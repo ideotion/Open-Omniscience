@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "Abrir estes artigos como um novo corpus de análise",
   "{n} near-identical copies across {m} sources = effectively one voice": "{n} cópias quase idênticas em {m} fontes = na prática uma só voz",
   "{n} near-identical copies from one source = one voice": "{n} cópias quase idênticas de uma só fonte = uma voz",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "Nenhum grupo quase idêntico detetado neste corpus — não é prova de que não há coordenação, apenas que nenhuma foi encontrada neste limiar."
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "Nenhum grupo quase idêntico detetado neste corpus — não é prova de que não há coordenação, apenas que nenhuma foi encontrada neste limiar.",
+  "Shared origins": "Origens partilhadas",
+  "Shared origin": "Origem partilhada",
+  "cited": "citado",
+  "articles in this corpus citing the same outbound page": "artigos deste corpus que citam a mesma página externa",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "Nenhuma página externa é citada por 2 ou mais artigos deste corpus ainda.",
+  "Open every article citing this origin as a new corpus": "Abrir como novo corpus todos os artigos que citam esta origem",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Vários artigos que citam a mesma página não são uma confirmação independente — uma origem, vários ecos.",
+  "No articles cite this origin.": "Nenhum artigo cita esta origem."
 }

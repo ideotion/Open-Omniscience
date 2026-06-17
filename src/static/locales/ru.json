@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "Открыть эти статьи как новый корпус для анализа",
   "{n} near-identical copies across {m} sources = effectively one voice": "{n} почти идентичных копий из {m} источников = фактически один голос",
   "{n} near-identical copies from one source = one voice": "{n} почти идентичных копий из одного источника = один голос",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "В этом корпусе почти идентичных кластеров не обнаружено — это не доказательство отсутствия координации, лишь то, что при этом пороге ничего не найдено."
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "В этом корпусе почти идентичных кластеров не обнаружено — это не доказательство отсутствия координации, лишь то, что при этом пороге ничего не найдено.",
+  "Shared origins": "Общие первоисточники",
+  "Shared origin": "Общий первоисточник",
+  "cited": "цит.",
+  "articles in this corpus citing the same outbound page": "статьи этого корпуса, ссылающиеся на одну и ту же внешнюю страницу",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "Пока ни одна внешняя страница не цитируется 2+ статьями этого корпуса.",
+  "Open every article citing this origin as a new corpus": "Открыть новым корпусом все статьи, ссылающиеся на этот первоисточник",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Несколько статей, ссылающихся на одну и ту же страницу, — не независимое подтверждение: один первоисточник, несколько отголосков.",
+  "No articles cite this origin.": "Ни одна статья не ссылается на этот первоисточник."
 }

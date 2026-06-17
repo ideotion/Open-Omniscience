@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "इन लेखों को एक नए विश्लेषण कॉर्पस के रूप में खोलें",
   "{n} near-identical copies across {m} sources = effectively one voice": "{m} स्रोतों में {n} लगभग समान प्रतियाँ = वास्तव में एक ही आवाज़",
   "{n} near-identical copies from one source = one voice": "एक ही स्रोत से {n} लगभग समान प्रतियाँ = एक आवाज़",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "इस कॉर्पस में कोई लगभग समान समूह नहीं मिला — यह समन्वय न होने का प्रमाण नहीं, केवल इतना कि इस सीमा पर कुछ नहीं मिला।"
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "इस कॉर्पस में कोई लगभग समान समूह नहीं मिला — यह समन्वय न होने का प्रमाण नहीं, केवल इतना कि इस सीमा पर कुछ नहीं मिला।",
+  "Shared origins": "साझा स्रोत",
+  "Shared origin": "साझा स्रोत",
+  "cited": "उद्धृत",
+  "articles in this corpus citing the same outbound page": "इस कॉर्पस के लेख जो एक ही बाहरी पृष्ठ का हवाला देते हैं",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "इस कॉर्पस में अभी तक कोई बाहरी पृष्ठ 2+ लेखों द्वारा उद्धृत नहीं है।",
+  "Open every article citing this origin as a new corpus": "इस स्रोत का हवाला देने वाले सभी लेखों को नए कॉर्पस के रूप में खोलें",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "एक ही पृष्ठ का हवाला देने वाले कई लेख स्वतंत्र पुष्टि नहीं हैं — एक स्रोत, कई प्रतिध्वनियाँ।",
+  "No articles cite this origin.": "कोई लेख इस स्रोत का हवाला नहीं देता।"
 }

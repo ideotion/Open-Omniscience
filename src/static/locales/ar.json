@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "افتح هذه المقالات كمجموعة تحليل جديدة",
   "{n} near-identical copies across {m} sources = effectively one voice": "{n} نسخة شبه متطابقة عبر {m} مصدرًا = صوت واحد فعليًا",
   "{n} near-identical copies from one source = one voice": "{n} نسخة شبه متطابقة من مصدر واحد = صوت واحد",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "لم يُكتشف أي تجمّع شبه متطابق في هذه المجموعة — وهذا ليس دليلاً على غياب التنسيق، بل فقط أنه لم يُعثر على شيء عند هذا الحد."
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "لم يُكتشف أي تجمّع شبه متطابق في هذه المجموعة — وهذا ليس دليلاً على غياب التنسيق، بل فقط أنه لم يُعثر على شيء عند هذا الحد.",
+  "Shared origins": "مصادر مشتركة",
+  "Shared origin": "مصدر مشترك",
+  "cited": "استشهاد",
+  "articles in this corpus citing the same outbound page": "مقالات في هذه المجموعة تستشهد بالصفحة الخارجية نفسها",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "لا توجد بعد صفحة خارجية يستشهد بها مقالان أو أكثر في هذه المجموعة.",
+  "Open every article citing this origin as a new corpus": "افتح كمجموعة جديدة كل مقال يستشهد بهذا المصدر",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "عدة مقالات تستشهد بالصفحة نفسها ليست تأكيدًا مستقلاً — مصدر واحد وأصداء متعددة.",
+  "No articles cite this origin.": "لا توجد مقالات تستشهد بهذا المصدر."
 }

@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "Buka artikel-artikel ini sebagai korpus analisis baru",
   "{n} near-identical copies across {m} sources = effectively one voice": "{n} salinan nyaris identik di {m} sumber = sebenarnya satu suara",
   "{n} near-identical copies from one source = one voice": "{n} salinan nyaris identik dari satu sumber = satu suara",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "Tidak ada kluster nyaris identik terdeteksi dalam korpus ini — bukan bukti tidak ada koordinasi, hanya tidak ada yang ditemukan pada ambang ini."
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "Tidak ada kluster nyaris identik terdeteksi dalam korpus ini — bukan bukti tidak ada koordinasi, hanya tidak ada yang ditemukan pada ambang ini.",
+  "Shared origins": "Asal bersama",
+  "Shared origin": "Asal bersama",
+  "cited": "dikutip",
+  "articles in this corpus citing the same outbound page": "artikel dalam korpus ini yang mengutip halaman luar yang sama",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "Belum ada halaman luar yang dikutip oleh 2+ artikel dalam korpus ini.",
+  "Open every article citing this origin as a new corpus": "Buka semua artikel yang mengutip asal ini sebagai korpus baru",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Beberapa artikel yang mengutip halaman yang sama bukan konfirmasi independen — satu asal, banyak gema.",
+  "No articles cite this origin.": "Tidak ada artikel yang mengutip asal ini."
 }

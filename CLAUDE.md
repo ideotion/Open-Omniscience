@@ -2280,6 +2280,21 @@ ruling, a contingency, or a deliberate-omission note.
   (/api/links/articles-by-link) + shared-keyword neighbours with multi-select branch; the inline
   "1 voice" annotation in the reader + the Articles list; DISSOLVE the manual Source-integrity tab
   once the card + inline fully absorb it (absorption-test-gated, the Desk lesson — not yet).
+  **PR 2 — SHARED-ORIGIN LENS SHIPPED 2026-06-17 (branch `claude/related-shared-origins`, draft
+  PR onto 0.09, BROWSER-UNVERIFIED, frontend-only):** the Related subtab now renders a SECOND
+  lens beneath the near-dup clusters — "Shared origins": the outbound pages cited by 2+ articles
+  in the corpus (reuses the EXISTING /api/links/corpus; no new backend), each with the
+  anti-false-triangulation caveat ("several articles citing the same page are not independent
+  confirmation — one origin, several echoes") VISIBLE, and a "Branch into a new corpus →" that
+  calls `branchFromOrigin` → /api/links/articles-by-link?url= → `openAnalysisForIds` over every
+  citing article (the "sources' sources" trail). renderAnRelated restructured to render BOTH
+  sections (Promise.all; no early-return on empty clusters), near-dup section + its #299 strings
+  PRESERVED (test_corpus_coordination stays green). +8 i18n ×12 (non-en AI-drafted, flagged);
+  tests/test_related_shared_origins.py + node --check green; full pytest needs py3.13 (CI).
+  STILL REMAINING (PR 3): the inline "N near-identical = 1 voice" BADGE on article rows in the
+  Articles list / search results / reader (a distinct surface — the lists/reader render
+  separately from the analysis Related subtab); shared-KEYWORD neighbours; multi-select branch;
+  DISSOLVE the manual Source-integrity tab (absorption-test-gated).
 - **Offline LLM kit** (RM-08 release artifact); DuckDuckGo discovery channel
   only after RM-03 gate UX proves out. **Translated docs:** infrastructure
   shipped (per-language docs served with honest machine-drafted banner; fr

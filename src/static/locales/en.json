@@ -1101,5 +1101,13 @@
   "Open these articles as a new analysis corpus": "Open these articles as a new analysis corpus",
   "{n} near-identical copies across {m} sources = effectively one voice": "{n} near-identical copies across {m} sources = effectively one voice",
   "{n} near-identical copies from one source = one voice": "{n} near-identical copies from one source = one voice",
-  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold."
+  "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.": "No near-identical clusters detected in this corpus — not proof there is no coordination, only that none was found at this threshold.",
+  "Shared origins": "Shared origins",
+  "Shared origin": "Shared origin",
+  "cited": "cited",
+  "articles in this corpus citing the same outbound page": "articles in this corpus citing the same outbound page",
+  "No outbound page is cited by 2+ articles in this corpus yet.": "No outbound page is cited by 2+ articles in this corpus yet.",
+  "Open every article citing this origin as a new corpus": "Open every article citing this origin as a new corpus",
+  "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Several articles citing the same page are not independent confirmation — one origin, several echoes.",
+  "No articles cite this origin.": "No articles cite this origin."
 }
