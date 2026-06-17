@@ -1117,5 +1117,7 @@
   "Customize…": "Personnaliser…",
   "Also delete the app folder": "Supprimer aussi le dossier de l'application",
   "Also wipe my data and keys (irreversible)": "Effacer aussi mes données et clés (irréversible)",
-  "Download a backup first": "Télécharger d'abord une sauvegarde"
+  "Download a backup first": "Télécharger d'abord une sauvegarde",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "L'un de {n} exemplaires quasi identiques = en fait une seule voix. Ouvrez Liés pour inspecter la grappe.",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} d'entre eux sont des exemplaires quasi identiques — moins de voix indépendantes que ne le suggère le nombre (voir Liés)."
 }

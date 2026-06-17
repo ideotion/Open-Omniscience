@@ -1117,5 +1117,7 @@
   "Customize…": "Customize…",
   "Also delete the app folder": "Also delete the app folder",
   "Also wipe my data and keys (irreversible)": "Also wipe my data and keys (irreversible)",
-  "Download a backup first": "Download a backup first"
+  "Download a backup first": "Download a backup first",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related)."
 }

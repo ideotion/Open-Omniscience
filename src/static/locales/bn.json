@@ -1117,5 +1117,7 @@
   "Customize…": "কাস্টমাইজ…",
   "Also delete the app folder": "অ্যাপ ফোল্ডারও মুছুন",
   "Also wipe my data and keys (irreversible)": "আমার ডেটা ও কী-ও মুছুন (অপরিবর্তনীয়)",
-  "Download a backup first": "প্রথমে একটি ব্যাকআপ ডাউনলোড করুন"
+  "Download a backup first": "প্রথমে একটি ব্যাকআপ ডাউনলোড করুন",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "{n}টি প্রায় অভিন্ন কপির একটি = কার্যত একটিই কণ্ঠস্বর। ক্লাস্টার দেখতে সম্পর্কিত খুলুন।",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "এর মধ্যে {n}টি প্রায় অভিন্ন কপি — সংখ্যা যা বোঝায় তার চেয়ে কম স্বাধীন কণ্ঠস্বর (সম্পর্কিত দেখুন)।"
 }

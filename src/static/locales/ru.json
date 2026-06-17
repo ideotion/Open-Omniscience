@@ -1117,5 +1117,7 @@
   "Customize…": "Настроить…",
   "Also delete the app folder": "Также удалить папку приложения",
   "Also wipe my data and keys (irreversible)": "Также стереть мои данные и ключи (необратимо)",
-  "Download a backup first": "Сначала скачать резервную копию"
+  "Download a backup first": "Сначала скачать резервную копию",
+  "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "Одна из {n} почти идентичных копий = фактически один голос. Откройте «Связанные», чтобы изучить кластер.",
+  "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} из них — почти идентичные копии: независимых голосов меньше, чем кажется по числу (см. «Связанные»)."
 }
