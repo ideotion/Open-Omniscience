@@ -395,6 +395,18 @@ ruling, a contingency, or a deliberate-omission note.
   periodic re-fetch of tracked figures, new vintage each time; consented/airplane-gated).
   (13) **DESIGN-ONLY VERTICALS = PROCEED with them** (elections/civic + the 9 manipulation-
   pattern cards): start building, no longer deferred.
+  **CARD #6 SOURCE-LAUNDERING SHIPPED 2026-06-17 (the ledger's recommended first card, backend
+  VERIFIED py3.13):** src/analytics/laundering.py:find_source_laundering — origins cited by many
+  DISTINCT sources (the independence measure, NOT article count) = apparent corroboration tracing
+  to ONE origin; reads article_links (citation graph, not text); social/storefront origins excluded
+  (is_social/is_commerce noise filter); NO score; the INNOCENT explanation (a widely-cited primary
+  source looks identical) stated beside the pattern; returns the exact citing-article set. A
+  source_laundering PRODUCER (bucket="overtold", passes the no-score Card schema, _trigger) auto-
+  surfaces it as a Home Lead via run_all; GET /api/insights/source-laundering for exploration.
+  tests/test_source_laundering.py (5: fires on distinct sources, one-chatty-source-can't-launder,
+  social/commerce excluded, both gates, endpoint). REMAINING: the other 8 cards (astroturf/copypasta
+  partly covered by echo_chamber; headline-body-mismatch, outrage-intensity, recycled-claim,
+  flood/bury, manufactured-emergence, event-timed-op still to build); the elections/civic vertical.
   SEQUENCING: (1) is the lead. Record-only here; build across stacked PRs onto 0.09.
 - **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run
   UNSUPERVISED.** SCOPE = the V0.1 RC mandate IN FULL ('absolutely everything' from

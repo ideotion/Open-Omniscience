@@ -497,6 +497,25 @@ def insights_ring_countries(
     return ring_country_split(db, ring_id=ring_id, days=days, limit=limit)
 
 
+@router.get("/source-laundering")
+def insights_source_laundering(
+    min_sources: int = Query(3, ge=2, le=100, description="distinct-source surfacing gate"),
+    min_articles: int = Query(3, ge=2, le=100),
+    days: int | None = Query(None, ge=1, le=36500),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Origins cited by many DISTINCT sources — apparent corroboration that isn't
+    independent (manipulation-pattern card #6). Names the STRUCTURE, never intent:
+    independence is distinct sources (not article count); social/storefront origins
+    are excluded; the innocent explanation is stated beside the pattern; no score."""
+    from src.analytics.laundering import find_source_laundering
+
+    return find_source_laundering(
+        db, min_sources=min_sources, min_articles=min_articles, days=days, limit=limit
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None
