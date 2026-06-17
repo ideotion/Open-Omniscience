@@ -1158,5 +1158,7 @@
   "Done.": "Done.",
   "Open an article to read its summary or translation.": "Open an article to read its summary or translation.",
   "Local model — click to re-check": "Local model — click to re-check",
-  "Saved.": "Saved."
+  "Saved.": "Saved.",
+  "Open the source-integrity desk →": "Open the source-integrity desk →",
+  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations."
 }
