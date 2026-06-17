@@ -1,0 +1,75 @@
+/* ================================================================= *
+ *  Field — mobile-first, one-handed, a card stream.GPL-3.0-or-later.*
+ *  Critical argument vs. the original: the default is desktop-dense  *
+ *  (wide tables, a left rail, cramped controls) and on a phone it    *
+ *  collapses to an off-canvas drawer behind a hamburger — the device *
+ *  a field reporter actually carries is a second-class citizen.      *
+ *  Field inverts that: a persistent BOTTOM tab bar, a single-column  *
+ *  stream of tappable cards, big touch targets, a sticky search — and *
+ *  it scales UP to a calm centred column on the desktop.             *
+ *  Respects the active theme. Scope: html[data-ui="field"].         *
+ * ================================================================= */
+html[data-ui="field"] { --radius: 16px; --radius-sm: 12px; --space: 16px; --pad: 16px; }
+html[data-ui="field"] body { font-size: 15.5px; line-height: 1.6; }
+html[data-ui="field"] .app { display: block; min-height: 100vh; }
+html[data-ui="field"] #hamburger { display: none; }
+
+/* Sidebar -> a fixed BOTTOM navigation bar (icon over label, horizontally
+   scrollable since there are many sections). The grouped nav flattens via
+   display:contents — no DOM change. */
+html[data-ui="field"] .sidebar {
+  position: fixed; inset: auto 0 0 0; top: auto; transform: none;
+  width: 100%; height: auto; flex-direction: row; z-index: 70;
+  background: color-mix(in srgb, var(--bg2) 94%, transparent);
+  backdrop-filter: blur(12px);
+  border-right: 0; border-top: 1px solid var(--border);
+  padding: 6px max(8px, env(safe-area-inset-left)) calc(6px + env(safe-area-inset-bottom));
+  overflow: visible;
+}
+html[data-ui="field"] .brand { display: none; }
+html[data-ui="field"] .nav-groups { flex: 1; display: flex; flex-direction: row; gap: 2px;
+  padding: 0; overflow-x: auto; scrollbar-width: none; }
+html[data-ui="field"] .nav-groups::-webkit-scrollbar { display: none; }
+html[data-ui="field"] .nav-group { display: contents; }
+html[data-ui="field"] .nav-group > .gl { display: none; }
+html[data-ui="field"] .nav-item {
+  flex: 0 0 auto; width: auto; flex-direction: column; gap: 3px; align-items: center;
+  padding: 7px 12px; margin: 0; border-radius: 12px; font-size: 10.5px; color: var(--muted);
+}
+html[data-ui="field"] .nav-item svg { width: 21px; height: 21px; flex-basis: 21px; opacity: 1; }
+html[data-ui="field"] .nav-item .badge { display: none; }
+html[data-ui="field"] .nav-item.active { color: var(--accent); background: transparent; }
+html[data-ui="field"] .nav-item.active::before { display: none; }
+html[data-ui="field"] .sb-foot { flex: 0 0 auto; flex-direction: column; gap: 0; border-top: 0; padding: 0; }
+html[data-ui="field"] .sb-foot button { flex-direction: column; gap: 3px; padding: 7px 12px; font-size: 10.5px; }
+html[data-ui="field"] .sb-foot .lbl { font-size: 10.5px; }
+html[data-ui="field"] #sb-collapse, html[data-ui="field"] #sb-expand { display: none; }
+
+/* Sticky top bar with a big, comfortable search. */
+html[data-ui="field"] .topbar { padding: 10px 14px; gap: 8px; }
+html[data-ui="field"] .omni { max-width: none; border-radius: 14px; padding: 11px 14px; font-size: 15px; }
+html[data-ui="field"] .status-cluster { display: none; }   /* declutter — status lives in the task manager */
+
+/* Single-column stream; room for the bottom bar; centred on big screens. */
+html[data-ui="field"] main { padding: 14px 14px 84px; }
+html[data-ui="field"] main > * { max-width: 640px; }
+html[data-ui="field"] .tab-page.active { gap: 14px; }
+html[data-ui="field"] .row { gap: 10px; }
+html[data-ui="field"] .row > div { min-width: 100%; }       /* stack form fields */
+
+/* Cards as a feed: full-width, generous, tappable. */
+html[data-ui="field"] .cards { grid-template-columns: 1fr; gap: 14px; }
+html[data-ui="field"] .card { padding: 18px; border-radius: 16px; gap: 11px; }
+html[data-ui="field"] .card h4 { font-size: 17px; line-height: 1.35; }
+html[data-ui="field"] .card .acts button, html[data-ui="field"] button { min-height: 44px; padding: 11px 18px; }
+html[data-ui="field"] input, html[data-ui="field"] select, html[data-ui="field"] textarea { min-height: 44px; border-radius: 12px; }
+html[data-ui="field"] .panel { border-radius: 18px; padding: 18px; }
+/* Wide tables scroll horizontally instead of squeezing. */
+html[data-ui="field"] table { min-width: 520px; }
+html[data-ui="field"] .home-glance { border-radius: 16px; }
+
+/* On a real phone, tighten the gutters a touch. */
+@media (max-width: 420px) {
+  html[data-ui="field"] main { padding: 10px 10px 84px; }
+  html[data-ui="field"] .nav-item { padding: 6px 10px; }
+}

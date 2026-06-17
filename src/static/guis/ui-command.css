@@ -1,0 +1,70 @@
+/* ================================================================= *
+ *  Command — keyboard / command-first.             GPL-3.0-or-later.*
+ *  Critical argument vs. the original: features are spread across a  *
+ *  deep tree (13 tabs, many subtabs) — discovery is slow and mouse-  *
+ *  bound. Command makes the SEARCH/COMMAND surface the centre of     *
+ *  gravity: a prominent omnibar plus an always-present, fuzzy,       *
+ *  arrow-key launcher on Home that runs any section or action with   *
+ *  Enter. Built for the journalist/OSINT power user who wants speed. *
+ *  Alpine.js (vendored, MIT, zero network) drives the launcher.     *
+ *  Respects the active theme. Scope: html[data-ui="command"].       *
+ * ================================================================= */
+html[data-ui="command"] { --radius: 12px; --radius-sm: 10px; }
+
+/* The omnibar grows into a real command surface. */
+html[data-ui="command"] .topbar { padding: 12px 18px; }
+html[data-ui="command"] .omni {
+  max-width: 720px; padding: 11px 16px; font-size: 14.5px; border-radius: 12px;
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+html[data-ui="command"] .omni:hover, html[data-ui="command"] .omni:focus-within { border-color: var(--accent); }
+
+/* The launcher (injected by ui-command.js on Home). */
+html[data-ui="command"] .cmd-launch {
+  padding: 0; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background:
+    radial-gradient(700px 300px at 50% -40%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+    var(--panel);
+}
+html[data-ui="command"] .cmd-bar {
+  display: flex; align-items: center; gap: 12px; padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+html[data-ui="command"] .cmd-bar > svg { color: var(--accent); flex: 0 0 auto; }
+html[data-ui="command"] .cmd-input {
+  flex: 1; border: 0; background: transparent; padding: 4px 0; font-size: 21px;
+  font-weight: 500; color: var(--fg); border-radius: 0;
+}
+html[data-ui="command"] .cmd-input:focus { outline: none; border: 0; }
+html[data-ui="command"] .cmd-input::placeholder { color: var(--muted); opacity: .8; font-weight: 400; }
+html[data-ui="command"] .cmd-kbd, html[data-ui="command"] .cmd-hint kbd {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 6px; padding: 2px 7px; background: var(--panel2);
+}
+html[data-ui="command"] .cmd-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; padding: 14px;
+  max-height: 46vh; overflow: auto;
+}
+html[data-ui="command"] .cmd-tile {
+  display: flex; align-items: center; gap: 10px; margin: 0; text-align: start;
+  background: var(--panel2); border: 1px solid var(--border); color: var(--fg);
+  border-radius: 10px; padding: 12px 14px; font-weight: 500; cursor: pointer; transition: none;
+}
+html[data-ui="command"] .cmd-tile .cmd-label { flex: 1; }
+html[data-ui="command"] .cmd-tile .cmd-sub { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+html[data-ui="command"] .cmd-tile.sel, html[data-ui="command"] .cmd-tile:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--accent); color: var(--fg);
+}
+html[data-ui="command"] .cmd-hint { padding: 0 20px 16px; margin: 0; }
+html[data-ui="command"] .cmd-hint kbd { padding: 1px 6px; }
+
+/* Make keyboard focus loud everywhere (this UI is keyboard-led). */
+html[data-ui="command"] :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+html[data-ui="command"] .nav-item:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
+@media (max-width: 560px) {
+  html[data-ui="command"] .cmd-input { font-size: 17px; }
+  html[data-ui="command"] .cmd-grid { grid-template-columns: 1fr; max-height: none; }
+}

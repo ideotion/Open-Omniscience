@@ -1,0 +1,70 @@
+/* ================================================================= *
+ *  Canvas — a spatial, zoomable investigation board.GPL-3.0-or-later*
+ *  Critical argument vs. the original: a list/tab tree flattens what *
+ *  an investigation actually is — a web of related places, people,   *
+ *  sources and dates. Canvas gives Home a pan/zoom board where every *
+ *  section is a node you arrange, zoom and open, externalising the   *
+ *  mental map. The conventional surfaces stay below (no loss, full   *
+ *  a11y fallback). Alpine.js (vendored, MIT, zero network) runs it.  *
+ *  Respects the active theme. Scope: html[data-ui="canvas"].        *
+ * ================================================================= */
+html[data-ui="canvas"] { --radius: 14px; }
+
+html[data-ui="canvas"] .canvas-board {
+  position: relative; overflow: hidden; padding: 0;
+  height: clamp(340px, 56vh, 620px);
+  touch-action: none; cursor: grab; user-select: none;
+  background: var(--panel);
+}
+html[data-ui="canvas"] .canvas-board:active { cursor: grabbing; }
+
+/* A faint engineering grid + a centre glow, so depth and pan read clearly. */
+html[data-ui="canvas"] .canvas-grid {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(900px 480px at 50% 42%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%),
+    linear-gradient(color-mix(in srgb, var(--border) 60%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 60%, transparent) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px, 28px 28px;
+}
+html[data-ui="canvas"] .canvas-toolbar {
+  position: absolute; inset: 10px 12px auto auto; z-index: 4;
+  display: flex; align-items: center; gap: 10px;
+}
+html[data-ui="canvas"] .canvas-hint {
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; margin: 0;
+  backdrop-filter: blur(6px);
+}
+html[data-ui="canvas"] .canvas-reset { margin: 0; }
+
+html[data-ui="canvas"] .canvas-world {
+  position: absolute; left: 0; top: 0; width: 0; height: 0;
+  transform-origin: 0 0; will-change: transform;
+}
+html[data-ui="canvas"] .canvas-hub {
+  position: absolute; left: 0; top: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px;
+  border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 18%, transparent), 0 0 30px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+html[data-ui="canvas"] .canvas-node {
+  position: absolute; transform: translate(-50%, -50%); margin: 0;
+  background: var(--panel2); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 11px 16px; font-weight: 600; font-size: 14px;
+  white-space: nowrap; cursor: grab; box-shadow: 0 8px 22px -12px rgba(0,0,0,.6);
+  transition: border-color .12s ease, box-shadow .12s ease, background .12s ease;
+}
+html[data-ui="canvas"] .canvas-node:hover {
+  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel2));
+  box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+html[data-ui="canvas"] .canvas-node:active { cursor: grabbing; }
+html[data-ui="canvas"] .canvas-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+@media (max-width: 600px) {
+  html[data-ui="canvas"] .canvas-board { height: clamp(300px, 60vh, 520px); }
+  html[data-ui="canvas"] .canvas-hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-ui="canvas"] .canvas-node { transition: none; }
+}

@@ -863,6 +863,25 @@ def test_ui_invariants():
         "outbound links open the local preview, never a bare external <a href>)"
     )
 
+    # --- 30. Alternative-interfaces gallery (Settings -> GUIs, maintainer-ruled
+    #     2026-06-17): a SANDBOX gallery of eight opt-in interfaces, each a
+    #     SHARED-CORE SHELL that reuses app.js's id-targeted render logic under a
+    #     scoped skin (html[data-ui="<id>"]); the default interface stays the
+    #     guarded reference + default. The ethical non-negotiables are preserved
+    #     BY CONSTRUCTION (same DOM) and enforced file-by-file in
+    #     tests/test_gui_alternatives.py. Here we pin the additive WIRING so a
+    #     future session cannot silently drop it.
+    assert '<script src="/static/guis/boot.js">' in html, (
+        "the GUIs boot loader must be included in <head> (applies the chosen skin before first paint)"
+    )
+    assert "/static/guis/gallery.js" in html, "the GUIs gallery renderer must be included"
+    assert (
+        'data-tab="guis"' in html and 'id="set-guis"' in html and 'id="guis-gallery"' in html
+    ), "Settings must carry the GUIs subtab button + the set-guis panel + the #guis-gallery host"
+    assert 'cat === "guis"' in html and "OOGUIs.renderGallery" in html, (
+        "showSetCat() must lazy-render the gallery when the GUIs subtab is shown"
+    )
+
 
 def test_corpus_tier_header():
     """Corpus maturity tier on Home (evidence-tiered cards REMAINING slice): a
