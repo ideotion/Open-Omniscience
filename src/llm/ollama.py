@@ -37,11 +37,14 @@ CATALOG_AS_OF = "2026-06"
 # visible without us pretending to a freshness we can't guarantee.
 OLLAMA_TESTED_VERSION = "0.5.x"
 MODEL_CATALOG: list[dict] = [
-    {"tag": "llama3.2:1b", "size": "~1.3 GB", "min_ram_gb": 4, "note": "smallest; very low-spec"},
-    {"tag": "llama3.2:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "balanced default"},
-    {"tag": "gemma2:2b", "size": "~1.6 GB", "min_ram_gb": 6, "note": "small, fast"},
-    {"tag": "qwen2.5:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "strong multilingual"},
-    {"tag": "phi3:mini", "size": "~2.3 GB", "min_ram_gb": 8, "note": "reasoning-leaning"},
+    {"tag": "granite4:350m", "size": "~0.3 GB", "min_ram_gb": 4, "note": "IBM Granite 4.0 — tiny (350M); simple tasks"},
+    {"tag": "gemma3:1b", "size": "~0.8 GB", "min_ram_gb": 4, "note": "Google Gemma 3 — small & fast (1B)"},
+    {"tag": "llama3.2:1b", "size": "~1.3 GB", "min_ram_gb": 4, "note": "Meta Llama 3.2 — smallest; very low-spec"},
+    {"tag": "llama3.2:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "Meta Llama 3.2 — balanced default"},
+    {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "note": "IBM Granite 4.0 — latest small (3.4B, hybrid)"},
+    {"tag": "nemotron-mini", "size": "~2.7 GB", "min_ram_gb": 8, "note": "NVIDIA Nemotron Mini (4B)"},
+    {"tag": "gemma3:4b", "size": "~3.3 GB", "min_ram_gb": 8, "note": "Google Gemma 3 (4B)"},
+    {"tag": "mistral:7b", "size": "~4.4 GB", "min_ram_gb": 8, "note": "Mistral 7B (Apache-2.0)"},
 ]
 DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", "llama3.2:3b")
 
