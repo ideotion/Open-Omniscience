@@ -7672,7 +7672,10 @@
         ]);
         _anRelatedClusters = (cd && cd.clusters) || [];
         _anRelatedLinks = (ld && ld.items) || [];
-        let html = `<div class="hint"><b>${_anRelatedClusters.length}</b> ${esc(t("Near-identical clusters"))}`
+        let html = `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">`
+          + `<button class="secondary tiny" onclick="branchSelectedRelated()">${esc(t("Branch selected into a new corpus →"))}</button>`
+          + ` <span id="an-rel-selcount" class="muted" style="font-size:11px"></span></div>`
+          + `<div class="hint"><b>${_anRelatedClusters.length}</b> ${esc(t("Near-identical clusters"))}`
           + ` <span class="muted">· ${esc((cd && cd.method) || "")}</span></div>`;
         if (!_anRelatedClusters.length) {
           html += `<div class="muted" style="margin:6px 0 2px">`
@@ -7688,7 +7691,7 @@
             const more = c.size > 6 ? `<li class="muted">+${c.size - 6} ${esc(t("more"))}</li>` : "";
             return `<div class="card" style="padding:10px;margin-top:8px">`
               + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
-              + `<b>${esc(voice)}</b>`
+              + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="c" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}"><b>${esc(voice)}</b></span>`
               + `<button class="secondary tiny" onclick="branchFromRelated(${i})" title="${esc(t("Open these articles as a new analysis corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div>`
               + `<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">${esc(t("Show all"))}</summary>`
               + `<ul style="margin:6px 0 0">${ex}${more}</ul></details></div>`;
@@ -7705,8 +7708,9 @@
             const label = it.domain || it.link_text || it.normalized_url;
             return `<div class="card" style="padding:10px;margin-top:8px">`
               + `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">`
+              + `<span style="display:flex;align-items:center;gap:6px"><input type="checkbox" class="an-rel-pick" data-kind="o" data-idx="${i}" onchange="anRelUpdateSel()" aria-label="${esc(t("Select for branching"))}">`
               + `<span>${extLink(it.sample_url || it.normalized_url, esc(label), "", "")} `
-              + `<span class="muted">· ${it.citations}× ${esc(t("cited"))}</span></span>`
+              + `<span class="muted">· ${it.citations}× ${esc(t("cited"))}</span></span></span>`
               + `<button class="secondary tiny" onclick="branchFromOrigin(${i})" title="${esc(t("Open every article citing this origin as a new corpus"))}">${esc(t("Branch into a new corpus →"))}</button></div></div>`;
           }).join("")
             + `<p class="card-caveat" style="margin-top:8px">${esc((ld && ld.caveat) || t("Several articles citing the same page are not independent confirmation — one origin, several echoes."))}</p>`;
@@ -7732,6 +7736,37 @@
         if (!ids.length) { if (typeof toast === "function") toast(t("No articles cite this origin.")); return; }
         openAnalysisForIds(ids, (it.domain || t("Shared origin")) + " · " + ids.length);
       } catch (e) { if (typeof toast === "function") toast(e.message); }
+    }
+    // Multi-select branch: union the SELECTED clusters' + origins' article sets into
+    // ONE fresh corpus (associated research over a hand-picked combination).
+    function anRelUpdateSel() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const n = document.querySelectorAll("#an-related .an-rel-pick:checked").length;
+      const el = $("an-rel-selcount");
+      if (el) el.textContent = n ? t("{n} selected").replace("{n}", n) : "";
+    }
+    async function branchSelectedRelated() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const picks = Array.from(document.querySelectorAll("#an-related .an-rel-pick:checked"));
+      if (!picks.length) { if (typeof toast === "function") toast(t("Select one or more rows to branch.")); return; }
+      const ids = new Set();
+      const originIdx = [];
+      for (const cb of picks) {
+        if (cb.dataset.kind === "c") {
+          const c = _anRelatedClusters[+cb.dataset.idx];
+          (c && c.article_ids || []).forEach((id) => ids.add(id));
+        } else { originIdx.push(+cb.dataset.idx); }
+      }
+      try {
+        const lists = await Promise.all(originIdx.map((i) => {
+          const it = _anRelatedLinks[i];
+          return it ? api("/api/links/articles-by-link?url=" + encodeURIComponent(it.normalized_url || it.sample_url)).catch(() => null) : null;
+        }));
+        for (const d of lists) (d && d.articles || []).forEach((a) => ids.add(a.id));
+      } catch (e) { /* origins are best-effort; cluster ids still branch */ }
+      const arr = Array.from(ids);
+      if (!arr.length) { if (typeof toast === "function") toast(t("No articles in the selected rows.")); return; }
+      openAnalysisForIds(arr, t("Selected related") + " · " + arr.length);
     }
 
     // Self-contained radial mind-map for the analysis window. Distinct from the

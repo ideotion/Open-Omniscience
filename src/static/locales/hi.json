@@ -1123,5 +1123,11 @@
   "Read": "पढ़ें",
   "Show the copies": "प्रतियाँ दिखाएँ",
   "Related in your corpus": "आपके कॉर्पस में संबंधित",
-  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "आपके कॉर्पस में लगभग समान प्रतियाँ — वास्तव में एक ही आवाज़, स्वतंत्र पुष्टि नहीं। संबंधित देखें।"
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "आपके कॉर्पस में लगभग समान प्रतियाँ — वास्तव में एक ही आवाज़, स्वतंत्र पुष्टि नहीं। संबंधित देखें।",
+  "Branch selected into a new corpus →": "चयन को नए कॉर्पस में शाखा बनाएँ →",
+  "{n} selected": "{n} चयनित",
+  "Select for branching": "शाखा के लिए चुनें",
+  "Select one or more rows to branch.": "शाखा बनाने के लिए एक या अधिक पंक्तियाँ चुनें।",
+  "No articles in the selected rows.": "चयनित पंक्तियों में कोई लेख नहीं।",
+  "Selected related": "चयनित संबंधित"
 }

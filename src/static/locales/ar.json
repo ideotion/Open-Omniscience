@@ -1123,5 +1123,11 @@
   "Read": "قراءة",
   "Show the copies": "إظهار النسخ",
   "Related in your corpus": "ذات صلة في مجموعتك",
-  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "نسخ شبه متطابقة في مجموعتك — صوت واحد فعليًا، وليست تأكيدًا مستقلاً. انظر «ذات صلة»."
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "نسخ شبه متطابقة في مجموعتك — صوت واحد فعليًا، وليست تأكيدًا مستقلاً. انظر «ذات صلة».",
+  "Branch selected into a new corpus →": "تفرّع بالمحدد إلى مجموعة جديدة →",
+  "{n} selected": "{n} محدد",
+  "Select for branching": "حدد للتفرّع",
+  "Select one or more rows to branch.": "حدد صفًا واحدًا أو أكثر للتفرّع.",
+  "No articles in the selected rows.": "لا مقالات في الصفوف المحددة.",
+  "Selected related": "المحدد ذو الصلة"
 }

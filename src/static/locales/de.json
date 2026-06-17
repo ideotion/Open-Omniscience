@@ -1123,5 +1123,11 @@
   "Read": "Lesen",
   "Show the copies": "Kopien anzeigen",
   "Related in your corpus": "Verwandt in Ihrem Korpus",
-  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Nahezu identische Kopien in Ihrem Korpus — faktisch eine Stimme, keine unabhängige Bestätigung. Siehe Verwandt."
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "Nahezu identische Kopien in Ihrem Korpus — faktisch eine Stimme, keine unabhängige Bestätigung. Siehe Verwandt.",
+  "Branch selected into a new corpus →": "Auswahl in ein neues Korpus abzweigen →",
+  "{n} selected": "{n} ausgewählt",
+  "Select for branching": "Zum Abzweigen auswählen",
+  "Select one or more rows to branch.": "Wählen Sie eine oder mehrere Zeilen zum Abzweigen.",
+  "No articles in the selected rows.": "Keine Artikel in den ausgewählten Zeilen.",
+  "Selected related": "Verwandte Auswahl"
 }

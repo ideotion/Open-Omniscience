@@ -1123,5 +1123,11 @@
   "Read": "পড়ুন",
   "Show the copies": "কপিগুলো দেখান",
   "Related in your corpus": "আপনার কর্পাসে সম্পর্কিত",
-  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "আপনার কর্পাসে প্রায় অভিন্ন কপি — কার্যত একটিই কণ্ঠস্বর, স্বাধীন নিশ্চিতকরণ নয়। সম্পর্কিত দেখুন।"
+  "Near-identical copies in your corpus — effectively one voice, not independent confirmation. See Related.": "আপনার কর্পাসে প্রায় অভিন্ন কপি — কার্যত একটিই কণ্ঠস্বর, স্বাধীন নিশ্চিতকরণ নয়। সম্পর্কিত দেখুন।",
+  "Branch selected into a new corpus →": "নির্বাচিতগুলো নতুন কর্পাসে শাখা করুন →",
+  "{n} selected": "{n}টি নির্বাচিত",
+  "Select for branching": "শাখার জন্য নির্বাচন করুন",
+  "Select one or more rows to branch.": "শাখা করতে এক বা একাধিক সারি নির্বাচন করুন।",
+  "No articles in the selected rows.": "নির্বাচিত সারিতে কোনো নিবন্ধ নেই।",
+  "Selected related": "নির্বাচিত সম্পর্কিত"
 }
