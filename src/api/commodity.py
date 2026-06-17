@@ -101,25 +101,39 @@ def list_prices(
     db: Session = Depends(get_db),
 ) -> dict:
     """List stored price points for a symbol, optionally normalized to one unit."""
+    # Column tuples, NOT full ORM objects: a long-history series (e.g. a daily
+    # FRED index since 1971 ≈ 13k points) was materialising thousands of ORM
+    # entities per chart load — the slowest reads in the 2026-06-17 perf report
+    # (N225 6.6s, NASDAQCOM 5.3s). Selecting only the 5 needed columns skips the
+    # ORM instrumentation overhead (same technique that took insights_map
+    # ~550→215ms). Uses the (symbol, observed_on) composite index for filter+sort.
     rows = (
-        db.query(CommodityPrice).filter_by(symbol=symbol).order_by(CommodityPrice.observed_on).all()
+        db.query(
+            CommodityPrice.observed_on,
+            CommodityPrice.price,
+            CommodityPrice.unit,
+            CommodityPrice.currency,
+            CommodityPrice.market,
+        )
+        .filter_by(symbol=symbol)
+        .order_by(CommodityPrice.observed_on)
+        .all()
     )
     out = []
-    for r in rows:
-        price, u = r.price, r.unit
-        if unit and unit != r.unit:
+    for observed_on, price, u, currency, market in rows:
+        if unit and unit != u:
             try:
-                price = convert_price(r.price, r.unit, unit)
+                price = convert_price(price, u, unit)
                 u = unit
             except UnitError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         out.append(
             {
-                "observed_on": r.observed_on.isoformat(),
+                "observed_on": observed_on.isoformat(),
                 "price": price,
-                "currency": r.currency,
+                "currency": currency,
                 "unit": u,
-                "market": r.market,
+                "market": market,
             }
         )
     return {"symbol": symbol, "count": len(out), "prices": out}
