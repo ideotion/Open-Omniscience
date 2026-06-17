@@ -1391,9 +1391,19 @@ ruling, a contingency, or a deliberate-omission note.
   `POST /api/insights/keyword-tags/backfill?limit=` (limit 0 = all). Counts only {scanned,
   tagged_keywords, tags_added}, never invents a tag. tests/test_keyword_tags.py +1 (tags election
   not widget; idempotent second pass = 0 added). This makes the tag feature non-empty on existing
-  corpora (so S3b won't show a blank subtab). REMAINING: S1b stoplists→data files (Q3); S3b the
-  Settings → Keywords subtab FRONTEND (explore+hide/tag, Q4, on the S3a endpoints; can offer a
-  one-click 'apply baseline tags' = this backfill); S4 in-app analyzer-proposal review.
+  corpora (so S3b won't show a blank subtab).
+  **ITEM AC S3b — KEYWORD EXPLORER SUBTAB SHIPPED 2026-06-17 (conservative + browser-unverified per
+  fork-3):** the deferred Item AC frontend. A Settings → Keywords subtab (`data-tab="keywords"` /
+  `#set-keywords`, wired via showSetCat) explores keywords by their type/topic TAGS (the S3a API):
+  `loadKeywordExplorer` reads /keyword-tags/facets → clickable tag chips per axis → kxShowTag reads
+  /keyword-tags/keywords → a keyword list (term · lang · a/m · source) with a HIDE button (reuses
+  POST /api/insights/exclude, reversible); "Apply baseline tags" runs the backfill (POST
+  /keyword-tags/backfill). Panel content is un-keyed English MATCHING the adjacent super-group +
+  diagnostics keyword-curation UIs (so i18n stays 100% with ZERO new keys; the nav label reuses the
+  already-keyed "Keywords"). node --check clean; test_ui_invariants test_keyword_explorer_subtab
+  pins the subtab + the facets/backfill/exclude wiring. REMAINING: the per-keyword TAG add/remove UI
+  (the S3a write endpoints exist; this slice does explore + hide + backfill); S1b stoplists→data
+  files (Q3); S4 in-app analyzer-proposal review; browser click-through (fork-3).
   **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
   risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
   the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N

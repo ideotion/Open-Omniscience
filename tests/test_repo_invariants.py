@@ -2089,3 +2089,17 @@ def test_corpus_window_competitive_subtab():
     assert "composite score" not in cfn or "no composite score" in cfn.lower() or (
         "never a" in cfn.lower()
     ), "the Competitive tab must not compute a composite score"
+
+
+def test_keyword_explorer_subtab():
+    """Item AC: a Settings -> Keywords subtab explores keywords by their type/topic
+    tags (the S3a tag API), hides noise, and applies the curated baseline tags
+    (backfill). Panel content is un-keyed English, matching the adjacent super-group
+    + diagnostics keyword-curation UIs; the nav label reuses the keyed 'Keywords'."""
+    src = _ui_source()
+    assert 'data-tab="keywords"' in src, "the Settings Keywords subtab button must exist"
+    assert 'id="set-keywords"' in src, "the Keywords panel must exist"
+    assert "function loadKeywordExplorer" in src, "the explorer loader must exist"
+    assert "/api/insights/keyword-tags/facets" in src, "explore must read the tag facets"
+    assert "/api/insights/keyword-tags/backfill" in src, "the apply-baseline-tags action must exist"
+    assert "/api/insights/exclude" in src, "the hide action must reuse the exclude endpoint"
