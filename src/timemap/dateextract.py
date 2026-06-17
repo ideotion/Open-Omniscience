@@ -125,6 +125,20 @@ _MONTHS.update({
     # Bulgarian (Cyrillic)
     "януари": 1, "февруари": 2, "май": 5, "юни": 6, "юли": 7,
     "септември": 9, "октомври": 10, "ноември": 11, "декември": 12,
+    # Arabic — Gregorian transliteration (the internationally common set; the
+    # multi-word Levantine names like كانون الثاني are out of scope for now).
+    # Eastern-Arabic digits (٠-٩) parse via \d + int() already. "مارس" also means
+    # "practised", but a month only fires with an adjacent day/year, so prose is safe.
+    "يناير": 1, "فبراير": 2, "مارس": 3, "أبريل": 4, "ابريل": 4, "مايو": 5,
+    "يونيو": 6, "يوليو": 7, "أغسطس": 8, "اغسطس": 8, "سبتمبر": 9, "أكتوبر": 10,
+    "اكتوبر": 10, "نوفمبر": 11, "ديسمبر": 12,
+    # Hindi (Devanagari) — Gregorian month names; Devanagari digits parse via \d.
+    "जनवरी": 1, "फरवरी": 2, "फ़रवरी": 2, "मार्च": 3, "अप्रैल": 4, "मई": 5,
+    "जून": 6, "जुलाई": 7, "अगस्त": 8, "सितंबर": 9, "सितम्बर": 9, "अक्टूबर": 10,
+    "नवंबर": 11, "नवम्बर": 11, "दिसंबर": 12, "दिसम्बर": 12,
+    # Bengali — Gregorian month names; Bengali digits parse via \d.
+    "জানুয়ারি": 1, "ফেব্রুয়ারি": 2, "মার্চ": 3, "এপ্রিল": 4, "মে": 5, "জুন": 6,
+    "জুলাই": 7, "আগস্ট": 8, "সেপ্টেম্বর": 9, "অক্টোবর": 10, "নভেম্বর": 11, "ডিসেম্বর": 12,
 })
 _MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 

@@ -106,6 +106,28 @@ def test_additional_language_months_extract():
         assert (expected, "day") in got, f"{text!r} -> {got!r}"
 
 
+def test_rtl_and_indic_month_names():
+    """Arabic / Hindi / Bengali Gregorian month names (UI locales the date-diag
+    flagged at ~0% coverage). Native digits (Eastern-Arabic ٠-٩, Devanagari,
+    Bengali) parse via \\d + int(); a month only fires next to a day/year, so
+    'مارس' (=March, but also 'practised') never invents a date from prose."""
+    from datetime import date
+
+    from src.timemap.dateextract import extract_dates
+
+    def d(text, anchor=None):
+        return [(c["date"], c["precision"]) for c in extract_dates(text, today=TODAY, anchor=anchor)]
+
+    assert ("2001-09-11", "day") in d("وقع الحدث في ١١ سبتمبر ٢٠٠١ في المدينة.")  # ar, eastern digits
+    assert ("2024-05-05", "day") in d("اجتمعوا في 5 مايو 2024.")  # ar, ascii digits
+    assert ("2003-03-01", "month") in d("في مارس 2024.".replace("2024", "2003"))  # ar month+year
+    assert ("2001-09-11", "day") in d("बैठक ११ सितंबर २००१ को हुई।")  # hi, devanagari digits
+    assert ("2001-09-11", "day") in d("সভা ১১ সেপ্টেম্বর ২০০১ সালে।")  # bn, bengali digits
+    # 'مارس' inside 'يمارس' (practises), even before a year, must NOT match (word boundary)
+    assert d("هو يمارس 2024 ساعة.") == []
+    assert d("هو يمارس الرياضة كل يوم.") == []  # no adjacent number at all
+
+
 def test_cjk_dates_year_month_day_markers():
     """Chinese/Japanese dates use the 年/月/日 ideographs as unambiguous markers
     (date-diag 2026-06-17 probes for 'cjk_date'). Half-width AND full-width digits
