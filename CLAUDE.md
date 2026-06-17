@@ -1358,8 +1358,8 @@ ruling, a contingency, or a deliberate-omission note.
   card strings must enter the UI translations).** #onboard CARD DONE
   2026-06-14 (h2/p/button keyed ×12; the engine auto-translates the static
   card once keyed); REMAINING here = the server-built home-card TITLES.
-- **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; catalog +
-  caveat slice SHIPPED, UI revamp SEQUENCED):** the maintainer wants Commodities + Indices
+- **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
+  SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent
   index coverage; (b) CATEGORY subtabs (Indices: continents + tags; Commodities: its
   categories) via the ooSubtabs grammar; (c) AGGREGATE several curves onto ONE graph
@@ -1392,10 +1392,36 @@ ruling, a contingency, or a deliberate-omission note.
   note; the board still renders on tab-show and the one-time onboarding import seeds first-load (the
   loadIndicesData/loadMarketData handlers are left orphaned-harmless). tests/test_market_autoload.py
   (freshness gate: only stale + never-seen feeds fetched; skips here — markets pipeline imports
-  feedparser, absent in the sandbox — runs in CI). i18n 100%; node --check clean. REMAINING (the UI
-  revamp, slices 2–6): the category subtabs, multi-series aggregation + family-stacking, scale
-  controls, coherent axis + clear legends — a browser-unverifiable effort (fork-3); Commodities +
-  Indices as twin boards.
+  feedparser, absent in the sandbox — runs in CI). i18n 100%; node --check clean.
+  **ALL 6 UI-REVAMP SLICES SHIPPED + MERGED to 0.09 2026-06-17 (browser-unverified per fork-3 —
+  node --check + a new test_repo_invariants test per slice + i18n 100%; each needs a human
+  click-through):** Slice 1 AUTO-LOAD (#312, above). Slice 2 CONTINENT/TAG SUBTABS (#314): the
+  Indices board groups by CONTINENT via ooSubtabs (the commodities-category analog) + a secondary
+  TAG-chip AND-filter; `/api/markets/board` now emits `continent`+`tags` per card so the UI facets
+  without a re-fetch (test_indices_category_subtabs). Slice 3 COMPARE OVERLAY + SCALES (#318): a
+  multi-select "Compare" on the Indices cards opens ONE ooChart overlay of the real series via the
+  shared #chart-enlarge dialog with an Absolute/Indexed/**Log** scale toggle; ooChart gained an
+  ADDITIVE `opts.logY` (log10 y-axis, vt/vtInv identity-when-off so every existing chart is
+  byte-unchanged — same contract as opts.indexed); chartEnlarge gained an optional 4th `opts` arg
+  (test_indices_multiseries_compare). Slice 4 COHERENT AXIS + LEGENDS (#320): `dashChartSvg` gained
+  an ADDITIVE shared `[t0,t1]` time axis (date-based point placement) so every commodity card aligns
+  on ONE calendar axis (a monthly + a daily series cohere); index-based fallback is byte-identical
+  (Home sparklines/trends unchanged); each Indices spark gained a start→as-of `.idx-range` legend
+  (test_markets_coherent_time_axis_and_legends). Slice 5 FAMILY-STACKED GRAPHS (#321): a reusable
+  `renderFamilyGraphs` draws ONE multi-series ooChart per category (indexed default + visible
+  "relative not absolute" caveat); a Cards/Families toggle on the commodities board defaults to Cards
+  (no regression); family blocks carry `.mkt-cat`/data-cat so the subtabs filter both views
+  (test_markets_family_stacked_graphs). Slice 6 TWIN-BOARD PARITY (#324): the Families view +
+  ooTimeScope time-range control come to the Indices board reusing renderFamilyGraphs/ooTimeScope/
+  windowPricesRange/fetchPrices (one ooChart per CONTINENT, lazy full-series load only when Families
+  is opened, Cards view untouched); both boards now share continent/category subtabs · tag chips ·
+  compare overlay+scales · families view · time-range control · the coherent shared axis
+  (test_markets_twin_board_parity). ALSO this batch: the manual loadIndicesData/loadMarketData
+  handlers are orphaned-harmless (buttons gone); new strings flow through `t()` (English fallback,
+  keyable later — i18n gate stays 100%). REMAINING (flagged, low-priority): the indices CARDS still
+  use the compact spark (commodities cards use the larger dashChartSvg) — a cosmetic card-rendering
+  unification; commodities could gain a tag facet for full symmetry; the new English-fallback strings
+  want keying; and a human click-through across themes/breakpoints (no headless harness here).
   **GRAPH "co-occurrence … never causation" CAVEAT REMOVED (maintainer ruled 2026-06-17 —
   REVERSES the earlier "binding visible caveat" on charts; it cluttered every graph):** all 6
   on-graph mentions of `t("co-occurrence in your corpus, never causation")` removed from
