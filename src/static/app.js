@@ -995,7 +995,7 @@
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") loadStatAgencies();        // official-statistics producer directory (Group N)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
-      if (cat === "safety") loadAtRestState();       // honest at-rest attestation (doctor)
+      if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
     }
     function buildDrawer() {
       const ui = getUi();
@@ -3216,18 +3216,87 @@
       } catch (e) { toast("Panic wipe failed: " + e.message, "err"); }
     }
 
+    // Resolve {mode, remove_folder, wipe_data} from the picker. Data is removed only in
+    // 'secure' or an explicit 'custom' opt-in — never minimal/full (maintainer-ruled).
+    function _uninstallSel() {
+      const mode = (($("uninstall-mode") || {}).value) || "minimal";
+      const remove_folder = mode === "custom"
+        ? !!(($("uninstall-folder") || {}).checked)
+        : (mode === "full" || mode === "secure");
+      const wipe_data = mode === "custom"
+        ? !!(($("uninstall-data") || {}).checked)
+        : (mode === "secure");
+      return {mode, remove_folder, wipe_data};
+    }
+
+    // Show the Customize checkboxes + a live preview of the EXACT paths a mode removes
+    // (informed consent before anything irreversible). Deletes nothing — GET only.
+    async function onUninstallMode() {
+      const sel = _uninstallSel();
+      const cust = $("uninstall-custom"); if (cust) cust.style.display = sel.mode === "custom" ? "" : "none";
+      const box = $("uninstall-preview"); if (!box) return;
+      try {
+        const qs = `mode=${encodeURIComponent(sel.mode)}&remove_folder=${sel.remove_folder}&wipe_data=${sel.wipe_data}`;
+        const p = await api(`/api/safety/uninstall/plan?${qs}`);
+        const bits = [`virtualenv${p.venv ? "" : " (none found)"}`, `${(p.launchers || []).length} launcher(s)`];
+        if (p.app_folder) bits.push(`the app folder <code>${esc(p.app_folder)}</code>`);
+        if (p.wipe_data_dir) bits.push(`<strong>your data &amp; keys</strong> at <code>${esc(p.wipe_data_dir)}</code>`);
+        let html = `Will remove: ${bits.join(", ")}.`;
+        if (!p.wipe_data_dir && p.data_dir) html += ` Your data at <code>${esc(p.data_dir)}</code> is kept.`;
+        if (p.wipe_data_dir) html += ` <span class="muted">Overwrite can’t guarantee erasure on SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and the key is destroyed.</span>`;
+        html += ` <span class="muted">An uninstall log is written to ${esc(p.audit_log || "")}.</span>`;
+        box.innerHTML = html;
+      } catch (e) { box.textContent = ""; }
+    }
+
+    // Offer a backup before a destructive uninstall (maintainer-asked). Reuses the
+    // encrypted-backup endpoint; downloads the .ooenc, then the user re-clicks Uninstall
+    // (we never run the uninstall while a backup is still streaming from this server).
+    async function uninstallBackupFirst() {
+      const pass = prompt("Choose a passphrase to encrypt the backup (you'll need it to restore):");
+      if (!pass) { toast("Backup cancelled — nothing removed.", "err"); return false; }
+      try {
+        const res = await fetch("/api/safety/backup/encrypted",
+          {method: "POST", headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({passphrase: pass})});
+        if (!res.ok) { const d = await res.json().catch(() => ({}));
+          throw new Error(d.detail || res.statusText); }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "open-omniscience-backup.ooenc";
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+        toast("Backup downloaded — save it somewhere safe, then click Uninstall again.", "ok");
+        return true;
+      } catch (e) { toast("Backup failed: " + e.message, "err"); return false; }
+    }
+
     async function uninstallApp() {
-      if (!confirm("UNINSTALL: remove the app's virtualenv and desktop launchers, then stop the server?\n\n" +
-                   "Your data is KEPT (use Panic wipe to destroy it). The app folder is left in place.")) return;
-      if (prompt('To confirm, type UNINSTALL in capitals:') !== "UNINSTALL") {
+      const sel = _uninstallSel();
+      // Only the data-wiping modes risk losing the corpus — offer a backup there first.
+      if (sel.wipe_data) {
+        const backFirst = confirm("This mode WIPES your data and keys — IRREVERSIBLE.\n\n" +
+          "Create an encrypted backup first?\n\nOK = back up now (then click Uninstall again)\n" +
+          "Cancel = continue WITHOUT a backup");
+        if (backFirst) { await uninstallBackupFirst(); return; }
+      }
+      let msg = "UNINSTALL: remove the virtualenv and desktop launchers, then stop the server.";
+      if (sel.remove_folder) msg += "\nAlso delete the app folder.";
+      if (sel.wipe_data) msg += "\nAlso WIPE your data and keys — IRREVERSIBLE.";
+      else msg += "\nYour data is KEPT.";
+      if (!confirm(msg + "\n\nContinue?")) return;
+      const want = sel.wipe_data ? "WIPE" : "UNINSTALL";
+      if (prompt(`To confirm, type ${want} in capitals:`) !== want) {
         toast("Uninstall cancelled.", "err"); return; }
       try {
-        const r = await api("/api/safety/uninstall", {method: "POST", body: JSON.stringify({confirm: true})});
+        const r = await api("/api/safety/uninstall", {method: "POST",
+          body: JSON.stringify({confirm: true, mode: sel.mode,
+            remove_folder: sel.remove_folder, wipe_data: sel.wipe_data})});
         if (!r.scheduled) { $("uninstall-result").textContent = r.note || "Nothing to remove."; return; }
         $("uninstall-result").innerHTML =
-          `<span class="pill warn">uninstalling</span> The app is stopping now; this page will stop responding. ` +
-          `Your data is kept at <code>${esc(r.data_dir || "")}</code>. ` +
-          `Removing the virtualenv and ${(r.launchers || []).length} launcher(s).`;
+          `<span class="pill warn">uninstalling</span> ${esc(r.note || "")} ` +
+          `<span class="muted">This page will stop responding.</span>`;
         toast("Uninstalling — the app is stopping.", "warn");
       } catch (e) { toast("Uninstall failed: " + e.message, "err"); }
     }

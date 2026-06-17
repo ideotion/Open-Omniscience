@@ -1110,6 +1110,14 @@
   "Open every article citing this origin as a new corpus": "Abrir como nuevo corpus todos los artículos que citan este origen",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Varios artículos que citan la misma página no son una confirmación independiente: un origen, varios ecos.",
   "No articles cite this origin.": "Ningún artículo cita este origen.",
+  "Uninstall mode": "Modo de desinstalación",
+  "Minimal — keep the app folder and your data": "Mínimo — conservar la carpeta de la app y tus datos",
+  "Full — also delete the app folder (data kept)": "Completo — eliminar también la carpeta de la app (se conservan los datos)",
+  "Secure — also wipe your data and keys": "Seguro — borrar también tus datos y claves",
+  "Customize…": "Personalizar…",
+  "Also delete the app folder": "Eliminar también la carpeta de la app",
+  "Also wipe my data and keys (irreversible)": "Borrar también mis datos y claves (irreversible)",
+  "Download a backup first": "Descargar primero una copia de seguridad",
   "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "Una de {n} copias casi idénticas = en realidad una sola voz. Abre Relacionados para inspeccionar el grupo.",
   "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} de estos son copias casi idénticas: menos voces independientes de las que sugiere el recuento (ver Relacionados)."
 }

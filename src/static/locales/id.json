@@ -1110,6 +1110,14 @@
   "Open every article citing this origin as a new corpus": "Buka semua artikel yang mengutip asal ini sebagai korpus baru",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "Beberapa artikel yang mengutip halaman yang sama bukan konfirmasi independen — satu asal, banyak gema.",
   "No articles cite this origin.": "Tidak ada artikel yang mengutip asal ini.",
+  "Uninstall mode": "Mode pencopotan",
+  "Minimal — keep the app folder and your data": "Minimal — simpan folder aplikasi dan data Anda",
+  "Full — also delete the app folder (data kept)": "Penuh — hapus juga folder aplikasi (data tetap disimpan)",
+  "Secure — also wipe your data and keys": "Aman — hapus juga data dan kunci Anda",
+  "Customize…": "Sesuaikan…",
+  "Also delete the app folder": "Hapus juga folder aplikasi",
+  "Also wipe my data and keys (irreversible)": "Hapus juga data dan kunci saya (tidak dapat dibatalkan)",
+  "Download a backup first": "Unduh cadangan terlebih dahulu",
   "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "Salah satu dari {n} salinan nyaris identik = sebenarnya satu suara. Buka Terkait untuk memeriksa kluster.",
   "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "{n} di antaranya adalah salinan nyaris identik — suara independen lebih sedikit daripada yang ditunjukkan jumlahnya (lihat Terkait)."
 }

@@ -1110,6 +1110,14 @@
   "Open every article citing this origin as a new corpus": "এই উৎস উদ্ধৃতকারী সব নিবন্ধ নতুন কর্পাস হিসেবে খুলুন",
   "Several articles citing the same page are not independent confirmation — one origin, several echoes.": "একই পৃষ্ঠা উদ্ধৃতকারী একাধিক নিবন্ধ স্বাধীন নিশ্চিতকরণ নয় — একটিই উৎস, একাধিক প্রতিধ্বনি।",
   "No articles cite this origin.": "কোনো নিবন্ধ এই উৎস উদ্ধৃত করে না।",
+  "Uninstall mode": "আনইনস্টল মোড",
+  "Minimal — keep the app folder and your data": "সর্বনিম্ন — অ্যাপ ফোল্ডার ও আপনার ডেটা রাখুন",
+  "Full — also delete the app folder (data kept)": "সম্পূর্ণ — অ্যাপ ফোল্ডারও মুছুন (ডেটা রক্ষিত)",
+  "Secure — also wipe your data and keys": "নিরাপদ — আপনার ডেটা ও কী-ও মুছুন",
+  "Customize…": "কাস্টমাইজ…",
+  "Also delete the app folder": "অ্যাপ ফোল্ডারও মুছুন",
+  "Also wipe my data and keys (irreversible)": "আমার ডেটা ও কী-ও মুছুন (অপরিবর্তনীয়)",
+  "Download a backup first": "প্রথমে একটি ব্যাকআপ ডাউনলোড করুন",
   "One of {n} near-identical copies = effectively one voice. Open Related to inspect the cluster.": "{n}টি প্রায় অভিন্ন কপির একটি = কার্যত একটিই কণ্ঠস্বর। ক্লাস্টার দেখতে সম্পর্কিত খুলুন।",
   "{n} of these are near-identical copies — fewer independent voices than the count suggests (see Related).": "এর মধ্যে {n}টি প্রায় অভিন্ন কপি — সংখ্যা যা বোঝায় তার চেয়ে কম স্বাধীন কণ্ঠস্বর (সম্পর্কিত দেখুন)।"
 }

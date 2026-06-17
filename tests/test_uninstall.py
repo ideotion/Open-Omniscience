@@ -116,3 +116,98 @@ def test_api_uninstall_confirm_calls_service(monkeypatch):
     with TestClient(app) as c:
         r = c.post("/api/safety/uninstall", json={"confirm": True})
         assert r.status_code == 200 and r.json()["scheduled"] is True
+
+
+# --- modes (2026-06-17: "data dies only in Secure") ------------------------- #
+
+def test_plan_modes_carry_folder_and_data_targets(tmp_path, monkeypatch):
+    app = _fake_install(tmp_path, monkeypatch)
+    minimal = U.plan_uninstall(app)
+    assert minimal["mode"] == "minimal"
+    assert minimal["app_folder"] is None and minimal["wipe_data_dir"] is None
+
+    full = U.plan_uninstall(app, remove_folder=True)
+    assert full["mode"] == "full"
+    assert full["app_folder"] == str(app) and full["wipe_data_dir"] is None  # data kept
+
+    secure = U.plan_uninstall(app, remove_folder=True, wipe_data=True)
+    assert secure["mode"] == "secure" and secure["app_folder"] == str(app)
+    # wipe_data_dir is only set when the data dir actually exists
+    assert ("wipe_data_dir" in secure) and ("audit_log" in secure)
+
+
+def test_secure_request_reports_data_not_kept(tmp_path, monkeypatch):
+    app = _fake_install(tmp_path, monkeypatch)
+    # give the plan a real data dir to wipe
+    data = tmp_path / "data"; data.mkdir(); (data / "corpus.db").write_text("x", encoding="utf-8")
+    monkeypatch.setattr("src.paths.data_dir", lambda: data)
+    captured = {}
+    res = U.request_uninstall(confirm=True, remove_folder=True, wipe_data=True, src_dir=app,
+                              _spawn=lambda plan, pid: captured.update(plan=plan),
+                              _arm_shutdown=lambda: None)
+    assert res["scheduled"] is True and res["data_kept"] is False
+    assert res["overwrite_limit"] and "SSD" in res["overwrite_limit"]  # honest limit present
+    assert captured["plan"]["wipe_data_dir"] == str(data)
+    assert (data / "corpus.db").exists()  # the call itself deleted nothing (watcher mocked)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="watcher uses POSIX detach + shells")
+def test_watcher_removes_exactly_the_planned_paths(tmp_path):
+    """Run the real detached-watcher source on a sandbox tree (system python) and prove
+    it removes venv + launchers + (opt) data dir + app folder, and writes an audit log."""
+    import json
+    import subprocess
+
+    app = tmp_path / "app"; (app / ".venv").mkdir(parents=True)
+    (app / "keepme.txt").write_text("x", encoding="utf-8")
+    data = tmp_path / "data"; data.mkdir(); (data / "corpus.db").write_bytes(b"secret-bytes")
+    launcher = tmp_path / "x.desktop"; launcher.write_text("x", encoding="utf-8")
+    audit = tmp_path / "uninstall.log"
+    payload = {
+        "files": [str(launcher)], "venv": str(app / ".venv"),
+        "wipe_data_dir": str(data), "app_folder": str(app), "audit_log": str(audit),
+    }
+    # a guaranteed-dead PID so the watcher's "wait for server exit" returns at once
+    dead = subprocess.Popen([sys.executable, "-c", "pass"]); dead.wait()
+    subprocess.run([sys.executable, "-c", U._WATCHER_SRC, str(dead.pid), json.dumps(payload)],
+                   timeout=30, check=True)
+    assert not launcher.exists()
+    assert not (app / ".venv").exists()
+    assert not data.exists()            # data wiped (secure)
+    assert not app.exists()             # app folder removed
+    assert audit.exists() and "uninstall watcher done" in audit.read_text(encoding="utf-8")
+
+
+def test_close_db_quietly_disposes_engine(monkeypatch):
+    called = {"n": 0}
+    monkeypatch.setattr("src.database.session.dispose_engine", lambda: called.__setitem__("n", called["n"] + 1))
+    U._close_db_quietly()
+    assert called["n"] == 1
+    # never raises even if dispose blows up (best-effort shutdown)
+    monkeypatch.setattr("src.database.session.dispose_engine",
+                        lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    U._close_db_quietly()
+
+
+def test_api_uninstall_plan_preview_deletes_nothing(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app as fastapi_app
+
+    with TestClient(fastapi_app) as c:
+        r = c.get("/api/safety/uninstall/plan", params={"mode": "secure"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["mode"] == "secure" and body["remove_folder"] is True and body["wipe_data"] is True
+        # unknown mode is rejected
+        assert c.get("/api/safety/uninstall/plan", params={"mode": "nope"}).status_code == 400
+
+
+def test_api_uninstall_unknown_mode_rejected():
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        assert c.post("/api/safety/uninstall",
+                      json={"confirm": True, "mode": "bogus"}).status_code == 400

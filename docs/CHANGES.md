@@ -11,6 +11,15 @@ at-rest encryption with the backup redesign, the corpora system (hand- and
 tag-selected), the global-search rework, agenda calendar views + catalog depth,
 and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
+- **Uninstall now has modes — and offers a backup first.** Settings → Safety → *Uninstall*
+  lets you choose **Minimal** (remove the program, keep the app folder and your data),
+  **Full** (also delete the app folder, data still kept), **Secure** (also wipe your data
+  and keys), or **Customize** (tick exactly what to remove). Before a screen shows you the
+  exact paths that will be removed, and the destructive modes offer **“Download a backup
+  first.”** Secure is honest about its limit: an overwrite can’t guarantee erasure on
+  SSD/flash/copy-on-write disks — the real protection is that your corpus was encrypted and
+  the key is destroyed. A short uninstall log is written to your home folder so you can
+  confirm what happened. The shutdown is also quieter now (no scary database-teardown lines).
 - **The keyword log is now a small per-language archive.** On a large corpus the keyword
   diagnostics log had grown to ~20 MB — awkward to share. **Download keyword log** now
   produces a **`.zip` split per language** (a `summary.json` of the corpus-wide structures
