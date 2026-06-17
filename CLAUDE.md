@@ -2263,10 +2263,15 @@ ruling, a contingency, or a deliberate-omission note.
   (`rings_merged`+`caveat`); `OO_KEYWORD_EQUIV=0` disables; missing/empty file = no-op
   (never invents). Reusable `group_rows` primitive so each view aggregates its OWN fields
   (mentions / cooccur+pmi / recent+prior). tests/test_keyword_equivalence.py (8: pure +
-  in-memory integration incl. the signature fallback + polysemy + split). REMAINING:
-  cross-country recognition (split a ring's trend per source country); the map view;
-  surfacing `language_breakdown` in the frontend; the local LLM PROPOSING candidate rings
-  (the analyzer from PR #279 already emits ring candidates from the diagnostics logs).
+  in-memory integration incl. the signature fallback + polysemy + split).
+  CROSS-COUNTRY SPLIT SHIPPED 2026-06-17 (backend): `queries.ring_country_split` +
+  `GET /api/insights/ring-countries` group a ring's mentions across ALL its languages by
+  the producing Source.country (the de-US-centring multi-perspective lens — counts only,
+  no score, language-qualified membership via `ring_of` so never a fabricated merge,
+  unlocated sources bucketed null never dropped); tests/test_ring_country_split.py (3).
+  REMAINING: the frontend view of the split; the map view; surfacing `language_breakdown`
+  in the frontend; the local LLM PROPOSING candidate rings (the analyzer from PR #279
+  already emits ring candidates from the diagnostics logs).
 - **TRUST TABS → DISSOLVE + SPREAD (RULED 2026-06-15; supersedes the old "Custody tab UX"
   note; full design = field-test LEDGER Item N):** the "Trust" sidebar group (Evidence &
   custody + Source integrity) is DISSOLVED (invariant #8 content-first; absorption-test-gated,
