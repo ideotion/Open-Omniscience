@@ -87,6 +87,46 @@ _RING_CAVEAT = (
     "(language_breakdown); the user can split any ring."
 )
 
+# Languages without word-segmentation: keyword extraction is whitespace-based and does
+# NOT segment these, so keyword analytics over articles in them are incomplete. The
+# diagnostics engine_report flags the same set; this surfaces it to the user, by ruling
+# (audit-07 B1 disclosure sweep: the app ships zh/ja locales, so the honesty gap must be
+# stated where the user actually reads keywords, not only in a diagnostics export).
+_UNSEGMENTED_LANGS = frozenset({"zh", "ja"})
+
+
+def unsegmented_note(session, article_ids: list[int]) -> dict | None:
+    """An honest disclosure when the matched set contains unsegmented-language articles.
+
+    Returns ``{languages, n_articles, note}`` when any article in the set is in a
+    language the keyword extractor cannot segment (zh/ja), else ``None``. One cheap
+    indexed COUNT grouped by language — no extraction, no score. Surfaced so a user
+    looking at sparse/empty keyword analytics for a Chinese/Japanese corpus learns WHY
+    instead of mistaking it for "no keywords".
+    """
+    if not article_ids:
+        return None
+    rows = (
+        session.query(Article.language, func.count(Article.id))
+        .filter(Article.id.in_(article_ids))
+        .filter(func.lower(Article.language).in_(sorted(_UNSEGMENTED_LANGS)))
+        .group_by(Article.language)
+        .all()
+    )
+    if not rows:
+        return None
+    langs = sorted({(lang or "").lower() for lang, _ in rows})
+    n = int(sum(c for _, c in rows))
+    return {
+        "languages": langs,
+        "n_articles": n,
+        "note": (
+            f"Keyword extraction does not segment {', '.join(langs)} (no word "
+            f"boundaries), so keyword analytics for {n} article(s) in those languages "
+            "are incomplete — this is a known limit, not an empty result."
+        ),
+    }
+
 
 def resolve_keyword(session, term: str) -> Keyword | None:
     """Map a user term to a stored keyword: exact normalized match, else best LIKE."""
@@ -309,7 +349,11 @@ def corpus_keywords(
         )
         if len(terms) >= limit:
             break
-    return {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
+    out = {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
+    note = unsegmented_note(session, article_ids)
+    if note:
+        out["unsegmented"] = note  # honest "why so few keywords" disclosure (B1)
+    return out
 
 
 def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> dict:
@@ -331,11 +375,17 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
         "from the most-mentioned term (deterministic, always outward)."
     )
     if not terms:
-        return {
+        empty = {
             "level": "article", "nodes": [], "edges": [], "n_articles": n_articles,
             "method": method,
             "caveat": "Too few keywords indexed for this selection to draw a map yet.",
         }
+        # If the emptiness is because the set is in an unsegmented language, say so
+        # (the honest "why", not a bare empty map).
+        if kw.get("unsegmented"):
+            empty["unsegmented"] = kw["unsegmented"]
+            empty["caveat"] = kw["unsegmented"]["note"]
+        return empty
     center = terms[0]
     nodes = [{
         "id": center["term"], "label": center["term"], "kind": "keyword",
@@ -353,12 +403,15 @@ def article_graph(session, *, article_ids: list[int], limit_nodes: int = 24) -> 
             "mentions": tdat["mentions"], "articles": tdat["articles"],
         })
         edges.append({"a": center["term"], "b": tdat["term"], "weight": tdat["mentions"]})
-    return {
+    graph = {
         "level": "article", "term": center["term"],
         "nodes": nodes, "edges": edges, "n_articles": n_articles,
         "method": method,
         "caveat": "A concept map of the keywords present, not a co-occurrence network; not causation.",
     }
+    if kw.get("unsegmented"):  # a mixed-language set: keep the map but disclose the gap
+        graph["unsegmented"] = kw["unsegmented"]
+    return graph
 
 
 def corpus_who(session, *, article_ids: list[int], limit: int = 40) -> dict:
