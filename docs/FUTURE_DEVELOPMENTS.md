@@ -1805,11 +1805,13 @@ more directly than the evidence-trail-only stance.
 A long evaluative session on where small LOCAL models genuinely help. The maintainer is
 running a parallel research pass with full internet access; this records what we
 CONVERGED on and what stays OPEN so context-summarization can't lose it. Builds on the
-AI-layer (the `src/ai_layer` scaffold #330 + the keyword-extraction first writer #332)
-and the strict-separation ruling (AI never writes the main DB except summary/translation;
-all other AI-derived analytics live in the parallel AI store as a labelled, disposable
-lens). NOT approved-to-build except the who/where/when SCOPE ruling + the eval-first
-methodology below.
+AI-layer (the `src/ai_layer` logic #330/#332). **STORAGE UPDATED 2026-06-18 (see CLAUDE.md
+(3) — REVERSES the 2026-06-17 strict-physical-separation ruling):** AI-derived analytics now
+live in their OWN tables in the MAIN DB (`ai_keyword`, FK to articles, rendered inline labelled
+"AI-derived · unreliable"), for UI integration + fast corpus-wide selection; integrity preserved
+by construction (own table + no score + provenance + an invariant test that the trusted index
+never reads it). The separate `ai_layer.db` was migrated away. NOT approved-to-build except the
+who/where/when SCOPE ruling + the eval-first methodology below.
 
 **THE DOCTRINE (the organizing line that answers every sub-idea):**
 - LLMs are strong at **PERCEPTION** (extract, disambiguate, compress, translate, resolve
@@ -1959,3 +1961,26 @@ against this and pins the ⚠️/❓ figures before any build. The eval harness 
 decider for BOTH who/where/when and sentiment (candidate vs baseline/VADER, per stratum, on
 news). Approved-to-build so far = the who/where/when SCOPE (date/place/who incl. orgs, no
 "what") + the eval-first methodology; everything else stays OPEN.
+
+**RESEARCH RECONCILED + the CASCADE design (maintainer's parallel research, 2026-06-18):** the
+maintainer's internet research INDEPENDENTLY arrived at the eval-first conclusion (no external
+study ranks the models on our task; build a small stratified hand-labeled eval, Macro-F1 +
+per-language confusion matrix, temp 0). It SHARPENS three points: (a) LLMs are good at COARSE
+sentiment, WEAK on fine-grained/aspect/entity-level — so entity-directed sentiment is the
+HARDEST tier (Zhang et al. 2023); (b) NEUTRAL is the consistent failure mode, and news is a
+neutral register → expect over-calling; (c) Mistral + FINE-TUNING is the lever (Mistral-8B top
+in a Feb-2026 disaster-sentiment study; a fine-tuned Mistral-7B beating GPT-4 in a defense-intel
+multilingual task). **THE CASCADE (maintainer proposal):** prompt 1 = who/where/when → JSON →
+stored as confirmable candidates with provenance (SECONDARY); prompt 2 = "how is each WHO
+perceived" → TERTIARY, explicitly unreliable. Article-level sentiment judged USELESS (agreed);
+entity-directed perception is the investigative target. MY REFINEMENTS (proposed, pending the
+maintainer's nod): (1) NO numeric scale → a DESCRIPTIVE label (favourable/unfavourable/neutral/
+mixed) + the EVIDENCE SPAN (locally checkable, avoids false-precision aura); (2) default HARD to
+neutral/abstain (the news-neutral failure mode); (3) separate "bad news ABOUT X" from "negative
+TOWARD X" (Balahur's subtask — measure portrayal, not event valence); (4) an exploratory
+COMPARISON lens (feeds source-competitive analysis: "how does source A vs B portray X"), NEVER an
+automatic selection filter (an unreliable signal must not silently shape the corpus). Maps to the
+eval harness as TWO tasks: task 1 who/where/when (validatable); task 2 entity-perception
+(neutral-heavy labeled set, scored only on entities task 1 got right, Macro-F1 + per-language
+confusion matrix). All in the `ai_keyword`-style main-DB AI tables (per the storage update above),
+tertiary tier, labelled "AI-derived · unreliable".

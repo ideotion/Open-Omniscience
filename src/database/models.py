@@ -1526,6 +1526,56 @@ class KeywordMention(Base):
         return f"<KeywordMention(kw={self.keyword_id} art={self.article_id} x{self.count})>"
 
 
+class AiKeyword(Base):
+    """AI-DERIVED keywords/entities — a labelled, UNRELIABLE lens, NEVER the trusted index.
+
+    Maintainer ruling 2026-06-18 (REVERSES the earlier separate-database design): AI
+    analytics live in their OWN tables in the MAIN database — not a separate file — for
+    seamless UI integration + fast corpus-wide selection (a real indexed JOIN on
+    ``article_id``). The integrity guarantee is preserved BY CONSTRUCTION, not by physical
+    separation:
+      * this is its OWN table, never the trusted ``keywords`` / ``keyword_mentions``;
+      * the rule-based keyword index reads ONLY ``articles.content`` and NEVER this table
+        (enforced by tests/test_ai_layer.py) — so AI output can never be confused with, or
+        joined into, rule-based fact;
+      * every row carries its model provenance; there is NO score column (honesty);
+      * ``confirmed`` curates the lens IN PLACE — a confirmed row stays AI-derived, it never
+        crosses into the trusted tables.
+    Always surfaced in the UI as "AI-derived · unreliable" (the two-class convention).
+    """
+
+    __tablename__ = "ai_keyword"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # A REAL FK now (same database): referential integrity + cascade cleanup + the
+    # indexed JOIN that makes corpus-wide AI-signal selection fast.
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False
+    )
+    term: Mapped[str] = mapped_column(String(300), nullable=False)
+    # The kind of AI analytic: keyword | entity | claim | dedup | perception (extensible).
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, default="keyword")
+    language: Mapped[str | None] = mapped_column(String(16))
+    # Provenance: which local model produced this, under which prompt version.
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_version: Mapped[str | None] = mapped_column(String(64))
+    # Confirm-within-the-lens: default unconfirmed. A confirmed row STAYS AI-derived.
+    confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Optional free-text evidence (e.g. the snippet the model drew the term from).
+    evidence: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    article = relationship("Article")
+
+    __table_args__ = (
+        Index("ix_ai_keyword_article_kind", "article_id", "kind"),
+        Index("ix_ai_keyword_term", "term"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return f"<AiKeyword {self.kind} {self.term!r} a={self.article_id}>"
+
+
 class SourceCandidate(Base):
     """A machine-suggested source awaiting the operator's decision (RM-19, WP5).
 

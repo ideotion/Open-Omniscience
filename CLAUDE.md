@@ -1346,7 +1346,26 @@ ruling, a contingency, or a deliberate-omission note.
   candidates · place-centric corpus brief), Source integrity (cross-language/PARAPHRASE
   coordination = the strongest LLM-additive where lexical MinHash fails · headline-body
   mismatch · loaded-language spotter — STRUCTURE never intent/credibility, "name the shape").
-  (3) LLM SCOPE — STRICT PHYSICAL SEPARATION (maintainer RULED 2026-06-17, OVERRIDES the
+  (3) LLM SCOPE — **SUPERSEDED 2026-06-18 → AI ANALYTICS NOW LIVE IN OWN TABLES IN THE MAIN DB**
+  (maintainer ruled 2026-06-18, weighing UX + performance + the corpus-SELECTION use-case + the
+  summaries/translations precedent — REVERSES the strict-physical-separation ruling that follows).
+  KEY INSIGHT that decided it: UI integration is DECOUPLED from storage (a separate file is invisible
+  to users behind the API; what tipped it was the perf/ergonomics cost of two files for corpus-wide
+  AI-signal FILTERING/selection, which has no cross-file SQL JOIN). So AI-derived analytics live in
+  their OWN tables in the MAIN corpus DB — table `ai_keyword`, a REAL FK to articles (fast indexed
+  JOIN), rendered INLINE in the article view labelled "AI-derived · unreliable" (the existing
+  two-class convention). The integrity guarantee is preserved BY CONSTRUCTION (not physical
+  separation): own table (NEVER the trusted `keywords`/`keyword_mentions`) + NO score column + model
+  provenance + confirm-within-the-lens + an INVARIANT TEST that the trusted rule-based index NEVER
+  reads `ai_keyword` (tests/test_ai_layer.py — the index reads only `articles.content`, the same way
+  summaries/translations are already safe). MIGRATED 2026-06-18 (branch claude/ai-tables-into-main):
+  `src/ai_layer/db.py` (the separate engine) DELETED; `AiKeyword` moved onto the main `Base`;
+  store/jobs/api use the main session + the main single-writer gate; migration d0e1f2a3b4c5 creates
+  the `ai_keyword` table; the read endpoint no longer file-guards. The 2026-06-17 text below is the
+  PRIOR ruling, kept as the record — its "separate file / never-ATTACH / own gate" MECHANICS no
+  longer apply, but its HONESTY rules (no score, provenance, never feed the trusted index,
+  summaries/translations as the carve-out) STILL hold.
+  (3-prior, SUPERSEDED) LLM SCOPE — STRICT PHYSICAL SEPARATION (maintainer RULED 2026-06-17, OVERRIDES the
   earlier same-day "provenance-partition / no separate DB" recommendation — do NOT revert to
   it): the AI must NEVER write to the MAIN database EXCEPT to summarize/translate (those stay
   in article_analyses — the one accepted AI surface in the main store, the maintainer's
@@ -1398,9 +1417,15 @@ ruling, a contingency, or a deliberate-omission note.
   if no AI feature ran), POST `/keywords/confirm` (confirm-within-the-lens). tests/test_ai_keyword_extract.py
   (8): parse/extract units, the batch writes the AI store + skip-existing + abort-on-unavailable, and the
   HTTP test PROVES the feature-level separation — after extraction the article has AiKeyword rows but ZERO
-  main `KeywordMention` rows. mypy +0 (115≤127), ruff clean, wiring+llm regression green. REMAINING: the
-  read-only AI lens UI beside the trusted keywords (backend ready); the deep-model tier (1) + whole-corpus
-  cited synthesis (3); the backup stance for ai_layer.db (own member vs excluded-as-rebuildable).
+  main `KeywordMention` rows. mypy +0 (115≤127), ruff clean, wiring+llm regression green.
+  **MIGRATED INTO THE MAIN DB 2026-06-18 (branch claude/ai-tables-into-main, per the (3) reversal above;
+  backend VERIFIED py3.13):** the separate `ai_layer.db` is gone — `AiKeyword` is now a main-`Base` table
+  (`ai_keyword`, real FK to articles), `src/ai_layer/db.py` deleted, store/jobs/api on the main session +
+  the main write gate, migration d0e1f2a3b4c5; the feature-level proof STANDS (the HTTP test still asserts
+  ZERO `KeywordMention` for the extracted article) and the invariant test now pins "the trusted analytics
+  never read `ai_keyword`". The backup-stance remaining-item is MOOT (ai_keyword now rides the main
+  oo-backup-2 automatically). REMAINING: the read-only AI lens UI beside the trusted keywords (backend
+  ready); the deep-model tier (1) + whole-corpus cited synthesis (3).
   ALL LLM features keep the standing
   honesty invariants: grounded+cited, refuse-when-absent, no score/verdict/ranking, local
   loopback, provenance recorded, caveats visible, never auto-fed into the pipeline.

@@ -5,16 +5,17 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Runs the local model over each article in a matched set and persists the extracted
-terms as ``AiKeyword`` rows in the SEPARATE AI store — never the main corpus. A local
+terms as ``AiKeyword`` rows — the AI-derived ``ai_keyword`` table in the MAIN database
+(maintainer ruling 2026-06-18), NEVER the trusted ``keyword_mentions`` index. A local
 CPU model over many articles is slow, so we:
   * stream HONEST per-article progress (invariant #20: never a fabricated bar/ETA),
   * rely on the client's per-call kill-switch check (airplane mode aborts loudly),
-  * commit per article (progress persists; the AI write gate's window stays short and
-    is never held across the slow LLM call),
+  * commit per article (progress persists; the single-writer gate's window stays short
+    and is never held across the slow LLM call),
   * skip articles already extracted for this kind (idempotent top-up).
 
-These rows live ONLY in the AI store; the trusted rule-based keyword index in the
-main DB is never touched (the maintainer-ruled separation).
+Writes touch ONLY the ``ai_keyword`` table; the trusted rule-based keyword index reads
+only ``articles.content`` and never this table (the integrity guarantee).
 """
 
 from __future__ import annotations
@@ -25,9 +26,9 @@ from typing import NamedTuple
 from sqlalchemy import select
 
 from src.ai_layer import store as ai_store
-from src.ai_layer.db import ai_session_scope
 from src.ai_layer.extract import EXTRACT_PROMPT_VERSION, extract_terms
-from src.ai_layer.models import AiKeyword
+from src.database.models import AiKeyword
+from src.database.session import session_scope
 from src.llm.ollama import LLMError, LLMUnavailable
 
 
@@ -56,13 +57,13 @@ def extract_for_articles(
     Emits one ``start`` event, one ``item`` per article (status =
     stored | skipped | failed), and a final ``done`` — or an aborted ``done`` if the
     local model becomes unavailable mid-run (it won't recover, so we stop). All writes
-    go to the AI store via :func:`ai_session_scope`; the main DB is never written.
+    go to the ``ai_keyword`` table via the main session; the trusted index is never written.
     """
     total = len(work)
     yield {"event": "start", "total": total, "model": model, "kind": kind}
     stored = skipped = failed = terms_total = 0
 
-    with ai_session_scope() as session:
+    with session_scope() as session:
         already: set[int] = set()
         if skip_existing and work:
             ids = [w.article_id for w in work]

@@ -5,9 +5,10 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Pure functions over a SQLAlchemy ``Session`` (testable in-memory; the production
-session comes from :mod:`src.ai_layer.db`). Honesty by construction: every stored
-term carries its model provenance, nothing is a score, and ``confirmed`` curates the
-AI lens IN PLACE — a confirmed row never crosses into the trusted main index.
+session is the MAIN session — the AI ``ai_keyword`` table lives in the main DB since
+the 2026-06-18 ruling). Honesty by construction: every stored term carries its model
+provenance, nothing is a score, and ``confirmed`` curates the AI lens IN PLACE — a
+confirmed row never crosses into the trusted ``keyword_mentions`` index.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.ai_layer.models import AiKeyword
+from src.database.models import AiKeyword
 
 
 def record_keywords(
