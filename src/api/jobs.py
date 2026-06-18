@@ -117,10 +117,24 @@ def _collect_job() -> dict | None:
     st = get_scheduler().status()
     if not (st.get("running") or st.get("active")):
         return None
+    # Honest phase label so the user understands WHAT the pass is doing (the
+    # task-manager's whole point — maintainer 2026-06-18). Articles are collected
+    # FIRST; the post-scrape housekeeping (markets/calendars/preflight checks) is a
+    # named phase so a lingering market fetch reads as "finishing", not a stall.
+    _PHASE_LABELS = {
+        "collecting": "collection pass — collecting articles",
+        "background": "collection pass — background tasks (markets · calendars · checks)",
+        "briefing": "collection pass — building the briefing",
+    }
+    if st.get("active"):
+        label = _PHASE_LABELS.get(st.get("phase") or "", "collection pass")
+    else:
+        label = "collection loop (idle)"
     return {
         "id": "collect:current",
         "kind": "collect",
-        "label": "collection pass" if st.get("active") else "collection loop (idle)",
+        "label": label,
+        "phase": st.get("phase"),
         "state": "running" if st.get("active") else "scheduled",
         "next_run": st.get("next_run"),
         "progress": None,  # the detailed panel reads /api/scheduler/activity
