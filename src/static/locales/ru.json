@@ -1312,5 +1312,11 @@
   "by continent": "по континентам",
   "(mentioned, deduced)": "(упомянуто, выведено)",
   "mentioned places (deduced)": "упомянутые места (выведено)",
-  "Mentioned places: deduced from text, never confirmed.": "Упомянутые места: выведено из текста, не подтверждено."
+  "Mentioned places: deduced from text, never confirmed.": "Упомянутые места: выведено из текста, не подтверждено.",
+  "Europe": "Европа",
+  "North America": "Северная Америка",
+  "Asia": "Азия",
+  "South America": "Южная Америка",
+  "Africa": "Африка",
+  "Oceania": "Океания"
 }

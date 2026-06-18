@@ -1312,5 +1312,11 @@
   "by continent": "大陸別",
   "(mentioned, deduced)": "（言及・推定）",
   "mentioned places (deduced)": "言及された場所（推定）",
-  "Mentioned places: deduced from text, never confirmed.": "言及された場所：本文から推定され、確認されていません。"
+  "Mentioned places: deduced from text, never confirmed.": "言及された場所：本文から推定され、確認されていません。",
+  "Europe": "ヨーロッパ",
+  "North America": "北アメリカ",
+  "Asia": "アジア",
+  "South America": "南アメリカ",
+  "Africa": "アフリカ",
+  "Oceania": "オセアニア"
 }

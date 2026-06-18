@@ -1312,5 +1312,11 @@
   "by continent": "by continent",
   "(mentioned, deduced)": "(mentioned, deduced)",
   "mentioned places (deduced)": "mentioned places (deduced)",
-  "Mentioned places: deduced from text, never confirmed.": "Mentioned places: deduced from text, never confirmed."
+  "Mentioned places: deduced from text, never confirmed.": "Mentioned places: deduced from text, never confirmed.",
+  "Europe": "Europe",
+  "North America": "North America",
+  "Asia": "Asia",
+  "South America": "South America",
+  "Africa": "Africa",
+  "Oceania": "Oceania"
 }

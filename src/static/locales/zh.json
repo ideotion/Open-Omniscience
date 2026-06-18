@@ -1312,5 +1312,11 @@
   "by continent": "按大洲",
   "(mentioned, deduced)": "（提及，推断）",
   "mentioned places (deduced)": "提及的地点（推断）",
-  "Mentioned places: deduced from text, never confirmed.": "提及的地点：根据文本推断，从未确认。"
+  "Mentioned places: deduced from text, never confirmed.": "提及的地点：根据文本推断，从未确认。",
+  "Europe": "欧洲",
+  "North America": "北美洲",
+  "Asia": "亚洲",
+  "South America": "南美洲",
+  "Africa": "非洲",
+  "Oceania": "大洋洲"
 }

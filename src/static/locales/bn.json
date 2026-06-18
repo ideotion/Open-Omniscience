@@ -1312,5 +1312,11 @@
   "by continent": "মহাদেশ অনুসারে",
   "(mentioned, deduced)": "(উল্লিখিত, অনুমিত)",
   "mentioned places (deduced)": "উল্লিখিত স্থান (অনুমিত)",
-  "Mentioned places: deduced from text, never confirmed.": "উল্লিখিত স্থান: পাঠ্য থেকে অনুমিত, কখনও নিশ্চিত নয়।"
+  "Mentioned places: deduced from text, never confirmed.": "উল্লিখিত স্থান: পাঠ্য থেকে অনুমিত, কখনও নিশ্চিত নয়।",
+  "Europe": "ইউরোপ",
+  "North America": "উত্তর আমেরিকা",
+  "Asia": "এশিয়া",
+  "South America": "দক্ষিণ আমেরিকা",
+  "Africa": "আফ্রিকা",
+  "Oceania": "ওশেনিয়া"
 }

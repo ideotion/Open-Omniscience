@@ -2051,6 +2051,10 @@ def test_ooMap_choropleth():
         "the mentioned-places overlay must carry its deduced/never-confirmed caveat"
     )
 
+    # continent NAMES are localised too — routed through t(), not raw backend English
+    # (the 6 names are keyed x12; this is the map being fully part of the translation).
+    assert "t(r.continent)" in html, "continent labels must be translated via t()"
+
 
 def test_search_timescope():
     """The Search sidebar tab reuses the SAME ooTimeScope control for date-range

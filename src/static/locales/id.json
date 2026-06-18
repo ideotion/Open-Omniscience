@@ -1312,5 +1312,11 @@
   "by continent": "menurut benua",
   "(mentioned, deduced)": "(disebut, disimpulkan)",
   "mentioned places (deduced)": "tempat yang disebut (disimpulkan)",
-  "Mentioned places: deduced from text, never confirmed.": "Tempat yang disebut: disimpulkan dari teks, tidak pernah dikonfirmasi."
+  "Mentioned places: deduced from text, never confirmed.": "Tempat yang disebut: disimpulkan dari teks, tidak pernah dikonfirmasi.",
+  "Europe": "Eropa",
+  "North America": "Amerika Utara",
+  "Asia": "Asia",
+  "South America": "Amerika Selatan",
+  "Africa": "Afrika",
+  "Oceania": "Oseania"
 }

@@ -1312,5 +1312,11 @@
   "by continent": "حسب القارة",
   "(mentioned, deduced)": "(مذكور، مُستنتَج)",
   "mentioned places (deduced)": "الأماكن المذكورة (مُستنتَجة)",
-  "Mentioned places: deduced from text, never confirmed.": "الأماكن المذكورة: مُستنتَجة من النص، وغير مؤكَّدة."
+  "Mentioned places: deduced from text, never confirmed.": "الأماكن المذكورة: مُستنتَجة من النص، وغير مؤكَّدة.",
+  "Europe": "أوروبا",
+  "North America": "أمريكا الشمالية",
+  "Asia": "آسيا",
+  "South America": "أمريكا الجنوبية",
+  "Africa": "أفريقيا",
+  "Oceania": "أوقيانوسيا"
 }
