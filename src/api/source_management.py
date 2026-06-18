@@ -152,6 +152,56 @@ async def run_source_preflight(
     return summary
 
 
+@router.get("/unmanaged-languages", response_model=dict)
+async def unmanaged_language_sources(db: Session = Depends(get_db)):
+    """How many ENABLED sources publish in a language the keyword engine cannot yet
+    manage (no stoplist, or unsegmented like zh/ja). These pollute analytics with
+    function-word junk and inflate the corpus. Read-only: counts + per-language
+    breakdown, plus the managed-language list for transparency. The operator
+    decides whether to disable them (POST /disable-unmanaged-languages)."""
+    from src.analytics.managed import MANAGED_LANGUAGES, is_unmanaged, normalize_lang
+    from src.database.models import Source
+
+    by_language: dict[str, int] = {}
+    for (lang,) in db.query(Source.language).filter(Source.enabled.is_(True)).all():
+        if is_unmanaged(lang):
+            code = normalize_lang(lang)
+            by_language[code] = by_language.get(code, 0) + 1
+    return {
+        "enabled_unmanaged": sum(by_language.values()),
+        "by_language": dict(sorted(by_language.items(), key=lambda kv: -kv[1])),
+        "managed_languages": sorted(MANAGED_LANGUAGES),
+        "method": (
+            "Enabled sources whose language has no stoplist or is unsegmented (zh/ja) — "
+            "the keyword engine cannot analyse them yet, so scraping them adds junk. "
+            "Kept and re-enablable; disabling is the operator's choice."
+        ),
+    }
+
+
+@router.post("/disable-unmanaged-languages", response_model=dict)
+async def disable_unmanaged_language_sources(db: Session = Depends(get_db)):
+    """DISABLE (never delete) every enabled source in an unmanaged language so the
+    app stops accumulating un-analysable junk. Reversible: the sources stay in the
+    catalogue, filterable, and re-enablable once a stoplist for their language lands.
+    Returns the count + per-language breakdown of what was disabled."""
+    from src.analytics.managed import is_unmanaged, normalize_lang
+    from src.database.models import Source
+
+    by_language: dict[str, int] = {}
+    for src in db.query(Source).filter(Source.enabled.is_(True)).all():
+        if is_unmanaged(src.language):
+            src.enabled = False
+            code = normalize_lang(src.language)
+            by_language[code] = by_language.get(code, 0) + 1
+    db.commit()
+    return {
+        "disabled": sum(by_language.values()),
+        "by_language": dict(sorted(by_language.items(), key=lambda kv: -kv[1])),
+        "note": "Sources kept and re-enablable; re-enable them when their language gains a stoplist.",
+    }
+
+
 @router.get("/preflight/log", response_model=dict)
 @limiter.limit("100/hour")
 async def source_preflight_log(request: Request, limit: int = Query(200, ge=1, le=1000)):

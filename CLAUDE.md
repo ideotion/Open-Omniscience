@@ -2910,6 +2910,26 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **SOURCE-LANGUAGE GATING — unmanaged languages disabled by default (maintainer 2026-06-18 "the app
+  scrapes material in languages we cannot manage … flag those sources as disabled by default while keeping
+  them, justified in the documentation"; branch claude/source-language-gating, draft PR onto 0.09):** ONE
+  source of truth `src/analytics/managed.py` (MANAGED_LANGUAGES = the 18 functional-stoplist langs en/fr/de/
+  es/it/pt/nl/ru/ar/hu/id/sv/da/nb/no/pl/sr/sl; UNSEGMENTED zh/ja; is_managed/is_unmanaged/language_status/
+  normalize_lang — engine_report now imports it, no dup). The keyword engine can only analyse managed langs;
+  no_stoplist langs (tr/el/uk/th/ur/bg/ca/fi/cs/hi…) leak function-word junk + zh/ja are unsegmented = broken
+  extraction → that junk pollutes analytics AND inflates the corpus (the perf drag). FIX: (1) the SEEDER
+  (csv_io.upsert_sources) seeds a NEW source in an unmanaged language DISABLED by default — KEPT, never
+  deleted, re-enablable; explicit `enabled` in the row wins (curation), unknown-language stays enabled (never
+  disable what we can't classify), existing sources untouched (re-seed never flips the operator's choice);
+  (2) GET /api/sources/unmanaged-languages (count + per-lang breakdown of enabled unmanaged sources) + POST
+  /api/sources/disable-unmanaged-languages (bulk disable, kept, reversible, idempotent); (3) Settings →
+  Sources panel (appears only when there's something to disable) showing the count + a "Disable sources in
+  languages we can't analyse yet" button; (4) USER_MANUAL §3.3 justifies it (honest trade-off: don't gather
+  what we'd mangle; re-enable when a stoplist lands). tests/test_managed_languages.py (classification + the
+  engine_report shares-the-set + seeder gating incl. explicit-override + re-seed-doesn't-flip + the two
+  endpoints incl. kept-not-deleted + idempotent). node --check + i18n 100%; managed logic verified here.
+  REMAINING (the user's OTHER ask, next): keyword diagnostics chunk-by-chunk over the WHOLE dataset to grow
+  the stoplists (so no_stoplist langs become managed → re-enable their sources); the perf roadmap counters/cache.
 - **PERF — SUPERGROUPS 132s→fast (field perf report 2026-06-18, draft PR onto 0.09):** the maintainer
   clicked Insights → Groups on a 10,252-article / 244,866-keyword / 829,226-mention corpus (408 MB
   encrypted, 2 cores, 5.6 GB RAM); /api/insights/supergroups took 132 s and FROZE the UI (clicks queued,

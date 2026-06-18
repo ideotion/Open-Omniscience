@@ -414,6 +414,36 @@ robots, etc. Fetching is always ethical (robots fail-closed, rate-limited).
   `reliability_score` (1–10). Import **upserts by domain** — new rows created,
   existing updated — and **bad rows are reported, not silently dropped**.
 
+#### Languages we can't yet analyse — disabled by default (kept)
+
+The keyword/analytics engine can only **manage** languages for which a *stoplist*
+exists and whose script is **space-segmented**. Today that means: **en, fr, de, es,
+it, pt, nl, ru, ar, hu, id, sv, da, nb, no, pl, sr, sl**. Languages with **no
+stoplist** (e.g. tr, el, uk, th, ur, bg, ca, fi, cs, hi, …) still *tokenise*, but
+their function words ("the/of/and" equivalents) leak in as false keywords; and
+**zh/ja have no word segmentation**, so extraction is broken outright.
+
+Scraping material in those languages therefore produces **junk keywords** that:
+
+- **pollute the analytics** — false keywords skew associations, trends and
+  super-groups, and
+- **inflate the corpus** — every aggregation (Insights, Groups, the mind-map) pays
+  the cost of hundreds of thousands of meaningless rows, which is a real
+  performance drag on large corpora.
+
+So, by design: **a new source in an unmanaged language is seeded *disabled***. It is
+**kept** (never deleted) and fully **re-enablable** — you can still read those
+outlets, and the moment a stoplist for their language is added, you flip them back
+on. This is an honest trade-off: we would rather *not gather* what we would *mangle*
+than present unreliable analytics. An **explicit** `enabled: true` in a CSV import
+always wins (your curation is respected), and a source whose language is **unknown**
+stays enabled (we never disable what we can't classify).
+
+**To apply this to an existing corpus:** Settings → Sources shows how many enabled
+sources are in unmanaged languages (and which) and offers **"Disable sources in
+languages we can't analyse yet"** — a reversible bulk action that disables them
+(kept). Re-enable any of them at any time from the sources table.
+
 ### 3.4 Library
 
 *(Called **Database** before 0.05.)*
