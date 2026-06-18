@@ -2546,6 +2546,32 @@ ruling, a contingency, or a deliberate-omission note.
   test_repo_invariants 68 passed. ooMap now ABSORBS the temporal map's full capability → 5b (retire
   #oo-tmap, absorption-gated) is unblocked. REMAINING: 5b retire + embed on When/Where + Insights;
   per-slide perf; i18n-key the detail when the temporal-map English strings are swept.
+  **SLICE 5b SHIPPED 2026-06-18 (RETIRE the standalone temporal map; PR onto 0.09; FRONTEND-ONLY,
+  BROWSER-UNVERIFIED per fork-3):** the maintainer's "fold signals in, THEN retire" reaches the
+  retire. ABSORPTION ANALYSIS first proved the split is safe: ooMap fetches its OWN signals
+  (`_ooMapSignals` ← /api/timemap, line 7493) — it does NOT depend on `loadTimemap`/`TMAP.signals`;
+  and the SHARED helpers (kindColor · TMAP_KINDS · fmtYear · fmtDate · dateToT · TMAP_NEAR_DEG ·
+  tmapFindCoverage · lon2x/lat2y) are INTERLEAVED with the temporal-only functions across ~7598–8070,
+  so a mass JS deletion is dangerous browser-unverified (a wrongly-removed helper passes node --check
+  but breaks the map at runtime). So the SAFE retire: (1) REMOVE the temporal-map `<section>` PANEL
+  from index.html (#tab-timemap is now JUST the World coverage / ooMap section — −77 HTML lines) +
+  broaden the panel description to honestly cover the absorbed in-map controls (dimensions · continent ·
+  places · time signals — English tail, no new keys); (2) REROUTE the tab dispatch `timemap:
+  loadTimemap` → `loadOoMapCoverage` (which fetches /api/insights/map-coverage → _renderOoMapDim = the
+  full unified map), so `loadTimemap` + the whole temporal block become UNREACHABLE dead code (no active
+  caller — verified: only the breadcrumb + its own def reference it); (3) the temporal-only functions
+  (renderTimemap / buildTmap* / showTmapDetail / tmapNearby / the onTmap*+zoom/reset/play/mentions
+  handlers / wireTmap* / tmap*Prefs / TMAP state) are left in place UNREACHABLE (they null-guard on the
+  removed #tmap-* elements) under a RETIRED-(slice 5b) breadcrumb, pending a browser-verified
+  DELETION-cleanup PR (the Desk-lesson "made unreachable" bar — chosen over a risky interleaved
+  mass-delete). The SHARED helpers STAY (ooMap reuses them). test_tmap_mention_layer (the retired
+  surface's test) REWRITTEN → `test_temporal_map_retired_into_ooMap`: asserts the panel/controls are
+  GONE, the dispatch routes to ooMap, and every absorbed capability survives (places via
+  /api/insights/where + the deduced caveat, the signal click-detail, the in-map slider, tmapFindCoverage)
+  — absorption-gated. node --check clean; full test_repo_invariants 68 passed; i18n --min 100 (1316 ×12).
+  REMAINING: the browser-verified DELETION-cleanup of the dead temporal functions; RENAME the "Temporal
+  map" tab label → "World map" (a 12-locale key rename, deferred to avoid churn here; still defensible —
+  the time slider/signals live on); embed ooMap on When/Where + Insights; per-slide perf on huge corpora.
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles

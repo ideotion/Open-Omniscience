@@ -839,84 +839,9 @@
     <div class="tab-page" id="tab-timemap">
     <section class="panel">
       <h2>World coverage <span class="muted" style="font-weight:400">— a choropleth of your corpus</span></h2>
-      <p class="muted" style="margin-top:0">Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.</p>
+      <p class="muted" style="margin-top:0">Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map. Use the in-map controls to change what’s measured (sources · articles · keywords · tone), group by continent, overlay the places your corpus mentions, or turn on the time signals and sweep the moment in focus.</p>
       <div id="oo-coverage-map" style="margin-top:8px"></div>
       <div id="oo-coverage-detail" style="margin-top:8px"></div>
-    </section>
-    <section class="panel">
-      <h2>Temporal map <span class="muted" style="font-weight:400">— space &amp; time on one axis</span></h2>
-      <p class="muted" style="margin-top:0">Every locatable, datable signal on one zoomable world map, with a
-        slider that sweeps from antiquity to the near future. Drag the slider to move the moment in focus; events
-        fade with distance in time. Pins need <em>both</em> a place and a date — what has neither stays honestly off the map.</p>
-      <div id="tmap-status" class="hint">Loading…</div>
-
-      <div class="row" style="margin-top:10px;align-items:center;gap:14px">
-        <div style="flex:1;min-width:240px">
-          <label for="tmap-slider" style="display:flex;justify-content:space-between">
-            <span>Moment in focus</span>
-            <strong id="tmap-focus-label" style="font-variant-numeric:tabular-nums">—</strong>
-          </label>
-          <input id="tmap-slider" type="range" min="0" max="1000" value="1000" step="1"
-                 style="width:100%" oninput="onTmapSlide()">
-          <div id="tmap-strip" style="margin-top:4px"></div>
-        </div>
-        <div><label for="tmap-window">Window</label><select id="tmap-window" onchange="onTmapWindowChange()">
-          <option value="0">all of time</option>
-          <option value="2000">± 2000 yrs</option>
-          <option value="100">± 100 yrs</option>
-          <option value="25" selected>± 25 yrs</option>
-          <option value="5">± 5 yrs</option>
-          <option value="1">± 1 yr</option>
-          <option value="0.17">± 2 months</option>
-          <option value="0.085">± 1 month</option>
-          <option value="0.02">± 1 week</option>
-        </select></div>
-        <div><label for="tmap-date">Focus date</label>
-          <input type="date" id="tmap-date" onchange="onTmapDate()" style="width:auto"></div>
-        <div style="flex:0 0 auto;align-self:end">
-          <button class="tiny secondary" id="tmap-play" onclick="toggleTmapPlay()" title="Sweep time forward">▶ play</button>
-          <select id="tmap-speed" class="tiny" title="Play speed" style="width:auto">
-            <option value="0.5">0.5×</option><option value="1" selected>1×</option>
-            <option value="2">2×</option><option value="4">4×</option></select>
-        </div>
-      </div>
-      <div class="row" style="margin-top:6px;align-items:end;gap:8px">
-        <div><label for="tmap-span-a">Time span — from / to</label>
-          <span style="white-space:nowrap">
-            <input type="date" id="tmap-span-a" onchange="onTmapSpanChange()" style="width:auto">
-            <input type="date" id="tmap-span-b" onchange="onTmapSpanChange()" style="width:auto"></span></div>
-        <div class="hint" style="align-self:center">Set both to re-map the whole slider onto that period (e.g. the last two months) — play then sweeps only it. Clear to return to all recorded time.</div>
-      </div>
-
-      <div class="row" style="margin-top:8px;align-items:center;gap:8px">
-        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px;margin-left:6px">
-          <input type="checkbox" id="tmap-articles" onchange="loadTimemap()"> my corpus</label>
-        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px"
-               title="Dates mentioned in your articles' text (extracted, unconfirmed)">
-          <input type="checkbox" id="tmap-mentions" onchange="loadTimemap()"> dates in text</label>
-        <label class="tiny" style="display:inline-flex;align-items:center;gap:5px">
-          <input type="checkbox" id="tmap-hazards" onchange="loadTimemap()"> live hazards</label>
-        <button class="tiny secondary" onclick="loadTimemap()">refresh</button>
-        <span class="hint" style="align-self:center">drag to pan · zoom in to read labels · click a pin for detail</span>
-      </div>
-
-      <div id="tmap-legend" class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap"></div>
-
-      <div id="tmap-wrap" style="position:relative;margin-top:6px">
-        <div id="tmap-svg"></div>
-        <!-- Controls live INSIDE the map (the Google-Maps lesson, maintainer-ruled) -->
-        <div style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
-          <button class="tiny secondary" onclick="zoomTmap(0.7)" title="Zoom in">＋</button>
-          <button class="tiny secondary" onclick="zoomTmap(1.4)" title="Zoom out">－</button>
-          <button class="tiny secondary" onclick="resetTmap()" title="Reset view">⟲</button>
-          <button class="tiny secondary" id="tmap-expand" onclick="tmapExpand()" title="Enlarge the map">⛶</button>
-          <button class="tiny secondary" id="tmap-mentions-toggle" onclick="toggleTmapMentions()"
-            aria-pressed="false"
-            title="Show the places your corpus MENTIONS, deduced from article text (never confirmed). Marker area scales with how many articles mention each place — raw counts, no score.">📍 places</button>
-        </div>
-      </div>
-      <div id="tmap-detail" style="margin-top:8px"></div>
-      <div id="tmap-caveat" class="hint" style="margin-top:8px"></div>
     </section>
     </div>
 

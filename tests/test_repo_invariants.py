@@ -1926,49 +1926,47 @@ def test_ootimescope_reused():
     assert html.count('ooChart($("corpus-chart")') == 1
 
 
-def test_tmap_mention_layer():
-    """Temporal-map mention layer: the places the corpus's articles MENTION,
-    plotted from the SHIPPED /api/insights/where substrate, reusing the map's
-    existing equirectangular projection (lon2x/lat2y) and render loop.
+def test_temporal_map_retired_into_ooMap():
+    """Map rework slice 5b (maintainer ruling 2026-06-18, "fold signals in, then
+    retire"): the standalone temporal-map PANEL is RETIRED — its UI was removed and
+    the Map tab routes to the unified ooMap, which absorbed the temporal map's full
+    capability (choropleth + signals layer + time slider + click-detail + the
+    mentioned-places overlay).
 
-    Honesty (non-negotiable): markers scale by raw article SPREAD (r∝√spread,
-    AREA∝spread — no composite score); null-coordinate places are NOT plotted
-    and their count is surfaced; the endpoint's "Deduced from text, never
-    confirmed." caveat is VISIBLE on the layer (legend) AND in the readout.
+    ABSORPTION-GATED (the Desk lesson — nothing lost): every capability the temporal
+    map had must survive on ooMap before its panel is removed. This REPLACES the old
+    test_tmap_mention_layer (the mention layer is now ooMap's Places overlay, slice 4,
+    covered in test_ooMap_choropleth).
     """
     html = _ui_source()
 
-    # The in-map overlay toggle (Google-Maps "controls inside the map" convention).
-    assert 'id="tmap-mentions-toggle"' in html, "the mention-layer toggle button must exist"
-    assert 'onclick="toggleTmapMentions()"' in html, "the toggle must call toggleTmapMentions()"
-    assert "function toggleTmapMentions()" in html, "toggleTmapMentions must be defined"
+    # 1) The old temporal-map PANEL + its controls are GONE from the chrome.
+    for gone in (
+        'id="tmap-slider"', 'id="tmap-svg"', 'id="tmap-wrap"', 'id="tmap-legend"',
+        'id="tmap-mentions-toggle"', "Temporal map <span",
+        'onclick="toggleTmapPlay()"', 'onclick="toggleTmapMentions()"', 'oninput="onTmapSlide()"',
+    ):
+        assert gone not in html, f"the retired temporal-map panel must not ship: {gone}"
 
-    # The layer fetches the SHIPPED corpus-wide WHERE endpoint (bounded, lazy).
-    assert "/api/insights/where" in html, "the layer must fetch /api/insights/where"
+    # 2) The Map tab now drives the unified ooMap directly (not the temporal loader).
+    assert "timemap: loadOoMapCoverage," in html, "the Map tab must route to the unified ooMap"
 
-    # Reuses the EXISTING projection — no second projection invented.
-    assert "function buildTmapMentionLayer()" in html, "the layer builder must exist"
-    assert "lon2x(p.lon)" in html and "lat2y(p.lat)" in html, (
-        "mention markers must reuse the temporal map's lon2x/lat2y projection"
+    # 3) ABSORBED capabilities survive on ooMap (the Desk lesson):
+    #    - the mentioned-PLACES overlay (was the temporal mention layer) reuses the
+    #      SAME /api/insights/where substrate + the deduced caveat;
+    assert "/api/insights/where" in html, "the mentioned-places capability must survive on ooMap"
+    assert "Deduced from text, never confirmed." in html, "the deduced caveat must survive"
+    #    - the signal click-detail (ported in 5a.2) + the in-map time slider live on ooMap.
+    assert "data-oomap-sig=" in html and "function _ooMapSignalDetail(s, visible, win)" in html, (
+        "the temporal map's signal click-detail must live on ooMap"
     )
-    # Marker AREA ∝ spread ⇒ radius ∝ √(articles); honest raw count, never a score.
-    assert "Math.sqrt((+p.articles" in html, "marker radius must scale with √(article spread)"
+    assert "data-oomap-focus" in html, "the in-map time slider must live on ooMap"
 
-    # Null-coordinate places are dropped from the plot, their count surfaced.
-    assert "p.lat != null && p.lon != null" in html, "places without coordinates must not be plotted"
-    assert "places not mapped (no coordinates)" in html, (
-        "the count of unmapped (null-coordinate) places must be surfaced honestly"
-    )
-    # Degrade loudly on empty.
-    assert "No mapped mentions in your corpus yet." in html, "honest empty state required"
+    # 4) The shared helpers ooMap reuses are NOT removed by the retire.
+    assert "function tmapFindCoverage(" in html, "tmapFindCoverage (reused by the ooMap detail) must survive"
 
-    # The deduced/never-confirmed caveat is present on BOTH the legend and the readout,
-    # defaulting to the endpoint's verbatim string (informed-consent layering).
-    assert "Deduced from text, never confirmed." in html, (
-        "the endpoint's verbatim caveat must appear (legend + readout fallback)"
-    )
-    assert "function buildTmapMentionLegend()" in html, "the layer legend caveat line must exist"
-    assert "function showTmapWhereDetail(" in html, "the marker readout must exist"
+    # 5) The now-unreachable temporal-only functions are flagged for the deletion-cleanup.
+    assert "RETIRED (slice 5b)" in html, "the dead temporal functions must be flagged unreachable"
 
 
 def test_ooMap_choropleth():
