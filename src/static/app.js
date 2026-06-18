@@ -132,7 +132,10 @@
     const _GUIDE_KEY = "oo_guide_v1";
     // The visible step order. "encryption" + "sources" are deferred placeholders
     // (shown but inert) so the next slice slots its real UI straight in.
-    const _GW_STEPS = ["lang", "encryption", "sources", "finish"];
+    // Language -> Finish. The encryption choice is made in the DB-unlock/install
+    // flow (not a wizard placeholder) and sources auto-seed on boot, so the two
+    // inert "Coming soon" steps were removed (maintainer 2026-06-18).
+    const _GW_STEPS = ["lang", "finish"];
     let _gwIdx = 0;
     function _guideState() {
       try { return JSON.parse(localStorage.getItem(_GUIDE_KEY)) || {}; } catch { return {}; }
@@ -1344,10 +1347,8 @@
           <b>framing splits</b>, <b>promises due</b> (a mentioned future date arrives),
           <b>edit-war bursts</b> on tracked Wikipedia pages, <b>regions gone quiet</b>,
           and <b>source candidates</b> from offline discovery.</p>
-          <div class="acts">
-            <button class="secondary tiny" onclick="showTab('ingest')">Collect now</button>
-            <button class="secondary tiny" onclick="api('/api/briefing/refresh',{method:'POST'}).then(loadHome)">Recompute briefing</button>
-          </div></div>`;
+          <p class="muted" style="margin-top:6px">Collection and Leads update automatically in the
+          background while you're online — there's nothing to start by hand.</p></div>`;
         return;
       }
       // Family-type colors: a deterministic hue per bucket, applied as the card
