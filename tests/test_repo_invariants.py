@@ -1249,7 +1249,12 @@ def test_agenda_category_chips_and_country_flags():
     for fn in ("function renderAgendaCatChips", "function agSetCat", "function agCatHue", "function agFlag"):
         assert fn in html, f"category chips / flags require {fn}()"
     assert "const cat = _agCat," in html, "the category filter must read the chip state (_agCat), not the removed select"
-    assert "AG.categories = (fac.categories" in html, "categories must be data-driven from the catalog facets"
+    # Data-driven from the catalog facets — the "real event tags (drop the useless
+    # 'imported' category)" rework (39353cf) now folds the imported feeds' real kinds in
+    # via a Set, so the assignment is `[...new Set((fac.categories || []).concat(...))]`.
+    assert "AG.categories = [...new Set((fac.categories" in html, (
+        "categories must be data-driven from the catalog facets"
+    )
     assert "${agFlag(x)} ${esc(x)}" in html, "country options must show the flag emoji beside the ISO-2 code"
     assert ".ag-catchip" in html, "the category chips need their styling"
     # the future "religious" category is pre-keyed so its chip is born translated
@@ -1319,7 +1324,12 @@ def test_agenda_merges_imported_events_as_filterable_class():
     html = _ui_source()
     assert "function mapImportedToAgenda" in html, "imported events must map into the agenda shape"
     assert "/api/events/imported?from=" in html, "loadAgenda must pull imported events (forward-looking)"
-    assert 'category: "imported"' in html and "imported: true" in html, "imported events are their own class"
+    # The "drop the useless 'imported' category" rework (39353cf): imported events now
+    # carry their feed's REAL kind as the category, and the distinct, filterable
+    # provenance class is the `imported: true` FLAG (not a generic "imported" category).
+    assert "imported: true" in html, (
+        "imported events must carry the imported:true provenance flag (their filterable class)"
+    )
     assert "e.imported || (e.sources" in html, "imported events must bypass the subscribed-only filter"
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
