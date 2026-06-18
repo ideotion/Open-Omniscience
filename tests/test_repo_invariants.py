@@ -2094,6 +2094,20 @@ def test_ooMap_choropleth():
     # Honest event convention carried over: future/unconfirmed = a hollow/dashed ring.
     assert "const future = focus != null && s.t > focus" in html, "future events stay distinct (hollow/dashed)"
 
+    # --- slice 5a.2: signal CLICK-TO-DETAIL (ported faithfully so 5b's retire loses nothing) --- #
+    assert "data-oomap-sig=" in html and "opts.onSignal(s, host._ooSigVisible" in html, (
+        "signal markers must be clickable -> the detail panel"
+    )
+    assert "function _ooMapSignalDetail(s, visible, win)" in html, "the ported signal-detail panel must exist"
+    assert 'id="oo-coverage-detail"' in html, "the Map tab must host the signal-detail panel"
+    # The honest space-time co-occurrence framing is carried over verbatim (never a cause).
+    assert "function _ooMapNearby(s, visible, win)" in html, "the 'near in space & time' seed must be ported"
+    assert "co-occurrence, not a connection or cause. You judge." in html, (
+        "the near-in-space-time panel must keep its non-causal caveat"
+    )
+    # The space-time loop back to the corpus is preserved (find coverage).
+    assert "tmapFindCoverage(" in html, "the 'find coverage in your corpus' action must be preserved"
+
 
 def test_search_timescope():
     """The Search sidebar tab reuses the SAME ooTimeScope control for date-range

@@ -7223,14 +7223,14 @@
       // (/api/timemap) + helpers (kindColor / TMAP_KINDS / fmtYear / fmtDate). The
       // in-map slider moves the focus moment. Confirmed = filled, future/unconfirmed
       // = a hollow/dashed ring (the temporal map's honest convention).
-      let signalPts = "", sigKinds = [];
+      let signalPts = "", sigKinds = [], sigVisible = [];
       if (opts.signalsOn && Array.isArray(opts.signals)) {
         const focus = opts.focusT, win = opts.windowY || 0;
-        const vis = opts.signals.filter(s => s.lat != null && s.lon != null
+        sigVisible = opts.signals.filter(s => s.lat != null && s.lon != null
           && typeof s.t === "number"
           && (!win || focus == null || Math.abs(s.t - focus) <= win));
-        sigKinds = [...new Set(vis.map(s => s.kind))];
-        signalPts = vis.map(s => {
+        sigKinds = [...new Set(sigVisible.map(s => s.kind))];
+        signalPts = sigVisible.map((s, i) => {
           const x = lon2x(s.lon).toFixed(1), y = lat2y(s.lat).toFixed(1);
           const dist = focus == null ? 0 : Math.abs(s.t - focus);
           const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
@@ -7241,7 +7241,12 @@
             ? `fill="transparent" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future ? "2 1.5" : ""}"`
             : `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`;
           const ti = `${s.title} — ${fmtDate(s)} · ${TMAP_KINDS[s.kind]?.l || s.kind}${s.place ? " · " + s.place : ""}`;
-          return `<circle cx="${x}" cy="${y}" r="${r}" ${ring} opacity="${op.toFixed(2)}"><title>${esc(ti)}</title></circle>`;
+          // a larger transparent hit disc keeps the whole marker clickable (the
+          // temporal-map lesson: hollow rings were clickable only on the 1px edge).
+          const clk = opts.onSignal ? ` data-oomap-sig="${i}" style="cursor:pointer"` : "";
+          return `<g${clk} opacity="${op.toFixed(2)}">`
+            + (opts.onSignal ? `<circle cx="${x}" cy="${y}" r="${(r + 3.5).toFixed(1)}" fill="transparent"></circle>` : "")
+            + `<circle cx="${x}" cy="${y}" r="${r}" ${ring}><title>${esc(ti)}</title></circle></g>`;
         }).join("");
       }
 
@@ -7317,6 +7322,7 @@
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
+      host._ooSigVisible = sigVisible;             // for signal click-to-detail resolution
       _wireOoMap(host, opts);
     }
 
@@ -7347,6 +7353,8 @@
       if (opts && opts.onPlaces) { const pb = host.querySelector("[data-oomap-places]"); if (pb) pb.addEventListener("click", () => opts.onPlaces()); }
       if (opts && opts.onSignals) { const sb = host.querySelector("[data-oomap-signals]"); if (sb) sb.addEventListener("click", () => opts.onSignals()); }
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
+      if (opts && opts.onSignal) host.querySelectorAll("[data-oomap-sig]").forEach(g =>
+        g.addEventListener("click", () => { const s = (host._ooSigVisible || [])[+g.dataset.oomapSig]; if (s) opts.onSignal(s, host._ooSigVisible || []); }));
       svg.addEventListener("wheel", e => {
         e.preventDefault();
         const m = svg.getScreenCTM().inverse(), p = svg.createSVGPoint();
@@ -7490,8 +7498,66 @@
         },
         // rAF-coalesce slider drags so a fast sweep is at most one re-render per frame.
         onFocus: v => { _ooMapFocusSlider = v; if (_ooMapFocusRAF) cancelAnimationFrame(_ooMapFocusRAF); _ooMapFocusRAF = requestAnimationFrame(() => _renderOoMapDim()); },
+        onSignal: (s, visible) => _ooMapSignalDetail(s, visible, windowY),
         valueLabel: fmtV,
       });
+    }
+    // Signal click-to-detail (slice 5a.2 — ported faithfully from the temporal map's
+    // showTmapDetail so retiring #oo-tmap loses nothing): the event's kind/title,
+    // confirmed/geocode honesty, date·place·country·coords·source, note, reference
+    // link, "find coverage in your corpus", and the co-occurrence "near in space &
+    // time" seed (the same honest never-a-cause framing). English to match the
+    // retired panel (no regression); keyable later.
+    let _ooMapSigSet = [], _ooMapSigWin = 25;
+    function _ooMapSignalAt(i) { const s = _ooMapSigSet[i]; if (s) _ooMapSignalDetail(s, _ooMapSigSet, _ooMapSigWin); }
+    function _ooMapNearby(s, visible, win) {
+      const out = [];
+      (visible || []).forEach((o, idx) => {
+        if (o === s) return;
+        const dt = Math.abs(o.t - s.t), dlon = Math.abs(o.lon - s.lon), dlat = Math.abs(o.lat - s.lat);
+        if (dt <= win && dlon <= TMAP_NEAR_DEG && dlat <= TMAP_NEAR_DEG)
+          out.push({ idx, o, score: dt / (win || 1) + Math.hypot(dlon, dlat) / TMAP_NEAR_DEG });
+      });
+      return out.sort((a, b) => a.score - b.score).slice(0, 6);
+    }
+    function _ooMapSignalDetail(s, visible, win) {
+      const host = $("oo-coverage-detail"); if (!host || !s) return;
+      _ooMapSigSet = visible || []; _ooMapSigWin = win || 25;
+      const url = s.url ? safeUrl(s.url) : null;
+      const cov = (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+      const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
+                : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
+      const conf = s.source === "corpus-mention" ? `<span class="pill warn" title="a date extracted from article text">mentioned · extracted</span>`
+                 : s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
+      host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
+          <strong>${esc(s.title)}</strong>
+          <span class="pill">${esc(TMAP_KINDS[s.kind]?.l || s.kind)}</span> ${conf} ${geo}
+        </div>
+        <div class="muted" style="margin-top:5px;font-size:13px">
+          ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${esc(String(s.country).toUpperCase())})` : ""}
+          · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
+        </div>
+        ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
+        <div class="row" style="margin-top:7px;gap:8px">
+          ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "text-decoration:none;align-self:center") : ""}
+          ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
+        </div>
+        ${(() => {
+          const near = _ooMapNearby(s, _ooMapSigSet, _ooMapSigWin);
+          if (!near.length) return "";
+          const items = near.map(n => `<button class="tiny secondary" style="margin:2px 3px 0 0"
+            onclick="_ooMapSignalAt(${n.idx})" title="${esc(fmtDate(n.o))}${n.o.place ? " · " + esc(n.o.place) : ""}">
+            <span style="width:8px;height:8px;border-radius:50%;background:${kindColor(n.o.kind)};display:inline-block;margin-right:4px"></span>
+            ${esc((n.o.title || "").slice(0, 38))} <span class="muted">${n.o.year != null ? esc(String(n.o.year)) : ""}</span></button>`).join("");
+          return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px">
+            <div style="font-size:12px"><strong>Near in space &amp; time</strong>
+              <span class="warn" title="These signals are merely close in place and time within your current window.">— co-occurrence, not a connection or cause. You judge.</span></div>
+            <div style="margin-top:4px">${items}</div></div>`;
+        })()}
+      </div>`;
+      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     async function loadOoMapCoverage() {
       const host = $("oo-coverage-map"); if (!host) return;
