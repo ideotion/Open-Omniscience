@@ -2891,6 +2891,25 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **PERF — SUPERGROUPS 132s→fast (field perf report 2026-06-18, draft PR onto 0.09):** the maintainer
+  clicked Insights → Groups on a 10,252-article / 244,866-keyword / 829,226-mention corpus (408 MB
+  encrypted, 2 cores, 5.6 GB RAM); /api/insights/supergroups took 132 s and FROZE the UI (clicks queued,
+  airplane toggle unresponsive — the single GIL-bound server was busy). ROOT CAUSE: `_supergroup_totals`
+  GROUP BY'd EVERY keyword joined to EVERY mention (829k rows) then discarded 99.99% to keep the 8
+  super-groups' members. FIX (behaviour-identical): resolve member keyword IDs FIRST (indexed IN on the
+  exact ring/member terms; a small (id, term)-only scan ONLY when a family member needs canonical-key
+  morphology matching — never when all members are rings), then aggregate mentions for ONLY those IDs.
+  Turns a whole-corpus aggregation into a handful-of-keywords one. tests/test_supergroups.py gains
+  test_supergroup_totals_count_only_members (a high-mention NON-member must not leak); existing
+  test_super_rings cross-language aggregation preserved. This is ONE fix in a larger perf workstream the
+  maintainer opened — REMAINING (diagnosed from the logs, not yet built): /api/insights/{graph 103s,
+  framing 141s, associations 76s, trending(-windows) 8-36s ×132 polls, map 7-9s, top 2.7s} all recompute
+  whole-corpus aggregations per call with NO cache → need (a) denormalized mention_count/article_count on
+  Keyword maintained at index time (kills the mention join for top/trending/supergroups), (b) a background-
+  warmed TTL cache (stale-while-revalidate) so the UI is instant, (c) polling-storm cut (activity+vitals
+  6741 reqs each), (d) frontend idle-CPU runaway (browser 40% CPU at rest), (e) keyword-quality lever:
+  18+ languages are no_stoplist (tr/el/uk/th/ur/bg/ca/fi/cs…) + zh unsegmented + 5,094 unknown-language →
+  junk inflating the 245k/829k counts that every aggregation pays for.
 - **TASK-MANAGER REDESIGN — WINDOWS-STYLE (maintainer 2026-06-18 "entirely rethink the task manager
   UI … anchored in what Windows created: see what consumes resources, see what is actually happening
   (is an LLM translating? are super-groups loading?), pause services, performance + hardware metrics +

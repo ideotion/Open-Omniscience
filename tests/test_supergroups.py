@@ -111,3 +111,32 @@ def test_supergroup_crud_and_aggregate(tmp_path):
             assert c.delete(f"/api/insights/supergroups/{sid}").status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+def test_supergroup_totals_count_only_members(tmp_path):
+    """Regression for the 2026-06-18 perf fix: the totals query used to GROUP BY
+    every keyword×mention and discard non-members — O(whole corpus). The optimised
+    query aggregates ONLY member keywords, so a high-mention NON-member must never
+    leak into a super-group's totals (and the result is unchanged)."""
+    app, Sess = _client(tmp_path)
+    with Sess() as s:
+        s.add(Source(name="Src", domain="s.test"))
+        s.flush()
+        for i in range(6):
+            s.add(Article(url=f"https://s.test/{i}", canonical_url=f"https://s.test/{i}",
+                          source_id=1, title=f"t{i}", content="x", hash=f"h{i}"))
+        s.flush()
+        _seed_keyword(s, "Russia", "russia", article_ids=[1, 2, 3])  # member: 3 mentions
+        # A NON-member keyword with FAR more mentions than the member.
+        _seed_keyword(s, "Weather", "weather", article_ids=[1, 2, 3, 4, 5, 6])
+        s.commit()
+    try:
+        with TestClient(app) as c:
+            sid = c.post("/api/insights/supergroups", json={"name": "Geo"}).json()["id"]
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"normalized": ["russia"]})
+            g = c.get("/api/insights/supergroups").json()["supergroups"][0]
+            # ONLY the member counts — the 6-mention non-member is excluded.
+            assert g["mentions"] == 3 and g["count"] == 1
+            assert g["members"][0]["normalized"] == "russia"
+    finally:
+        app.dependency_overrides.clear()
