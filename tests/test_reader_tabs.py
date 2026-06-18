@@ -102,6 +102,62 @@ def test_reader_renders_tabs_and_references_assets(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_reader_renders_ai_derived_metadata_inline(tmp_path):
+    """AI-derived metadata renders INLINE in the article view as a third, clearly-labelled
+    class (the unified ai_keyword lens) — grouped by kind, never the trusted index, and
+    absent when there is none. Satisfies the maintainer ruling."""
+    from src.ai_layer import store as ai_store
+    from src.api.main import app
+    from src.database.session import get_db
+
+    Sess = _seed(tmp_path, "rai.db")
+    with Sess() as s:
+        ai_store.record_keywords(
+            s, 1, ["Acme Corp", "$4.2bn"], model="m", kind="figure", prompt_version="custom:1"
+        )
+        s.commit()
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            body = client.get("/api/articles/1/view").text
+            assert "AI-derived — unreliable" in body, "the AI-derived group label is missing"
+            assert "figure" in body and "$4.2bn" in body, "the grouped AI terms must render"
+            assert "never part of the trusted" in body, "the honesty caveat must be present"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_reader_omits_ai_block_when_no_ai_metadata(tmp_path):
+    """No AI metadata -> no AI group rendered (no clutter on the common path)."""
+    from src.api.main import app
+    from src.database.session import get_db
+
+    Sess = _seed(tmp_path, "rnoai.db")
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            body = client.get("/api/articles/1/view").text
+            assert "AI-derived — unreliable" not in body
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
 def test_reader_static_assets_are_served():
     """reader.js / reader.css must serve (a 404 would silently break the tabs)."""
     from src.api.main import app
