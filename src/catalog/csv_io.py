@@ -182,6 +182,7 @@ def upsert_sources(session, rows: list[dict]) -> dict:
     whole commit window, silently discarding every good row that preceded the bad
     one while keeping the rows that followed it.
     """
+    from src.analytics.managed import is_unmanaged
     from src.database.models import Source
 
     created = updated = 0
@@ -201,6 +202,15 @@ def upsert_sources(session, rows: list[dict]) -> dict:
                         if k != "domain":
                             setattr(src, k, v)
                 else:
+                    # Language gating (maintainer 2026-06-18): a NEW source in a
+                    # language the keyword engine cannot manage seeds DISABLED by
+                    # default (kept, re-enablable) so the app never accumulates
+                    # un-analysable junk. An explicit ``enabled`` in the row always
+                    # wins (curation), and an unknown language stays enabled (we
+                    # never disable what we cannot classify). Existing sources are
+                    # untouched — re-seeding never flips the operator's choice.
+                    if "enabled" not in row and is_unmanaged(row.get("language")):
+                        row = {**row, "enabled": False}
                     session.add(Source(**row))
             # The savepoint committed cleanly -> count it only now (so a row that
             # failed at flush is never miscounted as created/updated).

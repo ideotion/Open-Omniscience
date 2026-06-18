@@ -1531,6 +1531,17 @@
       <button class="secondary" onclick="seedDefaults()" title="Register a curated starter set of public-interest RSS sources">Seed starter sources</button>
     </section>
 
+    <section class="panel" id="unmanaged-lang-panel" style="display:none">
+      <h2>Languages we can't analyse yet</h2>
+      <p class="muted" style="margin-top:0">The keyword engine can only analyse languages with a stoplist and
+        word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce
+        <strong>junk keywords</strong> that skew analytics and slow the app. They're kept and re-enablable —
+        disabling them just stops gathering material we'd mangle until a stoplist for that language lands.</p>
+      <div id="unmanaged-lang-summary" class="hint"></div>
+      <button class="secondary" id="unmanaged-lang-btn" onclick="disableUnmanagedLanguages()"
+        title="Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.">Disable sources in languages we can't analyse yet</button>
+    </section>
+
     <section class="panel">
       <h2>Manage sources</h2>
       <div class="row">

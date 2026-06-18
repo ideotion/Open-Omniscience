@@ -30,18 +30,11 @@ from src.database.models import (
     KeywordTag,
 )
 
-# Languages with FUNCTIONAL keyword extraction today: a stoplist exists and the
-# script is space-segmented. zh/ja are word-segmentation-less, so their keyword
-# extraction is broken regardless — surfaced honestly, never presented as working.
-# Verified-present stoplists (the self-test covers en/de/fr/es/it/pt/nl/ru/ar/hu/id;
-# the evidence batch also seeded sv/da/nb/no/pl/sr/sl). fi/tr/hi/bn are deliberately
-# NOT claimed functional — their coverage is minimal/unverified, so they fall to
-# "no_stoplist" (honest: they tokenise but function words leak).
-_FUNCTIONAL = frozenset(
-    {"en", "fr", "de", "es", "it", "pt", "nl", "ru", "ar", "hu", "id",
-     "sv", "da", "nb", "no", "pl", "sr", "sl"}
-)
-_UNSEGMENTED = frozenset({"zh", "ja"})  # no word segmentation -> extraction broken
+# Languages with FUNCTIONAL keyword extraction today live in the ONE source of
+# truth (src.analytics.managed) — shared with the source-language gating so the
+# engine report and "which sources to disable" can never disagree.
+from src.analytics.managed import MANAGED_LANGUAGES as _FUNCTIONAL
+from src.analytics.managed import UNSEGMENTED as _UNSEGMENTED
 
 
 def _is_acronym(n: str) -> bool:

@@ -3759,6 +3759,31 @@
       sel.innerHTML = sources.filter(s => s.rss_url).map(s =>
         `<option value="${s.id}">${esc(s.name)}</option>`).join("")
         || '<option value="">(no sources with an RSS feed)</option>';
+      loadUnmanagedLanguages();
+    }
+
+    // Surface how many enabled sources are in languages the keyword engine cannot
+    // analyse (no stoplist / unsegmented) — junk that pollutes analytics + slows the
+    // app. The panel only appears when there's something to disable.
+    async function loadUnmanagedLanguages() {
+      const panel = $("unmanaged-lang-panel"); if (!panel) return;
+      let r; try { r = await api("/api/sources/unmanaged-languages"); } catch (e) { panel.style.display = "none"; return; }
+      if (!r || !r.enabled_unmanaged) { panel.style.display = "none"; return; }
+      const langs = Object.entries(r.by_language).map(([k, n]) => `${esc(k)} (${n})`).join(", ");
+      $("unmanaged-lang-summary").innerHTML =
+        `<strong>${r.enabled_unmanaged}</strong> enabled source(s) in languages we can't analyse yet: ${langs}.`;
+      panel.style.display = "";
+    }
+
+    async function disableUnmanagedLanguages() {
+      const btn = $("unmanaged-lang-btn"); if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/sources/disable-unmanaged-languages", {method: "POST"});
+        toast(`Disabled ${r.disabled} source(s) in unmanaged languages (kept — re-enable any time).`);
+        loadUnmanagedLanguages();
+        if (typeof loadManagedSources === "function") loadManagedSources();
+      } catch (e) { toast(e.message, "err"); }
+      finally { if (btn) btn.disabled = false; }
     }
 
     async function seedDefaults() {
