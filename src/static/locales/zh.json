@@ -1205,5 +1205,21 @@
   "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "你获取的每个数据都会被跟踪，并在你联网时按其间隔重新获取，每次存储一个新版次(修订被保留，绝不覆盖)。停用或移除任何你不想要的。",
   "Pull any model tag": "拉取任意模型标签",
   "The local language models power Summarize, Translate and Synthesize. This shows what you actually have installed (live from Ollama) and a small suggested list annotated for your hardware. Pick the active model, pull new ones, or remove them — all from here. Newer and better models appear constantly — pull any tag below, or browse": "本地语言模型为摘要、翻译和综合提供支持。这里显示你实际已安装的内容(实时来自 Ollama)以及一份带有硬件注释的小型推荐列表。选择活动模型、拉取新模型或将其移除 — 全部在此完成。更新更好的模型不断出现 — 在下方拉取任意标签，或浏览",
-  "Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.": "拉取模型是一项网络操作:它通过 Ollama 进程经由明网下载 — 而不是通过本应用的 Tor 代理 — 因此在飞行模式下会被拒绝，并在你首次联网时请求你的同意。下载在你的机器上进行;之后模型完全离线运行。"
+  "Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.": "拉取模型是一项网络操作:它通过 Ollama 进程经由明网下载 — 而不是通过本应用的 Tor 代理 — 因此在飞行模式下会被拒绝，并在你首次联网时请求你的同意。下载在你的机器上进行;之后模型完全离线运行。",
+  "Wikipedia change-tracking": "维基百科变更跟踪",
+  "Track watched pages per language edition (editions are per-language, not per-country). We store one baseline snapshot per page, then only diffs/deltas of new edits — so cosmetic changes cost almost nothing — and flag large / suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates are surfaced for you to judge; nothing is labelled \"disinformation\".": "按语言版本跟踪监视页面(版本按语言划分，而非按国家)。我们为每个页面保存一个基线快照，之后只保存新编辑的差异/增量 — 因此外观性改动几乎没有成本 — 并标记大型/可疑编辑(大小增量、回退/清空标签、匿名、爆发、可选 ORES)。候选项会呈现给你判断;不会把任何内容标注为\"虚假信息\"。",
+  "use ORES scores": "使用 ORES 评分",
+  "Optional, heavy offline full-text baselines (per-language dumps) are configured further down in this panel — pick an edition from the list and download it. Not needed for the change-tracking above.": "离线全文基线(按语言的转储)是可选且体积大的，在本面板更下方配置 — 从列表中选择一个版本并下载。上面的变更跟踪不需要它们。",
+  "Watch a page": "监视一个页面",
+  "Watchlist": "监视列表",
+  "optional": "可选",
+  "Flagged changes": "已标记的变更",
+  "flagged only": "仅已标记",
+  "Edition filter": "版本筛选",
+  "Wikipedia offline baselines": "维基百科离线基线",
+  "Language edition": "语言版本",
+  "Loading editions…": "正在加载版本…",
+  "Estimate size": "估算大小",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "可选、体积大，且与实时变更跟踪分开。在下面选择一个语言版本，下载官方维基媒体的当前文本转储(可续传，支持暂停/继续)。版本以平铺方式列出 — 你的语言在前，然后是最大的版本;当你点击\"估算大小\"时，真实的下载大小会从服务器读取 — 不做任何猜测。enwiki ≈ 数十 GB;大多数版本要小得多。基线仅用于离线阅读/搜索 — 上面的变更跟踪并不需要它们。",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "列表仅限本应用的语言 — 即本应用能够读取和分析的版本。在框中输入即可按名称、自称或代码筛选。每个版本会内联显示一个粗略的大小档位和估算的下载大小，而\"估算大小\"会从服务器报告确切的当前转储大小。你也可以输入任何未列出的版本代码。"
 }

@@ -1099,11 +1099,7 @@
     <div class="set-view" id="set-wikipedia" style="display:none">
     <section class="panel">
       <h2>Wikipedia change-tracking</h2>
-      <p class="muted" style="margin-top:0">Track watched pages per <strong>language edition</strong>
-        (editions are per-language, not per-country). We store one baseline snapshot per page, then only
-        <em>diffs/deltas</em> of new edits — so cosmetic changes cost almost nothing — and flag large /
-        suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates
-        are surfaced for you to judge; nothing is labelled "disinformation".</p>
+      <p class="muted" style="margin-top:0">Track watched pages per language edition (editions are per-language, not per-country). We store one baseline snapshot per page, then only diffs/deltas of new edits — so cosmetic changes cost almost nothing — and flag large / suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates are surfaced for you to judge; nothing is labelled "disinformation".</p>
       <div id="wiki-status" class="hint">Loading…</div>
       <div class="row" style="margin-top:6px">
         <button onclick="trackWikiNow()">Track now</button>
@@ -1112,9 +1108,7 @@
         </label>
         <span id="wiki-progress" class="hint" style="align-self:center"></span>
       </div>
-      <div class="hint" style="margin-top:6px">Optional, heavy <strong>offline full-text baselines</strong>
-        (per-language dumps) are configured <strong>further down in this panel</strong> — pick an edition
-        from the list and download it. Not needed for the change-tracking above.</div>
+      <div class="hint" style="margin-top:6px">Optional, heavy offline full-text baselines (per-language dumps) are configured further down in this panel — pick an edition from the list and download it. Not needed for the change-tracking above.</div>
     </section>
 
     <section class="panel">
@@ -1144,11 +1138,7 @@
 
     <section class="panel">
       <h2>Wikipedia offline baselines</h2>
-      <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a
-        language edition below and download the official Wikimedia <em>current-text</em> dump (resumable, with
-        pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you
-        click <em>Estimate size</em> — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller.
-        Baselines are only for offline reading/search — the change-tracking above does not need them.</p>
+      <p class="muted" style="margin-top:0">Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.</p>
       <div class="row">
         <div style="flex:2">
           <label for="dump-lang">Language edition</label>
@@ -1160,10 +1150,7 @@
         <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startDump()">Download</button></div>
         <div id="dump-estimate" class="hint" style="align-self:center"></div>
       </div>
-      <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze.
-        <strong>Type in the box to filter</strong> by name, autonym or code. Each edition shows a coarse size
-        tier and an estimated download size inline, while <em>Estimate size</em> reports the exact current dump
-        size from the server. You can also type any edition code that isn't listed.</div>
+      <div class="hint">The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.</div>
       <div id="dump-size-note" class="hint" hidden><span>Inline sizes are estimates — the exact size is read on download.</span>
         <span class="muted">· <span>reviewed</span> <span id="dump-size-asof"></span></span></div>
       <div style="overflow:auto;margin-top:10px"><table id="dump-table"></table></div>

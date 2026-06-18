@@ -1205,5 +1205,21 @@
   "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "取得した各値は追跡され、オンライン中はその間隔で再取得され、毎回新しいヴィンテージが保存されます(改訂は保持され、上書きされません)。不要なものは無効化または削除してください。",
   "Pull any model tag": "任意のモデルタグを取得",
   "The local language models power Summarize, Translate and Synthesize. This shows what you actually have installed (live from Ollama) and a small suggested list annotated for your hardware. Pick the active model, pull new ones, or remove them — all from here. Newer and better models appear constantly — pull any tag below, or browse": "ローカル言語モデルは要約・翻訳・統合を支えます。ここには実際にインストール済みのもの(Ollama からのライブ)と、ハードウェア向けの注釈付きの小さな推奨リストが表示されます。アクティブなモデルの選択、新規取得、削除がすべてここからできます。より新しく優れたモデルが次々に登場します — 下で任意のタグを取得するか、こちらを参照してください",
-  "Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.": "モデルの取得はネットワーク操作です。Ollama プロセスを通じて平文のインターネット経由でダウンロードされ — このアプリの Tor プロキシ経由ではありません — そのため機内モードでは拒否され、初めてオンラインにするときに同意を求めます。ダウンロードはあなたのマシンで行われ、その後モデルは完全にオフラインで動作します。"
+  "Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.": "モデルの取得はネットワーク操作です。Ollama プロセスを通じて平文のインターネット経由でダウンロードされ — このアプリの Tor プロキシ経由ではありません — そのため機内モードでは拒否され、初めてオンラインにするときに同意を求めます。ダウンロードはあなたのマシンで行われ、その後モデルは完全にオフラインで動作します。",
+  "Wikipedia change-tracking": "Wikipedia の変更追跡",
+  "Track watched pages per language edition (editions are per-language, not per-country). We store one baseline snapshot per page, then only diffs/deltas of new edits — so cosmetic changes cost almost nothing — and flag large / suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates are surfaced for you to judge; nothing is labelled \"disinformation\".": "言語版ごとに監視ページを追跡します(版は国別ではなく言語別)。ページごとに基準スナップショットを 1 つ保存し、その後は新しい編集の差分/デルタのみを保存します — そのため表面的な変更はほとんどコストがかかりません — そして大きな/疑わしい編集(サイズ差分、差し戻し/白紙化タグ、匿名、急増、任意の ORES)にフラグを付けます。候補はあなたが判断できるよう提示され、何も「偽情報」とはラベル付けされません。",
+  "use ORES scores": "ORES スコアを使用",
+  "Optional, heavy offline full-text baselines (per-language dumps) are configured further down in this panel — pick an edition from the list and download it. Not needed for the change-tracking above.": "オフライン全文ベースライン(言語ごとのダンプ)は任意かつ大容量で、このパネルのさらに下で設定します — 一覧から版を選んでダウンロードしてください。上記の変更追跡には不要です。",
+  "Watch a page": "ページを監視",
+  "Watchlist": "ウォッチリスト",
+  "optional": "任意",
+  "Flagged changes": "フラグ付きの変更",
+  "flagged only": "フラグ付きのみ",
+  "Edition filter": "版フィルター",
+  "Wikipedia offline baselines": "Wikipedia オフラインベースライン",
+  "Language edition": "言語版",
+  "Loading editions…": "版を読み込み中…",
+  "Estimate size": "サイズを推定",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "任意で大容量、ライブの変更追跡とは別物です。下で言語版を選び、公式 Wikimedia の現在テキストのダンプをダウンロードします(再開可能、一時停止/再開付き)。版はフラットに一覧表示され — あなたの言語が先、その後に最大の版が続きます。実際のダウンロードサイズは「サイズを推定」をクリックするとサーバーから読み取られ、推測は一切しません。enwiki ≈ 数十 GB。ほとんどの版ははるかに小さいです。ベースラインはオフラインの閲覧/検索専用で — 上記の変更追跡には不要です。",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "一覧はアプリの言語 — このアプリが読み取り・分析できる版 — に限られます。ボックスに入力して、名称・自称・コードで絞り込めます。各版には大まかなサイズ段階と推定ダウンロードサイズがインラインで表示され、「サイズを推定」はサーバーから正確な現在のダンプサイズを報告します。一覧にない版コードを入力することもできます。"
 }
