@@ -1627,9 +1627,7 @@
       <p class="hint">Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes
         through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message
         is retained, and tracking links are de-toxed and never followed.</p>
-      <p class="hint" style="margin-top:5px"><span class="warn">This is a network action.</span> It is refused under airplane
-        mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email
-        client) — it is <em>not</em> routed through Tor. Credentials are used for this one fetch and not stored.</p>
+      <p class="hint" style="margin-top:5px"><span class="warn">This is a network action.</span> It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.</p>
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:8px">
         <label>Protocol<br><select id="mbox-proto"><option value="imap">IMAP</option><option value="pop3">POP3</option></select></label>
         <label>Host<br><input id="mbox-host" placeholder="imap.example.com" size="18"></label>

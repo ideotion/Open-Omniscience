@@ -1170,5 +1170,19 @@
   "Add watch": "निगरानी जोड़ें",
   "Check now": "अभी जाँचें",
   "Run the engine now (it also runs after every collection pass)": "इंजन अभी चलाएँ (यह हर संग्रह पास के बाद भी चलता है)",
-  "Floods in the region": "क्षेत्र में बाढ़"
+  "Floods in the region": "क्षेत्र में बाढ़",
+  "Choose .eml files to import": "आयात के लिए .eml फ़ाइलें चुनें",
+  "Pull from a mailbox (IMAP/POP3)": "मेलबॉक्स से खींचें (IMAP/POP3)",
+  "Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message is retained, and tracking links are de-toxed and never followed.": "फ़ाइलों को एक-एक करके निर्यात करने के बजाय सीधे मेलबॉक्स से न्यूज़लेटर खींचें। हर संदेश फ़ाइल आयात वाले उसी anonymise-at-ingest पथ से गुज़रता है — प्राप्तकर्ता कभी संग्रहीत नहीं होता, कोई कच्चा संदेश नहीं रखा जाता, और ट्रैकिंग लिंक डी-टॉक्स किए जाते हैं और कभी अनुसरण नहीं किए जाते।",
+  "This is a network action.": "यह एक नेटवर्क क्रिया है।",
+  "It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.": "हवाई जहाज़ मोड में इसे अस्वीकार कर दिया जाता है, और यह आपके मेल प्रदाता से सीधे TLS के ज़रिए जुड़ता है (किसी भी ईमेल क्लाइंट की तरह उस प्रदाता को आपका IP बताते हुए) — यह Tor के ज़रिए रूट नहीं होता। प्रमाण-पत्र केवल इस एक बार के लिए उपयोग होते हैं और संग्रहीत नहीं किए जाते।",
+  "Protocol": "प्रोटोकॉल",
+  "Host": "होस्ट",
+  "Port": "पोर्ट",
+  "User": "उपयोगकर्ता",
+  "Password": "पासवर्ड",
+  "Folder (IMAP)": "फ़ोल्डर (IMAP)",
+  "Max messages": "अधिकतम संदेश",
+  "auto": "स्वतः",
+  "Pull newsletters": "न्यूज़लेटर खींचें"
 }

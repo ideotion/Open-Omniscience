@@ -1170,5 +1170,19 @@
   "Add watch": "নজরদারি যোগ করুন",
   "Check now": "এখন পরীক্ষা করুন",
   "Run the engine now (it also runs after every collection pass)": "এখনই ইঞ্জিন চালান (এটি প্রতিটি সংগ্রহ পাসের পরেও চলে)",
-  "Floods in the region": "অঞ্চলে বন্যা"
+  "Floods in the region": "অঞ্চলে বন্যা",
+  "Choose .eml files to import": "আমদানির জন্য .eml ফাইল বেছে নিন",
+  "Pull from a mailbox (IMAP/POP3)": "একটি মেইলবক্স থেকে আনুন (IMAP/POP3)",
+  "Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message is retained, and tracking links are de-toxed and never followed.": "একটি একটি করে ফাইল রপ্তানি না করে সরাসরি একটি মেইলবক্স থেকে নিউজলেটার আনুন। প্রতিটি বার্তা ফাইল আমদানির মতোই একই অ্যানোনিমাইজ-অ্যাট-ইনজেস্ট পথে যায় — প্রাপককে কখনও সংরক্ষণ করা হয় না, কোনো কাঁচা বার্তা রাখা হয় না, এবং ট্র্যাকিং লিঙ্কগুলি ডি-টক্স করা হয় ও কখনও অনুসরণ করা হয় না।",
+  "This is a network action.": "এটি একটি নেটওয়ার্ক ক্রিয়া।",
+  "It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.": "এয়ারপ্লেন মোডে এটি প্রত্যাখ্যাত হয়, এবং সরাসরি TLS-এর মাধ্যমে আপনার মেল প্রদানকারীর সাথে সংযোগ করে (যেকোনো ইমেল ক্লায়েন্টের মতোই সেই প্রদানকারীর কাছে আপনার IP প্রকাশ করে) — এটি Tor-এর মাধ্যমে রুট করা হয় না। শংসাপত্র শুধু এই একবারের আনার জন্য ব্যবহৃত হয় এবং সংরক্ষণ করা হয় না।",
+  "Protocol": "প্রোটোকল",
+  "Host": "হোস্ট",
+  "Port": "পোর্ট",
+  "User": "ব্যবহারকারী",
+  "Password": "পাসওয়ার্ড",
+  "Folder (IMAP)": "ফোল্ডার (IMAP)",
+  "Max messages": "সর্বাধিক বার্তা",
+  "auto": "স্বয়ংক্রিয়",
+  "Pull newsletters": "নিউজলেটার আনুন"
 }
