@@ -1312,5 +1312,11 @@
   "by continent": "nach Kontinent",
   "(mentioned, deduced)": "(erwähnt, abgeleitet)",
   "mentioned places (deduced)": "erwähnte Orte (abgeleitet)",
-  "Mentioned places: deduced from text, never confirmed.": "Erwähnte Orte: aus dem Text abgeleitet, nie bestätigt."
+  "Mentioned places: deduced from text, never confirmed.": "Erwähnte Orte: aus dem Text abgeleitet, nie bestätigt.",
+  "Europe": "Europa",
+  "North America": "Nordamerika",
+  "Asia": "Asien",
+  "South America": "Südamerika",
+  "Africa": "Afrika",
+  "Oceania": "Ozeanien"
 }

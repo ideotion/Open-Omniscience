@@ -7333,7 +7333,7 @@
         else v = r[dim.id];
         if (v != null && isFinite(v)) {
           values[r.country] = v;
-          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? r.continent : r.name });
+          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : r.name });
         }
       });
       const nWith = Object.keys(values).length;
@@ -7347,13 +7347,13 @@
       if (_ooMapPlacesOn) caveat += `  ${t("Mentioned places: deduced from text, never confirmed.")}`;
       const fmtCount = v => dim.id === "sentiment" ? (v >= 0 ? "+" : "") + fmtNum(v, 2) : `${fmtNum(v)} ${dim.unit}`;
       const fmtV = (iso, v) => continentMode
-        ? `${(rowBy[iso] || {}).continent || ""} — ${fmtCount(v)}`
+        ? `${t((rowBy[iso] || {}).continent || "")} — ${fmtCount(v)}`
         : (dim.id === "sentiment"
             ? `${fmtCount(v)} · ${t("n=")}${(rowBy[iso] || {}).sentiment_n || 0}`
             : fmtCount(v));
       const srRows = continentMode
         ? Object.keys(contAgg).filter(c => contAgg[c]).sort((a, b) => contAgg[b].value - contAgg[a].value)
-            .map(c => `${c}: ${fmtCount(contAgg[c].value)}`)
+            .map(c => `${t(c)}: ${fmtCount(contAgg[c].value)}`)
         : undefined;
       const overlayPoints = (_ooMapPlacesOn && _ooMapWhere && Array.isArray(_ooMapWhere.places))
         ? _ooMapWhere.places.map(p => ({ lat: p.lat, lon: p.lon, value: p.articles, label: p.name })) : [];

@@ -2452,9 +2452,18 @@ ruling, a contingency, or a deliberate-omission note.
   clearly labelled; counts only, no score. +7 i18n keys ×12 (non-en AI-drafted, FLAGGED for native
   review). tests/test_map_coverage.py pins the `continent` field contract; test_ooMap_choropleth
   extended (continent aggregator + weighted-mean tone + granularity/places controls + the deduced
-  caveat). i18n --min 100 (1308×12), node --check, ruff F/B clean (no Python source changed). NOTE:
-  continent NAMES (Europe…) render in English in labels, consistent with the English country names
-  (data values, not chrome). REMAINING: human click-through; slice 5 (fold the time-slider in,
+  caveat). i18n --min 100 (1308×12), node --check, ruff F/B clean (no Python source changed).
+  **CONTINENT-NAME i18n FOLLOW-UP SHIPPED 2026-06-18 (maintainer asked "did you think about having
+  the map's UI also part of the entire translation"): the 6 CONTINENT names (Europe/Asia/Africa/
+  North America/South America/Oceania) the slice-4 aggregation renders are now routed through
+  `t()` (in `_renderOoMapDim`'s point label + `fmtV` hover + `srRows`) and KEYED ×12 (standard
+  continent translations), so the continent-granularity labels are fully localised — the map's
+  CHROME was already ×12 (controls/legends/caveats); this closes the bounded data-vocabulary the
+  map itself introduced. +6 i18n keys ×12; test_ooMap_choropleth asserts `t(r.continent)`. NOTE:
+  COUNTRY names (~200) still render in English — that is an APP-WIDE decision (country names are
+  English everywhere: sources, search, analysis; `country_display_name` returns English), so
+  localising them belongs to a separate app-wide pass, not a map-local fix (flagged for the
+  maintainer). REMAINING: human click-through; slice 5 (fold the time-slider in,
   retire the old temporal-map surfaces, embed ooMap on When/Where + Insights).
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
