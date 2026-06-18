@@ -2522,10 +2522,30 @@ ruling, a contingency, or a deliberate-omission note.
   after verifying ooMap absorbs it; the Desk lesson). +2 i18n keys ×12 (Signals · Moment in focus).
   test_ooMap_choropleth extended (signals toggle + /api/timemap reuse + kindColor + the focus-window
   filter + the future-ring honesty + the slider). i18n --min 100 (1316×12), node --check, full
-  test_repo_invariants 67 passed. NO backend change. REMAINING: click-to-detail on a signal (the
-  temporal map's rich panel — fold before retiring); per-render perf on huge corpora (full SVG
+  test_repo_invariants 67 passed. NO backend change. REMAINING: per-render perf on huge corpora (full SVG
   rebuild on slide — could update only the signals layer); 5b (retire #oo-tmap, absorption-gated) +
   embed ooMap on When/Where + Insights.
+  **SLICE 5a.2 SHIPPED 2026-06-18 (signal CLICK-TO-DETAIL folded in, so 5b's retire loses nothing;
+  PR onto 0.09; FRONTEND-ONLY, BROWSER-UNVERIFIED):** the ooMap signals layer's markers are now
+  CLICKABLE → a detail panel (`#oo-coverage-detail`, added below the map) ported FAITHFULLY from the
+  temporal map's `showTmapDetail`: kind dot + title + kind pill + confirmed/geocode honesty pills
+  (`confirmed`/`unconfirmed·scheduled`/`mentioned·extracted`, `≈ country`/`city`), date · place ·
+  country · exact coords · data source, the note, the reference-source extLink, the "Find coverage
+  in your corpus" action (reuses `tmapFindCoverage`), AND the "Near in space & time" co-occurrence
+  seed — `_ooMapNearby` mirrors `tmapNearby` over the ooMap visible set, keeping the verbatim
+  "co-occurrence, not a connection or cause. You judge." caveat (never causal). Each marker gained a
+  larger transparent HIT disc (the temporal-map lesson: hollow rings were clickable only on the 1px
+  edge) + `data-oomap-sig` index; the visible set is attached to the host (`host._ooSigVisible`) so
+  `_wireOoMap` resolves the click; nearby buttons re-enter via the global `_ooMapSignalAt(idx)`
+  (app.js is a classic script → top-level fns are global, so the inline onclick + tmapFindCoverage
+  resolve). `ooMap` gained `opts.onSignal(s, visible)`; the loader passes the adaptive `windowY` for
+  the nearby time threshold. The detail is ENGLISH to MATCH the panel it replaces (no regression vs
+  the still-English temporal-map detail; keyable later when that whole surface is i18n-swept). NO
+  backend change; +0 i18n keys. test_ooMap_choropleth extended (clickable markers + the ported panel
+  + #oo-coverage-detail + _ooMapNearby + the non-causal caveat + find-coverage); node --check, full
+  test_repo_invariants 68 passed. ooMap now ABSORBS the temporal map's full capability → 5b (retire
+  #oo-tmap, absorption-gated) is unblocked. REMAINING: 5b retire + embed on When/Where + Insights;
+  per-slide perf; i18n-key the detail when the temporal-map English strings are swept.
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles
