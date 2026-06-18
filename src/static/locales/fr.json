@@ -1267,5 +1267,10 @@
   "en, fr (blank = all)": "en, fr (vide = toutes)",
   "name or domain": "nom ou domaine",
   "Recursive crawl stays inside each source's own domain, honours robots.txt (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers articles, it does not mirror sites.": "L'exploration récursive reste dans le domaine propre de chaque source, respecte robots.txt (fail-closed), est limitée en débit et bornée par les limites de profondeur / pages ci-dessus — elle découvre des articles, elle ne duplique pas les sites.",
-  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "Sélectionnez plusieurs sources et récupérez tous leurs flux en une seule exécution. Filtrez par langue, pays ou type, puis cochez celles que vous voulez. Chacune est récupérée de manière éthique (robots fail-closed, limitée en débit) ; jusqu'à 50 par exécution."
+  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "Sélectionnez plusieurs sources et récupérez tous leurs flux en une seule exécution. Filtrez par langue, pays ou type, puis cochez celles que vous voulez. Chacune est récupérée de manière éthique (robots fail-closed, limitée en débit) ; jusqu'à 50 par exécution.",
+  "Collecting articles": "Collecte des articles",
+  "Background tasks (markets · calendars · checks)": "Tâches en arrière-plan (marchés · calendriers · vérifications)",
+  "Building the briefing": "Construction de la synthèse",
+  "Up next this pass": "À suivre dans cette passe",
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "L’ordre est ré-aléatoirisé à chaque passe — stratifié par langue et par étiquette, ce n’est pas une file fixe."
 }

@@ -518,9 +518,20 @@
       } else {
         const nr = a.next_run ? new Date(a.next_run) : null;
         const mins = nr ? Math.max(0, Math.round((nr - Date.now()) / 60000)) : null;
-        nowHtml = row("Now collecting", a.running
-          ? `<span class="muted">idle</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${mins} min</span>` : ""}`
-          : '<span class="muted">scheduler stopped</span>');
+        // A pass can be ACTIVE while past the per-source scrape (progress is cleared
+        // once the articles are in): show the honest PHASE so a lingering market or
+        // calendar fetch reads as "finishing", not "idle" (maintainer 2026-06-18 — the
+        // task-manager's whole point). Phase comes from /api/scheduler/activity.
+        const _phaseTxt = {
+          collecting: "Collecting articles",
+          background: "Background tasks (markets · calendars · checks)",
+          briefing: "Building the briefing",
+        }[a.phase];
+        nowHtml = row("Now collecting", a.active
+          ? `<span class="muted">${esc(_phaseTxt || "Collecting…")}</span>`
+          : a.running
+            ? `<span class="muted">idle</span>${mins != null ? ` · <span title="${esc(fmtDateTime(a.next_run))}">⏱ ${mins} min</span>` : ""}`
+            : '<span class="muted">scheduler stopped</span>');
       }
       // -- Next pass: targets as domain chips + the honest estimate --------- //
       const chips = (plan.next_targets || []).map(d => `<span class="cap-chip">${esc(d)}</span>`).join("");
@@ -610,9 +621,28 @@
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here."))}</div>`);
       }
       if (elQ) {
-        elQ.innerHTML = `<div class="vsect">${esc(t("Queue"))}</div>` + (queued.length
+        let qHtml = `<div class="vsect">${esc(t("Queue"))}</div>` + (queued.length
           ? queued.map(j => _jobRow(j, queuedKeysByKind, t)).join("")
           : `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them."))}</div>`);
+        // Read-only "Up next" preview of the COLLECTION pass order. The download
+        // queue above is a fixed, reorderable list; the collection order is NOT — it
+        // is re-randomised every pass (stratified by language + tag), so we show it
+        // as an informative preview, never as reorderable rows (would imply a fixed
+        // queue that doesn't exist). Reuses the plan already in _actData (the same
+        // /api/scheduler/activity the window polls — no new endpoint, no new poll).
+        const plan = (_actData && _actData.plan) || {};
+        const ups = plan.next_targets || [];
+        if (ups.length) {
+          const more = Math.max(0, (plan.planned_total || 0) - ups.length);
+          qHtml += `<div class="vsect">${esc(t("Up next this pass"))}</div>` +
+            `<div class="cap-chips">` +
+            ups.map(d => `<span class="cap-chip">${esc(d)}</span>`).join("") +
+            (more ? `<span class="cap-chip muted">+${more}</span>` : "") + `</div>` +
+            `<div class="muted" style="font-size:11px;padding:2px 0 6px">` +
+            esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) +
+            `</div>`;
+        }
+        elQ.innerHTML = qHtml;
       }
     }
     async function jobCancel(id) {

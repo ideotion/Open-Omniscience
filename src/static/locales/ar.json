@@ -1267,5 +1267,10 @@
   "en, fr (blank = all)": "en، fr (فارغ = الكل)",
   "name or domain": "الاسم أو النطاق",
   "Recursive crawl stays inside each source's own domain, honours robots.txt (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers articles, it does not mirror sites.": "يبقى الزحف التكراري داخل نطاق كل مصدر، ويحترم robots.txt (يفشل مغلقًا)، ومحدود المعدل، ومقيَّد بحدود العمق / الصفحات أعلاه — إنه يكتشف المقالات، ولا ينسخ المواقع.",
-  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "اختر عدة مصادر واجلب كل خلاصاتها في تشغيلة واحدة. رشّح حسب اللغة أو البلد أو النوع، ثم أشّر على ما تريد. يُجلَب كلٌّ منها بأخلاقية (robots يفشل مغلقًا، ومحدود المعدل)؛ حتى 50 لكل تشغيلة."
+  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "اختر عدة مصادر واجلب كل خلاصاتها في تشغيلة واحدة. رشّح حسب اللغة أو البلد أو النوع، ثم أشّر على ما تريد. يُجلَب كلٌّ منها بأخلاقية (robots يفشل مغلقًا، ومحدود المعدل)؛ حتى 50 لكل تشغيلة.",
+  "Collecting articles": "جمع المقالات",
+  "Background tasks (markets · calendars · checks)": "مهام في الخلفية (الأسواق · التقاويم · الفحوص)",
+  "Building the briefing": "إنشاء الموجز",
+  "Up next this pass": "التالي في هذه الجولة",
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "تُعاد عشوائية الترتيب في كل جولة — مُصنَّفة حسب اللغة والوسم، وليست طابورًا ثابتًا."
 }

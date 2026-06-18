@@ -1267,5 +1267,10 @@
   "en, fr (blank = all)": "en, fr (blank = all)",
   "name or domain": "name or domain",
   "Recursive crawl stays inside each source's own domain, honours robots.txt (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers articles, it does not mirror sites.": "Recursive crawl stays inside each source's own domain, honours robots.txt (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers articles, it does not mirror sites.",
-  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run."
+  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.",
+  "Collecting articles": "Collecting articles",
+  "Background tasks (markets · calendars · checks)": "Background tasks (markets · calendars · checks)",
+  "Building the briefing": "Building the briefing",
+  "Up next this pass": "Up next this pass",
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "Order is re-randomised every pass — stratified by language and tag, not a fixed queue."
 }

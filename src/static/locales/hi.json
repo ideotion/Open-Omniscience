@@ -1267,5 +1267,10 @@
   "en, fr (blank = all)": "en, fr (खाली = सभी)",
   "name or domain": "नाम या डोमेन",
   "Recursive crawl stays inside each source's own domain, honours robots.txt (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers articles, it does not mirror sites.": "रिकर्सिव क्रॉल प्रत्येक स्रोत के अपने डोमेन के भीतर रहता है, robots.txt का पालन करता है (fail-closed), दर-सीमित है, और ऊपर की गहराई / पृष्ठ सीमाओं से बंधा है — यह लेख खोजता है, साइटों की नकल नहीं करता।",
-  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "कई स्रोत चुनें और एक ही रन में उनके सभी फ़ीड प्राप्त करें। भाषा, देश या प्रकार से फ़िल्टर करें, फिर जो चाहें उन पर टिक करें। प्रत्येक नैतिक रूप से प्राप्त किया जाता है (robots fail-closed, दर-सीमित); प्रति रन 50 तक।"
+  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "कई स्रोत चुनें और एक ही रन में उनके सभी फ़ीड प्राप्त करें। भाषा, देश या प्रकार से फ़िल्टर करें, फिर जो चाहें उन पर टिक करें। प्रत्येक नैतिक रूप से प्राप्त किया जाता है (robots fail-closed, दर-सीमित); प्रति रन 50 तक।",
+  "Collecting articles": "लेख एकत्र किए जा रहे हैं",
+  "Background tasks (markets · calendars · checks)": "पृष्ठभूमि कार्य (बाज़ार · कैलेंडर · जाँच)",
+  "Building the briefing": "ब्रीफ़िंग बनाई जा रही है",
+  "Up next this pass": "इस चक्र में आगे",
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "हर चक्र में क्रम फिर से यादृच्छिक किया जाता है — भाषा और टैग के अनुसार स्तरीकृत, यह कोई स्थिर कतार नहीं है।"
 }
