@@ -37,6 +37,7 @@ class SettingsUpdate(BaseModel):
     llm_prompt_summary: str | None = None
     llm_prompt_translate: str | None = None
     llm_prompt_synthesis: str | None = None
+    llm_prompt_ai_keywords: str | None = None  # the built-in keyword-extraction prompt (Part B)
 
 
 def _payload() -> dict:

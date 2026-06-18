@@ -295,9 +295,13 @@ def test_prompts_endpoint_exposes_defaults_and_keep_alive(tmp_path, monkeypatch)
     _override(_FakeOllama())
     with TestClient(app) as client:
         d = client.get("/api/llm/prompts").json()
-        assert set(d["prompts"]) == {"summary", "translate", "synthesis"}
+        # Part B: the built-in keyword-EXTRACTION prompt joins the editable set.
+        assert set(d["prompts"]) == {"summary", "translate", "synthesis", "ai_keywords"}
         assert d["prompts"]["summary"]["default"]  # built-in default text present
         assert d["prompts"]["summary"]["current"] == ""  # no override yet
+        ak = d["prompts"]["ai_keywords"]
+        assert "{max_terms}" in ak["default"]  # the extraction prompt's placeholder
+        assert ak["current"] == "" and ak["version"] == "ai-keywords-v1"
         assert d["keep_alive"] and d["keep_alive_default"]
 
 

@@ -2904,8 +2904,9 @@
         summary: (P.summary && P.summary.default) || "",
         translate: (P.translate && P.translate.default) || "",
         synthesis: (P.synthesis && P.synthesis.default) || "",
+        ai_keywords: (P.ai_keywords && P.ai_keywords.default) || "",
       };
-      for (const k of ["summary", "translate", "synthesis"]) {
+      for (const k of ["summary", "translate", "synthesis", "ai_keywords"]) {
         const ta = $("llm-prompt-" + k); if (!ta) continue;
         // Pre-fill with the effective prompt (override if set, else the default).
         ta.value = (P[k] && P[k].current) || _llmPromptDefaults[k];
@@ -2950,6 +2951,7 @@
         llm_prompt_summary: _promptOut("summary"),
         llm_prompt_translate: _promptOut("translate"),
         llm_prompt_synthesis: _promptOut("synthesis"),
+        llm_prompt_ai_keywords: _promptOut("ai_keywords"),
       };
       if (btn) btn.disabled = true;
       try {
