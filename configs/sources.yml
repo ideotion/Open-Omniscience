@@ -2982,6 +2982,7 @@ sources:
   priority: 2
 - name: Investigative Reporting Denmark (DR)
   domain: investigateurope.eu
+  country: dk
   rss_url: https://investigateurope.eu/feed/
   language: en
   rate_limit_ms: 2000
@@ -5399,6 +5400,7 @@ sources:
   priority: 2
 - name: GOV.UK News
   domain: gov.uk
+  country: gb
   rss_url: https://www.gov.uk/government/news.atom
   language: en
   rate_limit_ms: 2000
@@ -5429,6 +5431,7 @@ sources:
   priority: 2
 - name: UK Parliament News
   domain: parliament.uk
+  country: gb
   rss_url: https://www.parliament.uk/rss/news
   language: en
   rate_limit_ms: 2000
@@ -7763,6 +7766,7 @@ sources:
   priority: 2
 - name: Drought Monitor (U.S.)
   domain: droughtmonitor.unl.edu
+  country: us
   rss_url: https://droughtmonitor.unl.edu/rss
   language: en
   rate_limit_ms: 2000
@@ -8063,6 +8067,7 @@ sources:
   priority: 2
 - name: U.S. Energy Information Administration (EIA)
   domain: eia.gov
+  country: us
   rss_url: https://www.eia.gov/feed
   language: en
   rate_limit_ms: 2000
@@ -8193,6 +8198,7 @@ sources:
   priority: 2
 - name: U.S. Hydrogen Alliance
   domain: ushydrogenalliance.org
+  country: us
   rss_url: https://www.ushydrogenalliance.org/feed
   language: en
   rate_limit_ms: 2000
@@ -10913,6 +10919,7 @@ sources:
   priority: 2
 - name: India Science Wire
   domain: indiasciencewire.com
+  country: in
   rss_url: https://www.indiasciencewire.com/feed
   language: en
   rate_limit_ms: 2000
@@ -11900,6 +11907,7 @@ sources:
   priority: 2
 - name: Cancer Research UK
   domain: cancerresearchuk.org
+  country: gb
   rss_url: https://www.cancerresearchuk.org/feed
   language: en
   rate_limit_ms: 2000
@@ -33665,6 +33673,7 @@ sources:
   priority: 2
 - name: National Museum of Korea
   domain: museum.go.kr
+  country: kr
   rss_url: ''
   language: en
   rate_limit_ms: 2000
@@ -35520,6 +35529,7 @@ sources:
   priority: 1
 - name: Cofact Thailand
   domain: cofact.org
+  country: th
   rss_url: ''
   language: th
   rate_limit_ms: 2000
@@ -35530,6 +35540,7 @@ sources:
   priority: 1
 - name: Vietnam Fact Check
   domain: vietnamfactcheck.com
+  country: vn
   rss_url: ''
   language: vi
   rate_limit_ms: 2000
