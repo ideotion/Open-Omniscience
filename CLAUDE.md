@@ -654,8 +654,8 @@ ruling, a contingency, or a deliberate-omission note.
   /api/backup/models/import (upload→restore). Settings → Data & backup gained a "Local LLM models
   (separate backup)" panel (export/restore buttons + store status). tests/test_ollama_models_backup.py
   (dedup round-trip, re-restore-skips, zip-slip rejection, env override) — executed locally, all
-  green. REMAINING: the WIKI-DUMP inclusion now has a PROVEN pattern to reuse (this module); the
-  models-backup Settings UI strings are not yet i18n-keyed (English fallback — follow-up); an
+  green. REMAINING: the WIKI-DUMP inclusion now has a PROVEN pattern to reuse (this module); ~~the
+  models-backup Settings UI strings are not yet i18n-keyed~~ DONE 2026-06-17 (i18n slice 8 keyed them ×12); an
   optional size/consent confirm before a multi-GB export (local disk I/O, no network).
   Design points to
   settle when built: (a) dumps are huge ⇒ DEDUP by checksum across backups (never
@@ -1612,6 +1612,16 @@ ruling, a contingency, or a deliberate-omission note.
   353→342; `--min 100` green (1217/1217 ×12); test_repo_invariants green. Cumulative this session 431→342
   (7 slices: Watches·mailbox·offline-map·statistics·models·wiki-tracking·wiki-baselines). Non-en AI-drafted,
   FLAGGED for native review. REMAINING: agenda/safety panels + the dynamic JS rows (need `t()`) + the ~342 tail.
+  **SLICE 8 SHIPPED 2026-06-17 (draft PR onto 0.09):** the MODELS-BACKUP section (Settings → Data & backup,
+  "Local LLM models (separate backup)") keyed ×12 — closes the explicit follow-up flagged in the
+  backup-ollama-models entry ("the models-backup Settings UI strings are not yet i18n-keyed"). +5 keys (the
+  heading, the Ollama-models-live-outside-the-corpus paragraph, "Checking the local model store…", "Download
+  models backup", "Restore models…"); no HTML edit needed (no inline tags). VERIFIED ALREADY-KEYED (prior
+  sessions, no work): the adjacent Backup & restore / Full-backup / Restore-merge sections, and the entire
+  agenda Calendars panel (only a stray "Filter" remains there, deferred). `--audit-chrome` 342→337; `--min 100`
+  green (1222/1222 ×12);
+  test_repo_invariants green. Cumulative this session 431→337 (8 slices). REMAINING: the custody/uninstall/
+  panic/OTS safety strings (sensitive wording — best with native review) + the dynamic JS rows + the ~337 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent
