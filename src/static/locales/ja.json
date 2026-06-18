@@ -1189,5 +1189,18 @@
   "Loading regions…": "地域を読み込み中…",
   "Sizes are estimates — the exact size is read from the mirror on download.": "サイズは推定値です — 正確なサイズはダウンロード時にミラーから読み取られます。",
   "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "OpenStreetMap の地域抽出データをオフライン用にダウンロードします — Wikipedia ダンプと同様に管理されます(再開可能、一時停止/再開、ダウンロードキュー付き)。地域は大きい順に表示されます。表示サイズは同梱カタログからの日付付き推定値です(ネットワークなし) — 正確なサイズはダウンロード開始時にミラーから読み取られます。大陸は Geofabrik、惑星全体は OpenStreetMap の planet ミラーから取得します。非常に大きい場合があります(大陸で数 GB、惑星全体で数十 GB)。",
-  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "ダウンロードはネットワーク操作です。このアプリの唯一のネットワークスイッチを通るため、機内モードでは拒否され、初めてオンラインにするときに同意を求めます。ダウンロードはバックグラウンドジョブとして実行されます(このアプリのネットワークのみ — あなたのデバイスや他のアプリは決して使いません)。"
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "ダウンロードはネットワーク操作です。このアプリの唯一のネットワークスイッチを通るため、機内モードでは拒否され、初めてオンラインにするときに同意を求めます。ダウンロードはバックグラウンドジョブとして実行されます(このアプリのネットワークのみ — あなたのデバイスや他のアプリは決して使いません)。",
+  "Official figures": "公式統計",
+  "Fetch a published figure from a documented official machine endpoint (the World Bank API, or a Eurostat / SDMX-JSON dataset). Each value is stored with its full provenance trail and a first-class vintage — a re-fetch later is a new row, never an overwrite, so revisions are preserved as evidence. Producers are compared side by side, never averaged, and a cell mixing different units / seasonal adjustment / base years is flagged, not reconciled. No score is ever computed.": "文書化された公式の機械エンドポイント(世界銀行 API、または Eurostat / SDMX-JSON データセット)から公表値を取得します。各値は完全な来歴と第一級のヴィンテージとともに保存されます — 後の再取得は新しい行であり、上書きではないため、改訂が証拠として保持されます。提供元は並べて比較され、平均化されることはなく、異なる単位・季節調整・基準年が混在するセルは、調整されず、フラグが付けられます。スコアは一切計算されません。",
+  "This is the one networked action here: the fetch egresses over your configured transport and is refused while airplane mode is on.": "ここで唯一のネットワーク操作です。取得は設定したトランスポートを通って外部に出て、機内モードでは拒否されます。",
+  "Indicator / dataset id": "指標 / データセット ID",
+  "Country (World Bank)": "国(世界銀行)",
+  "Fetch figures": "統計を取得",
+  "View stored figures — series id": "保存済みの統計を表示 — 系列 ID",
+  "Show stored": "保存済みを表示",
+  "Triangulate producers": "提供元を三角測量",
+  "Tracked for auto-refresh": "自動更新のため追跡中",
+  "Refresh due now": "期限到来分を今すぐ更新",
+  "Replay due fetches now (also runs in the background while you are online)": "期限到来分の取得を今すぐ再実行(オンライン中はバックグラウンドでも実行されます)",
+  "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "取得した各値は追跡され、オンライン中はその間隔で再取得され、毎回新しいヴィンテージが保存されます(改訂は保持され、上書きされません)。不要なものは無効化または削除してください。"
 }

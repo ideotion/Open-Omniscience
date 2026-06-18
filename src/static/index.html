@@ -1215,13 +1215,7 @@
     </section>
     <section class="panel">
       <h2>Official figures</h2>
-      <p class="muted" style="margin-top:0">Fetch a published figure from a documented official machine
-        endpoint (the World Bank API, or a Eurostat / SDMX-JSON dataset). Each value is stored with its full
-        provenance trail and a first-class <b>vintage</b> — a re-fetch later is a new row, never an overwrite, so
-        revisions are preserved as evidence. Producers are compared <b>side by side, never averaged</b>, and a
-        cell mixing different units / seasonal adjustment / base years is flagged, not reconciled. No score is
-        ever computed. <span class="warn">This is the one networked action here: the fetch egresses over your
-        configured transport and is refused while airplane mode is on.</span></p>
+      <p class="muted" style="margin-top:0">Fetch a published figure from a documented official machine endpoint (the World Bank API, or a Eurostat / SDMX-JSON dataset). Each value is stored with its full provenance trail and a first-class vintage — a re-fetch later is a new row, never an overwrite, so revisions are preserved as evidence. Producers are compared side by side, never averaged, and a cell mixing different units / seasonal adjustment / base years is flagged, not reconciled. No score is ever computed. <span class="warn">This is the one networked action here: the fetch egresses over your configured transport and is refused while airplane mode is on.</span></p>
       <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
         <label>Source<br><select id="statfig-source">
           <option value="worldbank">World Bank</option>
@@ -1244,8 +1238,7 @@
           <h3 style="margin:0;font-size:12px">Tracked for auto-refresh</h3>
           <button class="secondary" onclick="refreshStatSubs()" title="Replay due fetches now (also runs in the background while you are online)">Refresh due now</button>
         </div>
-        <p class="hint" style="margin-top:2px">Every figure you fetch is tracked and re-fetched on its interval while you are online,
-          storing a new <em>vintage</em> each time (revisions are preserved, never overwritten). Disable or remove any you do not want.</p>
+        <p class="hint" style="margin-top:2px">Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.</p>
         <div id="statfig-subs"></div>
       </div>
     </section>

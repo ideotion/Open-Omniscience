@@ -1574,6 +1574,16 @@ ruling, a contingency, or a deliberate-omission note.
   dropdown-label test as dynamic data). `--audit-chrome` 402→395; `--min 100` green (1185/1185 ×12);
   test_repo_invariants green. Cumulative this session 431→395. Non-en AI-drafted, FLAGGED for native review.
   REMAINING: Statistics/Models panels + the dynamic JS rows + the ~395 tail.
+  **SLICE 4 SHIPPED 2026-06-17 (draft PR onto 0.09):** the STATISTICS panel (Settings → Statistics, the
+  official-figures fetch / vintage / triangulate UI, rulings #12) keyed ×12. +13 keys: "Official figures"
+  heading, the big provenance/vintage/side-by-side-never-averaged/no-score intro paragraph (its two inline
+  `<b>` dropped → one sentence) + its `<span class="warn">` networked-action sentence kept separate, the
+  form labels (Indicator/dataset id · Country (World Bank) · View stored figures — series id), the buttons
+  (Fetch figures · Show stored · Triangulate producers · Refresh due now) + the Refresh hover, the "Tracked
+  for auto-refresh" heading, and the auto-refresh paragraph (its `<em>vintage</em>` dropped). statfig-source
+  is already excluded from the dropdown-label test (World Bank/Eurostat = proper-noun data). `--audit-chrome`
+  395→377; `--min 100` green (1198/1198 ×12); test_repo_invariants green. Cumulative this session 431→377.
+  Non-en AI-drafted, FLAGGED for native review. REMAINING: Models panel + the dynamic JS rows + the ~377 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent
