@@ -29,7 +29,7 @@ def _make_store(root: Path, ref_tag: str = "3b") -> Path:
     (store / "blobs").mkdir()
     digest = "sha256:" + "a" * 64
     (store / "blobs" / ("sha256-" + "a" * 64)).write_bytes(b"x" * 10)
-    (mdir / ref_tag).write_text(json.dumps({"layers": [{"digest": digest}]}))
+    (mdir / ref_tag).write_text(json.dumps({"layers": [{"digest": digest}]}), encoding="utf-8")
     return store
 
 
