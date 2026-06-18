@@ -1841,13 +1841,20 @@
     // filterable and never silently blended with curated events.
     function mapImportedToAgenda(e) {
       const d = e.date || "";
+      // "imported" is NOT a category — everything in the agenda is imported, so it
+      // told the user nothing (maintainer 2026-06-18). Use the feed's REAL facets:
+      // category = its kind (holidays / religion / civic / space / science /
+      // community), the country, and tags so the agenda filters to a thin view.
+      const kind = e.kind || "other";
+      const tags = [kind].concat(e.country ? [e.country] : []);
       return {
-        title: e.title, category: "imported", country: null, tags: [],
+        title: e.title, category: kind, country: e.country || null, tags: tags,
         confirmed: true,                       // an ICS VEVENT carries a concrete date
         next_occurrence: d,
         month: d.length >= 7 ? +d.slice(5, 7) : null,
         day: d.length >= 10 ? +d.slice(8, 10) : null,
         calendar: e.family, family_name: e.family_name, family_names: e.family_names,
+        kind: kind, countries: e.countries || (e.country ? [e.country] : []),
         sources: e.sources || [], source_count: e.source_count, family_count: e.family_count,
         imported: true,
       };
@@ -1888,10 +1895,13 @@
         const imported = (imp.events || []).map(mapImportedToAgenda).filter(e => !excl.has(e.calendar));
         const deduced = (ded.events || []).map(mapDeducedToAgenda).filter(e => !excl.has(e.calendar));
         AG.events = ev.events.concat(imported, deduced); AG.caveat = ev.caveat; AG.cals = fac.calendars;
-        // Imported + deduced events are each their own filterable category (distinct
-        // provenance classes, like DDG-discovered sources) — a chip only when present.
-        AG.categories = (fac.categories || []).concat(
-          imported.length ? ["imported"] : [], deduced.length ? ["deduced"] : []);
+        // Category chips = the REAL event kinds (holidays / religion / civic / …),
+        // never a useless "imported" bucket (maintainer 2026-06-18). Imported events
+        // each carry their feed's kind; deduced stays its own honest class. De-duped,
+        // sorted, only kinds actually present so the chip row stays thin.
+        const importedKinds = [...new Set(imported.map(e => e.category).filter(Boolean))].sort();
+        AG.categories = [...new Set((fac.categories || []).concat(importedKinds))].sort()
+          .concat(deduced.length ? ["deduced"] : []);
         AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
         // First run: subscribe to all calendars so the agenda isn't empty.
         if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
