@@ -301,6 +301,23 @@ def test_llm_prompt_editor_is_prefilled_copyable_and_default_aware():
     assert "_promptOut" in src, "save must send '' when the box still equals the default"
 
 
+def test_custom_extractor_settings_ui_is_wired():
+    """Settings → Models manages a LIST of user-defined custom extractors (maintainer ask
+    2026-06-18), CRUD over /api/ai/prompts. Browser-unverified — this pins the wiring."""
+    src = _ui_source()
+    # the define/manage form + list
+    for el in ("ai-prompts-list", "ai-prompt-label", "ai-prompt-kind", "ai-prompt-text"):
+        assert f'id="{el}"' in src, f"custom-extractor UI missing #{el}"
+    assert "Custom extractors" in src
+    # the CRUD handlers + load wiring on the Models subtab
+    assert "async function loadCustomPrompts(" in src
+    assert "function saveCustomPrompt(" in src and "function deleteCustomPrompt(" in src
+    assert 'api(id ? `/api/ai/prompts/${id}` : "/api/ai/prompts"' in src, (
+        "save must POST a new / PUT an existing custom prompt"
+    )
+    assert "loadCustomPrompts();" in src and 'cat === "models"' in src
+
+
 def test_ui_invariants():
     """Maintainer-ruled UI invariants (see CLAUDE.md). These regressed once
     between sessions; now they fail CI instead of relying on memory."""

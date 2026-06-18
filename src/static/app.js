@@ -1037,7 +1037,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
-      if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadLlmHealth(); }  // LLM-management subtab (Q6) — also re-check the pill
+      if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); }  // LLM-management subtab (Q6) — also re-check the pill
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
@@ -2959,6 +2959,92 @@
       } catch (e) {
         if (status) status.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
       } finally { if (btn) btn.disabled = false; }
+    }
+
+    // --- Custom extractors (Settings → Models) — a managed list of user-defined AI
+    // prompts (maintainer ask 2026-06-18). Each defines an output_kind (the metadata
+    // type) + a prompt; results are stored as ai_keyword rows of that kind (the unified,
+    // labelled "AI-derived · unreliable" store), never the trusted index. This surface
+    // DEFINES/manages them (CRUD over /api/ai/prompts); running is from an analysis
+    // window over a selection. -------------------------------------------------------- //
+    const _ct = (s) => ((window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s);
+    async function loadCustomPrompts() {
+      const box = $("ai-prompts-list"); if (!box) return;
+      let d;
+      try { d = await api("/api/ai/prompts"); }
+      catch (e) { box.textContent = ""; return; }   // optional surface
+      const ps = (d && d.prompts) || [];
+      if (!ps.length) { box.textContent = _ct("No custom extractors yet."); return; }
+      box.innerHTML = "";
+      for (const p of ps) {
+        const row = document.createElement("div");
+        row.className = "row";
+        row.style.cssText = "gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)";
+        const meta = document.createElement("div");
+        meta.style.flex = "1";
+        const bits = [esc(p.output_kind)];
+        if (p.run_on_ingest) bits.push(_ct("auto on new articles"));
+        if (!p.enabled) bits.push(_ct("disabled"));
+        meta.innerHTML = `<b>${esc(p.label)}</b> <span class="hint">· ${bits.join(" · ")}</span>`;
+        const edit = document.createElement("button");
+        edit.className = "ghost tiny"; edit.textContent = _ct("Edit");
+        edit.onclick = () => editCustomPrompt(p);
+        const del = document.createElement("button");
+        del.className = "ghost tiny"; del.textContent = _ct("Delete");
+        del.onclick = () => deleteCustomPrompt(p.id);
+        row.append(meta, edit, del);
+        box.appendChild(row);
+      }
+    }
+    function resetCustomPromptForm() {
+      for (const [id, v] of [["ai-prompt-id", ""], ["ai-prompt-label", ""],
+                             ["ai-prompt-kind", ""], ["ai-prompt-text", ""]]) {
+        if ($(id)) $(id).value = v;
+      }
+      if ($("ai-prompt-oningest")) $("ai-prompt-oningest").checked = false;
+      if ($("ai-prompt-enabled")) $("ai-prompt-enabled").checked = true;
+      if ($("ai-prompt-form-title")) $("ai-prompt-form-title").textContent = _ct("Add a custom extractor");
+      if ($("ai-prompt-status")) $("ai-prompt-status").textContent = "";
+      _autoGrowPrompt($("ai-prompt-text"));
+    }
+    function editCustomPrompt(p) {
+      $("ai-prompt-id").value = p.id;
+      $("ai-prompt-label").value = p.label || "";
+      $("ai-prompt-kind").value = p.output_kind || "";
+      $("ai-prompt-text").value = p.prompt_text || "";
+      $("ai-prompt-oningest").checked = !!p.run_on_ingest;
+      $("ai-prompt-enabled").checked = !!p.enabled;
+      if ($("ai-prompt-form-title")) $("ai-prompt-form-title").textContent = _ct("Edit custom extractor");
+      _autoGrowPrompt($("ai-prompt-text"));
+      $("ai-prompt-label").focus();
+    }
+    async function saveCustomPrompt(btn) {
+      const st = $("ai-prompt-status");
+      const id = ($("ai-prompt-id").value || "").trim();
+      const body = {
+        label: ($("ai-prompt-label").value || "").trim(),
+        output_kind: ($("ai-prompt-kind").value || "").trim(),
+        prompt_text: ($("ai-prompt-text").value || "").trim(),
+        run_on_ingest: !!($("ai-prompt-oningest") && $("ai-prompt-oningest").checked),
+        enabled: !($("ai-prompt-enabled")) || $("ai-prompt-enabled").checked,
+      };
+      if (btn) btn.disabled = true;
+      try {
+        await api(id ? `/api/ai/prompts/${id}` : "/api/ai/prompts",
+                  {method: id ? "PUT" : "POST", body: JSON.stringify(body)});
+        if (st) st.textContent = _ct("Saved.");
+        resetCustomPromptForm();
+        loadCustomPrompts();
+      } catch (e) {
+        if (st) st.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+      } finally { if (btn) btn.disabled = false; }
+    }
+    async function deleteCustomPrompt(id) {
+      try { await api(`/api/ai/prompts/${id}`, {method: "DELETE"}); loadCustomPrompts(); }
+      catch (e) {
+        const st = $("ai-prompt-status");
+        if (st) st.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+      }
     }
 
     async function loadSettings() {

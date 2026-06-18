@@ -1030,6 +1030,33 @@
         <span id="llm-behaviour-status" class="hint"></span>
       </div>
     </section>
+    <section class="panel">
+      <h2>Custom extractors</h2>
+      <p class="muted" style="margin-top:0">Your own AI extractors — each a prompt that pulls one kind of rich metadata from an article (an extension of the built-in who / where / when). Output items are stored as AI-derived metadata of the type you name, shown beside the article and labelled "AI-derived · unreliable", never mixed into the trusted keyword index. Define and manage them here; running them — over a selection from an analysis window, or automatically on new articles for the ones you enable — is being added.</p>
+      <div id="ai-prompts-list" class="hint">Loading…</div>
+      <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+        <div id="ai-prompt-form-title" style="font-weight:600;margin-bottom:6px">Add a custom extractor</div>
+        <input type="hidden" id="ai-prompt-id">
+        <div class="row" style="gap:10px">
+          <div style="flex:2"><label for="ai-prompt-label">Name</label>
+            <input id="ai-prompt-label" placeholder="e.g. Monetary figures" maxlength="80"></div>
+          <div style="flex:1"><label for="ai-prompt-kind">Metadata type</label>
+            <input id="ai-prompt-kind" placeholder="e.g. figure" maxlength="40"></div>
+        </div>
+        <label for="ai-prompt-text" style="display:block;margin-top:6px">Prompt</label>
+        <textarea id="ai-prompt-text" rows="6" maxlength="4000" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"
+          placeholder="Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above."></textarea>
+        <div class="row" style="gap:16px;margin-top:6px;align-items:center">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ai-prompt-oningest" style="width:auto"> Run automatically on new articles</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ai-prompt-enabled" style="width:auto" checked> Enabled</label>
+        </div>
+        <div class="row" style="gap:8px;margin-top:8px;align-items:center">
+          <button onclick="saveCustomPrompt(this)">Save extractor</button>
+          <button class="ghost" onclick="resetCustomPromptForm()">Clear</button>
+          <span id="ai-prompt-status" class="hint"></span>
+        </div>
+      </div>
+    </section>
     </div>
 
     <div class="set-view" id="set-wikipedia" style="display:none">
