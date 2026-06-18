@@ -2588,9 +2588,21 @@ ruling, a contingency, or a deliberate-omission note.
   GONE, the dispatch routes to ooMap, and every absorbed capability survives (places via
   /api/insights/where + the deduced caveat, the signal click-detail, the in-map slider, tmapFindCoverage)
   — absorption-gated. node --check clean; full test_repo_invariants 68 passed; i18n --min 100 (1316 ×12).
-  REMAINING: the browser-verified DELETION-cleanup of the dead temporal functions; RENAME the "Temporal
-  map" tab label → "World map" (a 12-locale key rename, deferred to avoid churn here; still defensible —
-  the time slider/signals live on); embed ooMap on When/Where + Insights; per-slide perf on huge corpora.
+  REMAINING: the browser-verified DELETION-cleanup of the dead temporal functions; embed ooMap on
+  When/Where + Insights; per-slide perf on huge corpora.
+  **TAB RENAMED "Temporal map" → "World map" 2026-06-18 (the slice-5b finisher; PR onto 0.09;
+  FRONTEND-ONLY):** the unified surface is no longer "temporal" only (choropleth + signals + slider +
+  places), so the tab is renamed across ALL 5 display touch-points — the sidebar nav `<span>`, the
+  Ctrl-K palette registry entry, the two investigate.html "Open the … map" suggestions, and the
+  section comment — plus the i18n KEY renamed "Temporal map" → "World map" across all 12 locales with
+  translations (en World map · fr Carte du monde · de Weltkarte · es Mapa del mundo · pt Mapa-múndi ·
+  ru Карта мира · ar خريطة العالم · zh 世界地图 · ja 世界地図 · hi विश्व मानचित्र · bn বিশ্ব মানচিত্র · id Peta dunia;
+  AI-drafted, flagged for native review — but "World map" is a very common term, high-confidence). The
+  backend `src/timemap/` module name + docstring stay (internal; renaming the module is out of scope).
+  i18n --min 100 unchanged (1316 ×12 — same key count, renamed in place); node --check; the 5b
+  absorption test still green (it asserts the old `Temporal map <span` h2 is gone — now there is no
+  "Temporal map" text anywhere, a stronger guarantee). REMAINING for the map rework: the dead-code
+  deletion cleanup (browser-verified) + the When/Where·Insights ooMap embed.
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles
