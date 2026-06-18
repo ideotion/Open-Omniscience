@@ -1305,5 +1305,12 @@
   "Catalogued sources based in each country — counts only, no score.": "प्रत्येक देश में स्थित सूचीबद्ध स्रोत — केवल गणना, कोई स्कोर नहीं।",
   "Articles collected from sources in each country — counts only, no score.": "प्रत्येक देश के स्रोतों से एकत्रित लेख — केवल गणना, कोई स्कोर नहीं।",
   "Keyword mentions in articles from sources in each country — counts only, no score.": "प्रत्येक देश के स्रोतों के लेखों में कीवर्ड उल्लेख — केवल गणना, कोई स्कोर नहीं।",
-  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "लेखों का औसत टोन (VADER) — केवल अंग्रेज़ी शब्दकोश, अन्य भाषाओं के लिए अविश्वसनीय; केवल अंग्रेज़ी लेख स्कोर किए जाते हैं। अनुमानित, कभी निर्णय नहीं।"
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "लेखों का औसत टोन (VADER) — केवल अंग्रेज़ी शब्दकोश, अन्य भाषाओं के लिए अविश्वसनीय; केवल अंग्रेज़ी लेख स्कोर किए जाते हैं। अनुमानित, कभी निर्णय नहीं।",
+  "Continent": "महाद्वीप",
+  "Places": "स्थान",
+  "Granularity": "विवरण स्तर",
+  "by continent": "महाद्वीप के अनुसार",
+  "(mentioned, deduced)": "(उल्लिखित, अनुमानित)",
+  "mentioned places (deduced)": "उल्लिखित स्थान (अनुमानित)",
+  "Mentioned places: deduced from text, never confirmed.": "उल्लिखित स्थान: पाठ से अनुमानित, कभी पुष्ट नहीं।"
 }

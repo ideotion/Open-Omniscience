@@ -7152,12 +7152,38 @@
           + `data-iso="${esc(iso)}"${opts.onCountry ? ' style="cursor:pointer"' : ""}>`
           + `<title>${esc((p.label || p.iso2 || "") + " — " + vlabel(iso, p.value) + " " + t("(shown as a point)"))}</title></circle>`;
       }
+      // Mentioned-places OVERLAY (switchable, slice 4): hollow markers DISTINCT
+      // from the solid centroid points, sized by article spread (raw count). A
+      // different data layer (what the corpus mentions, deduced) over the fills.
+      let overlayPts = "";
+      if (opts.placesOn && Array.isArray(opts.overlayPoints)) {
+        const ov = opts.overlayPoints.filter(p => p.lat != null && p.lon != null);
+        const ovMax = Math.max(1, ...ov.map(p => +p.value || 0));
+        for (const p of ov) {
+          const x = lon2x(p.lon).toFixed(1), y = lat2y(p.lat).toFixed(1);
+          const r = (1.3 + 3.2 * Math.sqrt((+p.value || 0) / ovMax)).toFixed(1);
+          overlayPts += `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="var(--accent)" stroke-width="0.7" opacity="0.85">`
+            + `<title>${esc((p.label || "") + " — " + (p.value != null ? fmtNum(p.value) + " " + t("articles") + " " : "") + t("(mentioned, deduced)"))}</title></circle>`;
+        }
+      }
 
       // sr-only top list + aria summary (chart a11y pattern, PR G).
       const top = Object.keys(values).map(k => [k, values[k]]).filter(r => typeof r[1] === "number")
         .sort((a, b) => b[1] - a[1]).slice(0, 8);
-      const srTop = top.map(r => `<li>${esc((names[r[0]] || r[0].toUpperCase()) + ": " + vlabel(r[0], r[1]))}</li>`).join("");
+      const srTop = (opts.srRows || top.map(r => (names[r[0]] || r[0].toUpperCase()) + ": " + vlabel(r[0], r[1])))
+        .map(s => `<li>${esc(s)}</li>`).join("");
       const aria = opts.aria || opts.label || "map";
+
+      // Granularity + places overlay (slice 4) — finer/coarser spatial resolution,
+      // also "controls inside the map". Continent = the per-country values
+      // pre-aggregated by the loader; Places = the mentioned-places overlay.
+      const granHtml = opts.onGranularity ? `
+        <div class="oomap-gran" role="group" aria-label="${esc(t("Granularity"))}"
+             style="position:absolute;bottom:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;z-index:5">
+          <button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Country"))}</button>
+          <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>
+          ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
+        </div>` : "";
 
       // In-map dimension picker (the "controls inside the map" convention) — the
       // active dimension paints the choropleth; switching re-colours it.
@@ -7182,7 +7208,7 @@
              style="display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${W} / ${H}">
           <defs><pattern id="oomap-nodata" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern></defs>
-          ${grid}${paths}${pts}
+          ${grid}${paths}${pts}${overlayPts}
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
           <button class="tiny secondary" data-oomap="in" title="${esc(t("Zoom in"))}">＋</button>
@@ -7190,7 +7216,7 @@
           <button class="tiny secondary" data-oomap="reset" title="${esc(t("Reset view"))}">⟲</button>
           <button class="tiny secondary" data-oomap="big" title="${esc(t("Enlarge the map"))}">⛶</button>
         </div>
-        ${pickerHtml}
+        ${pickerHtml}${granHtml}
         <ul class="sr-only">${srTop}</ul>
       </div>
       <div class="oomap-legend" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px">
@@ -7200,6 +7226,7 @@
           <span style="width:14px;height:10px;border:1px solid var(--border);background:repeating-linear-gradient(45deg,var(--panel2),var(--panel2) 2px,var(--border) 2px,var(--border) 3px)"></span>
           ${esc(t("no data"))}</span>
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
+        ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
@@ -7228,6 +7255,9 @@
       }));
       if (opts && opts.onDimension) host.querySelectorAll("[data-oomap-dim]").forEach(b =>
         b.addEventListener("click", () => opts.onDimension(b.dataset.oomapDim)));
+      if (opts && opts.onGranularity) host.querySelectorAll("[data-oomap-gran]").forEach(b =>
+        b.addEventListener("click", () => opts.onGranularity(b.dataset.oomapGran)));
+      if (opts && opts.onPlaces) { const pb = host.querySelector("[data-oomap-places]"); if (pb) pb.addEventListener("click", () => opts.onPlaces()); }
       svg.addEventListener("wheel", e => {
         e.preventDefault();
         const m = svg.getScreenCTM().inverse(), p = svg.createSVGPoint();
@@ -7254,7 +7284,26 @@
     // Map-tab choropleth: per-country coverage with a DIMENSION PICKER (slice 3).
     // The endpoint returns every measure per country in ONE payload, so switching
     // dimension is instant (no re-fetch) — the picker just re-colours the map.
-    let _ooMapPayload = null, _ooMapDim = "sources";
+    let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null;
+    // Aggregate the per-country values into CONTINENTS (slice 4): a SUM for counts,
+    // a sentiment_n-WEIGHTED mean for tone (the honest cross-country average).
+    function _ooMapContinentAgg(rows, dim) {
+      const acc = {};
+      rows.forEach(r => {
+        const c = r.continent; if (!c) return;
+        const v = r[dim.id]; if (v == null || !isFinite(v)) return;
+        if (!acc[c]) acc[c] = { sum: 0, wsum: 0, wn: 0 };
+        if (dim.id === "sentiment") { const n = r.sentiment_n || 0; acc[c].wsum += v * n; acc[c].wn += n; }
+        else acc[c].sum += v;
+      });
+      const out = {};
+      Object.keys(acc).forEach(c => {
+        out[c] = dim.id === "sentiment"
+          ? (acc[c].wn > 0 ? { value: acc[c].wsum / acc[c].wn, n: acc[c].wn } : null)
+          : { value: acc[c].sum, n: null };
+      });
+      return out;
+    }
     function _ooMapDims() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       return [
@@ -7274,30 +7323,57 @@
       const dims = _ooMapDims();
       const dim = dims.find(d => d.id === _ooMapDim) || dims[0];
       const rows = _ooMapPayload.by_country || [];
+      const continentMode = _ooMapGran === "continent";
+      const contAgg = continentMode ? _ooMapContinentAgg(rows, dim) : null;
       const values = {}, names = {}, points = [], rowBy = {};
       rows.forEach(r => {
         names[r.country] = r.name; rowBy[r.country] = r;
-        const v = r[dim.id];
+        let v;
+        if (continentMode) { const ca = r.continent && contAgg[r.continent]; if (!ca) return; v = ca.value; }
+        else v = r[dim.id];
         if (v != null && isFinite(v)) {
           values[r.country] = v;
-          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: r.name });
+          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? r.continent : r.name });
         }
       });
       const nWith = Object.keys(values).length;
       // 'unlocated' is data from sources WITH NO country (only the count dims).
       const unloc = dim.id === "sentiment" ? 0 : ((_ooMapPayload.unlocated && _ooMapPayload.unlocated[dim.id]) || 0);
-      const aria = `${dim.label} — ${nWith} ${t("countries with data")}.`;
-      const caveat = dim.caveat
+      const aria = continentMode
+        ? `${dim.label} — ${t("by continent")}.`
+        : `${dim.label} — ${nWith} ${t("countries with data")}.`;
+      let caveat = dim.caveat
         + (unloc ? `  ${unloc} ${dim.unit} ${t("with no country — counted, not mapped.")}` : "");
-      const fmtV = (iso, v) => dim.id === "sentiment"
-        ? `${(v >= 0 ? "+" : "") + fmtNum(v, 2)} · ${t("n=")}${(rowBy[iso] || {}).sentiment_n || 0}`
-        : `${fmtNum(v)} ${dim.unit}`;
+      if (_ooMapPlacesOn) caveat += `  ${t("Mentioned places: deduced from text, never confirmed.")}`;
+      const fmtCount = v => dim.id === "sentiment" ? (v >= 0 ? "+" : "") + fmtNum(v, 2) : `${fmtNum(v)} ${dim.unit}`;
+      const fmtV = (iso, v) => continentMode
+        ? `${(rowBy[iso] || {}).continent || ""} — ${fmtCount(v)}`
+        : (dim.id === "sentiment"
+            ? `${fmtCount(v)} · ${t("n=")}${(rowBy[iso] || {}).sentiment_n || 0}`
+            : fmtCount(v));
+      const srRows = continentMode
+        ? Object.keys(contAgg).filter(c => contAgg[c]).sort((a, b) => contAgg[b].value - contAgg[a].value)
+            .map(c => `${c}: ${fmtCount(contAgg[c].value)}`)
+        : undefined;
+      const overlayPoints = (_ooMapPlacesOn && _ooMapWhere && Array.isArray(_ooMapWhere.places))
+        ? _ooMapWhere.places.map(p => ({ lat: p.lat, lon: p.lon, value: p.articles, label: p.name })) : [];
       await ooMap(host, {
-        values, names, points, aria,
+        values, names, points, aria, srRows,
         scale: dim.scale, label: dim.label, unit: dim.unit,
         method: _ooMapPayload.method || "", caveat,
         dimensions: dims.map(d => ({ id: d.id, label: d.label })), activeDim: dim.id,
         onDimension: id => { _ooMapDim = id; _renderOoMapDim(); },
+        granularity: _ooMapGran,
+        onGranularity: g => { _ooMapGran = (g === "continent" ? "continent" : "country"); _renderOoMapDim(); },
+        placesOn: _ooMapPlacesOn, overlayPoints,
+        onPlaces: async () => {
+          _ooMapPlacesOn = !_ooMapPlacesOn;
+          if (_ooMapPlacesOn && !_ooMapWhere) {
+            try { _ooMapWhere = await api("/api/insights/where?limit=400"); }
+            catch { _ooMapWhere = { places: [] }; }
+          }
+          _renderOoMapDim();
+        },
         valueLabel: fmtV,
       });
     }

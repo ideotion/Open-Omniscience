@@ -2036,6 +2036,21 @@ def test_ooMap_choropleth():
         "the sentiment dimension must disclose the VADER English-only limit"
     )
 
+    # --- slice 4: GRANULARITY (continent aggregation + place-points overlay) --- #
+    assert "function _ooMapContinentAgg(rows, dim)" in html, "the continent aggregator must exist"
+    # honest aggregate: SUM for counts, sentiment_n-WEIGHTED mean for tone.
+    assert "acc[c].wsum += v * n" in html, "continent tone must be a sentiment_n-weighted mean"
+    # in-map granularity toggle (country / continent) + the wiring.
+    assert 'data-oomap-gran="continent"' in html, "the continent granularity toggle must exist"
+    assert "opts.onGranularity(b.dataset.oomapGran)" in html, "granularity buttons must switch level"
+    # the mentioned-places overlay (switchable), reusing the WHERE substrate.
+    assert "data-oomap-places" in html and "opts.onPlaces()" in html, "the places-overlay toggle must exist"
+    assert "/api/insights/where" in html, "the places overlay must reuse the WHERE substrate"
+    # the overlay is a DEDUCED layer — its caveat is surfaced, never confirmed.
+    assert "Mentioned places: deduced from text, never confirmed." in html, (
+        "the mentioned-places overlay must carry its deduced/never-confirmed caveat"
+    )
+
 
 def test_search_timescope():
     """The Search sidebar tab reuses the SAME ooTimeScope control for date-range

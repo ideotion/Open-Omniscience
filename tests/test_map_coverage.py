@@ -161,6 +161,10 @@ def test_map_coverage_endpoint_enriches_and_is_honest(client, seeded):
     # private codes are NOT in the gazetteer -> no fabricated centroid is attached.
     assert "lat" not in by[_ZY] and "lon" not in by[_ZY]
 
+    # the 'continent' field is always present (the slice-4 aggregation reads it);
+    # an unknown code maps to None -- honest, never a fabricated continent.
+    assert "continent" in by[_ZY] and by[_ZY]["continent"] is None
+
     # no score field leaks through the endpoint either.
     for row in d["by_country"]:
         assert not any("score" in k for k in row)

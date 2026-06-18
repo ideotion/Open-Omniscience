@@ -2363,7 +2363,8 @@ ruling, a contingency, or a deliberate-omission note.
   fills + in-map zoom/pan + colour-scale legend + honest no-data; first dimension
   sources-per-country; big/fullscreen on the rebuilt Map tab); (3) dimensions [SHIPPED
   2026-06-18, below] (articles·keywords·sentiment, dimension picker,
-  caveats); (4) granularity (continent aggregation + city/place point overlay); (5)
+  caveats); (4) granularity [SHIPPED 2026-06-18, below] (continent aggregation + city/place
+  point overlay); (5)
   consolidation (fold the time-slider in, retire the old surfaces, embed ooMap on
   When/Where + insights).
   **SLICE 1 SHIPPED 2026-06-18 (the choropleth data foundation; backend VERIFIED py3.13):**
@@ -2430,6 +2431,31 @@ ruling, a contingency, or a deliberate-omission note.
   mention-join trap) — eager for instant switching; could go lazy if a huge corpus reports a slow
   Map load. REMAINING: human click-through; slice 4 (continent aggregation + city/place point
   overlay), slice 5 (fold the time-slider in, retire the old surfaces).
+  **SLICE 4 SHIPPED 2026-06-18 (GRANULARITY — continent aggregation + place-points overlay; PR
+  onto 0.09; FRONTEND-ONLY, BROWSER-UNVERIFIED per fork-3):** two in-map granularity controls
+  (the "controls inside the map" convention, bottom-left). (a) CONTINENT AGGREGATION — a
+  Country↔Continent toggle: `_ooMapContinentAgg` rolls the per-country values into the 6
+  continents (`continent_of`, already on each map-coverage row since slice 2) — a SUM for counts,
+  a `sentiment_n`-WEIGHTED mean for tone (the honest cross-country average, never a mean-of-means);
+  each country is then PAINTED by its continent's aggregate (country borders stay visible, colours
+  group by continent — no continent-polygon union needed, no new geometry/endpoint); the hover +
+  sr-list show the continent + its aggregate. (b) PLACE-POINTS OVERLAY — a switchable "Places"
+  layer plotting the corpus's MENTIONED places (reuses the LOCAL `/api/insights/where`, lazy-
+  fetched once, capped 400) as HOLLOW markers DISTINCT from the solid centroid-fallback points,
+  sized by article spread (√, raw count) — a different data layer (what the corpus is ABOUT) over
+  the source-coverage fills, with the endpoint's "deduced from text, never confirmed" caveat
+  VISIBLE when on. `ooMap` gained `opts.granularity`/`onGranularity` + `placesOn`/`overlayPoints`/
+  `onPlaces` + `srRows` (continent-level sr summary); the loader owns the state (`_ooMapGran`,
+  `_ooMapPlacesOn`, cached `_ooMapWhere`) and re-renders on toggle. NO backend change (continent
+  from slice 2 + the existing WHERE endpoint, both local). HONESTY: an unknown-continent country
+  is no-data in continent mode (never a fabricated continent); the overlay is a deduced layer
+  clearly labelled; counts only, no score. +7 i18n keys ×12 (non-en AI-drafted, FLAGGED for native
+  review). tests/test_map_coverage.py pins the `continent` field contract; test_ooMap_choropleth
+  extended (continent aggregator + weighted-mean tone + granularity/places controls + the deduced
+  caveat). i18n --min 100 (1308×12), node --check, ruff F/B clean (no Python source changed). NOTE:
+  continent NAMES (Europe…) render in English in labels, consistent with the English country names
+  (data values, not chrome). REMAINING: human click-through; slice 5 (fold the time-slider in,
+  retire the old temporal-map surfaces, embed ooMap on When/Where + Insights).
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles

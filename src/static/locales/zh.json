@@ -1305,5 +1305,12 @@
   "Catalogued sources based in each country — counts only, no score.": "编入目录的、位于各国的来源——仅计数，无评分。",
   "Articles collected from sources in each country — counts only, no score.": "从各国来源收集的文章——仅计数，无评分。",
   "Keyword mentions in articles from sources in each country — counts only, no score.": "各国来源文章中的关键词提及——仅计数，无评分。",
-  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "文章平均情感倾向（VADER）——仅英文词典，对其他语言不可靠；仅对英文文章评分。属推断，而非结论。"
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "文章平均情感倾向（VADER）——仅英文词典，对其他语言不可靠；仅对英文文章评分。属推断，而非结论。",
+  "Continent": "大洲",
+  "Places": "地点",
+  "Granularity": "粒度",
+  "by continent": "按大洲",
+  "(mentioned, deduced)": "（提及，推断）",
+  "mentioned places (deduced)": "提及的地点（推断）",
+  "Mentioned places: deduced from text, never confirmed.": "提及的地点：根据文本推断，从未确认。"
 }
