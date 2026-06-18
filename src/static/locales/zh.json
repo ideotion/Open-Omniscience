@@ -1189,5 +1189,18 @@
   "Loading regions…": "正在加载区域…",
   "Sizes are estimates — the exact size is read from the mirror on download.": "大小为估算值 — 确切大小在下载时从镜像读取。",
   "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "下载 OpenStreetMap 区域提取数据以供离线使用 — 像 Wikipedia 转储一样管理(可续传，支持暂停/继续，并有下载队列)。区域按从大到小排列；显示的大小是来自内置目录的带日期估算值(无网络)— 确切大小在下载开始时从镜像读取。各大洲来自 Geofabrik；整个地球来自 OpenStreetMap planet 镜像。这些可能非常大(一个大洲数 GB；整个地球数十 GB)。",
-  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "下载是一项网络操作:它经过本应用唯一的网络开关，因此在飞行模式下会被拒绝，并在你首次联网时请求你的同意。下载作为后台任务运行(仅本应用的网络 — 绝不涉及你的设备或其他应用)。"
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "下载是一项网络操作:它经过本应用唯一的网络开关，因此在飞行模式下会被拒绝，并在你首次联网时请求你的同意。下载作为后台任务运行(仅本应用的网络 — 绝不涉及你的设备或其他应用)。",
+  "Official figures": "官方数据",
+  "Fetch a published figure from a documented official machine endpoint (the World Bank API, or a Eurostat / SDMX-JSON dataset). Each value is stored with its full provenance trail and a first-class vintage — a re-fetch later is a new row, never an overwrite, so revisions are preserved as evidence. Producers are compared side by side, never averaged, and a cell mixing different units / seasonal adjustment / base years is flagged, not reconciled. No score is ever computed.": "从有文档记录的官方机器端点(世界银行 API，或 Eurostat / SDMX-JSON 数据集)获取一个已发布的数据。每个值都连同其完整的来源轨迹和一流的版次(vintage)一起存储 — 之后再次获取是一行新记录，绝不覆盖，因此修订作为证据被保留。各来源并排比较，绝不求平均，混合了不同单位／季节调整／基准年的单元格会被标记，而非调和。绝不计算任何评分。",
+  "This is the one networked action here: the fetch egresses over your configured transport and is refused while airplane mode is on.": "这是这里唯一的网络操作:获取会通过你配置的传输方式出网，并在飞行模式下被拒绝。",
+  "Indicator / dataset id": "指标 / 数据集 ID",
+  "Country (World Bank)": "国家(世界银行)",
+  "Fetch figures": "获取数据",
+  "View stored figures — series id": "查看已存储数据 — 系列 ID",
+  "Show stored": "显示已存储",
+  "Triangulate producers": "对来源进行三角校验",
+  "Tracked for auto-refresh": "已跟踪以自动刷新",
+  "Refresh due now": "立即刷新到期项",
+  "Replay due fetches now (also runs in the background while you are online)": "立即重放到期的获取(在你联网时也会在后台运行)",
+  "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "你获取的每个数据都会被跟踪，并在你联网时按其间隔重新获取，每次存储一个新版次(修订被保留，绝不覆盖)。停用或移除任何你不想要的。"
 }
