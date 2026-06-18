@@ -9532,15 +9532,17 @@
       }
     }
 
-    // --- Run a user-defined custom extractor over the analysis selection (the on-demand
-    // path for the #386 managed list). Mirrors bulkLlm: same selection (_bulkParams),
-    // same NDJSON stream + abort (_bulkAbort / bulkLlmStop). Results store as ai_keyword
-    // rows of the prompt's kind — AI-derived, labelled unreliable, NEVER the trusted
-    // keyword index (the backend writes ai_keyword, not KeywordMention). ------------- //
-    async function aiRunPromptAn() {
+    // --- Run a user-defined custom extractor over the analysis OR search selection (the
+    // on-demand path for the #386 managed list). ``ctx`` is "an" or "search" (mirrors
+    // bulkLlm): same selection (_bulkParams), same NDJSON stream + abort (_bulkAbort /
+    // bulkLlmStop), ctx-scoped element ids so both surfaces can be open at once. Results
+    // store as ai_keyword rows of the prompt's kind — AI-derived, labelled unreliable,
+    // NEVER the trusted keyword index (the backend writes ai_keyword, not KeywordMention). //
+    async function aiRunPrompt(ctx) {
+      ctx = ctx || "an";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const mount = $("bulk-llm-an"); if (!mount) return;
-      const p = _bulkParams("an");
+      const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search"); if (!mount) return;
+      const p = _bulkParams(ctx);
       const hasSel = p.get("article_ids") || p.get("query") || p.get("source")
         || p.get("language") || p.get("start_date") || p.get("end_date");
       if (!hasSel) { toast(t("Run a search first."), "err"); return; }
@@ -9559,21 +9561,22 @@
         <div style="font-weight:600;margin-bottom:4px">${esc(t("Run a custom extractor"))}</div>
         <div class="hint" style="margin-bottom:8px">${esc(t("Runs your prompt with the local model over each matched article. Results are stored as AI-derived metadata of that type, labelled unreliable — the trusted keyword index is never affected; nothing leaves your machine."))}</div>
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
-          <select id="ai-run-pick">${opts}</select>
-          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ai-run-skip" checked> ${esc(t("Skip articles already done"))}</label>
-          <button class="primary" id="ai-run-start" onclick="aiRunPromptStart()">${esc(t("Start"))}</button>
-          <button class="ghost tiny" onclick="bulkLlmStop('an')">${esc(t("Cancel"))}</button>
+          <select id="ai-run-pick-${ctx}">${opts}</select>
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ai-run-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
+          <button class="primary" id="ai-run-start-${ctx}" onclick="aiRunPromptStart('${ctx}')">${esc(t("Start"))}</button>
+          <button class="ghost tiny" onclick="bulkLlmStop('${ctx}')">${esc(t("Cancel"))}</button>
         </div>
-        <div id="ai-run-prog" class="hint" style="margin-top:8px"></div>
+        <div id="ai-run-prog-${ctx}" class="hint" style="margin-top:8px"></div>
       </div>`;
     }
-    async function aiRunPromptStart() {
+    async function aiRunPromptStart(ctx) {
+      ctx = ctx || "an";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const pick = $("ai-run-pick"), prog = $("ai-run-prog"), startBtn = $("ai-run-start");
+      const pick = $("ai-run-pick-" + ctx), prog = $("ai-run-prog-" + ctx), startBtn = $("ai-run-start-" + ctx);
       const id = pick && pick.value;
       if (!id) return;
-      const p = _bulkParams("an");
-      const skipEl = $("ai-run-skip");
+      const p = _bulkParams(ctx);
+      const skipEl = $("ai-run-skip-" + ctx);
       const body = { skip_existing: !!(skipEl && skipEl.checked) };
       const ids = p.get("article_ids");
       if (ids) { body.article_ids = ids.split(",").map(Number).filter((n) => n); }

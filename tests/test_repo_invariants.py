@@ -319,13 +319,15 @@ def test_custom_extractor_settings_ui_is_wired():
 
 
 def test_custom_extractor_run_from_analysis_window_is_wired():
-    """A custom extractor RUNS over the analysis selection on demand (the on-demand path
-    for the managed list). Browser-unverified — this pins the wiring."""
+    """A custom extractor RUNS over the selection on demand from BOTH the analysis window
+    and the search toolbar (ctx-aware). Browser-unverified — this pins the wiring."""
     src = _ui_source()
-    assert 'onclick="aiRunPromptAn()"' in src, "analysis window needs a 'Run extractor' action"
-    assert "async function aiRunPromptAn(" in src and "async function aiRunPromptStart(" in src
-    # mirrors the bulk-LLM streaming run (same selection + abort), POSTs to the run endpoint
-    assert "_bulkParams(\"an\")" in src
+    # the ctx-aware run control is reachable from both surfaces
+    assert "onclick=\"aiRunPrompt('an')\"" in src, "analysis window needs a 'Run extractor' action"
+    assert "onclick=\"aiRunPrompt('search')\"" in src, "search toolbar needs a 'Run extractor' action"
+    assert "async function aiRunPrompt(" in src and "async function aiRunPromptStart(" in src
+    # mirrors the bulk-LLM streaming run (same ctx-keyed selection + abort), POSTs to the endpoint
+    assert "_bulkParams(ctx)" in src
     assert "`/api/ai/prompts/${id}/run`" in src, "must POST to the custom-prompt run endpoint"
     # results are the AI lens, never the trusted index — the copy must say so
     assert "AI-derived metadata" in src
