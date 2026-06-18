@@ -21,6 +21,7 @@ platform cannot supply are returned as ``null`` (honest "unknown", never a guess
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 
@@ -29,6 +30,7 @@ from fastapi import APIRouter
 from src.monitoring.activity import activity_monitor
 
 router = APIRouter(prefix="/api/system", tags=["system"])
+_LOG = logging.getLogger(__name__)
 
 # Process handle + start time, resolved once. psutil is a core dependency, but we
 # stay defensive: if it is somehow unavailable the endpoint still returns the
@@ -173,8 +175,30 @@ def set_network_mode(payload: dict) -> dict:
     """
     from src.ingest import activate_kill_switch, clear_kill_switch, kill_switch_active
 
-    if bool(payload.get("online")):
+    online = bool(payload.get("online"))
+    if online:
         clear_kill_switch()
     else:
         activate_kill_switch()
+    # Online ⟺ collecting (maintainer 2026-06-18): crossing online immediately
+    # starts the continuous background collector (articles + markets/indices +
+    # calendars + watched Wikipedia + …); crossing offline (airplane) stops it —
+    # "the only reason to stop it is airplane mode". So EVERY path to online (the
+    # top-bar airplane button, the first-launch wizard's "Go online", any consented
+    # action) begins collection at once, with no separate Collect/Start step. The
+    # kill switch is set FIRST so a stop winds the in-flight pass down fast. Gated
+    # by OO_NO_SCHEDULER (tests/headless drive the scheduler themselves).
+    if os.getenv("OO_NO_SCHEDULER", "0") != "1":
+        try:
+            from src.scheduler.runner import get_scheduler
+
+            scheduler = get_scheduler()
+            if online:
+                scheduler.start()  # idempotent: no-op if already running
+            else:
+                scheduler.stop()  # idempotent: no-op if not running
+        except Exception:  # noqa: BLE001 - a scheduler hiccup must never fail the toggle
+            _LOG.warning(
+                "network toggle: scheduler %s failed", "start" if online else "stop", exc_info=True
+            )
     return {"online": not kill_switch_active()}

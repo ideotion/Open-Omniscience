@@ -990,9 +990,10 @@ def test_corpus_tier_header():
 
 def test_first_launch_guide_wizard():
     """First-launch GUIDED SETUP (ruled 2026-06-13): a ONE-TIME stepped wizard
-    walks a new user to a working app. SLICE 1 = shell + Language step + Finish/
-    start-collecting step (encryption + sources-by-theme are deferred placeholder
-    steps). Binding constraints, pinned so they cannot regress between sessions:
+    walks a new user to a working app. Steps = Language -> Finish/start-collecting
+    (the two inert "Coming soon" encryption + sources placeholders were removed
+    2026-06-18 — encryption is chosen in the DB-unlock/install flow and sources
+    auto-seed). Binding constraints, pinned so they cannot regress between sessions:
       * the wizard exists and REPLACES the #onboard welcome card as the first-run
         entry (the empty-corpus check opens it instead of the card);
       * the Language step switches the WHOLE UI through THE i18n engine
@@ -1008,11 +1009,12 @@ def test_first_launch_guide_wizard():
     assert "function openGuide(" in html, "the wizard must be openable (openGuide)"
     for ctrl in ('id="gw-back"', 'id="gw-next"', 'id="gw-finish"', 'id="gw-dots"'):
         assert ctrl in html, f"the wizard shell control is missing: {ctrl}"
-    # the two SLICE-1 steps + the two DEFERRED placeholder steps (so the next
-    # slice slots its real UI in without re-deriving the structure).
-    for step in ('data-step="lang"', 'data-step="finish"',
-                 'data-step="encryption"', 'data-step="sources"'):
+    # the two real steps — Language and Finish (the inert "Coming soon"
+    # encryption/sources placeholders were removed 2026-06-18).
+    for step in ('data-step="lang"', 'data-step="finish"'):
         assert step in html, f"the wizard step is missing: {step}"
+    for gone in ('data-step="encryption"', 'data-step="sources"'):
+        assert gone not in html, f"the inert placeholder step must be gone: {gone}"
     # 2. Language step uses THE i18n engine via the shared picker (no new list).
     gw = html.split('id="guide-wizard"', 1)[1].split("</dialog>", 1)[0]
     assert 'id="gw-langs"' in gw, "the wizard must carry the Language step's picker"
