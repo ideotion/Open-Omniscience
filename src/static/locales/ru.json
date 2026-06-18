@@ -1226,5 +1226,16 @@
   "Ollama models live outside your corpus, so they are NOT in the full backup. Back them up separately to avoid re-downloading (multi-GB; slow over Tor). Restore is additive and bit-identical — existing blobs are skipped, never overwritten.": "Модели Ollama находятся вне вашего корпуса, поэтому их НЕТ в полной резервной копии. Сделайте их резервную копию отдельно, чтобы не скачивать заново (несколько ГБ; медленно через Tor). Восстановление аддитивно и побитово идентично — существующие блобы пропускаются и никогда не перезаписываются.",
   "Checking the local model store…": "Проверка локального хранилища моделей…",
   "Download models backup": "Скачать резервную копию моделей",
-  "Restore models…": "Восстановить модели…"
+  "Restore models…": "Восстановить модели…",
+  "Chain of custody": "Цепочка ответственного хранения",
+  "Tamper-evident, signed provenance for legal defensibility. Toggles below are preferences; the status line shows what this build can actually do.": "Защищённое от подделки, подписанное происхождение для юридической доказуемости. Переключатели ниже — это настройки; строка состояния показывает, что эта сборка действительно может.",
+  "Loading custody settings…": "Загрузка настроек хранения…",
+  "Post-quantum signatures": "Постквантовые подписи",
+  "Add an ML-DSA (FIPS 204) signature alongside Ed25519 so the chain stays verifiable against a future quantum adversary.": "Добавьте подпись ML-DSA (FIPS 204) рядом с Ed25519, чтобы цепочка оставалась проверяемой против будущего квантового противника.",
+  "OpenTimestamps anchoring": "Закрепление через OpenTimestamps",
+  "Anchor entries into Bitcoin via public calendars. Independent proof of time, but requires network egress and reveals your IP/timing to the calendars.": "Закрепляйте записи в Bitcoin через публичные календари. Независимое доказательство времени, но требует сетевого исходящего трафика и раскрывает ваш IP/тайминг календарям.",
+  "Auto-log on ingest": "Автозапись при загрузке",
+  "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "Конфиденциальность: OpenTimestamps публикует только хеш, но его отправка раскрывает ваш IP и время операторам календарей. Для анонимного источника направьте трафик через Tor (HTTPS_PROXY) или оставайтесь только локально.",
+  "Default actor": "Актор по умолчанию",
+  "Save custody settings": "Сохранить настройки хранения"
 }

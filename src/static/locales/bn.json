@@ -1226,5 +1226,16 @@
   "Ollama models live outside your corpus, so they are NOT in the full backup. Back them up separately to avoid re-downloading (multi-GB; slow over Tor). Restore is additive and bit-identical — existing blobs are skipped, never overwritten.": "Ollama মডেলগুলি আপনার সংগ্রহের বাইরে থাকে, তাই সেগুলি পূর্ণ ব্যাকআপে নেই। পুনরায় ডাউনলোড এড়াতে আলাদাভাবে ব্যাকআপ করুন (মাল্টি-GB; Tor-এ ধীর)। পুনরুদ্ধার সংযোজনমূলক এবং বিট-অভিন্ন — বিদ্যমান ব্লবগুলি বাদ দেওয়া হয়, কখনও ওভাররাইট হয় না।",
   "Checking the local model store…": "স্থানীয় মডেল স্টোর পরীক্ষা করা হচ্ছে…",
   "Download models backup": "মডেল ব্যাকআপ ডাউনলোড করুন",
-  "Restore models…": "মডেল পুনরুদ্ধার করুন…"
+  "Restore models…": "মডেল পুনরুদ্ধার করুন…",
+  "Chain of custody": "তত্ত্বাবধানের শৃঙ্খল",
+  "Tamper-evident, signed provenance for legal defensibility. Toggles below are preferences; the status line shows what this build can actually do.": "আইনি প্রতিরক্ষার জন্য টেম্পার-স্পষ্ট, স্বাক্ষরিত উৎস-প্রমাণ। নিচের টগলগুলি পছন্দ; স্ট্যাটাস লাইন দেখায় এই বিল্ড আসলে কী করতে পারে।",
+  "Loading custody settings…": "তত্ত্বাবধান সেটিংস লোড হচ্ছে…",
+  "Post-quantum signatures": "পোস্ট-কোয়ান্টাম স্বাক্ষর",
+  "Add an ML-DSA (FIPS 204) signature alongside Ed25519 so the chain stays verifiable against a future quantum adversary.": "ভবিষ্যৎ কোয়ান্টাম প্রতিপক্ষের বিরুদ্ধে শৃঙ্খলটি যাচাইযোগ্য রাখতে Ed25519-এর পাশাপাশি একটি ML-DSA (FIPS 204) স্বাক্ষর যোগ করুন।",
+  "OpenTimestamps anchoring": "OpenTimestamps অ্যাঙ্করিং",
+  "Anchor entries into Bitcoin via public calendars. Independent proof of time, but requires network egress and reveals your IP/timing to the calendars.": "পাবলিক ক্যালেন্ডারের মাধ্যমে এন্ট্রিগুলি বিটকয়েনে অ্যাঙ্কর করুন। সময়ের স্বাধীন প্রমাণ, তবে নেটওয়ার্ক এগ্রেস প্রয়োজন এবং ক্যালেন্ডারগুলির কাছে আপনার IP/সময় প্রকাশ করে।",
+  "Auto-log on ingest": "ইনজেস্টে স্বয়ংক্রিয় লগ",
+  "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "গোপনীয়তা: OpenTimestamps শুধু একটি হ্যাশ প্রকাশ করে, কিন্তু তা জমা দিলে ক্যালেন্ডার অপারেটরদের কাছে আপনার IP ও সময় প্রকাশ পায়। একটি বেনামি উৎসের জন্য, Tor (HTTPS_PROXY) দিয়ে ট্রাফিক রুট করুন বা শুধু স্থানীয় থাকুন।",
+  "Default actor": "ডিফল্ট অভিনেতা",
+  "Save custody settings": "তত্ত্বাবধান সেটিংস সংরক্ষণ করুন"
 }

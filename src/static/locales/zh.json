@@ -1226,5 +1226,16 @@
   "Ollama models live outside your corpus, so they are NOT in the full backup. Back them up separately to avoid re-downloading (multi-GB; slow over Tor). Restore is additive and bit-identical — existing blobs are skipped, never overwritten.": "Ollama 模型位于你的语料库之外，因此不包含在完整备份中。请单独备份以避免重新下载(数 GB；通过 Tor 很慢)。恢复是增量且逐位相同的 — 已存在的数据块会被跳过，绝不覆盖。",
   "Checking the local model store…": "正在检查本地模型存储…",
   "Download models backup": "下载模型备份",
-  "Restore models…": "恢复模型…"
+  "Restore models…": "恢复模型…",
+  "Chain of custody": "保管链",
+  "Tamper-evident, signed provenance for legal defensibility. Toggles below are preferences; the status line shows what this build can actually do.": "防篡改、带签名的来源记录，可用于法律上的可辩护性。下面的开关是偏好设置;状态行显示此版本实际能做什么。",
+  "Loading custody settings…": "正在加载保管设置…",
+  "Post-quantum signatures": "后量子签名",
+  "Add an ML-DSA (FIPS 204) signature alongside Ed25519 so the chain stays verifiable against a future quantum adversary.": "在 Ed25519 之外再添加一个 ML-DSA(FIPS 204)签名，使该链对未来的量子对手仍可验证。",
+  "OpenTimestamps anchoring": "OpenTimestamps 锚定",
+  "Anchor entries into Bitcoin via public calendars. Independent proof of time, but requires network egress and reveals your IP/timing to the calendars.": "通过公共日历将条目锚定到比特币。独立的时间证明，但需要网络出站，并会向这些日历暴露你的 IP 和时间。",
+  "Auto-log on ingest": "采集时自动记录",
+  "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "隐私:OpenTimestamps 只发布一个哈希值，但提交它会向日历运营方暴露你的 IP 和时间。对于匿名来源，请通过 Tor(HTTPS_PROXY)路由流量，或仅保持在本地。",
+  "Default actor": "默认操作者",
+  "Save custody settings": "保存保管设置"
 }
