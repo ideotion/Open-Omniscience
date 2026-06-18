@@ -1850,13 +1850,20 @@
     // filterable and never silently blended with curated events.
     function mapImportedToAgenda(e) {
       const d = e.date || "";
+      // "imported" is NOT a category — everything in the agenda is imported, so it
+      // told the user nothing (maintainer 2026-06-18). Use the feed's REAL facets:
+      // category = its kind (holidays / religion / civic / space / science /
+      // community), the country, and tags so the agenda filters to a thin view.
+      const kind = e.kind || "other";
+      const tags = [kind].concat(e.country ? [e.country] : []);
       return {
-        title: e.title, category: "imported", country: null, tags: [],
+        title: e.title, category: kind, country: e.country || null, tags: tags,
         confirmed: true,                       // an ICS VEVENT carries a concrete date
         next_occurrence: d,
         month: d.length >= 7 ? +d.slice(5, 7) : null,
         day: d.length >= 10 ? +d.slice(8, 10) : null,
         calendar: e.family, family_name: e.family_name, family_names: e.family_names,
+        kind: kind, countries: e.countries || (e.country ? [e.country] : []),
         sources: e.sources || [], source_count: e.source_count, family_count: e.family_count,
         imported: true,
       };
@@ -1897,10 +1904,13 @@
         const imported = (imp.events || []).map(mapImportedToAgenda).filter(e => !excl.has(e.calendar));
         const deduced = (ded.events || []).map(mapDeducedToAgenda).filter(e => !excl.has(e.calendar));
         AG.events = ev.events.concat(imported, deduced); AG.caveat = ev.caveat; AG.cals = fac.calendars;
-        // Imported + deduced events are each their own filterable category (distinct
-        // provenance classes, like DDG-discovered sources) — a chip only when present.
-        AG.categories = (fac.categories || []).concat(
-          imported.length ? ["imported"] : [], deduced.length ? ["deduced"] : []);
+        // Category chips = the REAL event kinds (holidays / religion / civic / …),
+        // never a useless "imported" bucket (maintainer 2026-06-18). Imported events
+        // each carry their feed's kind; deduced stays its own honest class. De-duped,
+        // sorted, only kinds actually present so the chip row stays thin.
+        const importedKinds = [...new Set(imported.map(e => e.category).filter(Boolean))].sort();
+        AG.categories = [...new Set((fac.categories || []).concat(importedKinds))].sort()
+          .concat(deduced.length ? ["deduced"] : []);
         AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
         // First run: subscribe to all calendars so the agenda isn't empty.
         if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
@@ -2335,6 +2345,17 @@
         _astroYear = year;
       } catch (_e) { _astroByDate = {}; _seasonByDate = {}; _astroYear = null; }
     }
+    // The day-of-month (1..31) of the Nth `weekday` (0=Mon..6=Sun) of month m/year y
+    // — week=-1 is the LAST; null when it doesn't exist (e.g. a 5th Friday). Mirrors
+    // catalog.nth_weekday so floating events ("3rd Tuesday of March") place every year.
+    function nthWeekday(y, m, weekday, week) {
+      const ndays = new Date(y, m, 0).getDate();                      // days in month m (1-based)
+      const dow = d => (new Date(y, m - 1, d).getDay() + 6) % 7;      // -> 0=Mon … 6=Sun
+      if (week === -1) return ndays - ((dow(ndays) - weekday + 7) % 7);
+      if (week == null || week < 1) return null;
+      const day = 1 + ((weekday - dow(1) + 7) % 7) + (week - 1) * 7;
+      return day <= ndays ? day : null;
+    }
     function renderAgendaMonth(rows) {
       const box = $("agenda-month"), dayBox = $("agenda-day");
       if (AGV.y == null) { const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1; }
@@ -2347,6 +2368,12 @@
       const byDay = {}, monthOnly = [];
       for (const e of rows) {
         if (e.month === m && e.day) (byDay[e.day] = byDay[e.day] || []).push(e);
+        // FLOATING rule (e.g. 3rd Tuesday of March): compute the day for THIS browsed
+        // year so it places correctly every year, not only the one next_occurrence holds.
+        else if (e.month === m && e.weekday != null && e.week != null) {
+          const fd = nthWeekday(y, m, e.weekday, e.week);
+          if (fd) (byDay[fd] = byDay[fd] || []).push(e);
+        }
         else if (e.next_occurrence && e.next_occurrence.slice(0, 7) === ym) {
           const d = +e.next_occurrence.slice(8, 10);
           if (!(byDay[d] || []).includes(e)) (byDay[d] = byDay[d] || []).push(e);

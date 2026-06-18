@@ -454,6 +454,9 @@ def collapse_imported(rows: list[dict]) -> list[dict]:
             g = groups[fp] = {
                 "title": e.get("title", ""), "date": e.get("date", ""),
                 "sources": [], "families": [], "family_names": [], "uids": [],
+                # Carry the facets through the merge (the canonical kind is the first
+                # family's; countries accumulate — one holiday spans many countries).
+                "kind": str(e.get("kind") or "other"), "countries": [],
             }
         for s in e.get("sources", []):
             if s not in g["sources"]:
@@ -462,6 +465,9 @@ def collapse_imported(rows: list[dict]) -> list[dict]:
         if fam and fam not in g["families"]:
             g["families"].append(fam)
             g["family_names"].append(e.get("family_name", fam))
+        c = e.get("country")
+        if c and c not in g["countries"]:
+            g["countries"].append(c)
         for u in e.get("uids", []) or []:
             if u and u not in g["uids"]:
                 g["uids"].append(u)
@@ -472,6 +478,7 @@ def collapse_imported(rows: list[dict]) -> list[dict]:
         g["family_count"] = len(g["families"])
         g["family"] = g["families"][0] if g["families"] else None
         g["family_name"] = g["family_names"][0] if g["family_names"] else ""
+        g["country"] = g["countries"][0] if g["countries"] else None
         out.append(g)
     return out
 
@@ -485,14 +492,27 @@ def imported_agenda(*, family: str | None = None, frm: str | None = None,
     so the agenda never shows the same holiday once per feed. A single-family view
     is already deduped at import, so it is returned uncollapsed.
     """
+    # Each event inherits its feed FAMILY's real facets — kind (holidays / religion
+    # / civic / space / science / community) + country — so the agenda can filter to
+    # a thin, meaningful view instead of a useless "imported" bucket (maintainer
+    # 2026-06-18: "everything is imported; enrich the tag list"). A user-added feed
+    # with no directory entry falls back to kind "other".
+    fam_meta = {f["key"]: f for f in load_families()}
     out = []
     for key, bucket in load_imports().items():
         if family and key != family:
             continue
+        meta = fam_meta.get(key) or {}
         for entry in bucket.get("events", {}).values():
             if frm and entry["date"] < frm:
                 continue
-            out.append({**entry, "family": key, "family_name": bucket.get("name", key)})
+            out.append({
+                **entry,
+                "family": key,
+                "family_name": bucket.get("name", key),
+                "kind": str(meta.get("kind") or "other"),
+                "country": meta.get("country"),
+            })
     out.sort(key=lambda e: (e["date"], e["title"]))
     if collapse and family is None:
         out = collapse_imported(out)

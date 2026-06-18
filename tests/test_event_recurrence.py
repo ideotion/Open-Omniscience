@@ -92,3 +92,38 @@ def test_agenda_exposes_span_and_origin(monkeypatch):
         assert span["start"] == "2027-04-01" and span["end"] == "2027-04-30"
     finally:
         catalog.load_events.cache_clear()
+
+
+def test_floating_nth_weekday_recurrence():
+    """Floating dates — '3rd Tuesday of March', 'last Monday of May' (maintainer
+    2026-06-18: many recurring events are defined by an Nth weekday, not a fixed
+    day). The date is computed per year; a non-existent Nth (a 5th Friday) is
+    skipped to the next year, never invented."""
+    from src.events.catalog import _coerce_weekday, _next_occurrence, nth_weekday
+
+    assert nth_weekday(2026, 3, 1, 3) == date(2026, 3, 17)   # 3rd Tuesday of March
+    assert nth_weekday(2026, 5, 0, -1) == date(2026, 5, 25)  # last Monday of May
+    assert nth_weekday(2026, 2, 4, 5) is None                # no 5th Friday in Feb 2026
+    # the next upcoming occurrence rolls to next year once this year's is past
+    assert _next_occurrence(3, None, date(2026, 6, 1), weekday=1, week=3) == "2027-03-16"
+    assert _next_occurrence(3, None, date(2026, 1, 1), weekday=1, week=3) == "2026-03-17"
+    # weekday accepts a name or an int; unknown -> None (never guessed)
+    assert _coerce_weekday("tuesday") == 1 and _coerce_weekday("Tue") == 1 and _coerce_weekday(1) == 1
+    assert _coerce_weekday("nope") is None
+
+
+def test_floating_event_flows_through_agenda(monkeypatch):
+    """A floating catalog entry surfaces in agenda() with the right next_occurrence."""
+    import src.events.catalog as catalog
+
+    monkeypatch.setattr(catalog, "load_events", lambda: [
+        {
+            "title": "Third Tuesday of March", "calendar": "civic", "category": "civic",
+            "country": None, "region": None, "cadence": "annual",
+            "month": 3, "day": None, "weekday": 1, "week": 3,
+            "end_month": None, "end_day": None, "origin_year": None, "until_year": None,
+            "confirmed": True, "official_url": "https://example.org", "tags": [], "note": None,
+        }
+    ])
+    out = catalog.agenda(today=date(2026, 1, 1))
+    assert out and out[0]["next_occurrence"] == "2026-03-17"

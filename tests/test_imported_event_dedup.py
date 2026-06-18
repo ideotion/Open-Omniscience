@@ -45,3 +45,39 @@ def test_different_dates_stay_separate_disagreement_surfaced():
 def test_single_family_view_is_not_collapsed():
     from src.events.feeds import imported_agenda  # smoke: collapse flag wired
     assert imported_agenda(family="nonexistent") == []
+
+
+def test_collapse_preserves_kind_and_accumulates_countries():
+    """"imported" is not a useful tag (everything is imported). Imported events
+    inherit their feed family's real KIND (holidays/religion/civic/…) and country,
+    so the agenda filters to a thin view; a multi-country holiday keeps its kind and
+    accumulates the countries it covers (maintainer 2026-06-18)."""
+    rows = [
+        {"title": "New Year", "date": "2026-01-01", "sources": ["fr"], "family": "holidays-fr",
+         "family_name": "Holidays (FR)", "kind": "holidays", "country": "FR"},
+        {"title": "New Year", "date": "2026-01-01", "sources": ["de"], "family": "holidays-de",
+         "family_name": "Holidays (DE)", "kind": "holidays", "country": "DE"},
+    ]
+    out = collapse_imported(rows)
+    assert len(out) == 1
+    g = out[0]
+    assert g["kind"] == "holidays", "the merged event keeps its real kind (the filter facet)"
+    assert set(g["countries"]) == {"FR", "DE"}, "countries accumulate across the merge"
+    assert g["country"] in {"FR", "DE"}, "a representative country is set"
+
+
+def test_imported_agenda_enriches_with_kind_and_country(tmp_path, monkeypatch):
+    """imported_agenda tags each event with its feed family's kind + country so the
+    frontend never has to hardcode an 'imported' category."""
+    import src.events.feeds as feeds
+
+    monkeypatch.setattr(feeds, "load_families", lambda: [
+        {"key": "holidays-fr", "name": "Holidays (FR)", "kind": "holidays", "country": "FR", "feeds": []},
+    ])
+    monkeypatch.setattr(feeds, "load_imports", lambda: {
+        "holidays-fr": {"name": "Holidays (FR)", "events": {
+            "u1": {"uid": "u1", "title": "Bastille Day", "date": "2026-07-14"},
+        }},
+    })
+    out = feeds.imported_agenda(frm="2026-01-01")
+    assert out and out[0]["kind"] == "holidays" and out[0]["country"] == "FR"
