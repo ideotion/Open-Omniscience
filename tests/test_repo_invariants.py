@@ -1953,6 +1953,71 @@ def test_tmap_mention_layer():
     assert "function showTmapWhereDetail(" in html, "the marker readout must exist"
 
 
+def test_ooMap_choropleth():
+    """ooMap slice 2 (maintainer ruling 2026-06-18): the universal CHOROPLETH
+    component -- country fills coloured by a measured dimension, in-map zoom/pan,
+    a colour-scale legend, honest no-data, and a centroid POINT fallback. First
+    dimension = sources-per-country, on the rebuilt Map (Temporal-map) tab.
+
+    Honesty (non-negotiable): no-data is visually DISTINCT from zero (a hatch,
+    never a guessed colour); polygon-less territories become POINTS, never an
+    invented border; the caveat is VISIBLE by default (#23); unlocated sources
+    are surfaced, never placed; counts only, no score.
+    """
+    html = _ui_source()
+
+    # The reusable component + its geometry loader (loopback-only asset, slice 1).
+    assert "async function ooMap(host, opts)" in html, "the ooMap component must exist"
+    assert "async function _ooMapGeoLoad()" in html, "the geometry loader must exist"
+    assert "/static/world_countries.json" in html, "ooMap must load the slice-1 country polygons"
+
+    # Reuses the EXISTING equirectangular projection -- no second projection invented.
+    assert "function _ooMapPath(rings)" in html, "the polygon path builder must exist"
+    assert "lon2x(p[0])" in html and "lat2y(p[1])" in html, (
+        "country polygons must reuse the map's lon2x/lat2y projection"
+    )
+
+    # Honest NO-DATA: a hatched pattern fill, distinct from any data colour, NOT zero.
+    assert "url(#oomap-nodata)" in html, "no-data countries must use the hatch fill"
+    assert 'pattern id="oomap-nodata"' in html, "the no-data hatch pattern must be defined"
+    assert 't("no data")' in html, "a country with no value must read 'no data', never zero"
+
+    # Centroid POINT fallback ONLY for data areas the polygon set lacks (never a border).
+    assert "geoCodes.has((p.iso2" in html, (
+        "points are plotted only for data areas WITHOUT a polygon (no invented borders)"
+    )
+    assert 't("(shown as a point)")' in html or 't("small areas shown as points")' in html, (
+        "the point fallback must be disclosed in the legend/readout"
+    )
+
+    # In-map controls (Google-Maps "controls inside the map") + instance-local pan/zoom.
+    assert 'data-oomap="in"' in html and 'data-oomap="reset"' in html, "in-map zoom/reset controls"
+    assert "function _wireOoMap(host, opts)" in html, "instance-local viewBox wiring must exist"
+
+    # a11y: the svg is role=img with an aria summary + a screen-reader top list.
+    assert 'id="oo-choro"' in html and 'role="img"' in html, "the choropleth svg needs role=img"
+    assert 'aria-label="${esc(aria)}"' in html, "the choropleth needs an aria-label summary"
+
+    # The colour scale inherits the theme accent (no hardcoded palette).
+    assert "function _ooMapFill(t)" in html and "color-mix(in srgb, var(--accent)" in html, (
+        "the sequential fill must derive from the theme accent via color-mix"
+    )
+
+    # The first dimension is wired to the SHIPPED endpoint and rendered on the Map tab.
+    assert "async function loadOoMapCoverage()" in html, "the Map-tab loader must exist"
+    assert "/api/insights/map-coverage" in html, "the loader must fetch the coverage endpoint"
+    assert 'id="oo-coverage-map"' in html, "the Map tab must host the choropleth"
+    assert "loadOoMapCoverage();" in html, "the loader must be wired into the Map-tab open path"
+
+    # Caveat VISIBLE by default (#23) + unlocated sources surfaced, never placed.
+    assert 'class="card-caveat"' in html and "${esc(opts.caveat)}" in html, (
+        "the choropleth caveat must render in a visible .card-caveat line"
+    )
+    assert "sources have no country and are not shown on the map." in html, (
+        "unlocated (country-less) sources must be surfaced honestly, never mapped"
+    )
+
+
 def test_search_timescope():
     """The Search sidebar tab reuses the SAME ooTimeScope control for date-range
     filtering (maintainer: "reuse the time-range control everywhere") so PERIODS

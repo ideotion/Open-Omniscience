@@ -1282,5 +1282,19 @@
   "Idle": "निष्क्रिय",
   "Downloads": "डाउनलोड",
   "AI & analysis": "एआई और विश्लेषण",
-  "paused — airplane mode": "रुका हुआ — हवाई जहाज़ मोड"
+  "paused — airplane mode": "रुका हुआ — हवाई जहाज़ मोड",
+  "World coverage": "वैश्विक कवरेज",
+  "— a choropleth of your corpus": "— आपके कोर्पस का कोरोप्लेथ मानचित्र",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "हर देश को इस आधार पर रंगा जाता है कि आपके कितने स्रोत वहाँ स्थित हैं — गहरा रंग अधिक दर्शाता है। बिना स्थानित स्रोत वाला देश बिना रंग का रहता है — ईमानदारी से “कोई डेटा नहीं”, कभी शून्य नहीं। जिन छोटे क्षेत्रों को मोटा रेखाचित्र नहीं बना सकता वे बिंदुओं के रूप में दिखते हैं, और बिना देश वाले स्रोत गिने जाते हैं पर मानचित्र पर कभी नहीं रखे जाते।",
+  "Sources per country": "प्रति देश स्रोत",
+  "no data": "कोई डेटा नहीं",
+  "Most": "सर्वाधिक",
+  "countries with data": "डेटा वाले देश",
+  "sources unlocated": "अस्थानित स्रोत",
+  "(shown as a point)": "(बिंदु के रूप में दिखाया गया)",
+  "small areas shown as points": "छोटे क्षेत्र बिंदुओं के रूप में",
+  "Map geometry unavailable.": "मानचित्र ज्यामिति उपलब्ध नहीं है।",
+  "Could not load coverage:": "कवरेज लोड नहीं हो सका:",
+  "sources have no country and are not shown on the map.": "स्रोतों का कोई देश नहीं है और वे मानचित्र पर नहीं दिखाए जाते।",
+  "No located sources yet — add sources with a country, or collect some articles.": "अभी तक कोई स्थानित स्रोत नहीं — देश वाले स्रोत जोड़ें, या कुछ लेख एकत्र करें।"
 }

@@ -1282,5 +1282,19 @@
   "Idle": "Inactif",
   "Downloads": "Téléchargements",
   "AI & analysis": "IA et analyse",
-  "paused — airplane mode": "en pause — mode avion"
+  "paused — airplane mode": "en pause — mode avion",
+  "World coverage": "Couverture mondiale",
+  "— a choropleth of your corpus": "— une carte choroplèthe de votre corpus",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "Chaque pays est teinté selon le nombre de vos sources qui y sont basées — plus c’est foncé, plus il y en a. Un pays sans source localisée reste non teinté — honnêtement « aucune donnée », jamais zéro. Les petits territoires que le contour grossier ne peut pas dessiner apparaissent en points, et les sources sans pays sont comptées mais jamais placées sur la carte.",
+  "Sources per country": "Sources par pays",
+  "no data": "aucune donnée",
+  "Most": "Le plus",
+  "countries with data": "pays avec des données",
+  "sources unlocated": "sources non localisées",
+  "(shown as a point)": "(affiché comme un point)",
+  "small areas shown as points": "petits territoires affichés en points",
+  "Map geometry unavailable.": "Géométrie de carte indisponible.",
+  "Could not load coverage:": "Impossible de charger la couverture :",
+  "sources have no country and are not shown on the map.": "sources n’ont pas de pays et ne sont pas affichées sur la carte.",
+  "No located sources yet — add sources with a country, or collect some articles.": "Aucune source localisée pour l’instant — ajoutez des sources avec un pays, ou collectez des articles."
 }

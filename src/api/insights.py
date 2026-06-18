@@ -394,6 +394,43 @@ def insights_map(
     return data
 
 
+@router.get("/map-coverage")
+def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
+    """Per-country COVERAGE for the choropleth (ooMap, slice 2): how many sources
+    -- and the articles collected from them -- originate in each country.
+
+    The FIRST map dimension is ``sources``. Counts only, NO score. Sources with
+    no catalogued country are surfaced in ``unlocated`` and never placed on the
+    map. Each located country also carries a centroid (``lat``/``lon`` from the
+    gazetteer) so the UI can fall back to a POINT for territories the coarse
+    110m geometry has no polygon for -- a point, never an invented border.
+    """
+    from src.catalog.countries import continent_of, country_display_name
+    from src.timemap.geocode import geocode
+
+    data = q.source_country_counts(db)
+    for row in data["by_country"]:
+        cc = row["country"]
+        disp = country_display_name(cc)
+        # A real country gets its name; an unknown code shows uppercased (honest:
+        # the code itself), never a fabricated name.
+        row["name"] = disp if (disp and disp != cc) else cc.upper()
+        row["continent"] = continent_of(cc)
+        pt = geocode(country=cc)
+        if pt:
+            row["lat"], row["lon"] = pt["lat"], pt["lon"]
+    data["dimension"] = "sources"
+    data["method"] = (
+        "Count of catalogued sources whose country = each ISO-2 area "
+        "(articles = those collected from them). Counts only, no score."
+    )
+    data["caveat"] = (
+        "Country is operator/catalogue-asserted; sources without a country are "
+        "counted as 'unlocated', never placed on the map."
+    )
+    return data
+
+
 @router.get("/who")
 def insights_who(
     entity_class: str | None = Query(

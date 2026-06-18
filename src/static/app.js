@@ -7046,6 +7046,193 @@
       });
     }
 
+    // ============================ ooMap ================================ //
+    // Universal CHOROPLETH world map (no deps, like ooChart/ooSubtabs). Colours
+    // each country POLYGON by a measured data dimension on a sequential scale,
+    // with in-map zoom/pan, a legend, honest no-data, and a centroid POINT
+    // fallback for territories the coarse 110m geometry has no polygon for
+    // (a point, never an invented border). Reuses the equirectangular
+    // projection (lon2x/lat2y, MAP_W/MAP_H). Maintainer ruling 2026-06-18.
+    let _ooMapGeo = null;                            // cached world_countries.json
+    async function _ooMapGeoLoad() {
+      if (_ooMapGeo !== null) return _ooMapGeo;
+      try { const r = await fetch("/static/world_countries.json"); _ooMapGeo = r.ok ? await r.json() : false; }
+      catch { _ooMapGeo = false; }                   // absent -> honest "unavailable", never an error
+      return _ooMapGeo;
+    }
+    function _ooMapPath(rings) {                      // [[lon,lat]...] rings -> SVG path 'd'
+      return (rings || []).map(ring => ring.length
+        ? "M" + ring.map(p => `${lon2x(p[0]).toFixed(1)} ${lat2y(p[1]).toFixed(1)}`).join("L") + "Z" : "").join(" ");
+    }
+    // Sequential fill: t in [0,1] -> theme accent over panel2. The MINIMUM data
+    // value still reads as >=12% accent so a data area is never mistaken for the
+    // hatched "no data" fill. color-mix inherits the active theme palette.
+    function _ooMapFill(t) {
+      const pct = Math.round(12 + Math.max(0, Math.min(1, t)) * 88);
+      return `color-mix(in srgb, var(--accent) ${pct}%, var(--panel2))`;
+    }
+
+    // The choropleth scale is LINEAR by default (faithful to magnitude; it
+    // surfaces real skew rather than flattening it). opts:
+    //   values {iso2:number} · points [{iso2,lat,lon,value,label}] (centroid
+    //   fallback) · label · unit · method · caveat · aria · names {iso2:name}
+    //   · valueLabel(iso2,v)->string · onCountry(iso2)
+    async function ooMap(host, opts) {
+      if (!host) return;
+      opts = opts || {};
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const geo = await _ooMapGeoLoad();
+      if (!geo || !geo.countries) { host.innerHTML = `<div class="muted">${esc(t("Map geometry unavailable."))}</div>`; return; }
+      const values = opts.values || {}, names = opts.names || {};
+      const nums = Object.values(values).filter(v => typeof v === "number" && isFinite(v));
+      const maxV = nums.length ? Math.max(...nums) : 0, minV = nums.length ? Math.min(...nums) : 0;
+      const span = maxV - minV;
+      const norm = v => span > 0 ? (v - minV) / span : (v > 0 ? 1 : 0);
+      const vlabel = (iso, v) => opts.valueLabel ? opts.valueLabel(iso, v) : `${v} ${opts.unit || ""}`.trim();
+
+      const W = MAP_W, H = MAP_H;
+      let grid = "";
+      for (let lon = -180; lon <= 180; lon += 30) grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${H}" stroke="var(--border)" stroke-width="0.25"/>`;
+      for (let lat = -90; lat <= 90; lat += 30) grid += `<line x1="0" y1="${lat2y(lat)}" x2="${W}" y2="${lat2y(lat)}" stroke="var(--border)" stroke-width="0.25"/>`;
+
+      const geoCodes = new Set(Object.keys(geo.countries).map(s => s.toLowerCase()));
+      let paths = "";
+      for (const [iso, c] of Object.entries(geo.countries)) {
+        const code = iso.toLowerCase(), v = values[code];
+        const has = typeof v === "number" && isFinite(v);
+        const d = _ooMapPath(c.rings); if (!d) continue;
+        const fill = has ? _ooMapFill(norm(v)) : "url(#oomap-nodata)";
+        const title = `${c.name} — ${has ? vlabel(code, v) : t("no data")}`;
+        paths += `<path d="${d}" fill="${fill}" stroke="var(--border)" stroke-width="0.3" data-iso="${esc(code)}"`
+          + `${opts.onCountry ? ' style="cursor:pointer"' : ""}><title>${esc(title)}</title></path>`;
+      }
+      // Centroid POINT fallback: areas WITH data but NO polygon (microstates).
+      const pointRows = (opts.points || []).filter(p => p.lat != null && p.lon != null
+        && typeof p.value === "number" && isFinite(p.value) && !geoCodes.has((p.iso2 || "").toLowerCase()));
+      let pts = "";
+      for (const p of pointRows) {
+        const x = lon2x(p.lon).toFixed(1), y = lat2y(p.lat).toFixed(1), iso = (p.iso2 || "").toLowerCase();
+        pts += `<circle cx="${x}" cy="${y}" r="2.4" fill="${_ooMapFill(norm(p.value))}" stroke="var(--accent)" stroke-width="0.5" `
+          + `data-iso="${esc(iso)}"${opts.onCountry ? ' style="cursor:pointer"' : ""}>`
+          + `<title>${esc((p.label || p.iso2 || "") + " — " + vlabel(iso, p.value) + " " + t("(shown as a point)"))}</title></circle>`;
+      }
+
+      // sr-only top list + aria summary (chart a11y pattern, PR G).
+      const top = Object.keys(values).map(k => [k, values[k]]).filter(r => typeof r[1] === "number")
+        .sort((a, b) => b[1] - a[1]).slice(0, 8);
+      const srTop = top.map(r => `<li>${esc((names[r[0]] || r[0].toUpperCase()) + ": " + vlabel(r[0], r[1]))}</li>`).join("");
+      const aria = opts.aria || opts.label || "map";
+
+      host.innerHTML = `<div class="oomap-wrap" style="position:relative">
+        <svg id="oo-choro" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(aria)}"
+             style="display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${W} / ${H}">
+          <defs><pattern id="oomap-nodata" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern></defs>
+          ${grid}${paths}${pts}
+        </svg>
+        <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
+          <button class="tiny secondary" data-oomap="in" title="${esc(t("Zoom in"))}">＋</button>
+          <button class="tiny secondary" data-oomap="out" title="${esc(t("Zoom out"))}">－</button>
+          <button class="tiny secondary" data-oomap="reset" title="${esc(t("Reset view"))}">⟲</button>
+          <button class="tiny secondary" data-oomap="big" title="${esc(t("Enlarge the map"))}">⛶</button>
+        </div>
+        <ul class="sr-only">${srTop}</ul>
+      </div>
+      <div class="oomap-legend" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px">
+        ${opts.label ? `<span>${esc(opts.label)}</span>` : ""}
+        <span style="display:inline-flex;align-items:center;gap:6px">
+          <span class="muted">${esc(fmtNum(minV))}</span>
+          <span style="width:90px;height:10px;border:1px solid var(--border);border-radius:3px;background:linear-gradient(to right, ${_ooMapFill(0)}, ${_ooMapFill(1)})"></span>
+          <span class="muted">${esc(fmtNum(maxV))}${opts.unit ? " " + esc(opts.unit) : ""}</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:5px">
+          <span style="width:14px;height:10px;border:1px solid var(--border);background:repeating-linear-gradient(45deg,var(--panel2),var(--panel2) 2px,var(--border) 2px,var(--border) 3px)"></span>
+          ${esc(t("no data"))}</span>
+        ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
+      </div>
+      ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
+      ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
+      _wireOoMap(host, opts);
+    }
+
+    // Instance-local viewBox zoom/pan (the Google-Maps "controls inside the map"
+    // convention). State lives in a closure per render -- no module globals, so
+    // re-renders cannot accumulate listeners (drag listeners are added on
+    // mousedown and removed on mouseup).
+    function _wireOoMap(host, opts) {
+      const svg = host.querySelector("#oo-choro"); if (!svg) return;
+      const W = MAP_W, H = MAP_H;
+      let vb = { x: 0, y: 0, w: W, h: H };
+      const apply = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+      const zoom = (f, ax, ay) => {
+        const cx = ax != null ? ax : vb.x + vb.w / 2, cy = ay != null ? ay : vb.y + vb.h / 2;
+        const w = Math.min(W, Math.max(W * 0.04, vb.w * f)), sc = w / vb.w;
+        vb.x = cx - (cx - vb.x) * sc; vb.y = cy - (cy - vb.y) * sc; vb.w = w; vb.h *= sc; apply();
+      };
+      host.querySelectorAll("[data-oomap]").forEach(b => b.addEventListener("click", () => {
+        const a = b.dataset.oomap;
+        if (a === "in") zoom(0.7); else if (a === "out") zoom(1.4);
+        else if (a === "big") { const w = host.querySelector(".oomap-wrap"); if (w) w.classList.toggle("mm-big"); }
+        else { vb = { x: 0, y: 0, w: W, h: H }; apply(); }
+      }));
+      svg.addEventListener("wheel", e => {
+        e.preventDefault();
+        const m = svg.getScreenCTM().inverse(), p = svg.createSVGPoint();
+        p.x = e.clientX; p.y = e.clientY; const qp = p.matrixTransform(m);
+        zoom(Math.exp(e.deltaY * 0.0015), qp.x, qp.y);
+      }, { passive: false });
+      let drag = false, sx = 0, sy = 0;
+      svg.addEventListener("mousedown", e => {
+        drag = true; sx = e.clientX; sy = e.clientY; svg.style.cursor = "grabbing";
+        const mv = ev => {
+          if (!drag) return; const r = svg.getBoundingClientRect();
+          vb.x -= (ev.clientX - sx) * vb.w / r.width; vb.y -= (ev.clientY - sy) * vb.h / r.height;
+          sx = ev.clientX; sy = ev.clientY; apply();
+        };
+        const up = () => { drag = false; svg.style.cursor = "grab"; window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+        window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+      });
+      if (opts && opts.onCountry) svg.addEventListener("click", e => {
+        if (drag) return; const el = e.target.closest("[data-iso]");
+        if (el && el.dataset.iso) opts.onCountry(el.dataset.iso);
+      });
+    }
+
+    // Map-tab choropleth: sources-per-country (the FIRST ooMap dimension).
+    async function loadOoMapCoverage() {
+      const host = $("oo-coverage-map"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const d = await api("/api/insights/map-coverage");
+        const rows = d.by_country || [];
+        if (!rows.length) {
+          host.innerHTML = `<div class="muted">${esc(t("No located sources yet — add sources with a country, or collect some articles."))}</div>`;
+          return;
+        }
+        const values = {}, names = {}, arts = {}, points = [];
+        rows.forEach(r => {
+          values[r.country] = r.sources; names[r.country] = r.name; arts[r.country] = r.articles || 0;
+          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: r.sources, label: r.name });
+        });
+        const unloc = (d.unlocated && d.unlocated.sources) || 0;
+        const topRow = rows[0];
+        const aria = `${t("Sources per country")}. ${rows.length} ${t("countries with data")}.`
+          + (topRow ? ` ${t("Most")}: ${topRow.name} (${topRow.sources}).` : "")
+          + (unloc ? ` ${unloc} ${t("sources unlocated")}.` : "");
+        const caveat = (d.caveat || "")
+          + (unloc ? `  ${unloc} ${t("sources have no country and are not shown on the map.")}` : "");
+        await ooMap(host, {
+          values, names, points, aria,
+          label: t("Sources per country"), unit: t("sources"),
+          method: d.method || "", caveat,
+          valueLabel: (iso, v) => `${v} ${t("sources")} · ${arts[iso] || 0} ${t("articles")}`,
+        });
+      } catch (e) {
+        host.innerHTML = `<div class="err">${esc(t("Could not load coverage:") + " " + e.message)}</div>`;
+      }
+    }
+
     async function loadMap() {
       const days = $("map-days").value, kind = $("map-kind").value;
       try {
@@ -7514,6 +7701,7 @@
     }
 
     async function loadTimemap() {
+      loadOoMapCoverage();                         // the ooMap choropleth (independent of the temporal layer)
       if (!_tmapPrefsLoaded) { _tmapPrefsLoaded = true; tmapRestorePrefs(); }  // restore once, before reading controls
       const hz = $("tmap-hazards") && $("tmap-hazards").checked;
       const arts = $("tmap-articles") && $("tmap-articles").checked;

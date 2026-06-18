@@ -1282,5 +1282,19 @@
   "Idle": "アイドル",
   "Downloads": "ダウンロード",
   "AI & analysis": "AI と分析",
-  "paused — airplane mode": "一時停止——機内モード"
+  "paused — airplane mode": "一時停止——機内モード",
+  "World coverage": "世界カバレッジ",
+  "— a choropleth of your corpus": "— コーパスのコロプレスマップ",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "各国は、そこに拠点を置くソースの数に応じて色付けされます — 濃いほど多くなります。位置情報のあるソースがない国は色付けされず、正直に「データなし」とされ、ゼロではありません。粗い輪郭では描けない小さな地域は点として表示され、国が不明なソースは集計されますが地図上には配置されません。",
+  "Sources per country": "国別ソース数",
+  "no data": "データなし",
+  "Most": "最多",
+  "countries with data": "データのある国",
+  "sources unlocated": "未配置のソース",
+  "(shown as a point)": "(点として表示)",
+  "small areas shown as points": "小さな地域は点で表示",
+  "Map geometry unavailable.": "地図ジオメトリは利用できません。",
+  "Could not load coverage:": "カバレッジを読み込めませんでした:",
+  "sources have no country and are not shown on the map.": "国が不明なソースは地図に表示されません。",
+  "No located sources yet — add sources with a country, or collect some articles.": "位置情報のあるソースはまだありません — 国付きのソースを追加するか、記事を収集してください。"
 }

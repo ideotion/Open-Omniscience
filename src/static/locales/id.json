@@ -1282,5 +1282,19 @@
   "Idle": "Diam",
   "Downloads": "Unduhan",
   "AI & analysis": "AI & analisis",
-  "paused — airplane mode": "dijeda — mode pesawat"
+  "paused — airplane mode": "dijeda — mode pesawat",
+  "World coverage": "Cakupan dunia",
+  "— a choropleth of your corpus": "— peta koroplet korpus Anda",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "Setiap negara diberi warna berdasarkan berapa banyak sumber Anda yang berbasis di sana — makin gelap makin banyak. Negara tanpa sumber berlokasi tetap tak berwarna — secara jujur “tidak ada data”, bukan nol. Wilayah kecil yang tak bisa digambar oleh garis kasar muncul sebagai titik, dan sumber tanpa negara dihitung tetapi tidak pernah ditempatkan di peta.",
+  "Sources per country": "Sumber per negara",
+  "no data": "tidak ada data",
+  "Most": "Terbanyak",
+  "countries with data": "negara dengan data",
+  "sources unlocated": "sumber tak berlokasi",
+  "(shown as a point)": "(ditampilkan sebagai titik)",
+  "small areas shown as points": "wilayah kecil sebagai titik",
+  "Map geometry unavailable.": "Geometri peta tidak tersedia.",
+  "Could not load coverage:": "Tidak dapat memuat cakupan:",
+  "sources have no country and are not shown on the map.": "sumber tidak memiliki negara dan tidak ditampilkan di peta.",
+  "No located sources yet — add sources with a country, or collect some articles.": "Belum ada sumber berlokasi — tambahkan sumber dengan negara, atau kumpulkan beberapa artikel."
 }

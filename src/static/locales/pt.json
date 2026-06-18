@@ -1282,5 +1282,19 @@
   "Idle": "Ocioso",
   "Downloads": "Downloads",
   "AI & analysis": "IA e análise",
-  "paused — airplane mode": "em pausa — modo avião"
+  "paused — airplane mode": "em pausa — modo avião",
+  "World coverage": "Cobertura mundial",
+  "— a choropleth of your corpus": "— um mapa coroplético do seu corpus",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "Cada país é sombreado conforme quantas das suas fontes estão sediadas ali — mais escuro significa mais. Um país sem fonte localizada permanece sem sombra — honestamente «sem dados», nunca zero. Pequenos territórios que o contorno grosseiro não consegue desenhar aparecem como pontos, e as fontes sem país são contadas mas nunca colocadas no mapa.",
+  "Sources per country": "Fontes por país",
+  "no data": "sem dados",
+  "Most": "Máximo",
+  "countries with data": "países com dados",
+  "sources unlocated": "fontes não localizadas",
+  "(shown as a point)": "(mostrado como um ponto)",
+  "small areas shown as points": "territórios pequenos mostrados como pontos",
+  "Map geometry unavailable.": "Geometria do mapa indisponível.",
+  "Could not load coverage:": "Não foi possível carregar a cobertura:",
+  "sources have no country and are not shown on the map.": "fontes não têm país e não são mostradas no mapa.",
+  "No located sources yet — add sources with a country, or collect some articles.": "Ainda não há fontes localizadas — adicione fontes com um país ou colete alguns artigos."
 }
