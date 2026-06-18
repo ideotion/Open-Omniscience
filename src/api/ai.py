@@ -4,10 +4,11 @@ AI-layer API: LLM keyword extraction into the SEPARATE AI store + a read-only le
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-These endpoints READ articles from the main corpus (allowed) and WRITE only to the
-AI store (src.ai_layer) — never the trusted keyword index in the main DB (the
-maintainer-ruled strict separation). The AI keywords are a parallel, labelled,
-disposable lens: no score, full model provenance, unconfirmed until a user curates.
+These endpoints READ articles from the main corpus and WRITE only to the AI-derived
+``ai_keyword`` table in the MAIN DB (maintainer ruling 2026-06-18) — NEVER the trusted
+``keyword_mentions`` index, which reads only ``articles.content``. The AI keywords are a
+parallel, labelled, disposable lens: no score, full model provenance, unconfirmed until
+a user curates.
 
 Ollama is loopback (no network egress for generation), so — like the existing
 summarize/translate/bulk endpoints — extraction is not behind the network-consent
@@ -25,7 +26,6 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.ai_layer import store as ai_store
-from src.ai_layer.db import ai_db_path, ai_session_scope, init_ai_db
 from src.ai_layer.jobs import ArticleWork, extract_for_articles
 from src.api.llm import active_model, get_llm_client
 from src.database.models import Article
@@ -65,9 +65,9 @@ def extract_keywords(
     client: OllamaClient = Depends(get_llm_client),
 ):
     """Extract salient keywords/entities for a matched article set with the local
-    model, storing them in the AI store. Selection mirrors the analysis window: an
-    explicit ``article_ids`` set wins, else the search filters resolve the set.
-    Streams NDJSON honest progress (invariant #20)."""
+    model, storing them in the ``ai_keyword`` table. Selection mirrors the analysis
+    window: an explicit ``article_ids`` set wins, else the search filters resolve the
+    set. Streams NDJSON honest progress (invariant #20)."""
     cap = max(1, min(req.limit or 200, _AI_EXTRACT_MAX))
 
     if req.article_ids:
@@ -101,7 +101,6 @@ def extract_keywords(
 
     model = req.model or active_model()
     max_terms = max(1, min(req.max_terms or 20, 100))
-    init_ai_db()  # ensure the AI store exists (we are about to write to it)
 
     # Visible in the task manager while it runs ("are keywords being extracted?").
     from src.monitoring import tasks as _bgtasks
@@ -130,31 +129,31 @@ def extract_keywords(
 
 @router.get("/articles/{article_id}/keywords")
 def article_ai_keywords(
-    article_id: int, kind: str | None = None, confirmed_only: bool = False
+    article_id: int,
+    kind: str | None = None,
+    confirmed_only: bool = False,
+    db: Session = Depends(get_db),
 ) -> dict:
     """The AI-derived keywords stored for one article (the read-only lens).
 
-    Side-effect-free: if no AI feature has ever run (the store file does not exist),
-    return an empty lens WITHOUT creating the file."""
-    if not ai_db_path().exists():
-        return {"article_id": article_id, "count": 0, "keywords": [], "note": _LENS_NOTE}
-    with ai_session_scope() as s:
-        rows = ai_store.keywords_for_article(
-            s, article_id, kind=kind, confirmed_only=confirmed_only
-        )
-        keywords = [
-            {
-                "id": r.id,
-                "term": r.term,
-                "kind": r.kind,
-                "language": r.language,
-                "model": r.model,
-                "prompt_version": r.prompt_version,
-                "confirmed": r.confirmed,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in rows
-        ]
+    Returns an empty list when an article has no AI keywords yet — the ``ai_keyword``
+    table always exists in the main DB, and a read never writes anything."""
+    rows = ai_store.keywords_for_article(
+        db, article_id, kind=kind, confirmed_only=confirmed_only
+    )
+    keywords = [
+        {
+            "id": r.id,
+            "term": r.term,
+            "kind": r.kind,
+            "language": r.language,
+            "model": r.model,
+            "prompt_version": r.prompt_version,
+            "confirmed": r.confirmed,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
     return {
         "article_id": article_id,
         "count": len(keywords),
@@ -169,13 +168,11 @@ class AiConfirmRequest(BaseModel):
 
 
 @router.post("/keywords/confirm")
-def confirm_ai_keyword(req: AiConfirmRequest) -> dict:
-    """Curate the AI lens IN PLACE: confirm/unconfirm one AI keyword. The row stays in
-    the AI store either way — a confirmed item never crosses into the trusted index."""
-    if not ai_db_path().exists():
-        raise HTTPException(status_code=404, detail="No AI keywords yet.")
-    with ai_session_scope() as s:
-        ok = ai_store.set_confirmed(s, req.id, req.confirmed)
+def confirm_ai_keyword(req: AiConfirmRequest, db: Session = Depends(get_db)) -> dict:
+    """Curate the AI lens IN PLACE: confirm/unconfirm one AI keyword. The row stays
+    AI-derived either way — a confirmed item never crosses into the trusted index."""
+    ok = ai_store.set_confirmed(db, req.id, req.confirmed)
     if not ok:
         raise HTTPException(status_code=404, detail=f"AI keyword {req.id} not found.")
+    db.commit()
     return {"id": req.id, "confirmed": req.confirmed, "ok": True}
