@@ -1237,5 +1237,9 @@
   "Auto-log on ingest": "تسجيل تلقائي عند الإدخال",
   "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "الخصوصية: ينشر OpenTimestamps تجزئة فقط، لكن إرسالها يكشف عنوان IP وتوقيتك لمشغّلي التقاويم. لمصدر مجهول، وجّه الحركة عبر Tor (HTTPS_PROXY) أو ابقَ محليًا فقط.",
   "Default actor": "الفاعل الافتراضي",
-  "Save custody settings": "حفظ إعدادات الحيازة"
+  "Save custody settings": "حفظ إعدادات الحيازة",
+  "Uninstall the app": "إلغاء تثبيت التطبيق",
+  "Uninstall & stop the app": "إلغاء التثبيت وإيقاف التطبيق",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted. This cannot be undone. Overwrite-in-place does not guarantee unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails) and destroy the key.": "يحذف بشكل لا رجعة فيه المجموعة والمفاتيح والذاكرة المؤقتة على هذا الجهاز، ثم يجب إعادة تشغيل التطبيق. لا يمكن التراجع عن هذا. الكتابة فوق البيانات في مكانها لا تضمن عدم قابلية الاسترداد على SSD/الفلاش — لذلك، استخدم تشفير القرص الكامل (LUKS/Qubes/Tails) وأتلِف المفتاح.",
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal:": "تُزال البيئة الافتراضية ومشغّلات سطح المكتب دائمًا؛ أما ذهاب مجلد التطبيق وبياناتك أيضًا فيعتمد على الوضع. يمكنك أيضًا تشغيله في الطرفية:"
 }

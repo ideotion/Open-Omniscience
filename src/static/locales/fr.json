@@ -1237,5 +1237,9 @@
   "Auto-log on ingest": "Journalisation automatique à l'ingestion",
   "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "Confidentialité : OpenTimestamps ne publie qu'un hachage, mais le soumettre révèle votre IP et votre horodatage aux opérateurs des calendriers. Pour une source anonyme, acheminez le trafic via Tor (HTTPS_PROXY) ou restez uniquement en local.",
   "Default actor": "Acteur par défaut",
-  "Save custody settings": "Enregistrer les paramètres de possession"
+  "Save custody settings": "Enregistrer les paramètres de possession",
+  "Uninstall the app": "Désinstaller l'application",
+  "Uninstall & stop the app": "Désinstaller et arrêter l'application",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted. This cannot be undone. Overwrite-in-place does not guarantee unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails) and destroy the key.": "Supprime de façon irréversible le corpus, les clés et les caches sur cette machine, puis l'application doit être redémarrée. Cela ne peut pas être annulé. L'écrasement sur place ne garantit pas l'irrécupérabilité sur SSD/flash — pour cela, utilisez le chiffrement intégral du disque (LUKS/Qubes/Tails) et détruisez la clé.",
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal:": "L'environnement virtuel et les lanceurs de bureau sont toujours supprimés ; le départ du dossier de l'application et de vos données dépend du mode. Vous pouvez aussi l'exécuter dans un terminal :"
 }

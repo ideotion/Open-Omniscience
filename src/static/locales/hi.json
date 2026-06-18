@@ -1237,5 +1237,9 @@
   "Auto-log on ingest": "इनजेस्ट पर स्वतः-लॉग",
   "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "गोपनीयता: OpenTimestamps केवल एक हैश प्रकाशित करता है, लेकिन इसे जमा करने पर कैलेंडर ऑपरेटरों को आपका IP और समय पता चलता है। किसी गुमनाम स्रोत के लिए, ट्रैफ़िक को Tor (HTTPS_PROXY) के माध्यम से रूट करें या केवल स्थानीय रहें।",
   "Default actor": "डिफ़ॉल्ट कर्ता",
-  "Save custody settings": "अभिरक्षा सेटिंग्स सहेजें"
+  "Save custody settings": "अभिरक्षा सेटिंग्स सहेजें",
+  "Uninstall the app": "ऐप अनइंस्टॉल करें",
+  "Uninstall & stop the app": "अनइंस्टॉल करें और ऐप रोकें",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted. This cannot be undone. Overwrite-in-place does not guarantee unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails) and destroy the key.": "इस मशीन पर संग्रह, कुंजियाँ और कैश को अपरिवर्तनीय रूप से हटा देता है, फिर ऐप को पुनः आरंभ करना होगा। इसे पूर्ववत नहीं किया जा सकता। यथास्थान ओवरराइट SSD/फ़्लैश पर अपुनर्प्राप्यता की गारंटी नहीं देता — इसके लिए, पूर्ण-डिस्क एन्क्रिप्शन (LUKS/Qubes/Tails) का उपयोग करें और कुंजी नष्ट कर दें।",
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal:": "वर्चुअलenv और डेस्कटॉप लॉन्चर हमेशा हटाए जाते हैं; ऐप फ़ोल्डर और आपका डेटा भी जाएगा या नहीं यह मोड पर निर्भर करता है। आप इसे एक टर्मिनल में भी चला सकते हैं:"
 }

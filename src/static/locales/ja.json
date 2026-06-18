@@ -1237,5 +1237,9 @@
   "Auto-log on ingest": "取り込み時に自動記録",
   "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "プライバシー:OpenTimestamps はハッシュのみを公開しますが、それを送信するとあなたの IP と時刻がカレンダー運営者に知られます。匿名の情報源には、トラフィックを Tor (HTTPS_PROXY) 経由にするか、ローカルのみに留めてください。",
   "Default actor": "既定のアクター",
-  "Save custody settings": "保全設定を保存"
+  "Save custody settings": "保全設定を保存",
+  "Uninstall the app": "アプリをアンインストール",
+  "Uninstall & stop the app": "アンインストールしてアプリを停止",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted. This cannot be undone. Overwrite-in-place does not guarantee unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails) and destroy the key.": "このマシン上のコーパス・鍵・キャッシュを元に戻せない形で削除し、その後アプリを再起動する必要があります。これは取り消せません。その場での上書きは SSD/フラッシュでの復元不能を保証しません — それには全ディスク暗号化(LUKS/Qubes/Tails)を使い、鍵を破棄してください。",
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal:": "仮想環境とデスクトップのランチャーは常に削除されます。アプリのフォルダーとあなたのデータも削除されるかはモードによります。ターミナルで実行することもできます:"
 }

@@ -1237,5 +1237,9 @@
   "Auto-log on ingest": "Catat otomatis saat menelan",
   "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "Privasi: OpenTimestamps hanya menerbitkan sebuah hash, tetapi mengirimkannya mengungkap IP dan waktu Anda kepada operator kalender. Untuk sumber anonim, rutekan lalu lintas melalui Tor (HTTPS_PROXY) atau tetap hanya lokal.",
   "Default actor": "Aktor bawaan",
-  "Save custody settings": "Simpan pengaturan pengawasan"
+  "Save custody settings": "Simpan pengaturan pengawasan",
+  "Uninstall the app": "Hapus instalasi aplikasi",
+  "Uninstall & stop the app": "Hapus instalasi & hentikan aplikasi",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted. This cannot be undone. Overwrite-in-place does not guarantee unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails) and destroy the key.": "Menghapus korpus, kunci, dan cache di mesin ini secara permanen, lalu aplikasi harus dimulai ulang. Ini tidak dapat dibatalkan. Penimpaan di tempat tidak menjamin ketidakdapatpulihan pada SSD/flash — untuk itu, gunakan enkripsi disk penuh (LUKS/Qubes/Tails) dan musnahkan kuncinya.",
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal:": "Virtualenv dan peluncur desktop selalu dihapus; apakah folder aplikasi dan data Anda ikut terhapus tergantung pada mode. Anda juga dapat menjalankannya di terminal:"
 }
