@@ -1782,6 +1782,85 @@ def source_laundering(session) -> list[Card]:
     return cards
 
 
+_MAX_RECYCLED = 4
+
+
+def recycled_claim(session) -> list[Card]:
+    """Surface recent text that near-duplicates a much OLDER article — a claim
+    resurfacing after dormancy (manipulation-pattern card, ruling #13).
+
+    Names a STRUCTURE, never intent: the same text reappearing long after it first ran.
+    The trigger is a measured time GAP (days), never a score; a single source recycling
+    its own evergreen is flagged ``single_source``; the innocent explanations (anniversary
+    piece, evergreen re-run, wire re-publish) are stated beside the pattern.
+    """
+    try:
+        from src.analytics.recycled_claim import RECYCLED_CAVEAT, find_recycled_claims
+
+        found = find_recycled_claims(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("recycled-claim scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for c in found.get("clusters", [])[:_MAX_RECYCLED]:
+        title = c["recent_title"] or c["original_title"] or "(untitled)"
+        if len(title) > 70:
+            title = title[:67] + "…"
+        spread = (
+            f"across {c['distinct_sources']} sources"
+            if not c["single_source"]
+            else "by the same source"
+        )
+        cards.append(
+            Card(
+                type="recycled_claim",
+                title=f"Resurfaced after {c['gap_days']} days: {title}",
+                summary=(
+                    f"Near-identical text first seen {c['first_seen']} reappeared "
+                    f"{c['resurfaced']} ({spread}) — a {c['gap_days']}-day gap. It may be an "
+                    "anniversary piece or an evergreen re-run, or old content recycled as "
+                    "new. Read both and judge."
+                ),
+                bucket="watch",
+                signal={
+                    "metric": "gap_days",
+                    "value": c["gap_days"],
+                    "n_articles": c["n_articles"],
+                    "distinct_sources": c["distinct_sources"],
+                    "single_source": c["single_source"],
+                    "first_seen": c["first_seen"],
+                    "resurfaced": c["resurfaced"],
+                    "sources": c["sources"],
+                },
+                method=found.get("method", ""),
+                caveat=RECYCLED_CAVEAT,
+                # The exact article set (old + recent), so the card opens the window over it.
+                article_ids=list(c.get("article_ids", [])),
+                n=c["n_articles"],
+                key=f"recycled:{c['first_seen']}:{title}",
+                trigger=_trigger(
+                    "This reads almost word-for-word like something published much earlier. "
+                    "Old text coming back is often innocent — an anniversary, an evergreen "
+                    "re-run — but it can also be recycled to look like fresh news. Read both "
+                    "and judge.",
+                    [
+                        ("Dormancy gap", f"{c['gap_days']} days"),
+                        ("Articles in the cluster", str(c["n_articles"])),
+                        (
+                            "Spread",
+                            "same source"
+                            if c["single_source"]
+                            else f"{c['distinct_sources']} distinct sources",
+                        ),
+                        ("Minimum gap for this Lead", f">= {found['min_gap_days']} days ✓"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -1805,6 +1884,7 @@ _DEFAULT_PRODUCERS = (
     ("space_time_convergence", space_time_convergence),
     ("watch_matches", watch_matches),
     ("source_laundering", source_laundering),
+    ("recycled_claim", recycled_claim),
 )
 
 

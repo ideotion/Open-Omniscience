@@ -404,8 +404,22 @@ ruling, a contingency, or a deliberate-omission note.
   source_laundering PRODUCER (bucket="overtold", passes the no-score Card schema, _trigger) auto-
   surfaces it as a Home Lead via run_all; GET /api/insights/source-laundering for exploration.
   tests/test_source_laundering.py (5: fires on distinct sources, one-chatty-source-can't-launder,
-  social/commerce excluded, both gates, endpoint). REMAINING: the other 8 cards (astroturf/copypasta
-  partly covered by echo_chamber; headline-body-mismatch, outrage-intensity, recycled-claim,
+  social/commerce excluded, both gates, endpoint).
+  **CARD RECYCLED-CLAIM SHIPPED 2026-06-17 (the 2nd card, backend VERIFIED py3.13 — chosen for its
+  CLEAN deterministic signal over the design-heavy NLP cards):** src/analytics/recycled_claim.py:
+  find_recycled_claims — a RECENT article near-identical to a MUCH OLDER one = a claim resurfacing
+  after dormancy. Reuses the proven near_duplicate_clusters PRIMITIVE (MinHash+LSH, high-precision,
+  NOT fuzzy NLP) so it's honest+testable, and is DISTINCT from echo_chamber (near-dup in a SHORT
+  window = coordination) by requiring a LARGE dormancy gap. HONESTY: the trigger is a measured time
+  GAP (days between oldest+newest member), never a score; a cluster only fires when a member is RECENT
+  (a CURRENT resurfacing, not two equally-old dups); a single source recycling its own evergreen is
+  surfaced but FLAGGED single_source; the scan is BOUNDED (recent pool + older pool, both capped,
+  stated in method); innocent explanations (anniversary/evergreen-rerun/wire-republish) stated beside
+  the pattern. A recycled_claim PRODUCER (bucket="watch", no-score schema, _trigger) auto-surfaces it
+  as a Home Lead; GET /api/insights/recycled-claims for exploration. tests/test_recycled_claim.py (6:
+  fires on recent-dup-of-old, short-gap-isn't-recycled, two-old-without-recent-doesn't-fire,
+  single-source-flagged, unrelated-text-no-cluster, endpoint). REMAINING: the other 6 cards
+  (astroturf/copypasta partly covered by echo_chamber; headline-body-mismatch, outrage-intensity,
   flood/bury, manufactured-emergence, event-timed-op still to build); the elections/civic vertical.
   SEQUENCING: (1) is the lead. Record-only here; build across stacked PRs onto 0.09.
 - **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run

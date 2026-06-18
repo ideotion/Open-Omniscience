@@ -516,6 +516,31 @@ def insights_source_laundering(
     )
 
 
+@router.get("/recycled-claims")
+def insights_recycled_claims(
+    recent_days: int = Query(14, ge=1, le=3650, description="window for a 'current' resurfacing"),
+    lookback_days: int = Query(
+        365, ge=1, le=36500, description="how far back to look for an original"
+    ),
+    min_gap_days: int = Query(60, ge=1, le=36500, description="minimum dormancy gap to surface"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Recent articles that near-duplicate a much OLDER one — a claim resurfacing after
+    dormancy (manipulation-pattern card). Names the STRUCTURE, never intent: the trigger
+    is a measured time gap (not a score); a single source recycling its own evergreen is
+    flagged; the innocent explanations are stated beside the pattern."""
+    from src.analytics.recycled_claim import find_recycled_claims
+
+    return find_recycled_claims(
+        db,
+        recent_days=recent_days,
+        lookback_days=lookback_days,
+        min_gap_days=min_gap_days,
+        max_clusters=limit,
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None
