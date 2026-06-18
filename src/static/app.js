@@ -7183,6 +7183,34 @@
         }
       }
 
+      // Signals LAYER (slice 5a — folding the temporal map in): curated/extracted
+      // EVENTS placed in space AND time, kind-coloured, filtered by the focus
+      // window and faded by distance in time. Reuses the temporal map's data
+      // (/api/timemap) + helpers (kindColor / TMAP_KINDS / fmtYear / fmtDate). The
+      // in-map slider moves the focus moment. Confirmed = filled, future/unconfirmed
+      // = a hollow/dashed ring (the temporal map's honest convention).
+      let signalPts = "", sigKinds = [];
+      if (opts.signalsOn && Array.isArray(opts.signals)) {
+        const focus = opts.focusT, win = opts.windowY || 0;
+        const vis = opts.signals.filter(s => s.lat != null && s.lon != null
+          && typeof s.t === "number"
+          && (!win || focus == null || Math.abs(s.t - focus) <= win));
+        sigKinds = [...new Set(vis.map(s => s.kind))];
+        signalPts = vis.map(s => {
+          const x = lon2x(s.lon).toFixed(1), y = lat2y(s.lat).toFixed(1);
+          const dist = focus == null ? 0 : Math.abs(s.t - focus);
+          const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
+          const future = focus != null && s.t > focus + 0.001;
+          const r = s.confirmed ? 3 : 2.4;
+          const col = kindColor(s.kind);
+          const ring = (future || !s.confirmed)
+            ? `fill="transparent" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future ? "2 1.5" : ""}"`
+            : `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`;
+          const ti = `${s.title} — ${fmtDate(s)} · ${TMAP_KINDS[s.kind]?.l || s.kind}${s.place ? " · " + s.place : ""}`;
+          return `<circle cx="${x}" cy="${y}" r="${r}" ${ring} opacity="${op.toFixed(2)}"><title>${esc(ti)}</title></circle>`;
+        }).join("");
+      }
+
       // sr-only top list + aria summary (chart a11y pattern, PR G).
       const top = Object.keys(values).map(k => [k, values[k]]).filter(r => typeof r[1] === "number")
         .sort((a, b) => b[1] - a[1]).slice(0, 8);
@@ -7199,6 +7227,14 @@
           <button class="tiny secondary" data-oomap-gran="country" aria-pressed="${opts.granularity !== "continent"}"${opts.granularity !== "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Country"))}</button>
           <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
+          ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
+        </div>` : "";
+      // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
+      // the Signals layer is on; sweeps the focus moment (antiquity -> near future).
+      const sliderHtml = opts.signalsOn ? `
+        <div class="oomap-time" style="position:absolute;bottom:36px;left:8px;right:8px;z-index:5;display:flex;align-items:center;gap:8px;background:color-mix(in srgb, var(--panel) 82%, transparent);padding:3px 8px;border-radius:6px">
+          <input type="range" data-oomap-focus min="0" max="1000" value="${opts.focusSlider != null ? opts.focusSlider : 1000}" step="1" style="flex:1" aria-label="${esc(t("Moment in focus"))}">
+          <strong style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${esc(opts.focusLabel || "")}</strong>
         </div>` : "";
 
       // In-map dimension picker (the "controls inside the map" convention) — the
@@ -7224,7 +7260,7 @@
              style="display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${W} / ${H}">
           <defs><pattern id="oomap-nodata" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern></defs>
-          ${grid}${paths}${pts}${overlayPts}
+          ${grid}${paths}${pts}${overlayPts}${signalPts}
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
           <button class="tiny secondary" data-oomap="in" title="${esc(t("Zoom in"))}">＋</button>
@@ -7232,7 +7268,7 @@
           <button class="tiny secondary" data-oomap="reset" title="${esc(t("Reset view"))}">⟲</button>
           <button class="tiny secondary" data-oomap="big" title="${esc(t("Enlarge the map"))}">⛶</button>
         </div>
-        ${pickerHtml}${granHtml}
+        ${pickerHtml}${granHtml}${sliderHtml}
         <ul class="sr-only">${srTop}</ul>
       </div>
       <div class="oomap-legend" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px">
@@ -7243,6 +7279,7 @@
           ${esc(t("no data"))}</span>
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
+        ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(TMAP_KINDS[k]?.l || k)}</span>`).join("") : ""}
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
@@ -7274,6 +7311,8 @@
       if (opts && opts.onGranularity) host.querySelectorAll("[data-oomap-gran]").forEach(b =>
         b.addEventListener("click", () => opts.onGranularity(b.dataset.oomapGran)));
       if (opts && opts.onPlaces) { const pb = host.querySelector("[data-oomap-places]"); if (pb) pb.addEventListener("click", () => opts.onPlaces()); }
+      if (opts && opts.onSignals) { const sb = host.querySelector("[data-oomap-signals]"); if (sb) sb.addEventListener("click", () => opts.onSignals()); }
+      if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
       svg.addEventListener("wheel", e => {
         e.preventDefault();
         const m = svg.getScreenCTM().inverse(), p = svg.createSVGPoint();
@@ -7301,6 +7340,8 @@
     // The endpoint returns every measure per country in ONE payload, so switching
     // dimension is instant (no re-fetch) — the picker just re-colours the map.
     let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null;
+    // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
+    let _ooMapSignalsOn = false, _ooMapSignals = null, _ooMapFocusSlider = 1000, _ooMapFocusRAF = 0;
     // Aggregate the per-country values into CONTINENTS (slice 4): a SUM for counts,
     // a sentiment_n-WEIGHTED mean for tone (the honest cross-country average).
     function _ooMapContinentAgg(rows, dim) {
@@ -7373,6 +7414,18 @@
         : undefined;
       const overlayPoints = (_ooMapPlacesOn && _ooMapWhere && Array.isArray(_ooMapWhere.places))
         ? _ooMapWhere.places.map(p => ({ lat: p.lat, lon: p.lon, value: p.articles, label: p.name })) : [];
+      // Signals layer: derive the time span from the plottable signals, map the
+      // slider position to a focus YEAR, and use an adaptive window (~1/12 of the
+      // span) so the slider sweeps meaningfully whatever the corpus's time range.
+      const sig = _ooMapSignalsOn && Array.isArray(_ooMapSignals) ? _ooMapSignals : [];
+      let focusT = null, windowY = 0, focusSlider = _ooMapFocusSlider, focusLabel = "";
+      if (sig.length) {
+        const ts = sig.map(s => s.t);
+        const tmin = Math.min(...ts), tmax = Math.max(...ts), spanY = tmax - tmin;
+        windowY = Math.max(5, spanY / 12);
+        focusT = tmin + (focusSlider / 1000) * spanY;
+        focusLabel = (typeof fmtYear === "function") ? fmtYear(focusT) : String(Math.round(focusT));
+      }
       await ooMap(host, {
         values, names, points, aria, srRows,
         scale: dim.scale, label: dim.label, unit: dim.unit,
@@ -7390,6 +7443,19 @@
           }
           _renderOoMapDim();
         },
+        signalsOn: _ooMapSignalsOn, signals: sig, focusT, windowY, focusSlider, focusLabel,
+        onSignals: async () => {
+          _ooMapSignalsOn = !_ooMapSignalsOn;
+          if (_ooMapSignalsOn && _ooMapSignals == null) {
+            try {
+              const d = await api("/api/timemap?limit=4000");
+              _ooMapSignals = (d.signals || []).filter(s => typeof s.t === "number" && s.lat != null && s.lon != null);
+            } catch { _ooMapSignals = []; }
+          }
+          _renderOoMapDim();
+        },
+        // rAF-coalesce slider drags so a fast sweep is at most one re-render per frame.
+        onFocus: v => { _ooMapFocusSlider = v; if (_ooMapFocusRAF) cancelAnimationFrame(_ooMapFocusRAF); _ooMapFocusRAF = requestAnimationFrame(() => _renderOoMapDim()); },
         valueLabel: fmtV,
       });
     }

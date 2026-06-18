@@ -2390,7 +2390,8 @@ ruling, a contingency, or a deliberate-omission note.
   2026-06-18, below] (articles·keywords·sentiment, dimension picker,
   caveats); (4) granularity [SHIPPED 2026-06-18, below] (continent aggregation + city/place
   point overlay); (5)
-  consolidation (fold the time-slider in, retire the old surfaces, embed ooMap on
+  consolidation [maintainer chose "FOLD signals in, then retire" 2026-06-18 — 5a SHIPPED below]
+  (fold the time-slider in, retire the old surfaces, embed ooMap on
   When/Where + insights).
   **SLICE 1 SHIPPED 2026-06-18 (the choropleth data foundation; backend VERIFIED py3.13):**
   a CHOROPLETH needs per-country FILL polygons — the app had only coastline/land outlines
@@ -2499,8 +2500,32 @@ ruling, a contingency, or a deliberate-omission note.
   locale with ZERO translation tables / ZERO new i18n keys. test_ooMap_choropleth asserts the
   helper + Intl.DisplayNames region + the map use. REMAINING: adopt `ooRegionName` on any other
   name-surface found in a click-through; the map's English-only continent SET was the keyed case,
-  country names are the CLDR case. REMAINING (map rework): human click-through; slice 5 (fold the
-  time-slider in, retire the old temporal-map surfaces, embed ooMap on When/Where + Insights).
+  country names are the CLDR case.
+  **SLICE 5 — maintainer chose "FOLD signals in, then retire" (AskUserQuestion 2026-06-18): make
+  ooMap the ONE map (events become a layer, the slider an in-map control), THEN retire the old
+  temporal map. Built as stacked PRs (5a additive layer+slider, 5b retire).**
+  **SLICE 5a SHIPPED 2026-06-18 (the SIGNALS layer + in-map TIME SLIDER on ooMap; PR onto 0.09;
+  FRONTEND-ONLY, BROWSER-UNVERIFIED per fork-3):** ooMap gained a switchable "Signals" layer
+  (bottom-left control group, beside Country/Continent/Places) that plots the temporal map's
+  space-time EVENTS as kind-coloured points — REUSING the existing LOCAL `/api/timemap?limit=4000`
+  substrate (no hazards flag → no live-hazard network; airplane-safe) + its helpers
+  (`kindColor`/`TMAP_KINDS`/`fmtYear`/`fmtDate`) + its honest convention (confirmed = filled,
+  future/unconfirmed = a hollow/dashed ring; faded by distance in time). An in-map TIME SLIDER
+  (full-width, appears above the controls when Signals is on) sweeps the focus MOMENT (antiquity →
+  near-future): the loader derives the time span from the plottable signals, maps the slider 0–1000
+  to a focus year, and uses an ADAPTIVE window (~span/12) so the sweep is meaningful at any range;
+  signals filter by `|s.t − focus| ≤ window`. A kind LEGEND (the kinds present) shows in the legend
+  row. Signals are LAZY-fetched on first toggle (like Places), filtered to those with a numeric `t`
+  + coordinates (never re-projected — reuses lon2x/lat2y). Slider drags are rAF-COALESCED (≤1
+  re-render/frame). `ooMap` gained `opts.signals`/`signalsOn`/`onSignals` + `focusT`/`windowY`/
+  `focusSlider`/`focusLabel`/`onFocus`. The OLD temporal map is UNTOUCHED (additive — 5b retires it
+  after verifying ooMap absorbs it; the Desk lesson). +2 i18n keys ×12 (Signals · Moment in focus).
+  test_ooMap_choropleth extended (signals toggle + /api/timemap reuse + kindColor + the focus-window
+  filter + the future-ring honesty + the slider). i18n --min 100 (1316×12), node --check, full
+  test_repo_invariants 67 passed. NO backend change. REMAINING: click-to-detail on a signal (the
+  temporal map's rich panel — fold before retiring); per-render perf on huge corpora (full SVG
+  rebuild on slide — could update only the signals layer); 5b (retire #oo-tmap, absorption-gated) +
+  embed ooMap on When/Where + Insights.
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles
