@@ -12,6 +12,10 @@ src/analytics/queries.
 
 from __future__ import annotations
 
+import logging
+import os as _os
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -19,10 +23,53 @@ from sqlalchemy.orm import Session
 from src.analytics import queries as q
 from src.analytics.convergence import find_convergences
 from src.database.session import get_db
+from src.utils.cache import SimpleCache
+
+_LOG = logging.getLogger("api.insights")
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 
 _VALID_KINDS = ("term", "entity", "person", "org", "location")
+
+# ---------------------------------------------------------------------------- #
+# Whole-corpus read cache (perf, field report 2026-06-18).
+#
+# top / trending / trending-windows / map all GROUP BY over the full 829k-mention
+# table per call (measured 2.7-36 s), and the Home "Trending" panel POLLS one of
+# them — 132 calls in one session. They recompute the SAME numbers every time. A
+# short TTL cache makes the UI instant; honest about it (computed_at + cache_ttl_s
+# + a `cached` flag travel in the payload, like the database-stats cache). We use a
+# plain TTL (NOT a write-invalidated probe) on purpose: under continuous scraping a
+# write-invalidated cache would be cold on every pass — exactly when the operator is
+# looking — so a small disclosed staleness buys a permanently-snappy UI. The cache
+# is WARMED in the background after each scrape (warm_cache), so even the first open
+# rarely hits a cold query. OO_INSIGHTS_CACHE_TTL overrides; 0 disables.
+_CACHE_TTL_S = int(_os.getenv("OO_INSIGHTS_CACHE_TTL", "120"))
+_read_cache = SimpleCache(max_size=128, default_ttl=max(1, _CACHE_TTL_S))
+
+
+def _ckey(name: str, **params) -> str:
+    return name + "|" + "|".join(f"{k}={params[k]}" for k in sorted(params))
+
+
+def _cached(key: str, compute):
+    """Return the cached payload (flagged ``cached: true``) or compute, stamp the
+    freshness window, store and return it. Disabled when the TTL is 0."""
+    if _CACHE_TTL_S <= 0:
+        return compute()
+    hit = _read_cache.get(key)
+    if isinstance(hit, dict):
+        return {**hit, "cached": True}
+    out = compute()
+    if isinstance(out, dict):
+        out = {
+            **out,
+            "computed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "cache_ttl_s": _CACHE_TTL_S,
+        }
+        _read_cache.set(key, out)
+        return {**out, "cached": False}
+    return out
 
 
 def _resolve_corpus(
@@ -284,7 +331,9 @@ def insights_top(
     db: Session = Depends(get_db),
 ) -> dict:
     """Most-mentioned keywords (optionally windowed / per-country / per-kind)."""
-    return q.top_terms(db, days=days, country=country, kind=_kind(kind), limit=limit, group=group)
+    key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group)
+    return _cached(key, lambda: q.top_terms(
+        db, days=days, country=country, kind=_kind(kind), limit=limit, group=group))
 
 
 @router.get("/trending")
@@ -297,14 +346,16 @@ def insights_trending(
     db: Session = Depends(get_db),
 ) -> dict:
     """Rising keywords by a transparent recent-vs-prior ratio."""
-    return q.trending(
+    key = _ckey("trending", window_days=window_days, baseline_days=baseline_days,
+                country=country, kind=kind, limit=limit)
+    return _cached(key, lambda: q.trending(
         db,
         window_days=window_days,
         baseline_days=baseline_days,
         country=country,
         kind=_kind(kind),
         limit=limit,
-    )
+    ))
 
 
 @router.get("/trending-windows")
@@ -329,9 +380,10 @@ def insights_trending_windows(
     ADDITIVE: ``series_top > 0`` attaches a per-term daily ``series`` (reusing the
     /trend day buckets) to the top terms so the frontend can draw an ooChart each;
     ``series_top=0`` (default) is byte-identical to the prior response."""
-    return q.trending_windows(
+    key = _ckey("trending-windows", country=country, kind=kind, limit=limit, series_top=series_top)
+    return _cached(key, lambda: q.trending_windows(
         db, country=country, kind=_kind(kind), limit=limit, series_top=series_top
-    )
+    ))
 
 
 @router.get("/trend")
@@ -405,30 +457,70 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
     gazetteer) so the UI can fall back to a POINT for territories the coarse
     110m geometry has no polygon for -- a point, never an invented border.
     """
-    from src.catalog.countries import continent_of, country_display_name
-    from src.timemap.geocode import geocode
+    def _compute() -> dict:
+        from src.catalog.countries import continent_of, country_display_name
+        from src.timemap.geocode import geocode
 
-    data = q.source_country_counts(db)
-    for row in data["by_country"]:
-        cc = row["country"]
-        disp = country_display_name(cc)
-        # A real country gets its name; an unknown code shows uppercased (honest:
-        # the code itself), never a fabricated name.
-        row["name"] = disp if (disp and disp != cc) else cc.upper()
-        row["continent"] = continent_of(cc)
-        pt = geocode(country=cc)
-        if pt:
-            row["lat"], row["lon"] = pt["lat"], pt["lon"]
-    data["dimension"] = "sources"
-    data["method"] = (
-        "Count of catalogued sources whose country = each ISO-2 area "
-        "(articles = those collected from them). Counts only, no score."
-    )
-    data["caveat"] = (
-        "Country is operator/catalogue-asserted; sources without a country are "
-        "counted as 'unlocated', never placed on the map."
-    )
-    return data
+        data = q.source_country_counts(db)
+        for row in data["by_country"]:
+            cc = row["country"]
+            disp = country_display_name(cc)
+            # A real country gets its name; an unknown code shows uppercased (honest:
+            # the code itself), never a fabricated name.
+            row["name"] = disp if (disp and disp != cc) else cc.upper()
+            row["continent"] = continent_of(cc)
+            pt = geocode(country=cc)
+            if pt:
+                row["lat"], row["lon"] = pt["lat"], pt["lon"]
+        data["dimension"] = "sources"
+        data["method"] = (
+            "Count of catalogued sources whose country = each ISO-2 area "
+            "(articles = those collected from them). Counts only, no score."
+        )
+        data["caveat"] = (
+            "Country is operator/catalogue-asserted; sources without a country are "
+            "counted as 'unlocated', never placed on the map."
+        )
+        return data
+
+    return _cached(_ckey("map-coverage"), _compute)
+
+
+def warm_cache(db: Session) -> dict:
+    """Pre-compute the common whole-corpus views into the read cache so the Home /
+    Insights surfaces never hit a cold heavy query (perf, field report 2026-06-18).
+
+    Called best-effort AFTER each scrape's briefing refresh (same cadence, same
+    background thread), using the DEFAULT parameter combos the UI actually requests.
+    Stores under the exact keys the endpoints use, so a warmed value is a cache HIT.
+    """
+    warmed: list[str] = []
+    specs: list[tuple[str, object]] = [
+        # Home "Trending now" calls series_top=5; the Insights default is series_top=0.
+        (_ckey("trending-windows", country=None, kind=None, limit=10, series_top=5),
+         lambda: q.trending_windows(db, country=None, kind=None, limit=10, series_top=5)),
+        (_ckey("trending-windows", country=None, kind=None, limit=10, series_top=0),
+         lambda: q.trending_windows(db, country=None, kind=None, limit=10, series_top=0)),
+        (_ckey("top", days=None, country=None, kind=None, limit=20, group=True),
+         lambda: q.top_terms(db, days=None, country=None, kind=None, limit=20, group=True)),
+    ]
+    if _CACHE_TTL_S <= 0:
+        return {"warmed": warmed, "disabled": True}
+    for key, compute in specs:
+        # Already fresh (warmed within the TTL) -> skip; keeps warming cheap when
+        # passes run faster than the TTL, recomputing only once a value expires.
+        if _read_cache.get(key) is not None:
+            continue
+        try:
+            out = compute()
+            if isinstance(out, dict):
+                out = {**out, "computed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                       "cache_ttl_s": _CACHE_TTL_S}
+                _read_cache.set(key, out)
+                warmed.append(key)
+        except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to a pass
+            _LOG.warning("insights cache warm failed for %s", key, exc_info=True)
+    return {"warmed": warmed}
 
 
 @router.get("/who")
