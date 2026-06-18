@@ -315,6 +315,15 @@ _EXTRA_STOPWORD_TEXT = (
     "været blevet fået siger skal andet lyder blandt "  # Danish
     "sitä olisi mukaan sanoo ovat kuin teki "  # Finnish
     "görə "  # Azerbaijani postposition (Meydan TV per-source concentration)
+    # Universal WEB-MARKUP / URL junk (2026-06-18 field log: a source whose page
+    # chrome leaked into the indexed content turned 'https', 'www', 'img',
+    # 'margin-left', … into top keywords). These are never meaningful content in
+    # ANY language, so the global union is safe. NB: the real fix is stripping
+    # HTML/CSS/URLs from article content BEFORE extraction (a content-extraction
+    # issue, flagged separately) — this only stops the markup that still leaks
+    # from polluting keywords. Dual-use words (table/body/icon/html/css) are
+    # deliberately left OUT (a story may be about them).
+    "https http www href img colspan rowspan tbody thead nbsp margin-left margin-right px utf "
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any
