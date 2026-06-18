@@ -24,8 +24,24 @@ from pydantic import BaseModel
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, run_restore
+from src.paths import data_dir
 
 _LOG = logging.getLogger("api.backup_v2")
+
+
+def _staging_dir() -> str:
+    """Where to stage a backup/export build + its temp file.
+
+    NEVER the system temp dir: on Linux (notably Fedora/Qubes) ``/tmp`` is tmpfs
+    (RAM-backed), so building a DB-sized snapshot + zip there exhausts RAM and fails
+    with ``[Errno 28] No space left on device`` even when the real disk has dozens
+    of GB free (field report 2026-06-18). The data dir lives on real disk beside the
+    corpus, with the room a backup needs; ``write_backup_v2`` builds in ``dest.parent``,
+    so pointing the temp file here puts the WHOLE build on disk."""
+    d = data_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    return str(d)
+
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])
 
@@ -63,7 +79,7 @@ def backup_v2(body: BackupBody) -> FileResponse:
         )
     ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     suffix = ".oobak" if body.plaintext else ".oobak.ooenc"
-    fd, tmp = tempfile.mkstemp(prefix="oo-bak-", suffix=suffix)
+    fd, tmp = tempfile.mkstemp(prefix="oo-bak-", suffix=suffix, dir=_staging_dir())
     import os
 
     # Close the open descriptor BEFORE unlinking/reopening: Windows cannot
@@ -239,7 +255,7 @@ def models_export(body: ModelsExportBody) -> FileResponse:
     if not store.exists():
         raise HTTPException(status_code=404, detail="no local Ollama model store found")
     ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    fd, tmp = tempfile.mkstemp(prefix="oo-models-", suffix=".oomodels")
+    fd, tmp = tempfile.mkstemp(prefix="oo-models-", suffix=".oomodels", dir=_staging_dir())
     os.close(fd)
     Path(tmp).unlink(missing_ok=True)
     dest = Path(tmp)
@@ -270,7 +286,7 @@ async def models_import(file: UploadFile = File(...)) -> dict:
     data = await file.read()
     if len(data) > _MAX_RESTORE_BYTES:
         raise HTTPException(status_code=413, detail="upload exceeds the 2 GiB cap")
-    fd, tmp = tempfile.mkstemp(prefix="oo-models-imp-", suffix=".oomodels")
+    fd, tmp = tempfile.mkstemp(prefix="oo-models-imp-", suffix=".oomodels", dir=_staging_dir())
     os.close(fd)
     dest = Path(tmp)
     try:

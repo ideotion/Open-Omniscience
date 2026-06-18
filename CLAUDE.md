@@ -2910,6 +2910,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **BACKUP FIX — stage on disk, not tmpfs (field report 2026-06-18 "Backup failed: [Errno 28] No space
+  left on device" with dozens of GB free disk + an earlier "the operation was aborted"; branch
+  claude/fix-backup-tmpfs, draft PR onto 0.09):** ROOT CAUSE — backup_v2 created its temp file via
+  `tempfile.mkstemp()` (default /tmp) and `write_backup_v2` builds in `dest.parent`, so the WHOLE build
+  (a ~460 MB corpus snapshot + the ~460 MB zip + the final artifact) landed in /tmp, which on Fedora/Qubes
+  is tmpfs (RAM-backed). On a 5.6 GB box already at 3 GB RSS, the tmpfs ran out → Errno 28 (and earlier, an
+  OOM-style connection drop the WebKit browser reported as "the operation was aborted"). Both errors are the
+  same cause — NOT the real disk (which had room beside the 460 MB corpus). FIX: a `_staging_dir()` helper
+  returns data_dir() (real disk beside the corpus, created on demand) and is passed as `dir=` to all three
+  create-path mkstemps (backup, models export, models import); restore already staged in data_dir via
+  read_artifact. tests/test_backup_staging.py (the helper returns+creates the data dir; a regression guard
+  that EVERY mkstemp passes dir=_staging_dir() so no create path can silently fall back to /tmp again).
+  REMAINING (recommended next, not in this fix): a long backup still blocks the request synchronously while
+  building — make it a task-manager JOB (build → then download) so the browser never times out on a
+  multi-GB corpus; surface free-disk preflight before a big export.
 - **SOURCE-LANGUAGE GATING — unmanaged languages disabled by default (maintainer 2026-06-18 "the app
   scrapes material in languages we cannot manage … flag those sources as disabled by default while keeping
   them, justified in the documentation"; branch claude/source-language-gating, draft PR onto 0.09):** ONE
