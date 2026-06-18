@@ -1216,10 +1216,9 @@
     // Home strip maps them to translated labels in the UI layer; an unknown key
     // falls back to a prettified form so a new server key never shows raw.
     const HOME_STAT_LABELS = {
-      articles: "Articles", sources: "Sources", source_groups: "Source groups",
+      articles: "Articles", sources: "Sources",
       keywords: "Keywords", commodity_prices: "Commodity prices",
-      external_sources: "External sources", article_links: "Article links",
-      article_analyses: "Article analyses", mentioned_dates: "Mentioned dates",
+      article_links: "Article links", mentioned_dates: "Mentioned dates",
     };
     function homeStatLabel(k) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
