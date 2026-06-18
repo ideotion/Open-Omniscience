@@ -1604,6 +1604,14 @@ ruling, a contingency, or a deliberate-omission note.
   `--audit-chrome` 371→353; `--min 100` green (1211/1211 ×12); test_repo_invariants green. Cumulative this
   session 431→353. Non-en AI-drafted, FLAGGED for native review. REMAINING: the Wikipedia offline-baselines
   section + agenda/safety panels + the dynamic JS rows + the ~353 tail.
+  **SLICE 7 SHIPPED 2026-06-17 (draft PR onto 0.09):** the WIKIPEDIA offline-baselines section (dump
+  download + filter help) keyed ×12 — COMPLETES the Wikipedia panel. +6 keys: "Wikipedia offline baselines"
+  heading, "Language edition", "Loading editions…", "Estimate size", the big current-text-dump intro
+  paragraph (de-tagged `<em>`×2 → one sentence) and the filter-help hint (de-tagged `<strong>`/`<em>`). The
+  "Read a page from a downloaded dump" subsection was already keyed from a prior session. `--audit-chrome`
+  353→342; `--min 100` green (1217/1217 ×12); test_repo_invariants green. Cumulative this session 431→342
+  (7 slices: Watches·mailbox·offline-map·statistics·models·wiki-tracking·wiki-baselines). Non-en AI-drafted,
+  FLAGGED for native review. REMAINING: agenda/safety panels + the dynamic JS rows (need `t()`) + the ~342 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent

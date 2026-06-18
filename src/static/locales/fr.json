@@ -1215,5 +1215,11 @@
   "optional": "facultatif",
   "Flagged changes": "Modifications signalées",
   "flagged only": "signalées seulement",
-  "Edition filter": "Filtre d'édition"
+  "Edition filter": "Filtre d'édition",
+  "Wikipedia offline baselines": "Bases de référence Wikipédia hors ligne",
+  "Language edition": "Édition linguistique",
+  "Loading editions…": "Chargement des éditions…",
+  "Estimate size": "Estimer la taille",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "Optionnelle, lourde et distincte du suivi des modifications en direct. Choisissez une édition linguistique ci-dessous et téléchargez le vidage officiel du texte actuel de Wikimedia (reprenable, avec pause/reprise). Les éditions sont listées à plat — vos langues d'abord, puis les plus grandes éditions ; la taille de téléchargement réelle est lue depuis le serveur quand vous cliquez sur « Estimer la taille » — rien n'est deviné. enwiki ≈ des dizaines de Go ; la plupart des éditions sont bien plus petites. Les bases de référence servent uniquement à la lecture/recherche hors ligne — le suivi des modifications ci-dessus n'en a pas besoin.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "La liste se limite aux langues de l'application — les éditions que cette application peut lire et analyser. Tapez dans la case pour filtrer par nom, autonyme ou code. Chaque édition affiche un palier de taille grossier et une taille de téléchargement estimée en ligne, tandis que « Estimer la taille » indique la taille exacte du vidage actuel depuis le serveur. Vous pouvez aussi taper n'importe quel code d'édition non listé."
 }

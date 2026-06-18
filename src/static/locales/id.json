@@ -1215,5 +1215,11 @@
   "optional": "opsional",
   "Flagged changes": "Perubahan yang ditandai",
   "flagged only": "hanya yang ditandai",
-  "Edition filter": "Filter edisi"
+  "Edition filter": "Filter edisi",
+  "Wikipedia offline baselines": "Baseline luring Wikipedia",
+  "Language edition": "Edisi bahasa",
+  "Loading editions…": "Memuat edisi…",
+  "Estimate size": "Perkirakan ukuran",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "Opsional, berat, dan terpisah dari pelacakan perubahan langsung. Pilih sebuah edisi bahasa di bawah dan unduh dump teks-saat-ini resmi Wikimedia (dapat dilanjutkan, dengan jeda/lanjutkan). Edisi diurutkan datar — bahasa Anda dahulu, lalu edisi terbesar; ukuran unduhan sebenarnya dibaca dari server saat Anda mengklik \"Perkirakan ukuran\" — tidak ada yang ditebak. enwiki ≈ puluhan GB; sebagian besar edisi jauh lebih kecil. Baseline hanya untuk membaca/mencari luring — pelacakan perubahan di atas tidak memerlukannya.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "Daftar dibatasi pada bahasa aplikasi — edisi yang dapat dibaca dan dianalisis aplikasi ini. Ketik di kotak untuk memfilter berdasarkan nama, autonim, atau kode. Setiap edisi menampilkan tingkat ukuran kasar dan perkiraan ukuran unduhan secara inline, sementara \"Perkirakan ukuran\" melaporkan ukuran dump terkini yang tepat dari server. Anda juga dapat mengetik kode edisi apa pun yang tidak terdaftar."
 }

@@ -1215,5 +1215,11 @@
   "optional": "ঐচ্ছিক",
   "Flagged changes": "চিহ্নিত পরিবর্তন",
   "flagged only": "শুধু চিহ্নিত",
-  "Edition filter": "সংস্করণ ফিল্টার"
+  "Edition filter": "সংস্করণ ফিল্টার",
+  "Wikipedia offline baselines": "উইকিপিডিয়া অফলাইন বেসলাইন",
+  "Language edition": "ভাষা সংস্করণ",
+  "Loading editions…": "সংস্করণ লোড হচ্ছে…",
+  "Estimate size": "আকার অনুমান করুন",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "ঐচ্ছিক, ভারী, এবং লাইভ পরিবর্তন-ট্র্যাকিং থেকে আলাদা। নিচে একটি ভাষা সংস্করণ বেছে নিন এবং অফিসিয়াল উইকিমিডিয়া বর্তমান-পাঠ্য ডাম্প ডাউনলোড করুন (পুনরায় চালুযোগ্য, বিরতি/পুনরারম্ভ সহ)। সংস্করণগুলি ফ্ল্যাট তালিকাভুক্ত — আপনার ভাষাগুলি প্রথমে, এরপর সবচেয়ে বড় সংস্করণগুলি; আপনি \"আকার অনুমান করুন\" ক্লিক করলে আসল ডাউনলোড আকার সার্ভার থেকে পড়া হয় — কিছুই অনুমান করা হয় না। enwiki ≈ কয়েক দশ GB; বেশিরভাগ সংস্করণ অনেক ছোট। বেসলাইন শুধু অফলাইন পড়া/অনুসন্ধানের জন্য — উপরের পরিবর্তন-ট্র্যাকিংয়ের এগুলি দরকার নেই।",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "তালিকাটি অ্যাপের ভাষাগুলিতে সীমাবদ্ধ — এই অ্যাপ যেসব সংস্করণ পড়তে ও বিশ্লেষণ করতে পারে। নাম, স্বনাম বা কোড দিয়ে ফিল্টার করতে বাক্সে টাইপ করুন। প্রতিটি সংস্করণ একটি মোটামুটি আকার স্তর এবং একটি আনুমানিক ডাউনলোড আকার ইনলাইনে দেখায়, আর \"আকার অনুমান করুন\" সার্ভার থেকে সঠিক বর্তমান ডাম্প আকার জানায়। আপনি তালিকায় না থাকা যেকোনো সংস্করণ কোডও টাইপ করতে পারেন।"
 }
