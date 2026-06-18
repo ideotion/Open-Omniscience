@@ -12,9 +12,16 @@ permissions:
 
 # Don't pile up superseded runs: a rapid push series on the same ref cancels the
 # in-flight run and starts fresh (saves runner minutes; the active cycle merges fast).
+# EXCEPTION (audit A18-CI-01, 2026-06-18): NEVER cancel the default/release branch's own
+# push runs. The fast merge cadence was cancelling every post-merge run before it could
+# finish (the branch tip sat `queued`, the prior runs were all `cancelled`), so the
+# blocking gates never actually validated the protected branch -- broken tests landed on
+# it unseen. Keying the exemption to `repository.default_branch` (not a hardcoded "0.09")
+# follows the same don't-rot-on-release-rename principle as the push trigger below; PRs
+# and feature-branch pushes still cancel their own superseded runs.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref_name != github.event.repository.default_branch }}
 
 on:
   # Run on every pushed branch so the active release branch (0.05, 0.06, 0.07,

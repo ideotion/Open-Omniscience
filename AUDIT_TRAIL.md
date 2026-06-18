@@ -28,10 +28,12 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
     `StaticPool` + `check_same_thread=False` (the pattern `test_convergence.py` already uses).
   - **A18-TEST-03 (S2):** `tests/test_ollama_store_detection.py:32` did `write_text` without
     `encoding="utf-8"` — flagged by the repo's own portability meta-test. Fix: add the encoding.
-- **A18-CI-01 (S2, REPORTED, no change):** these landed undetected because **CI never completes on
-  `0.09`** — the tip `b75100e7` run is still `queued` and the prior 8 push-runs are all `cancelled`
-  (`concurrency: cancel-in-progress` + rapid merges, `.github/workflows/ci.yml:15`). Making CI gate
-  the default branch is the single highest-value follow-up (maintainer decision).
+- **A18-CI-01 (S2, was RED → maintainer-authorized → FIXED):** these landed undetected because **CI
+  never completes on `0.09`** — the tip `b75100e7` run sat `queued` and the prior 8 push-runs were
+  all `cancelled` (`concurrency: cancel-in-progress` + rapid merges, `.github/workflows/ci.yml:13`).
+  Fix: `cancel-in-progress` is now conditional (`github.ref_name != repository.default_branch`) so
+  the default/release branch's own push runs run to completion (gate restored) while PRs and feature
+  branches still cancel superseded runs. YELLOW trade-off (more runner minutes on the default branch).
 - **Two S3 documentation contradictions FIXED (GREEN):** the UI tab renamed *Temporal map → World
   map* (2026-06-18) was stale in `README.md`/`docs/USER_MANUAL.md`, whose nav lists also still
   carried the dissolved **Source integrity** + retired **Search**/**System** sidebar entries.
