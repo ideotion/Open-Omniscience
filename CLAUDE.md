@@ -1544,6 +1544,19 @@ ruling, a contingency, or a deliberate-omission note.
   card strings must enter the UI translations).** #onboard CARD DONE
   2026-06-14 (h2/p/button keyed ×12; the engine auto-translates the static
   card once keyed); REMAINING here = the server-built home-card TITLES.
+  **LONG-TAIL BURN-DOWN — SLICE 1 SHIPPED 2026-06-17 (ruling #8 PROCEED; draft PR onto 0.09):**
+  the WATCHES panel (ruling-#3 on-by-default feature, shipped this session English-only) is now
+  fully keyed ×12 — heading + Lead-when-it-matches suffix, the honesty intro paragraph (its inline
+  `<em>` emphasis dropped so it keys as ONE clean sentence per the codebase's full-sentence
+  convention — fragment-keys translate badly), the form labels (Condition/Min articles/Window),
+  Add watch · Check now + its hover, and the example placeholder. +10 keys ×12 (`src/static/locales/*.json`;
+  non-en AI-drafted, FLAGGED for native review, Lead-word reuses the shipped rename fr piste/de Spur/…).
+  MECHANISM CONFIRMED + reusable for the next slices: the engine keys on the English string and
+  auto-walks DOM text + the translated ATTRS (title/placeholder/aria-label), so a STATIC single-text-node
+  string becomes translatable by ADDING locale entries only — zero JS change; interpolated JS strings
+  (the dynamic `loadWatches` rows) still need `t()` and stay English for now. `--audit-chrome` 431→417;
+  `--min 100` green (1166/1166 ×12); test_repo_invariants green. REMAINING: the other recently-shipped
+  panels (Statistics/Models/Newsletters/Offline-map) + the dynamic `loadWatches` rows + the ~417 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent

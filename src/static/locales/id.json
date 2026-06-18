@@ -1160,5 +1160,15 @@
   "Local model — click to re-check": "Model lokal — klik untuk periksa ulang",
   "Saved.": "Tersimpan.",
   "Open the source-integrity desk →": "Buka meja integritas sumber →",
-  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "Koordinasi kini ditampilkan otomatis — sebagai Petunjuk, di tampilan Terkait jendela analisis, dan inline pada daftar artikel serta pembaca. Buka meja manual untuk menggabungkan jaringan terkoordinasi menjadi satu suara, melihat profil sumber, atau mengelola anotasi web-of-trust."
+  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "Koordinasi kini ditampilkan otomatis — sebagai Petunjuk, di tampilan Terkait jendela analisis, dan inline pada daftar artikel serta pembaca. Buka meja manual untuk menggabungkan jaringan terkoordinasi menjadi satu suara, melihat profil sumber, atau mengelola anotasi web-of-trust.",
+  "Watches": "Pemantauan",
+  "— save a condition, get a Lead when it matches": "— simpan sebuah kondisi, dapatkan petunjuk saat cocok",
+  "A watch is a saved search the app keeps an eye on. When your corpus gains enough new articles matching it (your own threshold, within a recent window), it fires a watch Lead card on Home — local-only, no notifications, no network. A watch is a prompt to read, never a verdict or a score.": "Pemantauan adalah pencarian tersimpan yang diawasi aplikasi. Ketika korpus Anda memperoleh cukup artikel baru yang cocok (ambang batas Anda sendiri, dalam jendela waktu terkini), ia memunculkan kartu petunjuk «watch» di Beranda — hanya lokal, tanpa notifikasi, tanpa jaringan. Pemantauan adalah ajakan untuk membaca, bukan vonis atau skor.",
+  "Condition (search query)": "Kondisi (kueri pencarian)",
+  "Min articles": "Artikel min.",
+  "Window (days)": "Jendela (hari)",
+  "Add watch": "Tambah pemantauan",
+  "Check now": "Periksa sekarang",
+  "Run the engine now (it also runs after every collection pass)": "Jalankan mesin sekarang (juga berjalan setelah setiap putaran pengumpulan)",
+  "Floods in the region": "Banjir di wilayah ini"
 }

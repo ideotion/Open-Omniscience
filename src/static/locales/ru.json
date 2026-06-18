@@ -1160,5 +1160,15 @@
   "Local model — click to re-check": "Локальная модель — нажмите, чтобы перепроверить",
   "Saved.": "Сохранено.",
   "Open the source-integrity desk →": "Открыть панель целостности источников →",
-  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "Координация теперь показывается автоматически — как зацепки, в виде «Связанные» в окне анализа и встроенно в списках статей и в читалке. Откройте ручную панель, чтобы свести скоординированную сеть к одному голосу, посмотреть профиль источника или управлять аннотациями сети доверия."
+  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "Координация теперь показывается автоматически — как зацепки, в виде «Связанные» в окне анализа и встроенно в списках статей и в читалке. Откройте ручную панель, чтобы свести скоординированную сеть к одному голосу, посмотреть профиль источника или управлять аннотациями сети доверия.",
+  "Watches": "Наблюдения",
+  "— save a condition, get a Lead when it matches": "— сохраните условие и получайте зацепку при совпадении",
+  "A watch is a saved search the app keeps an eye on. When your corpus gains enough new articles matching it (your own threshold, within a recent window), it fires a watch Lead card on Home — local-only, no notifications, no network. A watch is a prompt to read, never a verdict or a score.": "Наблюдение — это сохранённый поиск, за которым следит приложение. Когда в вашем корпусе появляется достаточно новых подходящих статей (ваш собственный порог, в пределах недавнего окна), оно показывает карточку-зацепку «watch» на главной — только локально, без уведомлений, без сети. Наблюдение — это повод прочитать, а не вердикт и не оценка.",
+  "Condition (search query)": "Условие (поисковый запрос)",
+  "Min articles": "Мин. статей",
+  "Window (days)": "Окно (дни)",
+  "Add watch": "Добавить наблюдение",
+  "Check now": "Проверить сейчас",
+  "Run the engine now (it also runs after every collection pass)": "Запустить движок сейчас (также выполняется после каждого прохода сбора)",
+  "Floods in the region": "Наводнения в регионе"
 }
