@@ -2370,3 +2370,26 @@ def test_super_ring_ui():
     assert "/api/insights/rings" in src, "loadSuperGroups must fetch the rings list"
     assert "function sgAddRing" in src, "the add-ring handler must exist"
     assert "rings: [ring]" in src, "add-ring must POST a ring member (not a family normalized)"
+
+
+def test_task_manager_opens_in_a_standalone_tab():
+    """The task manager opens in its OWN browser tab (maintainer 2026-06-18) so it
+    can stay parked on the desktop while the user works in the app. Pinned: the
+    #tm-open button calls openTaskManager() (window.open the /tasks page), the
+    /tasks route serves the standalone page, and that page is a read+control view
+    over the EXISTING job/scheduler/system APIs — it never flips the network."""
+    html = _ui_source()  # index.html + app.js + app.css
+    assert 'onclick="openTaskManager()"' in html, "#tm-open must open the standalone task tab"
+    assert "function openTaskManager(" in html and 'window.open("/tasks"' in html, (
+        "openTaskManager must window.open the /tasks page (a named target stays in place)"
+    )
+    main_src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    assert '"/tasks"' in main_src and "taskmanager.html" in main_src, (
+        "the /tasks route must serve the standalone taskmanager.html"
+    )
+    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    for ep in ("/api/jobs", "/api/scheduler/activity", "/api/system/vitals"):
+        assert ep in tm, f"the task page must read the existing {ep} endpoint (no new backend)"
+    assert "/api/system/network" not in tm, "the task page must never flip the network itself"
+    for pid in ('id="jobs-body"', 'id="queue-body"', 'id="sched-body"', 'id="vitals-body"'):
+        assert pid in tm, f"task panel missing: {pid}"

@@ -787,6 +787,15 @@
       }
       _ensureVitalsPoll();
     }
+    // The task manager opens in its OWN browser tab (maintainer 2026-06-18) so it
+    // can stay parked on the desktop while the user works in the app. A NAMED
+    // window target ("oo-tasks") means re-clicking FOCUSES the existing tab
+    // instead of piling up duplicates. The standalone /tasks page polls the same
+    // /api/jobs · /api/scheduler · /api/system endpoints (no in-app popover state).
+    function openTaskManager() {
+      const w = window.open("/tasks", "oo-tasks");
+      if (w && w.focus) { try { w.focus(); } catch (_) { /* popup blocked / cross-tab */ } }
+    }
     // Esc closes the task manager; Tab is trapped inside it (OO-D13-001).
     function vitalsKey(e) {
       if (e.key === "Escape") { e.preventDefault(); if (_vitalsOpen) toggleVitals(); return; }
