@@ -2829,6 +2829,41 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **TIME-TO-FIRST-ARTICLE + TASK-MANAGER PHASE (maintainer field test 2026-06-18 — "it took
+  3-5 minutes to get the first article … the app's downloading markets/indices/calendars
+  beforehand … the task manager fails to show what the app is doing"; branch
+  claude/friendly-lamport-s3a1qa, draft PR #359 onto 0.09, backend VERIFIED-by-reading, full
+  pytest in CI):** ROOT CAUSE (confirmed in code + by the maintainer's "Collecting… fred.stlouisfed.org/
+  graph/fredgraph.csv…" observation): `_default_run_once` ran the FIRST-RUN source preflight +
+  feed_preflight (robots + SAMPLE-fetch of every market/calendar feed — `fredgraph.csv?id=SP500` is
+  the first sampled index) + the per-pass calendar auto-import + field-test instrumentation
+  SYNCHRONOUSLY BEFORE `run_scrape_once`; each slow over Tor (30 s timeout each), so the operator
+  watched the chip sit on FRED for minutes before any RSS article landed. Default mode is "rss" — FRED
+  is NOT even part of article collection; it was preflight/instrumentation. FIX (src/scheduler/runner.py):
+  REORDER so `run_scrape_once` runs FIRST (articles flow in seconds); preflight/feed-preflight/calendar-
+  import/field-test/discovery/briefing all moved AFTER it as best-effort housekeeping (each already
+  docstring'd "never blocks the scrape"). SAFE: EthicalFetcher enforces robots.txt + per-host Crawl-delay
+  LIVE per fetch (src/ingest/__init__.py), independent of the preflight-written SourceMetadata, so
+  collecting before the preflight LOG is written does NOT reduce politeness (preflight is instrumentation,
+  not a gate). VISIBILITY: new coarse pass PHASE (`_phase_set`/`current_phase`, module-global independent
+  of the per-source `_PROGRESS` that run_scrape_once clears) surfaced in scheduler `status()` and the
+  task-manager collect job label — "collection pass — collecting articles" vs "— background tasks (markets ·
+  calendars · checks)" vs "— building the briefing" — so a lingering market fetch reads as "finishing", not a
+  stall (the task manager's whole point). tests/test_collect_first_ordering.py (scrape-before-preflight,
+  phase transitions, phase-aware label). REMAINING: surface the phase in the task-manager FRONTEND panel
+  (backend label already carries it); optionally run the first-run preflight in a background thread.
+- **INSTALL-SIZE ESTIMATES (maintainer-asked 2026-06-18 from an install log, branch
+  claude/friendly-lamport-s3a1qa, draft PR onto 0.09):** install.sh now informs the user
+  of ROUGH download sizes before the long pip step + in the component menus. Dated
+  `SIZES_AS_OF="2026-06"` + `component_mb`/`human_mb`/`extras_total_mb`/`print_download_estimate`
+  helpers; per-component MB measured from the real py3.13 download log (core ~55 MB · analysis
+  ~90 MB · compression ~7 MB · llm extra ~1 MB; total core+analysis+compression ~152 MB).
+  HONEST: "rough, measured {date}, varies by OS/arch, cached wheels won't re-download". Menu
+  labels (whiptail + plain ask_yn) carry the size; the estimate prints before the download in
+  pip_install. Ollama surfaced separately per the maintainer ("ollama ~1 GB"): the LLM menu
+  item + install prompt + estimate footnote state Ollama ~1 GB + a model ~0.8–2.7 GB (model
+  sizes already in the whiptail model menu). tests/test_installer.py::test_install_shows_download_size_estimate.
+  REMAINING: numbers are advisory — refresh when the dependency set changes materially.
 - **UNINSTALL MODES + BACKUP-FIRST + CLEAN SHUTDOWN + AUDIT LOG (maintainer-asked
   2026-06-17 after a field uninstall log showed sqlcipher teardown noise + confusion
   that "it didn't uninstall"; draft PR onto 0.09, browser-unverified UI):** REASSURANCE

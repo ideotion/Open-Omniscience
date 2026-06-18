@@ -223,6 +223,28 @@ def current_progress() -> dict | None:
         return dict(_PROGRESS) if _PROGRESS else None
 
 
+# Coarse PHASE of the in-flight pass, independent of the detailed per-source
+# _PROGRESS (which run_scrape_once owns and clears at the end of the scrape).
+# This survives the whole pass so the task manager can honestly say WHAT the
+# background work is — "collecting articles" vs the post-scrape housekeeping
+# (markets/calendars/preflight) that used to run FIRST and look like a stall.
+_PHASE_LOCK = threading.Lock()
+_PHASE: str | None = None
+
+
+def _phase_set(phase: str | None) -> None:
+    global _PHASE
+    with _PHASE_LOCK:
+        _PHASE = phase
+
+
+def current_phase() -> str | None:
+    """The current coarse pass phase (e.g. 'collecting'/'background'/'briefing'),
+    or None when idle. Backs the task-manager's human label for the collect job."""
+    with _PHASE_LOCK:
+        return _PHASE
+
+
 # How many sources the activity-panel preview materialises for its 8 sample
 # domains + representative politeness delay. Bounds the per-poll cost: the total
 # is a cheap COUNT, only this many rows are decrypted/built into ORM objects.
@@ -678,6 +700,7 @@ class BackgroundScheduler:
             from src.scheduler.runlog import record_run
 
             record_run(report)
+            _phase_set(None)
             self._active = False
             self._run_lock.release()
 
@@ -690,10 +713,42 @@ class BackgroundScheduler:
         fetcher = make_fetcher()
         run_started = datetime.now(UTC)
         with session_scope() as session:
+            # COLLECT ARTICLES FIRST (maintainer 2026-06-18: "it took 3-5 minutes
+            # to get the first article"). The first-run source/feed preflight, the
+            # per-pass calendar auto-import and the field-test instrumentation used
+            # to run BEFORE the scrape — so over a slow transport (Tor) the operator
+            # waited minutes, watching the activity chip sit on a market feed (FRED,
+            # the first sampled index) while NO article had landed. The real
+            # collection now runs FIRST so articles flow within seconds; all the
+            # best-effort housekeeping below piggybacks AFTER it. Robots is enforced
+            # LIVE per fetch (EthicalFetcher, fail-closed), so scraping before the
+            # preflight LOG is written is safe — the log is instrumentation, not a gate.
+            _phase_set("collecting")
+            result = run_scrape_once(session, fetcher, settings)
+            # Opt-in drop-folder export (WP3/RM-06): write the new-articles
+            # delta into the operator's local folder. Best-effort; off when
+            # export_dir is empty (the default).
+            if settings.export_dir:
+                try:
+                    from src.scheduler.runlog import export_delta
+
+                    path = export_delta(
+                        session, started_at=run_started, export_dir=settings.export_dir
+                    )
+                    if path:
+                        result["delta_export"] = path
+                except Exception:  # noqa: BLE001 - never fail the scrape on export
+                    _LOG.warning("delta drop-folder export failed", exc_info=True)
+
+            # --- Background housekeeping: best-effort, AFTER the articles, so it
+            # never delays the first one. The task manager labels this phase honestly
+            # ("background tasks: markets · calendars · checks") so the lingering
+            # market/calendar fetches are understood, not mistaken for a stall. ---
+            _phase_set("background")
             # First-ever scrape: preflight the enabled sources once (reachability +
             # robots verdicts -> per-source settings + a shareable JSONL log). Done
             # here, not at app boot: boot must stay offline; this run is already
-            # going to the network. Best-effort -- never blocks the scrape.
+            # going to the network. Best-effort -- never blocks the scrape (now after it).
             try:
                 from src.monitoring.preflight import has_run_before, preflight_sources
 
@@ -740,21 +795,6 @@ class BackgroundScheduler:
                     field_test.run_field_test(session, fetcher)
             except Exception:  # noqa: BLE001
                 _LOG.warning("field-test instrumentation failed", exc_info=True)
-            result = run_scrape_once(session, fetcher, settings)
-            # Opt-in drop-folder export (WP3/RM-06): write the new-articles
-            # delta into the operator's local folder. Best-effort; off when
-            # export_dir is empty (the default).
-            if settings.export_dir:
-                try:
-                    from src.scheduler.runlog import export_delta
-
-                    path = export_delta(
-                        session, started_at=run_started, export_dir=settings.export_dir
-                    )
-                    if path:
-                        result["delta_export"] = path
-                except Exception:  # noqa: BLE001 - never fail the scrape on export
-                    _LOG.warning("delta drop-folder export failed", exc_info=True)
             # Offline source discovery (WP5/RM-19): budgeted, DB-only, and its
             # outcome lands in the run report -- background, never hidden.
             try:
@@ -767,6 +807,7 @@ class BackgroundScheduler:
                 _LOG.warning("offline source discovery failed", exc_info=True)
             # Precompute + cache the Home briefing so it loads instantly. Best-effort:
             # a briefing failure must never fail the scrape that just succeeded.
+            _phase_set("briefing")
             try:
                 from src.briefing.service import refresh_briefing
 
@@ -790,6 +831,7 @@ class BackgroundScheduler:
                 "last_error": self._last_error,
                 "settings": s.to_dict(),
                 "progress": current_progress(),
+                "phase": current_phase(),
             }
 
     def activity(self, session) -> dict:
