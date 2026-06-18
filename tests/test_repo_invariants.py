@@ -299,6 +299,12 @@ def test_llm_prompt_editor_is_prefilled_copyable_and_default_aware():
     assert "resize:vertical" in src, "prompt textareas must be user-resizable"
     # saving a box that still equals the default stores "" (keeps provenance "default")
     assert "_promptOut" in src, "save must send '' when the box still equals the default"
+    # Part B: the built-in keyword-EXTRACTION prompt is editable alongside the other three
+    assert 'id="llm-prompt-ai_keywords"' in src, "the keyword-extraction prompt box is missing"
+    assert "copyLlmPrompt('ai_keywords'" in src and 'llm_prompt_ai_keywords:' in src, (
+        "the extraction prompt must be copyable AND saved through the settings body"
+    )
+    assert '"ai_keywords"]' in src, "loadLlmPrompts must populate the ai_keywords box"
 
 
 def test_custom_extractor_settings_ui_is_wired():

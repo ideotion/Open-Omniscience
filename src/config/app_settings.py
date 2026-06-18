@@ -65,6 +65,9 @@ class AppSettings:
     llm_prompt_summary: str = ""
     llm_prompt_translate: str = ""
     llm_prompt_synthesis: str = ""
+    # The built-in AI-keyword EXTRACTION prompt (Part B) — tunable like the three above;
+    # the default (_EXTRACT_SYSTEM) lives in src.ai_layer.extract. "" = use the built-in.
+    llm_prompt_ai_keywords: str = ""
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -127,6 +130,7 @@ def load_settings() -> AppSettings:
         llm_prompt_summary=_prompt("llm_prompt_summary"),
         llm_prompt_translate=_prompt("llm_prompt_translate"),
         llm_prompt_synthesis=_prompt("llm_prompt_synthesis"),
+        llm_prompt_ai_keywords=_prompt("llm_prompt_ai_keywords"),
     )
 
 
@@ -173,7 +177,8 @@ def save_settings(updates: dict) -> AppSettings:
                 "seconds, '0' (unload now) or '-1' (never unload)"
             )
         current.llm_keep_alive = ka
-    for _field in ("llm_prompt_summary", "llm_prompt_translate", "llm_prompt_synthesis"):
+    for _field in ("llm_prompt_summary", "llm_prompt_translate", "llm_prompt_synthesis",
+                   "llm_prompt_ai_keywords"):
         if _field in updates and updates[_field] is not None:
             val = updates[_field]
             if not isinstance(val, str):

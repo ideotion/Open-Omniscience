@@ -186,6 +186,33 @@ def test_extract_endpoint_then_read_and_confirm():
     assert confirmed["count"] == 1
 
 
+def test_extraction_uses_operator_override_prompt(tmp_path, monkeypatch):
+    """Part B: an operator override of the built-in extraction prompt (Settings → Models)
+    is the system prompt actually used, and is recorded as 'ai-keywords-custom' provenance
+    (so a result is never mistaken for a default-prompt extraction)."""
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    (aid,) = _seed_articles(1)
+    fake = _FakeOllama(text="Nile\nflood")
+    app.dependency_overrides[get_llm_client] = lambda: fake
+    client = TestClient(app)
+
+    # set the override through the same path the editor uses
+    r = client.put("/api/settings", json={"llm_prompt_ai_keywords": "ONLY rivers. Max {max_terms}."})
+    assert r.status_code == 200
+
+    r = client.post("/api/ai/keywords/extract", json={"article_ids": [aid]})
+    assert r.status_code == 200
+    # the override (with {max_terms} substituted) was the system prompt sent to the model
+    assert any("ONLY rivers." in (c[2] or "") for c in fake.calls)
+    assert not any("research assistant indexing" in (c[2] or "") for c in fake.calls)  # not the default
+
+    got = client.get(f"/api/ai/articles/{aid}/keywords").json()
+    assert got["count"] >= 1
+    assert all(k["prompt_version"] == "ai-keywords-custom" for k in got["keywords"])
+
+
 def test_read_lens_empty_for_article_without_ai_keywords():
     """The ``ai_keyword`` table always exists in the main DB; a read for an article with
     no AI keywords returns an empty list and writes nothing."""

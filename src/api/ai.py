@@ -127,6 +127,19 @@ def extract_keywords(
     model = req.model or active_model()
     max_terms = max(1, min(req.max_terms or 20, 100))
 
+    # Part B: the built-in extraction prompt is tunable (Settings → Models). An operator
+    # override replaces _EXTRACT_SYSTEM; "" = the built-in. Recorded as a distinct
+    # provenance version so a result's prompt is never ambiguous after an edit.
+    from src.ai_layer.extract import EXTRACT_PROMPT_VERSION
+    from src.config.app_settings import load_settings
+
+    try:
+        _override = (load_settings().llm_prompt_ai_keywords or "").strip()
+    except Exception:  # noqa: BLE001 - a settings hiccup must not break extraction
+        _override = ""
+    system = _override or None
+    pv = "ai-keywords-custom" if system else EXTRACT_PROMPT_VERSION
+
     # Visible in the task manager while it runs ("are keywords being extracted?").
     from src.monitoring import tasks as _bgtasks
 
@@ -140,7 +153,7 @@ def extract_keywords(
             done = 0
             for event in extract_for_articles(
                 work, client, model=model, kind=req.kind, max_terms=max_terms,
-                skip_existing=req.skip_existing,
+                skip_existing=req.skip_existing, system=system, prompt_version=pv,
             ):
                 if isinstance(event, dict) and event.get("event") == "item":
                     done += 1

@@ -1005,13 +1005,13 @@
     </section>
     <section class="panel">
       <h2>Behaviour &amp; prompts</h2>
-      <p class="muted" style="margin-top:0">There are three system prompts — Summary (used for one or many articles), Translation (one or many), and Synthesis (one combined output across several). They instruct the local model, and the exact prompt used is recorded with every result.</p>
+      <p class="muted" style="margin-top:0">There are four system prompts — Summary (used for one or many articles), Translation (one or many), Synthesis (one combined output across several), and Keyword extraction (the built-in keyword/entity indexer). They instruct the local model, and the exact prompt used is recorded with every result.</p>
       <div class="row" style="align-items:end;margin-bottom:6px">
         <div style="flex:0 0 auto"><label for="llm-keep-alive">Keep the model loaded for</label>
           <input id="llm-keep-alive" style="max-width:140px" placeholder="30m"></div>
         <div class="hint" style="flex:1;align-self:center">How long Ollama keeps the model in memory after a request, so the next one does not reload it. Examples: 30m, 1h, -1 (never unload), 0 (unload now).</div>
       </div>
-      <div class="hint" style="margin:10px 0 6px">Leave a prompt empty to use the built-in default (shown as the placeholder). In the translation prompt, the placeholder {target} is replaced by the target language.</div>
+      <div class="hint" style="margin:10px 0 6px">Leave a prompt empty to use the built-in default (shown as the placeholder). In the translation prompt, the placeholder {target} is replaced by the target language; in the keyword-extraction prompt, {max_terms} is the per-article limit.</div>
       <div style="margin-bottom:10px"><label for="llm-prompt-summary">Summary prompt</label>
         <textarea id="llm-prompt-summary" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
         <div class="row" style="gap:6px;margin-top:4px">
@@ -1027,6 +1027,11 @@
         <div class="row" style="gap:6px;margin-top:4px">
           <button class="ghost tiny" onclick="copyLlmPrompt('synthesis',this)">Copy</button>
           <button class="ghost tiny" onclick="resetLlmPrompt('synthesis')">Reset to default</button></div></div>
+      <div style="margin-bottom:10px"><label for="llm-prompt-ai_keywords">Keyword-extraction prompt</label>
+        <textarea id="llm-prompt-ai_keywords" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="ghost tiny" onclick="copyLlmPrompt('ai_keywords',this)">Copy</button>
+          <button class="ghost tiny" onclick="resetLlmPrompt('ai_keywords')">Reset to default</button></div></div>
       <div class="row" style="align-items:center;gap:10px">
         <button onclick="saveLlmBehaviour(this)">Save prompts &amp; behaviour</button>
         <span id="llm-behaviour-status" class="hint"></span>

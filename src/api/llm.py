@@ -217,14 +217,16 @@ def llm_models(client: OllamaClient = Depends(get_llm_client)) -> dict:
 @router.get("/prompts")
 def llm_prompts() -> dict:
     """The local-LLM behaviour the operator can tune (maintainer 2026-06-17): the
-    keep-alive duration and the three editable SYSTEM PROMPTS, each with its built-in
+    keep-alive duration and the editable SYSTEM PROMPTS, each with its built-in
     default and the current override ("" = using the default). Read by Settings → Models.
 
-    There are three system prompts in total — ``summary`` (used for one OR many
-    articles), ``translate`` (one OR many; ``{target}`` is the target language), and
-    ``synthesis`` (one combined output across several). Bulk reuses the single-article
+    Four system prompts — ``summary`` (used for one OR many articles), ``translate`` (one
+    OR many; ``{target}`` is the target language), ``synthesis`` (one combined output
+    across several), and ``ai_keywords`` (the built-in keyword/entity EXTRACTION prompt,
+    Part B; ``{max_terms}`` is the per-article cap). Bulk reuses the single-article
     summary/translate prompt per article — there is no separate "several" prompt.
     """
+    from src.ai_layer.extract import _EXTRACT_SYSTEM, EXTRACT_PROMPT_VERSION
     from src.config.app_settings import AppSettings
 
     s = _llm_settings()
@@ -247,11 +249,17 @@ def llm_prompts() -> dict:
                 "current": (s.llm_prompt_synthesis if s else "") or "",
                 "version": SYNTHESIS_PROMPT_VERSION,
             },
+            "ai_keywords": {
+                "default": _EXTRACT_SYSTEM,
+                "current": (s.llm_prompt_ai_keywords if s else "") or "",
+                "version": EXTRACT_PROMPT_VERSION,
+            },
         },
         "note": (
             "Empty = use the built-in default. The exact prompt used is recorded with "
             "each result (provenance). The translate prompt may contain {target} for the "
-            "target language. Save changes via Settings (PUT /api/settings)."
+            "target language; the keyword-extraction prompt may contain {max_terms}. "
+            "Save changes via Settings (PUT /api/settings)."
         ),
     }
 
