@@ -128,6 +128,7 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
             },
         )
         created.append(dom)
+        known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
     if created:
         session.flush()  # autoflush is off app-wide; make the rows visible to callers
     if skipped_commerce:
@@ -159,6 +160,12 @@ def catalog_channel(session, *, cap: int, thin_threshold: int = 3) -> list[str]:
             break
         dom = str(entry.get("domain") or "").lower()
         country = str(entry.get("country") or "").lower()
+        # `dom in known` also catches a domain ALREADY proposed earlier in THIS
+        # batch (we add each created domain to `known` below): the packaged
+        # catalog can list the same domain more than once (e.g. several language
+        # editions), and adding it twice violated the source_candidates.domain
+        # UNIQUE constraint — which used to poison the whole scrape transaction
+        # and silently roll back the articles just stored (field log 2026-06-18).
         if not dom or dom in known or country not in targets:
             continue
         n_there = country_counts_from_session(session).get(country, 0)
@@ -175,6 +182,7 @@ def catalog_channel(session, *, cap: int, thin_threshold: int = 3) -> list[str]:
             },
         )
         created.append(dom)
+        known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
     if created:
         session.flush()  # autoflush is off app-wide; make the rows visible to callers
     return created
@@ -185,11 +193,27 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
     that goes into the scheduler run log (the visible record of what happened)."""
     if per_run <= 0:
         return {"enabled": False, "created": 0}
-    half = max(1, per_run // 2)
-    cited = citation_channel(session, cap=half)
-    remaining = per_run - len(cited)
-    catalogd = catalog_channel(session, cap=remaining) if remaining > 0 else []
-    session.flush()
+    # Run discovery inside a SAVEPOINT (nested transaction). Discovery is a
+    # best-effort post-scrape step; if it raises (e.g. a UNIQUE collision on
+    # source_candidates.domain) the savepoint rolls back ONLY discovery's own
+    # rows, leaving the outer transaction — and the articles the scrape just
+    # stored — intact and committable. Before this, any discovery error poisoned
+    # the shared session, every pass was recorded ok:false, and NO new articles
+    # were committed: "scraping stopped" (field log 2026-06-18). Data collection
+    # must never be broken by this side feature.
+    try:
+        with session.begin_nested():
+            half = max(1, per_run // 2)
+            cited = citation_channel(session, cap=half)
+            remaining = per_run - len(cited)
+            catalogd = catalog_channel(session, cap=remaining) if remaining > 0 else []
+            session.flush()
+    except Exception:  # noqa: BLE001 - discovery must never break the scrape
+        _LOG.warning(
+            "source discovery failed; rolled back its savepoint, the scrape is unaffected",
+            exc_info=True,
+        )
+        return {"enabled": True, "budget": per_run, "created": 0, "error": "discovery_rolled_back"}
     return {
         "enabled": True,
         "budget": per_run,

@@ -117,6 +117,27 @@ def run_deferred_startup() -> None:
             seed_supergroups(_s)
     except Exception:  # noqa: BLE001 - seeding must never block startup
         logger.warning("super-group seeding failed", exc_info=True)
+    # Curated source catalog. CRITICAL (maintainer 2026-06-18 field log: an
+    # ENCRYPTED store — the default — unlocked via the web came up with only ~1
+    # source and almost nothing to collect). The only seed call used to live in
+    # main(), which runs BEFORE the web unlock while the store is still locked, so
+    # the catalog never seeded for encrypted installs. run_deferred_startup runs at
+    # EVERY unlock, and the seed is idempotent (dedup by domain), so it fills the
+    # ~3,200-source catalog once and is near-free on later boots. Data collection is
+    # the heart of the project — it must have sources. Gated by OO_AUTOSEED.
+    if os.getenv("OO_AUTOSEED", "1") != "0":
+        try:
+            from src.ingest.seed_sources import seed_default_sources
+            from src.law.catalog import register_documents, seed_legal_sources
+
+            with session_scope() as session:
+                seeded = seed_default_sources(session)
+                seed_legal_sources(session)
+                register_documents(session)
+            if seeded.get("created"):
+                logger.info("Seeded %d catalog sources at startup.", seeded["created"])
+        except Exception:  # noqa: BLE001 - seeding must never block startup
+            logger.warning("could not seed the source catalog at startup", exc_info=True)
     try:
         with session_scope() as session:
             ARTICLES_COUNT.set(session.query(Article).count())
