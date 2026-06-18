@@ -234,22 +234,42 @@ def top_terms(
     family (``Trump`` / ``Trump's`` / ``Donald Trump`` -> one row) for display, with
     summed mentions and the member forms listed — see src/analytics/families.py.
     """
-    q = session.query(
-        Keyword,
-        func.sum(KeywordMention.count).label("m"),
-        func.count(func.distinct(KeywordMention.article_id)).label("arts"),
-    ).join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-    if days:
-        q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
-    if country:
-        q = q.filter(KeywordMention.country == country.lower())
-    q = _apply_kind(q, kind)
-    rows = (
-        q.group_by(Keyword.id)
-        .order_by(func.sum(KeywordMention.count).desc())
-        .limit(limit * 4)
-        .all()
-    )
+    if not days and not country:
+        # CORPUS-WIDE top-N (the hot Home grouped view): read the denormalised
+        # per-keyword counters maintained at index time instead of joining +
+        # GROUP BY-ing the whole keyword_mentions table. mention_count == SUM(count)
+        # and article_count == COUNT(DISTINCT article_id) BY CONSTRUCTION (see
+        # src/analytics/store.py + tests/test_keyword_counters.py), so the rows are
+        # byte-identical — but this is an index-only scan (idx_keyword_mention_count),
+        # never the mention join that dragged article pages through the SQLCipher
+        # codec. ``mention_count > 0`` reproduces the inner-join's "has mentions"
+        # filter (a counter is 0 iff the keyword has no mentions).
+        q = session.query(
+            Keyword,
+            Keyword.mention_count.label("m"),
+            Keyword.article_count.label("arts"),
+        ).filter(Keyword.mention_count > 0)
+        q = _apply_kind(q, kind)
+        rows = q.order_by(Keyword.mention_count.desc()).limit(limit * 4).all()
+    else:
+        # Windowed / per-country: the corpus-wide counters cannot serve a scoped
+        # SUM, so this path keeps the mention aggregation (filtered, then grouped).
+        q = session.query(
+            Keyword,
+            func.sum(KeywordMention.count).label("m"),
+            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+        ).join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        if days:
+            q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
+        if country:
+            q = q.filter(KeywordMention.country == country.lower())
+        q = _apply_kind(q, kind)
+        rows = (
+            q.group_by(Keyword.id)
+            .order_by(func.sum(KeywordMention.count).desc())
+            .limit(limit * 4)
+            .all()
+        )
     is_hidden = _hidden_predicate()
     cap = limit * 4 if group else limit
     terms = []

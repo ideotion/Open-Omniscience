@@ -792,11 +792,9 @@ def _supergroup_totals(db: Session, member_rows: set[tuple[str, str | None]]) ->
     terms, so a super-group with a ring spans languages — the super-ring model.
     Keyed by the member's ``normalized_term`` (the ring id for a ring); a display
     total, best-effort like the original (one term feeds one member key)."""
-    from sqlalchemy import func
-
     from src.analytics.equivalence import ring_meta
     from src.analytics.families import canonical_key
-    from src.database.models import Keyword, KeywordMention
+    from src.database.models import Keyword
 
     term_to_key: dict[str, str] = {}
     canon_to_key: dict[str, str] = {}
@@ -838,15 +836,15 @@ def _supergroup_totals(db: Session, member_rows: set[tuple[str, str | None]]) ->
                 matched_ids.add(kid)
     if not matched_ids:
         return totals
+    # Read the denormalised per-keyword counters (maintained at index time) for the
+    # resolved member ids — NO keyword_mentions join / GROUP BY. mention_count ==
+    # SUM(count) and article_count == COUNT(DISTINCT article_id) by construction
+    # (src/analytics/store.py + tests/test_keyword_counters.py), so the per-member
+    # totals are identical; the residual mention aggregation over the matched ids is
+    # gone, leaving a small index-only read on the keywords table.
     rows = (
-        db.query(
-            Keyword.normalized_term,
-            func.sum(KeywordMention.count),
-            func.count(func.distinct(KeywordMention.article_id)),
-        )
-        .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        db.query(Keyword.normalized_term, Keyword.mention_count, Keyword.article_count)
         .filter(Keyword.id.in_(matched_ids))
-        .group_by(Keyword.id)
         .all()
     )
     for norm, m, a in rows:

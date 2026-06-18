@@ -35,7 +35,12 @@ def _sess():
 
 
 def _kw_with_mentions(s, article, term, norm, lang, count):
-    k = Keyword(term=term, normalized_term=norm, language=lang, frequency=0, is_entity=False)
+    # mention_count/article_count are denormalised counters maintained at index time
+    # in production; one mention of `count` in one article -> (count, 1).
+    k = Keyword(
+        term=term, normalized_term=norm, language=lang, frequency=0, is_entity=False,
+        mention_count=count, article_count=1,
+    )
     s.add(k)
     s.flush()
     s.add(KeywordMention(keyword_id=k.id, article_id=article.id, count=count, observed_on=date.today()))
