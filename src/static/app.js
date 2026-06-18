@@ -2880,10 +2880,18 @@
     }
 
     // --- LLM behaviour & prompts (Settings → Models) --------------------------- //
-    // The three editable system prompts + keep-alive. An empty box = the built-in
-    // default (shown as the placeholder). The exact prompt used is recorded with every
-    // result, so customising never breaks provenance. Saved via PUT /api/settings.
+    // The editable system prompts + keep-alive. Each box is PRE-FILLED with the
+    // effective prompt — the saved override if any, else the built-in default — and
+    // auto-sized to show the whole thing, so the operator edits the real text
+    // (maintainer ask 2026-06-18). Saving a box whose text still equals the default
+    // stores "" (= use the default), so provenance stays "default" vs "custom" honest;
+    // the exact prompt used is recorded with every result. Saved via PUT /api/settings.
     let _llmPromptDefaults = {summary: "", translate: "", synthesis: ""};
+    function _autoGrowPrompt(ta) {
+      if (!ta) return;
+      ta.style.height = "auto";
+      ta.style.height = Math.min(ta.scrollHeight + 4, 640) + "px";  // fit content; cap so one box can't dominate
+    }
     async function loadLlmPrompts() {
       if (!$("llm-keep-alive")) return;
       let d;
@@ -2899,23 +2907,49 @@
       };
       for (const k of ["summary", "translate", "synthesis"]) {
         const ta = $("llm-prompt-" + k); if (!ta) continue;
-        ta.value = (P[k] && P[k].current) || "";         // "" = using the default
-        ta.placeholder = _llmPromptDefaults[k];          // show what the default is
+        // Pre-fill with the effective prompt (override if set, else the default).
+        ta.value = (P[k] && P[k].current) || _llmPromptDefaults[k];
+        ta.placeholder = _llmPromptDefaults[k];          // the default, shown if cleared
+        if (!ta._ooGrow) { ta.addEventListener("input", () => _autoGrowPrompt(ta)); ta._ooGrow = true; }
+        _autoGrowPrompt(ta);                             // size to show the whole prompt
       }
     }
     function resetLlmPrompt(k) {
-      // Reset = clear the override so the built-in default is used (the default shows
-      // as the placeholder). We never silently bake the default text in as a "custom".
-      const ta = $("llm-prompt-" + k); if (ta) ta.value = "";
+      // Restore the built-in default TEXT in the box (visible + editable). Saving a box
+      // whose text equals the default stores "" (override cleared), so provenance stays
+      // "default" — we never bake the default in as a fake "custom".
+      const ta = $("llm-prompt-" + k); if (!ta) return;
+      ta.value = _llmPromptDefaults[k] || "";
+      _autoGrowPrompt(ta);
+    }
+    function copyLlmPrompt(k, btn) {
+      const ta = $("llm-prompt-" + k); if (!ta) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const done = () => {
+        if (!btn) return;
+        const o = btn.textContent; btn.textContent = t("Copied");
+        setTimeout(() => { btn.textContent = o; }, 1200);
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); done(); });
+        } else { ta.select(); if (document.execCommand) document.execCommand("copy"); done(); }
+      } catch (e) { ta.select(); }
     }
     async function saveLlmBehaviour(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const status = $("llm-behaviour-status");
+      // Send "" when the box still equals the default (override cleared → use the
+      // default), else the operator's exact text — keeps provenance default-vs-custom honest.
+      const _promptOut = (k) => {
+        const ta = $("llm-prompt-" + k); const v = ta ? ta.value : "";
+        return v.trim() && v.trim() !== (_llmPromptDefaults[k] || "").trim() ? v : "";
+      };
       const body = {
         llm_keep_alive: ($("llm-keep-alive").value || "").trim() || "30m",
-        llm_prompt_summary: $("llm-prompt-summary").value,
-        llm_prompt_translate: $("llm-prompt-translate").value,
-        llm_prompt_synthesis: $("llm-prompt-synthesis").value,
+        llm_prompt_summary: _promptOut("summary"),
+        llm_prompt_translate: _promptOut("translate"),
+        llm_prompt_synthesis: _promptOut("synthesis"),
       };
       if (btn) btn.disabled = true;
       try {

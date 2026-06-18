@@ -1084,15 +1084,21 @@
         <div class="hint" style="flex:1;align-self:center">How long Ollama keeps the model in memory after a request, so the next one does not reload it. Examples: 30m, 1h, -1 (never unload), 0 (unload now).</div>
       </div>
       <div class="hint" style="margin:10px 0 6px">Leave a prompt empty to use the built-in default (shown as the placeholder). In the translation prompt, the placeholder {target} is replaced by the target language.</div>
-      <div style="margin-bottom:8px"><label for="llm-prompt-summary">Summary prompt</label>
-        <textarea id="llm-prompt-summary" rows="3" style="width:100%;font:13px ui-monospace,monospace"></textarea>
-        <button class="ghost tiny" onclick="resetLlmPrompt('summary')">Reset to default</button></div>
-      <div style="margin-bottom:8px"><label for="llm-prompt-translate">Translation prompt</label>
-        <textarea id="llm-prompt-translate" rows="3" style="width:100%;font:13px ui-monospace,monospace"></textarea>
-        <button class="ghost tiny" onclick="resetLlmPrompt('translate')">Reset to default</button></div>
-      <div style="margin-bottom:8px"><label for="llm-prompt-synthesis">Synthesis prompt</label>
-        <textarea id="llm-prompt-synthesis" rows="4" style="width:100%;font:13px ui-monospace,monospace"></textarea>
-        <button class="ghost tiny" onclick="resetLlmPrompt('synthesis')">Reset to default</button></div>
+      <div style="margin-bottom:10px"><label for="llm-prompt-summary">Summary prompt</label>
+        <textarea id="llm-prompt-summary" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="ghost tiny" onclick="copyLlmPrompt('summary',this)">Copy</button>
+          <button class="ghost tiny" onclick="resetLlmPrompt('summary')">Reset to default</button></div></div>
+      <div style="margin-bottom:10px"><label for="llm-prompt-translate">Translation prompt</label>
+        <textarea id="llm-prompt-translate" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="ghost tiny" onclick="copyLlmPrompt('translate',this)">Copy</button>
+          <button class="ghost tiny" onclick="resetLlmPrompt('translate')">Reset to default</button></div></div>
+      <div style="margin-bottom:10px"><label for="llm-prompt-synthesis">Synthesis prompt</label>
+        <textarea id="llm-prompt-synthesis" rows="10" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="ghost tiny" onclick="copyLlmPrompt('synthesis',this)">Copy</button>
+          <button class="ghost tiny" onclick="resetLlmPrompt('synthesis')">Reset to default</button></div></div>
       <div class="row" style="align-items:center;gap:10px">
         <button onclick="saveLlmBehaviour(this)">Save prompts &amp; behaviour</button>
         <span id="llm-behaviour-status" class="hint"></span>
