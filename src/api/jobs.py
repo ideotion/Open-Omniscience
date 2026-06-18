@@ -166,17 +166,62 @@ def _live_fetch() -> dict | None:
     }
 
 
+def _task_jobs() -> list[dict]:
+    """Background LLM/analysis tasks that registered themselves (src.monitoring.tasks).
+
+    Read-only visibility — the answer to "is an LLM translating? are keywords being
+    extracted?". Each carries only the owner's real facts (label/detail and an
+    optional done/total it published), never a fabricated percentage. No actions:
+    these are short, in-request operations the user did not queue."""
+    from src.monitoring.tasks import snapshot
+
+    out: list[dict] = []
+    for t in snapshot():
+        prog = None
+        if t.get("total"):
+            done = int(t.get("done") or 0)
+            total = int(t["total"])
+            prog = {"done": done, "total": total, "percent": round(100 * done / total) if total else 0}
+        out.append(
+            {
+                "id": f"task:{t['token']}",
+                "kind": t.get("kind") or "task",
+                "label": t.get("label") or "background task",
+                "detail": t.get("detail"),
+                "state": "running",
+                "elapsed_s": t.get("elapsed_s"),
+                "progress": prog,
+                "actions": [],
+            }
+        )
+    return out
+
+
+@router.get("/history")
+def jobs_history(limit: int = 20) -> dict:
+    """Recent COMPLETED collection passes (the History tab) — newest first, with the
+    owner's honest verdict (ok/error), mode, articles stored and duration. Reads the
+    scheduler's own append-only run log; no shadow state."""
+    from src.scheduler.runlog import recent_runs
+
+    runs = recent_runs(limit=max(1, min(limit, 100)))
+    return {"runs": runs, "count": len(runs)}
+
+
 @router.get("")
 def list_jobs() -> dict:
     """Every visible job, aggregated LIVE from the owning systems (no shadow
     state): the collection loop/pass, each wiki-dump and OSM-region download with
-    its real queue position, and the fetch currently on the wire (domain only)."""
+    its real queue position, the fetch currently on the wire (domain only), and
+    any background LLM/analysis task that registered itself (the Windows-Task-
+    Manager "what is actually happening" view — maintainer 2026-06-18)."""
     jobs: list[dict] = []
     j = _collect_job()
     if j:
         jobs.append(j)
     jobs.extend(_dump_jobs())
     jobs.extend(_osm_jobs())
+    jobs.extend(_task_jobs())
     f = _live_fetch()
     if f:
         jobs.append(f)

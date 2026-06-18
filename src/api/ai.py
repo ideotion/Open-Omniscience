@@ -103,12 +103,27 @@ def extract_keywords(
     max_terms = max(1, min(req.max_terms or 20, 100))
     init_ai_db()  # ensure the AI store exists (we are about to write to it)
 
+    # Visible in the task manager while it runs ("are keywords being extracted?").
+    from src.monitoring import tasks as _bgtasks
+
+    _tok = _bgtasks.register(
+        "analytics", f"Extracting AI keywords · {len(work)} article(s)",
+        detail=f"model {model}", total=len(work),
+    )
+
     def _stream():
-        for event in extract_for_articles(
-            work, client, model=model, kind=req.kind, max_terms=max_terms,
-            skip_existing=req.skip_existing,
-        ):
-            yield json.dumps(event, separators=(",", ":")) + "\n"
+        try:
+            done = 0
+            for event in extract_for_articles(
+                work, client, model=model, kind=req.kind, max_terms=max_terms,
+                skip_existing=req.skip_existing,
+            ):
+                if isinstance(event, dict) and event.get("event") == "item":
+                    done += 1
+                    _bgtasks.update(_tok, done=done)
+                yield json.dumps(event, separators=(",", ":")) + "\n"
+        finally:
+            _bgtasks.finish(_tok)
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 

@@ -1272,5 +1272,15 @@
   "Background tasks (markets · calendars · checks)": "Tareas en segundo plano (mercados · calendarios · comprobaciones)",
   "Building the briefing": "Generando el resumen",
   "Up next this pass": "A continuación en esta pasada",
-  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "El orden se vuelve a aleatorizar en cada pasada — estratificado por idioma y etiqueta, no es una cola fija."
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "El orden se vuelve a aleatorizar en cada pasada — estratificado por idioma y etiqueta, no es una cola fija.",
+  "Processes": "Procesos",
+  "Performance": "Rendimiento",
+  "History": "Historial",
+  "Airplane mode": "Modo avión",
+  "Online · collecting": "En línea · recopilando",
+  "Online · idle": "En línea · inactivo",
+  "Idle": "Inactivo",
+  "Downloads": "Descargas",
+  "AI & analysis": "IA y análisis",
+  "paused — airplane mode": "en pausa — modo avión"
 }

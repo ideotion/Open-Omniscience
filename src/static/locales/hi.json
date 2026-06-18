@@ -1272,5 +1272,15 @@
   "Background tasks (markets · calendars · checks)": "पृष्ठभूमि कार्य (बाज़ार · कैलेंडर · जाँच)",
   "Building the briefing": "ब्रीफ़िंग बनाई जा रही है",
   "Up next this pass": "इस चक्र में आगे",
-  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "हर चक्र में क्रम फिर से यादृच्छिक किया जाता है — भाषा और टैग के अनुसार स्तरीकृत, यह कोई स्थिर कतार नहीं है।"
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "हर चक्र में क्रम फिर से यादृच्छिक किया जाता है — भाषा और टैग के अनुसार स्तरीकृत, यह कोई स्थिर कतार नहीं है।",
+  "Processes": "प्रक्रियाएँ",
+  "Performance": "प्रदर्शन",
+  "History": "इतिहास",
+  "Airplane mode": "हवाई जहाज़ मोड",
+  "Online · collecting": "ऑनलाइन · संग्रह",
+  "Online · idle": "ऑनलाइन · निष्क्रिय",
+  "Idle": "निष्क्रिय",
+  "Downloads": "डाउनलोड",
+  "AI & analysis": "एआई और विश्लेषण",
+  "paused — airplane mode": "रुका हुआ — हवाई जहाज़ मोड"
 }

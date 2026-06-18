@@ -1272,5 +1272,15 @@
   "Background tasks (markets · calendars · checks)": "后台任务（市场 · 日历 · 检查）",
   "Building the briefing": "正在生成简报",
   "Up next this pass": "本轮接下来",
-  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "每轮顺序都会重新随机排列——按语言和标签分层，并非固定队列。"
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "每轮顺序都会重新随机排列——按语言和标签分层，并非固定队列。",
+  "Processes": "进程",
+  "Performance": "性能",
+  "History": "历史",
+  "Airplane mode": "飞行模式",
+  "Online · collecting": "在线 · 采集中",
+  "Online · idle": "在线 · 空闲",
+  "Idle": "空闲",
+  "Downloads": "下载",
+  "AI & analysis": "AI 与分析",
+  "paused — airplane mode": "已暂停——飞行模式"
 }

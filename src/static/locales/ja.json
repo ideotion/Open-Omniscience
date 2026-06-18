@@ -1272,5 +1272,15 @@
   "Background tasks (markets · calendars · checks)": "バックグラウンド処理（市場 · カレンダー · チェック）",
   "Building the briefing": "ブリーフィングを作成中",
   "Up next this pass": "このパスの次の対象",
-  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "順序はパスごとに再ランダム化されます——言語とタグで層化され、固定キューではありません。"
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "順序はパスごとに再ランダム化されます——言語とタグで層化され、固定キューではありません。",
+  "Processes": "プロセス",
+  "Performance": "パフォーマンス",
+  "History": "履歴",
+  "Airplane mode": "機内モード",
+  "Online · collecting": "オンライン · 収集中",
+  "Online · idle": "オンライン · アイドル",
+  "Idle": "アイドル",
+  "Downloads": "ダウンロード",
+  "AI & analysis": "AI と分析",
+  "paused — airplane mode": "一時停止——機内モード"
 }

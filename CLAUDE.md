@@ -2851,6 +2851,31 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **TASK-MANAGER REDESIGN — WINDOWS-STYLE (maintainer 2026-06-18 "entirely rethink the task manager
+  UI … anchored in what Windows created: see what consumes resources, see what is actually happening
+  (is an LLM translating? are super-groups loading?), pause services, performance + hardware metrics +
+  the jobs list with prioritise"; branch claude/taskmgr-windows-redesign, draft PR onto 0.09,
+  BROWSER-UNVERIFIED):** the standalone /tasks page (src/static/taskmanager.html) rebuilt into a
+  Windows-Task-Manager-style window: a PERSISTENT resource SUMMARY strip (state chip — Online·collecting /
+  Airplane mode [red] / Idle, honest from activity.online — + live CPU/RAM/↓/active-jobs) above five tabs:
+  PROCESSES (one grouped live list of EVERYTHING — Collection [pass+phase] · Downloads [wiki/OSM, with
+  pause/reorder/resume] · AI & analysis · Network [the fetch] — replaces "Active") · PERFORMANCE (live
+  hardware sparkline charts from a rolling buffer: CPU%, Memory RSS, Network ↓ [diffed], Disk I/O [diffed],
+  + cores/threads; replaces the flat "System" rows) · QUEUE (the reorderable download queue + the read-only
+  up-next preview) · SCHEDULE (scheduler facts, now AIRPLANE-AWARE — fixes the reported bug where it showed
+  "running — collection in progress" while in airplane mode; offline → "paused — airplane mode" in red) ·
+  HISTORY (recent completed passes from a new GET /api/jobs/history → runlog.recent_runs, honest ok/error
+  verdicts). The "what is actually happening" gap is closed by a NEW live background-task registry
+  src/monitoring/tasks.py (register/update/finish/track context-mgr/snapshot; stale-prune; pure stdlib, no
+  shadow state, no fabricated %), surfaced in /api/jobs via _task_jobs (kind llm/analytics, read-only), and
+  wired into the LLM endpoints (bulk summarize/translate per-article progress; single summarize/translate)
+  + the AI keyword-extract stream — so "Translating → French · 3/12" now shows. +10 i18n structural keys ×12
+  (tabs/state chips/groups; the rest English-fallback keyable later; gate 100%). tests: test_background_tasks.py
+  (registry incl. track-always-finishes + stale-prune + the /api/jobs surface + history shape) +
+  test_repo_invariants::test_task_manager_redesign_windows_style; node --check clean; registry logic verified
+  here (stdlib). REMAINING: the BIG one — Insights "Groups" took ~60 s and froze the UI on a 10k-article /
+  245k-keyword / 829k-mention corpus (separate perf workstream the maintainer opened with logs); per-job ↓
+  rate; History filters; wiring more producers (indexing/supergroup loads) into the registry.
 - **TIME-TO-FIRST-ARTICLE + TASK-MANAGER PHASE (maintainer field test 2026-06-18 — "it took
   3-5 minutes to get the first article … the app's downloading markets/indices/calendars
   beforehand … the task manager fails to show what the app is doing"; branch

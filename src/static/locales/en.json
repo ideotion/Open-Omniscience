@@ -1272,5 +1272,15 @@
   "Background tasks (markets · calendars · checks)": "Background tasks (markets · calendars · checks)",
   "Building the briefing": "Building the briefing",
   "Up next this pass": "Up next this pass",
-  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "Order is re-randomised every pass — stratified by language and tag, not a fixed queue."
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.",
+  "Processes": "Processes",
+  "Performance": "Performance",
+  "History": "History",
+  "Airplane mode": "Airplane mode",
+  "Online · collecting": "Online · collecting",
+  "Online · idle": "Online · idle",
+  "Idle": "Idle",
+  "Downloads": "Downloads",
+  "AI & analysis": "AI & analysis",
+  "paused — airplane mode": "paused — airplane mode"
 }
