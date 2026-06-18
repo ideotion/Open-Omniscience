@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "মানচিত্রের জ্যামিতি অনুপলব্ধ।",
   "Could not load coverage:": "কভারেজ লোড করা যায়নি:",
   "sources have no country and are not shown on the map.": "উৎসের কোনো দেশ নেই এবং মানচিত্রে দেখানো হয় না।",
-  "No located sources yet — add sources with a country, or collect some articles.": "এখনও কোনো অবস্থানযুক্ত উৎস নেই — দেশসহ উৎস যোগ করুন, বা কিছু নিবন্ধ সংগ্রহ করুন।"
+  "No located sources yet — add sources with a country, or collect some articles.": "এখনও কোনো অবস্থানযুক্ত উৎস নেই — দেশসহ উৎস যোগ করুন, বা কিছু নিবন্ধ সংগ্রহ করুন।",
+  "Keyword mentions": "কীওয়ার্ড উল্লেখ",
+  "tone": "টোন",
+  "Map dimension": "মানচিত্র মাত্রা",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "দেশহীন — গোনা হয়েছে, মানচিত্রে নেই।",
+  "Catalogued sources based in each country — counts only, no score.": "প্রতিটি দেশে অবস্থিত তালিকাভুক্ত উৎস — কেবল গণনা, কোনো স্কোর নয়।",
+  "Articles collected from sources in each country — counts only, no score.": "প্রতিটি দেশের উৎস থেকে সংগৃহীত নিবন্ধ — কেবল গণনা, কোনো স্কোর নয়।",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "প্রতিটি দেশের উৎসের নিবন্ধে কীওয়ার্ড উল্লেখ — কেবল গণনা, কোনো স্কোর নয়।",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "নিবন্ধের গড় টোন (VADER) — কেবল ইংরেজি অভিধান, অন্য ভাষায় অনির্ভরযোগ্য; কেবল ইংরেজি নিবন্ধ স্কোর করা হয়। অনুমিত, কখনও রায় নয়।"
 }

@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "地図ジオメトリは利用できません。",
   "Could not load coverage:": "カバレッジを読み込めませんでした:",
   "sources have no country and are not shown on the map.": "国が不明なソースは地図に表示されません。",
-  "No located sources yet — add sources with a country, or collect some articles.": "位置情報のあるソースはまだありません — 国付きのソースを追加するか、記事を収集してください。"
+  "No located sources yet — add sources with a country, or collect some articles.": "位置情報のあるソースはまだありません — 国付きのソースを追加するか、記事を収集してください。",
+  "Keyword mentions": "キーワード言及",
+  "tone": "トーン",
+  "Map dimension": "地図の次元",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "国不明 — 集計済み、地図には未表示。",
+  "Catalogued sources based in each country — counts only, no score.": "各国に拠点を置く登録済みソース — 件数のみ、スコアなし。",
+  "Articles collected from sources in each country — counts only, no score.": "各国のソースから収集した記事 — 件数のみ、スコアなし。",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "各国のソースの記事中のキーワード言及 — 件数のみ、スコアなし。",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "記事の平均トーン（VADER）— 英語辞書のみで、他言語には不正確。英語記事のみ採点。推定であり、判定ではありません。"
 }

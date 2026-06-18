@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "Geometri peta tidak tersedia.",
   "Could not load coverage:": "Tidak dapat memuat cakupan:",
   "sources have no country and are not shown on the map.": "sumber tidak memiliki negara dan tidak ditampilkan di peta.",
-  "No located sources yet — add sources with a country, or collect some articles.": "Belum ada sumber berlokasi — tambahkan sumber dengan negara, atau kumpulkan beberapa artikel."
+  "No located sources yet — add sources with a country, or collect some articles.": "Belum ada sumber berlokasi — tambahkan sumber dengan negara, atau kumpulkan beberapa artikel.",
+  "Keyword mentions": "Penyebutan kata kunci",
+  "tone": "nada",
+  "Map dimension": "Dimensi peta",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "tanpa negara — dihitung, tidak dipetakan.",
+  "Catalogued sources based in each country — counts only, no score.": "Sumber terkatalog yang berbasis di tiap negara — hanya hitungan, tanpa skor.",
+  "Articles collected from sources in each country — counts only, no score.": "Artikel yang dikumpulkan dari sumber di tiap negara — hanya hitungan, tanpa skor.",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "Penyebutan kata kunci dalam artikel dari sumber di tiap negara — hanya hitungan, tanpa skor.",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Nada rata-rata artikel (VADER) — hanya leksikon Inggris, tidak andal untuk bahasa lain; hanya artikel Inggris yang dinilai. Disimpulkan, bukan vonis."
 }

@@ -2361,7 +2361,8 @@ ruling, a contingency, or a deliberate-omission note.
   entire visual layer. BUILD SEQUENCE (one PR per slice onto 0.09): (1) country-polygons
   foundation [SHIPPED 2026-06-18, below]; (2) ooMap core [SHIPPED 2026-06-18, below] (country
   fills + in-map zoom/pan + colour-scale legend + honest no-data; first dimension
-  sources-per-country; big/fullscreen on the rebuilt Map tab); (3) dimensions (articles·keywords·sentiment, dimension picker,
+  sources-per-country; big/fullscreen on the rebuilt Map tab); (3) dimensions [SHIPPED
+  2026-06-18, below] (articles·keywords·sentiment, dimension picker,
   caveats); (4) granularity (continent aggregation + city/place point overlay); (5)
   consolidation (fold the time-slider in, retire the old surfaces, embed ooMap on
   When/Where + insights).
@@ -2405,6 +2406,30 @@ ruling, a contingency, or a deliberate-omission note.
   enrichment + no-score) + test_repo_invariants::test_ooMap_choropleth; i18n --min 100 (1292×12),
   node --check, ruff F/B clean, mypy 119≤127 (0 on new lines). REMAINING: human click-through
   across themes/breakpoints; slice 3 (dimension picker articles·keywords·sentiment).
+  **SLICE 3 SHIPPED 2026-06-18 (the DIMENSION PICKER; PR onto 0.09; backend VERIFIED py3.13,
+  frontend BROWSER-UNVERIFIED per fork-3):** four choropleth dimensions switchable from an
+  IN-MAP picker overlay (the "controls inside the map" convention) — Sources · Articles ·
+  Keyword mentions · Mean tone. `queries.source_country_counts` extended: one article scan now
+  also yields per-source-country mean TONE (`func.avg(Article.sentiment_score)` + scored-subset
+  `sentiment_n`) and a KEYWORD-MENTIONS count via `KeywordMention.country` (the DENORMALISED
+  source country → an index scan, NO keyword_mentions→articles row-decrypt join, honouring the
+  perf-trap ledger fact); `/api/insights/map-coverage` passes them through. Frontend:
+  `_ooMapPayload` caches the ONE payload so switching dimension is INSTANT (no re-fetch) —
+  `_renderOoMapDim` re-colours from the active dim; `ooMap` gained `opts.dimensions`/`activeDim`/
+  `onDimension` (the picker) + `opts.scale`. SIGNED data rides a DIVERGING scale: new
+  `_ooMapFillDiverging` (theme `--err`←panel→`--ok`, 0 at centre) — sentiment never on a
+  one-sided ramp; the legend branches sequential↔diverging. HONESTY: mean tone carries the VADER
+  English-only caveat VISIBLE (B1) + `n=` scored count; a country with NO scored (English)
+  article reports `sentiment=None` → the no-data hatch, never a fabricated zero; `unlocated`
+  (country-less) data surfaced per count dimension, never mapped; counts only, no score (the tone
+  field is `sentiment`, never a `*score*` key). +9 i18n keys ×12 (non-en AI-drafted, FLAGGED for
+  native review). tests/test_map_coverage.py (+test_keywords_and_sentiment_dimensions: keyword
+  count via denormalised country, mean-tone over scored subset, no-score) + test_ooMap_choropleth
+  extended (picker + diverging + VADER caveat); i18n --min 100 (1301×12), node --check, ruff F/B
+  clean, mypy 119≤127. NOTE: the sentiment dimension adds an article-row scan (direct, not the
+  mention-join trap) — eager for instant switching; could go lazy if a huge corpus reports a slow
+  Map load. REMAINING: human click-through; slice 4 (continent aggregation + city/place point
+  overlay), slice 5 (fold the time-slider in, retire the old surfaces).
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles
