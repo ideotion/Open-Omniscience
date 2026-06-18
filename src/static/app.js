@@ -2772,7 +2772,12 @@
         : `<p class="muted">${esc(t("No models installed yet — pull one below."))}</p>`;
       const cat = (d.catalog || []).map(m => {
         const [lbl, cls] = FIT[m.fit] || FIT.unknown;
-        return `<tr><td><code>${esc(m.tag)}</code></td><td>${esc(m.size)}</td>` +
+        // Embedding models are downloadable but the app's text features can't use
+        // them — label honestly (the #oo-tip hover carries the why, invariant #17).
+        const kindBadge = m.kind === "embedding"
+          ? ` <span class="pill warn" title="${esc(t("An embedding model — for semantic search/RAG, not used by summarize or translate."))}">${esc(t("embedding"))}</span>`
+          : "";
+        return `<tr><td><code>${esc(m.tag)}</code>${kindBadge}</td><td>${esc(m.size)}</td>` +
           `<td class="${cls === 'ok' ? '' : cls}"><span class="pill ${cls === 'err' ? 'err' : (cls === 'warn' ? 'warn' : 'ok')}">${esc(lbl)}</span></td>` +
           `<td class="muted">${esc(m.note)}</td>` +
           `<td><button class="tiny" onclick="pullModel(${esc(JSON.stringify(m.tag))})">${esc(t("Pull"))}</button></td></tr>`;
