@@ -2959,6 +2959,22 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **PERF — INSIGHTS READ CACHE + BACKGROUND WARM (perf workstream, field report 2026-06-18; branch
+  claude/perf-insights-cache, draft PR onto 0.09):** the whole-corpus read endpoints (top 2.7s, trending,
+  trending-windows 8-36s POLLED 132x from Home, map-coverage 7-9s) GROUP BY over the full 829k-mention table
+  EVERY call and recompute identical numbers. Added a short TTL cache (src/api/insights.py: SimpleCache,
+  `_cached`/`_ckey`, default 120s, OO_INSIGHTS_CACHE_TTL, 0 disables) on those 4 endpoints — keyed by their
+  params, HONEST (computed_at + cache_ttl_s + a `cached` flag in the payload, like the database-stats cache).
+  DELIBERATELY a plain TTL, NOT a write-invalidated probe: under continuous scraping a write-invalidated cache
+  is cold every pass (exactly when the operator looks), so a small DISCLOSED staleness buys a permanently-snappy
+  UI. `warm_cache(session)` pre-computes the DEFAULT views the UI requests (Home trending-windows series_top=5/0,
+  top group=True) and is called best-effort AFTER each scrape's refresh_briefing (same background thread, off the
+  request path) — so even the first open rarely hits a cold query; warming SKIPS keys still fresh within the TTL
+  (cheap when passes outrun the TTL). tests/test_insights_cache.py (memoize, distinct-params-distinct-entries,
+  warm populates the exact Home key + a 2nd warm recomputes nothing). REMAINING in the perf workstream:
+  denormalized keyword counters (mention_count/article_count on Keyword → indexed top/supergroups, no mention
+  join); cache associations/graph/framing (per-query, heavier); cut the frontend Home poll frequency (the cache
+  already makes each poll a cheap hit); SQLite cache_size bump; the browser idle-CPU 40% runaway.
 - **STATS DISPLAY CLEANUP + DATA-MODEL ASSESSMENT (maintainer 2026-06-18; branch claude/stats-cleanup,
   draft PR onto 0.09):** removed three counters from the Database/Home stats (database._COUNTED_TABLES +
   the frontend HOME_STAT_LABELS, both render dynamically): `article_analyses` ("pointless" — LLM

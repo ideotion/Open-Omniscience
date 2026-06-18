@@ -119,6 +119,15 @@ def refresh_briefing(session) -> dict:
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
     tmp.replace(path)
     _LOG.info("briefing refreshed: %d cards", len(cards))
+    # Warm the heavy whole-corpus read cache (top / trending / map) in this same
+    # background pass, so the Home + Insights surfaces are instant and never trigger
+    # a cold multi-second aggregation in the UI (perf, field report 2026-06-18).
+    try:
+        from src.api.insights import warm_cache
+
+        warm_cache(session)
+    except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to the feed
+        _LOG.warning("insights cache warm failed; briefing continues", exc_info=True)
     return payload
 
 
