@@ -1566,6 +1566,14 @@ ruling, a contingency, or a deliberate-omission note.
   the "Pull newsletters" button. `--audit-chrome` 417→402; `--min 100` green (1180/1180 ×12);
   test_repo_invariants green. Non-en AI-drafted, FLAGGED for native review. REMAINING: Statistics/Models/
   Offline-map panels + the dynamic JS rows + the ~402 tail.
+  **SLICE 3 SHIPPED 2026-06-17 (draft PR onto 0.09):** the OFFLINE-MAP panel (Settings → Offline map, the
+  OSM region-download manager) keyed ×12. +5 keys: "Offline map regions" heading, the big managed-like-
+  wiki-dumps description paragraph (its inline `<em>dated estimate</em>` dropped → one sentence), the
+  "Loading regions…" placeholder, the sizes-are-estimates note, and the downloading-is-a-network-action
+  consent paragraph (Region/Download/reviewed were already keyed; osm-region is already excluded from the
+  dropdown-label test as dynamic data). `--audit-chrome` 402→395; `--min 100` green (1185/1185 ×12);
+  test_repo_invariants green. Cumulative this session 431→395. Non-en AI-drafted, FLAGGED for native review.
+  REMAINING: Statistics/Models panels + the dynamic JS rows + the ~395 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent

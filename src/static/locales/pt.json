@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "Pasta (IMAP)",
   "Max messages": "Mensagens máx.",
   "auto": "automático",
-  "Pull newsletters": "Extrair boletins"
+  "Pull newsletters": "Extrair boletins",
+  "Offline map regions": "Regiões de mapa offline",
+  "Loading regions…": "Carregando regiões…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "Os tamanhos são estimativas — o tamanho exato é lido do mirror ao baixar.",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "Baixe extratos de regiões do OpenStreetMap para uso offline — geridos como os despejos da Wikipédia (retomáveis, com pausar/retomar e uma fila de downloads). As regiões são listadas das maiores para as menores; o tamanho exibido é uma estimativa datada de um catálogo incluído (sem rede) — o tamanho exato é lido do mirror ao iniciar o download. Os continentes vêm da Geofabrik; o planeta inteiro do mirror do planeta do OpenStreetMap. Podem ser muito grandes (um continente, vários GB; o planeta, dezenas de GB).",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "Baixar é uma ação de rede: passa pelo único interruptor de rede deste aplicativo, então é recusado no modo avião e pede seu consentimento na primeira vez que você fica online. O download é executado como tarefa em segundo plano (apenas a rede deste aplicativo — nunca seu dispositivo ou outros apps)."
 }

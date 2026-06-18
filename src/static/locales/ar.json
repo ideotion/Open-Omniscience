@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "المجلد (IMAP)",
   "Max messages": "أقصى عدد للرسائل",
   "auto": "تلقائي",
-  "Pull newsletters": "اسحب النشرات"
+  "Pull newsletters": "اسحب النشرات",
+  "Offline map regions": "مناطق الخريطة دون اتصال",
+  "Loading regions…": "جارٍ تحميل المناطق…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "الأحجام تقديرية — يُقرأ الحجم الدقيق من المرآة عند التنزيل.",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "نزّل مقتطفات مناطق OpenStreetMap للاستخدام دون اتصال — تُدار مثل تفريغات ويكيبيديا (قابلة للاستئناف، مع إيقاف/استئناف، وقائمة انتظار للتنزيل). تُدرَج المناطق من الأكبر أولاً؛ والحجم المعروض تقدير مؤرَّخ من فهرس مُضمَّن (دون شبكة) — ويُقرأ الحجم الدقيق من المرآة عند بدء التنزيل. القارات من Geofabrik؛ والكوكب بأكمله من مرآة كوكب OpenStreetMap. قد تكون كبيرة جدًا (القارة عدة غيغابايت؛ والكوكب عشرات الغيغابايت).",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "التنزيل إجراء يستخدم الشبكة: يمر عبر مفتاح الشبكة الوحيد في هذا التطبيق، لذا يُرفَض أثناء وضع الطيران ويطلب موافقتك أول مرة تتصل فيها بالإنترنت. يعمل التنزيل كمهمة في الخلفية (شبكة هذا التطبيق فقط — وليس جهازك أو التطبيقات الأخرى أبدًا)."
 }

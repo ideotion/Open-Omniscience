@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "फ़ोल्डर (IMAP)",
   "Max messages": "अधिकतम संदेश",
   "auto": "स्वतः",
-  "Pull newsletters": "न्यूज़लेटर खींचें"
+  "Pull newsletters": "न्यूज़लेटर खींचें",
+  "Offline map regions": "ऑफ़लाइन मानचित्र क्षेत्र",
+  "Loading regions…": "क्षेत्र लोड हो रहे हैं…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "आकार अनुमान हैं — डाउनलोड पर सटीक आकार मिरर से पढ़ा जाता है।",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "ऑफ़लाइन उपयोग के लिए OpenStreetMap क्षेत्र अर्क डाउनलोड करें — विकिपीडिया डंप की तरह प्रबंधित (पुनः आरंभ करने योग्य, रोकें/जारी रखें के साथ, और एक डाउनलोड कतार)। क्षेत्र सबसे बड़े पहले सूचीबद्ध हैं; दिखाया गया आकार एक बंडल किए गए कैटलॉग से एक दिनांकित अनुमान है (कोई नेटवर्क नहीं) — डाउनलोड शुरू होने पर सटीक आकार मिरर से पढ़ा जाता है। महाद्वीप Geofabrik से आते हैं; पूरा ग्रह OpenStreetMap planet मिरर से। ये बहुत बड़े हो सकते हैं (एक महाद्वीप कई GB; ग्रह दसियों GB)।",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "डाउनलोड करना एक नेटवर्क क्रिया है: यह इस ऐप के एकमात्र नेटवर्क स्विच से होकर जाता है, इसलिए हवाई जहाज़ मोड में अस्वीकार कर दिया जाता है और पहली बार ऑनलाइन होने पर आपकी सहमति माँगता है। डाउनलोड एक पृष्ठभूमि कार्य के रूप में चलता है (केवल इस ऐप का नेटवर्क — कभी आपका डिवाइस या अन्य ऐप नहीं)।"
 }
