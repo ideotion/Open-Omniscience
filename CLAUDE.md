@@ -1584,6 +1584,16 @@ ruling, a contingency, or a deliberate-omission note.
   is already excluded from the dropdown-label test (World Bank/Eurostat = proper-noun data). `--audit-chrome`
   395→377; `--min 100` green (1198/1198 ×12); test_repo_invariants green. Cumulative this session 431→377.
   Non-en AI-drafted, FLAGGED for native review. REMAINING: Models panel + the dynamic JS rows + the ~377 tail.
+  **SLICE 5 SHIPPED 2026-06-17 (draft PR onto 0.09):** the MODELS/LLM panel (Settings → Models, the Ollama
+  management subtab, ruling on the in-app installer) was MOSTLY already keyed from a prior session — this
+  FINISHES it: +3 keys (the "Pull any model tag" label, the intro paragraph, the pull-network-action hint).
+  The intro paragraph was RESTRUCTURED so its functional `ollama.com/library` link sits at the END (instead
+  of mid-sentence), letting it key as ONE clean sentence instead of two un-translatable fragments around the
+  anchor (the link-in-prose pattern; conservative reorder, meaning preserved); the network hint dropped its
+  `<strong>`+`<em>not</em>` → one sentence. `--audit-chrome` 377→371; `--min 100` green (1201/1201 ×12);
+  test_repo_invariants green. Cumulative this session 431→371 (5 panels: Watches·mailbox·offline-map·
+  statistics·models). Non-en AI-drafted, FLAGGED for native review. REMAINING: the Wikipedia/agenda/safety
+  panels + the dynamic JS rows (need `t()`) + the ~371 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent

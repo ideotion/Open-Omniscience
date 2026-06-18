@@ -1202,5 +1202,8 @@
   "Tracked for auto-refresh": "自動更新のため追跡中",
   "Refresh due now": "期限到来分を今すぐ更新",
   "Replay due fetches now (also runs in the background while you are online)": "期限到来分の取得を今すぐ再実行(オンライン中はバックグラウンドでも実行されます)",
-  "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "取得した各値は追跡され、オンライン中はその間隔で再取得され、毎回新しいヴィンテージが保存されます(改訂は保持され、上書きされません)。不要なものは無効化または削除してください。"
+  "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "取得した各値は追跡され、オンライン中はその間隔で再取得され、毎回新しいヴィンテージが保存されます(改訂は保持され、上書きされません)。不要なものは無効化または削除してください。",
+  "Pull any model tag": "任意のモデルタグを取得",
+  "The local language models power Summarize, Translate and Synthesize. This shows what you actually have installed (live from Ollama) and a small suggested list annotated for your hardware. Pick the active model, pull new ones, or remove them — all from here. Newer and better models appear constantly — pull any tag below, or browse": "ローカル言語モデルは要約・翻訳・統合を支えます。ここには実際にインストール済みのもの(Ollama からのライブ)と、ハードウェア向けの注釈付きの小さな推奨リストが表示されます。アクティブなモデルの選択、新規取得、削除がすべてここからできます。より新しく優れたモデルが次々に登場します — 下で任意のタグを取得するか、こちらを参照してください",
+  "Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.": "モデルの取得はネットワーク操作です。Ollama プロセスを通じて平文のインターネット経由でダウンロードされ — このアプリの Tor プロキシ経由ではありません — そのため機内モードでは拒否され、初めてオンラインにするときに同意を求めます。ダウンロードはあなたのマシンで行われ、その後モデルは完全にオフラインで動作します。"
 }
