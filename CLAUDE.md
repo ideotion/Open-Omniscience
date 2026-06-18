@@ -2459,12 +2459,23 @@ ruling, a contingency, or a deliberate-omission note.
   `t()` (in `_renderOoMapDim`'s point label + `fmtV` hover + `srRows`) and KEYED ×12 (standard
   continent translations), so the continent-granularity labels are fully localised — the map's
   CHROME was already ×12 (controls/legends/caveats); this closes the bounded data-vocabulary the
-  map itself introduced. +6 i18n keys ×12; test_ooMap_choropleth asserts `t(r.continent)`. NOTE:
-  COUNTRY names (~200) still render in English — that is an APP-WIDE decision (country names are
-  English everywhere: sources, search, analysis; `country_display_name` returns English), so
-  localising them belongs to a separate app-wide pass, not a map-local fix (flagged for the
-  maintainer). REMAINING: human click-through; slice 5 (fold the time-slider in,
-  retire the old temporal-map surfaces, embed ooMap on When/Where + Insights).
+  map itself introduced. +6 i18n keys ×12; test_ooMap_choropleth asserts `t(r.continent)`.
+  **COUNTRY-NAME i18n SHIPPED 2026-06-18 (the follow-up to the continent fix; PR onto 0.09;
+  FRONTEND-ONLY, BROWSER-UNVERIFIED):** the displayed country NAMES are now localised via the
+  BROWSER'S OWN CLDR data — a reusable `ooRegionName(code, fallback)` = `new Intl.DisplayNames([
+  OOI18N.current()], {type:"region"}).of(CODE)` (per-lang cached, try/catch + fallback to the
+  supplied English name / the code). Verified accurate across en/fr/de/zh/ar/ja/ru
+  (France/États-Unis/Chine · 法国/美国/中国 · فرنسا …) and SAFE on unknown structurally-valid codes
+  (.of("ZY")→"ZY", no throw). Applied where the UI shows a country as a NAME: the map (ooMap
+  polygon hover `ooRegionName(code, c.name)` + the loader's `names` map → centroid labels + sr-list
+  + valueLabel) and the Sources table cell. KEY INSIGHT (corrects the earlier "English everywhere"
+  read): MOST of the app already shows the language-neutral ISO CODE (FR/US), which correctly STAYS
+  a code (like url anchors) — only the few NAME surfaces needed localising, and CLDR gives every
+  locale with ZERO translation tables / ZERO new i18n keys. test_ooMap_choropleth asserts the
+  helper + Intl.DisplayNames region + the map use. REMAINING: adopt `ooRegionName` on any other
+  name-surface found in a click-through; the map's English-only continent SET was the keyed case,
+  country names are the CLDR case. REMAINING (map rework): human click-through; slice 5 (fold the
+  time-slider in, retire the old temporal-map surfaces, embed ooMap on When/Where + Insights).
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles
