@@ -2359,9 +2359,9 @@ ruling, a contingency, or a deliberate-omission note.
   (lon2x/lat2y), the city gazetteer, the location endpoints (/api/insights/where·who·
   corpus-sources, KeywordMention.country, Source.country, sentiment-at-ingest). REDO: the
   entire visual layer. BUILD SEQUENCE (one PR per slice onto 0.09): (1) country-polygons
-  foundation [SHIPPED 2026-06-18, below]; (2) ooMap core (country fills + in-map zoom/pan +
-  colour-scale legend + honest no-data; first dimension sources-per-country; big/fullscreen
-  on the rebuilt Map tab); (3) dimensions (articles·keywords·sentiment, dimension picker,
+  foundation [SHIPPED 2026-06-18, below]; (2) ooMap core [SHIPPED 2026-06-18, below] (country
+  fills + in-map zoom/pan + colour-scale legend + honest no-data; first dimension
+  sources-per-country; big/fullscreen on the rebuilt Map tab); (3) dimensions (articles·keywords·sentiment, dimension picker,
   caveats); (4) granularity (continent aggregation + city/place point overlay); (5)
   consolidation (fold the time-slider in, retire the old surfaces, embed ooMap on
   When/Where + insights).
@@ -2381,6 +2381,30 @@ ruling, a contingency, or a deliberate-omission note.
   test_countries_geo.py (8: iso2 fallback, ISO-keying, multipolygon, microstate-survives,
   no-ISO-dropped, asset shape+coverage). mypy 0-new (119≤127 — base drifted up via other
   merges, my module adds 0), ruff F/B clean.
+  **SLICE 2 SHIPPED 2026-06-18 (the ooMap choropleth CORE; PR #368, draft onto 0.09;
+  backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED per fork-3):** the reusable
+  `ooMap(host, opts)` component (no deps, like ooChart/ooSubtabs) in src/static/app.js —
+  country FILL polygons coloured by a measured dimension on a theme-accent sequential scale
+  (`_ooMapFill` via `color-mix(var(--accent)…)`, inherits all 17 themes; LINEAR, faithful to
+  real skew not flattened); in-map zoom/pan (＋/－/⟲ + wheel + drag + ⛶) with an
+  INSTANCE-LOCAL viewBox closure (`_wireOoMap`, no module globals, drag listeners add-on-down/
+  remove-on-up so re-renders never leak); a colour-scale LEGEND (real min/max + unit); HONEST
+  NO-DATA = a hatch `url(#oomap-nodata)`, visually distinct from zero (`t("no data")`, never a
+  guessed colour); CENTROID POINT-FALLBACK for data-bearing territories the coarse 110m geometry
+  has no polygon for (the ~75-microstate gap slice 1 flagged — plotted at the gazetteer centroid,
+  `!geoCodes.has(...)`, a point NEVER an invented border); a11y `role="img"` + aria summary +
+  `.sr-only` top list. Reuses slice-1 `world_countries.json` (175 countries) + the existing
+  `lon2x`/`lat2y` projection (no second projection). FIRST DIMENSION = sources-per-country on the
+  rebuilt Map (Temporal-map) tab: `queries.source_country_counts` groups sources + their articles
+  by `Source.country`, country-less → an `unlocated` bucket NEVER mapped (counts only, no score);
+  `GET /api/insights/map-coverage` enriches each located country with display name + continent +
+  a centroid (geocode) and carries method+caveat. The existing temporal-map (signals + time
+  slider) is KEPT BELOW for the slice-5 consolidation (the Desk lesson — nothing removed; slice 5
+  folds the slider into ooMap as the in-map time control). +14 i18n keys ×12 (non-en AI-drafted,
+  FLAGGED for native review). tests/test_map_coverage.py (grouping + unlocated bucket + endpoint
+  enrichment + no-score) + test_repo_invariants::test_ooMap_choropleth; i18n --min 100 (1292×12),
+  node --check, ruff F/B clean, mypy 119≤127 (0 on new lines). REMAINING: human click-through
+  across themes/breakpoints; slice 3 (dimension picker articles·keywords·sentiment).
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles

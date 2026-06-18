@@ -1282,5 +1282,19 @@
   "Idle": "خامل",
   "Downloads": "التنزيلات",
   "AI & analysis": "الذكاء الاصطناعي والتحليل",
-  "paused — airplane mode": "متوقّف مؤقتًا — وضع الطيران"
+  "paused — airplane mode": "متوقّف مؤقتًا — وضع الطيران",
+  "World coverage": "التغطية العالمية",
+  "— a choropleth of your corpus": "— خريطة كوروبليثية لمجموعتك",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "يُظلَّل كل بلد حسب عدد مصادرك الموجودة فيه — كلما اشتد اللون زاد العدد. يبقى البلد بلا مصدر محدد الموقع دون تظليل — بصدق «لا توجد بيانات»، وليس صفرًا. تظهر المناطق الصغيرة التي لا يستطيع المخطط التقريبي رسمها كنقاط، وتُحتسب المصادر بلا بلد لكنها لا تُوضع على الخريطة أبدًا.",
+  "Sources per country": "المصادر حسب البلد",
+  "no data": "لا توجد بيانات",
+  "Most": "الأكثر",
+  "countries with data": "دول بها بيانات",
+  "sources unlocated": "مصادر غير محددة الموقع",
+  "(shown as a point)": "(يظهر كنقطة)",
+  "small areas shown as points": "المناطق الصغيرة تظهر كنقاط",
+  "Map geometry unavailable.": "هندسة الخريطة غير متوفرة.",
+  "Could not load coverage:": "تعذّر تحميل التغطية:",
+  "sources have no country and are not shown on the map.": "مصادر بلا بلد ولا تظهر على الخريطة.",
+  "No located sources yet — add sources with a country, or collect some articles.": "لا توجد مصادر محددة الموقع بعد — أضف مصادر ببلد، أو اجمع بعض المقالات."
 }

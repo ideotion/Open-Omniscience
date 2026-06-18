@@ -1282,5 +1282,19 @@
   "Idle": "Inaktiv",
   "Downloads": "Downloads",
   "AI & analysis": "KI & Analyse",
-  "paused — airplane mode": "pausiert — Flugmodus"
+  "paused — airplane mode": "pausiert — Flugmodus",
+  "World coverage": "Weltweite Abdeckung",
+  "— a choropleth of your corpus": "— eine Choroplethenkarte Ihres Korpus",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "Jedes Land ist danach eingefärbt, wie viele Ihrer Quellen dort ansässig sind — dunkler bedeutet mehr. Ein Land ohne verortete Quelle bleibt ungefärbt — ehrlich „keine Daten“, niemals null. Kleine Gebiete, die der grobe Umriss nicht zeichnen kann, erscheinen als Punkte, und Quellen ohne Land werden gezählt, aber nie auf der Karte platziert.",
+  "Sources per country": "Quellen pro Land",
+  "no data": "keine Daten",
+  "Most": "Am meisten",
+  "countries with data": "Länder mit Daten",
+  "sources unlocated": "Quellen ohne Standort",
+  "(shown as a point)": "(als Punkt dargestellt)",
+  "small areas shown as points": "kleine Gebiete als Punkte dargestellt",
+  "Map geometry unavailable.": "Kartengeometrie nicht verfügbar.",
+  "Could not load coverage:": "Abdeckung konnte nicht geladen werden:",
+  "sources have no country and are not shown on the map.": "Quellen haben kein Land und werden nicht auf der Karte angezeigt.",
+  "No located sources yet — add sources with a country, or collect some articles.": "Noch keine verorteten Quellen — fügen Sie Quellen mit einem Land hinzu oder sammeln Sie Artikel."
 }

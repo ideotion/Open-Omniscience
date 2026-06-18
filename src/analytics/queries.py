@@ -632,6 +632,59 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
     }
 
 
+def source_country_counts(session) -> dict:
+    """Sources -- and the articles collected from them -- grouped by the source's
+    catalogued country (ISO-2). The FIRST choropleth dimension (ooMap): WHERE the
+    corpus's coverage originates.
+
+    Counts only, NO score. Sources without a country go into an ``unlocated``
+    bucket and are NEVER guessed onto the map. The country is whatever the
+    catalogue/operator asserted on the source -- this surfaces real catalogue
+    skew (the de-US-centring lens), it does not correct it.
+    """
+    src_rows = (
+        session.query(Source.country, func.count(Source.id))
+        .group_by(Source.country)
+        .all()
+    )
+    # Articles per source-country (join so the secondary count reflects the
+    # volume actually collected, not just catalogue presence).
+    art_rows = (
+        session.query(Source.country, func.count(Article.id))
+        .join(Article, Article.source_id == Source.id)
+        .group_by(Source.country)
+        .all()
+    )
+    arts: dict[str, int] = {
+        (cc or "").strip().lower(): int(n or 0) for cc, n in art_rows
+    }
+
+    by_country: list[dict] = []
+    unlocated_sources = 0
+    total_sources = 0
+    for cc, n in src_rows:
+        n = int(n or 0)
+        total_sources += n
+        code = (cc or "").strip().lower()
+        if not code:
+            unlocated_sources += n
+            continue
+        by_country.append(
+            {"country": code, "sources": n, "articles": arts.get(code, 0)}
+        )
+
+    by_country.sort(key=lambda r: (-r["sources"], r["country"]))
+    return {
+        "by_country": by_country,
+        "unlocated": {
+            "sources": unlocated_sources,
+            "articles": arts.get("", 0),
+        },
+        "total_sources": total_sources,
+        "total_articles": sum(arts.values()),
+    }
+
+
 _COORD_METHOD = (
     "Near-duplicate clustering (MinHash + LSH, high-precision, Jaccard >= 0.7) within the "
     "matched set; independence is measured by DISTINCT SOURCES, never article count."

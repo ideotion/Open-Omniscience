@@ -1282,5 +1282,19 @@
   "Idle": "Idle",
   "Downloads": "Downloads",
   "AI & analysis": "AI & analysis",
-  "paused — airplane mode": "paused — airplane mode"
+  "paused — airplane mode": "paused — airplane mode",
+  "World coverage": "World coverage",
+  "— a choropleth of your corpus": "— a choropleth of your corpus",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.",
+  "Sources per country": "Sources per country",
+  "no data": "no data",
+  "Most": "Most",
+  "countries with data": "countries with data",
+  "sources unlocated": "sources unlocated",
+  "(shown as a point)": "(shown as a point)",
+  "small areas shown as points": "small areas shown as points",
+  "Map geometry unavailable.": "Map geometry unavailable.",
+  "Could not load coverage:": "Could not load coverage:",
+  "sources have no country and are not shown on the map.": "sources have no country and are not shown on the map.",
+  "No located sources yet — add sources with a country, or collect some articles.": "No located sources yet — add sources with a country, or collect some articles."
 }

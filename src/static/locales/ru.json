@@ -1282,5 +1282,19 @@
   "Idle": "Ожидание",
   "Downloads": "Загрузки",
   "AI & analysis": "ИИ и анализ",
-  "paused — airplane mode": "пауза — режим полёта"
+  "paused — airplane mode": "пауза — режим полёта",
+  "World coverage": "Мировой охват",
+  "— a choropleth of your corpus": "— картограмма вашего корпуса",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "Каждая страна закрашена по числу ваших источников, базирующихся там, — темнее значит больше. Страна без локализованного источника остаётся незакрашенной — честно «нет данных», а не ноль. Малые территории, которые грубый контур не может нарисовать, показаны точками, а источники без страны учитываются, но никогда не размещаются на карте.",
+  "Sources per country": "Источники по странам",
+  "no data": "нет данных",
+  "Most": "Больше всего",
+  "countries with data": "стран с данными",
+  "sources unlocated": "источников без локации",
+  "(shown as a point)": "(показано точкой)",
+  "small areas shown as points": "малые территории показаны точками",
+  "Map geometry unavailable.": "Геометрия карты недоступна.",
+  "Could not load coverage:": "Не удалось загрузить охват:",
+  "sources have no country and are not shown on the map.": "источников без страны не показаны на карте.",
+  "No located sources yet — add sources with a country, or collect some articles.": "Пока нет источников с локацией — добавьте источники со страной или соберите статьи."
 }

@@ -1282,5 +1282,19 @@
   "Idle": "空闲",
   "Downloads": "下载",
   "AI & analysis": "AI 与分析",
-  "paused — airplane mode": "已暂停——飞行模式"
+  "paused — airplane mode": "已暂停——飞行模式",
+  "World coverage": "全球覆盖",
+  "— a choropleth of your corpus": "— 你的语料库的分级统计地图",
+  "Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map.": "每个国家根据有多少来源位于其中而着色——颜色越深表示越多。没有已定位来源的国家保持不着色——诚实地标为“无数据”，而非零。粗略轮廓无法绘制的小地区以点显示，没有国家的来源会被计数但绝不放在地图上。",
+  "Sources per country": "各国来源数",
+  "no data": "无数据",
+  "Most": "最多",
+  "countries with data": "个有数据的国家",
+  "sources unlocated": "个未定位来源",
+  "(shown as a point)": "(以点显示)",
+  "small areas shown as points": "小地区以点显示",
+  "Map geometry unavailable.": "地图几何数据不可用。",
+  "Could not load coverage:": "无法加载覆盖数据：",
+  "sources have no country and are not shown on the map.": "个来源没有国家，不在地图上显示。",
+  "No located sources yet — add sources with a country, or collect some articles.": "暂无已定位来源——添加带国家的来源，或收集一些文章。"
 }
