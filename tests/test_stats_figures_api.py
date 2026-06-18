@@ -143,11 +143,10 @@ def test_triangulate_endpoint_side_by_side(client, monkeypatch):
     clear_kill_switch()
     import src.stats.fetch as statfetch
 
-    # Two producers report the SAME series_id "X" for FRA 2021, different units.
+    # Two producers report the SAME series_id "X" for FRA 2021, different units: the
+    # worldbank figure is fetched (USD), the eurostat figure (EUR) is stored directly below.
     wb = [{"page": 1, "pages": 1, "per_page": 1, "total": 1},
           [{"indicator": {"id": "X"}, "countryiso3code": "FRA", "date": "2021", "value": 100.0, "unit": "USD"}]]
-    es = [{"page": 1, "pages": 1, "per_page": 1, "total": 1},
-          [{"indicator": {"id": "X"}, "countryiso3code": "FRA", "date": "2021", "value": 90.0, "unit": "EUR"}]]
     monkeypatch.setattr(statfetch, "_default_getter", lambda url: _FakeResp(wb))
     client.post("/api/stats/figures/fetch", json={"source": "worldbank", "indicator": "X", "country": "FR"})
     # Store the eurostat figure under agency "eurostat" but with the worldbank parser
