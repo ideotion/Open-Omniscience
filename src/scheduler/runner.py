@@ -805,6 +805,21 @@ class BackgroundScheduler:
                 )
             except Exception:  # noqa: BLE001 - never fail the scrape on discovery
                 _LOG.warning("offline source discovery failed", exc_info=True)
+            # AUTO-ON-INGEST (opt-in): run every enabled, run_on_ingest custom AI
+            # extractor over the most recent articles. Best-effort + bounded; with no
+            # auto prompts (the default) it is one empty query, so zero cost. NEVER
+            # inline at ingest (a local model in the scrape hot path would stall it) —
+            # here, post-pass, off the article path; skip_existing means only NEW
+            # articles cost a model call. Results are ai_keyword rows (the AI lens),
+            # never the trusted index.
+            try:
+                from src.ai_layer.auto import run_auto_on_ingest
+
+                _auto = run_auto_on_ingest(session)
+                if _auto.get("ran"):
+                    result["ai_auto"] = _auto
+            except Exception:  # noqa: BLE001 - never let AI extraction break a scrape
+                _LOG.warning("auto-on-ingest extraction failed", exc_info=True)
             # Precompute + cache the Home briefing so it loads instantly. Best-effort:
             # a briefing failure must never fail the scrape that just succeeded.
             _phase_set("briefing")
