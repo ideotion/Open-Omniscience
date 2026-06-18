@@ -406,7 +406,9 @@ def insights_associations(
     db: Session = Depends(get_db),
 ) -> dict:
     """Keywords co-occurring with ``term`` (PMI-ranked) — powers the mind-map."""
-    return q.associations(db, term, limit=limit, min_cooccur=min_cooccur, group=group)
+    key = _ckey("associations", term=term, limit=limit, min_cooccur=min_cooccur, group=group)
+    return _cached(key, lambda: q.associations(
+        db, term, limit=limit, min_cooccur=min_cooccur, group=group))
 
 
 @router.get("/context")
@@ -1023,7 +1025,9 @@ def insights_graph(
             db, article_ids, query=None, source=None, start_date=None,
             end_date=None, language=None, tags=None, cap=cap,
         )
-        return q.article_graph(db, article_ids=ids)
+        # Cache by the exact id set so re-opening the same analysis mindmap is instant.
+        return _cached(_ckey("graph-articles", ids=",".join(map(str, ids))),
+                       lambda: q.article_graph(db, article_ids=ids))
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():
@@ -1036,9 +1040,10 @@ def insights_graph(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"bad date: {d!r}") from None
 
-    return q.layered_graph(
+    key = _ckey("graph", level=level, term=term, hops=hops, days=days, start=start, end=end)
+    return _cached(key, lambda: q.layered_graph(
         db, level=level, term=term, hops=hops, days=days, start=_parse(start), end=_parse(end)
-    )
+    ))
 
 
 # --- Keyword tags (Item AC): explore + user curation of type/topic tags -------- #

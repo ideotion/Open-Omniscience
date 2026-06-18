@@ -3055,6 +3055,17 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **PERF — CACHE THE PER-QUERY ANALYSIS ENDPOINTS (perf workstream, field report 2026-06-18; branch
+  claude/perf-graph-assoc-cache, draft PR onto 0.09):** /api/insights/associations (76s) + /graph (103s)
+  are whole-corpus co-occurrence/PMI (genuinely heavy, not a simple pathology), explored ON-DEMAND by term.
+  Extended the #372 TTL cache (`_cached`/`_ckey`, computed_at+cache_ttl_s+cached flag) to BOTH: associations
+  keyed by (term,limit,min_cooccur,group); the term/level layered_graph keyed by (level,term,hops,days,
+  start,end); the article-set article_graph keyed by the exact id set. So re-opening the same term's
+  mind-map / associations (the common explore-back-and-forth) is INSTANT; the first open still computes
+  (cold cost unchanged — that needs the deeper co-occurrence optimisation or denormalized counters, flagged).
+  tests/test_insights_cache.py +test_associations_endpoint_is_cached (2nd same-term call is a hit, a
+  different term recomputes). REMAINING: denormalized keyword counters (the structural cold-cost win); cut
+  Home poll frequency; graph/associations FIRST-open optimisation.
 - **PERF — FRAMING 141s (field perf report 2026-06-18; branch claude/perf-framing, draft PR onto 0.09):**
   /api/framing was the slowest endpoint — it ran VADER over the FULL text of up to 1000 articles AND
   concatenated all of each source's content for term-frequency, and the corpus includes long Wikipedia

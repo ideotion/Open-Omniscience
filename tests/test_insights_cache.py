@@ -55,3 +55,23 @@ def test_warm_cache_populates_the_keys_the_endpoints_use(monkeypatch):
     assert ins._read_cache.get(home_key) is not None
     # A second warm within the TTL recomputes nothing (all keys already fresh).
     assert ins.warm_cache(db=object())["warmed"] == []
+
+
+def test_associations_endpoint_is_cached(monkeypatch):
+    # The per-query analysis endpoints (associations / graph) are heavy whole-corpus
+    # co-occurrence; caching by their args makes re-opening the same term instant.
+    ins._read_cache._cache.clear()
+    calls = {"n": 0}
+
+    def fake_assoc(db, term, **kw):
+        calls["n"] += 1
+        return {"term": term, "neighbours": []}
+
+    monkeypatch.setattr(ins.q, "associations", fake_assoc)
+    r1 = ins.insights_associations(term="middle-east", db=object())
+    r2 = ins.insights_associations(term="middle-east", db=object())
+    assert calls["n"] == 1  # the 2nd call is served from cache
+    assert r1["cached"] is False and r2["cached"] is True
+    # A different term is a different cache entry (recomputed).
+    ins.insights_associations(term="other", db=object())
+    assert calls["n"] == 2
