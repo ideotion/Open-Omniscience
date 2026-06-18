@@ -77,6 +77,8 @@ _AGENCIES: tuple[StatAgency, ...] = (
                "North America", "https://www.bls.gov"),
     StatAgency("us-census", "U.S. Census Bureau", "Census", "national", "US",
                "North America", "https://www.census.gov"),
+    StatAgency("us-eia", "U.S. Energy Information Administration", "EIA", "national", "US",
+               "North America", "https://www.eia.gov"),
     StatAgency("ca-statcan", "Statistics Canada", "StatCan", "national", "CA",
                "North America", "https://www.statcan.gc.ca"),
     StatAgency("mx-inegi", "Instituto Nacional de Estadística y Geografía", "INEGI",

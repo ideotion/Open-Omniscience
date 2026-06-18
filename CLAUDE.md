@@ -1871,6 +1871,18 @@ ruling, a contingency, or a deliberate-omission note.
   renderer. REMAINING: S&P500 is an INDEX, not a commodity — reclassify; expand feeds
   (rare earths, oil, gas, LNG, sand, cereals, sugar…); the bottom-of-page #mkt-chart
   price-detail (chartSymbol) stays as the in-place detail (the Desk lesson — not removed).
+  **EIA EXPANSION (maintainer ruled 2026-06-18, chose "expand no-key energy feeds" via
+  AskUserQuestion):** EIA (eia.gov) was already an ENABLED RSS source + its WTI/Brent/Henry-Hub
+  prices auto-ingest via FRED. Added (a) `us-eia` to the official-statistics agency directory
+  (`src/stats/agencies.py` — the raw-data layer, controversial like every producer) and (b) five
+  more no-key EIA petroleum-product feeds to `configs/commodity_feeds.yml` (gasoline GASREGW ·
+  diesel GASDESW · heating-oil DHOILNYH · propane DPROPANEMBTX · jet-fuel DJFUELUSGULF, all
+  EIA-via-FRED key-free CSV, auto-imported by the markets pass = ingested by default). FRED ids
+  believed-correct but NOT network-verified here (sandbox 403) → flagged in-file; a wrong id
+  fails LOUDLY (dead-series verdict), never fabricates — VERIFY on a networked box.
+  tests/test_eia_energy_feeds.py. The full-catalog paths (EIA API v2 = needs the maintainer's
+  free key; or the GB-scale bulk files) were the DEFERRED options B/C — revisit if "all data"
+  beyond the high-value energy series is wanted.
   **COMBINED TIME-ALIGNED TREND OVERLAY (maintainer concept + ruling 2026-06-17; BUILT
   on branch `claude/analysis-trend-overlay`, draft PR onto 0.09, BROWSER-UNVERIFIED):**
   maintainer asked to AGGREGATE/overlay everything that shares the common TIME axis —

@@ -49,6 +49,52 @@ feeds:
     currency: USD
     unit: mmbtu
     market: EIA/FRED
+  # --- More EIA energy products (no-key expansion, maintainer request 2026-06-18) ----- #
+  # EIA-sourced petroleum-product series redistributed by FRED as key-free CSV. IDs are
+  # believed-correct from EIA's FRED redistribution but were NOT live-verified here (no
+  # network); per this file's contract a wrong/renamed id fails LOUDLY (HTTP error / no
+  # rows -> dead-series verdict), never fabricates -- VERIFY on a networked box and fix
+  # the URL here if one moved.
+  - key: gasoline_regular
+    name: "Gasoline — US regular, retail (weekly)"
+    symbol: GASOLINE
+    category: energy
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASREGW"
+    currency: USD
+    unit: gallon
+    market: EIA/FRED
+  - key: diesel
+    name: "Diesel — US No. 2, retail (weekly)"
+    symbol: DIESEL
+    category: energy
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW"
+    currency: USD
+    unit: gallon
+    market: EIA/FRED
+  - key: heating_oil
+    name: "Heating Oil — No. 2, New York Harbor (daily)"
+    symbol: HEATOIL
+    category: energy
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DHOILNYH"
+    currency: USD
+    unit: gallon
+    market: EIA/FRED
+  - key: propane
+    name: "Propane — Mont Belvieu, TX (daily)"
+    symbol: PROPANE
+    category: energy
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DPROPANEMBTX"
+    currency: USD
+    unit: gallon
+    market: EIA/FRED
+  - key: jet_fuel
+    name: "Jet Fuel — kerosene-type, US Gulf Coast (daily)"
+    symbol: JETFUEL
+    category: energy
+    url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DJFUELUSGULF"
+    currency: USD
+    unit: gallon
+    market: EIA/FRED
 
   # --- Base metals (World Bank "Global price of", monthly, via FRED) -------- #
   - key: copper
