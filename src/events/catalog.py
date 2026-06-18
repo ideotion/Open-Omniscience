@@ -12,6 +12,7 @@ construction.
 
 from __future__ import annotations
 
+import calendar as _calendar
 from collections import Counter
 from datetime import date
 from functools import lru_cache
@@ -87,6 +88,10 @@ def load_events() -> list[dict]:
                 "cadence": str(e.get("cadence", "annual")),
                 "month": e.get("month"),
                 "day": e.get("day"),
+                # Floating recurrence: month + weekday + week (e.g. 3rd Tuesday of
+                # March; week -1 = last). Present only for movable-by-rule events.
+                "weekday": _coerce_weekday(e.get("weekday")),
+                "week": e.get("week"),
                 "end_month": e.get("end_month"),
                 "end_day": e.get("end_day"),
                 "origin_year": _coerce_year(e.get("origin_year")),
@@ -133,6 +138,42 @@ def _span_end_date(start: date, end_month: int | None, end_day: int | None) -> d
         return None
 
 
+# Floating (non-fixed) recurrence: "the third Tuesday of March", "last Monday of
+# May" (maintainer 2026-06-18 — many real recurring events are defined this way).
+_WEEKDAYS = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
+    "saturday": 5, "sunday": 6,
+    "mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6,
+}
+
+
+def _coerce_weekday(v) -> int | None:
+    """A YAML ``weekday`` -> 0=Mon..6=Sun, from a name ('tuesday'/'tue') or an int."""
+    if v is None:
+        return None
+    if isinstance(v, int):
+        return v if 0 <= v <= 6 else None
+    return _WEEKDAYS.get(str(v).strip().lower())
+
+
+def nth_weekday(year: int, month: int, weekday: int, week: int) -> date | None:
+    """The date of the Nth ``weekday`` (0=Mon..6=Sun) of ``month``/``year``.
+
+    ``week`` >= 1 counts from the start (1 = first); ``week`` == -1 is the LAST one.
+    Returns None when that occurrence does not exist (e.g. a 5th Friday in a month
+    with only four) — the caller skips to the next year, never inventing a date.
+    """
+    ndays = _calendar.monthrange(year, month)[1]
+    if week == -1:  # the last `weekday` of the month
+        last = date(year, month, ndays)
+        return date(year, month, ndays - ((last.weekday() - weekday) % 7))
+    if week is None or week < 1:
+        return None
+    first = date(year, month, 1)
+    day = 1 + ((weekday - first.weekday()) % 7) + (week - 1) * 7
+    return date(year, month, day) if day <= ndays else None
+
+
 def _next_occurrence(
     month: int | None,
     day: int | None,
@@ -140,13 +181,18 @@ def _next_occurrence(
     *,
     origin_year: int | None = None,
     until_year: int | None = None,
+    weekday: int | None = None,
+    week: int | None = None,
 ) -> str | None:
-    """The next calendar date this (month, day) falls on within the active year range.
+    """The next calendar date this entry falls on within the active year range.
 
-    None if not a fixed date, or if no occurrence falls in [origin_year, until_year].
-    Scans a few years forward so a future ``origin_year`` is honoured.
+    Handles BOTH a FIXED date (``month`` + ``day``) and a FLOATING one (``month`` +
+    ``weekday`` + ``week``, e.g. the 3rd Tuesday of March). None if neither is fully
+    specified, or if no occurrence falls in [origin_year, until_year]. Scans a few
+    years forward so a future ``origin_year`` is honoured.
     """
-    if not month or not day:
+    floating = weekday is not None and week is not None
+    if not month or (not floating and not day):
         return None
     # Scan up to ~the gap to a future origin plus this/next year; bounded + cheap.
     last = today.year + 1
@@ -156,9 +202,11 @@ def _next_occurrence(
         if not _in_active_range(year, origin_year, until_year):
             continue
         try:
-            d = date(year, int(month), int(day))
-        except ValueError:
+            d = nth_weekday(year, int(month), weekday, week) if floating else date(year, int(month), int(day))
+        except (ValueError, TypeError):
             return None
+        if d is None:  # this year's Nth-weekday doesn't exist — try the next year
+            continue
         if d >= today:
             return d.isoformat()
     return None
@@ -217,6 +265,7 @@ def agenda(
         nxt = _next_occurrence(
             e["month"], e["day"], today,
             origin_year=e.get("origin_year"), until_year=e.get("until_year"),
+            weekday=e.get("weekday"), week=e.get("week"),
         )
         items.append({**e, "next_occurrence": nxt, "span": _span_for(e, today)})
     items.sort(key=lambda x: (x["next_occurrence"] is None, x["next_occurrence"] or "", x["title"]))

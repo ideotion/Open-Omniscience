@@ -2336,6 +2336,17 @@
         _astroYear = year;
       } catch (_e) { _astroByDate = {}; _seasonByDate = {}; _astroYear = null; }
     }
+    // The day-of-month (1..31) of the Nth `weekday` (0=Mon..6=Sun) of month m/year y
+    // — week=-1 is the LAST; null when it doesn't exist (e.g. a 5th Friday). Mirrors
+    // catalog.nth_weekday so floating events ("3rd Tuesday of March") place every year.
+    function nthWeekday(y, m, weekday, week) {
+      const ndays = new Date(y, m, 0).getDate();                      // days in month m (1-based)
+      const dow = d => (new Date(y, m - 1, d).getDay() + 6) % 7;      // -> 0=Mon … 6=Sun
+      if (week === -1) return ndays - ((dow(ndays) - weekday + 7) % 7);
+      if (week == null || week < 1) return null;
+      const day = 1 + ((weekday - dow(1) + 7) % 7) + (week - 1) * 7;
+      return day <= ndays ? day : null;
+    }
     function renderAgendaMonth(rows) {
       const box = $("agenda-month"), dayBox = $("agenda-day");
       if (AGV.y == null) { const t = new Date(); AGV.y = t.getFullYear(); AGV.m = t.getMonth() + 1; }
@@ -2348,6 +2359,12 @@
       const byDay = {}, monthOnly = [];
       for (const e of rows) {
         if (e.month === m && e.day) (byDay[e.day] = byDay[e.day] || []).push(e);
+        // FLOATING rule (e.g. 3rd Tuesday of March): compute the day for THIS browsed
+        // year so it places correctly every year, not only the one next_occurrence holds.
+        else if (e.month === m && e.weekday != null && e.week != null) {
+          const fd = nthWeekday(y, m, e.weekday, e.week);
+          if (fd) (byDay[fd] = byDay[fd] || []).push(e);
+        }
         else if (e.next_occurrence && e.next_occurrence.slice(0, 7) === ym) {
           const d = +e.next_occurrence.slice(8, 10);
           if (!(byDay[d] || []).includes(e)) (byDay[d] = byDay[d] || []).push(e);
