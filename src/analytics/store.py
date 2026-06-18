@@ -150,6 +150,33 @@ def backfill_baseline_tags(session: Session, *, limit: int | None = None) -> dic
     return {"scanned": scanned, "tagged_keywords": tagged_keywords, "tags_added": tags_added}
 
 
+def _apply_keyword_counter_deltas(
+    session: Session, old_contrib: dict[int, int], new_contrib: dict[int, int]
+) -> None:
+    """Adjust ``Keyword.mention_count`` / ``article_count`` by ONE article's net change.
+
+    ``old_contrib`` / ``new_contrib`` map ``keyword_id -> summed occurrence count``
+    for, respectively, this article's mentions BEFORE and AFTER a re-index. Because
+    there is exactly one ``KeywordMention`` row per (keyword, article) — the unique
+    ``(keyword_id, article_id)`` index — a keyword's ``article_count`` changes by at
+    most ±1 (present-after minus present-before) and its ``mention_count`` by
+    (new occurrence count − old). This keeps the denormalised counters EXACT across
+    ingest and re-index in O(keywords-in-this-article), never a corpus-wide recompute.
+
+    The ``max(0, …)`` is a defensive floor — a counter must never display negative;
+    correct maintenance never reaches it, and :func:`backfill_keyword_counters` is the
+    authoritative repair (the drift tests assert counter == the live GROUP BY).
+    """
+    affected = set(old_contrib) | set(new_contrib)
+    if not affected:
+        return
+    for kw in session.query(Keyword).filter(Keyword.id.in_(affected)).all():
+        d_men = new_contrib.get(kw.id, 0) - old_contrib.get(kw.id, 0)
+        d_art = (1 if kw.id in new_contrib else 0) - (1 if kw.id in old_contrib else 0)
+        kw.mention_count = max(0, (kw.mention_count or 0) + d_men)
+        kw.article_count = max(0, (kw.article_count or 0) + d_art)
+
+
 def index_article(
     session: Session,
     article: Article,
@@ -185,6 +212,18 @@ def index_article(
 
     cc = normalize_country(country or article.country)
 
+    # Capture this article's PRIOR contribution to the denormalised keyword
+    # counters BEFORE replacing its mentions, so mention_count / article_count stay
+    # EXACT across a re-index (idempotent). One indexed scan over this article's
+    # rows (ix_mention_article) — bounded by the article's keyword count.
+    old_contrib: dict[int, int] = {}
+    for kid, cnt in (
+        session.query(KeywordMention.keyword_id, KeywordMention.count)
+        .filter_by(article_id=article.id)
+        .all()
+    ):
+        old_contrib[kid] = old_contrib.get(kid, 0) + int(cnt or 0)
+
     # Idempotent re-index: drop this article's existing mentions first.
     session.query(KeywordMention).filter_by(article_id=article.id).delete()
 
@@ -195,6 +234,7 @@ def index_article(
 
     written = 0
     self_suppressed = 0
+    new_contrib: dict[int, int] = {}
     for t in terms:
         # Case-insensitive: _self_name_forms is casefolded, but the entity
         # detector keeps acronyms UPPERCASE (2026-06-16 ruling), so a source
@@ -219,7 +259,14 @@ def index_article(
                 extractor=extractor.name,
             )
         )
+        # One mention row per (keyword, article): accumulate the new occurrence
+        # count so article_count moves by exactly +/-1 per keyword (see
+        # _apply_keyword_counter_deltas).
+        new_contrib[kw.id] = new_contrib.get(kw.id, 0) + int(t.count)
         written += 1
+
+    # Keep the denormalised counters exact for THIS article's net change.
+    _apply_keyword_counter_deltas(session, old_contrib, new_contrib)
 
     # When x Where x Who at ingest (T12, CONFIRMED GO): persist the deduced
     # dates/places/entities WITH the keyword pass — one hook, so every path
@@ -272,3 +319,42 @@ def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> 
             _LOG.warning("indexing article %s failed", art.id, exc_info=True)
     remaining = _unindexed_query(session).count()
     return {"indexed": indexed, "remaining": remaining}
+
+
+def backfill_keyword_counters(session: Session) -> dict:
+    """Recompute ``Keyword.mention_count`` + ``article_count`` from the live mentions.
+
+    The one-pass authoritative (re)population for an existing corpus — used to seed
+    the columns when they are first added, and the repair if the incremental
+    maintenance in :func:`index_article` ever drifts. Idempotent: it sets every
+    keyword's counters to the live ``SUM(count)`` / ``COUNT(DISTINCT article_id)``
+    and ZEROES keywords with no mentions, so a stale counter never lingers. Counts
+    only — no score. Returns a small tally."""
+    from sqlalchemy import func
+
+    agg = {
+        kid: (int(m or 0), int(a or 0))
+        for kid, m, a in (
+            session.query(
+                KeywordMention.keyword_id,
+                func.sum(KeywordMention.count),
+                func.count(func.distinct(KeywordMention.article_id)),
+            ).group_by(KeywordMention.keyword_id)
+        )
+    }
+    # Zero everything first (one bulk UPDATE), then set the keywords that have
+    # mentions (one fast bulk-update by primary key).
+    session.query(Keyword).update(
+        {Keyword.mention_count: 0, Keyword.article_count: 0}, synchronize_session=False
+    )
+    if agg:
+        session.bulk_update_mappings(
+            Keyword,
+            [
+                {"id": kid, "mention_count": m, "article_count": a}
+                for kid, (m, a) in agg.items()
+            ],
+        )
+    session.commit()
+    total = session.query(func.count(Keyword.id)).scalar() or 0
+    return {"keywords": int(total), "with_mentions": len(agg)}
