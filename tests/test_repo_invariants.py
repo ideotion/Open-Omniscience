@@ -2385,3 +2385,37 @@ def test_startup_seeds_the_source_catalog_at_unlock():
         "run_deferred_startup must seed the source catalog (encrypted stores seed at "
         "unlock, not in main()) — otherwise an encrypted install has nothing to collect"
     )
+
+
+def test_llm_catalog_tags_are_pullable_and_embeddings_labelled():
+    """Every suggested model must be PULLABLE — its tag has to satisfy the same
+    strict regex the /api/llm/pull endpoint enforces (src/api/llm.py:_MODEL_RE), so
+    a catalog entry can never 400 when the user clicks Pull. Embedding models, which
+    the summarize/translate/synthesize features cannot use, must be labelled
+    kind="embedding" so the picker says so honestly (maintainer 2026-06-18). Read via
+    AST so this runs without the optional httpx/LLM dependency."""
+    import ast
+    import re as _re
+
+    src = (_ROOT / "src" / "llm" / "ollama.py").read_text(encoding="utf-8")
+    catalog = None
+    for node in ast.walk(ast.parse(src)):
+        tgt = None
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            tgt = node.target.id
+        elif isinstance(node, ast.Assign) and node.targets and isinstance(node.targets[0], ast.Name):
+            tgt = node.targets[0].id
+        if tgt == "MODEL_CATALOG":
+            catalog = ast.literal_eval(node.value)
+    assert catalog, "MODEL_CATALOG must be a non-empty list"
+    # the exact regex from src/api/llm.py (kept in sync; pinned here so a drift fails)
+    pull_re = _re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+    for m in catalog:
+        assert pull_re.match(m["tag"]), f"catalog tag is not pullable: {m['tag']!r}"
+        assert m.get("note"), f"catalog entry missing a note: {m['tag']!r}"
+    # the embedding models we ship are labelled; nothing else is mislabelled
+    embeds = {m["tag"] for m in catalog if m.get("kind") == "embedding"}
+    assert {"bge-m3", "embeddinggemma", "nomic-embed-text-v2-moe"} <= embeds, (
+        "the shipped embedding models must carry kind='embedding'"
+    )
+    assert "llama3.2:3b" not in embeds, "a text model must never be labelled embedding"

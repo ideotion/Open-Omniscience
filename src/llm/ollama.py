@@ -37,14 +37,27 @@ CATALOG_AS_OF = "2026-06"
 # visible without us pretending to a freshness we can't guarantee.
 OLLAMA_TESTED_VERSION = "0.5.x"
 MODEL_CATALOG: list[dict] = [
+    # --- Text generation: summarize / translate / synthesize use plain /api/generate
+    # (no tool-calling), so any instruct/chat TEXT model that fits the RAM works. ---
     {"tag": "granite4:350m", "size": "~0.3 GB", "min_ram_gb": 4, "note": "IBM Granite 4.0 — tiny (350M); simple tasks"},
     {"tag": "gemma3:1b", "size": "~0.8 GB", "min_ram_gb": 4, "note": "Google Gemma 3 — small & fast (1B)"},
     {"tag": "llama3.2:1b", "size": "~1.3 GB", "min_ram_gb": 4, "note": "Meta Llama 3.2 — smallest; very low-spec"},
+    {"tag": "granite4.1:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "IBM Granite 4.1 — multilingual (3B), Apache-2.0"},
     {"tag": "llama3.2:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "Meta Llama 3.2 — balanced default"},
-    {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "note": "IBM Granite 4.0 — latest small (3.4B, hybrid)"},
+    {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "note": "IBM Granite 4.0 — small (3.4B, hybrid)"},
     {"tag": "nemotron-mini", "size": "~2.7 GB", "min_ram_gb": 8, "note": "NVIDIA Nemotron Mini (4B)"},
+    {"tag": "translategemma:4b", "size": "~3.3 GB", "min_ram_gb": 8, "note": "Google TranslateGemma — translation across 55 languages (4B)"},
     {"tag": "gemma3:4b", "size": "~3.3 GB", "min_ram_gb": 8, "note": "Google Gemma 3 (4B)"},
+    {"tag": "gemma4:e4b", "size": "~3.5 GB", "min_ram_gb": 8, "note": "Google Gemma 4 — latest edge model (Apr 2026), reasoning"},
     {"tag": "mistral:7b", "size": "~4.4 GB", "min_ram_gb": 8, "note": "Mistral 7B (Apache-2.0)"},
+    {"tag": "granite4.1:8b", "size": "~5 GB", "min_ram_gb": 8, "note": "IBM Granite 4.1 — multilingual (8B), RAG/tools"},
+    {"tag": "gpt-oss:20b", "size": "~14 GB", "min_ram_gb": 16, "note": "OpenAI gpt-oss — 20B MoE reasoning; needs ~16 GB"},
+    # --- Embedding models: downloadable here, but the app's summarize / translate /
+    # synthesize features do NOT use them (they are for semantic search / RAG, a
+    # future capability). Labelled `kind: embedding` so the picker says so. ---
+    {"tag": "embeddinggemma", "size": "~0.6 GB", "min_ram_gb": 4, "kind": "embedding", "note": "Google EmbeddingGemma (308M) — text embeddings; not used by summarize/translate"},
+    {"tag": "nomic-embed-text-v2-moe", "size": "~1 GB", "min_ram_gb": 4, "kind": "embedding", "note": "Nomic Embed v2 MoE — multilingual embeddings (~100 languages); not used by summarize/translate"},
+    {"tag": "bge-m3", "size": "~1.2 GB", "min_ram_gb": 4, "kind": "embedding", "note": "BAAI BGE-M3 — multilingual embeddings; not used by summarize/translate"},
 ]
 DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", "llama3.2:3b")
 
@@ -77,7 +90,9 @@ def annotate_catalog(ram_gb: float | None = None) -> list[dict]:
             fit = "tight"
         else:
             fit = "too_large"
-        out.append({**m, "fit": fit})
+        # kind defaults to "text" (usable by summarize/translate); an "embedding"
+        # entry overrides it via **m, so the picker can label it honestly.
+        out.append({"kind": "text", **m, "fit": fit})
     return out
 
 
