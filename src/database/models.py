@@ -1576,6 +1576,33 @@ class AiKeyword(Base):
         return f"<AiKeyword {self.kind} {self.term!r} a={self.article_id}>"
 
 
+class AiCustomPrompt(Base):
+    """A user-defined AI extractor — a managed-list prompt producing TYPED AI metadata
+    (maintainer ask 2026-06-18). Conceptually an extension of the built-in who/where/when
+    extractors: each custom prompt declares an ``output_kind`` (the metadata TYPE, e.g.
+    "figure", "statute", "quote") and its results are stored as ``AiKeyword`` rows of that
+    kind — the UNIFIED, prompt-related AI-metadata store, labelled "AI-derived · unreliable"
+    like the rest. These rows are config/definitions (no AI output lives here); a prompt runs
+    on demand and/or — per ``run_on_ingest`` — automatically at ingest. The trusted rule-based
+    index is never involved.
+    """
+
+    __tablename__ = "ai_custom_prompt"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    # The metadata TYPE this prompt produces (becomes the AiKeyword.kind of its results).
+    output_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Per-prompt run toggle (maintainer choice "both"): also run automatically at ingest.
+    run_on_ingest: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid
+        return f"<AiCustomPrompt {self.label!r} kind={self.output_kind}>"
+
+
 class SourceCandidate(Base):
     """A machine-suggested source awaiting the operator's decision (RM-19, WP5).
 
