@@ -98,6 +98,70 @@ EOF
 }
 
 # --------------------------------------------------------------------------- #
+# Rough download-size estimates (so the user knows what they're in for)
+# --------------------------------------------------------------------------- #
+# Approximate DOWNLOADED-wheel sizes per component, in MB. Measured from a clean
+# Linux / Python 3.13 install on 2026-06 (the real pip download log). These are
+# advisory: actual bytes vary by OS / arch / Python, and pip never re-downloads a
+# wheel it already has cached. The unpacked on-disk footprint is larger than the
+# download. Keep this dated and refresh when the dependency set changes materially.
+SIZES_AS_OF="2026-06"
+_CORE_MB=55          # always installed (FastAPI, SQLCipher, lxml, crypto, Pillow…)
+
+# component_mb COMPONENT -> echoes an integer MB estimate (0 if unknown).
+component_mb() {
+    case "$1" in
+        core)        echo 55 ;;   # the always-installed spine
+        analysis)    echo 90 ;;   # numpy/pandas/scipy/scikit-learn/statsmodels/nltk…
+        compression) echo 7  ;;   # zstandard + lz4
+        llm)         echo 1  ;;   # python extra only; Ollama + model are separate (see below)
+        nlp)         echo 60 ;;   # spaCy wheels (a language model is fetched separately)
+        *)           echo 0  ;;
+    esac
+}
+
+# human_mb MB -> "~X MB" for <1 GB, "~X.X GB" above.
+human_mb() {
+    local mb="${1:-0}"
+    if [ "$mb" -ge 1024 ]; then
+        printf '~%d.%d GB' "$((mb / 1024))" "$(((mb % 1024) * 10 / 1024))"
+    else
+        printf '~%d MB' "$mb"
+    fi
+}
+
+# extras_total_mb "a,b" -> echoes core + chosen extras, in MB.
+extras_total_mb() {
+    local total="$_CORE_MB" e
+    local -a arr
+    IFS=',' read -ra arr <<<"${1:-}"
+    for e in "${arr[@]}"; do
+        [ -n "$e" ] && total=$((total + $(component_mb "$e")))
+    done
+    echo "$total"
+}
+
+# Print a friendly "here's roughly how much will download" estimate for the
+# selected components. Honest about what it does and doesn't cover.
+print_download_estimate() {
+    local extras="$1" total e
+    total="$(extras_total_mb "$extras")"
+    local breakdown="core $(human_mb "$_CORE_MB")"
+    local -a arr
+    IFS=',' read -ra arr <<<"$extras"
+    for e in "${arr[@]}"; do
+        [ -n "$e" ] && breakdown="$breakdown + $e $(human_mb "$(component_mb "$e")")"
+    done
+    say ""
+    say "  ${BOLD}Estimated download:${RST} $(human_mb "$total") of Python packages"
+    say "    ${DIM}$breakdown${RST}"
+    say "    ${DIM}Rough, measured $SIZES_AS_OF; varies by OS/arch; already-cached wheels won't re-download.${RST}"
+    case ",$extras," in
+        *,llm,*) say "    ${DIM}Local LLM: Ollama adds ~1 GB, plus a model (~0.8–2.7 GB), downloaded separately.${RST}" ;;
+    esac
+}
+
+# --------------------------------------------------------------------------- #
 # Component selection
 # --------------------------------------------------------------------------- #
 # Echoes a comma-separated extras list (may be empty). Core is always installed.
@@ -116,20 +180,20 @@ choose_components() {
         CHOSEN_EXTRAS="$(whiptail --title "Open Omniscience -- choose components" \
             --checklist "Core (scrape, store, search, export) is always installed.\nSelect optional add-ons (Space to toggle, Enter to confirm):" \
             16 74 3 \
-            "analysis"    "Quantitative analysis, keywords, framing, sentiment" ON \
-            "compression" "Storage compression accelerators (zstandard, lz4)"   ON \
-            "llm"         "Local LLM tools (summarize / translate via Ollama)"  OFF \
+            "analysis"    "Quantitative analysis, keywords, framing (~90 MB)"   ON \
+            "compression" "Storage compression accelerators, zstandard+lz4 (~7 MB)" ON \
+            "llm"         "Local LLM via Ollama (+~1 GB Ollama & a model later)" OFF \
             3>&1 1>&2 2>&3 < "$TTY_IN" | tr -d '"' | tr ' ' ',')"
         return
     fi
     say ""
     say "${BOLD}Choose components${RST} (Core is always installed):"
     local extras=""
-    if ask_yn "Install Analysis tools (keywords, framing, sentiment)?" y; then extras="analysis"; fi
-    if ask_yn "Install storage Compression accelerators (zstandard, lz4 -- smaller database)?" y; then
+    if ask_yn "Install Analysis tools (keywords, framing, sentiment)? (~90 MB download)" y; then extras="analysis"; fi
+    if ask_yn "Install storage Compression accelerators (zstandard, lz4 -- smaller database)? (~7 MB)" y; then
         extras="${extras:+$extras,}compression"
     fi
-    if ask_yn "Install Local-LLM tools (summarize / translate via Ollama)?" n; then
+    if ask_yn "Install Local-LLM tools (summarize / translate via Ollama)? (Ollama adds ~1 GB later)" n; then
         extras="${extras:+$extras,}llm"
     fi
     CHOSEN_EXTRAS="$extras"
@@ -194,6 +258,8 @@ pip_install() {
     if [ -n "$extras" ] && ! printf '%s' "$extras" | grep -qE '^[A-Za-z0-9_.,-]+$'; then
         die "Internal error: invalid component spec '$extras'. Please report this."
     fi
+    # Tell the user roughly how much will download before the long step begins.
+    print_download_estimate "$extras"
     if [ "${OO_SKIP_PIP:-0}" = "1" ]; then warn "OO_SKIP_PIP=1 -- skipping pip install ($spec)"; return; fi
     step "Installing the app: $spec"
     python -m pip install --upgrade pip setuptools wheel >/dev/null
@@ -306,7 +372,8 @@ maybe_setup_ollama() {
             say ""
             say "  Ollama runs the local language models. Its official installer is:"
             say "    ${DIM}curl -fsSL https://ollama.com/install.sh | sh${RST}"
-            if ask_yn "Install Ollama now (downloads & runs the official installer)?" n; then want=1; else want=0; fi
+            say "    ${DIM}The Ollama runtime is ~1 GB to download; a model is extra (~0.8–2.7 GB).${RST}"
+            if ask_yn "Install Ollama now (downloads & runs the official installer, ~1 GB)?" n; then want=1; else want=0; fi
         fi
         if [ "$want" = "1" ]; then
             step "Installing Ollama (official installer)"

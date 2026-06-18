@@ -110,6 +110,34 @@ def test_unattended_install_without_launcher_opt_out(tmp_path):
     assert not (home / ".local/share/applications/open-omniscience.desktop").exists()
 
 
+def test_install_shows_download_size_estimate(tmp_path):
+    # The user should be told roughly how much will download before the long pip
+    # step. Core + each chosen extra is surfaced, with the dated rough-estimate
+    # caveat, and the LLM note flags Ollama's separate ~1 GB download.
+    home = tmp_path / "home"
+    home.mkdir()
+    env = {
+        "HOME": str(home),
+        "PATH": os.environ["PATH"],
+        "OO_SKIP_PIP": "1",
+        "OO_SKIP_DB": "1",
+        "OO_COMPONENTS": "analysis,llm",
+        "OO_MAKE_LAUNCHER": "0",
+    }
+    r = subprocess.run(
+        ["bash", str(REPO / "install.sh"), "--unattended"], capture_output=True, text=True, env=env
+    )
+    out = r.stdout + r.stderr
+    assert r.returncode == 0, out
+    assert "Estimated download:" in out
+    assert "core ~55 MB" in out
+    assert "analysis ~90 MB" in out
+    # Rough/dated honesty caveat travels with the figure.
+    assert "Rough, measured" in out
+    # LLM selected => the separate Ollama runtime download is called out.
+    assert "Ollama adds ~1 GB" in out
+
+
 def test_curl_pipe_install_does_not_leak_menu_into_pip_spec(tmp_path):
     # Regression: under `curl | bash`, stdin is the piped script, not a TTY. The
     # component menu used to print its prompt to stdout, which the caller captured

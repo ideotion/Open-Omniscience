@@ -2821,6 +2821,18 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **INSTALL-SIZE ESTIMATES (maintainer-asked 2026-06-18 from an install log, branch
+  claude/friendly-lamport-s3a1qa, draft PR onto 0.09):** install.sh now informs the user
+  of ROUGH download sizes before the long pip step + in the component menus. Dated
+  `SIZES_AS_OF="2026-06"` + `component_mb`/`human_mb`/`extras_total_mb`/`print_download_estimate`
+  helpers; per-component MB measured from the real py3.13 download log (core ~55 MB · analysis
+  ~90 MB · compression ~7 MB · llm extra ~1 MB; total core+analysis+compression ~152 MB).
+  HONEST: "rough, measured {date}, varies by OS/arch, cached wheels won't re-download". Menu
+  labels (whiptail + plain ask_yn) carry the size; the estimate prints before the download in
+  pip_install. Ollama surfaced separately per the maintainer ("ollama ~1 GB"): the LLM menu
+  item + install prompt + estimate footnote state Ollama ~1 GB + a model ~0.8–2.7 GB (model
+  sizes already in the whiptail model menu). tests/test_installer.py::test_install_shows_download_size_estimate.
+  REMAINING: numbers are advisory — refresh when the dependency set changes materially.
 - **UNINSTALL MODES + BACKUP-FIRST + CLEAN SHUTDOWN + AUDIT LOG (maintainer-asked
   2026-06-17 after a field uninstall log showed sqlcipher teardown noise + confusion
   that "it didn't uninstall"; draft PR onto 0.09, browser-unverified UI):** REASSURANCE
