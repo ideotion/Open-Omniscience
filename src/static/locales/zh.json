@@ -1237,5 +1237,9 @@
   "Auto-log on ingest": "采集时自动记录",
   "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "隐私:OpenTimestamps 只发布一个哈希值，但提交它会向日历运营方暴露你的 IP 和时间。对于匿名来源，请通过 Tor(HTTPS_PROXY)路由流量，或仅保持在本地。",
   "Default actor": "默认操作者",
-  "Save custody settings": "保存保管设置"
+  "Save custody settings": "保存保管设置",
+  "Uninstall the app": "卸载应用",
+  "Uninstall & stop the app": "卸载并停止应用",
+  "Irreversibly deletes the corpus, keys and caches on this machine, then the app must be restarted. This cannot be undone. Overwrite-in-place does not guarantee unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails) and destroy the key.": "不可逆地删除本机上的语料库、密钥和缓存，然后必须重启应用。此操作无法撤销。原位覆盖并不能保证在 SSD/闪存上不可恢复 — 为此，请使用全盘加密(LUKS/Qubes/Tails)并销毁密钥。",
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal:": "虚拟环境和桌面启动器始终会被移除;应用文件夹和你的数据是否一并移除取决于模式。你也可以在终端中运行它:"
 }

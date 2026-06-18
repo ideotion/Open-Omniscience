@@ -1633,6 +1633,20 @@ ruling, a contingency, or a deliberate-omission note.
   wall). `--audit-chrome` 337→326; `--min 100` green (1233/1233 ×12); test_repo_invariants green. Cumulative
   this session 431→326 (9 slices). REMAINING: the uninstall/panic safety strings + the dynamic JS rows + the
   ~326 tail.
+  **SLICE 10 SHIPPED 2026-06-17 (draft PR onto 0.09):** the PANIC-WIPE + UNINSTALL paragraphs (Settings →
+  Safety) keyed ×12 — most of that section (Panic wipe / Wipe everything now / Uninstall mode + its options /
+  the checkboxes / Download a backup first / Customize…) was ALREADY keyed; this adds the 4 that weren't: the
+  "Uninstall the app" heading, the "Uninstall & stop the app" button, the security-critical panic paragraph
+  (irreversible wipe · "cannot be undone" · SSD/flash-unrecoverability · LUKS/Qubes/Tails — de-tagged
+  `<strong>`/`<em>`), and the uninstall paragraph (RESTRUCTURED so its `<code>./install.sh --uninstall</code>`
+  command sits at the END, keying as one sentence). Same security-warning native-review caveat as slice 9.
+  `--audit-chrome` 326→312; `--min 100` green (1237/1237 ×12); test_repo_invariants 63 passed. ALSO this
+  round: caught + fixed a BASE-RED on 0.09 (PR #355) — two agenda invariants went stale after the merged
+  "drop the useless 'imported' category" rework (39353cf): AG.categories is now
+  `[...new Set((fac.categories||[]).concat(importedKinds))]` and imported events use their feed's real kind +
+  the `imported: true` flag (not a `category:"imported"` literal); updated both assertions to match the
+  merged code (test-only, intent preserved). Cumulative this session 431→312 (10 slices). REMAINING: the
+  dynamic JS rows (need `t()` + browser click-through) + the ~312 scattered tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent
