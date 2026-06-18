@@ -237,6 +237,7 @@
           title="Summarize every matched article with your local model — stored with its model and date, never analysed for keywords.">Summarize all</button>
         <button class="secondary" onclick="bulkLlm('translate','search')"
           title="Translate every matched article with your local model — stored with its model and date, never analysed for keywords.">Translate all</button>
+        <button class="secondary" onclick="aiRunPrompt('search')" title="Run one of your custom AI extractors over these articles — results are stored as AI-derived metadata of that type, labelled unreliable, never the trusted keyword index.">Run extractor</button>
         <button class="secondary" onclick="exportEvidence()" title="Signed, tamper-evident bundle">Export signed evidence</button>
       </div>
       <div id="search-meta" class="hint"></div>
@@ -305,7 +306,7 @@
         <button class="ghost tiny" onclick="synthesizeResults(this, anQuery(), 'an-synth')" title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
         <button class="ghost tiny" onclick="bulkLlm('summarize','an')" title="Summarize every matched article with your local model — stored with its model and date, never analysed for keywords.">Summarize all</button>
         <button class="ghost tiny" onclick="bulkLlm('translate','an')" title="Translate every matched article with your local model — stored with its model and date, never analysed for keywords.">Translate all</button>
-        <button class="ghost tiny" onclick="aiRunPromptAn()" title="Run one of your custom AI extractors over these articles — results are stored as AI-derived metadata of that type, labelled unreliable, never the trusted keyword index.">Run extractor</button>
+        <button class="ghost tiny" onclick="aiRunPrompt('an')" title="Run one of your custom AI extractors over these articles — results are stored as AI-derived metadata of that type, labelled unreliable, never the trusted keyword index.">Run extractor</button>
       </div>
       <div id="an-synth" style="display:none;margin-top:8px"></div>
       <div id="bulk-llm-an" class="bulk-llm" style="display:none;margin-top:8px"></div>
