@@ -2994,6 +2994,24 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **DIAGNOSTICS — STOPWORD-CANDIDATE DIGEST (maintainer 2026-06-18 "full authority on the logging process,
+  you're the one analyzing them"; branch claude/diag-stopword-candidates, draft PR onto 0.09):** the
+  recursive-improvement loop is "grow the not-a-keyword (stopword) list", and the keyword log was a 24 MB dump
+  of the top-5000/language keywords — the wrong shape. INSIGHT: a function word is SHORT, FREQUENT and
+  UBIQUITOUS (spread across many distinct articles), so it sits at the TOP by frequency (well within the
+  per-language survivor set the export already builds) — the 5000 cap NEVER hides it; the tail is rare/novel
+  terms, not stopwords. So instead of dumping everything, the log now carries a COMPACT per-language
+  `stopword_candidates` digest computed FROM the survivors (ZERO extra DB cost): per dominant-signature
+  language, the short (<=14ch) single-token TERMS with >=5 distinct-article spread NOT yet stoplisted,
+  ranked by article spread, with each language's status (functional/no_stoplist/unsegmented from
+  src.analytics.managed) and `priority_languages` = the no_stoplist/unsegmented buckets first (the worklist).
+  No score; "candidates to REVIEW before adding". Added to BOTH the streamed JSON log + the zip summary.json
+  (additive — the envelope test asserts keys-present not keys-exclusive, so byte-additive is safe). Closes the
+  loop directly: I read stopword_candidates.by_language, propose the per-language stoplist additions (feeds the
+  existing _EXTRA_STOPWORD_TEXT batches), which then turns no_stoplist langs into managed ones → re-enable
+  their sources (#366). tests/test_stopword_candidates.py (shape + every exclusion filter + the no_stoplist
+  priority ordering + article-spread ranking). REMAINING perf workstream: denormalized counters; cache
+  associations/graph/framing; Home poll frequency.
 - **PERF — IDLE BROWSER-CPU 40% (field report 2026-06-18 "despite airplane mode my CPU takes 40%,
   gnome-www-browser"; branch claude/perf-idle-cpu, draft PR onto 0.09):** ROOT CAUSE — `#net-toggle.off`
   ran `animation: netpulse 2.2s infinite` animating a BOX-SHADOW forever. Airplane mode is the idle/default
