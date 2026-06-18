@@ -1202,5 +1202,8 @@
   "Tracked for auto-refresh": "已跟踪以自动刷新",
   "Refresh due now": "立即刷新到期项",
   "Replay due fetches now (also runs in the background while you are online)": "立即重放到期的获取(在你联网时也会在后台运行)",
-  "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "你获取的每个数据都会被跟踪，并在你联网时按其间隔重新获取，每次存储一个新版次(修订被保留，绝不覆盖)。停用或移除任何你不想要的。"
+  "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "你获取的每个数据都会被跟踪，并在你联网时按其间隔重新获取，每次存储一个新版次(修订被保留，绝不覆盖)。停用或移除任何你不想要的。",
+  "Pull any model tag": "拉取任意模型标签",
+  "The local language models power Summarize, Translate and Synthesize. This shows what you actually have installed (live from Ollama) and a small suggested list annotated for your hardware. Pick the active model, pull new ones, or remove them — all from here. Newer and better models appear constantly — pull any tag below, or browse": "本地语言模型为摘要、翻译和综合提供支持。这里显示你实际已安装的内容(实时来自 Ollama)以及一份带有硬件注释的小型推荐列表。选择活动模型、拉取新模型或将其移除 — 全部在此完成。更新更好的模型不断出现 — 在下方拉取任意标签，或浏览",
+  "Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.": "拉取模型是一项网络操作:它通过 Ollama 进程经由明网下载 — 而不是通过本应用的 Tor 代理 — 因此在飞行模式下会被拒绝，并在你首次联网时请求你的同意。下载在你的机器上进行;之后模型完全离线运行。"
 }
