@@ -2985,6 +2985,17 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **PERF — IDLE BROWSER-CPU 40% (field report 2026-06-18 "despite airplane mode my CPU takes 40%,
+  gnome-www-browser"; branch claude/perf-idle-cpu, draft PR onto 0.09):** ROOT CAUSE — `#net-toggle.off`
+  ran `animation: netpulse 2.2s infinite` animating a BOX-SHADOW forever. Airplane mode is the idle/default
+  state, so the button pulsed at rest, and an animated box-shadow forces a full repaint every frame (a known
+  WebKit/GNOME-Web hog on a 2-core software-rendered VM) → ~40% CPU AT REST with nothing happening. FIX:
+  replaced the perpetual pulse with a STATIC red ring (painted once) + the existing red colour/border; the
+  plane glyph FILL + colour already convey the state (invariant #14), so nothing is lost. Removed the now-unused
+  @keyframes netpulse. (The global prefers-reduced-motion guard already killed it for THOSE users; this fixes
+  it for everyone.) test_repo_invariants::test_airplane_button_has_no_perpetual_animation guards it. REMAINING
+  perf workstream: denormalized keyword counters; cache associations/graph/framing; cut the Home poll
+  frequency; optional SQLite cache_size knob (per-connection × the 8+64 pool = OOM risk, so env-gated only).
 - **PERF — INSIGHTS READ CACHE + BACKGROUND WARM (perf workstream, field report 2026-06-18; branch
   claude/perf-insights-cache, draft PR onto 0.09):** the whole-corpus read endpoints (top 2.7s, trending,
   trending-windows 8-36s POLLED 132x from Home, map-coverage 7-9s) GROUP BY over the full 829k-mention table

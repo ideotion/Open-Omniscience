@@ -2545,6 +2545,23 @@ def test_task_manager_shows_pass_phase_and_upcoming_sources():
         assert key in en, f"missing i18n key: {key!r}"
 
 
+def test_airplane_button_has_no_perpetual_animation():
+    """Airplane mode is the idle/default state, so a forever-running animation on
+    the network button repaints every frame at rest — it pinned the browser near
+    40% CPU (field report 2026-06-18; animated box-shadow is a WebKit repaint hog).
+    The offline state must be shown statically (colour + a painted-once ring + the
+    plane glyph FILL, invariant #14), never an infinite animation."""
+    css = (_ROOT / "src" / "static" / "app.css").read_text(encoding="utf-8")
+    assert "@keyframes netpulse" not in css, "the perpetual airplane-button pulse must be gone"
+    # The #net-toggle.off rule must not start an animation (find its declaration block).
+    import re
+
+    m = re.search(r"#net-toggle\.off\s*\{([^}]*)\}", css)
+    assert m, "missing #net-toggle.off rule"
+    assert "animation" not in m.group(1), "#net-toggle.off must not run a perpetual animation"
+    assert "var(--err)" in m.group(1), "offline state must still be shown (red colour/ring)"
+
+
 def test_task_manager_redesign_windows_style():
     """The standalone task manager is a Windows-Task-Manager-style window
     (maintainer 2026-06-18): a persistent resource summary + Processes /

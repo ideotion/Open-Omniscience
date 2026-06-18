@@ -271,8 +271,14 @@
     .vitals-pop .vnote { margin-top:7px; color:var(--muted); font-size:11px; line-height:1.35; }
     /* App-wide network mode (the kill switch as a first-class control) */
     body.net-offline header.topbar, body.net-offline .topbar { box-shadow: inset 0 -2px 0 var(--err); }
-    #net-toggle.off { color:var(--err); border-color:var(--err); animation: netpulse 2.2s ease-in-out infinite; }
-    @keyframes netpulse { 0%,100% { box-shadow:0 0 0 0 transparent; } 50% { box-shadow:0 0 0 4px color-mix(in srgb, var(--err) 25%, transparent); } }
+    /* Offline emphasis is a STATIC red ring + colour — NOT an animated box-shadow.
+       A perpetual box-shadow pulse repaints every frame, and since airplane mode is
+       the idle/default state it pinned the browser near ~40% CPU AT REST (field
+       report 2026-06-18; animated box-shadow is a known WebKit/GNOME-Web repaint
+       hog on a 2-core VM). The plane glyph FILL + the red colour already convey the
+       state (invariant #14); this ring just emphasises it, painted ONCE. */
+    #net-toggle.off { color:var(--err); border-color:var(--err);
+                      box-shadow:0 0 0 3px color-mix(in srgb, var(--err) 16%, transparent); }
     #net-flash { position:fixed; inset:0; z-index:200; pointer-events:none; opacity:0; }
     /* Direction-aware transition color (UI_SHELL_REDESIGN §3): the color encodes
        WHICH WAY you're crossing — a calm/grounded hue for going OFFLINE (the safe
