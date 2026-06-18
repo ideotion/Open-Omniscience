@@ -364,7 +364,26 @@ ruling, a contingency, or a deliberate-omission note.
   claims + embeddings, mind negation); sentiment classifier choice (deep-research done — XLM-R
   ONNX-safe, mDeBERTa ONNX-broken, per-language gating, validate on news, or pivot to
   subjectivity/loaded-language feeding the manipulation cards). Implementation reuses the
-  ai_layer store (#330/#332); nothing built this session beyond capturing the evaluation.
+  ai_layer store (#330/#332, now ai_keyword tables in the MAIN DB per the 2026-06-18 storage
+  reversal #377).
+  **UNIFIED AI-METADATA + USER-DEFINED PROMPTS (maintainer ruled 2026-06-18): AI metadata is
+  UNIFIED and PROMPT-RELATED** — who/where/when (time/location/entity) and any user-defined
+  prompt all produce the SAME kind of thing: typed AI-metadata rows in `ai_keyword`
+  (kind=type, term=value, prompt provenance), rendered INLINE in the article view labelled
+  "AI-derived · unreliable". A user defines a MANAGED LIST of custom extractors, each runnable
+  ON DEMAND and/or AUTO-ON-INGEST (per-prompt toggle). PROMPT-EDITOR UX SHIPPED (#380, merged):
+  the Settings → Models prompt boxes are pre-filled with the effective text, auto-sized,
+  resizable + copyable, and saving a box equal to the default clears the override.
+  CUSTOM-PROMPT BACKEND SHIPPED 2026-06-18 (branch claude/ai-custom-prompts, draft PR onto 0.09;
+  VERIFIED py3.13): `AiCustomPrompt` model (label · output_kind=the metadata type · prompt_text ·
+  run_on_ingest · enabled) + migration e1f2a3b4c5d6; CRUD `GET/POST/PUT/DELETE /api/ai/prompts`;
+  `POST /api/ai/prompts/{id}/run` streams a run over a selection (reuses `_resolve_work` +
+  `extract_for_articles`, now parametrised with a custom `system` prompt + output `kind` +
+  `prompt_version="custom:<id>"`) → writes `ai_keyword` rows of that kind, NEVER the trusted
+  index (test asserts ZERO KeywordMention). tests/test_ai_custom_prompts.py (5). REMAINING: the
+  Settings UI for the managed list (reuse the #380 editor); the AUTO-ON-INGEST hook (run_on_ingest
+  field is stored; the per-article hook is the next slice); expose the built-in extraction/cascade
+  prompts in the same editor (Part B). Nothing else built this session beyond capturing the evaluation.
 - **MAINTAINER BATCH RULINGS 2026-06-17 (answered the next-session question list; binding —
   these set priorities + override several earlier defaults):**
   (1) **PIVOT TO RELEASE-ENGINEERING** — the next push leads with the RC-BLOCKING release-eng

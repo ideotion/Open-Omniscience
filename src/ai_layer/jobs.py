@@ -51,6 +51,8 @@ def extract_for_articles(
     max_terms: int = 20,
     keep_alive: str | None = None,
     skip_existing: bool = True,
+    system: str | None = None,
+    prompt_version: str = EXTRACT_PROMPT_VERSION,
 ) -> Iterator[dict]:
     """Extract + persist terms for each article, yielding progress events.
 
@@ -58,6 +60,11 @@ def extract_for_articles(
     stored | skipped | failed), and a final ``done`` — or an aborted ``done`` if the
     local model becomes unavailable mid-run (it won't recover, so we stop). All writes
     go to the ``ai_keyword`` table via the main session; the trusted index is never written.
+
+    ``system`` + ``kind`` + ``prompt_version`` parametrise the extractor: the built-in
+    keyword pass uses the defaults, a USER-DEFINED custom prompt passes its own system
+    text, output ``kind`` (the metadata type) and ``prompt_version`` (e.g. ``custom:7``) —
+    the same unified typed-metadata path either way.
     """
     total = len(work)
     yield {"event": "start", "total": total, "model": model, "kind": kind}
@@ -84,7 +91,7 @@ def extract_for_articles(
             try:
                 terms = extract_terms(
                     client, w.title, w.content, model=model,
-                    max_terms=max_terms, keep_alive=keep_alive,
+                    max_terms=max_terms, keep_alive=keep_alive, system=system,
                 )
             except LLMUnavailable as exc:
                 # Ollama down / model missing / airplane mode — won't recover mid-run.
@@ -100,7 +107,7 @@ def extract_for_articles(
                 continue
             added = ai_store.record_keywords(
                 session, w.article_id, terms, model=model, kind=kind,
-                language=w.language, prompt_version=EXTRACT_PROMPT_VERSION,
+                language=w.language, prompt_version=prompt_version,
             )
             session.commit()  # persist progress; release the gate between articles
             stored += 1

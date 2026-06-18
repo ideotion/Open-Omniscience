@@ -72,14 +72,21 @@ def extract_terms(
     model: str,
     max_terms: int = 20,
     keep_alive: str | None = None,
+    system: str | None = None,
 ) -> list[str]:
     """Ask the local model for an article's salient terms. Returns a clean list (may
     be empty — an unusable page yields nothing). Raises the client's ``LLMUnavailable``
-    / ``LLMError`` (the caller decides how to handle a mid-run outage)."""
+    / ``LLMError`` (the caller decides how to handle a mid-run outage).
+
+    A custom ``system`` prompt (a user-defined extractor) overrides the built-in keyword
+    instruction; the parsing (one item per line, deduped, bounded) is SHARED, so every
+    extractor — built-in or user-defined — yields the same unified, typed AI-metadata
+    shape. ``{max_terms}`` is substituted in whichever system prompt is used."""
     text = (content or "").strip()
     if not text:
         return []
-    system = _EXTRACT_SYSTEM.replace("{max_terms}", str(max_terms))
+    base = system if (system and system.strip()) else _EXTRACT_SYSTEM
+    sys_prompt = base.replace("{max_terms}", str(max_terms))
     prompt = f"Article title: {title or '(untitled)'}\n\n{text[:_MAX_CHARS]}"
-    result = client.generate(prompt, model=model, system=system, keep_alive=keep_alive)
+    result = client.generate(prompt, model=model, system=sys_prompt, keep_alive=keep_alive)
     return parse_terms(result.text, max_terms=max_terms)
