@@ -11,7 +11,7 @@ Honest, sourced signals only (see src/awareness/framing.py). Requires the
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from src.awareness.framing import compare_framing
 from src.database.fts import SearchQueryError, search_ids
@@ -19,6 +19,16 @@ from src.database.models import Article
 from src.database.session import get_db
 
 router = APIRouter(prefix="/api/framing", tags=["framing"])
+
+# Framing is a COARSE signal (per-source tone via VADER + emphasised terms by
+# frequency), not a verdict. Running VADER over the FULL text of every article —
+# and the corpus includes long Wikipedia pages — made this the slowest endpoint
+# (≈141 s on the field corpus). The lead of an article carries its tone and its
+# emphasis, so we bound the text fed to the computation; typical news articles are
+# well under this, so their result is unchanged, while a pathological long page no
+# longer dominates. (The decrypt of the content column is inherent; this bounds the
+# pure-Python VADER + concatenation + term-frequency work, which was the hot cost.)
+_FRAMING_MAX_CHARS = 8000
 
 
 @router.get("")
@@ -32,7 +42,9 @@ def framing(
     Without a query, the most recent articles are used. Articles are grouped by
     source; each source's tone (VADER), emphasised terms and headlines are returned.
     """
-    q = db.query(Article)
+    # Eager-load the source: ``a.source.name`` below otherwise fires one extra
+    # decrypt-query PER article (an N+1 that, at limit=1000, is a large hidden cost).
+    q = db.query(Article).options(joinedload(Article.source))
     if query:
         try:
             ids = search_ids(db, query)
@@ -57,7 +69,7 @@ def framing(
         by_source.setdefault(source, []).append(
             {
                 "title": a.title,
-                "content": a.content,
+                "content": (a.content or "")[:_FRAMING_MAX_CHARS],
                 "url": a.url,
                 "published_at": a.published_at.isoformat() if a.published_at else None,
             }

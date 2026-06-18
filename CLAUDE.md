@@ -3030,6 +3030,19 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **PERF — FRAMING 141s (field perf report 2026-06-18; branch claude/perf-framing, draft PR onto 0.09):**
+  /api/framing was the slowest endpoint — it ran VADER over the FULL text of up to 1000 articles AND
+  concatenated all of each source's content for term-frequency, and the corpus includes long Wikipedia
+  pages, so the pure-Python VADER + concat + term-freq dominated; plus an N+1 lazy load on `a.source` (one
+  extra decrypt-query PER article). FIX (two safe levers): (1) `joinedload(Article.source)` kills the N+1;
+  (2) bound the text fed to the COARSE framing computation (`_FRAMING_MAX_CHARS=8000`) — framing is a
+  signal-not-a-verdict (its own caveat), an article's LEAD carries its tone + emphasis, and typical news
+  articles are well under 8000 chars so their result is UNCHANGED while a pathological long page no longer
+  dominates. The content-column decrypt is inherent (SQLCipher decrypts whole pages); this bounds the hot
+  PYTHON work. tests/test_framing_perf.py pins the content bound (a 20k-char article is truncated to the
+  cap). REMAINING perf workstream: denormalized counters; cache the per-query analysis endpoints
+  (framing/associations/graph keyed by args, for instant re-opens); Home poll frequency; graph/associations
+  cold cost (same long-content/large-corpus shape — candidates for the same bounding + the cache).
 - **DIAGNOSTICS — STOPWORD-CANDIDATE DIGEST (maintainer 2026-06-18 "full authority on the logging process,
   you're the one analyzing them"; branch claude/diag-stopword-candidates, draft PR onto 0.09):** the
   recursive-improvement loop is "grow the not-a-keyword (stopword) list", and the keyword log was a 24 MB dump
