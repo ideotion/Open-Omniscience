@@ -2405,6 +2405,47 @@ def test_task_manager_opens_in_a_standalone_tab():
         assert pid in tm, f"task panel missing: {pid}"
 
 
+def test_task_manager_shows_pass_phase_and_upcoming_sources():
+    """The task manager must show WHAT a pass is doing, not a bare 'idle'
+    (maintainer 2026-06-18: "the task manager fails to show what the app is doing").
+    Two surfaces, on BOTH the standalone /tasks page and the in-app app.js:
+      * when a pass is ACTIVE but past the per-source scrape (progress cleared),
+        the System view shows the honest PHASE (collecting / background / briefing),
+        read from /api/scheduler/activity — never 'idle';
+      * the Queue shows a read-only 'Up next this pass' preview of the collection
+        order, with the honest 'order is re-randomised every pass' caveat (it is NOT
+        a fixed reorderable queue — that distinction was the user's confusion)."""
+    import json as _json
+
+    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    for src, name in ((tm, "taskmanager.html"), (app, "app.js")):
+        # Phase mapping keyed off a.phase, gated on a.active (not a bare 'idle').
+        assert "a.phase" in src, f"{name}: must read the pass phase from activity"
+        assert "Background tasks (markets · calendars · checks)" in src, (
+            f"{name}: must label the post-scrape background phase honestly"
+        )
+        assert "a.active" in src, f"{name}: the phase line must be gated on an active pass"
+        # Read-only upcoming-sources preview + the not-a-fixed-queue caveat.
+        assert "Up next this pass" in src, f"{name}: Queue must preview the upcoming sources"
+        assert "Order is re-randomised every pass" in src, (
+            f"{name}: the upcoming preview must carry the not-a-fixed-queue caveat"
+        )
+    # Both surfaces reuse the plan the activity poll ALREADY fetched (no new poll).
+    assert "window._act" in tm and "plan.next_targets" in tm
+    assert "_actData" in app and "plan.next_targets" in app
+    # The new strings are keyed in en.json so they translate ×12 (gate stays 100%).
+    en = _json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    for key in (
+        "Collecting articles",
+        "Background tasks (markets · calendars · checks)",
+        "Building the briefing",
+        "Up next this pass",
+        "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.",
+    ):
+        assert key in en, f"missing i18n key: {key!r}"
+
+
 def test_startup_seeds_the_source_catalog_at_unlock():
     """Data collection is the heart of the project, so the app MUST come up with
     its source catalog. An ENCRYPTED store (the default) is unlocked via the web,

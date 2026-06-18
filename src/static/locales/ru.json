@@ -1267,5 +1267,10 @@
   "en, fr (blank = all)": "en, fr (пусто = все)",
   "name or domain": "имя или домен",
   "Recursive crawl stays inside each source's own domain, honours robots.txt (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers articles, it does not mirror sites.": "Рекурсивный обход остаётся в пределах собственного домена каждого источника, уважает robots.txt (fail-closed), ограничен по частоте и ограничен лимитами глубины / страниц выше — он обнаруживает статьи, а не зеркалирует сайты.",
-  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "Выберите несколько источников и получите все их ленты за один проход. Отфильтруйте по языку, стране или типу, затем отметьте нужные. Каждый загружается этично (robots fail-closed, с ограничением частоты); до 50 за проход."
+  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "Выберите несколько источников и получите все их ленты за один проход. Отфильтруйте по языку, стране или типу, затем отметьте нужные. Каждый загружается этично (robots fail-closed, с ограничением частоты); до 50 за проход.",
+  "Collecting articles": "Сбор статей",
+  "Background tasks (markets · calendars · checks)": "Фоновые задачи (рынки · календари · проверки)",
+  "Building the briefing": "Формирование сводки",
+  "Up next this pass": "Далее в этом проходе",
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "Порядок заново перемешивается при каждом проходе — со стратификацией по языку и тегу, это не фиксированная очередь."
 }

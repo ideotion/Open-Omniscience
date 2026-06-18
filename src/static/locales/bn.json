@@ -1267,5 +1267,10 @@
   "en, fr (blank = all)": "en, fr (খালি = সব)",
   "name or domain": "নাম বা ডোমেইন",
   "Recursive crawl stays inside each source's own domain, honours robots.txt (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers articles, it does not mirror sites.": "রিকার্সিভ ক্রল প্রতিটি উৎসের নিজস্ব ডোমেইনের ভেতরে থাকে, robots.txt মান্য করে (fail-closed), হার-সীমিত, এবং উপরের গভীরতা / পৃষ্ঠা সীমা দ্বারা আবদ্ধ — এটি নিবন্ধ আবিষ্কার করে, সাইট মিরর করে না।",
-  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "একাধিক উৎস নির্বাচন করুন এবং এক রানে তাদের সব ফিড আনুন। ভাষা, দেশ বা ধরন অনুযায়ী ফিল্টার করুন, তারপর যেগুলি চান সেগুলিতে টিক দিন। প্রতিটি নৈতিকভাবে আনা হয় (robots fail-closed, হার-সীমিত); প্রতি রানে সর্বোচ্চ ৫০।"
+  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "একাধিক উৎস নির্বাচন করুন এবং এক রানে তাদের সব ফিড আনুন। ভাষা, দেশ বা ধরন অনুযায়ী ফিল্টার করুন, তারপর যেগুলি চান সেগুলিতে টিক দিন। প্রতিটি নৈতিকভাবে আনা হয় (robots fail-closed, হার-সীমিত); প্রতি রানে সর্বোচ্চ ৫০।",
+  "Collecting articles": "নিবন্ধ সংগ্রহ করা হচ্ছে",
+  "Background tasks (markets · calendars · checks)": "নেপথ্য কাজ (বাজার · ক্যালেন্ডার · যাচাই)",
+  "Building the briefing": "ব্রিফিং তৈরি হচ্ছে",
+  "Up next this pass": "এই পাসে পরবর্তী",
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "প্রতি পাসে ক্রম পুনরায় এলোমেলো করা হয় — ভাষা ও ট্যাগ অনুসারে স্তরবিন্যাসিত, এটি স্থির সারি নয়।"
 }

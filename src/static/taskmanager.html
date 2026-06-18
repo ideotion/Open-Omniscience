@@ -189,9 +189,25 @@
     $("jobs-body").innerHTML = '<div class="vsect">' + esc(t("Active")) + "</div>" + (active.length
       ? active.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("")
       : '<div class="muted" style="padding:4px 0">' + esc(t("Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.")) + "</div>");
-    $("queue-body").innerHTML = '<div class="vsect">' + esc(t("Queue")) + "</div>" + (queued.length
+    var qHtml = '<div class="vsect">' + esc(t("Queue")) + "</div>" + (queued.length
       ? queued.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("")
       : '<div class="muted" style="padding:4px 0">' + esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.")) + "</div>");
+    // Read-only "Up next" preview of the COLLECTION pass order. The download queue
+    // above is a fixed, reorderable list; the collection order is NOT — it is
+    // re-randomised every pass (stratified by language + tag), so we show it as an
+    // informative preview, never reorderable rows (would imply a fixed queue that
+    // does not exist). Reuses the plan the activity poll already fetched (window._act).
+    var plan = (window._act && window._act.plan) || {};
+    var ups = plan.next_targets || [];
+    if (ups.length) {
+      var more = Math.max(0, (plan.planned_total || 0) - ups.length);
+      qHtml += '<div class="vsect">' + esc(t("Up next this pass")) + "</div>" +
+        '<div class="cap-chips" style="display:flex;flex-wrap:wrap;gap:4px">' +
+        ups.map(function (d) { return '<span class="pill">' + esc(d) + "</span>"; }).join("") +
+        (more ? '<span class="pill muted">+' + more + "</span>" : "") + "</div>" +
+        '<div class="vnote">' + esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) + "</div>";
+    }
+    $("queue-body").innerHTML = qHtml;
   }
 
   // ---- Schedule — the scheduler's own facts (no fabricated countdown) ---- //
@@ -236,7 +252,17 @@
       var pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
       now = row(t("Now collecting"), esc(pg.current || "…") + ' <span class="muted">· ' + esc(pg.mode || "") + "</span>") +
         '<div class="cap-bar"><div class="cap-fill" style="width:' + pct + '%"></div><span class="cap-txt">' + pg.done + "/" + pg.total + " · " + pct + '%</span></div>';
-    } else { now = row(t("Now collecting"), a.running ? '<span class="muted">' + esc(t("idle")) + "</span>" : '<span class="muted">' + esc(t("scheduler stopped")) + "</span>"); }
+    } else {
+      // A pass can be ACTIVE past the per-source scrape (progress cleared once the
+      // articles are in): show the honest PHASE so a lingering market/calendar fetch
+      // reads as "finishing", not "idle" (maintainer 2026-06-18).
+      var _ph = { collecting: t("Collecting articles"),
+                  background: t("Background tasks (markets · calendars · checks)"),
+                  briefing: t("Building the briefing") }[a.phase];
+      now = row(t("Now collecting"), a.active ? '<span class="muted">' + esc(_ph || t("Collecting articles")) + "</span>"
+              : a.running ? '<span class="muted">' + esc(t("idle")) + "</span>"
+              : '<span class="muted">' + esc(t("scheduler stopped")) + "</span>");
+    }
     var rateHtml = rates.length ? sect(t("Per-source download rate")) + rates.map(function (r) {
       return '<div class="vr"><span>' + esc(r.host) + "</span><b>" + r.kbps + " KB/s <span class=\"muted\">· " + fmtBytes(r.bytes) + " · " + r.fetches + "×</span></b></div>";
     }).join("") : "";

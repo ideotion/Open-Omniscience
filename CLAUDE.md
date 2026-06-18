@@ -2850,8 +2850,19 @@ ruling, a contingency, or a deliberate-omission note.
   task-manager collect job label — "collection pass — collecting articles" vs "— background tasks (markets ·
   calendars · checks)" vs "— building the briefing" — so a lingering market fetch reads as "finishing", not a
   stall (the task manager's whole point). tests/test_collect_first_ordering.py (scrape-before-preflight,
-  phase transitions, phase-aware label). REMAINING: surface the phase in the task-manager FRONTEND panel
-  (backend label already carries it); optionally run the first-run preflight in a background thread.
+  phase transitions, phase-aware label). FRONTEND FOLLOW-UP SHIPPED 2026-06-18 (branch
+  claude/taskmgr-phase-upnext, draft PR onto 0.09, browser-unverified): the standalone /tasks page
+  (src/static/taskmanager.html, its OWN renderSystem/renderJobs) AND the in-app app.js
+  (_renderVitals/_renderJobs) now (a) show the honest PHASE when a pass is ACTIVE but past the
+  per-source scrape (progress cleared) instead of a bare "idle" — reads `a.phase` from
+  /api/scheduler/activity, gated on `a.active`; (b) show a read-only "Up next this pass" preview of
+  the COLLECTION order in the Queue tab (reuses the plan the activity poll ALREADY fetched — no new
+  endpoint/poll) with the honest "order is re-randomised every pass — stratified by language & tag,
+  not a fixed queue" caveat (closing the user's "the queue is empty" confusion: the collection order
+  is NOT the reorderable download queue). +5 i18n keys ×12 (AI-drafted non-en, flagged for native
+  review; gate stays 100%); test_repo_invariants::test_task_manager_shows_pass_phase_and_upcoming_sources.
+  REMAINING: optionally run the first-run preflight in a background thread (the reorder already gives
+  articles-in-seconds).
 - **INSTALL-SIZE ESTIMATES (maintainer-asked 2026-06-18 from an install log, branch
   claude/friendly-lamport-s3a1qa, draft PR onto 0.09):** install.sh now informs the user
   of ROUGH download sizes before the long pip step + in the component menus. Dated

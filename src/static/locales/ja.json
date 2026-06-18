@@ -1267,5 +1267,10 @@
   "en, fr (blank = all)": "en, fr(空欄 = すべて)",
   "name or domain": "名前またはドメイン",
   "Recursive crawl stays inside each source's own domain, honours robots.txt (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers articles, it does not mirror sites.": "再帰クロールは各ソース自身のドメイン内に留まり、robots.txt を尊重し(フェイルクローズ)、レート制限され、上記の深さ / ページ上限で制限されます — 記事を発見しますが、サイトをミラーすることはありません。",
-  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "複数のソースを選び、一度の実行ですべてのフィードを取得します。言語・国・種類で絞り込み、欲しいものにチェックを入れます。各ソースは倫理的に取得されます(robots フェイルクローズ、レート制限);1 回の実行につき最大 50 件。"
+  "Select several sources and fetch all their feeds in one run. Filter by language, country or type, then tick the ones you want. Each is fetched ethically (robots fail-closed, rate-limited); up to 50 per run.": "複数のソースを選び、一度の実行ですべてのフィードを取得します。言語・国・種類で絞り込み、欲しいものにチェックを入れます。各ソースは倫理的に取得されます(robots フェイルクローズ、レート制限);1 回の実行につき最大 50 件。",
+  "Collecting articles": "記事を収集中",
+  "Background tasks (markets · calendars · checks)": "バックグラウンド処理（市場 · カレンダー · チェック）",
+  "Building the briefing": "ブリーフィングを作成中",
+  "Up next this pass": "このパスの次の対象",
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "順序はパスごとに再ランダム化されます——言語とタグで層化され、固定キューではありません。"
 }
