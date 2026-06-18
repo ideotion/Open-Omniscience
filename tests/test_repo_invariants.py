@@ -2055,6 +2055,15 @@ def test_ooMap_choropleth():
     # (the 6 names are keyed x12; this is the map being fully part of the translation).
     assert "t(r.continent)" in html, "continent labels must be translated via t()"
 
+    # COUNTRY names are localised via the browser's CLDR (Intl.DisplayNames, keyed by
+    # the ISO code) — accurate per locale, zero translation tables. Code-only surfaces
+    # (FR/US) stay as their language-neutral codes.
+    assert "function ooRegionName(code, fallback)" in html, "the CLDR country-name helper must exist"
+    assert 'new Intl.DisplayNames([lang], { type: "region" })' in html, (
+        "country names must use Intl.DisplayNames region data (no hand-translated table)"
+    )
+    assert "ooRegionName(code, c.name)" in html, "map polygon labels must localise the country name"
+
 
 def test_search_timescope():
     """The Search sidebar tab reuses the SAME ooTimeScope control for date-range

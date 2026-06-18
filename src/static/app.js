@@ -3869,7 +3869,7 @@
         <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div></td>
         <td>${esc(s.domain)}${s.rss_url?' <span class="pill ok" title="has RSS feed">rss</span>':''}</td>
         <td class="muted">${esc(s.source_type || "—")}</td>
-        <td class="muted" title="${esc((s.country || "").toUpperCase())}">${esc(s.country_name || s.country || "—")}</td>
+        <td class="muted" title="${esc((s.country || "").toUpperCase())}">${esc(s.country ? ooRegionName(s.country, s.country_name) : (s.country_name || "—"))}</td>
         <td class="muted">${esc(s.language || "—")}</td>
         <td><select class="tiny" style="width:auto;padding:3px"
               onchange="updateSource(${s.id},{priority:Number(this.value)})">${prio}</select></td>
@@ -7077,6 +7077,22 @@
     // fallback for territories the coarse 110m geometry has no polygon for
     // (a point, never an invented border). Reuses the equirectangular
     // projection (lon2x/lat2y, MAP_W/MAP_H). Maintainer ruling 2026-06-18.
+    // Localised COUNTRY name from an ISO-2 code via the browser's CLDR data
+    // (Intl.DisplayNames) — accurate in every locale, no translation tables. Falls
+    // back to the supplied English name / the code. Reusable wherever the UI shows
+    // a country as a NAME (the map, the Sources table); code-only surfaces (FR/US)
+    // stay as their language-neutral codes.
+    const _ooRegionDN = {};
+    function ooRegionName(code, fallback) {
+      const cc = (code || "").trim().toUpperCase();
+      if (!cc) return fallback || "";
+      const lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      try {
+        if (!_ooRegionDN[lang]) _ooRegionDN[lang] = new Intl.DisplayNames([lang], { type: "region" });
+        return _ooRegionDN[lang].of(cc) || fallback || cc;
+      } catch { return fallback || cc; }
+    }
+
     let _ooMapGeo = null;                            // cached world_countries.json
     async function _ooMapGeoLoad() {
       if (_ooMapGeo !== null) return _ooMapGeo;
@@ -7138,7 +7154,7 @@
         const has = typeof v === "number" && isFinite(v);
         const d = _ooMapPath(c.rings); if (!d) continue;
         const fill = has ? fillFor(v) : "url(#oomap-nodata)";
-        const title = `${c.name} — ${has ? vlabel(code, v) : t("no data")}`;
+        const title = `${ooRegionName(code, c.name)} — ${has ? vlabel(code, v) : t("no data")}`;
         paths += `<path d="${d}" fill="${fill}" stroke="var(--border)" stroke-width="0.3" data-iso="${esc(code)}"`
           + `${opts.onCountry ? ' style="cursor:pointer"' : ""}><title>${esc(title)}</title></path>`;
       }
@@ -7327,13 +7343,13 @@
       const contAgg = continentMode ? _ooMapContinentAgg(rows, dim) : null;
       const values = {}, names = {}, points = [], rowBy = {};
       rows.forEach(r => {
-        names[r.country] = r.name; rowBy[r.country] = r;
+        names[r.country] = ooRegionName(r.country, r.name); rowBy[r.country] = r;
         let v;
         if (continentMode) { const ca = r.continent && contAgg[r.continent]; if (!ca) return; v = ca.value; }
         else v = r[dim.id];
         if (v != null && isFinite(v)) {
           values[r.country] = v;
-          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : r.name });
+          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: continentMode ? t(r.continent) : names[r.country] });
         }
       });
       const nWith = Object.keys(values).length;
