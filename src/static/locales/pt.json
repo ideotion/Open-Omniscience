@@ -1215,5 +1215,11 @@
   "optional": "opcional",
   "Flagged changes": "Mudanças sinalizadas",
   "flagged only": "apenas sinalizadas",
-  "Edition filter": "Filtro de edição"
+  "Edition filter": "Filtro de edição",
+  "Wikipedia offline baselines": "Bases de referência offline da Wikipédia",
+  "Language edition": "Edição de idioma",
+  "Loading editions…": "Carregando edições…",
+  "Estimate size": "Estimar tamanho",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "Opcional, pesada e separada do rastreamento de mudanças ao vivo. Escolha uma edição de idioma abaixo e baixe o despejo oficial de texto atual da Wikimedia (retomável, com pausar/retomar). As edições são listadas em formato plano — seus idiomas primeiro, depois as maiores edições; o tamanho real de download é lido do servidor quando você clica em \"Estimar tamanho\" — nada é adivinhado. enwiki ≈ dezenas de GB; a maioria das edições é bem menor. As bases de referência servem apenas para leitura/busca offline — o rastreamento de mudanças acima não precisa delas.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "A lista é limitada aos idiomas do aplicativo — as edições que este aplicativo pode ler e analisar. Digite na caixa para filtrar por nome, autônimo ou código. Cada edição mostra um nível de tamanho aproximado e um tamanho de download estimado em linha, enquanto \"Estimar tamanho\" informa o tamanho exato do despejo atual a partir do servidor. Você também pode digitar qualquer código de edição não listado."
 }

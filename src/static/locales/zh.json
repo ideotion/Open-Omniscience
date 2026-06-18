@@ -1215,5 +1215,11 @@
   "optional": "可选",
   "Flagged changes": "已标记的变更",
   "flagged only": "仅已标记",
-  "Edition filter": "版本筛选"
+  "Edition filter": "版本筛选",
+  "Wikipedia offline baselines": "维基百科离线基线",
+  "Language edition": "语言版本",
+  "Loading editions…": "正在加载版本…",
+  "Estimate size": "估算大小",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "可选、体积大，且与实时变更跟踪分开。在下面选择一个语言版本，下载官方维基媒体的当前文本转储(可续传，支持暂停/继续)。版本以平铺方式列出 — 你的语言在前，然后是最大的版本;当你点击\"估算大小\"时，真实的下载大小会从服务器读取 — 不做任何猜测。enwiki ≈ 数十 GB;大多数版本要小得多。基线仅用于离线阅读/搜索 — 上面的变更跟踪并不需要它们。",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "列表仅限本应用的语言 — 即本应用能够读取和分析的版本。在框中输入即可按名称、自称或代码筛选。每个版本会内联显示一个粗略的大小档位和估算的下载大小，而\"估算大小\"会从服务器报告确切的当前转储大小。你也可以输入任何未列出的版本代码。"
 }

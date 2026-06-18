@@ -1215,5 +1215,11 @@
   "optional": "वैकल्पिक",
   "Flagged changes": "चिह्नित परिवर्तन",
   "flagged only": "केवल चिह्नित",
-  "Edition filter": "संस्करण फ़िल्टर"
+  "Edition filter": "संस्करण फ़िल्टर",
+  "Wikipedia offline baselines": "विकिपीडिया ऑफ़लाइन बेसलाइन",
+  "Language edition": "भाषा संस्करण",
+  "Loading editions…": "संस्करण लोड हो रहे हैं…",
+  "Estimate size": "आकार अनुमानित करें",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "वैकल्पिक, भारी, और लाइव परिवर्तन-ट्रैकिंग से अलग। नीचे एक भाषा संस्करण चुनें और आधिकारिक विकिमीडिया वर्तमान-पाठ डंप डाउनलोड करें (पुनः आरंभ करने योग्य, रोकें/जारी रखें के साथ)। संस्करण सपाट सूचीबद्ध हैं — आपकी भाषाएँ पहले, फिर सबसे बड़े संस्करण; जब आप \"आकार अनुमानित करें\" क्लिक करते हैं तो असली डाउनलोड आकार सर्वर से पढ़ा जाता है — कुछ भी अनुमानित नहीं किया जाता। enwiki ≈ दसियों GB; अधिकांश संस्करण बहुत छोटे हैं। बेसलाइन केवल ऑफ़लाइन पढ़ने/खोज के लिए हैं — ऊपर की परिवर्तन-ट्रैकिंग को इनकी ज़रूरत नहीं।",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "सूची ऐप की भाषाओं तक सीमित है — वे संस्करण जिन्हें यह ऐप पढ़ और विश्लेषित कर सकता है। नाम, स्वनाम या कोड से फ़िल्टर करने के लिए बॉक्स में टाइप करें। प्रत्येक संस्करण एक मोटा आकार स्तर और एक अनुमानित डाउनलोड आकार इनलाइन दिखाता है, जबकि \"आकार अनुमानित करें\" सर्वर से सटीक वर्तमान डंप आकार बताता है। आप कोई भी असूचीबद्ध संस्करण कोड भी टाइप कर सकते हैं।"
 }

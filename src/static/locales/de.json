@@ -1215,5 +1215,11 @@
   "optional": "optional",
   "Flagged changes": "Markierte Änderungen",
   "flagged only": "nur markierte",
-  "Edition filter": "Ausgabenfilter"
+  "Edition filter": "Ausgabenfilter",
+  "Wikipedia offline baselines": "Wikipedia-Offline-Basislinien",
+  "Language edition": "Sprachausgabe",
+  "Loading editions…": "Ausgaben werden geladen…",
+  "Estimate size": "Größe schätzen",
+  "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "Optional, umfangreich und getrennt von der Live-Änderungsverfolgung. Wählen Sie unten eine Sprachausgabe und laden Sie den offiziellen Wikimedia-Dump des aktuellen Textes herunter (fortsetzbar, mit Pause/Fortsetzen). Ausgaben werden flach gelistet — Ihre Sprachen zuerst, dann die größten Ausgaben; die echte Downloadgröße wird vom Server gelesen, wenn Sie auf „Größe schätzen“ klicken — nichts wird geraten. enwiki ≈ zig GB; die meisten Ausgaben sind weit kleiner. Basislinien dienen nur dem Offline-Lesen/Suchen — die obige Änderungsverfolgung braucht sie nicht.",
+  "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "Die Liste ist auf die Sprachen der App beschränkt — die Ausgaben, die diese App lesen und analysieren kann. Tippen Sie in das Feld, um nach Name, Eigenname oder Code zu filtern. Jede Ausgabe zeigt eine grobe Größenstufe und eine geschätzte Downloadgröße inline an, während „Größe schätzen“ die genaue aktuelle Dump-Größe vom Server meldet. Sie können auch einen beliebigen, nicht gelisteten Ausgaben-Code eingeben."
 }
