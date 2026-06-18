@@ -1160,5 +1160,15 @@
   "Local model — click to re-check": "ローカルモデル — クリックして再確認",
   "Saved.": "保存しました。",
   "Open the source-integrity desk →": "ソース整合性デスクを開く →",
-  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "協調は現在、自動的に提示されます——手がかりとして、分析ウィンドウの「関連」ビューで、また記事リストやリーダーにインラインで。手動デスクを開くと、協調ネットワークを一つの声にまとめる、ソースのプロファイルを調べる、信頼の網の注釈を管理する、ができます。"
+  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "協調は現在、自動的に提示されます——手がかりとして、分析ウィンドウの「関連」ビューで、また記事リストやリーダーにインラインで。手動デスクを開くと、協調ネットワークを一つの声にまとめる、ソースのプロファイルを調べる、信頼の網の注釈を管理する、ができます。",
+  "Watches": "ウォッチ",
+  "— save a condition, get a Lead when it matches": "— 条件を保存し、一致したら手がかりを受け取る",
+  "A watch is a saved search the app keeps an eye on. When your corpus gains enough new articles matching it (your own threshold, within a recent window), it fires a watch Lead card on Home — local-only, no notifications, no network. A watch is a prompt to read, never a verdict or a score.": "ウォッチは、アプリが見守る保存済みの検索です。あなたのコーパスに一致する新しい記事が十分に増えると(あなた自身のしきい値で、最近の期間内に)、ホームに「watch」の手がかりカードを表示します — ローカルのみ、通知なし、ネットワークなし。ウォッチは読むためのきっかけであり、判定やスコアではありません。",
+  "Condition (search query)": "条件(検索クエリ)",
+  "Min articles": "最小記事数",
+  "Window (days)": "期間(日)",
+  "Add watch": "ウォッチを追加",
+  "Check now": "今すぐ確認",
+  "Run the engine now (it also runs after every collection pass)": "エンジンを今すぐ実行(収集パスのたびにも実行されます)",
+  "Floods in the region": "地域の洪水"
 }

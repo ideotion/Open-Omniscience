@@ -1160,5 +1160,15 @@
   "Local model — click to re-check": "Lokales Modell — zum erneuten Prüfen klicken",
   "Saved.": "Gespeichert.",
   "Open the source-integrity desk →": "Quellenintegritäts-Desk öffnen →",
-  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "Koordination wird jetzt automatisch sichtbar gemacht — als Spuren, in der Verwandt-Ansicht des Analysefensters und inline in Artikellisten und im Reader. Öffnen Sie den manuellen Desk, um ein koordiniertes Netzwerk auf eine Stimme zu reduzieren, ein Quellenprofil nachzuschlagen oder Web-of-Trust-Annotationen zu verwalten."
+  "Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.": "Koordination wird jetzt automatisch sichtbar gemacht — als Spuren, in der Verwandt-Ansicht des Analysefensters und inline in Artikellisten und im Reader. Öffnen Sie den manuellen Desk, um ein koordiniertes Netzwerk auf eine Stimme zu reduzieren, ein Quellenprofil nachzuschlagen oder Web-of-Trust-Annotationen zu verwalten.",
+  "Watches": "Beobachtungen",
+  "— save a condition, get a Lead when it matches": "— eine Bedingung speichern und eine Spur erhalten, wenn sie zutrifft",
+  "A watch is a saved search the app keeps an eye on. When your corpus gains enough new articles matching it (your own threshold, within a recent window), it fires a watch Lead card on Home — local-only, no notifications, no network. A watch is a prompt to read, never a verdict or a score.": "Eine Beobachtung ist eine gespeicherte Suche, die die App im Auge behält. Wenn Ihr Korpus genügend neue passende Artikel erhält (Ihr eigener Schwellenwert, innerhalb eines kürzlichen Zeitfensters), löst sie auf der Startseite eine „watch“-Spur-Karte aus — nur lokal, keine Benachrichtigungen, kein Netzwerk. Eine Beobachtung ist eine Einladung zum Lesen, niemals ein Urteil oder eine Bewertung.",
+  "Condition (search query)": "Bedingung (Suchanfrage)",
+  "Min articles": "Min. Artikel",
+  "Window (days)": "Zeitfenster (Tage)",
+  "Add watch": "Beobachtung hinzufügen",
+  "Check now": "Jetzt prüfen",
+  "Run the engine now (it also runs after every collection pass)": "Engine jetzt ausführen (läuft auch nach jedem Sammeldurchlauf)",
+  "Floods in the region": "Überschwemmungen in der Region"
 }
