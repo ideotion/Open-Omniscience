@@ -240,3 +240,37 @@ def test_uninstall_aborts_without_confirmation(tmp_path):
     assert r.returncode == 0
     assert fake_venv.exists(), "nothing should be removed without confirmation"
     assert "nothing was removed" in r.stdout
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="POSIX shell function test; needs bash",
+)
+def test_ollama_store_access_guards_are_noops():
+    """configure_ollama_store_access() must NO-OP when opted out (OO_OLLAMA_READABLE=0)
+    or when there is no protected systemd-service store — it must never attempt a
+    chmod blindly. The actual chmod path is privileged + machine-specific (verified on
+    a real install), so here we only pin the guards."""
+    import os
+    import re
+
+    src = (REPO / "install.sh").read_text(encoding="utf-8")
+    m = re.search(r"\nconfigure_ollama_store_access\(\) \{.*?\n\}\n", src, re.S)
+    assert m, "configure_ollama_store_access not found in install.sh"
+    harness = (
+        'DIM=""; RST=""\n'
+        "say(){ :; }; step(){ echo ENTERED; }; ok(){ echo OK; }; warn(){ echo WARN; }\n"
+        "chmod(){ echo CHMOD; }\n"  # trap any chmod attempt
+        + m.group(0)
+        + "\nconfigure_ollama_store_access\n"
+    )
+    # opted out -> immediate return, no entry into the active path, no chmod
+    r = subprocess.run(
+        ["bash", "-c", harness], capture_output=True, text=True,
+        env={**os.environ, "OO_OLLAMA_READABLE": "0"},
+    )
+    assert r.returncode == 0 and "ENTERED" not in r.stdout and "CHMOD" not in r.stdout
+    # default, but no /usr/share/ollama/.ollama/models here -> no chmod either
+    env = {k: v for k, v in os.environ.items() if k != "OO_OLLAMA_READABLE"}
+    r2 = subprocess.run(["bash", "-c", harness], capture_output=True, text=True, env=env)
+    assert r2.returncode == 0 and "CHMOD" not in r2.stdout

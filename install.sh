@@ -23,6 +23,7 @@
 #   OO_COMPONENTS="analysis,llm"   extras to add on top of core (comma-separated)
 #   OO_WITH_OLLAMA=1               install Ollama if missing (asks consent unless unattended)
 #   OO_OLLAMA_MODEL="gemma3:1b"  model to pull (empty = none)
+#   OO_OLLAMA_READABLE=0           don't make the Ollama model store backup-readable
 #   OO_MAKE_LAUNCHER=1             create the desktop launcher
 #   OO_PYTHON=python3.13           interpreter to use
 #   OO_SKIP_PIP=1 / OO_SKIP_DB=1   skip the pip install / db init (testing only)
@@ -237,6 +238,51 @@ _seed_sources() {
 # Optional: local LLM (Ollama). Transparent and opt-in -- we show the exact
 # command and ask before running any third-party installer.
 # --------------------------------------------------------------------------- #
+# Make Ollama's model store readable so the in-app "Back up models" works without
+# the user touching systemd (maintainer 2026-06-18: this app targets journalists,
+# not people who hand-edit OLLAMA_MODELS). The official Linux installer runs the
+# service as the 'ollama' system user, so models land under /usr/share/ollama (that
+# user's home, mode 0700) — unreadable by the human user, so the backup silently
+# finds nothing. We grant READ-only access to the model blobs (public data, never
+# made writable) and traverse rights to the parent dirs, while deliberately LEAVING
+# the service's private key (id_ed25519) untouched. Best-effort + non-fatal: on any
+# failure Ollama keeps working and the app still shows in-app guidance (PR #354).
+# Opt out with OO_OLLAMA_READABLE=0.
+configure_ollama_store_access() {
+    [ "${OO_OLLAMA_READABLE:-1}" = "0" ] && return 0
+    local models="/usr/share/ollama/.ollama/models"
+    [ -d "$models" ] || return 0   # only the protected systemd-service store needs this
+
+    step "Making the Ollama model store readable for in-app backup"
+    say "  ${DIM}The Ollama service keeps models under /usr/share/ollama (the 'ollama'${RST}"
+    say "  ${DIM}user's home, mode 0700), so the app can't read them to back them up.${RST}"
+    say "  ${DIM}Granting READ-only access to the model blobs (public data, never made${RST}"
+    say "  ${DIM}writable); the service's private key is left untouched.${RST}"
+
+    local SUDO=""
+    if [ "$(id -u)" != "0" ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            SUDO="sudo"
+        else
+            warn "Need root to adjust permissions; to enable model backup later, run:"
+            say  "    chmod a+x /usr/share/ollama /usr/share/ollama/.ollama"
+            say  "    chmod -R a+rX $models"
+            return 0
+        fi
+    fi
+    # a+x on the parent dirs = traverse only (does NOT expose the private key file,
+    # which keeps its own 0600); a+rX on the models tree = read the public blobs.
+    if $SUDO chmod a+x /usr/share/ollama /usr/share/ollama/.ollama 2>/dev/null \
+       && $SUDO chmod -R a+rX "$models" 2>/dev/null; then
+        ok "Ollama models are now readable for in-app backup."
+    else
+        warn "Couldn't set permissions automatically. To enable model backup, run:"
+        say  "    sudo chmod a+x /usr/share/ollama /usr/share/ollama/.ollama"
+        say  "    sudo chmod -R a+rX $models"
+        say  "  ${DIM}Or relocate the store via OLLAMA_MODELS (Settings → Models explains).${RST}"
+    fi
+}
+
 maybe_setup_ollama() {
     local extras="$1"
     case ",$extras," in *,llm,*) : ;; *) return 0 ;; esac
@@ -299,6 +345,9 @@ maybe_setup_ollama() {
             warn "Ollama not available; skipping model download."
         fi
     fi
+
+    # After install + pull, make the model store backup-readable (Linux service case).
+    configure_ollama_store_access
 }
 
 # --------------------------------------------------------------------------- #
