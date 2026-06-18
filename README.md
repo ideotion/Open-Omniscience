@@ -52,8 +52,9 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   honestly (see [docs/USER_MANUAL.md](docs/USER_MANUAL.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
 - ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust*)
-  covering Home, **Analysis**, Insights, Temporal map, World law, Agenda, Indices,
-  Commodities, Library, Evidence &amp; custody and Source integrity. A **minimal top
+  covering Home, **Analysis**, Insights, World map, World law, Agenda, Indices,
+  Commodities, Library and Evidence &amp; custody. (Source integrity's tools moved
+  into **Settings → Safety**, content-first.) A **minimal top
   bar** carries the always-on **search** omnibar (also the Ctrl/⌘-K command palette),
   live status, a **task-manager** button, the **airplane-mode** network toggle, a
   **language switcher** and an in-app **Help/docs** reader (the top-bar `?`);
@@ -105,7 +106,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   **interactive map** (zoomable SVG with city pins by real lat/lon + per-country/
   city tables) — every figure a real aggregate with method + caveat. See
   [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
-- ✅ **Temporal map** (the **Temporal map** tab): every locatable, datable signal on one
+- ✅ **World map** (the **World map** tab): every locatable, datable signal on one
   zoomable world map under a **time slider** from antiquity to the near future — curated
   historical/scheduled anchors, your **geocoded corpus** (publication date), **dates
   mentioned in article text** (extracted, human-confirmable per-article **date tags**), and
@@ -134,8 +135,8 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   richer **per-article tracked-changes *timeline* tab** — the living-source view —
   is in progress; see below.) See [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 
-- ✅ **Source integrity & anti-amplification** (the **Source integrity** tab, `0.06`
-  Phases B–D): the pure `src/signals/` substrate — **concentration** (Gini), **near-dup /
+- ✅ **Source integrity & anti-amplification** (`0.06` Phases B–D; the desk's tools
+  now open from **Settings → Safety**): the pure `src/signals/` substrate — **concentration** (Gini), **near-dup /
   coordination** (MinHash + LSH → actor graph), **novelty / surprisal** — powers a
   **no-composite-score** source profile and **user-guided anti-amplification**: the app
   *proposes* collapsing a coordinated near-duplicate flood into one actor (with its
