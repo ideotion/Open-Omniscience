@@ -163,7 +163,12 @@ def init_db() -> None:
         ensure_article_analysis_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
+        ensure_keyword_counter_columns,
     )
+
+    # Denormalised keyword counters (+ their index, + one-time backfill) BEFORE the
+    # generic hot-index pass, since the counters' index depends on the column.
+    ensure_keyword_counter_columns(engine)
 
     ensure_hot_indexes(engine)
 

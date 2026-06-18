@@ -139,6 +139,73 @@ def ensure_article_analysis_columns(engine: Engine) -> list[str]:
     return added
 
 
+# Denormalised corpus-wide keyword counters (perf workstream 2026-06-18) for stores
+# created before these columns existed. create_all builds them on a fresh DB but never
+# ALTERs an existing table, and not every install runs alembic — so an existing corpus
+# self-heals the columns here, then is POPULATED once from the live mentions (the
+# columns are wrong-zero the instant they exist; the one-time backfill makes them true,
+# and index_article keeps them true thereafter). Same self-heal pattern as the feed /
+# analysis columns; idempotent (PRAGMA-checked).
+_KEYWORD_COUNTER_COLUMNS: dict[str, str] = {
+    "mention_count": "ALTER TABLE keywords ADD COLUMN mention_count INTEGER NOT NULL DEFAULT 0",
+    "article_count": "ALTER TABLE keywords ADD COLUMN article_count INTEGER NOT NULL DEFAULT 0",
+}
+
+# Populate both counters from the live mentions in one pass. Correlated subqueries
+# (portable across every SQLite version) over the covering index ix_mention_covering,
+# so each is an index-only scan; runs ONCE, only when a column was just added.
+_KEYWORD_COUNTER_BACKFILL = (
+    "UPDATE keywords SET "
+    "mention_count = COALESCE("
+    "(SELECT SUM(count) FROM keyword_mentions WHERE keyword_id = keywords.id), 0), "
+    "article_count = COALESCE("
+    "(SELECT COUNT(DISTINCT article_id) FROM keyword_mentions WHERE keyword_id = keywords.id), 0)"
+)
+
+
+def ensure_keyword_counter_columns(engine: Engine) -> list[str]:
+    """Self-heal ``keywords.mention_count`` / ``article_count`` + their index, then
+    backfill from the live mentions when freshly added (idempotent).
+
+    Returns the column names added (empty when already present / fresh DB / non-sqlite /
+    no keywords table). When ANY column is added the counters are wrong-zero, so a
+    one-time backfill recomputes the true ``SUM(count)`` / ``COUNT(DISTINCT article_id)``
+    — after which :func:`src.analytics.store.index_article` maintains them incrementally.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='keywords'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(keywords)")).fetchall()}
+        for name, ddl in _KEYWORD_COUNTER_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+        # The ordered top-N scan index (depends on the column existing, so it is
+        # created here rather than in HOT_INDEXES).
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_keyword_mention_count "
+                "ON keywords (mention_count)"
+            )
+        )
+    if added:
+        t0 = time.perf_counter()
+        with engine.begin() as conn:
+            conn.execute(text(_KEYWORD_COUNTER_BACKFILL))
+        _LOG.info(
+            "added keywords counter column(s) %s and backfilled from live mentions in %d ms",
+            ", ".join(added),
+            round((time.perf_counter() - t0) * 1000),
+        )
+    return added
+
+
 def optimize_at_boot(engine: Engine) -> dict:
     """Refresh the query planner's statistics, bounded (PRAGMA analysis_limit).
 

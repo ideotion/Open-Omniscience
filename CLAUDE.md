@@ -3132,6 +3132,35 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **PERF — DENORMALISED KEYWORD COUNTERS, SLICE 1 (the structural cold-cost win; perf workstream
+  field report 2026-06-18; branch claude/nice-sagan-tompbw, draft PR onto 0.09; backend VERIFIED py3.13
+  in a built .venv313):** `Keyword.mention_count` (SUM of per-article occurrence counts) +
+  `Keyword.article_count` (DISTINCT articles) + `idx_keyword_mention_count`, maintained AT INDEX TIME so
+  the hot whole-corpus aggregations can later read an indexed counter instead of GROUP BY-ing the 829k-row
+  keyword_mentions table (the join dragged whole article pages through the SQLCipher codec). Honest COUNTS,
+  no score. SLICE 1 is ADDITIVE + maintained + backfilled + TESTED with NO query rewrite (behavior-identical
+  — nothing reads them yet; slice 2 rewrites top_terms + _supergroup_totals). DRIFT DECISION (the hard part):
+  INCREMENTAL ±, not per-keyword recompute — there is exactly ONE KeywordMention row per (keyword, article)
+  (the unique (keyword_id,article_id) index), so re-indexing one article moves article_count by at most ±1
+  and mention_count by (new occ − old); `index_article` captures the article's PRIOR contribution before the
+  delete-then-reinsert, accumulates the new, and applies the net delta (`_apply_keyword_counter_deltas`) — O(article
+  keywords), never a corpus scan, drift-proof by the unique-row property (recompute-per-keyword was rejected:
+  it would scan a hot keyword's full mention set per re-indexed article). Counter writes ride the existing
+  single-writer gate via the index_article session (no second gate). `backfill_keyword_counters` = the one-pass
+  authoritative repair (GROUP BY → bulk update, zeroes mentionless keywords). Self-heal at boot
+  (`ensure_keyword_counter_columns`, wired before ensure_hot_indexes since the index needs the column) ADDs the
+  columns+index then BACKFILLS once from live mentions (the live DB isn't auto-alembic'd); migration
+  a2b3c4d5e6f7 (off the single head e1f2a3b4c5d6) does the same on staged/alembic DBs — both VERIFIED here to
+  produce identical counters on a simulated old-schema DB. tests/test_keyword_counters.py (8): the KILLER
+  assert_counters_match_join (every stored counter == the live GROUP BY) across ingest, re-index-same-article-
+  twice (not doubled), changed-content (decrement to 0), distinct-article-vs-occurrence, backfill-repairs +
+  non-vacuous (a corrupted counter raises), zeroes-orphans, backfill_corpus path; PROVEN non-vacuous (sabotaging
+  the old-contribution decrement fails exactly the two re-index tests). mypy 120≤127 (0 new), ruff F/B clean,
+  58-test keyword/insights/store regression batch + test_migrations single-head + repo invariants green.
+  REMAINING — SLICE 2 (next PR, stacked): rewrite top_terms (corpus-wide path, no days/country) + _supergroup_totals
+  to read the counters (byte-identical equivalence test); trending/trending_windows are inherently observed_on-
+  WINDOWED and map-coverage's keyword path is grouped-by-COUNTRY, so corpus-wide counters DON'T apply there
+  (documented, not forced).
 - **PERF — CACHE THE PER-QUERY ANALYSIS ENDPOINTS (perf workstream, field report 2026-06-18; branch
   claude/perf-graph-assoc-cache, draft PR onto 0.09):** /api/insights/associations (76s) + /graph (103s)
   are whole-corpus co-occurrence/PMI (genuinely heavy, not a simple pathology), explored ON-DEMAND by term.

@@ -724,6 +724,31 @@ class Keyword(Base):
     # truth -- this records the X (PRODUCT_SYNTHESIS §8).
     extractor: Mapped[str | None] = mapped_column(String(40))
 
+    # Denormalised corpus-wide counters maintained AT INDEX TIME (the one
+    # src/analytics/store.py chokepoint), so the hot keyword aggregations
+    # (top_terms, super-groups) read an indexed counter instead of joining +
+    # GROUP BY-ing the 800k+-row keyword_mentions table -- the structural cold-cost
+    # win of the perf workstream (field report 2026-06-18: a GROUP BY of every
+    # keyword over every mention dragged whole article pages through the SQLCipher
+    # codec). These are HONEST COUNTS, never a score:
+    #   * mention_count = SUM of the per-article occurrence counts (total mentions);
+    #   * article_count = DISTINCT articles mentioning the keyword. There is exactly
+    #     ONE KeywordMention row per (keyword, article) -- the unique
+    #     (keyword_id, article_id) index -- so article_count is also the row count,
+    #     which is why re-indexing one article moves it by at most +/-1 (the
+    #     incremental maintenance is drift-proof and O(article), never a corpus scan).
+    # server_default="0" backfills existing rows when the column is self-healed in
+    # (an ALTER TABLE ADD COLUMN that is NOT NULL needs a default); the boot self-heal
+    # and the migration then populate the real values from the live mentions. The
+    # backfill is the authoritative repair; tests assert counter == the live GROUP BY
+    # after ingest AND re-index.
+    mention_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    article_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
     # Relationships
     category = relationship("KeywordCategory", back_populates="keywords")
     articles = relationship("Article", secondary=article_keyword_association, lazy="dynamic")
@@ -737,6 +762,10 @@ class Keyword(Base):
         Index("idx_keyword_frequency", "frequency"),
         Index("idx_keyword_is_ngram", "is_ngram"),
         Index("idx_keyword_is_entity", "is_entity"),
+        # Ordered scan for the corpus-wide top-N by mentions (top_terms, the hot
+        # Home grouped view) -- an index-only ORDER BY mention_count DESC LIMIT,
+        # no keyword_mentions join. Mirrored in the boot self-heal + migration.
+        Index("idx_keyword_mention_count", "mention_count"),
     )
 
     def __repr__(self):
