@@ -864,6 +864,28 @@ ruling, a contingency, or a deliberate-omission note.
   Net-new located ≈54 + ~70 provenance upgrades. (The Wikidata generator run for
   the 73 named gaps is still the big remaining lever; this closes the
   title-evident gap that needed no network.)
+  **DEMONYM/NAME PASS — 2ND BATCH SHIPPED 2026-06-17 (maintainer flagged "there are still
+  sources with country names in their names but no country assigned"):** a fresh scan
+  confirmed the `(Country)`-SUFFIX gap is still 0 (the regression guard holds), so this is
+  purely the demonym/name case the ledger left to hand-review. Scanned all 1782 uncountried
+  entries for an ISO country full-name (COUNTRY_NAMES) or a curated demonym in the NAME,
+  with the SAME topic/US-org exclusions (history/podcast/project/fund/institute/studies/
+  ChinaFile/Marshall/International…). 37 raw candidates → 11 GENUINE national entities
+  assigned (hand-reviewed, additive 11 `country:` lines, 0 deletions; sources.yml located
+  44.4%→44.7%): India Science Wire→in · Investigative Reporting Denmark (DR)→dk · GOV.UK
+  News + UK Parliament News + Cancer Research UK→gb · Drought Monitor (U.S.) + U.S. Energy
+  Information Administration (EIA) + U.S. Hydrogen Alliance→us · National Museum of Korea→kr
+  · Cofact Thailand→th · Vietnam Fact Check→vn. DELIBERATELY left NULL (honesty, per the
+  standing rules — verified each): every `* Robotics News` (generic content series), all
+  topic/history/academic sites (Late Imperial/Modern China, China Heritage, Ancient Greek *,
+  Medieval Ethiopia, Kingdom of Ghana/Zimbabwe, Mali Empire, * History), and US orgs ABOUT a
+  country (China File/ChinaFile, China Digital Times, 38 North, Alliance for Securing
+  Democracy - Spanish). The 3 genuine US agencies are assigned because the name is
+  unambiguous ("U.S. Energy Information Administration") — labelling a TRUE country is honest
+  (a wrong country is worse than none); the de-US-centring rule forbids fabricated US
+  DEFAULTS, not labelling real US entities. No auto-inference added (the seeder still reads
+  only the explicit `(Country)` suffix; demonym fixes stay hand-curated DATA). 23 catalog/seed
+  tests green.
 - **LIVE-TEST FIELD REPORT #2 (2026-06-11, seven items — facts code-verified;
   implementation queued; proposed order at the end):**
   (1) NETWORK TOGGLE — UI SEMANTICS + CONSENT SHIPPED (T2, invariant #14):
