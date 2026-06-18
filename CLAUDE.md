@@ -1594,6 +1594,16 @@ ruling, a contingency, or a deliberate-omission note.
   test_repo_invariants green. Cumulative this session 431→371 (5 panels: Watches·mailbox·offline-map·
   statistics·models). Non-en AI-drafted, FLAGGED for native review. REMAINING: the Wikipedia/agenda/safety
   panels + the dynamic JS rows (need `t()`) + the ~371 tail.
+  **SLICE 6 SHIPPED 2026-06-17 (draft PR onto 0.09):** the WIKIPEDIA panel's TRACKING half (Settings →
+  Wikipedia: change-tracking + watch-a-page + flagged-changes; the offline-baselines section is the next
+  slice) keyed ×12. +10 keys: the two section headings + the change-tracking intro paragraph (de-tagged
+  `<strong>`/`<em>`) + "use ORES scores" + the offline-baselines pointer hint (de-tagged `<strong>`×2) + the
+  "Watch a page" heading + Watchlist + optional + the long "Watched pages join your corpus…" hint AND its
+  `title` why-these-choices essay (the engine translates titles too) + "Flagged changes"/"flagged only"/
+  "Edition filter" (wiki-lang + dump-lang already excluded from the dropdown-label test as edition data).
+  `--audit-chrome` 371→353; `--min 100` green (1211/1211 ×12); test_repo_invariants green. Cumulative this
+  session 431→353. Non-en AI-drafted, FLAGGED for native review. REMAINING: the Wikipedia offline-baselines
+  section + agenda/safety panels + the dynamic JS rows + the ~353 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent

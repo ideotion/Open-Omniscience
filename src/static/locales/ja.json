@@ -1205,5 +1205,15 @@
   "Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.": "取得した各値は追跡され、オンライン中はその間隔で再取得され、毎回新しいヴィンテージが保存されます(改訂は保持され、上書きされません)。不要なものは無効化または削除してください。",
   "Pull any model tag": "任意のモデルタグを取得",
   "The local language models power Summarize, Translate and Synthesize. This shows what you actually have installed (live from Ollama) and a small suggested list annotated for your hardware. Pick the active model, pull new ones, or remove them — all from here. Newer and better models appear constantly — pull any tag below, or browse": "ローカル言語モデルは要約・翻訳・統合を支えます。ここには実際にインストール済みのもの(Ollama からのライブ)と、ハードウェア向けの注釈付きの小さな推奨リストが表示されます。アクティブなモデルの選択、新規取得、削除がすべてここからできます。より新しく優れたモデルが次々に登場します — 下で任意のタグを取得するか、こちらを参照してください",
-  "Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.": "モデルの取得はネットワーク操作です。Ollama プロセスを通じて平文のインターネット経由でダウンロードされ — このアプリの Tor プロキシ経由ではありません — そのため機内モードでは拒否され、初めてオンラインにするときに同意を求めます。ダウンロードはあなたのマシンで行われ、その後モデルは完全にオフラインで動作します。"
+  "Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.": "モデルの取得はネットワーク操作です。Ollama プロセスを通じて平文のインターネット経由でダウンロードされ — このアプリの Tor プロキシ経由ではありません — そのため機内モードでは拒否され、初めてオンラインにするときに同意を求めます。ダウンロードはあなたのマシンで行われ、その後モデルは完全にオフラインで動作します。",
+  "Wikipedia change-tracking": "Wikipedia の変更追跡",
+  "Track watched pages per language edition (editions are per-language, not per-country). We store one baseline snapshot per page, then only diffs/deltas of new edits — so cosmetic changes cost almost nothing — and flag large / suspicious edits (size delta, revert/blank tags, anonymous, bursts, optional ORES). Candidates are surfaced for you to judge; nothing is labelled \"disinformation\".": "言語版ごとに監視ページを追跡します(版は国別ではなく言語別)。ページごとに基準スナップショットを 1 つ保存し、その後は新しい編集の差分/デルタのみを保存します — そのため表面的な変更はほとんどコストがかかりません — そして大きな/疑わしい編集(サイズ差分、差し戻し/白紙化タグ、匿名、急増、任意の ORES)にフラグを付けます。候補はあなたが判断できるよう提示され、何も「偽情報」とはラベル付けされません。",
+  "use ORES scores": "ORES スコアを使用",
+  "Optional, heavy offline full-text baselines (per-language dumps) are configured further down in this panel — pick an edition from the list and download it. Not needed for the change-tracking above.": "オフライン全文ベースライン(言語ごとのダンプ)は任意かつ大容量で、このパネルのさらに下で設定します — 一覧から版を選んでダウンロードしてください。上記の変更追跡には不要です。",
+  "Watch a page": "ページを監視",
+  "Watchlist": "ウォッチリスト",
+  "optional": "任意",
+  "Flagged changes": "フラグ付きの変更",
+  "flagged only": "フラグ付きのみ",
+  "Edition filter": "版フィルター"
 }
