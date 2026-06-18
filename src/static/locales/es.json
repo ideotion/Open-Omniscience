@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "Carpeta (IMAP)",
   "Max messages": "Mensajes máx.",
   "auto": "automático",
-  "Pull newsletters": "Extraer boletines"
+  "Pull newsletters": "Extraer boletines",
+  "Offline map regions": "Regiones de mapa sin conexión",
+  "Loading regions…": "Cargando regiones…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "Los tamaños son estimaciones: el tamaño exacto se lee del mirror al descargar.",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "Descarga extractos de regiones de OpenStreetMap para uso sin conexión: se gestionan como los volcados de Wikipedia (reanudables, con pausa/reanudación y una cola de descargas). Las regiones se listan de mayor a menor; el tamaño mostrado es una estimación fechada de un catálogo incluido (sin red): el tamaño exacto se lee del mirror al iniciar la descarga. Los continentes provienen de Geofabrik; el planeta entero, del mirror del planeta de OpenStreetMap. Pueden ser muy grandes (un continente, varios GB; el planeta, decenas de GB).",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "Descargar es una acción de red: pasa por el único interruptor de red de esta aplicación, por lo que se rechaza en modo avión y pide tu consentimiento la primera vez que te conectas. La descarga se ejecuta como tarea en segundo plano (solo la red de esta aplicación, nunca tu dispositivo ni otras apps)."
 }

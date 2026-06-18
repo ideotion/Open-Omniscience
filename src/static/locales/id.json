@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "Folder (IMAP)",
   "Max messages": "Pesan maks.",
   "auto": "otomatis",
-  "Pull newsletters": "Tarik buletin"
+  "Pull newsletters": "Tarik buletin",
+  "Offline map regions": "Wilayah peta luring",
+  "Loading regions…": "Memuat wilayah…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "Ukuran adalah perkiraan — ukuran persis dibaca dari mirror saat mengunduh.",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "Unduh ekstrak wilayah OpenStreetMap untuk penggunaan luring — dikelola seperti dump Wikipedia (dapat dilanjutkan, dengan jeda/lanjutkan, dan antrean unduhan). Wilayah diurutkan dari yang terbesar; ukuran yang ditampilkan adalah perkiraan bertanggal dari katalog bawaan (tanpa jaringan) — ukuran persis dibaca dari mirror saat unduhan dimulai. Benua berasal dari Geofabrik; seluruh planet dari mirror planet OpenStreetMap. Ini bisa sangat besar (satu benua beberapa GB; planet puluhan GB).",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "Mengunduh adalah tindakan jaringan: ia melewati satu-satunya sakelar jaringan aplikasi ini, jadi ditolak saat mode pesawat aktif dan meminta persetujuan Anda saat pertama kali daring. Unduhan berjalan sebagai tugas latar belakang (hanya jaringan aplikasi ini — tidak pernah perangkat Anda atau aplikasi lain)."
 }

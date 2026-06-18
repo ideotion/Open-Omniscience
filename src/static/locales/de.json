@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "Ordner (IMAP)",
   "Max messages": "Max. Nachrichten",
   "auto": "automatisch",
-  "Pull newsletters": "Newsletter abrufen"
+  "Pull newsletters": "Newsletter abrufen",
+  "Offline map regions": "Offline-Kartenregionen",
+  "Loading regions…": "Regionen werden geladen…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "Größen sind Schätzungen — die genaue Größe wird beim Download vom Mirror gelesen.",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "OpenStreetMap-Regionsauszüge zur Offline-Nutzung herunterladen — verwaltet wie die Wikipedia-Dumps (fortsetzbar, mit Pause/Fortsetzen und einer Download-Warteschlange). Regionen werden zuerst nach Größe gelistet; die angezeigte Größe ist eine datierte Schätzung aus einem mitgelieferten Katalog (kein Netzwerk) — die genaue Größe wird beim Start des Downloads vom Mirror gelesen. Kontinente stammen von Geofabrik, der ganze Planet vom OpenStreetMap-Planet-Mirror. Diese können sehr groß sein (ein Kontinent mehrere GB; der Planet zig GB).",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "Das Herunterladen ist eine Netzwerkaktion: Es läuft über den einen Netzwerkschalter dieser App, wird also im Flugmodus abgelehnt und fragt beim ersten Online-Gehen nach Ihrer Zustimmung. Der Download läuft als Hintergrundaufgabe (nur das Netzwerk dieser App — niemals Ihr Gerät oder andere Apps)."
 }

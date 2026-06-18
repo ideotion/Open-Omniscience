@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "文件夹 (IMAP)",
   "Max messages": "最大消息数",
   "auto": "自动",
-  "Pull newsletters": "拉取新闻通讯"
+  "Pull newsletters": "拉取新闻通讯",
+  "Offline map regions": "离线地图区域",
+  "Loading regions…": "正在加载区域…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "大小为估算值 — 确切大小在下载时从镜像读取。",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "下载 OpenStreetMap 区域提取数据以供离线使用 — 像 Wikipedia 转储一样管理(可续传，支持暂停/继续，并有下载队列)。区域按从大到小排列；显示的大小是来自内置目录的带日期估算值(无网络)— 确切大小在下载开始时从镜像读取。各大洲来自 Geofabrik；整个地球来自 OpenStreetMap planet 镜像。这些可能非常大(一个大洲数 GB；整个地球数十 GB)。",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "下载是一项网络操作:它经过本应用唯一的网络开关，因此在飞行模式下会被拒绝，并在你首次联网时请求你的同意。下载作为后台任务运行(仅本应用的网络 — 绝不涉及你的设备或其他应用)。"
 }

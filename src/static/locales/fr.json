@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "Dossier (IMAP)",
   "Max messages": "Messages max.",
   "auto": "auto",
-  "Pull newsletters": "Récupérer les infolettres"
+  "Pull newsletters": "Récupérer les infolettres",
+  "Offline map regions": "Régions de carte hors ligne",
+  "Loading regions…": "Chargement des régions…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "Les tailles sont des estimations — la taille exacte est lue depuis le miroir au téléchargement.",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "Téléchargez des extraits de régions OpenStreetMap pour une utilisation hors ligne — gérés comme les vidages Wikipédia (reprenables, avec pause/reprise et une file d'attente de téléchargement). Les régions sont listées des plus grandes aux plus petites ; la taille indiquée est une estimation datée issue d'un catalogue intégré (sans réseau) — la taille exacte est lue depuis le miroir au démarrage du téléchargement. Les continents proviennent de Geofabrik ; la planète entière du miroir planète d'OpenStreetMap. Ils peuvent être très volumineux (un continent fait plusieurs Go ; la planète, des dizaines de Go).",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "Le téléchargement est une action réseau : il passe par l'unique interrupteur réseau de cette application, il est donc refusé en mode avion et demande votre consentement la première fois que vous vous connectez. Le téléchargement s'exécute en tâche de fond (uniquement le réseau de cette application — jamais votre appareil ni d'autres applications)."
 }

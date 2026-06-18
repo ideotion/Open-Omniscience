@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "フォルダー (IMAP)",
   "Max messages": "最大メッセージ数",
   "auto": "自動",
-  "Pull newsletters": "ニュースレターを取得"
+  "Pull newsletters": "ニュースレターを取得",
+  "Offline map regions": "オフライン地図の地域",
+  "Loading regions…": "地域を読み込み中…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "サイズは推定値です — 正確なサイズはダウンロード時にミラーから読み取られます。",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "OpenStreetMap の地域抽出データをオフライン用にダウンロードします — Wikipedia ダンプと同様に管理されます(再開可能、一時停止/再開、ダウンロードキュー付き)。地域は大きい順に表示されます。表示サイズは同梱カタログからの日付付き推定値です(ネットワークなし) — 正確なサイズはダウンロード開始時にミラーから読み取られます。大陸は Geofabrik、惑星全体は OpenStreetMap の planet ミラーから取得します。非常に大きい場合があります(大陸で数 GB、惑星全体で数十 GB)。",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "ダウンロードはネットワーク操作です。このアプリの唯一のネットワークスイッチを通るため、機内モードでは拒否され、初めてオンラインにするときに同意を求めます。ダウンロードはバックグラウンドジョブとして実行されます(このアプリのネットワークのみ — あなたのデバイスや他のアプリは決して使いません)。"
 }

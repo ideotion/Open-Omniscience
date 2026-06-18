@@ -1184,5 +1184,10 @@
   "Folder (IMAP)": "Папка (IMAP)",
   "Max messages": "Макс. сообщений",
   "auto": "авто",
-  "Pull newsletters": "Загрузить рассылки"
+  "Pull newsletters": "Загрузить рассылки",
+  "Offline map regions": "Регионы офлайн-карты",
+  "Loading regions…": "Загрузка регионов…",
+  "Sizes are estimates — the exact size is read from the mirror on download.": "Размеры приблизительны — точный размер считывается с зеркала при загрузке.",
+  "Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).": "Скачивайте выгрузки регионов OpenStreetMap для офлайн-использования — управляются как дампы Википедии (с возобновлением, паузой/продолжением и очередью загрузок). Регионы перечислены от крупнейших; показанный размер — датированная оценка из встроенного каталога (без сети) — точный размер считывается с зеркала при старте загрузки. Континенты берутся с Geofabrik; вся планета — с зеркала планеты OpenStreetMap. Они могут быть очень большими (континент — несколько ГБ; планета — десятки ГБ).",
+  "Downloading is a network action: it goes through this app's one network switch, so it is refused while airplane mode is on and asks for your consent the first time you go online. The download runs as a background job (this app's network only — never your device or other apps).": "Загрузка — это сетевое действие: она проходит через единственный сетевой переключатель этого приложения, поэтому отклоняется в режиме полёта и запрашивает ваше согласие при первом выходе в сеть. Загрузка выполняется как фоновая задача (только сеть этого приложения — никогда ваше устройство или другие приложения)."
 }
