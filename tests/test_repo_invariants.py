@@ -283,6 +283,24 @@ def test_llm_catalog_freshness():
     )
 
 
+def test_llm_prompt_editor_is_prefilled_copyable_and_default_aware():
+    """Settings → Models prompt editor (maintainer ask 2026-06-18): boxes show the whole
+    prompt PRE-FILLED with the effective text, are copyable, auto-grow, and saving a box
+    still equal to the default clears the override (clean provenance). Browser-unverified —
+    this pins the wiring so it can't silently regress."""
+    src = _ui_source()
+    # pre-fill the box with the effective prompt (override OR the built-in default)
+    assert "|| _llmPromptDefaults[k]" in src, "prompt boxes must be PRE-FILLED with the default"
+    # auto-size to show the whole prompt + a per-prompt Copy button
+    assert "_autoGrowPrompt(" in src, "prompt boxes must auto-grow to show the whole prompt"
+    assert "function copyLlmPrompt(" in src and "copyLlmPrompt('summary'" in src, (
+        "each prompt needs a Copy button wired to copyLlmPrompt"
+    )
+    assert "resize:vertical" in src, "prompt textareas must be user-resizable"
+    # saving a box that still equals the default stores "" (keeps provenance "default")
+    assert "_promptOut" in src, "save must send '' when the box still equals the default"
+
+
 def test_ui_invariants():
     """Maintainer-ruled UI invariants (see CLAUDE.md). These regressed once
     between sessions; now they fail CI instead of relying on memory."""
