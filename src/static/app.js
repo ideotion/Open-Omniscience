@@ -885,7 +885,7 @@
       indices: loadIndices,
       markets: loadMarkets,
       insights: loadInsights,
-      timemap: loadTimemap,
+      timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: loadLaw,
       agenda: loadAgenda,
       library: () => { loadCoverage(); },    // stats handled by the live poller (startLive)
@@ -8042,6 +8042,15 @@
       applyTmapVB(); wireTmapDrag(); wireTmapWheel();
     }
 
+    // RETIRED (slice 5b): the standalone temporal map's UI panel was removed and
+    // the Map tab now routes to loadOoMapCoverage (the unified ooMap absorbs the
+    // choropleth + signals layer + time slider + click-detail). These temporal-only
+    // functions (loadTimemap / renderTimemap / buildTmap* / showTmapDetail /
+    // tmapNearby / the onTmap* + zoom/reset/play/mentions handlers / wireTmap* /
+    // tmap*Prefs / the TMAP state) are now UNREACHABLE dead code — they null-guard on
+    // the removed #tmap-* elements. Left in place pending a browser-verified deletion
+    // cleanup; the SHARED helpers kindColor / TMAP_KINDS / fmtYear / fmtDate / dateToT
+    // / TMAP_NEAR_DEG / tmapFindCoverage STAY (ooMap reuses them).
     async function loadTimemap() {
       loadOoMapCoverage();                         // the ooMap choropleth (independent of the temporal layer)
       if (!_tmapPrefsLoaded) { _tmapPrefsLoaded = true; tmapRestorePrefs(); }  // restore once, before reading controls
