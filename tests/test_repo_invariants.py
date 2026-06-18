@@ -2370,3 +2370,18 @@ def test_super_ring_ui():
     assert "/api/insights/rings" in src, "loadSuperGroups must fetch the rings list"
     assert "function sgAddRing" in src, "the add-ring handler must exist"
     assert "rings: [ring]" in src, "add-ring must POST a ring member (not a family normalized)"
+
+
+def test_startup_seeds_the_source_catalog_at_unlock():
+    """Data collection is the heart of the project, so the app MUST come up with
+    its source catalog. An ENCRYPTED store (the default) is unlocked via the web,
+    which runs run_deferred_startup — NOT main(); main() runs while the store is
+    still locked, so its seed call never reaches an encrypted catalog. Field log
+    2026-06-18 caught exactly this: an encrypted install came up with ~1 source
+    and nothing to scrape. Guard that run_deferred_startup seeds sources."""
+    main_src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    deferred = main_src.split("def run_deferred_startup", 1)[1].split("\ndef ", 1)[0]
+    assert "seed_default_sources" in deferred, (
+        "run_deferred_startup must seed the source catalog (encrypted stores seed at "
+        "unlock, not in main()) — otherwise an encrypted install has nothing to collect"
+    )
