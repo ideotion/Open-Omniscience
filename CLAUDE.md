@@ -1647,6 +1647,14 @@ ruling, a contingency, or a deliberate-omission note.
   the `imported: true` flag (not a `category:"imported"` literal); updated both assertions to match the
   merged code (test-only, intent preserved). Cumulative this session 431→312 (10 slices). REMAINING: the
   dynamic JS rows (need `t()` + browser click-through) + the ~312 scattered tail.
+  **SLICE 11 SHIPPED 2026-06-17 (draft PR onto 0.09):** the COLLECT Settings panel (scheduler + manual + batch
+  ingest) keyed ×12 — CORRECTS the earlier "remaining is dynamic-JS" read: a classification pass found 265 of
+  the 312 remaining audit strings are STILL static index.html (zero-risk keyable), 0 are app.js-only, 47 in
+  reader/other files. +26 keys (all clean single-text-node labels/buttons + 3 honesty paragraphs: the
+  collection-speed concurrency title, the recursive-crawl bound, the batch-ingest intro — no HTML edits needed,
+  no inline tags). `--audit-chrome` 312→286; `--min 100` green (1263/1263 ×12); test_repo_invariants 63 passed.
+  Cumulative this session 431→286 (11 slices). REMAINING static clusters (per the classification): Insights tab
+  (~51), Markets (~35), Sources Settings (~23), integrity/law/search/timemap tabs + the reader/other files (47).
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent
