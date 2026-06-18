@@ -1170,5 +1170,19 @@
   "Add watch": "Ajouter une veille",
   "Check now": "Vérifier maintenant",
   "Run the engine now (it also runs after every collection pass)": "Lancer le moteur maintenant (il s'exécute aussi après chaque passe de collecte)",
-  "Floods in the region": "Inondations dans la région"
+  "Floods in the region": "Inondations dans la région",
+  "Choose .eml files to import": "Choisir les fichiers .eml à importer",
+  "Pull from a mailbox (IMAP/POP3)": "Récupérer depuis une boîte mail (IMAP/POP3)",
+  "Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message is retained, and tracking links are de-toxed and never followed.": "Récupérez des infolettres en direct depuis une boîte mail au lieu d'exporter les fichiers un par un. Chaque message suit le même chemin d'anonymisation à l'importation que l'import de fichiers — le destinataire n'est jamais conservé, aucun message brut n'est retenu, et les liens de pistage sont détoxifiés et jamais suivis.",
+  "This is a network action.": "Ceci est une action réseau.",
+  "It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.": "Elle est refusée en mode avion et se connecte directement à votre fournisseur de messagerie via TLS (révélant votre IP à ce fournisseur, comme tout client mail) — elle n'est pas acheminée via Tor. Les identifiants servent à cette seule récupération et ne sont pas conservés.",
+  "Protocol": "Protocole",
+  "Host": "Hôte",
+  "Port": "Port",
+  "User": "Utilisateur",
+  "Password": "Mot de passe",
+  "Folder (IMAP)": "Dossier (IMAP)",
+  "Max messages": "Messages max.",
+  "auto": "auto",
+  "Pull newsletters": "Récupérer les infolettres"
 }

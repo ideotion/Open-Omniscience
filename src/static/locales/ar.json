@@ -1170,5 +1170,19 @@
   "Add watch": "إضافة مراقبة",
   "Check now": "تحقق الآن",
   "Run the engine now (it also runs after every collection pass)": "شغّل المحرك الآن (يعمل أيضًا بعد كل دورة جمع)",
-  "Floods in the region": "فيضانات في المنطقة"
+  "Floods in the region": "فيضانات في المنطقة",
+  "Choose .eml files to import": "اختر ملفات .eml للاستيراد",
+  "Pull from a mailbox (IMAP/POP3)": "السحب من صندوق بريد (IMAP/POP3)",
+  "Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message is retained, and tracking links are de-toxed and never followed.": "اسحب النشرات مباشرة من صندوق بريد بدلاً من تصدير الملفات واحدًا تلو الآخر. تمر كل رسالة عبر مسار إخفاء الهوية عند الاستيراد نفسه الخاص باستيراد الملفات — لا يُخزَّن المستلِم أبدًا، ولا يُحتفَظ بأي رسالة خام، وتُنقَّى روابط التتبّع ولا تُتَّبع أبدًا.",
+  "This is a network action.": "هذا إجراء يستخدم الشبكة.",
+  "It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.": "يُرفَض في وضع الطيران، ويتصل بمزوّد بريدك مباشرةً عبر TLS (كاشفًا عنوان IP الخاص بك لذلك المزوّد، مثل أي عميل بريد) — وهو لا يمر عبر Tor. تُستخدَم بيانات الاعتماد لعملية السحب هذه فقط ولا تُخزَّن.",
+  "Protocol": "البروتوكول",
+  "Host": "المضيف",
+  "Port": "المنفذ",
+  "User": "المستخدم",
+  "Password": "كلمة المرور",
+  "Folder (IMAP)": "المجلد (IMAP)",
+  "Max messages": "أقصى عدد للرسائل",
+  "auto": "تلقائي",
+  "Pull newsletters": "اسحب النشرات"
 }

@@ -1557,6 +1557,15 @@ ruling, a contingency, or a deliberate-omission note.
   (the dynamic `loadWatches` rows) still need `t()` and stay English for now. `--audit-chrome` 431→417;
   `--min 100` green (1166/1166 ×12); test_repo_invariants green. REMAINING: the other recently-shipped
   panels (Statistics/Models/Newsletters/Offline-map) + the dynamic `loadWatches` rows + the ~417 tail.
+  **SLICE 2 SHIPPED 2026-06-17 (draft PR onto 0.09):** the live-MAILBOX sub-panel (Settings → Newsletters,
+  the IMAP/POP3 pull, ruling #11 — the feature the maintainer is eager to test) is now keyed ×12 (the
+  .eml-import half was already keyed). +14 keys ×12: the "Pull from a mailbox (IMAP/POP3)" heading + its
+  two honesty paragraphs (the live-pull description + the network/TLS/not-Tor/creds-not-stored warning —
+  its inline `<em>not</em>` dropped so it keys as ONE sentence, same convention as slice 1), the form
+  labels (Protocol/Host/Port/User/Password/Folder (IMAP)/Max messages), the "auto" port placeholder, and
+  the "Pull newsletters" button. `--audit-chrome` 417→402; `--min 100` green (1180/1180 ×12);
+  test_repo_invariants green. Non-en AI-drafted, FLAGGED for native review. REMAINING: Statistics/Models/
+  Offline-map panels + the dynamic JS rows + the ~402 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent

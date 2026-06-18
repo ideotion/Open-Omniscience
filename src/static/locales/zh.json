@@ -1170,5 +1170,19 @@
   "Add watch": "添加监视",
   "Check now": "立即检查",
   "Run the engine now (it also runs after every collection pass)": "立即运行引擎(每次采集后也会运行)",
-  "Floods in the region": "该地区的洪水"
+  "Floods in the region": "该地区的洪水",
+  "Choose .eml files to import": "选择要导入的 .eml 文件",
+  "Pull from a mailbox (IMAP/POP3)": "从邮箱拉取 (IMAP/POP3)",
+  "Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message is retained, and tracking links are de-toxed and never followed.": "直接从邮箱实时拉取新闻通讯，而不必逐个导出文件。每条消息都经过与文件导入相同的导入即匿名化流程 — 绝不存储收件人，不保留任何原始消息，追踪链接会被净化且绝不被访问。",
+  "This is a network action.": "这是一项网络操作。",
+  "It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.": "在飞行模式下会被拒绝，并通过 TLS 直接连接到你的邮件提供商(像任何邮件客户端一样向该提供商暴露你的 IP)— 不经过 Tor。凭据仅用于这一次拉取，不会被存储。",
+  "Protocol": "协议",
+  "Host": "主机",
+  "Port": "端口",
+  "User": "用户",
+  "Password": "密码",
+  "Folder (IMAP)": "文件夹 (IMAP)",
+  "Max messages": "最大消息数",
+  "auto": "自动",
+  "Pull newsletters": "拉取新闻通讯"
 }
