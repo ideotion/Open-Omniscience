@@ -42,6 +42,10 @@ def _seed_keyword(s, term, normalized, *, article_ids):
         frequency=0,
         is_entity=True,
         entity_type="org",
+        # Denormalised counters maintained at index time in production: one count=1
+        # mention per article_id -> mention_count = total, article_count = distinct.
+        mention_count=len(article_ids),
+        article_count=len(set(article_ids)),
     )
     s.add(k)
     s.flush()

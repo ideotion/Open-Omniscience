@@ -3173,10 +3173,23 @@ ruling, a contingency, or a deliberate-omission note.
   non-vacuous (a corrupted counter raises), zeroes-orphans, backfill_corpus path; PROVEN non-vacuous (sabotaging
   the old-contribution decrement fails exactly the two re-index tests). mypy 120≤127 (0 new), ruff F/B clean,
   58-test keyword/insights/store regression batch + test_migrations single-head + repo invariants green.
-  REMAINING — SLICE 2 (next PR, stacked): rewrite top_terms (corpus-wide path, no days/country) + _supergroup_totals
-  to read the counters (byte-identical equivalence test); trending/trending_windows are inherently observed_on-
-  WINDOWED and map-coverage's keyword path is grouped-by-COUNTRY, so corpus-wide counters DON'T apply there
-  (documented, not forced).
+  SLICE 1 MERGED (#392).
+  **SLICE 2 SHIPPED (the actual perf win; branch claude/nice-sagan-tompbw-s2 stacked on slice 1, draft PR onto
+  0.09; backend VERIFIED py3.13):** `top_terms` CORPUS-WIDE path (no days/country — the hot `/api/insights/top?
+  group=true` Home view + the layered_graph family/supergroup levels) now reads `Keyword.mention_count`/
+  `article_count` via the indexed ORDER-BY scan (`idx_keyword_mention_count`, `mention_count>0` reproduces the
+  inner-join "has mentions") instead of joining + GROUP BY-ing keyword_mentions; the WINDOWED path (days/country)
+  KEEPS the mention aggregation (counters are corpus-wide, can't serve a scoped SUM). `_supergroup_totals` (the
+  prior perf fix already resolved member ids first) now reads the counters off those ids — NO residual mention
+  join/scan (a hot member like "government" no longer scans its full mention set). HONEST SCOPE: trending/
+  trending_windows are inherently observed_on-WINDOWED and map-coverage's keyword path is grouped-by-COUNTRY, so
+  the corpus-wide counters DON'T apply there — left on the join (documented, not forced). Byte-identical for any
+  CONSISTENT corpus (counters==join by the slice-1 invariant): tests/test_keyword_counter_queries.py (6) compares
+  the counter-based top_terms to an inline join reference (values + tie-free ordering + kind filter +
+  excludes-no-mentions + grouped families + windowed-path-still-scopes). FIXTURE FIX (the one non-obvious cost of
+  denormalisation): test_supergroups/test_super_rings/test_keyword_equivalence seeded KeywordMention rows directly
+  WITHOUT counters (a state index_article never produces) → made consistent (inline counters or a backfill call,
+  mirroring production). mypy 120≤127 (0 new), ruff F/B clean. The denormalised-counters perf lever is COMPLETE.
 - **PERF — CACHE THE PER-QUERY ANALYSIS ENDPOINTS (perf workstream, field report 2026-06-18; branch
   claude/perf-graph-assoc-cache, draft PR onto 0.09):** /api/insights/associations (76s) + /graph (103s)
   are whole-corpus co-occurrence/PMI (genuinely heavy, not a simple pathology), explored ON-DEMAND by term.

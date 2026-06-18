@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.analytics import equivalence as E
 from src.analytics import queries as q
+from src.analytics.store import backfill_keyword_counters
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
 # --- pure module: merge_equivalents / group_rows ----------------------------- #
@@ -145,6 +146,9 @@ def _seed_election(s, *, fr_language="fr"):
         s.add(KeywordMention(keyword_id=elec_fr.id, article_id=a.id, count=3, observed_on=date.today()))
     s.add(KeywordMention(keyword_id=weather.id, article_id=arts[0].id, count=1, observed_on=date.today()))
     s.commit()
+    # top_terms now reads the denormalised Keyword counters (slice 2); populate them
+    # from the seeded mentions exactly as index_article does in production.
+    backfill_keyword_counters(s)
 
 
 def test_top_terms_grouped_merges_cross_language_ring():
