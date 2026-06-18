@@ -3158,9 +3158,14 @@
       const el = $("models-bk-status"); if (!el) return;
       try {
         const d = await api("/api/backup/models");
-        el.textContent = d.store_present
-          ? `${d.models.length} ${t("model(s)")} · ${_fmtBytes(d.total_bytes)} · ${d.store}`
-          : t("No local Ollama model store found.");
+        if (d.models && d.models.length) {
+          el.textContent = `${d.models.length} ${t("model(s)")} · ${_fmtBytes(d.total_bytes)} · ${d.store}`;
+        } else {
+          // Degrade LOUDLY: a protected store (the Linux ollama-user service dir) or an
+          // empty one returns an actionable hint (set OLLAMA_MODELS) — show it, never a
+          // bare "none" that hides WHY the models can't be found.
+          el.textContent = d.hint || t("No local Ollama model store found.");
+        }
       } catch (e) { el.textContent = e.message; }
     }
     async function modelsBackupExport(btn) {

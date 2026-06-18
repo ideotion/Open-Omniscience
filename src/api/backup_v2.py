@@ -212,17 +212,14 @@ def merge_batches(limit: int = 20) -> dict:
 # --------------------------------------------------------------------------- #
 @router.get("/models")
 def models_status() -> dict:
-    """Is the local Ollama model store present, and what's in it (sizes)?"""
-    from src.backup.ollama_models import default_store, list_models
+    """Is the local Ollama model store present, and what's in it (sizes)?
 
-    store = default_store()
-    models = list_models(store) if store.exists() else []
-    return {
-        "store": str(store),
-        "store_present": store.exists(),
-        "models": [m.to_dict() for m in models],
-        "total_bytes": sum(m.bytes for m in models),
-    }
+    Detects the real store across locations (incl. the protected Linux systemd
+    service dir) and, when models can't be reached, returns an actionable ``hint``
+    so the backup degrades LOUDLY instead of silently reporting nothing."""
+    from src.backup.ollama_models import store_status
+
+    return store_status()
 
 
 class ModelsExportBody(BaseModel):
