@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "Геометрия карты недоступна.",
   "Could not load coverage:": "Не удалось загрузить охват:",
   "sources have no country and are not shown on the map.": "источников без страны не показаны на карте.",
-  "No located sources yet — add sources with a country, or collect some articles.": "Пока нет источников с локацией — добавьте источники со страной или соберите статьи."
+  "No located sources yet — add sources with a country, or collect some articles.": "Пока нет источников с локацией — добавьте источники со страной или соберите статьи.",
+  "Keyword mentions": "Упоминания ключевых слов",
+  "tone": "тон",
+  "Map dimension": "Измерение карты",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "без страны — учтены, не на карте.",
+  "Catalogued sources based in each country — counts only, no score.": "Каталогизированные источники, базирующиеся в каждой стране, — только подсчёты, без оценки.",
+  "Articles collected from sources in each country — counts only, no score.": "Статьи, собранные из источников каждой страны, — только подсчёты, без оценки.",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "Упоминания ключевых слов в статьях из источников каждой страны — только подсчёты, без оценки.",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Средний тон статей (VADER) — только английский словарь, ненадёжно для других языков; оцениваются только англоязычные статьи. Выведено, но не вердикт."
 }

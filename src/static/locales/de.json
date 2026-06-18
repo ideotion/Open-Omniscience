@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "Kartengeometrie nicht verfügbar.",
   "Could not load coverage:": "Abdeckung konnte nicht geladen werden:",
   "sources have no country and are not shown on the map.": "Quellen haben kein Land und werden nicht auf der Karte angezeigt.",
-  "No located sources yet — add sources with a country, or collect some articles.": "Noch keine verorteten Quellen — fügen Sie Quellen mit einem Land hinzu oder sammeln Sie Artikel."
+  "No located sources yet — add sources with a country, or collect some articles.": "Noch keine verorteten Quellen — fügen Sie Quellen mit einem Land hinzu oder sammeln Sie Artikel.",
+  "Keyword mentions": "Schlüsselwort-Erwähnungen",
+  "tone": "Tonalität",
+  "Map dimension": "Kartendimension",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "ohne Land — gezählt, nicht kartiert.",
+  "Catalogued sources based in each country — counts only, no score.": "Katalogisierte Quellen mit Sitz im jeweiligen Land — nur Zählungen, kein Score.",
+  "Articles collected from sources in each country — counts only, no score.": "Aus Quellen im jeweiligen Land gesammelte Artikel — nur Zählungen, kein Score.",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "Schlüsselwort-Erwähnungen in Artikeln aus Quellen im jeweiligen Land — nur Zählungen, kein Score.",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Mittlere Artikel-Tonalität (VADER) — nur englisches Lexikon, für andere Sprachen unzuverlässig; nur englische Artikel werden bewertet. Abgeleitet, niemals ein Urteil."
 }

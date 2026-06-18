@@ -7096,6 +7096,14 @@
       const pct = Math.round(12 + Math.max(0, Math.min(1, t)) * 88);
       return `color-mix(in srgb, var(--accent) ${pct}%, var(--panel2))`;
     }
+    // Diverging fill for SIGNED data (e.g. mean tone): t in [-1,1] -> a
+    // theme-aware red(--err)..panel..green(--ok) ramp (negative left, positive
+    // right). Signed data must never ride a one-sided sequential scale.
+    function _ooMapFillDiverging(t) {
+      const m = Math.max(-1, Math.min(1, t));
+      const pct = Math.round(10 + Math.abs(m) * 80);
+      return `color-mix(in srgb, ${m < 0 ? "var(--err)" : "var(--ok)"} ${pct}%, var(--panel2))`;
+    }
 
     // The choropleth scale is LINEAR by default (faithful to magnitude; it
     // surfaces real skew rather than flattening it). opts:
@@ -7112,7 +7120,11 @@
       const nums = Object.values(values).filter(v => typeof v === "number" && isFinite(v));
       const maxV = nums.length ? Math.max(...nums) : 0, minV = nums.length ? Math.min(...nums) : 0;
       const span = maxV - minV;
-      const norm = v => span > 0 ? (v - minV) / span : (v > 0 ? 1 : 0);
+      const diverging = opts.scale === "diverging";
+      const maxAbs = nums.length ? Math.max(...nums.map(v => Math.abs(v))) : 0;
+      const fillFor = v => diverging
+        ? _ooMapFillDiverging(maxAbs > 0 ? v / maxAbs : 0)
+        : _ooMapFill(span > 0 ? (v - minV) / span : (v > 0 ? 1 : 0));
       const vlabel = (iso, v) => opts.valueLabel ? opts.valueLabel(iso, v) : `${v} ${opts.unit || ""}`.trim();
 
       const W = MAP_W, H = MAP_H;
@@ -7126,7 +7138,7 @@
         const code = iso.toLowerCase(), v = values[code];
         const has = typeof v === "number" && isFinite(v);
         const d = _ooMapPath(c.rings); if (!d) continue;
-        const fill = has ? _ooMapFill(norm(v)) : "url(#oomap-nodata)";
+        const fill = has ? fillFor(v) : "url(#oomap-nodata)";
         const title = `${c.name} — ${has ? vlabel(code, v) : t("no data")}`;
         paths += `<path d="${d}" fill="${fill}" stroke="var(--border)" stroke-width="0.3" data-iso="${esc(code)}"`
           + `${opts.onCountry ? ' style="cursor:pointer"' : ""}><title>${esc(title)}</title></path>`;
@@ -7137,7 +7149,7 @@
       let pts = "";
       for (const p of pointRows) {
         const x = lon2x(p.lon).toFixed(1), y = lat2y(p.lat).toFixed(1), iso = (p.iso2 || "").toLowerCase();
-        pts += `<circle cx="${x}" cy="${y}" r="2.4" fill="${_ooMapFill(norm(p.value))}" stroke="var(--accent)" stroke-width="0.5" `
+        pts += `<circle cx="${x}" cy="${y}" r="2.4" fill="${fillFor(p.value)}" stroke="var(--accent)" stroke-width="0.5" `
           + `data-iso="${esc(iso)}"${opts.onCountry ? ' style="cursor:pointer"' : ""}>`
           + `<title>${esc((p.label || p.iso2 || "") + " — " + vlabel(iso, p.value) + " " + t("(shown as a point)"))}</title></circle>`;
       }
@@ -7147,6 +7159,24 @@
         .sort((a, b) => b[1] - a[1]).slice(0, 8);
       const srTop = top.map(r => `<li>${esc((names[r[0]] || r[0].toUpperCase()) + ": " + vlabel(r[0], r[1]))}</li>`).join("");
       const aria = opts.aria || opts.label || "map";
+
+      // In-map dimension picker (the "controls inside the map" convention) — the
+      // active dimension paints the choropleth; switching re-colours it.
+      const pickerHtml = (opts.dimensions && opts.dimensions.length > 1) ? `
+        <div class="oomap-dims" role="group" aria-label="${esc(t("Map dimension"))}"
+             style="position:absolute;top:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;z-index:5;max-width:62%">
+          ${opts.dimensions.map(dm => `<button class="tiny secondary" data-oomap-dim="${esc(dm.id)}" aria-pressed="${dm.id === opts.activeDim ? "true" : "false"}"`
+            + `${dm.id === opts.activeDim ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(dm.label)}</button>`).join("")}
+        </div>` : "";
+      // Legend: a sequential ramp for counts, a diverging red..panel..green ramp
+      // for signed data (the 0 sits at the centre stop).
+      const legendBar = diverging
+        ? `<span class="muted">${esc(fmtNum(minV))}</span>
+           <span style="width:110px;height:10px;border:1px solid var(--border);border-radius:3px;background:linear-gradient(to right, ${_ooMapFillDiverging(-1)}, ${_ooMapFillDiverging(0)}, ${_ooMapFillDiverging(1)})"></span>
+           <span class="muted">${esc(fmtNum(maxV))}${opts.unit ? " " + esc(opts.unit) : ""}</span>`
+        : `<span class="muted">${esc(fmtNum(minV))}</span>
+           <span style="width:90px;height:10px;border:1px solid var(--border);border-radius:3px;background:linear-gradient(to right, ${_ooMapFill(0)}, ${_ooMapFill(1)})"></span>
+           <span class="muted">${esc(fmtNum(maxV))}${opts.unit ? " " + esc(opts.unit) : ""}</span>`;
 
       host.innerHTML = `<div class="oomap-wrap" style="position:relative">
         <svg id="oo-choro" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(aria)}"
@@ -7161,15 +7191,12 @@
           <button class="tiny secondary" data-oomap="reset" title="${esc(t("Reset view"))}">⟲</button>
           <button class="tiny secondary" data-oomap="big" title="${esc(t("Enlarge the map"))}">⛶</button>
         </div>
+        ${pickerHtml}
         <ul class="sr-only">${srTop}</ul>
       </div>
       <div class="oomap-legend" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px">
         ${opts.label ? `<span>${esc(opts.label)}</span>` : ""}
-        <span style="display:inline-flex;align-items:center;gap:6px">
-          <span class="muted">${esc(fmtNum(minV))}</span>
-          <span style="width:90px;height:10px;border:1px solid var(--border);border-radius:3px;background:linear-gradient(to right, ${_ooMapFill(0)}, ${_ooMapFill(1)})"></span>
-          <span class="muted">${esc(fmtNum(maxV))}${opts.unit ? " " + esc(opts.unit) : ""}</span>
-        </span>
+        <span style="display:inline-flex;align-items:center;gap:6px">${legendBar}</span>
         <span style="display:inline-flex;align-items:center;gap:5px">
           <span style="width:14px;height:10px;border:1px solid var(--border);background:repeating-linear-gradient(45deg,var(--panel2),var(--panel2) 2px,var(--border) 2px,var(--border) 3px)"></span>
           ${esc(t("no data"))}</span>
@@ -7200,6 +7227,8 @@
         else if (a === "big") { const w = host.querySelector(".oomap-wrap"); if (w) w.classList.toggle("mm-big"); }
         else { vb = { x: 0, y: 0, w: W, h: H }; apply(); }
       }));
+      if (opts && opts.onDimension) host.querySelectorAll("[data-oomap-dim]").forEach(b =>
+        b.addEventListener("click", () => opts.onDimension(b.dataset.oomapDim)));
       svg.addEventListener("wheel", e => {
         e.preventDefault();
         const m = svg.getScreenCTM().inverse(), p = svg.createSVGPoint();
@@ -7223,36 +7252,67 @@
       });
     }
 
-    // Map-tab choropleth: sources-per-country (the FIRST ooMap dimension).
+    // Map-tab choropleth: per-country coverage with a DIMENSION PICKER (slice 3).
+    // The endpoint returns every measure per country in ONE payload, so switching
+    // dimension is instant (no re-fetch) — the picker just re-colours the map.
+    let _ooMapPayload = null, _ooMapDim = "sources";
+    function _ooMapDims() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      return [
+        { id: "sources", label: t("Sources"), unit: t("sources"), scale: "sequential",
+          caveat: t("Catalogued sources based in each country — counts only, no score.") },
+        { id: "articles", label: t("Articles"), unit: t("articles"), scale: "sequential",
+          caveat: t("Articles collected from sources in each country — counts only, no score.") },
+        { id: "keywords", label: t("Keyword mentions"), unit: t("mentions"), scale: "sequential",
+          caveat: t("Keyword mentions in articles from sources in each country — counts only, no score.") },
+        { id: "sentiment", label: t("Mean tone"), unit: t("tone"), scale: "diverging",
+          caveat: t("Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.") },
+      ];
+    }
+    async function _renderOoMapDim() {
+      const host = $("oo-coverage-map"); if (!host || !_ooMapPayload) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const dims = _ooMapDims();
+      const dim = dims.find(d => d.id === _ooMapDim) || dims[0];
+      const rows = _ooMapPayload.by_country || [];
+      const values = {}, names = {}, points = [], rowBy = {};
+      rows.forEach(r => {
+        names[r.country] = r.name; rowBy[r.country] = r;
+        const v = r[dim.id];
+        if (v != null && isFinite(v)) {
+          values[r.country] = v;
+          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: r.name });
+        }
+      });
+      const nWith = Object.keys(values).length;
+      // 'unlocated' is data from sources WITH NO country (only the count dims).
+      const unloc = dim.id === "sentiment" ? 0 : ((_ooMapPayload.unlocated && _ooMapPayload.unlocated[dim.id]) || 0);
+      const aria = `${dim.label} — ${nWith} ${t("countries with data")}.`;
+      const caveat = dim.caveat
+        + (unloc ? `  ${unloc} ${dim.unit} ${t("with no country — counted, not mapped.")}` : "");
+      const fmtV = (iso, v) => dim.id === "sentiment"
+        ? `${(v >= 0 ? "+" : "") + fmtNum(v, 2)} · ${t("n=")}${(rowBy[iso] || {}).sentiment_n || 0}`
+        : `${fmtNum(v)} ${dim.unit}`;
+      await ooMap(host, {
+        values, names, points, aria,
+        scale: dim.scale, label: dim.label, unit: dim.unit,
+        method: _ooMapPayload.method || "", caveat,
+        dimensions: dims.map(d => ({ id: d.id, label: d.label })), activeDim: dim.id,
+        onDimension: id => { _ooMapDim = id; _renderOoMapDim(); },
+        valueLabel: fmtV,
+      });
+    }
     async function loadOoMapCoverage() {
       const host = $("oo-coverage-map"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const d = await api("/api/insights/map-coverage");
-        const rows = d.by_country || [];
-        if (!rows.length) {
+        _ooMapPayload = await api("/api/insights/map-coverage");
+        if (!(_ooMapPayload.by_country || []).length) {
           host.innerHTML = `<div class="muted">${esc(t("No located sources yet — add sources with a country, or collect some articles."))}</div>`;
           return;
         }
-        const values = {}, names = {}, arts = {}, points = [];
-        rows.forEach(r => {
-          values[r.country] = r.sources; names[r.country] = r.name; arts[r.country] = r.articles || 0;
-          if (r.lat != null && r.lon != null) points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: r.sources, label: r.name });
-        });
-        const unloc = (d.unlocated && d.unlocated.sources) || 0;
-        const topRow = rows[0];
-        const aria = `${t("Sources per country")}. ${rows.length} ${t("countries with data")}.`
-          + (topRow ? ` ${t("Most")}: ${topRow.name} (${topRow.sources}).` : "")
-          + (unloc ? ` ${unloc} ${t("sources unlocated")}.` : "");
-        const caveat = (d.caveat || "")
-          + (unloc ? `  ${unloc} ${t("sources have no country and are not shown on the map.")}` : "");
-        await ooMap(host, {
-          values, names, points, aria,
-          label: t("Sources per country"), unit: t("sources"),
-          method: d.method || "", caveat,
-          valueLabel: (iso, v) => `${v} ${t("sources")} · ${arts[iso] || 0} ${t("articles")}`,
-        });
+        await _renderOoMapDim();
       } catch (e) {
         host.innerHTML = `<div class="err">${esc(t("Could not load coverage:") + " " + e.message)}</div>`;
       }

@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "地图几何数据不可用。",
   "Could not load coverage:": "无法加载覆盖数据：",
   "sources have no country and are not shown on the map.": "个来源没有国家，不在地图上显示。",
-  "No located sources yet — add sources with a country, or collect some articles.": "暂无已定位来源——添加带国家的来源，或收集一些文章。"
+  "No located sources yet — add sources with a country, or collect some articles.": "暂无已定位来源——添加带国家的来源，或收集一些文章。",
+  "Keyword mentions": "关键词提及",
+  "tone": "情感倾向",
+  "Map dimension": "地图维度",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "无国家——已计数，未在地图显示。",
+  "Catalogued sources based in each country — counts only, no score.": "编入目录的、位于各国的来源——仅计数，无评分。",
+  "Articles collected from sources in each country — counts only, no score.": "从各国来源收集的文章——仅计数，无评分。",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "各国来源文章中的关键词提及——仅计数，无评分。",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "文章平均情感倾向（VADER）——仅英文词典，对其他语言不可靠；仅对英文文章评分。属推断，而非结论。"
 }

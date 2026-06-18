@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "Map geometry unavailable.",
   "Could not load coverage:": "Could not load coverage:",
   "sources have no country and are not shown on the map.": "sources have no country and are not shown on the map.",
-  "No located sources yet — add sources with a country, or collect some articles.": "No located sources yet — add sources with a country, or collect some articles."
+  "No located sources yet — add sources with a country, or collect some articles.": "No located sources yet — add sources with a country, or collect some articles.",
+  "Keyword mentions": "Keyword mentions",
+  "tone": "tone",
+  "Map dimension": "Map dimension",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "with no country — counted, not mapped.",
+  "Catalogued sources based in each country — counts only, no score.": "Catalogued sources based in each country — counts only, no score.",
+  "Articles collected from sources in each country — counts only, no score.": "Articles collected from sources in each country — counts only, no score.",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "Keyword mentions in articles from sources in each country — counts only, no score.",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict."
 }

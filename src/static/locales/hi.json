@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "मानचित्र ज्यामिति उपलब्ध नहीं है।",
   "Could not load coverage:": "कवरेज लोड नहीं हो सका:",
   "sources have no country and are not shown on the map.": "स्रोतों का कोई देश नहीं है और वे मानचित्र पर नहीं दिखाए जाते।",
-  "No located sources yet — add sources with a country, or collect some articles.": "अभी तक कोई स्थानित स्रोत नहीं — देश वाले स्रोत जोड़ें, या कुछ लेख एकत्र करें।"
+  "No located sources yet — add sources with a country, or collect some articles.": "अभी तक कोई स्थानित स्रोत नहीं — देश वाले स्रोत जोड़ें, या कुछ लेख एकत्र करें।",
+  "Keyword mentions": "कीवर्ड उल्लेख",
+  "tone": "टोन",
+  "Map dimension": "मानचित्र आयाम",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "बिना देश — गिने गए, मानचित्र पर नहीं।",
+  "Catalogued sources based in each country — counts only, no score.": "प्रत्येक देश में स्थित सूचीबद्ध स्रोत — केवल गणना, कोई स्कोर नहीं।",
+  "Articles collected from sources in each country — counts only, no score.": "प्रत्येक देश के स्रोतों से एकत्रित लेख — केवल गणना, कोई स्कोर नहीं।",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "प्रत्येक देश के स्रोतों के लेखों में कीवर्ड उल्लेख — केवल गणना, कोई स्कोर नहीं।",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "लेखों का औसत टोन (VADER) — केवल अंग्रेज़ी शब्दकोश, अन्य भाषाओं के लिए अविश्वसनीय; केवल अंग्रेज़ी लेख स्कोर किए जाते हैं। अनुमानित, कभी निर्णय नहीं।"
 }

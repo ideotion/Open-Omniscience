@@ -39,33 +39,50 @@ def seeded(client):
     distinct article count, so the grouping and the 'unlocated' bucket are both
     exercised deterministically. Depends on ``client`` so the app's startup has
     created the schema (the sibling where/who aggregate tests do the same)."""
-    from src.database.models import Article, Source
+    from src.database.models import Article, Keyword, KeywordMention, Source
     from src.database.session import session_scope
 
-    # (country, n_articles)
-    plan = [(_ZY, 3), (_ZX, 1), (None, 2)]
-    made: dict = {"sources": []}
+    # (country, [sentiment_score per article]) -- None = unscored (no English VADER)
+    plan = [(_ZY, [0.2, 0.5, 0.8]), (_ZX, [0.0]), (None, [None, None])]
+    made: dict = {"sources": [], "keyword": None}
     with session_scope() as s:
-        for i, (cc, n_art) in enumerate(plan):
+        zy_article_ids: list[int] = []
+        for i, (cc, scores) in enumerate(plan):
             src = Source(name=f"CovSeed{i}", domain=f"covseed{i}.example", country=cc)
             s.add(src)
             s.flush()
             made["sources"].append(src.id)
-            for j in range(n_art):
-                s.add(
-                    Article(
-                        url=f"https://covseed{i}.example/{j}",
-                        canonical_url=f"https://covseed{i}.example/{j}",
-                        source_id=src.id,
-                        title=f"cov{i}-{j}",
-                        content="x",
-                        language="en",
-                        hash=f"cov{i}_{j}_" + "0" * 50,
-                    )
+            for j, sc in enumerate(scores):
+                a = Article(
+                    url=f"https://covseed{i}.example/{j}",
+                    canonical_url=f"https://covseed{i}.example/{j}",
+                    source_id=src.id,
+                    title=f"cov{i}-{j}",
+                    content="x",
+                    language="en",
+                    hash=f"cov{i}_{j}_" + "0" * 50,
+                    sentiment_score=sc,
                 )
+                s.add(a)
+                s.flush()
+                if cc == _ZY:
+                    zy_article_ids.append(a.id)
+        # One keyword + two mentions denormalised to country zy (KeywordMention.country
+        # is the SOURCE country, so the keyword dimension needs no Article join). The
+        # unique (keyword_id, article_id) index forces two DISTINCT articles.
+        kw = Keyword(term="covterm", normalized_term="covterm")
+        s.add(kw)
+        s.flush()
+        made["keyword"] = kw.id
+        for aid in zy_article_ids[:2]:
+            s.add(KeywordMention(keyword_id=kw.id, article_id=aid, country=_ZY))
     yield made
     # cleanup so repeated runs stay deterministic
     with session_scope() as s:
+        s.query(KeywordMention).filter(KeywordMention.keyword_id == made["keyword"]).delete(
+            synchronize_session=False
+        )
+        s.query(Keyword).filter(Keyword.id == made["keyword"]).delete(synchronize_session=False)
         s.query(Article).filter(Article.source_id.in_(made["sources"])).delete(
             synchronize_session=False
         )
@@ -97,6 +114,33 @@ def test_source_country_counts_groups_and_buckets(seeded):
     # by_country is ordered by source count (descending) -- an honest ordering.
     counts = [r["sources"] for r in data["by_country"]]
     assert counts == sorted(counts, reverse=True)
+
+
+def test_keywords_and_sentiment_dimensions(seeded):
+    """Slice 3: the extra choropleth dimensions -- keyword mentions (denormalised
+    by source country, no Article join) and mean tone (VADER, over the SCORED
+    subset, with sentiment_n; a country with no scored article reports None)."""
+    from src.analytics import queries as q
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        data = q.source_country_counts(s)
+
+    by = {r["country"]: r for r in data["by_country"]}
+
+    # keyword MENTIONS per source-country (two distinct articles tagged).
+    assert by[_ZY]["keywords"] == 2
+    assert by[_ZX]["keywords"] == 0
+
+    # mean tone over the SCORED subset; sentiment_n discloses that subset size.
+    assert by[_ZY]["sentiment_n"] == 3
+    assert abs(by[_ZY]["sentiment"] - 0.5) < 1e-6  # (0.2 + 0.5 + 0.8) / 3
+    assert by[_ZX]["sentiment_n"] == 1 and abs(by[_ZX]["sentiment"] - 0.0) < 1e-6
+
+    # the tone field is named 'sentiment' -- never a '*score*' key (no composite).
+    for r in data["by_country"]:
+        assert "sentiment" in r and "keywords" in r
+        assert not any("score" in k for k in r)
 
 
 def test_map_coverage_endpoint_enriches_and_is_honest(client, seeded):

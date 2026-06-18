@@ -633,30 +633,53 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
 
 
 def source_country_counts(session) -> dict:
-    """Sources -- and the articles collected from them -- grouped by the source's
-    catalogued country (ISO-2). The FIRST choropleth dimension (ooMap): WHERE the
-    corpus's coverage originates.
+    """Per-country choropleth measures (ooMap), keyed by the source's catalogued
+    country (ISO-2): the count of SOURCES, the ARTICLES collected from them, the
+    KEYWORD MENTIONS in those articles, and the mean article TONE.
 
     Counts only, NO score. Sources without a country go into an ``unlocated``
     bucket and are NEVER guessed onto the map. The country is whatever the
     catalogue/operator asserted on the source -- this surfaces real catalogue
-    skew (the de-US-centring lens), it does not correct it.
+    skew (the de-US-centring lens), it does not correct it. Mean tone is VADER
+    (English-lexicon only): ``sentiment`` is the average over the SCORED subset
+    and ``sentiment_n`` is how many articles that was -- so a country with no
+    English articles honestly reports ``sentiment=None`` (no data), never zero.
     """
     src_rows = (
         session.query(Source.country, func.count(Source.id))
         .group_by(Source.country)
         .all()
     )
-    # Articles per source-country (join so the secondary count reflects the
-    # volume actually collected, not just catalogue presence).
+    # Articles + mean tone per source-country in ONE scan. avg() ignores NULL
+    # scores; count(sentiment_score) is the scored (English) subset size.
     art_rows = (
-        session.query(Source.country, func.count(Article.id))
+        session.query(
+            Source.country,
+            func.count(Article.id),
+            func.avg(Article.sentiment_score),
+            func.count(Article.sentiment_score),
+        )
         .join(Article, Article.source_id == Source.id)
         .group_by(Source.country)
         .all()
     )
-    arts: dict[str, int] = {
-        (cc or "").strip().lower(): int(n or 0) for cc, n in art_rows
+    # Keyword MENTIONS per source-country -- KeywordMention.country is the
+    # denormalised SOURCE country, so this is an index scan (no Article join,
+    # avoiding the keyword_mentions->articles row-decrypt cost).
+    kw_rows = (
+        session.query(KeywordMention.country, func.count())
+        .group_by(KeywordMention.country)
+        .all()
+    )
+    arts: dict[str, dict] = {}
+    for cc, n, tone, tone_n in art_rows:
+        arts[(cc or "").strip().lower()] = {
+            "articles": int(n or 0),
+            "sentiment": round(float(tone), 3) if tone is not None else None,
+            "sentiment_n": int(tone_n or 0),
+        }
+    kws: dict[str, int] = {
+        (cc or "").strip().lower(): int(n or 0) for cc, n in kw_rows
     }
 
     by_country: list[dict] = []
@@ -669,8 +692,16 @@ def source_country_counts(session) -> dict:
         if not code:
             unlocated_sources += n
             continue
+        a = arts.get(code, {})
         by_country.append(
-            {"country": code, "sources": n, "articles": arts.get(code, 0)}
+            {
+                "country": code,
+                "sources": n,
+                "articles": a.get("articles", 0),
+                "keywords": kws.get(code, 0),
+                "sentiment": a.get("sentiment"),
+                "sentiment_n": a.get("sentiment_n", 0),
+            }
         )
 
     by_country.sort(key=lambda r: (-r["sources"], r["country"]))
@@ -678,10 +709,11 @@ def source_country_counts(session) -> dict:
         "by_country": by_country,
         "unlocated": {
             "sources": unlocated_sources,
-            "articles": arts.get("", 0),
+            "articles": arts.get("", {}).get("articles", 0),
+            "keywords": kws.get("", 0),
         },
         "total_sources": total_sources,
-        "total_articles": sum(arts.values()),
+        "total_articles": sum(v.get("articles", 0) for v in arts.values()),
     }
 
 

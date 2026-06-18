@@ -2009,12 +2009,31 @@ def test_ooMap_choropleth():
     assert 'id="oo-coverage-map"' in html, "the Map tab must host the choropleth"
     assert "loadOoMapCoverage();" in html, "the loader must be wired into the Map-tab open path"
 
-    # Caveat VISIBLE by default (#23) + unlocated sources surfaced, never placed.
+    # Caveat VISIBLE by default (#23) + unlocated data surfaced, never placed.
     assert 'class="card-caveat"' in html and "${esc(opts.caveat)}" in html, (
         "the choropleth caveat must render in a visible .card-caveat line"
     )
-    assert "sources have no country and are not shown on the map." in html, (
-        "unlocated (country-less) sources must be surfaced honestly, never mapped"
+    assert "with no country — counted, not mapped." in html, (
+        "unlocated (country-less) data must be surfaced honestly, never mapped"
+    )
+
+    # --- slice 3: the DIMENSION PICKER (articles / keywords / sentiment) --- #
+    assert "function _ooMapDims()" in html, "the dimension config must exist"
+    for dim_id in ('"sources"', '"articles"', '"keywords"', '"sentiment"'):
+        assert f"id: {dim_id}" in html, f"dimension {dim_id} must be offered"
+    # An in-map picker overlay whose buttons re-colour the map (no re-fetch).
+    assert "data-oomap-dim=" in html, "the in-map dimension picker buttons must exist"
+    assert "opts.onDimension(b.dataset.oomapDim)" in html, "picker buttons must switch dimension"
+    assert "function _renderOoMapDim()" in html, "the per-dimension re-render must exist"
+    # SIGNED data (mean tone) rides a DIVERGING scale, never a one-sided ramp.
+    assert "function _ooMapFillDiverging(t)" in html, "sentiment needs a diverging fill"
+    assert 'opts.scale === "diverging"' in html, "the scale must branch to diverging for signed data"
+    assert "var(--err)" in html and "var(--ok)" in html, (
+        "the diverging ramp must use the theme's err/ok hues"
+    )
+    # The sentiment dimension carries the VADER English-only caveat (B1), visible.
+    assert "Mean article tone (VADER) — English-lexicon only" in html, (
+        "the sentiment dimension must disclose the VADER English-only limit"
     )
 
 

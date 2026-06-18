@@ -1296,5 +1296,14 @@
   "Map geometry unavailable.": "هندسة الخريطة غير متوفرة.",
   "Could not load coverage:": "تعذّر تحميل التغطية:",
   "sources have no country and are not shown on the map.": "مصادر بلا بلد ولا تظهر على الخريطة.",
-  "No located sources yet — add sources with a country, or collect some articles.": "لا توجد مصادر محددة الموقع بعد — أضف مصادر ببلد، أو اجمع بعض المقالات."
+  "No located sources yet — add sources with a country, or collect some articles.": "لا توجد مصادر محددة الموقع بعد — أضف مصادر ببلد، أو اجمع بعض المقالات.",
+  "Keyword mentions": "إشارات الكلمات المفتاحية",
+  "tone": "نبرة",
+  "Map dimension": "بُعد الخريطة",
+  "n=": "n=",
+  "with no country — counted, not mapped.": "بلا بلد — محتسبة وغير مُمثَّلة على الخريطة.",
+  "Catalogued sources based in each country — counts only, no score.": "المصادر المفهرسة الموجودة في كل بلد — أعداد فقط، بلا درجة.",
+  "Articles collected from sources in each country — counts only, no score.": "المقالات المجمَّعة من مصادر كل بلد — أعداد فقط، بلا درجة.",
+  "Keyword mentions in articles from sources in each country — counts only, no score.": "إشارات الكلمات المفتاحية في مقالات مصادر كل بلد — أعداد فقط، بلا درجة.",
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "متوسط نبرة المقالات (VADER) — معجم إنجليزي فقط، غير موثوق للغات الأخرى؛ تُقيَّم المقالات الإنجليزية فقط. مُستنتَج، وليس حكمًا."
 }
