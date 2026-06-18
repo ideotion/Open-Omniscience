@@ -318,6 +318,19 @@ def test_custom_extractor_settings_ui_is_wired():
     assert "loadCustomPrompts();" in src and 'cat === "models"' in src
 
 
+def test_custom_extractor_run_from_analysis_window_is_wired():
+    """A custom extractor RUNS over the analysis selection on demand (the on-demand path
+    for the managed list). Browser-unverified — this pins the wiring."""
+    src = _ui_source()
+    assert 'onclick="aiRunPromptAn()"' in src, "analysis window needs a 'Run extractor' action"
+    assert "async function aiRunPromptAn(" in src and "async function aiRunPromptStart(" in src
+    # mirrors the bulk-LLM streaming run (same selection + abort), POSTs to the run endpoint
+    assert "_bulkParams(\"an\")" in src
+    assert "`/api/ai/prompts/${id}/run`" in src, "must POST to the custom-prompt run endpoint"
+    # results are the AI lens, never the trusted index — the copy must say so
+    assert "AI-derived metadata" in src
+
+
 def test_ui_invariants():
     """Maintainer-ruled UI invariants (see CLAUDE.md). These regressed once
     between sessions; now they fail CI instead of relying on memory."""

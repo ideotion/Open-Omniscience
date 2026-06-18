@@ -9532,6 +9532,109 @@
       }
     }
 
+    // --- Run a user-defined custom extractor over the analysis selection (the on-demand
+    // path for the #386 managed list). Mirrors bulkLlm: same selection (_bulkParams),
+    // same NDJSON stream + abort (_bulkAbort / bulkLlmStop). Results store as ai_keyword
+    // rows of the prompt's kind — AI-derived, labelled unreliable, NEVER the trusted
+    // keyword index (the backend writes ai_keyword, not KeywordMention). ------------- //
+    async function aiRunPromptAn() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const mount = $("bulk-llm-an"); if (!mount) return;
+      const p = _bulkParams("an");
+      const hasSel = p.get("article_ids") || p.get("query") || p.get("source")
+        || p.get("language") || p.get("start_date") || p.get("end_date");
+      if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      let prompts = [];
+      try { const d = await api("/api/ai/prompts"); prompts = (d && d.prompts) || []; }
+      catch (e) { toast(t("Could not load your extractors."), "err"); return; }
+      const usable = prompts.filter((x) => x.enabled);
+      mount.style.display = "";
+      if (!usable.length) {
+        mount.innerHTML = `<div class="card"><div class="hint">${esc(t("Define a custom extractor in Settings → Models first."))}</div></div>`;
+        return;
+      }
+      const opts = usable.map((x) =>
+        `<option value="${x.id}">${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
+      mount.innerHTML = `<div class="card">
+        <div style="font-weight:600;margin-bottom:4px">${esc(t("Run a custom extractor"))}</div>
+        <div class="hint" style="margin-bottom:8px">${esc(t("Runs your prompt with the local model over each matched article. Results are stored as AI-derived metadata of that type, labelled unreliable — the trusted keyword index is never affected; nothing leaves your machine."))}</div>
+        <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
+          <select id="ai-run-pick">${opts}</select>
+          <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="ai-run-skip" checked> ${esc(t("Skip articles already done"))}</label>
+          <button class="primary" id="ai-run-start" onclick="aiRunPromptStart()">${esc(t("Start"))}</button>
+          <button class="ghost tiny" onclick="bulkLlmStop('an')">${esc(t("Cancel"))}</button>
+        </div>
+        <div id="ai-run-prog" class="hint" style="margin-top:8px"></div>
+      </div>`;
+    }
+    async function aiRunPromptStart() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const pick = $("ai-run-pick"), prog = $("ai-run-prog"), startBtn = $("ai-run-start");
+      const id = pick && pick.value;
+      if (!id) return;
+      const p = _bulkParams("an");
+      const skipEl = $("ai-run-skip");
+      const body = { skip_existing: !!(skipEl && skipEl.checked) };
+      const ids = p.get("article_ids");
+      if (ids) { body.article_ids = ids.split(",").map(Number).filter((n) => n); }
+      else {
+        if (p.get("query")) body.query = p.get("query");
+        if (p.get("source")) body.source = p.get("source");
+        if (p.get("language")) body.language = p.get("language");
+        if (p.get("start_date")) body.start_date = p.get("start_date");
+        if (p.get("end_date")) body.end_date = p.get("end_date");
+      }
+      if (startBtn) startBtn.disabled = true;
+      if (prog) prog.textContent = t("Starting…");
+      _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
+      let done = 0, total = 0;
+      try {
+        const resp = await fetch(`/api/ai/prompts/${id}/run`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body), signal: _bulkAbort ? _bulkAbort.signal : undefined,
+        });
+        if (!resp.ok || !resp.body) {
+          let detail = "HTTP " + resp.status;
+          try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
+          if (prog) prog.innerHTML = `<span class="note err">${esc(detail)}</span>`;
+          if (startBtn) startBtn.disabled = false; return;
+        }
+        const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
+        for (;;) {
+          const { done: fin, value } = await reader.read();
+          if (fin) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split("\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let o; try { o = JSON.parse(line); } catch (e) { continue; }
+            if (o.event === "start") {
+              total = o.total;
+              if (prog) prog.textContent = t("Processing") + " 0/" + total + "…";
+            } else if (o.event === "item") {
+              done++;
+              if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "…";
+            } else if (o.event === "done") {
+              if (o.aborted) {
+                if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${esc(o.reason || "")}</span>`;
+              } else if (prog) {
+                const tally = `${o.terms || 0} ${t("items")} · ${o.stored || 0} ${t("stored")} · `
+                  + `${o.skipped || 0} ${t("skipped")} · ${o.failed || 0} ${t("failed")}`;
+                prog.innerHTML = `<b>${esc(t("Done."))}</b> ${esc(tally)} `
+                  + `<span class="muted">${esc(t("Open an article to see its AI-derived metadata."))}</span>`;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        if (e && e.name === "AbortError") { if (prog) prog.textContent = t("Cancelled."); }
+        else if (prog) prog.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+      } finally {
+        if (startBtn) startBtn.disabled = false; _bulkAbort = null;
+        loadLlmHealth();
+      }
+    }
+
     async function loadCandidates() {
       try {
         const r = await api("/api/sources/candidates?status=candidate&limit=50");
