@@ -1391,6 +1391,18 @@ async def read_investigate():
     return await read_root()
 
 
+# The Task Manager opens in its OWN browser tab (top-bar #tm-open), so it can stay
+# parked on the user's desktop while they work in the app (maintainer 2026-06-18).
+# A read+control view over the existing /api/jobs · /api/scheduler · /api/system
+# endpoints; same server, same corpus, no CDN.
+@app.get("/tasks", response_class=HTMLResponse)
+async def read_tasks():
+    page = Path(__file__).parent.parent / "static" / "taskmanager.html"
+    if page.exists():
+        return HTMLResponse(content=page.read_text(encoding="utf-8"), status_code=200)
+    return await read_root()
+
+
 def main() -> None:
     """Console entrypoint (``open-omniscience``).
 

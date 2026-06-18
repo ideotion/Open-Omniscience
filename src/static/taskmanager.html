@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<!--
+  Open Omniscience — the standalone Task Manager (maintainer 2026-06-18).
+  Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+  Opens in its OWN browser tab (from the top-bar #tm-open button) so it can stay
+  parked on the user's desktop while they work in the main app. A second page
+  alongside the Console + /investigate: same loopback server, same APIs, no CDN,
+  no framework. It is a read+control view over EXISTING tested endpoints:
+    * GET /api/jobs                 — active + queued jobs (+ db-writer state)
+    * GET /api/scheduler/activity   — schedule facts, current-pass progress, plan
+    * GET /api/system/vitals        — this process's CPU / memory / scraping ↓
+  Controls POST the same endpoints the in-app window used (cancel/resume/reorder).
+  Honest by construction: real states only, no fabricated "healthy", no countdown
+  the backend didn't give us. Reuses app.css (pills, bars, rows) + i18n.js (the
+  task-manager strings are already keyed, so this is translated ×12 for free).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task manager · FOOS</title>
+<link rel="icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/i18n.js"></script>
+<style>
+  body { margin: 0; background: var(--bg, #0d0f12); color: var(--fg, #e7e9ee);
+         font: 14px/1.5 system-ui, sans-serif; }
+  .tm-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+             border-bottom: 1px solid var(--line, #232733); position: sticky; top: 0;
+             background: var(--panel, #14171d); z-index: 2; }
+  .tm-head h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  .tm-head .eye { width: 22px; height: 22px; }
+  .tm-head .muted { margin-inline-start: auto; font-size: 12px; }
+  .tm-tabs { display: flex; gap: 2px; padding: 8px 12px 0; border-bottom: 1px solid var(--line, #232733);
+             background: var(--panel, #14171d); position: sticky; top: 43px; z-index: 1; }
+  .tm-tabs button { background: transparent; border: 0; color: var(--fg, #e7e9ee); opacity: .6;
+                    padding: 8px 14px; border-bottom: 2px solid transparent; cursor: pointer;
+                    font: inherit; border-radius: 6px 6px 0 0; }
+  .tm-tabs button.active { opacity: 1; border-bottom-color: var(--accent, #4a9eff); font-weight: 600; }
+  .tm-tabs button:hover { opacity: 1; background: var(--hover, rgba(255,255,255,.04)); }
+  .tm-body { padding: 14px 18px; max-width: 860px; }
+  .tm-panel[hidden] { display: none; }
+  .vsect { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+           opacity: .7; margin: 14px 0 6px; }
+  .vr { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0;
+        border-bottom: 1px solid var(--line, #1c2029); font-size: 13px; }
+  .vr span { opacity: .8; } .vr b { text-align: end; font-weight: 500; }
+  .vnote { font-size: 11px; opacity: .6; margin: 4px 0 2px; }
+  .cap-bar { position: relative; height: 14px; background: var(--line, #232733); border-radius: 7px;
+             overflow: hidden; margin: 4px 0; }
+  .cap-bar > i, .cap-fill { display: block; height: 100%; background: var(--accent, #4a9eff); }
+  .cap-txt { position: absolute; inset: 0; text-align: center; font-size: 10px; line-height: 14px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+          background: var(--line, #232733); }
+  .pill.ok { background: var(--ok, #1f7a3f); color: #fff; }
+  .pill.warn { background: var(--warn, #8a6d1a); color: #fff; }
+  .pill.err { background: var(--err, #a33); color: #fff; }
+  .job { display: flex; align-items: center; gap: 8px; padding: 5px 0; flex-wrap: wrap;
+         border-bottom: 1px solid var(--line, #1c2029); }
+  .job .label { font-size: 13px; font-weight: 600; }
+  .job .acts { margin-inline-start: auto; display: flex; gap: 4px; }
+  .tbtn { font: inherit; font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+          border: 1px solid var(--line, #2a2f3a); background: var(--panel2, #1b1f27); color: var(--fg, #e7e9ee); }
+  .tbtn.danger { border-color: var(--err, #a33); color: var(--err, #d66); }
+  .muted { opacity: .6; } .err-line { color: var(--err, #d66); }
+  #tm-foot { padding: 10px 18px; font-size: 11px; opacity: .55; border-top: 1px solid var(--line, #232733); }
+</style>
+</head>
+<body>
+  <div class="tm-head">
+    <!-- the canonical ASCII eye (invariant #5): pointed-oval + grid iris -->
+    <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3.2"/>
+    </svg>
+    <h1 data-i18n>Task manager</h1>
+    <span class="muted" id="tm-conn" data-i18n>Live</span>
+  </div>
+  <nav class="tm-tabs" id="tm-tabs" role="tablist">
+    <button class="active" data-panel="active" role="tab" data-i18n>Active</button>
+    <button data-panel="queue" role="tab" data-i18n>Queue</button>
+    <button data-panel="schedule" role="tab" data-i18n>Schedule</button>
+    <button data-panel="system" role="tab" data-i18n>System</button>
+  </nav>
+  <div class="tm-body">
+    <div class="tm-panel" id="p-active"><div id="jobs-body"></div></div>
+    <div class="tm-panel" id="p-queue" hidden><div id="queue-body"></div></div>
+    <div class="tm-panel" id="p-schedule" hidden><div id="sched-body"></div></div>
+    <div class="tm-panel" id="p-system" hidden><div id="vitals-body"></div></div>
+  </div>
+  <div id="tm-foot" data-i18n>This window updates on its own. Collection runs continuously while online; the only thing that stops it is airplane mode.</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  // Reuse the SPA's translations: the task-manager strings are already keyed.
+  function t(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+  function applyLang() {
+    // Pick up the language the user chose in the main app (same localStorage key).
+    try {
+      var lang = localStorage.getItem("oo.lang");
+      if (lang && window.OOI18N && OOI18N.setLang) OOI18N.setLang(lang);
+      if (window.OOI18N && OOI18N.apply) OOI18N.apply(document);
+    } catch (e) { /* private mode / engine absent: English fallback */ }
+  }
+  // Carry the user's theme over so the window matches the app (app.css reads vars
+  // off <html data-theme>); default theme otherwise.
+  try {
+    var th = localStorage.getItem("oo.theme");
+    if (th) document.documentElement.setAttribute("data-theme", th);
+  } catch (e) { /* ignore */ }
+
+  function fmtBytes(n) {
+    if (n == null) return "—";
+    var u = ["B", "KB", "MB", "GB", "TB"], i = 0;
+    n = Number(n);
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+  }
+  function fmtRel(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso), s = Math.round((Date.now() - d.getTime()) / 1000);
+    if (isNaN(s)) return "—";
+    var fut = s < 0; s = Math.abs(s);
+    var v = s < 60 ? s + "s" : s < 3600 ? Math.round(s / 60) + "m" : Math.round(s / 3600) + "h";
+    return fut ? "in " + v : v + " ago";
+  }
+  function fmtLocal(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return iso || ""; } }
+
+  async function api(path, opts) {
+    var res = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {}));
+    var text = await res.text(), data;
+    try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+    if (res.status === 503 && data && data.locked) { location.replace("/unlock"); throw new Error("locked"); }
+    if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
+    return data;
+  }
+  function toast(msg, kind) {
+    var c = $("tm-conn");
+    if (c) { c.textContent = msg; c.className = "muted" + (kind === "err" ? " err-line" : ""); setTimeout(refresh, 400); }
+  }
+
+  // ---- jobs (Active + Queue) — faithful to the in-app _jobRow grammar ---- //
+  var _jobs = null;
+  var isDl = function (k) { return k === "wiki-dump" || k === "osm-map"; };
+  var dlKey = function (j) { return j.id.slice(j.id.indexOf(":") + 1); };
+  var reorderEp = function (k) { return k === "osm-map" ? "/api/jobs/osm/reorder" : "/api/jobs/dumps/reorder"; };
+
+  function jobRow(j, queuedKeysByKind) {
+    var pill = j.state === "running" ? "ok" : (j.state === "failed" ? "err" : "warn");
+    var prog = "";
+    if (j.progress && j.progress.total) {
+      var pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+      prog = '<div class="cap-bar" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><i style="width:' + pct + '%"></i></div>' +
+             '<div class="muted" style="font-size:11px">' + fmtBytes(j.progress.done) + " / " + fmtBytes(j.progress.total) + " · " + pct + '%</div>';
+    }
+    var acts = [];
+    if (j.id === "collect:current")
+      acts.push('<button class="tbtn danger" title="' + esc(t("Stopping collection engages the network kill switch — the app goes offline.")) + '" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Stop")) + "</button>");
+    if (isDl(j.kind) && j.state === "running")
+      acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Pause")) + "</button>");
+    if (isDl(j.kind) && j.state === "queued") {
+      var k = dlKey(j), keys = queuedKeysByKind[j.kind] || [], idx = keys.indexOf(k);
+      if (idx > 0) acts.push('<button class="tbtn" title="' + esc(t("Move earlier in the queue")) + '" onclick="TM.move(\'' + esc(k) + "', -1, '" + esc(j.kind) + "')\">↑</button>");
+      if (idx >= 0 && idx < keys.length - 1) acts.push('<button class="tbtn" title="' + esc(t("Move later in the queue")) + '" onclick="TM.move(\'' + esc(k) + "', 1, '" + esc(j.kind) + "')\">↓</button>");
+      acts.push('<button class="tbtn" onclick="TM.cancel(\'' + esc(j.id) + '\')">' + esc(t("Cancel")) + "</button>");
+    }
+    if (isDl(j.kind) && (j.state === "paused" || j.state === "failed"))
+      acts.push('<button class="tbtn" onclick="TM.resume(\'' + esc(j.id) + '\')">' + esc(t("Resume")) + "</button>");
+    var qpos = j.queue_position ? ' <span class="muted">#' + j.queue_position + " " + esc(t("in queue")) + "</span>" : "";
+    return '<div class="job"><span class="pill ' + pill + '">' + esc(t(j.state)) + '</span><span class="label">' + esc(j.label) + "</span>" + qpos +
+           '<span class="acts">' + acts.join("") + '</span><div style="flex-basis:100%">' + prog + "</div></div>";
+  }
+
+  function renderJobs(data) {
+    _jobs = data;
+    var jobs = (data.jobs || []).filter(function (j) { return j.state !== "done"; });
+    var queued = jobs.filter(function (j) { return j.state === "queued"; })
+                     .sort(function (a, b) { return (a.queue_position || 0) - (b.queue_position || 0); });
+    var queuedKeysByKind = {};
+    queued.forEach(function (j) { if (isDl(j.kind)) (queuedKeysByKind[j.kind] = queuedKeysByKind[j.kind] || []).push(dlKey(j)); });
+    var active = jobs.filter(function (j) { return j.state !== "queued"; });
+    $("jobs-body").innerHTML = '<div class="vsect">' + esc(t("Active")) + "</div>" + (active.length
+      ? active.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("")
+      : '<div class="muted" style="padding:4px 0">' + esc(t("Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.")) + "</div>");
+    $("queue-body").innerHTML = '<div class="vsect">' + esc(t("Queue")) + "</div>" + (queued.length
+      ? queued.map(function (j) { return jobRow(j, queuedKeysByKind); }).join("")
+      : '<div class="muted" style="padding:4px 0">' + esc(t("The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.")) + "</div>");
+  }
+
+  // ---- Schedule — the scheduler's own facts (no fabricated countdown) ---- //
+  function renderSchedule(a) {
+    var el = $("sched-body");
+    if (!a) { el.innerHTML = '<div class="muted">' + esc(t("No collection scheduled or running right now — when collection is on, the schedule appears here.")) + "</div>"; return; }
+    var s = a.settings || {}, pg = a.progress;
+    var row = function (k, v) { return '<div class="vr"><span>' + k + "</span><b>" + v + "</b></div>"; };
+    var sect = function (x) { return '<div class="vsect">' + x + "</div>"; };
+    var state = a.active ? '<span class="pill ok">' + esc(t("running — collection in progress")) + "</span>"
+              : a.running ? '<span class="pill ok">' + esc(t("running")) + "</span>"
+              : '<span class="pill">' + esc(t("stopped")) + "</span>";
+    var now;
+    if (pg && pg.total) {
+      var pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
+      now = row(t("Current pass"), esc(pg.current || "…") + ' <span class="muted">· ' + esc(pg.mode || "") + "</span>") +
+        '<div class="cap-bar"><div class="cap-fill" style="width:' + pct + '%"></div><span class="cap-txt">' + pg.done + "/" + pg.total + " · " + pct + '%</span></div>';
+    } else { now = row(t("Current pass"), '<span class="muted">' + esc(t("idle — no pass in flight")) + "</span>"); }
+    var cadence = s.continuous
+      ? '<span title="' + esc(t("Continuous: passes run back-to-back with only a short gap while online. Going offline stops the loop.")) + '">' + esc(t("continuous (back-to-back passes)")) + "</span>"
+      : "<b>" + (s.interval_minutes != null ? esc(String(s.interval_minutes)) : "—") + "</b> " + esc(t("minutes between passes"));
+    var next = !a.running ? row(t("Next pass"), '<span class="muted">' + esc(t("not scheduled — collection is stopped")) + "</span>")
+      : a.active ? row(t("Next pass"), '<span class="muted">' + esc(t("a pass is running now")) + "</span>")
+      : a.next_run ? row(t("Next pass"), '<span title="' + esc(fmtLocal(a.next_run)) + '">' + esc(fmtRel(a.next_run)) + "</span>")
+      : row(t("Next pass"), '<span class="muted">' + esc(t("scheduled — timing not yet known")) + "</span>");
+    var last = a.last_run ? row(t("Last run"), '<span title="' + esc(fmtLocal(a.last_run)) + '">' + esc(fmtRel(a.last_run)) + "</span>")
+                          : row(t("Last run"), '<span class="muted">' + esc(t("no run yet")) + "</span>");
+    el.innerHTML = sect(t("Collection")) + '<div class="vr"><span>' + esc(t("State")) + "</span><b>" + state + "</b></div>" + now +
+      sect(t("Schedule")) + '<div class="vr"><span>' + esc(t("Cadence")) + "</span><b>" + cadence + "</b></div>" + next + last +
+      row(t("Mode"), '<span class="muted">' + esc(s.mode || a.mode || "") + "</span>") +
+      '<div class="vnote">' + esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method.")) + "</div>";
+  }
+
+  // ---- System — this process's real CPU / memory / scraping rate ---- //
+  function renderSystem(v, a) {
+    var p = (v && v.process) || {}, sc = (v && v.scraping) || {};
+    a = a || {}; var pg = a.progress, plan = a.plan || {}, rates = a.per_host_rates || [];
+    var row = function (k, val) { return '<div class="vr"><span>' + k + "</span><b>" + val + "</b></div>"; };
+    var sect = function (x) { return '<div class="vsect">' + x + "</div>"; };
+    var now;
+    if (pg && pg.total) {
+      var pct = Math.round(100 * Math.min(pg.done, pg.total) / pg.total);
+      now = row(t("Now collecting"), esc(pg.current || "…") + ' <span class="muted">· ' + esc(pg.mode || "") + "</span>") +
+        '<div class="cap-bar"><div class="cap-fill" style="width:' + pct + '%"></div><span class="cap-txt">' + pg.done + "/" + pg.total + " · " + pct + '%</span></div>';
+    } else { now = row(t("Now collecting"), a.running ? '<span class="muted">' + esc(t("idle")) + "</span>" : '<span class="muted">' + esc(t("scheduler stopped")) + "</span>"); }
+    var rateHtml = rates.length ? sect(t("Per-source download rate")) + rates.map(function (r) {
+      return '<div class="vr"><span>' + esc(r.host) + "</span><b>" + r.kbps + " KB/s <span class=\"muted\">· " + fmtBytes(r.bytes) + " · " + r.fetches + "×</span></b></div>";
+    }).join("") : "";
+    var sys = sect(t("System")) +
+      row(t("CPU"), p.cpu_percent == null ? "—" : p.cpu_percent + "%") +
+      row(t("Memory"), fmtBytes(p.rss_bytes)) +
+      row(t("Scraping ↓"), '<span class="muted">' + esc(t("total")) + " " + fmtBytes(sc.bytes_total) + " · " + (sc.fetches_total || 0) + "×</span>");
+    $("vitals-body").innerHTML = now + rateHtml + sys;
+  }
+
+  // ---- controls (POST the same endpoints the in-app window used) ---- //
+  window.TM = {
+    cancel: async function (id) {
+      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/cancel", { method: "POST" }); toast(r.detail || t("Cancelled.")); }
+      catch (e) { toast(e.message, "err"); }
+    },
+    resume: async function (id) {
+      // The download path refuses while airplane mode is engaged; we never POST
+      // the network from here, so no consent is bypassed — a refusal surfaces.
+      try { var r = await api("/api/jobs/" + encodeURIComponent(id) + "/resume", { method: "POST" }); toast(r.detail || t("Resumed.")); }
+      catch (e) { toast(e.message, "err"); }
+    },
+    move: async function (key, dir, kind) {
+      var jobs = (_jobs && _jobs.jobs) || [];
+      var q = jobs.filter(function (j) { return j.state === "queued" && j.kind === kind; })
+                  .sort(function (a, b) { return (a.queue_position || 0) - (b.queue_position || 0); }).map(dlKey);
+      var i = q.indexOf(key);
+      if (i < 0 || i + dir < 0 || i + dir >= q.length) return;
+      var tmp = q[i]; q[i] = q[i + dir]; q[i + dir] = tmp;
+      try { await api(reorderEp(kind), { method: "POST", body: JSON.stringify({ keys: q }) }); refresh(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+  };
+
+  // ---- tabs ---- //
+  function selectPanel(name) {
+    ["active", "queue", "schedule", "system"].forEach(function (n) {
+      var p = $("p-" + n); if (p) p.hidden = n !== name;
+    });
+    Array.prototype.forEach.call($("tm-tabs").children, function (b) {
+      var on = b.getAttribute("data-panel") === name;
+      b.classList.toggle("active", on); b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+  }
+  Array.prototype.forEach.call($("tm-tabs").children, function (b) {
+    b.addEventListener("click", function () { selectPanel(b.getAttribute("data-panel")); });
+  });
+
+  // ---- adaptive refresh: fast while something is live, slow when idle ---- //
+  var _busy = false;
+  async function refresh() {
+    if (_busy) return; _busy = true;
+    var active = false;
+    try {
+      var jobs = await api("/api/jobs"); renderJobs(jobs);
+      active = (jobs.jobs || []).some(function (j) { return j.state === "running"; });
+    } catch (e) { /* transient */ }
+    try { var act = await api("/api/scheduler/activity"); renderSchedule(act); active = active || !!act.active; window._act = act; }
+    catch (e) { renderSchedule(window._act || null); }
+    try { var v = await api("/api/system/vitals"); renderSystem(v, window._act); } catch (e) { renderSystem(null, window._act); }
+    var c = $("tm-conn"); if (c && !/err/.test(c.className)) c.textContent = t("Live");
+    _busy = false;
+    return active;
+  }
+  function loop() {
+    refresh().then(function (active) {
+      setTimeout(loop, document.hidden ? 15000 : (active ? 2500 : 6000));
+    });
+  }
+  applyLang();
+  selectPanel("active");
+  loop();
+})();
+</script>
+</body>
+</html>
