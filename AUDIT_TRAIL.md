@@ -5,6 +5,48 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
 
 ---
 
+## 2026-06-18 · Comprehensive audit + remediation (0.09 / v0.0.9)
+
+- **Base commit:** `b75100e` (tip of the protected default `0.09`, PR #394 merged).
+- **Branch:** `claude/eloquent-mayer-ouec0d` (at the `0.09` tip) → one draft PR onto `0.09`.
+- **Environment advantage:** a real **Python 3.13.12** + pip were available (unlike the
+  3.11-only assumption), so a `.venv313` was built (latest deps: starlette 1.3.1, sqlalchemy
+  2.0.51, pytest 9.1.0) and **every gate was executed, not inferred**.
+- **Static/boot gates GREEN as-found:** app boots (60 routes), ruff F+B pass, i18n 100% ×12,
+  single alembic head (`a2b3c4d5e6f7`), mypy 120 ≤ 127, bandit clean, compileall clean,
+  `node --check` clean, `test_repo_invariants` 70 passed.
+- **Headline finding — the full test suite was NOT green as-found: 3 failed, 1748 passed, 6
+  skipped.** All three reproduce in isolation and are unrelated to this PR's docs; **fixed** here
+  (suite green after: **1751 passed, 6 skipped, 0 failed**, and 3.3× faster):
+  - **A18-TEST-01 (S1):** `test_convergences_endpoint` — the catalog auto-seed was moved into
+    `run_deferred_startup` (2026-06-18, `main.py:120`), so it fires on every TestClient lifespan and
+    its auto-increment ids collide with the test's pinned `Source(id=901/902)` (`UNIQUE constraint
+    failed: sources.id`). Fix: `OO_AUTOSEED=0` in `tests/conftest.py` (matches `OO_NO_SCHEDULER=1`
+    + the existing `test_law.py:205` precedent; direct-seed tests unaffected).
+  - **A18-TEST-02 (S2):** `test_disable_unmanaged_languages_endpoint` — a thread-unsafe
+    `:memory:` engine shared across the TestClient portal thread ("no such table: sources"). Fix:
+    `StaticPool` + `check_same_thread=False` (the pattern `test_convergence.py` already uses).
+  - **A18-TEST-03 (S2):** `tests/test_ollama_store_detection.py:32` did `write_text` without
+    `encoding="utf-8"` — flagged by the repo's own portability meta-test. Fix: add the encoding.
+- **A18-CI-01 (S2, REPORTED, no change):** these landed undetected because **CI never completes on
+  `0.09`** — the tip `b75100e7` run is still `queued` and the prior 8 push-runs are all `cancelled`
+  (`concurrency: cancel-in-progress` + rapid merges, `.github/workflows/ci.yml:15`). Making CI gate
+  the default branch is the single highest-value follow-up (maintainer decision).
+- **Two S3 documentation contradictions FIXED (GREEN):** the UI tab renamed *Temporal map → World
+  map* (2026-06-18) was stale in `README.md`/`docs/USER_MANUAL.md`, whose nav lists also still
+  carried the dissolved **Source integrity** + retired **Search**/**System** sidebar entries.
+  Reconciled to ground truth (`src/static/index.html`); historical/planning docs left as records.
+- **Verified FALSE POSITIVE (no change):** supergroup `article_count` uses `max()` — the documented
+  "articles = max member" honest convention (`src/api/insights.py:854`), not a bug.
+- **Known/tracked, unchanged:** CSP `unsafe-inline` (`OO-D12-001`), Ollama clearnet pull (by
+  design), SSRF TOCTOU (`OO-D2-003`), `ALLOWED_ORIGINS` env (S3).
+- **Full log:** [`docs/audit/AUDIT_LOG_2026-06-18.md`](docs/audit/AUDIT_LOG_2026-06-18.md)
+- **Source files changed:** `tests/conftest.py`, `tests/test_managed_languages.py`,
+  `tests/test_ollama_store_detection.py` (test-baseline), `README.md`, `docs/USER_MANUAL.md`
+  (docs-coherence). The closed 29-finding `findings.csv` ledger was intentionally not touched.
+
+---
+
 ## 2026-06-15 · Autonomous solo session — run-verified audit + docs-honesty fixes
 
 - **Base commit:** `00923bb` (tip of `0.09`, PR #221 merged).
