@@ -1305,5 +1305,12 @@
   "Catalogued sources based in each country — counts only, no score.": "المصادر المفهرسة الموجودة في كل بلد — أعداد فقط، بلا درجة.",
   "Articles collected from sources in each country — counts only, no score.": "المقالات المجمَّعة من مصادر كل بلد — أعداد فقط، بلا درجة.",
   "Keyword mentions in articles from sources in each country — counts only, no score.": "إشارات الكلمات المفتاحية في مقالات مصادر كل بلد — أعداد فقط، بلا درجة.",
-  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "متوسط نبرة المقالات (VADER) — معجم إنجليزي فقط، غير موثوق للغات الأخرى؛ تُقيَّم المقالات الإنجليزية فقط. مُستنتَج، وليس حكمًا."
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "متوسط نبرة المقالات (VADER) — معجم إنجليزي فقط، غير موثوق للغات الأخرى؛ تُقيَّم المقالات الإنجليزية فقط. مُستنتَج، وليس حكمًا.",
+  "Continent": "قارة",
+  "Places": "أماكن",
+  "Granularity": "مستوى التفصيل",
+  "by continent": "حسب القارة",
+  "(mentioned, deduced)": "(مذكور، مُستنتَج)",
+  "mentioned places (deduced)": "الأماكن المذكورة (مُستنتَجة)",
+  "Mentioned places: deduced from text, never confirmed.": "الأماكن المذكورة: مُستنتَجة من النص، وغير مؤكَّدة."
 }

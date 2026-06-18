@@ -1305,5 +1305,12 @@
   "Catalogued sources based in each country — counts only, no score.": "Catalogued sources based in each country — counts only, no score.",
   "Articles collected from sources in each country — counts only, no score.": "Articles collected from sources in each country — counts only, no score.",
   "Keyword mentions in articles from sources in each country — counts only, no score.": "Keyword mentions in articles from sources in each country — counts only, no score.",
-  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict."
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.",
+  "Continent": "Continent",
+  "Places": "Places",
+  "Granularity": "Granularity",
+  "by continent": "by continent",
+  "(mentioned, deduced)": "(mentioned, deduced)",
+  "mentioned places (deduced)": "mentioned places (deduced)",
+  "Mentioned places: deduced from text, never confirmed.": "Mentioned places: deduced from text, never confirmed."
 }

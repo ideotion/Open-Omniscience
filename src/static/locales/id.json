@@ -1305,5 +1305,12 @@
   "Catalogued sources based in each country — counts only, no score.": "Sumber terkatalog yang berbasis di tiap negara — hanya hitungan, tanpa skor.",
   "Articles collected from sources in each country — counts only, no score.": "Artikel yang dikumpulkan dari sumber di tiap negara — hanya hitungan, tanpa skor.",
   "Keyword mentions in articles from sources in each country — counts only, no score.": "Penyebutan kata kunci dalam artikel dari sumber di tiap negara — hanya hitungan, tanpa skor.",
-  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Nada rata-rata artikel (VADER) — hanya leksikon Inggris, tidak andal untuk bahasa lain; hanya artikel Inggris yang dinilai. Disimpulkan, bukan vonis."
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Nada rata-rata artikel (VADER) — hanya leksikon Inggris, tidak andal untuk bahasa lain; hanya artikel Inggris yang dinilai. Disimpulkan, bukan vonis.",
+  "Continent": "Benua",
+  "Places": "Tempat",
+  "Granularity": "Granularitas",
+  "by continent": "menurut benua",
+  "(mentioned, deduced)": "(disebut, disimpulkan)",
+  "mentioned places (deduced)": "tempat yang disebut (disimpulkan)",
+  "Mentioned places: deduced from text, never confirmed.": "Tempat yang disebut: disimpulkan dari teks, tidak pernah dikonfirmasi."
 }

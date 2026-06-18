@@ -1305,5 +1305,12 @@
   "Catalogued sources based in each country — counts only, no score.": "各国に拠点を置く登録済みソース — 件数のみ、スコアなし。",
   "Articles collected from sources in each country — counts only, no score.": "各国のソースから収集した記事 — 件数のみ、スコアなし。",
   "Keyword mentions in articles from sources in each country — counts only, no score.": "各国のソースの記事中のキーワード言及 — 件数のみ、スコアなし。",
-  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "記事の平均トーン（VADER）— 英語辞書のみで、他言語には不正確。英語記事のみ採点。推定であり、判定ではありません。"
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "記事の平均トーン（VADER）— 英語辞書のみで、他言語には不正確。英語記事のみ採点。推定であり、判定ではありません。",
+  "Continent": "大陸",
+  "Places": "場所",
+  "Granularity": "粒度",
+  "by continent": "大陸別",
+  "(mentioned, deduced)": "（言及・推定）",
+  "mentioned places (deduced)": "言及された場所（推定）",
+  "Mentioned places: deduced from text, never confirmed.": "言及された場所：本文から推定され、確認されていません。"
 }

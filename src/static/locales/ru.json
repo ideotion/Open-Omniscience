@@ -1305,5 +1305,12 @@
   "Catalogued sources based in each country — counts only, no score.": "Каталогизированные источники, базирующиеся в каждой стране, — только подсчёты, без оценки.",
   "Articles collected from sources in each country — counts only, no score.": "Статьи, собранные из источников каждой страны, — только подсчёты, без оценки.",
   "Keyword mentions in articles from sources in each country — counts only, no score.": "Упоминания ключевых слов в статьях из источников каждой страны — только подсчёты, без оценки.",
-  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Средний тон статей (VADER) — только английский словарь, ненадёжно для других языков; оцениваются только англоязычные статьи. Выведено, но не вердикт."
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "Средний тон статей (VADER) — только английский словарь, ненадёжно для других языков; оцениваются только англоязычные статьи. Выведено, но не вердикт.",
+  "Continent": "Континент",
+  "Places": "Места",
+  "Granularity": "Детализация",
+  "by continent": "по континентам",
+  "(mentioned, deduced)": "(упомянуто, выведено)",
+  "mentioned places (deduced)": "упомянутые места (выведено)",
+  "Mentioned places: deduced from text, never confirmed.": "Упомянутые места: выведено из текста, не подтверждено."
 }

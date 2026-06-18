@@ -1305,5 +1305,12 @@
   "Catalogued sources based in each country — counts only, no score.": "প্রতিটি দেশে অবস্থিত তালিকাভুক্ত উৎস — কেবল গণনা, কোনো স্কোর নয়।",
   "Articles collected from sources in each country — counts only, no score.": "প্রতিটি দেশের উৎস থেকে সংগৃহীত নিবন্ধ — কেবল গণনা, কোনো স্কোর নয়।",
   "Keyword mentions in articles from sources in each country — counts only, no score.": "প্রতিটি দেশের উৎসের নিবন্ধে কীওয়ার্ড উল্লেখ — কেবল গণনা, কোনো স্কোর নয়।",
-  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "নিবন্ধের গড় টোন (VADER) — কেবল ইংরেজি অভিধান, অন্য ভাষায় অনির্ভরযোগ্য; কেবল ইংরেজি নিবন্ধ স্কোর করা হয়। অনুমিত, কখনও রায় নয়।"
+  "Mean article tone (VADER) — English-lexicon only, unreliable for other languages; only English articles are scored. Deduced, never a verdict.": "নিবন্ধের গড় টোন (VADER) — কেবল ইংরেজি অভিধান, অন্য ভাষায় অনির্ভরযোগ্য; কেবল ইংরেজি নিবন্ধ স্কোর করা হয়। অনুমিত, কখনও রায় নয়।",
+  "Continent": "মহাদেশ",
+  "Places": "স্থান",
+  "Granularity": "বিশদতা",
+  "by continent": "মহাদেশ অনুসারে",
+  "(mentioned, deduced)": "(উল্লিখিত, অনুমিত)",
+  "mentioned places (deduced)": "উল্লিখিত স্থান (অনুমিত)",
+  "Mentioned places: deduced from text, never confirmed.": "উল্লিখিত স্থান: পাঠ্য থেকে অনুমিত, কখনও নিশ্চিত নয়।"
 }
