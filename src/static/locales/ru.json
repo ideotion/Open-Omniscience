@@ -1272,5 +1272,15 @@
   "Background tasks (markets · calendars · checks)": "Фоновые задачи (рынки · календари · проверки)",
   "Building the briefing": "Формирование сводки",
   "Up next this pass": "Далее в этом проходе",
-  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "Порядок заново перемешивается при каждом проходе — со стратификацией по языку и тегу, это не фиксированная очередь."
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "Порядок заново перемешивается при каждом проходе — со стратификацией по языку и тегу, это не фиксированная очередь.",
+  "Processes": "Процессы",
+  "Performance": "Производительность",
+  "History": "История",
+  "Airplane mode": "Режим полёта",
+  "Online · collecting": "В сети · сбор",
+  "Online · idle": "В сети · ожидание",
+  "Idle": "Ожидание",
+  "Downloads": "Загрузки",
+  "AI & analysis": "ИИ и анализ",
+  "paused — airplane mode": "пауза — режим полёта"
 }

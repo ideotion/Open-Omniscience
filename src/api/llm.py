@@ -334,10 +334,15 @@ def summarize_article(
         "summary", output_language=req.output_language
     )
     prompt = f"Article title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
+    # Visible in the task manager while the model runs ("is an LLM working?").
+    from src.monitoring.tasks import track
+
+    _t = (article.title or "article")[:48]
     try:
-        result = client.generate(
-            prompt, model=model, system=system, keep_alive=_effective_keep_alive()
-        )
+        with track("llm", f"Summarizing “{_t}”", detail=f"model {model}"):
+            result = client.generate(
+                prompt, model=model, system=system, keep_alive=_effective_keep_alive()
+            )
     except LLMUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
@@ -387,10 +392,14 @@ def translate_article(
     model = req.model or active_model()
     system, prompt_version, prompt_text = _build_prompting("translate", target=req.target_language)
     prompt = f"Title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
+    from src.monitoring.tasks import track
+
+    _t = (article.title or "article")[:48]
     try:
-        result = client.generate(
-            prompt, model=model, system=system, keep_alive=_effective_keep_alive()
-        )
+        with track("llm", f"Translating → {req.target_language}: “{_t}”", detail=f"model {model}"):
+            result = client.generate(
+                prompt, model=model, system=system, keep_alive=_effective_keep_alive()
+            )
     except LLMUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
@@ -709,6 +718,16 @@ def bulk_llm(
     total = len(work)
     capped = requested > total
 
+    # Make the run VISIBLE in the task manager ("is an LLM translating?"): one task
+    # for the whole bulk run, progress = articles done / total (the model's REAL
+    # work, never a fabricated %). Always finished, even on an early abort.
+    from src.monitoring import tasks as _bgtasks
+
+    _verb = "Summarizing" if op == "summarize" else f"Translating → {target}"
+    _tok = _bgtasks.register(
+        "llm", f"{_verb} {total} article(s)", detail=f"model {model}", total=total
+    )
+
     def _stream():
         import json as _json
 
@@ -723,8 +742,10 @@ def bulk_llm(
         stored = skipped = failed = 0
         from src.database.session import SessionLocal
 
-        with SessionLocal() as s:
+        try:
+          with SessionLocal() as s:
             for i, (aid, title, content) in enumerate(work, 1):
+                _bgtasks.update(_tok, done=i)
                 if req.skip_existing and aid in already:
                     skipped += 1
                     yield emit({"event": "item", "i": i, "total": total,
@@ -760,7 +781,9 @@ def bulk_llm(
                 yield emit({"event": "item", "i": i, "total": total,
                             "article_id": aid, "title": title, "status": "stored",
                             "chars": len(result.text)})
-        yield emit({"event": "done", "total": total, "stored": stored,
-                    "skipped": skipped, "failed": failed, "aborted": False})
+          yield emit({"event": "done", "total": total, "stored": stored,
+                      "skipped": skipped, "failed": failed, "aborted": False})
+        finally:
+            _bgtasks.finish(_tok)
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")

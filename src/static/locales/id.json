@@ -1272,5 +1272,15 @@
   "Background tasks (markets · calendars · checks)": "Tugas latar belakang (pasar · kalender · pemeriksaan)",
   "Building the briefing": "Menyusun ringkasan",
   "Up next this pass": "Berikutnya pada lintasan ini",
-  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "Urutan diacak ulang setiap lintasan — distratifikasi menurut bahasa dan tag, bukan antrean tetap."
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "Urutan diacak ulang setiap lintasan — distratifikasi menurut bahasa dan tag, bukan antrean tetap.",
+  "Processes": "Proses",
+  "Performance": "Kinerja",
+  "History": "Riwayat",
+  "Airplane mode": "Mode pesawat",
+  "Online · collecting": "Online · mengumpulkan",
+  "Online · idle": "Online · diam",
+  "Idle": "Diam",
+  "Downloads": "Unduhan",
+  "AI & analysis": "AI & analisis",
+  "paused — airplane mode": "dijeda — mode pesawat"
 }

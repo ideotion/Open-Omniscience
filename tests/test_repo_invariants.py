@@ -2446,6 +2446,41 @@ def test_task_manager_shows_pass_phase_and_upcoming_sources():
         assert key in en, f"missing i18n key: {key!r}"
 
 
+def test_task_manager_redesign_windows_style():
+    """The standalone task manager is a Windows-Task-Manager-style window
+    (maintainer 2026-06-18): a persistent resource summary + Processes /
+    Performance / Queue / Schedule / History tabs, airplane-aware, showing what
+    actually runs (incl. LLM/analysis tasks) with live hardware charts."""
+    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    # The five tabs + their panels.
+    for panel in ("processes", "performance", "queue", "schedule", "history"):
+        assert f'data-panel="{panel}"' in tm, f"missing tab: {panel}"
+        assert f'id="p-{panel}"' in tm, f"missing panel: p-{panel}"
+    # Persistent resource summary strip (state + CPU/RAM/↓/jobs).
+    assert 'id="tm-summary"' in tm and "renderSummary" in tm
+    # Processes are grouped like Windows (apps / background / services).
+    assert '"AI & analysis"' in tm and "renderProcesses" in tm
+    # Background LLM/analysis tasks are surfaced (the "is an LLM translating?" view).
+    assert '"llm"' in tm and '"analytics"' in tm
+    # Performance tab draws live hardware charts from a rolling buffer.
+    assert "renderPerformance" in tm and "sparkSvg" in tm and "Disk I/O" in tm
+    # History tab reads the run log; airplane mode is honest in the schedule.
+    assert "/api/jobs/history" in tm and "renderHistory" in tm
+    assert "a.online === false" in tm and "paused — airplane mode" in tm
+    # Never flips the network from the task page.
+    assert "/api/system/network" not in tm
+
+    # The backend surfaces background tasks + a history endpoint.
+    jobs_src = (_ROOT / "src" / "api" / "jobs.py").read_text(encoding="utf-8")
+    assert "_task_jobs" in jobs_src and "src.monitoring.tasks" in jobs_src
+    assert '"/history"' in jobs_src and "recent_runs" in jobs_src
+    # The LLM + AI endpoints register a visible task.
+    llm_src = (_ROOT / "src" / "api" / "llm.py").read_text(encoding="utf-8")
+    ai_src = (_ROOT / "src" / "api" / "ai.py").read_text(encoding="utf-8")
+    assert "monitoring.tasks" in llm_src or "monitoring import tasks" in llm_src
+    assert "monitoring import tasks" in ai_src or "monitoring.tasks" in ai_src
+
+
 def test_startup_seeds_the_source_catalog_at_unlock():
     """Data collection is the heart of the project, so the app MUST come up with
     its source catalog. An ENCRYPTED store (the default) is unlocked via the web,

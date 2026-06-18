@@ -1272,5 +1272,15 @@
   "Background tasks (markets · calendars · checks)": "مهام في الخلفية (الأسواق · التقاويم · الفحوص)",
   "Building the briefing": "إنشاء الموجز",
   "Up next this pass": "التالي في هذه الجولة",
-  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "تُعاد عشوائية الترتيب في كل جولة — مُصنَّفة حسب اللغة والوسم، وليست طابورًا ثابتًا."
+  "Order is re-randomised every pass — stratified by language and tag, not a fixed queue.": "تُعاد عشوائية الترتيب في كل جولة — مُصنَّفة حسب اللغة والوسم، وليست طابورًا ثابتًا.",
+  "Processes": "العمليات",
+  "Performance": "الأداء",
+  "History": "السجل",
+  "Airplane mode": "وضع الطيران",
+  "Online · collecting": "متصل · يجمع",
+  "Online · idle": "متصل · خامل",
+  "Idle": "خامل",
+  "Downloads": "التنزيلات",
+  "AI & analysis": "الذكاء الاصطناعي والتحليل",
+  "paused — airplane mode": "متوقّف مؤقتًا — وضع الطيران"
 }
