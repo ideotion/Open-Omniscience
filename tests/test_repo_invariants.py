@@ -2082,6 +2082,18 @@ def test_ooMap_choropleth():
     )
     assert "ooRegionName(code, c.name)" in html, "map polygon labels must localise the country name"
 
+    # --- slice 5a: SIGNALS layer + in-map time slider (folding the temporal map in) --- #
+    # A switchable signals layer reusing the temporal-map substrate (/api/timemap)
+    # + its kind colours; events placed in space AND time, never re-projected.
+    assert "data-oomap-signals" in html and "opts.onSignals()" in html, "the Signals layer toggle must exist"
+    assert "/api/timemap?limit=4000" in html, "the signals layer must reuse the /api/timemap substrate"
+    assert "kindColor(s.kind)" in html, "signals must reuse the temporal map's kind colours"
+    # The in-map TIME slider sweeps the focus moment; signals filter by the focus window.
+    assert "data-oomap-focus" in html and "opts.onFocus(+fs.value)" in html, "the in-map time slider must exist"
+    assert "Math.abs(s.t - focus) <= win" in html, "signals must filter by the focus window (space AND time)"
+    # Honest event convention carried over: future/unconfirmed = a hollow/dashed ring.
+    assert "const future = focus != null && s.t > focus" in html, "future events stay distinct (hollow/dashed)"
+
 
 def test_search_timescope():
     """The Search sidebar tab reuses the SAME ooTimeScope control for date-range
