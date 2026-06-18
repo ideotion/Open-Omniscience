@@ -346,6 +346,25 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **LLM-ASSISTED PERCEPTION — who/where/when extraction + sentiment + an eval harness
+  (maintainer brainstorm 2026-06-18; EVALUATION, reconciliation pending the maintainer's
+  PARALLEL internet research; full record in `docs/FUTURE_DEVELOPMENTS.md` →
+  "LLM-assisted PERCEPTION"):** DOCTRINE = LLM for PERCEPTION (extract/disambiguate/translate,
+  locally-checkable + validatable, stored as confirmable CANDIDATES in the AI layer) NEVER
+  JUDGMENT (grade/rank/decide-worth); measure on the SHIPPED small model, never assume
+  frontier quality. AGREED (maintainer-ruled): LLM who/where/when scope = dates + places +
+  WHO (persons AND orgs — "the DOJ is a who"), explicitly NO "what"/events; build it AFTER an
+  EVAL-FIRST harness (synthetic difficulty-tiered + phenomenon-tagged set ×12 langs with
+  ar/zh/ja/hi/bn gold flagged needs-native, PLUS a real-article set; score precision/recall/
+  HALLUCINATION per language/tier/phenomenon vs the rule-based baseline; deterministic; LLM
+  place-string vs gazetteer-coordinate scored apart; de-US-centring bias measured per-stratum)
+  — the same harness becomes task 2 for sentiment-vs-VADER. OPEN (not approved): LLM-as-grader
+  (leaning AGAINST a composite grade; reframe to a descriptive substance lens + an LLM-free
+  source-behaviour profile); fact→SVO→novelty (SVO-aggregation rejected; reframe to attributed
+  claims + embeddings, mind negation); sentiment classifier choice (deep-research done — XLM-R
+  ONNX-safe, mDeBERTa ONNX-broken, per-language gating, validate on news, or pivot to
+  subjectivity/loaded-language feeding the manipulation cards). Implementation reuses the
+  ai_layer store (#330/#332); nothing built this session beyond capturing the evaluation.
 - **MAINTAINER BATCH RULINGS 2026-06-17 (answered the next-session question list; binding —
   these set priorities + override several earlier defaults):**
   (1) **PIVOT TO RELEASE-ENGINEERING** — the next push leads with the RC-BLOCKING release-eng

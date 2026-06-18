@@ -1799,3 +1799,163 @@ on Tier 4 / the journalist-facing lens; (b) whether to ever use the words "push 
 or only describe the mechanic ("this item embeds a negative claim inside the
 question"); (c) whether the everyday-person promise should answer "who's winning"
 more directly than the evidence-trail-only stance.
+
+## LLM-assisted PERCEPTION — who/where/who extraction, sentiment, and an eval harness (maintainer brainstorm 2026-06-18; EVALUATION — reconciliation pending the maintainer's PARALLEL internet research)
+
+A long evaluative session on where small LOCAL models genuinely help. The maintainer is
+running a parallel research pass with full internet access; this records what we
+CONVERGED on and what stays OPEN so context-summarization can't lose it. Builds on the
+AI-layer (the `src/ai_layer` scaffold #330 + the keyword-extraction first writer #332)
+and the strict-separation ruling (AI never writes the main DB except summary/translation;
+all other AI-derived analytics live in the parallel AI store as a labelled, disposable
+lens). NOT approved-to-build except the who/where/when SCOPE ruling + the eval-first
+methodology below.
+
+**THE DOCTRINE (the organizing line that answers every sub-idea):**
+- LLMs are strong at **PERCEPTION** (extract, disambiguate, compress, translate, resolve
+  coreference) and weak/dangerous at **JUDGMENT** (grade, rank, decide truth or worth).
+- Sharper axis: prefer tasks whose every output is **locally checkable** (read the snippet,
+  verify the date/place in seconds) and **validatable** (ground truth exists), stored as
+  confirmable **CANDIDATES** in the AI layer — never trusted fact, never a quality/selection
+  gate.
+- **Small-local-model reality:** "LLMs are good at X" is calibrated to frontier models; the
+  1–3B (and ~30B-on-CPU) models this project runs are weaker (more hallucination, shakier
+  schema adherence). So NOTHING is assumed — everything is MEASURED on the shipped model.
+  Models improve fast ⇒ the eval harness is a reusable, model-independent regression tool
+  (build the labeled set once, re-run per model, watch the curve).
+
+**AGREED — LLM who/where/when extraction (the strongest, most-defensible application):**
+- **SCOPE (maintainer-ruled 2026-06-18):** dates, places, and **WHO = persons AND
+  organizations/entities** ("the Department of Justice is a who"). Explicitly **NO "what" /
+  events** — events have fuzzy ground truth (low human inter-annotator agreement) and the
+  biggest hallucination surface, so they're dropped. Matches the existing
+  `article_entities` person/org classes + `who_aggregate`.
+- **Why it's the best LLM fit:** validatable (dates/places/who have ground truth); LLMs
+  genuinely beat the rule-based extractors at disambiguation (Paris TX vs FR), coreference
+  ("the president" → who), relative dates ("next Tuesday"), org surface-forms
+  (DOJ = Justice Department), and multilingual text; and it slots into the two-class
+  deduced/confirmed model + the AI layer + the temporal map.
+- **Implementation shape (AFTER the eval validates a model):** an AI-LAYER batch job
+  (reusing the #330/#332 store) producing confirmable candidates (date / place / who) each
+  with a source snippet + model provenance; surfaced as a DISTINCT, toggleable layer on the
+  temporal map + reader, BESIDE (never overwriting) the rule-based trusted When×Where×Who;
+  coordinates resolved by the GAZETTEER (the LLM proposes the place STRING; never let it
+  fabricate lat/lon precision); PER-LANGUAGE gating; loopback Ollama (airplane refuses).
+
+**AGREED — the EVAL-FIRST methodology (the falsifiable test, before any implementation):**
+- ONE task-pluggable eval harness: a labeled corpus + a scorer comparing a CANDIDATE (LLM)
+  against the rule-based BASELINE, per stratum. Lives in eval tooling, touches NO trusted
+  data; the maintainer runs it on their machine (has Ollama) and sends the report (the
+  established "run it, send the log" loop).
+- **Dataset = (A) a synthetic, DIFFICULTY-TIERED (1–5), PHENOMENON-TAGGED set across all 12
+  UI languages** — the explicit tiering/tagging is what makes a synthetic set RIGOROUS
+  (the author's hand is auditable, not hidden). Probes: relative dates, ambiguous places
+  (Paris TX/FR), ambiguous persons (Washington person/place), org surface-forms + aliases,
+  **metonymy** (Beijing / the White House / the Kremlin as actors-expressed-as-places — TAG
+  and MEASURE how the model reads them, never force one answer), coreference, negation,
+  non-gazetteer Global-South places, non-Latin numerals. Gold for ar/zh/ja/hi/bn is flagged
+  `needs-native` (an eval with wrong gold measures nothing) and scored as its own stratum.
+  **PLUS (B) a smaller HAND-LABELED REAL-article set** for external validity — the synthetic
+  set measures CAPABILITY, not the real-world hit-rate.
+- **Scoring:** precision AND recall AND **hallucination rate** (exhaustive gold ⇒ any extra
+  emission = a false positive — this is what catches the failure mode that matters); broken
+  out **per language / tier / phenomenon** (the bias IS the result, never the average); WHO
+  scored with its **person/org class**; deterministic run (temperature 0 / pinned
+  model+quant+prompt); the LLM place-STRING extraction scored SEPARATELY from the gazetteer
+  COORDINATE resolution.
+- **The de-US-centring guard, baked into the test:** LLM + gazetteer coverage is better for
+  Western/English/well-documented places, so a naïve enriched map goes DENSER over the West
+  (a cartographic lie that implies "more happens in rich countries"). The eval measures
+  per-stratum P/R AND error STRUCTURE (systematic vs random) so the bias surfaces as a
+  number; the implementation then gates by validated language and reports coverage gaps
+  honestly, rather than emitting confident pins it can't justify.
+
+**OPEN (still evaluating — NOT approved):**
+- **LLM-as-GRADER** (a reliability/quality grade in metadata to qualify/disqualify
+  articles): leaning AGAINST a composite grade — it breaks no-composite-scores,
+  LLM-less-as-asset, reproducibility, de-US-centring, and the anti-censorship stance;
+  documented LLM-judge **verbosity bias would REWARD the very padding the maintainer
+  hates**; and "reliability" is unvalidatable (no ground truth). Salvageable kernel = a
+  DESCRIPTIVE, decomposed **"substance / did-this-waste-my-time" lens** (intra-article
+  density, headline-body match, attribution density), several dimensions RULE-BASED
+  (reproducible), the LLM only for padding/density AS DESCRIPTION, AI-layer, never a gate.
+  Plus a reproducible, LLM-FREE **source-behaviour profile** (recycled-claim rate,
+  attribution density, original-reporting share) as the honest answer to "some sources are
+  more worthwhile."
+- **FACT-extraction → shortest SVO → novelty-by-aggregation:** SVO-string aggregation
+  REJECTED — open-vocabulary canonicalization produces FALSE novelty (one fact, four
+  triples), and the compression drops attribution/modality/negation (turning a claim into a
+  "fact" = a falsification). Honest path = extract **ATTRIBUTED claims** (keep
+  modality/attribution) + cluster by sentence **EMBEDDINGS** (deterministic) for SEMANTIC
+  novelty, in the AI layer — BUT embeddings mishandle NEGATION ("X will run" vs "X will not
+  run" cluster together), so polarity must be carried explicitly; and any corpus-novelty
+  count must inherit the distinct-SOURCES independence discipline (anti-false-triangulation).
+  The tractable, valuable part is the INTRA-article "core claim vs padding" signal, not
+  corpus-wide novelty (which near-dup + entity/keyword overlap already partly cover, lexically).
+- **SENTIMENT (replace the English-only VADER):** see the deep-research findings below.
+  Leaning: an **XLM-R-based, MIT/Apache, ONNX-safe 3-class classifier** (deploy ONNX+INT8,
+  torch only at build time), **per-language gated** (emit only for validated languages;
+  caveat Hindi; withhold zh/ja/bn/nl/ru until validated — emitting a confident label from an
+  unvalidated language is fabricated precision), **validated on NEWS** (MAD-TSC), a
+  descriptive AI-layer lens never a gate — OR pivot the target to **SUBJECTIVITY /
+  LOADED-LANGUAGE** (news-native, feeds the manipulation-pattern cards, "name the shape, not
+  the verdict"), which several found a better fit than valence for news.
+
+**DEEP-RESEARCH FINDINGS — sentiment / subjectivity classifiers (2026-06-18; live search
+pass; flags: ✅ fetch-verified · ⚠️ search-derived from a named primary source, digits
+unconfirmed · ❓ unverified/discard). The session BLOCKED direct fetches of huggingface.co /
+arxiv.org / ACL (HTTP 403), so most numbers are the search index's rendering of those
+pages, not raw reads — pin the ⚠️/❓ ones on a network where HF is allowlisted.**
+
+Three load-bearing findings:
+1. **News sentiment is intrinsically hard — it's the TARGET, not the model.** Journalists
+   write to be objective, so sentiment is implicit, and you must separate "bad news" from
+   "negative sentiment toward a target" (NewsMTSC EACL 2021; Balahur LREC 2010 ⚠️). Human
+   inter-annotator agreement started <50%, reaching ~81% only after tightly constraining the
+   task (⚠️). There is **no widely-adopted off-the-shelf MULTILINGUAL NEWS-domain sentiment
+   model** with strong metrics; the multilingual-news DATA to fine-tune on is **MAD-TSC**
+   (8 aligned languages, target-based, ACL 2023).
+2. **Per-language quality is structurally uneven (UMSAB, macro-F1, ✅ fetch-verified from
+   cardiffnlp/xlm-t):** ar 66.9 · en 70.6 · fr 71.2 · de 77.3 · **hi 56.4** · it 69.1 ·
+   pt 75.4 · es 67.9 (avg 69.4). European ~67–77; Arabic mid; **Hindi a steep drop**
+   (baseline as low as 36.6); and **zh, ja, bn, nl, ru are NOT in UMSAB at all** — 5+ of the
+   12 UI languages have no sentiment-benchmark backing, and non-Latin transfer degrades hard
+   (XTREME POS: Spanish 86.9 vs Japanese 49.2 ⚠️). A naïve multilingual deploy would
+   re-create the de-US-centring harm (confident European labels, garbage/none for the Global
+   South / CJK).
+3. **ONNX/offline path: clean for XLM-R/DistilBERT, BROKEN for mDeBERTa, UNKNOWN for
+   ModernBERT/mmBERT.** ✅ Optimum issue #2075: mDeBERTa-v3 exports to ONNX incorrectly
+   (disentangled attention traces wrong → "always predicts the same label") — so the
+   news-native subjectivity model (GroNLP, mDeBERTa-v3) needs a torch runtime or parity
+   validation. Torch-free runtime IS achievable (export on a build box; ship
+   onnxruntime + tokenizers + .onnx). INT8 ≈1.6–4× smaller, ~0.2–0.5 F1 drop — but the
+   speedup needs a CPU with VNNI/AVX2 (on a 2-core VM INT8 can be SLOWER — verify), and
+   quantization regressed in onnxruntime ≥1.21 (pin 1.20.1 or confirm the file shrinks).
+
+Valence-sentiment candidates: **cardiffnlp/twitter-xlm-roberta-base-sentiment(-multilingual)**
+(~278M, **MIT** ✅, 8 trained langs, tweets, 3-class, ONNX-safe — best-documented/peer-reviewed
+XLM-T); **clapAI family** (Apache-2.0 ⚠️, 16+ langs, 3-class; `mmBERT-small` F1 82.2@140M ⚠️
+but ModernBERT/mmBERT ONNX support ❓ — prefer clapAI's XLM-R-base variant for ONNX safety);
+**lxyuan/distilbert-…-sentiments-student** (~135M, Apache ⚠️, distilled, no benchmark);
+**tabularisai/multilingual-sentiment-analysis** (~135M, Apache ⚠️, 22 langs, **synthetic
+LLM-generated training data**, 5-class); **nlptown/bert-base-multilingual-uncased-sentiment**
+(**no declared license** ❌, 1–5 star — set aside). Alternatives (news-native): **subjectivity**
+`GroNLP/mdebertav3-subjectivity-multilingual` (SUBJ/OBJ on news, CLEF-2023 2nd; mDeBERTa →
+ONNX-risk; license ❓); **loaded-language** `kinit/semeval2023-task3-persuasion-techniques`
+(XLM-R-large, 23 techniques incl. "Loaded Language"/"Appeal to Fear", news-trained; ~550M,
+raw `.pth`, license ❓ — maps onto the manipulation-pattern cards); **emotion** XLM-EMO
+(19 langs, 4-class, F1 0.85 ⚠️, MIT code, tweet-domain) or tabularisai-emotion (23 langs,
+11 multi-label, synthetic). Sources: cardiffnlp/xlm-t (github.com/cardiffnlp/xlm-t; XLM-T
+LREC 2022, arxiv 2104.12250); MAD-TSC (aclanthology.org/2023.acl-long.461, github.com/
+EvanDufraisse/MAD_TSC); NewsMTSC (aclanthology.org/2021.eacl-main.142); AfriSenti
+(github.com/afrisenti-semeval/afrisent-semeval-2023); XTREME (arxiv 2003.11080); Optimum
+ONNX bug (github.com/huggingface/optimum/issues/2075); onnxruntime quantization
+(onnxruntime.ai/docs/performance/model-optimizations/quantization.html); GroNLP subjectivity
+(huggingface.co/GroNLP/mdebertav3-subjectivity-multilingual); kinit persuasion
+(huggingface.co/kinit/semeval2023-task3-persuasion-techniques).
+
+**RECONCILIATION:** the maintainer's parallel internet research (2026-06-18) reconciles
+against this and pins the ⚠️/❓ figures before any build. The eval harness is the empirical
+decider for BOTH who/where/when and sentiment (candidate vs baseline/VADER, per stratum, on
+news). Approved-to-build so far = the who/where/when SCOPE (date/place/who incl. orgs, no
+"what") + the eval-first methodology; everything else stays OPEN.
