@@ -2322,6 +2322,46 @@ ruling, a contingency, or a deliberate-omission note.
 - **Temporal map remainder:** logarithmic time scale (agreed: linear/log
   toggle, labelled ticks, no hidden warp); feed mention-layer with extracted
   event-places.
+- **MAP REWORK — UNIVERSAL ooMap + CHOROPLETH (maintainer ruling 2026-06-18; the current
+  map is "unusable", rethink everything; 4 decisions answered via AskUserQuestion):** (1)
+  ONE universal map component (`ooMap`, like ooChart/ooSubtabs) REPLACES every map surface
+  (the Temporal-map tab + the When/Where mini `#map-svg` + ~7 touch-points); the time-slider
+  becomes a CONTROL inside it. (2) CHOROPLETH-first: colour a geographic unit by a measured
+  DATA dimension on a colour scale — sources/articles/keywords/sentiment/analytics per
+  place; this genuinely did NOT exist (the old map only plots dots). (3) BIG: fills the
+  content area minus tabs/subtabs (near-fullscreen). (4) IN-MAP controls (Google-Maps "inside
+  the map" principle, already a ledger ruling): zoom +/−, legend, dimension/layer picker,
+  granularity, pan — all overlaid INSIDE the map. GRANULARITY = country core + continent
+  (aggregate of countries) + city/place POINTS overlay (switchable). PLACEMENT = rebuild the
+  existing Temporal-map tab into it (no new top-level tab). HONESTY carries: no-data ≠ zero
+  (a country with no data renders "no data", never a guessed colour); unlocated bucketed
+  ("N not mapped"); VADER-EN-only caveat on the sentiment layer; "deduced, never confirmed"
+  on mention layers; NO composite scores. SALVAGE: the equirectangular projection
+  (lon2x/lat2y), the city gazetteer, the location endpoints (/api/insights/where·who·
+  corpus-sources, KeywordMention.country, Source.country, sentiment-at-ingest). REDO: the
+  entire visual layer. BUILD SEQUENCE (one PR per slice onto 0.09): (1) country-polygons
+  foundation [SHIPPED 2026-06-18, below]; (2) ooMap core (country fills + in-map zoom/pan +
+  colour-scale legend + honest no-data; first dimension sources-per-country; big/fullscreen
+  on the rebuilt Map tab); (3) dimensions (articles·keywords·sentiment, dimension picker,
+  caveats); (4) granularity (continent aggregation + city/place point overlay); (5)
+  consolidation (fold the time-slider in, retire the old surfaces, embed ooMap on
+  When/Where + insights).
+  **SLICE 1 SHIPPED 2026-06-18 (the choropleth data foundation; backend VERIFIED py3.13):**
+  a CHOROPLETH needs per-country FILL polygons — the app had only coastline/land outlines
+  (`world_outline.json`, NE 110m land). NEW `src/timemap/countries_geo.py` =
+  `coarsen_admin0(geojson)` (pure, network-free) → `{iso2: {name, rings}}` keyed by ISO-2,
+  reusing outline.py's exact ring helpers; `iso2_of` honours NE's `ISO_A2="-99"` →
+  `ISO_A2_EH` fallback (France/Norway), and a microstate keeps its LARGEST ring even below
+  min_span so it never vanishes. NEW `scripts/build_country_polygons.py` (run-once-with-
+  network, mirrors build_world_outline.py) fetches NE 110m admin-0 + coarsens. Generated
+  the real asset HERE (sandbox network reached raw.githubusercontent): `src/static/
+  world_countries.json` = 175 countries, 285 rings, **136 KB** (precision 1 ≈ 11 km, min_span
+  0.5). HONEST GAP: NE 110m is too coarse for ~75 catalog microstates (Singapore/Malta/
+  Tuvalu/HK…) → the renderer (slice 2) gives those a CENTROID POINT-FALLBACK from the
+  gazetteer so no country with data is ever lost (NEVER invented borders). tests/
+  test_countries_geo.py (8: iso2 fallback, ISO-keying, multipolygon, microstate-survives,
+  no-ISO-dropped, asset shape+coverage). mypy 0-new (119≤127 — base drifted up via other
+  merges, my module adds 0), ruff F/B clean.
 - **Home cards remainder:** **ALL CARDS CLICKABLE — SHIPPED 2026-06-16 (Item I,
   maintainer-ruled "clickable cards open an advanced search / the unified interface
   with all analytics subtabs, whose corpus corresponds to the selection of articles
