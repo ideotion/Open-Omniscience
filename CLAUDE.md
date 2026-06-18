@@ -380,10 +380,26 @@ ruling, a contingency, or a deliberate-omission note.
   `POST /api/ai/prompts/{id}/run` streams a run over a selection (reuses `_resolve_work` +
   `extract_for_articles`, now parametrised with a custom `system` prompt + output `kind` +
   `prompt_version="custom:<id>"`) → writes `ai_keyword` rows of that kind, NEVER the trusted
-  index (test asserts ZERO KeywordMention). tests/test_ai_custom_prompts.py (5). REMAINING: the
-  Settings UI for the managed list (reuse the #380 editor); the AUTO-ON-INGEST hook (run_on_ingest
-  field is stored; the per-article hook is the next slice); expose the built-in extraction/cascade
-  prompts in the same editor (Part B). Nothing else built this session beyond capturing the evaluation.
+  index (test asserts ZERO KeywordMention). tests/test_ai_custom_prompts.py (5).
+  CUSTOM-PROMPT UI + RUN + SEARCH + INLINE + AUTO + BUILT-IN-EDITOR ALL SHIPPED 2026-06-18 (stacked
+  draft PRs onto 0.09, ALL MERGED; frontend browser-unverified per fork-3 — needs a click-through):
+  (#386) Settings → Models "Custom extractors" CRUD UI (define/edit/enable/delete the managed list,
+  reuses the #380 editor); (#387) a "Run extractor" action in the analysis window runs a chosen
+  extractor over the selection (ctx-aware `aiRunPrompt`, mirrors bulkLlm: `_bulkParams` + NDJSON
+  stream + abort); (#390) the SAME control in the SEARCH toolbar (parity); (#388) the unified AI
+  metadata renders INLINE in the article view as a THIRD class "AI-derived — unreliable"
+  (server-rendered in `view_article` via `ai_store.keywords_for_article`, grouped by kind, absent
+  when none; TestClient-verified); (#389) AUTO-ON-INGEST (`src/ai_layer/auto.run_auto_on_ingest`)
+  runs enabled+`run_on_ingest` extractors over recent articles in the scheduler's POST-PASS
+  housekeeping — NEVER inline (a model in the scrape hot path would stall it), opt-in (no auto
+  prompts ⇒ zero cost), `skip_existing` so only NEW articles cost a call, `is_available`-gated;
+  (#391, Part B) the built-in keyword-EXTRACTION prompt is now editable in the SAME
+  Behaviour-&-prompts editor (`AppSettings.llm_prompt_ai_keywords`; `/api/llm/prompts` 4th entry;
+  the extract endpoint applies the override → `"ai-keywords-custom"` provenance). The unified loop
+  is COMPLETE: define (custom) / tune (built-in) → run (analysis OR search, or auto-on-ingest) →
+  see inline — all local, never the trusted index, provenance per result. REMAINING (polish): a
+  per-article Summarize/Translate/extract on the analysis Articles list; the broader LLM-PERCEPTION
+  eval program (above) is the separate, larger track.
 - **MAINTAINER BATCH RULINGS 2026-06-17 (answered the next-session question list; binding —
   these set priorities + override several earlier defaults):**
   (1) **PIVOT TO RELEASE-ENGINEERING** — the next push leads with the RC-BLOCKING release-eng
