@@ -143,7 +143,7 @@ async function viewPromise() {
   html += panel("Go deeper (each opens the main app with the parameters shown)",
     `<div class="suggest">
        ${suggestion("Search variants", "/#search", `your query: ${terms}`)}
-       ${suggestion("Open the Temporal map", "/#timemap", `window around ${date}`)}
+       ${suggestion("Open the World map", "/#timemap", `window around ${date}`)}
        ${suggestion("Add to briefing draft", "/#home", "pin the original + follow-ups")}
        ${suggestion("Log to custody", "/#custody", `article ${articleId}: signed, hash-chained entry`)}
      </div>`);
@@ -178,7 +178,7 @@ async function viewEditWar() {
     `<div class="suggest">
        ${suggestion("Open the Wikipedia tab", "/#wiki", `page: ${wiki}:${title} — diffs & baselines`)}
        ${suggestion("Search your corpus", "/#search", `query: "${title}" — is news driving the burst?`)}
-       ${suggestion("Open the Temporal map", "/#timemap", "the burst window in context")}
+       ${suggestion("Open the World map", "/#timemap", "the burst window in context")}
      </div>`);
   return html;
 }

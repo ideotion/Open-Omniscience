@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from src.database.models import Base, StatFigure, StatSubscription
+from src.database.models import Base, StatFigure
 from src.ingest import activate_kill_switch, clear_kill_switch
 from src.stats import subscriptions as S
 

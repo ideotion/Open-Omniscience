@@ -67,7 +67,7 @@ def test_crud_roundtrip(db):
 
 def test_fires_on_threshold_with_new_evidence(db):
     a1, a2, a3 = _art(db, "a1"), _art(db, "a2"), _art(db, "a3")
-    w = W.create_watch(db, name="W", query="flood", threshold=3, window_days=7)
+    W.create_watch(db, name="W", query="flood", threshold=3, window_days=7)
     db.commit()
     matched = {a1.id, a2.id, a3.id}
     # Inject a matcher that returns our three articles for the query.
@@ -124,7 +124,7 @@ def test_window_excludes_old_articles(db):
 
 def test_bad_query_does_not_break_the_pass(db):
     _art(db, "a1")
-    w1 = W.create_watch(db, name="bad", query="boom", threshold=1, window_days=7)
+    W.create_watch(db, name="bad", query="boom", threshold=1, window_days=7)
     a = _art(db, "a2")
     w2 = W.create_watch(db, name="good", query="flood", threshold=1, window_days=7)
     db.commit()
@@ -143,7 +143,7 @@ def test_bad_query_does_not_break_the_pass(db):
 
 def test_recent_fired_watches_is_the_lead_card_source(db):
     a = [_art(db, f"a{i}") for i in range(3)]
-    w = W.create_watch(db, name="W", query="flood", threshold=3, window_days=7)
+    W.create_watch(db, name="W", query="flood", threshold=3, window_days=7)
     db.commit()
     W.evaluate_watches(db, matcher=lambda s, q: [x.id for x in a])
     db.commit()

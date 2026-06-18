@@ -111,7 +111,6 @@ def test_rtl_and_indic_month_names():
     flagged at ~0% coverage). Native digits (Eastern-Arabic ٠-٩, Devanagari,
     Bengali) parse via \\d + int(); a month only fires next to a day/year, so
     'مارس' (=March, but also 'practised') never invents a date from prose."""
-    from datetime import date
 
     from src.timemap.dateextract import extract_dates
 

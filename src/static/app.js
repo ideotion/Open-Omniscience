@@ -857,7 +857,7 @@
       {id:"home",     label:"Home",               grp:"Investigate"},
       {id:"search",   label:"Search",             grp:"Investigate"},
       {id:"insights", label:"Insights",           grp:"Investigate"},
-      {id:"timemap",  label:"Temporal map",       grp:"Investigate"},
+      {id:"timemap",  label:"World map",          grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
       {id:"law",      label:"World law",          grp:"Investigate"},
       {id:"agenda",   label:"Agenda",             grp:"Investigate"},
@@ -7592,7 +7592,7 @@
       } catch (e) { toast("Map failed: " + e.message, "err"); }
     }
 
-    // -- Temporal map: space-time signals on the world map + a time slider -- //
+    // -- World map (ooMap): choropleth + space-time signals + a time slider -- //
     // Reuses the equirectangular projection (lon2x/lat2y, MAP_W/MAP_H) with its
     // own viewBox so it pans/zooms independently of the Insights map.
     const TMAP_KINDS = {
