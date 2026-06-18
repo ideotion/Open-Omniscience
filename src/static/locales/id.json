@@ -1226,5 +1226,16 @@
   "Ollama models live outside your corpus, so they are NOT in the full backup. Back them up separately to avoid re-downloading (multi-GB; slow over Tor). Restore is additive and bit-identical — existing blobs are skipped, never overwritten.": "Model Ollama berada di luar korpus Anda, jadi TIDAK ada di cadangan penuh. Cadangkan secara terpisah untuk menghindari pengunduhan ulang (multi-GB; lambat lewat Tor). Pemulihan bersifat aditif dan identik per bit — blob yang sudah ada dilewati, tidak pernah ditimpa.",
   "Checking the local model store…": "Memeriksa penyimpanan model lokal…",
   "Download models backup": "Unduh cadangan model",
-  "Restore models…": "Pulihkan model…"
+  "Restore models…": "Pulihkan model…",
+  "Chain of custody": "Rantai pengawasan",
+  "Tamper-evident, signed provenance for legal defensibility. Toggles below are preferences; the status line shows what this build can actually do.": "Provenans bertanda tangan dan anti-rusak untuk pertahanan hukum. Sakelar di bawah adalah preferensi; baris status menunjukkan apa yang sebenarnya dapat dilakukan build ini.",
+  "Loading custody settings…": "Memuat pengaturan pengawasan…",
+  "Post-quantum signatures": "Tanda tangan pasca-kuantum",
+  "Add an ML-DSA (FIPS 204) signature alongside Ed25519 so the chain stays verifiable against a future quantum adversary.": "Tambahkan tanda tangan ML-DSA (FIPS 204) di samping Ed25519 agar rantai tetap dapat diverifikasi terhadap musuh kuantum di masa depan.",
+  "OpenTimestamps anchoring": "Penjangkaran OpenTimestamps",
+  "Anchor entries into Bitcoin via public calendars. Independent proof of time, but requires network egress and reveals your IP/timing to the calendars.": "Jangkarkan entri ke Bitcoin melalui kalender publik. Bukti waktu independen, tetapi memerlukan keluaran jaringan dan mengungkap IP/waktu Anda ke kalender.",
+  "Auto-log on ingest": "Catat otomatis saat menelan",
+  "Privacy: OpenTimestamps publishes only a hash, but submitting it reveals your IP and timing to the calendar operators. For an anonymous source, route traffic through Tor (HTTPS_PROXY) or stay local-only.": "Privasi: OpenTimestamps hanya menerbitkan sebuah hash, tetapi mengirimkannya mengungkap IP dan waktu Anda kepada operator kalender. Untuk sumber anonim, rutekan lalu lintas melalui Tor (HTTPS_PROXY) atau tetap hanya lokal.",
+  "Default actor": "Aktor bawaan",
+  "Save custody settings": "Simpan pengaturan pengawasan"
 }

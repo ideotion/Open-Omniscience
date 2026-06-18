@@ -1622,6 +1622,17 @@ ruling, a contingency, or a deliberate-omission note.
   green (1222/1222 ×12);
   test_repo_invariants green. Cumulative this session 431→337 (8 slices). REMAINING: the custody/uninstall/
   panic/OTS safety strings (sensitive wording — best with native review) + the dynamic JS rows + the ~337 tail.
+  **SLICE 9 SHIPPED 2026-06-17 (draft PR onto 0.09):** the CHAIN-OF-CUSTODY section (Settings → Safety, the
+  security-critical custody/OpenTimestamps panel) keyed ×12 — the whole section was unkeyed. +11 keys: "Chain
+  of custody" heading + intro (de-tagged `<em>`), "Loading custody settings…", "Post-quantum signatures" + its
+  ML-DSA/FIPS-204 hover, "OpenTimestamps anchoring" + its Bitcoin-anchoring hover, "Auto-log on ingest", the
+  OTS IP/timing PRIVACY WARNING, "Default actor", "Save custody settings". SECURITY-CRITICAL wording (IP/timing
+  disclosure, hash-only, Tor routing, unrecoverability) translated CAREFULLY preserving the exact technical
+  claims — but the non-en is still AI-drafted and these warnings ESPECIALLY want native review (a mistranslated
+  security warning = a misleading assurance; better readable-in-language-flagged than an unreadable English
+  wall). `--audit-chrome` 337→326; `--min 100` green (1233/1233 ×12); test_repo_invariants green. Cumulative
+  this session 431→326 (9 slices). REMAINING: the uninstall/panic safety strings + the dynamic JS rows + the
+  ~326 tail.
 - **MARKETS REVAMP — MAINTAINER VISION 2026-06-17 (the unified twin-board ask; ALL 6 SLICES
   SHIPPED + MERGED to 0.09 — #312/#314/#318/#320/#321/#324; see the per-slice log below):** the maintainer wants Commodities + Indices
   to become NEARLY-IDENTICAL twin boards (only the data differs) with: (a) all-continent
