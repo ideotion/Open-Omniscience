@@ -49,6 +49,64 @@ router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 # English. Bounded per language, biased against none.
 _MAX_KEYWORDS_PER_LANG = 5000
 
+# Stopword-candidate digest (maintainer 2026-06-18, "full authority on the logging
+# process"): the recursive-improvement loop is "grow the not-a-keyword list", and
+# the analyst (me) needs, per language, the terms that LOOK like function words but
+# aren't stoplisted yet — NOT a 24 MB dump of 245k keywords. A function word is
+# SHORT, FREQUENT and UBIQUITOUS (spread across many articles), so it lives at the
+# TOP by frequency (well within the per-language survivor set) — the cap never hides
+# it. This compact, whole-corpus-relevant digest is computed FROM the survivors the
+# export already built (zero extra DB cost), prioritised by the languages that have
+# NO stoplist yet (where the wins are).
+_SW_CAND_PER_LANG = 60     # top candidates surfaced per language
+_SW_CAND_MAX_LEN = 14      # function words are short; longer terms are content
+_SW_CAND_MIN_ARTICLES = 5  # needs real spread (ubiquity) to look like a function word
+
+
+def _stopword_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
+    """Per dominant-language, the highest article-SPREAD short single-token TERMS that
+    are NOT yet stoplisted — the shape of a function word. Ranked by distinct-article
+    spread; no score. Languages with no stoplist (no_stoplist/unsegmented) come first."""
+    from src.analytics.managed import language_status
+
+    by_lang: dict[str, list[dict]] = {}
+    for kid, m, a, _first, _last in survivors:
+        term, norm, lang, is_ent, _ent = meta.get(kid, ("?", "?", None, False, None))
+        if is_ent or not norm or " " in norm:
+            continue  # single-token TERMS only (entities + n-grams aren't function words)
+        if len(norm) > _SW_CAND_MAX_LEN or int(a) < _SW_CAND_MIN_ARTICLES:
+            continue
+        if is_hidden(norm):
+            continue  # already stoplisted / excluded — not a candidate
+        dom = dom_lang.get(kid) or lang or "?"
+        by_lang.setdefault(dom, []).append(
+            {"term": term, "normalized": norm, "mentions": int(m), "articles": int(a), "len": len(norm)}
+        )
+    out: dict[str, dict] = {}
+    for dom, items in by_lang.items():
+        items.sort(key=lambda x: (-x["articles"], -x["mentions"]))
+        out[dom] = {
+            "status": language_status(dom),
+            "total": len(items),
+            "candidates": items[:_SW_CAND_PER_LANG],
+        }
+    priority = sorted(
+        (d for d, v in out.items() if v["status"] in ("no_stoplist", "unsegmented")),
+        key=lambda d: -out[d]["total"],
+    )
+    # Surface unmanaged-language buckets first (the worklist), each densest-first.
+    ordered = dict(sorted(out.items(), key=lambda kv: (kv[1]["status"] not in ("no_stoplist", "unsegmented"), -kv[1]["total"])))
+    return {
+        "method": (
+            "Per dominant-signature language, short single-token TERMS (<= "
+            f"{_SW_CAND_MAX_LEN} chars, >= {_SW_CAND_MIN_ARTICLES} distinct articles) NOT "
+            "yet stoplisted, ranked by article spread — the shape of a function word. "
+            "Candidates to REVIEW before adding to a stoplist; no score, no inference."
+        ),
+        "priority_languages": priority,
+        "by_language": ordered,
+    }
+
 
 def _in_batches(ids: list[int], size: int = 800):
     for i in range(0, len(ids), size):
@@ -106,6 +164,7 @@ def _keyword_zip(
     suspects_total: int,
     suspects_capped: bool,
     entries_by_lang: dict,
+    stopword_candidates: dict,
 ) -> Response:
     """Build the per-language keyword-log ZIP, guaranteed under the byte cap.
 
@@ -128,6 +187,7 @@ def _keyword_zip(
             {"normalized_term": term, **data} for term, data in sorted(overrides.items())
         ],
         "supergroups": supergroups,
+        "stopword_candidates": stopword_candidates,
         "per_source_concentration": {
             "suspects": per_source_concentration,
             "suspects_total": suspects_total,
@@ -514,6 +574,10 @@ def keyword_log(
             )
     families = [f.to_dict() for f in build_families(fam_items, overrides)]
 
+    # Compact per-language stopword-candidate digest (reuses the survivors already
+    # built — zero extra DB cost) for the recursive "grow the not-a-keyword list" loop.
+    stopword_candidates = _stopword_candidates(survivors, meta, dom_lang, is_hidden)
+
     method = (
         f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
         "language — a global cap would anglicise the export) with real "
@@ -579,6 +643,9 @@ def keyword_log(
             separators=(",", ":"),
         )
         yield ', "supergroups": ' + json.dumps(supergroups, separators=(",", ":"))
+        yield ', "stopword_candidates": ' + json.dumps(
+            stopword_candidates, separators=(",", ":")
+        )
         yield ', "per_source_concentration": ' + json.dumps(
             {
                 "suspects": per_source_concentration,
@@ -608,6 +675,7 @@ def keyword_log(
             entries_by_lang=_group_entries_by_language(
                 survivors, _entry, dom_lang, stored_lang
             ),
+            stopword_candidates=stopword_candidates,
         )
 
     kind_tag = "digest" if digest else "log"
