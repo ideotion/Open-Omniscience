@@ -683,6 +683,30 @@ def _supergroup_totals(db: Session, member_rows: set[tuple[str, str | None]]) ->
     totals = {k: {"mentions": 0, "articles": 0} for k in keys}
     if not keys:
         return totals
+
+    # PERFORMANCE (field report 2026-06-18: "Groups" took 132 s and froze the UI on a
+    # 245k-keyword / 829k-mention corpus). The old query GROUP BY'd EVERY keyword joined
+    # to EVERY mention, then kept only the handful belonging to a super-group — i.e. it
+    # aggregated 829k mentions to discard 99.99% of them. Instead, resolve the member
+    # keyword IDs FIRST (cheap, small columns), then aggregate mentions for ONLY those.
+    matched_ids: set[int] = set()
+    # Exact terms (every ring term + each family member's own term) — an indexed lookup.
+    if term_to_key:
+        for (kid,) in (
+            db.query(Keyword.id)
+            .filter(Keyword.normalized_term.in_(list(term_to_key)))
+            .all()
+        ):
+            matched_ids.add(kid)
+    # Family morphological variants (country↔countries) match by canonical key, which is
+    # a Python function (not a column) — so a scan is unavoidable, but ONLY when a family
+    # (non-ring) member exists, and over the small (id, term) columns, never the mentions.
+    if canon_to_key:
+        for kid, norm in db.query(Keyword.id, Keyword.normalized_term).all():
+            if canonical_key(norm) in canon_to_key:
+                matched_ids.add(kid)
+    if not matched_ids:
+        return totals
     rows = (
         db.query(
             Keyword.normalized_term,
@@ -690,6 +714,7 @@ def _supergroup_totals(db: Session, member_rows: set[tuple[str, str | None]]) ->
             func.count(func.distinct(KeywordMention.article_id)),
         )
         .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        .filter(Keyword.id.in_(matched_ids))
         .group_by(Keyword.id)
         .all()
     )
