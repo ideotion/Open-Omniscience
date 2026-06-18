@@ -64,15 +64,17 @@ def _cached(key: str, compute, db: Session) -> dict:
 
 
 # Human-facing label -> table name. Counted only if the table is present.
+# Deliberately NOT shown (maintainer 2026-06-18): ``article_analyses`` (LLM
+# summaries/translations — an internal artifact, not a corpus metric), and
+# ``external_sources``/``source_groups`` (both empty, never-wired concepts —
+# "external" is redundant since every source IS external, and source GROUPS
+# duplicate source TAGS, the mechanism the app actually uses).
 _COUNTED_TABLES: dict[str, str] = {
     "articles": "articles",
     "sources": "sources",
-    "source_groups": "source_groups",
     "keywords": "keywords",
     "commodity_prices": "commodity_prices",
-    "external_sources": "external_sources",
     "article_links": "article_links",
-    "article_analyses": "article_analyses",
     "mentioned_dates": "article_mentioned_dates",
 }
 

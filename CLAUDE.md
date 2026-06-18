@@ -2934,6 +2934,22 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **STATS DISPLAY CLEANUP + DATA-MODEL ASSESSMENT (maintainer 2026-06-18; branch claude/stats-cleanup,
+  draft PR onto 0.09):** removed three counters from the Database/Home stats (database._COUNTED_TABLES +
+  the frontend HOME_STAT_LABELS, both render dynamically): `article_analyses` ("pointless" — LLM
+  summaries/translations are an internal artifact, not a corpus metric), `external_sources` ("unjustified"
+  — every source is external by definition; the table is empty/never-wired), `source_groups` (0 rows;
+  source GROUPS duplicate source TAGS — the mechanism the app actually uses for filtering + the stratified
+  scrape order). ASSESSMENTS RECORDED for follow-up (maintainer brainstorm): (a) DEPRECATE source-groups in
+  favour of tags — the SourceGroup model + source_group_association M2M + source_manager CRUD + the
+  is_tag_based flag are redundant with Source.tags; a later PR can retire the groups API/UI (keep tags). (b)
+  The AUTO-SCRAPE-CITED-ORIGINS idea ("when >X articles share the same external source, auto-scrape it")
+  ALREADY half-exists as the discovery citation_channel (src/discovery/channels.py: domains cited by ≥3
+  distinct stored articles become CANDIDATES, with a commerce filter) — but it creates DISABLED candidates
+  for operator review (RM-03 "nothing happens without you"), NOT auto-scraped sources. Making it automatic
+  is a genuine ethics ruling (auto-enabling scraping vs the review gate); recommended design: auto-PROMOTE
+  above a higher configurable threshold X, ENABLED only if it passes the gates (not commerce/social, robots
+  ok; language unknown pre-scrape so #366 can't gate it until first fetch), else stays a candidate.
 - **BACKUP FIX — stage on disk, not tmpfs (field report 2026-06-18 "Backup failed: [Errno 28] No space
   left on device" with dozens of GB free disk + an earlier "the operation was aborted"; branch
   claude/fix-backup-tmpfs, draft PR onto 0.09):** ROOT CAUSE — backup_v2 created its temp file via
