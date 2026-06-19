@@ -1407,5 +1407,8 @@
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "由本地 LLM 对前若干结果（最多 20 条）进行的一次综合 — 共同事实、分歧、悬而未决的问题，并引用文章编号。是辅助，绝非结论。",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "告诉本地模型要提取什么。每行输出一项 — 每项成为上述类型的一条元数据。",
   "Updates automatically in the background.": "在后台自动更新。",
-  "Verified translation (cross-language concept).": "已验证的翻译（跨语言概念）。"
+  "Verified translation (cross-language concept).": "已验证的翻译（跨语言概念）。",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.": "在你的调度预算内，由引用和目录渠道离线发现。每一行都显示其证据。“采纳”会创建一个仍需你启用的已停用来源；“忽略”会被记住，永不再次建议。",
+  "The keyword engine can only analyse languages with a stoplist and word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce junk keywords that skew analytics and slow the app. They're kept and re-enablable — disabling them just stops gathering material we'd mangle until a stoplist for that language lands.": "关键词引擎只能分析具有停用词表和分词的语言。其他语言的来源（没有停用词表，或未分词的中文/日文）会产生干扰分析并拖慢应用的垃圾关键词。它们会被保留且可重新启用 — 停用它们只是停止收集我们会处理不当的材料，直到该语言的停用词表就绪。",
+  "Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.": "恢复仅为追加式 — 破坏性的替换恢复已被移除。请通过上面的合并恢复（已签名的备份工件）进行恢复，它会补充你的语料库，绝不覆盖它。"
 }

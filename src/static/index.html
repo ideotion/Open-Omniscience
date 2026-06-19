@@ -1488,9 +1488,7 @@
     <div class="set-view" id="set-sources" style="display:none">
     <section class="panel" id="candidates-panel" style="display:none">
       <h2>Discovery candidates <span class="muted" style="font-weight:400">(machine-suggested — nothing happens without you)</span></h2>
-      <p class="muted" style="margin-top:0">Found offline by the citation and catalog channels under your
-        scheduler budget. Each row shows its evidence. <strong>Promote</strong> creates a <em>disabled</em>
-        source you still have to enable; <strong>Dismiss</strong> is remembered and never re-suggested.</p>
+      <p class="muted" style="margin-top:0">Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.</p>
       <div id="candidates-list"></div>
     </section>
     <section class="panel">
@@ -1507,10 +1505,7 @@
 
     <section class="panel" id="unmanaged-lang-panel" style="display:none">
       <h2>Languages we can't analyse yet</h2>
-      <p class="muted" style="margin-top:0">The keyword engine can only analyse languages with a stoplist and
-        word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce
-        <strong>junk keywords</strong> that skew analytics and slow the app. They're kept and re-enablable —
-        disabling them just stops gathering material we'd mangle until a stoplist for that language lands.</p>
+      <p class="muted" style="margin-top:0">The keyword engine can only analyse languages with a stoplist and word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce junk keywords that skew analytics and slow the app. They're kept and re-enablable — disabling them just stops gathering material we'd mangle until a stoplist for that language lands.</p>
       <div id="unmanaged-lang-summary" class="hint"></div>
       <button class="secondary" id="unmanaged-lang-btn" onclick="disableUnmanagedLanguages()"
         title="Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.">Disable sources in languages we can't analyse yet</button>
@@ -1645,9 +1640,7 @@
         <div style="flex:0 0 auto;align-self:end">
           <button class="secondary" onclick="encryptedBackup()">Download encrypted backup (.ooenc)</button></div>
       </div>
-      <div class="hint">Restore is <strong>additive-only</strong> — the destructive replace-restore was removed.
-        Restore through the merge restore above (the signed backup artifact), which complements your corpus
-        and never overwrites it.</div>
+      <div class="hint">Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.</div>
 
       <hr>
       <h3 style="margin-bottom:6px">Database maintenance</h3>
