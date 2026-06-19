@@ -74,6 +74,17 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
 
 
+def test_language_codes_shown_as_full_names_via_cldr():
+    """Field test 2026-06-19 #52/#53 (THEME-4): show the full language NAME (CLDR via
+    Intl.DisplayNames), not a bare 2-letter code, wherever a language is displayed
+    (sources table/meta, source profile, translation provenance)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function ooLangName(code, fallback)" in app, "the ooLangName CLDR helper is gone"
+    assert 'new Intl.DisplayNames([ui], { type: "language" })' in app
+    # Applied at the sources table language cell (re-renders live on oo:langchange).
+    assert "ooLangName(s.language" in app
+
+
 def test_network_polish_go_online_green_dynamic_title_and_panic_i18n():
     """Field test 2026-06-19 polish: (#O-5) going ONLINE flashes green; (#5) the airplane
     button carries a state-specific, i18n-safe dynamic title; (#64) the panic dialog is

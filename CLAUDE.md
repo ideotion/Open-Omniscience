@@ -3187,6 +3187,19 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — THEME-4 FULL LANGUAGE NAMES (#52/#53, slice 1; branch
+  claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
+  the maintainer wants the full language WORD everywhere a 2-letter code shows (except the top
+  status-bar flag). Added `ooLangName(code)` — the language analog of `ooRegionName`, using the
+  browser's own CLDR via `Intl.DisplayNames(type:"language")` (per-locale cached, falls back to the
+  code; node-verified fr→French/français, zh→Chinese, ar→Arabic), so ZERO translation tables / ZERO
+  new i18n keys. Applied to the app.js source/language surfaces: the Sources table language column
+  (re-renders LIVE on `oo:langchange` via the #16 hook — names update on a language switch), the
+  search-result source meta (language + country both CLDR-localised), the source-profile "Language:"
+  fact, and the translation provenance `[src→tgt]` pill. The raw code is kept as a hover title where
+  useful. test_repo_invariants::test_language_codes_shown_as_full_names_via_cldr. REMAINING (THEME-4
+  cont.): the standalone reader's Translation tab default = current UI language + its language picker;
+  alphabetical ordering of language lists; any other 2-letter-code surfaces found in a click-through.
 - **FIELD TEST 2026-06-19 — P2-1 REMOVED THE "CONTROVERSIAL" SOURCE VERDICT (#50; ruling REVERSES
   the official-statistics "controversial sources" framing; branch claude/gallant-bohr-1cogzj;
   backend VERIFIED py3.11 venv):** maintainer — "users should make their humble opinions." Calling a
