@@ -106,3 +106,37 @@ def test_kind_filter_matches(db):
     terms_only = columnar.top_terms_raw(con, kind="term", limit=1000)
     assert all(r["kind"] == "term" for r in terms_only)
     con.close()
+
+
+def test_persisted_refresh_is_a_noop_when_not_persisted(db):
+    # Slice 4 D: the background read-model refresh persists ONLY when the store is the
+    # encrypted PERSISTED one. Offline (no secure crypto extension) it is in-memory, so
+    # this is a deliberate no-op (never wasted work, never a plaintext file).
+    if columnar.secure_crypto_available():
+        pytest.skip("secure crypto present -> the persisted path is exercised elsewhere")
+    assert columnar.refresh_persisted_read_model(db, passphrase="x")["skipped"] == "in-memory"
+    assert columnar.refresh_persisted_read_model(db, passphrase=None)["skipped"] == "in-memory"
+
+
+def test_status_is_honest_about_the_engine_mode(db, monkeypatch):
+    # In-memory here (no secure crypto): status must say so, never claim persistence.
+    st = columnar.status("a-passphrase")
+    assert st["available"] is True
+    assert st["mode"] in ("memory", "persisted")
+    assert st["encrypted"] == (st["mode"] == "persisted")
+    monkeypatch.setenv("OO_COLUMNAR", "0")
+    assert columnar.status("x")["mode"] == "unavailable"
+
+
+def test_diagnostics_columnar_endpoint_is_observable_and_honest():
+    # Slice 4 D: the maintainer can SEE the engine mode + geo vintage to decide on the
+    # crypto-extension packaging. No score.
+    from src.api.diagnostics import columnar_status
+
+    out = columnar_status()
+    assert set(out) >= {"columnar", "ip_geo", "method"}
+    assert out["columnar"]["mode"] in ("memory", "persisted", "unavailable")
+    assert "DB-IP" in out["ip_geo"]["attribution"]
+    import json
+
+    assert "score" not in json.dumps(out["columnar"]).lower()

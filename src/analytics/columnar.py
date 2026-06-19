@@ -300,3 +300,35 @@ def top_terms_raw(con, *, kind: str | None = None, limit: int = 20) -> list[dict
          "articles": int(r[4])}
         for r in out
     ]
+
+
+def refresh_persisted_read_model(session, passphrase: str | None = None) -> dict:
+    """Maintain the read-model in the background — ONLY when the store is PERSISTED.
+
+    Called where ``warm_cache`` runs (off the request path). Persisting the read-model is
+    worthwhile only when it SURVIVES the process (the encrypted persisted store); an
+    in-memory store is rebuilt per process, so building it in the background would be
+    wasted work — hence the in-memory case is a deliberate no-op. Best-effort: a failure
+    never breaks the pass; the canonical store remains the source of truth. Returns a
+    small status dict.
+    """
+    if not duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
+        return {"skipped": "unavailable"}
+    if not (passphrase and secure_crypto_available()):
+        return {"skipped": "in-memory"}  # nothing to persist across restarts
+    con = None
+    try:
+        con = connect(passphrase=passphrase)
+        if con is None:
+            return {"skipped": "unavailable"}
+        rows = build_keyword_read_model(con, session)
+        return {"persisted": True, "keyword_agg_rows": rows}
+    except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
+        _LOG.warning("columnar read-model refresh failed", exc_info=True)
+        return {"skipped": "error"}
+    finally:
+        if con is not None:
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001
+                pass

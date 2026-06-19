@@ -567,6 +567,19 @@ def warm_cache(db: Session) -> dict:
     except Exception:  # noqa: BLE001 - never fatal to a pass
         _LOG.warning("background counter reconcile failed during warm_cache", exc_info=True)
 
+    # Maintain the derived COLUMNAR read-model — ONLY when the store is PERSISTED
+    # (Slice 4 D). A no-op when columnar is unavailable / in-memory (an in-memory store
+    # is rebuilt per process, so persisting it in the background would be wasted work).
+    # Uses the SAME corpus passphrase (no second key surface). Best-effort, off the
+    # request path; the canonical store stays the source of truth.
+    try:
+        from src.analytics.columnar import refresh_persisted_read_model
+        from src.database.connect import get_passphrase
+
+        refresh_persisted_read_model(db, passphrase=get_passphrase())
+    except Exception:  # noqa: BLE001 - never fatal to a pass
+        _LOG.warning("columnar read-model refresh failed during warm_cache", exc_info=True)
+
     warmed: list[str] = []
     specs: list[tuple[str, object]] = [
         # Home "Trending now" calls series_top=5; the Insights default is series_top=0.
