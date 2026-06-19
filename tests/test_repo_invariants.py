@@ -147,6 +147,34 @@ def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
     )
 
 
+def test_world_map_shapes_labels_and_click_country():
+    """Field test 2026-06-19 THEME-2: the world map gains (a) deduced/scheduled
+    events as distinct SHAPES (colour=kind, shape=certainty) so it reads without
+    colour alone; (b) dynamic non-overlapping country labels (greedy declutter,
+    constant on-screen size, re-laid-out on zoom, opt-in toggle); (c) click a
+    country → its coverage breakdown (counts only, the VADER caveat on tone)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # (a) shape by certainty class, colour by kind
+    assert "function _ooSigClass(s)" in app and "function _ooSigMarker(" in app, (
+        "the signal shape helpers (certainty class → circle/triangle/diamond) must exist"
+    )
+    assert '"corpus-mention"' in app and "return \"deduced\"" in app, (
+        "corpus-extracted (deduced) events must map to their own shape class"
+    )
+    assert "_ooSigMarker(cls, x, y, r, ring" in app, "signals must render via the shape helper"
+    # (b) dynamic, non-overlapping, re-laid-out-on-zoom labels (opt-in)
+    assert "function _ooMapLayoutLabels(host, vb)" in app, "the greedy label declutter must exist"
+    assert "11 * (vb.w / MAP_W)" in app, "labels must be constant on-screen size as the viewBox zooms"
+    assert "if (host._ooLabels && host._ooLabels.length) _ooMapLayoutLabels(host, vb)" in app, (
+        "labels must re-declutter on every viewBox change (dynamic)"
+    )
+    assert "data-oomap-labels" in app and "onLabels:" in app, "an in-map Labels toggle must be wired"
+    # (c) click a country → coverage detail (no score; VADER caveat on tone)
+    assert "function _ooMapCountryDetail(row, dim)" in app, "the click-country coverage detail must exist"
+    assert "onCountry: iso => _ooMapCountryDetail(" in app, "the map must wire onCountry to the detail"
+    assert "English-only VADER lexicon" in app, "the per-country tone must carry the VADER caveat"
+
+
 def test_subtabs_are_browser_style_with_clear_active_state():
     """Field test 2026-06-19 #31/#57 (THEME-1): one homogeneous browser-tab look with an
     UNMISTAKABLE active state — an accent underline + bold (the old subtle bg+border read

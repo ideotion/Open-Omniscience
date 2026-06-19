@@ -7428,11 +7428,38 @@
       return `color-mix(in srgb, ${m < 0 ? "var(--err)" : "var(--ok)"} ${pct}%, var(--panel2))`;
     }
 
+    // Signal marker SHAPE by certainty class (THEME-2): colour = kind, shape =
+    // certainty, so the map reads without relying on colour alone.
+    function _ooSigClass(s) {
+      if (s && s.source === "corpus-mention") return "deduced";   // extracted from text, never confirmed
+      if (s && !s.confirmed) return "scheduled";                  // an upcoming/unconfirmed event
+      return "confirmed";
+    }
+    function _ooSigClassLabel(cls) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      return cls === "deduced" ? t("deduced · never confirmed")
+        : cls === "scheduled" ? t("scheduled / unconfirmed") : t("confirmed");
+    }
+    // Returns the SVG marker element string: confirmed = circle, scheduled =
+    // triangle, deduced = diamond. `fill` is the pre-built fill/stroke attr string.
+    function _ooSigMarker(cls, x, y, r, fill, titleEsc) {
+      const ttl = `<title>${titleEsc}</title>`;
+      if (cls === "scheduled") {
+        const pts = `${x},${(y - r).toFixed(1)} ${(x - r).toFixed(1)},${(y + r * 0.8).toFixed(1)} ${(x + r).toFixed(1)},${(y + r * 0.8).toFixed(1)}`;
+        return `<polygon points="${pts}" ${fill}>${ttl}</polygon>`;
+      }
+      if (cls === "deduced") {
+        const pts = `${x},${(y - r).toFixed(1)} ${(x + r).toFixed(1)},${y} ${x},${(y + r).toFixed(1)} ${(x - r).toFixed(1)},${y}`;
+        return `<polygon points="${pts}" ${fill}>${ttl}</polygon>`;
+      }
+      return `<circle cx="${x}" cy="${y}" r="${r}" ${fill}>${ttl}</circle>`;
+    }
+
     // The choropleth scale is LINEAR by default (faithful to magnitude; it
     // surfaces real skew rather than flattening it). opts:
     //   values {iso2:number} · points [{iso2,lat,lon,value,label}] (centroid
     //   fallback) · label · unit · method · caveat · aria · names {iso2:name}
-    //   · valueLabel(iso2,v)->string · onCountry(iso2)
+    //   · valueLabel(iso2,v)->string · onCountry(iso2) · labelsOn/onLabels
     async function ooMap(host, opts) {
       if (!host) return;
       opts = opts || {};
@@ -7505,22 +7532,29 @@
           && (!win || focus == null || Math.abs(s.t - focus) <= win));
         sigKinds = [...new Set(sigVisible.map(s => s.kind))];
         signalPts = sigVisible.map((s, i) => {
-          const x = lon2x(s.lon).toFixed(1), y = lat2y(s.lat).toFixed(1);
+          const x = +lon2x(s.lon).toFixed(1), y = +lat2y(s.lat).toFixed(1);
           const dist = focus == null ? 0 : Math.abs(s.t - focus);
           const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
-          const future = focus != null && s.t > focus + 0.001;
           const r = s.confirmed ? 3 : 2.4;
           const col = kindColor(s.kind);
-          const ring = (future || !s.confirmed)
-            ? `fill="transparent" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future ? "2 1.5" : ""}"`
-            : `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`;
-          const ti = `${s.title} — ${fmtDate(s)} · ${TMAP_KINDS[s.kind]?.l || s.kind}${s.place ? " · " + s.place : ""}`;
+          // SHAPE encodes the event's CERTAINTY CLASS (field test 2026-06-19,
+          // THEME-2: "deduced events as shapes"), COLOUR encodes the kind — so the
+          // map reads without relying on colour alone: a corpus-extracted (deduced,
+          // never-confirmed) event is a hollow DIAMOND, a scheduled/unconfirmed
+          // future event a hollow TRIANGLE, a confirmed event a filled CIRCLE. The
+          // shape is FIXED per event (independent of the focus slider) so sliding
+          // the time window never morphs a marker.
+          const cls = _ooSigClass(s);
+          const ring = cls === "confirmed"
+            ? `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`
+            : `fill="transparent" stroke="${col}" stroke-width="1.1"${cls === "deduced" ? ' stroke-dasharray="1.6 1.2"' : ""}`;
+          const ti = `${s.title} — ${fmtDate(s)} · ${TMAP_KINDS[s.kind]?.l || s.kind}${s.place ? " · " + s.place : ""} · ${_ooSigClassLabel(cls)}`;
           // a larger transparent hit disc keeps the whole marker clickable (the
           // temporal-map lesson: hollow rings were clickable only on the 1px edge).
           const clk = opts.onSignal ? ` data-oomap-sig="${i}" style="cursor:pointer"` : "";
           return `<g${clk} opacity="${op.toFixed(2)}">`
             + (opts.onSignal ? `<circle cx="${x}" cy="${y}" r="${(r + 3.5).toFixed(1)}" fill="transparent"></circle>` : "")
-            + `<circle cx="${x}" cy="${y}" r="${r}" ${ring}><title>${esc(ti)}</title></circle></g>`;
+            + _ooSigMarker(cls, x, y, r, ring, esc(ti)) + `</g>`;
         }).join("");
       }
 
@@ -7530,6 +7564,17 @@
       const srTop = (opts.srRows || top.map(r => (names[r[0]] || r[0].toUpperCase()) + ": " + vlabel(r[0], r[1])))
         .map(s => `<li>${esc(s)}</li>`).join("");
       const aria = opts.aria || opts.label || "map";
+
+      // Dynamic non-overlapping country labels (THEME-2): build candidates from the
+      // located areas (opts.points carry lat/lon/label/value), highest-value first.
+      // The greedy declutter + the constant-on-screen font size run in
+      // _ooMapLayoutLabels on every viewBox change (so labels stay readable as you
+      // zoom and never overlap). Opt-in via the in-map "Labels" toggle.
+      const labelCands = (opts.labelsOn && Array.isArray(opts.points))
+        ? opts.points.filter(p => p.lat != null && p.lon != null && p.label)
+            .map(p => ({ x: lon2x(p.lon), y: lat2y(p.lat), text: String(p.label), value: +p.value || 0 }))
+            .sort((a, b) => b.value - a.value)
+        : [];
 
       // Granularity + places overlay (slice 4) — finer/coarser spatial resolution,
       // also "controls inside the map". Continent = the per-country values
@@ -7541,6 +7586,7 @@
           <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
           ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
+          ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
         </div>` : "";
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
       // the Signals layer is on; sweeps the focus moment (antiquity -> near future).
@@ -7574,6 +7620,7 @@
           <defs><pattern id="oomap-nodata" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern></defs>
           ${grid}${paths}${pts}${overlayPts}${signalPts}
+          <g id="oomap-labels"></g>
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
           <button class="tiny secondary" data-oomap="in" title="${esc(t("Zoom in"))}">＋</button>
@@ -7593,11 +7640,37 @@
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
         ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(TMAP_KINDS[k]?.l || k)}</span>`).join("") : ""}
+        ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
       host._ooSigVisible = sigVisible;             // for signal click-to-detail resolution
+      host._ooLabels = labelCands;                 // for the dynamic-label declutter (re-laid-out on zoom)
       _wireOoMap(host, opts);
+      _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
+    }
+    // Greedy non-overlapping label declutter (THEME-2), re-run on every viewBox
+    // change so labels stay constant-size on screen, never overlap, and reveal more
+    // detail as you zoom in. Highest-value countries win ties (placed first).
+    function _ooMapLayoutLabels(host, vb) {
+      const g = host && host.querySelector("#oomap-labels"); if (!g) return;
+      const cands = host._ooLabels || [];
+      if (!cands.length) { g.innerHTML = ""; return; }
+      const fs = Math.max(2.4, 11 * (vb.w / MAP_W));   // ≈ constant on-screen size as the viewBox zooms
+      const placed = [], pad = fs * 0.25;
+      let out = "";
+      for (const c of cands) {
+        if (c.x < vb.x || c.x > vb.x + vb.w || c.y < vb.y || c.y > vb.y + vb.h) continue;  // off the visible viewBox
+        const w = c.text.length * fs * 0.55 + pad, h = fs * 1.1;
+        const box = { x: c.x - w / 2, y: c.y - h / 2, w, h };
+        if (placed.some(p => !(box.x + box.w < p.x || box.x > p.x + p.w || box.y + box.h < p.y || box.y > p.y + p.h))) continue;
+        placed.push(box);
+        out += `<text x="${c.x.toFixed(1)}" y="${c.y.toFixed(1)}" font-size="${fs.toFixed(2)}" text-anchor="middle" `
+          + `dominant-baseline="middle" fill="var(--fg)" stroke="var(--panel2)" stroke-width="${(fs * 0.18).toFixed(2)}" `
+          + `paint-order="stroke" style="pointer-events:none">${esc(c.text)}</text>`;
+        if (placed.length >= 80) break;   // bound the work
+      }
+      g.innerHTML = out;
     }
 
     // Instance-local viewBox zoom/pan (the Google-Maps "controls inside the map"
@@ -7619,7 +7692,12 @@
         });
       }
       let vb = { x: 0, y: 0, w: W, h: H };
-      const apply = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+      const apply = () => {
+        svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+        // Re-declutter labels for the new viewBox (THEME-2: dynamic, constant-size,
+        // non-overlapping — more reveal as you zoom). No-op when labels are off.
+        if (host._ooLabels && host._ooLabels.length) _ooMapLayoutLabels(host, vb);
+      };
       const zoom = (f, ax, ay) => {
         const cx = ax != null ? ax : vb.x + vb.w / 2, cy = ay != null ? ay : vb.y + vb.h / 2;
         const w = Math.min(W, Math.max(W * 0.04, vb.w * f)), sc = w / vb.w;
@@ -7649,6 +7727,7 @@
         b.addEventListener("click", () => opts.onGranularity(b.dataset.oomapGran)));
       if (opts && opts.onPlaces) { const pb = host.querySelector("[data-oomap-places]"); if (pb) pb.addEventListener("click", () => opts.onPlaces()); }
       if (opts && opts.onSignals) { const sb = host.querySelector("[data-oomap-signals]"); if (sb) sb.addEventListener("click", () => opts.onSignals()); }
+      if (opts && opts.onLabels) { const lb = host.querySelector("[data-oomap-labels]"); if (lb) lb.addEventListener("click", () => opts.onLabels()); }
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
       if (opts && opts.onSignal) host.querySelectorAll("[data-oomap-sig]").forEach(g =>
         g.addEventListener("click", () => { const s = (host._ooSigVisible || [])[+g.dataset.oomapSig]; if (s) opts.onSignal(s, host._ooSigVisible || []); }));
@@ -7678,7 +7757,7 @@
     // Map-tab choropleth: per-country coverage with a DIMENSION PICKER (slice 3).
     // The endpoint returns every measure per country in ONE payload, so switching
     // dimension is instant (no re-fetch) — the picker just re-colours the map.
-    let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null;
+    let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null, _ooMapLabelsOn = false;
     // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
     let _ooMapSignalsOn = false, _ooMapSignals = null, _ooMapFocusSlider = 1000, _ooMapFocusRAF = 0;
     // Aggregate the per-country values into CONTINENTS (slice 4): a SUM for counts,
@@ -7805,8 +7884,45 @@
         // rAF-coalesce slider drags so a fast sweep is at most one re-render per frame.
         onFocus: v => { _ooMapFocusSlider = v; if (_ooMapFocusRAF) cancelAnimationFrame(_ooMapFocusRAF); _ooMapFocusRAF = requestAnimationFrame(() => _renderOoMapDim()); },
         onSignal: (s, visible) => _ooMapSignalDetail(s, visible, windowY),
+        // Dynamic non-overlapping country labels (THEME-2), opt-in.
+        labelsOn: _ooMapLabelsOn,
+        onLabels: () => { _ooMapLabelsOn = !_ooMapLabelsOn; _renderOoMapDim(); },
+        // Click a country → its coverage breakdown (THEME-2 "click-country → list").
+        onCountry: iso => _ooMapCountryDetail(rowBy[(iso || "").toLowerCase()], dim),
         valueLabel: fmtV,
       });
+    }
+    // Click-a-country detail (THEME-2): the per-country coverage breakdown across
+    // every measured dimension (sources · articles · keyword mentions · mean tone),
+    // straight from the map-coverage row (counts only, no score). The mean-tone line
+    // carries the VADER English-only caveat + its n. A button opens the Sources tab
+    // so the user can explore that country's sources.
+    function _ooMapCountryDetail(row, dim) {
+      const host = $("oo-coverage-detail"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      if (!row) { host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)"><span class="muted">${esc(t("No coverage recorded for this country yet."))}</span></div>`; return; }
+      const iso = (row.country || "").toLowerCase();
+      const name = ooRegionName(iso, row.name || row.country);
+      const line = (label, v, extra) => (v != null && isFinite(v))
+        ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(label)}</span><span>${esc(fmtNum(v))}${extra ? " " + esc(extra) : ""}</span></div>` : "";
+      const tone = (row.sentiment != null && isFinite(row.sentiment))
+        ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(t("Mean tone"))}</span><span>${row.sentiment >= 0 ? "+" : ""}${esc(fmtNum(row.sentiment, 2))} · ${esc(t("n="))}${row.sentiment_n || 0}</span></div>` : "";
+      host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <strong>${esc(name)}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}
+        </div>
+        <div style="margin-top:6px;font-size:13px;display:flex;flex-direction:column;gap:2px">
+          ${line(t("Sources"), row.sources)}
+          ${line(t("Articles"), row.articles)}
+          ${line(t("Keyword mentions"), row.keywords)}
+          ${tone}
+        </div>
+        ${tone ? `<div class="card-caveat" style="margin-top:5px">${esc(t("Mean tone uses the English-only VADER lexicon; non-English articles are not scored."))}</div>` : ""}
+        <div class="row" style="margin-top:7px;gap:8px">
+          <button class="tiny secondary" onclick="showTab('sources')">${esc(t("Explore sources"))}</button>
+        </div>
+      </div>`;
+      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     // Signal click-to-detail (slice 5a.2 — ported faithfully from the temporal map's
     // showTmapDetail so retiring #oo-tmap loses nothing): the event's kind/title,
