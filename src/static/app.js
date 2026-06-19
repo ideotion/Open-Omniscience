@@ -4976,6 +4976,7 @@
       EURUSD: "euro dollar exchange rate",
     };
     let _mktCatTabs = null;        // the commodities category ooSubtabs handle
+    let _mktCat = "__all";          // the currently-selected category (persists across re-renders)
     let _mktView = "cards";         // "cards" | "families" (Slice 5; default = no regression)
     function selectCommodityCat(key) {
       // Button/ARIA state is owned by the ooSubtabs component (universal
@@ -4983,6 +4984,7 @@
       // section is visible. "__all" (the default lens) shows everything. The
       // family blocks carry the same .mkt-cat/data-cat, so this filters BOTH
       // the cards view and the families view.
+      _mktCat = key;  // remember it so a board re-render (auto-refresh / view toggle) keeps it
       document.querySelectorAll("#mkt-dashboard .mkt-cat").forEach(el => {
         el.style.display = (key === "__all" || el.dataset.cat === key) ? "" : "none";
       });
@@ -5118,11 +5120,18 @@
       if (!catNav) return;
       if (present.length > 1) {
         catNav.style.display = "";
+        // Preserve the operator's selected category across re-renders (auto-refresh,
+        // cards/families toggle, time-scope change) — only fall back to "All" when the
+        // previously-selected category is no longer present (#31).
+        const valid = ["__all"].concat(present.map(([k]) => sectionKey([k])));
+        const initial = valid.indexOf(_mktCat) >= 0 ? _mktCat : "__all";
         catNav.innerHTML =
-          `<button class="active" data-tab="__all">${esc(t("All"))}</button>`
-          + present.map(([k, label]) =>
-              `<button data-tab="${esc(sectionKey([k]))}">${esc(t(label))}</button>`).join("");
-        _mktCatTabs = ooSubtabs(catNav, selectCommodityCat, {initial: "__all"});
+          `<button${initial === "__all" ? ' class="active"' : ""} data-tab="__all">${esc(t("All"))}</button>`
+          + present.map(([k, label]) => {
+              const key = sectionKey([k]);
+              return `<button${initial === key ? ' class="active"' : ""} data-tab="${esc(key)}">${esc(t(label))}</button>`;
+            }).join("");
+        _mktCatTabs = ooSubtabs(catNav, selectCommodityCat, {initial});
       } else {
         catNav.style.display = "none";
         catNav.innerHTML = "";
@@ -5570,13 +5579,18 @@
     function ooSubtabs(nav, onSelect, opts) {
       if (!nav) return null;
       opts = opts || {};
-      const btns = Array.prototype.slice.call(nav.querySelectorAll("[data-tab]"));
-      if (!btns.length) return null;
+      // Query buttons LIVE on every operation, never capture once: surfaces like the
+      // Markets category tabs REBUILD this nav's buttons on a re-render and call
+      // ooSubtabs again, but the click/keydown listeners are wired once (_ooWired), so
+      // a captured array goes stale and paints DETACHED buttons — leaving the
+      // HTML-marked "All" visually active after a switch (field test 2026-06-19 #31).
+      const buttons = () => Array.prototype.slice.call(nav.querySelectorAll("[data-tab]"));
+      if (!buttons().length) return null;
       nav.setAttribute("role", "tablist");
-      btns.forEach(b => { b.setAttribute("role", "tab"); if (!b.getAttribute("type")) b.type = "button"; });
+      buttons().forEach(b => { b.setAttribute("role", "tab"); if (!b.getAttribute("type")) b.type = "button"; });
       function paint(key) {            // visuals + a11y only — never fires onSelect
         let hit = null;
-        btns.forEach(b => {
+        buttons().forEach(b => {
           const on = b.dataset.tab === key;
           b.classList.toggle("active", on);
           b.setAttribute("aria-selected", on ? "true" : "false");
@@ -5599,6 +5613,7 @@
           if (b && nav.contains(b)) select(b.dataset.tab);
         });
         nav.addEventListener("keydown", e => {
+          const btns = buttons();
           const i = btns.indexOf(document.activeElement);
           if (i < 0) return;
           let j = i;
@@ -5615,7 +5630,10 @@
       // WITHOUT firing onSelect (each surface already renders its default panel),
       // unless opts.initial explicitly asks to switch+fire.
       if (opts.initial !== undefined) select(opts.initial);
-      else paint((btns.filter(b => b.classList.contains("active"))[0] || btns[0]).dataset.tab);
+      else {
+        const bs = buttons();
+        paint((bs.filter(b => b.classList.contains("active"))[0] || bs[0]).dataset.tab);
+      }
       return { select: select, paint: paint };
     }
 

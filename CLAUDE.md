@@ -3185,6 +3185,20 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P1 MARKETS SUBTAB ACTIVE-STATE (#31, THEME-1 down-payment; branch
+  claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
+  the Markets category subtab kept "All" visually active after switching to another category
+  (content filtered correctly, only the HIGHLIGHT was wrong). ROOT CAUSE: the universal `ooSubtabs`
+  (invariant #18) captured its button array ONCE, but `_renderCommodityCatTabs` REBUILDS the nav's
+  buttons on every board render and re-calls ooSubtabs; the click/keydown listeners are wired once
+  (`nav._ooWired`), so the wired handler `paint()`ed the STALE/detached buttons while the freshly-
+  rebuilt "All" kept its HTML `active` class. FIX (component-level, helps EVERY rebuild-driven subtab
+  surface): ooSubtabs now queries its buttons LIVE (`const buttons = () => …querySelectorAll`) in
+  paint/select/keydown/initial — resilient to nav rebuilds; the invariant-#18 contract (.active +
+  role/aria + roving tabindex + keyboard + {select,paint}) is unchanged. PLUS the markets board now
+  PERSISTS the selected category across re-renders (auto-refresh / cards↔families / time-scope) via
+  `_mktCat` (falls back to "All" only if the category is no longer present), instead of snapping to
+  "All". test_repo_invariants::test_oosubtabs_queries_buttons_live_and_markets_keep_selection.
 - **FIELD TEST 2026-06-19 — P1 LIVE LANGUAGE SWITCH RE-RENDERS CLDR NAMES (#16; branch
   claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
   country/continent names updated only on a full page refresh. ROOT CAUSE: `ooRegionName`/

@@ -74,6 +74,22 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
 
 
+def test_oosubtabs_queries_buttons_live_and_markets_keep_selection():
+    """Field test 2026-06-19 #31: the markets category subtab kept "All" visually active
+    after switching. Root cause: ooSubtabs captured its button array once, but the markets
+    nav rebuilds its buttons on every render, so the wired-once click handler painted
+    detached buttons. ooSubtabs must query buttons LIVE, and the markets board must
+    preserve the selected category across re-renders."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    oo = app.split("function ooSubtabs(", 1)[1].split("return { select: select", 1)[0]
+    assert "const buttons = () =>" in oo, "ooSubtabs no longer queries its buttons live"
+    assert "const btns = Array.prototype.slice.call(nav.querySelectorAll" not in oo, (
+        "ooSubtabs went back to capturing a stale button array (the #31 regression)"
+    )
+    # The markets board persists the operator's category choice across re-renders.
+    assert "_mktCat = key" in app and "indexOf(_mktCat)" in app
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
