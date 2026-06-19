@@ -1203,13 +1203,9 @@
     <section class="panel">
       <h2>Offline map regions</h2>
       <p class="muted" style="margin-top:0">Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).</p>
-      <div class="row">
-        <div style="flex:2">
-          <label for="osm-region">Region</label>
-          <select id="osm-region"><option value="">Loading regions…</option></select>
-        </div>
-        <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startOsmDownload()">Download</button></div>
-      </div>
+      <!-- Available maps as a LIST, not a dropdown (field test 2026-06-19 #15): every
+           region visible at once with its size + a direct Download button. -->
+      <div id="osm-region-list" class="osm-region-list"><div class="muted">Loading regions…</div></div>
       <div id="osm-size-note" class="hint" hidden><span>Sizes are estimates — the exact size is read from the mirror on download.</span>
         <span class="muted">· <span>reviewed</span> <span id="osm-size-asof"></span></span></div>
       <div class="hint">Downloading is a network action: it goes through this app's one network switch, so it is refused while

@@ -573,6 +573,12 @@
     .an-ov-h { font-weight:700; }
     .an-ov-s { font-size:12px; }
     .an-ov-go { font-size:11px; align-self:flex-end; margin-top:auto; }
+    /* Offline-map regions as a LIST, not a dropdown (#15): every region visible at once. */
+    .osm-region-list { max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
+    .osm-region-row { display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:7px 10px; border-bottom:1px solid var(--border-soft, var(--border)); }
+    .osm-region-row:last-child { border-bottom:0; }
+    .osm-region-name { overflow:hidden; text-overflow:ellipsis; }
 
     /* ---- ooTimeScope: reusable time-range control ------------------- */
     /* From/To dates + a visual draggable range bar + quick presets. The

@@ -122,6 +122,12 @@ def test_world_map_fullscreen_uses_the_fullscreen_api():
         "the map fullscreen control must use the Fullscreen API"
     )
     assert 'addEventListener("fullscreenchange"' in app, "must reset the ⛶ glyph on exit"
+    # #15: offline-map regions are a LIST (per-row Download), not a <select> dropdown.
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="osm-region-list"' in html and '<select id="osm-region"' not in html, (
+        "offline-map regions must be a list, not a dropdown (#15)"
+    )
+    assert "osm-region-row" in app, "each region row renders with a direct Download button"
 
 
 def test_world_map_near_time_capped_log_slider_and_no_download_confirm():

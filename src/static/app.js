@@ -8379,15 +8379,18 @@
     // (the backend's guarded factory enforces the kill switch too).
     async function loadOsmMap() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const sel = $("osm-region"); if (!sel) return;
+      const list = $("osm-region-list"); if (!list) return;
       try {
         const d = await api("/api/geo/regions");
-        sel.innerHTML = (d.regions || []).map(r =>
-          `<option value="${esc(r.code)}">${esc(r.name)} · ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</option>`
-        ).join("") || `<option value="">${esc(t("No regions."))}</option>`;
+        const rows = (d.regions || []).map(r =>
+          `<div class="osm-region-row">
+            <span class="osm-region-name"><strong>${esc(r.name)}</strong> <span class="muted">· ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</span></span>
+            <button class="tiny danger" onclick="startOsmDownload(${esc(JSON.stringify(r.code))})">${esc(t("Download"))}</button>
+          </div>`).join("");
+        list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
         const note = $("osm-size-note"), asof = $("osm-size-asof");
         if (note && asof && d.size_estimate_as_of) { asof.textContent = d.size_estimate_as_of; note.hidden = false; }
-      } catch (e) { sel.innerHTML = `<option value="">${esc(t("Could not load regions."))}</option>`; }
+      } catch (e) { list.innerHTML = `<div class="muted">${esc(t("Could not load regions."))}</div>`; }
       loadOsmDownloads();
     }
     async function loadOsmDownloads() {
@@ -8410,7 +8413,7 @@
     }
     async function startOsmDownload(code) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const c = code || $("osm-region").value;
+      const c = code || ($("osm-region") ? $("osm-region").value : "");  // list rows pass the code directly
       if (!c) return;
       // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown
       // in the region list, the download is a visible task-manager job, and the ONE
