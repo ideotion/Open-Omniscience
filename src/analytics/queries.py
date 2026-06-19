@@ -806,35 +806,35 @@ def server_locations(session) -> dict:
         b["ips"].add(ip)
         b["sources"].add(sid)
 
-    countries = sorted(
-        (
-            {
-                "country": cc,
-                "lat": b["lat"],
-                "lon": b["lon"],
-                "level": b["level"],
-                "articles": b["articles"],
-                "distinct_ips": len(b["ips"]),
-                "distinct_sources": len(b["sources"]),
-            }
-            for cc, b in by_country.items()
-        ),
-        key=lambda x: -x["articles"],
-    )
-    clusters = sorted(
-        (
-            {
-                "ip": ip,
-                "distinct_sources": len(srcs),
-                "articles": ip_articles.get(ip, 0),
-                "country": (geo_cache.get(ip) or {}).get("country"),
-                "sources": [names.get(s) for s in list(srcs)[:20] if names.get(s)],
-            }
-            for ip, srcs in ip_sources.items()
-            if len(srcs) >= 2  # shared by 2+ DISTINCT sources -> a shape to investigate
-        ),
-        key=lambda x: -x["distinct_sources"],
+    # Sort the underlying (typed) data, then build the display dicts -- so the sort key
+    # is a plain int, not a heterogeneous dict-value union.
+    ordered_countries = sorted(by_country.items(), key=lambda kv: -int(kv[1]["articles"]))
+    countries = [
+        {
+            "country": cc,
+            "lat": b["lat"],
+            "lon": b["lon"],
+            "level": b["level"],
+            "articles": b["articles"],
+            "distinct_ips": len(b["ips"]),
+            "distinct_sources": len(b["sources"]),
+        }
+        for cc, b in ordered_countries
+    ]
+    shared = sorted(
+        ((ip, srcs) for ip, srcs in ip_sources.items() if len(srcs) >= 2),
+        key=lambda t: -len(t[1]),  # shared by 2+ DISTINCT sources -> a shape to investigate
     )[:50]
+    clusters = [
+        {
+            "ip": ip,
+            "distinct_sources": len(srcs),
+            "articles": ip_articles.get(ip, 0),
+            "country": (geo_cache.get(ip) or {}).get("country"),
+            "sources": [names.get(s) for s in list(srcs)[:20] if names.get(s)],
+        }
+        for ip, srcs in shared
+    ]
 
     return {
         "countries": countries,
