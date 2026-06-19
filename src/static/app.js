@@ -7133,6 +7133,60 @@
       if (!row || !row.translation) return "";
       return ` <span class="kw-trans" title="${esc(t("Verified translation (cross-language concept)."))}">→ ${esc(row.translation)}</span>`;
     }
+    // The TENTATIVE LLM translation (Phase 4 fallback): shown ONLY when no verified
+    // ring translation exists, with a distinct ≈ marker + an "unreliable" hover — never
+    // presented as fact.
+    function kwTentativeHtml(row) {
+      if (!row || row.translation || !row.tentative) return "";
+      return ` <span class="kw-trans kw-tentative" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">≈ ${esc(row.tentative)}</span>`;
+    }
+    // Analysis-window Keywords subtab render + the Phase-4 tentative-fill action.
+    let _anKwData = null, _anKwHost = null;
+    function _anKwNeedsTentative(tm) {
+      return !tm.translation && !tm.tentative && (tm.language || "").toLowerCase() !== uiLangCode();
+    }
+    function anRenderKwChips() {
+      const d = _anKwData, kw = _anKwHost;
+      if (!kw) return;
+      if (!d || !d.terms || !d.terms.length) {
+        kw.innerHTML = `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
+        return;
+      }
+      const chips = d.terms.map((term) =>
+        `<button class="chip" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
+        + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}${kwTransHtml(term)}${kwTentativeHtml(term)}`
+        + ` <span class="muted">${term.articles}</span></button>`).join(" ");
+      // Audit-07 B1 disclosure: our extractor does NOT segment CJK, so those keywords
+      // are unreliable; surface it when CJK terms are present.
+      const cjk = d.terms.some((tm) => /[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term));
+      const cjkNote = cjk ? ` · <span class="note err" title="${esc(t("Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable."))}">${esc(t("CJK not segmented — unreliable"))}</span>` : "";
+      // Offer the tentative LLM fallback only when some keyword has NO verified
+      // translation into the reader's language (Phase 4; explicit action, never auto).
+      const btn = d.terms.some(_anKwNeedsTentative)
+        ? ` <button class="ghost tiny" onclick="anFillTentative()" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">✦ ${esc(t("Translate the rest (AI, tentative)"))}</button>`
+        : "";
+      kw.innerHTML = `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
+        + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}${btn}</div>`
+        + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`;
+    }
+    async function anFillTentative() {
+      const d = _anKwData; if (!d || !d.terms) return;
+      const items = d.terms.filter(_anKwNeedsTentative).map(tm => ({term: tm.term, language: tm.language}));
+      if (!items.length) return;
+      try {
+        const r = await api("/api/ai/translate-keywords",
+          {method: "POST", body: JSON.stringify({terms: items, target_lang: uiLangCode()})});
+        if (!r.available) {
+          toast(t("Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations."), "err");
+          return;
+        }
+        const tx = r.translations || {};
+        let n = 0;
+        d.terms.forEach(tm => { if (tx[tm.term]) { tm.tentative = tx[tm.term]; n++; } });
+        anRenderKwChips();
+        if (!n) toast(t("No tentative translations were produced."));
+      } catch (e) { toast("Translate failed: " + e.message, "err"); }
+    }
     function termListHtml(terms, extra) {
       if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
       return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
@@ -9781,22 +9835,8 @@
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
-        if (!d.terms || !d.terms.length) {
-          kw.innerHTML = `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
-        } else {
-          const chips = d.terms.map((term) =>
-            `<button class="chip" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
-            + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}${kwTransHtml(term)}`
-            + ` <span class="muted">${term.articles}</span></button>`).join(" ");
-          // Audit-07 B1 disclosure: our extractor splits on spaces/punctuation and does
-          // NOT segment CJK, so CJK keywords are unreliable. Surface it exactly when CJK
-          // terms are present (visible by default + the long form in the hover bubble).
-          const cjk = d.terms.some((tm) => /[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term));
-          const cjkNote = cjk ? ` · <span class="note err" title="${esc(t("Keyword extraction splits on spaces and punctuation; it does NOT segment Chinese, Japanese or Korean, so the CJK keyword aggregates shown here are unreliable."))}">${esc(t("CJK not segmented — unreliable"))}</span>` : "";
-          kw.innerHTML = `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
-            + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}</div>`
-            + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`;
-        }
+        _anKwData = d; _anKwHost = kw;   // stash for the tentative-fill action
+        anRenderKwChips();
       } catch (e) { kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Mindmap: a deterministic radial keyword-association graph seeded on the
       // TOP keyword of the matched set (KEYWORDS ARE CORPORA). Self-contained

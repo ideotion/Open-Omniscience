@@ -800,3 +800,8 @@
        language-aware engine — never blind the reader to a foreign keyword). */
     .kw-trans { color: var(--accent); font-size: 0.9em; opacity: 0.95;
       border-bottom: 1px dotted var(--accent); cursor: help; }
+
+    /* TENTATIVE (LLM) keyword translation — distinct from the verified accent: muted
+       + dashed, with a ≈ marker, so it never reads as a verified fact (Phase 4). */
+    .kw-trans.kw-tentative { color: var(--muted); border-bottom-style: dashed;
+      border-bottom-color: var(--muted); font-style: italic; }

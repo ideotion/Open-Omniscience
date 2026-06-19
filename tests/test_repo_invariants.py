@@ -3049,3 +3049,21 @@ def test_translations_extend_to_analysis_window_and_supergroups():
     assert "ring·${(m.ring_members || []).length}" in html and "${kwTransHtml(m)}" in html, (
         "a super-group ring member must render its verified translation"
     )
+
+
+def test_tentative_llm_keyword_translation_is_wired_and_flagged():
+    """Phase 4 (Wikidata rings + LLM fallback): keywords no verified ring covers get a
+    TENTATIVE local-LLM translation, shown ONLY when there's no verified one, with a
+    distinct ≈ marker + an 'unreliable, not verified' flag — an explicit action, never
+    auto. Browser-unverified; this pins the wiring + the honesty surface."""
+    html = _ui_source()
+    for marker in ("function kwTentativeHtml(", "function anFillTentative(",
+                   "/api/ai/translate-keywords", "kw-tentative", "anRenderKwChips("):
+        assert marker in html, f"missing tentative-translation wiring: {marker}"
+    # tentative shows ONLY when there is no verified translation, and is flagged unreliable.
+    assert "if (!row || row.translation || !row.tentative) return" in html, (
+        "the tentative translation must never override a verified one"
+    )
+    assert "AI-generated tentative translation — unreliable, not verified." in html
+    # explicit, gated action (the button only appears when something needs it).
+    assert "Translate the rest (AI, tentative)" in html and "d.terms.some(_anKwNeedsTentative)" in html
