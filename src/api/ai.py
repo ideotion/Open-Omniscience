@@ -217,6 +217,55 @@ def confirm_ai_keyword(req: AiConfirmRequest, db: Session = Depends(get_db)) -> 
 
 
 # --------------------------------------------------------------------------- #
+#  TENTATIVE keyword translation (Phase 4 of language-aware keywords): the
+#  fallback for keywords no VERIFIED ring covers. Output is labelled unreliable,
+#  cached, never written to any store, loopback-only; airplane mode refuses it.
+# --------------------------------------------------------------------------- #
+class AiTranslateItem(BaseModel):
+    term: str
+    language: str | None = None
+
+
+class AiTranslateRequest(BaseModel):
+    terms: list[AiTranslateItem]
+    target_lang: str
+
+
+_TRANSLATE_TENTATIVE_NOTE = (
+    "AI-generated TENTATIVE translation — unreliable, not verified, never stored. The "
+    "verified cross-language ring translation always takes precedence."
+)
+
+
+@router.post("/translate-keywords")
+def translate_keywords_ep(
+    req: AiTranslateRequest,
+    client: OllamaClient = Depends(get_llm_client),
+) -> dict:
+    """Tentative LLM translations for the keywords a verified ring does NOT cover.
+
+    Verified ring terms are skipped (the verified tier wins). Loopback-only (no
+    network-consent popup, like the other Ollama paths); when Ollama is unavailable —
+    including airplane mode (the kill switch) — returns ``available: false`` with no
+    translations and WITHOUT attempting a model call."""
+    from src.ai_layer.translate import TRANSLATE_PROMPT_VERSION, translate_keywords
+
+    tgt = (req.target_lang or "").strip().lower()
+    base = {
+        "source": "llm-tentative",
+        "caveat": _TRANSLATE_TENTATIVE_NOTE,
+        "prompt_version": TRANSLATE_PROMPT_VERSION,
+    }
+    if not tgt or len(tgt) > 3 or not tgt.isalpha():
+        return {**base, "available": True, "translations": {}}
+    if not client.is_available():  # Ollama down or airplane mode -> no socket, no fabrication
+        return {**base, "available": False, "translations": {}}
+    items = [{"term": it.term, "language": it.language} for it in req.terms]
+    translations = translate_keywords(client, items, tgt, model=active_model())
+    return {**base, "available": True, "translations": translations}
+
+
+# --------------------------------------------------------------------------- #
 #  User-defined AI extractors (maintainer ask 2026-06-18) — a managed list of
 #  custom prompts, each an EXTENSION of the built-in who/where/when extractors:
 #  it declares an output_kind (the metadata TYPE) and its results are stored as
