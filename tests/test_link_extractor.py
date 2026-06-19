@@ -65,3 +65,22 @@ def test_non_web_scheme_not_mislabelled():
 
 def test_empty_html_yields_no_links():
     assert _le().extract_links("<html><body><p>no links</p></body></html>") == []
+
+
+def test_normalize_url_rejects_malformed_and_non_web(caplog):
+    """Field log 2026-06-18: 'https://about:blank:' and a headline smuggled as a URL
+    ('http://bihar : <text>') reached .port and raised 'Port could not be cast to
+    integer value' (caught but noisy). They are not links — normalise to '' and never
+    log a WARNING."""
+    le = _le()
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        assert le.normalize_url("https://about:blank:") == ""
+        assert le.normalize_url("http://bihar : a headline with spaces") == ""
+        assert le.normalize_url("about:blank") == ""
+        assert le.normalize_url("javascript:void(0)") == ""
+        assert le.normalize_url("   ") == ""
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    # Real URLs still normalise (scheme/host lowercased, default port + www dropped).
+    assert le.normalize_url("https://WWW.Example.com:443/Path") == "https://example.com/Path"

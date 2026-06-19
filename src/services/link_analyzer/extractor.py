@@ -341,17 +341,36 @@ class LinkExtractor:
         """
         if not url:
             return ""
+        url = url.strip()
+        if not url:
+            return ""
 
         try:
             # Parse the URL
             parsed = urlparse(url)
 
-            # Remove default ports
-            if parsed.port and (
-                (parsed.scheme == "http" and parsed.port == 80)
-                or (parsed.scheme == "https" and parsed.port == 443)
+            # Only http(s) are real outbound web links worth de-duplicating. Skip
+            # about:/javascript:/data:/mailto:/tel:/fragment-only and bare title text
+            # ("http://bihar : <headline>" smuggled in with spaces): these were
+            # reaching the .port access below and raising "Port could not be cast to
+            # integer value" — caught, but noisy and pointless. They are not links.
+            if parsed.scheme not in ("http", "https"):
+                return ""
+            if not parsed.netloc or " " in parsed.netloc:
+                return ""
+
+            # Remove default ports. ``.port`` raises ValueError on a malformed
+            # authority (e.g. "about:blank:" behind an https:// prefix) — treat that
+            # as "not a usable URL" rather than crashing the normaliser.
+            try:
+                port = parsed.port
+            except ValueError:
+                return ""
+            if port and (
+                (parsed.scheme == "http" and port == 80)
+                or (parsed.scheme == "https" and port == 443)
             ):
-                netloc = parsed.netloc.replace(f":{parsed.port}", "")
+                netloc = parsed.netloc.replace(f":{port}", "")
             else:
                 netloc = parsed.netloc
 
@@ -379,8 +398,11 @@ class LinkExtractor:
             return normalized
 
         except Exception as e:
-            logger.warning(f"Error normalizing URL {url}: {e}")
-            return url.lower() if url else ""
+            # A URL we cannot normalise is not a usable outbound link; drop it
+            # quietly (debug, not warning — these are malformed hrefs in scraped
+            # HTML, not an app fault) instead of storing the raw garbage.
+            logger.debug(f"Could not normalise URL {url!r}: {e}")
+            return ""
 
     def _determine_link_type(
         self, url: str, parsed_url, tag_name: str, base_domain: str = ""
