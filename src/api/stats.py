@@ -26,10 +26,11 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 def stat_agencies() -> dict:
     """The curated directory of official statistical producers — government +
     international agencies, deliberately global (BRICS, Africa and smaller economies
-    included alongside Western producers + IGOs). Each is flagged ``controversial``
-    (an official figure is a STANCED source — stated, never a score). Descriptive
-    only: no figures, no ranking, no network. ``continents_covered`` is an honest
-    coverage metric (the ruling measures coverage, never assumes it)."""
+    included alongside Western producers + IGOs). An official figure is a STANCED
+    source — stated as a descriptive caveat, never a per-source verdict label and
+    never a score (ruling #50: the user judges). Descriptive only: no figures, no
+    ranking, no network. ``continents_covered`` is an honest coverage metric (the
+    ruling measures coverage, never assumes it)."""
     from src.stats.agencies import continents_covered, list_agencies
 
     agencies = list_agencies()
@@ -48,13 +49,13 @@ def stat_agencies() -> dict:
 
 @router.post("/sources/ingest")
 def ingest_stat_sources() -> dict:
-    """Register the curated statistical producers as DISABLED, controversial sources.
+    """Register the curated statistical producers as DISABLED sources.
 
     Each agency is added to the source catalog as a ``source_type="statistics"``
-    Source, carrying the ``official-statistics`` + ``controversial`` tags (an
-    official figure is a STANCED source — by ruling, every producer is
-    ``controversial``; there is no "controversial" column). Rows are created
-    DISABLED — registered, NOT scraped: official machine endpoints (SDMX / APIs)
+    Source, carrying the ``official-statistics`` + region tags (NO "controversial"
+    verdict tag — ruling #50: an official figure is a STANCED source, stated as a
+    caveat, but the user judges). Rows are created DISABLED — registered, NOT
+    scraped: official machine endpoints (SDMX / APIs)
     are preferred over scraping, wired up in a later slice.
 
     Additive and IDEMPOTENT — a domain already in the catalog is left untouched, so
@@ -279,7 +280,7 @@ def registered_sources(
     region: str | None = Query(None, description="region-slug tag filter, e.g. africa"),
     enabled: bool | None = Query(None),
 ) -> dict:
-    """The registered official-statistics SOURCE rows (ingested as DISABLED, controversial).
+    """The registered official-statistics SOURCE rows (ingested as DISABLED; no verdict tag).
 
     A filterable directory of what has been registered as a source via
     ``/sources/ingest`` — descriptive provenance only (name · domain · country ·

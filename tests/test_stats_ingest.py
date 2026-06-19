@@ -1,12 +1,13 @@
 """
-Ingest the official-statistics agency directory as DISABLED, controversial Source
-rows (Group N, official-statistics ingestion — first "ingest as sources" slice).
+Ingest the official-statistics agency directory as DISABLED Source rows (Group N,
+official-statistics ingestion — first "ingest as sources" slice).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Asserts the honesty contract: sources land DISABLED (registered, not scraped),
-source_type="statistics", carry the official-statistics + controversial tags,
+source_type="statistics", carry the official-statistics + region tags (NO
+"controversial" verdict tag — ruling #50),
 NEVER a fabricated reliability_score; national producers carry a lowercase ISO-2
 country while IGOs carry none; and the whole thing is idempotent / never clobbers
 an existing source. No network anywhere (home_url is reduced to a domain locally).
@@ -45,7 +46,7 @@ def _stat_sources(session):
     return session.query(Source).filter(Source.source_type == "statistics").all()
 
 
-def test_ingest_creates_disabled_controversial_sources(client):
+def test_ingest_creates_disabled_sources(client):
     from src.database.session import session_scope
     from src.stats.ingest import ingest_agencies_as_sources
 
@@ -71,7 +72,7 @@ def test_ingest_creates_disabled_controversial_sources(client):
             assert r.source_type == "statistics"
             assert r.reliability_score is None  # never a fabricated score
             tags = (r.tags or "").split(",")
-            assert "controversial" in tags
+            assert "controversial" not in tags  # no verdict tag (ruling #50)
             assert "official-statistics" in tags
 
         # A national agency carries a lowercase ISO-2 country.

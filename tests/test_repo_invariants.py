@@ -986,10 +986,10 @@ def test_ui_invariants():
     assert "ensureOnline(" in html, "pulling a model must pass ensureOnline (invariant #14)"
     # 29. Official-statistics producers (Group N) Settings subtab: a descriptive
     #     directory over /api/stats/agencies + a one-click "register as DISABLED
-    #     controversial sources" action over /api/stats/sources/ingest, living in a
-    #     Settings subtab. The directory is DESCRIPTIVE only (no figures, no score);
-    #     producers are stanced sources (the "controversial" framing is a note, never
-    #     a credibility verdict). Outbound home URLs MUST go through extLink so they
+    #     sources" action over /api/stats/sources/ingest, living in a Settings subtab.
+    #     The directory is DESCRIPTIVE only (no figures, no score, NO "controversial"
+    #     verdict label — ruling #50: a producer is a stanced source stated as a
+    #     caveat; the user judges). Outbound home URLs MUST go through extLink so they
     #     open the LOCAL preview first (invariant #6/#6e — no bare external <a href>).
     assert 'data-tab="stats"' in html and 'id="set-stats"' in html, (
         "the Statistics Settings subtab button + panel must exist (Group N frontend)"

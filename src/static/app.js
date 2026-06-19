@@ -8353,9 +8353,9 @@
     }
 
     // -- Official statistics producers (Group N): the curated directory + the --- //
-    //    one-click "register as DISABLED controversial sources" action.          //
-    //    Descriptive only: NO figures, NO score; every producer is a STANCED      //
-    //    source by ruling (the "controversial" pill states it, never a verdict).  //
+    //    one-click "register as DISABLED sources" action.                         //
+    //    Descriptive only: NO figures, NO score, NO verdict label (ruling #50 —   //
+    //    a producer is a STANCED source, stated as a caveat; the user judges).    //
     //    home URLs open the LOCAL link-preview first (extLink, invariant #6/#6e). //
     async function loadStatAgencies() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -8382,11 +8382,10 @@
             <td>${a.country ? esc(String(a.country).toUpperCase()) : "<span class=\"muted\">—</span>"}</td>
             <td>${esc(a.region || "")}</td>
             <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
-            <td><span class="pill warn">${esc(t("controversial"))}</span></td>
           </tr>`).join("");
         box.innerHTML = `<table>
           <tr><th>${esc(t("Name"))}</th><th>${esc(t("Scope"))}</th><th>${esc(t("Country"))}</th>`
-          + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th><th></th></tr>${rows}</table>`;
+          + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th></tr>${rows}</table>`;
         // The API caveat travels with the data, visible by default (informed consent).
         if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>`;
       } catch (e) {
@@ -8396,7 +8395,7 @@
     async function ingestStatSources() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const msg = $("stat-ingest-msg"), btn = $("stat-ingest-btn");
-      if (!confirm(t("Register all official-statistics producers as DISABLED sources? They are added controversial and NOT scraped."))) return;
+      if (!confirm(t("Register all official-statistics producers as DISABLED sources? They are added disabled and NOT scraped — enable any to start collecting."))) return;
       if (btn) btn.disabled = true;
       if (msg) msg.textContent = t("Registering…");
       try {

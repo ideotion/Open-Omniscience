@@ -1149,15 +1149,14 @@
       <p class="muted" style="margin-top:0">A curated directory of government and international statistical
         agencies — deliberately global (BRICS, Africa and smaller economies alongside the usual Western producers
         and IGOs). Every producer here is a <em>stanced</em> source: an official figure carries its producing
-        state's interests, so each is flagged <span class="pill warn">controversial</span> by ruling — this is a
-        descriptive note about WHO publishes, never a credibility verdict or a score. No figures are fetched and
-        nothing leaves your machine.</p>
+        state's interests — this directory shows WHO publishes so you can judge for yourself. We attach no
+        credibility verdict and no score. No figures are fetched and nothing leaves your machine.</p>
       <p class="hint" id="stat-coverage" style="margin-top:0"></p>
       <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
         <button class="secondary" id="stat-ingest-btn" onclick="ingestStatSources()">Register as sources</button>
-        <div class="hint" style="align-self:center">Adds every producer to your catalogue as a <b>disabled</b>,
-          controversial source — registered, not scraped (idempotent; safe to repeat). This is a local database
-          change, not a network action.</div>
+        <div class="hint" style="align-self:center">Adds every producer to your catalogue as a <b>disabled</b>
+          source — registered, not scraped (enable any to start collecting; idempotent, safe to repeat). This is a
+          local database change, not a network action.</div>
       </div>
       <div id="stat-ingest-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
       <div style="overflow:auto;margin-top:10px" id="stat-agencies"><div class="muted">Loading…</div></div>

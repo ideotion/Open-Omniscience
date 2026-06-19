@@ -3104,9 +3104,11 @@ ruling, a contingency, or a deliberate-omission note.
 - **OFFICIAL-STATISTICS INGESTION (maintainer concept 2026-06-12, designed
   in FUTURE_DEVELOPMENTS with questions):** worldwide government +
   international statistical agencies (BLS/INSEE/Eurostat/World Bank/IMF +
-  deliberately BRICS/Africa/forgotten-regions producers) ingested as
-  CONTROVERSIAL sources like any other — producing state + agency +
-  publication date + methodology ref on every figure; VINTAGES stored
+  deliberately BRICS/Africa/forgotten-regions producers) ingested as DISABLED
+  sources like any other (the "controversial" verdict was REMOVED 2026-06-19,
+  ruling #50 — see the shipped-log entry; a producer is a stanced source stated
+  as a descriptive caveat, the user judges, NO verdict label) — producing state +
+  agency + publication date + methodology ref on every figure; VINTAGES stored
   (revisions are evidence, the law/wiki versioning model); comparability
   guards (SA/NSA, definitions, base years — never compare incomparable
   denominators silently); official machine endpoints (SDMX/APIs) before
@@ -3185,6 +3187,20 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P2-1 REMOVED THE "CONTROVERSIAL" SOURCE VERDICT (#50; ruling REVERSES
+  the official-statistics "controversial sources" framing; branch claude/gallant-bohr-1cogzj;
+  backend VERIFIED py3.11 venv):** maintainer — "users should make their humble opinions." Calling a
+  source "controversial" is itself a VERDICT, so removing it INCREASES honesty (evidence-trails-not-
+  verdicts). Dropped the per-source verdict everywhere: `agencies.py` to_dict no longer emits
+  `controversial`; `ingest.py` tags are now `["official-statistics", region]` (no "controversial"
+  tag); the agency-directory UI lost its "controversial" pill column; the register-confirm + the
+  Statistics-panel description reworded (no verdict). KEPT the honest PROVENANCE transparency as a
+  DESCRIPTIVE CAVEAT on the response ("an official figure is a stanced source — you judge"), never a
+  label. REVERSES the just-merged #396 test: `test_every_agency_is_flagged_controversial_no_score`
+  → `test_no_agency_carries_a_controversial_verdict_no_score` (asserts the field/tag is GONE, no-score
+  stays); test_stats_ingest + test_eia_energy_feeds + the repo-invariant comment updated. Ledger
+  official-statistics non-negotiable reworded. The reworded UI strings are English-fallback (old
+  "controversial" locale keys orphaned-harmless; i18n gate stays 100%; THEME-5 re-keys).
 - **FIELD TEST 2026-06-19 — P3 NETWORK/SAFETY POLISH (#5/#O-5/#64; branch
   claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
   (#O-5) the go-online TRANSITION now flashes GREEN (`--ok`, the "go" signal) and go-offline a
