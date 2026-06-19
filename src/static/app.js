@@ -277,6 +277,12 @@
       if (plane) plane.setAttribute("fill", online ? "none" : "currentColor");
       const label = document.getElementById("net-label");
       if (label) label.textContent = online ? t("Online") : t("Offline");
+      // State-specific hover title (field test 2026-06-19 #5): name the ACTION the
+      // click performs. The button is data-i18n-dyn so the i18n observer won't revert
+      // this; the oo:langchange listener re-calls _paintNetwork to re-translate it.
+      btn.title = online
+        ? t("Online — click to go offline (airplane mode); every new network request will be refused.")
+        : t("Offline (airplane mode) — click to go online; you'll be asked to confirm first.");
       btn.classList.toggle("off", !online);
       document.body.classList.toggle("net-offline", !online);
       // Onboarding coachmark: invite once when we first learn we're offline;
@@ -3534,10 +3540,14 @@
     // encryptedRestore() (destructive replace-restore) was REMOVED 2026-06-13:
     // restore is additive-only via the merge restore (the signed backup artifact).
     async function panicWipe() {
-      if (!confirm("PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?\n\n" +
-                   "This cannot be undone. Type-confirm follows.")) return;
-      if (prompt('To confirm, type WIPE in capitals:') !== "WIPE") {
-        toast("Panic wipe cancelled.", "err"); return; }
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Security dialog must be readable in the operator's language (field test
+      // 2026-06-19 #64). The typed keyword stays the literal ASCII "WIPE" so the
+      // confirmation never depends on locale-specific input.
+      if (!confirm(t("PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?") + "\n\n" +
+                   t("This cannot be undone. Type-confirm follows."))) return;
+      if (prompt(t("To confirm, type WIPE in capitals:")) !== "WIPE") {
+        toast(t("Panic wipe cancelled."), "err"); return; }
       try {
         const r = await api("/api/safety/panic", {method: "POST", body: JSON.stringify({confirm: true})});
         $("panic-result").innerHTML =
@@ -9936,6 +9946,8 @@
         const tbl = $("src-table");
         if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
       } catch (_e) {}
+      // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
+      try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
     });
 
     // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.

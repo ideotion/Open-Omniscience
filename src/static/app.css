@@ -280,12 +280,12 @@
     #net-toggle.off { color:var(--err); border-color:var(--err);
                       box-shadow:0 0 0 3px color-mix(in srgb, var(--err) 16%, transparent); }
     #net-flash { position:fixed; inset:0; z-index:200; pointer-events:none; opacity:0; }
-    /* Direction-aware transition color (UI_SHELL_REDESIGN §3): the color encodes
-       WHICH WAY you're crossing — a calm/grounded hue for going OFFLINE (the safe
-       action, never an alarming red) and the live accent for going ONLINE (the
-       consented one). Today a single red flash conflated the two opposite meanings. */
-    #net-flash.go-off { background:radial-gradient(ellipse at top, color-mix(in srgb, var(--ok) 30%, transparent), transparent 60%); }
-    #net-flash.go-on  { background:radial-gradient(ellipse at top, color-mix(in srgb, var(--accent) 32%, transparent), transparent 60%); }
+    /* Direction-aware transition color. Field test 2026-06-19 #O-5: going ONLINE flashes
+       GREEN (--ok, the "go" signal the maintainer expects); going OFFLINE flashes a
+       calm/grounded neutral (--muted) — never green (which now reads as online) and
+       never the engaged button's alarm red. */
+    #net-flash.go-on  { background:radial-gradient(ellipse at top, color-mix(in srgb, var(--ok) 32%, transparent), transparent 60%); }
+    #net-flash.go-off { background:radial-gradient(ellipse at top, color-mix(in srgb, var(--muted) 26%, transparent), transparent 60%); }
     #net-flash.go-off, #net-flash.go-on { animation: netflash 0.9s ease-out; }
     @keyframes netflash { 0% { opacity:0; } 25% { opacity:1; } 100% { opacity:0; } }
     /* Enlarged mind-map / cloud (maintainer: enlargeable, weight-true) */

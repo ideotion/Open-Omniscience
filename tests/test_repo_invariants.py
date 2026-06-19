@@ -74,6 +74,26 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
 
 
+def test_network_polish_go_online_green_dynamic_title_and_panic_i18n():
+    """Field test 2026-06-19 polish: (#O-5) going ONLINE flashes green; (#5) the airplane
+    button carries a state-specific, i18n-safe dynamic title; (#64) the panic dialog is
+    translatable."""
+    base = _SRC / "static"
+    css = (base / "app.css").read_text(encoding="utf-8")
+    app = (base / "app.js").read_text(encoding="utf-8")
+    i18n = (base / "i18n.js").read_text(encoding="utf-8")
+    html = (base / "index.html").read_text(encoding="utf-8")
+    # #O-5: go-on (online) is green (--ok), not the accent.
+    assert "#net-flash.go-on  { background:radial-gradient(ellipse at top, color-mix(in srgb, var(--ok)" in css
+    # #5: the button is JS-managed and i18n opts out of clobbering its title.
+    assert "data-i18n-dyn" in html
+    assert 'el.hasAttribute("data-i18n-dyn")' in i18n
+    assert "btn.title = online" in app  # state-specific title in _paintNetwork
+    # #64: panic dialog routed through t().
+    panic = app.split("async function panicWipe()", 1)[1][:600]
+    assert 't("PANIC WIPE' in panic and 't("To confirm, type WIPE' in panic
+
+
 def test_oosubtabs_queries_buttons_live_and_markets_keep_selection():
     """Field test 2026-06-19 #31: the markets category subtab kept "All" visually active
     after switching. Root cause: ooSubtabs captured its button array once, but the markets

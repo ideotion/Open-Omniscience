@@ -52,6 +52,12 @@
     if (n.nodeValue !== t) n.nodeValue = t;
   }
   function doAttrs(el) {
+    // Opt-out for JS-managed (state-dependent) attributes: an element marked
+    // data-i18n-dyn owns its own attribute text and translates it itself via t()
+    // (e.g. the airplane button's title flips with online/offline state). Without
+    // this, the first-seen-English cache below would revert the dynamic value on the
+    // next pass (field test 2026-06-19 #5).
+    if (el.hasAttribute && el.hasAttribute("data-i18n-dyn")) return;
     let store = origAttr.get(el);
     for (const a of ATTRS) {
       if (!el.hasAttribute(a)) continue;

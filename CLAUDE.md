@@ -3185,6 +3185,20 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P3 NETWORK/SAFETY POLISH (#5/#O-5/#64; branch
+  claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
+  (#O-5) the go-online TRANSITION now flashes GREEN (`--ok`, the "go" signal) and go-offline a
+  calm/grounded neutral (`--muted`) — the two were swapped (go-OFF was green, go-ON the accent).
+  (#5) the airplane button's hover title is now STATE-SPECIFIC ("…click to go offline…" when
+  online / "…click to go online; you'll be asked to confirm…" when offline) — set in
+  `_paintNetwork`, re-translated on `oo:langchange`. This needed a NEW reusable i18n opt-out:
+  `data-i18n-dyn` makes the DOM walker SKIP an element whose attributes JS owns (the engine
+  otherwise caches the first-seen English title and reverts dynamic swaps — the Item R trap);
+  use it for any future state-dependent attribute. (#64) the PANIC-WIPE confirm/prompt/cancel
+  strings now route through `t()` (the typed keyword stays literal ASCII "WIPE" — never
+  locale-dependent input); ACTUAL ×12 translations belong to the THEME-5 i18n sweep (the strings
+  are English-fallback now, gate stays 100%). test_repo_invariants::
+  test_network_polish_go_online_green_dynamic_title_and_panic_i18n.
 - **FIELD TEST 2026-06-19 — P1 MARKETS SUBTAB ACTIVE-STATE (#31, THEME-1 down-payment; branch
   claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
   the Markets category subtab kept "All" visually active after switching to another category
