@@ -1395,5 +1395,16 @@
   "Merge selected": "चयनित को मर्ज करें",
   "Min. articles": "न्यून. लेख",
   "Most-cited sources": "सर्वाधिक उद्धृत स्रोत",
-  "My calendar": "मेरा कैलेंडर"
+  "My calendar": "मेरा कैलेंडर",
+  "Trends": "रुझान",
+  "User Manual": "उपयोगकर्ता पुस्तिका",
+  "Value column": "मान कॉलम",
+  "Value regex": "मान रेगेक्स",
+  "View chain": "श्रृंखला देखें",
+  "Unit": "इकाई",
+  "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.": "एक Markdown दस्तावेज़ जो शब्दशः क्वेरी, ऐप संस्करण और प्रति-लेख उद्गम दर्ज करता है — निर्णयों और सहकर्मी-समीक्षा के लिए। केवल चयन दर्ज करता है; कोई निष्कर्ष नहीं निकालता।",
+  "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "ऐसी भाषा में हर सक्षम स्रोत को अक्षम करें (कभी हटाएँ नहीं) जिसे कीवर्ड इंजन संभाल नहीं सकता। स्रोत तालिका से प्रतिवर्ती।",
+  "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "शीर्ष परिणामों (अधिकतम 20) पर स्थानीय LLM द्वारा एक संश्लेषण — साझा तथ्य, असहमतियाँ, खुले प्रश्न, लेख संख्याओं का हवाला देते हुए। सहायता, कभी निर्णय नहीं।",
+  "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "स्थानीय मॉडल को बताएँ कि क्या निकालना है। प्रति पंक्ति एक आइटम आउटपुट करें — प्रत्येक ऊपर दिए प्रकार का एक मेटाडेटा बन जाता है।",
+  "Updates automatically in the background.": "पृष्ठभूमि में स्वतः अद्यतन होता है।"
 }

@@ -1395,5 +1395,16 @@
   "Merge selected": "選択項目を統合",
   "Min. articles": "最小記事数",
   "Most-cited sources": "最も引用されたソース",
-  "My calendar": "マイカレンダー"
+  "My calendar": "マイカレンダー",
+  "Trends": "トレンド",
+  "User Manual": "ユーザーマニュアル",
+  "Value column": "値の列",
+  "Value regex": "値の正規表現",
+  "View chain": "チェーンを表示",
+  "Unit": "単位",
+  "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.": "正確なクエリ、アプリのバージョン、記事ごとの出所を記録する Markdown 文書 — 判断とピアレビューのためのものです。選択のみを記録し、何も結論しません。",
+  "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "キーワードエンジンが扱えない言語の有効なソースをすべて無効化します（削除はしません）。ソース表から元に戻せます。",
+  "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "上位の結果（最大 20 件）にわたるローカル LLM による 1 つの統合 — 共通の事実、相違点、未解決の問い、記事番号付き。補助であり、決して判断ではありません。",
+  "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "抽出する内容をローカルモデルに伝えます。1 行に 1 項目を出力します — それぞれが上記の種類のメタデータになります。",
+  "Updates automatically in the background.": "バックグラウンドで自動的に更新されます。"
 }

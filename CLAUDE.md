@@ -3264,6 +3264,18 @@ ruling, a contingency, or a deliberate-omission note.
   colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
   + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
   standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: CLEAN CAPTIONS + LABELS SLICE ×12 (post-#403-merge; branch
+  claude/gallant-bohr-1cogzj):** the easy-LABEL tail being nearly exhausted, this slice keyed the remaining
+  CLEAN, SINGLE-NODE strings that need NO inline-tag de-tagging — 6 labels (Trends · User Manual · Value
+  column · Value regex · View chain · Unit) + 5 complete honesty CAPTIONS (the signed-evidence Markdown
+  "Records selection only; concludes nothing"; the unmanaged-language disable note "Reversible from the
+  sources table"; the synthesize "Assistance, never a verdict"; the custom-extractor "one item per line";
+  "Updates automatically in the background."). 1391→1402 keys ×12; non-en AI-drafted, FLAGGED for native
+  review (Markdown/LLM/Regex/max-20 kept literal; the honesty phrases — "never a verdict", "concludes
+  nothing", "Reversible" — translated faithfully). i18n --min 100 (1402 ×12); ui_invariants/dropdown guards
+  green. PHASE NOTE: the SINGLE-NODE tail is now largely done; the REMAINING ~250 untranslatable strings are
+  inline-TAGGED help paragraphs (need the per-panel `<b>/<em>` de-tagging treatment) + data/proper-nouns
+  (correctly left literal). Next i18n work is the heavier panel de-tagging, done deliberately panel-by-panel.
 - **FIELD TEST 2026-06-19 — THEME-5 i18n: STATIC-LABEL BURN-DOWN SLICE ×12 (post-#402-merge; branch
   claude/gallant-bohr-1cogzj):** continued the documented panel tail — keyed 31 CLEAN, short, single-text-node
   chrome LABELS scattered across the Insights/Settings/Search/Sources panels (Add a source · Add rule · Add a

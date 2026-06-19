@@ -1395,5 +1395,16 @@
   "Merge selected": "Merge selected",
   "Min. articles": "Min. articles",
   "Most-cited sources": "Most-cited sources",
-  "My calendar": "My calendar"
+  "My calendar": "My calendar",
+  "Trends": "Trends",
+  "User Manual": "User Manual",
+  "Value column": "Value column",
+  "Value regex": "Value regex",
+  "View chain": "View chain",
+  "Unit": "Unit",
+  "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.": "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.",
+  "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.",
+  "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.",
+  "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.",
+  "Updates automatically in the background.": "Updates automatically in the background."
 }

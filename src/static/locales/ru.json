@@ -1395,5 +1395,16 @@
   "Merge selected": "Объединить выбранное",
   "Min. articles": "Мин. статей",
   "Most-cited sources": "Самые цитируемые источники",
-  "My calendar": "Мой календарь"
+  "My calendar": "Мой календарь",
+  "Trends": "Тренды",
+  "User Manual": "Руководство пользователя",
+  "Value column": "Столбец значения",
+  "Value regex": "Regex значения",
+  "View chain": "Показать цепочку",
+  "Unit": "Единица",
+  "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.": "Документ Markdown, фиксирующий точный запрос, версию приложения и происхождение по каждой статье — для выводов и рецензирования. Фиксирует только подборку; ничего не заключает.",
+  "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "Отключить (никогда не удалять) каждый включённый источник на языке, который не поддерживает движок ключевых слов. Обратимо из таблицы источников.",
+  "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "Один синтез локальной LLM по лучшим результатам (макс. 20) — общие факты, расхождения, открытые вопросы, со ссылками на номера статей. Помощь, но не вывод.",
+  "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Укажите локальной модели, что извлечь. Выводите по одному элементу в строке — каждый становится метаданными указанного выше типа.",
+  "Updates automatically in the background.": "Обновляется автоматически в фоновом режиме."
 }
