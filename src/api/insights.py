@@ -511,6 +511,21 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
     return _cached(_ckey("map-coverage"), _compute)
 
 
+@router.get("/server-locations")
+def insights_server_locations(db: Session = Depends(get_db)) -> dict:
+    """The ooMap "server location" layer (Slice 6c): the captured server IPs (Slice 6a)
+    geolocated OFFLINE (Slice 6b), per-country, with IP/host CLUSTERING + honest
+    unavailable buckets (Tor/proxy, not-captured, unknown-IP).
+
+    DISTINCT from the editorial ``map-coverage`` (Source.country) layer: this is the
+    NETWORK location we actually connected to -- our vantage point (often a CDN edge /
+    anycast), never proof of the publisher's origin. Counts only, NO score; the caveat is
+    visible by default. Until the country DB is bundled (a networked-machine step), the
+    located countries are empty and everything lands honestly in the unavailable buckets.
+    """
+    return _cached(_ckey("server-locations"), lambda: q.server_locations(db))
+
+
 def warm_cache(db: Session) -> dict:
     """Pre-compute the common whole-corpus views into the read cache so the Home /
     Insights surfaces never hit a cold heavy query (perf, field report 2026-06-18).
