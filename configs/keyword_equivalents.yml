@@ -16,9 +16,9 @@ rings:
     members: ["en:ai", "en:artificial intelligence", "fr:ia", "fr:intelligence artificielle", "fr:artificielle"]
     note: "fr:ia appears as l'ia in raw text (elision now stripped). fr:artificielle rides along — in this corpus it is 100% the AI adjective."
   - id: data
-    members: ["en:data", "fr:données", "de:daten"]
+    members: ["en:data", "fr:données", "de:daten", "ar:بيانات", "ru:данные"]
   - id: world
-    members: ["en:world", "fr:monde", "de:welt", "es:mundo", "pt:mundo", "it:mondo"]
+    members: ["en:world", "fr:monde", "de:welt", "es:mundo", "pt:mundo", "it:mondo", "ar:عالم", "ru:мир"]
     note: "World-Cup vocabulary may dominate temporarily (June 2026 news cycle)."
   - id: model
     members: ["en:model", "en:models", "fr:modèle", "fr:modèles"]
@@ -34,35 +34,40 @@ rings:
     members: ["en:hand", "fr:main", "de:hand", "es:mano", "pt:mão", "it:mano"]
     note: "fr:main only — en:main (adjective/place) and de:Main (river) stay out."
   - id: election
-    members: ["en:election", "en:elections", "fr:élection", "fr:élections", "de:wahl", "es:elección", "pt:eleição", "id:pemilu"]
+    members: ["en:election", "en:elections", "fr:élection", "fr:élections", "de:wahl", "es:elección", "pt:eleição", "id:pemilu", "ar:انتخابات", "ru:выборы"]
     note: "de:wahl is also 'choice'; signature evidence should dominate before merging."
   - id: war
-    members: ["en:war", "fr:guerre", "de:krieg", "es:guerra", "pt:guerra", "ru:война"]
+    members: ["en:war", "fr:guerre", "de:krieg", "es:guerra", "pt:guerra", "ru:война", "ar:حرب"]
   # --- Hand-curated expansion 2026-06-17 (high-confidence common nouns; the
   #     Wikidata generator scripts/generate_wikidata_rings.py scales this to
   #     hundreds, sourced by QID, for the full 12 UI languages) ---------------- #
+  # ARABIC + RUSSIAN members added 2026-06-19 (field ask: a reader saw top keywords
+  # in Arabic and could not read them — the answer is to TRANSLATE, so an Arabic
+  # keyword now resolves to the reader's language via these rings). Standard MSA /
+  # Russian forms, AI-drafted, FLAGGED FOR NATIVE REVIEW; the Wikidata generator
+  # (maintainer's machine) is the path to verified breadth.
   - id: government
-    members: ["en:government", "fr:gouvernement", "de:regierung", "es:gobierno", "it:governo", "pt:governo", "nl:regering", "ru:правительство"]
+    members: ["en:government", "fr:gouvernement", "de:regierung", "es:gobierno", "it:governo", "pt:governo", "nl:regering", "ru:правительство", "ar:حكومة"]
   - id: president
-    members: ["en:president", "fr:président", "de:präsident", "es:presidente", "it:presidente", "pt:presidente", "nl:president", "ru:президент"]
+    members: ["en:president", "fr:président", "de:präsident", "es:presidente", "it:presidente", "pt:presidente", "nl:president", "ru:президент", "ar:رئيس"]
   - id: inflation
-    members: ["en:inflation", "fr:inflation", "de:inflation", "es:inflación", "it:inflazione", "pt:inflação", "nl:inflatie", "ru:инфляция"]
+    members: ["en:inflation", "fr:inflation", "de:inflation", "es:inflación", "it:inflazione", "pt:inflação", "nl:inflatie", "ru:инфляция", "ar:تضخم"]
   - id: economy
-    members: ["en:economy", "fr:économie", "de:wirtschaft", "es:economía", "it:economia", "pt:economia", "nl:economie"]
+    members: ["en:economy", "fr:économie", "de:wirtschaft", "es:economía", "it:economia", "pt:economia", "nl:economie", "ar:اقتصاد", "ru:экономика"]
   - id: climate
-    members: ["en:climate", "fr:climat", "de:klima", "es:clima", "it:clima", "pt:clima", "nl:klimaat"]
+    members: ["en:climate", "fr:climat", "de:klima", "es:clima", "it:clima", "pt:clima", "nl:klimaat", "ar:مناخ", "ru:климат"]
   - id: health
-    members: ["en:health", "fr:santé", "de:gesundheit", "es:salud", "it:salute", "pt:saúde", "nl:gezondheid"]
+    members: ["en:health", "fr:santé", "de:gesundheit", "es:salud", "it:salute", "pt:saúde", "nl:gezondheid", "ar:صحة", "ru:здоровье"]
   - id: energy
-    members: ["en:energy", "fr:énergie", "de:energie", "es:energía", "it:energia", "pt:energia", "nl:energie"]
+    members: ["en:energy", "fr:énergie", "de:energie", "es:energía", "it:energia", "pt:energia", "nl:energie", "ar:طاقة", "ru:энергетика"]
   - id: vaccine
-    members: ["en:vaccine", "fr:vaccin", "de:impfstoff", "es:vacuna", "it:vaccino", "pt:vacina", "nl:vaccin"]
+    members: ["en:vaccine", "fr:vaccin", "de:impfstoff", "es:vacuna", "it:vaccino", "pt:vacina", "nl:vaccin", "ar:لقاح", "ru:вакцина"]
   - id: pandemic
-    members: ["en:pandemic", "fr:pandémie", "de:pandemie", "es:pandemia", "it:pandemia", "pt:pandemia", "nl:pandemie"]
+    members: ["en:pandemic", "fr:pandémie", "de:pandemie", "es:pandemia", "it:pandemia", "pt:pandemia", "nl:pandemie", "ar:جائحة", "ru:пандемия"]
   - id: sanctions
-    members: ["en:sanctions", "fr:sanctions", "de:sanktionen", "es:sanciones", "it:sanzioni", "pt:sanções", "nl:sancties"]
+    members: ["en:sanctions", "fr:sanctions", "de:sanktionen", "es:sanciones", "it:sanzioni", "pt:sanções", "nl:sancties", "ar:عقوبات", "ru:санкции"]
   - id: market
-    members: ["en:market", "fr:marché", "de:markt", "es:mercado", "it:mercato", "pt:mercado", "nl:markt"]
+    members: ["en:market", "fr:marché", "de:markt", "es:mercado", "it:mercato", "pt:mercado", "nl:markt", "ar:سوق", "ru:рынок"]
     note: "marketplace and financial market share the surface form across these languages."
   - id: refugee
-    members: ["en:refugee", "fr:réfugié", "de:flüchtling", "es:refugiado", "it:rifugiato", "pt:refugiado", "nl:vluchteling"]
+    members: ["en:refugee", "fr:réfugié", "de:flüchtling", "es:refugiado", "it:rifugiato", "pt:refugiado", "nl:vluchteling", "ar:لاجئ", "ru:беженцы"]

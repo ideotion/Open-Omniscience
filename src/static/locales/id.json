@@ -1406,5 +1406,6 @@
   "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "Nonaktifkan (jangan pernah hapus) setiap sumber aktif dalam bahasa yang tidak dapat ditangani mesin kata kunci. Dapat dibatalkan dari tabel sumber.",
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "Satu sintesis LLM lokal atas hasil teratas (maks. 20) — fakta bersama, ketidaksepakatan, pertanyaan terbuka, mengutip nomor artikel. Bantuan, bukan putusan.",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Beri tahu model lokal apa yang harus diekstrak. Keluarkan satu item per baris — masing-masing menjadi metadata jenis di atas.",
-  "Updates automatically in the background.": "Diperbarui secara otomatis di latar belakang."
+  "Updates automatically in the background.": "Diperbarui secara otomatis di latar belakang.",
+  "Verified translation (cross-language concept).": "Terjemahan terverifikasi (konsep lintas bahasa)."
 }
