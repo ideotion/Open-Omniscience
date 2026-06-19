@@ -1320,5 +1320,11 @@
   "Africa": "Afrika",
   "Oceania": "Oseania",
   "Signals": "Sinyal",
-  "Moment in focus": "Momen fokus"
+  "Moment in focus": "Momen fokus",
+  "healthy": "sehat",
+  "offline": "luring",
+  "checking…": "memeriksa…",
+  "AI": "AI",
+  "encrypted (AES-256-GCM)": "terenkripsi (AES-256-GCM)",
+  "plaintext archive": "arsip teks biasa"
 }

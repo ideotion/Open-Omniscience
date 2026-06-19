@@ -1320,5 +1320,11 @@
   "Africa": "أفريقيا",
   "Oceania": "أوقيانوسيا",
   "Signals": "إشارات",
-  "Moment in focus": "اللحظة المحددة"
+  "Moment in focus": "اللحظة المحددة",
+  "healthy": "سليم",
+  "offline": "غير متصل",
+  "checking…": "جارٍ التحقق…",
+  "AI": "ذكاء اصطناعي",
+  "encrypted (AES-256-GCM)": "مشفّر (AES-256-GCM)",
+  "plaintext archive": "أرشيف غير مشفّر"
 }

@@ -1320,5 +1320,11 @@
   "Africa": "非洲",
   "Oceania": "大洋洲",
   "Signals": "信号",
-  "Moment in focus": "聚焦时刻"
+  "Moment in focus": "聚焦时刻",
+  "healthy": "正常",
+  "offline": "离线",
+  "checking…": "检查中…",
+  "AI": "AI",
+  "encrypted (AES-256-GCM)": "已加密 (AES-256-GCM)",
+  "plaintext archive": "明文存档"
 }

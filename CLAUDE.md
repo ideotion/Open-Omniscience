@@ -3187,6 +3187,16 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: STATUS-BAR + SESSION-NEW STRINGS ×12 (#59; branch
+  claude/gallant-bohr-1cogzj):** the always-on status pill showed hardcoded lowercase "healthy"/
+  "offline"/"checking…" (the #59 named gap) — routed through `t()` and keyed ×12, plus this session's
+  short new visible strings ("AI" subtab #42, "encrypted (AES-256-GCM)" / "plaintext archive" P0-2
+  verdict pills). 6 keys × 12 locales (en + 11 AI-drafted, FLAGGED for native review per the standing
+  pattern; confident common forms — KI/IA/ИИ, 正常/オフライン, etc.). i18n --min 100 green (1322 ×12).
+  The LONGER session strings (the airplane state titles #5, the panic dialog #64) stay English-fallback
+  for a careful native-review sweep (a mistranslated security warning is worse than English — the
+  standing caution). REMAINING THEME-5: the ~hundreds-string long tail (the recently-added panels,
+  per the slice-by-slice burn-down) + the panic/airplane sentences.
 - **FIELD TEST 2026-06-19 — P2-8 TRENDS AS CLICKABLE BAR GRAPHS (#25; branch
   claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the Insights →
   Trends rising/top LISTS became clickable horizontal BAR graphs (`termBarsHtml`): keywords top→down,

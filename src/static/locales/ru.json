@@ -1320,5 +1320,11 @@
   "Africa": "Африка",
   "Oceania": "Океания",
   "Signals": "Сигналы",
-  "Moment in focus": "Момент в фокусе"
+  "Moment in focus": "Момент в фокусе",
+  "healthy": "исправно",
+  "offline": "не в сети",
+  "checking…": "проверка…",
+  "AI": "ИИ",
+  "encrypted (AES-256-GCM)": "зашифровано (AES-256-GCM)",
+  "plaintext archive": "незашифрованный архив"
 }

@@ -2761,12 +2761,13 @@
     }
 
     async function loadHealth() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const h = await api("/api/health");
         $("version").textContent = "v" + h.version;
-        $("health").innerHTML = '<span class="dot ok"></span> healthy';
+        $("health").innerHTML = '<span class="dot ok"></span> ' + esc(t("healthy"));
       } catch (e) {
-        $("health").innerHTML = '<span class="dot err"></span> offline';
+        $("health").innerHTML = '<span class="dot err"></span> ' + esc(t("offline"));
       }
     }
 

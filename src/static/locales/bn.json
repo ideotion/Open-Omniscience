@@ -1320,5 +1320,11 @@
   "Africa": "আফ্রিকা",
   "Oceania": "ওশেনিয়া",
   "Signals": "সংকেত",
-  "Moment in focus": "ফোকাসকৃত মুহূর্ত"
+  "Moment in focus": "ফোকাসকৃত মুহূর্ত",
+  "healthy": "সুস্থ",
+  "offline": "অফলাইন",
+  "checking…": "যাচাই করা হচ্ছে…",
+  "AI": "এআই",
+  "encrypted (AES-256-GCM)": "এনক্রিপ্টেড (AES-256-GCM)",
+  "plaintext archive": "অনাবৃত আর্কাইভ"
 }

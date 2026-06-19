@@ -1320,5 +1320,11 @@
   "Africa": "Afrique",
   "Oceania": "Océanie",
   "Signals": "Signaux",
-  "Moment in focus": "Moment ciblé"
+  "Moment in focus": "Moment ciblé",
+  "healthy": "sain",
+  "offline": "hors ligne",
+  "checking…": "vérification…",
+  "AI": "IA",
+  "encrypted (AES-256-GCM)": "chiffré (AES-256-GCM)",
+  "plaintext archive": "archive en clair"
 }

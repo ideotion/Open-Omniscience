@@ -1320,5 +1320,11 @@
   "Africa": "अफ्रीका",
   "Oceania": "ओशिनिया",
   "Signals": "संकेत",
-  "Moment in focus": "केंद्रित क्षण"
+  "Moment in focus": "केंद्रित क्षण",
+  "healthy": "स्वस्थ",
+  "offline": "ऑफ़लाइन",
+  "checking…": "जाँच हो रही है…",
+  "AI": "एआई",
+  "encrypted (AES-256-GCM)": "एन्क्रिप्टेड (AES-256-GCM)",
+  "plaintext archive": "अनएन्क्रिप्टेड संग्रह"
 }

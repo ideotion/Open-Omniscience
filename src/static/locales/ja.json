@@ -1320,5 +1320,11 @@
   "Africa": "アフリカ",
   "Oceania": "オセアニア",
   "Signals": "シグナル",
-  "Moment in focus": "焦点の時点"
+  "Moment in focus": "焦点の時点",
+  "healthy": "正常",
+  "offline": "オフライン",
+  "checking…": "確認中…",
+  "AI": "AI",
+  "encrypted (AES-256-GCM)": "暗号化済み (AES-256-GCM)",
+  "plaintext archive": "平文アーカイブ"
 }
