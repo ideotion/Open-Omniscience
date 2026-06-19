@@ -51,6 +51,7 @@ from sqlalchemy import (
     Text,
     TypeDecorator,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -533,6 +534,19 @@ class Article(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
     language: Mapped[str | None] = mapped_column(String(10))
     hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
+    # K1/K2 identity seams (data-architecture Slice 5). Additive, never reformat `hash`:
+    #   * content_multihash -- the SELF-DESCRIBING content hash ("sha2-256:<hex>"),
+    #     alongside the bare-hex dedup `hash`, so a future hash-algorithm change is
+    #     unambiguous per-article (src/utils/url_utils.content_multihash).
+    #   * canon_version -- which canonicalization produced `canonical_url`
+    #     (src/utils/url_utils.CANON_VERSION), so a corpus spanning a canonicaliser
+    #     change knows which rule made each canonical_url.
+    # Both are stamped FORWARD on every insert path by the before_insert listener below
+    # and backfilled for existing rows (migration + boot self-heal). Nullable: an
+    # article whose hash is not a 64-hex SHA-256 leaves content_multihash NULL rather
+    # than fabricating an algorithm label.
+    content_multihash: Mapped[str | None] = mapped_column(String(80))
+    canon_version: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=lambda: datetime.now(UTC))
 
@@ -619,6 +633,24 @@ class Article(Base):
     def __repr__(self):
         title = (self.title or "")[:50]
         return f"<Article(id={self.id}, title='{title}...', source_id={self.source_id})>"
+
+
+@event.listens_for(Article, "before_insert")
+def _stamp_article_identity(mapper, connection, target: "Article") -> None:
+    """Stamp the K1/K2 identity seams on EVERY insert path (Slice 5).
+
+    A model-level hook (not per-call-site) so pipeline, crawl, email, wiki and any
+    future ingest path all populate them — drift-proof. It only fills a value the
+    caller left empty; it NEVER reformats ``hash`` and never fabricates a label:
+    ``content_multihash`` is set only when ``hash`` is a 64-hex SHA-256 digest (which
+    every ingest path produces via ``generate_content_hash``), else left NULL.
+    """
+    from src.utils.url_utils import CANON_VERSION, CONTENT_HASH_ALGO
+
+    if not target.content_multihash and target.hash and len(target.hash) == 64:
+        target.content_multihash = f"{CONTENT_HASH_ALGO}:{target.hash}"
+    if not target.canon_version:
+        target.canon_version = CANON_VERSION
 
 
 # Keyword and Category Models for Keyword Extraction

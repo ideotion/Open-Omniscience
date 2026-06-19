@@ -171,6 +171,7 @@ def init_db() -> None:
     # never adds indexes to existing tables; not every install runs alembic).
     from src.database.maintenance import (
         ensure_article_analysis_columns,
+        ensure_article_identity_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
         ensure_keyword_counter_columns,
@@ -179,6 +180,9 @@ def init_db() -> None:
     # Denormalised keyword counters (+ their index, + one-time backfill) BEFORE the
     # generic hot-index pass, since the counters' index depends on the column.
     ensure_keyword_counter_columns(engine)
+
+    # K1/K2 identity seams on articles (self-heal + backfill for pre-existing stores).
+    ensure_article_identity_columns(engine)
 
     ensure_hot_indexes(engine)
 

@@ -139,6 +139,61 @@ def ensure_article_analysis_columns(engine: Engine) -> list[str]:
     return added
 
 
+# K1/K2 identity seams (data-architecture Slice 5): content_multihash + canon_version
+# on articles, for stores created before these columns existed. Additive + nullable; the
+# backfill is a pure string op over the small `hash`/`canonical_url` columns (no content
+# decrypt), so it is cheap even on a large encrypted corpus.
+_ARTICLE_IDENTITY_COLUMNS: dict[str, str] = {
+    "content_multihash": "ALTER TABLE articles ADD COLUMN content_multihash VARCHAR(80)",
+    "canon_version": "ALTER TABLE articles ADD COLUMN canon_version VARCHAR(16)",
+}
+
+
+def ensure_article_identity_columns(engine: Engine) -> list[str]:
+    """Self-heal ``articles.content_multihash`` / ``canon_version`` + backfill them.
+
+    Mirrors the other self-heals (the live DB never auto-runs alembic). content_multihash
+    is backfilled as ``sha2-256:<hash>`` for rows whose hash is a 64-char SHA-256 digest
+    (every ingest path produces one) — never a fabricated label for an odd hash; the
+    bare-hex dedup ``hash`` is untouched. canon_version is backfilled to the current
+    ``CANON_VERSION`` for existing rows (they WERE canonicalised by the current rules).
+    Idempotent; no-op on a fresh DB / non-sqlite / missing table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    from src.utils.url_utils import CANON_VERSION, CONTENT_HASH_ALGO
+
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_IDENTITY_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        with engine.begin() as conn:
+            if "content_multihash" in added:
+                conn.execute(
+                    text(
+                        "UPDATE articles SET content_multihash = :pfx || hash "
+                        "WHERE content_multihash IS NULL AND length(hash) = 64"
+                    ),
+                    {"pfx": f"{CONTENT_HASH_ALGO}:"},
+                )
+            if "canon_version" in added:
+                conn.execute(
+                    text("UPDATE articles SET canon_version = :v WHERE canon_version IS NULL"),
+                    {"v": CANON_VERSION},
+                )
+        _LOG.info(f"added + backfilled articles identity column(s): {', '.join(added)}")
+    return added
+
+
 # Denormalised corpus-wide keyword counters (perf workstream 2026-06-18) for stores
 # created before these columns existed. create_all builds them on a fresh DB but never
 # ALTERs an existing table, and not every install runs alembic — so an existing corpus
