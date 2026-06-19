@@ -1253,9 +1253,19 @@ def reindex_imported_articles(batch_id: int) -> dict:
 
 
 def run_restore(
-    staged: StagedArtifact, *, commit: bool, allow_unverified: bool = False
+    staged: StagedArtifact,
+    *,
+    commit: bool,
+    allow_unverified: bool = False,
+    reindex_imported: bool = True,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
+
+    ``reindex_imported`` (default True): after the swap, recompute core-engine
+    metadata for the imported articles (P0-4). The MERGE-ENGINE correctness suite
+    (commutativity/idempotency/crash-safety) passes False to test the engine in
+    isolation — the re-index is a one-directional post-step (it makes the FULL
+    restore direction-dependent in DERIVED data by design) with its own test.
 
     Preview and commit run THE SAME merge code against a disposable working
     copy, so the preview's numbers are exactly what a commit would do to the
@@ -1343,11 +1353,12 @@ def run_restore(
     # (keywords, date/place/entity extraction, sentiment); AI artifacts are left
     # verbatim. Best-effort: the restore is already committed AND additive, so a
     # re-index hiccup must never undo it.
-    try:
-        report["reindexed"] = reindex_imported_articles(batch_id)
-    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-        _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
-        report["reindexed"] = {"reindexed": 0, "failed": 0, "skipped": "see server log"}
+    if reindex_imported:
+        try:
+            report["reindexed"] = reindex_imported_articles(batch_id)
+        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+            _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
+            report["reindexed"] = {"reindexed": 0, "failed": 0, "skipped": "see server log"}
     report["pruned_snapshots"] = _prune_snapshots()
     _LOG.info("merge-restore committed: batch=%s plan=%s", batch_id, counts)
     return report

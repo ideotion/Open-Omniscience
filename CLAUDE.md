@@ -3229,8 +3229,14 @@ ruling, a contingency, or a deliberate-omission note.
   by merged_rows, not a corpus-wide reindex). Best-effort: the restore is already committed +
   additive, so a re-index hiccup logs + degrades (report["reindexed"]) and never undoes it.
   tests/test_reindex_on_import.py (recompute + AI-verbatim; missing-ids skip; e2e targets ONLY
-  merged_rows, local article untouched). REMAINING: surface the re-index in the restore report
-  UI + as a task-manager job (P1/P3 backup-progress items).
+  merged_rows, local article untouched). MERGE-ENGINE-SYMMETRY RECONCILIATION (CI caught it):
+  the re-index makes the FULL restore direction-dependent in DERIVED data (only the IMPORTED side
+  re-indexes), so the torture suite's merge(A,B)≡merge(B,A) symmetry/idempotency assertions broke.
+  RESOLVED honestly: `run_restore(reindex_imported=True)` default for production; the torture harness
+  (torture_helper.py) passes `reindex_imported=False` to test the MERGE ENGINE in isolation — the
+  re-index is a one-directional post-step with its own test, NOT part of the engine's commutativity
+  contract. Full torture suite green again (10/10, run locally with PYTHONPATH for the subprocesses).
+  REMAINING: surface the re-index in the restore report UI + as a task-manager job (P1/P3 items).
 - **FIELD TEST 2026-06-19 — P0-3 RESTORE PREVIEW ALWAYS ANSWERS JSON (#O-3; branch
   claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** two older-version backups
   failed to preview with "JSON.parse: unexpected character at line 1 column 1" — the SPA
