@@ -773,7 +773,7 @@
   "Fetch mode saved.": "Abrufmodus gespeichert.",
   "Enter a passphrase first.": "Geben Sie zuerst eine Passphrase ein.",
   "Encrypted backup downloaded.": "Verschlüsselte Sicherung heruntergeladen.",
-  "Panic wipe cancelled.": "Notlöschung abgebrochen.",
+  "Panic wipe cancelled.": "Not-Löschung abgebrochen.",
   "Local data wiped. Restart the app.": "Lokale Daten gelöscht. Starten Sie die App neu.",
   "Uninstall cancelled.": "Deinstallation abgebrochen.",
   "Uninstalling — the app is stopping.": "Deinstallation läuft — die App wird beendet.",
@@ -1326,5 +1326,10 @@
   "checking…": "wird geprüft…",
   "AI": "KI",
   "encrypted (AES-256-GCM)": "verschlüsselt (AES-256-GCM)",
-  "plaintext archive": "Klartext-Archiv"
+  "plaintext archive": "Klartext-Archiv",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "Online — klicken, um offline zu gehen (Flugmodus); jede neue Netzwerkanfrage wird abgelehnt.",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "Offline (Flugmodus) — klicken, um online zu gehen; Sie werden zuerst um Bestätigung gebeten.",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "NOT-LÖSCHUNG: Korpus, Schlüssel und Caches auf diesem Gerät unwiderruflich löschen?",
+  "This cannot be undone. Type-confirm follows.": "Dies kann nicht rückgängig gemacht werden. Eine Tippbestätigung folgt.",
+  "To confirm, type WIPE in capitals:": "Zum Bestätigen WIPE in Großbuchstaben eingeben:"
 }

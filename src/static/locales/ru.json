@@ -1326,5 +1326,10 @@
   "checking…": "проверка…",
   "AI": "ИИ",
   "encrypted (AES-256-GCM)": "зашифровано (AES-256-GCM)",
-  "plaintext archive": "незашифрованный архив"
+  "plaintext archive": "незашифрованный архив",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "В сети — нажмите, чтобы перейти в автономный режим (режим полёта); каждый новый сетевой запрос будет отклонён.",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "Не в сети (режим полёта) — нажмите, чтобы выйти в сеть; сначала потребуется подтверждение.",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "ЭКСТРЕННОЕ СТИРАНИЕ: безвозвратно удалить корпус, ключи и кэш на этом компьютере?",
+  "This cannot be undone. Type-confirm follows.": "Это нельзя отменить. Далее — подтверждение вводом.",
+  "To confirm, type WIPE in capitals:": "Для подтверждения введите WIPE заглавными буквами:"
 }

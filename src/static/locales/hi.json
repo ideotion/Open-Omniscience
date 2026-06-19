@@ -1326,5 +1326,10 @@
   "checking…": "जाँच हो रही है…",
   "AI": "एआई",
   "encrypted (AES-256-GCM)": "एन्क्रिप्टेड (AES-256-GCM)",
-  "plaintext archive": "अनएन्क्रिप्टेड संग्रह"
+  "plaintext archive": "अनएन्क्रिप्टेड संग्रह",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "ऑनलाइन — ऑफ़लाइन (एयरप्लेन मोड) पर जाने के लिए क्लिक करें; हर नया नेटवर्क अनुरोध अस्वीकार किया जाएगा।",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "ऑफ़लाइन (एयरप्लेन मोड) — ऑनलाइन होने के लिए क्लिक करें; पहले आपसे पुष्टि माँगी जाएगी।",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "आपातकालीन मिटाव: इस मशीन पर कॉर्पस, कुंजियाँ और कैश को अपरिवर्तनीय रूप से हटाएँ?",
+  "This cannot be undone. Type-confirm follows.": "इसे पूर्ववत नहीं किया जा सकता। आगे टाइप-पुष्टि है।",
+  "To confirm, type WIPE in capitals:": "पुष्टि के लिए, बड़े अक्षरों में WIPE टाइप करें:"
 }

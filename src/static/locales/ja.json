@@ -1326,5 +1326,10 @@
   "checking…": "確認中…",
   "AI": "AI",
   "encrypted (AES-256-GCM)": "暗号化済み (AES-256-GCM)",
-  "plaintext archive": "平文アーカイブ"
+  "plaintext archive": "平文アーカイブ",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "オンライン — クリックしてオフライン（機内モード）にします。新しいネットワーク要求はすべて拒否されます。",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "オフライン（機内モード）— クリックしてオンラインにします。先に確認を求められます。",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "緊急消去：このマシン上のコーパス・鍵・キャッシュを取り消し不能に削除しますか？",
+  "This cannot be undone. Type-confirm follows.": "これは元に戻せません。続いて入力による確認があります。",
+  "To confirm, type WIPE in capitals:": "確認するには、WIPE と大文字で入力してください："
 }

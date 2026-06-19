@@ -773,7 +773,7 @@
   "Fetch mode saved.": "ফেচ মোড সংরক্ষণ করা হয়েছে।",
   "Enter a passphrase first.": "প্রথমে একটি পাসফ্রেজ লিখুন।",
   "Encrypted backup downloaded.": "এনক্রিপ্টেড ব্যাকআপ ডাউনলোড করা হয়েছে।",
-  "Panic wipe cancelled.": "জরুরি মুছে ফেলা বাতিল করা হয়েছে।",
+  "Panic wipe cancelled.": "জরুরি মোছা বাতিল করা হয়েছে।",
   "Local data wiped. Restart the app.": "স্থানীয় ডেটা মুছে ফেলা হয়েছে। অ্যাপটি পুনরায় চালু করুন।",
   "Uninstall cancelled.": "আনইনস্টল বাতিল করা হয়েছে।",
   "Uninstalling — the app is stopping.": "আনইনস্টল করা হচ্ছে — অ্যাপটি বন্ধ হচ্ছে।",
@@ -1326,5 +1326,10 @@
   "checking…": "যাচাই করা হচ্ছে…",
   "AI": "এআই",
   "encrypted (AES-256-GCM)": "এনক্রিপ্টেড (AES-256-GCM)",
-  "plaintext archive": "অনাবৃত আর্কাইভ"
+  "plaintext archive": "অনাবৃত আর্কাইভ",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "অনলাইন — অফলাইনে (এয়ারপ্লেন মোড) যেতে ক্লিক করুন; প্রতিটি নতুন নেটওয়ার্ক অনুরোধ প্রত্যাখ্যান করা হবে।",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "অফলাইন (এয়ারপ্লেন মোড) — অনলাইনে যেতে ক্লিক করুন; প্রথমে আপনাকে নিশ্চিত করতে বলা হবে।",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "জরুরি মোছা: এই মেশিনে কর্পাস, কী এবং ক্যাশে অপরিবর্তনীয়ভাবে মুছে ফেলবেন?",
+  "This cannot be undone. Type-confirm follows.": "এটি পূর্বাবস্থায় ফেরানো যাবে না। এরপর টাইপ-নিশ্চিতকরণ আছে।",
+  "To confirm, type WIPE in capitals:": "নিশ্চিত করতে, বড় হাতের অক্ষরে WIPE টাইপ করুন:"
 }

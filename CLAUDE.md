@@ -3219,6 +3219,21 @@ ruling, a contingency, or a deliberate-omission note.
   colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
   + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
   standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: SECURITY SENTENCES ×12 (#5/#64; branch
+  claude/gallant-bohr-1cogzj):** the explicitly-named, security-CRITICAL subset of the THEME-5 tail —
+  the airplane STATE titles (#5: "Online — click to go offline (airplane mode)…" / "Offline (airplane
+  mode) — click to go online; you'll be asked to confirm first.") and the PANIC-WIPE dialog (#64: the
+  PANIC-WIPE confirm + "This cannot be undone. Type-confirm follows." + "To confirm, type WIPE in
+  capitals:" + "Panic wipe cancelled.") — keyed ×12 (1322→1327 keys; one already existed). These flow
+  through `t()` already (airplane via `_paintNetwork` + the `data-i18n-dyn` mechanism, re-translated on
+  the `oo:langchange` listener; panic via the `panicWipe` confirm/prompt). Translated CAREFULLY,
+  preserving the exact technical claims (irreversible/every-new-request-refused/confirm-first) and the
+  literal ASCII keyword "WIPE" (the typed confirmation never depends on locale input). Non-en
+  AI-drafted, FLAGGED for native review — a mistranslated security warning is worse than English, so
+  these especially want a native pass. i18n --min 100 green (1327 ×12). The maintainer's batch-1 answer
+  (translate ×12, flag for review) reverses the earlier "stay English-fallback" caution for these.
+  REMAINING THEME-5: the ~hundreds-string long tail (this session's UI labels stay English-fallback,
+  keyable later per the established slice approach; the recently-added panels per the burn-down).
 - **FIELD TEST 2026-06-19 — THEME-5 i18n: STATUS-BAR + SESSION-NEW STRINGS ×12 (#59; branch
   claude/gallant-bohr-1cogzj):** the always-on status pill showed hardcoded lowercase "healthy"/
   "offline"/"checking…" (the #59 named gap) — routed through `t()` and keyed ×12, plus this session's

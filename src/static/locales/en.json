@@ -1326,5 +1326,10 @@
   "checking…": "checking…",
   "AI": "AI",
   "encrypted (AES-256-GCM)": "encrypted (AES-256-GCM)",
-  "plaintext archive": "plaintext archive"
+  "plaintext archive": "plaintext archive",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "Online — click to go offline (airplane mode); every new network request will be refused.",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "Offline (airplane mode) — click to go online; you'll be asked to confirm first.",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?",
+  "This cannot be undone. Type-confirm follows.": "This cannot be undone. Type-confirm follows.",
+  "To confirm, type WIPE in capitals:": "To confirm, type WIPE in capitals:"
 }

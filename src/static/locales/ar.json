@@ -1326,5 +1326,10 @@
   "checking…": "جارٍ التحقق…",
   "AI": "ذكاء اصطناعي",
   "encrypted (AES-256-GCM)": "مشفّر (AES-256-GCM)",
-  "plaintext archive": "أرشيف غير مشفّر"
+  "plaintext archive": "أرشيف غير مشفّر",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "متصل — انقر للانتقال إلى وضع عدم الاتصال (وضع الطيران)؛ سيُرفض كل طلب شبكة جديد.",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "غير متصل (وضع الطيران) — انقر للاتصال؛ سيُطلب منك التأكيد أولاً.",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "مسح طارئ: حذف المجموعة والمفاتيح والذاكرة المؤقتة على هذا الجهاز نهائيًا؟",
+  "This cannot be undone. Type-confirm follows.": "لا يمكن التراجع عن هذا. يلي ذلك تأكيد بالكتابة.",
+  "To confirm, type WIPE in capitals:": "للتأكيد، اكتب WIPE بأحرف كبيرة:"
 }
