@@ -122,7 +122,7 @@
   "Open investigation ↗": "Ouvrir l'enquête ↗",
   "+ Add to draft": "+ Ajouter au brouillon",
   "Discovery candidates": "Candidates découvertes",
-  "(machine-suggested — nothing happens without you)": "(suggéré par la machine — rien ne se passe sans vous)",
+  "(machine-suggested — nothing happens without you)": "(suggérées par la machine — rien ne se passe sans vous)",
   "Promote (disabled)": "Adopter (désactivée)",
   "Dismiss": "Écarter",
   "External topic discovery": "Découverte externe par sujet",
@@ -1407,6 +1407,7 @@
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "Une synthèse par le LLM local sur les meilleurs résultats (max 20) — faits communs, désaccords, questions ouvertes, en citant les numéros d'articles. Une aide, jamais un verdict.",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Indiquez au modèle local ce qu'il doit extraire. Produisez un élément par ligne — chacun devient une métadonnée du type ci-dessus.",
   "Updates automatically in the background.": "Se met à jour automatiquement en arrière-plan.",
+  "Verified translation (cross-language concept).": "Traduction vérifiée (concept translangue).",
   "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.": "Trouvées hors ligne par les canaux de citation et de catalogue, dans la limite de votre budget de planification. Chaque ligne montre ses preuves. « Promouvoir » crée une source désactivée que vous devez encore activer ; « Rejeter » est mémorisé et n'est jamais resuggéré.",
   "The keyword engine can only analyse languages with a stoplist and word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce junk keywords that skew analytics and slow the app. They're kept and re-enablable — disabling them just stops gathering material we'd mangle until a stoplist for that language lands.": "Le moteur de mots-clés ne peut analyser que les langues disposant d'une liste de mots vides et d'une segmentation des mots. Les sources dans d'autres langues (sans liste de mots vides, ou le chinois/japonais qui ne sont pas segmentés) produisent des mots-clés parasites qui faussent les analyses et ralentissent l'application. Elles sont conservées et réactivables — les désactiver cesse simplement de collecter une matière que nous dénaturerions, jusqu'à l'arrivée d'une liste de mots vides pour cette langue.",
   "Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.": "La restauration est purement additive — la restauration destructive par remplacement a été supprimée. Restaurez via la restauration par fusion ci-dessus (l'artefact de sauvegarde signé), qui complète votre corpus et ne l'écrase jamais."

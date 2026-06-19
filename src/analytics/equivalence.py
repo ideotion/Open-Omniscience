@@ -150,6 +150,37 @@ def ring_meta(ring_id: str) -> Ring | None:
     return _index()[2].get(ring_id)
 
 
+def ring_translation(ring_id: str, target_lang: str) -> str | None:
+    """The VERIFIED translation of a ring into ``target_lang`` — the ring's member
+    term in that language (Wikidata-QID-sourced), or None when the ring carries no
+    member in that language. Works even when that member is not itself in the corpus,
+    because a ring lists ALL its language members from the curated/generated table."""
+    ring = ring_meta(ring_id)
+    if not ring:
+        return None
+    tl = (target_lang or "").casefold()
+    if not tl:
+        return None
+    for lang, term in ring.members:
+        if lang.casefold() == tl:
+            return term
+    return None
+
+
+def translate_term(language: str | None, normalized: str, target_lang: str) -> str | None:
+    """Verified translation of one keyword into ``target_lang`` via its ring, or None.
+
+    A keyword is translatable when it belongs to a cross-language ring that has a
+    member in the target language. Language-qualified (so we never fabricate a
+    translation from an ambiguous bare term); ``language`` is the keyword's effective
+    language. Returns None for a same-language no-op (the target IS the source)."""
+    tl = (target_lang or "").casefold()
+    if not tl or (language or "").casefold() == tl:
+        return None
+    rid = ring_of(language, normalized)
+    return ring_translation(rid, target_lang) if rid else None
+
+
 def _is_split(overrides: dict[str, dict] | None, normalized: str) -> bool:
     """A user 'split' override pins a term to its own normalized key -> keep it out."""
     if not overrides:

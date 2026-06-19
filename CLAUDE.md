@@ -2264,6 +2264,35 @@ ruling, a contingency, or a deliberate-omission note.
   individual keywords, the S3b that was deferred) is still unbuilt — this step delivered the
   ring/super-ring editing the program needed, not the whole explorer; browser click-through still
   owed (fork-3). The pre-translation/synonym/super-ring program (Steps 1-4) is COMPLETE.
+- **LANGUAGE-AWARE KEYWORDS — TRANSLATE, NEVER BLIND (maintainer ruled 2026-06-19):** a
+  reader saw top keywords in Arabic they could not read. The REJECTED instinct was a
+  blind-by-language FILTER (PR #398 — built then CLOSED: "we shouldn't blind a user from
+  foreign language keyword trends"). The RULING: the keyword engine must be LANGUAGE-AWARE
+  and TRANSLATE — show every keyword regardless of language WITH its translation (original +
+  translation), which also surfaces translanguage concepts; translations bind to keyword
+  FAMILIES and GROUPS. Source = VERIFIED Wikidata-QID rings + a TENTATIVE local-LLM fallback,
+  flagged (maintainer chose "Wikidata rings + LLM fallback" via AskUserQuestion). PHASE 1
+  SHIPPED (PR #399, draft onto 0.09): `equivalence.ring_translation`/`translate_term` +
+  `top_terms`/`trending`/`trending_windows` gain `target_lang` (each row annotated with a
+  verified `translation` via its ring; absent target = byte-compat default) + the
+  `/api/insights/{top,trending,trending-windows}` `target_lang` param; frontend `kwTransHtml`
+  renders `original → translation` in the Trends + Home keyword lists (UI language passed
+  automatically); +1 i18n key ×12; Arabic+Russian members added to 16 curated rings so the
+  complaint resolves today (انتخابات→election …). tests/test_keyword_translation.py +
+  test_repo_invariants. REMAINING PHASES: (2) BREADTH — run scripts/generate_wikidata_rings.py
+  on a networked machine (Wikidata is 403 in the dev sandbox; the maintainer offered to run a
+  parallel internet session — a ~586-concept seed list across 14 domains was handed over);
+  (3) bind translations through families + super-groups in the UI; (4) the tentative LLM
+  fallback for keywords in no ring.
+  **FUTURE SELF-CHECK (maintainer-asked 2026-06-19 "mark to question ourself"): before
+  hand-expanding the ring concept set further, MEASURE whether it helps — re-run the
+  keyword-engine report after a Wikidata batch lands and read its `translation_coverage` (%
+  of top keywords that fall in a ring; ~5% pre-batch). If coverage is still low, the SCALABLE
+  answer is corpus-driven generation (`generate_wikidata_rings.py --from-log LOG.json --top N`
+  over the real keyword-diagnostics log) — coverage that tracks what the corpus actually
+  contains — NOT absorbing more of Wikidata (115M items, ~140GB dump, mostly people/papers/taxa
+  = wrong shape; against the local-first ethos). Decide "add more concepts vs corpus-driven vs
+  LLM-tentative" by the measured coverage delta, not by guessing.**
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,

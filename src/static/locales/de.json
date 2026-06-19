@@ -122,7 +122,7 @@
   "Open investigation ↗": "Untersuchung öffnen ↗",
   "+ Add to draft": "+ Zum Entwurf",
   "Discovery candidates": "Entdeckte Kandidaten",
-  "(machine-suggested — nothing happens without you)": "(maschinell vorgeschlagen — nichts geschieht ohne Sie)",
+  "(machine-suggested — nothing happens without you)": "(maschinell vorgeschlagen — ohne Sie geschieht nichts)",
   "Promote (disabled)": "Übernehmen (deaktiviert)",
   "Dismiss": "Ausblenden",
   "External topic discovery": "Externe Themensuche",
@@ -1407,6 +1407,7 @@
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "Eine Synthese durch das lokale LLM über die besten Ergebnisse (max. 20) — gemeinsame Fakten, Widersprüche, offene Fragen, mit Artikelnummern. Eine Hilfe, nie ein Urteil.",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Sagen Sie dem lokalen Modell, was es extrahieren soll. Geben Sie ein Element pro Zeile aus — jedes wird zu einem Metadatum des obigen Typs.",
   "Updates automatically in the background.": "Aktualisiert sich automatisch im Hintergrund.",
+  "Verified translation (cross-language concept).": "Verifizierte Übersetzung (sprachübergreifendes Konzept).",
   "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.": "Offline durch die Zitations- und Katalogkanäle innerhalb Ihres Planungsbudgets gefunden. Jede Zeile zeigt ihre Belege. „Übernehmen“ erstellt eine deaktivierte Quelle, die Sie noch aktivieren müssen; „Verwerfen“ wird gemerkt und nie wieder vorgeschlagen.",
   "The keyword engine can only analyse languages with a stoplist and word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce junk keywords that skew analytics and slow the app. They're kept and re-enablable — disabling them just stops gathering material we'd mangle until a stoplist for that language lands.": "Die Stichwort-Engine kann nur Sprachen mit einer Stoppwortliste und Wortsegmentierung analysieren. Quellen in anderen Sprachen (ohne Stoppwortliste oder zh/ja, die nicht segmentiert werden) erzeugen Stichwort-Müll, der die Analysen verzerrt und die App verlangsamt. Sie werden behalten und sind reaktivierbar — sie zu deaktivieren stoppt nur das Sammeln von Material, das wir verstümmeln würden, bis eine Stoppwortliste für diese Sprache verfügbar ist.",
   "Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.": "Die Wiederherstellung ist rein additiv — die destruktive Ersetzungs-Wiederherstellung wurde entfernt. Stellen Sie über die Merge-Wiederherstellung oben wieder her (das signierte Backup-Artefakt), die Ihren Korpus ergänzt und ihn nie überschreibt."

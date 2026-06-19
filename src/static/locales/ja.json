@@ -122,7 +122,7 @@
   "Open investigation ↗": "調査を開く ↗",
   "+ Add to draft": "+ 下書きに追加",
   "Discovery candidates": "発見された候補",
-  "(machine-suggested — nothing happens without you)": "（機械による提案 — あなたなしには何も起こりません）",
+  "(machine-suggested — nothing happens without you)": "（機械による提案 — あなたの操作なしには何も起こりません）",
   "Promote (disabled)": "承認（無効のまま）",
   "Dismiss": "閉じる",
   "External topic discovery": "外部トピック検索",
@@ -1407,6 +1407,7 @@
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "上位の結果（最大 20 件）にわたるローカル LLM による 1 つの統合 — 共通の事実、相違点、未解決の問い、記事番号付き。補助であり、決して判断ではありません。",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "抽出する内容をローカルモデルに伝えます。1 行に 1 項目を出力します — それぞれが上記の種類のメタデータになります。",
   "Updates automatically in the background.": "バックグラウンドで自動的に更新されます。",
+  "Verified translation (cross-language concept).": "検証済みの翻訳（言語横断的な概念）。",
   "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.": "スケジューリング予算の範囲内で、引用チャネルとカタログチャネルによりオフラインで発見されました。各行はその根拠を示します。「採用」はまだ有効化が必要な無効状態のソースを作成します。「却下」は記憶され、二度と提案されません。",
   "The keyword engine can only analyse languages with a stoplist and word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce junk keywords that skew analytics and slow the app. They're kept and re-enablable — disabling them just stops gathering material we'd mangle until a stoplist for that language lands.": "キーワードエンジンは、ストップワードリストと単語分割がある言語のみを解析できます。他の言語のソース（ストップワードリストがない、または分割されない中国語・日本語）は、分析を歪めアプリを遅くするノイズキーワードを生成します。これらは保持され再有効化できます — 無効化は、その言語のストップワードリストが用意されるまで、損なってしまう素材の収集を止めるだけです。",
   "Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.": "復元は追加のみです — 破壊的な置換復元は削除されました。上記のマージ復元（署名済みバックアップ成果物）で復元してください。これはコーパスを補完し、決して上書きしません。"

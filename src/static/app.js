@@ -1280,7 +1280,7 @@
       if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
-        const d = await api("/api/insights/trending-windows?limit=4&series_top=4");
+        const d = await api("/api/insights/trending-windows?limit=4&series_top=4" + tgtLangParam());
         const wk = (d.windows || []).find(w => w.label === "7d") || (d.windows || [])[0];
         const terms = (wk && wk.terms) || [];
         if (!terms.length) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
@@ -1291,7 +1291,7 @@
             : "";
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
-              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}</a>
+              <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}</a>${kwTransHtml(x)}
               <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span>
             </div>${spark}</div>`;
         }).join("");
@@ -7122,12 +7122,23 @@
       } catch (e) { $("ins-trend").innerHTML = ""; toast("Explore failed: " + e.message, "err"); }
     }
 
+    // The current UI language as a target for verified keyword translations.
+    function uiLangCode() { return (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; }
+    function tgtLangParam() { return "&target_lang=" + encodeURIComponent(uiLangCode()); }
+    // A foreign keyword's VERIFIED translation into the UI language (Wikidata-sourced
+    // cross-language ring) — shown beside the original so the reader is never blinded
+    // to a foreign-language keyword, only given its translation (the language-aware
+    // engine). `row` is the keyword row; `t` here is the outer i18n function.
+    function kwTransHtml(row) {
+      if (!row || !row.translation) return "";
+      return ` <span class="kw-trans" title="${esc(t("Verified translation (cross-language concept)."))}">→ ${esc(row.translation)}</span>`;
+    }
     function termListHtml(terms, extra) {
       if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
       return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
           onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-        <a href="#" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
+        <a href="#" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>${kwTransHtml(t)}
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
@@ -7162,7 +7173,7 @@
 
     async function loadTrends() {
       const wd = $("trd-window").value, bd = $("trd-base").value, kind = $("trd-kind").value, cc = $("trd-country").value.trim();
-      const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${extra||""}`;
+      const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${tgtLangParam()}${extra||""}`;
       try {
         const [rising, top] = await Promise.all([
           api(`/api/insights/trending?window_days=${wd}&baseline_days=${bd}&${qp()}`),
@@ -7191,7 +7202,7 @@
         // (from /trending-windows, reusing trend()'s day buckets) so each renders a
         // small honest sparkline (dashChartSvg: line when dense, Item-Y bars when
         // sparse — never an interpolated curve). The rest stay a plain list.
-        const d = await api("/api/insights/trending-windows?limit=8&series_top=5");
+        const d = await api("/api/insights/trending-windows?limit=8&series_top=5" + tgtLangParam());
         _trendWindowsData = d;  // stash so enlargeTrend(wi,ti) needs no extra fetch
         box.innerHTML = (d.windows || []).map((w, wi) => {
           const head = `<h2 style="font-size:13px">${esc(LABELS[w.label] || w.label)} <span class="muted">· n=${w.count}</span></h2>`;
