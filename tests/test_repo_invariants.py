@@ -59,6 +59,21 @@ def _ui_source() -> str:
     return "\n".join(parts)
 
 
+def test_live_language_switch_rerenders_cldr_name_surfaces():
+    """Field test 2026-06-19 #16: country/continent names (CLDR-derived at render time)
+    must update when the UI language changes, not only on a page refresh. i18n.setLang
+    emits an 'oo:langchange' event; app.js listens and re-renders the map (+ sources)."""
+    base = _SRC / "static"
+    i18n = (base / "i18n.js").read_text(encoding="utf-8")
+    app = (base / "app.js").read_text(encoding="utf-8")
+    assert "oo:langchange" in i18n, "setLang no longer emits the language-change event"
+    assert 'CustomEvent("oo:langchange"' in i18n
+    assert 'addEventListener("oo:langchange"' in app, "app.js does not listen for the lang switch"
+    # The listener must re-render the CLDR-name surface (the world map).
+    listener = app.split('addEventListener("oo:langchange"', 1)[1][:400]
+    assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():

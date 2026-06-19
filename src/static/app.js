@@ -9906,6 +9906,20 @@
       if (!document.hidden && _netOnline !== false) loadLlmHealth();
     });
 
+    // Live language switch (field test 2026-06-19 #16): CLDR-derived names (country /
+    // continent on the world map, the sources country column) are localized at RENDER
+    // time, so the i18n DOM walker (which matches English source strings) cannot
+    // re-derive them. Re-render those dynamic-name surfaces in the new locale. The map
+    // re-renders from its CACHE (no fetch); the sources table re-renders only if it has
+    // already been loaded.
+    document.addEventListener("oo:langchange", () => {
+      try { if (_ooMapPayload && typeof _renderOoMapDim === "function") _renderOoMapDim(); } catch (_e) {}
+      try {
+        const tbl = $("src-table");
+        if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
+      } catch (_e) {}
+    });
+
     // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.
     document.addEventListener("keydown", e => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }

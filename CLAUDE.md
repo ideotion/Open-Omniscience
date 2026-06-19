@@ -3185,6 +3185,16 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P1 LIVE LANGUAGE SWITCH RE-RENDERS CLDR NAMES (#16; branch
+  claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
+  country/continent names updated only on a full page refresh. ROOT CAUSE: `ooRegionName`/
+  `Intl.DisplayNames` localize names at RENDER time, but the i18n DOM walker (`apply()`) translates
+  by EXACT-English-string match — it cannot re-derive a CLDR name already baked into the SVG/cells.
+  FIX: `i18n.setLang` now dispatches a `oo:langchange` CustomEvent after apply(); app.js listens and
+  re-renders the dynamic-name surfaces in the new locale — the world map from its CACHE (no fetch,
+  host-guarded `_renderOoMapDim`) and the sources table only if already loaded. test_repo_invariants
+  ::test_live_language_switch_rerenders_cldr_name_surfaces pins the event + listener + map re-render.
+  Reusable hook for any future render-time-derived surface. i18n gate 100%.
 - **FIELD TEST 2026-06-19 — P1 DOWNLOADS HONOUR AIRPLANE (#36/#41, completes THEME-6; branch
   claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** two honesty bugs in the wiki-dump
   + OSM download managers. (1) The chunk loop checked ONLY the per-download Pause event, NOT the

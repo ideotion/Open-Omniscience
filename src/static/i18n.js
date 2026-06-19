@@ -91,6 +91,12 @@
     if (code === "en") { map = {}; meta = {}; } else { await load(code); }
     setDir();
     apply();
+    // Notify surfaces whose text is derived at RENDER time and so cannot be reached by
+    // the string-matching DOM walker above — e.g. CLDR country/continent names on the
+    // map and the sources table (field test 2026-06-19 #16: names only updated on a full
+    // page refresh). Those listeners re-render in the new locale.
+    try { document.dispatchEvent(new CustomEvent("oo:langchange", { detail: { lang: code } })); }
+    catch (_e) { /* CustomEvent unsupported -> the page-refresh fallback still works */ }
     const sel = document.getElementById(SELECT_ID);
     if (sel && sel.value !== code) sel.value = code;
   }
