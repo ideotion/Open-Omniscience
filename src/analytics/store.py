@@ -329,9 +329,9 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
     keyword/date/place/entity rows can be misaligned with the CURRENT engine.
     ``index_article`` is delete-then-reinsert per article, so it OVERWRITES those
     rows with current-engine output (keywords, mentions, sentiment, when/where/who).
-    AI artifacts (``article_analyses`` summaries/translations, ``ai_keyword``) are
-    NOT touched by ``index_article``, so they stay verbatim. Idempotent; one bad
-    article never aborts the batch (the restore is already committed + additive)."""
+    AI artifacts (``article_analyses`` summaries/translations + the AI-derived keyword
+    rows) are NOT touched by ``index_article``, so they stay verbatim. Idempotent; one
+    bad article never aborts the batch (the restore is already committed + additive)."""
     reindexed = 0
     failed = 0
     for aid in article_ids:
