@@ -364,6 +364,16 @@ class ExtractedTerm:
 _ELISION = re.compile(r"\b([dlncjmst]|qu)['’](?=\w)", re.IGNORECASE)
 
 
+def _deelide(word: str) -> str:
+    """Strip a leading Romance elision from a single token: l'assemblée -> assemblée,
+    d'euros -> euros, qu'il -> il, c'est -> est. The elided article/pronoun is
+    tokenization noise, not meaning (French/Italian/Catalan/Occitan…). Cheap guard:
+    only touch tokens that actually carry an apostrophe."""
+    if "'" in word or "’" in word:
+        return _ELISION.sub("", word)
+    return word
+
+
 def _normalize(s: str) -> str:
     # French elisions are tokenization noise, not meaning: "d'euros" is about
     # euros, "l'ia" about ia. Strip the elided article before keying (field
@@ -449,7 +459,10 @@ class BaselineExtractor:
 
     def _terms(self, text: str, language: str) -> list[ExtractedTerm]:
         stop = _stopset(language)
-        toks = [(m.group(0).lower(), m.start()) for m in _WORD_RE.finditer(text)]
+        # De-elide each token: the contracted article (l'/d'/qu'/c'…) is noise, so
+        # "l'assemblée" is the keyword "assemblée" and "qu'il" reduces to the stopword
+        # "il". Without this the whole "l'assemblée" form was kept as a keyword.
+        toks = [(_deelide(m.group(0).lower()), m.start()) for m in _WORD_RE.finditer(text)]
         counts: Counter[str] = Counter()
         first_at: dict[str, int] = {}
 

@@ -112,6 +112,21 @@ def test_stopword_bounded_ngrams_are_dropped():
     )
 
 
+def test_romance_elision_is_stripped_from_terms():
+    """l'assemblée -> assemblée (not the whole "l'assemblée"); qu'il -> the stopword
+    "il" (dropped); d'euros -> euros. The elided article/pronoun is tokenization
+    noise, so it must never become part of a keyword (field finding 2026-06-18)."""
+    text = "L'Assemblée nationale a voté la réforme. D'euros et qu'il faut. L'assemblée débat."
+    ex = BaselineExtractor()
+    by = _by_norm(ex.extract(text))
+    assert "assemblée" in by
+    assert "euros" in by
+    # The contracted forms must NOT survive as keywords.
+    assert "l'assemblée" not in by and "d'euros" not in by and "qu'il" not in by
+    # And the de-elided form feeds the n-grams.
+    assert "assemblée nationale" in by
+
+
 def test_empty_text_yields_nothing():
     assert BaselineExtractor().extract("") == []
     assert BaselineExtractor().extract("   ") == []
