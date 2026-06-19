@@ -2796,7 +2796,8 @@ def test_task_manager_opens_in_a_standalone_tab():
     can stay parked on the desktop while the user works in the app. Pinned: the
     #tm-open button calls openTaskManager() (window.open the /tasks page), the
     /tasks route serves the standalone page, and that page is a read+control view
-    over the EXISTING job/scheduler/system APIs — it never flips the network."""
+    over the EXISTING job/scheduler/system APIs. It may ENGAGE airplane (the safe
+    direction) but never goes ONLINE itself (P2-12: consent lives in the app)."""
     html = _ui_source()  # index.html + app.js + app.css
     assert 'onclick="openTaskManager()"' in html, "#tm-open must open the standalone task tab"
     assert "function openTaskManager(" in html and 'window.open("/tasks"' in html, (
@@ -2809,7 +2810,9 @@ def test_task_manager_opens_in_a_standalone_tab():
     tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
     for ep in ("/api/jobs", "/api/scheduler/activity", "/api/system/vitals"):
         assert ep in tm, f"the task page must read the existing {ep} endpoint (no new backend)"
-    assert "/api/system/network" not in tm, "the task page must never flip the network itself"
+    # The status-bar airplane control may engage airplane (offline = the SAFE
+    # direction, no socket opens) but must NEVER cross ONLINE without the app's consent.
+    assert "online: true" not in tm, "the task page must never go online (consent lives in the app)"
     for pid in ('id="jobs-body"', 'id="queue-body"', 'id="sched-body"', 'id="vitals-body"'):
         assert pid in tm, f"task panel missing: {pid}"
 
@@ -2893,8 +2896,12 @@ def test_task_manager_redesign_windows_style():
     # History tab reads the run log; airplane mode is honest in the schedule.
     assert "/api/jobs/history" in tm and "renderHistory" in tm
     assert "a.online === false" in tm and "paused — airplane mode" in tm
-    # Never flips the network from the task page.
-    assert "/api/system/network" not in tm
+    # The status-bar airplane control (P2-12) may ENGAGE airplane (the safe
+    # direction, no consent), but must NEVER go ONLINE from the task page —
+    # crossing online requires the app's ONE consent popup, so offline routes to "/".
+    assert 'JSON.stringify({ online: false })' in tm, "the task page may engage airplane (safe)"
+    assert "online: true" not in tm, "the task page must NEVER go online without the app's consent"
+    assert 'location.href = "/"' in tm, "going online must route back to the app (consent lives there)"
 
     # The backend surfaces background tasks + a history endpoint.
     jobs_src = (_ROOT / "src" / "api" / "jobs.py").read_text(encoding="utf-8")
@@ -2905,6 +2912,26 @@ def test_task_manager_redesign_windows_style():
     ai_src = (_ROOT / "src" / "api" / "ai.py").read_text(encoding="utf-8")
     assert "monitoring.tasks" in llm_src or "monitoring import tasks" in llm_src
     assert "monitoring import tasks" in ai_src or "monitoring.tasks" in ai_src
+
+
+def test_task_manager_status_bar_and_sessions(monkeypatch=None):
+    """Field test 2026-06-19 P2-12: the standalone task page gains the SPA's
+    top-bar controls MINUS search — a status bar with airplane + a language
+    picker + help; the Up-next list is a full vertical list; History is reframed
+    as 'online sessions'; Performance adapts to window size (auto-fit grid)."""
+    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    # status bar: airplane control + language select (i18n auto-wires #oo-lang-select) + help
+    assert 'id="tm-status"' in tm, "the status bar must exist"
+    assert 'id="tm-air"' in tm and "function paintAir()" in tm, "the airplane control must exist"
+    assert 'id="oo-lang-select"' in tm and "TM_LANGS" in tm, "a language picker with the 12 locales"
+    assert 'id="tm-help"' in tm, "a help affordance must exist (minus search)"
+    # Up-next is a full vertical list (not a chip cloud)
+    assert '<ol class="tm-upnext">' in tm, "Up-next must render as a full vertical list"
+    # History reframed as online sessions
+    assert 'data-panel="history" role="tab" data-i18n>Sessions' in tm, "the History tab is reframed as Sessions"
+    assert 'esc(t("Online sessions"))' in tm, "the panel heading is 'Online sessions'"
+    # Performance grid adapts to window size
+    assert "repeat(auto-fit, minmax(220px, 1fr))" in tm, "the performance grid must be responsive"
 
 
 def test_startup_seeds_the_source_catalog_at_unlock():
