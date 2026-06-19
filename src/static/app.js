@@ -6120,8 +6120,8 @@
       box.innerHTML = '<div class="muted">Loading…</div>';
       try {
         const [sgs, top, rings] = await Promise.all([
-          api("/api/insights/supergroups"),
-          api("/api/insights/top?group=true&limit=200"),
+          api("/api/insights/supergroups?target_lang=" + encodeURIComponent(uiLangCode())),
+          api("/api/insights/top?group=true&limit=200" + tgtLangParam()),
           api("/api/insights/rings"),
         ]);
         $("sg-family-options").innerHTML = (top.terms || []).map(f =>
@@ -6137,7 +6137,7 @@
       const chips = g.members.length ? g.members.map(m => {
         const isRing = !!m.ring_id;
         const inner = isRing
-          ? `⊕ ${esc(m.ring_id)} <span class="muted">ring·${(m.ring_members || []).length}</span>`
+          ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">ring·${(m.ring_members || []).length}</span>`
           : esc(m.normalized);
         const tip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
         return `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
@@ -9780,13 +9780,13 @@
       if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
-        const d = await api("/api/insights/corpus-keywords?" + p.toString());
+        const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
         if (!d.terms || !d.terms.length) {
           kw.innerHTML = `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
         } else {
           const chips = d.terms.map((term) =>
             `<button class="chip" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
-            + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}`
+            + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}${kwTransHtml(term)}`
             + ` <span class="muted">${term.articles}</span></button>`).join(" ");
           // Audit-07 B1 disclosure: our extractor splits on spaces/punctuation and does
           // NOT segment CJK, so CJK keywords are unreliable. Surface it exactly when CJK

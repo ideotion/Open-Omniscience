@@ -185,6 +185,7 @@ def insights_corpus_keywords(
     article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
     limit: int = Query(30, ge=1, le=100),
     cap: int = Query(1000, ge=1, le=5000),
+    target_lang: str | None = Query(None, description="UI language for verified ring translations"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Top keywords across the analysis corpus — either an EXPLICIT article-id set (a
@@ -192,12 +193,13 @@ def insights_corpus_keywords(
 
     Bounded to ``cap`` articles; the bound is DISCLOSED (``total_matched``/``capped``)
     — it scopes the analysis, never a hidden cut. No score; counts only, honest caveat.
+    ``target_lang`` annotates each row with its verified cross-language translation.
     """
     ids, total = _resolve_corpus(
         db, article_ids, query=query, source=source, start_date=start_date,
         end_date=end_date, language=language, tags=tags, cap=cap,
     )
-    res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit)
+    res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit, target_lang=_tlang(target_lang))
     res["total_matched"] = total
     res["capped"] = total > len(ids)
     res["method"] = "Keyword counts across the matched articles, ordered by how many mention each term."
@@ -886,11 +888,19 @@ def _get_supergroup(db: Session, sg_id: int):
 
 
 @router.get("/supergroups")
-def list_supergroups(db: Session = Depends(get_db)) -> dict:
-    """List super-groups with their members (families AND rings) + aggregate totals."""
-    from src.analytics.equivalence import ring_meta
+def list_supergroups(
+    target_lang: str | None = Query(None, description="UI language for verified ring translations"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """List super-groups with their members (families AND rings) + aggregate totals.
+
+    ``target_lang`` binds the verified cross-language ``translation`` to each ring
+    member (the maintainer ruling: translations bind to keyword families AND groups),
+    so a super-ring shows its concept in the reader's language."""
+    from src.analytics.equivalence import ring_meta, ring_translation
     from src.database.models import KeywordSuperGroup
 
+    tl = _tlang(target_lang)
     sgs = db.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
     member_rows = {(m.normalized_term, m.ring_id) for sg in sgs for m in sg.members}
     totals = _supergroup_totals(db, member_rows)
@@ -908,6 +918,11 @@ def list_supergroups(db: Session = Depends(get_db)) -> dict:
                 meta = ring_meta(m.ring_id)
                 entry["ring_id"] = m.ring_id
                 entry["ring_members"] = [f"{lg}:{term}" for lg, term in (meta.members if meta else ())]
+                if tl:
+                    tr = ring_translation(m.ring_id, tl)
+                    if tr:
+                        entry["translation"] = tr
+                        entry["translation_source"] = "ring"
             members.append(entry)
         members.sort(key=lambda x: -x["mentions"])
         out.append(

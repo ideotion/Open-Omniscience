@@ -85,6 +85,7 @@ def _seed_solo(s):
         s.flush()
         s.add(KeywordMention(keyword_id=k.id, article_id=a.id, count=m, observed_on=date.today()))
     s.commit()
+    return a
 
 
 def test_trending_annotates_verified_translation():
@@ -105,3 +106,15 @@ def test_trending_windows_threads_target_lang():
                 assert t.get("translation") == "election"
                 found = True
     assert found
+
+
+def test_corpus_keywords_annotates_verified_translation():
+    """The analysis-window Keywords subtab is language-aware too (Phase 3)."""
+    s = _sess()
+    a = _seed_solo(s)
+    by = _by_norm(q.corpus_keywords(s, article_ids=[a.id], limit=10, target_lang="en"))
+    assert by["élection"]["translation"] == "election" and by["élection"]["translation_source"] == "ring"
+    assert "translation" not in by["budget"]
+    # No target_lang -> byte-compatible default (no annotation).
+    plain = _by_norm(q.corpus_keywords(s, article_ids=[a.id], limit=10))
+    assert all("translation" not in t for t in plain.values())
