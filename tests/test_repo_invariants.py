@@ -74,6 +74,19 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
 
 
+def test_trends_render_as_clickable_bar_graphs():
+    """Field test 2026-06-19 #25: the rising/top Trends are clickable horizontal BAR
+    graphs (bar length ∝ the real count/rate, value shown — no score), and clicking a
+    bar opens the unified analysis window (trend + worldwide spread)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function termBarsHtml(terms, valueOf, labelOf)" in app
+    assert 'termBarsHtml(rising.terms' in app and 'termBarsHtml(top.terms' in app, (
+        "the rising/top Trends must render as bar graphs (#25)"
+    )
+    bars = app.split("function termBarsHtml(", 1)[1].split("\n    }", 1)[0]
+    assert "openAnalysisFor(" in bars, "clicking a trend bar must open the analysis window"
+
+
 def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
     """Field test 2026-06-19 THEME-2 (#14/#15): the "near in space & time" co-occurrence
     is capped to a TIGHT fixed window (it used the slider's span/12 ~166y, linking events

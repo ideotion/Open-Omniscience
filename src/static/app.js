@@ -7029,6 +7029,27 @@
         <a href="#" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
+    // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
+    // top→down, bar length ∝ the REAL measured value (mentions count / rising rate —
+    // never a composite score), the value shown beside it; clicking a bar opens the
+    // unified analysis window (trend over time + worldwide spread). The bar is a
+    // visual of the count/rate, not a verdict — the number stays explicit.
+    function termBarsHtml(terms, valueOf, labelOf) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
+      const max = Math.max(1, ...terms.map(t => Number(valueOf(t)) || 0));
+      return '<div class="term-bars">' + terms.map(t => {
+        const v = Number(valueOf(t)) || 0;
+        const pct = Math.max(2, Math.round((v / max) * 100));
+        return `<div class="tb-row">
+          <button class="tiny danger tb-x" title="exclude this keyword" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
+          <a class="tb-label" href="#" title="${esc(t.term)} — open in analysis (trend + worldwide spread)"
+             onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
+          <span class="tb-bar" aria-hidden="true"><span class="tb-fill" style="width:${pct}%"></span></span>
+          <span class="tb-val muted">${esc(labelOf(t))}</span>
+        </div>`;
+      }).join("") + "</div>";
+    }
 
     async function excludeKeyword(term) {
       try {
@@ -7046,8 +7067,11 @@
           api(`/api/insights/trending?window_days=${wd}&baseline_days=${bd}&${qp()}`),
           api(`/api/insights/top?days=${wd}&${qp()}`),
         ]);
-        $("trd-rising").innerHTML = termListHtml(rising.terms, t => `↑${t.growth}× (recent ${t.recent}, prior ${t.prior})`);
-        $("trd-top").innerHTML = termListHtml(top.terms, t => `${t.mentions} mentions · ${t.articles} articles`);
+        // #25: clickable horizontal bar graphs (rising by growth rate, top by mentions).
+        $("trd-rising").innerHTML = termBarsHtml(rising.terms, t => t.growth,
+          t => `↑${t.growth}× (${t.recent} recent · ${t.prior} prior)`);
+        $("trd-top").innerHTML = termBarsHtml(top.terms, t => t.mentions,
+          t => `${t.mentions} mentions · ${t.articles} articles`);
         $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
       } catch (e) { toast("Trends failed: " + e.message, "err"); }
       loadTrendWindows();

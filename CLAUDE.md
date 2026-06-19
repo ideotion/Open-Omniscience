@@ -3187,6 +3187,14 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P2-8 TRENDS AS CLICKABLE BAR GRAPHS (#25; branch
+  claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the Insights →
+  Trends rising/top LISTS became clickable horizontal BAR graphs (`termBarsHtml`): keywords top→down,
+  bar length ∝ the REAL measured value (rising = growth rate, top = mention count — normalised to the
+  max, NEVER a composite score), the value shown beside each bar; clicking a bar opens the unified
+  analysis window (`openAnalysisFor` → trend over time + worldwide spread). The exclude ✕ stays.
+  Honest: the bar visualises a count/rate, the number is explicit. termListHtml kept for the
+  trending-windows "rest" list. +CSS `.term-bars`. test_trends_render_as_clickable_bar_graphs.
 - **FIELD TEST 2026-06-19 — THEME-2 WORLD MAP (contained slice: #14/#15; branch
   claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the unified ooMap
   (the world map after the 5b retire) got three contained, honesty-relevant fixes. (#14 near-time)
