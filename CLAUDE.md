@@ -3264,6 +3264,19 @@ ruling, a contingency, or a deliberate-omission note.
   colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
   + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
   standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: STATIC-LABEL BURN-DOWN SLICE ×12 (post-#402-merge; branch
+  claude/gallant-bohr-1cogzj):** continued the documented panel tail — keyed 31 CLEAN, short, single-text-node
+  chrome LABELS scattered across the Insights/Settings/Search/Sources panels (Add a source · Add rule · Add a
+  custom extractor · Add a price-extraction rule · Advanced · Apply baseline tags · Boolean query · By city ·
+  By country · Competitive · Convergence · Corpus landscape · Custom extractors · Explore · Export all (CSV) ·
+  Export bundle · Filter · Flagged legal changes · Import CSV · Import custom feed · Import sources from a CSV
+  file · In context · Keyword & entity insights · Keyword families · Keyword or entity · Manage sources · Map
+  (cities) · Merge selected · Min. articles · Most-cited sources · My calendar). Each VERIFIED via
+  --audit-chrome (untranslatable=unkeyed) + confirmed present as element text in index.html; DELIBERATELY
+  excluded data/examples/proper-nouns/fragments (Donald Trump, Neodymium spot, NY.GDP.MKTP.CD, DuckDuckGo,
+  IMAP, "After adding, use"…). 1360→1391 keys ×12 (CSV/PMI kept literal); non-en AI-drafted, FLAGGED for
+  native review. i18n --min 100 (1391 ×12); full test_repo_invariants green (no dropdown/data-guard tripped).
+  REMAINING THEME-5: the longer HELP-PARAGRAPH tail (needs the inline-tag de-tagging treatment) + more panels.
 - **FIELD TEST 2026-06-19 — THEME-5 i18n: THIS-SESSION'S UI STRINGS ×12 (post-#400-merge; branch
   claude/gallant-bohr-1cogzj):** keyed the 33 NEW visible strings the merged session added through `t()`
   with English fallback — so the session's OWN additions leave NO English-fallback debt. Covers P2-10
