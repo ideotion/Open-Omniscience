@@ -3264,6 +3264,18 @@ ruling, a contingency, or a deliberate-omission note.
   colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
   + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
   standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: THIS-SESSION'S UI STRINGS ×12 (post-#400-merge; branch
+  claude/gallant-bohr-1cogzj):** keyed the 33 NEW visible strings the merged session added through `t()`
+  with English fallback — so the session's OWN additions leave NO English-fallback debt. Covers P2-10
+  (the families member-chip + price-detail + Correlate labels), the THEME-2 map (Labels toggle · the
+  certainty shape-key confirmed/scheduled/deduced · Shape=certainty;colour=kind · the click-country
+  coverage detail incl. the VADER-EN caveat · Explore sources), the in-browser OSM .pbf overlay (OSM ·
+  offline OSM · nodes · ways · preview · the bounded-preview note · the reader-unavailable / no-region /
+  reading / read-error toasts), and the P2-12 task page (Sessions · Online sessions · Network mode · the
+  empty-sessions state · the two airplane-control titles). 1327→1360 keys ×12; non-en AI-drafted, FLAGGED
+  for native review (acronyms OSM/VADER/.osm.pbf kept literal). i18n --min 100 (1360 ×12); verified each
+  literal resolves to a key AND appears in source. REMAINING THEME-5: the broader ~hundreds-string panel
+  tail (the established slice-by-slice burn-down).
 - **FIELD TEST 2026-06-19 — THEME-2 IN-BROWSER OSM .pbf RENDERER (#51 batch-1; branch
   claude/gallant-bohr-1cogzj; parser+endpoint VERIFIED, overlay BROWSER-UNVERIFIED):** the maintainer's
   chosen path to render a DOWNLOADED offline-map region with NO network + no heavy WebGL. NEW
