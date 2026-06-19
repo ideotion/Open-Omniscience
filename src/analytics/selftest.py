@@ -176,6 +176,34 @@ _CASES: tuple[Challenge, ...] = (
         language="es",
         not_entity=("mercados",),
     ),
+    Challenge(
+        # 2026-06-18 keyword-log: Greek was the largest no_stoplist language (4992
+        # keywords of leaked grammar). Distinct script -> the union is collision-free.
+        "greek_function_words_filtered",
+        "Greek (distinct script) function words are filtered; content survives",
+        "Ο πρωθυπουργός είπε ότι η κυβέρνηση δεν θα αλλάξει την πολιτική για την οικονομία.",
+        language="el",
+        absent=("και", "του", "ότι", "δεν", "την", "για"),
+        term=("κυβέρνηση",),
+    ),
+    Challenge(
+        "bulgarian_function_words_filtered",
+        "Bulgarian (Cyrillic) function words are filtered; content survives",
+        "Правителството заяви, че може да промени политиката, защото икономиката се забавя.",
+        language="bg",
+        absent=("като", "защото", "може", "това"),
+    ),
+    Challenge(
+        # 2026-06-18 field finding: the elided article was kept whole ("l'assemblée"
+        # was a keyword). De-elision makes the bare content word the keyword and
+        # reduces "qu'il" to the stopword "il".
+        "french_elision_is_stripped",
+        "Romance elisions (l'/d'/qu') are not kept as part of a keyword",
+        "L'Assemblée a voté la réforme. D'euros et qu'il faut. L'assemblée débat encore.",
+        language="fr",
+        term=("assemblée", "euros"),
+        absent=("l'assemblée", "d'euros", "qu'il"),
+    ),
 )
 
 

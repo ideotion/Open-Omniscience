@@ -324,6 +324,23 @@ _EXTRA_STOPWORD_TEXT = (
     # from polluting keywords. Dual-use words (table/body/icon/html/css) are
     # deliberately left OUT (a story may be about them).
     "https http www href img colspan rowspan tbody thead nbsp margin-left margin-right px utf "
+    # 2026-06-18 keyword-log: the highest-volume no_stoplist languages (el 4992,
+    # uk 3684, bg 3090 keywords) leaked their grammar into the index. These are
+    # GREEK and CYRILLIC scripts, so the global union can never collide with a Latin
+    # corpus language; cross-Cyrillic overlap (bg/uk/ru/sr) is fine — a shared
+    # function word is a stopword in each. Hand-filtered to PURE grammar (articles,
+    # prepositions, pronouns, conjunctions, common auxiliaries); content/entities/
+    # months were excluded on purpose (el: ηπα/ιράν/τραμπ/πηγές; bg: българия/юни/
+    # евро/софия/директор; uk: україни/нато/завод/червня + the ru-mislabelled forms).
+    # el promotes to MANAGED (src/analytics/managed.py); uk stays gated (its sample
+    # mixed ru-spelled tokens, so the language signal is not yet trustworthy).
+    "και του της την για από που στο τον των στην τις ότι δεν τους στη στις είναι "  # Greek
+    "μια στα έχει ένα στον αλλά κατά ενώ όπως μας αυτό οποία ήταν εδώ μέσα μετά είχε "  # Greek
+    "αυτή καθώς προς σας έχουν πως πρέπει πιο μεταξύ μόνο όλα όταν πριν οποίο μία ένας έναν "  # Greek
+    "това като които има може през към ако много няма само който след той всички този "  # Bulgarian
+    "във която което защото със срещу така една както още дали трябва бъде беше пред "  # Bulgarian
+    "вече също кой бил чрез тези тази един "  # Bulgarian
+    "про він під також після які який від але вже його вони має мають лише коли цього всі "  # Ukrainian
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any
