@@ -74,6 +74,29 @@ def test_report_structure_and_metrics():
     assert "score" not in r  # no composite score, anywhere at the top level
 
 
+def test_extraction_noise_flags_actionable_classes():
+    """The report self-surfaces junk keywords by actionable class (2026-06-18 field
+    asks). An elision-contaminated term, a markup token and a bare-year are each
+    flagged; a clean content keyword is not."""
+    s = _sess()
+    s.add(Source(name="Src", domain="s.test"))
+    s.flush()
+    _kw(s, "l'assemblée", "l'assemblée")   # elision backlog (pre de-elision)
+    _kw(s, "colspan", "colspan")           # leaked HTML token
+    _kw(s, "2024", "2024")                 # bare digits
+    _kw(s, "government", "government")      # clean content keyword
+    s.commit()
+    r = keyword_engine_report(s, top_n=50, sample_articles=1)
+    noise = r["extraction_noise"]
+    cls = noise["classes"]
+    assert "l'assemblée" in cls["elision_contaminated"]["examples"]
+    assert "colspan" in cls["markup_token"]["examples"]
+    assert "2024" in cls["mostly_digits"]["examples"]
+    # a clean content keyword appears in NONE of the example lists
+    assert all("government" not in c["examples"] for c in cls.values())
+    assert noise["scanned"] == 4 and noise["total_flagged"] == 3
+
+
 def test_language_status_is_honest():
     assert _lang_status("zh") == "unsegmented" and _lang_status("ja") == "unsegmented"
     assert _lang_status("en") == "functional" and _lang_status("ru") == "functional"

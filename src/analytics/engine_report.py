@@ -41,6 +41,85 @@ def _is_acronym(n: str) -> bool:
     return len(n) >= 2 and n.isupper() and any(c.isalpha() for c in n)
 
 
+# Markup/URL tokens that should never be content keywords (the leak class from the
+# 2026-06-18 log). Mirrors the global stoplist's web-junk batch; here it is a
+# DETECTOR (counts what still leaked), not a filter.
+_MARKUP_TOKENS = frozenset(
+    "https http www href img colspan rowspan tbody thead nbsp px utf "
+    "span div src rel nofollow noopener stylesheet javascript "
+    "margin-left margin-right padding-left padding-right font-size text-align".split()
+)
+
+
+def _extraction_noise(session: Session, cap: int = 60000) -> dict:
+    """Bounded audit of keyword HYGIENE — how much of the index is extraction noise,
+    by actionable CLASS, with examples. No score; counts only. Each class points at a
+    concrete fix (de-elision, HTML stripping, a stoplist), so a maintainer can see the
+    backlog shrink after a re-index / a new batch lands."""
+    import re
+
+    from src.analytics.extract import _ELISION  # the Romance-elision detector
+
+    rows = session.query(Keyword.normalized_term).limit(cap).all()
+    terms = [r[0] or "" for r in rows]
+    scanned = len(terms)
+
+    classes: dict[str, dict] = {
+        "elision_contaminated": {
+            "what": "a keyword still carrying an elided article/pronoun (l'/d'/qu'…) — pre de-elision backlog; clears on re-index",
+            "count": 0, "examples": [],
+        },
+        "markup_token": {
+            "what": "an HTML/CSS/URL token that leaked from un-stripped page chrome (https/colspan/margin-left…)",
+            "count": 0, "examples": [],
+        },
+        "mostly_digits": {
+            "what": "a token that is all digits or digit-heavy (rarely a useful content keyword)",
+            "count": 0, "examples": [],
+        },
+        "has_markup_char": {
+            "what": "a token containing a markup/structural character (<, >, {, }, =, /, ;) — almost always leaked HTML/CSS",
+            "count": 0, "examples": [],
+        },
+    }
+
+    def _hit(key: str, term: str) -> None:
+        c = classes[key]
+        c["count"] += 1
+        if len(c["examples"]) < 10:
+            c["examples"].append(term)
+
+    markup_char_re = re.compile(r"[<>{}=;/]")
+    for t in terms:
+        if not t:
+            continue
+        head = t.split()[0] if " " in t else t
+        if _ELISION.search(t):
+            _hit("elision_contaminated", t)
+        if head in _MARKUP_TOKENS or any(w in _MARKUP_TOKENS for w in t.split()):
+            _hit("markup_token", t)
+        if markup_char_re.search(t):
+            _hit("has_markup_char", t)
+        digits = sum(1 for ch in t if ch.isdigit())
+        alpha = sum(1 for ch in t if ch.isalpha())
+        if digits and digits >= max(1, alpha):
+            _hit("mostly_digits", t)
+
+    total_noise = sum(c["count"] for c in classes.values())
+    return {
+        "method": (
+            "Bounded scan of keyword normalized_terms (cap stated), classified by actionable "
+            "noise type with examples. Classes can overlap. Counts only — no score."
+        ),
+        "scanned": scanned,
+        "cap": cap,
+        "capped": scanned >= cap,
+        "total_flagged": total_noise,
+        "pct_flagged": _pct(total_noise, scanned),
+        "classes": classes,
+    }
+
+
 def _lang_status(lang: str) -> str:
     if lang in _UNSEGMENTED:
         return "unsegmented"  # no word segmentation -> extraction broken
@@ -179,6 +258,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             "method": "functional = has a stoplist + space-segmented; unsegmented (zh/ja) = extraction broken; no_stoplist = function words leak",
             "languages": languages,
         },
+        "extraction_noise": _extraction_noise(session),
         "curation": {
             "rings": rings_total,
             "family_overrides": int(session.query(func.count(KeywordFamilyOverride.id)).scalar() or 0),
