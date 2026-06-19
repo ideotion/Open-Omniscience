@@ -422,10 +422,17 @@ ruling, a contingency, or a deliberate-omission note.
   columnar engine (in-memory; persisted-encryption BLOCKED on a per-OS httpfs crypto-extension
   packaging decision — empirical finding), Slice 5 K1/K2 identity, Slice 6a IP capture, Slice 6b
   offline geo engine+generator (real DB-IP table BLOCKED on a networked-machine fetch — 403 here;
-  CC BY 4.0 verified), Slice 6c server-location backend. REMAINING = Slice 4 PR-2/3 (port heavy
-  aggregations onto the columnar store behind the seam) + the persisted-encryption decision; run the
-  6b generator to bundle the DB; the 6c FRONTEND ooMap server-location layer. The VERIFY-list item
-  "IP-geo DB license/size/offline" is partly DONE (DB-IP = CC BY 4.0, offline lookup proven).
+  CC BY 4.0 verified), Slice 6c server-location backend. **FOLLOW-UP SHIPPED 2026-06-19 (PR #410 after #407 merged,
+  "proceed with all"; detail in the Shipped-batch-log "DATA-ARCHITECTURE FOLLOW-UP 2026-06-19"):**
+  6b real DB-IP table now BUNDLED (CC BY 4.0 mirror, ~4.4 MB, offline lookups proven) so 6b + the
+  VERIFY-list "IP-geo DB license/size/offline" are DONE; 6c FRONTEND ooMap "Server IPs" layer SHIPPED
+  (browser-unverified); Slice 4 PR-2 FOUNDATION (columnar read-model builder + byte-identical
+  projection + cold fallback) + D (persisted background maintenance + /api/diagnostics/columnar
+  observability) SHIPPED. REMAINING = Slice 4 PR-3 (port the HEAVY aggregations
+  associations/graph/framing onto the columnar store: raw-aggregation in DuckDB + the Python honesty
+  layers unchanged, perf-verified on a real corpus) + the ONE open gate: the per-OS httpfs/OpenSSL
+  crypto-extension PACKAGING DECISION enabling persisted-offline encryption (until then columnar is
+  in-memory and the hot endpoints stay on the fast Slice-2 counters).
 - **LLM-ASSISTED PERCEPTION — who/where/when extraction + sentiment + an eval harness
   (maintainer brainstorm 2026-06-18; EVALUATION, reconciliation pending the maintainer's
   PARALLEL internet research; full record in `docs/FUTURE_DEVELOPMENTS.md` →
@@ -3271,6 +3278,35 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **DATA-ARCHITECTURE FOLLOW-UP 2026-06-19 (PR #410, draft onto 0.09, after #407 merged; the
+  "proceed with all, incrementally" pass — finishes the gated items from #407; backend VERIFIED on
+  the py3.11 venv, frontend BROWSER-UNVERIFIED per fork-3):**
+  - **A — real IP-geo DB BUNDLED (Slice 6b complete):** db-ip.com 403s, but the DB-IP CC BY 4.0
+    MIRROR (sapics/ip-location-db, identical start,end,CC) is reachable → bundled the real country
+    table `src/geo/data/dbip_country_lite.csv.gz` (~4.4 MB gz, 701k IPv4+IPv6 ranges).
+    IP_GEO_AS_OF="2026-06"; lookup resolves real IPs OFFLINE (8.8.8.8→us, IPv6 too; zero sockets);
+    freshness test active; generator gained `--mirror` + always-gzip. The VERIFY-list "IP-geo DB
+    license/size/offline" is now DONE.
+  - **B — ooMap "Server IPs" layer (Slice 6c frontend):** a switchable layer (mirrors Places/Signals)
+    plotting captured server IPs (geolocated offline) as violet squares DISTINCT from the editorial
+    source-country choropleth; lazy-fetches /api/insights/server-locations; caveats VISIBLE
+    (CDN-edge/anycast, not the origin; unavailable over Tor) + clustering "a shape to investigate,
+    never a verdict" + a clusters/Tor-unavailable legend line; new strings English-fallback (i18n
+    100%). test_world_map_server_location_layer.
+  - **C — columnar read-model builder (Slice 4 PR-2 foundation):** columnar.build_keyword_read_model
+    = a BYTE-IDENTICAL projection of the Slice-2 counters into a DuckDB keyword_agg table (off the
+    request path); top_terms_raw reads it in the live raw shape; cold/missing store → [] (the
+    canonical correctness path never DEPENDS on the derived store). NOT wired to the hot endpoints:
+    offline it's in-memory = a per-process rebuild = no gain over the counters; the win is the
+    PERSISTED store across restarts (gated on the crypto-extension decision); the heavy-aggregation
+    ports (associations/graph/framing — the slow ones) are the careful follow-on PR-3 (raw-aggregation
+    in DuckDB + the Python honesty layers unchanged, perf-verified on a real corpus).
+  - **D — persisted maintenance + observability:** columnar.refresh_persisted_read_model maintains
+    the read-model ONLY when PERSISTED (encrypted; secure crypto available), a no-op in-memory; wired
+    into warm_cache using the SAME passphrase (get_passphrase, no second key surface); GET
+    /api/diagnostics/columnar surfaces the engine mode (persisted/memory/unavailable) + geo vintage so
+    the per-OS httpfs/OpenSSL crypto-extension PACKAGING DECISION is informed (still the one open gate
+    for persisted-offline encryption). tests cover the no-op + honest status + endpoint.
 - **DATA-ARCHITECTURE & SOURCE-IP BUILD 2026-06-19 (the AUTONOMOUS_BUILD_BRIEF_DATA_ARCH.md
   slices; branch claude/modest-hopper-gisgst, draft PR onto 0.09; backend VERIFIED on a py3.11
   test venv built here — 49 passed/2 CI-only-skipped; full pytest needs py3.13 → CI). Session
