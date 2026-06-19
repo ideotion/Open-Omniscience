@@ -2737,3 +2737,30 @@ def test_llm_catalog_tags_are_pullable_and_embeddings_labelled():
         "the shipped embedding models must carry kind='embedding'"
     )
     assert "llama3.2:3b" not in embeds, "a text model must never be labelled embedding"
+
+
+def test_keyword_language_filter_is_wired_and_transparent():
+    """'Languages I read' filter on the keyword views (field ask 2026-06-19): a
+    reader can restrict top/trending keyword lists to languages they read, defaulting
+    to the UI language, with an always-visible one-click 'All languages' (transparent,
+    never silent). Browser-unverified — this pins the wiring."""
+    html = _ui_source()
+    # The always-visible control container lives in the Insights Trends panel.
+    assert 'id="kwlang-bar"' in html, "the languages-I-read control container must exist"
+    # The preference + helpers + the picker endpoint are wired in app.js.
+    for marker in (
+        "renderKwLangBar(", "kwLangParam(", "KWLANG_KEY",
+        "/api/insights/keyword-languages",
+    ):
+        assert marker in html, f"missing keyword-language wiring: {marker}"
+    # The Trends + Home keyword fetches carry the filter.
+    assert "trending-windows?limit=8&series_top=5\" + kwLangParam()" in html, (
+        "the Insights three-windows fetch must apply the language filter"
+    )
+    assert "trending-windows?limit=4&series_top=4\" + kwLangParam()" in html, (
+        "the Home trending fetch must apply the language filter"
+    )
+    # Transparent: it is one click from 'All languages' (a keyed, translated string).
+    assert 't("All languages")' in html, "the control must offer a visible 'All languages'"
+    # Wired with addEventListener (not a silent change), per the gallery convention.
+    assert 'cb.addEventListener("change"' in html, "the filter must react via an explicit listener"

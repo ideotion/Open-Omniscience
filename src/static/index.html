@@ -713,6 +713,11 @@
            2026-06-16). Fed by /api/insights/trending-windows; rendered by
            loadTrendWindows(). Additive — the adjustable single-window view stays below. -->
       <h2 style="margin-top:0;font-size:13px">Rising — three windows</h2>
+      <!-- "Languages I read" filter (field ask 2026-06-19): keyword lists default to
+           the UI language so a reader is not shown top keywords in a script they
+           cannot read; always visible + one click to "All languages" (transparent,
+           never silent). Populated by renderKwLangBar(); a localStorage preference. -->
+      <div id="kwlang-bar" style="margin:0 0 10px"></div>
       <div class="row" id="trd-windows" style="gap:20px"><div class="muted">Loading…</div></div>
       <div id="trd-windows-note" class="hint" style="margin:4px 0 14px"></div>
       <div class="row">

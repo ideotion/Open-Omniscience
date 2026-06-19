@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from datetime import date, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from src.database.models import (
     Article,
@@ -180,6 +180,39 @@ def _apply_kind(query, kind: str | None):
     return query.filter(Keyword.entity_type == kind)
 
 
+def _norm_langs(languages: list[str] | None) -> list[str] | None:
+    """Normalise a 'languages I read' list to lowercased ISO codes, or None for all.
+
+    Bare codes only (``en``/``fr``); the unknown-language bucket is requested as the
+    literal ``?`` (matched against an empty/NULL stored language by the caller)."""
+    if not languages:
+        return None
+    out = [c.strip().lower() for c in languages if c and c.strip()]
+    return out or None
+
+
+def _apply_lang_filter(query, langs: list[str] | None):
+    """SQL filter: keep keywords whose stored language is in ``langs``; the literal
+    ``?`` also matches NULL/empty (the unknown-language bucket)."""
+    if not langs:
+        return query
+    conds = []
+    codes = [c for c in langs if c != "?"]
+    if codes:
+        conds.append(func.lower(Keyword.language).in_(codes))
+    if "?" in langs:
+        conds.append(or_(Keyword.language.is_(None), Keyword.language == ""))
+    return query.filter(or_(*conds)) if conds else query
+
+
+def _lang_matches(kw_language: str | None, langs: list[str] | None) -> bool:
+    """Python equivalent of :func:`_apply_lang_filter` for row-by-row loops."""
+    if not langs:
+        return True
+    code = (kw_language or "").strip().lower()
+    return (code in langs) if code else ("?" in langs)
+
+
 def _bucket_key(d: date, bucket: str) -> str:
     if bucket == "day":
         return d.isoformat()
@@ -227,13 +260,19 @@ def top_terms(
     kind: str | None = None,
     limit: int = 20,
     group: bool = False,
+    languages: list[str] | None = None,
 ) -> dict:
     """Most-mentioned keywords (optionally within a window / country / kind).
 
     With ``group=True`` the surface variants of one entity are merged into a single
     family (``Trump`` / ``Trump's`` / ``Donald Trump`` -> one row) for display, with
     summed mentions and the member forms listed — see src/analytics/families.py.
+
+    ``languages`` (a list of ISO codes) restricts the result to keywords stored in
+    those languages — the "languages I read" filter, so a reader does not get top
+    keywords in a script they cannot read. ``None`` / empty = all languages.
     """
+    langs = _norm_langs(languages)
     if not days and not country:
         # CORPUS-WIDE top-N (the hot Home grouped view): read the denormalised
         # per-keyword counters maintained at index time instead of joining +
@@ -250,6 +289,7 @@ def top_terms(
             Keyword.article_count.label("arts"),
         ).filter(Keyword.mention_count > 0)
         q = _apply_kind(q, kind)
+        q = _apply_lang_filter(q, langs)
         rows = q.order_by(Keyword.mention_count.desc()).limit(limit * 4).all()
     else:
         # Windowed / per-country: the corpus-wide counters cannot serve a scoped
@@ -264,6 +304,7 @@ def top_terms(
         if country:
             q = q.filter(KeywordMention.country == country.lower())
         q = _apply_kind(q, kind)
+        q = _apply_lang_filter(q, langs)
         rows = (
             q.group_by(Keyword.id)
             .order_by(func.sum(KeywordMention.count).desc())
@@ -810,13 +851,18 @@ def trending(
     kind: str | None = None,
     limit: int = 20,
     min_recent: int = 3,
+    languages: list[str] | None = None,
 ) -> dict:
     """Rising keywords: recent volume vs the prior-period rate (a defined ratio).
 
     ``growth`` = recent_count / expected, where expected = (prior_count /
     baseline_days) * window_days. New terms (no prior) report growth as the recent
     count. This is a transparent ratio, not a significance test.
+
+    ``languages`` restricts to keywords stored in those languages (the reader's
+    "languages I read" filter); ``None`` = all.
     """
+    langs = _norm_langs(languages)
     today = date.today()
     w_start = today - timedelta(days=window_days)
     b_start = w_start - timedelta(days=baseline_days)
@@ -850,6 +896,8 @@ def trending(
     for kid, rc, pc, expected, growth in scored:
         kw = session.get(Keyword, kid)
         if kw is None or (kind and kind_of(kw) != kind) or is_hidden(kw.normalized_term):
+            continue
+        if not _lang_matches(kw.language, langs):
             continue
         stored_lang[kw.normalized_term] = kw.language
         cand.append(
@@ -969,6 +1017,7 @@ def trending_windows(
     kind: str | None = None,
     limit: int = 10,
     series_top: int = 0,
+    languages: list[str] | None = None,
 ) -> dict:
     """Rising keywords across THREE preset windows side by side (24h · 7d · 30d).
 
@@ -996,6 +1045,7 @@ def trending_windows(
             limit=limit,
             # 24h on a young corpus is thin — don't gate it out; show n + caveat.
             min_recent=1 if wdays == 1 else 2,
+            languages=languages,
         )
         terms = res["terms"]
         if series_top > 0:

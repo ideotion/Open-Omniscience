@@ -1320,5 +1320,8 @@
   "Africa": "আফ্রিকা",
   "Oceania": "ওশেনিয়া",
   "Signals": "সংকেত",
-  "Moment in focus": "ফোকাসকৃত মুহূর্ত"
+  "Moment in focus": "ফোকাসকৃত মুহূর্ত",
+  "All languages": "সব ভাষা",
+  "Unknown": "অজানা",
+  "Show keyword lists only in the languages you read.": "আপনি যে ভাষাগুলো পড়েন কেবল সেই ভাষাগুলোতেই কীওয়ার্ড তালিকা দেখান।"
 }

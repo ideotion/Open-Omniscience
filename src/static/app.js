@@ -1265,7 +1265,7 @@
       if (!box) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
-        const d = await api("/api/insights/trending-windows?limit=4&series_top=4");
+        const d = await api("/api/insights/trending-windows?limit=4&series_top=4" + kwLangParam());
         const wk = (d.windows || []).find(w => w.label === "7d") || (d.windows || [])[0];
         const terms = (wk && wk.terms) || [];
         if (!terms.length) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
@@ -7006,9 +7006,70 @@
       } catch (e) { toast("Exclude failed: " + e.message, "err"); }
     }
 
+    // ---- "Languages I read" filter for the keyword views (field ask 2026-06-19) --
+    // A DISPLAY preference (localStorage), default = the current UI language, so a
+    // reader is not shown top keywords in a script they cannot read. The control is
+    // ALWAYS visible and one click from "All languages" — transparent filtering,
+    // never silent (the app's informed-consent ethos). The literal "all" sentinel
+    // means no filter; an unset preference defaults to [UI language].
+    const KWLANG_KEY = "oo.kwLangs";
+    function kwLangIsAll() { try { return localStorage.getItem(KWLANG_KEY) === "all"; } catch (e) { return false; } }
+    function kwLangPref() {
+      try {
+        const v = localStorage.getItem(KWLANG_KEY);
+        if (v === "all") return [];
+        if (v) { const a = JSON.parse(v); if (Array.isArray(a)) return a; }
+      } catch (e) {}
+      const ui = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      return [ui];
+    }
+    function kwLangParam() {
+      if (kwLangIsAll()) return "";
+      const ls = kwLangPref();
+      return ls.length ? "&languages=" + encodeURIComponent(ls.join(",")) : "";
+    }
+    function setKwLangs(arr, all) {
+      try { localStorage.setItem(KWLANG_KEY, all ? "all" : JSON.stringify(arr)); } catch (e) {}
+    }
+    function kwLangName(code) {
+      if (!code || code === "?") return t("Unknown");
+      try { return new Intl.DisplayNames([(OOI18N && OOI18N.current && OOI18N.current()) || "en"], { type: "language" }).of(code) || code; }
+      catch (e) { return code; }
+    }
+    let _kwLangsAvail = null;  // [{language, keywords}] from /api/insights/keyword-languages
+    async function ensureKwLangsAvail() {
+      if (_kwLangsAvail) return _kwLangsAvail;
+      try { _kwLangsAvail = (await api("/api/insights/keyword-languages")).languages || []; }
+      catch (e) { _kwLangsAvail = []; }
+      return _kwLangsAvail;
+    }
+    // Render the always-visible filter into hostId; onChange() re-runs the view.
+    async function renderKwLangBar(hostId, onChange) {
+      const host = $(hostId); if (!host) return;
+      const avail = await ensureKwLangsAvail();
+      const all = kwLangIsAll();
+      const sel = new Set(kwLangPref());
+      const shown = all ? avail.length : avail.filter(l => sel.has(l.language)).length;
+      const summary = all ? t("All languages") : (kwLangPref().map(kwLangName).join(", ") || t("All languages"));
+      const opts = avail.map(l =>
+        `<label class="kwlang-opt"><input type="checkbox" value="${esc(l.language)}" ${(all || sel.has(l.language)) ? "checked" : ""}> `
+        + `${esc(kwLangName(l.language))} <span class="muted">${l.keywords}</span></label>`).join("");
+      host.innerHTML =
+        `<details class="kwlang"><summary title="${esc(t("Show keyword lists only in the languages you read."))}">`
+        + `${esc(t("Languages"))}: ${esc(summary)} <span class="muted">· ${shown}/${avail.length}</span></summary>`
+        + `<div class="kwlang-body"><label class="kwlang-opt"><input type="checkbox" data-all ${all ? "checked" : ""}> ${esc(t("All languages"))}</label>`
+        + `<div class="kwlang-grid">${opts}</div></div></details>`;
+      host.querySelectorAll("input").forEach(cb => cb.addEventListener("change", () => {
+        if (cb.hasAttribute("data-all")) setKwLangs([], cb.checked);
+        else setKwLangs([...host.querySelectorAll(".kwlang-grid input:checked")].map(i => i.value), false);
+        if (typeof onChange === "function") onChange();
+      }));
+    }
+
     async function loadTrends() {
+      renderKwLangBar("kwlang-bar", loadTrends);
       const wd = $("trd-window").value, bd = $("trd-base").value, kind = $("trd-kind").value, cc = $("trd-country").value.trim();
-      const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${extra||""}`;
+      const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${kwLangParam()}${extra||""}`;
       try {
         const [rising, top] = await Promise.all([
           api(`/api/insights/trending?window_days=${wd}&baseline_days=${bd}&${qp()}`),
@@ -7034,7 +7095,7 @@
         // (from /trending-windows, reusing trend()'s day buckets) so each renders a
         // small honest sparkline (dashChartSvg: line when dense, Item-Y bars when
         // sparse — never an interpolated curve). The rest stay a plain list.
-        const d = await api("/api/insights/trending-windows?limit=8&series_top=5");
+        const d = await api("/api/insights/trending-windows?limit=8&series_top=5" + kwLangParam());
         _trendWindowsData = d;  // stash so enlargeTrend(wi,ti) needs no extra fetch
         box.innerHTML = (d.windows || []).map((w, wi) => {
           const head = `<h2 style="font-size:13px">${esc(LABELS[w.label] || w.label)} <span class="muted">· n=${w.count}</span></h2>`;

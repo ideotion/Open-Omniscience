@@ -1320,5 +1320,8 @@
   "Africa": "アフリカ",
   "Oceania": "オセアニア",
   "Signals": "シグナル",
-  "Moment in focus": "焦点の時点"
+  "Moment in focus": "焦点の時点",
+  "All languages": "すべての言語",
+  "Unknown": "不明",
+  "Show keyword lists only in the languages you read.": "あなたが読める言語のキーワード一覧のみを表示します。"
 }

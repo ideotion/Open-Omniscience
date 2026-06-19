@@ -1320,5 +1320,8 @@
   "Africa": "Африка",
   "Oceania": "Океания",
   "Signals": "Сигналы",
-  "Moment in focus": "Момент в фокусе"
+  "Moment in focus": "Момент в фокусе",
+  "All languages": "Все языки",
+  "Unknown": "Неизвестно",
+  "Show keyword lists only in the languages you read.": "Показывать списки ключевых слов только на языках, которые вы читаете."
 }

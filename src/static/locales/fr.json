@@ -1320,5 +1320,8 @@
   "Africa": "Afrique",
   "Oceania": "Océanie",
   "Signals": "Signaux",
-  "Moment in focus": "Moment ciblé"
+  "Moment in focus": "Moment ciblé",
+  "All languages": "Toutes les langues",
+  "Unknown": "Inconnue",
+  "Show keyword lists only in the languages you read.": "N'afficher les listes de mots-clés que dans les langues que vous lisez."
 }

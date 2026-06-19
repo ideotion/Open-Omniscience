@@ -729,3 +729,12 @@
     #guide-wizard .gw-lang[aria-selected="true"] { border-color: var(--accent);
       background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
     #guide-wizard .gw-lang .gw-native { margin-inline-end: auto; }
+    /* "Languages I read" filter on the keyword views (field ask 2026-06-19). */
+    details.kwlang { display:inline-block; border:1px solid var(--border); border-radius:8px;
+      padding:4px 10px; font-size:12px; background:var(--panel); max-width:100%; }
+    details.kwlang > summary { cursor:pointer; list-style:none; }
+    details.kwlang > summary::-webkit-details-marker { display:none; }
+    details.kwlang .kwlang-body { margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+    details.kwlang .kwlang-grid { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:6px;
+      max-height:240px; overflow:auto; }
+    details.kwlang .kwlang-opt { display:flex; align-items:center; gap:6px; white-space:nowrap; }

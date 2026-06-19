@@ -1320,5 +1320,8 @@
   "Africa": "أفريقيا",
   "Oceania": "أوقيانوسيا",
   "Signals": "إشارات",
-  "Moment in focus": "اللحظة المحددة"
+  "Moment in focus": "اللحظة المحددة",
+  "All languages": "كل اللغات",
+  "Unknown": "غير معروف",
+  "Show keyword lists only in the languages you read.": "إظهار قوائم الكلمات المفتاحية فقط باللغات التي تقرؤها."
 }

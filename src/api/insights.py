@@ -328,12 +328,16 @@ def insights_top(
     kind: str | None = Query(None),
     limit: int = Query(20, ge=1, le=200),
     group: bool = Query(True, description="Merge surface variants into entity families"),
+    languages: str | None = Query(
+        None, description="Comma-separated ISO codes to restrict to ('languages I read'); omit for all"
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Most-mentioned keywords (optionally windowed / per-country / per-kind)."""
-    key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group)
+    """Most-mentioned keywords (optionally windowed / per-country / per-kind / per-language)."""
+    langs = _langs(languages)
+    key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group, langs=langs)
     return _cached(key, lambda: q.top_terms(
-        db, days=days, country=country, kind=_kind(kind), limit=limit, group=group))
+        db, days=days, country=country, kind=_kind(kind), limit=limit, group=group, languages=langs))
 
 
 @router.get("/trending")
@@ -343,11 +347,13 @@ def insights_trending(
     country: str | None = None,
     kind: str | None = None,
     limit: int = Query(20, ge=1, le=200),
+    languages: str | None = Query(None, description="Comma-separated ISO codes to restrict to; omit for all"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Rising keywords by a transparent recent-vs-prior ratio."""
+    langs = _langs(languages)
     key = _ckey("trending", window_days=window_days, baseline_days=baseline_days,
-                country=country, kind=kind, limit=limit)
+                country=country, kind=kind, limit=limit, langs=langs)
     return _cached(key, lambda: q.trending(
         db,
         window_days=window_days,
@@ -355,6 +361,7 @@ def insights_trending(
         country=country,
         kind=_kind(kind),
         limit=limit,
+        languages=langs,
     ))
 
 
@@ -370,6 +377,7 @@ def insights_trending_windows(
         description="Attach a daily mention-count series to the first N terms of "
         "each window (0 = none; reuses the /trend day series, counts only).",
     ),
+    languages: str | None = Query(None, description="Comma-separated ISO codes to restrict to; omit for all"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Rising keywords across THREE preset windows side by side — past 24h · past
@@ -380,10 +388,34 @@ def insights_trending_windows(
     ADDITIVE: ``series_top > 0`` attaches a per-term daily ``series`` (reusing the
     /trend day buckets) to the top terms so the frontend can draw an ooChart each;
     ``series_top=0`` (default) is byte-identical to the prior response."""
-    key = _ckey("trending-windows", country=country, kind=kind, limit=limit, series_top=series_top)
+    langs = _langs(languages)
+    key = _ckey("trending-windows", country=country, kind=kind, limit=limit,
+                series_top=series_top, langs=langs)
     return _cached(key, lambda: q.trending_windows(
-        db, country=country, kind=_kind(kind), limit=limit, series_top=series_top
+        db, country=country, kind=_kind(kind), limit=limit, series_top=series_top, languages=langs
     ))
+
+
+@router.get("/keyword-languages")
+def insights_keyword_languages(db: Session = Depends(get_db)) -> dict:
+    """The languages present in the keyword index, with keyword counts — feeds the
+    'languages I read' picker on the keyword views. Counts only, no score. A keyword
+    with no stored language is bucketed under '?' (unknown)."""
+    from sqlalchemy import func
+
+    from src.database.models import Keyword
+
+    rows = (
+        db.query(func.lower(Keyword.language), func.count(Keyword.id))
+        .group_by(func.lower(Keyword.language))
+        .all()
+    )
+    langs = []
+    for code, n in rows:
+        c = (code or "").strip()
+        langs.append({"language": c or "?", "keywords": int(n)})
+    langs.sort(key=lambda x: -x["keywords"])
+    return {"languages": langs, "method": "Distinct Keyword.language with counts; '?' = no stored language."}
 
 
 @router.get("/trend")
@@ -675,6 +707,21 @@ def insights_recycled_claims(
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None
+
+
+def _langs(languages: str | None) -> list[str] | None:
+    """Parse the ``languages`` query param (comma-separated ISO codes, or ``?`` for
+    the unknown bucket) into a bounded list, or None for 'all languages'. The
+    'languages I read' display filter for the keyword views."""
+    if not languages:
+        return None
+    out = []
+    for c in languages.split(","):
+        c = c.strip().lower()
+        # bare 2-3 letter codes or the literal unknown bucket; ignore junk
+        if c == "?" or (2 <= len(c) <= 3 and c.isalpha()):
+            out.append(c)
+    return out[:30] or None
 
 
 # -- Keyword-family overrides (manual merge / split — "the user disposes") ---- #
