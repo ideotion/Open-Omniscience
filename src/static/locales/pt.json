@@ -1395,5 +1395,16 @@
   "Merge selected": "Mesclar selecionados",
   "Min. articles": "Mín. de artigos",
   "Most-cited sources": "Fontes mais citadas",
-  "My calendar": "Meu calendário"
+  "My calendar": "Meu calendário",
+  "Trends": "Tendências",
+  "User Manual": "Manual do usuário",
+  "Value column": "Coluna de valor",
+  "Value regex": "Regex de valor",
+  "View chain": "Ver cadeia",
+  "Unit": "Unidade",
+  "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.": "Um documento Markdown que registra a consulta literal, a versão do aplicativo e a procedência por artigo — para vereditos e revisão por pares. Registra apenas a seleção; não conclui nada.",
+  "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "Desativar (nunca excluir) cada fonte ativada em um idioma que o motor de palavras-chave não consegue gerenciar. Reversível pela tabela de fontes.",
+  "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "Uma síntese do LLM local sobre os melhores resultados (máx. 20) — fatos comuns, divergências, questões em aberto, citando números de artigo. Uma ajuda, nunca um veredito.",
+  "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Diga ao modelo local o que extrair. Produza um item por linha — cada um se torna um metadado do tipo acima.",
+  "Updates automatically in the background.": "Atualiza automaticamente em segundo plano."
 }

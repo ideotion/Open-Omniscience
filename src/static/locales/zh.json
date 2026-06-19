@@ -1395,5 +1395,16 @@
   "Merge selected": "合并所选",
   "Min. articles": "最少文章数",
   "Most-cited sources": "被引用最多的来源",
-  "My calendar": "我的日历"
+  "My calendar": "我的日历",
+  "Trends": "趋势",
+  "User Manual": "用户手册",
+  "Value column": "数值列",
+  "Value regex": "数值正则",
+  "View chain": "查看链",
+  "Unit": "单位",
+  "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.": "一个 Markdown 文档，记录原始查询、应用版本和每篇文章的来源 — 用于结论与同行评审。只记录所选内容；不下任何结论。",
+  "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "停用（绝不删除）使用关键词引擎无法处理的语言的每个已启用来源。可从来源表中撤销。",
+  "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "由本地 LLM 对前若干结果（最多 20 条）进行的一次综合 — 共同事实、分歧、悬而未决的问题，并引用文章编号。是辅助，绝非结论。",
+  "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "告诉本地模型要提取什么。每行输出一项 — 每项成为上述类型的一条元数据。",
+  "Updates automatically in the background.": "在后台自动更新。"
 }

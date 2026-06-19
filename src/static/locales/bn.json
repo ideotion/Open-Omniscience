@@ -1395,5 +1395,16 @@
   "Merge selected": "নির্বাচিত একত্র করুন",
   "Min. articles": "ন্যূন. নিবন্ধ",
   "Most-cited sources": "সর্বাধিক উদ্ধৃত উৎস",
-  "My calendar": "আমার ক্যালেন্ডার"
+  "My calendar": "আমার ক্যালেন্ডার",
+  "Trends": "প্রবণতা",
+  "User Manual": "ব্যবহারকারী নির্দেশিকা",
+  "Value column": "মান কলাম",
+  "Value regex": "মান রেজেক্স",
+  "View chain": "চেইন দেখুন",
+  "Unit": "একক",
+  "A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.": "একটি Markdown নথি যা আক্ষরিক কোয়েরি, অ্যাপ সংস্করণ এবং প্রতি-নিবন্ধ উৎস রেকর্ড করে — রায় ও সহকর্মী-পর্যালোচনার জন্য। কেবল নির্বাচন রেকর্ড করে; কিছুই উপসংহার টানে না।",
+  "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "কীওয়ার্ড ইঞ্জিন পরিচালনা করতে পারে না এমন ভাষার প্রতিটি সক্রিয় উৎস নিষ্ক্রিয় করুন (কখনো মুছবেন না)। উৎস টেবিল থেকে প্রত্যাবর্তনযোগ্য।",
+  "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "শীর্ষ ফলাফলের (সর্বোচ্চ ২০) উপর স্থানীয় LLM-এর একটি সংশ্লেষণ — অভিন্ন তথ্য, মতবিরোধ, উন্মুক্ত প্রশ্ন, নিবন্ধ নম্বর উদ্ধৃত করে। সহায়তা, কখনো রায় নয়।",
+  "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "স্থানীয় মডেলকে বলুন কী বের করতে হবে। প্রতি লাইনে একটি আইটেম আউটপুট করুন — প্রতিটি উপরের ধরনের একটি মেটাডেটা হয়ে ওঠে।",
+  "Updates automatically in the background.": "পটভূমিতে স্বয়ংক্রিয়ভাবে আপডেট হয়।"
 }
