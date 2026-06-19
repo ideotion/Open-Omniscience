@@ -7575,6 +7575,27 @@
             .sort((a, b) => b.value - a.value)
         : [];
 
+      // OSM offline-region overlay (THEME-2): the bounded preview parsed by OOPBF
+      // from a downloaded .osm.pbf — ways as thin polylines + nodes as faint dots,
+      // both CAPPED so a dense region can't choke the SVG. Reuses the same lon2x/
+      // lat2y projection (no second projection). Honest preview, never fabricated.
+      let osmHtml = "";
+      const osm = opts.osmOn && opts.osmGeo ? opts.osmGeo : null;
+      if (osm) {
+        const lines = (osm.lines || []).slice(0, 3000).map(cs => {
+          const pts = cs.map(c => `${lon2x(c.lon).toFixed(1)},${lat2y(c.lat).toFixed(1)}`).join(" ");
+          return `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="0.4" vector-effect="non-scaling-stroke" opacity="0.7"/>`;
+        }).join("");
+        const allPts = osm.points || [];
+        const step = Math.max(1, Math.ceil(allPts.length / 4000));   // sample to cap rendered dots
+        let dots = "";
+        for (let i = 0; i < allPts.length; i += step) {
+          const p = allPts[i];
+          dots += `<circle cx="${lon2x(p.lon).toFixed(1)}" cy="${lat2y(p.lat).toFixed(1)}" r="0.5" fill="var(--accent)" opacity="0.55"/>`;
+        }
+        osmHtml = `<g id="oomap-osm">${lines}${dots}</g>`;
+      }
+
       // Granularity + places overlay (slice 4) — finer/coarser spatial resolution,
       // also "controls inside the map". Continent = the per-country values
       // pre-aggregated by the loader; Places = the mentioned-places overlay.
@@ -7586,6 +7607,7 @@
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
           ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
           ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
+          ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn ? "true" : "false"}"${opts.osmOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
         </div>` : "";
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
       // the Signals layer is on; sweeps the focus moment (antiquity -> near future).
@@ -7618,7 +7640,7 @@
              style="display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${W} / ${H}">
           <defs><pattern id="oomap-nodata" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern></defs>
-          ${grid}${paths}${pts}${overlayPts}${signalPts}
+          ${grid}${paths}${pts}${overlayPts}${signalPts}${osmHtml}
           <g id="oomap-labels"></g>
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
@@ -7640,6 +7662,7 @@
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
         ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(TMAP_KINDS[k]?.l || k)}</span>`).join("") : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
+        ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}</span>` : ""}
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
@@ -7727,6 +7750,7 @@
       if (opts && opts.onPlaces) { const pb = host.querySelector("[data-oomap-places]"); if (pb) pb.addEventListener("click", () => opts.onPlaces()); }
       if (opts && opts.onSignals) { const sb = host.querySelector("[data-oomap-signals]"); if (sb) sb.addEventListener("click", () => opts.onSignals()); }
       if (opts && opts.onLabels) { const lb = host.querySelector("[data-oomap-labels]"); if (lb) lb.addEventListener("click", () => opts.onLabels()); }
+      if (opts && opts.onOsm) { const ob = host.querySelector("[data-oomap-osm]"); if (ob) ob.addEventListener("click", () => opts.onOsm()); }
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
       if (opts && opts.onSignal) host.querySelectorAll("[data-oomap-sig]").forEach(g =>
         g.addEventListener("click", () => { const s = (host._ooSigVisible || [])[+g.dataset.oomapSig]; if (s) opts.onSignal(s, host._ooSigVisible || []); }));
@@ -7757,6 +7781,7 @@
     // The endpoint returns every measure per country in ONE payload, so switching
     // dimension is instant (no re-fetch) — the picker just re-colours the map.
     let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null, _ooMapLabelsOn = false;
+    let _ooMapOsmOn = false, _ooMapOsmGeo = null, _ooMapOsmLoading = false;   // in-browser .pbf overlay (THEME-2)
     // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
     let _ooMapSignalsOn = false, _ooMapSignals = null, _ooMapFocusSlider = 1000, _ooMapFocusRAF = 0;
     // Aggregate the per-country values into CONTINENTS (slice 4): a SUM for counts,
@@ -7886,6 +7911,10 @@
         // Dynamic non-overlapping country labels (THEME-2), opt-in.
         labelsOn: _ooMapLabelsOn,
         onLabels: () => { _ooMapLabelsOn = !_ooMapLabelsOn; _renderOoMapDim(); },
+        // In-browser OSM offline-region overlay (THEME-2): parse a DOWNLOADED
+        // .osm.pbf locally (zero network) and draw its geometry. Opt-in.
+        osmOn: _ooMapOsmOn, osmGeo: _ooMapOsmGeo,
+        onOsm: () => _ooMapToggleOsm(),
         // Click a country → its coverage breakdown (THEME-2 "click-country → list").
         onCountry: iso => _ooMapCountryDetail(rowBy[(iso || "").toLowerCase()], dim),
         valueLabel: fmtV,
@@ -7987,6 +8016,44 @@
       </div>`;
       host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
+    // Toggle the in-browser OSM offline-region overlay (THEME-2). On first enable
+    // it finds a DOWNLOADED region, fetches a bounded byte PREFIX of its local
+    // .osm.pbf (zero network — a file already on disk), parses it with OOPBF, and
+    // resolves way refs to coordinates. Honest: a preview, capped, never fabricated.
+    async function _ooMapToggleOsm() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      if (_ooMapOsmOn) { _ooMapOsmOn = false; _renderOoMapDim(); return; }
+      if (typeof OOPBF === "undefined" || !OOPBF.parse) { toast(t("The offline-map reader is unavailable."), "err"); return; }
+      if (_ooMapOsmGeo) { _ooMapOsmOn = true; _renderOoMapDim(); return; }   // already parsed; just show
+      if (_ooMapOsmLoading) return;
+      _ooMapOsmLoading = true;
+      try {
+        const dl = await api("/api/geo/downloads");
+        const done = (dl.downloads || []).filter(d => d.status === "done" && d.code);
+        if (!done.length) { toast(t("No offline-map region downloaded yet — get one in Settings → Offline map."), "err"); return; }
+        const code = done[0].code;
+        toast(t("Reading the offline map…"));
+        // BINARY fetch (the bounded prefix). Loopback file read — no network egress.
+        const res = await fetch(`/api/geo/regions/${encodeURIComponent(code)}/preview?max_bytes=8388608`);
+        if (!res.ok) { toast(t("Could not read the downloaded region."), "err"); return; }
+        const ab = await res.arrayBuffer();
+        const geo = await OOPBF.parse(ab, { maxBlocks: 16, maxNodes: 120000 });
+        // Resolve way refs -> coordinates using the decoded node set (partial in a
+        // bounded preview — drop a way we can't resolve, never invent a point).
+        const byId = new Map(); for (const n of geo.nodes) byId.set(n.id, n);
+        const lines = [];
+        for (const w of geo.ways) {
+          const cs = []; for (const id of w.refs) { const nd = byId.get(id); if (nd) cs.push(nd); }
+          if (cs.length >= 2) lines.push(cs);
+        }
+        _ooMapOsmGeo = { region: code, points: geo.nodes, lines, truncated: geo.truncated, blocks: geo.blocks };
+        _ooMapOsmOn = true;
+        _renderOoMapDim();
+      } catch (e) {
+        toast(t("Could not read the downloaded region.") + " " + (e && e.message ? e.message : ""), "err");
+      } finally { _ooMapOsmLoading = false; }
+    }
+
     async function loadOoMapCoverage() {
       const host = $("oo-coverage-map"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);

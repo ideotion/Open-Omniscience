@@ -175,6 +175,32 @@ def test_world_map_shapes_labels_and_click_country():
     assert "English-only VADER lexicon" in app, "the per-country tone must carry the VADER caveat"
 
 
+def test_world_map_osm_offline_overlay():
+    """Field test 2026-06-19 THEME-2 (batch-1: in-browser .pbf parser): the world
+    map can overlay a DOWNLOADED OSM region, parsed entirely in the browser (zero
+    network) by the bounded OOPBF reader, served as a bounded byte prefix by the
+    backend. Honest preview, capped render, no fabricated geometry."""
+    html = _ui_source()  # index.html + app.js + app.css
+    idx = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the parser module is loaded before app.js
+    assert '/static/osmpbf.js' in idx, "the in-browser OSM .pbf reader must be loaded"
+    # an opt-in in-map OSM toggle, wired through OOPBF.parse on a downloaded region
+    assert "data-oomap-osm" in html and "onOsm" in html, "the map must offer an OSM overlay toggle"
+    assert "function _ooMapToggleOsm()" in html and "OOPBF.parse(" in html, (
+        "the toggle must parse the downloaded .osm.pbf in the browser"
+    )
+    # zero-network: it reads a LOCAL downloaded region via the bounded preview endpoint
+    assert "/api/geo/regions/${encodeURIComponent(code)}/preview" in html
+    # capped render (a dense region cannot choke the SVG) + honest preview legend
+    assert 'id="oomap-osm"' in html and "offline OSM" in html
+    # backend: the bounded preview endpoint exists, path-safe, bounded
+    geo = (_ROOT / "src" / "api" / "geo.py").read_text(encoding="utf-8")
+    assert '"/regions/{code}/preview"' in geo and "_PREVIEW_MAX" in geo, (
+        "the bounded region-preview endpoint must exist + be capped"
+    )
+    assert "is_valid_code(code)" in geo, "the preview endpoint must reject path-unsafe codes"
+
+
 def test_subtabs_are_browser_style_with_clear_active_state():
     """Field test 2026-06-19 #31/#57 (THEME-1): one homogeneous browser-tab look with an
     UNMISTAKABLE active state — an accent underline + bold (the old subtle bg+border read

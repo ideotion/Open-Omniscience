@@ -3219,6 +3219,25 @@ ruling, a contingency, or a deliberate-omission note.
   colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
   + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
   standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-2 IN-BROWSER OSM .pbf RENDERER (#51 batch-1; branch
+  claude/gallant-bohr-1cogzj; parser+endpoint VERIFIED, overlay BROWSER-UNVERIFIED):** the maintainer's
+  chosen path to render a DOWNLOADED offline-map region with NO network + no heavy WebGL. NEW
+  `src/static/osmpbf.js` = a dependency-free OSM PBF reader: protobuf varint/zigzag primitives, the
+  BlobHeader/Blob container, zlib via the native `DecompressionStream`, and the PrimitiveBlock
+  dense-node DELTA decode to exact WGS84 degrees + way refs. BOUNDED by construction (`maxBlocks`/
+  `maxNodes` → an honest PREVIEW that flags `truncated`, never an OOM on a multi-GB extract). The
+  varint/zigzag/dense-decode core is PROVEN under node against a hand-encoded fixture
+  (`tests/osmpbf_node_test.js`, run in CI by `tests/test_osmpbf_parser.py` — exact degrees, full-file
+  parse, maxBlocks truncation; the test writes its OWN protobuf encoder so the round-trip + hand-computed
+  degrees are non-vacuous). NEW backend `GET /api/geo/regions/{code}/preview?max_bytes=` serves a BOUNDED
+  byte PREFIX of the LOCAL `.osm.pbf` (loopback, zero-network — reads a file already on disk; path-safe
+  via `is_valid_code`; hard 16 MB ceiling; 404 if not downloaded; X-OO-Region-* headers); tests/
+  test_osm_preview.py (5). FRONTEND: an opt-in in-map "OSM" toggle on ooMap fetches a downloaded region's
+  preview, parses it with OOPBF, resolves way refs→coords, and overlays nodes (sampled ≤4000) + ways
+  (≤3000) on the SAME lon2x/lat2y projection (no second projection) with an honest "offline OSM · N
+  nodes · M ways · preview" legend. node --check + test_world_map_osm_offline_overlay; full pytest in CI.
+  REMAINING (flagged): human click-through (a real downloaded region — none in this env); rendering polish
+  (bbox auto-zoom to the region; way styling by tag); enriching the choropleth from OSM boundaries (#51 fuller).
 - **FIELD TEST 2026-06-19 — THEME-5 i18n: SECURITY SENTENCES ×12 (#5/#64; branch
   claude/gallant-bohr-1cogzj):** the explicitly-named, security-CRITICAL subset of the THEME-5 tail —
   the airplane STATE titles (#5: "Online — click to go offline (airplane mode)…" / "Offline (airplane
