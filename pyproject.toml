@@ -113,6 +113,18 @@ crypto = [
     "python-gnupg>=0.5.2",
 ]
 
+# Optional derived COLUMNAR read-model (data-architecture Slice 4): a DuckDB
+# accelerator for the heavy whole-corpus aggregations. Kept OUT of core: when absent
+# the read-model seam (src/analytics/readmodel.py) serves the live SQLite query
+# (slower, never wrong). The canonical encrypted SQLCipher store always stays the
+# source of truth; the columnar store is a disposable, rebuildable cache. Encryption
+# uses DuckDB's AES backend (>=1.4); a SECURE persisted store needs an OpenSSL crypto
+# extension available OFFLINE -- when it is not, the engine runs IN-MEMORY rather than
+# ever writing a plaintext derived file (see src/analytics/columnar.py).
+columnar = [
+    "duckdb>=1.4",
+]
+
 # Post-quantum chain-of-custody signatures. The custody log signs with Ed25519
 # alone if this is absent (and labels itself honestly); installing this upgrades
 # new signatures to hybrid Ed25519 + ML-DSA (FIPS 204) for quantum resistance.
