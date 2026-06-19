@@ -3264,6 +3264,21 @@ ruling, a contingency, or a deliberate-omission note.
   colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
   + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
   standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: DE-TAGGING PHASE SLICE 1 ×12 (post-#404-merge; branch
+  claude/gallant-bohr-1cogzj):** STARTED the harder inline-tag de-tagging phase (the single-node tail being
+  exhausted). De-tagged 3 help paragraphs in index.html (dropped the cosmetic inline `<strong>`/`<em>` so each
+  `<p>` is ONE text node — the established ledger convention, LOW layout risk = text stays, just not bold;
+  verified NO test asserted that markup first) + keyed 4 strings ×12: the Sources DISCOVERY-CANDIDATES note
+  ("Promote creates a disabled source … Dismiss is remembered and never re-suggested"), the candidates heading
+  "(machine-suggested — nothing happens without you)", the UNMANAGED-LANGUAGES explainer ("…produce junk
+  keywords … kept and re-enablable …"), and the safety RESTORE-additive-only note ("the destructive
+  replace-restore was removed … complements your corpus and never overwrites it"). The i18n engine normalises
+  internal whitespace, so the single-line JSON key matches the multi-line `<p>` (verified each resolves +
+  appears in the normalised HTML). 1402→1405 keys ×12 (one pre-existed); honesty phrases ("never re-suggested",
+  "kept and re-enablable", "additive-only", "never overwrites") translated faithfully; non-en AI-drafted,
+  FLAGGED for native review. i18n --min 100 (1405 ×12); full test_repo_invariants green (no UI/restore/discovery
+  guard tripped). Proves the de-tagging pattern is unblocked; ~250 inline-tagged help strings remain, continue
+  panel-by-panel.
 - **FIELD TEST 2026-06-19 — THEME-5 i18n: CLEAN CAPTIONS + LABELS SLICE ×12 (post-#403-merge; branch
   claude/gallant-bohr-1cogzj):** the easy-LABEL tail being nearly exhausted, this slice keyed the remaining
   CLEAN, SINGLE-NODE strings that need NO inline-tag de-tagging — 6 labels (Trends · User Manual · Value

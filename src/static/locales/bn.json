@@ -122,7 +122,7 @@
   "Open investigation ↗": "তদন্ত খুলুন ↗",
   "+ Add to draft": "+ খসড়ায় যোগ করুন",
   "Discovery candidates": "আবিষ্কৃত প্রার্থী সূত্র",
-  "(machine-suggested — nothing happens without you)": "(যন্ত্রের পরামর্শ — আপনাকে ছাড়া কিছুই ঘটে না)",
+  "(machine-suggested — nothing happens without you)": "(মেশিন-প্রস্তাবিত — আপনি ছাড়া কিছুই হয় না)",
   "Promote (disabled)": "গ্রহণ (নিষ্ক্রিয়)",
   "Dismiss": "বাতিল",
   "External topic discovery": "বাহ্যিক বিষয়-অনুসন্ধান",
@@ -1406,5 +1406,8 @@
   "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "কীওয়ার্ড ইঞ্জিন পরিচালনা করতে পারে না এমন ভাষার প্রতিটি সক্রিয় উৎস নিষ্ক্রিয় করুন (কখনো মুছবেন না)। উৎস টেবিল থেকে প্রত্যাবর্তনযোগ্য।",
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "শীর্ষ ফলাফলের (সর্বোচ্চ ২০) উপর স্থানীয় LLM-এর একটি সংশ্লেষণ — অভিন্ন তথ্য, মতবিরোধ, উন্মুক্ত প্রশ্ন, নিবন্ধ নম্বর উদ্ধৃত করে। সহায়তা, কখনো রায় নয়।",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "স্থানীয় মডেলকে বলুন কী বের করতে হবে। প্রতি লাইনে একটি আইটেম আউটপুট করুন — প্রতিটি উপরের ধরনের একটি মেটাডেটা হয়ে ওঠে।",
-  "Updates automatically in the background.": "পটভূমিতে স্বয়ংক্রিয়ভাবে আপডেট হয়।"
+  "Updates automatically in the background.": "পটভূমিতে স্বয়ংক্রিয়ভাবে আপডেট হয়।",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.": "আপনার শিডিউলিং বাজেটের মধ্যে উদ্ধৃতি ও ক্যাটালগ চ্যানেল দ্বারা অফলাইনে পাওয়া গেছে। প্রতিটি সারি তার প্রমাণ দেখায়। “প্রোমোট” একটি নিষ্ক্রিয় উৎস তৈরি করে যা আপনাকে এখনও সক্রিয় করতে হবে; “বাতিল” মনে রাখা হয় এবং আর কখনো প্রস্তাব করা হয় না।",
+  "The keyword engine can only analyse languages with a stoplist and word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce junk keywords that skew analytics and slow the app. They're kept and re-enablable — disabling them just stops gathering material we'd mangle until a stoplist for that language lands.": "কীওয়ার্ড ইঞ্জিন কেবল সেই ভাষাগুলো বিশ্লেষণ করতে পারে যেগুলোর স্টপওয়ার্ড তালিকা ও শব্দ-বিভাজন আছে। অন্য ভাষার উৎস (স্টপওয়ার্ড তালিকা ছাড়া, বা zh/ja যা বিভাজিত নয়) এমন আবর্জনা কীওয়ার্ড তৈরি করে যা বিশ্লেষণ বিকৃত করে এবং অ্যাপ ধীর করে। এগুলো রাখা হয় ও পুনরায় সক্রিয় করা যায় — এগুলো নিষ্ক্রিয় করা কেবল এমন উপাদান সংগ্রহ বন্ধ করে যা আমরা বিকৃত করে ফেলতাম, যতক্ষণ না সেই ভাষার জন্য একটি স্টপওয়ার্ড তালিকা আসে।",
+  "Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.": "পুনরুদ্ধার কেবল সংযোজনমূলক — ধ্বংসাত্মক প্রতিস্থাপন-পুনরুদ্ধার সরিয়ে ফেলা হয়েছে। উপরের মার্জ পুনরুদ্ধারের (স্বাক্ষরিত ব্যাকআপ আর্টিফ্যাক্ট) মাধ্যমে পুনরুদ্ধার করুন, যা আপনার কর্পাসকে পরিপূরক করে এবং কখনো ওভাররাইট করে না।"
 }

@@ -122,7 +122,7 @@
   "Open investigation ↗": "افتح التحقيق ↗",
   "+ Add to draft": "+ أضف إلى المسودة",
   "Discovery candidates": "مصادر مرشّحة مكتشفة",
-  "(machine-suggested — nothing happens without you)": "(اقتراح آلي — لا يحدث شيء من دونك)",
+  "(machine-suggested — nothing happens without you)": "(اقتراح آلي — لا يحدث شيء بدونك)",
   "Promote (disabled)": "اعتماد (معطّل)",
   "Dismiss": "استبعاد",
   "External topic discovery": "الاكتشاف الخارجي حسب الموضوع",
@@ -1406,5 +1406,8 @@
   "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "تعطيل (وليس حذف) كل مصدر مُفعَّل بلغة لا يستطيع محرك الكلمات المفتاحية معالجتها. قابل للعكس من جدول المصادر.",
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "توليفة واحدة من النموذج اللغوي المحلي عبر أفضل النتائج (20 كحد أقصى) — الحقائق المشتركة والاختلافات والأسئلة المفتوحة، مع ذكر أرقام المقالات. مساعدة، وليست حكمًا.",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "أخبر النموذج المحلي بما يجب استخراجه. أخرِج عنصرًا واحدًا في كل سطر — يصبح كل منها بيانات وصفية من النوع أعلاه.",
-  "Updates automatically in the background.": "يُحدَّث تلقائيًا في الخلفية."
+  "Updates automatically in the background.": "يُحدَّث تلقائيًا في الخلفية.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.": "تم العثور عليها دون اتصال عبر قنوات الاستشهاد والفهرس ضمن ميزانية الجدولة لديك. يعرض كل صف أدلته. ينشئ «الترقية» مصدرًا معطَّلًا لا يزال عليك تفعيله؛ ويُتذكَّر «التجاهل» ولا يُقترح مرة أخرى أبدًا.",
+  "The keyword engine can only analyse languages with a stoplist and word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce junk keywords that skew analytics and slow the app. They're kept and re-enablable — disabling them just stops gathering material we'd mangle until a stoplist for that language lands.": "لا يستطيع محرك الكلمات المفتاحية تحليل سوى اللغات التي لها قائمة كلمات وقف وتقطيع للكلمات. تنتج المصادر بلغات أخرى (بلا قائمة كلمات وقف، أو الصينية/اليابانية غير المقطَّعة) كلمات مفتاحية رديئة تشوّه التحليلات وتبطئ التطبيق. وهي محفوظة وقابلة لإعادة التفعيل — تعطيلها يوقف فقط جمع مادة سنشوّهها، إلى أن تتوفر قائمة كلمات وقف لتلك اللغة.",
+  "Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.": "الاستعادة إضافية فقط — أُزيلت الاستعادة المدمِّرة بالاستبدال. استعِد عبر استعادة الدمج أعلاه (أرشيف النسخة الاحتياطية الموقَّع)، التي تكمّل مجموعتك ولا تستبدلها أبدًا."
 }

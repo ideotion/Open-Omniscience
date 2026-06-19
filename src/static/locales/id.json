@@ -122,7 +122,7 @@
   "Open investigation ↗": "Buka investigasi ↗",
   "+ Add to draft": "+ Tambah ke draf",
   "Discovery candidates": "Kandidat temuan",
-  "(machine-suggested — nothing happens without you)": "(saran mesin — tidak ada yang terjadi tanpa Anda)",
+  "(machine-suggested — nothing happens without you)": "(disarankan mesin — tidak ada yang terjadi tanpa Anda)",
   "Promote (disabled)": "Terima (nonaktif)",
   "Dismiss": "Abaikan",
   "External topic discovery": "Penemuan topik eksternal",
@@ -1406,5 +1406,8 @@
   "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "Nonaktifkan (jangan pernah hapus) setiap sumber aktif dalam bahasa yang tidak dapat ditangani mesin kata kunci. Dapat dibatalkan dari tabel sumber.",
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "Satu sintesis LLM lokal atas hasil teratas (maks. 20) — fakta bersama, ketidaksepakatan, pertanyaan terbuka, mengutip nomor artikel. Bantuan, bukan putusan.",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Beri tahu model lokal apa yang harus diekstrak. Keluarkan satu item per baris — masing-masing menjadi metadata jenis di atas.",
-  "Updates automatically in the background.": "Diperbarui secara otomatis di latar belakang."
+  "Updates automatically in the background.": "Diperbarui secara otomatis di latar belakang.",
+  "Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.": "Ditemukan secara luring oleh kanal kutipan dan katalog dalam anggaran penjadwalan Anda. Setiap baris menunjukkan buktinya. “Promosikan” membuat sumber nonaktif yang masih harus Anda aktifkan; “Tolak” diingat dan tidak pernah disarankan lagi.",
+  "The keyword engine can only analyse languages with a stoplist and word-segmentation. Sources in other languages (no stoplist, or zh/ja which aren't segmented) produce junk keywords that skew analytics and slow the app. They're kept and re-enablable — disabling them just stops gathering material we'd mangle until a stoplist for that language lands.": "Mesin kata kunci hanya dapat menganalisis bahasa yang memiliki daftar kata henti dan segmentasi kata. Sumber dalam bahasa lain (tanpa daftar kata henti, atau zh/ja yang tidak tersegmentasi) menghasilkan kata kunci sampah yang mengaburkan analisis dan memperlambat aplikasi. Mereka tetap disimpan dan dapat diaktifkan kembali — menonaktifkannya hanya menghentikan pengumpulan materi yang akan kami rusak, sampai daftar kata henti untuk bahasa itu tersedia.",
+  "Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.": "Pemulihan bersifat hanya-menambah — pemulihan ganti yang destruktif telah dihapus. Pulihkan melalui pemulihan gabung di atas (artefak cadangan bertanda tangan), yang melengkapi korpus Anda dan tidak pernah menimpanya."
 }
