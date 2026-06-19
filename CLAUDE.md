@@ -371,6 +371,51 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **DATA-ARCHITECTURE & DURABILITY SKELETON (maintainer design session 2026-06-19; ARCHITECTURE-OF-
+  RECORD delivered, build BRIEF ready, code NOT started — full design in
+  `docs/design/DATA_ARCHITECTURE_SKELETON.md`; the paste-ready autonomous-session build brief in
+  `docs/design/AUTONOMOUS_BUILD_BRIEF_DATA_ARCH.md`):** product of TWO internet-research reviews
+  (scaling 10×/100×/1000×; provable source authentication & tamper-evidence) cross-checked against the
+  codebase. KEY INSIGHT: scaling + durability + authentication are ONE skeleton — one canonical
+  encrypted SQLite/SQLCipher store, one A1 export seam, two disposable rebuildable derived
+  representations (a columnar store for SPEED, a WARC/BagIt archive for PERMANENCE), both keyed by the
+  K1 content hash, both carrying the honesty envelope; the custody log/signer/anchor already built in
+  `src/custody` IS the day-one federation seam. MAINTAINER RULINGS (binding): (1) CROSS-TIME RECALL IS
+  SACRED — no feature may bias toward recent data / default to a recent window / make old data
+  second-class (so TIME-PARTITIONING is ABANDONED unless provably byte-identical with no recency bias);
+  (2) PERFORMANCE MUST NOT DEPEND ON HIDING DATA — decade-scale speed comes from maintained counters +
+  a derived columnar read-model with every article fully present + searchable always; (3) HONESTY
+  ENVELOPE mandatory on maintained aggregates `{value, basis:exact|estimated, as_of, method, n}`
+  (basis is a DISCLOSURE not a score — assert_no_score_fields holds), the thing that makes counters
+  honest despite the `KeywordMention` ondelete=CASCADE drift; (4) DERIVED COLUMNAR STORE = PERSISTED +
+  ENCRYPTED DuckDB under the SAME passphrase (one connect() factory, no second key surface, invisible
+  to the user), incrementally maintained so a decade-scale corpus is never reprocessed per session,
+  with an EMPIRICAL offline encryption GATE (sentinel absent from raw bytes · won't open without key ·
+  opens with key) and a HARD FALLBACK to DuckDB IN-MEMORY — NEVER a plaintext derived file; it is a
+  disposable cache (canonical store stays source of truth; cold/missing store falls back to the live
+  query; excluded from backups, rebuildable); (5) CAPTURE POSTURE = default-anonymize + opt-in
+  high-fidelity (do NOT reverse anonymize-at-ingest; the invasive raw-retention default would buy DKIM
+  proof that may evaporate by design — the key-publishing deniability movement); (6) SOURCE IP CAPTURE
+  + OFFLINE GEOLOCATION onto ooMap as a DISTINCT "server location" layer (country-level CC-DB bundled
+  + city-level downloaded on demand into data_dir, NEVER at boot; honest "unavailable" over Tor since
+  the socket is the proxy not the server; caveats VISIBLE — CDN-edge/anycast/approximate/never proof
+  of true origin; clustering = a shape to investigate like source-laundering, never a verdict); (7)
+  TIERED-RETENTION EVICTION DESIGNED-not-BUILT (needs the WARC archive first; default-off; ONLY raw
+  text relocates to a LOCAL archive while the search index + all mention/analytic/metadata rows stay
+  HOT so no search/analytic loses anything; transparent on-open local read; reversible; performance
+  does NOT depend on it). FROZEN SEAMS for V0.1 (K1 content-multihash ALONGSIDE the never-reformatted
+  Article.hash · K2 canon_version · K3 provenance Tier vocabulary descriptive-not-a-score · K4 honesty
+  envelope · K5 BagIt+WARC-text-fidelity-with-raw-slots-reserved archive · K6 encryption decoupled
+  [SQLCipher operational no-recovery / age outer archival / same-key-or-in-memory derived] · K7
+  format-versioning-fails-LOUD). DEFERRED (separate workstreams, routed/gated): WARC/BagIt archive +
+  age + SLIP-39; TLS chain/SCTs/CT capture + the Tier-vocabulary UI (authentication-evidence);
+  TLS-NOTARIZATION Tier-2 (TLS-1.2-only + Tor-incompatible bandwidth + injects a deanonymizing third
+  party — NOT load-bearing now); WITNESS FEDERATION / the original blockchain intent → the Open
+  Commons Mirror sister project (this app stays single-machine + anchoring-only via OpenTimestamps,
+  ~90% of the value with one consented call, no cluster). VERIFY-before-0.1: DuckDB encryption AEAD/
+  offline + string-heavy speedup; age/SLIP-39 + recovery drill; TLSNotary TLS-1.3; C2PA offline trust
+  list; OTS offline verify; published-private-key DKIM prevalence; IP-geo DB license/size/offline.
+  BUILD ORDER (the brief): envelope → counters → A1 seam → columnar engine → K1/K2 identity → IP+geo.
 - **LLM-ASSISTED PERCEPTION — who/where/when extraction + sentiment + an eval harness
   (maintainer brainstorm 2026-06-18; EVALUATION, reconciliation pending the maintainer's
   PARALLEL internet research; full record in `docs/FUTURE_DEVELOPMENTS.md` →
