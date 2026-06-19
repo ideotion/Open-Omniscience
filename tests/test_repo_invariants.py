@@ -716,11 +716,16 @@ def test_ui_invariants():
         "the early-corpus sparse caveat must be removed app-wide (Item Y amends #16)"
     )
     for surface in (
-        'ooChart($("mkt-chart-oo")',
+        # P2-10: the commodity price detail moved into the shared fullscreen overlay
+        # (chartSymbol -> chartEnlarge -> ooChart), so #mkt-chart-oo is no longer a
+        # surface; chartEnlarge is the toolkit path now.
         'ooChart($("ins-trend-oo")',
         'ooChart($("idx-chart-oo")',  # indices detail rolled onto ooChart
     ):
         assert surface in html, f"chart surface must use THE toolkit: {surface}"
+    assert "chartEnlarge(`${symbol}" in html, (
+        "the commodity price detail must route through the shared chartEnlarge (ooChart) overlay (P2-10)"
+    )
     # 17. the universal hover-for-information convention (ruled 2026-06-12,
     #     the informed-consent instrument): every titled element is marked
     #     automatically (dotted accent underline / corner dot) and opens ONE

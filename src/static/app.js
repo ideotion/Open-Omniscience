@@ -5605,10 +5605,9 @@
 
     async function chartSymbol(symbol, unit) {
       // P2-10: the single-symbol price detail opens in the ONE shared fullscreen
-      // overlay (#chart-enlarge) instead of the cramped bottom #mkt-chart strip,
-      // and PRESERVES "Correlate with news" (appended below the chart). Reuses the
-      // ooChart-in-#mkt-chart-oo path inside the dialog so the existing tests +
-      // the correlation wiring stay intact.
+      // overlay (#chart-enlarge → ooChart) instead of the cramped bottom #mkt-chart
+      // strip, and PRESERVES "Correlate with news" (appended below the chart via the
+      // chartEnlarge extra/onReady hook; the correlation renders into that element).
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
