@@ -72,6 +72,13 @@ class FetchResult:
     fetched_at: datetime
     etag: str | None = None  # response ETag (opaque validator), if sent
     last_modified: str | None = None  # response Last-Modified, if sent
+    # The server IP we actually connected to (data-architecture Slice 6a). It is OUR
+    # VANTAGE POINT -- usually a CDN edge / anycast address, NOT the publisher's origin.
+    # Available only on a DIRECT clearnet connection: over a SOCKS proxy / Tor the socket
+    # connects to the proxy, not the server, so the real server IP is unavailable and
+    # ``server_ip`` is None with a stated ``server_ip_reason`` -- never a guess.
+    server_ip: str | None = None
+    server_ip_reason: str | None = None  # why server_ip is None (honest, when unavailable)
 
 
 class FetchError(Exception):
@@ -320,6 +327,13 @@ class EthicalFetcher:
             # the loop exits with either a definitive response or a raised error
             assert response is not None and final_url is not None
 
+            # Source IP capture (Slice 6a): read the connected server IP while the
+            # connection is still live (stream=True keeps it open until the body is
+            # read). Clearnet only -- over Tor/proxy this is honestly unavailable.
+            server_ip, server_ip_reason = self._capture_server_ip(
+                response, proxied=bool(self.proxy or iso_proxies)
+            )
+
             etag = response.headers.get("ETag")
             last_modified = response.headers.get("Last-Modified")
 
@@ -338,6 +352,8 @@ class EthicalFetcher:
                     fetched_at=datetime.now(UTC),
                     etag=etag,
                     last_modified=last_modified,
+                    server_ip=server_ip,
+                    server_ip_reason=server_ip_reason,
                 )
 
             if response.status_code != 200:
@@ -358,9 +374,44 @@ class EthicalFetcher:
                 fetched_at=datetime.now(UTC),
                 etag=etag,
                 last_modified=last_modified,
+                server_ip=server_ip,
+                server_ip_reason=server_ip_reason,
             )
         finally:
             activity_monitor.fetch_finished(fetch_token)
+
+    def _capture_server_ip(
+        self, response, *, proxied: bool
+    ) -> tuple[str | None, str | None]:
+        """The server IP we connected to (Slice 6a) + an honest reason when unavailable.
+
+        Returns ``(ip, None)`` on a direct clearnet connection, else ``(None, reason)``.
+        NEVER a guess: over a SOCKS proxy / Tor the socket connects to the PROXY, not the
+        server, so the real server IP is genuinely unavailable. The captured IP is OUR
+        VANTAGE POINT (usually a CDN edge / anycast), not proof of the publisher's origin.
+        """
+        if proxied:
+            return None, "unavailable (proxy/Tor)"
+        if not self._real_session:
+            return None, None  # injected/test session: no real socket to read
+        # Read the connected peer from the live urllib3 socket. Internals differ across
+        # urllib3 versions, so try the known paths and degrade loudly (never fabricate).
+        sock = None
+        try:
+            sock = response.raw._connection.sock  # urllib3 HTTPConnection
+        except Exception:  # noqa: BLE001
+            try:
+                sock = response.raw._fp.fp.raw._sock  # http.client fallback
+            except Exception:  # noqa: BLE001
+                sock = None
+        if sock is None:
+            return None, "unavailable (socket not readable)"
+        try:
+            ip = sock.getpeername()[0]
+            ipaddress.ip_address(ip)  # validate; raises on garbage
+            return str(ip), None
+        except Exception:  # noqa: BLE001
+            return None, "unavailable (socket not readable)"
 
     # -- SSRF guard + bounded redirects + size-capped body ----------------- #
 

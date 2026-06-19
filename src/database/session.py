@@ -172,6 +172,7 @@ def init_db() -> None:
     from src.database.maintenance import (
         ensure_article_analysis_columns,
         ensure_article_identity_columns,
+        ensure_article_ip_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
         ensure_keyword_counter_columns,
@@ -183,6 +184,9 @@ def init_db() -> None:
 
     # K1/K2 identity seams on articles (self-heal + backfill for pre-existing stores).
     ensure_article_identity_columns(engine)
+
+    # Source IP provenance columns (self-heal for pre-existing stores; no backfill).
+    ensure_article_ip_columns(engine)
 
     ensure_hot_indexes(engine)
 

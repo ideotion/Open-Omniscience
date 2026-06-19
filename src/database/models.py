@@ -547,6 +547,15 @@ class Article(Base):
     # than fabricating an algorithm label.
     content_multihash: Mapped[str | None] = mapped_column(String(80))
     canon_version: Mapped[str | None] = mapped_column(String(16))
+    # Source IP provenance (data-architecture Slice 6a). The server IP we connected to
+    # at fetch -- OUR VANTAGE POINT, usually a CDN edge / anycast, NOT proof of the
+    # publisher's true origin. Captured only on a DIRECT clearnet connection; over a
+    # SOCKS proxy / Tor the socket reaches the proxy, not the server, so server_ip is
+    # NULL and server_ip_reason states why (never a guessed IP). ip_observed_at is when
+    # we looked. Geolocated offline + mapped (6b/6c) with the caveats visible.
+    server_ip: Mapped[str | None] = mapped_column(String(45))  # IPv6-max length
+    ip_observed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    server_ip_reason: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, onupdate=lambda: datetime.now(UTC))
 

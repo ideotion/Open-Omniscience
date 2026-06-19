@@ -194,6 +194,42 @@ def ensure_article_identity_columns(engine: Engine) -> list[str]:
     return added
 
 
+# Source IP provenance (data-architecture Slice 6a): server_ip / ip_observed_at /
+# server_ip_reason on articles, for stores created before these columns existed. All
+# nullable, NO backfill -- a pre-existing article simply has no captured server IP
+# (honest NULL), and future fetches populate it forward via the pipeline.
+_ARTICLE_IP_COLUMNS: dict[str, str] = {
+    "server_ip": "ALTER TABLE articles ADD COLUMN server_ip VARCHAR(45)",
+    "ip_observed_at": "ALTER TABLE articles ADD COLUMN ip_observed_at DATETIME",
+    "server_ip_reason": "ALTER TABLE articles ADD COLUMN server_ip_reason VARCHAR(64)",
+}
+
+
+def ensure_article_ip_columns(engine: Engine) -> list[str]:
+    """Self-heal the source-IP columns on ``articles`` (idempotent, additive).
+
+    No backfill: existing articles have no captured server IP (honest NULL); the fetch
+    pipeline populates them forward. No-op on a fresh DB / non-sqlite / missing table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_IP_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added articles source-IP column(s): {', '.join(added)}")
+    return added
+
+
 # Denormalised corpus-wide keyword counters (perf workstream 2026-06-18) for stores
 # created before these columns existed. create_all builds them on a fresh DB but never
 # ALTERs an existing table, and not every install runs alembic — so an existing corpus
