@@ -3293,6 +3293,20 @@ ruling, a contingency, or a deliberate-omission note.
   colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
   + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
   standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: DE-TAGGING PHASE SLICE 2 (Insights panel) ×12 (post-#405-merge;
+  branch claude/gallant-bohr-1cogzj):** continued the de-tagging burn-down on the INSIGHTS-tab help texts —
+  de-tagged 4 `<p class="hint">` paragraphs (dropped inline `<b>`/`<em>`, EXAMPLE/proper-noun tokens kept
+  literal inside the sentence) + keyed them ×12: the LINKS citation-graph note, the FAMILIES merge/split
+  explainer (Trump=Trump's=Donald Trump example + the ✕ glyph preserved), the GROUPS super-ring explainer
+  (election/élection/wahl + Russia–Ukraine war examples preserved; "Pure curation — nothing in the keyword
+  store changes"), and the CONVERGENCE note (the load-bearing honesty line "Independence is measured by
+  distinct sources, not article count. Co-occurrence is never causation — a prompt to read, not proof
+  anything happened." translated FAITHFULLY in every locale). 1406→1410 keys ×12; non-en AI-drafted, FLAGGED
+  for native review; verified each resolves against the whitespace-normalised HTML. i18n --min 100 (1410 ×12);
+  full test_repo_invariants green; no test asserted the removed markup (grep-checked first). NOTE re conflicts:
+  an open i18n slice collides on the locale-JSON tails whenever another i18n PR merges first (happened with
+  #399→#405) — always the same additive-UNION resolution (keep theirs + add my keys from the git stage
+  versions). ~245 inline-tagged help strings remain.
 - **FIELD TEST 2026-06-19 — THEME-5 i18n: DE-TAGGING PHASE SLICE 1 ×12 (post-#404-merge; branch
   claude/gallant-bohr-1cogzj):** STARTED the harder inline-tag de-tagging phase (the single-node tail being
   exhausted). De-tagged 3 help paragraphs in index.html (dropped the cosmetic inline `<strong>`/`<em>` so each
