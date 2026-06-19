@@ -322,6 +322,14 @@ def insights_corpus_coordination(
     return res
 
 
+def _tlang(target_lang: str | None) -> str | None:
+    """Sanitise the target-language code for verified-translation annotation."""
+    if not target_lang:
+        return None
+    c = target_lang.strip().lower()
+    return c if (2 <= len(c) <= 3 and c.isalpha()) else None
+
+
 @router.get("/top")
 def insights_top(
     days: int | None = Query(None, ge=1, le=3650),
@@ -329,14 +337,22 @@ def insights_top(
     kind: str | None = Query(None),
     limit: int = Query(20, ge=1, le=200),
     group: bool = Query(True, description="Merge surface variants into entity families"),
+    target_lang: str | None = Query(
+        None, description="UI language: annotate each row with its verified ring translation into this language"
+    ),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Most-mentioned keywords (optionally windowed / per-country / per-kind)."""
-    key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group)
+    """Most-mentioned keywords (optionally windowed / per-country / per-kind).
+
+    ``target_lang`` makes the rows language-aware: a foreign keyword whose concept is
+    in a cross-language ring gains its verified translation into that language."""
+    tl = _tlang(target_lang)
+    key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group, tl=tl)
 
     def _compute() -> dict:
         out = rm.top_terms(
-            db, days=days, country=country, kind=_kind(kind), limit=limit, group=group
+            db, days=days, country=country, kind=_kind(kind), limit=limit, group=group,
+            target_lang=tl,
         )
         # Honesty envelope over the counts (Slice 2). The corpus-wide path reads the
         # maintained counters -> disclose their freshness; the windowed/per-country path
@@ -366,11 +382,13 @@ def insights_trending(
     country: str | None = None,
     kind: str | None = None,
     limit: int = Query(20, ge=1, le=200),
+    target_lang: str | None = Query(None, description="UI language for verified ring translations"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Rising keywords by a transparent recent-vs-prior ratio."""
+    tl = _tlang(target_lang)
     key = _ckey("trending", window_days=window_days, baseline_days=baseline_days,
-                country=country, kind=kind, limit=limit)
+                country=country, kind=kind, limit=limit, tl=tl)
     return _cached(key, lambda: rm.trending(
         db,
         window_days=window_days,
@@ -378,6 +396,7 @@ def insights_trending(
         country=country,
         kind=_kind(kind),
         limit=limit,
+        target_lang=tl,
     ))
 
 
@@ -393,6 +412,7 @@ def insights_trending_windows(
         description="Attach a daily mention-count series to the first N terms of "
         "each window (0 = none; reuses the /trend day series, counts only).",
     ),
+    target_lang: str | None = Query(None, description="UI language for verified ring translations"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Rising keywords across THREE preset windows side by side — past 24h · past
@@ -403,9 +423,11 @@ def insights_trending_windows(
     ADDITIVE: ``series_top > 0`` attaches a per-term daily ``series`` (reusing the
     /trend day buckets) to the top terms so the frontend can draw an ooChart each;
     ``series_top=0`` (default) is byte-identical to the prior response."""
-    key = _ckey("trending-windows", country=country, kind=kind, limit=limit, series_top=series_top)
+    tl = _tlang(target_lang)
+    key = _ckey("trending-windows", country=country, kind=kind, limit=limit,
+                series_top=series_top, tl=tl)
     return _cached(key, lambda: rm.trending_windows(
-        db, country=country, kind=_kind(kind), limit=limit, series_top=series_top
+        db, country=country, kind=_kind(kind), limit=limit, series_top=series_top, target_lang=tl
     ))
 
 

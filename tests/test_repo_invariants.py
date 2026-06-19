@@ -3012,3 +3012,21 @@ def test_llm_catalog_tags_are_pullable_and_embeddings_labelled():
         "the shipped embedding models must carry kind='embedding'"
     )
     assert "llama3.2:3b" not in embeds, "a text model must never be labelled embedding"
+
+
+def test_keyword_views_show_verified_translations():
+    """Language-aware keyword views (maintainer ruling 2026-06-19): don't blind the
+    reader to foreign keywords — show each one WITH its verified cross-language
+    translation into the UI language. Browser-unverified; this pins the wiring."""
+    html = _ui_source()
+    # The translation helper + UI-language target param exist and are used.
+    for marker in ("function kwTransHtml(", "tgtLangParam(", "function uiLangCode(", "kw-trans"):
+        assert marker in html, f"missing translation wiring: {marker}"
+    # termListHtml renders the translation beside the keyword.
+    assert "${kwTransHtml(t)}" in html, "termListHtml must render the verified translation"
+    # The three keyword fetches request the verified translation for the UI language.
+    assert "/api/insights/trending-windows?limit=8&series_top=5\" + tgtLangParam()" in html
+    assert "/api/insights/trending-windows?limit=4&series_top=4\" + tgtLangParam()" in html
+    assert "tgtLangParam()}${extra||\"\"}" in html, "the Trends top/rising fetch must pass target_lang"
+    # It is a TRANSLATION (additive), not a filter that hides languages.
+    assert "kwLangParam" not in html, "the rejected blind-by-language filter must not be present"

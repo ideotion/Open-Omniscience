@@ -83,7 +83,9 @@ def test_top_endpoint_routes_through_the_seam(db, monkeypatch):
 
     sentinel = {"terms": [{"term": "SEAM_SENTINEL"}], "count": 1}
     monkeypatch.setattr(I.rm, "top_terms", lambda *a, **k: dict(sentinel))
-    out = I.insights_top(days=None, country=None, kind=None, limit=20, group=True, db=db)
+    out = I.insights_top(
+        days=None, country=None, kind=None, limit=20, group=True, target_lang=None, db=db
+    )
     assert out["terms"] == [{"term": "SEAM_SENTINEL"}]
     # The Slice-2 envelope is still attached on top of the seam's result.
     assert "counts" in out and out["counts"]["basis"] in ("exact", "estimated")

@@ -2274,6 +2274,35 @@ ruling, a contingency, or a deliberate-omission note.
   individual keywords, the S3b that was deferred) is still unbuilt — this step delivered the
   ring/super-ring editing the program needed, not the whole explorer; browser click-through still
   owed (fork-3). The pre-translation/synonym/super-ring program (Steps 1-4) is COMPLETE.
+- **LANGUAGE-AWARE KEYWORDS — TRANSLATE, NEVER BLIND (maintainer ruled 2026-06-19):** a
+  reader saw top keywords in Arabic they could not read. The REJECTED instinct was a
+  blind-by-language FILTER (PR #398 — built then CLOSED: "we shouldn't blind a user from
+  foreign language keyword trends"). The RULING: the keyword engine must be LANGUAGE-AWARE
+  and TRANSLATE — show every keyword regardless of language WITH its translation (original +
+  translation), which also surfaces translanguage concepts; translations bind to keyword
+  FAMILIES and GROUPS. Source = VERIFIED Wikidata-QID rings + a TENTATIVE local-LLM fallback,
+  flagged (maintainer chose "Wikidata rings + LLM fallback" via AskUserQuestion). PHASE 1
+  SHIPPED (PR #399, draft onto 0.09): `equivalence.ring_translation`/`translate_term` +
+  `top_terms`/`trending`/`trending_windows` gain `target_lang` (each row annotated with a
+  verified `translation` via its ring; absent target = byte-compat default) + the
+  `/api/insights/{top,trending,trending-windows}` `target_lang` param; frontend `kwTransHtml`
+  renders `original → translation` in the Trends + Home keyword lists (UI language passed
+  automatically); +1 i18n key ×12; Arabic+Russian members added to 16 curated rings so the
+  complaint resolves today (انتخابات→election …). tests/test_keyword_translation.py +
+  test_repo_invariants. REMAINING PHASES: (2) BREADTH — run scripts/generate_wikidata_rings.py
+  on a networked machine (Wikidata is 403 in the dev sandbox; the maintainer offered to run a
+  parallel internet session — a ~586-concept seed list across 14 domains was handed over);
+  (3) bind translations through families + super-groups in the UI; (4) the tentative LLM
+  fallback for keywords in no ring.
+  **FUTURE SELF-CHECK (maintainer-asked 2026-06-19 "mark to question ourself"): before
+  hand-expanding the ring concept set further, MEASURE whether it helps — re-run the
+  keyword-engine report after a Wikidata batch lands and read its `translation_coverage` (%
+  of top keywords that fall in a ring; ~5% pre-batch). If coverage is still low, the SCALABLE
+  answer is corpus-driven generation (`generate_wikidata_rings.py --from-log LOG.json --top N`
+  over the real keyword-diagnostics log) — coverage that tracks what the corpus actually
+  contains — NOT absorbing more of Wikidata (115M items, ~140GB dump, mostly people/papers/taxa
+  = wrong shape; against the local-first ethos). Decide "add more concepts vs corpus-driven vs
+  LLM-tentative" by the measured coverage delta, not by guessing.**
 - **WIKIPEDIA AS A LIVING SOURCE (maintainer concept 2026-06-12, recorded in
   FUTURE_DEVELOPMENTS with the design map + questions):** wiki articles enter
   the SAME aggregation as sourced articles (metadata, when×where×who,
@@ -3340,6 +3369,35 @@ ruling, a contingency, or a deliberate-omission note.
   colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
   + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
   standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: DE-TAGGING PHASE SLICE 2 (Insights panel) ×12 (post-#405-merge;
+  branch claude/gallant-bohr-1cogzj):** continued the de-tagging burn-down on the INSIGHTS-tab help texts —
+  de-tagged 4 `<p class="hint">` paragraphs (dropped inline `<b>`/`<em>`, EXAMPLE/proper-noun tokens kept
+  literal inside the sentence) + keyed them ×12: the LINKS citation-graph note, the FAMILIES merge/split
+  explainer (Trump=Trump's=Donald Trump example + the ✕ glyph preserved), the GROUPS super-ring explainer
+  (election/élection/wahl + Russia–Ukraine war examples preserved; "Pure curation — nothing in the keyword
+  store changes"), and the CONVERGENCE note (the load-bearing honesty line "Independence is measured by
+  distinct sources, not article count. Co-occurrence is never causation — a prompt to read, not proof
+  anything happened." translated FAITHFULLY in every locale). 1406→1410 keys ×12; non-en AI-drafted, FLAGGED
+  for native review; verified each resolves against the whitespace-normalised HTML. i18n --min 100 (1410 ×12);
+  full test_repo_invariants green; no test asserted the removed markup (grep-checked first). NOTE re conflicts:
+  an open i18n slice collides on the locale-JSON tails whenever another i18n PR merges first (happened with
+  #399→#405) — always the same additive-UNION resolution (keep theirs + add my keys from the git stage
+  versions). ~245 inline-tagged help strings remain.
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: DE-TAGGING PHASE SLICE 1 ×12 (post-#404-merge; branch
+  claude/gallant-bohr-1cogzj):** STARTED the harder inline-tag de-tagging phase (the single-node tail being
+  exhausted). De-tagged 3 help paragraphs in index.html (dropped the cosmetic inline `<strong>`/`<em>` so each
+  `<p>` is ONE text node — the established ledger convention, LOW layout risk = text stays, just not bold;
+  verified NO test asserted that markup first) + keyed 4 strings ×12: the Sources DISCOVERY-CANDIDATES note
+  ("Promote creates a disabled source … Dismiss is remembered and never re-suggested"), the candidates heading
+  "(machine-suggested — nothing happens without you)", the UNMANAGED-LANGUAGES explainer ("…produce junk
+  keywords … kept and re-enablable …"), and the safety RESTORE-additive-only note ("the destructive
+  replace-restore was removed … complements your corpus and never overwrites it"). The i18n engine normalises
+  internal whitespace, so the single-line JSON key matches the multi-line `<p>` (verified each resolves +
+  appears in the normalised HTML). 1402→1405 keys ×12 (one pre-existed); honesty phrases ("never re-suggested",
+  "kept and re-enablable", "additive-only", "never overwrites") translated faithfully; non-en AI-drafted,
+  FLAGGED for native review. i18n --min 100 (1405 ×12); full test_repo_invariants green (no UI/restore/discovery
+  guard tripped). Proves the de-tagging pattern is unblocked; ~250 inline-tagged help strings remain, continue
+  panel-by-panel.
 - **FIELD TEST 2026-06-19 — THEME-5 i18n: CLEAN CAPTIONS + LABELS SLICE ×12 (post-#403-merge; branch
   claude/gallant-bohr-1cogzj):** the easy-LABEL tail being nearly exhausted, this slice keyed the remaining
   CLEAN, SINGLE-NODE strings that need NO inline-tag de-tagging — 6 labels (Trends · User Manual · Value
