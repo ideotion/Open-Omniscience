@@ -7497,7 +7497,18 @@
     // mousedown and removed on mouseup).
     function _wireOoMap(host, opts) {
       const svg = host.querySelector("#oo-choro"); if (!svg) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const W = MAP_W, H = MAP_H;
+      // Reset the ⛶ glyph/title when fullscreen exits (Esc or the button). Wired once.
+      if (!host._ooFsWired) {
+        host._ooFsWired = true;
+        document.addEventListener("fullscreenchange", () => {
+          const fsBtn = host.querySelector('[data-oomap="big"]'); if (!fsBtn) return;
+          const on = document.fullscreenElement === host.querySelector(".oomap-wrap");
+          fsBtn.textContent = on ? "🗗" : "⛶";
+          fsBtn.title = on ? t("Exit fullscreen") : t("Enlarge the map");
+        });
+      }
       let vb = { x: 0, y: 0, w: W, h: H };
       const apply = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
       const zoom = (f, ax, ay) => {
@@ -7508,7 +7519,19 @@
       host.querySelectorAll("[data-oomap]").forEach(b => b.addEventListener("click", () => {
         const a = b.dataset.oomap;
         if (a === "in") zoom(0.7); else if (a === "out") zoom(1.4);
-        else if (a === "big") { const w = host.querySelector(".oomap-wrap"); if (w) w.classList.toggle("mm-big"); }
+        else if (a === "big") {
+          // TRUE fullscreen (field test 2026-06-19 #12), with a CSS fallback for
+          // browsers without the API. The in-map ⛶ stays the visible exit control
+          // (clicking it again exits); Esc also exits natively.
+          const w = host.querySelector(".oomap-wrap"); if (!w) return;
+          try {
+            if (document.fullscreenElement === w) { document.exitFullscreen(); }
+            else if (w.requestFullscreen) {
+              w.requestFullscreen().then(() => { b.title = t("Exit fullscreen"); b.textContent = "🗗"; })
+                .catch(() => w.classList.toggle("mm-big"));
+            } else { w.classList.toggle("mm-big"); }
+          } catch (_e) { w.classList.toggle("mm-big"); }
+        }
         else { vb = { x: 0, y: 0, w: W, h: H }; apply(); }
       }));
       if (opts && opts.onDimension) host.querySelectorAll("[data-oomap-dim]").forEach(b =>

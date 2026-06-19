@@ -113,6 +113,17 @@ def test_trends_render_as_clickable_bar_graphs():
     assert "openAnalysisFor(" in bars, "clicking a trend bar must open the analysis window"
 
 
+def test_world_map_fullscreen_uses_the_fullscreen_api():
+    """Field test 2026-06-19 #12 (THEME-2): the map ⛶ control uses the real Fullscreen
+    API (with a CSS fallback + Esc/click exit), not just a CSS .mm-big toggle."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    big = app.split('else if (a === "big")', 1)[1].split("else {", 1)[0]
+    assert "requestFullscreen" in big and "exitFullscreen" in big, (
+        "the map fullscreen control must use the Fullscreen API"
+    )
+    assert 'addEventListener("fullscreenchange"' in app, "must reset the ⛶ glyph on exit"
+
+
 def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
     """Field test 2026-06-19 THEME-2 (#14/#15): the "near in space & time" co-occurrence
     is capped to a TIGHT fixed window (it used the slider's span/12 ~166y, linking events
