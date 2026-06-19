@@ -103,6 +103,72 @@ def test_no_samples_writes_no_summary(tmp_path, monkeypatch):
     assert mon._write_summary(None) is None
 
 
+def _clock(step=1.5):
+    """A fake monotonic clock advancing ``step`` seconds per read (deterministic dt)."""
+    t = [0.0]
+
+    def now():
+        t[0] += step
+        return t[0]
+
+    return now
+
+
+def test_writer_saturation_trips_on_wait_rate_not_just_instantaneous_waiters(tmp_path, monkeypatch):
+    """The field bug: instantaneous ``waiters`` reads ~1 at a sample tick even when
+    the gate queued 23 deep between ticks, so the governor kept RAMPING. The gate's
+    accrued wait RATE must trip saturation and make the governor back off."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    g = BandwidthGovernor(mode="maximum", w_max=15, seed=8)
+    # waiters reads 1 every tick (below max(2, permits//3)) so the OLD check never
+    # trips; but total_wait_s grows 3.0 per 1.5 s tick => wait_rate 2.0 >= 1.0.
+    waits = iter([3.0, 6.0, 9.0, 12.0, 15.0, 18.0])
+    mon = CollectionMonitor(
+        governor=g,
+        pass_id="wr",
+        mode="rss",
+        interval_s=1.5,
+        rate_fn=lambda: 50.0,  # far below "maximum" ceiling => would ramp if not saturated
+        vitals_fn=lambda: _HEALTHY_VITALS,
+        writer_stats_fn=lambda: {"waiters": 1, "total_wait_s": next(waits), "contended": 0, "peak_waiters": 23},
+        now_fn=_clock(1.5),
+    )
+    start = g.permits
+    reasons = []
+    for _ in range(4):
+        mon._tick()
+        reasons.append(collect_perf.get_latest()["adjust_reason"])
+    # Despite low instantaneous waiters, the governor recognised the writer is the
+    # limit and reduced the worker count instead of ramping toward the ceiling.
+    assert "writer-saturated" in reasons
+    assert g.permits < start
+    last = collect_perf.get_latest()["writer_gate"]
+    assert last["saturated"] is True
+    assert last["wait_rate"] is not None and last["wait_rate"] >= 1.0
+
+
+def test_writer_not_saturated_when_gate_is_quiet(tmp_path, monkeypatch):
+    """Control: an idle/low-wait gate must NOT be flagged saturated (no false back-off)."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    g = BandwidthGovernor(mode="maximum", w_max=15, seed=4)
+    mon = CollectionMonitor(
+        governor=g,
+        pass_id="wq",
+        mode="rss",
+        interval_s=1.5,
+        rate_fn=lambda: 50.0,
+        vitals_fn=lambda: _HEALTHY_VITALS,
+        writer_stats_fn=lambda: {"waiters": 0, "total_wait_s": 0.0, "contended": 0, "peak_waiters": 0},
+        now_fn=_clock(1.5),
+    )
+    for _ in range(3):
+        mon._tick()
+    last = collect_perf.get_latest()["writer_gate"]
+    assert last["saturated"] is False
+    # With the gate quiet and rate below the maximum ceiling, it ramped (didn't back off).
+    assert g.permits >= 4
+
+
 def test_samples_and_summary_land_in_the_log(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     collect_perf._set_latest(None)

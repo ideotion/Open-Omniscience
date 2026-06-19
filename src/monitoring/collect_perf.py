@@ -41,6 +41,10 @@ _CAP_LINES = 5000
 # Contention thresholds (honest, simple, and logged so the heuristic is auditable).
 _CPU_SATURATED_PCT = 92.0  # system-wide CPU at/above this = CPU is the limit
 _DEFAULT_MEM_FLOOR_MB = 512.0  # back off when available memory drops below this
+# Writer saturation: thread-seconds of write-wait accrued per wall-second. >= 1.0
+# means, on average, at least one worker spent the whole interval blocked on the
+# single writer — the gate, not bandwidth, is the limit.
+_WRITER_WAIT_RATE_SAT = 1.0
 
 
 def _log_path():
@@ -69,6 +73,25 @@ def _set_latest(sample: dict | None) -> None:
         _LATEST = dict(sample) if sample else None
 
 
+_PROC = None  # persistent psutil.Process so cpu_percent() has a reference interval
+
+
+def _proc_handle():
+    """One reused psutil.Process for the whole process.
+
+    ``Process.cpu_percent(interval=None)`` measures CPU since the PREVIOUS call ON
+    THE SAME INSTANCE; a fresh ``Process()`` every tick therefore always reports
+    0.0 (no prior reading) — which is why the logs showed cpu_proc_pct flat at 0.
+    Reusing one handle makes the reading real."""
+    global _PROC
+    if _PROC is None:
+        import psutil
+
+        _PROC = psutil.Process()
+        _PROC.cpu_percent(interval=None)  # prime this handle's counter
+    return _PROC
+
+
 def _vitals() -> dict:
     """Process + system CPU% and memory, via psutil. All fields None on any error
     (psutil missing / sandbox) so the governor simply skips that back-off — never a
@@ -80,7 +103,7 @@ def _vitals() -> dict:
         out["cpu_sys_pct"] = psutil.cpu_percent(interval=None)
         vm = psutil.virtual_memory()
         out["mem_avail_mb"] = round(vm.available / (1024 * 1024), 1)
-        proc = psutil.Process()
+        proc = _proc_handle()
         out["cpu_proc_pct"] = proc.cpu_percent(interval=None)
         out["rss_mb"] = round(proc.memory_info().rss / (1024 * 1024), 1)
     except Exception:  # noqa: BLE001 - vitals are best-effort
@@ -139,10 +162,12 @@ class CollectionMonitor:
         rate_fn=None,
         vitals_fn=None,
         writer_stats_fn=None,
+        now_fn=None,
     ) -> None:
         self._gov = governor
         self._pass_id = pass_id
         self._mode = mode
+        self._now = now_fn or time.monotonic
         self._interval = max(0.05, float(interval_s))
         self._mem_floor = float(mem_floor_mb)
         self._vitals_fn = vitals_fn or _vitals
@@ -161,6 +186,13 @@ class CollectionMonitor:
         self._max_writer_waiters = 0
         self._writer_wait_start: float | None = None
         self._writer_wait_last: float = 0.0
+        # Per-tick deltas of the gate's CUMULATIVE counters — the real saturation
+        # signal. Instantaneous ``waiters`` reads ~1 at a sample tick even when the
+        # gate queued 23 deep between ticks (a write releases fast), so the old
+        # check almost never tripped; the wait/contended RATE catches it.
+        self._prev_total_wait: float | None = None
+        self._prev_contended: int | None = None
+        self._prev_tick_mono: float | None = None
         # State for the bytes-diff rate when no rate_fn is injected.
         self._prev_bytes = 0
         self._prev_mono = 0.0
@@ -175,7 +207,7 @@ class CollectionMonitor:
             import psutil
 
             psutil.cpu_percent(interval=None)
-            psutil.Process().cpu_percent(interval=None)
+            _proc_handle().cpu_percent(interval=None)
         except Exception:  # noqa: BLE001
             pass
         self._thread = threading.Thread(target=self._loop, name="oo-collect-perf", daemon=True)
@@ -242,10 +274,36 @@ class CollectionMonitor:
         mem_avail = vit.get("mem_avail_mb")
         waiters = int(wstats.get("waiters", 0) or 0)
 
+        # Per-tick deltas of the gate's cumulative wait/contention counters.
+        now_mono = self._now()
+        total_wait = wstats.get("total_wait_s")
+        contended = wstats.get("contended")
+        dt = (now_mono - self._prev_tick_mono) if self._prev_tick_mono else self._interval
+        dt = max(dt, 1e-3)
+        wait_rate = None  # thread-seconds of write-wait accrued per wall-second
+        contended_rate = None  # writes that had to QUEUE per wall-second
+        if isinstance(total_wait, (int, float)) and self._prev_total_wait is not None:
+            wait_rate = max(0.0, (float(total_wait) - self._prev_total_wait)) / dt
+        if isinstance(contended, (int, float)) and self._prev_contended is not None:
+            contended_rate = max(0.0, (int(contended) - self._prev_contended)) / dt
+        self._prev_total_wait = float(total_wait) if isinstance(total_wait, (int, float)) else self._prev_total_wait
+        self._prev_contended = int(contended) if isinstance(contended, (int, float)) else self._prev_contended
+        self._prev_tick_mono = now_mono
+
         mem_low = mem_avail is not None and mem_avail < self._mem_floor
         cpu_saturated = cpu_sys is not None and cpu_sys >= _CPU_SATURATED_PCT
-        # The writer is the limit when several workers are queued behind it.
-        writer_saturated = waiters >= max(2, permits // 3)
+        # The writer is the limit when workers QUEUE behind it. The instantaneous
+        # waiter count is bursty (a write releases fast, so a sample tick often
+        # catches it at 1 even after a 23-deep queue), so saturation is decided
+        # mainly on the RATE the gate accrued wait/contention over the interval:
+        #   wait_rate >= 1.0  => on average >= 1 worker was blocked the whole tick
+        #   contended_rate    => most of this tick's writes had to queue
+        # The instantaneous check stays as a fast catch when many wait at once.
+        writer_saturated = (
+            waiters >= max(2, permits // 3)
+            or (wait_rate is not None and wait_rate >= _WRITER_WAIT_RATE_SAT)
+            or (contended_rate is not None and contended_rate >= max(1.0, permits * 0.5))
+        )
 
         new_permits, reason = self._gov.observe(
             rate,
@@ -290,6 +348,10 @@ class CollectionMonitor:
                 "contended": wstats.get("contended"),
                 "total_wait_s": wstats.get("total_wait_s"),
                 "max_wait_s": wstats.get("max_wait_s"),
+                # Per-tick rates — the signal the governor now backs off on.
+                "wait_rate": round(wait_rate, 3) if wait_rate is not None else None,
+                "contended_rate": round(contended_rate, 3) if contended_rate is not None else None,
+                "saturated": writer_saturated,
             },
             "cpu_sys_pct": cpu_sys,
             "cpu_proc_pct": vit.get("cpu_proc_pct"),

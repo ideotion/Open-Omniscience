@@ -50,6 +50,8 @@ def order(monkeypatch):
     monkeypatch.setattr("src.events.feeds.auto_import_due_feeds",
                         lambda f: calls.append("calendars") or {"picked": []})
     monkeypatch.setattr("src.monitoring.field_test.enabled", lambda: False)
+    monkeypatch.setattr("src.markets.pipeline.import_due_feeds",
+                        lambda s, fetcher=None, now=None: calls.append("markets") or {"imported": 0})
     monkeypatch.setattr("src.discovery.run_discovery",
                         lambda s, per_run: calls.append("discovery") or {})
 
@@ -94,3 +96,13 @@ def test_collect_job_label_reflects_phase(monkeypatch):
     assert job is not None
     assert "background tasks" in job["label"]
     assert job["phase"] == "background"
+
+
+def test_market_feeds_autoload_in_default_rss_pass_after_scrape(order):
+    """Field log 2026-06-18: price_points = 0 because the curated commodity/index
+    feeds only imported in markets MODE, while the default continuous mode is rss.
+    They must now ride the default pass's housekeeping (freshness-gated), AFTER the
+    articles (time-to-first-article) and BEFORE the briefing."""
+    calls, _ = order
+    assert "markets" in calls, calls
+    assert calls.index("scrape") < calls.index("markets") < calls.index("briefing"), calls

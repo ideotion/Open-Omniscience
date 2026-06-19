@@ -21,9 +21,11 @@ def test_managed_language_classification():
     assert is_managed("en") and is_managed("EN") and is_managed("en-US")
     assert is_managed("fr") and is_managed("ar") and is_managed("ru")
     assert not is_managed("tr") and not is_managed("zh") and not is_managed("")
+    # el/bg gained hand-filtered Greek/Cyrillic grammar stoplists (2026-06-18) -> managed.
+    assert is_managed("el") and is_managed("bg")
     # Unmanaged = a KNOWN language we cannot analyse; unknown/empty is NOT unmanaged
     # (we never disable what we cannot classify).
-    assert is_unmanaged("tr") and is_unmanaged("el") and is_unmanaged("zh")
+    assert is_unmanaged("tr") and is_unmanaged("uk") and is_unmanaged("zh")
     assert not is_unmanaged("en")
     assert not is_unmanaged("") and not is_unmanaged(None)
     assert language_status("en") == "functional"
@@ -101,7 +103,7 @@ def test_disable_unmanaged_languages_endpoint(tmp_path):
     s.add_all([
         Source(name="EN", domain="en.test", language="en", enabled=True),
         Source(name="TR", domain="tr.test", language="tr", enabled=True),
-        Source(name="EL", domain="el.test", language="el", enabled=True),
+        Source(name="UK", domain="uk.test", language="uk", enabled=True),
         Source(name="ZH", domain="zh.test", language="zh", enabled=True),
     ])
     s.commit()
@@ -116,8 +118,8 @@ def test_disable_unmanaged_languages_endpoint(tmp_path):
     try:
         with TestClient(app) as c:
             r = c.get("/api/sources/unmanaged-languages").json()
-            assert r["enabled_unmanaged"] == 3  # tr, el, zh
-            assert set(r["by_language"]) == {"tr", "el", "zh"}
+            assert r["enabled_unmanaged"] == 3  # tr, uk, zh
+            assert set(r["by_language"]) == {"tr", "uk", "zh"}
             assert "en" in r["managed_languages"]
 
             d = c.post("/api/sources/disable-unmanaged-languages").json()

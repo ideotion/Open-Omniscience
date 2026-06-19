@@ -12,8 +12,11 @@ un-analysable junk until a stoplist for that language lands. This module is the 
 source of truth; both the engine report and the source gating read it.
 
 The managed set mirrors the verified-present stoplists (self-test covers
-en/de/fr/es/it/pt/nl/ru/ar/hu/id; the evidence batch seeded sv/da/nb/no/pl/sr/sl).
-fi/tr/hi/bn and the rest are deliberately NOT claimed: they tokenise but leak.
+en/de/fr/es/it/pt/nl/ru/ar/hu/id + el/bg; the evidence batch seeded
+sv/da/nb/no/pl/sr/sl, and the 2026-06-18 keyword-log added Greek/Bulgarian grammar
+stoplists). fi/tr/uk/hi/bn and the rest are deliberately NOT claimed: they tokenise
+but leak (uk's sample even mixed ru-spelled tokens, so its language signal is not
+yet trustworthy).
 """
 
 from __future__ import annotations
@@ -22,6 +25,10 @@ MANAGED_LANGUAGES: frozenset[str] = frozenset(
     {
         "en", "fr", "de", "es", "it", "pt", "nl", "ru", "ar", "hu", "id",
         "sv", "da", "nb", "no", "pl", "sr", "sl",
+        # 2026-06-18 keyword-log: hand-filtered grammar stoplists added (distinct
+        # GREEK/CYRILLIC scripts, so no Latin-corpus collision). These were the
+        # highest-volume no_stoplist languages (el 4992, bg 3090 keywords).
+        "el", "bg",
     }
 )
 # No word segmentation -> keyword extraction is broken regardless of a stoplist.

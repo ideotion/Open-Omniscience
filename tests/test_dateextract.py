@@ -100,6 +100,10 @@ def test_additional_language_months_extract():
         ("Састанак је био 5. мај 2024.", "2024-05-05"),                       # Serbian (Cyrillic)
         ("Срещата беше на 5 май 2024 г.", "2024-05-05"),                      # Bulgarian (Cyrillic)
         ("A találkozó 2024. október 23. napján volt.", "2024-10-23"),        # Hungarian (year-first)
+        # date-diagnostics 2026-06-18: Dutch coverage 38 % — "maart"/"augustus"
+        # were the only months absent (the rest overlapped other tables).
+        ("De vergadering was op 5 maart 2024 in de stad.", "2024-03-05"),     # Dutch (March)
+        ("Het besluit viel op 3 augustus 2024.", "2024-08-03"),              # Dutch (August)
     ]
     for text, expected in cases:
         got = _dates(text)

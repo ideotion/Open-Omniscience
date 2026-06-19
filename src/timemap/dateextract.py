@@ -150,6 +150,12 @@ _MONTHS.update({
     "ноября": 11, "ноябре": 11, "декабрь": 12, "декабря": 12, "декабре": 12,
     # Indonesian (the months not already covered by other tables)
     "maret": 3, "mei": 5, "agustus": 8,
+    # Dutch (date-diagnostics 2026-06-18: nl coverage 38 % — most months overlapped
+    # other tables, but "maart" and "augustus" were absent, so "5 maart"/"3 augustus"
+    # never resolved). The rest (januari/februari/april/mei/juni/juli/september/
+    # oktober/november/december) are already present via the Nordic/German/Indonesian
+    # tables. Same months in Afrikaans.
+    "maart": 3, "augustus": 8,
 })
 _MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 

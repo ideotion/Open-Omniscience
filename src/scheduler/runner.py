@@ -783,6 +783,23 @@ class BackgroundScheduler:
                         _LOG.info("calendar auto-import: %s", result_ai)
             except Exception:  # noqa: BLE001 - never fail the scrape on auto-import
                 _LOG.warning("calendar auto-import failed", exc_info=True)
+            # Market data auto-load (maintainer 2026-06-17 "markets load automatically
+            # in the background"): the curated commodity/index CSV feeds. Previously
+            # this only ran in markets MODE, but the default continuous mode is rss,
+            # so a normal user never collected any price points (field log 2026-06-18:
+            # price_points = 0). It is freshness-gated (daily/monthly cadence) so it is
+            # usually a no-op, and small + cheap (the bandwidth-ladder's first tier).
+            # Skip when already in markets mode (run_scrape_once did it there).
+            try:
+                if settings.mode != "markets":
+                    from src.markets.pipeline import import_due_feeds
+
+                    feeds = import_due_feeds(session, fetcher=fetcher)
+                    if feeds.get("imported"):
+                        result["feed_points"] = feeds.get("imported", 0)
+                        _LOG.info("market auto-load: %s price points", feeds.get("imported"))
+            except Exception:  # noqa: BLE001 - never fail the scrape on market auto-load
+                _LOG.warning("market auto-load failed", exc_info=True)
             # TEMPORARY (0.0.8 live-test cycle): exercise every fetch surface
             # once and log verbatim outcomes for the maintainer's debug bundle.
             # Self-improvement instrumentation only; OO_FIELD_TEST=0 disables;

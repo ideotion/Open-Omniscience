@@ -35,7 +35,7 @@ from src.timemap.dateextract import _MONTHS, _REL_WORDS, _WEEKDAYS, extract_date
 # had real article volume but no vocabulary → near-zero coverage); sv/nb share
 # the Nordic table now too.
 MONTH_VOCAB_LANGS: frozenset[str] = frozenset(
-    {"en", "fr", "de", "es", "it", "pt",
+    {"en", "fr", "de", "es", "it", "pt", "nl",
      "ro", "hu", "tr", "da", "sv", "nb", "fi", "pl", "sk", "sr", "bg",
      # RTL / Indic UI locales (Gregorian month names; zh/ja use 年月日 markers,
      # handled by the extractor's CJK path rather than a month-name table).
