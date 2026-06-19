@@ -74,6 +74,23 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
 
 
+def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
+    """Field test 2026-06-19 THEME-2 (#14/#15): the "near in space & time" co-occurrence
+    is capped to a TIGHT fixed window (it used the slider's span/12 ~166y, linking events
+    decades apart); the time slider is LOGARITHMIC-by-age (recent gets most travel); and
+    the offline-map download has no redundant confirm (ensureOnline stays the only gate)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "const _OOMAP_NEAR_YEARS = 2;" in app, "the near-time co-occurrence cap is gone"
+    assert "Math.min(win || _OOMAP_NEAR_YEARS, _OOMAP_NEAR_YEARS)" in app
+    assert "Math.pow(_LOGB, 1 - frac)" in app, "the time slider is no longer logarithmic"
+    # The OSM download keeps the network consent but dropped the redundant 'are you sure'.
+    osm = app.split("async function startOsmDownload(", 1)[1].split("\n    }", 1)[0]
+    assert 'ensureOnline("Download an offline map region")' not in osm or "ensureOnline" in osm
+    assert "confirm(t(\"Download this offline map region" not in osm, (
+        "the redundant map-download confirm should be gone (#15)"
+    )
+
+
 def test_subtabs_are_browser_style_with_clear_active_state():
     """Field test 2026-06-19 #31/#57 (THEME-1): one homogeneous browser-tab look with an
     UNMISTAKABLE active state — an accent underline + bold (the old subtle bg+border read

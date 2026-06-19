@@ -7600,7 +7600,16 @@
         const ts = sig.map(s => s.t);
         const tmin = Math.min(...ts), tmax = Math.max(...ts), spanY = tmax - tmin;
         windowY = Math.max(5, spanY / 12);
-        focusT = tmin + (focusSlider / 1000) * spanY;
+        // LOGARITHMIC time slider (field test 2026-06-19 #14: "more recent events than
+        // medieval"). Map by AGE (years before the most recent), log-compressed, so the
+        // recent end of the slider gets most of the travel (fine resolution) while
+        // antiquity compresses — instead of a linear sweep that buries recent years.
+        // NOT a hidden warp: the focus YEAR label below is always shown, so the actual
+        // year at any slider position is explicit.
+        const _LOGB = 10;
+        const frac = focusSlider / 1000;  // 0 = oldest, 1 = most recent
+        const age = spanY > 0 ? spanY * (Math.pow(_LOGB, 1 - frac) - 1) / (_LOGB - 1) : 0;
+        focusT = tmax - age;
         focusLabel = (typeof fmtYear === "function") ? fmtYear(focusT) : String(Math.round(focusT));
       }
       await ooMap(host, {
@@ -7644,14 +7653,21 @@
     // time" seed (the same honest never-a-cause framing). English to match the
     // retired panel (no regression); keyable later.
     let _ooMapSigSet = [], _ooMapSigWin = 25;
+    // "Near in space & time" co-occurrence is a TIGHT, FIXED window (field test
+    // 2026-06-19 #14: it used the slider's focus window — ~span/12, i.e. ~166 years on
+    // an antiquity→now span — so it linked events DECADES apart, a misleading
+    // "co-occurrence"). Cap the time delta hard, independent of the slider: two events
+    // within a couple of years AND close in space is a meaningful (still non-causal) seed.
+    const _OOMAP_NEAR_YEARS = 2;
     function _ooMapSignalAt(i) { const s = _ooMapSigSet[i]; if (s) _ooMapSignalDetail(s, _ooMapSigSet, _ooMapSigWin); }
     function _ooMapNearby(s, visible, win) {
+      const w = Math.min(win || _OOMAP_NEAR_YEARS, _OOMAP_NEAR_YEARS);  // never wider than the cap
       const out = [];
       (visible || []).forEach((o, idx) => {
         if (o === s) return;
         const dt = Math.abs(o.t - s.t), dlon = Math.abs(o.lon - s.lon), dlat = Math.abs(o.lat - s.lat);
-        if (dt <= win && dlon <= TMAP_NEAR_DEG && dlat <= TMAP_NEAR_DEG)
-          out.push({ idx, o, score: dt / (win || 1) + Math.hypot(dlon, dlat) / TMAP_NEAR_DEG });
+        if (dt <= w && dlon <= TMAP_NEAR_DEG && dlat <= TMAP_NEAR_DEG)
+          out.push({ idx, o, score: dt / (w || 1) + Math.hypot(dlon, dlat) / TMAP_NEAR_DEG });
       });
       return out.sort((a, b) => a.score - b.score).slice(0, 6);
     }
@@ -8343,9 +8359,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const c = code || $("osm-region").value;
       if (!c) return;
-      // A user-initiated (not resume) start confirms the heavy download first.
-      if (!code && !confirm(t("Download this offline map region? These can be very large (several GB to tens of GB)."))) return;
-      // Every offline->online transition passes the ONE consent popup (invariant #14).
+      // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown
+      // in the region list, the download is a visible task-manager job, and the ONE
+      // network-consent popup (ensureOnline) below is the only gate that matters.
       if (!await ensureOnline(t("Download an offline map region"))) return;
       try {
         await api("/api/geo/downloads/start", {method:"POST", body: JSON.stringify({code: c})});

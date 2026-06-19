@@ -3187,6 +3187,22 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — THEME-2 WORLD MAP (contained slice: #14/#15; branch
+  claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the unified ooMap
+  (the world map after the 5b retire) got three contained, honesty-relevant fixes. (#14 near-time)
+  the "near in space & time" co-occurrence used the SLIDER's focus window (~span/12 ≈ 166y on an
+  antiquity→now span) so it linked events DECADES apart — a misleading "co-occurrence"; now capped to
+  a TIGHT FIXED `_OOMAP_NEAR_YEARS = 2` (independent of the slider) so only genuinely near-in-time +
+  near-in-space events seed (still non-causal, the verbatim caveat stays). (#14 log slider) the time
+  slider was LINEAR (`tmin + frac·span`) so recent years were buried; now LOGARITHMIC-by-age
+  (`focusT = tmax − span·(10^(1−frac)−1)/9`) so the recent end gets most of the travel (slider 0→year
+  25, 0.5→1544, 0.75→1852, 1.0→2025 on a 2000y span) — NOT a hidden warp (the focus-YEAR label is
+  always shown). (#15) the offline-map download dropped the redundant "are you sure (several GB)"
+  confirm — `ensureOnline` (the ONE network consent) + the visible task-manager job + the size in the
+  region list are the honest gates. test_world_map_near_time_capped_log_slider_and_no_download_confirm.
+  REMAINING THEME-2 (larger, browser-test-needed): dynamic non-overlapping country labels, fullscreen,
+  OSM data enriching ALL maps (#51), click-country→list, deduced events as shapes, regions as a list
+  not a dropdown (#15 second half), linear/log toggle (the fuller agreed design).
 - **FIELD TEST 2026-06-19 — P2-2 CARD DECLUTTER VIA A "?" AFFORDANCE (#19/#66; branch
   claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the maintainer
   found Leads cluttered with the verbose "why"/method. Consolidated the "Why am I seeing this?"
