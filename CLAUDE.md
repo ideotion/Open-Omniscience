@@ -3185,6 +3185,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P0-2 BACKUP ENCRYPTION IS PROVABLY REAL (#O-4; branch
+  claude/gallant-bohr-1cogzj, draft onto 0.09; backend VERIFIED py3.11 venv):** the maintainer
+  saw an encrypted + a plaintext backup report the SAME size and asked "is it actually
+  encrypted?". ROOT CAUSE = display rounding, NOT a broken cipher: `encrypt_bytes` is genuine
+  AES-256-GCM + scrypt (OOENC1 header 48B + GCM tag 16B = a FIXED 64-byte overhead), so a 326 MB
+  backup grows ~64 bytes and rounds to the same MB. FIXES: (1) tests/test_backup_encryption_real.py
+  PROVES it — a LOW-entropy input becomes HIGH-entropy ciphertext (>7.9 bits/byte; a no-op or
+  header-over-plaintext would stay low), no plaintext leak, exact +64 size, exact decrypt
+  round-trip, wrong-pass loud, AND end-to-end via write_backup_v2 (encrypted artifact = OOENC1
+  high-entropy that decrypts to a valid zip; plaintext = bare zip, never OOENC1). (2) HONEST
+  SURFACE: `StagedArtifact.encrypted` (set from `was_encrypted` in read_artifact) flows into the
+  run_restore report → the Restore-preview UI now shows an "encrypted (AES-256-GCM)" / "plaintext
+  archive" verdict pill (the natural verify point), + a static backup-section note that
+  same-size-is-by-design (~64B GCM overhead). New UI strings are English-fallback (keyable in the
+  THEME-5 i18n sweep; the gate stays 100%). The maintainer's doubt is resolved AND now provable.
 - **PERF — DENORMALISED KEYWORD COUNTERS, SLICE 1 (the structural cold-cost win; perf workstream
   field report 2026-06-18; branch claude/nice-sagan-tompbw, draft PR onto 0.09; backend VERIFIED py3.13
   in a built .venv313):** `Keyword.mention_count` (SUM of per-article occurrence counts) +

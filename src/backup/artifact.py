@@ -97,6 +97,10 @@ class StagedArtifact:
     origin_fingerprint: str  # signer pubkey hex or "unsigned"
     members: list[dict] = field(default_factory=list)
     hash_failures: list[str] = field(default_factory=list)
+    # True when the uploaded artifact was OOENC1-wrapped (AES-256-GCM at rest) and
+    # had to be decrypted to read it. Surfaced in the restore preview so the operator
+    # can SEE a backup is genuinely encrypted (field test 2026-06-19 P0-2 doubt).
+    encrypted: bool = False
 
     def member_paths(self, role: str) -> list[tuple[str, Path]]:
         out = []
@@ -353,6 +357,7 @@ def read_artifact(
             signature_state="unsigned",
             origin_fingerprint="unsigned",
             members=[{"name": "corpus.db", "role": "corpus"}],
+            encrypted=was_encrypted,
         )
 
     if blob[:4] != _ZIP_MAGIC:
@@ -409,6 +414,7 @@ def read_artifact(
         origin_fingerprint=fingerprint,
         members=manifest.get("members", []),
         hash_failures=hash_failures,
+        encrypted=was_encrypted,
     )
 
 

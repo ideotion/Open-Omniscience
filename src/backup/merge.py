@@ -1259,6 +1259,10 @@ def run_restore(
         "signature_state": staged.signature_state,
         "origin_fingerprint": staged.origin_fingerprint,
         "artifact_schema_rev": original_rev,
+        # Honest encryption verdict (field test 2026-06-19 P0-2): True when the
+        # uploaded artifact was AES-256-GCM (OOENC1) at rest and we had to decrypt
+        # it. Lets the preview UI confirm a backup is genuinely encrypted.
+        "encrypted": staged.encrypted,
         "plan": counts,
         "verification": verification,
         "committed": False,

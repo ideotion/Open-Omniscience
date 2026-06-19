@@ -3391,7 +3391,13 @@
         $("v2-preview").style.display = "";
         const ver = body.verification || {};
         const sig = body.signature_state || "?";
+        // Honest encryption verdict (P0-2): confirm at the verification point that the
+        // archive really is AES-256-GCM ciphertext (the "same size" doubt) or plaintext.
+        const encPill = body.encrypted
+          ? `<span class="pill ok" title="${esc(t("This archive is AES-256-GCM ciphertext (it had to be decrypted with your passphrase to read it)."))}">${esc(t("encrypted (AES-256-GCM)"))}</span> `
+          : `<span class="pill warn" title="${esc(t("This archive is not encrypted — it protects nothing at rest."))}">${esc(t("plaintext archive"))}</span> `;
         $("v2-verify").innerHTML =
+          encPill +
           `<span class="pill ${ver.ok ? "ok" : "warn"}">${esc(ver.ok ? t("verification passed") : t("verification FAILED — merge will be refused"))}</span> ` +
           `<span class="muted">${esc(t("signature:"))} ${esc(sig)} · ${esc(t("archive schema:"))} ${esc(body.artifact_schema_rev || "?")}</span>`;
         $("v2-plan").innerHTML = _v2PlanTable(body.plan);

@@ -1272,6 +1272,7 @@
       <p class="muted" style="margin-top:0">One file carries everything: articles, keywords, Wikipedia and law
         snapshots, market series, events, settings, annotations and the custody log — with a signed manifest, so
         tampering is detectable. Encrypted with a passphrase by default; there is no recovery for a lost passphrase.</p>
+      <p class="hint" style="margin-top:0">An encrypted backup is almost exactly the same file size as a plaintext one — AES-256-GCM adds only a fixed ~64 bytes of overhead, so the size matching is expected, not a sign it isn't encrypted. You can confirm any backup is genuine ciphertext in the Restore preview below (it reports “encrypted (AES-256-GCM)”).</p>
       <div class="row">
         <div style="flex:2"><label for="v2-pass">Passphrase</label>
           <input id="v2-pass" type="password" autocomplete="new-password" placeholder="a strong, memorable passphrase"></div>
