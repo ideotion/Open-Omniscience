@@ -170,5 +170,11 @@ def test_pipeline_copies_server_ip_into_the_article(monkeypatch, db):
     out = P.store_fetched(db, src, fetched)
     art = db.query(Article).filter(Article.url == "https://news.test/a").one()
     assert art.server_ip == "203.0.113.50"
-    assert art.ip_observed_at == fetched.fetched_at
+    # SQLite's DateTime column stores naive datetimes (drops tzinfo), so compare the
+    # wall-clock instant rather than aware==naive (the value was copied correctly).
+    assert art.ip_observed_at is not None
+    observed = art.ip_observed_at
+    if observed.tzinfo is None:
+        observed = observed.replace(tzinfo=UTC)
+    assert observed == fetched.fetched_at
     assert out  # an IngestOutcome was returned
