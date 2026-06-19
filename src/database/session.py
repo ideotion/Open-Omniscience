@@ -107,7 +107,17 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         # aggregation; 64 MB keeps the hot b-trees decoded. temp_store=MEMORY
         # moves GROUP BY / ORDER BY scratch trees off disk. Both matter MORE
         # under SQLCipher, where every page re-read costs a decrypt.
-        cursor.execute("PRAGMA cache_size=-65536")  # negative = KiB => 64 MiB
+        #
+        # MEMORY KNOB (field log 2026-06-18: process RSS 1.28 GB on a 6 GB box).
+        # This cache is PER CONNECTION, so the worst case is ~cache_mb × (pool_size
+        # + max_overflow) connections held warm. The default stays 64 MiB (the
+        # aggregation speed-up is real), but OO_SQLITE_CACHE_MB lets a memory-
+        # constrained operator turn it down (e.g. 16) without code changes.
+        try:
+            cache_mb = max(2, int(os.getenv("OO_SQLITE_CACHE_MB", "64")))
+        except ValueError:
+            cache_mb = 64
+        cursor.execute(f"PRAGMA cache_size=-{cache_mb * 1024}")  # negative = KiB
         cursor.execute("PRAGMA temp_store=MEMORY")
         # mmap for PLAINTEXT stores only: SQLCipher pages cannot be memory-
         # mapped through the codec (every page passes the decrypt), so mmap
