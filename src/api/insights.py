@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
+from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
 from src.database.session import get_db
 from src.utils.cache import SimpleCache
@@ -334,7 +335,7 @@ def insights_top(
     key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group)
 
     def _compute() -> dict:
-        out = q.top_terms(
+        out = rm.top_terms(
             db, days=days, country=country, kind=_kind(kind), limit=limit, group=group
         )
         # Honesty envelope over the counts (Slice 2). The corpus-wide path reads the
@@ -370,7 +371,7 @@ def insights_trending(
     """Rising keywords by a transparent recent-vs-prior ratio."""
     key = _ckey("trending", window_days=window_days, baseline_days=baseline_days,
                 country=country, kind=kind, limit=limit)
-    return _cached(key, lambda: q.trending(
+    return _cached(key, lambda: rm.trending(
         db,
         window_days=window_days,
         baseline_days=baseline_days,
@@ -403,7 +404,7 @@ def insights_trending_windows(
     /trend day buckets) to the top terms so the frontend can draw an ooChart each;
     ``series_top=0`` (default) is byte-identical to the prior response."""
     key = _ckey("trending-windows", country=country, kind=kind, limit=limit, series_top=series_top)
-    return _cached(key, lambda: q.trending_windows(
+    return _cached(key, lambda: rm.trending_windows(
         db, country=country, kind=_kind(kind), limit=limit, series_top=series_top
     ))
 
@@ -429,7 +430,7 @@ def insights_associations(
 ) -> dict:
     """Keywords co-occurring with ``term`` (PMI-ranked) — powers the mind-map."""
     key = _ckey("associations", term=term, limit=limit, min_cooccur=min_cooccur, group=group)
-    return _cached(key, lambda: q.associations(
+    return _cached(key, lambda: rm.associations(
         db, term, limit=limit, min_cooccur=min_cooccur, group=group))
 
 
@@ -485,7 +486,7 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
         from src.catalog.countries import continent_of, country_display_name
         from src.timemap.geocode import geocode
 
-        data = q.source_country_counts(db)
+        data = rm.source_country_counts(db)
         for row in data["by_country"]:
             cc = row["country"]
             disp = country_display_name(cc)
@@ -533,11 +534,11 @@ def warm_cache(db: Session) -> dict:
     specs: list[tuple[str, object]] = [
         # Home "Trending now" calls series_top=5; the Insights default is series_top=0.
         (_ckey("trending-windows", country=None, kind=None, limit=10, series_top=5),
-         lambda: q.trending_windows(db, country=None, kind=None, limit=10, series_top=5)),
+         lambda: rm.trending_windows(db, country=None, kind=None, limit=10, series_top=5)),
         (_ckey("trending-windows", country=None, kind=None, limit=10, series_top=0),
-         lambda: q.trending_windows(db, country=None, kind=None, limit=10, series_top=0)),
+         lambda: rm.trending_windows(db, country=None, kind=None, limit=10, series_top=0)),
         (_ckey("top", days=None, country=None, kind=None, limit=20, group=True),
-         lambda: q.top_terms(db, days=None, country=None, kind=None, limit=20, group=True)),
+         lambda: rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True)),
     ]
     if _CACHE_TTL_S <= 0:
         return {"warmed": warmed, "disabled": True}
@@ -1067,7 +1068,7 @@ def insights_graph(
         )
         # Cache by the exact id set so re-opening the same analysis mindmap is instant.
         return _cached(_ckey("graph-articles", ids=",".join(map(str, ids))),
-                       lambda: q.article_graph(db, article_ids=ids))
+                       lambda: rm.article_graph(db, article_ids=ids))
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():
@@ -1081,7 +1082,7 @@ def insights_graph(
             raise HTTPException(status_code=400, detail=f"bad date: {d!r}") from None
 
     key = _ckey("graph", level=level, term=term, hops=hops, days=days, start=start, end=end)
-    return _cached(key, lambda: q.layered_graph(
+    return _cached(key, lambda: rm.layered_graph(
         db, level=level, term=term, hops=hops, days=days, start=_parse(start), end=_parse(end)
     ))
 
