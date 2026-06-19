@@ -748,6 +748,17 @@ class Keyword(Base):
     article_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # When the counters above were last RECONCILED -- recomputed exactly from the
+    # live mentions and proven equal to the canonical GROUP BY -- by the bounded
+    # background reconcile (src/analytics/store.reconcile_keyword_counters). NULL =
+    # never reconciled (the counters are still maintained incrementally + correct by
+    # construction, but UNVERIFIED). The honesty envelope reads this: counters served
+    # via the hot endpoints are disclosed `exact` when this watermark is fresh and
+    # `estimated` when it is NULL or stale -- the cascade-delete drift (ondelete=CASCADE
+    # bypasses the ORM maintenance hook, so a rare delete can drift a counter) is then
+    # NEVER silently wrong, only honestly "estimated" until the next reconcile repairs
+    # it. A disclosure of freshness, never a score.
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
 
     # Relationships
     category = relationship("KeywordCategory", back_populates="keywords")

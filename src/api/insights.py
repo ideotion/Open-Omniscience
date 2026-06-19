@@ -332,8 +332,30 @@ def insights_top(
 ) -> dict:
     """Most-mentioned keywords (optionally windowed / per-country / per-kind)."""
     key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group)
-    return _cached(key, lambda: q.top_terms(
-        db, days=days, country=country, kind=_kind(kind), limit=limit, group=group))
+
+    def _compute() -> dict:
+        out = q.top_terms(
+            db, days=days, country=country, kind=_kind(kind), limit=limit, group=group
+        )
+        # Honesty envelope over the counts (Slice 2). The corpus-wide path reads the
+        # maintained counters -> disclose their freshness; the windowed/per-country path
+        # is a live GROUP BY computed now -> exact. ADDITIVE: a new `counts` key only.
+        if days or country:
+            from src.analytics.envelope import Envelope, now_iso
+
+            out["counts"] = Envelope.exact(
+                out.get("count", 0),
+                as_of=now_iso(),
+                method="live mention aggregation over the window",
+                n=out.get("count", 0),
+            ).to_dict()
+        else:
+            from src.analytics.store import counter_envelope
+
+            out["counts"] = counter_envelope(db).to_dict()
+        return out
+
+    return _cached(key, _compute)
 
 
 @router.get("/trending")
@@ -496,6 +518,17 @@ def warm_cache(db: Session) -> dict:
     background thread), using the DEFAULT parameter combos the UI actually requests.
     Stores under the exact keys the endpoints use, so a warmed value is a cache HIT.
     """
+    # Bounded background reconcile of the maintained keyword counters (Slice 2): runs
+    # here (off the request path) and is a cheap no-op while the counters are fresh, so
+    # it throttles itself to ~once per freshness window. Repairs the rare cascade-delete
+    # drift and stamps the watermark the honesty envelope reads. Best-effort.
+    try:
+        from src.analytics.store import maybe_reconcile_counters
+
+        maybe_reconcile_counters(db)
+    except Exception:  # noqa: BLE001 - never fatal to a pass
+        _LOG.warning("background counter reconcile failed during warm_cache", exc_info=True)
+
     warmed: list[str] = []
     specs: list[tuple[str, object]] = [
         # Home "Trending now" calls series_top=5; the Insights default is series_top=0.
@@ -900,7 +933,16 @@ def list_supergroups(db: Session = Depends(get_db)) -> dict:
             }
         )
     out.sort(key=lambda s: -s["mentions"])
-    return {"count": len(out), "supergroups": out}
+    # Honesty envelope over the maintained counters the super-group totals read (Slice
+    # 2). ADDITIVE: a new `counts` key only. Disclosed `exact` when the counters were
+    # reconciled within the freshness window, else `estimated` (may have drifted).
+    from src.analytics.store import counter_envelope
+
+    return {
+        "count": len(out),
+        "supergroups": out,
+        "counts": counter_envelope(db).to_dict(),
+    }
 
 
 @router.get("/rings")

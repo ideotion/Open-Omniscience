@@ -149,6 +149,11 @@ def ensure_article_analysis_columns(engine: Engine) -> list[str]:
 _KEYWORD_COUNTER_COLUMNS: dict[str, str] = {
     "mention_count": "ALTER TABLE keywords ADD COLUMN mention_count INTEGER NOT NULL DEFAULT 0",
     "article_count": "ALTER TABLE keywords ADD COLUMN article_count INTEGER NOT NULL DEFAULT 0",
+    # Freshness watermark for the counter honesty envelope (Slice 2). Nullable, no
+    # default: a freshly self-healed column is NULL = "never reconciled" = honestly
+    # `estimated` until the background reconcile stamps it. Adding it does NOT make
+    # the counters wrong (they stay backfilled below), so it never forces a re-backfill.
+    "last_reconciled_at": "ALTER TABLE keywords ADD COLUMN last_reconciled_at DATETIME",
 }
 
 # Populate both counters from the live mentions in one pass. Correlated subqueries
@@ -194,7 +199,11 @@ def ensure_keyword_counter_columns(engine: Engine) -> list[str]:
                 "ON keywords (mention_count)"
             )
         )
-    if added:
+    # Only a freshly-added VALUE column is wrong-zero and needs the (potentially
+    # expensive) one-pass backfill. Adding the nullable `last_reconciled_at` watermark
+    # alone must NOT trigger a full recompute of already-correct counters (it would pay
+    # the whole GROUP BY at boot just to add a freshness column).
+    if added and ({"mention_count", "article_count"} & set(added)):
         t0 = time.perf_counter()
         with engine.begin() as conn:
             conn.execute(text(_KEYWORD_COUNTER_BACKFILL))
