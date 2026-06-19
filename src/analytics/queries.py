@@ -778,6 +778,117 @@ def source_country_counts(session) -> dict:
     }
 
 
+_SERVER_LOC_METHOD = (
+    "Captured server IPs (the address we connected to at fetch) geolocated OFFLINE against "
+    "a dated CC-licensed country DB; coordinates are a country stand-in point. Counts only, "
+    "no score."
+)
+_SERVER_LOC_CAVEAT = (
+    "Server location is OUR vantage point -- usually a CDN edge / anycast host, NOT proof of "
+    "the publisher's origin; approximate; dated offline DB; unavailable over Tor. IP/host "
+    "clustering (many distinct sources on one address) is a shape to investigate, never a verdict."
+)
+
+
+def server_locations(session) -> dict:
+    """Aggregate CAPTURED server IPs (Slice 6a) geolocated OFFLINE (Slice 6b) for the
+    ooMap "server location" layer (Slice 6c). Per-country counts + IP/host CLUSTERING +
+    honest unavailable buckets.
+
+    Reads only the small ``server_ip`` / ``server_ip_reason`` / ``source_id`` columns
+    (no article body decrypt); geolocation is per DISTINCT IP (cached) -- bounded. Counts
+    only, NO score. Clustering = IPs shared by 2+ DISTINCT sources (the network-layer
+    cousin of source-laundering); surfaced as a shape to investigate, never a verdict.
+    """
+    from src.geo import ip_geo
+
+    rows = (
+        session.query(
+            Article.server_ip,
+            Article.server_ip_reason,
+            Article.source_id,
+            func.count(Article.id),
+        )
+        .group_by(Article.server_ip, Article.server_ip_reason, Article.source_id)
+        .all()
+    )
+    names = {sid: nm for sid, nm in session.query(Source.id, Source.name)}
+
+    by_country: dict[str, dict] = {}
+    ip_sources: dict[str, set] = {}
+    ip_articles: dict[str, int] = {}
+    geo_cache: dict[str, dict] = {}
+    unavailable = {"tor_or_proxy": 0, "not_captured": 0, "unknown_ip": 0}
+
+    for ip, reason, sid, cnt in rows:
+        cnt = int(cnt or 0)
+        if not ip:
+            r = (reason or "").lower()
+            if "tor" in r or "proxy" in r:
+                unavailable["tor_or_proxy"] += cnt
+            else:
+                unavailable["not_captured"] += cnt
+            continue
+        g = geo_cache.get(ip)
+        if g is None:
+            g = ip_geo.lookup(ip)
+            geo_cache[ip] = g
+        ip_sources.setdefault(ip, set()).add(sid)
+        ip_articles[ip] = ip_articles.get(ip, 0) + cnt
+        cc = g.get("country")
+        if g.get("level") == "unavailable" or not cc:
+            unavailable["unknown_ip"] += cnt
+            continue
+        b = by_country.setdefault(
+            cc, {"articles": 0, "ips": set(), "sources": set(),
+                 "lat": g.get("lat"), "lon": g.get("lon"), "level": g.get("level")}
+        )
+        b["articles"] += cnt
+        b["ips"].add(ip)
+        b["sources"].add(sid)
+
+    # Sort the underlying (typed) data, then build the display dicts -- so the sort key
+    # is a plain int, not a heterogeneous dict-value union.
+    ordered_countries = sorted(by_country.items(), key=lambda kv: -int(kv[1]["articles"]))
+    countries = [
+        {
+            "country": cc,
+            "lat": b["lat"],
+            "lon": b["lon"],
+            "level": b["level"],
+            "articles": b["articles"],
+            "distinct_ips": len(b["ips"]),
+            "distinct_sources": len(b["sources"]),
+        }
+        for cc, b in ordered_countries
+    ]
+    shared = sorted(
+        ((ip, srcs) for ip, srcs in ip_sources.items() if len(srcs) >= 2),
+        key=lambda t: -len(t[1]),  # shared by 2+ DISTINCT sources -> a shape to investigate
+    )[:50]
+    clusters = [
+        {
+            "ip": ip,
+            "distinct_sources": len(srcs),
+            "articles": ip_articles.get(ip, 0),
+            "country": (geo_cache.get(ip) or {}).get("country"),
+            "sources": [names.get(s) for s in list(srcs)[:20] if names.get(s)],
+        }
+        for ip, srcs in shared
+    ]
+
+    return {
+        "countries": countries,
+        "clusters": clusters,
+        "unavailable": unavailable,
+        "distinct_ips": len(ip_sources),
+        "db_vintage": ip_geo.db_vintage(),
+        "attribution": ip_geo.ATTRIBUTION,
+        "method": _SERVER_LOC_METHOD,
+        "caveat": _SERVER_LOC_CAVEAT,
+    }
+
+
 _COORD_METHOD = (
     "Near-duplicate clustering (MinHash + LSH, high-precision, Jaccard >= 0.7) within the "
     "matched set; independence is measured by DISTINCT SOURCES, never article count."

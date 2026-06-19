@@ -385,3 +385,154 @@ def backfill_keyword_counters(session: Session) -> dict:
     session.commit()
     total = session.query(func.count(Keyword.id)).scalar() or 0
     return {"keywords": int(total), "with_mentions": len(agg)}
+
+
+# How long a reconcile stays trusted as `exact` before the envelope downgrades the
+# counters to `estimated` (a rare cascade delete could have drifted them since). The
+# incremental maintenance keeps them correct between reconciles, so this is a
+# conservative honesty window, not a correctness requirement. OO_COUNTER_FRESH_HOURS.
+def _fresh_window_hours() -> int:
+    import os
+
+    try:
+        return max(1, int(os.getenv("OO_COUNTER_FRESH_HOURS", "24")))
+    except ValueError:
+        return 24
+
+
+def reconcile_keyword_counters(session: Session, *, now=None) -> dict:
+    """Recompute the counters EXACTLY from the live mentions, detect drift, and stamp
+    ``Keyword.last_reconciled_at`` (Slice 2 — the bounded background reconcile).
+
+    This is the authoritative repair for the rare cascade-delete drift
+    (``ondelete=CASCADE`` bypasses the incremental maintenance in :func:`index_article`).
+    It is the one place a full ``GROUP BY`` over the mentions is paid — OFF the request
+    path (the hot endpoints read the counters, never this) — so after it runs the
+    counters are proven equal to the canonical store and the honesty envelope can
+    disclose them as ``exact``. Counts only, no score. Returns a tally including
+    ``drift_repaired`` = how many keyword counters were wrong before this pass.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func
+
+    stamp = now or datetime.now(UTC)
+    agg = {
+        kid: (int(m or 0), int(a or 0))
+        for kid, m, a in (
+            session.query(
+                KeywordMention.keyword_id,
+                func.sum(KeywordMention.count),
+                func.count(func.distinct(KeywordMention.article_id)),
+            ).group_by(KeywordMention.keyword_id)
+        )
+    }
+    # Detect drift: compare every keyword's CURRENT counters to the recomputed truth.
+    # O(keywords) (a small-row scan of the keywords table), never a per-keyword mention
+    # scan — and runs in the background, not on a read.
+    drift = 0
+    for kid, cur_m, cur_a in session.query(
+        Keyword.id, Keyword.mention_count, Keyword.article_count
+    ):
+        if (int(cur_m or 0), int(cur_a or 0)) != agg.get(kid, (0, 0)):
+            drift += 1
+    # Repair: zero all, set the keywords that have mentions, stamp the watermark on
+    # EVERY keyword (so a never-mentioned keyword is also "verified 0 as of now").
+    session.query(Keyword).update(
+        {Keyword.mention_count: 0, Keyword.article_count: 0, Keyword.last_reconciled_at: stamp},
+        synchronize_session=False,
+    )
+    if agg:
+        session.bulk_update_mappings(
+            Keyword,
+            [
+                {"id": kid, "mention_count": m, "article_count": a, "last_reconciled_at": stamp}
+                for kid, (m, a) in agg.items()
+            ],
+        )
+    session.commit()
+    total = session.query(func.count(Keyword.id)).scalar() or 0
+    return {
+        "keywords": int(total),
+        "with_mentions": len(agg),
+        "drift_repaired": int(drift),
+        "as_of": stamp.isoformat(timespec="seconds"),
+    }
+
+
+def counter_envelope(session: Session, *, window_hours: int | None = None, now=None):
+    """The honesty envelope (Slice 1) over the maintained keyword counters (Slice 2).
+
+    Cheap (``O(keywords)`` — never a mention scan): the hot endpoints call this to
+    disclose their counter-backed numbers as ``exact`` vs ``estimated``. The envelope's
+    ``value`` is the number of keywords whose counters back the view (``n``); its
+    ``basis`` is:
+
+      * ``exact``     — every keyword-with-mentions was reconciled within the freshness
+        window (the counters are verified equal to the canonical store);
+      * ``estimated`` — some keyword is unreconciled (NULL watermark) or its last
+        reconcile is stale, so the counters MAY have drifted (cascade delete) and are an
+        honest best-effort.
+
+    ``as_of`` is real, never fabricated: the reconcile watermark when known, else the
+    serve time for an as-yet-unverified maintained snapshot.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import func
+
+    from src.analytics.envelope import Envelope, now_iso
+
+    win = window_hours if window_hours is not None else _fresh_window_hours()
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(hours=win)
+
+    n = int(session.query(func.count(Keyword.id)).filter(Keyword.mention_count > 0).scalar() or 0)
+    method = (
+        "denormalised per-keyword counters maintained at index time; "
+        "reconciled exactly against the corpus in the background"
+    )
+    if n == 0:
+        # No counters back anything yet — an empty/fresh corpus. Honest, computed now.
+        return Envelope.exact(0, as_of=now_iso(), method=method, n=0)
+
+    # Is any keyword-with-mentions unreconciled or stale? Short-circuits (LIMIT 1).
+    stale = (
+        session.query(Keyword.id)
+        .filter(Keyword.mention_count > 0)
+        .filter(
+            (Keyword.last_reconciled_at.is_(None)) | (Keyword.last_reconciled_at < cutoff)
+        )
+        .first()
+    )
+    # The reconcile watermark = the OLDEST verification among counter-backing keywords
+    # (min ignores NULLs in SQL; we already detected NULLs via `stale`).
+    watermark = (
+        session.query(func.min(Keyword.last_reconciled_at))
+        .filter(Keyword.mention_count > 0)
+        .scalar()
+    )
+    if stale is not None:
+        # Estimated: as_of = the last KNOWN-exact reconcile time if one exists ("exact
+        # as of then, may have drifted since"), else the serve time (never reconciled).
+        as_of = watermark.isoformat(timespec="seconds") if watermark else now_iso()
+        return Envelope.estimated(n, as_of=as_of, method=method, n=n)
+    return Envelope.exact(n, as_of=watermark.isoformat(timespec="seconds"), method=method, n=n)
+
+
+def maybe_reconcile_counters(session: Session) -> dict:
+    """Run :func:`reconcile_keyword_counters` only when the counters are NOT fresh.
+
+    The bounded background trigger (called where ``warm_cache`` runs, after a scrape
+    pass — OFF the request path). When the envelope already reports ``exact`` this is a
+    cheap no-op, so it naturally throttles to roughly once per freshness window. Returns
+    the reconcile tally, or ``{"skipped": "fresh"}`` when nothing needed repair.
+    """
+    if counter_envelope(session).is_exact():
+        return {"skipped": "fresh"}
+    try:
+        return reconcile_keyword_counters(session)
+    except Exception:  # noqa: BLE001 - a background safety net must never break the pass
+        session.rollback()
+        _LOG.warning("background keyword-counter reconcile failed", exc_info=True)
+        return {"skipped": "error"}

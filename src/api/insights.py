@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
+from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
 from src.database.session import get_db
 from src.utils.cache import SimpleCache
@@ -347,8 +348,31 @@ def insights_top(
     in a cross-language ring gains its verified translation into that language."""
     tl = _tlang(target_lang)
     key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group, tl=tl)
-    return _cached(key, lambda: q.top_terms(
-        db, days=days, country=country, kind=_kind(kind), limit=limit, group=group, target_lang=tl))
+
+    def _compute() -> dict:
+        out = rm.top_terms(
+            db, days=days, country=country, kind=_kind(kind), limit=limit, group=group,
+            target_lang=tl,
+        )
+        # Honesty envelope over the counts (Slice 2). The corpus-wide path reads the
+        # maintained counters -> disclose their freshness; the windowed/per-country path
+        # is a live GROUP BY computed now -> exact. ADDITIVE: a new `counts` key only.
+        if days or country:
+            from src.analytics.envelope import Envelope, now_iso
+
+            out["counts"] = Envelope.exact(
+                out.get("count", 0),
+                as_of=now_iso(),
+                method="live mention aggregation over the window",
+                n=out.get("count", 0),
+            ).to_dict()
+        else:
+            from src.analytics.store import counter_envelope
+
+            out["counts"] = counter_envelope(db).to_dict()
+        return out
+
+    return _cached(key, _compute)
 
 
 @router.get("/trending")
@@ -365,7 +389,7 @@ def insights_trending(
     tl = _tlang(target_lang)
     key = _ckey("trending", window_days=window_days, baseline_days=baseline_days,
                 country=country, kind=kind, limit=limit, tl=tl)
-    return _cached(key, lambda: q.trending(
+    return _cached(key, lambda: rm.trending(
         db,
         window_days=window_days,
         baseline_days=baseline_days,
@@ -402,7 +426,7 @@ def insights_trending_windows(
     tl = _tlang(target_lang)
     key = _ckey("trending-windows", country=country, kind=kind, limit=limit,
                 series_top=series_top, tl=tl)
-    return _cached(key, lambda: q.trending_windows(
+    return _cached(key, lambda: rm.trending_windows(
         db, country=country, kind=_kind(kind), limit=limit, series_top=series_top, target_lang=tl
     ))
 
@@ -428,7 +452,7 @@ def insights_associations(
 ) -> dict:
     """Keywords co-occurring with ``term`` (PMI-ranked) — powers the mind-map."""
     key = _ckey("associations", term=term, limit=limit, min_cooccur=min_cooccur, group=group)
-    return _cached(key, lambda: q.associations(
+    return _cached(key, lambda: rm.associations(
         db, term, limit=limit, min_cooccur=min_cooccur, group=group))
 
 
@@ -484,7 +508,7 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
         from src.catalog.countries import continent_of, country_display_name
         from src.timemap.geocode import geocode
 
-        data = q.source_country_counts(db)
+        data = rm.source_country_counts(db)
         for row in data["by_country"]:
             cc = row["country"]
             disp = country_display_name(cc)
@@ -509,6 +533,21 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
     return _cached(_ckey("map-coverage"), _compute)
 
 
+@router.get("/server-locations")
+def insights_server_locations(db: Session = Depends(get_db)) -> dict:
+    """The ooMap "server location" layer (Slice 6c): the captured server IPs (Slice 6a)
+    geolocated OFFLINE (Slice 6b), per-country, with IP/host CLUSTERING + honest
+    unavailable buckets (Tor/proxy, not-captured, unknown-IP).
+
+    DISTINCT from the editorial ``map-coverage`` (Source.country) layer: this is the
+    NETWORK location we actually connected to -- our vantage point (often a CDN edge /
+    anycast), never proof of the publisher's origin. Counts only, NO score; the caveat is
+    visible by default. Until the country DB is bundled (a networked-machine step), the
+    located countries are empty and everything lands honestly in the unavailable buckets.
+    """
+    return _cached(_ckey("server-locations"), lambda: q.server_locations(db))
+
+
 def warm_cache(db: Session) -> dict:
     """Pre-compute the common whole-corpus views into the read cache so the Home /
     Insights surfaces never hit a cold heavy query (perf, field report 2026-06-18).
@@ -517,15 +556,26 @@ def warm_cache(db: Session) -> dict:
     background thread), using the DEFAULT parameter combos the UI actually requests.
     Stores under the exact keys the endpoints use, so a warmed value is a cache HIT.
     """
+    # Bounded background reconcile of the maintained keyword counters (Slice 2): runs
+    # here (off the request path) and is a cheap no-op while the counters are fresh, so
+    # it throttles itself to ~once per freshness window. Repairs the rare cascade-delete
+    # drift and stamps the watermark the honesty envelope reads. Best-effort.
+    try:
+        from src.analytics.store import maybe_reconcile_counters
+
+        maybe_reconcile_counters(db)
+    except Exception:  # noqa: BLE001 - never fatal to a pass
+        _LOG.warning("background counter reconcile failed during warm_cache", exc_info=True)
+
     warmed: list[str] = []
     specs: list[tuple[str, object]] = [
         # Home "Trending now" calls series_top=5; the Insights default is series_top=0.
         (_ckey("trending-windows", country=None, kind=None, limit=10, series_top=5),
-         lambda: q.trending_windows(db, country=None, kind=None, limit=10, series_top=5)),
+         lambda: rm.trending_windows(db, country=None, kind=None, limit=10, series_top=5)),
         (_ckey("trending-windows", country=None, kind=None, limit=10, series_top=0),
-         lambda: q.trending_windows(db, country=None, kind=None, limit=10, series_top=0)),
+         lambda: rm.trending_windows(db, country=None, kind=None, limit=10, series_top=0)),
         (_ckey("top", days=None, country=None, kind=None, limit=20, group=True),
-         lambda: q.top_terms(db, days=None, country=None, kind=None, limit=20, group=True)),
+         lambda: rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True)),
     ]
     if _CACHE_TTL_S <= 0:
         return {"warmed": warmed, "disabled": True}
@@ -921,7 +971,16 @@ def list_supergroups(db: Session = Depends(get_db)) -> dict:
             }
         )
     out.sort(key=lambda s: -s["mentions"])
-    return {"count": len(out), "supergroups": out}
+    # Honesty envelope over the maintained counters the super-group totals read (Slice
+    # 2). ADDITIVE: a new `counts` key only. Disclosed `exact` when the counters were
+    # reconciled within the freshness window, else `estimated` (may have drifted).
+    from src.analytics.store import counter_envelope
+
+    return {
+        "count": len(out),
+        "supergroups": out,
+        "counts": counter_envelope(db).to_dict(),
+    }
 
 
 @router.get("/rings")
@@ -1046,7 +1105,7 @@ def insights_graph(
         )
         # Cache by the exact id set so re-opening the same analysis mindmap is instant.
         return _cached(_ckey("graph-articles", ids=",".join(map(str, ids))),
-                       lambda: q.article_graph(db, article_ids=ids))
+                       lambda: rm.article_graph(db, article_ids=ids))
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():
@@ -1060,7 +1119,7 @@ def insights_graph(
             raise HTTPException(status_code=400, detail=f"bad date: {d!r}") from None
 
     key = _ckey("graph", level=level, term=term, hops=hops, days=days, start=start, end=end)
-    return _cached(key, lambda: q.layered_graph(
+    return _cached(key, lambda: rm.layered_graph(
         db, level=level, term=term, hops=hops, days=days, start=_parse(start), end=_parse(end)
     ))
 

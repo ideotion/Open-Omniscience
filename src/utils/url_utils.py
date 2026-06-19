@@ -109,6 +109,15 @@ def is_equivalent_domain(domain1: str, domain2: str) -> bool:
     return False
 
 
+# K2 identity seam (data-architecture Slice 5): a stable label for WHICH
+# canonicalization produced an Article.canonical_url, stamped on each article. Bump
+# this string (url-v2, ...) whenever :func:`canonicalize_url` changes its rules, so a
+# corpus spanning a canonicaliser change can tell which articles were normalised by
+# which version (and re-canonicalise only the stale ones) instead of silently mixing
+# them. Additive; never reformats the existing canonical_url.
+CANON_VERSION = "url-v1"
+
+
 def canonicalize_url(url: str) -> str:
     """
     Canonicalize a URL by:
@@ -209,6 +218,25 @@ def generate_content_hash(content: str) -> str:
     # Clean content: remove extra whitespace and normalize
     cleaned_content = " ".join(content.split())
     return hashlib.sha256(cleaned_content.encode("utf-8")).hexdigest()
+
+
+# K1 identity seam (data-architecture Slice 5): the SELF-DESCRIBING content hash.
+# ``Article.hash`` is a bare SHA-256 hex string and is load-bearing for dedup (unique
+# index) -- it must NEVER be reformatted. ``content_multihash`` lives ALONGSIDE it,
+# naming the algorithm explicitly (``sha2-256:<hex>``) so that if the content-hash
+# algorithm ever changes, new articles carry e.g. ``blake3:<hex>`` while old keep
+# ``sha2-256:<hex>`` -- the column is unambiguous about which produced a given digest.
+# Today's value is derived from the same digest as ``hash`` (so they are consistent by
+# construction); the backfill is a pure string prefix, no content re-hash.
+CONTENT_HASH_ALGO = "sha2-256"
+
+
+def content_multihash(content: str) -> str:
+    """Self-describing content hash (``sha2-256:<hex>``) over the same bytes as
+    :func:`generate_content_hash`. Empty string for empty content (honest, never a
+    fabricated digest of nothing)."""
+    digest = generate_content_hash(content)
+    return f"{CONTENT_HASH_ALGO}:{digest}" if digest else ""
 
 
 def get_domain_from_url(url: str) -> str | None:

@@ -139,6 +139,97 @@ def ensure_article_analysis_columns(engine: Engine) -> list[str]:
     return added
 
 
+# K1/K2 identity seams (data-architecture Slice 5): content_multihash + canon_version
+# on articles, for stores created before these columns existed. Additive + nullable; the
+# backfill is a pure string op over the small `hash`/`canonical_url` columns (no content
+# decrypt), so it is cheap even on a large encrypted corpus.
+_ARTICLE_IDENTITY_COLUMNS: dict[str, str] = {
+    "content_multihash": "ALTER TABLE articles ADD COLUMN content_multihash VARCHAR(80)",
+    "canon_version": "ALTER TABLE articles ADD COLUMN canon_version VARCHAR(16)",
+}
+
+
+def ensure_article_identity_columns(engine: Engine) -> list[str]:
+    """Self-heal ``articles.content_multihash`` / ``canon_version`` + backfill them.
+
+    Mirrors the other self-heals (the live DB never auto-runs alembic). content_multihash
+    is backfilled as ``sha2-256:<hash>`` for rows whose hash is a 64-char SHA-256 digest
+    (every ingest path produces one) — never a fabricated label for an odd hash; the
+    bare-hex dedup ``hash`` is untouched. canon_version is backfilled to the current
+    ``CANON_VERSION`` for existing rows (they WERE canonicalised by the current rules).
+    Idempotent; no-op on a fresh DB / non-sqlite / missing table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    from src.utils.url_utils import CANON_VERSION, CONTENT_HASH_ALGO
+
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_IDENTITY_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        with engine.begin() as conn:
+            if "content_multihash" in added:
+                conn.execute(
+                    text(
+                        "UPDATE articles SET content_multihash = :pfx || hash "
+                        "WHERE content_multihash IS NULL AND length(hash) = 64"
+                    ),
+                    {"pfx": f"{CONTENT_HASH_ALGO}:"},
+                )
+            if "canon_version" in added:
+                conn.execute(
+                    text("UPDATE articles SET canon_version = :v WHERE canon_version IS NULL"),
+                    {"v": CANON_VERSION},
+                )
+        _LOG.info(f"added + backfilled articles identity column(s): {', '.join(added)}")
+    return added
+
+
+# Source IP provenance (data-architecture Slice 6a): server_ip / ip_observed_at /
+# server_ip_reason on articles, for stores created before these columns existed. All
+# nullable, NO backfill -- a pre-existing article simply has no captured server IP
+# (honest NULL), and future fetches populate it forward via the pipeline.
+_ARTICLE_IP_COLUMNS: dict[str, str] = {
+    "server_ip": "ALTER TABLE articles ADD COLUMN server_ip VARCHAR(45)",
+    "ip_observed_at": "ALTER TABLE articles ADD COLUMN ip_observed_at DATETIME",
+    "server_ip_reason": "ALTER TABLE articles ADD COLUMN server_ip_reason VARCHAR(64)",
+}
+
+
+def ensure_article_ip_columns(engine: Engine) -> list[str]:
+    """Self-heal the source-IP columns on ``articles`` (idempotent, additive).
+
+    No backfill: existing articles have no captured server IP (honest NULL); the fetch
+    pipeline populates them forward. No-op on a fresh DB / non-sqlite / missing table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_IP_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added articles source-IP column(s): {', '.join(added)}")
+    return added
+
+
 # Denormalised corpus-wide keyword counters (perf workstream 2026-06-18) for stores
 # created before these columns existed. create_all builds them on a fresh DB but never
 # ALTERs an existing table, and not every install runs alembic — so an existing corpus
@@ -149,6 +240,11 @@ def ensure_article_analysis_columns(engine: Engine) -> list[str]:
 _KEYWORD_COUNTER_COLUMNS: dict[str, str] = {
     "mention_count": "ALTER TABLE keywords ADD COLUMN mention_count INTEGER NOT NULL DEFAULT 0",
     "article_count": "ALTER TABLE keywords ADD COLUMN article_count INTEGER NOT NULL DEFAULT 0",
+    # Freshness watermark for the counter honesty envelope (Slice 2). Nullable, no
+    # default: a freshly self-healed column is NULL = "never reconciled" = honestly
+    # `estimated` until the background reconcile stamps it. Adding it does NOT make
+    # the counters wrong (they stay backfilled below), so it never forces a re-backfill.
+    "last_reconciled_at": "ALTER TABLE keywords ADD COLUMN last_reconciled_at DATETIME",
 }
 
 # Populate both counters from the live mentions in one pass. Correlated subqueries
@@ -194,7 +290,11 @@ def ensure_keyword_counter_columns(engine: Engine) -> list[str]:
                 "ON keywords (mention_count)"
             )
         )
-    if added:
+    # Only a freshly-added VALUE column is wrong-zero and needs the (potentially
+    # expensive) one-pass backfill. Adding the nullable `last_reconciled_at` watermark
+    # alone must NOT trigger a full recompute of already-correct counters (it would pay
+    # the whole GROUP BY at boot just to add a freshness column).
+    if added and ({"mention_count", "article_count"} & set(added)):
         t0 = time.perf_counter()
         with engine.begin() as conn:
             conn.execute(text(_KEYWORD_COUNTER_BACKFILL))

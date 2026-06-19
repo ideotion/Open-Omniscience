@@ -416,6 +416,16 @@ ruling, a contingency, or a deliberate-omission note.
   offline + string-heavy speedup; age/SLIP-39 + recovery drill; TLSNotary TLS-1.3; C2PA offline trust
   list; OTS offline verify; published-private-key DKIM prevalence; IP-geo DB license/size/offline.
   BUILD ORDER (the brief): envelope → counters → A1 seam → columnar engine → K1/K2 identity → IP+geo.
+  **BUILD STATUS 2026-06-19 (branch claude/modest-hopper-gisgst, draft PR onto 0.09 — full per-slice
+  detail in the Shipped-batch-log entry "DATA-ARCHITECTURE & SOURCE-IP BUILD 2026-06-19"):** SHIPPED =
+  Slice 1 envelope, Slice 2 counter freshness+reconcile, Slice 3 read-model seam, Slice 4 PR-1
+  columnar engine (in-memory; persisted-encryption BLOCKED on a per-OS httpfs crypto-extension
+  packaging decision — empirical finding), Slice 5 K1/K2 identity, Slice 6a IP capture, Slice 6b
+  offline geo engine+generator (real DB-IP table BLOCKED on a networked-machine fetch — 403 here;
+  CC BY 4.0 verified), Slice 6c server-location backend. REMAINING = Slice 4 PR-2/3 (port heavy
+  aggregations onto the columnar store behind the seam) + the persisted-encryption decision; run the
+  6b generator to bundle the DB; the 6c FRONTEND ooMap server-location layer. The VERIFY-list item
+  "IP-geo DB license/size/offline" is partly DONE (DB-IP = CC BY 4.0, offline lookup proven).
 - **LLM-ASSISTED PERCEPTION — who/where/when extraction + sentiment + an eval harness
   (maintainer brainstorm 2026-06-18; EVALUATION, reconciliation pending the maintainer's
   PARALLEL internet research; full record in `docs/FUTURE_DEVELOPMENTS.md` →
@@ -3261,6 +3271,72 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **DATA-ARCHITECTURE & SOURCE-IP BUILD 2026-06-19 (the AUTONOMOUS_BUILD_BRIEF_DATA_ARCH.md
+  slices; branch claude/modest-hopper-gisgst, draft PR onto 0.09; backend VERIFIED on a py3.11
+  test venv built here — 49 passed/2 CI-only-skipped; full pytest needs py3.13 → CI). Session
+  RULINGS now binding (2026-06-19, also in the DATA-ARCHITECTURE queue entry): cross-time recall is
+  SACRED (no recency bias / time-partitioning ABANDONED); performance must NOT depend on hiding data
+  (counters + derived read-model, every article always present); the honesty ENVELOPE
+  {value,basis:exact|estimated,as_of,method,n} is mandatory on maintained aggregates (basis is a
+  DISCLOSURE, assert_no_score_fields holds); the derived columnar store is encrypted-under-the-same-
+  passphrase OR in-memory, NEVER a plaintext file; capture = default-anonymize + opt-in fidelity
+  (unchanged); source IP wanted + geolocated OFFLINE with heavy caveats; tiered-retention eviction
+  DEFERRED (needs the archive first). SHIPPED slices (one commit each, additive/reversible, migration
+  + boot self-heal per column, single alembic head, no model drift):**
+  - **Slice 1 — honesty envelope** `src/analytics/envelope.py` (Envelope{value,basis,as_of,method,n};
+    exact/estimated; as_of REQUIRED never fabricated; assert_no_score_fields run on it at import).
+    tests/test_envelope.py.
+  - **Slice 2 — counter freshness** `Keyword.last_reconciled_at` (migration b2c3d4e5f6a7 +
+    ensure_keyword_counter_columns self-heal that adds the nullable watermark WITHOUT re-backfilling).
+    store.reconcile_keyword_counters (recompute exact + detect drift + stamp; the ONE full GROUP BY,
+    OFF the request path), counter_envelope (O(keywords) exact-when-fresh / estimated-when-stale via
+    OO_COUNTER_FRESH_HOURS=24), maybe_reconcile_counters wired into warm_cache (self-throttling).
+    /top (corpus-wide) + /supergroups carry an ADDITIVE `counts` envelope. tests/
+    test_keyword_counter_freshness.py (injected-drift→estimated→reconcile→exact; counter read stays
+    O(keywords)).
+  - **Slice 3 — read-model seam** `src/analytics/readmodel.py` (ONE boundary: top_terms/trending/
+    trending_windows/associations/layered_graph/article_graph/source_country_counts; v1 delegates
+    byte-identically; insights endpoints route through rm.* so Slice 4 plugs in WITHOUT touching an
+    endpoint). tests/test_readmodel_seam.py (delegation == live; /top provably reads through the seam).
+  - **Slice 4 PR-1 — columnar engine** optional [columnar] extra (duckdb>=1.4); `src/analytics/
+    columnar.py` connect() = persisted-ENCRYPTED (AES key derived from the one passphrase, no second
+    key surface) ONLY after encryption_gate proves it (sentinel-absent / no-key-fails / with-key-works),
+    else IN-MEMORY; NEVER a plaintext file; offline (autoload + external access OFF). UNWIRED (zero
+    risk; absent duckdb → seam serves live query). **EMPIRICAL FINDING: the stock duckdb wheel does
+    NOT bundle the OpenSSL/httpfs crypto and would autoload it from the NETWORK (forbidden), so secure
+    PERSISTED encryption is unavailable fully-offline → engine runs in-memory (sanctioned hard-
+    fallback). DuckDB's mbedtls is documented NOT-secure → never trusted (no fabricated security).
+    PERSISTED-offline needs a per-OS httpfs extension bundled locally = a packaging decision left to
+    the maintainer; code is ready (secure_crypto_available gate).** tests/test_columnar_engine.py.
+  - **Slice 5 — K1/K2 identity** `Article.content_multihash` (self-describing sha2-256:<hex> alongside
+    the never-reformatted unique `hash`) + `canon_version` (url-v1). before_insert listener stamps
+    FORWARD on every insert path; migration d3e4f5a6b7c8 + ensure_article_identity_columns backfill
+    (pure string op, no content decrypt). Dedup unchanged. tests/test_article_identity_seams.py.
+  - **Slice 6a — source IP capture** EthicalFetcher._capture_server_ip reads the connected peer on a
+    DIRECT clearnet socket; over proxy/Tor → NULL + reason 'unavailable (proxy/Tor)', never a guess;
+    degrades loudly. Article.server_ip/ip_observed_at/server_ip_reason (migration e4f5a6b7c8d9 +
+    ensure_article_ip_columns, no backfill); store_fetched populates forward. The IP is OUR vantage
+    point (CDN edge/anycast), not the origin. tests/test_source_ip_capture.py.
+  - **Slice 6b — offline IP geolocation** `src/geo/ip_geo.py` lookup(ip)→{country,lat,lon,level,
+    db_vintage} fully OFFLINE (zero sockets, proven); country from a bundled DB-IP IP-to-Country Lite
+    range table (binary search, v4+v6), city from an on-demand data_dir download (never bundled/at
+    boot), country coords reuse geocode. NEVER fabricates a location (unknown/missing→unavailable+
+    reason). LICENSE VERIFIED: DB-IP IP-to-Country Lite = CC BY 4.0 (attribution mandatory,
+    ip_geo.ATTRIBUTION). scripts/build_ip_geo.py = networked-machine generator. **SKIP-AND-NOTE: the
+    real DB download is 403-blocked in the sandbox (like Wikidata/Ollama) → bundling it is a
+    networked-machine step; IP_GEO_AS_OF="unbundled" + the freshness test activate once it exists.**
+    tests/test_ip_geo.py (labeled documentation-IP fixtures, no fabricated real data).
+  - **Slice 6c (backend) — server-location layer** queries.server_locations + GET /api/insights/
+    server-locations: captured IPs geolocated offline, per-country, DISTINCT from the editorial
+    Source.country layer; IP/host CLUSTERING (2+ distinct sources on one IP = network-layer cousin of
+    source-laundering) surfaced as a shape to investigate NEVER a verdict; honest unavailable buckets;
+    counts only/no score; caveat + db_vintage + attribution carried. tests/test_server_locations.py.
+  REMAINING (flagged): Slice 4 PR-2/3 (port the heavy aggregations to read from the columnar store
+  behind the seam) + the persisted-encryption packaging decision (bundle per-OS httpfs); 6b bundle the
+  real DB-IP table (run the generator); 6c FRONTEND ooMap server-location layer toggle (browser-
+  unverifiable + needs the bundled DB to render). DEFERRED per brief (one-line, not built): WARC/BagIt
+  + age + SLIP-39; tiered-retention eviction; TLS chain/SCT/CT + provenance Tier vocabulary;
+  time-partitioning (abandoned unless provably result-invisible).
 - **FIELD TEST 2026-06-19 — THEME-3 ANALYSIS-WINDOW-PER-QUERY (centerpiece; branch
   claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the singleton #an
   analysis window became a MULTI-DOCUMENT WORKSPACE. A search / Lead / keyword now SPAWNS a NAMED,

@@ -157,6 +157,11 @@ def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
         word_count=len(doc.text.split()),
         created_at=now,
         updated_at=now,
+        # Source IP provenance (Slice 6a): the server we connected to (clearnet) or an
+        # honest "unavailable (proxy/Tor)" reason. Our vantage point, not the origin.
+        server_ip=getattr(fetched, "server_ip", None),
+        server_ip_reason=getattr(fetched, "server_ip_reason", None),
+        ip_observed_at=fetched.fetched_at,
     )
     session.add(article)
     try:
