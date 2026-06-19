@@ -1143,6 +1143,29 @@ def network_preflight_log() -> JSONResponse:
     )
 
 
+@router.get("/columnar")
+def columnar_status() -> dict:
+    """Observability for the derived data-architecture stores (Slice 4 + 6b).
+
+    Honest, network-free: the COLUMNAR engine mode (``persisted`` encrypted /
+    ``memory`` fallback / ``unavailable``) and the offline IP-geo DB vintage. Lets the
+    maintainer SEE whether persisted-encrypted analytics are active before deciding
+    whether to bundle the per-OS crypto extension that enables them. No score."""
+    from src.analytics import columnar
+    from src.database.connect import get_passphrase
+    from src.geo import ip_geo
+
+    return {
+        "columnar": columnar.status(get_passphrase()),
+        "ip_geo": ip_geo.freshness() | {"attribution": ip_geo.ATTRIBUTION},
+        "method": (
+            "Derived stores are disposable accelerators; the encrypted SQLCipher store is "
+            "always the source of truth. The columnar store is encrypted-under-the-same-"
+            "passphrase OR in-memory, never plaintext. Counts/state only, no score."
+        ),
+    }
+
+
 @router.get("/debug-bundle")
 def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     """ONE downloadable bundle with everything a developer needs to diagnose a

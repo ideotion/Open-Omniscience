@@ -201,6 +201,28 @@ def test_world_map_osm_offline_overlay():
     assert "is_valid_code(code)" in geo, "the preview endpoint must reject path-unsafe codes"
 
 
+def test_world_map_server_location_layer():
+    """Data-architecture slice 6c (frontend): the world map offers a switchable
+    "Server IPs" layer — the captured server IPs (6a) geolocated OFFLINE (6b),
+    DISTINCT from the editorial source-country choropleth, with the honesty caveats
+    visible and IP/host clustering surfaced as a shape to investigate, never a verdict.
+    Conservative + browser-unverified (node-checked; needs a click-through)."""
+    html = _ui_source()  # index.html + app.js + app.css
+    # an opt-in in-map toggle wired through onServer, fed by the backend endpoint
+    assert "data-oomap-server" in html and "onServer" in html, "the map needs a Server-IP toggle"
+    assert "/api/insights/server-locations" in html, "the layer must read the server-locations endpoint"
+    # distinct marker (violet squares) from the editorial choropleth + places overlay
+    assert "serverPts" in html and "#8b5cf6" in html
+    # caveats VISIBLE: CDN edge / anycast, not the origin; clustering is not a verdict
+    assert "CDN edge / anycast" in html
+    assert "a shape to investigate, never a verdict" in html
+    # backend: the endpoint + query exist (built in the merged PR #407)
+    ins = (_ROOT / "src" / "api" / "insights.py").read_text(encoding="utf-8")
+    assert '"/server-locations"' in ins
+    q = (_ROOT / "src" / "analytics" / "queries.py").read_text(encoding="utf-8")
+    assert "def server_locations(" in q
+
+
 def test_subtabs_are_browser_style_with_clear_active_state():
     """Field test 2026-06-19 #31/#57 (THEME-1): one homogeneous browser-tab look with an
     UNMISTAKABLE active state — an accent underline + bold (the old subtle bg+border read

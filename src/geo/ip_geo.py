@@ -27,10 +27,13 @@ Honesty rules (binding, maintainer ruling 2026-06-19):
   * **Re-geolocation is a new vintage**, never an overwrite: every result carries
     ``db_vintage`` so a later lookup against a fresher DB is distinguishable.
 
-EMPIRICAL NOTE: the DB-IP download is network-blocked in the build sandbox (403, like
-Wikidata/Ollama here), so the country table is NOT bundled by this change — run
-``scripts/build_ip_geo.py`` on a networked machine to produce it (the freshness test
-activates once it exists). ``OO_IP_GEO_DB`` / ``OO_IP_GEO_CITY_DB`` override the paths.
+DATA: the country table IS bundled (``data/dbip_country_lite.csv.gz``, ~4.4 MB,
+701k IPv4+IPv6 ranges, vintage :data:`IP_GEO_AS_OF`). The official db-ip.com download is
+network-blocked in the sandbox (403), so it is sourced from the DB-IP CC BY 4.0 mirror in
+``sapics/ip-location-db`` (identical ``start,end,CC`` format); ``scripts/build_ip_geo.py``
+refreshes it from either source. The freshness test pins the vintage within a sane window.
+``OO_IP_GEO_DB`` / ``OO_IP_GEO_CITY_DB`` override the paths (an env path that does not exist
+disables the bundled table — used to test the honest no-DB state).
 """
 
 from __future__ import annotations
@@ -50,7 +53,7 @@ _LOG = logging.getLogger(__name__)
 # When the bundled COUNTRY table was last refreshed. "unbundled" until the maintainer
 # runs scripts/build_ip_geo.py on a networked machine (the freshness test then asserts a
 # real YYYY-MM within a sane window). DB-IP refreshes monthly.
-IP_GEO_AS_OF = "unbundled"
+IP_GEO_AS_OF = "2026-06"
 
 # Mandatory CC BY 4.0 attribution for the bundled country table.
 ATTRIBUTION = "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0"
