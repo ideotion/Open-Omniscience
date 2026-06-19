@@ -399,6 +399,25 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Never return a bare plain-text 500. The SPA calls res.json() on EVERY
+    response (errors included), so Starlette's default plain-text 500 makes the UI
+    report only "JSON.parse: unexpected character at line 1 column 1", masking the
+    real cause (field test 2026-06-19 P0-3: an OLD backup's restore-preview surfaced
+    exactly this). Return a JSON {detail} for all otherwise-unhandled errors so the
+    UI can show the real message. Local single-user app: the operator IS the user, so
+    the message is included to aid debugging (no untrusted clients)."""
+    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    try:
+        REQUEST_COUNT.labels(
+            method=request.method, endpoint=request.url.path, http_status=500
+        ).inc()
+    except Exception:  # noqa: BLE001 - metrics must never mask the original error
+        pass
+    return JSONResponse(status_code=500, content={"detail": f"internal error: {exc}"})
+
+
 def _validate_date(value: str | None, field_name: str) -> None:
     """Raise HTTP 400 if `value` is set but not an ISO date (YYYY-MM-DD)."""
     if value:

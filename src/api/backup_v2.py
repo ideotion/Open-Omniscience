@@ -138,9 +138,20 @@ async def restore_preview(
     except MergeError as exc:
         cleanup_staging(staged)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception:
+    except HTTPException:
         cleanup_staging(staged)
         raise
+    except Exception as exc:
+        # Any other failure (e.g. an OLD backup whose corpus carries a schema this
+        # build cannot stage-migrate) must STILL return a JSON {detail}, never a bare
+        # plain-text 500 — the SPA reads res.json() and would otherwise show only
+        # "JSON.parse: unexpected character" (field test 2026-06-19 P0-3).
+        cleanup_staging(staged)
+        _LOG.exception("restore preview failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"could not read this backup (it may be from an incompatible version): {exc}",
+        ) from exc
     token = secrets.token_urlsafe(24)
     _PENDING[token] = staged
     report["commit_token"] = token
@@ -173,6 +184,14 @@ async def restore_commit(
         return report
     except MergeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # JSON, never a plain-text 500 (P0-3) — see preview above.
+        _LOG.exception("restore commit failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"could not restore this backup (it may be from an incompatible version): {exc}",
+        ) from exc
     finally:
         cleanup_staging(staged)
 

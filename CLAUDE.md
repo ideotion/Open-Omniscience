@@ -3185,6 +3185,22 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P0-3 RESTORE PREVIEW ALWAYS ANSWERS JSON (#O-3; branch
+  claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** two older-version backups
+  failed to preview with "JSON.parse: unexpected character at line 1 column 1" — the SPA
+  calls res.json() on every response, and an exception escaping `run_restore` (e.g. an old
+  corpus's staged-migration failure) RE-RAISED into Starlette's PLAIN-TEXT 500. Same class
+  the maintainer hit on backup-CREATE (fixed bespoke earlier). FIXES: (1) SYSTEMIC — a global
+  `@app.exception_handler(Exception)` in main.py returns a JSON {detail} for ANY
+  otherwise-unhandled error, so no endpoint can ever return a plain-text 500 again (the SPA
+  never trips JSON.parse). (2) SURGICAL — restore_preview + restore_commit now catch generic
+  Exception → HTTPException(500) with an ACTIONABLE "may be from an incompatible version: …"
+  message (and re-raise HTTPException cleanly). The version-gap path (`_stage_upload` →
+  ArtifactError "unsupported backup schema 'oo-backup-1'") was already a clean 400 — pinned.
+  tests/test_restore_preview_robust_errors.py (old-schema → 400 JSON naming the gap;
+  run_restore failure → 500 JSON not plaintext; the global handler returns JSON for an
+  unhandled error). DELIBERATELY did NOT add a throwaway route to the shared app singleton
+  (ledger flakiness lesson). REMAINING (P0-4): import recomputes core-engine metadata.
 - **FIELD TEST 2026-06-19 — P0-2 BACKUP ENCRYPTION IS PROVABLY REAL (#O-4; branch
   claude/gallant-bohr-1cogzj, draft onto 0.09; backend VERIFIED py3.11 venv):** the maintainer
   saw an encrypted + a plaintext backup report the SAME size and asked "is it actually
