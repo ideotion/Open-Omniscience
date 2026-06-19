@@ -182,10 +182,11 @@
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
           <span id="brief-generated" class="hint" style="margin:0"></span></div>
         <div class="brief-toolbar">
-          <label class="switch" title="Transparency: show how every figure was computed. The caveat is always shown on each Lead.">
-            <input type="checkbox" id="brief-methods" onchange="toggleMethods()"> Show method</label>
+          <!-- "Show method" toggle retired (field test 2026-06-19 P2-2): each Lead's
+               method + "why" now live behind a per-card "?" affordance (bottom-right);
+               the caveat stays visible on every card (#23). -->
           <span class="sp"></span>
-          <button class="secondary tiny" onclick="openDraft()">Draft (<span id="draft-count">0</span>) →</button>
+          <button class="secondary tiny" onclick="openDraft()" title="Your draft — Leads you pinned to investigate together">🛒 Draft (<span id="draft-count">0</span>) →</button>
         </div>
         <!-- Whole-sentence nodes (the i18n exact-match pattern; see the Agenda intro). -->
         <p class="hint" style="margin-top:8px"><span>Equal view — every source is counted once; no source is de-amplified in this version.</span>

@@ -3187,6 +3187,20 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P2-2 CARD DECLUTTER VIA A "?" AFFORDANCE (#19/#66; branch
+  claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the maintainer
+  found Leads cluttered with the verbose "why"/method. Consolidated the "Why am I seeing this?"
+  (plain sentence + exact math) AND the Method into ONE per-card "?" affordance (`.card-info`
+  `<details>`) at the BOTTOM-RIGHT of `.acts` (next to Add-to-draft/dismiss), removing them from the
+  card face. CONSTRAINT HONORED (Q2 + #23, the informed-consent non-negotiable): the CAVEAT stays
+  FULLY VISIBLE in `.card-caveat` on the face — NOT moved into the "?" (test asserts c.caveat NOT in
+  infoBlock + still in .card-caveat). The global "Show method" toggle (#brief-methods +
+  toggleMethods/applyMethodsToggle) is RETIRED — the per-card "?" absorbs it (method is reachable
+  per-card; the checkbox is gone, orphaned "Show method" locale keys harmless). #66: the Draft button
+  gained a 🛒 cart icon + title. #23 test updated (caveat-visible core unchanged; method now asserted
+  inside the "?" not a global-toggle .mc). node --check + test_ui_invariants + i18n 100%. REMAINING:
+  the full verbose caveat ALSO surfaced in the opened analysis window (the card click already opens it);
+  per-card-TYPE scenarios are Q1 (parked, maintainer-reserved).
 - **FIELD TEST 2026-06-19 — P2-5/THEME-1 BROWSER-STYLE SUBTABS + P2-11 MODELS→AI (#31/#57/#42;
   branch claude/gallant-bohr-1cogzj; frontend CSS/label, invariant-guarded, BROWSER-UNVERIFIED):**
   the maintainer found the subtab active-state "unreliable" and wants ONE homogeneous browser-tab

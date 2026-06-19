@@ -495,12 +495,23 @@
     .card .evid { display:flex; flex-direction:column; gap:3px; font-size:12.5px; }
     .card .evid a { color:var(--accent); text-decoration:none; }
     .card .evid a:hover { text-decoration:underline; }
-    .card .mc { font-size:11.5px; color:var(--muted); border-top:1px dashed var(--border); padding-top:7px; }
+    /* The per-card "?" affordance (P2-2 declutter, 2026-06-19): a small round button at
+       the bottom-right of .acts; opening it reveals the "why" + the exact math + the
+       method. The CAVEAT stays VISIBLE on the card face (#23) — only this verbose detail
+       layers here. */
+    .card .card-info { margin-left:auto; }
+    .card .card-info > summary { list-style:none; cursor:pointer; display:inline-flex;
+      align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%;
+      border:1px solid var(--border); color:var(--muted); font-weight:700; font-size:12px; }
+    .card .card-info > summary::-webkit-details-marker { display:none; }
+    .card .card-info > summary:hover { color:var(--accent); border-color:var(--accent); }
+    .card .card-info[open] > summary { color:var(--accent); border-color:var(--accent); }
+    .card .card-info-body { flex-basis:100%; margin-top:6px; font-size:12px;
+      border-top:1px dashed var(--border); padding-top:6px; }
+    .card .mc { font-size:11.5px; color:var(--muted); margin-top:6px; }
     .card .mc[hidden] { display:none; }
     /* "Why am I seeing this?" — plain words first, the exact math beneath. */
-    .card .why { font-size:12px; border-top:1px dashed var(--border); padding-top:6px; }
-    .card .why summary { cursor:pointer; color:var(--accent); font-weight:600; }
-    .card .why-plain { margin:6px 0 4px; color:var(--fg-soft, var(--fg)); }
+    .card .why-plain { margin:2px 0 4px; color:var(--fg-soft, var(--fg)); }
     .card .why-mathlabel { font-size:11px; color:var(--muted); text-transform:uppercase;
       letter-spacing:.04em; margin:6px 0 2px; }
     .card .why-math { width:100%; border-collapse:collapse; }

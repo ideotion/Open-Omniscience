@@ -1414,7 +1414,6 @@
         ? `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>` : "") + html;
       // "All" is the default; selecting a family shows only that bucket.
       if (data.buckets.length > 1) ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: "__all"});
-      applyMethodsToggle();
     }
     function selectHomeFamily(key) {
       document.querySelectorAll("#briefing-feed .brief-bucket").forEach(el => {
@@ -1481,20 +1480,25 @@
         const qp = new URLSearchParams({view: c.recipe.view, ...(c.recipe.params || {})});
         recipeBtn = `<a class="btnlike tiny" href="/investigate?${qp.toString()}" target="_blank" rel="noopener" title="Opens a dedicated investigation view in a new tab">Open investigation ↗</a>`;
       }
-      // "Why am I seeing this?" (evidence-tiered cards): a plain-language sentence
-      // first, the exact arithmetic underneath. Labels and the plain sentence are
-      // CONSTANT English strings -> the i18n engine translates them; values are
-      // numbers/symbols only (language-neutral).
-      let whyBlock = "";
-      if (c.trigger && c.trigger.plain) {
-        const rows = (c.trigger.math || []).map(r =>
-          `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
-        whyBlock = `<details class="why">
-          <summary>Why am I seeing this?</summary>
-          <p class="why-plain">${esc(c.trigger.plain)}</p>
-          ${rows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${rows}</table>` : ""}
-        </details>`;
-      }
+      // P2-2 declutter (field test 2026-06-19): the verbose "Why am I seeing this?"
+      // (plain sentence + exact math) and the Method live behind ONE per-card "?"
+      // affordance at the BOTTOM-RIGHT (in .acts), NOT inline on the card face. The
+      // CAVEAT stays VISIBLE on the card (#23 / informed-consent — never hidden); only
+      // the verbose method/math layers (and the analysis window the card opens shows
+      // the full context). Labels + the plain sentence are CONSTANT English strings
+      // (i18n-translated); values are numbers/symbols (language-neutral).
+      const _whyRows = (c.trigger && c.trigger.math || []).map(r =>
+        `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
+      const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(c.trigger.plain)}</p>` : "";
+      const _methodInfo = c.method ? `<div class="mc"><b>Method:</b> ${esc(c.method)}</div>` : "";
+      const infoBlock = (_whyPlain || _whyRows || _methodInfo)
+        ? `<details class="card-info"><summary title="Why am I seeing this — method &amp; the exact math" aria-label="Why am I seeing this — method and the exact math">?</summary>
+            <div class="card-info-body">
+              ${_whyPlain}
+              ${_whyRows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${_whyRows}</table>` : ""}
+              ${_methodInfo}
+            </div></details>`
+        : "";
       // EVERY card is clickable (maintainer 2026-06-16): the card body opens the
       // unified analysis window over the card's article selection (never the
       // standalone /investigate new tab — that stays as the explicit "Open
@@ -1521,27 +1525,19 @@
         ${caveatLine}
         ${sigLine}
         ${evidBlock}
-        ${whyBlock}
         ${weatherBox}
-        <div class="mc" hidden><b>Method:</b> ${esc(c.method)}</div>
         <div class="acts">
           ${recipeBtn}
           ${weatherBtn}
           <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
           ${collapseBtn}
           ${dismiss}
+          ${infoBlock}
         </div></div>`;
     }
 
-    function toggleMethods() {
-      localStorage.setItem("oo.brief.methods", $("brief-methods").checked ? "1" : "0");
-      applyMethodsToggle();
-    }
-    function applyMethodsToggle() {
-      const on = localStorage.getItem("oo.brief.methods") === "1";
-      const box = $("brief-methods"); if (box) box.checked = on;
-      document.querySelectorAll("#briefing-feed .mc").forEach(el => el.hidden = !on);
-    }
+    // The global "Show method" toggle was retired (P2-2, 2026-06-19): each Lead's
+    // method + "why" now live behind a per-card "?" affordance (cardHtml -> infoBlock).
 
     async function dismissCard(id) {
       try {

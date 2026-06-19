@@ -907,20 +907,27 @@ def test_ui_invariants():
     )[1][:1500], "the graph causation caveat was removed (maintainer 2026-06-17)"
     # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
     #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
-    #     .card-caveat line, NEVER hidden behind the method toggle. Only the verbose
-    #     method/math stays in the toggle-gated .mc block. (This regressed once: the
-    #     .mc block held BOTH method AND caveat behind a default-OFF checkbox.)
+    #     .card-caveat line on the card FACE, NEVER hidden. (P2-2 decluttering, field
+    #     test 2026-06-19: the verbose Method + "why" moved into a per-card "?"
+    #     affordance (.card-info) — the caveat stays on the face; only the verbose
+    #     method/math layers. This regressed once: the .mc block held BOTH behind a
+    #     default-OFF checkbox.)
     assert 'class="card-caveat">${esc(c.caveat)}' in html, (
         "every briefing card must render its caveat VISIBLE BY DEFAULT (CLAUDE.md "
         "informed-consent: caveats are never hidden behind a calm-UI toggle)"
     )
-    mc_block = html.split('<div class="mc" hidden>', 1)[1].split("</div>", 1)[0]
-    assert "c.caveat" not in mc_block, (
-        "the per-card caveat must NOT live inside the toggle-gated .mc block — it is "
-        "visible by default (CLAUDE.md informed-consent mandate)"
+    # The verbose method/why now live in the per-card "?" affordance (infoBlock); the
+    # caveat is NOT inside it (it stays visible on the face).
+    info_block = html.split("const infoBlock = ", 1)[1].split(': "";', 1)[0]
+    assert "_methodInfo" in info_block and "_whyPlain" in info_block, (
+        "the method + why must live in the per-card '?' affordance (infoBlock)"
     )
-    assert "c.method" in mc_block, (
-        "the verbose method/math stays behind the 'Show method' toggle (.mc)"
+    assert "c.caveat" not in info_block, (
+        "the per-card caveat must NOT be moved into the '?' affordance — it stays "
+        "VISIBLE on the card face (CLAUDE.md informed-consent mandate)"
+    )
+    assert "esc(c.method)" in html.split("const _methodInfo = ", 1)[1][:120], (
+        "the verbose method must render inside the per-card '?' affordance"
     )
     # The caveat colour must be theme-aware (var(--caveat)), not a hardcoded hex that
     # fails WCAG AA on light themes — the most ethically important strings stay legible.
