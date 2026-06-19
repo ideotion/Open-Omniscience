@@ -74,6 +74,32 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
 
 
+def test_analysis_window_per_query_spawns_tabs_and_retires_corpus_modal():
+    """Field test 2026-06-19 THEME-3: a search/Lead/keyword spawns a NAMED, closeable,
+    persisted analysis TAB over the one #an surface (multi-document workspace), with an
+    Overview screen; the legacy #corpus-win modal is RETIRED (openCorpus now spawns a
+    tab). One analysis surface (ruling: 'retire both')."""
+    base = _SRC / "static"
+    app = (base / "app.js").read_text(encoding="utf-8")
+    html = (base / "index.html").read_text(encoding="utf-8")
+    # The spawned-tab strip + machinery.
+    assert 'id="an-tabstrip"' in html, "the analysis-tab strip is missing"
+    for fn in ("function _anSpawn(", "function _anActivate(", "function _anCloseTab(",
+               "function _anRenderStrip(", "function _anRestoreTabs("):
+        assert fn in app, f"the analysis-tab machinery is incomplete: {fn}"
+    assert "let _anTabs" in app and "_AN_TABS_KEY" in app, "tabs must persist across sessions"
+    # openCorpus retired -> routes to a spawned analysis tab (one surface).
+    assert "function openCorpus(term) { openAnalysisFor(term); }" in app, (
+        "#corpus-win must be retired — openCorpus now spawns an analysis tab"
+    )
+    assert "document.getElementById(\"corpus-win\").showModal()" not in app, (
+        "the legacy keyword modal must no longer be shown"
+    )
+    # The Overview screen (generic per-card landing, Q1).
+    assert '<button class="active" data-tab="overview">Overview</button>' in html
+    assert "function renderAnOverview(" in app and 'id="an-overview"' in html
+
+
 def test_trends_render_as_clickable_bar_graphs():
     """Field test 2026-06-19 #25: the rising/top Trends are clickable horizontal BAR
     graphs (bar length ∝ the real count/rate, value shown — no score), and clicking a

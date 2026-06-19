@@ -253,11 +253,16 @@
          button (and the sidebar). Counts only, never a verdict. -->
     <div class="tab-page" id="tab-analyze">
     <section class="panel">
+      <!-- THEME-3 (2026-06-19): analysis-window-per-query — each search/Lead/keyword
+           spawns a NAMED, closeable, persisted tab over this one render area (replaces
+           the singleton + the retired #corpus-win modal). -->
+      <div id="an-tabstrip" class="an-tabstrip" role="tablist" style="display:none"></div>
       <div class="phead"><h2>Analysis</h2><span class="sp"></span>
         <span id="an-query" class="hint" style="margin:0"></span></div>
       <p class="hint" style="margin-top:0">Analytics over the articles your search matched — counts only, never a verdict. <span>Text only — images, audio and video aren't analysed.</span></p>
       <nav class="tabs" id="an-subtabs" style="position:static;padding:0;border:0;margin-top:6px">
-        <button class="active" data-tab="keywords">Keywords</button>
+        <button class="active" data-tab="overview">Overview</button>
+        <button data-tab="keywords">Keywords</button>
         <button data-tab="trend">Trend</button>
         <button data-tab="mindmap">Mindmap</button>
         <button data-tab="articles">Articles</button>
@@ -269,7 +274,8 @@
         <button data-tab="price" id="an-price-tab" style="display:none">Price</button>
         <button data-tab="advanced">Advanced</button>
       </nav>
-      <div class="an-panel" id="an-keywords" style="margin-top:10px">
+      <div class="an-panel" id="an-overview" style="margin-top:10px"></div>
+      <div class="an-panel" id="an-keywords" style="display:none;margin-top:10px">
         <div class="muted">Run a search, then press Analyze to populate this window.</div>
       </div>
       <div class="an-panel" id="an-trend" style="display:none;margin-top:10px;overflow:auto"></div>

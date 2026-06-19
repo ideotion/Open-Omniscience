@@ -3187,6 +3187,38 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — THEME-3 ANALYSIS-WINDOW-PER-QUERY (centerpiece; branch
+  claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the singleton #an
+  analysis window became a MULTI-DOCUMENT WORKSPACE. A search / Lead / keyword now SPAWNS a NAMED,
+  closeable, persisted TAB (`#an-tabstrip`) over the one render area; several searches coexist as
+  parallel tabs (deduped by seed key; soft cap 10; persisted to localStorage `oo.an.tabs.v1`,
+  restored at boot with lazy data-load on first open). Machinery: `_anTabs`/`_anActiveId` +
+  `_anSpawn`/`_anActivate`/`_anCloseTab`/`_anApplySeed`/`_anRenderStrip`/`_anShowEmpty`/
+  `_anRestoreTabs`; `openAnalysisFor`/`openAnalysisForIds`/`openAnalysis` refactored to spawn,
+  `anRunAdvanced` refines the ACTIVE tab in place. The legacy #corpus-win keyword MODAL is RETIRED —
+  `openCorpus(term)` now just spawns an analysis tab (one surface; the modal DOM stays unreachable
+  per the Desk lesson, never shown). NEW **Overview** subtab (the default landing, Q1 generic): an
+  honest headline TILE per lens (top keyword / where+who / source / sentiment + deep-link tiles for
+  Trend/Mindmap/Links/Related/Articles) — counts only, no synthesis, each deep-links to its subtab
+  via `renderAnOverview` (bounded Promise.all over the existing corpus-* endpoints, graceful degrade).
+  test_repo_invariants::test_analysis_window_per_query_spawns_tabs_and_retires_corpus_modal +
+  existing #an/openCorpus invariants still green; node --check + i18n 100%. REMAINING: spawned tabs
+  in the TOP facet strip (nav=B) vs the in-panel strip shipped here; per-tab subtab memory; richer
+  Overview headlines; human click-through (fork-3).
+- **FIELD TEST 2026-06-19 — LARGE-UI-REWRITE BATCH (maintainer "proceed with all remaining themes,
+  I'll test separately"; branch claude/gallant-bohr-1cogzj; ALL frontend, BROWSER-UNVERIFIED, flagged):**
+  batch-1 rulings (AskUserQuestion 2026-06-19): (1) THEME-3 = RETIRE BOTH the empty singleton #an AND
+  the legacy #corpus-win modal → ONE analysis surface (analysis-window-per-query, named/closeable/
+  persisted spawned tabs + an Overview screen); (2) THEME-2 OSM enrichment = IN-BROWSER .pbf PARSER
+  (bundle a local vector-tile/pbf parser, render the downloaded region directly, fully offline); (3)
+  THEME-5 security i18n = TRANSLATE ×12 + FLAG for native review (everything incl. panic/airplane);
+  (4) Q1 per-card = GENERIC ONLY (every card opens its EXACT corpus on the Overview screen; per-type
+  landing deferred — maintainer will send tweaks). AUTONOMOUS DEFAULTS (not asked): Overview = honest
+  headline tile per lens (no synthesis); THEME-2 fullscreen (Fullscreen API) · regions-as-list ·
+  dynamic non-overlapping labels (greedy declutter) · deduced-events-as-shapes (square/triangle,
+  colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
+  + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
+  standalone Tasks page. Built as stacked commits per-slice below.
 - **FIELD TEST 2026-06-19 — THEME-5 i18n: STATUS-BAR + SESSION-NEW STRINGS ×12 (#59; branch
   claude/gallant-bohr-1cogzj):** the always-on status pill showed hardcoded lowercase "healthy"/
   "offline"/"checking…" (the #59 named gap) — routed through `t()` and keyed ×12, plus this session's

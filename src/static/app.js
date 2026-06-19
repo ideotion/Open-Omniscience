@@ -928,6 +928,15 @@
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
+      // THEME-3: opening Analysis hydrates the restored active tab the first time (the
+      // strip is restored at boot; the active tab's data loads lazily here), or shows
+      // the launcher empty state when there are no tabs.
+      if (name === "analyze" && !_anHydrated) {
+        _anHydrated = true;
+        const tb = _anActiveId ? _anTabs.find(x => x.id === _anActiveId) : null;
+        if (tb) { _anRenderStrip(); _anApplySeed(tb); }
+        else if (!_anTabs.length) _anShowEmpty();
+      }
       if (name !== "timemap" && typeof stopTmapPlay === "function") stopTmapPlay();  // don't animate a hidden tab
       startLive(name);                                  // live status for the active tab
       document.body.classList.remove("nav-open");       // close mobile drawer
@@ -6386,14 +6395,10 @@
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
-    async function openCorpus(term) {
-      _corpusTerm = term;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      $("corpus-title").textContent = term;
-      $("corpus-n").textContent = "";
-      document.getElementById("corpus-win").showModal();
-      (_corpusSubtabs || {select: corpusTab}).select(_corpusTab);
-    }
+    // openCorpus is RETIRED here (THEME-3, 2026-06-19): the legacy #corpus-win keyword
+    // modal is gone — a keyword now spawns its own analysis TAB (one analysis surface).
+    // The replacement `function openCorpus(term){ openAnalysisFor(term); }` is defined
+    // with the tab machinery below; all call sites route through it unchanged.
     // Return the relocatable mind-map kit (#mm-kit) to its Insights home anchor.
     // Called BEFORE any corpus tab overwrites #corpus-body, so the shared
     // component (its DOM + live SVG/pan-zoom handlers) is never destroyed.
@@ -8792,80 +8797,203 @@
       if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
       return p;
     }
-    // Open the analysis window over an EXACT article set (a set-based card's precise
-    // selection — echo / convergence). The corpus is exactly these ids, not a re-run
-    // search. The Advanced tab can refine FROM here (which clears the fixed set).
-    function openAnalysisForIds(ids, label) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      _anIds = Array.isArray(ids) ? ids.slice(0, 5000) : null;
-      _anCommodity = null;   // a fixed article set, not a commodity overlay
-      $("an-adv-query").value = ""; $("an-adv-source").value = "";
-      $("an-adv-lang").value = ""; $("an-adv-from").value = ""; $("an-adv-to").value = "";
-      $("an-query").textContent = label ? `“${label}”` : t("(the selected article set)");
-      $("an-adv-note").textContent = t("Showing the exact article set behind this Lead.");
-      showTab("analyze");
-      loadAnalysis(anParams());
-    }
+    // === THEME-3 (2026-06-19): analysis-window-per-query ====================== //
+    // Each search / Lead / keyword spawns a NAMED, closeable, persisted TAB over the
+    // ONE #an render area. A SEED captures what to show; activating a tab applies its
+    // seed + re-renders. Replaces the singleton #an AND the retired #corpus-win modal
+    // (ruling: "retire both — one analysis surface"). Per-card landing = generic: a
+    // spawned tab lands on the OVERVIEW screen showing the card's EXACT corpus (Q1).
+    let _anTabs = [];          // [{id,key,label,kind,query,ids,commodity,src,lang,from,to}]
+    let _anActiveId = null;
+    let _anTabSeq = 1;
+    let _anHydrated = false;    // restored tabs load lazily the first time Analysis is opened
+    const _AN_TABS_KEY = "oo.an.tabs.v1";
+    const _AN_TAB_CAP = 10;    // soft cap (a multi-document workspace, not unbounded)
 
-    // --- Analysis window (Group F): analytics over the articles a search matched.
-    // Keywords (article-set aggregate) + the matches themselves; keyword chips
-    // open their own analysis (the keyword corpus window). Counts, never a verdict.
-    // Open the analysis window seeded with an explicit query (the omnibar Enter
-    // path — ruled: Enter -> a corpus-of-articles window, not the Search tab).
-    function openAnalysisFor(query, opts) {
-      _anIds = null;   // a fresh query, not a fixed article set
-      // A commodity click carries {commodity:{symbol,name,unit}} so the Price
-      // subtab can overlay the price curve with this term's corpus coverage.
-      _anCommodity = (opts && opts.commodity) || null;
-      const q = (query || "").trim();
-      $("an-adv-query").value = q;
-      $("an-adv-source").value = ""; $("an-adv-lang").value = "";
-      $("an-adv-from").value = ""; $("an-adv-to").value = "";
-      $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
-      $("an-adv-note").textContent = "";
-      showTab("analyze");
+    function _anSaveTabs() {
+      try {
+        // Persist only the lightweight SEEDS (never the rendered data).
+        const slim = _anTabs.map(tb => ({
+          id: tb.id, key: tb.key, label: tb.label, kind: tb.kind, query: tb.query || "",
+          ids: tb.kind === "ids" ? (tb.ids || []).slice(0, 5000) : null,
+          commodity: tb.commodity || null, src: tb.src || "", lang: tb.lang || "",
+          from: tb.from || "", to: tb.to || "",
+        }));
+        localStorage.setItem(_AN_TABS_KEY, JSON.stringify({tabs: slim, active: _anActiveId}));
+      } catch (_e) { /* private mode — tabs just won't persist */ }
+    }
+    function _anRenderStrip() {
+      const strip = $("an-tabstrip"); if (!strip) return;
+      if (!_anTabs.length) { strip.innerHTML = ""; strip.style.display = "none"; return; }
+      strip.style.display = "";
+      strip.innerHTML = _anTabs.map(tb => {
+        const on = tb.id === _anActiveId;
+        const lbl = (tb.label || tb.query || "set").slice(0, 28);
+        return `<span class="an-tab${on ? " active" : ""}" role="tab" aria-selected="${on ? "true" : "false"}">`
+          + `<button class="an-tab-label" onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
+          + `<button class="an-tab-x" onclick="_anCloseTab(${esc(JSON.stringify(tb.id))})" title="Close this analysis tab" aria-label="Close">✕</button></span>`;
+      }).join("");
+    }
+    function _anApplySeed(tb) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anIds = (tb.kind === "ids" && Array.isArray(tb.ids)) ? tb.ids.slice(0, 5000) : null;
+      _anCommodity = tb.commodity || null;
+      $("an-adv-query").value = tb.query || "";
+      $("an-adv-source").value = tb.src || "";
+      $("an-adv-lang").value = tb.lang || "";
+      $("an-adv-from").value = tb.from || "";
+      $("an-adv-to").value = tb.to || "";
+      $("an-query").textContent = tb.label ? `“${tb.label}”` : (tb.query ? `“${tb.query}”` : t("(the selected article set)"));
+      $("an-adv-note").textContent = (tb.kind === "ids") ? t("Showing the exact article set behind this Lead.") : "";
       loadAnalysis(anParams());
+      if (_anSubtabs) _anSubtabs.select("overview"); else anSelectTab("overview");   // generic landing (Q1)
+    }
+    function _anActivate(id) {
+      const tb = _anTabs.find(x => x.id === id); if (!tb) return;
+      _anActiveId = id; _anHydrated = true;
+      showTab("analyze");
+      _anRenderStrip();
+      _anApplySeed(tb);
+      _anSaveTabs();
+    }
+    function _anCloseTab(id) {
+      const i = _anTabs.findIndex(x => x.id === id); if (i < 0) return;
+      _anTabs.splice(i, 1);
+      if (_anActiveId === id) {
+        const next = _anTabs[i] || _anTabs[i - 1] || null;
+        _anActiveId = next ? next.id : null;
+        _anRenderStrip();
+        if (next) _anApplySeed(next); else _anShowEmpty();
+      } else { _anRenderStrip(); }
+      _anSaveTabs();
+    }
+    function _anShowEmpty() {
+      // No tabs: the surface is a launcher (the empty singleton #an is retired).
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anIds = null; _anCommodity = null; $("an-query").textContent = "";
+      const ov = $("an-overview");
+      if (ov) ov.innerHTML = `<div class="muted">${esc(t("Search above, or open a Lead or keyword, to start an analysis. Each opens its own tab here."))}</div>`;
+      if (_anSubtabs) _anSubtabs.select("overview"); else anSelectTab("overview");
+    }
+    // Spawn (or focus) a tab for a seed; dedupe by key so the SAME query/set reuses
+    // its tab while DIFFERENT searches coexist as parallel tabs (the workspace).
+    function _anSpawn(seed) {
+      const key = seed.kind === "ids"
+        ? ("ids:" + (seed.label || (seed.ids || []).slice(0, 4).join(",")))
+        : ("q:" + (seed.query || "").toLowerCase() + "|" + (seed.src || "") + "|" + (seed.lang || ""));
+      let tb = _anTabs.find(x => x.key === key);
+      if (!tb) {
+        tb = Object.assign({id: "t" + (_anTabSeq++) + Date.now().toString(36), key}, seed);
+        _anTabs.push(tb);
+        if (_anTabs.length > _AN_TAB_CAP) {
+          const drop = _anTabs.find(x => x.id !== tb.id);   // evict the oldest non-new tab
+          if (drop) _anTabs = _anTabs.filter(x => x.id !== drop.id);
+        }
+      } else { Object.assign(tb, seed, {id: tb.id, key}); }
+      _anActivate(tb.id);
+    }
+    // Open the analysis window over an EXACT article set (echo / convergence / a card's
+    // precise selection). The corpus is exactly these ids, not a re-run search.
+    function openAnalysisForIds(ids, label) {
+      _anSpawn({kind: "ids", ids: Array.isArray(ids) ? ids.slice(0, 5000) : [], label: label || "", query: ""});
+    }
+    // Open the analysis window seeded with a query (omnibar Enter, keyword/card click).
+    // A commodity click carries {commodity:{symbol,name,unit}} for the Price subtab.
+    function openAnalysisFor(query, opts) {
+      const q = (query || "").trim();
+      _anSpawn({kind: "query", query: q, label: q, commodity: (opts && opts.commodity) || null});
+    }
+    // Retired #corpus-win modal -> a keyword now spawns its own analysis tab (one
+    // surface). All openCorpus call sites get the spawn behaviour for free.
+    function openCorpus(term) { openAnalysisFor(term); }
+    function _anRestoreTabs() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(_AN_TABS_KEY) || "null");
+        if (raw && Array.isArray(raw.tabs) && raw.tabs.length) {
+          _anTabs = raw.tabs;
+          _anActiveId = raw.active && _anTabs.some(t => t.id === raw.active) ? raw.active : _anTabs[0].id;
+          _anRenderStrip();   // show the strip; the active tab loads lazily when Analysis opens
+        }
+      } catch (_e) { /* corrupt state — start clean */ }
     }
     function openAnalysis() {
-      _anCommodity = null;   // the search-driven path is not a commodity overlay
+      // The search "Analyze" path -> spawn a tab seeded from the current search.
       const qtxt = $("q").value.trim();
-      $("an-query").textContent = qtxt ? `“${qtxt}”` : "(all articles matching your filters)";
-      // Prefill the Advanced tab from the current search, so it reflects what is
-      // being analyzed and the user can refine from there (toward folding in Search).
-      $("an-adv-query").value = qtxt;
-      $("an-adv-source").value = $("f-source").value.trim();
-      $("an-adv-lang").value = $("f-lang").value.trim();
-      // Carry only a NARROWED window over to the analysis Advanced inputs (the
-      // ooTimeScope feeds start_date/end_date the same way; a bound left at the
-      // absolute min/max means "all", so it stays blank here).
       const _ts = _searchTimeScope && _searchTimeScope.get();
-      $("an-adv-from").value = (_ts && _ts.from && _ts.from > _searchTsBounds.min) ? _ts.from : "";
-      $("an-adv-to").value = (_ts && _ts.to && _ts.to < _searchTsBounds.max) ? _ts.to : "";
-      $("an-adv-note").textContent = "";
-      showTab("analyze");
-      loadAnalysis(searchParams());
+      _anSpawn({
+        kind: "query", query: qtxt, label: qtxt || "(filtered)",
+        src: ($("f-source").value || "").trim(), lang: ($("f-lang").value || "").trim(),
+        from: (_ts && _ts.from && _ts.from > _searchTsBounds.min) ? _ts.from : "",
+        to: (_ts && _ts.to && _ts.to < _searchTsBounds.max) ? _ts.to : "",
+      });
     }
-    // Advanced tab: refine the analyzed article set in-place. loadAnalysis re-runs
-    // EVERY subtab from the params, so this is the whole wiring.
+    // Advanced tab: refine the ACTIVE tab in-place (updates its seed, never spawns a
+    // new tab). loadAnalysis re-runs EVERY subtab from the params.
     function anRunAdvanced() {
       _anIds = null;   // refining via Advanced search replaces any fixed article set
       _anCommodity = null;   // a refined search is no longer the commodity overlay
       const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const p = new URLSearchParams();
-      const q = $("an-adv-query").value.trim(); if (q) p.set("query", q);
-      const src = $("an-adv-source").value.trim(); if (src) p.set("source", src);
-      const lang = $("an-adv-lang").value.trim(); if (lang) p.set("language", lang);
-      if ($("an-adv-from").value) p.set("start_date", $("an-adv-from").value);
-      if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
+      const q = $("an-adv-query").value.trim();
+      const src = $("an-adv-source").value.trim(), lang = $("an-adv-lang").value.trim();
+      const from = $("an-adv-from").value, to = $("an-adv-to").value;
+      const tb = _anTabs.find(x => x.id === _anActiveId);
+      if (tb) {
+        Object.assign(tb, {kind: "query", query: q, label: q || "(filtered)", ids: null,
+          commodity: null, src, lang, from, to,
+          key: "q:" + q.toLowerCase() + "|" + src + "|" + lang});
+        _anRenderStrip(); _anSaveTabs();
+      }
       $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
       $("an-adv-note").textContent = tt("Analysis updated — see the other tabs.");
-      loadAnalysis(p);
+      loadAnalysis(anParams());
     }
     function anSelectTab(key) {
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
+      if (key === "overview") renderAnOverview(_anLastParams);  // headline tile per lens
       if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
       if (key === "related") renderAnRelated(_anLastParams);   // lazy: coordination/related computed on show
+    }
+    // The OVERVIEW screen (THEME-3): an honest headline tile per lens (counts only, no
+    // synthesis), each deep-linking to its subtab. Bounded summary fetches; degrades
+    // gracefully (shows whatever resolves). The card's EXACT corpus is the scope (Q1).
+    let _anOverviewKey = null;
+    async function renderAnOverview(p) {
+      const host = $("an-overview"); if (!host || !p) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const key = p.toString();
+      if (_anOverviewKey === key && host.dataset.done === "1") return;  // already shown for this set
+      _anOverviewKey = key; host.dataset.done = "";
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      const qs = p.toString();
+      const grab = (path) => api(path + "?" + qs).then(d => d).catch(() => null);
+      const [kw, www, src, sent] = await Promise.all([
+        grab("/api/insights/corpus-keywords"), grab("/api/insights/corpus-www"),
+        grab("/api/insights/corpus-sources"), grab("/api/insights/corpus-sentiment"),
+      ]);
+      const topKw = kw && kw.terms && kw.terms.length ? kw.terms[0] : null;
+      const topPlace = www && www.where && www.where.length ? www.where[0] : null;
+      const topWho = www && www.who && www.who.length ? www.who[0] : null;
+      const topSrc = src && src.sources && src.sources.length ? src.sources[0] : null;
+      const tone = sent && (sent.summary || sent.mean != null) ? sent : null;
+      const tile = (lens, headline, sub) =>
+        `<button class="an-ov-tile" onclick="_anSubtabs && _anSubtabs.select(${esc(JSON.stringify(lens))})">`
+        + `<div class="an-ov-h">${esc(headline)}</div>`
+        + (sub ? `<div class="an-ov-s muted">${esc(sub)}</div>` : "")
+        + `<div class="an-ov-go muted">${esc(t("Open"))} →</div></button>`;
+      const tiles = [];
+      tiles.push(tile("keywords", t("Keywords"), topKw ? `${topKw.term} · ${kw.terms.length}+ ${t("Keywords").toLowerCase()}` : t("No keywords yet")));
+      tiles.push(tile("www", t("When/Where/Who"), [topPlace ? topPlace.name : null, topWho ? (topWho.name || topWho.term) : null].filter(Boolean).join(" · ") || t("Nothing extracted yet")));
+      tiles.push(tile("sources", t("Sources"), topSrc ? `${topSrc.name || topSrc.domain}` : t("No sources yet")));
+      tiles.push(tile("sentiment", t("Sentiment"), tone ? (tone.summary || "") : t("English-only (VADER) — see the tab")));
+      tiles.push(tile("trend", t("Trend"), t("How coverage moved over time")));
+      tiles.push(tile("mindmap", t("Mindmap"), t("Keyword associations")));
+      tiles.push(tile("links", t("Links"), t("Shared outbound origins")));
+      tiles.push(tile("related", t("Related"), t("Near-duplicate clusters")));
+      tiles.push(tile("articles", t("Articles"), t("The matched articles")));
+      host.innerHTML = `<div class="hint" style="margin-bottom:8px">${esc(t("A headline from each lens — counts only, never a verdict. Open any to dig in."))}</div>`
+        + `<div class="an-ov-grid">${tiles.join("")}</div>`;
+      host.dataset.done = "1";
     }
 
     // --- Commodity price × coverage overlay (Markets item, Group G) --------- //
@@ -10130,4 +10258,5 @@
     // (so the Insights Explore mind-map is never left empty after a relocation).
     $("corpus-win").addEventListener("close", _mmKitHome);
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
-    _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window (Keywords / Articles)
+    _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window subtabs
+    _anRestoreTabs();   // THEME-3: restore the spawned analysis-tab strip (data loads lazily)
