@@ -3185,6 +3185,26 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P0-4 IMPORT RECOMPUTES CORE-ENGINE METADATA (#O-1; branch
+  claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** maintainer ruling on restore
+  semantics — AI artifacts (translations/summaries/ai_keyword) kept AS-IS, but CORE-ENGINE
+  derived data (keywords, date/place/entity extraction, sentiment) RECOMPUTED on import so an
+  OLD backup aligns with the improved engine. DESIGN (the safe one — leaves the SIGKILL-
+  torture-tested merge SQL UNTOUCHED): the merge stays additive/verbatim (raw articles + AI
+  artifacts), then AFTER the atomic swap `run_restore` calls `merge.reindex_imported_articles
+  (batch_id)` → reads the imported article rowids from `merged_rows` (carried in from the
+  working copy; rowid == live id) → `store.reindex_articles(session, extractor, ids)` runs
+  `index_article` on each, which DELETE-then-REINSERTs that article's keyword mentions/
+  counters/sentiment + when×where×who, OVERWRITING the merged-in old derived rows with
+  current-engine output. `index_article` NEVER touches `article_analyses` or `ai_keyword`, so
+  AI artifacts stay byte-for-byte (the verbatim half). RECONCILES with RESTORE-IS-ADDITIVE-ONLY:
+  nothing is replaced/deleted at the article level — only the IMPORTED articles' DERIVED
+  metadata is recomputed (the whole point of the ruling); local articles untouched (targeted
+  by merged_rows, not a corpus-wide reindex). Best-effort: the restore is already committed +
+  additive, so a re-index hiccup logs + degrades (report["reindexed"]) and never undoes it.
+  tests/test_reindex_on_import.py (recompute + AI-verbatim; missing-ids skip; e2e targets ONLY
+  merged_rows, local article untouched). REMAINING: surface the re-index in the restore report
+  UI + as a task-manager job (P1/P3 backup-progress items).
 - **FIELD TEST 2026-06-19 — P0-3 RESTORE PREVIEW ALWAYS ANSWERS JSON (#O-3; branch
   claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** two older-version backups
   failed to preview with "JSON.parse: unexpected character at line 1 column 1" — the SPA

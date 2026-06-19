@@ -321,6 +321,33 @@ def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> 
     return {"indexed": indexed, "remaining": remaining}
 
 
+def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> dict:
+    """Recompute CORE-ENGINE derived metadata for an EXPLICIT set of articles.
+
+    Used after a backup MERGE (maintainer ruling 2026-06-19 P0-4): an imported
+    backup may have been produced by an OLDER extraction engine, so its merged-in
+    keyword/date/place/entity rows can be misaligned with the CURRENT engine.
+    ``index_article`` is delete-then-reinsert per article, so it OVERWRITES those
+    rows with current-engine output (keywords, mentions, sentiment, when/where/who).
+    AI artifacts (``article_analyses`` summaries/translations, ``ai_keyword``) are
+    NOT touched by ``index_article``, so they stay verbatim. Idempotent; one bad
+    article never aborts the batch (the restore is already committed + additive)."""
+    reindexed = 0
+    failed = 0
+    for aid in article_ids:
+        art = session.get(Article, aid)
+        if art is None:
+            continue
+        try:
+            index_article(session, art, extractor=extractor, country=art.country)
+            reindexed += 1
+        except Exception:  # noqa: BLE001 - one bad article must not abort the batch
+            session.rollback()
+            failed += 1
+            _LOG.warning("re-index of imported article %s failed", aid, exc_info=True)
+    return {"reindexed": reindexed, "failed": failed}
+
+
 def backfill_keyword_counters(session: Session) -> dict:
     """Recompute ``Keyword.mention_count`` + ``article_count`` from the live mentions.
 

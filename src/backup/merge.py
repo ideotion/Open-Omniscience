@@ -1222,6 +1222,36 @@ def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
     return removed
 
 
+def reindex_imported_articles(batch_id: int) -> dict:
+    """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
+
+    Maintainer ruling 2026-06-19 (P0-4): a backup may have been produced by an OLDER
+    extraction engine, so its merged-in keyword/date/place/entity rows can be
+    misaligned with the current engine. Run AFTER the atomic swap, so the ORM points
+    at the merged live DB and ``merged_rows`` (carried in from the working copy) names
+    the imported article rowids = their live ids (articles.id == rowid). ``index_article``
+    overwrites those derived rows with current-engine output; AI artifacts
+    (article_analyses summaries/translations, ai_keyword) are left verbatim."""
+    from sqlalchemy import text
+
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import reindex_articles
+    from src.database.session import session_scope
+
+    with session_scope() as session:
+        rows = session.execute(
+            text(
+                "SELECT row_id FROM merged_rows "
+                "WHERE batch_id = :b AND table_name = 'articles'"
+            ),
+            {"b": batch_id},
+        ).fetchall()
+        ids = [int(r[0]) for r in rows]
+        if not ids:
+            return {"reindexed": 0, "failed": 0}
+        return reindex_articles(session, extractor=get_extractor("baseline"), article_ids=ids)
+
+
 def run_restore(
     staged: StagedArtifact, *, commit: bool, allow_unverified: bool = False
 ) -> dict:
@@ -1308,6 +1338,16 @@ def run_restore(
 
     report["committed"] = True
     report["batch_id"] = batch_id
+    # P0-4 (maintainer ruling 2026-06-19): recompute the CORE-ENGINE derived metadata
+    # for the newly-imported articles so an OLD backup aligns with the CURRENT engine
+    # (keywords, date/place/entity extraction, sentiment); AI artifacts are left
+    # verbatim. Best-effort: the restore is already committed AND additive, so a
+    # re-index hiccup must never undo it.
+    try:
+        report["reindexed"] = reindex_imported_articles(batch_id)
+    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+        _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
+        report["reindexed"] = {"reindexed": 0, "failed": 0, "skipped": "see server log"}
     report["pruned_snapshots"] = _prune_snapshots()
     _LOG.info("merge-restore committed: batch=%s plan=%s", batch_id, counts)
     return report
