@@ -1947,11 +1947,12 @@ def test_markets_coherent_time_axis_and_legends():
 
 
 def test_markets_family_stacked_graphs():
-    """The commodities board offers a FAMILIES view (maintainer 2026-06-17 markets
-    revamp Slice 5: "in the 'all' subtab … stacking all curves into family graphs
+    """The commodities board is FAMILIES-FIRST (maintainer field test 2026-06-19
+    P2-10, building on the 2026-06-17 Slice 5 "stack all curves into family graphs
     … as much data but with fewer graphs"): one multi-series ooChart per category
-    replaces N small cards, reusing the ONE ooChart toolkit (invariant #16). A
-    Cards/Families toggle defaults to Cards (no regression)."""
+    is the DEFAULT view, reusing the ONE ooChart toolkit (invariant #16). The
+    Cards/Families toggle is DROPPED — the per-commodity tools migrate into each
+    family graph as member chips, so nothing is lost (the Desk lesson)."""
     html = _ui_source()
     # a reusable family-graph renderer (one multi-series ooChart per group)
     assert "function renderFamilyGraphs(host, groups, opts)" in html, (
@@ -1962,10 +1963,15 @@ def test_markets_family_stacked_graphs():
         "family graphs must default to the indexed (cross-magnitude) scale"
     )
     assert 'class="card-caveat"' in html, "the families view must carry a VISIBLE caveat"
-    # the Cards/Families toggle, defaulting to Cards (no regression)
-    assert 'id="mkt-viewtoggle"' in html, "the Cards/Families view toggle must exist"
-    assert 'let _mktView = "cards"' in html, "the view must DEFAULT to Cards (no regression)"
-    assert "function setMktView" in html, "the view-toggle callback must exist"
+    # families-first: the view DEFAULTS to families; the toggle UI is dropped
+    assert 'let _mktView = "families"' in html, "the board must DEFAULT to the families view (P2-10)"
+    assert 'tog.innerHTML = ""; tog.style.display = "none"' in html, (
+        "the Cards/Families toggle must be DROPPED (the slot is emptied/hidden, P2-10)"
+    )
+    # the per-commodity tools migrate into the family view as member chips
+    assert 'class="fam-mbtn"' in html, "family graphs must carry per-member action buttons (Analyse + price detail)"
+    assert "memberActions: [" in html, "the commodities families view must pass member actions"
+    assert "class=\"fam-enlarge\"" in html, "each family must offer a fullscreen Enlarge (the shared overlay)"
     # the families branch builds one family per category + the same subtabs filter both
     assert "function commodityFamilies" in html, "the per-category family builder must exist"
     assert 'if (_mktView === "families")' in html, (
@@ -1973,6 +1979,28 @@ def test_markets_family_stacked_graphs():
     )
     assert 'class="fam-block mkt-cat"' in html, (
         "family blocks must carry .mkt-cat/data-cat so the category subtabs filter them too"
+    )
+
+
+def test_markets_one_fullscreen_graph_overlay():
+    """The single-symbol price detail opens in the ONE shared fullscreen overlay
+    (#chart-enlarge), not the cramped bottom strip, and PRESERVES "Correlate with
+    news" (maintainer field test 2026-06-19 P2-10). chartSymbol routes into
+    chartEnlarge; chartEnlarge gained an optional extra/onReady hook to host the
+    correlation control; the correlation logic renders into a caller-supplied
+    element so both the overlay and any legacy caller work."""
+    html = _ui_source()
+    assert "function _chartEnlargeExtra(body, opts)" in html, (
+        "chartEnlarge must support optional extra content + an onReady hook"
+    )
+    assert "function correlateSymbolInto(symbol, el)" in html, (
+        "the correlation must render into a caller-supplied element (overlay-friendly)"
+    )
+    # chartSymbol opens the fullscreen overlay and wires Correlate into it
+    assert "chartEnlarge(`${symbol}" in html, "chartSymbol must route into the fullscreen overlay"
+    assert 'id="ce-correlate"' in html, "the overlay must carry the 'Correlate with news' control"
+    assert "correlateSymbolInto(symbol, body.querySelector" in html, (
+        "the overlay Correlate button must wire into the per-symbol correlation"
     )
 
 
@@ -1984,12 +2012,14 @@ def test_markets_twin_board_parity():
     same helpers (renderFamilyGraphs / ooTimeScope / windowPricesRange) so the
     two boards share their grammar. Cards view stays unchanged (no regression)."""
     html = _ui_source()
-    # BOTH boards carry the Cards/Families view toggle
-    assert 'id="mkt-viewtoggle"' in html and 'id="idx-viewtoggle"' in html, (
-        "both boards must have the Cards/Families view toggle (twin parity)"
+    # BOTH boards are families-first now (P2-10 twin parity): the toggle is dropped
+    # and both default to the families view.
+    assert 'let _idxView = "families"' in html, "the indices board must DEFAULT to the families view (P2-10)"
+    assert "function setIdxView" in html, "the indices view callback must still exist (cards path reachable)"
+    # the indices families view also carries member chips (twin parity)
+    assert "renderFamilyGraphs(el, idxFamilies(), {" in html, (
+        "indices families must pass member actions through the shared renderer"
     )
-    assert 'let _idxView = "cards"' in html, "the indices view must DEFAULT to Cards (no regression)"
-    assert "function setIdxView" in html, "the indices view-toggle callback must exist"
     # the indices Families view reuses the SAME family-graph renderer
     assert "function idxFamilies" in html and "function renderIdxFamilies" in html, (
         "the indices families builder + renderer must exist"
@@ -2353,8 +2383,12 @@ def test_oochart_enlarge_indices():
     # index cards open the detail (the click path is wired, with data only)
     assert "onclick=\"indexDetail(" in html, "index cards must open the ooChart detail"
     assert 'id="idx-chart"' in html, "the indices detail mount container must exist"
-    # the commodity board detail still uses ooChart too (unchanged canonical path)
-    assert 'ooChart($("mkt-chart-oo")' in html
+    # the commodity board detail still uses ooChart too — now via the ONE shared
+    # fullscreen overlay (P2-10: chartSymbol → chartEnlarge → ooChart), not a forked
+    # chart. The indices comparison overlay uses the same chartEnlarge path.
+    assert "chartEnlarge(`${symbol}" in html, (
+        "the commodity price detail must route through the shared chartEnlarge (ooChart) overlay"
+    )
     # ooChart itself is NOT forked: exactly one definition
     assert html.count("function ooChart(") == 1, "ooChart must not be forked"
     # the tiny in-card multiples remain the static SVGs (not converted)

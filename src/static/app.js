@@ -4363,7 +4363,7 @@
     let _idxTags = new Set();         // active tag facets (AND-filter, none = no tag filter)
     let _idxCatTabs = null;           // the continent ooSubtabs handle
     const _idxCompare = new Map();    // symbol -> {name, currency, unit} selected for the overlay (Slice 3)
-    let _idxView = "cards";           // "cards" | "families" (Slice 6 — twin parity; default = no regression)
+    let _idxView = "families";        // "cards" | "families" — families-first (P2-10 twin parity); the cards code path stays reachable but the UI has no toggle
     let _idxScope = {from: null, to: null};  // families-view time window
     let _idxTimeScope = null;          // the ooTimeScope handle (families view)
     let _idxSeriesLoaded = false;      // full per-symbol series fetched (lazy, for families)
@@ -4402,6 +4402,9 @@
       // multi-series graph per continent (windowed by the time-scope), CARDS = the
       // per-index spark cards (default; unchanged — no regression).
       if (_idxView === "families") {
+        // Families is now the DEFAULT view (P2-10), so the full per-symbol series
+        // must be lazy-loaded on first render too (the spark data is truncated).
+        if (_idxCards.length && !_idxSeriesLoaded) { loadIdxFullSeries().then(renderIndicesBoard); return; }
         if (!_idxTimeScope) buildIdxTimeScope();   // build once, after the series load
         renderIdxFamilies();
       } else if (_idxCards.length) {
@@ -4449,11 +4452,10 @@
     // The Cards/Families view toggle (Slice 6) — mirrors the commodities toggle so
     // the two boards stay near-identical; default Cards (no regression).
     function _renderIdxViewToggle(t) {
+      // Families-first (P2-10 twin parity): the toggle is DROPPED, mirroring the
+      // commodities board. Keep the slot empty; the cards path stays reachable.
       const tog = $("idx-viewtoggle"); if (!tog) return;
-      tog.innerHTML = `<span class="muted" style="font-size:12px;margin-right:2px">${esc(t("View"))}:</span>`
-        + [["cards", "Cards"], ["families", "Families"]].map(([k, lbl]) =>
-            `<button type="button" class="chip${_idxView === k ? " on" : ""}" data-view="${k}"
-               onclick="setIdxView(${esc(JSON.stringify(k))})">${esc(t(lbl))}</button>`).join("");
+      tog.innerHTML = ""; tog.style.display = "none";
     }
 
     function selectIndexCat(key) {
@@ -4581,14 +4583,24 @@
         key: cont, label: cont,
         series: byCont[cont].map(c => {
           const pts = windowPricesRange(MKT_PRICES[c.symbol] || [], _idxScope.from, _idxScope.to);
-          return {label: c.name || c.symbol, unit: c.currency || "",
+          return {label: c.name || c.symbol, unit: c.currency || "", symbol: c.symbol,
                   points: pts.map(p => ({t: p.observed_on, v: p.price}))};
         }),
       }));
     }
     function renderIdxFamilies() {
       const el = $("idx-board"); if (!el) return;
-      renderFamilyGraphs(el, idxFamilies(), {});
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Twin parity (P2-10): indices member chips mirror commodities — Analyse ↗
+      // (the index's corpus coverage) + the price detail in the fullscreen overlay.
+      renderFamilyGraphs(el, idxFamilies(), {
+        memberActions: [
+          {glyph: "⊞", title: t("Open this in the analysis window"),
+           fn: (s) => openAnalysisFor(s.label)},
+          {glyph: "📈", title: t("Price detail"),
+           fn: (s) => chartSymbol(s.symbol, s.unit)},
+        ],
+      });
     }
 
     // Apply BOTH facets: the continent subtab hides whole sections; the tag
@@ -4956,12 +4968,40 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const live = groups.filter(g => g.series.some(s => (s.points || []).length));
       if (!live.length) { host.innerHTML = `<div class="muted">${esc(t("No data in this window yet."))}</div>`; return; }
-      const cav = `<div class="card-caveat">${esc(t("Indexed to 100 at the window start — relative moves, not absolute levels; the hover shows the real value."))}</div>`;
-      host.innerHTML = live.map(g =>
-        `<div class="fam-block mkt-cat" data-cat="${esc(g.key)}">
-           <div class="vsect" style="grid-column:1/-1">${esc(t(g.label))} <span class="muted">· ${g.series.filter(s => (s.points || []).length).length} ${esc(t("series"))}</span></div>
+      const cavText = t("Indexed to 100 at the window start — relative moves, not absolute levels; the hover shows the real value.");
+      // Per-member action buttons (P2-10): families-first dropped the cards grid,
+      // so the per-commodity tools (Analyse ↗ + price-detail+Correlate) migrate
+      // INTO the family view as member chips — nothing lost (the Desk lesson). Each
+      // action is {glyph,title,fn(series)}; the delegated handler resolves the live
+      // series so no closure is stored in the DOM.
+      const acts = Array.isArray(opts.memberActions) ? opts.memberActions : [];
+      host.innerHTML = live.map((g, i) => {
+        const liveSer = g.series.filter(s => (s.points || []).length);
+        const members = acts.length
+          ? `<div class="fam-members" style="grid-column:1/-1">`
+            + liveSer.map((s, si) =>
+                `<span class="fam-member"><span class="fam-mlabel">${esc(s.label)}</span>`
+                + acts.map((a, ai) =>
+                    `<button type="button" class="fam-mbtn" data-fam="${i}" data-si="${si}" data-act="${ai}"
+                       title="${esc(a.title || "")}">${esc(a.glyph || "↗")}</button>`).join("")
+                + `</span>`).join("")
+            + `</div>`
+          : "";
+        return `<div class="fam-block mkt-cat" data-cat="${esc(g.key)}">
+           <div class="vsect fam-head" style="grid-column:1/-1">
+             <span>${esc(t(g.label))} <span class="muted">· ${liveSer.length} ${esc(t("series"))}</span></span>
+             <button type="button" class="fam-enlarge" data-fam="${i}"
+               title="${esc(t("Open this graph fullscreen with scale controls"))}">⛶</button>
+           </div>
            <div class="fam-chart" style="grid-column:1/-1"></div>
-         </div>`).join("") + cav;
+           ${members}
+         </div>`;
+      }).join("") + `<div class="card-caveat">${esc(cavText)}</div>`;
+      // Stash the live data for the delegated handlers (re-read live on every click,
+      // so a board re-render never serves a stale closure — the ooSubtabs lesson).
+      host._famGroups = live;
+      host._famCaveat = cavText;
+      host._famActions = acts;
       // ooChart renders imperatively into a live element, so instantiate after the
       // containers exist (in group order — the hosts match `live` 1:1).
       host.querySelectorAll(".fam-chart").forEach((el, i) => {
@@ -4969,6 +5009,26 @@
         ooChart(el, g.series.filter(s => (s.points || []).length),
           {height: 200, indexed: opts.indexed !== false, logY: !!opts.logY});
       });
+      if (!host._famWired) {
+        host._famWired = true;
+        host.addEventListener("click", (e) => {
+          const eb = e.target.closest(".fam-enlarge");
+          if (eb) {
+            const g = host._famGroups[+eb.dataset.fam]; if (!g) return;
+            // The ONE shared fullscreen graph overlay (P2-10) — the family's
+            // multi-series on #chart-enlarge with the Absolute/Indexed/Log scales.
+            chartEnlarge(t(g.label), g.series.filter(s => (s.points || []).length), host._famCaveat, {scales: true});
+            return;
+          }
+          const mb = e.target.closest(".fam-mbtn");
+          if (mb) {
+            const g = host._famGroups[+mb.dataset.fam]; if (!g) return;
+            const ser = g.series.filter(s => (s.points || []).length)[+mb.dataset.si];
+            const act = host._famActions[+mb.dataset.act];
+            if (ser && act && typeof act.fn === "function") act.fn(ser);
+          }
+        });
+      }
     }
 
     // Category display order + labels for the grouped Commodities board.
@@ -4995,7 +5055,7 @@
     };
     let _mktCatTabs = null;        // the commodities category ooSubtabs handle
     let _mktCat = "__all";          // the currently-selected category (persists across re-renders)
-    let _mktView = "cards";         // "cards" | "families" (Slice 5; default = no regression)
+    let _mktView = "families";      // "cards" | "families" — families-first (P2-10); the cards code path stays reachable (Desk lesson) but the UI has no toggle
     function selectCommodityCat(key) {
       // Button/ARIA state is owned by the ooSubtabs component (universal
       // grammar, invariant #18); this callback only filters which category
@@ -5017,10 +5077,16 @@
         series: seriesFor(k).map(s => {
           const pts = windowPricesRange(MKT_PRICES[s.symbol] || [], from, to);
           const last = pts.length ? pts[pts.length - 1] : null;
+          const unit = last ? `${last.currency}/${last.unit}` : "";
           return {
             label: s.name || s.symbol,
-            unit: last ? `${last.currency}/${last.unit}` : "",
+            unit,
             points: pts.map(p => ({t: p.observed_on, v: p.price})),
+            // Carry the identity so the family member chips can open the corpus
+            // analysis window (the curated family seed) AND the price detail.
+            symbol: s.symbol,
+            query: COMMODITY_QUERY[s.symbol] || s.name || s.symbol,
+            commodity: {symbol: s.symbol, name: s.name, unit},
           };
         }),
       }));
@@ -5058,7 +5124,18 @@
       // cards — "as much data but with fewer graphs". Default stays Cards (the
       // existing per-card grid below), so there is no regression.
       if (_mktView === "families") {
-        renderFamilyGraphs($("mkt-dashboard"), commodityFamilies(present, seriesFor, from, to), {});
+        // Families-first (P2-10): the per-commodity tools the cards grid carried
+        // migrate INTO each family graph as member chips — Analyse ↗ (the corpus
+        // value) + the price detail (chartSymbol → the fullscreen overlay, which
+        // preserves "Correlate with news"). Nothing is lost (the Desk lesson).
+        renderFamilyGraphs($("mkt-dashboard"), commodityFamilies(present, seriesFor, from, to), {
+          memberActions: [
+            {glyph: "⊞", title: t("Open this in the analysis window — its corpus coverage"),
+             fn: (s) => openAnalysisFor(s.query, {commodity: s.commodity})},
+            {glyph: "📈", title: t("Price detail + correlate with news"),
+             fn: (s) => chartSymbol(s.symbol, (s.commodity && s.commodity.unit) || "")},
+          ],
+        });
         _renderMktViewToggle(t);
         _renderCommodityCatTabs(present, sectionKey, t);
         return;
@@ -5122,12 +5199,12 @@
     // The Cards/Families view toggle (Slice 5) — only meaningful with >1 category;
     // default Cards (no regression). Reuses the chip grammar.
     function _renderMktViewToggle(t) {
+      // Families-first (P2-10): the Cards/Families toggle is DROPPED — families is
+      // the one board view, with the per-commodity tools migrated into it. The
+      // cards code path stays reachable programmatically (Desk lesson), but there
+      // is no UI switch, so this just keeps the slot empty.
       const tog = $("mkt-viewtoggle");
-      if (!tog) return;
-      tog.innerHTML = `<span class="muted" style="font-size:12px;margin-right:2px">${esc(t("View"))}:</span>`
-        + [["cards", "Cards"], ["families", "Families"]].map(([k, lbl]) =>
-            `<button type="button" class="chip${_mktView === k ? " on" : ""}" data-view="${k}"
-               onclick="setMktView(${esc(JSON.stringify(k))})">${esc(t(lbl))}</button>`).join("");
+      if (tog) { tog.innerHTML = ""; tog.style.display = "none"; }
     }
     // Category SUB-TABS (universal subtab grammar, invariant #18): the nav from the
     // categories actually present, with an "All" default lens (like Home families).
@@ -5527,17 +5604,30 @@
     }
 
     async function chartSymbol(symbol, unit) {
-      const el = $("mkt-chart");
-      el.innerHTML = `<div class="muted">Loading ${esc(symbol)}…</div>`;
+      // P2-10: the single-symbol price detail opens in the ONE shared fullscreen
+      // overlay (#chart-enlarge) instead of the cramped bottom #mkt-chart strip,
+      // and PRESERVES "Correlate with news" (appended below the chart). Reuses the
+      // ooChart-in-#mkt-chart-oo path inside the dialog so the existing tests +
+      // the correlation wiring stay intact.
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
-        el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} — ${d.count} point(s)
-            <button class="tiny secondary" onclick="correlateSymbol(${esc(JSON.stringify(symbol))})" title="Correlate price change vs news volume">Correlate with news</button></h2>` +
-          `<div id="mkt-chart-oo"></div><div id="mkt-corr" class="hint" style="margin-top:8px"></div>`;
-        ooChart($("mkt-chart-oo"), [{label: symbol, unit: unit || (d.prices[0] && d.prices[0].unit) || "",
-          points: d.prices.map(p => ({t: p.observed_on, v: p.price}))}], {height: 230});
+        const series = [{label: symbol, unit: unit || (d.prices[0] && d.prices[0].unit) || "",
+          points: d.prices.map(p => ({t: p.observed_on, v: p.price}))}];
+        chartEnlarge(`${symbol} — ${d.count} ${t9("point(s)")}`, series, "", {
+          scales: true,
+          extra: `<div style="margin-top:10px">`
+            + `<button class="tiny secondary" id="ce-correlate" type="button"`
+            + ` title="${esc(t9("Correlate price change vs news volume"))}">${esc(t9("Correlate with news"))}</button>`
+            + `<div id="mkt-corr" class="hint" style="margin-top:8px"></div></div>`,
+          onReady: (body) => {
+            const b = body.querySelector("#ce-correlate");
+            if (b) b.addEventListener("click", () => correlateSymbolInto(symbol, body.querySelector("#mkt-corr")));
+          },
+        });
       } catch (e) {
-        el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)} ` +
+        const el = $("mkt-chart");
+        if (el) el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)} ` +
           `<span class="muted">(commodity analysis endpoints require the [analysis] extra)</span></div>`;
       }
     }
@@ -5562,11 +5652,15 @@
       }
     }
 
-    async function correlateSymbol(symbol) {
-      // Correlate the symbol's daily price change against article volume for the
-      // current search query (if any). Honest output: real coefficient/p-value/n.
-      const q = $("q").value.trim();
-      $("mkt-chart").innerHTML = `<div class="muted">Correlating ${esc(symbol)} with news…</div>`;
+    // Correlate the symbol's daily price change against article volume for the
+    // current search query (if any), rendering into a CALLER-supplied element.
+    // Honest output: real coefficient/p-value/n. (P2-10 routes this into the
+    // fullscreen overlay; the legacy bottom-strip caller is kept below.)
+    async function correlateSymbolInto(symbol, el) {
+      if (!el) return;
+      const qInput = $("q");
+      const q = qInput ? qInput.value.trim() : "";
+      el.innerHTML = `<div class="muted">Correlating ${esc(symbol)} with news…</div>`;
       try {
         const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/correlation` +
           (q ? "?query=" + encodeURIComponent(q) : ""));
@@ -5578,13 +5672,15 @@
           body = `<div>method <strong>${esc(d.method)}</strong>, n=${d.n}, ` +
             `coefficient <strong>${d.coefficient.toFixed(3)}</strong>, p=${d.p_value.toExponential(2)} ${sig}</div>`;
         }
-        $("mkt-chart").innerHTML =
-          `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</h2>` +
+        el.innerHTML =
+          `<div style="margin:0 0 6px;font-size:13px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</div>` +
           body + `<div class="hint" style="margin-top:6px">${esc(d.caveat || "")}</div>`;
       } catch (e) {
-        $("mkt-chart").innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
+        el.innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
       }
     }
+    // Legacy bottom-strip caller (kept for any code path still using #mkt-chart).
+    function correlateSymbol(symbol) { correlateSymbolInto(symbol, $("mkt-chart")); }
 
     // ===== Universal subtab component (keystone, maintainer-ruled 2026-06-13) ==
     // ONE navigation grammar everywhere: a <nav class="tabs"> of buttons each
@@ -7191,9 +7287,22 @@
           render();
         });
         render();
+        _chartEnlargeExtra(body, opts);
         return;
       }
       ooChart(body, seriesList, {height: 360, maxWidth: 880});
+      _chartEnlargeExtra(body, opts);
+    }
+    // Optional extra content appended below the enlarged chart (P2-10: the
+    // per-symbol price detail routes here and adds its "Correlate with news"
+    // control). opts.extra is an HTML string; opts.onReady(body) wires it up.
+    function _chartEnlargeExtra(body, opts) {
+      if (opts && opts.extra) {
+        const wrap = document.createElement("div");
+        wrap.innerHTML = opts.extra;
+        body.appendChild(wrap);
+      }
+      if (opts && typeof opts.onReady === "function") opts.onReady(body);
     }
 
     // World map: equirectangular projection, viewBox-based zoom/pan (no deps).
