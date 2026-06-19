@@ -324,8 +324,12 @@ def insights_corpus_coordination(
 
 
 def _tlang(target_lang: str | None) -> str | None:
-    """Sanitise the target-language code for verified-translation annotation."""
-    if not target_lang:
+    """Sanitise the target-language code for verified-translation annotation.
+
+    Type-safe: some tests call the endpoint FUNCTIONS directly (e.g.
+    ``list_supergroups(db=s)``), so an unset ``target_lang`` arrives as its FastAPI
+    ``Query(None)`` default OBJECT, not ``None`` — treat any non-str as no-filter."""
+    if not isinstance(target_lang, str):
         return None
     c = target_lang.strip().lower()
     return c if (2 <= len(c) <= 3 and c.isalpha()) else None
