@@ -7528,6 +7528,22 @@
         }
       }
 
+      // Server-IP location LAYER (data-arch slice 6c): the captured server IPs,
+      // geolocated OFFLINE, as filled VIOLET squares — DISTINCT from the editorial
+      // source-country choropleth and from the hollow mentioned-places circles. It is
+      // OUR network vantage point (CDN edge / anycast), never the publisher's origin.
+      let serverPts = "";
+      if (opts.serverOn && Array.isArray(opts.serverPoints)) {
+        const sv = opts.serverPoints.filter(p => p.lat != null && p.lon != null);
+        const svMax = Math.max(1, ...sv.map(p => +p.value || 0));
+        for (const p of sv) {
+          const cx = lon2x(p.lon), cy = lat2y(p.lat);
+          const s = 2 + 3 * Math.sqrt((+p.value || 0) / svMax);
+          serverPts += `<rect x="${(cx - s / 2).toFixed(1)}" y="${(cy - s / 2).toFixed(1)}" width="${s.toFixed(1)}" height="${s.toFixed(1)}" fill="#8b5cf6" stroke="var(--panel)" stroke-width="0.4" opacity="0.85">`
+            + `<title>${esc((p.label || "") + " — " + (p.value != null ? fmtNum(p.value) + " " + t("articles") + " " : "") + t("(server IP location)"))}</title></rect>`;
+        }
+      }
+
       // Signals LAYER (slice 5a — folding the temporal map in): curated/extracted
       // EVENTS placed in space AND time, kind-coloured, filtered by the focus
       // window and faded by distance in time. Reuses the temporal map's data
@@ -7617,6 +7633,7 @@
           <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
           ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
+          ${opts.onServer ? `<button class="tiny secondary" data-oomap-server aria-pressed="${opts.serverOn ? "true" : "false"}"${opts.serverOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Server IP locations — offline geo; a CDN edge / anycast host, not the publisher's origin"))}">${esc(t("Server IPs"))}</button>` : ""}
           ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
           ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn ? "true" : "false"}"${opts.osmOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
         </div>` : "";
@@ -7651,7 +7668,7 @@
              style="display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${W} / ${H}">
           <defs><pattern id="oomap-nodata" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern></defs>
-          ${grid}${paths}${pts}${overlayPts}${signalPts}${osmHtml}
+          ${grid}${paths}${pts}${overlayPts}${serverPts}${signalPts}${osmHtml}
           <g id="oomap-labels"></g>
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
@@ -7671,6 +7688,8 @@
           ${esc(t("no data"))}</span>
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
+        ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
+        ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
         ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(TMAP_KINDS[k]?.l || k)}</span>`).join("") : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
         ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}</span>` : ""}
@@ -7760,6 +7779,7 @@
         b.addEventListener("click", () => opts.onGranularity(b.dataset.oomapGran)));
       if (opts && opts.onPlaces) { const pb = host.querySelector("[data-oomap-places]"); if (pb) pb.addEventListener("click", () => opts.onPlaces()); }
       if (opts && opts.onSignals) { const sb = host.querySelector("[data-oomap-signals]"); if (sb) sb.addEventListener("click", () => opts.onSignals()); }
+      if (opts && opts.onServer) { const vb = host.querySelector("[data-oomap-server]"); if (vb) vb.addEventListener("click", () => opts.onServer()); }
       if (opts && opts.onLabels) { const lb = host.querySelector("[data-oomap-labels]"); if (lb) lb.addEventListener("click", () => opts.onLabels()); }
       if (opts && opts.onOsm) { const ob = host.querySelector("[data-oomap-osm]"); if (ob) ob.addEventListener("click", () => opts.onOsm()); }
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
@@ -7795,6 +7815,9 @@
     let _ooMapOsmOn = false, _ooMapOsmGeo = null, _ooMapOsmLoading = false;   // in-browser .pbf overlay (THEME-2)
     // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
     let _ooMapSignalsOn = false, _ooMapSignals = null, _ooMapFocusSlider = 1000, _ooMapFocusRAF = 0;
+    // Server-IP location layer (data-arch slice 6c): captured server IPs geolocated
+    // OFFLINE, DISTINCT from the editorial Source.country choropleth. Lazily fetched.
+    let _ooMapServerOn = false, _ooMapServerLoc = null;
     // Aggregate the per-country values into CONTINENTS (slice 4): a SUM for counts,
     // a sentiment_n-WEIGHTED mean for tone (the honest cross-country average).
     function _ooMapContinentAgg(rows, dim) {
@@ -7855,6 +7878,22 @@
       let caveat = dim.caveat
         + (unloc ? `  ${unloc} ${dim.unit} ${t("with no country — counted, not mapped.")}` : "");
       if (_ooMapPlacesOn) caveat += `  ${t("Mentioned places: deduced from text, never confirmed.")}`;
+      // Server-IP layer (slice 6c): offline-geolocated captured server IPs, distinct
+      // from the editorial source-country choropleth; the endpoint's own caveat travels.
+      const serverPoints = (_ooMapServerOn && _ooMapServerLoc && Array.isArray(_ooMapServerLoc.countries))
+        ? _ooMapServerLoc.countries.filter(c => c.lat != null && c.lon != null)
+            .map(c => ({ lat: c.lat, lon: c.lon, value: c.articles,
+                         label: (names[c.country] || (c.country || "").toUpperCase()) })) : [];
+      let serverMeta = "";
+      if (_ooMapServerOn && _ooMapServerLoc) {
+        caveat += `  ${_ooMapServerLoc.caveat || t("Server location is our vantage point (CDN edge / anycast), not the publisher's origin; unavailable over Tor.")}`;
+        const nClusters = (_ooMapServerLoc.clusters || []).length;
+        const tor = (_ooMapServerLoc.unavailable || {}).tor_or_proxy || 0;
+        const bits = [];
+        if (nClusters) bits.push(`${nClusters} ${t("shared-host clusters")}`);
+        if (tor) bits.push(`${fmtNum(tor)} ${t("unavailable (Tor/proxy)")}`);
+        serverMeta = bits.join(" · ");
+      }
       const fmtCount = v => dim.id === "sentiment" ? (v >= 0 ? "+" : "") + fmtNum(v, 2) : `${fmtNum(v)} ${dim.unit}`;
       const fmtV = (iso, v) => continentMode
         ? `${t((rowBy[iso] || {}).continent || "")} — ${fmtCount(v)}`
@@ -7913,6 +7952,15 @@
               const d = await api("/api/timemap?limit=4000");
               _ooMapSignals = (d.signals || []).filter(s => typeof s.t === "number" && s.lat != null && s.lon != null);
             } catch { _ooMapSignals = []; }
+          }
+          _renderOoMapDim();
+        },
+        serverOn: _ooMapServerOn, serverPoints, serverMeta,
+        onServer: async () => {
+          _ooMapServerOn = !_ooMapServerOn;
+          if (_ooMapServerOn && !_ooMapServerLoc) {
+            try { _ooMapServerLoc = await api("/api/insights/server-locations"); }
+            catch { _ooMapServerLoc = { countries: [], clusters: [], unavailable: {} }; }
           }
           _renderOoMapDim();
         },
