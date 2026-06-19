@@ -3187,6 +3187,17 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P2-5/THEME-1 BROWSER-STYLE SUBTABS + P2-11 MODELS→AI (#31/#57/#42;
+  branch claude/gallant-bohr-1cogzj; frontend CSS/label, invariant-guarded, BROWSER-UNVERIFIED):**
+  the maintainer found the subtab active-state "unreliable" and wants ONE homogeneous browser-tab
+  look. Restyled `nav.tabs` (the universal ooSubtabs component, used by Insights/Settings/markets/
+  Home-families/task-manager/analysis) into a baseline strip with an UNMISTAKABLE active state — an
+  ACCENT underline (`border-bottom:2px solid var(--accent)`) + accent text + bold — replacing the old
+  subtle bg+border that read as buttons. Theme-safe (var(--accent) across all 17). Combined with the
+  #31 ooSubtabs live-query fix, the active tab is now both correct AND clearly visible. (#42) the LLM
+  Settings subtab label "Models" → "AI" (the `data-tab="models"` anchor stays the code identifier;
+  "AI" is English-fallback, keyed in THEME-5). test_repo_invariants::
+  test_subtabs_are_browser_style_with_clear_active_state.
 - **FIELD TEST 2026-06-19 — THEME-4 FULL LANGUAGE NAMES (#52/#53, slice 1; branch
   claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
   the maintainer wants the full language WORD everywhere a 2-letter code shows (except the top

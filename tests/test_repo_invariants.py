@@ -74,6 +74,19 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
 
 
+def test_subtabs_are_browser_style_with_clear_active_state():
+    """Field test 2026-06-19 #31/#57 (THEME-1): one homogeneous browser-tab look with an
+    UNMISTAKABLE active state — an accent underline + bold (the old subtle bg+border read
+    as buttons and was unreliable). Plus #42: the LLM subtab is labelled "AI"."""
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "nav.tabs { display:flex; flex-wrap:wrap; gap:2px; border-bottom:1px solid var(--border); }" in css
+    # The active tab carries an accent underline (the clear indicator).
+    assert "border-bottom:2px solid var(--accent); font-weight:700;" in css
+    # #42: Models subtab renamed to AI (data-tab anchor stays the code identifier).
+    assert '<button data-tab="models">AI</button>' in html
+
+
 def test_language_codes_shown_as_full_names_via_cldr():
     """Field test 2026-06-19 #52/#53 (THEME-4): show the full language NAME (CLDR via
     Intl.DisplayNames), not a bare 2-letter code, wherever a language is displayed

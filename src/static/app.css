@@ -518,12 +518,19 @@
     .draft-item textarea { min-height:38px; margin-top:5px; font-size:12.5px; }
 
     /* inline sub-tabs (e.g. Insights Explore/Trends/Map) */
-    nav.tabs { display:flex; flex-wrap:wrap; gap:4px; }
+    /* Browser-style subtabs (field test 2026-06-19 #31/#57, THEME-1): a baseline strip
+       with a CLEAR active state — the active tab carries an accent underline + accent
+       text + bold, unmistakable across all 17 themes (the old subtle bg+border read as
+       buttons and the active state was unreliable). One homogeneous look everywhere
+       (Insights, Settings, markets, Home families, task manager, analysis). */
+    nav.tabs { display:flex; flex-wrap:wrap; gap:2px; border-bottom:1px solid var(--border); }
     nav.tabs button { background:transparent; color:var(--muted); border:1px solid transparent;
-      border-radius:8px; margin:0; padding:7px 13px; font:inherit; cursor:pointer; font-weight:500; }
+      border-bottom:2px solid transparent; border-radius:7px 7px 0 0; margin:0 0 -1px 0;
+      padding:7px 14px; font:inherit; cursor:pointer; font-weight:500; }
     nav.tabs button:hover { color:var(--fg); background:var(--panel2); }
-    nav.tabs button.active { color:var(--fg); background:var(--panel2); border-color:var(--border); }
-    nav.tabs button[aria-selected="true"] { color:var(--fg); background:var(--panel2); border-color:var(--border); }
+    nav.tabs button.active, nav.tabs button[aria-selected="true"] {
+      color:var(--accent); background:var(--panel2);
+      border-color:var(--border); border-bottom:2px solid var(--accent); font-weight:700; }
     nav.tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
     /* ---- ooTimeScope: reusable time-range control ------------------- */
