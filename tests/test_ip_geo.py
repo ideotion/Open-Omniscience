@@ -58,8 +58,11 @@ def test_unknown_ip_is_unavailable_never_guessed(tmp_path, monkeypatch):
     assert r["reason"] == "IP not in DB"
 
 
-def test_no_db_is_unavailable_honestly():
-    r = ip_geo.lookup("203.0.113.10")  # no OO_IP_GEO_DB, no bundled file
+def test_no_db_is_unavailable_honestly(tmp_path, monkeypatch):
+    # A bundled DB now ships, so point the override at a NONEXISTENT path to exercise the
+    # honest no-DB state (env set + file missing -> _country_db_path returns None).
+    monkeypatch.setenv("OO_IP_GEO_DB", str(tmp_path / "does-not-exist.csv"))
+    r = ip_geo.lookup("203.0.113.10")
     assert r["level"] == "unavailable"
     assert r["reason"] == "no geo DB bundled"
 
@@ -95,8 +98,32 @@ def test_city_db_preferred_then_country_fallback(tmp_path, monkeypatch):
     assert r["place"] == "Exampleville"
 
 
-def test_freshness_reports_unbundled_by_default():
+def test_freshness_reports_bundled_within_a_sane_window():
+    # The real DB-IP CC BY 4.0 country table IS bundled now (data/dbip_country_lite.csv.gz).
     fr = ip_geo.freshness()
-    # In-repo today the real table is not bundled (network-blocked) -> honest.
-    assert fr["bundled"] is False
+    assert fr["bundled"] is True
     assert fr["as_of"] == ip_geo.IP_GEO_AS_OF
+    assert ip_geo.IP_GEO_AS_OF != "unbundled"
+    # Vintage is a real YYYY-MM within ~18 months (mirrors the CATALOG_AS_OF freshness gate).
+    assert isinstance(fr.get("age_months"), int)
+    assert -1 <= fr["age_months"] <= 18, f"geo DB vintage too old: {fr}"
+
+
+def test_real_bundled_db_resolves_known_ips_offline(monkeypatch):
+    # End-to-end against the real bundled table (no env override). Counts as the bundle
+    # smoke test: known public IPs resolve to a 2-letter country, fully offline.
+    ip_geo._country_ranges.cache_clear()
+
+    def _boom(*a, **k):
+        raise AssertionError("real-DB lookup attempted a network socket")
+
+    monkeypatch.setattr(socket, "socket", _boom)
+    r = ip_geo.lookup("8.8.8.8")  # Google public DNS
+    assert r["level"] == "country"
+    assert isinstance(r["country"], str) and len(r["country"]) == 2
+    assert r["db_vintage"] == ip_geo.IP_GEO_AS_OF
+    assert "DB-IP" in r["attribution"]
+    # IPv6 resolves too (the bundled table carries both families).
+    r6 = ip_geo.lookup("2001:4860:4860::8888")
+    assert r6["level"] == "country" and len(r6["country"]) == 2
+    ip_geo._country_ranges.cache_clear()

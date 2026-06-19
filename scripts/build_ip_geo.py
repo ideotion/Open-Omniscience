@@ -35,8 +35,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-_OUT = Path(__file__).resolve().parents[1] / "src" / "geo" / "data" / "dbip_country_lite.csv"
+_OUT = Path(__file__).resolve().parents[1] / "src" / "geo" / "data" / "dbip_country_lite.csv.gz"
 _URL = "https://download.db-ip.com/free/dbip-country-lite-{month}.csv.gz"
+# DB-IP CC BY 4.0 mirror (identical start,end,CC format) — reachable when db-ip.com 403s.
+_MIRROR = "https://raw.githubusercontent.com/sapics/ip-location-db/main/dbip-country/{f}"
 
 
 def _fetch(url: str) -> bytes:
@@ -61,28 +63,39 @@ def _validate_csv(text: str) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--month", help="YYYY-MM of the DB-IP lite release to download")
+    ap.add_argument("--month", help="YYYY-MM of the DB-IP lite release to download (db-ip.com)")
+    ap.add_argument("--mirror", action="store_true",
+                    help="fetch IPv4+IPv6 from the DB-IP CC BY 4.0 mirror (sapics/ip-location-db)")
     ap.add_argument("--from", dest="src", help="use a local .csv/.csv.gz instead of downloading")
-    ap.add_argument("--out", default=str(_OUT), help="output CSV path")
+    ap.add_argument("--out", default=str(_OUT), help="output .csv.gz path")
     args = ap.parse_args()
 
     if args.src:
         raw = Path(args.src).read_bytes()
+        text = gzip.decompress(raw).decode("utf-8") if raw[:2] == b"\x1f\x8b" else raw.decode("utf-8")
+    elif args.mirror:
+        parts = []
+        for fname in ("dbip-country-ipv4.csv", "dbip-country-ipv6.csv"):
+            url = _MIRROR.format(f=fname)
+            print(f"downloading {url}")
+            parts.append(_fetch(url).decode("utf-8"))
+        text = "\n".join(p.rstrip("\n") for p in parts) + "\n"
     elif args.month:
         url = _URL.format(month=args.month)
         print(f"downloading {url}")
-        raw = _fetch(url)
+        text = gzip.decompress(_fetch(url)).decode("utf-8")
     else:
-        ap.error("pass --month YYYY-MM or --from <file>")
+        ap.error("pass --mirror, --month YYYY-MM, or --from <file>")
         return 2
 
-    text = gzip.decompress(raw).decode("utf-8") if raw[:2] == b"\x1f\x8b" else raw.decode("utf-8")
     _validate_csv(text)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, encoding="utf-8")
+    # Always store gzipped (ip_geo reads .csv.gz transparently) to keep the repo small.
+    data = text.encode("utf-8")
+    out.write_bytes(gzip.compress(data, compresslevel=9) if out.suffix == ".gz" else data)
     rows = text.count("\n")
-    print(f"wrote {out} ({rows} rows, {out.stat().st_size} bytes)")
+    print(f"wrote {out} ({rows} rows, {out.stat().st_size} bytes on disk)")
     print("NOW: set IP_GEO_AS_OF in src/geo/ip_geo.py to the release month (YYYY-MM).")
     print("LICENSE: DB-IP IP-to-Country Lite is CC BY 4.0 — keep the attribution.")
     return 0
