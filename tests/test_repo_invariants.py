@@ -59,6 +59,208 @@ def _ui_source() -> str:
     return "\n".join(parts)
 
 
+def test_live_language_switch_rerenders_cldr_name_surfaces():
+    """Field test 2026-06-19 #16: country/continent names (CLDR-derived at render time)
+    must update when the UI language changes, not only on a page refresh. i18n.setLang
+    emits an 'oo:langchange' event; app.js listens and re-renders the map (+ sources)."""
+    base = _SRC / "static"
+    i18n = (base / "i18n.js").read_text(encoding="utf-8")
+    app = (base / "app.js").read_text(encoding="utf-8")
+    assert "oo:langchange" in i18n, "setLang no longer emits the language-change event"
+    assert 'CustomEvent("oo:langchange"' in i18n
+    assert 'addEventListener("oo:langchange"' in app, "app.js does not listen for the lang switch"
+    # The listener must re-render the CLDR-name surface (the world map).
+    listener = app.split('addEventListener("oo:langchange"', 1)[1][:400]
+    assert "_renderOoMapDim" in listener, "lang switch no longer re-renders the map names"
+
+
+def test_analysis_window_per_query_spawns_tabs_and_retires_corpus_modal():
+    """Field test 2026-06-19 THEME-3: a search/Lead/keyword spawns a NAMED, closeable,
+    persisted analysis TAB over the one #an surface (multi-document workspace), with an
+    Overview screen; the legacy #corpus-win modal is RETIRED (openCorpus now spawns a
+    tab). One analysis surface (ruling: 'retire both')."""
+    base = _SRC / "static"
+    app = (base / "app.js").read_text(encoding="utf-8")
+    html = (base / "index.html").read_text(encoding="utf-8")
+    # The spawned-tab strip + machinery.
+    assert 'id="an-tabstrip"' in html, "the analysis-tab strip is missing"
+    for fn in ("function _anSpawn(", "function _anActivate(", "function _anCloseTab(",
+               "function _anRenderStrip(", "function _anRestoreTabs("):
+        assert fn in app, f"the analysis-tab machinery is incomplete: {fn}"
+    assert "let _anTabs" in app and "_AN_TABS_KEY" in app, "tabs must persist across sessions"
+    # openCorpus retired -> routes to a spawned analysis tab (one surface).
+    assert "function openCorpus(term) { openAnalysisFor(term); }" in app, (
+        "#corpus-win must be retired — openCorpus now spawns an analysis tab"
+    )
+    assert "document.getElementById(\"corpus-win\").showModal()" not in app, (
+        "the legacy keyword modal must no longer be shown"
+    )
+    # The Overview screen (generic per-card landing, Q1).
+    assert '<button class="active" data-tab="overview">Overview</button>' in html
+    assert "function renderAnOverview(" in app and 'id="an-overview"' in html
+
+
+def test_trends_render_as_clickable_bar_graphs():
+    """Field test 2026-06-19 #25: the rising/top Trends are clickable horizontal BAR
+    graphs (bar length ∝ the real count/rate, value shown — no score), and clicking a
+    bar opens the unified analysis window (trend + worldwide spread)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function termBarsHtml(terms, valueOf, labelOf)" in app
+    assert 'termBarsHtml(rising.terms' in app and 'termBarsHtml(top.terms' in app, (
+        "the rising/top Trends must render as bar graphs (#25)"
+    )
+    bars = app.split("function termBarsHtml(", 1)[1].split("\n    }", 1)[0]
+    assert "openAnalysisFor(" in bars, "clicking a trend bar must open the analysis window"
+
+
+def test_world_map_fullscreen_uses_the_fullscreen_api():
+    """Field test 2026-06-19 #12 (THEME-2): the map ⛶ control uses the real Fullscreen
+    API (with a CSS fallback + Esc/click exit), not just a CSS .mm-big toggle."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    big = app.split('else if (a === "big")', 1)[1].split("else {", 1)[0]
+    assert "requestFullscreen" in big and "exitFullscreen" in big, (
+        "the map fullscreen control must use the Fullscreen API"
+    )
+    assert 'addEventListener("fullscreenchange"' in app, "must reset the ⛶ glyph on exit"
+    # #15: offline-map regions are a LIST (per-row Download), not a <select> dropdown.
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="osm-region-list"' in html and '<select id="osm-region"' not in html, (
+        "offline-map regions must be a list, not a dropdown (#15)"
+    )
+    assert "osm-region-row" in app, "each region row renders with a direct Download button"
+
+
+def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
+    """Field test 2026-06-19 THEME-2 (#14/#15): the "near in space & time" co-occurrence
+    is capped to a TIGHT fixed window (it used the slider's span/12 ~166y, linking events
+    decades apart); the time slider is LOGARITHMIC-by-age (recent gets most travel); and
+    the offline-map download has no redundant confirm (ensureOnline stays the only gate)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "const _OOMAP_NEAR_YEARS = 2;" in app, "the near-time co-occurrence cap is gone"
+    assert "Math.min(win || _OOMAP_NEAR_YEARS, _OOMAP_NEAR_YEARS)" in app
+    assert "Math.pow(_LOGB, 1 - frac)" in app, "the time slider is no longer logarithmic"
+    # The OSM download keeps the network consent but dropped the redundant 'are you sure'.
+    osm = app.split("async function startOsmDownload(", 1)[1].split("\n    }", 1)[0]
+    assert 'ensureOnline("Download an offline map region")' not in osm or "ensureOnline" in osm
+    assert "confirm(t(\"Download this offline map region" not in osm, (
+        "the redundant map-download confirm should be gone (#15)"
+    )
+
+
+def test_world_map_shapes_labels_and_click_country():
+    """Field test 2026-06-19 THEME-2: the world map gains (a) deduced/scheduled
+    events as distinct SHAPES (colour=kind, shape=certainty) so it reads without
+    colour alone; (b) dynamic non-overlapping country labels (greedy declutter,
+    constant on-screen size, re-laid-out on zoom, opt-in toggle); (c) click a
+    country → its coverage breakdown (counts only, the VADER caveat on tone)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # (a) shape by certainty class, colour by kind
+    assert "function _ooSigClass(s)" in app and "function _ooSigMarker(" in app, (
+        "the signal shape helpers (certainty class → circle/triangle/diamond) must exist"
+    )
+    assert '"corpus-mention"' in app and "return \"deduced\"" in app, (
+        "corpus-extracted (deduced) events must map to their own shape class"
+    )
+    assert "_ooSigMarker(cls, x, y, r, ring" in app, "signals must render via the shape helper"
+    # (b) dynamic, non-overlapping, re-laid-out-on-zoom labels (opt-in)
+    assert "function _ooMapLayoutLabels(host, vb)" in app, "the greedy label declutter must exist"
+    assert "11 * (vb.w / MAP_W)" in app, "labels must be constant on-screen size as the viewBox zooms"
+    assert "if (host._ooLabels && host._ooLabels.length) _ooMapLayoutLabels(host, vb)" in app, (
+        "labels must re-declutter on every viewBox change (dynamic)"
+    )
+    assert "data-oomap-labels" in app and "onLabels:" in app, "an in-map Labels toggle must be wired"
+    # (c) click a country → coverage detail (no score; VADER caveat on tone)
+    assert "function _ooMapCountryDetail(row, dim)" in app, "the click-country coverage detail must exist"
+    assert "onCountry: iso => _ooMapCountryDetail(" in app, "the map must wire onCountry to the detail"
+    assert "English-only VADER lexicon" in app, "the per-country tone must carry the VADER caveat"
+
+
+def test_world_map_osm_offline_overlay():
+    """Field test 2026-06-19 THEME-2 (batch-1: in-browser .pbf parser): the world
+    map can overlay a DOWNLOADED OSM region, parsed entirely in the browser (zero
+    network) by the bounded OOPBF reader, served as a bounded byte prefix by the
+    backend. Honest preview, capped render, no fabricated geometry."""
+    html = _ui_source()  # index.html + app.js + app.css
+    idx = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the parser module is loaded before app.js
+    assert '/static/osmpbf.js' in idx, "the in-browser OSM .pbf reader must be loaded"
+    # an opt-in in-map OSM toggle, wired through OOPBF.parse on a downloaded region
+    assert "data-oomap-osm" in html and "onOsm" in html, "the map must offer an OSM overlay toggle"
+    assert "function _ooMapToggleOsm()" in html and "OOPBF.parse(" in html, (
+        "the toggle must parse the downloaded .osm.pbf in the browser"
+    )
+    # zero-network: it reads a LOCAL downloaded region via the bounded preview endpoint
+    assert "/api/geo/regions/${encodeURIComponent(code)}/preview" in html
+    # capped render (a dense region cannot choke the SVG) + honest preview legend
+    assert 'id="oomap-osm"' in html and "offline OSM" in html
+    # backend: the bounded preview endpoint exists, path-safe, bounded
+    geo = (_ROOT / "src" / "api" / "geo.py").read_text(encoding="utf-8")
+    assert '"/regions/{code}/preview"' in geo and "_PREVIEW_MAX" in geo, (
+        "the bounded region-preview endpoint must exist + be capped"
+    )
+    assert "is_valid_code(code)" in geo, "the preview endpoint must reject path-unsafe codes"
+
+
+def test_subtabs_are_browser_style_with_clear_active_state():
+    """Field test 2026-06-19 #31/#57 (THEME-1): one homogeneous browser-tab look with an
+    UNMISTAKABLE active state — an accent underline + bold (the old subtle bg+border read
+    as buttons and was unreliable). Plus #42: the LLM subtab is labelled "AI"."""
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "nav.tabs { display:flex; flex-wrap:wrap; gap:2px; border-bottom:1px solid var(--border); }" in css
+    # The active tab carries an accent underline (the clear indicator).
+    assert "border-bottom:2px solid var(--accent); font-weight:700;" in css
+    # #42: Models subtab renamed to AI (data-tab anchor stays the code identifier).
+    assert '<button data-tab="models">AI</button>' in html
+
+
+def test_language_codes_shown_as_full_names_via_cldr():
+    """Field test 2026-06-19 #52/#53 (THEME-4): show the full language NAME (CLDR via
+    Intl.DisplayNames), not a bare 2-letter code, wherever a language is displayed
+    (sources table/meta, source profile, translation provenance)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function ooLangName(code, fallback)" in app, "the ooLangName CLDR helper is gone"
+    assert 'new Intl.DisplayNames([ui], { type: "language" })' in app
+    # Applied at the sources table language cell (re-renders live on oo:langchange).
+    assert "ooLangName(s.language" in app
+
+
+def test_network_polish_go_online_green_dynamic_title_and_panic_i18n():
+    """Field test 2026-06-19 polish: (#O-5) going ONLINE flashes green; (#5) the airplane
+    button carries a state-specific, i18n-safe dynamic title; (#64) the panic dialog is
+    translatable."""
+    base = _SRC / "static"
+    css = (base / "app.css").read_text(encoding="utf-8")
+    app = (base / "app.js").read_text(encoding="utf-8")
+    i18n = (base / "i18n.js").read_text(encoding="utf-8")
+    html = (base / "index.html").read_text(encoding="utf-8")
+    # #O-5: go-on (online) is green (--ok), not the accent.
+    assert "#net-flash.go-on  { background:radial-gradient(ellipse at top, color-mix(in srgb, var(--ok)" in css
+    # #5: the button is JS-managed and i18n opts out of clobbering its title.
+    assert "data-i18n-dyn" in html
+    assert 'el.hasAttribute("data-i18n-dyn")' in i18n
+    assert "btn.title = online" in app  # state-specific title in _paintNetwork
+    # #64: panic dialog routed through t().
+    panic = app.split("async function panicWipe()", 1)[1][:600]
+    assert 't("PANIC WIPE' in panic and 't("To confirm, type WIPE' in panic
+
+
+def test_oosubtabs_queries_buttons_live_and_markets_keep_selection():
+    """Field test 2026-06-19 #31: the markets category subtab kept "All" visually active
+    after switching. Root cause: ooSubtabs captured its button array once, but the markets
+    nav rebuilds its buttons on every render, so the wired-once click handler painted
+    detached buttons. ooSubtabs must query buttons LIVE, and the markets board must
+    preserve the selected category across re-renders."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    oo = app.split("function ooSubtabs(", 1)[1].split("return { select: select", 1)[0]
+    assert "const buttons = () =>" in oo, "ooSubtabs no longer queries its buttons live"
+    assert "const btns = Array.prototype.slice.call(nav.querySelectorAll" not in oo, (
+        "ooSubtabs went back to capturing a stale button array (the #31 regression)"
+    )
+    # The markets board persists the operator's category choice across re-renders.
+    assert "_mktCat = key" in app and "indexOf(_mktCat)" in app
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
@@ -540,11 +742,16 @@ def test_ui_invariants():
         "the early-corpus sparse caveat must be removed app-wide (Item Y amends #16)"
     )
     for surface in (
-        'ooChart($("mkt-chart-oo")',
+        # P2-10: the commodity price detail moved into the shared fullscreen overlay
+        # (chartSymbol -> chartEnlarge -> ooChart), so #mkt-chart-oo is no longer a
+        # surface; chartEnlarge is the toolkit path now.
         'ooChart($("ins-trend-oo")',
         'ooChart($("idx-chart-oo")',  # indices detail rolled onto ooChart
     ):
         assert surface in html, f"chart surface must use THE toolkit: {surface}"
+    assert "chartEnlarge(`${symbol}" in html, (
+        "the commodity price detail must route through the shared chartEnlarge (ooChart) overlay (P2-10)"
+    )
     # 17. the universal hover-for-information convention (ruled 2026-06-12,
     #     the informed-consent instrument): every titled element is marked
     #     automatically (dotted accent underline / corner dot) and opens ONE
@@ -832,20 +1039,27 @@ def test_ui_invariants():
     )[1][:1500], "the graph causation caveat was removed (maintainer 2026-06-17)"
     # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
     #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
-    #     .card-caveat line, NEVER hidden behind the method toggle. Only the verbose
-    #     method/math stays in the toggle-gated .mc block. (This regressed once: the
-    #     .mc block held BOTH method AND caveat behind a default-OFF checkbox.)
+    #     .card-caveat line on the card FACE, NEVER hidden. (P2-2 decluttering, field
+    #     test 2026-06-19: the verbose Method + "why" moved into a per-card "?"
+    #     affordance (.card-info) — the caveat stays on the face; only the verbose
+    #     method/math layers. This regressed once: the .mc block held BOTH behind a
+    #     default-OFF checkbox.)
     assert 'class="card-caveat">${esc(c.caveat)}' in html, (
         "every briefing card must render its caveat VISIBLE BY DEFAULT (CLAUDE.md "
         "informed-consent: caveats are never hidden behind a calm-UI toggle)"
     )
-    mc_block = html.split('<div class="mc" hidden>', 1)[1].split("</div>", 1)[0]
-    assert "c.caveat" not in mc_block, (
-        "the per-card caveat must NOT live inside the toggle-gated .mc block — it is "
-        "visible by default (CLAUDE.md informed-consent mandate)"
+    # The verbose method/why now live in the per-card "?" affordance (infoBlock); the
+    # caveat is NOT inside it (it stays visible on the face).
+    info_block = html.split("const infoBlock = ", 1)[1].split(': "";', 1)[0]
+    assert "_methodInfo" in info_block and "_whyPlain" in info_block, (
+        "the method + why must live in the per-card '?' affordance (infoBlock)"
     )
-    assert "c.method" in mc_block, (
-        "the verbose method/math stays behind the 'Show method' toggle (.mc)"
+    assert "c.caveat" not in info_block, (
+        "the per-card caveat must NOT be moved into the '?' affordance — it stays "
+        "VISIBLE on the card face (CLAUDE.md informed-consent mandate)"
+    )
+    assert "esc(c.method)" in html.split("const _methodInfo = ", 1)[1][:120], (
+        "the verbose method must render inside the per-card '?' affordance"
     )
     # The caveat colour must be theme-aware (var(--caveat)), not a hardcoded hex that
     # fails WCAG AA on light themes — the most ethically important strings stay legible.
@@ -935,10 +1149,10 @@ def test_ui_invariants():
     assert "ensureOnline(" in html, "pulling a model must pass ensureOnline (invariant #14)"
     # 29. Official-statistics producers (Group N) Settings subtab: a descriptive
     #     directory over /api/stats/agencies + a one-click "register as DISABLED
-    #     controversial sources" action over /api/stats/sources/ingest, living in a
-    #     Settings subtab. The directory is DESCRIPTIVE only (no figures, no score);
-    #     producers are stanced sources (the "controversial" framing is a note, never
-    #     a credibility verdict). Outbound home URLs MUST go through extLink so they
+    #     sources" action over /api/stats/sources/ingest, living in a Settings subtab.
+    #     The directory is DESCRIPTIVE only (no figures, no score, NO "controversial"
+    #     verdict label — ruling #50: a producer is a stanced source stated as a
+    #     caveat; the user judges). Outbound home URLs MUST go through extLink so they
     #     open the LOCAL preview first (invariant #6/#6e — no bare external <a href>).
     assert 'data-tab="stats"' in html and 'id="set-stats"' in html, (
         "the Statistics Settings subtab button + panel must exist (Group N frontend)"
@@ -1792,11 +2006,12 @@ def test_markets_coherent_time_axis_and_legends():
 
 
 def test_markets_family_stacked_graphs():
-    """The commodities board offers a FAMILIES view (maintainer 2026-06-17 markets
-    revamp Slice 5: "in the 'all' subtab … stacking all curves into family graphs
+    """The commodities board is FAMILIES-FIRST (maintainer field test 2026-06-19
+    P2-10, building on the 2026-06-17 Slice 5 "stack all curves into family graphs
     … as much data but with fewer graphs"): one multi-series ooChart per category
-    replaces N small cards, reusing the ONE ooChart toolkit (invariant #16). A
-    Cards/Families toggle defaults to Cards (no regression)."""
+    is the DEFAULT view, reusing the ONE ooChart toolkit (invariant #16). The
+    Cards/Families toggle is DROPPED — the per-commodity tools migrate into each
+    family graph as member chips, so nothing is lost (the Desk lesson)."""
     html = _ui_source()
     # a reusable family-graph renderer (one multi-series ooChart per group)
     assert "function renderFamilyGraphs(host, groups, opts)" in html, (
@@ -1807,10 +2022,15 @@ def test_markets_family_stacked_graphs():
         "family graphs must default to the indexed (cross-magnitude) scale"
     )
     assert 'class="card-caveat"' in html, "the families view must carry a VISIBLE caveat"
-    # the Cards/Families toggle, defaulting to Cards (no regression)
-    assert 'id="mkt-viewtoggle"' in html, "the Cards/Families view toggle must exist"
-    assert 'let _mktView = "cards"' in html, "the view must DEFAULT to Cards (no regression)"
-    assert "function setMktView" in html, "the view-toggle callback must exist"
+    # families-first: the view DEFAULTS to families; the toggle UI is dropped
+    assert 'let _mktView = "families"' in html, "the board must DEFAULT to the families view (P2-10)"
+    assert 'tog.innerHTML = ""; tog.style.display = "none"' in html, (
+        "the Cards/Families toggle must be DROPPED (the slot is emptied/hidden, P2-10)"
+    )
+    # the per-commodity tools migrate into the family view as member chips
+    assert 'class="fam-mbtn"' in html, "family graphs must carry per-member action buttons (Analyse + price detail)"
+    assert "memberActions: [" in html, "the commodities families view must pass member actions"
+    assert "class=\"fam-enlarge\"" in html, "each family must offer a fullscreen Enlarge (the shared overlay)"
     # the families branch builds one family per category + the same subtabs filter both
     assert "function commodityFamilies" in html, "the per-category family builder must exist"
     assert 'if (_mktView === "families")' in html, (
@@ -1818,6 +2038,28 @@ def test_markets_family_stacked_graphs():
     )
     assert 'class="fam-block mkt-cat"' in html, (
         "family blocks must carry .mkt-cat/data-cat so the category subtabs filter them too"
+    )
+
+
+def test_markets_one_fullscreen_graph_overlay():
+    """The single-symbol price detail opens in the ONE shared fullscreen overlay
+    (#chart-enlarge), not the cramped bottom strip, and PRESERVES "Correlate with
+    news" (maintainer field test 2026-06-19 P2-10). chartSymbol routes into
+    chartEnlarge; chartEnlarge gained an optional extra/onReady hook to host the
+    correlation control; the correlation logic renders into a caller-supplied
+    element so both the overlay and any legacy caller work."""
+    html = _ui_source()
+    assert "function _chartEnlargeExtra(body, opts)" in html, (
+        "chartEnlarge must support optional extra content + an onReady hook"
+    )
+    assert "function correlateSymbolInto(symbol, el)" in html, (
+        "the correlation must render into a caller-supplied element (overlay-friendly)"
+    )
+    # chartSymbol opens the fullscreen overlay and wires Correlate into it
+    assert "chartEnlarge(`${symbol}" in html, "chartSymbol must route into the fullscreen overlay"
+    assert 'id="ce-correlate"' in html, "the overlay must carry the 'Correlate with news' control"
+    assert "correlateSymbolInto(symbol, body.querySelector" in html, (
+        "the overlay Correlate button must wire into the per-symbol correlation"
     )
 
 
@@ -1829,12 +2071,14 @@ def test_markets_twin_board_parity():
     same helpers (renderFamilyGraphs / ooTimeScope / windowPricesRange) so the
     two boards share their grammar. Cards view stays unchanged (no regression)."""
     html = _ui_source()
-    # BOTH boards carry the Cards/Families view toggle
-    assert 'id="mkt-viewtoggle"' in html and 'id="idx-viewtoggle"' in html, (
-        "both boards must have the Cards/Families view toggle (twin parity)"
+    # BOTH boards are families-first now (P2-10 twin parity): the toggle is dropped
+    # and both default to the families view.
+    assert 'let _idxView = "families"' in html, "the indices board must DEFAULT to the families view (P2-10)"
+    assert "function setIdxView" in html, "the indices view callback must still exist (cards path reachable)"
+    # the indices families view also carries member chips (twin parity)
+    assert "renderFamilyGraphs(el, idxFamilies(), {" in html, (
+        "indices families must pass member actions through the shared renderer"
     )
-    assert 'let _idxView = "cards"' in html, "the indices view must DEFAULT to Cards (no regression)"
-    assert "function setIdxView" in html, "the indices view-toggle callback must exist"
     # the indices Families view reuses the SAME family-graph renderer
     assert "function idxFamilies" in html and "function renderIdxFamilies" in html, (
         "the indices families builder + renderer must exist"
@@ -2198,8 +2442,12 @@ def test_oochart_enlarge_indices():
     # index cards open the detail (the click path is wired, with data only)
     assert "onclick=\"indexDetail(" in html, "index cards must open the ooChart detail"
     assert 'id="idx-chart"' in html, "the indices detail mount container must exist"
-    # the commodity board detail still uses ooChart too (unchanged canonical path)
-    assert 'ooChart($("mkt-chart-oo")' in html
+    # the commodity board detail still uses ooChart too — now via the ONE shared
+    # fullscreen overlay (P2-10: chartSymbol → chartEnlarge → ooChart), not a forked
+    # chart. The indices comparison overlay uses the same chartEnlarge path.
+    assert "chartEnlarge(`${symbol}" in html, (
+        "the commodity price detail must route through the shared chartEnlarge (ooChart) overlay"
+    )
     # ooChart itself is NOT forked: exactly one definition
     assert html.count("function ooChart(") == 1, "ooChart must not be forked"
     # the tiny in-card multiples remain the static SVGs (not converted)
@@ -2579,7 +2827,8 @@ def test_task_manager_opens_in_a_standalone_tab():
     can stay parked on the desktop while the user works in the app. Pinned: the
     #tm-open button calls openTaskManager() (window.open the /tasks page), the
     /tasks route serves the standalone page, and that page is a read+control view
-    over the EXISTING job/scheduler/system APIs — it never flips the network."""
+    over the EXISTING job/scheduler/system APIs. It may ENGAGE airplane (the safe
+    direction) but never goes ONLINE itself (P2-12: consent lives in the app)."""
     html = _ui_source()  # index.html + app.js + app.css
     assert 'onclick="openTaskManager()"' in html, "#tm-open must open the standalone task tab"
     assert "function openTaskManager(" in html and 'window.open("/tasks"' in html, (
@@ -2592,7 +2841,9 @@ def test_task_manager_opens_in_a_standalone_tab():
     tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
     for ep in ("/api/jobs", "/api/scheduler/activity", "/api/system/vitals"):
         assert ep in tm, f"the task page must read the existing {ep} endpoint (no new backend)"
-    assert "/api/system/network" not in tm, "the task page must never flip the network itself"
+    # The status-bar airplane control may engage airplane (offline = the SAFE
+    # direction, no socket opens) but must NEVER cross ONLINE without the app's consent.
+    assert "online: true" not in tm, "the task page must never go online (consent lives in the app)"
     for pid in ('id="jobs-body"', 'id="queue-body"', 'id="sched-body"', 'id="vitals-body"'):
         assert pid in tm, f"task panel missing: {pid}"
 
@@ -2676,8 +2927,12 @@ def test_task_manager_redesign_windows_style():
     # History tab reads the run log; airplane mode is honest in the schedule.
     assert "/api/jobs/history" in tm and "renderHistory" in tm
     assert "a.online === false" in tm and "paused — airplane mode" in tm
-    # Never flips the network from the task page.
-    assert "/api/system/network" not in tm
+    # The status-bar airplane control (P2-12) may ENGAGE airplane (the safe
+    # direction, no consent), but must NEVER go ONLINE from the task page —
+    # crossing online requires the app's ONE consent popup, so offline routes to "/".
+    assert 'JSON.stringify({ online: false })' in tm, "the task page may engage airplane (safe)"
+    assert "online: true" not in tm, "the task page must NEVER go online without the app's consent"
+    assert 'location.href = "/"' in tm, "going online must route back to the app (consent lives there)"
 
     # The backend surfaces background tasks + a history endpoint.
     jobs_src = (_ROOT / "src" / "api" / "jobs.py").read_text(encoding="utf-8")
@@ -2688,6 +2943,26 @@ def test_task_manager_redesign_windows_style():
     ai_src = (_ROOT / "src" / "api" / "ai.py").read_text(encoding="utf-8")
     assert "monitoring.tasks" in llm_src or "monitoring import tasks" in llm_src
     assert "monitoring import tasks" in ai_src or "monitoring.tasks" in ai_src
+
+
+def test_task_manager_status_bar_and_sessions(monkeypatch=None):
+    """Field test 2026-06-19 P2-12: the standalone task page gains the SPA's
+    top-bar controls MINUS search — a status bar with airplane + a language
+    picker + help; the Up-next list is a full vertical list; History is reframed
+    as 'online sessions'; Performance adapts to window size (auto-fit grid)."""
+    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    # status bar: airplane control + language select (i18n auto-wires #oo-lang-select) + help
+    assert 'id="tm-status"' in tm, "the status bar must exist"
+    assert 'id="tm-air"' in tm and "function paintAir()" in tm, "the airplane control must exist"
+    assert 'id="oo-lang-select"' in tm and "TM_LANGS" in tm, "a language picker with the 12 locales"
+    assert 'id="tm-help"' in tm, "a help affordance must exist (minus search)"
+    # Up-next is a full vertical list (not a chip cloud)
+    assert '<ol class="tm-upnext">' in tm, "Up-next must render as a full vertical list"
+    # History reframed as online sessions
+    assert 'data-panel="history" role="tab" data-i18n>Sessions' in tm, "the History tab is reframed as Sessions"
+    assert 'esc(t("Online sessions"))' in tm, "the panel heading is 'Online sessions'"
+    # Performance grid adapts to window size
+    assert "repeat(auto-fit, minmax(220px, 1fr))" in tm, "the performance grid must be responsive"
 
 
 def test_startup_seeds_the_source_catalog_at_unlock():

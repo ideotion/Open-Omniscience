@@ -277,6 +277,12 @@
       if (plane) plane.setAttribute("fill", online ? "none" : "currentColor");
       const label = document.getElementById("net-label");
       if (label) label.textContent = online ? t("Online") : t("Offline");
+      // State-specific hover title (field test 2026-06-19 #5): name the ACTION the
+      // click performs. The button is data-i18n-dyn so the i18n observer won't revert
+      // this; the oo:langchange listener re-calls _paintNetwork to re-translate it.
+      btn.title = online
+        ? t("Online — click to go offline (airplane mode); every new network request will be refused.")
+        : t("Offline (airplane mode) — click to go online; you'll be asked to confirm first.");
       btn.classList.toggle("off", !online);
       document.body.classList.toggle("net-offline", !online);
       // Onboarding coachmark: invite once when we first learn we're offline;
@@ -922,6 +928,15 @@
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
+      // THEME-3: opening Analysis hydrates the restored active tab the first time (the
+      // strip is restored at boot; the active tab's data loads lazily here), or shows
+      // the launcher empty state when there are no tabs.
+      if (name === "analyze" && !_anHydrated) {
+        _anHydrated = true;
+        const tb = _anActiveId ? _anTabs.find(x => x.id === _anActiveId) : null;
+        if (tb) { _anRenderStrip(); _anApplySeed(tb); }
+        else if (!_anTabs.length) _anShowEmpty();
+      }
       if (name !== "timemap" && typeof stopTmapPlay === "function") stopTmapPlay();  // don't animate a hidden tab
       startLive(name);                                  // live status for the active tab
       document.body.classList.remove("nav-open");       // close mobile drawer
@@ -1408,7 +1423,6 @@
         ? `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>` : "") + html;
       // "All" is the default; selecting a family shows only that bucket.
       if (data.buckets.length > 1) ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: "__all"});
-      applyMethodsToggle();
     }
     function selectHomeFamily(key) {
       document.querySelectorAll("#briefing-feed .brief-bucket").forEach(el => {
@@ -1475,20 +1489,25 @@
         const qp = new URLSearchParams({view: c.recipe.view, ...(c.recipe.params || {})});
         recipeBtn = `<a class="btnlike tiny" href="/investigate?${qp.toString()}" target="_blank" rel="noopener" title="Opens a dedicated investigation view in a new tab">Open investigation ↗</a>`;
       }
-      // "Why am I seeing this?" (evidence-tiered cards): a plain-language sentence
-      // first, the exact arithmetic underneath. Labels and the plain sentence are
-      // CONSTANT English strings -> the i18n engine translates them; values are
-      // numbers/symbols only (language-neutral).
-      let whyBlock = "";
-      if (c.trigger && c.trigger.plain) {
-        const rows = (c.trigger.math || []).map(r =>
-          `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
-        whyBlock = `<details class="why">
-          <summary>Why am I seeing this?</summary>
-          <p class="why-plain">${esc(c.trigger.plain)}</p>
-          ${rows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${rows}</table>` : ""}
-        </details>`;
-      }
+      // P2-2 declutter (field test 2026-06-19): the verbose "Why am I seeing this?"
+      // (plain sentence + exact math) and the Method live behind ONE per-card "?"
+      // affordance at the BOTTOM-RIGHT (in .acts), NOT inline on the card face. The
+      // CAVEAT stays VISIBLE on the card (#23 / informed-consent — never hidden); only
+      // the verbose method/math layers (and the analysis window the card opens shows
+      // the full context). Labels + the plain sentence are CONSTANT English strings
+      // (i18n-translated); values are numbers/symbols (language-neutral).
+      const _whyRows = (c.trigger && c.trigger.math || []).map(r =>
+        `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
+      const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(c.trigger.plain)}</p>` : "";
+      const _methodInfo = c.method ? `<div class="mc"><b>Method:</b> ${esc(c.method)}</div>` : "";
+      const infoBlock = (_whyPlain || _whyRows || _methodInfo)
+        ? `<details class="card-info"><summary title="Why am I seeing this — method &amp; the exact math" aria-label="Why am I seeing this — method and the exact math">?</summary>
+            <div class="card-info-body">
+              ${_whyPlain}
+              ${_whyRows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${_whyRows}</table>` : ""}
+              ${_methodInfo}
+            </div></details>`
+        : "";
       // EVERY card is clickable (maintainer 2026-06-16): the card body opens the
       // unified analysis window over the card's article selection (never the
       // standalone /investigate new tab — that stays as the explicit "Open
@@ -1515,27 +1534,19 @@
         ${caveatLine}
         ${sigLine}
         ${evidBlock}
-        ${whyBlock}
         ${weatherBox}
-        <div class="mc" hidden><b>Method:</b> ${esc(c.method)}</div>
         <div class="acts">
           ${recipeBtn}
           ${weatherBtn}
           <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
           ${collapseBtn}
           ${dismiss}
+          ${infoBlock}
         </div></div>`;
     }
 
-    function toggleMethods() {
-      localStorage.setItem("oo.brief.methods", $("brief-methods").checked ? "1" : "0");
-      applyMethodsToggle();
-    }
-    function applyMethodsToggle() {
-      const on = localStorage.getItem("oo.brief.methods") === "1";
-      const box = $("brief-methods"); if (box) box.checked = on;
-      document.querySelectorAll("#briefing-feed .mc").forEach(el => el.hidden = !on);
-    }
+    // The global "Show method" toggle was retired (P2-2, 2026-06-19): each Lead's
+    // method + "why" now live behind a per-card "?" affordance (cardHtml -> infoBlock).
 
     async function dismissCard(id) {
       try {
@@ -2759,12 +2770,13 @@
     }
 
     async function loadHealth() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const h = await api("/api/health");
         $("version").textContent = "v" + h.version;
-        $("health").innerHTML = '<span class="dot ok"></span> healthy';
+        $("health").innerHTML = '<span class="dot ok"></span> ' + esc(t("healthy"));
       } catch (e) {
-        $("health").innerHTML = '<span class="dot err"></span> offline';
+        $("health").innerHTML = '<span class="dot err"></span> ' + esc(t("offline"));
       }
     }
 
@@ -3391,7 +3403,13 @@
         $("v2-preview").style.display = "";
         const ver = body.verification || {};
         const sig = body.signature_state || "?";
+        // Honest encryption verdict (P0-2): confirm at the verification point that the
+        // archive really is AES-256-GCM ciphertext (the "same size" doubt) or plaintext.
+        const encPill = body.encrypted
+          ? `<span class="pill ok" title="${esc(t("This archive is AES-256-GCM ciphertext (it had to be decrypted with your passphrase to read it)."))}">${esc(t("encrypted (AES-256-GCM)"))}</span> `
+          : `<span class="pill warn" title="${esc(t("This archive is not encrypted — it protects nothing at rest."))}">${esc(t("plaintext archive"))}</span> `;
         $("v2-verify").innerHTML =
+          encPill +
           `<span class="pill ${ver.ok ? "ok" : "warn"}">${esc(ver.ok ? t("verification passed") : t("verification FAILED — merge will be refused"))}</span> ` +
           `<span class="muted">${esc(t("signature:"))} ${esc(sig)} · ${esc(t("archive schema:"))} ${esc(body.artifact_schema_rev || "?")}</span>`;
         $("v2-plan").innerHTML = _v2PlanTable(body.plan);
@@ -3528,10 +3546,14 @@
     // encryptedRestore() (destructive replace-restore) was REMOVED 2026-06-13:
     // restore is additive-only via the merge restore (the signed backup artifact).
     async function panicWipe() {
-      if (!confirm("PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?\n\n" +
-                   "This cannot be undone. Type-confirm follows.")) return;
-      if (prompt('To confirm, type WIPE in capitals:') !== "WIPE") {
-        toast("Panic wipe cancelled.", "err"); return; }
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Security dialog must be readable in the operator's language (field test
+      // 2026-06-19 #64). The typed keyword stays the literal ASCII "WIPE" so the
+      // confirmation never depends on locale-specific input.
+      if (!confirm(t("PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?") + "\n\n" +
+                   t("This cannot be undone. Type-confirm follows."))) return;
+      if (prompt(t("To confirm, type WIPE in capitals:")) !== "WIPE") {
+        toast(t("Panic wipe cancelled."), "err"); return; }
       try {
         const r = await api("/api/safety/panic", {method: "POST", body: JSON.stringify({confirm: true})});
         $("panic-result").innerHTML =
@@ -3992,7 +4014,7 @@
         <td>${esc(s.domain)}${s.rss_url?' <span class="pill ok" title="has RSS feed">rss</span>':''}</td>
         <td class="muted">${esc(s.source_type || "—")}</td>
         <td class="muted" title="${esc((s.country || "").toUpperCase())}">${esc(s.country ? ooRegionName(s.country, s.country_name) : (s.country_name || "—"))}</td>
-        <td class="muted">${esc(s.language || "—")}</td>
+        <td class="muted" title="${esc(s.language || "")}">${esc(s.language ? ooLangName(s.language, s.language) : "—")}</td>
         <td><select class="tiny" style="width:auto;padding:3px"
               onchange="updateSource(${s.id},{priority:Number(this.value)})">${prio}</select></td>
         <td class="muted">${s.article_count!=null?s.article_count:'—'}</td>
@@ -4110,7 +4132,9 @@
       else {
         list.innerHTML = rows.map(s => {
           const feed = !!s.rss_url;
-          const meta = [s.language, s.country, s.source_type].filter(Boolean).map(esc).join(" · ");
+          const meta = [s.language ? ooLangName(s.language, s.language) : null,
+                        s.country ? ooRegionName(s.country, s.country) : null,
+                        s.source_type].filter(Boolean).map(esc).join(" · ");
           return `<label class="bi-row${feed ? "" : " bi-nofeed"}" title="${feed ? esc(s.rss_url) : "no RSS feed — cannot batch-fetch"}">
             <input type="checkbox" ${feed ? "" : "disabled"} ${BI.selected.has(s.id) ? "checked" : ""}
               onchange="batchToggle(${s.id}, this.checked)">
@@ -4339,7 +4363,7 @@
     let _idxTags = new Set();         // active tag facets (AND-filter, none = no tag filter)
     let _idxCatTabs = null;           // the continent ooSubtabs handle
     const _idxCompare = new Map();    // symbol -> {name, currency, unit} selected for the overlay (Slice 3)
-    let _idxView = "cards";           // "cards" | "families" (Slice 6 — twin parity; default = no regression)
+    let _idxView = "families";        // "cards" | "families" — families-first (P2-10 twin parity); the cards code path stays reachable but the UI has no toggle
     let _idxScope = {from: null, to: null};  // families-view time window
     let _idxTimeScope = null;          // the ooTimeScope handle (families view)
     let _idxSeriesLoaded = false;      // full per-symbol series fetched (lazy, for families)
@@ -4378,6 +4402,9 @@
       // multi-series graph per continent (windowed by the time-scope), CARDS = the
       // per-index spark cards (default; unchanged — no regression).
       if (_idxView === "families") {
+        // Families is now the DEFAULT view (P2-10), so the full per-symbol series
+        // must be lazy-loaded on first render too (the spark data is truncated).
+        if (_idxCards.length && !_idxSeriesLoaded) { loadIdxFullSeries().then(renderIndicesBoard); return; }
         if (!_idxTimeScope) buildIdxTimeScope();   // build once, after the series load
         renderIdxFamilies();
       } else if (_idxCards.length) {
@@ -4425,11 +4452,10 @@
     // The Cards/Families view toggle (Slice 6) — mirrors the commodities toggle so
     // the two boards stay near-identical; default Cards (no regression).
     function _renderIdxViewToggle(t) {
+      // Families-first (P2-10 twin parity): the toggle is DROPPED, mirroring the
+      // commodities board. Keep the slot empty; the cards path stays reachable.
       const tog = $("idx-viewtoggle"); if (!tog) return;
-      tog.innerHTML = `<span class="muted" style="font-size:12px;margin-right:2px">${esc(t("View"))}:</span>`
-        + [["cards", "Cards"], ["families", "Families"]].map(([k, lbl]) =>
-            `<button type="button" class="chip${_idxView === k ? " on" : ""}" data-view="${k}"
-               onclick="setIdxView(${esc(JSON.stringify(k))})">${esc(t(lbl))}</button>`).join("");
+      tog.innerHTML = ""; tog.style.display = "none";
     }
 
     function selectIndexCat(key) {
@@ -4557,14 +4583,24 @@
         key: cont, label: cont,
         series: byCont[cont].map(c => {
           const pts = windowPricesRange(MKT_PRICES[c.symbol] || [], _idxScope.from, _idxScope.to);
-          return {label: c.name || c.symbol, unit: c.currency || "",
+          return {label: c.name || c.symbol, unit: c.currency || "", symbol: c.symbol,
                   points: pts.map(p => ({t: p.observed_on, v: p.price}))};
         }),
       }));
     }
     function renderIdxFamilies() {
       const el = $("idx-board"); if (!el) return;
-      renderFamilyGraphs(el, idxFamilies(), {});
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Twin parity (P2-10): indices member chips mirror commodities — Analyse ↗
+      // (the index's corpus coverage) + the price detail in the fullscreen overlay.
+      renderFamilyGraphs(el, idxFamilies(), {
+        memberActions: [
+          {glyph: "⊞", title: t("Open this in the analysis window"),
+           fn: (s) => openAnalysisFor(s.label)},
+          {glyph: "📈", title: t("Price detail"),
+           fn: (s) => chartSymbol(s.symbol, s.unit)},
+        ],
+      });
     }
 
     // Apply BOTH facets: the continent subtab hides whole sections; the tag
@@ -4932,12 +4968,40 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const live = groups.filter(g => g.series.some(s => (s.points || []).length));
       if (!live.length) { host.innerHTML = `<div class="muted">${esc(t("No data in this window yet."))}</div>`; return; }
-      const cav = `<div class="card-caveat">${esc(t("Indexed to 100 at the window start — relative moves, not absolute levels; the hover shows the real value."))}</div>`;
-      host.innerHTML = live.map(g =>
-        `<div class="fam-block mkt-cat" data-cat="${esc(g.key)}">
-           <div class="vsect" style="grid-column:1/-1">${esc(t(g.label))} <span class="muted">· ${g.series.filter(s => (s.points || []).length).length} ${esc(t("series"))}</span></div>
+      const cavText = t("Indexed to 100 at the window start — relative moves, not absolute levels; the hover shows the real value.");
+      // Per-member action buttons (P2-10): families-first dropped the cards grid,
+      // so the per-commodity tools (Analyse ↗ + price-detail+Correlate) migrate
+      // INTO the family view as member chips — nothing lost (the Desk lesson). Each
+      // action is {glyph,title,fn(series)}; the delegated handler resolves the live
+      // series so no closure is stored in the DOM.
+      const acts = Array.isArray(opts.memberActions) ? opts.memberActions : [];
+      host.innerHTML = live.map((g, i) => {
+        const liveSer = g.series.filter(s => (s.points || []).length);
+        const members = acts.length
+          ? `<div class="fam-members" style="grid-column:1/-1">`
+            + liveSer.map((s, si) =>
+                `<span class="fam-member"><span class="fam-mlabel">${esc(s.label)}</span>`
+                + acts.map((a, ai) =>
+                    `<button type="button" class="fam-mbtn" data-fam="${i}" data-si="${si}" data-act="${ai}"
+                       title="${esc(a.title || "")}">${esc(a.glyph || "↗")}</button>`).join("")
+                + `</span>`).join("")
+            + `</div>`
+          : "";
+        return `<div class="fam-block mkt-cat" data-cat="${esc(g.key)}">
+           <div class="vsect fam-head" style="grid-column:1/-1">
+             <span>${esc(t(g.label))} <span class="muted">· ${liveSer.length} ${esc(t("series"))}</span></span>
+             <button type="button" class="fam-enlarge" data-fam="${i}"
+               title="${esc(t("Open this graph fullscreen with scale controls"))}">⛶</button>
+           </div>
            <div class="fam-chart" style="grid-column:1/-1"></div>
-         </div>`).join("") + cav;
+           ${members}
+         </div>`;
+      }).join("") + `<div class="card-caveat">${esc(cavText)}</div>`;
+      // Stash the live data for the delegated handlers (re-read live on every click,
+      // so a board re-render never serves a stale closure — the ooSubtabs lesson).
+      host._famGroups = live;
+      host._famCaveat = cavText;
+      host._famActions = acts;
       // ooChart renders imperatively into a live element, so instantiate after the
       // containers exist (in group order — the hosts match `live` 1:1).
       host.querySelectorAll(".fam-chart").forEach((el, i) => {
@@ -4945,6 +5009,26 @@
         ooChart(el, g.series.filter(s => (s.points || []).length),
           {height: 200, indexed: opts.indexed !== false, logY: !!opts.logY});
       });
+      if (!host._famWired) {
+        host._famWired = true;
+        host.addEventListener("click", (e) => {
+          const eb = e.target.closest(".fam-enlarge");
+          if (eb) {
+            const g = host._famGroups[+eb.dataset.fam]; if (!g) return;
+            // The ONE shared fullscreen graph overlay (P2-10) — the family's
+            // multi-series on #chart-enlarge with the Absolute/Indexed/Log scales.
+            chartEnlarge(t(g.label), g.series.filter(s => (s.points || []).length), host._famCaveat, {scales: true});
+            return;
+          }
+          const mb = e.target.closest(".fam-mbtn");
+          if (mb) {
+            const g = host._famGroups[+mb.dataset.fam]; if (!g) return;
+            const ser = g.series.filter(s => (s.points || []).length)[+mb.dataset.si];
+            const act = host._famActions[+mb.dataset.act];
+            if (ser && act && typeof act.fn === "function") act.fn(ser);
+          }
+        });
+      }
     }
 
     // Category display order + labels for the grouped Commodities board.
@@ -4970,13 +5054,15 @@
       EURUSD: "euro dollar exchange rate",
     };
     let _mktCatTabs = null;        // the commodities category ooSubtabs handle
-    let _mktView = "cards";         // "cards" | "families" (Slice 5; default = no regression)
+    let _mktCat = "__all";          // the currently-selected category (persists across re-renders)
+    let _mktView = "families";      // "cards" | "families" — families-first (P2-10); the cards code path stays reachable (Desk lesson) but the UI has no toggle
     function selectCommodityCat(key) {
       // Button/ARIA state is owned by the ooSubtabs component (universal
       // grammar, invariant #18); this callback only filters which category
       // section is visible. "__all" (the default lens) shows everything. The
       // family blocks carry the same .mkt-cat/data-cat, so this filters BOTH
       // the cards view and the families view.
+      _mktCat = key;  // remember it so a board re-render (auto-refresh / view toggle) keeps it
       document.querySelectorAll("#mkt-dashboard .mkt-cat").forEach(el => {
         el.style.display = (key === "__all" || el.dataset.cat === key) ? "" : "none";
       });
@@ -4991,10 +5077,16 @@
         series: seriesFor(k).map(s => {
           const pts = windowPricesRange(MKT_PRICES[s.symbol] || [], from, to);
           const last = pts.length ? pts[pts.length - 1] : null;
+          const unit = last ? `${last.currency}/${last.unit}` : "";
           return {
             label: s.name || s.symbol,
-            unit: last ? `${last.currency}/${last.unit}` : "",
+            unit,
             points: pts.map(p => ({t: p.observed_on, v: p.price})),
+            // Carry the identity so the family member chips can open the corpus
+            // analysis window (the curated family seed) AND the price detail.
+            symbol: s.symbol,
+            query: COMMODITY_QUERY[s.symbol] || s.name || s.symbol,
+            commodity: {symbol: s.symbol, name: s.name, unit},
           };
         }),
       }));
@@ -5032,7 +5124,18 @@
       // cards — "as much data but with fewer graphs". Default stays Cards (the
       // existing per-card grid below), so there is no regression.
       if (_mktView === "families") {
-        renderFamilyGraphs($("mkt-dashboard"), commodityFamilies(present, seriesFor, from, to), {});
+        // Families-first (P2-10): the per-commodity tools the cards grid carried
+        // migrate INTO each family graph as member chips — Analyse ↗ (the corpus
+        // value) + the price detail (chartSymbol → the fullscreen overlay, which
+        // preserves "Correlate with news"). Nothing is lost (the Desk lesson).
+        renderFamilyGraphs($("mkt-dashboard"), commodityFamilies(present, seriesFor, from, to), {
+          memberActions: [
+            {glyph: "⊞", title: t("Open this in the analysis window — its corpus coverage"),
+             fn: (s) => openAnalysisFor(s.query, {commodity: s.commodity})},
+            {glyph: "📈", title: t("Price detail + correlate with news"),
+             fn: (s) => chartSymbol(s.symbol, (s.commodity && s.commodity.unit) || "")},
+          ],
+        });
         _renderMktViewToggle(t);
         _renderCommodityCatTabs(present, sectionKey, t);
         return;
@@ -5096,12 +5199,12 @@
     // The Cards/Families view toggle (Slice 5) — only meaningful with >1 category;
     // default Cards (no regression). Reuses the chip grammar.
     function _renderMktViewToggle(t) {
+      // Families-first (P2-10): the Cards/Families toggle is DROPPED — families is
+      // the one board view, with the per-commodity tools migrated into it. The
+      // cards code path stays reachable programmatically (Desk lesson), but there
+      // is no UI switch, so this just keeps the slot empty.
       const tog = $("mkt-viewtoggle");
-      if (!tog) return;
-      tog.innerHTML = `<span class="muted" style="font-size:12px;margin-right:2px">${esc(t("View"))}:</span>`
-        + [["cards", "Cards"], ["families", "Families"]].map(([k, lbl]) =>
-            `<button type="button" class="chip${_mktView === k ? " on" : ""}" data-view="${k}"
-               onclick="setMktView(${esc(JSON.stringify(k))})">${esc(t(lbl))}</button>`).join("");
+      if (tog) { tog.innerHTML = ""; tog.style.display = "none"; }
     }
     // Category SUB-TABS (universal subtab grammar, invariant #18): the nav from the
     // categories actually present, with an "All" default lens (like Home families).
@@ -5112,11 +5215,18 @@
       if (!catNav) return;
       if (present.length > 1) {
         catNav.style.display = "";
+        // Preserve the operator's selected category across re-renders (auto-refresh,
+        // cards/families toggle, time-scope change) — only fall back to "All" when the
+        // previously-selected category is no longer present (#31).
+        const valid = ["__all"].concat(present.map(([k]) => sectionKey([k])));
+        const initial = valid.indexOf(_mktCat) >= 0 ? _mktCat : "__all";
         catNav.innerHTML =
-          `<button class="active" data-tab="__all">${esc(t("All"))}</button>`
-          + present.map(([k, label]) =>
-              `<button data-tab="${esc(sectionKey([k]))}">${esc(t(label))}</button>`).join("");
-        _mktCatTabs = ooSubtabs(catNav, selectCommodityCat, {initial: "__all"});
+          `<button${initial === "__all" ? ' class="active"' : ""} data-tab="__all">${esc(t("All"))}</button>`
+          + present.map(([k, label]) => {
+              const key = sectionKey([k]);
+              return `<button${initial === key ? ' class="active"' : ""} data-tab="${esc(key)}">${esc(t(label))}</button>`;
+            }).join("");
+        _mktCatTabs = ooSubtabs(catNav, selectCommodityCat, {initial});
       } else {
         catNav.style.display = "none";
         catNav.innerHTML = "";
@@ -5494,17 +5604,29 @@
     }
 
     async function chartSymbol(symbol, unit) {
-      const el = $("mkt-chart");
-      el.innerHTML = `<div class="muted">Loading ${esc(symbol)}…</div>`;
+      // P2-10: the single-symbol price detail opens in the ONE shared fullscreen
+      // overlay (#chart-enlarge → ooChart) instead of the cramped bottom #mkt-chart
+      // strip, and PRESERVES "Correlate with news" (appended below the chart via the
+      // chartEnlarge extra/onReady hook; the correlation renders into that element).
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/prices`);
-        el.innerHTML = `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} — ${d.count} point(s)
-            <button class="tiny secondary" onclick="correlateSymbol(${esc(JSON.stringify(symbol))})" title="Correlate price change vs news volume">Correlate with news</button></h2>` +
-          `<div id="mkt-chart-oo"></div><div id="mkt-corr" class="hint" style="margin-top:8px"></div>`;
-        ooChart($("mkt-chart-oo"), [{label: symbol, unit: unit || (d.prices[0] && d.prices[0].unit) || "",
-          points: d.prices.map(p => ({t: p.observed_on, v: p.price}))}], {height: 230});
+        const series = [{label: symbol, unit: unit || (d.prices[0] && d.prices[0].unit) || "",
+          points: d.prices.map(p => ({t: p.observed_on, v: p.price}))}];
+        chartEnlarge(`${symbol} — ${d.count} ${t9("point(s)")}`, series, "", {
+          scales: true,
+          extra: `<div style="margin-top:10px">`
+            + `<button class="tiny secondary" id="ce-correlate" type="button"`
+            + ` title="${esc(t9("Correlate price change vs news volume"))}">${esc(t9("Correlate with news"))}</button>`
+            + `<div id="mkt-corr" class="hint" style="margin-top:8px"></div></div>`,
+          onReady: (body) => {
+            const b = body.querySelector("#ce-correlate");
+            if (b) b.addEventListener("click", () => correlateSymbolInto(symbol, body.querySelector("#mkt-corr")));
+          },
+        });
       } catch (e) {
-        el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)} ` +
+        const el = $("mkt-chart");
+        if (el) el.innerHTML = `<div class="note err">Chart unavailable: ${esc(e.message)} ` +
           `<span class="muted">(commodity analysis endpoints require the [analysis] extra)</span></div>`;
       }
     }
@@ -5529,11 +5651,15 @@
       }
     }
 
-    async function correlateSymbol(symbol) {
-      // Correlate the symbol's daily price change against article volume for the
-      // current search query (if any). Honest output: real coefficient/p-value/n.
-      const q = $("q").value.trim();
-      $("mkt-chart").innerHTML = `<div class="muted">Correlating ${esc(symbol)} with news…</div>`;
+    // Correlate the symbol's daily price change against article volume for the
+    // current search query (if any), rendering into a CALLER-supplied element.
+    // Honest output: real coefficient/p-value/n. (P2-10 routes this into the
+    // fullscreen overlay; the legacy bottom-strip caller is kept below.)
+    async function correlateSymbolInto(symbol, el) {
+      if (!el) return;
+      const qInput = $("q");
+      const q = qInput ? qInput.value.trim() : "";
+      el.innerHTML = `<div class="muted">Correlating ${esc(symbol)} with news…</div>`;
       try {
         const d = await api(`/api/commodities/${encodeURIComponent(symbol)}/correlation` +
           (q ? "?query=" + encodeURIComponent(q) : ""));
@@ -5545,13 +5671,15 @@
           body = `<div>method <strong>${esc(d.method)}</strong>, n=${d.n}, ` +
             `coefficient <strong>${d.coefficient.toFixed(3)}</strong>, p=${d.p_value.toExponential(2)} ${sig}</div>`;
         }
-        $("mkt-chart").innerHTML =
-          `<h2 style="margin:0 0 8px;font-size:14px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</h2>` +
+        el.innerHTML =
+          `<div style="margin:0 0 6px;font-size:13px;color:var(--muted)">${esc(symbol)} vs news${q?` — “${esc(q)}”`:""}</div>` +
           body + `<div class="hint" style="margin-top:6px">${esc(d.caveat || "")}</div>`;
       } catch (e) {
-        $("mkt-chart").innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
+        el.innerHTML = `<div class="note err">Correlation unavailable: ${esc(e.message)}</div>`;
       }
     }
+    // Legacy bottom-strip caller (kept for any code path still using #mkt-chart).
+    function correlateSymbol(symbol) { correlateSymbolInto(symbol, $("mkt-chart")); }
 
     // ===== Universal subtab component (keystone, maintainer-ruled 2026-06-13) ==
     // ONE navigation grammar everywhere: a <nav class="tabs"> of buttons each
@@ -5564,13 +5692,18 @@
     function ooSubtabs(nav, onSelect, opts) {
       if (!nav) return null;
       opts = opts || {};
-      const btns = Array.prototype.slice.call(nav.querySelectorAll("[data-tab]"));
-      if (!btns.length) return null;
+      // Query buttons LIVE on every operation, never capture once: surfaces like the
+      // Markets category tabs REBUILD this nav's buttons on a re-render and call
+      // ooSubtabs again, but the click/keydown listeners are wired once (_ooWired), so
+      // a captured array goes stale and paints DETACHED buttons — leaving the
+      // HTML-marked "All" visually active after a switch (field test 2026-06-19 #31).
+      const buttons = () => Array.prototype.slice.call(nav.querySelectorAll("[data-tab]"));
+      if (!buttons().length) return null;
       nav.setAttribute("role", "tablist");
-      btns.forEach(b => { b.setAttribute("role", "tab"); if (!b.getAttribute("type")) b.type = "button"; });
+      buttons().forEach(b => { b.setAttribute("role", "tab"); if (!b.getAttribute("type")) b.type = "button"; });
       function paint(key) {            // visuals + a11y only — never fires onSelect
         let hit = null;
-        btns.forEach(b => {
+        buttons().forEach(b => {
           const on = b.dataset.tab === key;
           b.classList.toggle("active", on);
           b.setAttribute("aria-selected", on ? "true" : "false");
@@ -5593,6 +5726,7 @@
           if (b && nav.contains(b)) select(b.dataset.tab);
         });
         nav.addEventListener("keydown", e => {
+          const btns = buttons();
           const i = btns.indexOf(document.activeElement);
           if (i < 0) return;
           let j = i;
@@ -5609,7 +5743,10 @@
       // WITHOUT firing onSelect (each surface already renders its default panel),
       // unless opts.initial explicitly asks to switch+fire.
       if (opts.initial !== undefined) select(opts.initial);
-      else paint((btns.filter(b => b.classList.contains("active"))[0] || btns[0]).dataset.tab);
+      else {
+        const bs = buttons();
+        paint((bs.filter(b => b.classList.contains("active"))[0] || bs[0]).dataset.tab);
+      }
       return { select: select, paint: paint };
     }
 
@@ -6353,14 +6490,10 @@
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
-    async function openCorpus(term) {
-      _corpusTerm = term;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      $("corpus-title").textContent = term;
-      $("corpus-n").textContent = "";
-      document.getElementById("corpus-win").showModal();
-      (_corpusSubtabs || {select: corpusTab}).select(_corpusTab);
-    }
+    // openCorpus is RETIRED here (THEME-3, 2026-06-19): the legacy #corpus-win keyword
+    // modal is gone — a keyword now spawns its own analysis TAB (one analysis surface).
+    // The replacement `function openCorpus(term){ openAnalysisFor(term); }` is defined
+    // with the tab machinery below; all call sites route through it unchanged.
     // Return the relocatable mind-map kit (#mm-kit) to its Insights home anchor.
     // Called BEFORE any corpus tab overwrites #corpus-body, so the shared
     // component (its DOM + live SVG/pan-zoom handlers) is never destroyed.
@@ -6520,7 +6653,7 @@
         const facts = [];
         if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(meta.country.toUpperCase())}`);
         if (meta.region) facts.push(`${esc(t("Region"))}: ${esc(meta.region)}`);
-        if (meta.language) facts.push(`${esc(t("Language"))}: ${esc(meta.language)}`);
+        if (meta.language) facts.push(`${esc(t("Language"))}: ${esc(ooLangName(meta.language, meta.language))}`);
         if (meta.source_type) facts.push(`${esc(t("Type"))}: ${esc(meta.source_type)}`);
         const tags = (meta.tags && meta.tags.length) ? chips(meta.tags) : "";
         const hasMeta = facts.length || tags;
@@ -6997,6 +7130,27 @@
         <a href="#" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
+    // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
+    // top→down, bar length ∝ the REAL measured value (mentions count / rising rate —
+    // never a composite score), the value shown beside it; clicking a bar opens the
+    // unified analysis window (trend over time + worldwide spread). The bar is a
+    // visual of the count/rate, not a verdict — the number stays explicit.
+    function termBarsHtml(terms, valueOf, labelOf) {
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
+      const max = Math.max(1, ...terms.map(t => Number(valueOf(t)) || 0));
+      return '<div class="term-bars">' + terms.map(t => {
+        const v = Number(valueOf(t)) || 0;
+        const pct = Math.max(2, Math.round((v / max) * 100));
+        return `<div class="tb-row">
+          <button class="tiny danger tb-x" title="exclude this keyword" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
+          <a class="tb-label" href="#" title="${esc(t.term)} — open in analysis (trend + worldwide spread)"
+             onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
+          <span class="tb-bar" aria-hidden="true"><span class="tb-fill" style="width:${pct}%"></span></span>
+          <span class="tb-val muted">${esc(labelOf(t))}</span>
+        </div>`;
+      }).join("") + "</div>";
+    }
 
     async function excludeKeyword(term) {
       try {
@@ -7014,8 +7168,11 @@
           api(`/api/insights/trending?window_days=${wd}&baseline_days=${bd}&${qp()}`),
           api(`/api/insights/top?days=${wd}&${qp()}`),
         ]);
-        $("trd-rising").innerHTML = termListHtml(rising.terms, t => `↑${t.growth}× (recent ${t.recent}, prior ${t.prior})`);
-        $("trd-top").innerHTML = termListHtml(top.terms, t => `${t.mentions} mentions · ${t.articles} articles`);
+        // #25: clickable horizontal bar graphs (rising by growth rate, top by mentions).
+        $("trd-rising").innerHTML = termBarsHtml(rising.terms, t => t.growth,
+          t => `↑${t.growth}× (${t.recent} recent · ${t.prior} prior)`);
+        $("trd-top").innerHTML = termBarsHtml(top.terms, t => t.mentions,
+          t => `${t.mentions} mentions · ${t.articles} articles`);
         $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
       } catch (e) { toast("Trends failed: " + e.message, "err"); }
       loadTrendWindows();
@@ -7129,9 +7286,22 @@
           render();
         });
         render();
+        _chartEnlargeExtra(body, opts);
         return;
       }
       ooChart(body, seriesList, {height: 360, maxWidth: 880});
+      _chartEnlargeExtra(body, opts);
+    }
+    // Optional extra content appended below the enlarged chart (P2-10: the
+    // per-symbol price detail routes here and adds its "Correlate with news"
+    // control). opts.extra is an HTML string; opts.onReady(body) wires it up.
+    function _chartEnlargeExtra(body, opts) {
+      if (opts && opts.extra) {
+        const wrap = document.createElement("div");
+        wrap.innerHTML = opts.extra;
+        body.appendChild(wrap);
+      }
+      if (opts && typeof opts.onReady === "function") opts.onReady(body);
     }
 
     // World map: equirectangular projection, viewBox-based zoom/pan (no deps).
@@ -7214,6 +7384,21 @@
         return _ooRegionDN[lang].of(cc) || fallback || cc;
       } catch { return fallback || cc; }
     }
+    // The language analog (field test 2026-06-19 #52/#53, THEME-4): show the full
+    // language NAME in the current UI locale via the browser's own CLDR data, instead
+    // of a bare 2-letter code (e.g. "fr" -> "French" / "Français" / "Französisch"),
+    // EXCEPT the top status-bar flag/code. Per-locale cached; degrades to the code on
+    // an unknown/structurally-invalid tag. Re-derives on oo:langchange (same as names).
+    const _ooLangDN = {};
+    function ooLangName(code, fallback) {
+      const lc = (code || "").trim();
+      if (!lc) return fallback || "";
+      const ui = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      try {
+        if (!_ooLangDN[ui]) _ooLangDN[ui] = new Intl.DisplayNames([ui], { type: "language" });
+        return _ooLangDN[ui].of(lc) || fallback || lc;
+      } catch { return fallback || lc; }
+    }
 
     let _ooMapGeo = null;                            // cached world_countries.json
     async function _ooMapGeoLoad() {
@@ -7242,11 +7427,38 @@
       return `color-mix(in srgb, ${m < 0 ? "var(--err)" : "var(--ok)"} ${pct}%, var(--panel2))`;
     }
 
+    // Signal marker SHAPE by certainty class (THEME-2): colour = kind, shape =
+    // certainty, so the map reads without relying on colour alone.
+    function _ooSigClass(s) {
+      if (s && s.source === "corpus-mention") return "deduced";   // extracted from text, never confirmed
+      if (s && !s.confirmed) return "scheduled";                  // an upcoming/unconfirmed event
+      return "confirmed";
+    }
+    function _ooSigClassLabel(cls) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      return cls === "deduced" ? t("deduced · never confirmed")
+        : cls === "scheduled" ? t("scheduled / unconfirmed") : t("confirmed");
+    }
+    // Returns the SVG marker element string: confirmed = circle, scheduled =
+    // triangle, deduced = diamond. `fill` is the pre-built fill/stroke attr string.
+    function _ooSigMarker(cls, x, y, r, fill, titleEsc) {
+      const ttl = `<title>${titleEsc}</title>`;
+      if (cls === "scheduled") {
+        const pts = `${x},${(y - r).toFixed(1)} ${(x - r).toFixed(1)},${(y + r * 0.8).toFixed(1)} ${(x + r).toFixed(1)},${(y + r * 0.8).toFixed(1)}`;
+        return `<polygon points="${pts}" ${fill}>${ttl}</polygon>`;
+      }
+      if (cls === "deduced") {
+        const pts = `${x},${(y - r).toFixed(1)} ${(x + r).toFixed(1)},${y} ${x},${(y + r).toFixed(1)} ${(x - r).toFixed(1)},${y}`;
+        return `<polygon points="${pts}" ${fill}>${ttl}</polygon>`;
+      }
+      return `<circle cx="${x}" cy="${y}" r="${r}" ${fill}>${ttl}</circle>`;
+    }
+
     // The choropleth scale is LINEAR by default (faithful to magnitude; it
     // surfaces real skew rather than flattening it). opts:
     //   values {iso2:number} · points [{iso2,lat,lon,value,label}] (centroid
     //   fallback) · label · unit · method · caveat · aria · names {iso2:name}
-    //   · valueLabel(iso2,v)->string · onCountry(iso2)
+    //   · valueLabel(iso2,v)->string · onCountry(iso2) · labelsOn/onLabels
     async function ooMap(host, opts) {
       if (!host) return;
       opts = opts || {};
@@ -7319,22 +7531,29 @@
           && (!win || focus == null || Math.abs(s.t - focus) <= win));
         sigKinds = [...new Set(sigVisible.map(s => s.kind))];
         signalPts = sigVisible.map((s, i) => {
-          const x = lon2x(s.lon).toFixed(1), y = lat2y(s.lat).toFixed(1);
+          const x = +lon2x(s.lon).toFixed(1), y = +lat2y(s.lat).toFixed(1);
           const dist = focus == null ? 0 : Math.abs(s.t - focus);
           const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
-          const future = focus != null && s.t > focus + 0.001;
           const r = s.confirmed ? 3 : 2.4;
           const col = kindColor(s.kind);
-          const ring = (future || !s.confirmed)
-            ? `fill="transparent" stroke="${col}" stroke-width="1.1" stroke-dasharray="${future ? "2 1.5" : ""}"`
-            : `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`;
-          const ti = `${s.title} — ${fmtDate(s)} · ${TMAP_KINDS[s.kind]?.l || s.kind}${s.place ? " · " + s.place : ""}`;
+          // SHAPE encodes the event's CERTAINTY CLASS (field test 2026-06-19,
+          // THEME-2: "deduced events as shapes"), COLOUR encodes the kind — so the
+          // map reads without relying on colour alone: a corpus-extracted (deduced,
+          // never-confirmed) event is a hollow DIAMOND, a scheduled/unconfirmed
+          // future event a hollow TRIANGLE, a confirmed event a filled CIRCLE. The
+          // shape is FIXED per event (independent of the focus slider) so sliding
+          // the time window never morphs a marker.
+          const cls = _ooSigClass(s);
+          const ring = cls === "confirmed"
+            ? `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`
+            : `fill="transparent" stroke="${col}" stroke-width="1.1"${cls === "deduced" ? ' stroke-dasharray="1.6 1.2"' : ""}`;
+          const ti = `${s.title} — ${fmtDate(s)} · ${TMAP_KINDS[s.kind]?.l || s.kind}${s.place ? " · " + s.place : ""} · ${_ooSigClassLabel(cls)}`;
           // a larger transparent hit disc keeps the whole marker clickable (the
           // temporal-map lesson: hollow rings were clickable only on the 1px edge).
           const clk = opts.onSignal ? ` data-oomap-sig="${i}" style="cursor:pointer"` : "";
           return `<g${clk} opacity="${op.toFixed(2)}">`
             + (opts.onSignal ? `<circle cx="${x}" cy="${y}" r="${(r + 3.5).toFixed(1)}" fill="transparent"></circle>` : "")
-            + `<circle cx="${x}" cy="${y}" r="${r}" ${ring}><title>${esc(ti)}</title></circle></g>`;
+            + _ooSigMarker(cls, x, y, r, ring, esc(ti)) + `</g>`;
         }).join("");
       }
 
@@ -7344,6 +7563,38 @@
       const srTop = (opts.srRows || top.map(r => (names[r[0]] || r[0].toUpperCase()) + ": " + vlabel(r[0], r[1])))
         .map(s => `<li>${esc(s)}</li>`).join("");
       const aria = opts.aria || opts.label || "map";
+
+      // Dynamic non-overlapping country labels (THEME-2): build candidates from the
+      // located areas (opts.points carry lat/lon/label/value), highest-value first.
+      // The greedy declutter + the constant-on-screen font size run in
+      // _ooMapLayoutLabels on every viewBox change (so labels stay readable as you
+      // zoom and never overlap). Opt-in via the in-map "Labels" toggle.
+      const labelCands = (opts.labelsOn && Array.isArray(opts.points))
+        ? opts.points.filter(p => p.lat != null && p.lon != null && p.label)
+            .map(p => ({ x: lon2x(p.lon), y: lat2y(p.lat), text: String(p.label), value: +p.value || 0 }))
+            .sort((a, b) => b.value - a.value)
+        : [];
+
+      // OSM offline-region overlay (THEME-2): the bounded preview parsed by OOPBF
+      // from a downloaded .osm.pbf — ways as thin polylines + nodes as faint dots,
+      // both CAPPED so a dense region can't choke the SVG. Reuses the same lon2x/
+      // lat2y projection (no second projection). Honest preview, never fabricated.
+      let osmHtml = "";
+      const osm = opts.osmOn && opts.osmGeo ? opts.osmGeo : null;
+      if (osm) {
+        const lines = (osm.lines || []).slice(0, 3000).map(cs => {
+          const pts = cs.map(c => `${lon2x(c.lon).toFixed(1)},${lat2y(c.lat).toFixed(1)}`).join(" ");
+          return `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="0.4" vector-effect="non-scaling-stroke" opacity="0.7"/>`;
+        }).join("");
+        const allPts = osm.points || [];
+        const step = Math.max(1, Math.ceil(allPts.length / 4000));   // sample to cap rendered dots
+        let dots = "";
+        for (let i = 0; i < allPts.length; i += step) {
+          const p = allPts[i];
+          dots += `<circle cx="${lon2x(p.lon).toFixed(1)}" cy="${lat2y(p.lat).toFixed(1)}" r="0.5" fill="var(--accent)" opacity="0.55"/>`;
+        }
+        osmHtml = `<g id="oomap-osm">${lines}${dots}</g>`;
+      }
 
       // Granularity + places overlay (slice 4) — finer/coarser spatial resolution,
       // also "controls inside the map". Continent = the per-country values
@@ -7355,6 +7606,8 @@
           <button class="tiny secondary" data-oomap-gran="continent" aria-pressed="${opts.granularity === "continent"}"${opts.granularity === "continent" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Continent"))}</button>
           ${opts.onPlaces ? `<button class="tiny secondary" data-oomap-places aria-pressed="${opts.placesOn ? "true" : "false"}"${opts.placesOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Places"))}</button>` : ""}
           ${opts.onSignals ? `<button class="tiny secondary" data-oomap-signals aria-pressed="${opts.signalsOn ? "true" : "false"}"${opts.signalsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Signals"))}</button>` : ""}
+          ${opts.onLabels ? `<button class="tiny secondary" data-oomap-labels aria-pressed="${opts.labelsOn ? "true" : "false"}"${opts.labelsOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${esc(t("Labels"))}</button>` : ""}
+          ${opts.onOsm ? `<button class="tiny secondary" data-oomap-osm aria-pressed="${opts.osmOn ? "true" : "false"}"${opts.osmOn ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Overlay a downloaded offline-map region (preview)"))}">${esc(t("OSM"))}</button>` : ""}
         </div>` : "";
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
       // the Signals layer is on; sweeps the focus moment (antiquity -> near future).
@@ -7387,7 +7640,8 @@
              style="display:block;background:var(--panel2);border:1px solid var(--border);border-radius:8px;cursor:grab;aspect-ratio:${W} / ${H}">
           <defs><pattern id="oomap-nodata" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="6" height="6" fill="var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--border)" stroke-width="1"/></pattern></defs>
-          ${grid}${paths}${pts}${overlayPts}${signalPts}
+          ${grid}${paths}${pts}${overlayPts}${signalPts}${osmHtml}
+          <g id="oomap-labels"></g>
         </svg>
         <div class="oomap-controls" style="position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5">
           <button class="tiny secondary" data-oomap="in" title="${esc(t("Zoom in"))}">＋</button>
@@ -7407,11 +7661,38 @@
         ${pointRows.length ? `<span class="muted">○ ${esc(t("small areas shown as points"))}</span>` : ""}
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
         ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(TMAP_KINDS[k]?.l || k)}</span>`).join("") : ""}
+        ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
+        ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}</span>` : ""}
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
       host._ooSigVisible = sigVisible;             // for signal click-to-detail resolution
+      host._ooLabels = labelCands;                 // for the dynamic-label declutter (re-laid-out on zoom)
       _wireOoMap(host, opts);
+      _ooMapLayoutLabels(host, { x: 0, y: 0, w: W, h: H });   // initial layout (world view)
+    }
+    // Greedy non-overlapping label declutter (THEME-2), re-run on every viewBox
+    // change so labels stay constant-size on screen, never overlap, and reveal more
+    // detail as you zoom in. Highest-value countries win ties (placed first).
+    function _ooMapLayoutLabels(host, vb) {
+      const g = host && host.querySelector("#oomap-labels"); if (!g) return;
+      const cands = host._ooLabels || [];
+      if (!cands.length) { g.innerHTML = ""; return; }
+      const fs = Math.max(2.4, 11 * (vb.w / MAP_W));   // ≈ constant on-screen size as the viewBox zooms
+      const placed = [], pad = fs * 0.25;
+      let out = "";
+      for (const c of cands) {
+        if (c.x < vb.x || c.x > vb.x + vb.w || c.y < vb.y || c.y > vb.y + vb.h) continue;  // off the visible viewBox
+        const w = c.text.length * fs * 0.55 + pad, h = fs * 1.1;
+        const box = { x: c.x - w / 2, y: c.y - h / 2, w, h };
+        if (placed.some(p => !(box.x + box.w < p.x || box.x > p.x + p.w || box.y + box.h < p.y || box.y > p.y + p.h))) continue;
+        placed.push(box);
+        out += `<text x="${c.x.toFixed(1)}" y="${c.y.toFixed(1)}" font-size="${fs.toFixed(2)}" text-anchor="middle" `
+          + `dominant-baseline="middle" fill="var(--fg)" stroke="var(--panel2)" stroke-width="${(fs * 0.18).toFixed(2)}" `
+          + `paint-order="stroke" style="pointer-events:none">${esc(c.text)}</text>`;
+        if (placed.length >= 80) break;   // bound the work
+      }
+      g.innerHTML = out;
     }
 
     // Instance-local viewBox zoom/pan (the Google-Maps "controls inside the map"
@@ -7420,9 +7701,25 @@
     // mousedown and removed on mouseup).
     function _wireOoMap(host, opts) {
       const svg = host.querySelector("#oo-choro"); if (!svg) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const W = MAP_W, H = MAP_H;
+      // Reset the ⛶ glyph/title when fullscreen exits (Esc or the button). Wired once.
+      if (!host._ooFsWired) {
+        host._ooFsWired = true;
+        document.addEventListener("fullscreenchange", () => {
+          const fsBtn = host.querySelector('[data-oomap="big"]'); if (!fsBtn) return;
+          const on = document.fullscreenElement === host.querySelector(".oomap-wrap");
+          fsBtn.textContent = on ? "🗗" : "⛶";
+          fsBtn.title = on ? t("Exit fullscreen") : t("Enlarge the map");
+        });
+      }
       let vb = { x: 0, y: 0, w: W, h: H };
-      const apply = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+      const apply = () => {
+        svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+        // Re-declutter labels for the new viewBox (THEME-2: dynamic, constant-size,
+        // non-overlapping — more reveal as you zoom). No-op when labels are off.
+        if (host._ooLabels && host._ooLabels.length) _ooMapLayoutLabels(host, vb);
+      };
       const zoom = (f, ax, ay) => {
         const cx = ax != null ? ax : vb.x + vb.w / 2, cy = ay != null ? ay : vb.y + vb.h / 2;
         const w = Math.min(W, Math.max(W * 0.04, vb.w * f)), sc = w / vb.w;
@@ -7431,7 +7728,19 @@
       host.querySelectorAll("[data-oomap]").forEach(b => b.addEventListener("click", () => {
         const a = b.dataset.oomap;
         if (a === "in") zoom(0.7); else if (a === "out") zoom(1.4);
-        else if (a === "big") { const w = host.querySelector(".oomap-wrap"); if (w) w.classList.toggle("mm-big"); }
+        else if (a === "big") {
+          // TRUE fullscreen (field test 2026-06-19 #12), with a CSS fallback for
+          // browsers without the API. The in-map ⛶ stays the visible exit control
+          // (clicking it again exits); Esc also exits natively.
+          const w = host.querySelector(".oomap-wrap"); if (!w) return;
+          try {
+            if (document.fullscreenElement === w) { document.exitFullscreen(); }
+            else if (w.requestFullscreen) {
+              w.requestFullscreen().then(() => { b.title = t("Exit fullscreen"); b.textContent = "🗗"; })
+                .catch(() => w.classList.toggle("mm-big"));
+            } else { w.classList.toggle("mm-big"); }
+          } catch (_e) { w.classList.toggle("mm-big"); }
+        }
         else { vb = { x: 0, y: 0, w: W, h: H }; apply(); }
       }));
       if (opts && opts.onDimension) host.querySelectorAll("[data-oomap-dim]").forEach(b =>
@@ -7440,6 +7749,8 @@
         b.addEventListener("click", () => opts.onGranularity(b.dataset.oomapGran)));
       if (opts && opts.onPlaces) { const pb = host.querySelector("[data-oomap-places]"); if (pb) pb.addEventListener("click", () => opts.onPlaces()); }
       if (opts && opts.onSignals) { const sb = host.querySelector("[data-oomap-signals]"); if (sb) sb.addEventListener("click", () => opts.onSignals()); }
+      if (opts && opts.onLabels) { const lb = host.querySelector("[data-oomap-labels]"); if (lb) lb.addEventListener("click", () => opts.onLabels()); }
+      if (opts && opts.onOsm) { const ob = host.querySelector("[data-oomap-osm]"); if (ob) ob.addEventListener("click", () => opts.onOsm()); }
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
       if (opts && opts.onSignal) host.querySelectorAll("[data-oomap-sig]").forEach(g =>
         g.addEventListener("click", () => { const s = (host._ooSigVisible || [])[+g.dataset.oomapSig]; if (s) opts.onSignal(s, host._ooSigVisible || []); }));
@@ -7469,7 +7780,8 @@
     // Map-tab choropleth: per-country coverage with a DIMENSION PICKER (slice 3).
     // The endpoint returns every measure per country in ONE payload, so switching
     // dimension is instant (no re-fetch) — the picker just re-colours the map.
-    let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null;
+    let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null, _ooMapLabelsOn = false;
+    let _ooMapOsmOn = false, _ooMapOsmGeo = null, _ooMapOsmLoading = false;   // in-browser .pbf overlay (THEME-2)
     // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
     let _ooMapSignalsOn = false, _ooMapSignals = null, _ooMapFocusSlider = 1000, _ooMapFocusRAF = 0;
     // Aggregate the per-country values into CONTINENTS (slice 4): a SUM for counts,
@@ -7553,7 +7865,16 @@
         const ts = sig.map(s => s.t);
         const tmin = Math.min(...ts), tmax = Math.max(...ts), spanY = tmax - tmin;
         windowY = Math.max(5, spanY / 12);
-        focusT = tmin + (focusSlider / 1000) * spanY;
+        // LOGARITHMIC time slider (field test 2026-06-19 #14: "more recent events than
+        // medieval"). Map by AGE (years before the most recent), log-compressed, so the
+        // recent end of the slider gets most of the travel (fine resolution) while
+        // antiquity compresses — instead of a linear sweep that buries recent years.
+        // NOT a hidden warp: the focus YEAR label below is always shown, so the actual
+        // year at any slider position is explicit.
+        const _LOGB = 10;
+        const frac = focusSlider / 1000;  // 0 = oldest, 1 = most recent
+        const age = spanY > 0 ? spanY * (Math.pow(_LOGB, 1 - frac) - 1) / (_LOGB - 1) : 0;
+        focusT = tmax - age;
         focusLabel = (typeof fmtYear === "function") ? fmtYear(focusT) : String(Math.round(focusT));
       }
       await ooMap(host, {
@@ -7587,8 +7908,49 @@
         // rAF-coalesce slider drags so a fast sweep is at most one re-render per frame.
         onFocus: v => { _ooMapFocusSlider = v; if (_ooMapFocusRAF) cancelAnimationFrame(_ooMapFocusRAF); _ooMapFocusRAF = requestAnimationFrame(() => _renderOoMapDim()); },
         onSignal: (s, visible) => _ooMapSignalDetail(s, visible, windowY),
+        // Dynamic non-overlapping country labels (THEME-2), opt-in.
+        labelsOn: _ooMapLabelsOn,
+        onLabels: () => { _ooMapLabelsOn = !_ooMapLabelsOn; _renderOoMapDim(); },
+        // In-browser OSM offline-region overlay (THEME-2): parse a DOWNLOADED
+        // .osm.pbf locally (zero network) and draw its geometry. Opt-in.
+        osmOn: _ooMapOsmOn, osmGeo: _ooMapOsmGeo,
+        onOsm: () => _ooMapToggleOsm(),
+        // Click a country → its coverage breakdown (THEME-2 "click-country → list").
+        onCountry: iso => _ooMapCountryDetail(rowBy[(iso || "").toLowerCase()], dim),
         valueLabel: fmtV,
       });
+    }
+    // Click-a-country detail (THEME-2): the per-country coverage breakdown across
+    // every measured dimension (sources · articles · keyword mentions · mean tone),
+    // straight from the map-coverage row (counts only, no score). The mean-tone line
+    // carries the VADER English-only caveat + its n. A button opens the Sources tab
+    // so the user can explore that country's sources.
+    function _ooMapCountryDetail(row, dim) {
+      const host = $("oo-coverage-detail"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      if (!row) { host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)"><span class="muted">${esc(t("No coverage recorded for this country yet."))}</span></div>`; return; }
+      const iso = (row.country || "").toLowerCase();
+      const name = ooRegionName(iso, row.name || row.country);
+      const line = (label, v, extra) => (v != null && isFinite(v))
+        ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(label)}</span><span>${esc(fmtNum(v))}${extra ? " " + esc(extra) : ""}</span></div>` : "";
+      const tone = (row.sentiment != null && isFinite(row.sentiment))
+        ? `<div style="display:flex;justify-content:space-between;gap:12px"><span class="muted">${esc(t("Mean tone"))}</span><span>${row.sentiment >= 0 ? "+" : ""}${esc(fmtNum(row.sentiment, 2))} · ${esc(t("n="))}${row.sentiment_n || 0}</span></div>` : "";
+      host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <strong>${esc(name)}</strong>${row.continent ? ` <span class="pill">${esc(t(row.continent))}</span>` : ""}
+        </div>
+        <div style="margin-top:6px;font-size:13px;display:flex;flex-direction:column;gap:2px">
+          ${line(t("Sources"), row.sources)}
+          ${line(t("Articles"), row.articles)}
+          ${line(t("Keyword mentions"), row.keywords)}
+          ${tone}
+        </div>
+        ${tone ? `<div class="card-caveat" style="margin-top:5px">${esc(t("Mean tone uses the English-only VADER lexicon; non-English articles are not scored."))}</div>` : ""}
+        <div class="row" style="margin-top:7px;gap:8px">
+          <button class="tiny secondary" onclick="showTab('sources')">${esc(t("Explore sources"))}</button>
+        </div>
+      </div>`;
+      host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     // Signal click-to-detail (slice 5a.2 — ported faithfully from the temporal map's
     // showTmapDetail so retiring #oo-tmap loses nothing): the event's kind/title,
@@ -7597,14 +7959,21 @@
     // time" seed (the same honest never-a-cause framing). English to match the
     // retired panel (no regression); keyable later.
     let _ooMapSigSet = [], _ooMapSigWin = 25;
+    // "Near in space & time" co-occurrence is a TIGHT, FIXED window (field test
+    // 2026-06-19 #14: it used the slider's focus window — ~span/12, i.e. ~166 years on
+    // an antiquity→now span — so it linked events DECADES apart, a misleading
+    // "co-occurrence"). Cap the time delta hard, independent of the slider: two events
+    // within a couple of years AND close in space is a meaningful (still non-causal) seed.
+    const _OOMAP_NEAR_YEARS = 2;
     function _ooMapSignalAt(i) { const s = _ooMapSigSet[i]; if (s) _ooMapSignalDetail(s, _ooMapSigSet, _ooMapSigWin); }
     function _ooMapNearby(s, visible, win) {
+      const w = Math.min(win || _OOMAP_NEAR_YEARS, _OOMAP_NEAR_YEARS);  // never wider than the cap
       const out = [];
       (visible || []).forEach((o, idx) => {
         if (o === s) return;
         const dt = Math.abs(o.t - s.t), dlon = Math.abs(o.lon - s.lon), dlat = Math.abs(o.lat - s.lat);
-        if (dt <= win && dlon <= TMAP_NEAR_DEG && dlat <= TMAP_NEAR_DEG)
-          out.push({ idx, o, score: dt / (win || 1) + Math.hypot(dlon, dlat) / TMAP_NEAR_DEG });
+        if (dt <= w && dlon <= TMAP_NEAR_DEG && dlat <= TMAP_NEAR_DEG)
+          out.push({ idx, o, score: dt / (w || 1) + Math.hypot(dlon, dlat) / TMAP_NEAR_DEG });
       });
       return out.sort((a, b) => a.score - b.score).slice(0, 6);
     }
@@ -7647,6 +8016,44 @@
       </div>`;
       host.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
+    // Toggle the in-browser OSM offline-region overlay (THEME-2). On first enable
+    // it finds a DOWNLOADED region, fetches a bounded byte PREFIX of its local
+    // .osm.pbf (zero network — a file already on disk), parses it with OOPBF, and
+    // resolves way refs to coordinates. Honest: a preview, capped, never fabricated.
+    async function _ooMapToggleOsm() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      if (_ooMapOsmOn) { _ooMapOsmOn = false; _renderOoMapDim(); return; }
+      if (typeof OOPBF === "undefined" || !OOPBF.parse) { toast(t("The offline-map reader is unavailable."), "err"); return; }
+      if (_ooMapOsmGeo) { _ooMapOsmOn = true; _renderOoMapDim(); return; }   // already parsed; just show
+      if (_ooMapOsmLoading) return;
+      _ooMapOsmLoading = true;
+      try {
+        const dl = await api("/api/geo/downloads");
+        const done = (dl.downloads || []).filter(d => d.status === "done" && d.code);
+        if (!done.length) { toast(t("No offline-map region downloaded yet — get one in Settings → Offline map."), "err"); return; }
+        const code = done[0].code;
+        toast(t("Reading the offline map…"));
+        // BINARY fetch (the bounded prefix). Loopback file read — no network egress.
+        const res = await fetch(`/api/geo/regions/${encodeURIComponent(code)}/preview?max_bytes=8388608`);
+        if (!res.ok) { toast(t("Could not read the downloaded region."), "err"); return; }
+        const ab = await res.arrayBuffer();
+        const geo = await OOPBF.parse(ab, { maxBlocks: 16, maxNodes: 120000 });
+        // Resolve way refs -> coordinates using the decoded node set (partial in a
+        // bounded preview — drop a way we can't resolve, never invent a point).
+        const byId = new Map(); for (const n of geo.nodes) byId.set(n.id, n);
+        const lines = [];
+        for (const w of geo.ways) {
+          const cs = []; for (const id of w.refs) { const nd = byId.get(id); if (nd) cs.push(nd); }
+          if (cs.length >= 2) lines.push(cs);
+        }
+        _ooMapOsmGeo = { region: code, points: geo.nodes, lines, truncated: geo.truncated, blocks: geo.blocks };
+        _ooMapOsmOn = true;
+        _renderOoMapDim();
+      } catch (e) {
+        toast(t("Could not read the downloaded region.") + " " + (e && e.message ? e.message : ""), "err");
+      } finally { _ooMapOsmLoading = false; }
+    }
+
     async function loadOoMapCoverage() {
       const host = $("oo-coverage-map"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
@@ -8263,15 +8670,18 @@
     // (the backend's guarded factory enforces the kill switch too).
     async function loadOsmMap() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const sel = $("osm-region"); if (!sel) return;
+      const list = $("osm-region-list"); if (!list) return;
       try {
         const d = await api("/api/geo/regions");
-        sel.innerHTML = (d.regions || []).map(r =>
-          `<option value="${esc(r.code)}">${esc(r.name)} · ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</option>`
-        ).join("") || `<option value="">${esc(t("No regions."))}</option>`;
+        const rows = (d.regions || []).map(r =>
+          `<div class="osm-region-row">
+            <span class="osm-region-name"><strong>${esc(r.name)}</strong> <span class="muted">· ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</span></span>
+            <button class="tiny danger" onclick="startOsmDownload(${esc(JSON.stringify(r.code))})">${esc(t("Download"))}</button>
+          </div>`).join("");
+        list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
         const note = $("osm-size-note"), asof = $("osm-size-asof");
         if (note && asof && d.size_estimate_as_of) { asof.textContent = d.size_estimate_as_of; note.hidden = false; }
-      } catch (e) { sel.innerHTML = `<option value="">${esc(t("Could not load regions."))}</option>`; }
+      } catch (e) { list.innerHTML = `<div class="muted">${esc(t("Could not load regions."))}</div>`; }
       loadOsmDownloads();
     }
     async function loadOsmDownloads() {
@@ -8294,11 +8704,11 @@
     }
     async function startOsmDownload(code) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const c = code || $("osm-region").value;
+      const c = code || ($("osm-region") ? $("osm-region").value : "");  // list rows pass the code directly
       if (!c) return;
-      // A user-initiated (not resume) start confirms the heavy download first.
-      if (!code && !confirm(t("Download this offline map region? These can be very large (several GB to tens of GB)."))) return;
-      // Every offline->online transition passes the ONE consent popup (invariant #14).
+      // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown
+      // in the region list, the download is a visible task-manager job, and the ONE
+      // network-consent popup (ensureOnline) below is the only gate that matters.
       if (!await ensureOnline(t("Download an offline map region"))) return;
       try {
         await api("/api/geo/downloads/start", {method:"POST", body: JSON.stringify({code: c})});
@@ -8319,9 +8729,9 @@
     }
 
     // -- Official statistics producers (Group N): the curated directory + the --- //
-    //    one-click "register as DISABLED controversial sources" action.          //
-    //    Descriptive only: NO figures, NO score; every producer is a STANCED      //
-    //    source by ruling (the "controversial" pill states it, never a verdict).  //
+    //    one-click "register as DISABLED sources" action.                         //
+    //    Descriptive only: NO figures, NO score, NO verdict label (ruling #50 —   //
+    //    a producer is a STANCED source, stated as a caveat; the user judges).    //
     //    home URLs open the LOCAL link-preview first (extLink, invariant #6/#6e). //
     async function loadStatAgencies() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -8348,11 +8758,10 @@
             <td>${a.country ? esc(String(a.country).toUpperCase()) : "<span class=\"muted\">—</span>"}</td>
             <td>${esc(a.region || "")}</td>
             <td>${a.home_url ? extLink(a.home_url, a.home_url) : ""}</td>
-            <td><span class="pill warn">${esc(t("controversial"))}</span></td>
           </tr>`).join("");
         box.innerHTML = `<table>
           <tr><th>${esc(t("Name"))}</th><th>${esc(t("Scope"))}</th><th>${esc(t("Country"))}</th>`
-          + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th><th></th></tr>${rows}</table>`;
+          + `<th>${esc(t("Region"))}</th><th>${esc(t("Official site"))}</th></tr>${rows}</table>`;
         // The API caveat travels with the data, visible by default (informed consent).
         if (d.caveat) box.innerHTML += `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>`;
       } catch (e) {
@@ -8362,7 +8771,7 @@
     async function ingestStatSources() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const msg = $("stat-ingest-msg"), btn = $("stat-ingest-btn");
-      if (!confirm(t("Register all official-statistics producers as DISABLED sources? They are added controversial and NOT scraped."))) return;
+      if (!confirm(t("Register all official-statistics producers as DISABLED sources? They are added disabled and NOT scraped — enable any to start collecting."))) return;
       if (btn) btn.disabled = true;
       if (msg) msg.textContent = t("Registering…");
       try {
@@ -8705,80 +9114,203 @@
       if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
       return p;
     }
-    // Open the analysis window over an EXACT article set (a set-based card's precise
-    // selection — echo / convergence). The corpus is exactly these ids, not a re-run
-    // search. The Advanced tab can refine FROM here (which clears the fixed set).
-    function openAnalysisForIds(ids, label) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      _anIds = Array.isArray(ids) ? ids.slice(0, 5000) : null;
-      _anCommodity = null;   // a fixed article set, not a commodity overlay
-      $("an-adv-query").value = ""; $("an-adv-source").value = "";
-      $("an-adv-lang").value = ""; $("an-adv-from").value = ""; $("an-adv-to").value = "";
-      $("an-query").textContent = label ? `“${label}”` : t("(the selected article set)");
-      $("an-adv-note").textContent = t("Showing the exact article set behind this Lead.");
-      showTab("analyze");
-      loadAnalysis(anParams());
-    }
+    // === THEME-3 (2026-06-19): analysis-window-per-query ====================== //
+    // Each search / Lead / keyword spawns a NAMED, closeable, persisted TAB over the
+    // ONE #an render area. A SEED captures what to show; activating a tab applies its
+    // seed + re-renders. Replaces the singleton #an AND the retired #corpus-win modal
+    // (ruling: "retire both — one analysis surface"). Per-card landing = generic: a
+    // spawned tab lands on the OVERVIEW screen showing the card's EXACT corpus (Q1).
+    let _anTabs = [];          // [{id,key,label,kind,query,ids,commodity,src,lang,from,to}]
+    let _anActiveId = null;
+    let _anTabSeq = 1;
+    let _anHydrated = false;    // restored tabs load lazily the first time Analysis is opened
+    const _AN_TABS_KEY = "oo.an.tabs.v1";
+    const _AN_TAB_CAP = 10;    // soft cap (a multi-document workspace, not unbounded)
 
-    // --- Analysis window (Group F): analytics over the articles a search matched.
-    // Keywords (article-set aggregate) + the matches themselves; keyword chips
-    // open their own analysis (the keyword corpus window). Counts, never a verdict.
-    // Open the analysis window seeded with an explicit query (the omnibar Enter
-    // path — ruled: Enter -> a corpus-of-articles window, not the Search tab).
-    function openAnalysisFor(query, opts) {
-      _anIds = null;   // a fresh query, not a fixed article set
-      // A commodity click carries {commodity:{symbol,name,unit}} so the Price
-      // subtab can overlay the price curve with this term's corpus coverage.
-      _anCommodity = (opts && opts.commodity) || null;
-      const q = (query || "").trim();
-      $("an-adv-query").value = q;
-      $("an-adv-source").value = ""; $("an-adv-lang").value = "";
-      $("an-adv-from").value = ""; $("an-adv-to").value = "";
-      $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
-      $("an-adv-note").textContent = "";
-      showTab("analyze");
+    function _anSaveTabs() {
+      try {
+        // Persist only the lightweight SEEDS (never the rendered data).
+        const slim = _anTabs.map(tb => ({
+          id: tb.id, key: tb.key, label: tb.label, kind: tb.kind, query: tb.query || "",
+          ids: tb.kind === "ids" ? (tb.ids || []).slice(0, 5000) : null,
+          commodity: tb.commodity || null, src: tb.src || "", lang: tb.lang || "",
+          from: tb.from || "", to: tb.to || "",
+        }));
+        localStorage.setItem(_AN_TABS_KEY, JSON.stringify({tabs: slim, active: _anActiveId}));
+      } catch (_e) { /* private mode — tabs just won't persist */ }
+    }
+    function _anRenderStrip() {
+      const strip = $("an-tabstrip"); if (!strip) return;
+      if (!_anTabs.length) { strip.innerHTML = ""; strip.style.display = "none"; return; }
+      strip.style.display = "";
+      strip.innerHTML = _anTabs.map(tb => {
+        const on = tb.id === _anActiveId;
+        const lbl = (tb.label || tb.query || "set").slice(0, 28);
+        return `<span class="an-tab${on ? " active" : ""}" role="tab" aria-selected="${on ? "true" : "false"}">`
+          + `<button class="an-tab-label" onclick="_anActivate(${esc(JSON.stringify(tb.id))})" title="${esc(tb.label || tb.query || "")}">${esc(lbl)}</button>`
+          + `<button class="an-tab-x" onclick="_anCloseTab(${esc(JSON.stringify(tb.id))})" title="Close this analysis tab" aria-label="Close">✕</button></span>`;
+      }).join("");
+    }
+    function _anApplySeed(tb) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anIds = (tb.kind === "ids" && Array.isArray(tb.ids)) ? tb.ids.slice(0, 5000) : null;
+      _anCommodity = tb.commodity || null;
+      $("an-adv-query").value = tb.query || "";
+      $("an-adv-source").value = tb.src || "";
+      $("an-adv-lang").value = tb.lang || "";
+      $("an-adv-from").value = tb.from || "";
+      $("an-adv-to").value = tb.to || "";
+      $("an-query").textContent = tb.label ? `“${tb.label}”` : (tb.query ? `“${tb.query}”` : t("(the selected article set)"));
+      $("an-adv-note").textContent = (tb.kind === "ids") ? t("Showing the exact article set behind this Lead.") : "";
       loadAnalysis(anParams());
+      if (_anSubtabs) _anSubtabs.select("overview"); else anSelectTab("overview");   // generic landing (Q1)
+    }
+    function _anActivate(id) {
+      const tb = _anTabs.find(x => x.id === id); if (!tb) return;
+      _anActiveId = id; _anHydrated = true;
+      showTab("analyze");
+      _anRenderStrip();
+      _anApplySeed(tb);
+      _anSaveTabs();
+    }
+    function _anCloseTab(id) {
+      const i = _anTabs.findIndex(x => x.id === id); if (i < 0) return;
+      _anTabs.splice(i, 1);
+      if (_anActiveId === id) {
+        const next = _anTabs[i] || _anTabs[i - 1] || null;
+        _anActiveId = next ? next.id : null;
+        _anRenderStrip();
+        if (next) _anApplySeed(next); else _anShowEmpty();
+      } else { _anRenderStrip(); }
+      _anSaveTabs();
+    }
+    function _anShowEmpty() {
+      // No tabs: the surface is a launcher (the empty singleton #an is retired).
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anIds = null; _anCommodity = null; $("an-query").textContent = "";
+      const ov = $("an-overview");
+      if (ov) ov.innerHTML = `<div class="muted">${esc(t("Search above, or open a Lead or keyword, to start an analysis. Each opens its own tab here."))}</div>`;
+      if (_anSubtabs) _anSubtabs.select("overview"); else anSelectTab("overview");
+    }
+    // Spawn (or focus) a tab for a seed; dedupe by key so the SAME query/set reuses
+    // its tab while DIFFERENT searches coexist as parallel tabs (the workspace).
+    function _anSpawn(seed) {
+      const key = seed.kind === "ids"
+        ? ("ids:" + (seed.label || (seed.ids || []).slice(0, 4).join(",")))
+        : ("q:" + (seed.query || "").toLowerCase() + "|" + (seed.src || "") + "|" + (seed.lang || ""));
+      let tb = _anTabs.find(x => x.key === key);
+      if (!tb) {
+        tb = Object.assign({id: "t" + (_anTabSeq++) + Date.now().toString(36), key}, seed);
+        _anTabs.push(tb);
+        if (_anTabs.length > _AN_TAB_CAP) {
+          const drop = _anTabs.find(x => x.id !== tb.id);   // evict the oldest non-new tab
+          if (drop) _anTabs = _anTabs.filter(x => x.id !== drop.id);
+        }
+      } else { Object.assign(tb, seed, {id: tb.id, key}); }
+      _anActivate(tb.id);
+    }
+    // Open the analysis window over an EXACT article set (echo / convergence / a card's
+    // precise selection). The corpus is exactly these ids, not a re-run search.
+    function openAnalysisForIds(ids, label) {
+      _anSpawn({kind: "ids", ids: Array.isArray(ids) ? ids.slice(0, 5000) : [], label: label || "", query: ""});
+    }
+    // Open the analysis window seeded with a query (omnibar Enter, keyword/card click).
+    // A commodity click carries {commodity:{symbol,name,unit}} for the Price subtab.
+    function openAnalysisFor(query, opts) {
+      const q = (query || "").trim();
+      _anSpawn({kind: "query", query: q, label: q, commodity: (opts && opts.commodity) || null});
+    }
+    // Retired #corpus-win modal -> a keyword now spawns its own analysis tab (one
+    // surface). All openCorpus call sites get the spawn behaviour for free.
+    function openCorpus(term) { openAnalysisFor(term); }
+    function _anRestoreTabs() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(_AN_TABS_KEY) || "null");
+        if (raw && Array.isArray(raw.tabs) && raw.tabs.length) {
+          _anTabs = raw.tabs;
+          _anActiveId = raw.active && _anTabs.some(t => t.id === raw.active) ? raw.active : _anTabs[0].id;
+          _anRenderStrip();   // show the strip; the active tab loads lazily when Analysis opens
+        }
+      } catch (_e) { /* corrupt state — start clean */ }
     }
     function openAnalysis() {
-      _anCommodity = null;   // the search-driven path is not a commodity overlay
+      // The search "Analyze" path -> spawn a tab seeded from the current search.
       const qtxt = $("q").value.trim();
-      $("an-query").textContent = qtxt ? `“${qtxt}”` : "(all articles matching your filters)";
-      // Prefill the Advanced tab from the current search, so it reflects what is
-      // being analyzed and the user can refine from there (toward folding in Search).
-      $("an-adv-query").value = qtxt;
-      $("an-adv-source").value = $("f-source").value.trim();
-      $("an-adv-lang").value = $("f-lang").value.trim();
-      // Carry only a NARROWED window over to the analysis Advanced inputs (the
-      // ooTimeScope feeds start_date/end_date the same way; a bound left at the
-      // absolute min/max means "all", so it stays blank here).
       const _ts = _searchTimeScope && _searchTimeScope.get();
-      $("an-adv-from").value = (_ts && _ts.from && _ts.from > _searchTsBounds.min) ? _ts.from : "";
-      $("an-adv-to").value = (_ts && _ts.to && _ts.to < _searchTsBounds.max) ? _ts.to : "";
-      $("an-adv-note").textContent = "";
-      showTab("analyze");
-      loadAnalysis(searchParams());
+      _anSpawn({
+        kind: "query", query: qtxt, label: qtxt || "(filtered)",
+        src: ($("f-source").value || "").trim(), lang: ($("f-lang").value || "").trim(),
+        from: (_ts && _ts.from && _ts.from > _searchTsBounds.min) ? _ts.from : "",
+        to: (_ts && _ts.to && _ts.to < _searchTsBounds.max) ? _ts.to : "",
+      });
     }
-    // Advanced tab: refine the analyzed article set in-place. loadAnalysis re-runs
-    // EVERY subtab from the params, so this is the whole wiring.
+    // Advanced tab: refine the ACTIVE tab in-place (updates its seed, never spawns a
+    // new tab). loadAnalysis re-runs EVERY subtab from the params.
     function anRunAdvanced() {
       _anIds = null;   // refining via Advanced search replaces any fixed article set
       _anCommodity = null;   // a refined search is no longer the commodity overlay
       const tt = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const p = new URLSearchParams();
-      const q = $("an-adv-query").value.trim(); if (q) p.set("query", q);
-      const src = $("an-adv-source").value.trim(); if (src) p.set("source", src);
-      const lang = $("an-adv-lang").value.trim(); if (lang) p.set("language", lang);
-      if ($("an-adv-from").value) p.set("start_date", $("an-adv-from").value);
-      if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
+      const q = $("an-adv-query").value.trim();
+      const src = $("an-adv-source").value.trim(), lang = $("an-adv-lang").value.trim();
+      const from = $("an-adv-from").value, to = $("an-adv-to").value;
+      const tb = _anTabs.find(x => x.id === _anActiveId);
+      if (tb) {
+        Object.assign(tb, {kind: "query", query: q, label: q || "(filtered)", ids: null,
+          commodity: null, src, lang, from, to,
+          key: "q:" + q.toLowerCase() + "|" + src + "|" + lang});
+        _anRenderStrip(); _anSaveTabs();
+      }
       $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
       $("an-adv-note").textContent = tt("Analysis updated — see the other tabs.");
-      loadAnalysis(p);
+      loadAnalysis(anParams());
     }
     function anSelectTab(key) {
       document.querySelectorAll("#tab-analyze .an-panel").forEach(el =>
         el.style.display = (el.id === "an-" + key) ? "" : "none");
+      if (key === "overview") renderAnOverview(_anLastParams);  // headline tile per lens
       if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
       if (key === "related") renderAnRelated(_anLastParams);   // lazy: coordination/related computed on show
+    }
+    // The OVERVIEW screen (THEME-3): an honest headline tile per lens (counts only, no
+    // synthesis), each deep-linking to its subtab. Bounded summary fetches; degrades
+    // gracefully (shows whatever resolves). The card's EXACT corpus is the scope (Q1).
+    let _anOverviewKey = null;
+    async function renderAnOverview(p) {
+      const host = $("an-overview"); if (!host || !p) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const key = p.toString();
+      if (_anOverviewKey === key && host.dataset.done === "1") return;  // already shown for this set
+      _anOverviewKey = key; host.dataset.done = "";
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      const qs = p.toString();
+      const grab = (path) => api(path + "?" + qs).then(d => d).catch(() => null);
+      const [kw, www, src, sent] = await Promise.all([
+        grab("/api/insights/corpus-keywords"), grab("/api/insights/corpus-www"),
+        grab("/api/insights/corpus-sources"), grab("/api/insights/corpus-sentiment"),
+      ]);
+      const topKw = kw && kw.terms && kw.terms.length ? kw.terms[0] : null;
+      const topPlace = www && www.where && www.where.length ? www.where[0] : null;
+      const topWho = www && www.who && www.who.length ? www.who[0] : null;
+      const topSrc = src && src.sources && src.sources.length ? src.sources[0] : null;
+      const tone = sent && (sent.summary || sent.mean != null) ? sent : null;
+      const tile = (lens, headline, sub) =>
+        `<button class="an-ov-tile" onclick="_anSubtabs && _anSubtabs.select(${esc(JSON.stringify(lens))})">`
+        + `<div class="an-ov-h">${esc(headline)}</div>`
+        + (sub ? `<div class="an-ov-s muted">${esc(sub)}</div>` : "")
+        + `<div class="an-ov-go muted">${esc(t("Open"))} →</div></button>`;
+      const tiles = [];
+      tiles.push(tile("keywords", t("Keywords"), topKw ? `${topKw.term} · ${kw.terms.length}+ ${t("Keywords").toLowerCase()}` : t("No keywords yet")));
+      tiles.push(tile("www", t("When/Where/Who"), [topPlace ? topPlace.name : null, topWho ? (topWho.name || topWho.term) : null].filter(Boolean).join(" · ") || t("Nothing extracted yet")));
+      tiles.push(tile("sources", t("Sources"), topSrc ? `${topSrc.name || topSrc.domain}` : t("No sources yet")));
+      tiles.push(tile("sentiment", t("Sentiment"), tone ? (tone.summary || "") : t("English-only (VADER) — see the tab")));
+      tiles.push(tile("trend", t("Trend"), t("How coverage moved over time")));
+      tiles.push(tile("mindmap", t("Mindmap"), t("Keyword associations")));
+      tiles.push(tile("links", t("Links"), t("Shared outbound origins")));
+      tiles.push(tile("related", t("Related"), t("Near-duplicate clusters")));
+      tiles.push(tile("articles", t("Articles"), t("The matched articles")));
+      host.innerHTML = `<div class="hint" style="margin-bottom:8px">${esc(t("A headline from each lens — counts only, never a verdict. Open any to dig in."))}</div>`
+        + `<div class="an-ov-grid">${tiles.join("")}</div>`;
+      host.dataset.done = "1";
     }
 
     // --- Commodity price × coverage overlay (Markets item, Group G) --------- //
@@ -9731,7 +10263,7 @@
       try {
         const r = await api(`/api/llm/articles/${id}/translate`,
           {method: "POST", body: JSON.stringify({target_language: "English"})});
-        cell.innerHTML = `<span class="muted">[${esc(r.source_language || "?")}→${esc(r.target_language)}]</span> `
+        cell.innerHTML = `<span class="muted">[${esc(r.source_language ? ooLangName(r.source_language, r.source_language) : "?")}→${esc(ooLangName(r.target_language, r.target_language))}]</span> `
           + `${esc(r.result)} <span class="muted">— ${esc(r.model)}</span>`
           + `<div class="hint muted">Generated by a local model — verify against the stored article.</div>`;
       } catch (e) { cell.textContent = ""; toast("Translate: " + e.message, "err"); }
@@ -9900,6 +10432,22 @@
       if (!document.hidden && _netOnline !== false) loadLlmHealth();
     });
 
+    // Live language switch (field test 2026-06-19 #16): CLDR-derived names (country /
+    // continent on the world map, the sources country column) are localized at RENDER
+    // time, so the i18n DOM walker (which matches English source strings) cannot
+    // re-derive them. Re-render those dynamic-name surfaces in the new locale. The map
+    // re-renders from its CACHE (no fetch); the sources table re-renders only if it has
+    // already been loaded.
+    document.addEventListener("oo:langchange", () => {
+      try { if (_ooMapPayload && typeof _renderOoMapDim === "function") _renderOoMapDim(); } catch (_e) {}
+      try {
+        const tbl = $("src-table");
+        if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
+      } catch (_e) {}
+      // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
+      try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
+    });
+
     // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.
     document.addEventListener("keydown", e => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
@@ -10027,4 +10575,5 @@
     // (so the Insights Explore mind-map is never left empty after a relocation).
     $("corpus-win").addEventListener("close", _mmKitHome);
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
-    _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window (Keywords / Articles)
+    _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window subtabs
+    _anRestoreTabs();   // THEME-3: restore the spawned analysis-tab strip (data loads lazily)

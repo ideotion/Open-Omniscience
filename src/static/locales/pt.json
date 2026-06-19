@@ -773,7 +773,7 @@
   "Fetch mode saved.": "Modo de obtenção salvo.",
   "Enter a passphrase first.": "Insira primeiro uma frase-senha.",
   "Encrypted backup downloaded.": "Backup criptografado baixado.",
-  "Panic wipe cancelled.": "Limpeza de emergência cancelada.",
+  "Panic wipe cancelled.": "Apagamento de emergência cancelado.",
   "Local data wiped. Restart the app.": "Dados locais apagados. Reinicie o aplicativo.",
   "Uninstall cancelled.": "Desinstalação cancelada.",
   "Uninstalling — the app is stopping.": "Desinstalando — o aplicativo está sendo encerrado.",
@@ -1320,5 +1320,16 @@
   "Africa": "África",
   "Oceania": "Oceania",
   "Signals": "Sinais",
-  "Moment in focus": "Momento em foco"
+  "Moment in focus": "Momento em foco",
+  "healthy": "saudável",
+  "offline": "offline",
+  "checking…": "verificando…",
+  "AI": "IA",
+  "encrypted (AES-256-GCM)": "criptografado (AES-256-GCM)",
+  "plaintext archive": "arquivo sem criptografia",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "Online — clique para ficar offline (modo avião); toda nova solicitação de rede será recusada.",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "Offline (modo avião) — clique para ficar online; será pedida uma confirmação primeiro.",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "APAGAMENTO DE EMERGÊNCIA: excluir de forma irreversível o corpus, as chaves e os caches desta máquina?",
+  "This cannot be undone. Type-confirm follows.": "Isto não pode ser desfeito. Segue-se a confirmação por digitação.",
+  "To confirm, type WIPE in capitals:": "Para confirmar, digite WIPE em maiúsculas:"
 }

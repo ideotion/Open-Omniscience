@@ -1320,5 +1320,16 @@
   "Africa": "Afrika",
   "Oceania": "Oseania",
   "Signals": "Sinyal",
-  "Moment in focus": "Momen fokus"
+  "Moment in focus": "Momen fokus",
+  "healthy": "sehat",
+  "offline": "luring",
+  "checking…": "memeriksa…",
+  "AI": "AI",
+  "encrypted (AES-256-GCM)": "terenkripsi (AES-256-GCM)",
+  "plaintext archive": "arsip teks biasa",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "Daring — klik untuk luring (mode pesawat); setiap permintaan jaringan baru akan ditolak.",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "Luring (mode pesawat) — klik untuk daring; Anda akan diminta konfirmasi terlebih dahulu.",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "PENGHAPUSAN DARURAT: hapus korpus, kunci, dan cache di mesin ini secara permanen?",
+  "This cannot be undone. Type-confirm follows.": "Ini tidak dapat dibatalkan. Konfirmasi ketik menyusul.",
+  "To confirm, type WIPE in capitals:": "Untuk mengonfirmasi, ketik WIPE dengan huruf kapital:"
 }

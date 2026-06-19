@@ -2,7 +2,7 @@
 in the source layers and its energy data ingested by default. This pins the two additions:
 
   (1) EIA is in the raw-data official-statistics agency directory (so it is catalogued
-      alongside BLS/Census etc., flagged controversial like every official producer);
+      alongside BLS/Census etc.; a stanced source, stated as a caveat, no verdict — #50);
   (2) the no-key EIA energy FEED expansion (petroleum products redistributed by FRED as
       key-free CSV) is present in the commodity feed catalog, which the markets pass
       auto-imports — so the data is ingested by default with no API key.
@@ -29,9 +29,10 @@ def test_eia_is_in_the_official_statistics_directory():
     assert eia is not None, "EIA must be in the official-statistics agency directory"
     assert eia.country == "US" and eia.scope == "national"
     assert eia.acronym == "EIA"
-    # every official producer is a stanced source, stated — never a credibility score
+    # An official producer is a stanced source, stated as a caveat — never a per-source
+    # "controversial" verdict (ruling #50) and never a credibility score.
     d = eia.to_dict()
-    assert d["controversial"] is True
+    assert "controversial" not in d
     assert not any("score" in k for k in d), "no composite score on an agency entry"
     assert eia in list_agencies()
 

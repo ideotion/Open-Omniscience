@@ -104,7 +104,7 @@
         </div>
         <button class="icon-btn" id="tm-open" onclick="openTaskManager()" title="Tasks &amp; system" aria-label="Open the task manager (new tab)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 13 2-7h6"/></svg></button>
-        <button class="icon-btn" id="net-toggle" onclick="toggleNetwork()"
+        <button class="icon-btn" id="net-toggle" onclick="toggleNetwork()" data-i18n-dyn
           title="Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish."
           aria-label="Airplane mode (network on/off)">
           <svg id="net-plane" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
@@ -182,10 +182,11 @@
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
           <span id="brief-generated" class="hint" style="margin:0"></span></div>
         <div class="brief-toolbar">
-          <label class="switch" title="Transparency: show how every figure was computed. The caveat is always shown on each Lead.">
-            <input type="checkbox" id="brief-methods" onchange="toggleMethods()"> Show method</label>
+          <!-- "Show method" toggle retired (field test 2026-06-19 P2-2): each Lead's
+               method + "why" now live behind a per-card "?" affordance (bottom-right);
+               the caveat stays visible on every card (#23). -->
           <span class="sp"></span>
-          <button class="secondary tiny" onclick="openDraft()">Draft (<span id="draft-count">0</span>) →</button>
+          <button class="secondary tiny" onclick="openDraft()" title="Your draft — Leads you pinned to investigate together">🛒 Draft (<span id="draft-count">0</span>) →</button>
         </div>
         <!-- Whole-sentence nodes (the i18n exact-match pattern; see the Agenda intro). -->
         <p class="hint" style="margin-top:8px"><span>Equal view — every source is counted once; no source is de-amplified in this version.</span>
@@ -252,11 +253,16 @@
          button (and the sidebar). Counts only, never a verdict. -->
     <div class="tab-page" id="tab-analyze">
     <section class="panel">
+      <!-- THEME-3 (2026-06-19): analysis-window-per-query — each search/Lead/keyword
+           spawns a NAMED, closeable, persisted tab over this one render area (replaces
+           the singleton + the retired #corpus-win modal). -->
+      <div id="an-tabstrip" class="an-tabstrip" role="tablist" style="display:none"></div>
       <div class="phead"><h2>Analysis</h2><span class="sp"></span>
         <span id="an-query" class="hint" style="margin:0"></span></div>
       <p class="hint" style="margin-top:0">Analytics over the articles your search matched — counts only, never a verdict. <span>Text only — images, audio and video aren't analysed.</span></p>
       <nav class="tabs" id="an-subtabs" style="position:static;padding:0;border:0;margin-top:6px">
-        <button class="active" data-tab="keywords">Keywords</button>
+        <button class="active" data-tab="overview">Overview</button>
+        <button data-tab="keywords">Keywords</button>
         <button data-tab="trend">Trend</button>
         <button data-tab="mindmap">Mindmap</button>
         <button data-tab="articles">Articles</button>
@@ -268,7 +274,8 @@
         <button data-tab="price" id="an-price-tab" style="display:none">Price</button>
         <button data-tab="advanced">Advanced</button>
       </nav>
-      <div class="an-panel" id="an-keywords" style="margin-top:10px">
+      <div class="an-panel" id="an-overview" style="margin-top:10px"></div>
+      <div class="an-panel" id="an-keywords" style="display:none;margin-top:10px">
         <div class="muted">Run a search, then press Analyze to populate this window.</div>
       </div>
       <div class="an-panel" id="an-trend" style="display:none;margin-top:10px;overflow:auto"></div>
@@ -858,7 +865,7 @@
         <button class="active" data-tab="appearance">Appearance</button>
         <button data-tab="guis">GUIs</button>
         <button data-tab="general">General</button>
-        <button data-tab="models">Models</button>
+        <button data-tab="models">AI</button>
         <button data-tab="keywords">Keywords</button>
         <button data-tab="collect">Collect</button>
         <button data-tab="sources">Sources</button>
@@ -1149,15 +1156,14 @@
       <p class="muted" style="margin-top:0">A curated directory of government and international statistical
         agencies — deliberately global (BRICS, Africa and smaller economies alongside the usual Western producers
         and IGOs). Every producer here is a <em>stanced</em> source: an official figure carries its producing
-        state's interests, so each is flagged <span class="pill warn">controversial</span> by ruling — this is a
-        descriptive note about WHO publishes, never a credibility verdict or a score. No figures are fetched and
-        nothing leaves your machine.</p>
+        state's interests — this directory shows WHO publishes so you can judge for yourself. We attach no
+        credibility verdict and no score. No figures are fetched and nothing leaves your machine.</p>
       <p class="hint" id="stat-coverage" style="margin-top:0"></p>
       <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
         <button class="secondary" id="stat-ingest-btn" onclick="ingestStatSources()">Register as sources</button>
-        <div class="hint" style="align-self:center">Adds every producer to your catalogue as a <b>disabled</b>,
-          controversial source — registered, not scraped (idempotent; safe to repeat). This is a local database
-          change, not a network action.</div>
+        <div class="hint" style="align-self:center">Adds every producer to your catalogue as a <b>disabled</b>
+          source — registered, not scraped (enable any to start collecting; idempotent, safe to repeat). This is a
+          local database change, not a network action.</div>
       </div>
       <div id="stat-ingest-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
       <div style="overflow:auto;margin-top:10px" id="stat-agencies"><div class="muted">Loading…</div></div>
@@ -1197,13 +1203,9 @@
     <section class="panel">
       <h2>Offline map regions</h2>
       <p class="muted" style="margin-top:0">Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).</p>
-      <div class="row">
-        <div style="flex:2">
-          <label for="osm-region">Region</label>
-          <select id="osm-region"><option value="">Loading regions…</option></select>
-        </div>
-        <div style="flex:0 0 auto;align-self:end"><button class="danger" onclick="startOsmDownload()">Download</button></div>
-      </div>
+      <!-- Available maps as a LIST, not a dropdown (field test 2026-06-19 #15): every
+           region visible at once with its size + a direct Download button. -->
+      <div id="osm-region-list" class="osm-region-list"><div class="muted">Loading regions…</div></div>
       <div id="osm-size-note" class="hint" hidden><span>Sizes are estimates — the exact size is read from the mirror on download.</span>
         <span class="muted">· <span>reviewed</span> <span id="osm-size-asof"></span></span></div>
       <div class="hint">Downloading is a network action: it goes through this app's one network switch, so it is refused while
@@ -1272,6 +1274,7 @@
       <p class="muted" style="margin-top:0">One file carries everything: articles, keywords, Wikipedia and law
         snapshots, market series, events, settings, annotations and the custody log — with a signed manifest, so
         tampering is detectable. Encrypted with a passphrase by default; there is no recovery for a lost passphrase.</p>
+      <p class="hint" style="margin-top:0">An encrypted backup is almost exactly the same file size as a plaintext one — AES-256-GCM adds only a fixed ~64 bytes of overhead, so the size matching is expected, not a sign it isn't encrypted. You can confirm any backup is genuine ciphertext in the Restore preview below (it reports “encrypted (AES-256-GCM)”).</p>
       <div class="row">
         <div style="flex:2"><label for="v2-pass">Passphrase</label>
           <input id="v2-pass" type="password" autocomplete="new-password" placeholder="a strong, memorable passphrase"></div>
@@ -1916,6 +1919,8 @@
   </dialog>
 
   <script src="/static/i18n.js"></script>
+  <!-- in-browser OSM .pbf reader (THEME-2): renders downloaded offline-map regions, zero-network -->
+  <script src="/static/osmpbf.js"></script>
   <script src="/static/app.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
   <script src="/static/guis/gallery.js"></script>

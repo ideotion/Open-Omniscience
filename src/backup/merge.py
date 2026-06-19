@@ -1222,10 +1222,50 @@ def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
     return removed
 
 
+def reindex_imported_articles(batch_id: int) -> dict:
+    """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
+
+    Maintainer ruling 2026-06-19 (P0-4): a backup may have been produced by an OLDER
+    extraction engine, so its merged-in keyword/date/place/entity rows can be
+    misaligned with the current engine. Run AFTER the atomic swap, so the ORM points
+    at the merged live DB and ``merged_rows`` (carried in from the working copy) names
+    the imported article rowids = their live ids (articles.id == rowid). ``index_article``
+    overwrites those derived rows with current-engine output; AI artifacts
+    (article_analyses summaries/translations, ai_keyword) are left verbatim."""
+    from sqlalchemy import text
+
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import reindex_articles
+    from src.database.session import session_scope
+
+    with session_scope() as session:
+        rows = session.execute(
+            text(
+                "SELECT row_id FROM merged_rows "
+                "WHERE batch_id = :b AND table_name = 'articles'"
+            ),
+            {"b": batch_id},
+        ).fetchall()
+        ids = [int(r[0]) for r in rows]
+        if not ids:
+            return {"reindexed": 0, "failed": 0}
+        return reindex_articles(session, extractor=get_extractor("baseline"), article_ids=ids)
+
+
 def run_restore(
-    staged: StagedArtifact, *, commit: bool, allow_unverified: bool = False
+    staged: StagedArtifact,
+    *,
+    commit: bool,
+    allow_unverified: bool = False,
+    reindex_imported: bool = True,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
+
+    ``reindex_imported`` (default True): after the swap, recompute core-engine
+    metadata for the imported articles (P0-4). The MERGE-ENGINE correctness suite
+    (commutativity/idempotency/crash-safety) passes False to test the engine in
+    isolation — the re-index is a one-directional post-step (it makes the FULL
+    restore direction-dependent in DERIVED data by design) with its own test.
 
     Preview and commit run THE SAME merge code against a disposable working
     copy, so the preview's numbers are exactly what a commit would do to the
@@ -1259,6 +1299,10 @@ def run_restore(
         "signature_state": staged.signature_state,
         "origin_fingerprint": staged.origin_fingerprint,
         "artifact_schema_rev": original_rev,
+        # Honest encryption verdict (field test 2026-06-19 P0-2): True when the
+        # uploaded artifact was AES-256-GCM (OOENC1) at rest and we had to decrypt
+        # it. Lets the preview UI confirm a backup is genuinely encrypted.
+        "encrypted": staged.encrypted,
         "plan": counts,
         "verification": verification,
         "committed": False,
@@ -1304,6 +1348,17 @@ def run_restore(
 
     report["committed"] = True
     report["batch_id"] = batch_id
+    # P0-4 (maintainer ruling 2026-06-19): recompute the CORE-ENGINE derived metadata
+    # for the newly-imported articles so an OLD backup aligns with the CURRENT engine
+    # (keywords, date/place/entity extraction, sentiment); AI artifacts are left
+    # verbatim. Best-effort: the restore is already committed AND additive, so a
+    # re-index hiccup must never undo it.
+    if reindex_imported:
+        try:
+            report["reindexed"] = reindex_imported_articles(batch_id)
+        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+            _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
+            report["reindexed"] = {"reindexed": 0, "failed": 0, "skipped": "see server log"}
     report["pruned_snapshots"] = _prune_snapshots()
     _LOG.info("merge-restore committed: batch=%s plan=%s", batch_id, counts)
     return report

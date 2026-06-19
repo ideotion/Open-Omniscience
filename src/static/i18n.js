@@ -52,6 +52,12 @@
     if (n.nodeValue !== t) n.nodeValue = t;
   }
   function doAttrs(el) {
+    // Opt-out for JS-managed (state-dependent) attributes: an element marked
+    // data-i18n-dyn owns its own attribute text and translates it itself via t()
+    // (e.g. the airplane button's title flips with online/offline state). Without
+    // this, the first-seen-English cache below would revert the dynamic value on the
+    // next pass (field test 2026-06-19 #5).
+    if (el.hasAttribute && el.hasAttribute("data-i18n-dyn")) return;
     let store = origAttr.get(el);
     for (const a of ATTRS) {
       if (!el.hasAttribute(a)) continue;
@@ -91,6 +97,12 @@
     if (code === "en") { map = {}; meta = {}; } else { await load(code); }
     setDir();
     apply();
+    // Notify surfaces whose text is derived at RENDER time and so cannot be reached by
+    // the string-matching DOM walker above — e.g. CLDR country/continent names on the
+    // map and the sources table (field test 2026-06-19 #16: names only updated on a full
+    // page refresh). Those listeners re-render in the new locale.
+    try { document.dispatchEvent(new CustomEvent("oo:langchange", { detail: { lang: code } })); }
+    catch (_e) { /* CustomEvent unsupported -> the page-refresh fallback still works */ }
     const sel = document.getElementById(SELECT_ID);
     if (sel && sel.value !== code) sel.value = code;
   }

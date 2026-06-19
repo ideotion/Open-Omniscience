@@ -298,10 +298,18 @@ class DumpDownloadManager:
             entry.status = "downloading"
             entry.error = None
             self._save()
+            from src.ingest import kill_switch_active
+
             with open(dest, mode) as fh:
                 for chunk in resp.iter_content(_CHUNK):
-                    if stop_event is not None and stop_event.is_set():
+                    # Pause (resumable) on an explicit Pause OR when airplane mode
+                    # engages MID-DOWNLOAD: the kill switch must halt an already-open
+                    # file download, not only refuse new fetches (field test 2026-06-19
+                    # #36 — downloads kept running after airplane). A partial file is
+                    # left on disk; resume continues it via an HTTP Range request.
+                    if (stop_event is not None and stop_event.is_set()) or kill_switch_active():
                         entry.status = "paused"
+                        entry.error = None
                         self._save()
                         return entry
                     if not chunk:
@@ -323,6 +331,19 @@ class DumpDownloadManager:
             raise ValueError(f"unknown dump kind {kind!r}; use one of {DUMP_KINDS}")
         entry = self._entry_for(wiki, kind)
         if self._threads.get(entry.key) and self._threads[entry.key].is_alive():
+            return entry.to_dict()
+        from src.ingest import kill_switch_active
+
+        if kill_switch_active():
+            # Airplane mode: never open a socket. Present as PAUSED (resumable), never a
+            # cryptic "error" (field test 2026-06-19 #36/#41). The UI's resume re-prompts
+            # the go-online consent (ensureOnline) before calling start() again.
+            with self._lock:
+                if entry.key in self._order:
+                    self._order.remove(entry.key)
+                entry.status = "paused"
+                entry.error = None
+                self._save()
             return entry.to_dict()
         with self._lock:
             if self._downloading_now() >= self.max_concurrent:

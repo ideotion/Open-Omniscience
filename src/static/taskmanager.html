@@ -39,7 +39,16 @@
              background: var(--panel, #14171d); z-index: 3; }
   .tm-head h1 { font-size: 15px; margin: 0; font-weight: 600; }
   .tm-head .eye { width: 22px; height: 22px; }
-  .tm-head .muted { margin-inline-start: auto; font-size: 12px; }
+  .tm-status { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 8px; }
+  .tm-status .muted { font-size: 12px; }
+  .tm-sbtn { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px;
+    padding: 0 8px; border: 1px solid var(--line, #232733); border-radius: 8px; background: transparent;
+    color: var(--fg, #e7e9ee); cursor: pointer; font-size: 14px; line-height: 1; text-decoration: none; }
+  .tm-sbtn:hover { border-color: var(--accent, #4a9eff); }
+  .tm-sbtn.off { color: var(--err, #e05555); border-color: var(--err, #e05555); }
+  .tm-sbtn.on { color: var(--ok, #2ecc71); border-color: var(--ok, #2ecc71); }
+  .tm-sel { height: 28px; border: 1px solid var(--line, #232733); border-radius: 8px; background: var(--panel2, #161a22);
+    color: var(--fg, #e7e9ee); font-size: 12px; padding: 0 4px; }
   /* Persistent resource summary strip — always visible, optimises the header space. */
   .tm-summary { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap;
                 padding: 8px 16px; border-bottom: 1px solid var(--line, #232733);
@@ -97,6 +106,8 @@
   .perf-card .ps { font-size: 11px; opacity: .6; }
   .perf-card svg { width: 100%; height: 46px; display: block; margin-top: 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
+  .tm-upnext { margin: 4px 0 2px; padding-inline-start: 22px; display: flex; flex-direction: column; gap: 2px; }
+  .tm-upnext li { font-size: 13px; line-height: 1.5; }
   #tm-foot { padding: 10px 18px; font-size: 11px; opacity: .55; border-top: 1px solid var(--line, #232733); }
 </style>
 </head>
@@ -107,7 +118,15 @@
       <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3.2"/>
     </svg>
     <h1 data-i18n>Task manager</h1>
-    <span class="muted" id="tm-conn" data-i18n>Live</span>
+    <!-- Status bar (P2-12): the SPA top-bar controls MINUS search — airplane,
+         language, help. Engaging airplane is the safe direction (no consent);
+         going ONLINE routes back to the app where the ONE consent popup lives. -->
+    <div class="tm-status" id="tm-status">
+      <button class="tm-sbtn" id="tm-air" type="button" title="Network mode" aria-label="Network mode">✈</button>
+      <select class="tm-sel" id="oo-lang-select" aria-label="Language" title="Language"></select>
+      <a class="tm-sbtn" id="tm-help" href="/#help" title="Help" aria-label="Help">?</a>
+      <span class="muted" id="tm-conn" data-i18n>Live</span>
+    </div>
   </div>
   <!-- Always-visible resource summary (state + CPU/RAM/↓/jobs) -->
   <div class="tm-summary" id="tm-summary"></div>
@@ -116,7 +135,7 @@
     <button data-panel="performance" role="tab" data-i18n>Performance</button>
     <button data-panel="queue" role="tab" data-i18n>Queue</button>
     <button data-panel="schedule" role="tab" data-i18n>Schedule</button>
-    <button data-panel="history" role="tab" data-i18n>History</button>
+    <button data-panel="history" role="tab" data-i18n>Sessions</button>
   </nav>
   <div class="tm-body">
     <div class="tm-panel" id="p-processes"><div id="jobs-body"></div></div>
@@ -281,9 +300,12 @@
     var ups = plan.next_targets || [];
     if (ups.length) {
       var more = Math.max(0, (plan.planned_total || 0) - ups.length);
+      // A FULL vertical list (P2-12), numbered, not a wrapped chip cloud — it reads
+      // as the actual upcoming order. The trailing "+N more" is the honest remainder
+      // the backend didn't enumerate, never a fabricated row.
       qHtml += '<div class="vsect">' + esc(t("Up next this pass")) + "</div>" +
-        '<div class="chips">' + ups.map(function (d) { return '<span class="pill">' + esc(d) + "</span>"; }).join("") +
-        (more ? '<span class="pill muted">+' + more + "</span>" : "") + "</div>" +
+        '<ol class="tm-upnext">' + ups.map(function (d) { return "<li>" + esc(d) + "</li>"; }).join("") +
+        (more ? '<li class="muted">+' + more + " " + esc(t("more")) + "</li>" : "") + "</ol>" +
         '<div class="vnote">' + esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) + "</div>";
     }
     $("queue-body").innerHTML = qHtml;
@@ -395,13 +417,15 @@
     $("vitals-body").innerHTML = grid + note;
   }
 
-  // ---- History — recent completed passes (honest verdicts) ---- //
+  // ---- History — recent online sessions (completed collection passes) ---- //
+  // Framed as "online sessions" (P2-12): each completed pass IS a session the app
+  // ran while online; honest ok/error verdicts, no fabrication.
   async function renderHistory() {
     var el = $("hist-body");
     var d;
     try { d = await api("/api/jobs/history?limit=25"); } catch (e) { el.innerHTML = '<div class="muted">' + esc(t("Could not load history.")) + "</div>"; return; }
     var runs = (d && d.runs) || [];
-    if (!runs.length) { el.innerHTML = '<div class="vsect">' + esc(t("History")) + "</div><div class=\"muted\" style=\"padding:4px 0\">" + esc(t("No completed passes yet — finished collection passes appear here with their result.")) + "</div>"; return; }
+    if (!runs.length) { el.innerHTML = '<div class="vsect">' + esc(t("Online sessions")) + "</div><div class=\"muted\" style=\"padding:4px 0\">" + esc(t("No completed sessions yet — each finished collection pass (a session while online) appears here with its result.")) + "</div>"; return; }
     var rows = runs.map(function (r) {
       var ok = r.ok !== false && !r.error;
       var res = r.result || {};
@@ -415,13 +439,15 @@
              ' <span class="muted" title="' + esc(fmtLocal(when)) + '" style="font-weight:400">' + esc(fmtLocal(when)) + "</span></span>" +
              '<div class="detail">' + detail + "</div></div>";
     }).join("");
-    el.innerHTML = '<div class="vsect">' + esc(t("History")) + ' <span class="count">' + runs.length + "</span></div>" + rows;
+    el.innerHTML = '<div class="vsect">' + esc(t("Online sessions")) + ' <span class="count">' + runs.length + "</span></div>" + rows;
   }
 
   // ---- the persistent summary strip ---- //
   function renderSummary(v, act, rates) {
     var p = (v && v.process) || {};
     var offline = act && act.online === false;
+    // Keep the status-bar airplane control in sync with the real network state.
+    _tmOnline = act ? (act.online !== false) : null; paintAir();
     var active = act && act.active;
     var nJobs = _jobs ? (_jobs.jobs || []).filter(function (j) { return j.state === "running"; }).length : 0;
     var stateCls, stateTxt;
@@ -501,6 +527,51 @@
       setTimeout(loop, document.hidden ? 15000 : (live ? 2500 : 6000));
     });
   }
+
+  // ---- status bar (P2-12): language picker + airplane control ---- //
+  // The 12 UI locales (code, native name — the native name is the identifier,
+  // invariant #15; the flag stays in the SPA's richer picker). The i18n engine
+  // auto-wires #oo-lang-select (sets value + a change->setLang listener); we only
+  // populate the options + apply the saved language.
+  var TM_LANGS = [
+    ["en", "English"], ["fr", "Français"], ["es", "Español"], ["de", "Deutsch"],
+    ["zh", "中文"], ["hi", "हिन्दी"], ["ar", "العربية"], ["bn", "বাংলা"],
+    ["ru", "Русский"], ["pt", "Português"], ["id", "Bahasa Indonesia"], ["ja", "日本語"]
+  ];
+  (function initLangSelect() {
+    var sel = $("oo-lang-select"); if (!sel) return;
+    sel.innerHTML = TM_LANGS.map(function (l) {
+      return '<option value="' + l[0] + '">' + esc(l[1]) + "</option>";
+    }).join("");
+    var cur = "en";
+    try { cur = (window.OOI18N && OOI18N.current && OOI18N.current()) || localStorage.getItem("oo.lang") || "en"; } catch (e) { /* default en */ }
+    sel.value = cur;   // i18n.js' init also syncs this + adds the change listener
+  })();
+  // Airplane: ENGAGING airplane is the safe direction (no consent) and can happen
+  // from anywhere; GOING ONLINE crosses the network and must pass the ONE consent
+  // popup, which lives in the app — so when offline the button routes back to "/".
+  // The button's state is repainted by renderSummary from /api/scheduler/activity.
+  var _tmOnline = null;
+  function paintAir() {
+    var b = $("tm-air"); if (!b) return;
+    if (_tmOnline === false) {
+      b.className = "tm-sbtn off"; b.textContent = "✈";
+      b.title = t("Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).");
+    } else if (_tmOnline === true) {
+      b.className = "tm-sbtn on"; b.textContent = "✈";
+      b.title = t("Online. Click to go offline (airplane mode) — stops all collection.");
+    } else { b.className = "tm-sbtn"; b.title = t("Network mode"); }
+  }
+  (function wireAir() {
+    var b = $("tm-air"); if (!b) return;
+    b.addEventListener("click", async function () {
+      if (_tmOnline === false) { location.href = "/"; return; }   // go online → the app's consent popup
+      // online (or unknown) → engage airplane directly (safe, no socket opens)
+      try { await api("/api/system/network", { method: "POST", body: JSON.stringify({ online: false }) }); _tmOnline = false; paintAir(); refresh(); }
+      catch (e) { toast(e.message, "err"); }
+    });
+  })();
+
   applyLang();
   selectPanel("processes");
   loop();

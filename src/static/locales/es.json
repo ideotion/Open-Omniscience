@@ -1320,5 +1320,16 @@
   "Africa": "África",
   "Oceania": "Oceanía",
   "Signals": "Señales",
-  "Moment in focus": "Momento enfocado"
+  "Moment in focus": "Momento enfocado",
+  "healthy": "correcto",
+  "offline": "sin conexión",
+  "checking…": "comprobando…",
+  "AI": "IA",
+  "encrypted (AES-256-GCM)": "cifrado (AES-256-GCM)",
+  "plaintext archive": "archivo sin cifrar",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "En línea — haz clic para desconectar (modo avión); se rechazará toda nueva solicitud de red.",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "Sin conexión (modo avión) — haz clic para conectarte; se te pedirá confirmación primero.",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "BORRADO DE EMERGENCIA: ¿eliminar de forma irreversible el corpus, las claves y las cachés de esta máquina?",
+  "This cannot be undone. Type-confirm follows.": "Esto no se puede deshacer. A continuación, confirmación por escrito.",
+  "To confirm, type WIPE in capitals:": "Para confirmar, escribe WIPE en mayúsculas:"
 }

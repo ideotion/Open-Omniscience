@@ -21,6 +21,31 @@ ruling, a contingency, or a deliberate-omission note.
 - robots.txt fail-closed, per-host politeness, honest bot UA, single fetch path
   (`EthicalFetcher`), **global network kill switch** (`src/ingest`
   activate/clear_kill_switch — the Collect Stop button trips it).
+- **AIRPLANE MODE IS A SOCKET-LEVEL HARD GUARANTEE, not just a per-call convention
+  (ruled 2026-06-19 field test P0-1/#3/#8/#68; SHIPPED same day):** the kill switch
+  was checked at the top of every KNOWN fetch path — airtight only as far as our
+  memory. `src/ingest/airplane.py:install_airplane_socket_guard()` (wired into the
+  boot path in `run_deferred_startup`, alongside the boot kill-switch activation,
+  inside the same `OO_NO_SCHEDULER!=1` block) now wraps `socket.getaddrinfo` /
+  `create_connection` / `socket.socket.connect(_ex)` process-wide: while the kill
+  switch is engaged, ANY non-loopback target raises `AirplaneModeError(OSError)`
+  BEFORE the real socket call is reached — so no missed call site, third-party lib,
+  or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`) + AF_UNIX always
+  pass through (the app's own server, loopback Ollama, file DB). TRANSPARENT while
+  online (delegates straight through — zero cost during collection). The per-call
+  refusals stay as the friendly/explanatory layer; this is the net beneath them.
+  `OO_AIRPLANE_SOCKET_GUARD=0` disables. Enforced by tests/test_airplane_socket_guard.py
+  (white-box: proves the real call is NEVER reached for a remote target in airplane
+  mode = the brief's "boot + decline = zero sockets") + a source-level guard that the
+  boot path still installs it. INVESTIGATION RECORD (the rest of #3/#8): the documented
+  Python paths were ALL already gated (stats/fetch, duckduckgo, ollama via
+  _check_kill_switch + _require_loopback, weather); the scheduler does NOT auto-start
+  (only POST /api/system/network or /api/scheduler/start starts it; "Not now"/
+  dismissNetCoach POSTs nothing); boot DOES engage airplane (main.py); and the static
+  files carry ZERO external resources (no CDN/web-fonts/preconnect — grep-verified; only
+  one click-target ollama.com link). The loopback activity/network/vitals polls are NOT
+  internet. So the residual leak (if any beyond Ollama's own process / browser
+  DNS-prefetch) is now caught by construction.
 - Honesty by construction: no composite trust/quality scores (CardSchemaError
   enforces); every signal carries method + caveat + n; degrade loudly. No
   fabricated security, ever (no lock screens over plaintext, no theater).
@@ -3079,9 +3104,11 @@ ruling, a contingency, or a deliberate-omission note.
 - **OFFICIAL-STATISTICS INGESTION (maintainer concept 2026-06-12, designed
   in FUTURE_DEVELOPMENTS with questions):** worldwide government +
   international statistical agencies (BLS/INSEE/Eurostat/World Bank/IMF +
-  deliberately BRICS/Africa/forgotten-regions producers) ingested as
-  CONTROVERSIAL sources like any other — producing state + agency +
-  publication date + methodology ref on every figure; VINTAGES stored
+  deliberately BRICS/Africa/forgotten-regions producers) ingested as DISABLED
+  sources like any other (the "controversial" verdict was REMOVED 2026-06-19,
+  ruling #50 — see the shipped-log entry; a producer is a stanced source stated
+  as a descriptive caveat, the user judges, NO verdict label) — producing state +
+  agency + publication date + methodology ref on every figure; VINTAGES stored
   (revisions are evidence, the law/wiki versioning model); comparability
   guards (SA/NSA, definitions, base years — never compare incomparable
   denominators silently); official machine endpoints (SDMX/APIs) before
@@ -3160,6 +3187,269 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — THEME-3 ANALYSIS-WINDOW-PER-QUERY (centerpiece; branch
+  claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the singleton #an
+  analysis window became a MULTI-DOCUMENT WORKSPACE. A search / Lead / keyword now SPAWNS a NAMED,
+  closeable, persisted TAB (`#an-tabstrip`) over the one render area; several searches coexist as
+  parallel tabs (deduped by seed key; soft cap 10; persisted to localStorage `oo.an.tabs.v1`,
+  restored at boot with lazy data-load on first open). Machinery: `_anTabs`/`_anActiveId` +
+  `_anSpawn`/`_anActivate`/`_anCloseTab`/`_anApplySeed`/`_anRenderStrip`/`_anShowEmpty`/
+  `_anRestoreTabs`; `openAnalysisFor`/`openAnalysisForIds`/`openAnalysis` refactored to spawn,
+  `anRunAdvanced` refines the ACTIVE tab in place. The legacy #corpus-win keyword MODAL is RETIRED —
+  `openCorpus(term)` now just spawns an analysis tab (one surface; the modal DOM stays unreachable
+  per the Desk lesson, never shown). NEW **Overview** subtab (the default landing, Q1 generic): an
+  honest headline TILE per lens (top keyword / where+who / source / sentiment + deep-link tiles for
+  Trend/Mindmap/Links/Related/Articles) — counts only, no synthesis, each deep-links to its subtab
+  via `renderAnOverview` (bounded Promise.all over the existing corpus-* endpoints, graceful degrade).
+  test_repo_invariants::test_analysis_window_per_query_spawns_tabs_and_retires_corpus_modal +
+  existing #an/openCorpus invariants still green; node --check + i18n 100%. REMAINING: spawned tabs
+  in the TOP facet strip (nav=B) vs the in-panel strip shipped here; per-tab subtab memory; richer
+  Overview headlines; human click-through (fork-3).
+- **FIELD TEST 2026-06-19 — LARGE-UI-REWRITE BATCH (maintainer "proceed with all remaining themes,
+  I'll test separately"; branch claude/gallant-bohr-1cogzj; ALL frontend, BROWSER-UNVERIFIED, flagged):**
+  batch-1 rulings (AskUserQuestion 2026-06-19): (1) THEME-3 = RETIRE BOTH the empty singleton #an AND
+  the legacy #corpus-win modal → ONE analysis surface (analysis-window-per-query, named/closeable/
+  persisted spawned tabs + an Overview screen); (2) THEME-2 OSM enrichment = IN-BROWSER .pbf PARSER
+  (bundle a local vector-tile/pbf parser, render the downloaded region directly, fully offline); (3)
+  THEME-5 security i18n = TRANSLATE ×12 + FLAG for native review (everything incl. panic/airplane);
+  (4) Q1 per-card = GENERIC ONLY (every card opens its EXACT corpus on the Overview screen; per-type
+  landing deferred — maintainer will send tweaks). AUTONOMOUS DEFAULTS (not asked): Overview = honest
+  headline tile per lens (no synthesis); THEME-2 fullscreen (Fullscreen API) · regions-as-list ·
+  dynamic non-overlapping labels (greedy declutter) · deduced-events-as-shapes (square/triangle,
+  colour=type) · click-country→a coverage list; P2-10 families-first + drop the Cards/Families toggle
+  + one shared fullscreen graph overlay + axis smoothing; P2-12 minimal shared status bar on the
+  standalone Tasks page. Built as stacked commits per-slice below.
+- **FIELD TEST 2026-06-19 — THEME-2 IN-BROWSER OSM .pbf RENDERER (#51 batch-1; branch
+  claude/gallant-bohr-1cogzj; parser+endpoint VERIFIED, overlay BROWSER-UNVERIFIED):** the maintainer's
+  chosen path to render a DOWNLOADED offline-map region with NO network + no heavy WebGL. NEW
+  `src/static/osmpbf.js` = a dependency-free OSM PBF reader: protobuf varint/zigzag primitives, the
+  BlobHeader/Blob container, zlib via the native `DecompressionStream`, and the PrimitiveBlock
+  dense-node DELTA decode to exact WGS84 degrees + way refs. BOUNDED by construction (`maxBlocks`/
+  `maxNodes` → an honest PREVIEW that flags `truncated`, never an OOM on a multi-GB extract). The
+  varint/zigzag/dense-decode core is PROVEN under node against a hand-encoded fixture
+  (`tests/osmpbf_node_test.js`, run in CI by `tests/test_osmpbf_parser.py` — exact degrees, full-file
+  parse, maxBlocks truncation; the test writes its OWN protobuf encoder so the round-trip + hand-computed
+  degrees are non-vacuous). NEW backend `GET /api/geo/regions/{code}/preview?max_bytes=` serves a BOUNDED
+  byte PREFIX of the LOCAL `.osm.pbf` (loopback, zero-network — reads a file already on disk; path-safe
+  via `is_valid_code`; hard 16 MB ceiling; 404 if not downloaded; X-OO-Region-* headers); tests/
+  test_osm_preview.py (5). FRONTEND: an opt-in in-map "OSM" toggle on ooMap fetches a downloaded region's
+  preview, parses it with OOPBF, resolves way refs→coords, and overlays nodes (sampled ≤4000) + ways
+  (≤3000) on the SAME lon2x/lat2y projection (no second projection) with an honest "offline OSM · N
+  nodes · M ways · preview" legend. node --check + test_world_map_osm_offline_overlay; full pytest in CI.
+  REMAINING (flagged): human click-through (a real downloaded region — none in this env); rendering polish
+  (bbox auto-zoom to the region; way styling by tag); enriching the choropleth from OSM boundaries (#51 fuller).
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: SECURITY SENTENCES ×12 (#5/#64; branch
+  claude/gallant-bohr-1cogzj):** the explicitly-named, security-CRITICAL subset of the THEME-5 tail —
+  the airplane STATE titles (#5: "Online — click to go offline (airplane mode)…" / "Offline (airplane
+  mode) — click to go online; you'll be asked to confirm first.") and the PANIC-WIPE dialog (#64: the
+  PANIC-WIPE confirm + "This cannot be undone. Type-confirm follows." + "To confirm, type WIPE in
+  capitals:" + "Panic wipe cancelled.") — keyed ×12 (1322→1327 keys; one already existed). These flow
+  through `t()` already (airplane via `_paintNetwork` + the `data-i18n-dyn` mechanism, re-translated on
+  the `oo:langchange` listener; panic via the `panicWipe` confirm/prompt). Translated CAREFULLY,
+  preserving the exact technical claims (irreversible/every-new-request-refused/confirm-first) and the
+  literal ASCII keyword "WIPE" (the typed confirmation never depends on locale input). Non-en
+  AI-drafted, FLAGGED for native review — a mistranslated security warning is worse than English, so
+  these especially want a native pass. i18n --min 100 green (1327 ×12). The maintainer's batch-1 answer
+  (translate ×12, flag for review) reverses the earlier "stay English-fallback" caution for these.
+  REMAINING THEME-5: the ~hundreds-string long tail (this session's UI labels stay English-fallback,
+  keyable later per the established slice approach; the recently-added panels per the burn-down).
+- **FIELD TEST 2026-06-19 — THEME-5 i18n: STATUS-BAR + SESSION-NEW STRINGS ×12 (#59; branch
+  claude/gallant-bohr-1cogzj):** the always-on status pill showed hardcoded lowercase "healthy"/
+  "offline"/"checking…" (the #59 named gap) — routed through `t()` and keyed ×12, plus this session's
+  short new visible strings ("AI" subtab #42, "encrypted (AES-256-GCM)" / "plaintext archive" P0-2
+  verdict pills). 6 keys × 12 locales (en + 11 AI-drafted, FLAGGED for native review per the standing
+  pattern; confident common forms — KI/IA/ИИ, 正常/オフライン, etc.). i18n --min 100 green (1322 ×12).
+  The LONGER session strings (the airplane state titles #5, the panic dialog #64) stay English-fallback
+  for a careful native-review sweep (a mistranslated security warning is worse than English — the
+  standing caution). REMAINING THEME-5: the ~hundreds-string long tail (the recently-added panels,
+  per the slice-by-slice burn-down) + the panic/airplane sentences.
+- **FIELD TEST 2026-06-19 — P2-8 TRENDS AS CLICKABLE BAR GRAPHS (#25; branch
+  claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the Insights →
+  Trends rising/top LISTS became clickable horizontal BAR graphs (`termBarsHtml`): keywords top→down,
+  bar length ∝ the REAL measured value (rising = growth rate, top = mention count — normalised to the
+  max, NEVER a composite score), the value shown beside each bar; clicking a bar opens the unified
+  analysis window (`openAnalysisFor` → trend over time + worldwide spread). The exclude ✕ stays.
+  Honest: the bar visualises a count/rate, the number is explicit. termListHtml kept for the
+  trending-windows "rest" list. +CSS `.term-bars`. test_trends_render_as_clickable_bar_graphs.
+- **FIELD TEST 2026-06-19 — THEME-2 WORLD MAP (contained slice: #14/#15; branch
+  claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the unified ooMap
+  (the world map after the 5b retire) got three contained, honesty-relevant fixes. (#14 near-time)
+  the "near in space & time" co-occurrence used the SLIDER's focus window (~span/12 ≈ 166y on an
+  antiquity→now span) so it linked events DECADES apart — a misleading "co-occurrence"; now capped to
+  a TIGHT FIXED `_OOMAP_NEAR_YEARS = 2` (independent of the slider) so only genuinely near-in-time +
+  near-in-space events seed (still non-causal, the verbatim caveat stays). (#14 log slider) the time
+  slider was LINEAR (`tmin + frac·span`) so recent years were buried; now LOGARITHMIC-by-age
+  (`focusT = tmax − span·(10^(1−frac)−1)/9`) so the recent end gets most of the travel (slider 0→year
+  25, 0.5→1544, 0.75→1852, 1.0→2025 on a 2000y span) — NOT a hidden warp (the focus-YEAR label is
+  always shown). (#15) the offline-map download dropped the redundant "are you sure (several GB)"
+  confirm — `ensureOnline` (the ONE network consent) + the visible task-manager job + the size in the
+  region list are the honest gates. test_world_map_near_time_capped_log_slider_and_no_download_confirm.
+  REMAINING THEME-2 (larger, browser-test-needed): dynamic non-overlapping country labels, fullscreen,
+  OSM data enriching ALL maps (#51), click-country→list, deduced events as shapes, regions as a list
+  not a dropdown (#15 second half), linear/log toggle (the fuller agreed design).
+- **FIELD TEST 2026-06-19 — P2-2 CARD DECLUTTER VIA A "?" AFFORDANCE (#19/#66; branch
+  claude/gallant-bohr-1cogzj; frontend, invariant-guarded, BROWSER-UNVERIFIED):** the maintainer
+  found Leads cluttered with the verbose "why"/method. Consolidated the "Why am I seeing this?"
+  (plain sentence + exact math) AND the Method into ONE per-card "?" affordance (`.card-info`
+  `<details>`) at the BOTTOM-RIGHT of `.acts` (next to Add-to-draft/dismiss), removing them from the
+  card face. CONSTRAINT HONORED (Q2 + #23, the informed-consent non-negotiable): the CAVEAT stays
+  FULLY VISIBLE in `.card-caveat` on the face — NOT moved into the "?" (test asserts c.caveat NOT in
+  infoBlock + still in .card-caveat). The global "Show method" toggle (#brief-methods +
+  toggleMethods/applyMethodsToggle) is RETIRED — the per-card "?" absorbs it (method is reachable
+  per-card; the checkbox is gone, orphaned "Show method" locale keys harmless). #66: the Draft button
+  gained a 🛒 cart icon + title. #23 test updated (caveat-visible core unchanged; method now asserted
+  inside the "?" not a global-toggle .mc). node --check + test_ui_invariants + i18n 100%. REMAINING:
+  the full verbose caveat ALSO surfaced in the opened analysis window (the card click already opens it);
+  per-card-TYPE scenarios are Q1 (parked, maintainer-reserved).
+- **FIELD TEST 2026-06-19 — P2-5/THEME-1 BROWSER-STYLE SUBTABS + P2-11 MODELS→AI (#31/#57/#42;
+  branch claude/gallant-bohr-1cogzj; frontend CSS/label, invariant-guarded, BROWSER-UNVERIFIED):**
+  the maintainer found the subtab active-state "unreliable" and wants ONE homogeneous browser-tab
+  look. Restyled `nav.tabs` (the universal ooSubtabs component, used by Insights/Settings/markets/
+  Home-families/task-manager/analysis) into a baseline strip with an UNMISTAKABLE active state — an
+  ACCENT underline (`border-bottom:2px solid var(--accent)`) + accent text + bold — replacing the old
+  subtle bg+border that read as buttons. Theme-safe (var(--accent) across all 17). Combined with the
+  #31 ooSubtabs live-query fix, the active tab is now both correct AND clearly visible. (#42) the LLM
+  Settings subtab label "Models" → "AI" (the `data-tab="models"` anchor stays the code identifier;
+  "AI" is English-fallback, keyed in THEME-5). test_repo_invariants::
+  test_subtabs_are_browser_style_with_clear_active_state.
+- **FIELD TEST 2026-06-19 — THEME-4 FULL LANGUAGE NAMES (#52/#53, slice 1; branch
+  claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
+  the maintainer wants the full language WORD everywhere a 2-letter code shows (except the top
+  status-bar flag). Added `ooLangName(code)` — the language analog of `ooRegionName`, using the
+  browser's own CLDR via `Intl.DisplayNames(type:"language")` (per-locale cached, falls back to the
+  code; node-verified fr→French/français, zh→Chinese, ar→Arabic), so ZERO translation tables / ZERO
+  new i18n keys. Applied to the app.js source/language surfaces: the Sources table language column
+  (re-renders LIVE on `oo:langchange` via the #16 hook — names update on a language switch), the
+  search-result source meta (language + country both CLDR-localised), the source-profile "Language:"
+  fact, and the translation provenance `[src→tgt]` pill. The raw code is kept as a hover title where
+  useful. test_repo_invariants::test_language_codes_shown_as_full_names_via_cldr. REMAINING (THEME-4
+  cont.): the standalone reader's Translation tab default = current UI language + its language picker;
+  alphabetical ordering of language lists; any other 2-letter-code surfaces found in a click-through.
+- **FIELD TEST 2026-06-19 — P2-1 REMOVED THE "CONTROVERSIAL" SOURCE VERDICT (#50; ruling REVERSES
+  the official-statistics "controversial sources" framing; branch claude/gallant-bohr-1cogzj;
+  backend VERIFIED py3.11 venv):** maintainer — "users should make their humble opinions." Calling a
+  source "controversial" is itself a VERDICT, so removing it INCREASES honesty (evidence-trails-not-
+  verdicts). Dropped the per-source verdict everywhere: `agencies.py` to_dict no longer emits
+  `controversial`; `ingest.py` tags are now `["official-statistics", region]` (no "controversial"
+  tag); the agency-directory UI lost its "controversial" pill column; the register-confirm + the
+  Statistics-panel description reworded (no verdict). KEPT the honest PROVENANCE transparency as a
+  DESCRIPTIVE CAVEAT on the response ("an official figure is a stanced source — you judge"), never a
+  label. REVERSES the just-merged #396 test: `test_every_agency_is_flagged_controversial_no_score`
+  → `test_no_agency_carries_a_controversial_verdict_no_score` (asserts the field/tag is GONE, no-score
+  stays); test_stats_ingest + test_eia_energy_feeds + the repo-invariant comment updated. Ledger
+  official-statistics non-negotiable reworded. The reworded UI strings are English-fallback (old
+  "controversial" locale keys orphaned-harmless; i18n gate stays 100%; THEME-5 re-keys).
+- **FIELD TEST 2026-06-19 — P3 NETWORK/SAFETY POLISH (#5/#O-5/#64; branch
+  claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
+  (#O-5) the go-online TRANSITION now flashes GREEN (`--ok`, the "go" signal) and go-offline a
+  calm/grounded neutral (`--muted`) — the two were swapped (go-OFF was green, go-ON the accent).
+  (#5) the airplane button's hover title is now STATE-SPECIFIC ("…click to go offline…" when
+  online / "…click to go online; you'll be asked to confirm…" when offline) — set in
+  `_paintNetwork`, re-translated on `oo:langchange`. This needed a NEW reusable i18n opt-out:
+  `data-i18n-dyn` makes the DOM walker SKIP an element whose attributes JS owns (the engine
+  otherwise caches the first-seen English title and reverts dynamic swaps — the Item R trap);
+  use it for any future state-dependent attribute. (#64) the PANIC-WIPE confirm/prompt/cancel
+  strings now route through `t()` (the typed keyword stays literal ASCII "WIPE" — never
+  locale-dependent input); ACTUAL ×12 translations belong to the THEME-5 i18n sweep (the strings
+  are English-fallback now, gate stays 100%). test_repo_invariants::
+  test_network_polish_go_online_green_dynamic_title_and_panic_i18n.
+- **FIELD TEST 2026-06-19 — P1 MARKETS SUBTAB ACTIVE-STATE (#31, THEME-1 down-payment; branch
+  claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
+  the Markets category subtab kept "All" visually active after switching to another category
+  (content filtered correctly, only the HIGHLIGHT was wrong). ROOT CAUSE: the universal `ooSubtabs`
+  (invariant #18) captured its button array ONCE, but `_renderCommodityCatTabs` REBUILDS the nav's
+  buttons on every board render and re-calls ooSubtabs; the click/keydown listeners are wired once
+  (`nav._ooWired`), so the wired handler `paint()`ed the STALE/detached buttons while the freshly-
+  rebuilt "All" kept its HTML `active` class. FIX (component-level, helps EVERY rebuild-driven subtab
+  surface): ooSubtabs now queries its buttons LIVE (`const buttons = () => …querySelectorAll`) in
+  paint/select/keydown/initial — resilient to nav rebuilds; the invariant-#18 contract (.active +
+  role/aria + roving tabindex + keyboard + {select,paint}) is unchanged. PLUS the markets board now
+  PERSISTS the selected category across re-renders (auto-refresh / cards↔families / time-scope) via
+  `_mktCat` (falls back to "All" only if the category is no longer present), instead of snapping to
+  "All". test_repo_invariants::test_oosubtabs_queries_buttons_live_and_markets_keep_selection.
+- **FIELD TEST 2026-06-19 — P1 LIVE LANGUAGE SWITCH RE-RENDERS CLDR NAMES (#16; branch
+  claude/gallant-bohr-1cogzj; frontend, node-checked + invariant-guarded, BROWSER-UNVERIFIED):**
+  country/continent names updated only on a full page refresh. ROOT CAUSE: `ooRegionName`/
+  `Intl.DisplayNames` localize names at RENDER time, but the i18n DOM walker (`apply()`) translates
+  by EXACT-English-string match — it cannot re-derive a CLDR name already baked into the SVG/cells.
+  FIX: `i18n.setLang` now dispatches a `oo:langchange` CustomEvent after apply(); app.js listens and
+  re-renders the dynamic-name surfaces in the new locale — the world map from its CACHE (no fetch,
+  host-guarded `_renderOoMapDim`) and the sources table only if already loaded. test_repo_invariants
+  ::test_live_language_switch_rerenders_cldr_name_surfaces pins the event + listener + map re-render.
+  Reusable hook for any future render-time-derived surface. i18n gate 100%.
+- **FIELD TEST 2026-06-19 — P1 DOWNLOADS HONOUR AIRPLANE (#36/#41, completes THEME-6; branch
+  claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** two honesty bugs in the wiki-dump
+  + OSM download managers. (1) The chunk loop checked ONLY the per-download Pause event, NOT the
+  kill switch — a download started before airplane kept reading from its open socket after the
+  toggle. FIX: `(stop_event.is_set() or kill_switch_active())` → a clean resumable PAUSE within one
+  chunk (the kill switch must halt an OPEN download, not only refuse NEW fetches). (2) resume/start
+  in airplane hit the guarded fetcher → cryptic "error". FIX: `start()` PRE-CHECKS the kill switch →
+  presents PAUSED (resumable, error=None), never an error, opens NO socket (tested: http_get not
+  called). The frontend `jobResume` already re-prompts go-online (ensureOnline, app.js:662), so the
+  full flow is: airplane → download pauses cleanly → resume → consent → continues via HTTP Range.
+  Applied to BOTH `src/wiki/dumps.py` + `src/geo/osm_downloads.py`. ALSO #36: the task-manager job
+  LABEL was the raw "en · pages-articles-multistream" → now `_dump_label()` → "English Wikipedia —
+  articles dump" (via wiki.languages.get_language; multistream is an internal detail). tests/
+  test_download_airplane.py (start-in-airplane=paused-no-socket + mid-download pause for both
+  managers + human label). REMAINING #41 reorder: backend reorder exists + is tested (test_osm_jobs/
+  test_jobs_resume) — "can't reorder" is likely UI discoverability (controls show only for 2+ queued).
+- **FIELD TEST 2026-06-19 — P0-4 IMPORT RECOMPUTES CORE-ENGINE METADATA (#O-1; branch
+  claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** maintainer ruling on restore
+  semantics — AI artifacts (translations/summaries/ai_keyword) kept AS-IS, but CORE-ENGINE
+  derived data (keywords, date/place/entity extraction, sentiment) RECOMPUTED on import so an
+  OLD backup aligns with the improved engine. DESIGN (the safe one — leaves the SIGKILL-
+  torture-tested merge SQL UNTOUCHED): the merge stays additive/verbatim (raw articles + AI
+  artifacts), then AFTER the atomic swap `run_restore` calls `merge.reindex_imported_articles
+  (batch_id)` → reads the imported article rowids from `merged_rows` (carried in from the
+  working copy; rowid == live id) → `store.reindex_articles(session, extractor, ids)` runs
+  `index_article` on each, which DELETE-then-REINSERTs that article's keyword mentions/
+  counters/sentiment + when×where×who, OVERWRITING the merged-in old derived rows with
+  current-engine output. `index_article` NEVER touches `article_analyses` or `ai_keyword`, so
+  AI artifacts stay byte-for-byte (the verbatim half). RECONCILES with RESTORE-IS-ADDITIVE-ONLY:
+  nothing is replaced/deleted at the article level — only the IMPORTED articles' DERIVED
+  metadata is recomputed (the whole point of the ruling); local articles untouched (targeted
+  by merged_rows, not a corpus-wide reindex). Best-effort: the restore is already committed +
+  additive, so a re-index hiccup logs + degrades (report["reindexed"]) and never undoes it.
+  tests/test_reindex_on_import.py (recompute + AI-verbatim; missing-ids skip; e2e targets ONLY
+  merged_rows, local article untouched). MERGE-ENGINE-SYMMETRY RECONCILIATION (CI caught it):
+  the re-index makes the FULL restore direction-dependent in DERIVED data (only the IMPORTED side
+  re-indexes), so the torture suite's merge(A,B)≡merge(B,A) symmetry/idempotency assertions broke.
+  RESOLVED honestly: `run_restore(reindex_imported=True)` default for production; the torture harness
+  (torture_helper.py) passes `reindex_imported=False` to test the MERGE ENGINE in isolation — the
+  re-index is a one-directional post-step with its own test, NOT part of the engine's commutativity
+  contract. Full torture suite green again (10/10, run locally with PYTHONPATH for the subprocesses).
+  REMAINING: surface the re-index in the restore report UI + as a task-manager job (P1/P3 items).
+- **FIELD TEST 2026-06-19 — P0-3 RESTORE PREVIEW ALWAYS ANSWERS JSON (#O-3; branch
+  claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** two older-version backups
+  failed to preview with "JSON.parse: unexpected character at line 1 column 1" — the SPA
+  calls res.json() on every response, and an exception escaping `run_restore` (e.g. an old
+  corpus's staged-migration failure) RE-RAISED into Starlette's PLAIN-TEXT 500. Same class
+  the maintainer hit on backup-CREATE (fixed bespoke earlier). FIXES: (1) SYSTEMIC — a global
+  `@app.exception_handler(Exception)` in main.py returns a JSON {detail} for ANY
+  otherwise-unhandled error, so no endpoint can ever return a plain-text 500 again (the SPA
+  never trips JSON.parse). (2) SURGICAL — restore_preview + restore_commit now catch generic
+  Exception → HTTPException(500) with an ACTIONABLE "may be from an incompatible version: …"
+  message (and re-raise HTTPException cleanly). The version-gap path (`_stage_upload` →
+  ArtifactError "unsupported backup schema 'oo-backup-1'") was already a clean 400 — pinned.
+  tests/test_restore_preview_robust_errors.py (old-schema → 400 JSON naming the gap;
+  run_restore failure → 500 JSON not plaintext; the global handler returns JSON for an
+  unhandled error). DELIBERATELY did NOT add a throwaway route to the shared app singleton
+  (ledger flakiness lesson). REMAINING (P0-4): import recomputes core-engine metadata.
+- **FIELD TEST 2026-06-19 — P0-2 BACKUP ENCRYPTION IS PROVABLY REAL (#O-4; branch
+  claude/gallant-bohr-1cogzj, draft onto 0.09; backend VERIFIED py3.11 venv):** the maintainer
+  saw an encrypted + a plaintext backup report the SAME size and asked "is it actually
+  encrypted?". ROOT CAUSE = display rounding, NOT a broken cipher: `encrypt_bytes` is genuine
+  AES-256-GCM + scrypt (OOENC1 header 48B + GCM tag 16B = a FIXED 64-byte overhead), so a 326 MB
+  backup grows ~64 bytes and rounds to the same MB. FIXES: (1) tests/test_backup_encryption_real.py
+  PROVES it — a LOW-entropy input becomes HIGH-entropy ciphertext (>7.9 bits/byte; a no-op or
+  header-over-plaintext would stay low), no plaintext leak, exact +64 size, exact decrypt
+  round-trip, wrong-pass loud, AND end-to-end via write_backup_v2 (encrypted artifact = OOENC1
+  high-entropy that decrypts to a valid zip; plaintext = bare zip, never OOENC1). (2) HONEST
+  SURFACE: `StagedArtifact.encrypted` (set from `was_encrypted` in read_artifact) flows into the
+  run_restore report → the Restore-preview UI now shows an "encrypted (AES-256-GCM)" / "plaintext
+  archive" verdict pill (the natural verify point), + a static backup-section note that
+  same-size-is-by-design (~64B GCM overhead). New UI strings are English-fallback (keyable in the
+  THEME-5 i18n sweep; the gate stays 100%). The maintainer's doubt is resolved AND now provable.
 - **PERF — DENORMALISED KEYWORD COUNTERS, SLICE 1 (the structural cold-cost win; perf workstream
   field report 2026-06-18; branch claude/nice-sagan-tompbw, draft PR onto 0.09; backend VERIFIED py3.13
   in a built .venv313):** `Keyword.mention_count` (SUM of per-article occurrence counts) +

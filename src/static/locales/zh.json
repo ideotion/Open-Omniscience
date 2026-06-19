@@ -773,7 +773,7 @@
   "Fetch mode saved.": "抓取模式已保存。",
   "Enter a passphrase first.": "请先输入密码短语。",
   "Encrypted backup downloaded.": "已下载加密备份。",
-  "Panic wipe cancelled.": "紧急擦除已取消。",
+  "Panic wipe cancelled.": "已取消紧急清除。",
   "Local data wiped. Restart the app.": "本地数据已擦除。请重启应用。",
   "Uninstall cancelled.": "卸载已取消。",
   "Uninstalling — the app is stopping.": "正在卸载——应用正在停止。",
@@ -1320,5 +1320,16 @@
   "Africa": "非洲",
   "Oceania": "大洋洲",
   "Signals": "信号",
-  "Moment in focus": "聚焦时刻"
+  "Moment in focus": "聚焦时刻",
+  "healthy": "正常",
+  "offline": "离线",
+  "checking…": "检查中…",
+  "AI": "AI",
+  "encrypted (AES-256-GCM)": "已加密 (AES-256-GCM)",
+  "plaintext archive": "明文存档",
+  "Online — click to go offline (airplane mode); every new network request will be refused.": "在线 — 点击以转为离线（飞行模式）；每个新的网络请求都将被拒绝。",
+  "Offline (airplane mode) — click to go online; you'll be asked to confirm first.": "离线（飞行模式）— 点击以联网；将先要求你确认。",
+  "PANIC WIPE: irreversibly delete the corpus, keys and caches on this machine?": "紧急清除：不可逆地删除本机上的语料库、密钥和缓存？",
+  "This cannot be undone. Type-confirm follows.": "此操作无法撤销。接下来需要输入确认。",
+  "To confirm, type WIPE in capitals:": "如需确认，请输入大写的 WIPE："
 }

@@ -33,10 +33,13 @@ def test_catalog_is_global_and_well_formed():
     assert {"Africa", "Asia", "Europe", "North America", "South America", "Oceania"} <= nat
 
 
-def test_every_agency_is_flagged_controversial_no_score():
+def test_no_agency_carries_a_controversial_verdict_no_score():
+    """Maintainer ruling 2026-06-19 #50: drop the per-source "controversial" verdict
+    (a label is itself a verdict). The directory stays descriptive — no verdict field,
+    no score; the stanced nature is a descriptive caveat on the response, not a label."""
     for a in list_agencies():
         d = a.to_dict()
-        assert d["controversial"] is True  # an official figure is a stanced source
+        assert "controversial" not in d  # no verdict label (#50)
         assert "score" not in d and "rank" not in d  # directory, not a verdict
     assert get_agency("FR-INSEE").acronym == "INSEE"  # case-insensitive lookup
     assert get_agency("nope") is None
@@ -50,8 +53,9 @@ def test_agencies_endpoint():
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["count"] == len(data["agencies"]) >= 20
+    # The stanced nature stays as a descriptive caveat — not a per-source label.
     assert data["caveat"] and "stanced" in data["caveat"].lower()
-    assert all(x["controversial"] is True for x in data["agencies"])
+    assert all("controversial" not in x for x in data["agencies"])  # no verdict (#50)
     assert "Africa" in data["continents_covered"] and "Asia" in data["continents_covered"]
     # International producers sort first (deterministic grouping).
     assert data["agencies"][0]["scope"] == "international"

@@ -5,8 +5,8 @@ ingestion — first data-layer slice).
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Government + international statistical producers, to be ingested LATER as
-CONTROVERSIAL sources like any other (maintainer ruling, Group N): a figure carries
+Government + international statistical producers, to be ingested LATER as DISABLED
+sources like any other (maintainer ruling, Group N): a figure carries
 its producing state + agency + publication date + methodology reference; vintages are
 kept; comparability guards (SA/NSA, base years) apply; official machine endpoints
 (SDMX / APIs) are preferred over scraping; producers are triangulated SIDE BY SIDE,
@@ -17,9 +17,11 @@ DELIBERATELY GLOBAL (the ruling): national agencies span every continent, with B
 Africa and "forgotten regions" included on purpose alongside the usual Western + IGO
 producers — coverage is measured per continent, not skewed to the loudest publishers.
 
-HONESTY: ``controversial=True`` on every entry states the obvious — an official figure
-is a STANCED source (a producing state has interests); presence here is a directory of
-WHO publishes, never a credibility verdict.
+HONESTY (maintainer ruling 2026-06-19 #50 — "users should make their humble opinions"):
+an official figure is a STANCED source (a producing state has interests), stated as a
+descriptive CAVEAT on the data — NOT a per-source "controversial" LABEL. A label is
+itself a verdict, so we dropped it: this is a directory of WHO publishes, the user
+judges, and we never attach a credibility verdict or a score (evidence, not verdicts).
 """
 
 from __future__ import annotations
@@ -46,9 +48,11 @@ class StatAgency:
             "country": self.country,
             "region": self.region,
             "home_url": self.home_url,
-            # Every official producer is a STANCED source (the ruling): stated, never
-            # a score. Surfaced so a figure is never mistaken for neutral ground truth.
-            "controversial": True,
+            # No verdict field (maintainer ruling 2026-06-19 #50): present the producer
+            # descriptively and let the user form their own opinion. The stanced nature
+            # of an official figure is stated as a descriptive CAVEAT in the API response,
+            # never a per-source "controversial" LABEL — a label is itself a verdict, so
+            # removing it is MORE honest (evidence-trails-not-verdicts).
         }
 
 

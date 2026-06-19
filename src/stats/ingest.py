@@ -1,6 +1,6 @@
 """
-Ingest the official-statistics agency directory as DISABLED, controversial Source
-rows (Group N, official-statistics ingestion — first "ingest as sources" slice).
+Ingest the official-statistics agency directory as DISABLED Source rows (Group N,
+official-statistics ingestion — first "ingest as sources" slice).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -8,10 +8,11 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 The curated directory (src/stats/agencies.py) lists WHO publishes official
 statistics. This module REGISTERS each producer in the source catalog so it can be
 managed alongside every other source — but does NOT enable it: an official figure
-is a STANCED source (a producing state has interests; ``controversial=True`` on
-every agency by ruling), and official MACHINE endpoints (SDMX / APIs) are preferred
-over scraping, so the rows land DISABLED and are wired up in a later slice. The
-controversial nature is carried by a TAG (there is no "controversial" column).
+is a STANCED source (a producing state has interests), and official MACHINE endpoints
+(SDMX / APIs) are preferred over scraping, so the rows land DISABLED and are wired up
+in a later slice. NO "controversial" verdict is attached (maintainer ruling 2026-06-19
+#50 — "users should make their humble opinions"); the producer is filterable by the
+``official-statistics`` tag + its region, and the user judges.
 
 HONESTY (project §0.5): no figures, no ranking, NO ``reliability_score`` is ever
 written here (fabricating a credibility number is forbidden — it stays NULL). NO
@@ -36,14 +37,14 @@ def _region_slug(region: str) -> str:
 
 
 def ingest_agencies_as_sources(session: SASession) -> dict:
-    """Register every curated statistical agency as a DISABLED, controversial Source.
+    """Register every curated statistical agency as a DISABLED Source.
 
     Additive and idempotent: a Source whose ``domain`` already exists is skipped
     (never modified), so this is safe to call repeatedly. New rows are created
     DISABLED (``enabled=False`` — never auto-scraped; SDMX/API-before-scraping is a
-    later slice), low ``priority``, ``source_type="statistics"``, with the
-    controversial nature carried by a tag. ``reliability_score`` is deliberately
-    left NULL — no fabricated score, ever.
+    later slice), low ``priority``, ``source_type="statistics"``, tagged
+    ``official-statistics`` + region. NO "controversial" verdict tag (ruling #50).
+    ``reliability_score`` is deliberately left NULL — no fabricated score, ever.
 
     The caller owns the transaction (e.g. ``session_scope()``): this only
     ``session.add(...)`` new rows; the single-writer gate serialises the commit.
@@ -67,7 +68,9 @@ def ingest_agencies_as_sources(session: SASession) -> dict:
             skipped_existing += 1
             continue
 
-        tags = ["official-statistics", "controversial", _region_slug(agency.region)]
+        # No "controversial" tag (ruling #50): filterable as official-statistics + by
+        # region; the user judges — no verdict tag attached.
+        tags = ["official-statistics", _region_slug(agency.region)]
         session.add(
             Source(
                 name=agency.name,

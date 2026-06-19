@@ -156,7 +156,13 @@ def run_deferred_startup() -> None:
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
             from src.ingest import activate_kill_switch
+            from src.ingest.airplane import install_airplane_socket_guard
 
+            # Socket-level backstop FIRST, then engage offline: while airplane mode
+            # is on, no non-loopback packet can leave this process by ANY path
+            # (a missed call site, a third-party lib, a DNS prefetch). The guard is
+            # transparent while online, so it costs nothing during collection.
+            install_airplane_socket_guard()
             activate_kill_switch()
             logger.info("Booted in airplane mode (offline); awaiting the online consent to collect.")
         except Exception as exc:  # noqa: BLE001 - never block startup
@@ -391,6 +397,25 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
         content={"detail": "Too many requests. Please try again later."},
         headers=headers,
     )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Never return a bare plain-text 500. The SPA calls res.json() on EVERY
+    response (errors included), so Starlette's default plain-text 500 makes the UI
+    report only "JSON.parse: unexpected character at line 1 column 1", masking the
+    real cause (field test 2026-06-19 P0-3: an OLD backup's restore-preview surfaced
+    exactly this). Return a JSON {detail} for all otherwise-unhandled errors so the
+    UI can show the real message. Local single-user app: the operator IS the user, so
+    the message is included to aid debugging (no untrusted clients)."""
+    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    try:
+        REQUEST_COUNT.labels(
+            method=request.method, endpoint=request.url.path, http_status=500
+        ).inc()
+    except Exception:  # noqa: BLE001 - metrics must never mask the original error
+        pass
+    return JSONResponse(status_code=500, content={"detail": f"internal error: {exc}"})
 
 
 def _validate_date(value: str | None, field_name: str) -> None:

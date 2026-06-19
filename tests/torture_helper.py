@@ -183,7 +183,12 @@ def cmd_merge(args) -> None:
         _emit({"error": type(exc).__name__, "message": str(exc)[:300]})
         return
     try:
-        report = merge_mod.run_restore(staged, commit=args.commit)
+        # The torture suite validates the MERGE ENGINE (commutativity, idempotency,
+        # crash-safety, dedup). The post-swap re-index of imported articles (P0-4) is a
+        # one-directional post-step with its own test (test_reindex_on_import) — it makes
+        # the FULL restore direction-dependent in DERIVED data BY DESIGN, so disable it
+        # here to keep the engine's symmetry/determinism assertions meaningful.
+        report = merge_mod.run_restore(staged, commit=args.commit, reindex_imported=False)
         _emit({"report": report})
     except Exception as exc:  # noqa: BLE001
         _emit({"error": type(exc).__name__, "message": str(exc)[:300]})

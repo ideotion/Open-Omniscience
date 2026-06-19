@@ -135,7 +135,7 @@ extras_total_mb() {
     local total="$_CORE_MB" e
     local -a arr
     IFS=',' read -ra arr <<<"${1:-}"
-    for e in "${arr[@]}"; do
+    for e in ${arr[@]+"${arr[@]}"}; do
         [ -n "$e" ] && total=$((total + $(component_mb "$e")))
     done
     echo "$total"
@@ -149,7 +149,7 @@ print_download_estimate() {
     local breakdown="core $(human_mb "$_CORE_MB")"
     local -a arr
     IFS=',' read -ra arr <<<"$extras"
-    for e in "${arr[@]}"; do
+    for e in ${arr[@]+"${arr[@]}"}; do
         [ -n "$e" ] && breakdown="$breakdown + $e $(human_mb "$(component_mb "$e")")"
     done
     say ""
