@@ -232,3 +232,71 @@ def connect(passphrase: str | None = None):
     con = duckdb.connect(database=":memory:", config=_offline_config())
     _LOG.info("columnar engine: in-memory store (no secure persisted encryption offline)")
     return con
+
+
+# --------------------------------------------------------------------------- #
+# Read-model maintenance (Slice 4 PR-2 foundation).
+#
+# The derived read-model the heavy whole-corpus aggregations will read from. PR-2
+# builds the maintenance + a first BYTE-IDENTICAL projection (the keyword counters); the
+# perf win lands when the store is PERSISTED (a maintained store survives restarts), so
+# the hot endpoints are NOT wired to it yet (offline it is in-memory = a per-process
+# rebuild = no gain over the Slice-2 counters). The canonical SQLCipher store stays the
+# source of truth; a reader returning nothing means the seam falls back to the live query.
+
+_KEYWORD_AGG_DDL = (
+    "CREATE OR REPLACE TABLE keyword_agg ("
+    "normalized_term VARCHAR, term VARCHAR, kind VARCHAR, "
+    "mention_count BIGINT, article_count BIGINT, language VARCHAR)"
+)
+
+
+def build_keyword_read_model(con, session) -> int:
+    """(Re)build the columnar ``keyword_agg`` table from the canonical keyword counters.
+
+    A byte-identical projection of ``Keyword.mention_count`` / ``article_count`` (the
+    Slice-2 counters) — NOT a recompute, so it inherits their honesty envelope. Off the
+    request path (a background/maintenance step). Returns the row count written. The
+    canonical store is unchanged; this is a disposable derived table.
+    """
+    from src.analytics.queries import kind_of
+    from src.database.models import Keyword
+
+    con.execute(_KEYWORD_AGG_DDL)
+    rows = [
+        (kw.normalized_term, kw.term, kind_of(kw), int(kw.mention_count or 0),
+         int(kw.article_count or 0), kw.language)
+        for kw in session.query(Keyword).filter(Keyword.mention_count > 0)
+    ]
+    if rows:
+        con.executemany(
+            "INSERT INTO keyword_agg VALUES (?, ?, ?, ?, ?, ?)", rows
+        )
+    return len(rows)
+
+
+def top_terms_raw(con, *, kind: str | None = None, limit: int = 20) -> list[dict]:
+    """Read the corpus-wide most-mentioned keywords from the columnar read-model.
+
+    Returns the SAME raw row shape the live counter query produces
+    (``{term, normalized, kind, mentions, articles}``) BEFORE the Python family/ring
+    grouping — so the seam can apply the existing honesty layers unchanged and the
+    result stays byte-identical. Returns ``[]`` if the table is absent (caller falls back
+    to the live query). Counts only, no score.
+    """
+    try:
+        sql = "SELECT term, normalized_term, kind, mention_count, article_count FROM keyword_agg"
+        params: list = []
+        if kind:
+            sql += " WHERE kind = ?"
+            params.append(kind)
+        sql += " ORDER BY mention_count DESC LIMIT ?"
+        params.append(int(limit))
+        out = con.execute(sql, params).fetchall()
+    except Exception:  # noqa: BLE001 - missing table / cold store -> fall back to live
+        return []
+    return [
+        {"term": r[0], "normalized": r[1], "kind": r[2], "mentions": int(r[3]),
+         "articles": int(r[4])}
+        for r in out
+    ]
