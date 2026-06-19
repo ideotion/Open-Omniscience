@@ -1406,5 +1406,6 @@
   "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.",
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.",
-  "Updates automatically in the background.": "Updates automatically in the background."
+  "Updates automatically in the background.": "Updates automatically in the background.",
+  "Verified translation (cross-language concept).": "Verified translation (cross-language concept)."
 }

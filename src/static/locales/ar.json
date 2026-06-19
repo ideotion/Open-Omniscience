@@ -1406,5 +1406,6 @@
   "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "تعطيل (وليس حذف) كل مصدر مُفعَّل بلغة لا يستطيع محرك الكلمات المفتاحية معالجتها. قابل للعكس من جدول المصادر.",
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "توليفة واحدة من النموذج اللغوي المحلي عبر أفضل النتائج (20 كحد أقصى) — الحقائق المشتركة والاختلافات والأسئلة المفتوحة، مع ذكر أرقام المقالات. مساعدة، وليست حكمًا.",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "أخبر النموذج المحلي بما يجب استخراجه. أخرِج عنصرًا واحدًا في كل سطر — يصبح كل منها بيانات وصفية من النوع أعلاه.",
-  "Updates automatically in the background.": "يُحدَّث تلقائيًا في الخلفية."
+  "Updates automatically in the background.": "يُحدَّث تلقائيًا في الخلفية.",
+  "Verified translation (cross-language concept).": "ترجمة مُتحقَّق منها (مفهوم عابر للغات)."
 }

@@ -1406,5 +1406,6 @@
   "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "Desativar (nunca excluir) cada fonte ativada em um idioma que o motor de palavras-chave não consegue gerenciar. Reversível pela tabela de fontes.",
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "Uma síntese do LLM local sobre os melhores resultados (máx. 20) — fatos comuns, divergências, questões em aberto, citando números de artigo. Uma ajuda, nunca um veredito.",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "Diga ao modelo local o que extrair. Produza um item por linha — cada um se torna um metadado do tipo acima.",
-  "Updates automatically in the background.": "Atualiza automaticamente em segundo plano."
+  "Updates automatically in the background.": "Atualiza automaticamente em segundo plano.",
+  "Verified translation (cross-language concept).": "Tradução verificada (conceito translíngue)."
 }

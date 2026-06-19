@@ -180,6 +180,39 @@ def _apply_kind(query, kind: str | None):
     return query.filter(Keyword.entity_type == kind)
 
 
+def _annotate_translations(terms, target_lang, stored_lang=None):
+    """Make the keyword rows LANGUAGE-AWARE: tag each row whose concept has a VERIFIED
+    translation into ``target_lang`` (via its Wikidata-sourced ring) with
+    ``translation`` + ``translation_source='ring'`` — so the UI can show the original
+    AND its translation, never blinding the reader to a foreign-language keyword.
+
+    Grouped ring rows resolve directly by ``ring_id``; solo rows resolve by
+    (effective language, normalized). A same-language or self-identical result is
+    skipped (nothing to add). No-op when ``target_lang`` is empty."""
+    tl = (target_lang or "").strip().casefold()
+    if not tl:
+        return terms
+    from src.analytics import equivalence
+
+    stored_lang = stored_lang or {}
+    for r in terms:
+        rid = r.get("ring_id")
+        if rid:
+            tr = equivalence.ring_translation(rid, tl)
+        else:
+            norm = r.get("normalized") or ""
+            lang = r.get("language") or stored_lang.get(norm)
+            tr = equivalence.translate_term(lang, norm, tl)
+        if not tr:
+            continue
+        trf = tr.casefold()
+        if trf == (r.get("normalized") or "").casefold() or trf == (r.get("term") or "").casefold():
+            continue
+        r["translation"] = tr
+        r["translation_source"] = "ring"
+    return terms
+
+
 def _bucket_key(d: date, bucket: str) -> str:
     if bucket == "day":
         return d.isoformat()
@@ -227,8 +260,14 @@ def top_terms(
     kind: str | None = None,
     limit: int = 20,
     group: bool = False,
+    target_lang: str | None = None,
 ) -> dict:
     """Most-mentioned keywords (optionally within a window / country / kind).
+
+    ``target_lang`` makes the rows language-aware: each row whose concept has a
+    verified ring translation into that language gains ``translation`` (see
+    :func:`_annotate_translations`), so the reader sees foreign keywords WITH a
+    translation rather than being shown only their own language.
 
     With ``group=True`` the surface variants of one entity are merged into a single
     family (``Trump`` / ``Trump's`` / ``Donald Trump`` -> one row) for display, with
@@ -283,6 +322,7 @@ def top_terms(
                 "term": k.term,
                 "normalized": k.normalized_term,
                 "kind": kind_of(k),
+                "language": k.language,
                 "mentions": int(m),
                 "articles": int(a),
             }
@@ -303,6 +343,7 @@ def top_terms(
         ringed = any(t.get("ring_id") for t in merged)
         terms = merged
     terms = terms[:limit]
+    _annotate_translations(terms, target_lang, stored_lang)
     out = {
         "count": len(terms),
         "days": days,
@@ -810,6 +851,7 @@ def trending(
     kind: str | None = None,
     limit: int = 20,
     min_recent: int = 3,
+    target_lang: str | None = None,
 ) -> dict:
     """Rising keywords: recent volume vs the prior-period rate (a defined ratio).
 
@@ -857,6 +899,7 @@ def trending(
                 "term": kw.term,
                 "normalized": kw.normalized_term,
                 "kind": kind_of(kw),
+                "language": kw.language,
                 "recent": rc,
                 "prior": pc,
                 "expected": expected,
@@ -905,6 +948,7 @@ def trending(
         ringed = True
     out.sort(key=lambda t: (-t["growth"], -t["recent"]))
     out = out[:limit]
+    _annotate_translations(out, target_lang, stored_lang)
     res = {
         "count": len(out),
         "window_days": window_days,
@@ -969,6 +1013,7 @@ def trending_windows(
     kind: str | None = None,
     limit: int = 10,
     series_top: int = 0,
+    target_lang: str | None = None,
 ) -> dict:
     """Rising keywords across THREE preset windows side by side (24h · 7d · 30d).
 
@@ -996,6 +1041,7 @@ def trending_windows(
             limit=limit,
             # 24h on a young corpus is thin — don't gate it out; show n + caveat.
             min_recent=1 if wdays == 1 else 2,
+            target_lang=target_lang,
         )
         terms = res["terms"]
         if series_top > 0:

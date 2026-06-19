@@ -1406,5 +1406,6 @@
   "Disable (never delete) every enabled source in a language the keyword engine cannot manage. Reversible from the sources table.": "停用（绝不删除）使用关键词引擎无法处理的语言的每个已启用来源。可从来源表中撤销。",
   "One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.": "由本地 LLM 对前若干结果（最多 20 条）进行的一次综合 — 共同事实、分歧、悬而未决的问题，并引用文章编号。是辅助，绝非结论。",
   "Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above.": "告诉本地模型要提取什么。每行输出一项 — 每项成为上述类型的一条元数据。",
-  "Updates automatically in the background.": "在后台自动更新。"
+  "Updates automatically in the background.": "在后台自动更新。",
+  "Verified translation (cross-language concept).": "已验证的翻译（跨语言概念）。"
 }

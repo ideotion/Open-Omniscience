@@ -796,3 +796,7 @@
     #guide-wizard .gw-lang[aria-selected="true"] { border-color: var(--accent);
       background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 600; }
     #guide-wizard .gw-lang .gw-native { margin-inline-end: auto; }
+    /* Verified cross-language translation shown beside a foreign keyword (the
+       language-aware engine — never blind the reader to a foreign keyword). */
+    .kw-trans { color: var(--accent); font-size: 0.9em; opacity: 0.95;
+      border-bottom: 1px dotted var(--accent); cursor: help; }
