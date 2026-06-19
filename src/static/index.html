@@ -740,9 +740,7 @@
 
     <section class="panel ins-view" id="ins-sources" style="display:none">
       <h2 style="margin-top:0;font-size:13px">Most-cited sources <span class="muted">(co-citation)</span></h2>
-      <p class="hint" style="margin-top:0">Which external links or domains <em>many of your articles point to</em> —
-        a citation-graph signal grounded in what reporters actually reference. Click a row to assemble every
-        article in your corpus that cites it (opens the offline stored copy).</p>
+      <p class="hint" style="margin-top:0">Which external links or domains many of your articles point to — a citation-graph signal grounded in what reporters actually reference. Click a row to assemble every article in your corpus that cites it (opens the offline stored copy).</p>
       <div class="row">
         <div><label for="cs-by">Group by</label><select id="cs-by" onchange="loadCitedSources()">
           <option value="domain">domain</option><option value="url">exact link</option></select></div>
@@ -755,9 +753,7 @@
 
     <section class="panel ins-view" id="ins-families" style="display:none">
       <h2 style="margin-top:0;font-size:13px">Keyword families <span class="muted">— you decide</span></h2>
-      <p class="hint" style="margin-top:0">Surface variants are grouped automatically (<b>Trump</b> = <b>Trump's</b> =
-        <b>Donald Trump</b>). Here you correct it: <b>tick</b> two or more rows and <b>Merge</b> them, or click a
-        member's <b>✕</b> to <b>split</b> it out. Your decisions win over the automatic rules and are fully reversible.</p>
+      <p class="hint" style="margin-top:0">Surface variants are grouped automatically (Trump = Trump's = Donald Trump). Here you correct it: tick two or more rows and Merge them, or click a member's ✕ to split it out. Your decisions win over the automatic rules and are fully reversible.</p>
       <div class="row" style="align-items:center">
         <div><label for="fam-kind">Kind</label><select id="fam-kind" onchange="loadFamilies()">
           <option value="entity">entities</option><option value="person">people</option>
@@ -773,10 +769,7 @@
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
       <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families and rings</span></h2>
-      <p class="hint" style="margin-top:0">Gather several families — or cross-language <b>rings</b> (one concept across
-        languages, e.g. election / élection / wahl) — under one theme (e.g. <b>Russia–Ukraine war</b>
-        over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. A ring member makes the super-group
-        span languages (the super-ring model). Pure curation — nothing in the keyword store changes.</p>
+      <p class="hint" style="margin-top:0">Gather several families — or cross-language rings (one concept across languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. A ring member makes the super-group span languages (the super-ring model). Pure curation — nothing in the keyword store changes.</p>
       <div class="row" style="align-items:center">
         <div style="flex:2"><label for="sg-name">New super-group</label>
           <input id="sg-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
@@ -816,10 +809,7 @@
 
     <section class="panel ins-view" id="ins-convergence" style="display:none">
       <h2 style="margin-top:0;font-size:13px">Convergence <span class="muted">— same place, same window</span></h2>
-      <p class="hint" style="margin-top:0">Clusters of articles that converge on the <em>same place</em> within a
-        time window, on the <em>date mentioned in the text</em>. Independence is measured by distinct sources, not
-        article count. Co-occurrence is never causation — a prompt to read, not proof anything happened. Click a
-        cluster to assemble its exact article set.</p>
+      <p class="hint" style="margin-top:0">Clusters of articles that converge on the same place within a time window, on the date mentioned in the text. Independence is measured by distinct sources, not article count. Co-occurrence is never causation — a prompt to read, not proof anything happened. Click a cluster to assemble its exact article set.</p>
       <div class="row" style="align-items:center">
         <div><label for="cv-window">Window (days)</label><input id="cv-window" type="number" value="7" min="1" max="3650" onkeydown="if(event.key==='Enter')loadConvergences()"></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="loadConvergences()">Refresh</button></div>
