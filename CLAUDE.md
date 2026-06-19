@@ -21,6 +21,31 @@ ruling, a contingency, or a deliberate-omission note.
 - robots.txt fail-closed, per-host politeness, honest bot UA, single fetch path
   (`EthicalFetcher`), **global network kill switch** (`src/ingest`
   activate/clear_kill_switch — the Collect Stop button trips it).
+- **AIRPLANE MODE IS A SOCKET-LEVEL HARD GUARANTEE, not just a per-call convention
+  (ruled 2026-06-19 field test P0-1/#3/#8/#68; SHIPPED same day):** the kill switch
+  was checked at the top of every KNOWN fetch path — airtight only as far as our
+  memory. `src/ingest/airplane.py:install_airplane_socket_guard()` (wired into the
+  boot path in `run_deferred_startup`, alongside the boot kill-switch activation,
+  inside the same `OO_NO_SCHEDULER!=1` block) now wraps `socket.getaddrinfo` /
+  `create_connection` / `socket.socket.connect(_ex)` process-wide: while the kill
+  switch is engaged, ANY non-loopback target raises `AirplaneModeError(OSError)`
+  BEFORE the real socket call is reached — so no missed call site, third-party lib,
+  or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`) + AF_UNIX always
+  pass through (the app's own server, loopback Ollama, file DB). TRANSPARENT while
+  online (delegates straight through — zero cost during collection). The per-call
+  refusals stay as the friendly/explanatory layer; this is the net beneath them.
+  `OO_AIRPLANE_SOCKET_GUARD=0` disables. Enforced by tests/test_airplane_socket_guard.py
+  (white-box: proves the real call is NEVER reached for a remote target in airplane
+  mode = the brief's "boot + decline = zero sockets") + a source-level guard that the
+  boot path still installs it. INVESTIGATION RECORD (the rest of #3/#8): the documented
+  Python paths were ALL already gated (stats/fetch, duckduckgo, ollama via
+  _check_kill_switch + _require_loopback, weather); the scheduler does NOT auto-start
+  (only POST /api/system/network or /api/scheduler/start starts it; "Not now"/
+  dismissNetCoach POSTs nothing); boot DOES engage airplane (main.py); and the static
+  files carry ZERO external resources (no CDN/web-fonts/preconnect — grep-verified; only
+  one click-target ollama.com link). The loopback activity/network/vitals polls are NOT
+  internet. So the residual leak (if any beyond Ollama's own process / browser
+  DNS-prefetch) is now caught by construction.
 - Honesty by construction: no composite trust/quality scores (CardSchemaError
   enforces); every signal carries method + caveat + n; degrade loudly. No
   fabricated security, ever (no lock screens over plaintext, no theater).

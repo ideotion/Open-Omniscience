@@ -156,7 +156,13 @@ def run_deferred_startup() -> None:
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
             from src.ingest import activate_kill_switch
+            from src.ingest.airplane import install_airplane_socket_guard
 
+            # Socket-level backstop FIRST, then engage offline: while airplane mode
+            # is on, no non-loopback packet can leave this process by ANY path
+            # (a missed call site, a third-party lib, a DNS prefetch). The guard is
+            # transparent while online, so it costs nothing during collection.
+            install_airplane_socket_guard()
             activate_kill_switch()
             logger.info("Booted in airplane mode (offline); awaiting the online consent to collect.")
         except Exception as exc:  # noqa: BLE001 - never block startup
