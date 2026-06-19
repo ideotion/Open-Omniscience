@@ -3185,6 +3185,22 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD TEST 2026-06-19 — P1 DOWNLOADS HONOUR AIRPLANE (#36/#41, completes THEME-6; branch
+  claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** two honesty bugs in the wiki-dump
+  + OSM download managers. (1) The chunk loop checked ONLY the per-download Pause event, NOT the
+  kill switch — a download started before airplane kept reading from its open socket after the
+  toggle. FIX: `(stop_event.is_set() or kill_switch_active())` → a clean resumable PAUSE within one
+  chunk (the kill switch must halt an OPEN download, not only refuse NEW fetches). (2) resume/start
+  in airplane hit the guarded fetcher → cryptic "error". FIX: `start()` PRE-CHECKS the kill switch →
+  presents PAUSED (resumable, error=None), never an error, opens NO socket (tested: http_get not
+  called). The frontend `jobResume` already re-prompts go-online (ensureOnline, app.js:662), so the
+  full flow is: airplane → download pauses cleanly → resume → consent → continues via HTTP Range.
+  Applied to BOTH `src/wiki/dumps.py` + `src/geo/osm_downloads.py`. ALSO #36: the task-manager job
+  LABEL was the raw "en · pages-articles-multistream" → now `_dump_label()` → "English Wikipedia —
+  articles dump" (via wiki.languages.get_language; multistream is an internal detail). tests/
+  test_download_airplane.py (start-in-airplane=paused-no-socket + mid-download pause for both
+  managers + human label). REMAINING #41 reorder: backend reorder exists + is tested (test_osm_jobs/
+  test_jobs_resume) — "can't reorder" is likely UI discoverability (controls show only for 2+ queued).
 - **FIELD TEST 2026-06-19 — P0-4 IMPORT RECOMPUTES CORE-ENGINE METADATA (#O-1; branch
   claude/gallant-bohr-1cogzj; backend VERIFIED py3.11 venv):** maintainer ruling on restore
   semantics — AI artifacts (translations/summaries/ai_keyword) kept AS-IS, but CORE-ENGINE

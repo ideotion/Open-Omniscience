@@ -39,6 +39,25 @@ def _dl_actions(state: str) -> list[str]:
     return []
 
 
+# Human dump-kind labels (field test 2026-06-19 #36: the task manager showed the raw
+# "en · pages-articles-multistream"). The seekable multistream variant is an internal
+# detail — the user just wants "articles dump".
+_DUMP_KIND_LABELS = {
+    "pages-articles": "articles dump",
+    "pages-articles-multistream": "articles dump",
+    "pages-articles-multistream-index": "articles dump index",
+}
+
+
+def _dump_label(wiki: str, kind: str) -> str:
+    """A human label like "English Wikipedia — articles dump" (never "en · pages-…")."""
+    from src.wiki.languages import get_language
+
+    lang = get_language(wiki)
+    edition = lang.name if lang else (wiki or "?").upper()
+    return f"{edition} Wikipedia — {_DUMP_KIND_LABELS.get(kind, kind)}"
+
+
 def _dump_jobs() -> list[dict]:
     from src.wiki.dumps import get_manager
 
@@ -57,7 +76,7 @@ def _dump_jobs() -> list[dict]:
             {
                 "id": f"dump:{e['key']}",
                 "kind": "wiki-dump",
-                "label": f"{e['wiki']} · {e['kind']}",
+                "label": _dump_label(e["wiki"], e["kind"]),
                 "state": state,
                 "queue_position": (order.index(e["key"]) + 1) if e["key"] in order else None,
                 "progress": {
