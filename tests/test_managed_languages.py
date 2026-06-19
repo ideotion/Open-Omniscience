@@ -43,10 +43,21 @@ def test_engine_report_shares_the_managed_set():
 def _mem_session():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
 
     from src.database.models import Base
 
-    eng = create_engine("sqlite:///:memory:", future=True)
+    # Share the ONE in-memory connection across threads: the FastAPI TestClient runs
+    # the app in a separate (portal) thread, and the default SingletonThreadPool would
+    # hand that thread a fresh, EMPTY in-memory DB ("no such table: sources"). StaticPool
+    # + check_same_thread=False keep a single shared connection (matches the pattern in
+    # tests/test_convergence.py's session fixture).
+    eng = create_engine(
+        "sqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(eng)
     return sessionmaker(bind=eng, future=True)()
 

@@ -26,6 +26,12 @@ _ISOLATED = tempfile.mkdtemp(prefix="oo-tests-")
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
+# Never auto-seed the ~3,200-source production catalog during tests. The seed moved
+# into run_deferred_startup on 2026-06-18, so it now fires on EVERY TestClient-context
+# lifespan -- slow, non-hermetic, and its auto-increment Source ids collide with tests
+# that pin ids (e.g. the convergence endpoint test). Tests that need the catalog call
+# the seeder directly; one that wants the lifespan seed can still set OO_AUTOSEED=1.
+os.environ.setdefault("OO_AUTOSEED", "0")
 # The suite runs on an EXPLICIT plaintext store (the ruled opt-out); the
 # SQLCipher paths are exercised by tests/test_sqlcipher.py with their own
 # passphrases and data dirs.

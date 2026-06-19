@@ -37,7 +37,7 @@ HTTP API) and troubleshooting.
      [Search](#31-search) · [Collect](#32-collect) ·
      [Sources](#33-sources) · [Library](#34-library) · [Markets](#35-markets) ·
      [Indices](#35a-indices) · [Insights](#36-insights) ·
-     [Temporal map](#36a-temporal-map) · [Agenda](#36b-agenda) ·
+     [World map](#36a-world-map) · [Agenda](#36b-agenda) ·
      [Wikipedia](#37-wikipedia) ·
      [Evidence & custody](#38-evidence--custody) · [Settings](#39-settings) ·
      [Help & docs](#310-help--docs)
@@ -166,7 +166,7 @@ tools appear. Everything is stored locally; nothing is transmitted.
   text-size slider and ⛶ Enlarge. Font size always encodes shared-article volume.
 - **Pre-created super-groups:** a bundled starter set (drafted from real field
   logs) seeds at startup; your own edits and deletions always win.
-- **Temporal map controls:** precise focus-date entry, a from/to time-span that
+- **World map controls:** precise focus-date entry, a from/to time-span that
   remaps the slider (play then sweeps only that period), play speed 0.5–4×,
   fine ±month windows, wheel zoom, in-map controls and ⛶ Enlarge. Pins are
   clickable across their whole disc.
@@ -220,7 +220,7 @@ The core loop is:
 2. **Settings → Collect** — fetch a source's RSS feed or paste a single article URL.
    Or let the **scheduler** do it automatically on an interval.
 3. **Search** — Boolean full-text search across everything you've gathered.
-4. **Analysis / Insights / Temporal map / Commodities / Indices** — optional analysis
+4. **Analysis / Insights / World map / Commodities / Indices** — optional analysis
    layers on top of the corpus (the corpora window, patterns, space-time, prices).
 5. **Export** — CSV/JSON, or a **signed evidence bundle** anyone can verify
    offline.
@@ -236,11 +236,11 @@ Destructive actions always ask first.
 
 The sidebar groups the tools by intent:
 
-- **Investigate** — Home · Search · Analysis · Insights · Temporal map · World law ·
-  Agenda · Indices · Commodities *(advanced)*
+- **Investigate** — Home · Analysis · Insights · World map · World law ·
+  Agenda · Indices · Commodities *(advanced)* — search is the top-bar omnibar
 - **Collect** — Library
-- **Trust** — Evidence & custody · Source integrity
-- **System** — Help & docs
+- **Trust** — Evidence & custody
+  *(Source integrity's desk moved into Settings → Safety; Help & docs is the top-bar `?`.)*
 
 **Content-first (0.0.9).** The sidebar shows the *data*; the acquisition surfaces
 moved into **Settings**: **Collect** (the scheduler + manual ingest), **Sources** (the
@@ -540,10 +540,10 @@ Every figure is a real aggregate with its sample size and a caveat. See
 [`docs/USER_MANUAL.md`](USER_MANUAL.md). To tune which keywords appear, use the
 [keyword filter in Settings](#39-settings).
 
-### 3.6a Temporal map
+### 3.6a World map
 
 **What it's for:** seeing *where* and *when* together. A journalist's two oldest
-questions are location and time; the Temporal map puts every locatable, datable
+questions are location and time; the World map puts every locatable, datable
 signal on one zoomable world map under a **time slider** that sweeps from antiquity
 to the near future — so you can watch what clustered, where, and when.
 
@@ -1015,7 +1015,7 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 `POST /api/system/unlock|create-db|encrypt-db`. **Jobs / task manager** —
 `GET /api/jobs`; `POST /api/jobs/dumps/reorder`; `POST /api/jobs/{id}/cancel`.
 
-**Temporal map** — `GET /api/timemap` (space-time signals; `?kinds`, `?start`/`?end`
+**World map** — `GET /api/timemap` (space-time signals; `?kinds`, `?start`/`?end`
 fractional-year window, `?hazards`, `?articles`, `?mentions`, `?days`); `GET /api/timemap/range`.
 
 **Article date tags** — `GET/POST /api/article-dates/article/{id}` (list / extract);
