@@ -3030,3 +3030,22 @@ def test_keyword_views_show_verified_translations():
     assert "tgtLangParam()}${extra||\"\"}" in html, "the Trends top/rising fetch must pass target_lang"
     # It is a TRANSLATION (additive), not a filter that hides languages.
     assert "kwLangParam" not in html, "the rejected blind-by-language filter must not be present"
+
+
+def test_translations_extend_to_analysis_window_and_supergroups():
+    """Phase 3 (maintainer ruling: translations bind to families AND groups): the
+    verified translation is shown in the analysis-window Keywords subtab and on
+    super-group ring members too, not only the Trends/Home lists."""
+    html = _ui_source()
+    # Analysis-window Keywords subtab: corpus-keywords fetch carries target_lang and
+    # each chip renders the translation.
+    assert 'corpus-keywords?" + p.toString() + tgtLangParam()' in html, (
+        "the analysis-window Keywords fetch must request the verified translation"
+    )
+    # Super-groups: the list fetch passes target_lang and ring members show the translation.
+    assert '/api/insights/supergroups?target_lang=" + encodeURIComponent(uiLangCode())' in html, (
+        "the super-groups fetch must request the verified translation"
+    )
+    assert "ring·${(m.ring_members || []).length}" in html and "${kwTransHtml(m)}" in html, (
+        "a super-group ring member must render its verified translation"
+    )

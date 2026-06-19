@@ -364,6 +364,7 @@ def corpus_keywords(
     article_ids: list[int],
     kind: str | None = None,
     limit: int = 30,
+    target_lang: str | None = None,
 ) -> dict:
     """Top keywords across a GIVEN set of articles (the analysis-window corpus).
 
@@ -372,6 +373,9 @@ def corpus_keywords(
     matched articles". Ordered by article SPREAD (how many of the set mention the
     term), then mentions. Hidden/function words are dropped (the shared policy).
     No score — counts only; the caller states the honest method + caveat + n.
+
+    ``target_lang`` makes the rows language-aware (verified ring ``translation`` per
+    row) so the analysis window does not show foreign keywords without a translation.
     """
     if not article_ids:
         return {"count": 0, "n_articles": 0, "terms": []}
@@ -404,12 +408,14 @@ def corpus_keywords(
                 "term": k.term,
                 "normalized": k.normalized_term,
                 "kind": kind_of(k),
+                "language": k.language,
                 "mentions": int(m),
                 "articles": int(a),
             }
         )
         if len(terms) >= limit:
             break
+    _annotate_translations(terms, target_lang)
     out = {"count": len(terms), "n_articles": len(article_ids), "terms": terms}
     note = unsegmented_note(session, article_ids)
     if note:
