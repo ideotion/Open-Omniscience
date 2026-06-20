@@ -3299,14 +3299,22 @@ ruling, a contingency, or a deliberate-omission note.
 - **AUTONOMOUS V0.1 BATCH (2026-06-20, branch claude/sweet-keller-ozdip1 = ONE rolling branch
   per the system-reminder "develop only on this branch / NEVER push to a different branch"; PR #413
   draft onto 0.09, accumulating commits — also eliminates inter-PR locale conflicts). Commits so far:
-  (1) #51 OSM admin-boundary choropleth (entry below); (2) i18n de-tagging tail — batches 1-3
-  keyed 66 clean single-text-node chrome strings ×12 (30 labels + the "Your query leaves this
-  machine." note · 24 more labels · 12 complete help paragraphs incl. the backup-encryption
-  explainer, the world-map description, keyword self-test/engine-report, the four system prompts,
-  custom AI extractors; NO HTML change since the i18n walker matches per text node — clean nodes are
-  directly keyable, only inline-tagged FRAGMENTS need de-tagging [the harder remaining tail, mostly
-  the ~20 tagged help sentences + data/examples that stay literal]; technical tokens kept literal;
-  audit-chrome 222→156); (3) PER-ARTICLE
+  (1) #51 OSM admin-boundary choropleth (entry below); (2) i18n de-tagging tail — 8 batches keyed
+  108 chrome strings ×12 (audit-chrome 222→114): batches 1-3 = 66 CLEAN single-text-node strings
+  (labels + 12 help paragraphs incl. the backup-encryption explainer, world-map description, keyword
+  self-test/engine-report, the four system prompts, custom AI extractors) keyed with NO HTML change
+  (the walker matches per text node, so a clean node is directly keyable); batches 4-8 = 16 DE-TAGGED
+  paragraphs (removed cosmetic <b>/<em>/<strong>/<code> so each <p> is one node, then keyed) covering
+  the core honesty notes — Source-integrity "no trust score / Surface never suppress", the
+  Statistics agency-directory "stanced source / no verdict no score", coordinated-floods "shown by
+  default / one voice", Tor protected-mode anonymity warning, the restore-merge "nothing is replaced
+  or deleted" + "additive-only", annotations "never a score / who asserted what", keyword-filtering,
+  settings-stored-locally/no-telemetry, uninstall. DELIBERATELY KEPT TAGGED: the discovery paragraph's
+  <strong> emphasis on "Your query leaves this machine." (a privacy warning). Technical tokens literal
+  throughout. REMAINING tail (~114) = data/examples (stay literal) + the harder <a>-linked help
+  paragraphs (World-law mirror note etc., need the link-at-end restructure) + the passphrase
+  no-recovery warning (security-sensitive, deferred for native review). Non-en AI-drafted, flagged.
+  Full py3.13 suite (1860 passed) green on the PR after the batches. (3) PER-ARTICLE
   SUMMARIZE/TRANSLATE on the analysis Articles list (Track C, the repeatedly-flagged REMAINING; backend
   VERIFIED, frontend BROWSER-UNVERIFIED per fork-3): each row gained Summarize + Translate buttons →
   `anArticleLlm(id, op, btn)` reuses the EXISTING single-article endpoints `POST /api/llm/articles/{id}/
