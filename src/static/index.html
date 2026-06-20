@@ -464,9 +464,9 @@
           <label class="switch" style="margin-top:0"><input type="file" id="anno-import" accept="application/json"
                 onchange="importAnnotations(this)" style="display:none"><button class="secondary tiny"
                 onclick="document.getElementById('anno-import').click()">Import bundle…</button></label></div>
-        <p class="hint">Annotations are <b>descriptive, contestable facts</b> (ownership, leaning,
-          coordination, corrections) — never a score. Publish yours as a <b>signed</b> bundle; import the
-          ones you choose to trust. Aggregation shows <b>who asserted what</b>; dissent is shown, not averaged.</p>
+        <p class="hint">Annotations are descriptive, contestable facts (ownership, leaning,
+          coordination, corrections) — never a score. Publish yours as a signed bundle; import the
+          ones you choose to trust. Aggregation shows who asserted what; dissent is shown, not averaged.</p>
         <div class="row">
           <div style="flex:2"><input id="anno-target" placeholder="Source this is about (name/domain)"></div>
           <div style="flex:1"><select id="anno-kind">
@@ -962,7 +962,7 @@
       </div>
 
       <button onclick="saveSettings()">Save preferences</button>
-      <div class="hint">Stored locally in <code>app_settings.json</code> under the data directory — no telemetry, nothing leaves the machine.</div>
+      <div class="hint">Stored locally in app_settings.json under the data directory — no telemetry, nothing leaves the machine.</div>
     </section>
 
     <section class="panel">
@@ -1280,7 +1280,7 @@
 
       <hr>
       <h3 style="margin-bottom:6px">Restore — merge with a preview</h3>
-      <p class="muted" style="margin-top:0">Restoring <b>merges</b> the archive into your corpus — nothing is replaced
+      <p class="muted" style="margin-top:0">Restoring merges the archive into your corpus — nothing is replaced
         or deleted, duplicates are detected bit-for-bit, and where a value conflicts your local version is kept and
         both values are reported. Preview first: the plan below shows exactly what would happen. A safety snapshot is
         taken before anything is applied, and the merge refuses to proceed if verification fails.</p>
@@ -1313,8 +1313,8 @@
         <button class="secondary" onclick="downloadBackup()">Download backup (.db)</button>
       </div>
       <div class="hint">A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.</div>
-      <div class="hint">Restore is <strong>additive-only</strong>: use the merge restore above — it complements your
-        corpus and never replaces it. (The destructive replace-restore was removed; a raw <code>.db</code>
+      <div class="hint">Restore is additive-only: use the merge restore above — it complements your
+        corpus and never replaces it. (The destructive replace-restore was removed; a raw .db
         download is a snapshot for manual/advanced use.)</div>
       </details>
     </section>

@@ -395,7 +395,7 @@
   "An unencrypted archive protects nothing at rest and deliberately excludes your signing keys.": "未加密归档在静态下不提供任何保护，并刻意不包含您的签名密钥。",
   "Download unencrypted backup (.oobak)": "下载未加密备份 (.oobak)",
   "Restore — merge with a preview": "恢复——带预览的合并",
-  "Restoring merges the archive into your corpus — nothing is replaced or deleted, duplicates are detected bit-for-bit, and where a value conflicts your local version is kept and both values are reported. Preview first: the plan below shows exactly what would happen. A safety snapshot is taken before anything is applied, and the merge refuses to proceed if verification fails.": "恢复会将归档合并进您的语料库——不替换、不删除；重复内容按位识别；值冲突时保留您的本地版本并同时报告两个值。请先预览：下方计划准确显示将发生的事。应用前会先创建安全快照；校验失败则拒绝合并。",
+  "Restoring merges the archive into your corpus — nothing is replaced or deleted, duplicates are detected bit-for-bit, and where a value conflicts your local version is kept and both values are reported. Preview first: the plan below shows exactly what would happen. A safety snapshot is taken before anything is applied, and the merge refuses to proceed if verification fails.": "恢复会将归档合并进你的语料库——不会替换或删除任何内容，逐位检测重复项，当某个值发生冲突时保留你的本地版本并同时报告两个值。请先预览：下方的方案会准确显示将要发生的情况。在应用任何更改之前会先做一个安全快照，若校验失败则合并拒绝继续。",
   "Backup file": "备份文件",
   "Passphrase for this file": "此文件的口令",
   "empty for an unencrypted archive": "未加密归档请留空",
@@ -1501,5 +1501,8 @@
   "Live counts from the unified store. Every figure is a real COUNT(*) or on-disk byte size — nothing is estimated.": "来自统一存储的实时计数。每个数字都是真实的 COUNT(*) 或磁盘字节大小——没有任何估算。",
   "Analytics over keywords and entities extracted from ingested article text (people, companies and places are single units). Trends, associations (PMI) and context are real aggregates with sample sizes — nothing is invented.": "对从已采集文章文本中提取的关键词和实体的分析（人物、公司和地点为单一单位）。趋势、关联（PMI）和上下文都是带样本量的真实聚合——没有任何虚构。",
   "Off by default; everything else works without it. (Discovering RSS feeds for sources you added yourself stays local-path and is not affected.)": "默认关闭；其他一切无需它也能运行。（为你自己添加的来源发现 RSS 源仍走本地路径，不受影响。）",
-  "The app measures structure — coordination, novelty, output capacity, transparency — and you decide. There is deliberately no trust score: a single number over incommensurable dimensions would bake in bias and silence small, foreign, new or dissident sources. Surface, never suppress.": "应用衡量的是结构——协同、新颖性、产出能力、透明度——而由你决定。这里刻意没有信任评分：用单一数字概括不可通约的维度会固化偏见，并让弱小、外国、新兴或异见来源噤声。呈现，绝不压制。"
+  "The app measures structure — coordination, novelty, output capacity, transparency — and you decide. There is deliberately no trust score: a single number over incommensurable dimensions would bake in bias and silence small, foreign, new or dissident sources. Surface, never suppress.": "应用衡量的是结构——协同、新颖性、产出能力、透明度——而由你决定。这里刻意没有信任评分：用单一数字概括不可通约的维度会固化偏见，并让弱小、外国、新兴或异见来源噤声。呈现，绝不压制。",
+  "Annotations are descriptive, contestable facts (ownership, leaning, coordination, corrections) — never a score. Publish yours as a signed bundle; import the ones you choose to trust. Aggregation shows who asserted what; dissent is shown, not averaged.": "注释是描述性的、可质疑的事实（所有权、倾向、协同、更正）——绝非评分。将你的注释发布为签名捆绑包；导入你选择信任的那些。聚合显示谁主张了什么；分歧被呈现，而非取平均。",
+  "Stored locally in app_settings.json under the data directory — no telemetry, nothing leaves the machine.": "本地存储在数据目录下的 app_settings.json 中——无遥测，没有任何内容离开本机。",
+  "Restore is additive-only: use the merge restore above — it complements your corpus and never replaces it. (The destructive replace-restore was removed; a raw .db download is a snapshot for manual/advanced use.)": "恢复仅为追加式：使用上方的合并恢复——它会补充你的语料库，绝不替换。（破坏性的替换式恢复已被移除；原始 .db 下载是供手动/高级用途的快照。）"
 }
