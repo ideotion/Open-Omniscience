@@ -3342,6 +3342,71 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS V0.1 BATCH (2026-06-20, branch claude/sweet-keller-ozdip1 = ONE rolling branch
+  per the system-reminder "develop only on this branch / NEVER push to a different branch"; PR #413
+  draft onto 0.09, accumulating commits — also eliminates inter-PR locale conflicts). Commits so far:
+  (1) #51 OSM admin-boundary choropleth (entry below); (2) i18n de-tagging tail — 8 batches keyed
+  108 chrome strings ×12 (audit-chrome 222→114): batches 1-3 = 66 CLEAN single-text-node strings
+  (labels + 12 help paragraphs incl. the backup-encryption explainer, world-map description, keyword
+  self-test/engine-report, the four system prompts, custom AI extractors) keyed with NO HTML change
+  (the walker matches per text node, so a clean node is directly keyable); batches 4-8 = 16 DE-TAGGED
+  paragraphs (removed cosmetic <b>/<em>/<strong>/<code> so each <p> is one node, then keyed) covering
+  the core honesty notes — Source-integrity "no trust score / Surface never suppress", the
+  Statistics agency-directory "stanced source / no verdict no score", coordinated-floods "shown by
+  default / one voice", Tor protected-mode anonymity warning, the restore-merge "nothing is replaced
+  or deleted" + "additive-only", annotations "never a score / who asserted what", keyword-filtering,
+  settings-stored-locally/no-telemetry, uninstall. DELIBERATELY KEPT TAGGED: the discovery paragraph's
+  <strong> emphasis on "Your query leaves this machine." (a privacy warning). Technical tokens literal
+  throughout. REMAINING tail (~114) = data/examples (stay literal) + the harder <a>-linked help
+  paragraphs (World-law mirror note etc., need the link-at-end restructure) + the passphrase
+  no-recovery warning (security-sensitive, deferred for native review). Non-en AI-drafted, flagged.
+  Full py3.13 suite (1860 passed) green on the PR after the batches. (3) PER-ARTICLE
+  SUMMARIZE/TRANSLATE on the analysis Articles list (Track C, the repeatedly-flagged REMAINING; backend
+  VERIFIED, frontend BROWSER-UNVERIFIED per fork-3): each row gained Summarize + Translate buttons →
+  `anArticleLlm(id, op, btn)` reuses the EXISTING single-article endpoints `POST /api/llm/articles/{id}/
+  {summarize,translate}` (loopback Ollama — no network consent; airplane refuses at the client), renders
+  the result INLINE in a sibling row labelled "AI summary/translation — unreliable, verify against the
+  source" + model·prompt provenance (#23 caveat visible), translate target = the UI language via the
+  existing `_uiLangName()`. HONEST BY CONSTRUCTION: the rows store in `article_analyses` (the reader's
+  Summary/Translation tabs read the same), NEVER the trusted keyword index (the invariant test pins the
+  ArticleAnalysis store + the AI-derived caveat). +10 i18n keys ×12 (Summarize/Translate + the
+  caveats/hints; non-en AI-drafted, flagged). tests/test_repo_invariants.py::
+  test_analysis_articles_per_row_summarize_translate + existing test_llm_api green; node --check;
+  i18n --min 100 (1464 ×12). REMAINING for this item: a per-article custom-extractor run on the list
+  (the bulk path already has it); surfacing already-stored analyses inline without re-running.
+- **AUTONOMOUS V0.1 — THEME-2 #51 OSM ADMIN-BOUNDARY CHOROPLETH (2026-06-20, branch
+  claude/sweet-keller-ozdip1, draft PR onto 0.09; parser+assembly NODE-VERIFIED, frontend
+  BROWSER-UNVERIFIED per fork-3):** the maintainer-ruled #51 — colour each country by data
+  using REAL OSM admin boundaries, fixing the ~75 microstates the coarse Natural-Earth 110m
+  `world_countries.json` drops. Built on the shipped `src/static/osmpbf.js` (it decoded dense
+  nodes + ways only). EXTENDED the parser: `decodeStringTable` (PrimitiveBlock field 1) +
+  `resolveTags` + WAY tag decode (opts.withTags) + RELATION decode (opts.withRelations →
+  `decodeRelation`: members {ref,type,role} via memid sint64-delta + roles_sid stringtable +
+  resolved tags) — all BLOCK-LOCAL string resolution done in `decodePrimitiveBlock` where the
+  StringTable is in scope; backward-compatible (default opts = old geometry-only shape +
+  `relations:[]`, so the existing node test stays green). NEW pure `assembleAdminAreas(parsed)`:
+  finds admin_level=2 / boundary=administrative relations carrying ISO3166-1:alpha2, collects
+  outer-role way members, and `stitchRings` stitches them into CLOSED polygons by shared
+  endpoints (EPS match, reverse-as-needed), keyed by ISO-2 → `[{iso2,name,rings:[[lon,lat]…],
+  source}]`. HONEST BY CONSTRUCTION: emits ONLY rings it actually closed (a truncated/partial
+  boundary is dropped, never a fake border); only areas with a valid 2-letter ISO tag (so they
+  merge into the code-keyed choropleth); inner/hole rings skipped (outer only). FRONTEND
+  (browser-unverified): `_ooMapToggleOsm` now parses with withTags/withRelations (maxBlocks 48 to
+  reach the trailing relations section, maxNodes 200000 memory bound, 16MB prefix) + assembles
+  `osmAreas` into `_ooMapOsmGeo`; ooMap AUGMENTS its geometry — an OSM-derived shape REPLACES the
+  coarse 110m polygon for that country and ADDS countries the 110m set never had (the microstate
+  fix), drawn with an accent stroke + a "· boundary from OSM" title note + a legend "N country
+  boundaries" count (provenance visible). The existing raw-lines/nodes overlay + centroid-point
+  fallback are UNTOUCHED (additive; a country with no closed OSM ring still falls back). Backend
+  reuses the bounded, path-safe, zero-network `GET /api/geo/regions/{code}/preview` (no change).
+  +2 i18n keys ×12 (boundary from OSM · country boundaries; non-en AI-drafted, flagged). The
+  VERIFIABLE CORE is node-tested: `tests/osmpbf_node_test.js` gains a hand-encoded
+  StringTable+ways+admin-relation fixture (its own protobuf encoder) asserting the exact closed
+  ring coords + ISO key + that admin_level≠2 yields no area; `tests/test_repo_invariants.py::
+  test_world_map_osm_admin_boundary_choropleth` pins the parser+frontend wiring. node --check
+  (app.js + osmpbf.js) clean; i18n --min 100 (1416 ×12); 88 repo-invariants + osm parser/preview
+  green. REMAINING: inner-ring (hole/enclave) subtraction; human click-through with a real
+  downloaded region (no region in this env); bbox auto-zoom to the rendered country.
 - **SLICE 4 PR-3 — HEAVY-AGGREGATION PERF VIA THE COUNTERS, NOT DUCKDB 2026-06-19 ("proceed with
   the remaining item"; draft PR onto 0.09; VERIFIED py3.11):** the honest engineering call —
   /api/insights/associations (76 s) was an N+1, not a columnar problem, so the Slice-2 counters fix

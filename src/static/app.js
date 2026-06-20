@@ -7546,15 +7546,31 @@
       for (let lon = -180; lon <= 180; lon += 30) grid += `<line x1="${lon2x(lon)}" y1="0" x2="${lon2x(lon)}" y2="${H}" stroke="var(--border)" stroke-width="0.25"/>`;
       for (let lat = -90; lat <= 90; lat += 30) grid += `<line x1="0" y1="${lat2y(lat)}" x2="${W}" y2="${lat2y(lat)}" stroke="var(--border)" stroke-width="0.25"/>`;
 
-      const geoCodes = new Set(Object.keys(geo.countries).map(s => s.toLowerCase()));
+      // Effective geometry: real OSM admin boundaries (opt-in) AUGMENT the coarse
+      // 110m polygons by ISO code (#51). An OSM-derived shape REPLACES the coarse
+      // one for that country and ADDS countries the 110m set never had (microstates),
+      // so a data-bearing microstate renders a true polygon instead of a centroid
+      // point. Honest: only closed OSM rings reach here; everything else is unchanged.
+      const osmAreas = opts.osmAreas || null;
+      let eff = geo.countries, osmUsed = 0;
+      if (osmAreas) {
+        eff = Object.assign({}, geo.countries);
+        for (const iso in osmAreas) {
+          const a = osmAreas[iso];
+          if (!a || !a.rings || !a.rings.length) continue;
+          eff[iso] = { name: (geo.countries[iso] && geo.countries[iso].name) || a.name || iso, rings: a.rings, osm: true };
+          osmUsed++;
+        }
+      }
+      const geoCodes = new Set(Object.keys(eff).map(s => s.toLowerCase()));
       let paths = "";
-      for (const [iso, c] of Object.entries(geo.countries)) {
+      for (const [iso, c] of Object.entries(eff)) {
         const code = iso.toLowerCase(), v = values[code];
         const has = typeof v === "number" && isFinite(v);
         const d = _ooMapPath(c.rings); if (!d) continue;
         const fill = has ? fillFor(v) : "url(#oomap-nodata)";
-        const title = `${ooRegionName(code, c.name)} — ${has ? vlabel(code, v) : t("no data")}`;
-        paths += `<path d="${d}" fill="${fill}" stroke="var(--border)" stroke-width="0.3" data-iso="${esc(code)}"`
+        const title = `${ooRegionName(code, c.name)} — ${has ? vlabel(code, v) : t("no data")}${c.osm ? " · " + t("boundary from OSM") : ""}`;
+        paths += `<path d="${d}" fill="${fill}" stroke="${c.osm ? "var(--accent)" : "var(--border)"}" stroke-width="${c.osm ? "0.5" : "0.3"}" data-iso="${esc(code)}"`
           + `${opts.onCountry ? ' style="cursor:pointer"' : ""}><title>${esc(title)}</title></path>`;
       }
       // Centroid POINT fallback: areas WITH data but NO polygon (microstates).
@@ -7746,7 +7762,7 @@
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
         ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(TMAP_KINDS[k]?.l || k)}</span>`).join("") : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
-        ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}</span>` : ""}
+        ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}${osm.areaCount ? " · " + osm.areaCount + " " + esc(t("country boundaries")) : ""}</span>` : ""}
       </div>
       ${opts.method ? `<div class="hint" style="margin-top:4px">${esc(opts.method)}</div>` : ""}
       ${opts.caveat ? `<div class="card-caveat" style="margin-top:4px">${esc(opts.caveat)}</div>` : ""}`;
@@ -8027,6 +8043,9 @@
         // In-browser OSM offline-region overlay (THEME-2): parse a DOWNLOADED
         // .osm.pbf locally (zero network) and draw its geometry. Opt-in.
         osmOn: _ooMapOsmOn, osmGeo: _ooMapOsmGeo,
+        // #51: real OSM admin (country) boundaries AUGMENT the choropleth geometry
+        // by ISO code (a microstate the coarse 110m map drops now gets a true shape).
+        osmAreas: _ooMapOsmOn && _ooMapOsmGeo ? _ooMapOsmGeo.areas : null,
         onOsm: () => _ooMapToggleOsm(),
         // Click a country → its coverage breakdown (THEME-2 "click-country → list").
         onCountry: iso => _ooMapCountryDetail(rowBy[(iso || "").toLowerCase()], dim),
@@ -8150,7 +8169,10 @@
         const res = await fetch(`/api/geo/regions/${encodeURIComponent(code)}/preview?max_bytes=8388608`);
         if (!res.ok) { toast(t("Could not read the downloaded region."), "err"); return; }
         const ab = await res.arrayBuffer();
-        const geo = await OOPBF.parse(ab, { maxBlocks: 16, maxNodes: 120000 });
+        // Parse with tags + relations so we can also assemble admin (country)
+        // boundaries (THEME-2 #51) — a higher block cap reaches the relations
+        // section (they trail nodes/ways in a .pbf), maxNodes still bounds memory.
+        const geo = await OOPBF.parse(ab, { maxBlocks: 48, maxNodes: 200000, withTags: true, withRelations: true });
         // Resolve way refs -> coordinates using the decoded node set (partial in a
         // bounded preview — drop a way we can't resolve, never invent a point).
         const byId = new Map(); for (const n of geo.nodes) byId.set(n.id, n);
@@ -8159,7 +8181,15 @@
           const cs = []; for (const id of w.refs) { const nd = byId.get(id); if (nd) cs.push(nd); }
           if (cs.length >= 2) lines.push(cs);
         }
-        _ooMapOsmGeo = { region: code, points: geo.nodes, lines, truncated: geo.truncated, blocks: geo.blocks };
+        // Country (admin_level=2) boundary polygons, keyed by ISO 3166-1 alpha-2 so
+        // they MERGE into the choropleth by code — replaces the coarse 110m shape /
+        // centroid point for whatever country the region covers. Honest: only rings
+        // we actually closed are emitted (assembleAdminAreas), never a fake border.
+        const areas = (OOPBF.assembleAdminAreas ? OOPBF.assembleAdminAreas(geo) : []) || [];
+        const osmAreas = {};
+        for (const a of areas) { if (a && a.iso2 && a.rings && a.rings.length) osmAreas[a.iso2] = { name: a.name, rings: a.rings, source: a.source }; }
+        _ooMapOsmGeo = { region: code, points: geo.nodes, lines, truncated: geo.truncated, blocks: geo.blocks,
+          areas: osmAreas, areaCount: Object.keys(osmAreas).length };
         _ooMapOsmOn = true;
         _renderOoMapDim();
       } catch (e) {
@@ -9909,13 +9939,16 @@
         const p2 = new URLSearchParams(p); p2.set("limit", "100");
         const d = await api("/api/articles?" + p2.toString());
         const rows = (d.results || []).map((a) =>
-          `<tr><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
+          `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
           + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
           + `<td>${esc(a.source || "")}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
-          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td></tr>`).join("");
-        arts.innerHTML = `<div class="hint">${(d.total || 0).toLocaleString()} ${esc(t("Articles"))}</div>`
+          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
+          + `<td style="white-space:nowrap">`
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`).join("");
+        arts.innerHTML = `<div class="hint">${(d.total || 0).toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
           + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
-          + `<th>${esc(t("Published"))}</th><th></th></tr>${rows}</table>`;
+          + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`;
         annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
       } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // When/Where/Who deduced across the matched articles (counts, never confirmed).
@@ -10162,6 +10195,44 @@
       } finally {
         if (startBtn) startBtn.disabled = false; _bulkAbort = null;
         loadLlmHealth();   // an LLM run is a fresh signal of whether Ollama is up
+      }
+    }
+
+    // Per-article Summarize / Translate from the analysis Articles list (the
+    // single-article complement to bulkLlm). Reuses the existing single-article
+    // endpoints (loopback Ollama — no network consent; airplane refuses at the
+    // client). The result renders INLINE beneath the row, labelled AI-derived /
+    // unreliable with its model + prompt provenance, and is stored in
+    // article_analyses — NEVER the trusted keyword index (the reader's Summary /
+    // Translation tabs read the same rows). op = "summarize" | "translate".
+    async function anArticleLlm(id, op, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const row = btn && btn.closest ? btn.closest("tr") : null; if (!row) return;
+      const prev = btn.textContent; btn.disabled = true; btn.textContent = t("Working…");
+      // a sibling result row right under the article (reuse on repeat clicks)
+      let res = row.nextElementSibling;
+      if (!res || !res.classList || !res.classList.contains("an-llm-res")) {
+        res = document.createElement("tr"); res.className = "an-llm-res";
+        res.innerHTML = `<td colspan="5"></td>`;
+        row.parentNode.insertBefore(res, row.nextSibling);
+      }
+      const cell = res.firstChild;
+      cell.innerHTML = `<span class="muted">${esc(t("Working…"))}</span>`;
+      try {
+        const body = op === "translate" ? { target_language: _uiLangName() } : { output_language: _uiLangName() };
+        const d = await api(`/api/llm/articles/${id}/${op}`, { method: "POST", body: JSON.stringify(body) });
+        const text = (d && d.result) || "";
+        const prov = [d && d.model, d && d.prompt_version].filter(Boolean).join(" · ");
+        const label = op === "translate"
+          ? t("AI translation — unreliable, verify against the source.")
+          : t("AI summary — unreliable, verify against the source.");
+        cell.innerHTML = `<div class="card-caveat">${esc(label)}${prov ? ` <span class="muted">· ${esc(prov)}</span>` : ""}</div>`
+          + `<div style="white-space:pre-wrap;margin-top:4px">${esc(text)}</div>`;
+      } catch (e) {
+        cell.innerHTML = `<span class="note err">${esc((e && e.message) || t("The local model is unavailable."))}</span>`;
+      } finally {
+        btn.disabled = false; btn.textContent = prev;
+        loadLlmHealth();   // a fresh signal of whether Ollama is up
       }
     }
 

@@ -29,6 +29,11 @@ function packedZig(field, deltas) {
   let body = []; for (const d of deltas) body = body.concat(encVarint(encZig(d)));
   return lenField(field, body);
 }
+function packedVar(field, vals) {                       // packed PLAIN varints (keys/vals/roles/types)
+  let body = []; for (const v of vals) body = body.concat(encVarint(v));
+  return lenField(field, body);
+}
+function strEntry(s) { return lenField(1, Array.from(Buffer.from(s, "utf8"))); }  // StringTable.s
 
 // --- 1. primitives --- //
 ok(PBF.readVarint(new Uint8Array([0x96, 0x01]), 0)[0] === 150, "readVarint 150 (protobuf canonical)");
@@ -58,6 +63,76 @@ if (decoded.nodes.length === 2) {
   eqf(decoded.nodes[1].lon, 0.5, "node2 lon");
   ok(decoded.nodes[0].id === 1 && decoded.nodes[1].id === 2, "node ids delta-decoded");
 }
+
+// --- 2b. tags + a boundary RELATION -> assembleAdminAreas (THEME-2 #51) --- //
+// A PrimitiveBlock with a StringTable, 4 dense nodes forming a unit square, two
+// ways splitting its perimeter, and an admin_level=2 boundary relation (ISO MC)
+// whose two outer ways close into the country ring. Proves the StringTable +
+// way/relation tag + member decode and the ring stitching to a closed polygon.
+(function () {
+  // StringTable: index 0 = "" then the tag/role strings the relation references.
+  const ST = ["", "boundary", "administrative", "admin_level", "2", "ISO3166-1:alpha2", "MC", "name", "Testland", "outer"];
+  let stBody = []; for (const s of ST) stBody = stBody.concat(strEntry(s));
+  const stringTable = lenField(1, stBody);                       // PrimitiveBlock.field1
+
+  // 4 dense nodes (ids 1..4) at the corners of a unit square (lat/lon in degrees):
+  //   1:(0,0) 2:(0,1) 3:(1,1) 4:(1,0). coord = 1e-7 * cumdelta, so 1.0deg = 1e7.
+  const dense = []
+    .concat(packedZig(1, [1, 1, 1, 1]))                         // ids -> 1,2,3,4
+    .concat(packedZig(8, [0, 0, 1e7, 0]))                       // lat cum -> 0,0,1,1
+    .concat(packedZig(9, [0, 1e7, 0, -1e7]));                   // lon cum -> 0,1,1,0
+  const denseGroup = lenField(2, lenField(2, dense));           // group{ field2 DenseNodes }
+
+  // way 100 = nodes 1,2,3 ; way 101 = nodes 3,4,1  (perimeter split, no tags)
+  const way100 = [].concat(varField(1, 100), packedZig(8, [1, 1, 1]));      // refs delta 1,2,3
+  const way101 = [].concat(varField(1, 101), packedZig(8, [3, 1, -3]));     // refs delta 3,4,1
+  const waysGroup = lenField(2, [].concat(lenField(3, way100), lenField(3, way101)));
+
+  // relation 500: boundary=administrative, admin_level=2, ISO3166-1:alpha2=MC,
+  // name=Testland ; members = way 100 (outer), way 101 (outer)
+  const rel = [].concat(
+    varField(1, 500),
+    packedVar(2, [1, 3, 5, 7]),                                 // keys -> boundary,admin_level,ISO..,name
+    packedVar(3, [2, 4, 6, 8]),                                 // vals -> administrative,2,MC,Testland
+    packedVar(8, [9, 9]),                                       // roles_sid -> outer,outer
+    packedZig(9, [100, 1]),                                     // memids delta (sint64) -> 100,101
+    packedVar(10, [1, 1])                                       // types -> WAY,WAY
+  );
+  const relGroup = lenField(2, lenField(4, rel));               // group{ field4 Relation }
+
+  const pb = [].concat(stringTable, denseGroup, waysGroup, relGroup, varField(17, 100));
+  const u8 = new Uint8Array(pb);
+  // default (no opts) is geometry-only + backward-compatible
+  const plain = PBF.decodePrimitiveBlock(u8, 0, u8.length);
+  ok(plain.nodes.length === 4 && plain.ways.length === 2, "decode: 4 nodes + 2 ways");
+  ok(Array.isArray(plain.relations) && plain.relations.length === 0, "relations only when asked (backward compat)");
+  // with tags + relations
+  const full = PBF.decodePrimitiveBlock(u8, 0, u8.length, { withTags: true, withRelations: true });
+  ok(full.relations.length === 1, "withRelations decodes the boundary relation");
+  if (full.relations.length === 1) {
+    const r = full.relations[0];
+    ok(r.tags["boundary"] === "administrative" && r.tags["admin_level"] === "2", "relation tags resolved via StringTable");
+    ok(r.tags["ISO3166-1:alpha2"] === "MC" && r.tags["name"] === "Testland", "ISO + name tags resolved");
+    ok(r.members.length === 2 && r.members[0].ref === 100 && r.members[1].ref === 101, "members delta-decoded (ways 100,101)");
+    ok(r.members[0].type === 1 && r.members[0].role === "outer", "member type WAY + role 'outer' resolved");
+  }
+  const areas = PBF.assembleAdminAreas(full);
+  ok(areas.length === 1, "assembleAdminAreas closes one country (got " + areas.length + ")");
+  if (areas.length === 1) {
+    const a = areas[0];
+    ok(a.iso2 === "MC", "area keyed by ISO 3166-1 alpha-2");
+    ok(a.rings.length === 1, "one closed outer ring");
+    const ring = a.rings[0];
+    ok(ring.length === 5, "ring is closed (4 corners + repeat; got " + ring.length + ")");
+    // rings are [lon,lat]; first==last, and the square corners are present
+    ok(Math.abs(ring[0][0] - ring[ring.length - 1][0]) < 1e-9 && Math.abs(ring[0][1] - ring[ring.length - 1][1]) < 1e-9, "ring first==last");
+    const set = ring.slice(0, 4).map(p => p[0] + "," + p[1]).sort().join("|");
+    ok(set === "0,0|0,1|1,0|1,1", "ring covers the four unit-square corners (got " + set + ")");
+  }
+  // a non-boundary relation (wrong admin_level) is ignored -> no fabricated area
+  const noLevel = PBF.assembleAdminAreas({ nodes: full.nodes, ways: full.ways, relations: [{ id: 9, tags: { boundary: "administrative", admin_level: "6", "ISO3166-1:alpha2": "ZZ" }, members: full.relations[0].members }] });
+  ok(noLevel.length === 0, "admin_level!=2 is not a country (no area)");
+})();
 
 // --- 3. a full .osm.pbf (raw blob) parsed by parse() --- //
 function blobUnit(type, primitiveBlockBytes) {

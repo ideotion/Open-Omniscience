@@ -201,6 +201,61 @@ def test_world_map_osm_offline_overlay():
     assert "is_valid_code(code)" in geo, "the preview endpoint must reject path-unsafe codes"
 
 
+def test_world_map_osm_admin_boundary_choropleth():
+    """THEME-2 #51: the in-browser .pbf reader also decodes admin (country)
+    boundary RELATIONS + tags, assembles them into closed polygons keyed by ISO
+    code, and the choropleth AUGMENTS the coarse 110m geometry with them (a
+    microstate the 110m set drops now renders a true shape). Honest: only rings
+    actually closed are emitted (never a fabricated border); the OSM polygons add
+    to / replace the coarse ones, never silently hide data. The verifiable core is
+    node-tested (tests/osmpbf_node_test.js → tests/test_osmpbf_parser.py)."""
+    pbf = (_SRC / "static" / "osmpbf.js").read_text(encoding="utf-8")
+    # the parser gained StringTable + tag + relation decode + ring assembly
+    assert "function decodeStringTable(" in pbf and "function resolveTags(" in pbf
+    assert "withRelations" in pbf and "function decodeRelation(" in pbf  # boundary relation decode
+    assert "relations.push(" in pbf, "relations must be decodable"
+    assert "function assembleAdminAreas(" in pbf and "function stitchRings(" in pbf, (
+        "admin-boundary assembly + ring stitching must exist"
+    )
+    assert "ISO3166-1:alpha2" in pbf, "country areas are keyed by the ISO 3166-1 alpha-2 tag"
+    assert "assembleAdminAreas: assembleAdminAreas" in pbf, "the assembly must be exported (node-testable)"
+    html = _ui_source()  # index.html + app.js + app.css
+    # the OSM toggle now parses WITH tags+relations and assembles country boundaries
+    assert "withTags: true, withRelations: true" in html, (
+        "the OSM overlay must parse tags + relations to assemble boundaries"
+    )
+    assert "OOPBF.assembleAdminAreas(geo)" in html, "the frontend must assemble admin boundaries"
+    # the boundaries are passed to ooMap and MERGE into the choropleth by ISO code
+    assert "osmAreas:" in html and "opts.osmAreas" in html, "ooMap must accept the OSM areas"
+    assert "c.osm" in html, "OSM-augmented polygons must be distinguishable (honest provenance)"
+    assert "boundary from OSM" in html and "country boundaries" in html, (
+        "the OSM provenance + count must be disclosed (honesty)"
+    )
+
+
+def test_analysis_articles_per_row_summarize_translate():
+    """Track C: the analysis Articles list offers a PER-ARTICLE Summarize / Translate
+    (the single-article complement to the bulk LLM run). Reuses the existing
+    single-article endpoints (loopback Ollama), renders the result INLINE labelled
+    AI-derived / unreliable with model provenance, and NEVER touches the trusted
+    keyword index (the rows live in article_analyses). Browser-unverified."""
+    html = _ui_source()  # index.html + app.js + app.css
+    # per-row buttons wired to the handler
+    assert "anArticleLlm(${a.id},'summarize',this)" in html and "anArticleLlm(${a.id},'translate',this)" in html, (
+        "each article row must offer Summarize + Translate"
+    )
+    assert "async function anArticleLlm(" in html, "the per-article LLM handler must exist"
+    # it calls the existing single-article endpoints (not the keyword index)
+    assert "`/api/llm/articles/${id}/${op}`" in html, "must POST the single-article summarize/translate endpoint"
+    # the result is labelled AI-derived / unreliable (honesty by construction)
+    assert "AI summary — unreliable, verify against the source." in html
+    assert "AI translation — unreliable, verify against the source." in html
+    # the backend endpoints it relies on exist + store to article_analyses (never KeywordMention)
+    llm = (_ROOT / "src" / "api" / "llm.py").read_text(encoding="utf-8")
+    assert '"/articles/{article_id}/summarize"' in llm and '"/articles/{article_id}/translate"' in llm
+    assert "ArticleAnalysis(" in llm, "single-article results store in article_analyses, not the keyword index"
+
+
 def test_world_map_server_location_layer():
     """Data-architecture slice 6c (frontend): the world map offers a switchable
     "Server IPs" layer — the captured server IPs (6a) geolocated OFFLINE (6b),

@@ -81,23 +81,56 @@
 
   // --- OSM blocks (pure, node-tested) --- //
 
+  // Decode a PrimitiveBlock StringTable (field 1): repeated bytes s = 1. Index 0
+  // is the empty string by convention. Tags + member roles index into this table,
+  // which is BLOCK-LOCAL — so they must be resolved here, where it is in scope.
+  function decodeStringTable(buf, s, e) {
+    var out = [];
+    eachField(buf, s, e, function (fno, wt, f) {
+      if (fno === 1 && wt === 2) out.push(bytesToStr(buf, f.start, f.end));
+    });
+    return out;
+  }
+
+  // Resolve a packed pair of stringtable indices (keys[], vals[]) into a {key:val}
+  // object (Way + Relation tags). Missing/short -> {} (honest, never invents).
+  function resolveTags(keys, vals, strtab) {
+    var tags = {};
+    if (!keys || !vals) return tags;
+    var n = Math.min(keys.length, vals.length);
+    for (var i = 0; i < n; i++) {
+      var k = strtab[keys[i]];
+      if (k != null) tags[k] = vals[i] != null && strtab[vals[i]] != null ? strtab[vals[i]] : "";
+    }
+    return tags;
+  }
+
   // Decode an (uncompressed) PrimitiveBlock buffer slice into geometry.
-  // Returns { nodes:[{id,lat,lon}], ways:[{id,refs:[ids]}] } in WGS84 degrees.
-  function decodePrimitiveBlock(buf, start, end) {
+  // Returns { nodes:[{id,lat,lon}], ways:[{id,refs[,tags]}], relations:[...] }.
+  // opts.withTags attaches resolved tags to ways; opts.withRelations decodes
+  // relations (members {ref,type,role} + resolved tags) — both needed to assemble
+  // admin (country) boundaries. ids are GLOBAL; strings are block-local (resolved
+  // here). Default (no opts) keeps the original geometry-only shape (+ relations:[]).
+  function decodePrimitiveBlock(buf, start, end, opts) {
+    opts = opts || {};
+    var wantTags = !!opts.withTags, wantRels = !!opts.withRelations;
     var granularity = 100, latOff = 0, lonOff = 0;
-    var groups = [];
+    var groups = [], strRange = null;
     eachField(buf, start, end, function (fno, wt, f) {
-      if (fno === 2 && wt === 2) groups.push([f.start, f.end]);      // PrimitiveGroup
+      if (fno === 1 && wt === 2) strRange = [f.start, f.end];        // StringTable
+      else if (fno === 2 && wt === 2) groups.push([f.start, f.end]); // PrimitiveGroup
       else if (fno === 17 && wt === 0) granularity = f.varint;       // granularity
       else if (fno === 19 && wt === 0) latOff = f.varint;            // lat_offset (nano-deg)
       else if (fno === 20 && wt === 0) lonOff = f.varint;            // lon_offset
     });
-    var nodes = [], ways = [];
+    var strtab = (wantTags || wantRels) && strRange ? decodeStringTable(buf, strRange[0], strRange[1]) : [];
+    var nodes = [], ways = [], relations = [];
     var scale = 1e-9;
     for (var gi = 0; gi < groups.length; gi++) {
       eachField(buf, groups[gi][0], groups[gi][1], function (fno, wt, f) {
         if (fno === 2 && wt === 2) decodeDense(buf, f.start, f.end);
         else if (fno === 3 && wt === 2) decodeWay(buf, f.start, f.end);
+        else if (fno === 4 && wt === 2 && wantRels) decodeRelation(buf, f.start, f.end);
       });
     }
     function decodeDense(b, s, e) {
@@ -121,17 +154,126 @@
       }
     }
     function decodeWay(b, s, e) {
-      var id = 0, refs = null;
+      var id = 0, refs = null, keys = null, vals = null;
       eachField(b, s, e, function (fno, wt, f) {
         if (fno === 1 && wt === 0) id = f.varint;
-        else if (fno === 8 && wt === 2) refs = packedVarints(b, f.start, f.end);
+        else if (fno === 2 && wt === 2 && wantTags) keys = packedVarints(b, f.start, f.end);  // tag keys
+        else if (fno === 3 && wt === 2 && wantTags) vals = packedVarints(b, f.start, f.end);  // tag vals
+        else if (fno === 8 && wt === 2) refs = packedVarints(b, f.start, f.end);              // node refs (delta)
       });
       if (!refs || !refs.length) return;
       var rid = 0, out = [];
       for (var i = 0; i < refs.length; i++) { rid += zigzag(refs[i]); out.push(rid); }
-      ways.push({ id: id, refs: out });
+      var w = { id: id, refs: out };
+      if (wantTags) w.tags = resolveTags(keys, vals, strtab);
+      ways.push(w);
     }
-    return { nodes: nodes, ways: ways };
+    // Relation{ 1:id, 2:keys, 3:vals, 8:roles_sid(int32 idx), 9:memids(sint64 delta),
+    //           10:types(0 node,1 way,2 rel) } — used for admin (country) boundaries.
+    function decodeRelation(b, s, e) {
+      var id = 0, keys = null, vals = null, roles = null, memids = null, types = null;
+      eachField(b, s, e, function (fno, wt, f) {
+        if (fno === 1 && wt === 0) id = f.varint;
+        else if (fno === 2 && wt === 2) keys = packedVarints(b, f.start, f.end);
+        else if (fno === 3 && wt === 2) vals = packedVarints(b, f.start, f.end);
+        else if (fno === 8 && wt === 2) roles = packedVarints(b, f.start, f.end);
+        else if (fno === 9 && wt === 2) memids = packedVarints(b, f.start, f.end);   // sint64 delta
+        else if (fno === 10 && wt === 2) types = packedVarints(b, f.start, f.end);
+      });
+      var members = [];
+      if (memids && types) {
+        var mid = 0, m = Math.min(memids.length, types.length);
+        for (var i = 0; i < m; i++) {
+          mid += zigzag(memids[i]);
+          members.push({ ref: mid, type: types[i], role: roles ? (strtab[roles[i]] || "") : "" });
+        }
+      }
+      relations.push({ id: id, tags: resolveTags(keys, vals, strtab), members: members });
+    }
+    return { nodes: nodes, ways: ways, relations: relations };
+  }
+
+  // --- admin (country) boundary assembly (pure, node-tested) --- //
+
+  // Stitch open way segments (each [{lat,lon}...]) into CLOSED rings by matching
+  // shared endpoints. Returns rings as [[lon,lat]...] (the world_countries.json
+  // convention). A segment that never closes is DROPPED — honest, no fake border.
+  function stitchRings(segs) {
+    var EPS = 1e-7;
+    function same(a, b) { return Math.abs(a.lat - b.lat) < EPS && Math.abs(a.lon - b.lon) < EPS; }
+    var pool = (segs || []).filter(function (s) { return s && s.length >= 2; });
+    var used = new Array(pool.length).fill(false);
+    var rings = [];
+    for (var i = 0; i < pool.length; i++) {
+      if (used[i]) continue;
+      used[i] = true;
+      var ring = pool[i].slice(), progressed = true;
+      while (progressed && !same(ring[0], ring[ring.length - 1])) {
+        progressed = false;
+        for (var j = 0; j < pool.length; j++) {
+          if (used[j]) continue;
+          var seg = pool[j], tail = ring[ring.length - 1];
+          if (same(tail, seg[0])) { ring = ring.concat(seg.slice(1)); used[j] = true; progressed = true; break; }
+          if (same(tail, seg[seg.length - 1])) { ring = ring.concat(seg.slice(0, -1).reverse()); used[j] = true; progressed = true; break; }
+        }
+      }
+      if (ring.length >= 4 && same(ring[0], ring[ring.length - 1])) {
+        rings.push(ring.map(function (p) { return [p.lon, p.lat]; }));
+      }
+    }
+    return rings;
+  }
+
+  // Assemble country (admin_level=2) boundary polygons from a region parsed with
+  // parse(buf, {withTags:true, withRelations:true}). Keyed by the ISO 3166-1 alpha-2
+  // tag so the result MERGES into the choropleth by code (fixing microstates the
+  // coarse 110m geometry drops). Honest: emits ONLY rings we actually CLOSED from
+  // resolved coordinates — never fabricates a border or a code. opts.adminLevel
+  // (default "2") picks the boundary level. Returns [{iso2,name,rings,source}].
+  function assembleAdminAreas(parsed, opts) {
+    opts = opts || {};
+    var level = String(opts.adminLevel || "2");
+    var nodes = (parsed && parsed.nodes) || [], ways = (parsed && parsed.ways) || [],
+        rels = (parsed && parsed.relations) || [];
+    var nodeById = new Map(); for (var i = 0; i < nodes.length; i++) nodeById.set(nodes[i].id, nodes[i]);
+    var wayById = new Map(); for (var j = 0; j < ways.length; j++) wayById.set(ways[j].id, ways[j]);
+    var areas = [];
+    function isCountry(tags) {
+      if (!tags || String(tags["admin_level"]) !== level) return false;
+      return tags["boundary"] === "administrative" || tags["ISO3166-1:alpha2"] != null || tags["ISO3166-1"] != null;
+    }
+    function iso2Of(tags) {
+      var c = tags["ISO3166-1:alpha2"] || tags["ISO3166-1"] || "";
+      return /^[A-Za-z]{2}$/.test(c) ? c.toUpperCase() : "";
+    }
+    function wayCoords(wid) {                          // resolve refs -> coords (drop unresolved)
+      var w = wayById.get(wid); if (!w) return null;
+      var cs = []; for (var k = 0; k < w.refs.length; k++) { var nd = nodeById.get(w.refs[k]); if (nd) cs.push(nd); }
+      return cs.length >= 2 ? cs : null;
+    }
+    for (var r = 0; r < rels.length; r++) {
+      var rel = rels[r];
+      if (!isCountry(rel.tags)) continue;
+      var iso = iso2Of(rel.tags); if (!iso) continue; // can't place on the code-keyed choropleth
+      var segs = [];
+      for (var mi = 0; mi < rel.members.length; mi++) {
+        var mem = rel.members[mi];
+        if (mem.type !== 1) continue;                  // ways only
+        if (mem.role && mem.role !== "outer") continue;// outer rings (inner/holes skipped)
+        var cs = wayCoords(mem.ref); if (cs) segs.push(cs);
+      }
+      var rings = stitchRings(segs);
+      if (rings.length) areas.push({ iso2: iso, name: rel.tags["name"] || "", rings: rings, source: "osm-relation" });
+    }
+    for (var w2 = 0; w2 < ways.length; w2++) {         // standalone closed boundary ways
+      var ww = ways[w2];
+      if (!isCountry(ww.tags)) continue;
+      var iso2 = iso2Of(ww.tags); if (!iso2) continue;
+      var cs2 = wayCoords(ww.id); if (!cs2) continue;
+      var rings2 = stitchRings([cs2]);
+      if (rings2.length) areas.push({ iso2: iso2, name: ww.tags["name"] || "", rings: rings2, source: "osm-way" });
+    }
+    return areas;
   }
 
   // Read the BlobHeader{type,datasize} from buf at `pos` (after its int32-BE length
@@ -187,7 +329,7 @@
     var buf = new Uint8Array(arrayBuffer);
     var dv = new DataView(arrayBuffer);
     var pos = 0, blocks = 0, truncated = false;
-    var nodes = [], ways = [];
+    var nodes = [], ways = [], relations = [];
     while (pos + 4 <= buf.length) {
       var hlen = dv.getInt32(pos, false); pos += 4;          // int32-BE BlobHeader length
       if (hlen <= 0 || pos + hlen > buf.length) break;
@@ -202,9 +344,10 @@
         var inflated = await inflate(buf.subarray(blob.zlib[0], blob.zlib[1]));
         pbBuf = inflated; pbStart = 0; pbEnd = inflated.length;
       } else continue;
-      var geo = decodePrimitiveBlock(pbBuf, pbStart, pbEnd);
+      var geo = decodePrimitiveBlock(pbBuf, pbStart, pbEnd, opts);
       for (var i = 0; i < geo.nodes.length && nodes.length < maxNodes; i++) nodes.push(geo.nodes[i]);
       for (var j = 0; j < geo.ways.length; j++) ways.push(geo.ways[j]);
+      for (var rr = 0; geo.relations && rr < geo.relations.length; rr++) relations.push(geo.relations[rr]);
       blocks++;
       if (blocks >= maxBlocks || nodes.length >= maxNodes) { truncated = pos < buf.length; break; }
     }
@@ -218,12 +361,14 @@
         if (nd.lon < bbox.minLon) bbox.minLon = nd.lon; if (nd.lon > bbox.maxLon) bbox.maxLon = nd.lon;
       }
     }
-    return { nodes: nodes, ways: ways, bbox: bbox, blocks: blocks, truncated: truncated };
+    return { nodes: nodes, ways: ways, relations: relations, bbox: bbox, blocks: blocks, truncated: truncated };
   }
 
   var API = {
     readVarint: readVarint, zigzag: zigzag, eachField: eachField,
-    packedVarints: packedVarints, decodePrimitiveBlock: decodePrimitiveBlock,
+    packedVarints: packedVarints, decodeStringTable: decodeStringTable, resolveTags: resolveTags,
+    decodePrimitiveBlock: decodePrimitiveBlock, stitchRings: stitchRings,
+    assembleAdminAreas: assembleAdminAreas,
     readBlobHeader: readBlobHeader, readBlob: readBlob, inflate: inflate, parse: parse,
   };
   root.OOPBF = API;
