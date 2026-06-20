@@ -3299,9 +3299,14 @@ ruling, a contingency, or a deliberate-omission note.
 - **AUTONOMOUS V0.1 BATCH (2026-06-20, branch claude/sweet-keller-ozdip1 = ONE rolling branch
   per the system-reminder "develop only on this branch / NEVER push to a different branch"; PR #413
   draft onto 0.09, accumulating commits — also eliminates inter-PR locale conflicts). Commits so far:
-  (1) #51 OSM admin-boundary choropleth (entry below); (2) i18n batch 1 — keyed 30 clean
-  single-text-node chrome strings ×12 (labels + the "Your query leaves this machine." privacy note;
-  no HTML change since the i18n walker matches per text node; audit-chrome 222→192); (3) PER-ARTICLE
+  (1) #51 OSM admin-boundary choropleth (entry below); (2) i18n de-tagging tail — batches 1-3
+  keyed 66 clean single-text-node chrome strings ×12 (30 labels + the "Your query leaves this
+  machine." note · 24 more labels · 12 complete help paragraphs incl. the backup-encryption
+  explainer, the world-map description, keyword self-test/engine-report, the four system prompts,
+  custom AI extractors; NO HTML change since the i18n walker matches per text node — clean nodes are
+  directly keyable, only inline-tagged FRAGMENTS need de-tagging [the harder remaining tail, mostly
+  the ~20 tagged help sentences + data/examples that stay literal]; technical tokens kept literal;
+  audit-chrome 222→156); (3) PER-ARTICLE
   SUMMARIZE/TRANSLATE on the analysis Articles list (Track C, the repeatedly-flagged REMAINING; backend
   VERIFIED, frontend BROWSER-UNVERIFIED per fork-3): each row gained Summarize + Translate buttons →
   `anArticleLlm(id, op, btn)` reuses the EXISTING single-article endpoints `POST /api/llm/articles/{id}/
