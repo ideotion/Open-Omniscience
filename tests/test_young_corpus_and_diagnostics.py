@@ -304,8 +304,10 @@ def test_keyword_log_carries_language_signatures(client):
 
 
 def test_bundled_supergroups_seed_idempotent_and_user_wins(client):
-    """Maintainer-ruled 2026-06-11: super-groups ship pre-created, but seeding
-    NEVER overrides the user — existing names are skipped entirely."""
+    """Maintainer-ruled 2026-06-11 (concept rework 2026-06-20): super-groups ship
+    pre-created as durable CONCEPTS whose members are cross-language RINGS, but
+    seeding NEVER overrides the user — existing names are skipped entirely, and
+    the old topic groups (e.g. 'FIFA World Cup 2026') are gone."""
     from src.analytics.supergroup_seed import seed_supergroups
     from src.database.models import KeywordSuperGroup, SessionLocal
 
@@ -313,17 +315,17 @@ def test_bundled_supergroups_seed_idempotent_and_user_wins(client):
     try:
         seed_supergroups(s)
         names = {sg.name for sg in s.query(KeywordSuperGroup).all()}
-        assert "Artificial intelligence" in names and "Middle East conflict" in names
+        assert {"Artificial intelligence", "State & government"} <= names
+        assert "Middle East conflict" not in names  # old topic group retired
         # Second run: nothing duplicated.
         r2 = seed_supergroups(s)
         assert r2["created"] == 0
-        # User deletes a group -> reseeding recreates ONLY that one... no:
-        # the dispose rule says deletions stick within a session; recreate
-        # happens because the name is absent again — and that's the documented
-        # bundled-default behaviour. Verify member shape while here.
+        # Members are cross-language RINGS now (multilingual by construction), not
+        # hand-listed surface terms.
         sg = s.query(KeywordSuperGroup).filter_by(name="Artificial intelligence").first()
-        members = {m.normalized_term for m in sg.members}
-        assert {"ai", "ia", "données"} <= members  # multilingual by design
+        rings = {m.ring_id for m in sg.members}
+        assert {"artificial-intelligence", "machine-learning"} <= rings
+        assert all(m.ring_id for m in sg.members)
     finally:
         s.close()
 
