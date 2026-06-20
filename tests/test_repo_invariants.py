@@ -505,14 +505,22 @@ def test_no_print_in_library_code():
 
     print() is legitimate ONLY as deliberate CLI/console output: under an
     `if __name__ == "__main__"` demo guard, inside `def main()`, inside the
-    named CLI helper functions of src/api/main.py (panic/ephemeral/serve), or
-    in src/diagnostics.py (the `doctor` command, whose entire purpose is a
-    printed terminal report). Anything else is a regression.
+    named CLI helper functions of src/api/main.py (panic/ephemeral/serve, and
+    the legal-consent CLI helpers terms/accept-terms), or in src/diagnostics.py
+    (the `doctor` command, whose entire purpose is a printed terminal report).
+    Anything else is a regression.
     """
     import ast
 
     CLI_MODULES = {"src/diagnostics.py"}
-    CLI_FUNCTIONS = {"main", "_panic_cli", "_run_ephemeral", "_serve"}
+    CLI_FUNCTIONS = {
+        "main",
+        "_panic_cli",
+        "_run_ephemeral",
+        "_serve",
+        "_terms_cli",
+        "_accept_terms_cli",
+    }
 
     offenders: list[str] = []
     for p in _live_py_files():
