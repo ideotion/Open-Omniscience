@@ -9939,13 +9939,16 @@
         const p2 = new URLSearchParams(p); p2.set("limit", "100");
         const d = await api("/api/articles?" + p2.toString());
         const rows = (d.results || []).map((a) =>
-          `<tr><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
+          `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
           + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
           + `<td>${esc(a.source || "")}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
-          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td></tr>`).join("");
-        arts.innerHTML = `<div class="hint">${(d.total || 0).toLocaleString()} ${esc(t("Articles"))}</div>`
+          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
+          + `<td style="white-space:nowrap">`
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`).join("");
+        arts.innerHTML = `<div class="hint">${(d.total || 0).toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
           + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
-          + `<th>${esc(t("Published"))}</th><th></th></tr>${rows}</table>`;
+          + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`;
         annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
       } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // When/Where/Who deduced across the matched articles (counts, never confirmed).
@@ -10192,6 +10195,44 @@
       } finally {
         if (startBtn) startBtn.disabled = false; _bulkAbort = null;
         loadLlmHealth();   // an LLM run is a fresh signal of whether Ollama is up
+      }
+    }
+
+    // Per-article Summarize / Translate from the analysis Articles list (the
+    // single-article complement to bulkLlm). Reuses the existing single-article
+    // endpoints (loopback Ollama — no network consent; airplane refuses at the
+    // client). The result renders INLINE beneath the row, labelled AI-derived /
+    // unreliable with its model + prompt provenance, and is stored in
+    // article_analyses — NEVER the trusted keyword index (the reader's Summary /
+    // Translation tabs read the same rows). op = "summarize" | "translate".
+    async function anArticleLlm(id, op, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const row = btn && btn.closest ? btn.closest("tr") : null; if (!row) return;
+      const prev = btn.textContent; btn.disabled = true; btn.textContent = t("Working…");
+      // a sibling result row right under the article (reuse on repeat clicks)
+      let res = row.nextElementSibling;
+      if (!res || !res.classList || !res.classList.contains("an-llm-res")) {
+        res = document.createElement("tr"); res.className = "an-llm-res";
+        res.innerHTML = `<td colspan="5"></td>`;
+        row.parentNode.insertBefore(res, row.nextSibling);
+      }
+      const cell = res.firstChild;
+      cell.innerHTML = `<span class="muted">${esc(t("Working…"))}</span>`;
+      try {
+        const body = op === "translate" ? { target_language: _uiLangName() } : { output_language: _uiLangName() };
+        const d = await api(`/api/llm/articles/${id}/${op}`, { method: "POST", body: JSON.stringify(body) });
+        const text = (d && d.result) || "";
+        const prov = [d && d.model, d && d.prompt_version].filter(Boolean).join(" · ");
+        const label = op === "translate"
+          ? t("AI translation — unreliable, verify against the source.")
+          : t("AI summary — unreliable, verify against the source.");
+        cell.innerHTML = `<div class="card-caveat">${esc(label)}${prov ? ` <span class="muted">· ${esc(prov)}</span>` : ""}</div>`
+          + `<div style="white-space:pre-wrap;margin-top:4px">${esc(text)}</div>`;
+      } catch (e) {
+        cell.innerHTML = `<span class="note err">${esc((e && e.message) || t("The local model is unavailable."))}</span>`;
+      } finally {
+        btn.disabled = false; btn.textContent = prev;
+        loadLlmHealth();   // a fresh signal of whether Ollama is up
       }
     }
 

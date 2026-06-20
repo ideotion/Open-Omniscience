@@ -3296,6 +3296,25 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS V0.1 BATCH (2026-06-20, branch claude/sweet-keller-ozdip1 = ONE rolling branch
+  per the system-reminder "develop only on this branch / NEVER push to a different branch"; PR #413
+  draft onto 0.09, accumulating commits — also eliminates inter-PR locale conflicts). Commits so far:
+  (1) #51 OSM admin-boundary choropleth (entry below); (2) i18n batch 1 — keyed 30 clean
+  single-text-node chrome strings ×12 (labels + the "Your query leaves this machine." privacy note;
+  no HTML change since the i18n walker matches per text node; audit-chrome 222→192); (3) PER-ARTICLE
+  SUMMARIZE/TRANSLATE on the analysis Articles list (Track C, the repeatedly-flagged REMAINING; backend
+  VERIFIED, frontend BROWSER-UNVERIFIED per fork-3): each row gained Summarize + Translate buttons →
+  `anArticleLlm(id, op, btn)` reuses the EXISTING single-article endpoints `POST /api/llm/articles/{id}/
+  {summarize,translate}` (loopback Ollama — no network consent; airplane refuses at the client), renders
+  the result INLINE in a sibling row labelled "AI summary/translation — unreliable, verify against the
+  source" + model·prompt provenance (#23 caveat visible), translate target = the UI language via the
+  existing `_uiLangName()`. HONEST BY CONSTRUCTION: the rows store in `article_analyses` (the reader's
+  Summary/Translation tabs read the same), NEVER the trusted keyword index (the invariant test pins the
+  ArticleAnalysis store + the AI-derived caveat). +10 i18n keys ×12 (Summarize/Translate + the
+  caveats/hints; non-en AI-drafted, flagged). tests/test_repo_invariants.py::
+  test_analysis_articles_per_row_summarize_translate + existing test_llm_api green; node --check;
+  i18n --min 100 (1464 ×12). REMAINING for this item: a per-article custom-extractor run on the list
+  (the bulk path already has it); surfacing already-stored analyses inline without re-running.
 - **AUTONOMOUS V0.1 — THEME-2 #51 OSM ADMIN-BOUNDARY CHOROPLETH (2026-06-20, branch
   claude/sweet-keller-ozdip1, draft PR onto 0.09; parser+assembly NODE-VERIFIED, frontend
   BROWSER-UNVERIFIED per fork-3):** the maintainer-ruled #51 — colour each country by data

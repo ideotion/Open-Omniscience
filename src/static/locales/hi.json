@@ -1450,5 +1450,13 @@
   "Track changes now": "अभी परिवर्तन ट्रैक करें",
   "Tracked laws": "ट्रैक किए गए कानून",
   "Languages we can't analyse yet": "वे भाषाएँ जिनका हम अभी विश्लेषण नहीं कर सकते",
-  "Your query leaves this machine.": "आपकी क्वेरी इस मशीन से बाहर जाती है।"
+  "Your query leaves this machine.": "आपकी क्वेरी इस मशीन से बाहर जाती है।",
+  "Summarize": "सारांश",
+  "Translate": "अनुवाद",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "इस लेख को स्थानीय मॉडल से सारांशित करें — संग्रहीत, AI-व्युत्पन्न के रूप में चिह्नित, कभी भी कीवर्ड सूचकांक में नहीं।",
+  "Translate this article into the interface language with the local model.": "इस लेख को स्थानीय मॉडल से इंटरफ़ेस भाषा में अनुवाद करें।",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "सारांश / अनुवाद प्रत्येक लेख पर स्थानीय मॉडल चलाते हैं — परिणाम संग्रहीत होते हैं, AI-व्युत्पन्न के रूप में चिह्नित होते हैं, और कीवर्ड सूचकांक को कभी नहीं छूते।",
+  "AI summary — unreliable, verify against the source.": "AI सारांश — अविश्वसनीय, स्रोत से सत्यापित करें।",
+  "AI translation — unreliable, verify against the source.": "AI अनुवाद — अविश्वसनीय, स्रोत से सत्यापित करें।",
+  "The local model is unavailable.": "स्थानीय मॉडल अनुपलब्ध है।"
 }

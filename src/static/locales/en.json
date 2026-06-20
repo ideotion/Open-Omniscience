@@ -1450,5 +1450,13 @@
   "Track changes now": "Track changes now",
   "Tracked laws": "Tracked laws",
   "Languages we can't analyse yet": "Languages we can't analyse yet",
-  "Your query leaves this machine.": "Your query leaves this machine."
+  "Your query leaves this machine.": "Your query leaves this machine.",
+  "Summarize": "Summarize",
+  "Translate": "Translate",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.",
+  "Translate this article into the interface language with the local model.": "Translate this article into the interface language with the local model.",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.",
+  "AI summary — unreliable, verify against the source.": "AI summary — unreliable, verify against the source.",
+  "AI translation — unreliable, verify against the source.": "AI translation — unreliable, verify against the source.",
+  "The local model is unavailable.": "The local model is unavailable."
 }

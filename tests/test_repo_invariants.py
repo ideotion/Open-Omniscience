@@ -233,6 +233,29 @@ def test_world_map_osm_admin_boundary_choropleth():
     )
 
 
+def test_analysis_articles_per_row_summarize_translate():
+    """Track C: the analysis Articles list offers a PER-ARTICLE Summarize / Translate
+    (the single-article complement to the bulk LLM run). Reuses the existing
+    single-article endpoints (loopback Ollama), renders the result INLINE labelled
+    AI-derived / unreliable with model provenance, and NEVER touches the trusted
+    keyword index (the rows live in article_analyses). Browser-unverified."""
+    html = _ui_source()  # index.html + app.js + app.css
+    # per-row buttons wired to the handler
+    assert "anArticleLlm(${a.id},'summarize',this)" in html and "anArticleLlm(${a.id},'translate',this)" in html, (
+        "each article row must offer Summarize + Translate"
+    )
+    assert "async function anArticleLlm(" in html, "the per-article LLM handler must exist"
+    # it calls the existing single-article endpoints (not the keyword index)
+    assert "`/api/llm/articles/${id}/${op}`" in html, "must POST the single-article summarize/translate endpoint"
+    # the result is labelled AI-derived / unreliable (honesty by construction)
+    assert "AI summary — unreliable, verify against the source." in html
+    assert "AI translation — unreliable, verify against the source." in html
+    # the backend endpoints it relies on exist + store to article_analyses (never KeywordMention)
+    llm = (_ROOT / "src" / "api" / "llm.py").read_text(encoding="utf-8")
+    assert '"/articles/{article_id}/summarize"' in llm and '"/articles/{article_id}/translate"' in llm
+    assert "ArticleAnalysis(" in llm, "single-article results store in article_analyses, not the keyword index"
+
+
 def test_world_map_server_location_layer():
     """Data-architecture slice 6c (frontend): the world map offers a switchable
     "Server IPs" layer — the captured server IPs (6a) geolocated OFFLINE (6b),

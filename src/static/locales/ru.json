@@ -1450,5 +1450,13 @@
   "Track changes now": "Отслеживать изменения сейчас",
   "Tracked laws": "Отслеживаемые законы",
   "Languages we can't analyse yet": "Языки, которые мы пока не можем анализировать",
-  "Your query leaves this machine.": "Ваш запрос покидает этот компьютер."
+  "Your query leaves this machine.": "Ваш запрос покидает этот компьютер.",
+  "Summarize": "Сводка",
+  "Translate": "Перевести",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "Резюмировать эту статью локальной моделью — сохраняется, помечается как созданное ИИ, никогда не попадает в индекс ключевых слов.",
+  "Translate this article into the interface language with the local model.": "Перевести эту статью на язык интерфейса локальной моделью.",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "«Сводка» / «Перевести» запускают локальную модель для каждой статьи — результаты сохраняются, помечаются как созданные ИИ и никогда не попадают в индекс ключевых слов.",
+  "AI summary — unreliable, verify against the source.": "Сводка ИИ — ненадёжно, сверьте с источником.",
+  "AI translation — unreliable, verify against the source.": "Перевод ИИ — ненадёжно, сверьте с источником.",
+  "The local model is unavailable.": "Локальная модель недоступна."
 }

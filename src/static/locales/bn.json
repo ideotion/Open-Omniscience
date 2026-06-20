@@ -1450,5 +1450,13 @@
   "Track changes now": "এখনই পরিবর্তন ট্র্যাক করুন",
   "Tracked laws": "ট্র্যাক করা আইন",
   "Languages we can't analyse yet": "যে ভাষাগুলো আমরা এখনও বিশ্লেষণ করতে পারি না",
-  "Your query leaves this machine.": "আপনার ক্যোয়ারি এই মেশিন ছেড়ে যায়।"
+  "Your query leaves this machine.": "আপনার ক্যোয়ারি এই মেশিন ছেড়ে যায়।",
+  "Summarize": "সারসংক্ষেপ",
+  "Translate": "অনুবাদ",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "স্থানীয় মডেল দিয়ে এই নিবন্ধটি সারসংক্ষেপ করুন — সংরক্ষিত, AI-উদ্ভূত হিসেবে চিহ্নিত, কখনও কীওয়ার্ড সূচিতে নয়।",
+  "Translate this article into the interface language with the local model.": "স্থানীয় মডেল দিয়ে এই নিবন্ধটি ইন্টারফেস ভাষায় অনুবাদ করুন।",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "সারসংক্ষেপ / অনুবাদ প্রতি নিবন্ধে একটি স্থানীয় মডেল চালায় — ফলাফল সংরক্ষিত হয়, AI-উদ্ভূত হিসেবে চিহ্নিত হয়, এবং কখনও কীওয়ার্ড সূচি স্পর্শ করে না।",
+  "AI summary — unreliable, verify against the source.": "AI সারসংক্ষেপ — অনির্ভরযোগ্য, উৎসের সাথে যাচাই করুন।",
+  "AI translation — unreliable, verify against the source.": "AI অনুবাদ — অনির্ভরযোগ্য, উৎসের সাথে যাচাই করুন।",
+  "The local model is unavailable.": "স্থানীয় মডেল অনুপলব্ধ।"
 }

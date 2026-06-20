@@ -1450,5 +1450,13 @@
   "Track changes now": "تتبّع التغييرات الآن",
   "Tracked laws": "القوانين المتتبَّعة",
   "Languages we can't analyse yet": "اللغات التي لا يمكننا تحليلها بعد",
-  "Your query leaves this machine.": "يغادر استعلامك هذا الجهاز."
+  "Your query leaves this machine.": "يغادر استعلامك هذا الجهاز.",
+  "Summarize": "تلخيص",
+  "Translate": "ترجمة",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "تلخيص هذه المقالة بالنموذج المحلي — مخزَّن، موسوم بأنه من إنتاج الذكاء الاصطناعي، ولا يدخل أبدًا فهرس الكلمات المفتاحية.",
+  "Translate this article into the interface language with the local model.": "ترجمة هذه المقالة إلى لغة الواجهة باستخدام النموذج المحلي.",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "يُشغِّل «تلخيص» / «ترجمة» نموذجًا محليًا لكل مقالة — تُخزَّن النتائج وتُوسَم بأنها من إنتاج الذكاء الاصطناعي ولا تمسّ فهرس الكلمات المفتاحية أبدًا.",
+  "AI summary — unreliable, verify against the source.": "ملخّص بالذكاء الاصطناعي — غير موثوق، تحقّق منه بالرجوع إلى المصدر.",
+  "AI translation — unreliable, verify against the source.": "ترجمة بالذكاء الاصطناعي — غير موثوقة، تحقّق منها بالرجوع إلى المصدر.",
+  "The local model is unavailable.": "النموذج المحلي غير متاح."
 }

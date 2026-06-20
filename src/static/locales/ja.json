@@ -1450,5 +1450,13 @@
   "Track changes now": "今すぐ変更を追跡",
   "Tracked laws": "追跡中の法律",
   "Languages we can't analyse yet": "まだ解析できない言語",
-  "Your query leaves this machine.": "クエリがこの端末から送信されます。"
+  "Your query leaves this machine.": "クエリがこの端末から送信されます。",
+  "Summarize": "要約",
+  "Translate": "翻訳",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "ローカルモデルでこの記事を要約 — 保存され、AI 由来と明示、キーワード索引には決して入りません。",
+  "Translate this article into the interface language with the local model.": "ローカルモデルでこの記事をインターフェース言語に翻訳します。",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "「要約」「翻訳」は記事ごとにローカルモデルを実行します — 結果は保存され、AI 由来と明示され、キーワード索引には一切触れません。",
+  "AI summary — unreliable, verify against the source.": "AI による要約 — 信頼できません。出典で確認してください。",
+  "AI translation — unreliable, verify against the source.": "AI による翻訳 — 信頼できません。出典で確認してください。",
+  "The local model is unavailable.": "ローカルモデルは利用できません。"
 }

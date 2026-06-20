@@ -1450,5 +1450,13 @@
   "Track changes now": "Lacak perubahan sekarang",
   "Tracked laws": "Undang-undang yang dilacak",
   "Languages we can't analyse yet": "Bahasa yang belum bisa kami analisis",
-  "Your query leaves this machine.": "Kueri Anda meninggalkan mesin ini."
+  "Your query leaves this machine.": "Kueri Anda meninggalkan mesin ini.",
+  "Summarize": "Ringkas",
+  "Translate": "Terjemahkan",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "Ringkas artikel ini dengan model lokal — disimpan, dilabeli hasil AI, tidak pernah masuk indeks kata kunci.",
+  "Translate this article into the interface language with the local model.": "Terjemahkan artikel ini ke bahasa antarmuka dengan model lokal.",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "Ringkas / Terjemahkan menjalankan model lokal per artikel — hasilnya disimpan, dilabeli hasil AI, dan tidak pernah menyentuh indeks kata kunci.",
+  "AI summary — unreliable, verify against the source.": "Ringkasan AI — tidak dapat diandalkan, verifikasi dengan sumbernya.",
+  "AI translation — unreliable, verify against the source.": "Terjemahan AI — tidak dapat diandalkan, verifikasi dengan sumbernya.",
+  "The local model is unavailable.": "Model lokal tidak tersedia."
 }

@@ -1450,5 +1450,13 @@
   "Track changes now": "Rastrear cambios ahora",
   "Tracked laws": "Leyes rastreadas",
   "Languages we can't analyse yet": "Idiomas que aún no podemos analizar",
-  "Your query leaves this machine.": "Tu consulta sale de esta máquina."
+  "Your query leaves this machine.": "Tu consulta sale de esta máquina.",
+  "Summarize": "Resumir",
+  "Translate": "Traducir",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "Resumir este artículo con el modelo local — almacenado, etiquetado como generado por IA, nunca en el índice de palabras clave.",
+  "Translate this article into the interface language with the local model.": "Traducir este artículo al idioma de la interfaz con el modelo local.",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "Resumir / Traducir ejecutan un modelo local por artículo — los resultados se almacenan, se etiquetan como generados por IA y nunca tocan el índice de palabras clave.",
+  "AI summary — unreliable, verify against the source.": "Resumen de IA — poco fiable, verifícalo con la fuente.",
+  "AI translation — unreliable, verify against the source.": "Traducción de IA — poco fiable, verifícala con la fuente.",
+  "The local model is unavailable.": "El modelo local no está disponible."
 }

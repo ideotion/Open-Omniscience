@@ -1450,5 +1450,13 @@
   "Track changes now": "立即跟踪更改",
   "Tracked laws": "已跟踪的法律",
   "Languages we can't analyse yet": "我们尚无法分析的语言",
-  "Your query leaves this machine.": "您的查询将离开本机。"
+  "Your query leaves this machine.": "您的查询将离开本机。",
+  "Summarize": "摘要",
+  "Translate": "翻译",
+  "Summarize this article with the local model — stored, labelled AI-derived, never the keyword index.": "用本地模型摘要本文 — 已存储，标注为 AI 生成，绝不进入关键词索引。",
+  "Translate this article into the interface language with the local model.": "用本地模型将本文翻译为界面语言。",
+  "Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index.": "“摘要”/“翻译”按文章运行本地模型 — 结果会被存储、标注为 AI 生成，且绝不触及关键词索引。",
+  "AI summary — unreliable, verify against the source.": "AI 摘要 — 不可靠，请对照原文核实。",
+  "AI translation — unreliable, verify against the source.": "AI 翻译 — 不可靠，请对照原文核实。",
+  "The local model is unavailable.": "本地模型不可用。"
 }
