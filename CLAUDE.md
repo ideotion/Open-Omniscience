@@ -983,6 +983,29 @@ ruling, a contingency, or a deliberate-omission note.
   HOME_STAT_LABELS/Database label changes, ×12). TWO OPEN QUESTIONS asked 2026-06-20:
   import mechanism (server-side path vs browser folder-picker upload) + the unifying name
   (Documents vs …) — RECORD the answers here + ship.
+- **SEAMLESS INSTALL + OLLAMA→AI-TAB + LANGUAGE-FIRST FIRST LAUNCH (maintainer field test
+  2026-06-20; branch claude/keen-lamport-b4t3rh, draft PR #420 onto 0.09):** THREE rulings —
+  (1) move Ollama installation ENTIRELY to Settings → AI (the installer no longer asks for or
+  downloads Ollama/models); (2) the installer asks NOTHING — seamless from start to app launch;
+  (3) first app launch leads with LANGUAGE SELECTION, not the passphrase. SHIPPING (install.sh):
+  choose_components no longer prompts (installs the default core+analysis+compression set;
+  OO_COMPONENTS still overrides), make_launcher creates the launcher without asking
+  (OO_MAKE_LAUNCHER=0 still opts out), and maybe_setup_ollama is REMOVED from do_install (no
+  Ollama install/model-pull/prompt in install; configure_ollama_store_access stays defined +
+  test-pinned but uncalled — provisioning is the AI tab's job now). The seamless flow still ends
+  at maybe_launch (the app opens). The download-size estimate + uninstall confirmations STAY
+  (uninstall is destructive — "don't ask" was about INSTALL). SHIPPING (first launch, unlock.html):
+  on a FRESH store (state="fresh") a LANGUAGE step shows FIRST (the 12 native-name choices, RTL-
+  aware via OOI18N.setLang which persists oo.lang + translates the page), THEN the create-passphrase
+  view (now in the chosen language). ENCRYPTION-BY-DEFAULT IS PRESERVED (non-negotiable): the
+  passphrase step is REORDERED after language, never removed — language→passphrase on the pre-DB
+  page, then the main app's guided wizard handles sources→first-collect. "locked" (returning) →
+  straight to unlock as before. This BUILDS the wizard's deferred encryption-choice/language-first
+  flow (#24). Reuses the EXISTING "Choose your language" i18n key ×12 (already shipped for the
+  guided wizard — no new key, no locale churn). Enforced by test_repo_invariants.py::
+  test_seamless_install_and_language_first_first_launch. REMAINING: the AI-tab Ollama BINARY installer
+  (still blocked offline on per-OS checksums) for end-to-end in-app install; consolidate the now-
+  redundant guided-wizard language step; the model-store-readable step (was install.sh's job).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features

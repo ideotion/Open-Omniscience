@@ -338,6 +338,52 @@ def test_oosubtabs_queries_buttons_live_and_markets_keep_selection():
     assert "_mktCat = key" in app and "indexOf(_mktCat)" in app
 
 
+def test_seamless_install_and_language_first_first_launch():
+    """Maintainer field test 2026-06-20: (1) the installer asks NOTHING and never
+    provisions Ollama (that moved ENTIRELY to Settings -> AI); (2) first launch (a
+    FRESH store) leads with LANGUAGE selection, not the passphrase -- while keeping
+    encryption-by-default (the create-passphrase step just follows the language step)."""
+    installer = (_ROOT / "install.sh").read_text(encoding="utf-8")
+    # (1) Ollama install is fully out of the installer: no provisioning function, no
+    # third-party installer, no model pulls. (configure_ollama_store_access stays defined,
+    # pinned by tests/test_installer.py, but is no longer called by the default install.)
+    assert "maybe_setup_ollama" not in installer, (
+        "Ollama provisioning must be removed from the installer (moved to Settings -> AI)"
+    )
+    assert "ollama.com/install.sh" not in installer and "ollama pull" not in installer, (
+        "the installer must never download/run Ollama or pull a model"
+    )
+    # No interactive component/launcher prompts -- seamless install.
+    assert 'CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression}"' in installer
+    assert 'whiptail --title "Open Omniscience -- choose components"' not in installer, (
+        "the component-selection menu must be gone (seamless install asks nothing)"
+    )
+    assert 'local want="${OO_MAKE_LAUNCHER:-1}"' in installer, (
+        "the launcher is created by default, no prompt (OO_MAKE_LAUNCHER=0 still opts out)"
+    )
+
+    # (2) The fresh-store first launch shows a language step FIRST.
+    unlock = (_SRC / "static" / "unlock.html").read_text(encoding="utf-8")
+    assert 'id="view-language"' in unlock and "showLanguageStep" in unlock, (
+        "fresh first launch must offer a language step (view-language / showLanguageStep)"
+    )
+    assert 'if (s.state === "fresh") { showLanguageStep(); return; }' in unlock, (
+        "a FRESH store must route to the language step, not straight to the passphrase"
+    )
+    # The choice persists + translates via the shared i18n engine (oo.lang).
+    assert "OOI18N.setLang(code)" in unlock, (
+        "the language choice must persist + translate via OOI18N.setLang"
+    )
+    # Encryption-by-default is PRESERVED: the create-passphrase view still exists and
+    # simply follows the language step.
+    assert "pickLanguage" in unlock and '$("view-create").classList.remove("hidden")' in unlock, (
+        "after choosing a language, the create-passphrase view must follow"
+    )
+    assert 'id="view-create"' in unlock and "create-db" in unlock, (
+        "the passphrase create flow must remain (encryption-by-default, just reordered)"
+    )
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
