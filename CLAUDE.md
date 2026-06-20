@@ -961,6 +961,28 @@ ruling, a contingency, or a deliberate-omission note.
   hardening + .eml file/dir ingest + tests) [first PR]; S2 metadata+provenance
   schema + the eTLD+1 PSL resolver + silent auto-attach; S3 upload API + the
   import-progress/UNDO WINDOW + the import-time disclosure ×12 + USER_MANUAL.
+- **NEWSLETTER BATCH-IMPORT OVERHAUL (maintainer field test 2026-06-20; PENDING — building
+  on branch claude/keen-lamport-b4t3rh):** the .eml importer must scale to a FOLDER of
+  20GB+ newsletters. SIX asks: (1) FOLDER/BATCH import — the file picker can't select a
+  folder; (2) HTTP 400 at ~1300 files — ROOT CAUSE = Starlette's MultiPartParser default
+  max_files=1000 (600 works, 1300 → "Too many files" 400; no override in the repo); (3) a
+  PROGRESS BAR (imported / estimated-total) + a rule-of-three ETA, able to show a 20GB+
+  import in flight; (4) the import must APPEAR IN THE TASK MANAGER and be PAUSABLE; (5)
+  PERFORMANCE — slow while hardware doesn't peak (ROOT CAUSE = ingest_emails commits PER
+  MESSAGE = fsync/SQLCipher-codec-bound + serialized, NOT CPU-bound); (6) NAMING — clarify
+  app-wide that the DB "article count" is articles AND newsletters; coin a unifying term.
+  ARCHITECTURE (autonomous, dictated by 20GB+pause): a SERVER-SIDE folder-path import run
+  as a pausable background JOB mirroring DumpDownloadManager (persisted state under
+  data_dir, worker thread, pause via stop-event + persisted cursor, resume via re-start,
+  progress done/total, surfaced in /api/jobs + pause/resume routed in jobs.py). The backend
+  ALREADY has ingest_eml_directory()/ingest_eml_files() (unused). ZERO network (local disk
+  read — no airplane gate; it IS a DB-WRITER job kind="import", already in the /api/jobs
+  arbitration set). KEEP the small-file upload too (Desk lesson) + fix its 400 honestly.
+  PERF FIX: batch commits (every N rows, not per-row) + optional bounded parse worker pool.
+  NAMING is display-only (the backend stat KEY stays `articles` for API stability; only the
+  HOME_STAT_LABELS/Database label changes, ×12). TWO OPEN QUESTIONS asked 2026-06-20:
+  import mechanism (server-side path vs browser folder-picker upload) + the unifying name
+  (Documents vs …) — RECORD the answers here + ship.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features
