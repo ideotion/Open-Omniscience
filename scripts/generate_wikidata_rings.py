@@ -42,9 +42,12 @@ _API = "https://www.wikidata.org/w/api.php"
 _UA = "OpenOmniscience-ring-generator/0.1 (local-first research app)"
 
 
-def wbsearch_url(term: str) -> str:
+def wbsearch_url(term: str, lang: str = "en") -> str:
+    # Search in the SEED's own language, so a concept prominent only in ar/zh/ru
+    # (surfaced by the ring-gap digest) resolves to a QID too — wbgetentities then
+    # pulls labels for all 12 languages regardless of the search language.
     qs = urllib.parse.urlencode(
-        {"action": "wbsearchentities", "search": term, "language": "en",
+        {"action": "wbsearchentities", "search": term, "language": lang,
          "format": "json", "limit": 1, "type": "item"}
     )
     return f"{_API}?{qs}"
@@ -113,11 +116,15 @@ def fetch_json(url: str, getter: Callable[[str], bytes] | None = None) -> dict:
 
 
 def generate(seeds, getter=None, sleep=0.2, log=print) -> list[dict]:
-    """Build rings for each seed; one seed's failure never aborts the run."""
+    """Build rings for each seed; one seed's failure never aborts the run.
+
+    A seed is either a plain ``"term"`` (searched in English) or a ``(term, lang)``
+    pair (searched in that language — for the cross-language ring-gap candidates)."""
     rings: list[dict] = []
-    for seed in seeds:
+    for raw in seeds:
+        seed, slang = raw if isinstance(raw, tuple) else (raw, "en")
         try:
-            qid = parse_search(fetch_json(wbsearch_url(seed), getter))
+            qid = parse_search(fetch_json(wbsearch_url(seed, slang), getter))
             if not qid:
                 log(f"  no QID for {seed!r}")
                 continue
@@ -154,19 +161,38 @@ def emit_yaml(rings: list[dict], as_of: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def load_seeds(args) -> list[str]:
+def load_seeds(args):
+    """Return seeds as ``(term, search_language)`` pairs.
+
+    With ``--from-log`` it PREFERS the ``ring_candidates`` gap digest (concepts NOT
+    yet in any ring, every language), so a generation pass resolves NEW concepts
+    instead of re-resolving the ones we already have, and a concept prominent only
+    in ar/zh/ru is seedable too. It falls back to the legacy full ``keywords`` list
+    (English terms by spread) for older logs without the digest."""
     if args.seeds:
         return [
-            ln.strip()
+            (ln.strip(), "en")
             for ln in Path(args.seeds).read_text("utf-8").splitlines()
             if ln.strip() and not ln.lstrip().startswith("#")
         ]
     if args.from_log:
-        doc = json.loads(Path(args.from_log).read_text("utf-8"))
-        kws = (doc.get("data", doc)).get("keywords", [])
+        data = json.loads(Path(args.from_log).read_text("utf-8"))
+        data = data.get("data", data)
+        by_lang = (data.get("ring_candidates") or {}).get("by_language") or {}
+        if by_lang:
+            pool = [
+                (c.get("normalized") or c.get("term"), lang, int(c.get("articles", 0) or 0))
+                for lang, blk in by_lang.items()
+                for c in (blk.get("candidates") or [])
+                if (c.get("normalized") or c.get("term"))
+            ]
+            pool.sort(key=lambda t: -t[2])  # highest article spread first, across languages
+            return [(term, lang) for term, lang, _a in pool[: args.top]]
+        # Legacy fallback: the full per-keyword list (English terms by spread).
+        kws = data.get("keywords", [])
         en = [k for k in kws if k.get("language") == "en" and k.get("kind") == "term"]
         en.sort(key=lambda k: -int(k.get("articles", 0) or 0))
-        return [k.get("normalized") or k.get("term") for k in en[: args.top]]
+        return [((k.get("normalized") or k.get("term")), "en") for k in en[: args.top]]
     return []
 
 

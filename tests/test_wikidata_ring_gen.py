@@ -134,3 +134,66 @@ def test_shipped_generated_file_is_clean_and_vetted():
 
     assert translate_term("fr", "élection", "de") == "wahl"
     assert translate_term("en", "vaccine", "ar") == "لقاح"
+
+
+def test_wbsearch_url_searches_in_the_seed_language():
+    assert "language=ar" in G.wbsearch_url("حصار", "ar")
+    assert "language=en" in G.wbsearch_url("blockade")  # default
+
+
+def test_generate_accepts_term_lang_pairs(tmp_path):
+    seen = {}
+
+    def getter(url: str) -> bytes:
+        if "wbsearchentities" in url:
+            seen["lang"] = "language=ar" in url
+            return json.dumps(_SEARCH).encode()
+        return json.dumps(_ENTITY).encode()
+
+    rings = G.generate([("حصار", "ar")], getter=getter, sleep=0)
+    assert len(rings) == 1 and seen["lang"]  # searched Wikidata in Arabic
+
+
+def test_from_log_prefers_ring_gap_digest_cross_language(tmp_path):
+    import argparse
+
+    log = {
+        "data": {
+            "ring_candidates": {
+                "by_language": {
+                    "en": {"candidates": [
+                        {"normalized": "supply chain", "articles": 40},
+                        {"normalized": "quantum sensor", "articles": 20},
+                    ]},
+                    "ar": {"candidates": [{"normalized": "حصار", "articles": 35}]},
+                }
+            },
+            # legacy full list — MUST be ignored when the gap digest is present
+            "keywords": [{"language": "en", "kind": "term",
+                          "normalized": "already-have-this", "articles": 9999}],
+        }
+    }
+    p = tmp_path / "log.json"
+    p.write_text(json.dumps(log), encoding="utf-8")
+    args = argparse.Namespace(seeds=None, from_log=str(p), top=10)
+    seeds = G.load_seeds(args)
+
+    assert ("already-have-this", "en") not in seeds  # legacy ignored — gap-targeted
+    assert ("حصار", "ar") in seeds  # cross-language gap seeded
+    # ordered by article spread across languages: 40, 35, 20
+    assert seeds[:3] == [("supply chain", "en"), ("حصار", "ar"), ("quantum sensor", "en")]
+
+
+def test_from_log_falls_back_to_keywords_for_old_logs(tmp_path):
+    import argparse
+
+    log = {"data": {"keywords": [
+        {"language": "en", "kind": "term", "normalized": "inflation", "articles": 50},
+        {"language": "en", "kind": "entity", "normalized": "NATO", "articles": 99},  # entity skipped
+        {"language": "fr", "kind": "term", "normalized": "grève", "articles": 30},   # non-en skipped
+    ]}}
+    p = tmp_path / "old.json"
+    p.write_text(json.dumps(log), encoding="utf-8")
+    args = argparse.Namespace(seeds=None, from_log=str(p), top=10)
+    seeds = G.load_seeds(args)
+    assert seeds == [("inflation", "en")]  # legacy path: English terms only
