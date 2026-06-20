@@ -1500,5 +1500,6 @@
   "Protected mode cannot guarantee anonymity — you must run and trust the proxy yourself. SOCKS proxies need the optional [safety] extra.": "受保护模式无法保证匿名性——你必须自行运行并信任该代理。SOCKS 代理需要可选的 [safety] 附加组件。",
   "Live counts from the unified store. Every figure is a real COUNT(*) or on-disk byte size — nothing is estimated.": "来自统一存储的实时计数。每个数字都是真实的 COUNT(*) 或磁盘字节大小——没有任何估算。",
   "Analytics over keywords and entities extracted from ingested article text (people, companies and places are single units). Trends, associations (PMI) and context are real aggregates with sample sizes — nothing is invented.": "对从已采集文章文本中提取的关键词和实体的分析（人物、公司和地点为单一单位）。趋势、关联（PMI）和上下文都是带样本量的真实聚合——没有任何虚构。",
-  "Off by default; everything else works without it. (Discovering RSS feeds for sources you added yourself stays local-path and is not affected.)": "默认关闭；其他一切无需它也能运行。（为你自己添加的来源发现 RSS 源仍走本地路径，不受影响。）"
+  "Off by default; everything else works without it. (Discovering RSS feeds for sources you added yourself stays local-path and is not affected.)": "默认关闭；其他一切无需它也能运行。（为你自己添加的来源发现 RSS 源仍走本地路径，不受影响。）",
+  "The app measures structure — coordination, novelty, output capacity, transparency — and you decide. There is deliberately no trust score: a single number over incommensurable dimensions would bake in bias and silence small, foreign, new or dissident sources. Surface, never suppress.": "应用衡量的是结构——协同、新颖性、产出能力、透明度——而由你决定。这里刻意没有信任评分：用单一数字概括不可通约的维度会固化偏见，并让弱小、外国、新兴或异见来源噤声。呈现，绝不压制。"
 }
