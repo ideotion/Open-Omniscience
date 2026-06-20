@@ -1349,24 +1349,48 @@ def associations(
         .all()
     )
     is_hidden = _hidden_predicate()
+    # De-N+1 (Slice-4 PR-3, via the Slice-2 counters): the old loop ran TWO queries per
+    # co-occurring keyword — a COUNT(DISTINCT article_id) for n_b AND a session.get(Keyword)
+    # — which dominated this endpoint on a large corpus (field report: 76 s). Both are now
+    # batched:
+    #   * the co-keyword Keyword rows in ONE query (not N gets);
+    #   * n_b (distinct articles mentioning each co-keyword) corpus-wide == the maintained
+    #     ``article_count`` counter (BYTE-IDENTICAL: it IS COUNT(DISTINCT article_id), kept
+    #     exact by store.py + reconciled), so ZERO query; when a window is set the counters
+    #     don't apply, so n_b comes from ONE grouped query over the co-keyword ids.
+    kids = [kid for kid, _ in co_rows]
+    k2_by_id = (
+        {k.id: k for k in session.query(Keyword).filter(Keyword.id.in_(kids))} if kids else {}
+    )
+    nb_by_id: dict[int, int] = {}
+    if kids and (start or end):
+        nb_by_id = {
+            int(kid): int(c)
+            for kid, c in _window_filter(
+                session.query(
+                    KeywordMention.keyword_id,
+                    func.count(func.distinct(KeywordMention.article_id)),
+                ),
+                start,
+                end,
+            )
+            .filter(KeywordMention.keyword_id.in_(kids))
+            .group_by(KeywordMention.keyword_id)
+            .all()
+        }
     pairs = []
     stored_lang: dict[str, str | None] = {}
     for kid, co in co_rows:
         co = int(co)
-        n_b = (
-            _window_filter(
-                session.query(func.count(func.distinct(KeywordMention.article_id))).filter(
-                    KeywordMention.keyword_id == kid
-                ),
-                start,
-                end,
-            ).scalar()
-            or 1
-        )
-        pmi = math.log2((co * total) / (n_a * n_b)) if co > 0 else 0.0
-        k2 = session.get(Keyword, kid)
+        k2 = k2_by_id.get(kid)
         if k2 is None or is_hidden(k2.normalized_term):
             continue
+        if start or end:
+            n_b = nb_by_id.get(int(kid), 0) or 1
+        else:
+            # corpus-wide: the maintained counter == COUNT(DISTINCT article_id) for kid.
+            n_b = int(k2.article_count or 0) or 1
+        pmi = math.log2((co * total) / (n_a * n_b)) if co > 0 else 0.0
         stored_lang[k2.normalized_term] = k2.language
         pairs.append(
             {
