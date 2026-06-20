@@ -2365,6 +2365,26 @@ ruling, a contingency, or a deliberate-omission note.
   (via `generate_wikidata_rings.py --from-log` — corpus-driven, not absorbing more Wikidata) and
   supergroups 77→~200 as the ring set fills out. REMAINING: the families↔rings↔supergroups
   translation binding in the UI (Phase 3 frontend); the ~200 finer concept cut once rings reach 2000.
+  **RING-GAP DIAGNOSTIC DIGEST SHIPPED 2026-06-20 (maintainer-asked "tweak the keyword diagnostic
+  logger to optimize the gathering"; draft PR onto 0.09): the gathering→generation loop is now
+  gap-targeted + cross-language.** Found two inefficiencies in the corpus-driven path: (1) the keyword
+  log carried no ring-coverage view, and (2) `generate_wikidata_rings.py --from-log` seeded ENGLISH-only
+  and blindly took the top-N by spread — so `--top 300` mostly RE-resolved the 540 concepts we already
+  have, and a concept prominent only in ar/zh/ru was never seedable. FIXES: (a) NEW `_ring_candidates`
+  digest in the keyword-diagnostics log (`/api/diagnostics/keywords` stream + the per-language zip
+  summary, additive — byte-parity contract intact) = per dominant-signature language, the highest
+  article-SPREAD non-entity TERMS NOT yet in any ring (the GAP), excluding stopwords, multi-word concepts
+  KEPT, ranked by spread, lowest-coverage language first (the worklist); + `translation_coverage` =
+  ring-covered/gated terms (the self-check metric, now in the same export the maintainer already sends).
+  Reuses the survivors already built — zero extra DB cost. (b) `wbsearch_url(term, lang)` searches
+  Wikidata in the SEED's language (wbgetentities still pulls all 12), `generate` accepts `(term, lang)`
+  pairs, and `--from-log` now PREFERS `ring_candidates.by_language` (gap-targeted, cross-language,
+  sorted by spread) with a legacy `keywords` fallback for old logs. So a generation pass resolves NEW
+  concepts across languages, not the ones we already have. tests/test_ring_candidates_digest.py (gap
+  vs ringed/entity/stopword exclusion + coverage + lowest-coverage-first) + test_wikidata_ring_gen.py
+  (+5: language-aware search, (term,lang) generate, from-log prefers the digest cross-language, legacy
+  fallback). Ruff F/B clean. The from-log digest path closes the self-check loop: export → read
+  translation_coverage + the gap → run the generator on the gap → re-measure.
   **FUTURE SELF-CHECK (maintainer-asked 2026-06-19 "mark to question ourself"): before
   hand-expanding the ring concept set further, MEASURE whether it helps — re-run the
   keyword-engine report after a Wikidata batch lands and read its `translation_coverage` (%

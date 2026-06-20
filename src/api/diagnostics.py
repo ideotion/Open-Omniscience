@@ -62,6 +62,12 @@ _SW_CAND_PER_LANG = 60     # top candidates surfaced per language
 _SW_CAND_MAX_LEN = 14      # function words are short; longer terms are content
 _SW_CAND_MIN_ARTICLES = 5  # needs real spread (ubiquity) to look like a function word
 
+# Ring-candidate digest: the inverse worklist — the highest-spread CONCEPTS not yet
+# in any cross-language ring, per language, to drive the corpus-driven ring
+# expansion (generate_wikidata_rings.py --from-log) and to measure coverage.
+_RING_CAND_PER_LANG = 60     # top gap concepts surfaced per language
+_RING_CAND_MIN_ARTICLES = 3  # enough spread to be worth a Wikidata QID resolution
+
 
 def _stopword_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
     """Per dominant-language, the highest article-SPREAD short single-token TERMS that
@@ -104,6 +110,72 @@ def _stopword_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
             "Candidates to REVIEW before adding to a stoplist; no score, no inference."
         ),
         "priority_languages": priority,
+        "by_language": ordered,
+    }
+
+
+def _ring_candidates(survivors, meta, dom_lang, is_hidden) -> dict:
+    """Per dominant-signature language, the highest article-SPREAD TERMS that are
+    NOT yet in any cross-language RING — the ring GAP, the worklist for the
+    corpus-driven expansion ``generate_wikidata_rings.py --from-log``.
+
+    Two optimisations over blindly taking the top-N keywords: (1) it EXCLUDES terms
+    already in a ring, so a generation pass resolves NEW concepts instead of
+    re-resolving the ones we already have; (2) it surfaces EVERY language (not just
+    English), so a concept prominent only in ar/zh/ru is seedable too (the
+    de-US-centring fix — the generator can search Wikidata in that language).
+    Also reports ``translation_coverage`` (ring-covered / gated terms) — the
+    self-check metric, in the same log the maintainer already exports.
+
+    Concepts come from non-entity TERMS (acronym entities resolve ambiguously on
+    Wikidata — exactly the homograph garbage vetting had to drop). Multi-word terms
+    are KEPT (a concept can be "climate change" / "supply chain"), unlike the
+    single-token stopword candidates. No score, no inference."""
+    from src.analytics import equivalence
+
+    by_lang: dict[str, list[dict]] = {}
+    gated: dict[str, int] = {}
+    covered: dict[str, int] = {}
+    for kid, m, a, _first, _last in survivors:
+        term, norm, lang, is_ent, _ent = meta.get(kid, ("?", "?", None, False, None))
+        if is_ent or not norm:
+            continue
+        if int(a) < _RING_CAND_MIN_ARTICLES or is_hidden(norm):
+            continue
+        eff = dom_lang.get(kid) or lang or "?"
+        gated[eff] = gated.get(eff, 0) + 1
+        if equivalence.ring_of(eff, norm) is not None:
+            covered[eff] = covered.get(eff, 0) + 1
+            continue  # already a ring member — counts toward coverage, not a gap
+        by_lang.setdefault(eff, []).append(
+            {"term": term, "normalized": norm, "mentions": int(m), "articles": int(a)}
+        )
+    out: dict[str, dict] = {}
+    for lang, items in by_lang.items():
+        items.sort(key=lambda x: (-x["articles"], -x["mentions"]))
+        g = gated.get(lang, 0)
+        c = covered.get(lang, 0)
+        out[lang] = {
+            "gap_total": len(items),
+            "ring_covered": c,
+            "coverage": round(c / g, 4) if g else 0.0,
+            "candidates": items[:_RING_CAND_PER_LANG],
+        }
+    # LOWEST-coverage languages first (where ring-building helps most), then by gap size.
+    ordered = dict(sorted(out.items(), key=lambda kv: (kv[1]["coverage"], -kv[1]["gap_total"])))
+    tot_g = sum(gated.values())
+    tot_c = sum(covered.values())
+    return {
+        "method": (
+            "Per dominant-signature language, non-entity TERMS with >= "
+            f"{_RING_CAND_MIN_ARTICLES} distinct articles NOT yet in any cross-language "
+            "ring, ranked by article spread — the ring GAP for "
+            "generate_wikidata_rings.py --from-log. translation_coverage = "
+            "ring-covered / gated terms (the self-check metric). Candidates to RESOLVE "
+            "via a Wikidata QID; multi-word concepts kept; no score, no inference."
+        ),
+        "translation_coverage": round(tot_c / tot_g, 4) if tot_g else 0.0,
+        "gated_terms": tot_g,
         "by_language": ordered,
     }
 
@@ -165,6 +237,7 @@ def _keyword_zip(
     suspects_capped: bool,
     entries_by_lang: dict,
     stopword_candidates: dict,
+    ring_candidates: dict,
 ) -> Response:
     """Build the per-language keyword-log ZIP, guaranteed under the byte cap.
 
@@ -188,6 +261,7 @@ def _keyword_zip(
         ],
         "supergroups": supergroups,
         "stopword_candidates": stopword_candidates,
+        "ring_candidates": ring_candidates,
         "per_source_concentration": {
             "suspects": per_source_concentration,
             "suspects_total": suspects_total,
@@ -577,6 +651,9 @@ def keyword_log(
     # Compact per-language stopword-candidate digest (reuses the survivors already
     # built — zero extra DB cost) for the recursive "grow the not-a-keyword list" loop.
     stopword_candidates = _stopword_candidates(survivors, meta, dom_lang, is_hidden)
+    # Compact ring-GAP digest (same survivors — zero extra DB cost) for the
+    # corpus-driven ring expansion + the translation-coverage self-check.
+    ring_candidates = _ring_candidates(survivors, meta, dom_lang, is_hidden)
 
     method = (
         f"All gathered keywords (top {_MAX_KEYWORDS_PER_LANG} PER dominant signature "
@@ -646,6 +723,9 @@ def keyword_log(
         yield ', "stopword_candidates": ' + json.dumps(
             stopword_candidates, separators=(",", ":")
         )
+        yield ', "ring_candidates": ' + json.dumps(
+            ring_candidates, separators=(",", ":")
+        )
         yield ', "per_source_concentration": ' + json.dumps(
             {
                 "suspects": per_source_concentration,
@@ -676,6 +756,7 @@ def keyword_log(
                 survivors, _entry, dom_lang, stored_lang
             ),
             stopword_candidates=stopword_candidates,
+            ring_candidates=ring_candidates,
         )
 
     kind_tag = "digest" if digest else "log"
