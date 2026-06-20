@@ -2335,6 +2335,26 @@ ruling, a contingency, or a deliberate-omission note.
   has a QID + >=2 members, the 35 dropped ids stay absent, core translations resolve). REMAINING
   PHASES: (3) bind translations through families + super-groups in the UI; (4) the tentative LLM
   fallback for keywords in no ring (SHIPPED — see the ai_layer/translate.py entry).
+  **CONCEPT-SUPERGROUP SCAFFOLD SHIPPED 2026-06-20 (maintainer ruled supergroups must be durable
+  umbrella CONCEPTS — "broader than a ring" — cherry-picked by us to set a trajectory, NOT topics
+  of the moment: "FIFA shouldn't be a supergroup!!!"; draft PR onto 0.09):** distilled the 540
+  rings into 50 umbrella concept-words (the preliminary exercise) → built a 77-supergroup
+  conceptual scaffold across the ~12 domains (politics/economy/energy/climate/agriculture/physics/
+  life-sci/medicine/tech/media/culture/history/sport/infrastructure), every supergroup a list of
+  cross-language RING ids (not hand-listed language-specific surface terms), so each spans all 12
+  languages BY CONSTRUCTION via the super-ring model (`KeywordSuperGroupMember.ring_id`). ALL 540
+  rings covered (validated, no typo'd id). `configs/keyword_supergroups.yml` rewritten from the 8
+  old TOPIC groups → the concept set. `seed_supergroups` reworked: (a) accepts `rings:` members
+  (validated against the live ring set via `ring_meta` — unknown id skipped, never a dead member)
+  alongside legacy `members:` families; (b) SAFELY RETIRES the 8 old bundled topic groups
+  (Middle East conflict/FIFA World Cup 2026/AI[family-based]/US politics/…) but ONLY when a group
+  still holds EXACTLY its originally-seeded members (untouched) — the symmetric inverse of
+  "user wins": we only un-seed what we seeded, a user-edited group of the same name is left alone.
+  Idempotent (skip-by-name) preserved. tests/test_supergroup_seed.py (ring members validated +
+  idempotent/user-edit-wins + retire-only-untouched). TARGET (maintainer): grow rings 540→~2000
+  (via `generate_wikidata_rings.py --from-log` — corpus-driven, not absorbing more Wikidata) and
+  supergroups 77→~200 as the ring set fills out. REMAINING: the families↔rings↔supergroups
+  translation binding in the UI (Phase 3 frontend); the ~200 finer concept cut once rings reach 2000.
   **FUTURE SELF-CHECK (maintainer-asked 2026-06-19 "mark to question ourself"): before
   hand-expanding the ring concept set further, MEASURE whether it helps — re-run the
   keyword-engine report after a Wikidata batch lands and read its `translation_coverage` (%
