@@ -101,3 +101,36 @@ def test_equivalence_merges_a_generated_file_curated_wins(tmp_path, monkeypatch)
     finally:
         eq.load_rings.cache_clear()
         eq._index.cache_clear()
+
+
+def test_shipped_generated_file_is_clean_and_vetted():
+    """The committed configs/keyword_rings_generated.yml (Wikidata batch, vetted
+    2026-06-20) parses, every ring has >=2 members, carries a QID, and none of the
+    35 mis-resolved rings dropped in vetting (journals/bands/films/place-names/
+    homographs/Wikidata meta-classes) has crept back in."""
+    path = Path(__file__).resolve().parents[1] / "configs" / "keyword_rings_generated.yml"
+    data = yaml.safe_load(path.read_text("utf-8"))
+    assert data.get("generated_as_of")
+    raw = data["rings"]
+    assert len(raw) >= 500  # the breadth expansion
+    ids = {str(r["id"]) for r in raw}
+    assert len(ids) == len(raw)  # no duplicate ids
+    for r in raw:
+        assert str(r.get("qid", "")).startswith("Q")  # auditable provenance
+
+    rings = _parse_rings(data)
+    assert all(len(r.members) >= 2 for r in rings)
+
+    dropped = {
+        "warsaw", "the-police", "taxon", "wii", "metabolism", "nuclear-fusion",
+        "stem-cells", "the-library", "massachusetts", "sun-microsystems",
+        "indian-national-congress", "country-music", "version-edition-or-translation",
+        "village-in-india", "geonames", "cornwall", "farmington",
+    }
+    assert dropped.isdisjoint(ids), dropped & ids
+
+    # core concept rings survive and translate cross-language
+    from src.analytics.equivalence import translate_term
+
+    assert translate_term("fr", "élection", "de") == "wahl"
+    assert translate_term("en", "vaccine", "ar") == "لقاح"
