@@ -2296,11 +2296,29 @@ ruling, a contingency, or a deliberate-omission note.
   renders `original → translation` in the Trends + Home keyword lists (UI language passed
   automatically); +1 i18n key ×12; Arabic+Russian members added to 16 curated rings so the
   complaint resolves today (انتخابات→election …). tests/test_keyword_translation.py +
-  test_repo_invariants. REMAINING PHASES: (2) BREADTH — run scripts/generate_wikidata_rings.py
-  on a networked machine (Wikidata is 403 in the dev sandbox; the maintainer offered to run a
-  parallel internet session — a ~586-concept seed list across 14 domains was handed over);
-  (3) bind translations through families + super-groups in the UI; (4) the tentative LLM
-  fallback for keywords in no ring.
+  test_repo_invariants. PHASE 2 — BREADTH SHIPPED 2026-06-20 (draft PR onto 0.09): the
+  maintainer ran the parallel amnesic internet session over the ~586-concept seed list →
+  575 generated rings (all 12 langs well-covered, 529 with Arabic). VETTED before commit
+  (Wikidata first-search-hit resolution is ~6% wrong here): 35 mis-resolved rings DROPPED
+  by hand-review of their members — journals (nuclear-fusion/stem-cells/metabolism/the-library/
+  chemistry-a-european-journal/radiation-protection-dosimetry/mutation-research/
+  mathematics-genealogy-project), bands/labels (the-police/republic-records/empire-distribution),
+  companies (sun-microsystems/autonomy-corporation/eclipse-foundation), films (peace/hostage/court),
+  place-names (warsaw/massachusetts/cornwall/farmington), homographs (taxon←tax, oil-painting←oil,
+  satellite-virus←satellite, country-music←country, wii, guest-house was KEPT), too-specific
+  institutions (parliament-of-the-united-kingdom/indian-national-congress/us-military+naval-academy/
+  village-in-india) and Wikidata meta-classes (version-edition-or-translation/world-flora-online/
+  geonames) — each confirmed garbage by inspecting en/fr/de members (proper-noun echoes vs real
+  translations). 540 concept rings KEPT (science/medicine/tech/history/culture/sport/geography
+  + politics) → `configs/keyword_rings_generated.yml` (read by load_rings ALONGSIDE the curated
+  file, curated wins on id clash). DELIBERATELY NOT over-dropped (the maintainer's warning):
+  valid multi-word concepts (united-nations/solar-system/industrial-revolution/world-war-i/
+  cold-war/olympic-games/fifa-world-cup) and Title-cased concepts (atom/electron/cell/brain/
+  vaccine/cancer/gmo/coup-d'état) KEPT. tests/test_wikidata_ring_gen.py::
+  test_shipped_generated_file_is_clean_and_vetted guards it (>=500 rings, unique ids, every ring
+  has a QID + >=2 members, the 35 dropped ids stay absent, core translations resolve). REMAINING
+  PHASES: (3) bind translations through families + super-groups in the UI; (4) the tentative LLM
+  fallback for keywords in no ring (SHIPPED — see the ai_layer/translate.py entry).
   **FUTURE SELF-CHECK (maintainer-asked 2026-06-19 "mark to question ourself"): before
   hand-expanding the ring concept set further, MEASURE whether it helps — re-run the
   keyword-engine report after a Wikidata batch lands and read its `translation_coverage` (%
