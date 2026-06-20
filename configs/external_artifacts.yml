@@ -51,6 +51,7 @@ artifacts:
     refresh: "python scripts/build_ip_geo.py --mirror  # then set IP_GEO_AS_OF"
     freshness: {max_age_months: 6}
     couplings: ["src/geo/data/dbip_country_lite.csv.gz must exist + be parseable"]
+    upstream_check: {github: "sapics/ip-location-db", type: path_commit, path: "dbip-country/dbip-country-ipv4.csv", compare: as_of}
     last_verified: "2026-06-19"
 
   - id: llm-model-catalog
@@ -148,6 +149,7 @@ artifacts:
     pin: {path: src/static/guis/vendor/alpine.min.js, sha256: ""}  # filled by registry self-heal/verify
     refresh: "re-vendor the pinned version; update the sha256 + the gallery checksum constant"
     freshness: {policy: on-security}
+    upstream_check: {github: "alpinejs/alpine", type: release, current: "v3.14.1"}
     last_verified: "2026-06-17"
 
   - id: natural-earth-geometry
@@ -182,6 +184,7 @@ artifacts:
       confirm the persisted store still opens (else delete+rebuild — it is disposable);
       update {floor, verified} here.
     freshness: {policy: track-duckdb-version}
+    upstream_check: {github: "duckdb/duckdb", type: release, current: "v1.5.4"}
     platforms: [linux_amd64, linux_arm64, osx_amd64, osx_arm64, windows_amd64]
     couplings:
       - "pyproject.toml [project.optional-dependencies] columnar duckdb>= must equal floor"

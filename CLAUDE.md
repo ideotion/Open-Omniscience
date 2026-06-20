@@ -359,8 +359,11 @@ ruling, a contingency, or a deliberate-omission note.
   freshness` report status. On a DuckDB bump follow the EXTERNAL_DEPENDENCIES upgrade
   checklist (re-bundle the per-OS `httpfs` crypto extension at the new version; the registry
   `duckdb-crypto-extension` floor MUST equal the pyproject `[columnar]` floor — test-enforced).
-  REMAINING (awaiting sign-off): the proactive upstream-watch cron that opens an issue when
-  upstream > our pin (use Dependabot for the pip/Actions half).
+  LAYER 3 SHIPPED 2026-06-19 (maintainer "yes"): `.github/dependabot.yml` (pip + Actions) +
+  `.github/workflows/freshness.yml` (weekly cron) running `check_external_freshness.py` +
+  `check_upstream_updates.py` (GitHub API per a registry `upstream_check`, degrades loudly) +
+  `freshness_issue.py` (ONE rolling `freshness`-labelled issue, opened/updated/closed
+  idempotently). Add `upstream_check:{github,type}` to a registry entry to watch it.
 - Maintainer merges PRs fast: after `git push`, if the output says
   "[new branch]", the previous PR was merged — open a NEW PR onto `0.09`.
   COROLLARY (near-miss 2026-06-15): local `origin/0.09` goes STALE within

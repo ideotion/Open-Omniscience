@@ -20,11 +20,15 @@ the human companion; keep them in sync (the tests below enforce the important pa
    - **freshness** — nothing past its window;
    - **compatibility** — the version couplings hold (DuckDB floor ↔ pyproject ↔ installed;
      bundled data parseable at its vintage).
-3. **Proactive upstream watch (notification)** — *planned, awaiting sign-off*: a scheduled
-   CI job runs `check_external_freshness.py` and queries each upstream for a newer
-   release, **opening an issue** when upstream > our pin. Use **Dependabot** for the
-   pip + GitHub-Actions half; the cron covers the data/binary/catalog half. This is the
-   piece that means we *get told*, not *remember*.
+3. **Proactive upstream watch (notification)** — **built**: `.github/dependabot.yml`
+   tracks the pip deps + GitHub-Action SHAs (opens PRs on new releases), and
+   `.github/workflows/freshness.yml` runs weekly: `check_external_freshness.py` (our
+   windows + couplings, network-free) + `check_upstream_updates.py` (GitHub API: is
+   upstream newer than our pin, for the registry entries with an `upstream_check`), then
+   `freshness_issue.py` opens/updates/closes **ONE rolling issue** (label `freshness`) so
+   we *get told*, not *remember*. The upstream check degrades loudly (a flaky upstream is a
+   `check-failed` note, never a failed run); add an `upstream_check: {github, type}` to a
+   registry entry to bring it under the GitHub-API watch.
 4. **In-app self-report** — `GET /api/diagnostics/freshness` returns the registry status
    from a live install, so a production operator can surface staleness via the existing
    "click & send the debug bundle" channel.
