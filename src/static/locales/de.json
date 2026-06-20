@@ -1418,5 +1418,7 @@
   "AI-generated tentative translation — unreliable, not verified.": "KI-generierte vorläufige Übersetzung – unzuverlässig, nicht verifiziert.",
   "Translate the rest (AI, tentative)": "Rest übersetzen (KI, vorläufig)",
   "Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations.": "Die lokale KI ist offline — starten Sie Ollama (und schalten Sie den Flugmodus aus) für vorläufige Übersetzungen.",
-  "No tentative translations were produced.": "Es wurden keine vorläufigen Übersetzungen erzeugt."
+  "No tentative translations were produced.": "Es wurden keine vorläufigen Übersetzungen erzeugt.",
+  "boundary from OSM": "Grenze aus OSM",
+  "country boundaries": "Ländergrenzen"
 }

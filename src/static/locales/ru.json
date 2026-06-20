@@ -1418,5 +1418,7 @@
   "AI-generated tentative translation — unreliable, not verified.": "Предварительный перевод от ИИ — ненадёжный, непроверенный.",
   "Translate the rest (AI, tentative)": "Перевести остальное (ИИ, предварительно)",
   "Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations.": "Локальный ИИ офлайн — запустите Ollama (и выключите режим полёта) для предварительных переводов.",
-  "No tentative translations were produced.": "Предварительные переводы не получены."
+  "No tentative translations were produced.": "Предварительные переводы не получены.",
+  "boundary from OSM": "граница из OSM",
+  "country boundaries": "границы стран"
 }

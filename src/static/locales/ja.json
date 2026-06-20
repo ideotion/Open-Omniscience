@@ -1418,5 +1418,7 @@
   "AI-generated tentative translation — unreliable, not verified.": "AI生成の暫定的な翻訳——信頼できず、未検証です。",
   "Translate the rest (AI, tentative)": "残りを翻訳（AI、暫定）",
   "Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations.": "ローカルAIはオフラインです——暫定翻訳には Ollama を起動し（機内モードをオフに）してください。",
-  "No tentative translations were produced.": "暫定的な翻訳は生成されませんでした。"
+  "No tentative translations were produced.": "暫定的な翻訳は生成されませんでした。",
+  "boundary from OSM": "OSM 由来の境界",
+  "country boundaries": "国境"
 }

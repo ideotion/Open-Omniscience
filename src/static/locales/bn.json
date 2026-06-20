@@ -1418,5 +1418,7 @@
   "AI-generated tentative translation — unreliable, not verified.": "এআই-উৎপন্ন অস্থায়ী অনুবাদ — অনির্ভরযোগ্য, যাচাই করা হয়নি।",
   "Translate the rest (AI, tentative)": "বাকিগুলো অনুবাদ করুন (এআই, অস্থায়ী)",
   "Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations.": "স্থানীয় এআই অফলাইন — অস্থায়ী অনুবাদের জন্য Ollama চালু করুন (এবং বিমান মোড বন্ধ করুন)।",
-  "No tentative translations were produced.": "কোনো অস্থায়ী অনুবাদ তৈরি হয়নি।"
+  "No tentative translations were produced.": "কোনো অস্থায়ী অনুবাদ তৈরি হয়নি।",
+  "boundary from OSM": "OSM থেকে সীমানা",
+  "country boundaries": "দেশের সীমানা"
 }

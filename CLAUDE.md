@@ -3296,6 +3296,39 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS V0.1 — THEME-2 #51 OSM ADMIN-BOUNDARY CHOROPLETH (2026-06-20, branch
+  claude/sweet-keller-ozdip1, draft PR onto 0.09; parser+assembly NODE-VERIFIED, frontend
+  BROWSER-UNVERIFIED per fork-3):** the maintainer-ruled #51 — colour each country by data
+  using REAL OSM admin boundaries, fixing the ~75 microstates the coarse Natural-Earth 110m
+  `world_countries.json` drops. Built on the shipped `src/static/osmpbf.js` (it decoded dense
+  nodes + ways only). EXTENDED the parser: `decodeStringTable` (PrimitiveBlock field 1) +
+  `resolveTags` + WAY tag decode (opts.withTags) + RELATION decode (opts.withRelations →
+  `decodeRelation`: members {ref,type,role} via memid sint64-delta + roles_sid stringtable +
+  resolved tags) — all BLOCK-LOCAL string resolution done in `decodePrimitiveBlock` where the
+  StringTable is in scope; backward-compatible (default opts = old geometry-only shape +
+  `relations:[]`, so the existing node test stays green). NEW pure `assembleAdminAreas(parsed)`:
+  finds admin_level=2 / boundary=administrative relations carrying ISO3166-1:alpha2, collects
+  outer-role way members, and `stitchRings` stitches them into CLOSED polygons by shared
+  endpoints (EPS match, reverse-as-needed), keyed by ISO-2 → `[{iso2,name,rings:[[lon,lat]…],
+  source}]`. HONEST BY CONSTRUCTION: emits ONLY rings it actually closed (a truncated/partial
+  boundary is dropped, never a fake border); only areas with a valid 2-letter ISO tag (so they
+  merge into the code-keyed choropleth); inner/hole rings skipped (outer only). FRONTEND
+  (browser-unverified): `_ooMapToggleOsm` now parses with withTags/withRelations (maxBlocks 48 to
+  reach the trailing relations section, maxNodes 200000 memory bound, 16MB prefix) + assembles
+  `osmAreas` into `_ooMapOsmGeo`; ooMap AUGMENTS its geometry — an OSM-derived shape REPLACES the
+  coarse 110m polygon for that country and ADDS countries the 110m set never had (the microstate
+  fix), drawn with an accent stroke + a "· boundary from OSM" title note + a legend "N country
+  boundaries" count (provenance visible). The existing raw-lines/nodes overlay + centroid-point
+  fallback are UNTOUCHED (additive; a country with no closed OSM ring still falls back). Backend
+  reuses the bounded, path-safe, zero-network `GET /api/geo/regions/{code}/preview` (no change).
+  +2 i18n keys ×12 (boundary from OSM · country boundaries; non-en AI-drafted, flagged). The
+  VERIFIABLE CORE is node-tested: `tests/osmpbf_node_test.js` gains a hand-encoded
+  StringTable+ways+admin-relation fixture (its own protobuf encoder) asserting the exact closed
+  ring coords + ISO key + that admin_level≠2 yields no area; `tests/test_repo_invariants.py::
+  test_world_map_osm_admin_boundary_choropleth` pins the parser+frontend wiring. node --check
+  (app.js + osmpbf.js) clean; i18n --min 100 (1416 ×12); 88 repo-invariants + osm parser/preview
+  green. REMAINING: inner-ring (hole/enclave) subtraction; human click-through with a real
+  downloaded region (no region in this env); bbox auto-zoom to the rendered country.
 - **DATA-ARCHITECTURE FOLLOW-UP 2026-06-19 (PR #410, draft onto 0.09, after #407 merged; the
   "proceed with all, incrementally" pass — finishes the gated items from #407; backend VERIFIED on
   the py3.11 venv, frontend BROWSER-UNVERIFIED per fork-3):**

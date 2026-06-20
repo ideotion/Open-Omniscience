@@ -1418,5 +1418,7 @@
   "AI-generated tentative translation — unreliable, not verified.": "Terjemahan tentatif buatan AI — tidak dapat diandalkan, belum diverifikasi.",
   "Translate the rest (AI, tentative)": "Terjemahkan sisanya (AI, tentatif)",
   "Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations.": "AI lokal sedang offline — jalankan Ollama (dan matikan mode pesawat) untuk terjemahan tentatif.",
-  "No tentative translations were produced.": "Tidak ada terjemahan tentatif yang dihasilkan."
+  "No tentative translations were produced.": "Tidak ada terjemahan tentatif yang dihasilkan.",
+  "boundary from OSM": "batas dari OSM",
+  "country boundaries": "batas negara"
 }

@@ -201,6 +201,38 @@ def test_world_map_osm_offline_overlay():
     assert "is_valid_code(code)" in geo, "the preview endpoint must reject path-unsafe codes"
 
 
+def test_world_map_osm_admin_boundary_choropleth():
+    """THEME-2 #51: the in-browser .pbf reader also decodes admin (country)
+    boundary RELATIONS + tags, assembles them into closed polygons keyed by ISO
+    code, and the choropleth AUGMENTS the coarse 110m geometry with them (a
+    microstate the 110m set drops now renders a true shape). Honest: only rings
+    actually closed are emitted (never a fabricated border); the OSM polygons add
+    to / replace the coarse ones, never silently hide data. The verifiable core is
+    node-tested (tests/osmpbf_node_test.js → tests/test_osmpbf_parser.py)."""
+    pbf = (_SRC / "static" / "osmpbf.js").read_text(encoding="utf-8")
+    # the parser gained StringTable + tag + relation decode + ring assembly
+    assert "function decodeStringTable(" in pbf and "function resolveTags(" in pbf
+    assert "withRelations" in pbf and "function decodeRelation(" in pbf  # boundary relation decode
+    assert "relations.push(" in pbf, "relations must be decodable"
+    assert "function assembleAdminAreas(" in pbf and "function stitchRings(" in pbf, (
+        "admin-boundary assembly + ring stitching must exist"
+    )
+    assert "ISO3166-1:alpha2" in pbf, "country areas are keyed by the ISO 3166-1 alpha-2 tag"
+    assert "assembleAdminAreas: assembleAdminAreas" in pbf, "the assembly must be exported (node-testable)"
+    html = _ui_source()  # index.html + app.js + app.css
+    # the OSM toggle now parses WITH tags+relations and assembles country boundaries
+    assert "withTags: true, withRelations: true" in html, (
+        "the OSM overlay must parse tags + relations to assemble boundaries"
+    )
+    assert "OOPBF.assembleAdminAreas(geo)" in html, "the frontend must assemble admin boundaries"
+    # the boundaries are passed to ooMap and MERGE into the choropleth by ISO code
+    assert "osmAreas:" in html and "opts.osmAreas" in html, "ooMap must accept the OSM areas"
+    assert "c.osm" in html, "OSM-augmented polygons must be distinguishable (honest provenance)"
+    assert "boundary from OSM" in html and "country boundaries" in html, (
+        "the OSM provenance + count must be disclosed (honesty)"
+    )
+
+
 def test_world_map_server_location_layer():
     """Data-architecture slice 6c (frontend): the world map offers a switchable
     "Server IPs" layer — the captured server IPs (6a) geolocated OFFLINE (6b),

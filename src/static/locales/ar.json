@@ -1418,5 +1418,7 @@
   "AI-generated tentative translation — unreliable, not verified.": "ترجمة مبدئية مُولّدة بالذكاء الاصطناعي — غير موثوقة وغير مُتحقَّق منها.",
   "Translate the rest (AI, tentative)": "ترجمة البقية (ذكاء اصطناعي، مبدئي)",
   "Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations.": "الذكاء الاصطناعي المحلي غير متصل — شغّل Ollama (وأطفئ وضع الطيران) للحصول على ترجمات مبدئية.",
-  "No tentative translations were produced.": "لم تُنتَج أي ترجمات مبدئية."
+  "No tentative translations were produced.": "لم تُنتَج أي ترجمات مبدئية.",
+  "boundary from OSM": "حدود من OSM",
+  "country boundaries": "حدود الدول"
 }

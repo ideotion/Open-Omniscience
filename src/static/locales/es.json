@@ -1418,5 +1418,7 @@
   "AI-generated tentative translation — unreliable, not verified.": "Traducción tentativa generada por IA — poco fiable, sin verificar.",
   "Translate the rest (AI, tentative)": "Traducir el resto (IA, tentativo)",
   "Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations.": "La IA local está desconectada — inicie Ollama (y desactive el modo avión) para traducciones tentativas.",
-  "No tentative translations were produced.": "No se produjeron traducciones tentativas."
+  "No tentative translations were produced.": "No se produjeron traducciones tentativas.",
+  "boundary from OSM": "frontera de OSM",
+  "country boundaries": "fronteras de países"
 }

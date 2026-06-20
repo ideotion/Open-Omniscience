@@ -1418,5 +1418,7 @@
   "AI-generated tentative translation — unreliable, not verified.": "AI 生成的暂定翻译——不可靠，未经验证。",
   "Translate the rest (AI, tentative)": "翻译其余部分（AI，暂定）",
   "Local AI is offline — start Ollama (and turn airplane mode off) for tentative translations.": "本地 AI 已离线——请启动 Ollama（并关闭飞行模式）以获取暂定翻译。",
-  "No tentative translations were produced.": "未生成任何暂定翻译。"
+  "No tentative translations were produced.": "未生成任何暂定翻译。",
+  "boundary from OSM": "来自 OSM 的边界",
+  "country boundaries": "国家边界"
 }
