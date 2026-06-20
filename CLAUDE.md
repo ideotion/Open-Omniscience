@@ -348,6 +348,22 @@ ruling, a contingency, or a deliberate-omission note.
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`
   block after UI edits; locale files must stay 100% (scripts/i18n_report.py)
   when adding chrome strings (12 languages, Arabic is RTL).
+- **EXTERNAL-ARTIFACT REGISTRY (ruled 2026-06-19; SHIPPED — `configs/external_artifacts.yml`
+  + `src/maintenance/registry.py` + `tests/test_external_freshness.py` + the
+  `docs/maintenance/EXTERNAL_DEPENDENCIES.md` upgrade checklist):** ANY externally
+  sourced/pinned/bundled artifact (a dated `*_AS_OF` data file/catalog, a vendored binary,
+  a version coupling, a CI pin) MUST get a registry entry IN THE SAME COMMIT — the protocol
+  guard test fails otherwise (it scans the tree for `*_AS_OF` constants + asserts each is
+  registered). The consolidated freshness/compatibility check replaces the scattered
+  per-file freshness tests; `scripts/check_external_freshness.py` + `GET /api/diagnostics/
+  freshness` report status. On a DuckDB bump follow the EXTERNAL_DEPENDENCIES upgrade
+  checklist (re-bundle the per-OS `httpfs` crypto extension at the new version; the registry
+  `duckdb-crypto-extension` floor MUST equal the pyproject `[columnar]` floor — test-enforced).
+  LAYER 3 SHIPPED 2026-06-19 (maintainer "yes"): `.github/dependabot.yml` (pip + Actions) +
+  `.github/workflows/freshness.yml` (weekly cron) running `check_external_freshness.py` +
+  `check_upstream_updates.py` (GitHub API per a registry `upstream_check`, degrades loudly) +
+  `freshness_issue.py` (ONE rolling `freshness`-labelled issue, opened/updated/closed
+  idempotently). Add `upstream_check:{github,type}` to a registry entry to watch it.
 - Maintainer merges PRs fast: after `git push`, if the output says
   "[new branch]", the previous PR was merged — open a NEW PR onto `0.09`.
   COROLLARY (near-miss 2026-06-15): local `origin/0.09` goes STALE within
@@ -2319,6 +2335,26 @@ ruling, a contingency, or a deliberate-omission note.
   has a QID + >=2 members, the 35 dropped ids stay absent, core translations resolve). REMAINING
   PHASES: (3) bind translations through families + super-groups in the UI; (4) the tentative LLM
   fallback for keywords in no ring (SHIPPED — see the ai_layer/translate.py entry).
+  **CONCEPT-SUPERGROUP SCAFFOLD SHIPPED 2026-06-20 (maintainer ruled supergroups must be durable
+  umbrella CONCEPTS — "broader than a ring" — cherry-picked by us to set a trajectory, NOT topics
+  of the moment: "FIFA shouldn't be a supergroup!!!"; draft PR onto 0.09):** distilled the 540
+  rings into 50 umbrella concept-words (the preliminary exercise) → built a 77-supergroup
+  conceptual scaffold across the ~12 domains (politics/economy/energy/climate/agriculture/physics/
+  life-sci/medicine/tech/media/culture/history/sport/infrastructure), every supergroup a list of
+  cross-language RING ids (not hand-listed language-specific surface terms), so each spans all 12
+  languages BY CONSTRUCTION via the super-ring model (`KeywordSuperGroupMember.ring_id`). ALL 540
+  rings covered (validated, no typo'd id). `configs/keyword_supergroups.yml` rewritten from the 8
+  old TOPIC groups → the concept set. `seed_supergroups` reworked: (a) accepts `rings:` members
+  (validated against the live ring set via `ring_meta` — unknown id skipped, never a dead member)
+  alongside legacy `members:` families; (b) SAFELY RETIRES the 8 old bundled topic groups
+  (Middle East conflict/FIFA World Cup 2026/AI[family-based]/US politics/…) but ONLY when a group
+  still holds EXACTLY its originally-seeded members (untouched) — the symmetric inverse of
+  "user wins": we only un-seed what we seeded, a user-edited group of the same name is left alone.
+  Idempotent (skip-by-name) preserved. tests/test_supergroup_seed.py (ring members validated +
+  idempotent/user-edit-wins + retire-only-untouched). TARGET (maintainer): grow rings 540→~2000
+  (via `generate_wikidata_rings.py --from-log` — corpus-driven, not absorbing more Wikidata) and
+  supergroups 77→~200 as the ring set fills out. REMAINING: the families↔rings↔supergroups
+  translation binding in the UI (Phase 3 frontend); the ~200 finer concept cut once rings reach 2000.
   **FUTURE SELF-CHECK (maintainer-asked 2026-06-19 "mark to question ourself"): before
   hand-expanding the ring concept set further, MEASURE whether it helps — re-run the
   keyword-engine report after a Wikidata batch lands and read its `translation_coverage` (%
@@ -3361,6 +3397,28 @@ ruling, a contingency, or a deliberate-omission note.
   (app.js + osmpbf.js) clean; i18n --min 100 (1416 ×12); 88 repo-invariants + osm parser/preview
   green. REMAINING: inner-ring (hole/enclave) subtraction; human click-through with a real
   downloaded region (no region in this env); bbox auto-zoom to the rendered country.
+- **EXTERNAL-ARTIFACT FRESHNESS REGISTRY + COMPATIBILITY TESTS 2026-06-19 (maintainer-asked
+  "long-term strategy to avoid missing repository updates + add compatibility testing"; draft
+  PR onto 0.09; backend VERIFIED py3.11):** the project had ~8 dated `*_AS_OF` constants +
+  vendored data + version couplings guarded by SCATTERED per-file freshness tests, with no
+  single list + no upstream watch. Consolidated into: (1) `configs/external_artifacts.yml` =
+  the SINGLE SOURCE OF TRUTH (12 entries: ip-geo/catalog/dump-sizes/osm/baseline/stats/
+  denylist/install-sizes + vendored Alpine + Natural-Earth + the DuckDB↔crypto-extension
+  coupling + CI pins); (2) `src/maintenance/registry.py` = a NETWORK-FREE loader/evaluator
+  (reads `*_AS_OF` from source by regex, no imports; freshness windows; the DuckDB
+  version coupling); (3) `tests/test_external_freshness.py` = the PROTOCOL GUARD (every
+  `*_AS_OF` in the tree MUST be registered — can't ship a dated artifact unwatched) +
+  consolidated freshness + COMPATIBILITY couplings (the registry DuckDB floor == the
+  pyproject `[columnar]` floor; installed duckdb ≥ floor; the bundled geo DB parseable at its
+  vintage); (4) `scripts/check_external_freshness.py` (CLI, exit≠0 on stale — for the future
+  cron) + `GET /api/diagnostics/freshness` (production self-report). COMPATIBILITY HARDENING:
+  `columnar.connect()` now stamps a store-format marker (DuckDB major.minor + schema rev) and
+  on an incompatible/corrupt persisted store DELETES + REBUILDS it (disposable) instead of
+  crashing — so a DuckDB upgrade is safe. `docs/maintenance/EXTERNAL_DEPENDENCIES.md` carries
+  the 4-layer strategy + the per-bump upgrade checklist (esp. the per-OS httpfs extension
+  matrix). REMAINING (awaiting maintainer sign-off, layer 3): the upstream-watch CRON that
+  opens an issue when upstream > our pin (Dependabot for pip/Actions; the cron for data/
+  binaries). Tests verified py3.11; full pytest needs py3.13 → CI.
 - **DATA-ARCHITECTURE FOLLOW-UP 2026-06-19 (PR #410, draft onto 0.09, after #407 merged; the
   "proceed with all, incrementally" pass — finishes the gated items from #407; backend VERIFIED on
   the py3.11 venv, frontend BROWSER-UNVERIFIED per fork-3):**

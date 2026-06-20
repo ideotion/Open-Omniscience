@@ -1,0 +1,48 @@
+# External-artifact freshness watch (layer 3 of EXTERNAL_DEPENDENCIES.md).
+#
+# Open Omniscience - Global Intelligence Platform for Investigative Journalism
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# Weekly, this:
+#   1. runs scripts/check_external_freshness.py  (network-free: our windows + couplings)
+#   2. runs scripts/check_upstream_updates.py    (GitHub API: is upstream newer than our pin)
+#   3. opens / updates / closes ONE tracking issue (idempotent, label "freshness") so we are
+#      TOLD when a bundled artifact needs a refresh instead of relying on memory.
+# The pip + GitHub-Actions pins are handled by Dependabot (.github/dependabot.yml).
+name: Freshness
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    name: External-artifact freshness watch
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Install the registry's only dependency
+        run: python -m pip install pyyaml
+      - name: Check our pins (network-free)
+        run: python scripts/check_external_freshness.py --json > freshness.json || true
+      - name: Check upstream (GitHub API)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/check_upstream_updates.py --json > upstream.json || true
+      - name: Open / update / close the tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/freshness_issue.py
