@@ -201,8 +201,13 @@ def connect(passphrase: str | None = None):
     Returns a DuckDB connection, or ``None`` when the engine is unavailable (duckdb
     absent / ``OO_COLUMNAR=0``) so the caller falls back to the live query. The returned
     connection's working schema lives in the attached encrypted database ``oo`` when
-    persisted, or the default in-memory catalog when not. PR-1: the engine + safety
-    rails; building/serving aggregations from it is PR-2/3.
+    persisted, or the default in-memory catalog when not.
+
+    COMPATIBILITY: the store is DISPOSABLE. A persisted file written by an incompatible
+    DuckDB (the on-disk format is version-bound) or an older read-model schema is detected
+    via its format marker and REBUILT, and ANY open failure (corrupt / unreadable file)
+    deletes the file and falls back to in-memory — never a crash, because the canonical
+    SQLCipher store is always the source of truth.
     """
     if not duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
         return None
@@ -211,27 +216,90 @@ def connect(passphrase: str | None = None):
     # Persisted-encrypted ONLY when a SECURE backend is available AND the gate proves it.
     if passphrase and secure_crypto_available():
         store_dir = _store_dir()
+        path = store_dir / _STORE_FILENAME
         try:
             store_dir.mkdir(parents=True, exist_ok=True)
-            path = store_dir / _STORE_FILENAME
             # Prove encryption on a throwaway probe before trusting the real file.
             if encryption_gate(store_dir / ".oo_columnar_probe.duckdb", passphrase):
-                con = duckdb.connect(config=_offline_config())
-                con.execute("LOAD httpfs")
-                con.execute(
-                    f"ATTACH '{path.as_posix()}' AS oo (ENCRYPTION_KEY '{_derive_key(passphrase)}')"
-                )
-                con.execute("USE oo")
+                con = _attach_persisted(path, passphrase)
+                marker = read_store_meta(con)
+                if marker is None:
+                    ensure_store_meta(con)  # a fresh store: adopt the current marker
+                elif not marker_compatible(marker):
+                    # Incompatible DuckDB format / read-model schema -> drop + rebuild
+                    # (the store is a disposable cache; the canonical store is the truth).
+                    con.close()
+                    path.unlink(missing_ok=True)
+                    con = _attach_persisted(path, passphrase)
+                    ensure_store_meta(con)
+                    _LOG.info("columnar engine: rebuilt persisted store (was %s)", marker)
                 _LOG.info("columnar engine: persisted encrypted store at %s", path)
                 return con
             _LOG.warning("columnar engine: encryption gate failed; using in-memory store")
-        except Exception:  # noqa: BLE001 - any failure -> in-memory, never plaintext
+        except Exception:  # noqa: BLE001 - any failure -> drop the disposable file, in-memory
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
             _LOG.warning("columnar engine: persisted open failed; in-memory", exc_info=True)
 
     # In-memory fallback — rebuilt lazily on use; writes NO file (never plaintext).
     con = duckdb.connect(database=":memory:", config=_offline_config())
+    ensure_store_meta(con)
     _LOG.info("columnar engine: in-memory store (no secure persisted encryption offline)")
     return con
+
+
+def _attach_persisted(path, passphrase):
+    """Open a persisted encrypted DuckDB store with the secure backend loaded."""
+    import duckdb
+
+    con = duckdb.connect(config=_offline_config())
+    con.execute("LOAD httpfs")  # the OpenSSL crypto backend (offline; autoload is off)
+    con.execute(f"ATTACH '{path.as_posix()}' AS oo (ENCRYPTION_KEY '{_derive_key(passphrase)}')")
+    con.execute("USE oo")
+    return con
+
+
+# Bump when the columnar read-model TABLE SHAPES change (forces a disposable rebuild).
+STORE_SCHEMA_VERSION = 1
+
+
+def store_format_marker() -> str:
+    """A self-describing marker of what can READ this store: the DuckDB major.minor (the
+    on-disk format is bound to it) + our read-model schema rev. A persisted store whose
+    marker differs is treated as INCOMPATIBLE and rebuilt — never migrated, never crashed
+    on (it is a disposable projection of the canonical store)."""
+    v = "?"
+    try:
+        import duckdb
+
+        v = ".".join(str(duckdb.__version__).split(".")[:2])  # major.minor
+    except Exception:  # noqa: BLE001
+        pass
+    return f"duckdb-{v}/schema-{STORE_SCHEMA_VERSION}"
+
+
+def ensure_store_meta(con) -> None:
+    """Stamp the format marker into the store (idempotent)."""
+    con.execute("CREATE TABLE IF NOT EXISTS oo_meta (k VARCHAR PRIMARY KEY, v VARCHAR)")
+    con.execute("DELETE FROM oo_meta WHERE k = 'format'")
+    con.execute("INSERT INTO oo_meta VALUES ('format', ?)", [store_format_marker()])
+
+
+def read_store_meta(con) -> str | None:
+    """The store's recorded format marker, or None if unmarked (a fresh store)."""
+    try:
+        row = con.execute("SELECT v FROM oo_meta WHERE k = 'format'").fetchone()
+        return row[0] if row else None
+    except Exception:  # noqa: BLE001 - no oo_meta table yet (fresh/legacy store)
+        return None
+
+
+def marker_compatible(marker: str | None) -> bool:
+    """True iff a stored marker matches the current reader (same DuckDB major.minor +
+    schema rev). ``None`` (unmarked/fresh) is NOT 'incompatible' — the caller adopts it."""
+    return marker == store_format_marker()
 
 
 # --------------------------------------------------------------------------- #

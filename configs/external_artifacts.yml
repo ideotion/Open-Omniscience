@@ -1,0 +1,205 @@
+# ---------------------------------------------------------------------------- #
+# External-artifact registry — the SINGLE SOURCE OF TRUTH for everything this
+# project pins, vendors, or bundles from an outside source.
+#
+# Open Omniscience - Global Intelligence Platform for Investigative Journalism
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# WHY THIS EXISTS: dated/pinned external artifacts used to be guarded by scattered,
+# per-file `*_AS_OF` constants + per-file freshness tests. That left two gaps: a NEW
+# dated thing could ship with no guard, and nothing actively WATCHED UPSTREAM — you
+# only learned something moved when it broke. This registry closes both:
+#   * src/maintenance/registry.py reads it; tests/test_external_freshness.py enforces
+#     it (every `*_AS_OF` constant in the tree MUST be registered here — the protocol
+#     guard — and every entry must be within its freshness window + its couplings hold);
+#   * scripts/check_external_freshness.py prints a report (the future upstream-watch
+#     cron will use it to open an issue when upstream is newer);
+#   * GET /api/diagnostics/freshness self-reports staleness from a production install.
+#
+# WHEN YOU ADD an externally-sourced artifact (a data file, a catalog, a vendored
+# binary, a version coupling): ADD AN ENTRY HERE in the same commit. The guard test
+# will fail otherwise.
+#
+# Entry fields:
+#   id            unique slug
+#   title         human label
+#   kind          dated-data | catalog | vendored-data | vendored-binary | runtime-coupling | ci-pin
+#   description   what it is / why we bundle it
+#   upstream      where it comes from
+#   check_upstream how to tell a newer release exists (for the cron + humans)
+#   license       + attribution requirement when any
+#   pin           one of:
+#                   {file, const}            a `*_AS_OF` (or version) constant in source
+#                   {path, sha256}           a vendored file + its expected digest
+#                   {floor, verified}        a dependency floor + the version we verified
+#   refresh       the command/steps to refresh it
+#   freshness     {max_age_months: N}  |  {policy: on-security|track-duckdb-version|rarely}
+#   couplings     ids/notes this must stay consistent with
+#   platforms     (vendored-binary only) the per-OS/arch matrix
+#   last_verified YYYY-MM-DD + who/how
+
+artifacts:
+  # --- dated data / catalogs (each has a *_AS_OF constant the guard checks) -------
+  - id: ip-geo-country
+    title: DB-IP IP-to-Country Lite
+    kind: dated-data
+    description: Offline IP->country range table bundled for source-IP geolocation (Slice 6b).
+    upstream: https://db-ip.com/db/download/ip-to-country-lite (mirror sapics/ip-location-db, CC BY 4.0)
+    check_upstream: "monthly release; mirror dbip-country/ updates ~monthly"
+    license: CC BY 4.0 (attribution to DB-IP.com mandatory)
+    pin: {file: src/geo/ip_geo.py, const: IP_GEO_AS_OF}
+    refresh: "python scripts/build_ip_geo.py --mirror  # then set IP_GEO_AS_OF"
+    freshness: {max_age_months: 6}
+    couplings: ["src/geo/data/dbip_country_lite.csv.gz must exist + be parseable"]
+    upstream_check: {github: "sapics/ip-location-db", type: path_commit, path: "dbip-country/dbip-country-ipv4.csv", compare: as_of}
+    last_verified: "2026-06-19"
+
+  - id: llm-model-catalog
+    title: Ollama model catalog
+    kind: catalog
+    description: Curated dated catalog of installable local models (sizes/licenses) shown in Settings.
+    upstream: https://ollama.com/library
+    check_upstream: "tags on ollama.com/library; new small open models appear regularly"
+    license: per-model (catalog is our metadata)
+    pin: {file: src/llm/ollama.py, const: CATALOG_AS_OF}
+    refresh: "verify tags via search (ollama.com 403s WebFetch); update MODEL_CATALOG + CATALOG_AS_OF"
+    freshness: {max_age_months: 12}
+    last_verified: "2026-06-17"
+
+  - id: wiki-dump-sizes
+    title: Wikipedia dump size estimates
+    kind: dated-data
+    description: Per-edition approximate compressed dump sizes shown inline in the picker.
+    upstream: https://dumps.wikimedia.org
+    check_upstream: "dump sizes grow ~monthly; re-measure from dumpstatus.json"
+    license: CC BY-SA / GFDL (sizes are facts)
+    pin: {file: src/wiki/dump_sizes.py, const: DUMP_SIZES_AS_OF}
+    refresh: "re-measure per-edition sizes; update DUMP_SIZES + DUMP_SIZES_AS_OF"
+    freshness: {max_age_months: 12}
+    last_verified: "2026-06-16"
+
+  - id: osm-region-sizes
+    title: OSM region download size estimates
+    kind: dated-data
+    description: Per-region approximate .osm.pbf sizes shown in the offline-map picker.
+    upstream: https://download.geofabrik.de
+    check_upstream: "extracts grow ~weekly; re-measure"
+    license: ODbL (sizes are facts)
+    pin: {file: src/geo/osm_regions.py, const: OSM_SIZES_AS_OF}
+    refresh: "re-measure region sizes; update OSM_SIZES_AS_OF"
+    freshness: {max_age_months: 12}
+    last_verified: "2026-06-16"
+
+  - id: keyword-baseline
+    title: Keyword positive baseline (type/topic tags)
+    kind: dated-data
+    description: Curated per-language keyword baseline tags (configs/keyword_baseline/*.yml).
+    upstream: in-house curation (+ analyzer-grown)
+    check_upstream: "grown from keyword-diagnostics logs; not an external feed"
+    license: project (GPL-3.0-or-later)
+    pin: {file: src/analytics/baseline.py, const: BASELINE_AS_OF}
+    refresh: "extend configs/keyword_baseline/*.yml; bump BASELINE_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-06-17"
+
+  - id: stats-api-shapes
+    title: Official-statistics API shapes
+    kind: dated-data
+    description: World Bank / Eurostat (SDMX) endpoint + response shapes the parser targets.
+    upstream: World Bank API v2 / Eurostat SDMX-JSON
+    check_upstream: "APIs version their schemas; re-verify the parser fixtures"
+    license: per-provider
+    pin: {file: src/stats/fetch.py, const: STATS_API_AS_OF}
+    refresh: "re-verify SDMX/WB shapes against live; update fixtures + STATS_API_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-06-16"
+
+  - id: tracker-denylist
+    title: Newsletter tracker-param denylist
+    kind: dated-data
+    description: Evidence-based recipient-tracking query-param denylist for .eml/mailbox detox.
+    upstream: tracking-param research (mkt_tok, mc_eid, _hsenc, ...)
+    check_upstream: "new tracking params appear; review periodically"
+    license: project (GPL-3.0-or-later)
+    pin: {file: src/privacy/link_sanitizer.py, const: DENYLIST_AS_OF}
+    refresh: "extend the denylist; bump DENYLIST_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-06-15"
+
+  - id: install-size-estimates
+    title: Installer download-size estimates
+    kind: dated-data
+    description: Rough per-component MB shown by install.sh before the pip step.
+    upstream: measured from a real install log
+    check_upstream: "re-measure when the dependency set changes materially"
+    license: project (GPL-3.0-or-later)
+    pin: {file: install.sh, const: SIZES_AS_OF}
+    refresh: "re-measure component_mb; bump SIZES_AS_OF"
+    freshness: {max_age_months: 18}
+    last_verified: "2026-06-18"
+
+  # --- vendored data / binaries (checksum/version, not time) ----------------------
+  - id: vendored-alpine
+    title: Alpine.js (vendored)
+    kind: vendored-binary
+    description: Alpine v3.14.1 vendored locally for the GUI gallery (no CDN, sha256-pinned).
+    upstream: https://github.com/alpinejs/alpine (npm tarball)
+    check_upstream: "watch alpinejs releases for security fixes"
+    license: MIT
+    pin: {path: src/static/guis/vendor/alpine.min.js, sha256: ""}  # filled by registry self-heal/verify
+    refresh: "re-vendor the pinned version; update the sha256 + the gallery checksum constant"
+    freshness: {policy: on-security}
+    upstream_check: {github: "alpinejs/alpine", type: release, current: "v3.14.1"}
+    last_verified: "2026-06-17"
+
+  - id: natural-earth-geometry
+    title: Natural Earth coastline + country polygons
+    kind: vendored-data
+    description: world_outline.json (110m land) + world_countries.json (110m admin-0) for ooMap.
+    upstream: https://www.naturalearthdata.com (public domain)
+    check_upstream: "Natural Earth changes rarely; refresh only on a data correction"
+    license: public domain
+    pin: {path: src/static/world_countries.json, sha256: ""}
+    refresh: "python scripts/build_country_polygons.py ; python scripts/build_world_outline.py"
+    freshness: {policy: rarely}
+    last_verified: "2026-06-18"
+
+  # --- runtime version couplings (the gotchas the cron alone can't see) -----------
+  - id: duckdb-crypto-extension
+    title: DuckDB + httpfs/OpenSSL crypto extension coupling
+    kind: runtime-coupling
+    description: >
+      The columnar store's PERSISTED-OFFLINE encryption needs the OpenSSL crypto backend,
+      which ships in DuckDB's `httpfs` extension. That extension is a NATIVE binary pinned
+      to the EXACT DuckDB version and per platform+arch. DuckDB's default autoinstall/
+      autoload would fetch it over the network (we disable that), so to enable persisted
+      encryption the per-OS extension must be bundled locally for the pinned DuckDB version.
+    upstream: https://github.com/duckdb/duckdb (+ extensions.duckdb.org)
+    check_upstream: "watch duckdb releases; the storage format + extension version both move"
+    license: MIT (DuckDB)
+    pin: {floor: "1.4", verified: "1.5.4"}   # pyproject [columnar] duckdb>=floor ; verified against
+    refresh: >
+      On a DuckDB bump: re-download httpfs for EVERY supported platform_arch at the NEW
+      version; verify each signature/checksum; re-run the encryption gate per platform;
+      confirm the persisted store still opens (else delete+rebuild — it is disposable);
+      update {floor, verified} here.
+    freshness: {policy: track-duckdb-version}
+    upstream_check: {github: "duckdb/duckdb", type: release, current: "v1.5.4"}
+    platforms: [linux_amd64, linux_arm64, osx_amd64, osx_arm64, windows_amd64]
+    couplings:
+      - "pyproject.toml [project.optional-dependencies] columnar duckdb>= must equal floor"
+      - "the on-disk store format is version-bound; on mismatch the disposable store is rebuilt"
+    last_verified: "2026-06-19"
+
+  # --- CI / supply-chain pins (Dependabot territory; recorded so they are not forgotten) --
+  - id: ci-action-and-tool-pins
+    title: CI action SHAs + pinned QA tools
+    kind: ci-pin
+    description: GitHub Action SHAs (checkout, setup-python) + pinned mypy/bandit/pip-audit/ruff.
+    upstream: the respective repos
+    check_upstream: "enable Dependabot for github-actions + pip; it opens PRs on new releases"
+    license: per-tool
+    pin: {file: .github/workflows/ci.yml, const: NONE}  # SHAs carry tag comments; Dependabot bumps
+    refresh: "let Dependabot bump; re-pin to the new SHA with the tag comment"
+    freshness: {policy: on-security}
+    last_verified: "2026-06-15"

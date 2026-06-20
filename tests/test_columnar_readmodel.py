@@ -140,3 +140,29 @@ def test_diagnostics_columnar_endpoint_is_observable_and_honest():
     import json
 
     assert "score" not in json.dumps(out["columnar"]).lower()
+
+
+def test_store_format_marker_round_trips_and_detects_incompatibility(db):
+    # COMPATIBILITY: the store self-describes the DuckDB major.minor + schema rev, so a
+    # store written by an incompatible version is detected (and rebuilt, never crashed on).
+    con = columnar.connect(passphrase="x")
+    # connect() stamps the marker (even in-memory).
+    assert columnar.read_store_meta(con) == columnar.store_format_marker()
+    assert columnar.marker_compatible(columnar.store_format_marker()) is True
+    # An old/foreign marker is incompatible -> connect() would drop + rebuild the file.
+    assert columnar.marker_compatible("duckdb-0.1/schema-0") is False
+    assert columnar.marker_compatible(None) is False  # unmarked handled as 'adopt', not compatible
+    con.close()
+
+
+def test_connect_never_crashes_with_a_garbage_store_file(db, monkeypatch, tmp_path):
+    # A corrupt/incompatible file at the store path must NEVER crash the engine: offline
+    # it falls back to in-memory; with secure crypto it would delete+rebuild. Either way a
+    # usable connection comes back (the canonical store is the source of truth).
+    monkeypatch.setenv("OO_COLUMNAR_DIR", str(tmp_path))
+    (tmp_path / "analytics.duckdb").write_bytes(b"not a valid duckdb file \x00\x01\x02")
+    con = columnar.connect(passphrase="correct horse battery staple")
+    assert con is not None
+    con.execute("CREATE TABLE t (n INTEGER); INSERT INTO t VALUES (1)")
+    assert con.execute("SELECT SUM(n) FROM t").fetchone()[0] == 1
+    con.close()

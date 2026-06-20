@@ -1,0 +1,38 @@
+# Dependabot — the supply-chain half of the external-artifact watch (layer 3).
+#
+# Open Omniscience - Global Intelligence Platform for Investigative Journalism
+# Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+#
+# Dependabot covers the artifacts it CAN see automatically: the pip dependencies in
+# pyproject.toml and the GitHub Action SHAs in .github/workflows. It opens a PR when a new
+# release exists, so those pins never silently drift. The DATA / VENDORED-BINARY / catalog
+# artifacts it cannot see (DB-IP geo DB, model catalog, DuckDB crypto extension, …) are
+# watched by the freshness cron (.github/workflows/freshness.yml) instead. Together they are
+# layer 3 of docs/maintenance/EXTERNAL_DEPENDENCIES.md.
+version: 2
+updates:
+  # Python dependencies (the core + the optional extras, incl. duckdb in [columnar]).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "deps"
+    # A DuckDB bump has a version COUPLING (the per-OS crypto extension + the on-disk
+    # store format) — see EXTERNAL_DEPENDENCIES.md; review the checklist before merging.
+
+  # GitHub Action SHAs (we pin to a SHA + a tag comment; Dependabot bumps the SHA).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    labels: ["ci", "dependencies"]
+    commit-message:
+      prefix: "ci"
