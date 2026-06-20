@@ -3362,6 +3362,36 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **IN-APP SCALING BENCHMARK 2026-06-20 (maintainer-asked "add a benchmark so we can live test
+  this; include detailed benchmark logs I'll pass on"; branch claude/modest-hopper-gisgst, draft
+  PR #419 onto 0.09; backend VERIFIED py3.11):** the data-architecture scaling work was proven
+  byte-identical but never proven FAST at scale on a real machine. `src/monitoring/benchmark.py`:
+  `run_benchmark(session, repeats=3)` times the hot read paths against the LIVE corpus N times
+  (run 1 cold, runs 2..N warm-aggregated), each case a bounded query-layer fn the UI already
+  calls, per-case ISOLATED (one failing/absent case never aborts). Headline cases flagged
+  `optimized_this_session`: grouped top-terms + super-groups (the denormalised counters), associations
+  + the mind-map graph (the de-N+1); plus the broader hot reads (trending/windows, map coverage,
+  who/where, FTS, framing). The log is SELF-DESCRIBING — corpus size + the keyword-counter freshness
+  envelope (exact|estimated) + the columnar engine mode + host facts — so a number is interpretable
+  away from the machine. READ-ONLY (reports counter freshness, NEVER reconciles), bounded,
+  airplane-safe; on-click only, never transmitted; counts+ms only, NO score. GET
+  /api/diagnostics/benchmark + a Settings → Diagnostics "Download scaling benchmark (.json)" button
+  (un-keyed English matching the adjacent diagnostics buttons → i18n stays 100%, zero new keys).
+  tests/test_benchmark.py (6: shape/context, times the optimized paths cold/warm, single-run-cold-only,
+  read-only proof [no rows touched, no watermark stamped], no-score, summary). HONEST GAP in the bare
+  test env (not in a real install): fts_search needs the boot-built article_fts table + framing needs
+  the [analysis] VADER extra → both report ok=false per-case here, run in a real install.
+- **BACKUP IMPORT ACROSS VERSIONS — CONFIRMED TO MAINTAINER 2026-06-20 (informational, no code
+  change):** maintainer asked whether OLD-architecture backups are usable + whether articles get
+  re-analysed on import. ANSWER = YES to both: oo-backup-2 artifacts restore additively (merge engine)
+  down to the 0.0.8-baseline schema floor (FLOOR_NOTE "0.0.8 baseline (6ae5766d3136)"; the staged copy
+  is alembic-upgraded to head before merge; a NEWER-app artifact is refused by name), AND the P0-4
+  reindex (shipped 2026-06-19) recomputes CORE-ENGINE metadata on import — `run_restore(reindex_imported=
+  True)` default → `reindex_imported_articles(batch_id)` → `store.reindex_articles` runs `index_article`
+  over the imported article ids (delete-then-reinsert), so keywords/mentions + the NEW denormalised
+  counters + dates/places/entities + sentiment are recomputed by the CURRENT engine; AI artifacts
+  (article_analyses summaries/translations + ai_keyword) stay verbatim (index_article never touches them).
+  So an old backup imports AND gets the current optimizations for free. (Verified in code this session.)
 - **AUTONOMOUS V0.1 BATCH (2026-06-20, branch claude/sweet-keller-ozdip1 = ONE rolling branch
   per the system-reminder "develop only on this branch / NEVER push to a different branch"; PR #413
   draft onto 0.09, accumulating commits — also eliminates inter-PR locale conflicts). Commits so far:

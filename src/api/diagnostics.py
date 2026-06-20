@@ -1195,6 +1195,38 @@ def performance_report(
     )
 
 
+@router.get("/benchmark")
+def benchmark_report(
+    repeats: int = Query(3, ge=1, le=10, description="Runs per case (1 = cold only)"),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """The SCALING benchmark (maintainer-asked 2026-06-19): a repeatable, on-click
+    timing of the heavy read paths against THIS corpus on THIS machine — so the
+    data-architecture scaling work (denormalised keyword counters, de-N+1
+    associations/graph) can be LIVE-tested, with a self-describing log to hand back.
+
+    Each case runs ``repeats`` times (run 1 cold, runs 2..N warm) over a bounded
+    query-layer function the UI already calls. The log carries the corpus size, the
+    keyword-counter freshness, the columnar engine mode and host facts so a number is
+    interpretable away from the machine. READ-ONLY (it does not reconcile the
+    counters — it reports their current freshness), bounded, airplane-safe; generated
+    only on click and never transmitted. See src/monitoring/benchmark.py.
+    """
+    from src.monitoring.benchmark import run_benchmark
+
+    payload = run_benchmark(db, repeats=repeats)
+    body = envelope(
+        kind="scaling-benchmark",
+        query={"repeats": repeats},
+        count=payload.get("summary", {}).get("cases_run", 0),
+        payload=payload,
+    )
+    fname = f"oo-benchmark-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+    return JSONResponse(
+        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
 @router.get("/network")
 def network_preflight_log() -> JSONResponse:
     """The network-targets diagnostics log (maintainer↔developer channel):
