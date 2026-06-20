@@ -1,26 +1,167 @@
-# Initial keyword SUPER-GROUPS — bundled, pre-created (maintainer-ruled
-# 2026-06-11: "the supergroups should be created beforehand"). Drafted from
-# field log #1 (1,349 articles; June-2026 news cycle: Middle-East war, FIFA
-# World Cup, AI). Every member below was VERIFIED PRESENT in that log's
-# vocabulary — nothing invented; extend batch-by-batch from future logs.
+# Initial keyword SUPER-GROUPS -- bundled concept scaffold (maintainer-ruled
+# 2026-06-20: supergroups are durable umbrella CONCEPTS, one level broader than
+# a ring -- NOT topics of the moment). Cherry-picked by us to set the editorial
+# trajectory across the ~12 domains (politics, economy, science, culture,
+# history...). Members are cross-language RINGS (configs/keyword_rings_generated
+# + keyword_equivalents), so every group spans all 12 languages by construction.
+# Grows toward ~200 as the ring set grows toward ~2000.
 #
-# Seeded into the database at startup ONLY where a group name doesn't already
-# exist — the user's own edits/deletions always win (the dispose rule). Members
-# are family canonical normalized terms; a term may belong to several groups.
+# Seeded at startup ONLY where a group name does not already exist -- the user's
+# own edits/deletions always win. A ring member is validated against the ring set
+# at seed time; an unknown ring id is skipped (never a dead member).
+
 supergroups:
-  - name: "Middle East conflict"
-    members: ["iran", "israel"]
-  - name: "FIFA World Cup 2026"
-    members: ["world cup", "fifa", "cup"]
+  - name: "State & government"
+    rings: [government, president, prime-minister, minister, cabinet, senate, governance, federalism, monarchy, dictatorship, sovereignty, capital-city]
+  - name: "Elections & democracy"
+    rings: [public-election, voting, democracy, referendum, suffrage, political-opposition, citizenship]
+  - name: "Lawmaking & political process"
+    rings: [constitution, statute, policy, veto, impeachment, lobbying, coalition]
+  - name: "Political ideologies"
+    rings: [ideology, communism, socialism, capitalism, fascism, liberalism, conservatism, nationalism, populism, authoritarianism]
+  - name: "Diplomacy & international order"
+    rings: [diplomacy, treaty, summit, embassy, ambassador, geopolitics, united-nations, european-union]
+  - name: "Protest & political change"
+    rings: [protest, rebellion, independence, decolonization, colonialism, propaganda, coup-d-tat]
+  - name: "Armed conflict"
+    rings: [conflict, ceasefire, airstrike, occupation, blockade, peacekeeping, casualty, militia]
+  - name: "Weapons & arsenals"
+    rings: [weapon, missile, nuclear-weapon, tank, artillery-branch, submarine, ammunition, unmanned-aerial-vehicle]
+  - name: "Armed forces"
+    rings: [military, soldier, veteran, conscription, disarmament]
+  - name: "Intelligence & cyberwar"
+    rings: [espionage, intelligence-agency, cyberwarfare, surveillance]
+  - name: "Terrorism & atrocities"
+    rings: [terrorism, genocide, violence]
+  - name: "Migration & displacement"
+    rings: [refugee, human-migration, border, immigration, diaspora]
+  - name: "Human rights & freedoms"
+    rings: [human-rights, civil-and-political-rights, freedom-of-speech, freedom-of-expression, censorship]
+  - name: "Crime"
+    rings: [crime, homicide, theft, fraud, smuggling, defamation]
+  - name: "Justice & courts"
+    rings: [law, trial, judge, prosecutor, lawyer, jury, evidence, lawsuit, jurisdiction, sentence, parole, bail, prison, extradition, prisoner]
+  - name: "Intellectual property"
+    rings: [copyrighted, patent]
+  - name: "Inequality & welfare"
+    rings: [inequality, poverty, welfare, homelessness, housing, famine]
+  - name: "Population & demography"
+    rings: [human-population, demography, urbanization, census, birth-rate, life-expectancy, ethnic-group, continent]
+  - name: "Gender & family"
+    rings: [gender, gender-equality, feminism, family, identity]
+  - name: "Education & learning"
+    rings: [education, university, school, teacher, student, literacy]
+  - name: "Social cohesion"
+    rings: [multiculturalism, voluntary-association, creation, resignation]
+  - name: "Macroeconomy"
+    rings: [economy, inflation, recession, unemployment, economic-growth, gross-domestic-product, austerity, productivity]
+  - name: "Money & banking"
+    rings: [central-bank, currency, bank, interest-rate, debt, deficiency, exchange-rate, bankruptcy]
+  - name: "Financial markets"
+    rings: [stock-market, investment, stock, bond, dividend, mortgage-loan, insurance, cryptocurrency, blockchain]
+  - name: "Trade & globalization"
+    rings: [trade, tariff, export, import, marketplace, globalization, supply-chain, logistics]
+  - name: "Business & industry"
+    rings: [corporation, startup, entrepreneurship, merger, monopoly, commerce, retail, industrial-manufacturing, consumer, profit]
+  - name: "Labour & work"
+    rings: [wage, strike, labor-union]
+  - name: "Public finance"
+    rings: [budget, subsidy, privatization, nationalization]
+  - name: "Energy systems"
+    rings: [energy, electricity, electrical-grid]
+  - name: "Renewable energy"
+    rings: [renewable-energy, solar-energy, wind-power, hydropower, geothermal-energy, biofuel, hydrogen]
+  - name: "Fossil fuels"
+    rings: [fossil-fuel, petroleum, natural-gas, coal, gasoline, refinery]
+  - name: "Nuclear power"
+    rings: [nuclear-power, uranium]
+  - name: "Mining & metals"
+    rings: [mining, gold, copper, steel, aluminium, lithium, rare-earth-element, semiconductor]
+  - name: "Natural resources"
+    rings: [natural-resource, water-supply]
+  - name: "Climate change"
+    rings: [climate-change, global-warming, greenhouse-gas-emissions, carbon-dioxide, carbon-footprint, methane, sea-level-rise]
+  - name: "Natural disasters"
+    rings: [drought, flood, wildfire, earthquake, hurricane, volcano, tsunami, landslide, monsoon]
+  - name: "Ecology & biodiversity"
+    rings: [biodiversity, ecosystem, endangered-species, coral-reef, rainforest, wetland, deforestation]
+  - name: "Pollution & sustainability"
+    rings: [pollution, air-quality, recycling, sustainability, environmental-protection, ozone-layer]
+  - name: "Earth systems"
+    rings: [climate, weather, atmosphere, ocean, geology, glacier, permafrost, soil, erosion, desertification, water-scarcity]
+  - name: "Physical geography"
+    rings: [mountain, river, desert, city]
+  - name: "Agriculture"
+    rings: [agriculture, crop, harvest, agricultural-irrigation, pesticide, fertilizer, organic-agriculture, gmo]
+  - name: "Food & farming"
+    rings: [food-security, rice, wheat, soybean, coffee, sugar, grain, cattle, dairy, livestock, aquaculture]
+  - name: "Physics"
+    rings: [physics, gravity, force, velocity, magnetism, electromagnetism, thermodynamics, temperature, theory-of-relativity]
+  - name: "Quantum & particles"
+    rings: [quantum-mechanics, atom, electron, proton, neutron, photon, isotope, antimatter, nuclear-fission, visible-spectrum]
+  - name: "Chemistry"
+    rings: [molecules, chemical-element, chemical-reaction, oxygen, carbon, nitrogen, periodic-table, metal, crystal]
+  - name: "Astronomy"
+    rings: [astronomy, galaxy, star, asteroid, comet, black-hole, supernova, nebula, telescope, orbit, moon]
+  - name: "Cosmology & space"
+    rings: [universe, cosmology, dark-matter, solar-system, space-exploration, rocket]
+  - name: "Mathematics"
+    rings: [geometry, algebra, calculus, statistics, probability, equation, logic]
+  - name: "Biology & genetics"
+    rings: [biology, cell, deoxyribonucleic-acid, gene, genetics, chromosome, evolution, species, reproduction, protein, enzyme, hormone, photosynthesis, microbiome, genome]
+  - name: "Microbiology & immunity"
+    rings: [bacteria, virus, immunity, antibody, infection, antibiotic]
+  - name: "Human body"
+    rings: [anatomy, physiology, organ, tissue, blood, blood-plasma, heart, lung, brain, neuron]
+  - name: "Disease & epidemics"
+    rings: [disease, cancer, pandemic, epidemic, epidemiology, malaria, tuberculosis, diabetes, obesity, pathology]
+  - name: "Medicine & care"
+    rings: [medicine, hospital, surgery, medication, clinical-trial, diagnosis, medical-treatment, transplantation, vaccine, vaccination, health-care, public-health, nutrition]
+  - name: "Mental health"
+    rings: [mental-health, anxiety, major-depressive-disorder, addiction, autism, psychiatric-hospital]
+  - name: "Computing"
+    rings: [computer, computer-hardware, operating-system, server, cloud-computing, computer-network, computer-programming, open-source-software, integrated-circuit, central-processing-unit, bit-rate]
+  - name: "Software & internet"
+    rings: [software, internet, database, technology]
   - name: "Artificial intelligence"
-    members: ["ai", "ia", "intelligence artificielle", "model", "models", "modèles", "data", "données"]
-  - name: "US politics & government"
-    members: ["trump", "donald trump", "government", "federal government", "president", "supreme court", "court"]
-  - name: "Climate & environment"
-    members: ["climate", "climate change", "energy"]
-  - name: "Security & defense"
-    members: ["security", "military", "police"]
-  - name: "Economy & markets"
-    members: ["company", "companies", "euros"]
-  - name: "Russia & Ukraine"
-    members: ["russian"]
+    rings: [artificial-intelligence, machine-learning, deep-learning, artificial-neural-network, algorithm, automation, robot, autonomous-vehicle]
+  - name: "Data & privacy"
+    rings: [data, privacy, computer-security, encryption, cryptography]
+  - name: "Emerging technology"
+    rings: [biotechnology, nanotechnology, quantum-computing, virtual-reality, augmented-reality, electric-vehicle, battery, sensor, smartphone]
+  - name: "Journalism & press"
+    rings: [journalist, journalism, newspaper, editorial, news-conference, news-media, broadcasting, whistleblower, freedom-of-the-press]
+  - name: "Broadcast & digital media"
+    rings: [television, radio-station, podcast, documentary-film, social-media]
+  - name: "Advertising & opinion"
+    rings: [advertising, marketing, public-opinion]
+  - name: "Information integrity"
+    rings: [misinformation, disinformation, fact-checking]
+  - name: "Visual & performing arts"
+    rings: [art, painting, sculpture, photography, calligraphy, music, opera, dance, theatre, film]
+  - name: "Literature & language"
+    rings: [literature, poetry, novel, language, linguistics, grammatical-particle]
+  - name: "Architecture & design"
+    rings: [architecture, fashion, aesthetics]
+  - name: "Heritage & museums"
+    rings: [museum, monument, manuscript, heritage, archaeological-artefact, archaeology]
+  - name: "Tradition & folklore"
+    rings: [culture, mythology, folklore, festival, ritual]
+  - name: "Philosophy"
+    rings: [philosophy, ethics, logic, metaphysics, morality]
+  - name: "Religion & belief"
+    rings: [religion, theology, faith, atheism, irreligion, meditation, pilgrimage, religious-text]
+  - name: "Social sciences"
+    rings: [psychology, sociology, anthropology]
+  - name: "Eras of history"
+    rings: [history, antiquity, prehistory, ancient-history, renaissance, enlightenment, feudalism, dynasty, civilization]
+  - name: "Modern history"
+    rings: [industrial-revolution, world-war-i, cold-war, slavery, conquest, exploration]
+  - name: "Sport & competition"
+    rings: [sport, olympic-games, fifa-world-cup, championship, tournament, athlete, referee, award, doping-in-sport, stadium]
+  - name: "Sporting disciplines"
+    rings: [association-football, basketball, tennis, cricket, rugby, competitive-swimming, gymnastics, cycling, boxing, marathon]
+  - name: "Transport & mobility"
+    rings: [transport, railway, airport, controlled-access-highway, bridge, tunnel]
+  - name: "Built environment"
+    rings: [infrastructure, urban-planning, guest-house]
