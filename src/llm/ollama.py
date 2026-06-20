@@ -37,29 +37,45 @@ CATALOG_AS_OF = "2026-06"
 # visible without us pretending to a freshness we can't guarantee.
 OLLAMA_TESTED_VERSION = "0.5.x"
 MODEL_CATALOG: list[dict] = [
-    # --- Text generation: summarize / translate / synthesize use plain /api/generate
-    # (no tool-calling), so any instruct/chat TEXT model that fits the RAM works. ---
-    {"tag": "granite4:350m", "size": "~0.3 GB", "min_ram_gb": 4, "note": "IBM Granite 4.0 — tiny (350M); simple tasks"},
-    {"tag": "gemma3:1b", "size": "~0.8 GB", "min_ram_gb": 4, "note": "Google Gemma 3 — small & fast (1B)"},
-    {"tag": "llama3.2:1b", "size": "~1.3 GB", "min_ram_gb": 4, "note": "Meta Llama 3.2 — smallest; very low-spec"},
-    {"tag": "granite4.1:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "IBM Granite 4.1 — multilingual (3B), Apache-2.0"},
-    {"tag": "llama3.2:3b", "size": "~2 GB", "min_ram_gb": 8, "note": "Meta Llama 3.2 — balanced default"},
-    {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "note": "IBM Granite 4.0 — small (3.4B, hybrid)"},
-    {"tag": "nemotron-mini", "size": "~2.7 GB", "min_ram_gb": 8, "note": "NVIDIA Nemotron Mini (4B)"},
-    {"tag": "translategemma:4b", "size": "~3.3 GB", "min_ram_gb": 8, "note": "Google TranslateGemma — translation across 55 languages (4B)"},
-    {"tag": "gemma3:4b", "size": "~3.3 GB", "min_ram_gb": 8, "note": "Google Gemma 3 (4B)"},
-    {"tag": "gemma4:e4b", "size": "~3.5 GB", "min_ram_gb": 8, "note": "Google Gemma 4 — latest edge model (Apr 2026), reasoning"},
-    {"tag": "mistral:7b", "size": "~4.4 GB", "min_ram_gb": 8, "note": "Mistral 7B (Apache-2.0)"},
-    {"tag": "granite4.1:8b", "size": "~5 GB", "min_ram_gb": 8, "note": "IBM Granite 4.1 — multilingual (8B), RAG/tools"},
-    {"tag": "gpt-oss:20b", "size": "~14 GB", "min_ram_gb": 16, "note": "OpenAI gpt-oss — 20B MoE reasoning; needs ~16 GB"},
-    # --- Embedding models: downloadable here, but the app's summarize / translate /
+    # === Text generation (summarize / translate / synthesize use plain
+    # /api/generate, no tool-calling -> any instruct/chat TEXT model that fits the
+    # RAM works). Ordered RECOMMENDED-FIRST: models under OSI-approved permissive
+    # licenses (Apache-2.0 / MIT) lead; models whose licenses carry acceptable-use
+    # restrictions are listed lower and labelled, so the operator chooses with eyes
+    # open. `license` is each model's OWN license (shown in the picker) -- never a
+    # statement about the corpus. Verified against https://ollama.com/library this
+    # cycle; two unverifiable entries (gemma4:e4b, translategemma:4b) were removed
+    # rather than shipped on faith. The runtime can still point at ANY tag via
+    # OO_LLM_MODEL / the in-app "pull any tag" box -- this is only the curated list. ===
+    # --- Permissive (Apache-2.0 / MIT) — recommended ---
+    {"tag": "granite4:350m", "size": "~0.3 GB", "min_ram_gb": 4, "license": "Apache-2.0", "note": "IBM Granite 4.0 — tiny (350M); simple tasks; Apache-2.0"},
+    {"tag": "qwen3:1.7b", "size": "~1.4 GB", "min_ram_gb": 4, "license": "Apache-2.0", "note": "Alibaba Qwen3 (1.7B) — small & permissive; Apache-2.0"},
+    {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.0 — small (3.4B, hybrid); the app's default; Apache-2.0"},
+    {"tag": "granite4.1:3b", "size": "~2 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.1 — multilingual (3B); Apache-2.0"},
+    {"tag": "qwen3:4b", "size": "~2.6 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Alibaba Qwen3 (4B) — balanced & permissive; Apache-2.0"},
+    {"tag": "phi4-mini", "size": "~2.5 GB", "min_ram_gb": 8, "license": "MIT", "note": "Microsoft Phi-4-mini (3.8B) — MIT"},
+    {"tag": "mistral:7b", "size": "~4.4 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Mistral 7B — recommended mid-range; Apache-2.0"},
+    {"tag": "olmo2:7b", "size": "~4.5 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Allen AI OLMo 2 (7B) — fully open; Apache-2.0"},
+    {"tag": "granite4.1:8b", "size": "~5 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.1 — multilingual (8B), RAG/tools; Apache-2.0"},
+    {"tag": "phi4", "size": "~9 GB", "min_ram_gb": 16, "license": "MIT", "note": "Microsoft Phi-4 (14B) — MIT; needs ~16 GB"},
+    {"tag": "gpt-oss:20b", "size": "~14 GB", "min_ram_gb": 16, "license": "Apache-2.0", "note": "OpenAI gpt-oss — 20B MoE reasoning; needs ~16 GB; Apache-2.0"},
+    # --- Use-restricted licenses (kept available, NOT recommended as defaults) ---
+    {"tag": "gemma3:1b", "size": "~0.8 GB", "min_ram_gb": 4, "license": "Gemma (use restrictions)", "note": "Google Gemma 3 (1B) — Gemma license, use restrictions"},
+    {"tag": "gemma3:4b", "size": "~3.3 GB", "min_ram_gb": 8, "license": "Gemma (use restrictions)", "note": "Google Gemma 3 (4B) — Gemma license, use restrictions"},
+    {"tag": "llama3.2:1b", "size": "~1.3 GB", "min_ram_gb": 4, "license": "Llama Community (use restrictions)", "note": "Meta Llama 3.2 (1B) — Llama Community License, use restrictions"},
+    {"tag": "llama3.2:3b", "size": "~2 GB", "min_ram_gb": 8, "license": "Llama Community (use restrictions)", "note": "Meta Llama 3.2 (3B) — Llama Community License, use restrictions"},
+    {"tag": "nemotron-mini", "size": "~2.7 GB", "min_ram_gb": 8, "license": "NVIDIA Open Model License", "note": "NVIDIA Nemotron Mini (4B) — NVIDIA Open Model License"},
+    # === Embedding models: downloadable here, but the app's summarize / translate /
     # synthesize features do NOT use them (they are for semantic search / RAG, a
-    # future capability). Labelled `kind: embedding` so the picker says so. ---
-    {"tag": "embeddinggemma", "size": "~0.6 GB", "min_ram_gb": 4, "kind": "embedding", "note": "Google EmbeddingGemma (308M) — text embeddings; not used by summarize/translate"},
-    {"tag": "nomic-embed-text-v2-moe", "size": "~1 GB", "min_ram_gb": 4, "kind": "embedding", "note": "Nomic Embed v2 MoE — multilingual embeddings (~100 languages); not used by summarize/translate"},
-    {"tag": "bge-m3", "size": "~1.2 GB", "min_ram_gb": 4, "kind": "embedding", "note": "BAAI BGE-M3 — multilingual embeddings; not used by summarize/translate"},
+    # future capability). Labelled `kind: embedding` so the picker says so. ===
+    {"tag": "embeddinggemma", "size": "~0.6 GB", "min_ram_gb": 4, "kind": "embedding", "license": "Gemma (use restrictions)", "note": "Google EmbeddingGemma (308M) — text embeddings; not used by summarize/translate"},
+    {"tag": "nomic-embed-text-v2-moe", "size": "~1 GB", "min_ram_gb": 4, "kind": "embedding", "license": "Apache-2.0", "note": "Nomic Embed v2 MoE — multilingual embeddings (~100 languages); not used by summarize/translate"},
+    {"tag": "bge-m3", "size": "~1.2 GB", "min_ram_gb": 4, "kind": "embedding", "license": "MIT", "note": "BAAI BGE-M3 — multilingual embeddings; not used by summarize/translate"},
 ]
-DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", "llama3.2:3b")
+# The app's default model tag (a fallback when the operator has not chosen one in
+# Settings). Apache-2.0, low-spec-friendly, and matched by the installer's quick
+# pull so a fresh install's default is actually present. Override with OO_LLM_MODEL.
+DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", "granite4:micro")
 
 
 def total_ram_gb() -> float | None:

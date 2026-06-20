@@ -22,7 +22,7 @@
 # Unattended env vars (also used by CI):
 #   OO_COMPONENTS="analysis,llm"   extras to add on top of core (comma-separated)
 #   OO_WITH_OLLAMA=1               install Ollama if missing (asks consent unless unattended)
-#   OO_OLLAMA_MODEL="gemma3:1b"  model to pull (empty = none)
+#   OO_OLLAMA_MODEL="granite4:micro"  model to pull (empty = none; Apache-2.0)
 #   OO_OLLAMA_READABLE=0           don't make the Ollama model store backup-readable
 #   OO_MAKE_LAUNCHER=1             create the desktop launcher
 #   OO_PYTHON=python3.13           interpreter to use
@@ -393,15 +393,15 @@ maybe_setup_ollama() {
     if [ -z "$model" ] && [ "$UNATTENDED" != "1" ]; then
         if [ "$HAVE_WHIPTAIL" = "1" ]; then
             model=$(whiptail --title "Download a local model" --menu \
-                "Pick a small model to download now (you can pull others later):" 17 76 5 \
-                "gemma3:1b"      "~0.8 GB  Google Gemma 3, small & fast (good default)" \
-                "granite4:micro" "~2.1 GB  IBM Granite 4.0, latest small (3.4B)" \
-                "nemotron-mini"  "~2.7 GB  NVIDIA Nemotron Mini (4B)" \
-                "llama3.2:3b"    "~2.0 GB  Meta Llama 3.2, balanced" \
+                "Pick a small model to download now (you can pull others later).\nThe defaults below use permissive Apache-2.0/MIT licenses:" 18 78 5 \
+                "granite4:micro" "~2.1 GB  IBM Granite 4.0 (Apache-2.0) — recommended default" \
+                "qwen3:1.7b"     "~1.4 GB  Alibaba Qwen3 (Apache-2.0), small" \
+                "mistral:7b"     "~4.4 GB  Mistral 7B (Apache-2.0), mid-range" \
+                "gemma3:1b"      "~0.8 GB  Google Gemma 3 (Gemma license — use limits)" \
                 "none"           "Skip — pick from more models in-app later" 3>&1 1>&2 2>&3) || model="none"
         else
-            if ask_yn "Download a small default model now (gemma3:1b, ~0.8 GB)?" y; then
-                model="gemma3:1b"; else model="none"; fi
+            if ask_yn "Download a small default model now (granite4:micro, ~2.1 GB, Apache-2.0)?" y; then
+                model="granite4:micro"; else model="none"; fi
         fi
     fi
     if [ -n "$model" ] && [ "$model" != "none" ]; then
