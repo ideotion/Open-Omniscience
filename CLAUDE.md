@@ -444,11 +444,21 @@ ruling, a contingency, or a deliberate-omission note.
   VERIFY-list "IP-geo DB license/size/offline" are DONE; 6c FRONTEND ooMap "Server IPs" layer SHIPPED
   (browser-unverified); Slice 4 PR-2 FOUNDATION (columnar read-model builder + byte-identical
   projection + cold fallback) + D (persisted background maintenance + /api/diagnostics/columnar
-  observability) SHIPPED. REMAINING = Slice 4 PR-3 (port the HEAVY aggregations
-  associations/graph/framing onto the columnar store: raw-aggregation in DuckDB + the Python honesty
-  layers unchanged, perf-verified on a real corpus) + the ONE open gate: the per-OS httpfs/OpenSSL
-  crypto-extension PACKAGING DECISION enabling persisted-offline encryption (until then columnar is
-  in-memory and the hot endpoints stay on the fast Slice-2 counters).
+  observability) SHIPPED. **PR-3 SHIPPED 2026-06-19 (the heavy-aggregation perf, draft PR after #412
+  merged) — but via the Slice-2 COUNTERS, not the DuckDB port (the honest engineering call):** the
+  /api/insights/associations 76 s was an N+1 (a per-co-keyword COUNT(DISTINCT article_id) for n_b +
+  a session.get(Keyword) per row), NOT a DuckDB-shaped problem. Fixed in queries.associations: the
+  co-keyword rows are batch-loaded (one query, not N gets), and n_b corpus-wide == the maintained
+  ``article_count`` counter (BYTE-IDENTICAL: it IS COUNT(DISTINCT article_id), reconciled), so ZERO
+  query; windowed n_b comes from ONE grouped query (not N). layered_graph (keyword level calls
+  associations ~6×) inherits it; the Python PMI/family/ring honesty layers are untouched. Proven
+  byte-identical on both paths (tests/test_associations_perf.py recomputes n_b the live way + asserts
+  equality). framing was already bounded (8000-char cap + joinedload, prior fix); porting it would
+  need content in the derived store — deferred. REMAINING (now optional, NOT the 76 s blocker): the
+  columnar store could accelerate the inherent co_rows GROUP BY when PERSISTED — gated on the per-OS
+  httpfs/OpenSSL crypto-extension PACKAGING DECISION (until then columnar is in-memory; the hot
+  endpoints run fast on the counters). The data-architecture brief is COMPLETE bar that one
+  packaging decision.
 - **LLM-ASSISTED PERCEPTION — who/where/when extraction + sentiment + an eval harness
   (maintainer brainstorm 2026-06-18; EVALUATION, reconciliation pending the maintainer's
   PARALLEL internet research; full record in `docs/FUTURE_DEVELOPMENTS.md` →
@@ -3312,6 +3322,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **SLICE 4 PR-3 — HEAVY-AGGREGATION PERF VIA THE COUNTERS, NOT DUCKDB 2026-06-19 ("proceed with
+  the remaining item"; draft PR onto 0.09; VERIFIED py3.11):** the honest engineering call —
+  /api/insights/associations (76 s) was an N+1, not a columnar problem, so the Slice-2 counters fix
+  it with no new dependency, no persistence gate, offline, byte-identical. queries.associations now
+  batch-loads the co-keyword rows (one query, not N gets) and reads n_b corpus-wide from the
+  maintained ``article_count`` counter (== COUNT(DISTINCT article_id), zero query) / windowed from
+  ONE grouped query (not N). layered_graph keyword-level inherits it (calls associations ~6×); the
+  Python PMI/family/ring honesty layers are untouched. tests/test_associations_perf.py recomputes
+  n_b the live way + proves byte-identical output on both the counter path AND the windowed path.
+  Also hardened a latent test-ordering pollution in test_readmodel_seam (its insights reload with
+  OO_INSIGHTS_CACHE_TTL=0 could leak to a later test — now resets the env before the restore reload;
+  CI's alphabetical order never hit it, but a mixed-order run did). framing was already bounded
+  (8000-char cap, prior fix). The columnar DuckDB port stays available for the inherent co_rows
+  GROUP BY when PERSISTED (gated on the httpfs packaging decision) but is NO LONGER the 76 s blocker.
+  The data-architecture brief is COMPLETE bar that one packaging decision.
 - **EXTERNAL-ARTIFACT FRESHNESS REGISTRY + COMPATIBILITY TESTS 2026-06-19 (maintainer-asked
   "long-term strategy to avoid missing repository updates + add compatibility testing"; draft
   PR onto 0.09; backend VERIFIED py3.11):** the project had ~8 dated `*_AS_OF` constants +

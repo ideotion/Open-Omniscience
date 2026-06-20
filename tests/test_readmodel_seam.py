@@ -89,4 +89,8 @@ def test_top_endpoint_routes_through_the_seam(db, monkeypatch):
     assert out["terms"] == [{"term": "SEAM_SENTINEL"}]
     # The Slice-2 envelope is still attached on top of the seam's result.
     assert "counts" in out and out["counts"]["basis"] in ("exact", "estimated")
+    # Restore the module WITHOUT the cache-disabling env first, so a later test in the
+    # same process (e.g. test_insights_cache) doesn't inherit a module reloaded with
+    # _CACHE_TTL_S=0 (monkeypatch reverts the env only at teardown, after this body).
+    monkeypatch.delenv("OO_INSIGHTS_CACHE_TTL", raising=False)
     importlib.reload(I)  # restore the real module for other tests
