@@ -1166,6 +1166,20 @@ def columnar_status() -> dict:
     }
 
 
+@router.get("/freshness")
+def external_freshness() -> dict:
+    """Self-report the freshness of every registered external artifact (network-free).
+
+    A production install can surface — via the existing maintainer↔dev "click & send the
+    bundle" channel — exactly which bundled/pinned things are stale (the IP-geo DB, the
+    model catalog, the DuckDB↔crypto-extension coupling, …). Reads the registry
+    (configs/external_artifacts.yml); makes NO network call (the 'is upstream newer?'
+    watch is a separate consented scheduled job). Counts/state only, no score."""
+    from src.maintenance import registry as R
+
+    return R.summary()
+
+
 @router.get("/debug-bundle")
 def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     """ONE downloadable bundle with everything a developer needs to diagnose a

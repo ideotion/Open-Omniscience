@@ -348,6 +348,19 @@ ruling, a contingency, or a deliberate-omission note.
   stay green; mypy ratchet ≤ baseline in CI; `node --check` every `<script>`
   block after UI edits; locale files must stay 100% (scripts/i18n_report.py)
   when adding chrome strings (12 languages, Arabic is RTL).
+- **EXTERNAL-ARTIFACT REGISTRY (ruled 2026-06-19; SHIPPED — `configs/external_artifacts.yml`
+  + `src/maintenance/registry.py` + `tests/test_external_freshness.py` + the
+  `docs/maintenance/EXTERNAL_DEPENDENCIES.md` upgrade checklist):** ANY externally
+  sourced/pinned/bundled artifact (a dated `*_AS_OF` data file/catalog, a vendored binary,
+  a version coupling, a CI pin) MUST get a registry entry IN THE SAME COMMIT — the protocol
+  guard test fails otherwise (it scans the tree for `*_AS_OF` constants + asserts each is
+  registered). The consolidated freshness/compatibility check replaces the scattered
+  per-file freshness tests; `scripts/check_external_freshness.py` + `GET /api/diagnostics/
+  freshness` report status. On a DuckDB bump follow the EXTERNAL_DEPENDENCIES upgrade
+  checklist (re-bundle the per-OS `httpfs` crypto extension at the new version; the registry
+  `duckdb-crypto-extension` floor MUST equal the pyproject `[columnar]` floor — test-enforced).
+  REMAINING (awaiting sign-off): the proactive upstream-watch cron that opens an issue when
+  upstream > our pin (use Dependabot for the pip/Actions half).
 - Maintainer merges PRs fast: after `git push`, if the output says
   "[new branch]", the previous PR was merged — open a NEW PR onto `0.09`.
   COROLLARY (near-miss 2026-06-15): local `origin/0.09` goes STALE within
@@ -3278,6 +3291,28 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **EXTERNAL-ARTIFACT FRESHNESS REGISTRY + COMPATIBILITY TESTS 2026-06-19 (maintainer-asked
+  "long-term strategy to avoid missing repository updates + add compatibility testing"; draft
+  PR onto 0.09; backend VERIFIED py3.11):** the project had ~8 dated `*_AS_OF` constants +
+  vendored data + version couplings guarded by SCATTERED per-file freshness tests, with no
+  single list + no upstream watch. Consolidated into: (1) `configs/external_artifacts.yml` =
+  the SINGLE SOURCE OF TRUTH (12 entries: ip-geo/catalog/dump-sizes/osm/baseline/stats/
+  denylist/install-sizes + vendored Alpine + Natural-Earth + the DuckDB↔crypto-extension
+  coupling + CI pins); (2) `src/maintenance/registry.py` = a NETWORK-FREE loader/evaluator
+  (reads `*_AS_OF` from source by regex, no imports; freshness windows; the DuckDB
+  version coupling); (3) `tests/test_external_freshness.py` = the PROTOCOL GUARD (every
+  `*_AS_OF` in the tree MUST be registered — can't ship a dated artifact unwatched) +
+  consolidated freshness + COMPATIBILITY couplings (the registry DuckDB floor == the
+  pyproject `[columnar]` floor; installed duckdb ≥ floor; the bundled geo DB parseable at its
+  vintage); (4) `scripts/check_external_freshness.py` (CLI, exit≠0 on stale — for the future
+  cron) + `GET /api/diagnostics/freshness` (production self-report). COMPATIBILITY HARDENING:
+  `columnar.connect()` now stamps a store-format marker (DuckDB major.minor + schema rev) and
+  on an incompatible/corrupt persisted store DELETES + REBUILDS it (disposable) instead of
+  crashing — so a DuckDB upgrade is safe. `docs/maintenance/EXTERNAL_DEPENDENCIES.md` carries
+  the 4-layer strategy + the per-bump upgrade checklist (esp. the per-OS httpfs extension
+  matrix). REMAINING (awaiting maintainer sign-off, layer 3): the upstream-watch CRON that
+  opens an issue when upstream > our pin (Dependabot for pip/Actions; the cron for data/
+  binaries). Tests verified py3.11; full pytest needs py3.13 → CI.
 - **DATA-ARCHITECTURE FOLLOW-UP 2026-06-19 (PR #410, draft onto 0.09, after #407 merged; the
   "proceed with all, incrementally" pass — finishes the gated items from #407; backend VERIFIED on
   the py3.11 venv, frontend BROWSER-UNVERIFIED per fork-3):**
