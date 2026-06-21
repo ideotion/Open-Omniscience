@@ -1071,6 +1071,15 @@ ruling, a contingency, or a deliberate-omission note.
   bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
   summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
   limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **AIRPLANE-BUTTON FLASH PARITY EVERYWHERE SHIPPED 2026-06-21 (maintainer field test; branch
+  claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified):** clicking the airplane button
+  must give the SAME visual feedback everywhere. The app fired a direction-aware full-screen `#net-flash`
+  (`.go-on` live-accent / `.go-off` calm-muted, animated by `@keyframes netflash` in the SHARED app.css),
+  but the standalone /tasks page only repainted the button on engage-airplane. Added a `flashNet(online)`
+  mirroring the app + the matching "Offline — every new network request is refused…" toast to the /tasks
+  airplane click (go-off happens there; go-online still routes to "/" where the app's consent + flash
+  fire). Other airplane surfaces (net-coach, GUI gallery skins) already reuse the app's `toggleNetwork`,
+  so they flash. test_repo_invariants::test_airplane_flash_feedback_is_consistent_everywhere.
 - **LAUNCHER ROBUSTNESS + MODELS-EXPORT-BUTTON FIX + REINSTALL-KEEPS-LOGS (maintainer field test
   2026-06-21; branch claude/keen-lamport-b4t3rh, PR #420; bash -n + py_compile-VERIFIED):** (1) desktop
   icon failed to start the app after an OS restart, fixed by reinstall → most likely a venv broken by a

@@ -588,6 +588,21 @@ def test_gui_shutdown_button_and_endpoint():
     assert "wipe" not in sd.lower() and "rmtree" not in sd.lower(), "shutdown must not delete anything"
 
 
+def test_airplane_flash_feedback_is_consistent_everywhere():
+    """Maintainer 2026-06-21: clicking the airplane button must give the SAME visual
+    feedback everywhere. The app fires a direction-aware full-screen #net-flash
+    (.go-on/.go-off, animated in the shared app.css); the standalone /tasks page must
+    fire the same flash when engaging airplane (the toggle that happens there)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    assert "#net-flash" in css and ".go-off" in css and "@keyframes netflash" in css
+    assert 'classList.add(online ? "go-on" : "go-off")' in app, "the app fires the flash"
+    # /tasks reuses app.css and fires the identical flash on engage-airplane
+    assert "function flashNet(" in tm and 'classList.add(online ? "go-on" : "go-off")' in tm
+    assert "flashNet(false)" in tm
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():

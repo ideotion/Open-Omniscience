@@ -622,11 +622,25 @@
       b.title = t("Online — click to go offline (airplane mode); stops all collection.");
     }
   }
+  // Same direction-aware flash + toast as the app (maintainer 2026-06-21: the
+  // airplane button must give identical visual feedback everywhere). #net-flash +
+  // its .go-on/.go-off keyframes live in the shared app.css.
+  function flashNet(online) {
+    var f = document.getElementById("net-flash");
+    if (!f) { f = document.createElement("div"); f.id = "net-flash"; document.body.appendChild(f); }
+    f.classList.remove("go-on", "go-off"); void f.offsetWidth;  // restart the animation
+    f.classList.add(online ? "go-on" : "go-off");
+  }
   (function wireAir() {
     var b = $("net-toggle"); if (!b) return;
     b.addEventListener("click", async function () {
       if (_tmOnline === false) { location.href = "/"; return; }   // go online → the app's consent popup
-      try { await api("/api/system/network", { method: "POST", body: JSON.stringify({ online: false }) }); _tmOnline = false; paintAir(); refresh(); }
+      try {
+        await api("/api/system/network", { method: "POST", body: JSON.stringify({ online: false }) });
+        _tmOnline = false; paintAir(); flashNet(false);
+        toast(t("Offline — every new network request is refused. One in-flight request may finish."), "err");
+        refresh();
+      }
       catch (e) { toast(e.message, "err"); }
     });
   })();
