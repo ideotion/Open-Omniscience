@@ -983,6 +983,16 @@ ruling, a contingency, or a deliberate-omission note.
   HOME_STAT_LABELS/Database label changes, ×12). TWO OPEN QUESTIONS asked 2026-06-20:
   import mechanism (server-side path vs browser folder-picker upload) + the unifying name
   (Documents vs …) — RECORD the answers here + ship.
+  **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
+  importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
+  leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional
+  comments containing `>`, which defeat a naive `<[^>]+>` regex → stray `-->`) and UNDECODED HTML
+  entities (`&nbsp;`/`&#8202;`/`&copy;`/`&rsquo;`) into the stored body. FIX: drop `<style>`/`<script>`
+  blocks + comments BEFORE the tag strip, then `html.unescape` + strip zero-width chars + collapse
+  whitespace; `_extract_body` now falls back to HTML when the text/plain part is EMPTY. Already-
+  imported newsletters keep the old junk (re-import to clean — the cleaner body hashes differently,
+  so a re-import stores a fresh clean copy, it won't dedup against the junky one). tests/
+  test_email_ingest.py::test_strip_html_drops_style_script_comments_and_decodes_entities.
 - **SEAMLESS INSTALL + OLLAMA→AI-TAB + LANGUAGE-FIRST FIRST LAUNCH (maintainer field test
   2026-06-20; branch claude/keen-lamport-b4t3rh, draft PR #420 onto 0.09):** THREE rulings —
   (1) move Ollama installation ENTIRELY to Settings → AI (the installer no longer asks for or
