@@ -10322,6 +10322,30 @@
       return _LANG_EN[code] || "English";
     }
     function _bulkParams(ctx) { return ctx === "an" ? anParams() : searchParams(); }
+    // --- Bulk summarize / translate QUEUE (maintainer 2026-06-21) -------------- //
+    // Several batch runs can be QUEUED: start a long translation, keep searching, and
+    // queue more from new results — they run ONE AT A TIME (a single local CPU model
+    // can't do them well in parallel). Each job SNAPSHOTS its selection at enqueue, so
+    // it targets the right articles even after you change the search. The active run also
+    // appears in the task manager; this client-side queue manages the pending ones. The
+    // queue lives in a persistent sibling (.bulk-queue) so it survives the config panel
+    // being hidden or the custom-extractor panel reusing the same mount.
+    let _bulkQueue = [];        // jobs, see _bulkSelLabel for the shape
+    let _bulkActive = null;     // the running job (one at a time)
+    let _bulkJobAbort = null;   // its AbortController (separate from _bulkAbort = extractor)
+    let _bulkJobSeq = 1;
+
+    function _bulkSelLabel(op, body) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const verb = op === "translate" ? t("Translate") : t("Summarize");
+      let what;
+      if (body.article_ids) what = body.article_ids.length + " " + t("selected");
+      else if (body.query) what = '"' + body.query + '"';
+      else what = t("filtered set");
+      const into = op === "translate" && body.target_language ? " → " + body.target_language : "";
+      return verb + " " + what + into;
+    }
+
     function bulkLlm(op, ctx) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
@@ -10334,29 +10358,37 @@
       const heading = isTr ? t("Translate all matched articles") : t("Summarize all matched articles");
       const tgt = isTr
         ? `<label class="muted" style="margin-inline-end:4px" for="bulk-tgt-${ctx}">${esc(t("Into"))}</label>`
-          + `<input id="bulk-tgt-${ctx}" value="English" style="max-width:150px">`
+          + `<input id="bulk-tgt-${ctx}" value="${esc(_uiLangName())}" style="max-width:150px">`
         : "";
       mount.style.display = "";
       mount.innerHTML = `<div class="card">
         <div style="font-weight:600;margin-bottom:4px">${esc(heading)}</div>
-        <div class="hint" style="margin-bottom:8px">${esc(t("Runs a local model over each article — this can take a while. Each result is stored with its model and date; nothing leaves your machine, and keyword analysis is never affected."))}</div>
+        <div class="hint" style="margin-bottom:8px">${esc(t("Runs a local model over each article — this can take a while. Each result is stored with its model and date; nothing leaves your machine, and keyword analysis is never affected. You can queue several runs; they process one at a time."))}</div>
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
           ${tgt}
           <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="bulk-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
-          <button class="primary" id="bulk-start-${ctx}" onclick="bulkLlmRun('${op}','${ctx}')">${esc(t("Start"))}</button>
-          <button class="ghost tiny" onclick="bulkLlmStop('${ctx}')">${esc(t("Cancel"))}</button>
+          <button class="primary" id="bulk-start-${ctx}" onclick="bulkLlmRun('${op}','${ctx}')">${esc(t("Add to queue"))}</button>
+          <button class="ghost tiny" onclick="bulkPanelHide('${ctx}')">${esc(t("Hide"))}</button>
         </div>
-        <div id="bulk-prog-${ctx}" class="hint" style="margin-top:8px"></div>
       </div>`;
+      _bulkRenderQueue();
     }
+    // Hides the CONFIG panel only — queued/running jobs persist (the maintainer keeps
+    // searching while a translation runs). Never cancels work.
+    function bulkPanelHide(ctx) {
+      const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
+      if (mount) mount.style.display = "none";
+    }
+    // Back-compat: the custom-extractor panel's Cancel still aborts its own run + hides.
     function bulkLlmStop(ctx) {
       if (_bulkAbort) { try { _bulkAbort.abort(); } catch (e) { /* already done */ } _bulkAbort = null; }
       const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
       if (mount) mount.style.display = "none";
     }
-    async function bulkLlmRun(op, ctx) {
+
+    // Enqueue a bulk run (snapshot the current selection) and pump the queue.
+    function bulkLlmRun(op, ctx) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const prog = $("bulk-prog-" + ctx), startBtn = $("bulk-start-" + ctx);
       const p = _bulkParams(ctx);
       const skipEl = $("bulk-skip-" + ctx);
       const body = { op, skip_existing: !!(skipEl && skipEl.checked) };
@@ -10369,23 +10401,46 @@
         if (p.get("start_date")) body.start_date = p.get("start_date");
         if (p.get("end_date")) body.end_date = p.get("end_date");
       }
-      if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || "English"; }
-      else { body.output_language = _uiLangName(); body.ui_lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; }   // summaries come back in the UI language (v2 pin + native directive)
-      if (startBtn) startBtn.disabled = true;
-      if (prog) prog.textContent = t("Starting…");
-      _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
-      let done = 0, storedN = 0, skippedN = 0, failedN = 0, total = 0;
-      const tally = () => `(${storedN} ${t("stored")} · ${skippedN} ${t("skipped")} · ${failedN} ${t("failed")})`;
+      const hasSel = body.article_ids || body.query || body.source || body.language || body.start_date || body.end_date;
+      if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || _uiLangName(); }
+      else { body.output_language = _uiLangName(); body.ui_lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; }
+      const job = { id: _bulkJobSeq++, op, body, label: _bulkSelLabel(op, body),
+        status: "queued", total: 0, done: 0, storedN: 0, skippedN: 0, failedN: 0, todo: null, skip: 0, err: "" };
+      _bulkQueue.push(job);
+      const ahead = _bulkQueue.filter((j) => j.status === "queued").length - 1;
+      toast(_bulkActive ? `${t("Queued")} (${ahead} ${t("ahead")})` : t("Started."), "ok");
+      _bulkRenderQueue();
+      _bulkPump();
+    }
+
+    async function _bulkPump() {
+      if (_bulkActive) return;                       // one model run at a time
+      const job = _bulkQueue.find((j) => j.status === "queued");
+      if (!job) return;
+      _bulkActive = job; job.status = "running";
+      _bulkRenderQueue();
+      try { await _bulkRunJob(job); }
+      finally {
+        _bulkActive = null; _bulkJobAbort = null;
+        loadLlmHealth();                             // a fresh signal of whether Ollama is up
+        _bulkRenderQueue();
+        _bulkPump();                                 // next in line
+      }
+    }
+
+    async function _bulkRunJob(job) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _bulkJobAbort = ("AbortController" in window) ? new AbortController() : null;
       try {
         const resp = await fetch("/api/llm/bulk", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body), signal: _bulkAbort ? _bulkAbort.signal : undefined,
+          body: JSON.stringify(job.body), signal: _bulkJobAbort ? _bulkJobAbort.signal : undefined,
         });
         if (!resp.ok || !resp.body) {
           let detail = "HTTP " + resp.status;
           try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
-          if (prog) prog.innerHTML = `<span class="note err">${esc(detail)}</span>`;
-          if (startBtn) startBtn.disabled = false; return;
+          job.status = "error"; job.err = detail; _bulkRenderQueue(); return;
         }
         const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
         for (;;) {
@@ -10397,36 +10452,71 @@
             if (!line.trim()) continue;
             let o; try { o = JSON.parse(line); } catch (e) { continue; }
             if (o.event === "start") {
-              total = o.total;
-              // Show how many will ACTUALLY run (excludes already-done + already-in-target-language).
-              const todo = (o.to_process != null) ? o.to_process : total;
-              const skip = Math.max(0, total - todo);
-              const verb = op === "translate" ? t("to translate") : t("to summarize");
-              if (prog) prog.textContent = todo + " " + verb
-                + (skip > 0 ? " · " + skip + " " + t("skipped") : "") + "…";
+              job.total = o.total;
+              job.todo = (o.to_process != null) ? o.to_process : o.total;
+              job.skip = Math.max(0, job.total - job.todo);
             } else if (o.event === "item") {
-              done++;
-              if (o.status === "stored") storedN++;
-              else if (o.status === "skipped") skippedN++;
-              else if (o.status === "failed") failedN++;
-              if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "… " + tally();
+              job.done++;
+              if (o.status === "stored") job.storedN++;
+              else if (o.status === "skipped") job.skippedN++;
+              else if (o.status === "failed") job.failedN++;
             } else if (o.event === "done") {
-              if (o.aborted) {
-                if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${esc(o.reason || "")}</span> ${tally()}`;
-              } else {
-                if (prog) prog.innerHTML = `<b>${esc(t("Done."))}</b> ${tally()} `
-                  + `<span class="muted">${esc(t("Open an article to read its summary or translation."))}</span>`;
-              }
+              if (o.aborted) { job.status = "error"; job.err = o.reason || t("Stopped"); }
+              else job.status = "done";
             }
+            _bulkRenderQueue();
           }
         }
+        if (job.status === "running") job.status = "done";  // stream ended cleanly
       } catch (e) {
-        if (e && e.name === "AbortError") { if (prog) prog.textContent = t("Cancelled."); }
-        else if (prog) prog.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+        if (e && e.name === "AbortError") { job.status = "cancelled"; }
+        else { job.status = "error"; job.err = (e && e.message) || "error"; }
       } finally {
-        if (startBtn) startBtn.disabled = false; _bulkAbort = null;
-        loadLlmHealth();   // an LLM run is a fresh signal of whether Ollama is up
+        _bulkRenderQueue();
       }
+    }
+
+    function bulkJobCancel(id) {
+      const job = _bulkQueue.find((j) => j.id === id);
+      if (!job) return;
+      if (job.status === "running") { if (_bulkJobAbort) { try { _bulkJobAbort.abort(); } catch (e) { /* already */ } } }
+      else if (job.status === "queued") { job.status = "cancelled"; }
+      _bulkRenderQueue();
+    }
+    function bulkJobClearDone() {
+      _bulkQueue = _bulkQueue.filter((j) => j.status === "queued" || j.status === "running");
+      _bulkRenderQueue();
+    }
+
+    function _bulkJobLine(job) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tally = `(${job.storedN} ${t("stored")} · ${job.skippedN} ${t("skipped")} · ${job.failedN} ${t("failed")})`;
+      let state = "";
+      if (job.status === "queued") state = `<span class="chip">${esc(t("Queued"))}</span>`;
+      else if (job.status === "running") {
+        const head = job.total ? `${job.done}/${job.total}` : t("starting…");
+        state = `<span class="chip" style="background:var(--accent);color:#fff">${esc(t("Running"))} ${esc(head)}</span> <span class="muted">${esc(tally)}</span>`;
+      } else if (job.status === "done") state = `<b>${esc(t("Done."))}</b> <span class="muted">${esc(tally)}</span>`;
+      else if (job.status === "cancelled") state = `<span class="muted">${esc(t("Cancelled."))}</span>`;
+      else if (job.status === "error") state = `<span class="note err">${esc(t("Stopped:"))} ${esc(job.err)}</span> <span class="muted">${esc(tally)}</span>`;
+      const cancel = (job.status === "queued" || job.status === "running")
+        ? `<button class="ghost tiny" onclick="bulkJobCancel(${job.id})" style="margin-inline-start:auto">${esc(t("Cancel"))}</button>` : "";
+      return `<div class="row" style="gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+        <span style="font-weight:600">${esc(job.label)}</span> ${state} ${cancel}</div>`;
+    }
+    function _bulkRenderQueue() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const conts = document.querySelectorAll(".bulk-queue");
+      if (!conts.length) return;
+      let html = "";
+      if (_bulkQueue.length) {
+        const anyDone = _bulkQueue.some((j) => j.status === "done" || j.status === "cancelled" || j.status === "error");
+        html = `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
+          + _bulkQueue.map(_bulkJobLine).join("")
+          + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" onclick="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
+          + `</div>`;
+      }
+      conts.forEach((c) => { c.innerHTML = html; });
     }
 
     // Per-article Summarize / Translate from the analysis Articles list (the

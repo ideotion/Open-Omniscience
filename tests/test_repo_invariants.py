@@ -467,6 +467,27 @@ def test_synthesis_opens_a_window_with_selection_metadata_and_export():
     assert 'cp.set("ids"' in app
 
 
+def test_bulk_translate_summary_runs_are_queued():
+    """Maintainer field test 2026-06-21: batch translate/summarize runs are QUEUED — a
+    new batch can be added while one is ongoing; they run ONE AT A TIME, each snapshots
+    its selection, and the queue is visible with per-job cancel in a persistent panel."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # persistent queue containers (survive the config panel / extractor reusing the mount)
+    assert 'id="bulk-queue-search"' in html and 'id="bulk-queue-an"' in html
+    # queue machinery
+    assert "let _bulkQueue" in app and "_bulkActive" in app and "function _bulkPump(" in app
+    assert "function _bulkRunJob(" in app and "function bulkJobCancel(" in app
+    # bulkLlmRun ENQUEUES (snapshots a job) + pumps, instead of running inline
+    assert "_bulkQueue.push(job)" in app and "_bulkPump()" in app
+    # one at a time: the pump returns if a job is already active
+    assert "if (_bulkActive) return;" in app
+    # the queue renders into every .bulk-queue container with a per-job Cancel
+    assert 'querySelectorAll(".bulk-queue")' in app and "bulkJobCancel(" in app
+    # the custom-extractor path keeps its own abort (not broken by the queue refactor)
+    assert "function bulkLlmStop(" in app and "_bulkJobAbort" in app
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
