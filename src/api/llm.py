@@ -107,8 +107,37 @@ def _apply_target(template: str, target: str) -> str:
     return f"{template}\n\nTranslate into {target}."
 
 
+# A short, IN-LANGUAGE directive appended to the summary/synthesis system prompt so a
+# small model RELIABLY writes its answer in the UI language (maintainer 2026-06-21: a
+# weak model often echoed the SOURCE language despite the English "{language}" pin).
+# Keyed by UI language code; the instruction is written natively in that language so the
+# operative command is in the same language we want the output in. (We keep the tuned
+# English prompt BODY — translating multi-sentence instructions across 12 languages risks
+# DEGRADING a weak model's compliance; forcing the OUTPUT language is the reliable win.)
+_NATIVE_DIRECTIVE = {
+    "en": "Write your entire response in English.",
+    "fr": "Rédige l'intégralité de ta réponse en français.",
+    "de": "Schreibe deine gesamte Antwort auf Deutsch.",
+    "es": "Escribe toda tu respuesta en español.",
+    "pt": "Escreve toda a tua resposta em português.",
+    "it": "Scrivi tutta la tua risposta in italiano.",
+    "nl": "Schrijf je volledige antwoord in het Nederlands.",
+    "ru": "Напиши весь ответ на русском языке.",
+    "ar": "اكتب إجابتك كاملةً باللغة العربية.",
+    "zh": "请用中文写出全部回答。",
+    "ja": "回答はすべて日本語で書いてください。",
+    "hi": "अपना पूरा उत्तर हिन्दी में लिखें।",
+    "bn": "আপনার সম্পূর্ণ উত্তর বাংলায় লিখুন।",
+    "id": "Tulis seluruh jawabanmu dalam bahasa Indonesia.",
+}
+
+
 def _build_prompting(
-    op: str, *, target: str | None = None, output_language: str | None = None
+    op: str,
+    *,
+    target: str | None = None,
+    output_language: str | None = None,
+    output_lang_code: str | None = None,
 ) -> tuple[str, str, str]:
     """Resolve ``(system_prompt, prompt_version, prompt_text)`` for an op.
 
@@ -124,6 +153,10 @@ def _build_prompting(
     "English" (a neutral default for multilingual inputs). ``target`` is the translate
     output language. A custom prompt may include ``{language}`` too — we substitute it
     either way, so operator prompts can pin the language as well.
+
+    ``output_lang_code`` (maintainer 2026-06-21) is the UI language CODE; when given for
+    summary/synthesis we append a native-language directive (``_NATIVE_DIRECTIVE``) so a
+    weak model actually answers in the UI language instead of echoing the source.
     """
     s = _llm_settings()
     overrides = {
@@ -152,6 +185,10 @@ def _build_prompting(
         lang = (output_language or "").strip() or "the same language as the article"
         system = template.replace("{language}", lang)
         version = "summary-custom" if is_custom else SUMMARY_PROMPT_VERSION
+    if op in ("summary", "synthesis"):
+        directive = _NATIVE_DIRECTIVE.get((output_lang_code or "").strip().lower())
+        if directive:
+            system = f"{system}\n\n{directive}"
     return system, version, system
 
 
@@ -516,6 +553,7 @@ class SynthesizeRequest(BaseModel):
     query: str | None = None
     model: str | None = None
     output_language: str | None = None  # v2 language pin (default English for synthesis)
+    ui_lang: str | None = None  # UI language CODE -> native output directive (2026-06-21)
 
 
 @router.post("/synthesize")
@@ -541,13 +579,20 @@ def synthesize_articles(
         )
 
     truncated = False
+    total_matched = 0
     if req.article_ids:
         articles = db.query(Article).filter(Article.id.in_(req.article_ids)).all()
+        total_matched = len(req.article_ids)
     elif req.query:
         try:
             ids = search_ids(db, req.query) or []
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+        # How the members are chosen (maintainer asked): the query path takes the
+        # search-relevance order from FTS, then the TOP N (the model bound). The
+        # frontend lets the user pick the exact members (sent as article_ids) so this
+        # silent truncation is no longer the only path.
+        total_matched = len(ids)
         if len(ids) > _SYNTHESIS_MAX_ARTICLES:
             ids, truncated = ids[:_SYNTHESIS_MAX_ARTICLES], True
         articles = db.query(Article).filter(Article.id.in_(ids)).all()
@@ -558,18 +603,43 @@ def synthesize_articles(
     if not articles:
         raise HTTPException(status_code=404, detail="No matching articles with content.")
 
-    per_article = max(400, _SYNTHESIS_BUDGET_CHARS // len(articles))
+    ordered = sorted(articles, key=lambda x: x.id)
+    per_article = max(400, _SYNTHESIS_BUDGET_CHARS // len(ordered))
     parts = []
-    for i, a in enumerate(sorted(articles, key=lambda x: x.id), 1):
+    members = []
+    for i, a in enumerate(ordered, 1):
         src = a.source.name if a.source else "unknown source"
         pub = a.published_at.date().isoformat() if a.published_at else "undated"
         parts.append(
             f"[{i}] {a.title or '(untitled)'} ({src}, {pub})\n{a.content[:per_article]}"
         )
-    prompt = "\n\n---\n\n".join(parts)
+        members.append(
+            {
+                "n": i,
+                "id": a.id,
+                "title": a.title or "",
+                "source": src,
+                "published_at": a.published_at.isoformat() if a.published_at else "",
+                "url": a.url or "",
+                "language": a.language or "",
+            }
+        )
+    excerpts = "\n\n---\n\n".join(parts)
+    # Wrap the excerpts with an explicit directive at BOTH ends. A weak instruct model
+    # otherwise misread the numbered list and asked "which one should I summarize?"
+    # (maintainer 2026-06-21). The instruction is repeated AFTER the excerpts because a
+    # small model weights the last instruction most.
+    prompt = (
+        f"Synthesize ALL {len(ordered)} excerpts below into ONE combined synthesis with "
+        "the three labeled parts described in your instructions. Do not ask which one to "
+        "use and do not summarize a single excerpt — cover every excerpt together.\n\n"
+        f"{excerpts}\n\n"
+        f"Now write the combined three-part synthesis of all {len(ordered)} excerpts above, "
+        "citing the bracketed source numbers."
+    )
     model = req.model or active_model()
     system, prompt_version, prompt_text = _build_prompting(
-        "synthesis", output_language=req.output_language
+        "synthesis", output_language=req.output_language, output_lang_code=req.ui_lang
     )
 
     try:
@@ -581,8 +651,8 @@ def synthesize_articles(
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    member_ids = [a.id for a in sorted(articles, key=lambda x: x.id)]
-    for a in articles:
+    member_ids = [a.id for a in ordered]
+    for a in ordered:
         db.add(
             ArticleAnalysis(
                 article_id=a.id,
@@ -602,7 +672,10 @@ def synthesize_articles(
         "prompt_version": prompt_version,
         "member_ids": member_ids,
         "member_count": len(member_ids),
+        "members": members,
+        "total_matched": total_matched,
         "truncated": truncated,
+        "max_articles": _SYNTHESIS_MAX_ARTICLES,
         "result": result.text,
         "caveat": (
             "A synthesis is reading assistance over the listed member articles only -- "
@@ -661,6 +734,7 @@ class BulkLLMRequest(BaseModel):
     end_date: str | None = None
     target_language: str = "English"
     output_language: str | None = None  # v2 language pin for the summarize op
+    ui_lang: str | None = None  # UI language CODE -> native output directive (2026-06-21)
     model: str | None = None
     skip_existing: bool = True
     limit: int = 0  # 0 = no cap (process the whole matched set)
@@ -729,7 +803,7 @@ def bulk_llm(
     if op == "summarize":
         kind = "summary"
         system, prompt_version, prompt_text = _build_prompting(
-            "summary", output_language=req.output_language
+            "summary", output_language=req.output_language, output_lang_code=req.ui_lang
         )
     else:
         kind = "translation"

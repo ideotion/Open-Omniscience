@@ -145,6 +145,20 @@ def test_pagination(client):
     assert len(body["results"]) == 1
 
 
+def test_ids_param_returns_explicit_set_in_order(client):
+    # A card-seeded analysis corpus passes an explicit id set; the endpoint must
+    # return exactly those, in the requested order (synthesis selection relies on it).
+    all_ids = [row["id"] for row in client.get("/api/articles").json()["results"]]
+    assert len(all_ids) == 3
+    want = [all_ids[2], all_ids[0]]  # a deliberate out-of-natural order subset
+    body = client.get("/api/articles", params={"ids": ",".join(map(str, want))}).json()
+    assert body["total"] == 2
+    assert [r["id"] for r in body["results"]] == want
+    # a non-existent id is silently dropped, never fabricated
+    body2 = client.get("/api/articles", params={"ids": f"{all_ids[0]},999999"}).json()
+    assert [r["id"] for r in body2["results"]] == [all_ids[0]]
+
+
 def test_export_csv_matches_filter(client):
     r = client.get("/api/articles/export", params={"format": "csv", "query": "quantum"})
     assert r.status_code == 200

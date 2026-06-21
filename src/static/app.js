@@ -10125,29 +10125,184 @@
       window.open("/api/articles/export?" + params.toString(), "_blank");
     }
 
-    async function synthesizeResults(btn, qArg, mountId) {
-      // RM-12: one bounded synthesis call across the current results (max 20).
-      // qArg/mountId let the analysis window reuse this with its OWN query + a panel.
-      const q = (qArg != null ? qArg : $("q").value.trim());
-      if (!q) { toast("Run a search first.", "err"); return; }
-      btn.disabled = true; btn.textContent = "Synthesizing…";
+    // --- Synthesis window (maintainer 2026-06-21) ----------------------------- //
+    // "Synthesize results" opens a roomy, article-style WINDOW. Step 1 makes the member
+    // selection TRANSPARENT (which articles, of how many, by search relevance) and lets
+    // the user pick exactly which to include — no silent "top 20" truncation. Step 2
+    // shows the synthesis + caveat + provenance + the FULL corpus of synthesized
+    // articles WITH metadata, plus export (.md / standalone page) + copy. The synthesis
+    // is written in the UI language (the backend appends a native-language directive +
+    // a robust "synthesize ALL excerpts" prompt so a weak model no longer bails).
+    const _SYNTH_MAX = 20;        // mirrors the backend bound (small-CPU-model context)
+    let _synthData = null;        // last result, for export/copy
+    let _synthCandidates = null;  // {params, total, results} for the selection step
+    const _synthT = () => ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s));
+
+    function _synthCandidateParams(arg) {
+      // arg: a URLSearchParams (analysis window) | a query string | null (search tab).
+      if (arg instanceof URLSearchParams) return arg;
+      if (arg != null) { const p = new URLSearchParams(); const q = (arg || "").trim(); if (q) p.set("query", q); return p; }
+      return searchParams();   // search tab: respect query + active filters
+    }
+    async function synthesizeResults(btn, arg) {
+      const t = _synthT();
+      const p = _synthCandidateParams(arg);
+      const hasSel = p.get("query") || p.get("source") || p.get("language")
+        || p.get("start_date") || p.get("end_date") || p.get("article_ids");
+      if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      const dlg = $("synth-window"); if (!dlg) return;
+      $("synth-win-actions").innerHTML = "";
+      $("synth-win-title").textContent = t("Synthesis");
+      $("synth-win-body").innerHTML = `<p class="muted">${esc(t("Loading articles…"))}</p>`;
+      if (!dlg.open) dlg.showModal();
+      // Fetch a candidate pool a bit larger than the synthesis bound so the user has a
+      // real choice; /api/articles uses `ids` for an explicit set, else the query.
+      const cp = new URLSearchParams(p);
+      if (cp.get("article_ids")) { cp.set("ids", cp.get("article_ids")); cp.delete("article_ids"); }
+      cp.set("limit", "60");
       try {
-        const r = await api("/api/llm/synthesize",
-          {method: "POST", body: JSON.stringify({query: q, output_language: _uiLangName()})});
-        let box = $(mountId || "synth-result");
-        if (!box) {
-          box = document.createElement("div");
-          box.id = "synth-result"; box.className = "card";
-          $("results").parentNode.insertBefore(box, $("results"));
-        }
-        box.className = "card"; box.style.display = "";
-        box.innerHTML = `<span class="chip">synthesis · ${esc(r.model)} · ` +
-          `${r.member_count} articles${r.truncated ? " (top 20 of more)" : ""}</span>` +
-          `<p style="white-space:pre-wrap">${esc(r.result)}</p>` +
-          `<div class="hint">${esc(r.caveat)} Members: ${r.member_ids.map(i =>
-            `<a href="/api/articles/${i}/view" target="_blank" rel="noopener">#${i}</a>`).join(" ")}</div>`;
-      } catch (e) { toast("Synthesis failed: " + e.message, "err"); }
-      finally { btn.disabled = false; btn.textContent = "Synthesize results"; }
+        const data = await api("/api/articles?" + cp.toString());
+        _synthCandidates = { total: data.total, results: data.results || [] };
+        _synthRenderSelect();
+      } catch (e) { $("synth-win-body").innerHTML = `<p class="card-caveat">${esc(t("Could not load articles."))} ${esc(e.message)}</p>`; }
+    }
+
+    function _synthRenderSelect() {
+      const t = _synthT();
+      const c = _synthCandidates; if (!c) return;
+      const rows = c.results;
+      $("synth-win-actions").innerHTML = "";
+      $("synth-win-title").textContent = t("Synthesis");
+      if (!rows.length) { $("synth-win-body").innerHTML = `<p class="muted">${esc(t("No matching articles to synthesize."))}</p>`; return; }
+      const preset = Math.min(_SYNTH_MAX, rows.length);
+      const list = rows.map((a, i) => `
+        <label style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);align-items:flex-start">
+          <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} onchange="_synthCount()">
+          <span style="flex:1">
+            <span style="font-weight:600">${esc(a.title) || '<span class="muted">(untitled)</span>'}</span>
+            <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")} · ${esc((a.published_at || "").slice(0, 10)) || t("undated")} · ${esc((a.language || "?").toUpperCase())}
+              · <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a></span>
+          </span>
+        </label>`).join("");
+      $("synth-win-body").innerHTML = `
+        <div class="hint" style="margin-bottom:10px">${esc(t("A synthesis reads a bounded set of articles with a local model and writes what they agree on, where they disagree, and what they leave open — citing each source by number. It is reading assistance, never a verdict."))}</div>
+        <div class="card" style="margin-bottom:12px">
+          <div>${esc(t("Matched"))}: <b>${c.total}</b>${c.total > rows.length ? ` <span class="muted">(${esc(t("showing the top"))} ${rows.length} ${esc(t("by search relevance"))})</span>` : ""}</div>
+          <div class="muted" style="font-size:12px;margin-top:4px">${esc(t("Pick up to"))} ${_SYNTH_MAX} ${esc(t("articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)"))}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <span id="synth-count" class="chip"></span>
+          <button class="ghost tiny" onclick="_synthSelectAll(true)">${esc(t("Select first"))} ${_SYNTH_MAX}</button>
+          <button class="ghost tiny" onclick="_synthSelectAll(false)">${esc(t("Clear"))}</button>
+          <span style="margin-inline-start:auto"></span>
+          <button class="primary" id="synth-run-btn" onclick="_synthRun()">${esc(t("Run synthesis"))}</button>
+        </div>
+        <div>${list}</div>`;
+      _synthCount();
+    }
+
+    function _synthSelectAll(on) {
+      const cbs = Array.from(document.querySelectorAll("#synth-win-body .synth-cb"));
+      let n = 0;
+      for (const cb of cbs) { cb.checked = on && n < _SYNTH_MAX; if (cb.checked) n++; }
+      _synthCount();
+    }
+    function _synthCount() {
+      const t = _synthT();
+      const n = document.querySelectorAll("#synth-win-body .synth-cb:checked").length;
+      const el = $("synth-count"); if (el) el.textContent = `${t("Selected")}: ${n} / ${_SYNTH_MAX}`;
+      const btn = $("synth-run-btn");
+      if (btn) { btn.disabled = (n < 1 || n > _SYNTH_MAX); btn.title = n > _SYNTH_MAX ? t("Too many — uncheck some.") : ""; }
+    }
+
+    async function _synthRun() {
+      const t = _synthT();
+      const ids = Array.from(document.querySelectorAll("#synth-win-body .synth-cb:checked"))
+        .map((cb) => Number(cb.value)).filter((n) => n);
+      if (!ids.length) { toast(t("Select at least one article."), "err"); return; }
+      if (ids.length > _SYNTH_MAX) { toast(t("Too many — uncheck some."), "err"); return; }
+      const btn = $("synth-run-btn"); if (btn) { btn.disabled = true; btn.textContent = t("Synthesizing…"); }
+      const code = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      try {
+        const r = await api("/api/llm/synthesize", { method: "POST",
+          body: JSON.stringify({ article_ids: ids, output_language: _uiLangName(), ui_lang: code }) });
+        _synthData = r;
+        _synthRenderResult();
+      } catch (e) {
+        toast(t("Synthesis failed: ") + e.message, "err");
+        if (btn) { btn.disabled = false; btn.textContent = t("Run synthesis"); }
+      }
+    }
+
+    function _synthRenderResult() {
+      const t = _synthT();
+      const r = _synthData; if (!r) return;
+      $("synth-win-actions").innerHTML = `
+        <button class="ghost tiny" onclick="_synthCopy()" title="${esc(t("Copy the synthesis text"))}">${esc(t("Copy"))}</button>
+        <button class="ghost tiny" onclick="_synthExport('md')">${esc(t("Export .md"))}</button>
+        <button class="ghost tiny" onclick="_synthExport('html')">${esc(t("Open as a page ↗"))}</button>`;
+      const members = (r.members || []).map((m) => `
+        <li style="padding:6px 0;border-bottom:1px solid var(--line)">
+          <span style="font-weight:600">[${m.n}] ${esc(m.title) || '<span class="muted">(untitled)</span>'}</span>
+          <div class="muted" style="font-size:12px">${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10)) || t("undated")} · ${esc((m.language || "?").toUpperCase())}
+            · <a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>
+        </li>`).join("");
+      $("synth-win-body").innerHTML = `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <span class="chip">${esc(t("synthesis"))} · ${esc(r.model || "")}</span>
+          <span class="chip">${r.member_count} ${esc(t("articles"))}</span>
+          ${r.truncated ? `<span class="chip" title="${esc(t("Only the bounded set was synthesized."))}">${esc(t("top"))} ${r.max_articles} ${esc(t("of"))} ${r.total_matched}</span>` : ""}
+        </div>
+        <div style="white-space:pre-wrap;line-height:1.55">${esc(r.result || "")}</div>
+        <div class="card-caveat" style="margin-top:10px">${esc(r.caveat || "")}</div>
+        <h3 style="margin:16px 0 6px;font-size:14px">${esc(t("Synthesized corpus"))} (${(r.members || []).length})</h3>
+        <ul style="list-style:none;padding:0;margin:0">${members}</ul>
+        <div style="margin-top:12px"><button class="secondary tiny" onclick="_synthRenderSelect()">${esc(t("← Change selection"))}</button></div>`;
+    }
+
+    function _synthAsMarkdown() {
+      const t = _synthT(); const r = _synthData; if (!r) return "";
+      const out = [`# ${t("Synthesis")}`, "",
+        `*${t("Local model")}: ${r.model || "?"} · ${r.member_count} ${t("articles")} · ${new Date().toISOString().slice(0, 10)}*`,
+        "", (r.result || ""), "", `> ${r.caveat || ""}`, "", `## ${t("Synthesized corpus")}`];
+      for (const m of (r.members || []))
+        out.push(`${m.n}. ${m.title || "(untitled)"} — ${m.source || ""}${m.published_at ? " (" + m.published_at.slice(0, 10) + ")" : ""}${m.language ? " [" + m.language + "]" : ""}${m.url ? " " + m.url : ""}`);
+      return out.join("\n");
+    }
+    function _synthAsHtml() {
+      const t = _synthT(); const r = _synthData; if (!r) return "";
+      const rows = (r.members || []).map((m) =>
+        `<li><b>[${m.n}] ${esc(m.title || "(untitled)")}</b><br><small>${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10))} · ${esc((m.language || "").toUpperCase())}${m.url ? " · " + esc(m.url) : ""}</small></li>`).join("");
+      return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(t("Synthesis"))}</title>`
+        + `<style>body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#1a1a1a}`
+        + `.meta{color:#666;font-size:13px}blockquote{color:#555;border-left:3px solid #ddd;padding-left:12px}`
+        + `pre{white-space:pre-wrap;font:inherit}ul{padding-left:18px}li{margin:6px 0}</style></head><body>`
+        + `<h1>${esc(t("Synthesis"))}</h1>`
+        + `<p class="meta">${esc(t("Local model"))}: ${esc(r.model || "?")} · ${r.member_count} ${esc(t("articles"))} · ${new Date().toISOString().slice(0, 10)}</p>`
+        + `<pre>${esc(r.result || "")}</pre>`
+        + `<blockquote>${esc(r.caveat || "")}</blockquote>`
+        + `<h2>${esc(t("Synthesized corpus"))}</h2><ul>${rows}</ul></body></html>`;
+    }
+    function _synthDownload(name, mime, text) {
+      const blob = new Blob([text], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    function _synthExport(fmt) {
+      const t = _synthT(); if (!_synthData) return;
+      if (fmt === "md") { _synthDownload("synthesis.md", "text/markdown", _synthAsMarkdown()); return; }
+      const html = _synthAsHtml();
+      const w = window.open("", "_blank");
+      if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); }
+      else { _synthDownload("synthesis.html", "text/html", html); toast(t("Saved synthesis.html"), "ok"); }
+    }
+    function _synthCopy() {
+      const t = _synthT(); if (!_synthData) return;
+      const txt = _synthData.result || "";
+      if (navigator.clipboard && navigator.clipboard.writeText)
+        navigator.clipboard.writeText(txt).then(() => toast(t("Copied."), "ok"), () => toast(t("Copy failed."), "err"));
     }
 
     // --- Bulk summarize / translate over the matched set (local model) --------- //
@@ -10215,7 +10370,7 @@
         if (p.get("end_date")) body.end_date = p.get("end_date");
       }
       if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || "English"; }
-      else { body.output_language = _uiLangName(); }   // summaries come back in the UI language (v2 pin)
+      else { body.output_language = _uiLangName(); body.ui_lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; }   // summaries come back in the UI language (v2 pin + native directive)
       if (startBtn) startBtn.disabled = true;
       if (prog) prog.textContent = t("Starting…");
       _bulkAbort = ("AbortController" in window) ? new AbortController() : null;

@@ -168,6 +168,39 @@ def test_synthesize_carries_member_provenance_and_stores_per_member():
         assert len(stored) == 3  # provenance stored per member
 
 
+def test_synthesize_returns_member_metadata_and_total_matched():
+    # The window shows the FULL corpus of synthesized articles WITH metadata
+    # (maintainer 2026-06-21) — so the response must carry it.
+    fake = _FakeOllama()
+    _override(fake)
+    ids = [_seed_article() for _ in range(2)]
+    with TestClient(app) as client:
+        body = client.post("/api/llm/synthesize", json={"article_ids": ids}).json()
+        members = body["members"]
+        assert [m["id"] for m in members] == sorted(ids)
+        assert [m["n"] for m in members] == [1, 2]  # citation numbers
+        for m in members:
+            assert "title" in m and "source" in m and "language" in m and "published_at" in m
+        assert body["total_matched"] == 2
+        assert body["max_articles"] == 20
+
+
+def test_synthesize_appends_native_language_directive():
+    # A non-English ui_lang appends an in-language output directive to the system
+    # prompt so a weak model writes in the UI language (maintainer 2026-06-21).
+    fake = _FakeOllama()
+    _override(fake)
+    ids = [_seed_article()]
+    with TestClient(app) as client:
+        client.post("/api/llm/synthesize",
+                    json={"article_ids": ids, "ui_lang": "fr", "output_language": "French"})
+        system = fake.calls[0][2]
+        assert "français" in system  # the native French directive is present
+        # the wrapper forces a full multi-excerpt synthesis (no "ask which one" bail)
+        prompt = fake.calls[0][0]
+        assert "Synthesize ALL" in prompt
+
+
 def test_synthesize_caps_explicit_ids_at_20():
     _override(_FakeOllama())
     with TestClient(app) as client:

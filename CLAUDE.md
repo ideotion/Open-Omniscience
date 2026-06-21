@@ -1071,6 +1071,37 @@ ruling, a contingency, or a deliberate-omission note.
   bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
   summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
   limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **SYNTHESIS REWORK — WINDOW + TRANSPARENT SELECTION + UI-LANGUAGE + EXPORT SHIPPED 2026-06-21
+  (maintainer field test, 4 messages; branch claude/keen-lamport-b4t3rh, PR #420; backend
+  py_compile-VERIFIED, frontend browser-unverified per fork-3):** answers the maintainer's questions +
+  fixes the broken output. WAS: "Synthesize results" silently took the TOP 20 FTS-relevance matches
+  (the 20 = a context-safety bound `_SYNTHESIS_MAX_ARTICLES`; the 24k-char budget ÷ N excerpts), one
+  generate call, rendered INLINE in a small card; a weak model BAILED ("clarify which specific
+  article…") or echoed the SOURCE language despite the English `{language}` pin. NOW: (1) opens a roomy
+  article-style WINDOW (`<dialog id="synth-window">`); (2) TRANSPARENT SELECTION step — fetches a
+  candidate pool (`/api/articles?…&limit=60`, NEW `ids=` param for a card-seeded analysis corpus,
+  preserves order, bounded 1000), shows "Matched: M (top R by search relevance)", lists candidates
+  with metadata + reader links + checkboxes (first ≤20 pre-checked, live "Selected k/20", Run disabled
+  outside 1..20) so the USER picks the members (sent as explicit `article_ids` — no silent truncation
+  as the only path); (3) RESULT step shows the synthesis + caveat + provenance chips + the FULL
+  synthesized corpus WITH each article's metadata (title/source/date/lang/reader/source↗), "← Change
+  selection"; (4) EXPORT — Copy, Export .md (Blob download), "Open as a page ↗" (a standalone HTML doc
+  in a new tab, Ctrl-S saveable, falls back to download); (5) UI-LANGUAGE OUTPUT — the SPA sends
+  `ui_lang` (code) + `output_language` (English name); `_build_prompting` now appends a NATIVE-language
+  directive (`_NATIVE_DIRECTIVE` ×14 langs, e.g. fr "Rédige l'intégralité de ta réponse en français.")
+  to the summary/synthesis system prompt so a weak model actually writes in the UI language (the tuned
+  ENGLISH instruction BODY is KEPT — translating multi-sentence prompts ×12 risks DEGRADING a weak
+  model's compliance; forcing the OUTPUT language is the reliable win, applied to BULK SUMMARIES too);
+  (6) ROBUST PROMPT — the excerpts are wrapped "Synthesize ALL N excerpts… do not ask which one…" +
+  repeated AFTER the excerpts (small models weight the last instruction), killing the bail. Response
+  gains `members[]` (n/id/title/source/published_at/url/language) + `total_matched` + `max_articles`.
+  The 20 bound STAYS (a small CPU model can only synthesize a bounded set well) but is now VISIBLE +
+  user-controlled, not silent. tests: test_llm_api (member metadata + total_matched; fr native
+  directive in system + "Synthesize ALL" in prompt), test_api_search (the `ids=` set, order-preserving,
+  drops unknown ids), test_repo_invariants::test_synthesis_opens_a_window_with_selection_metadata_and_export.
+  All new window strings via `t()` (English-fallback, i18n gate 100%; keyable later). REMAINING: key
+  the window chrome ×12; optionally a persisted/saveable synthesis "document" (today export is the save
+  path); full multi-paragraph prompt-body localization if the native directive proves insufficient.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features

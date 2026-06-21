@@ -239,7 +239,7 @@
         <button class="secondary" onclick="exportMethods()"
           title="A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.">Methods appendix</button>
         <button class="secondary" onclick="synthesizeResults(this)"
-          title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
+          title="Synthesize a chosen set of your results with your local model — shared facts, disagreements, open questions, citing article numbers. You pick the members; assistance, never a verdict.">Synthesize results</button>
         <button class="secondary" onclick="bulkLlm('summarize','search')"
           title="Summarize every matched article with your local model — stored with its model and date, never analysed for keywords.">Summarize all</button>
         <button class="secondary" onclick="bulkLlm('translate','search')"
@@ -316,7 +316,7 @@
         <button class="ghost tiny" onclick="exportResults('json', anParams())">Export JSON</button>
         <button class="ghost tiny" onclick="exportMethods(anQuery())" title="Signed, reproducible record of the query + method behind this analysis">Methods appendix</button>
         <button class="ghost tiny" onclick="exportEvidence(anQuery())" title="Signed, tamper-evident bundle of the analysed articles">Export signed evidence</button>
-        <button class="ghost tiny" onclick="synthesizeResults(this, anQuery(), 'an-synth')" title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
+        <button class="ghost tiny" onclick="synthesizeResults(this, anParams())" title="Synthesize a chosen set of these articles with your local model — shared facts, disagreements, open questions, citing article numbers. You pick the members; assistance, never a verdict.">Synthesize results</button>
         <button class="ghost tiny" onclick="bulkLlm('summarize','an')" title="Summarize every matched article with your local model — stored with its model and date, never analysed for keywords.">Summarize all</button>
         <button class="ghost tiny" onclick="bulkLlm('translate','an')" title="Translate every matched article with your local model — stored with its model and date, never analysed for keywords.">Translate all</button>
         <button class="ghost tiny" onclick="aiRunPrompt('an')" title="Run one of your custom AI extractors over these articles — results are stored as AI-derived metadata of that type, labelled unreliable, never the trusted keyword index.">Run extractor</button>
@@ -1816,6 +1816,23 @@
     </div>
     <div id="chart-enlarge-body" style="padding:14px 16px"></div>
     <div id="chart-enlarge-note" class="card-caveat" style="padding:0 16px 14px"></div>
+  </dialog>
+
+  <!-- Synthesis window (maintainer 2026-06-21): "synthesize results" opens here as a
+       roomy, article-style document. Step 1 shows the EXACT member selection (which
+       articles, of how many, by relevance) so the choice is transparent and the user
+       picks the members. Step 2 shows the synthesis + caveat + provenance + the full
+       corpus of synthesized articles WITH their metadata; export (Markdown / standalone
+       page) + copy. Native showModal() traps focus (OO-D13-001). -->
+  <dialog id="synth-window" style="width:min(900px,96vw);max-height:92vh;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
+      <b id="synth-win-title" style="font-size:15px">Synthesis</b>
+      <span style="margin-inline-start:auto"></span>
+      <div id="synth-win-actions" style="display:flex;gap:6px"></div>
+      <button class="icon-btn" onclick="document.getElementById('synth-window').close()" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div id="synth-win-body" style="padding:14px 18px;overflow:auto;max-height:calc(92vh - 56px)"></div>
   </dialog>
 
   <!-- Local link preview (invariant #6 extension, first target: Home-card

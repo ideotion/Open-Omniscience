@@ -442,6 +442,31 @@ def test_analysis_articles_paginated():
     assert 't("Page")' in app and 't("of")' in app, "the 'Page X of Y' control must exist"
 
 
+def test_synthesis_opens_a_window_with_selection_metadata_and_export():
+    """Maintainer field test 2026-06-21: 'synthesize results' opens a roomy, article-style
+    WINDOW that (1) makes the member selection TRANSPARENT (which articles, of how many,
+    by relevance) and lets the user pick, (2) shows the full corpus of synthesized
+    articles WITH metadata, (3) is exportable/copyable, (4) writes in the UI language."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # the dialog window exists with a title + actions slot + body
+    assert 'id="synth-window"' in html and 'id="synth-win-body"' in html
+    assert 'id="synth-win-actions"' in html and 'id="synth-win-title"' in html
+    # synthesizeResults opens the window (not the old inline #synth-result card)
+    assert "synth-window" in app and ".showModal()" in app
+    assert "function synthesizeResults(" in app
+    # selection step: a candidate pool + checkboxes + a bounded count
+    assert "_synthRenderSelect" in app and "synth-cb" in app and "_synthCount" in app
+    assert "_SYNTH_MAX" in app, "the bound must be explicit/visible in the selection step"
+    # the user-chosen ids drive the run (no silent top-20 truncation as the only path)
+    assert "article_ids: ids" in app and "ui_lang: code" in app, "send chosen ids + UI language"
+    # result step shows member metadata + export/copy
+    assert "_synthRenderResult" in app and "r.members" in app
+    assert "_synthExport" in app and "_synthAsMarkdown" in app and "_synthCopy" in app
+    # the candidate fetch uses the new /api/articles ids param for a seeded corpus
+    assert 'cp.set("ids"' in app
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
