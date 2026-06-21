@@ -1129,9 +1129,12 @@ ruling, a contingency, or a deliberate-omission note.
   (Relevance/recency · Date · Source · Title A–Z · Language) + Order (Desc/Asc) selects; `anParams()`
   appends sort_by/sort_dir (only the Articles list reads them; insights endpoints ignore the extras; the
   card-seeded article_ids path keeps its explicit order). test_repo_invariants::
-  test_advanced_search_sort_by_metadata. REMAINING: the cross-tab "filtered" indicator (when any
-  filter/sort is active, show it on ALL tabs like the active-search-terms chip — a larger cross-cutting
-  frontend change, browser-unverified, next). (g) SHIPPED: the analysis Articles
+  test_advanced_search_sort_by_metadata. FILTERED-INDICATOR SHIPPED 2026-06-21 (browser-unverified):
+  when any filter/sort is active, `anRunAdvanced` shows a "Filtered" scope chip + a summary
+  (`_anFilterSummary`: source/language/date-range/sort) in the analysis window. HONEST REFRAME of the
+  brief's "on ALL tabs": the filters are ANALYSIS-SCOPED (they refine the analysis corpus, not Home/
+  Markets/etc.), so a global chip would mislead — the honest place is the analysis window where the
+  filter applies. test_repo_invariants::test_filtered_indicator_and_tag_autobackfill. (g) SHIPPED: the analysis Articles
   list is PAGINATED — `_anLoadArticles(p,page)` fetches /api/articles by limit+offset (page size 50,
   `total` drives the page count), renders Prev/Next + "Page X of Y" controls BOTH above and below the
   table, loadAnalysis seeds page 0; test_analysis_articles_paginated. PENDING: (h) LLM MODEL DOWNLOAD
@@ -3802,6 +3805,23 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD-TEST FOLLOW-UP BATCH 3 (2026-06-21, branch claude/amazing-tesla-z6bwkm, draft PR #427 onto
+  0.09 — the maintainer asked to "continue until the end / address EVERY item"; finishes the brief's
+  build queue):** per-item shipped notes live in their own ledger entries; this is the roll-up.
+  SHIPPED: §2.B FOLDER-IMPORT JOB (pausable DB-writer, reuses batched ingest_emails — entry above) ·
+  §2.C MODEL-DOWNLOAD QUEUE + AI-tab downloads section (entry above) · §2.D FILTERED-INDICATOR (analysis-
+  scoped chip — entry above) · §3.H one-time silent baseline-tag AUTO-BACKFILL when the Keywords explorer
+  opens empty (auto-index #21 pattern; `_kxAutoBackfilled` guard, local/idempotent/no-network; the
+  explicit "Apply baseline tags" button stays) · §4 i18n TAIL (26 new this-session strings keyed ×12 —
+  folder-backup/restore + newsletter-remove + folder-import + model-downloads + the filtered indicator;
+  non-en AI-drafted, FLAGGED for native review; gate 1537 ×12 = 100%). VERIFIED-NO-CHANGE: §3.G month
+  vocab already complete for all 12 UI locales (only zh/ja missing = the deferred CJK segmentation; no
+  safe speculative stopword additions without the maintainer's exported log) · §3.I polling backoff
+  already engaged everywhere (`_adaptivePoll` on both chrome polls + the /tasks `loop()` adaptive).
+  Backends VERIFIED py3.11 (import-job + pull-queue tests); all frontend BROWSER-UNVERIFIED per fork-3.
+  REMAINING (genuine polish/focused-session work): persisted import cursor across app restart; the
+  installed/catalog table COMPACTION; human click-through across the new surfaces; key any longer
+  English-fallback panel paragraphs.
 - **TRENDING COVERING INDEX (brief §3.E, the #1 perf hotspot; branch claude/amazing-tesla-z6bwkm,
   draft PR onto 0.09; backend VERIFIED py3.11):** `/api/insights/trending-windows` (~20s idle / ~98s
   under load, polled from Home) is observed_on-WINDOWED, so the corpus-wide keyword counters can't

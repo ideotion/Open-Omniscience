@@ -595,6 +595,18 @@ def test_remove_imported_newsletters_live_action():
     assert "/api/newsletters/remove-imported" in app
 
 
+def test_filtered_indicator_and_tag_autobackfill():
+    """Brief §2.D: when filters/sort are active the analysis window shows a 'Filtered'
+    scope chip (honest place — filters are analysis-scoped). §3.H: the Keywords explorer
+    auto-applies baseline tags once when it opens empty (the auto-index pattern)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # §2.D the active-filters indicator
+    assert "function _anFilterSummary(" in app
+    assert 't("Filtered")' in app
+    # §3.H one-time silent baseline-tag backfill when the explorer opens with no tags
+    assert "_kxAutoBackfilled" in app and "/api/insights/keyword-tags/backfill" in app
+
+
 def test_model_download_queue():
     """Brief §2.C1: model pulls are a QUEUED, task-manager-visible job (one active, the
     rest queue, each cancellable — Ollama's pull is not resumable so cancel, not pause).

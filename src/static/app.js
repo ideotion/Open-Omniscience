@@ -6485,6 +6485,7 @@
     }
 
     // -- Keyword explorer (Item AC: explore by tag, hide, apply baseline tags) ---- //
+    let _kxAutoBackfilled = false;
     async function loadKeywordExplorer() {
       const box = $("kx-facets");
       if (!box) return;
@@ -6492,6 +6493,15 @@
       $("kx-keywords").innerHTML = "";
       try {
         const f = await api("/api/insights/keyword-tags/facets");
+        // §3.H: tagging at ingest is forward-only, so a pre-existing corpus shows no
+        // tags until a backfill runs. Auto-apply the baseline tags ONCE (silent, local,
+        // idempotent — the auto-index #21 pattern) when the explorer opens empty.
+        const empty = (f.axes || ["type", "topic"]).every(ax => !((f.facets && f.facets[ax]) || []).length);
+        if (empty && !_kxAutoBackfilled) {
+          _kxAutoBackfilled = true;
+          try { await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"}); } catch (e) {}
+          return loadKeywordExplorer();  // re-render with the freshly applied tags (guard prevents a loop)
+        }
         box.innerHTML = (f.axes || ["type", "topic"]).map(ax => {
           const tags = (f.facets && f.facets[ax]) || [];
           const chips = tags.length ? tags.map(t =>
@@ -9752,6 +9762,20 @@
     }
     // Advanced tab: refine the ACTIVE tab in-place (updates its seed, never spawns a
     // new tab). loadAnalysis re-runs EVERY subtab from the params.
+    // The active filters/sort, summarised — so the corpus SCOPE is always visible in
+    // the analysis window (§2.D; the filters are analysis-scoped, so the honest place
+    // for the indicator is here, not a misleading app-wide chip).
+    function _anFilterSummary() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const parts = [];
+      const src = ($("an-adv-source").value || "").trim(); if (src) parts.push(t("source") + ": " + src);
+      const lang = ($("an-adv-lang").value || "").trim(); if (lang) parts.push(t("language") + ": " + lang);
+      const from = $("an-adv-from").value, to = $("an-adv-to").value;
+      if (from || to) parts.push((from || "…") + " → " + (to || "…"));
+      const sb = $("an-adv-sort") && $("an-adv-sort").value;
+      if (sb) parts.push(t("sorted") + ": " + sb + " " + (($("an-adv-dir") && $("an-adv-dir").value) === "asc" ? "↑" : "↓"));
+      return parts;
+    }
     function anRunAdvanced() {
       _anIds = null;   // refining via Advanced search replaces any fixed article set
       _anCommodity = null;   // a refined search is no longer the commodity overlay
@@ -9767,7 +9791,10 @@
         _anRenderStrip(); _anSaveTabs();
       }
       $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
-      $("an-adv-note").textContent = tt("Analysis updated — see the other tabs.");
+      const fs = _anFilterSummary();
+      $("an-adv-note").innerHTML = fs.length
+        ? `<span class="pill">${esc(tt("Filtered"))}</span> ${fs.map(esc).join(" · ")}`
+        : tt("Analysis updated — see the other tabs.");
       loadAnalysis(anParams());
     }
     function anSelectTab(key) {
