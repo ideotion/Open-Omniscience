@@ -595,6 +595,27 @@ def test_remove_imported_newsletters_live_action():
     assert "/api/newsletters/remove-imported" in app
 
 
+def test_newsletter_folder_import_job():
+    """Brief §2.B: a SERVER-SIDE .eml FOLDER import runs as a pausable, task-manager-
+    visible DB-writer job (the 20 GB+ case the upload can't handle). Reuses the batched
+    ingest_emails; resume is idempotent (content-hash dedup + a processed-paths set)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    ing = (_SRC / "api" / "ingestion.py").read_text(encoding="utf-8")
+    jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
+    job = (_SRC / "ingest" / "import_job.py").read_text(encoding="utf-8")
+    # the manager: pausable, resumable, reuses the batched ingest, DB-writer via SessionLocal
+    assert "class NewsletterImportManager" in job and "def resume(" in job
+    assert "ingest_emails" in job and "SessionLocal" in job
+    # endpoints
+    assert '"/newsletters/import-folder"' in ing and '"/newsletters/import-folder/status"' in ing
+    # /api/jobs surfaces it as a DB-WRITER (kind="import" -> arbitration with collect)
+    assert "def _import_jobs(" in jobs and '"kind": "import"' in jobs and '"newsletter-import"' in jobs
+    # UI
+    assert 'id="nl-folder"' in html and 'onclick="startFolderImport(' in html
+    assert "function startFolderImport(" in app and "/api/newsletters/import-folder" in app
+
+
 def test_newsletter_import_perf_and_upload_cap():
     """Brief §2.B: .eml ingest BATCHES commits (per-message fsync was the bottleneck on a
     20 GB+ folder) with a per-message fallback so a collision never loses data; and the

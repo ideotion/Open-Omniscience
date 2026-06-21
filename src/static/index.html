@@ -1632,6 +1632,20 @@
         <button class="secondary" id="nl-import-btn" onclick="importNewsletters(this)">Import .eml files</button>
       </div>
       <div id="nl-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+      <hr>
+      <h3 style="margin-bottom:6px">Import a whole folder (for very large sets)</h3>
+      <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every .eml under it is imported as a pausable background job — for a 20&nbsp;GB+ archive the file picker can't handle. Same anonymise-at-ingest path, zero network. Already-imported messages are skipped, so you can pause and resume safely.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:2"><label for="nl-folder">Folder path (on this machine)</label>
+          <input id="nl-folder" placeholder="/home/you/newsletters" size="30"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
+      </div>
+      <div id="nl-folder-progress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
+      <div class="row" id="nl-folder-controls" style="gap:8px;margin-top:6px;display:none">
+        <button class="secondary" id="nl-folder-pause" onclick="folderImportAction('pause', this)">Pause</button>
+        <button class="secondary" id="nl-folder-resume" onclick="folderImportAction('resume', this)" style="display:none">Resume</button>
+        <button class="secondary" id="nl-folder-cancel" onclick="folderImportAction('cancel', this)">Cancel</button>
+      </div>
     </section>
     <section class="panel">
       <h2>Pull from a mailbox (IMAP/POP3)</h2>

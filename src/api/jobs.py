@@ -251,6 +251,38 @@ def _folder_backup_jobs() -> list[dict]:
     ]
 
 
+def _import_jobs() -> list[dict]:
+    """The server-side .eml folder import as a visible job (§2.B). It is a DB-WRITER
+    (kind="import"), so it joins the arbitration set — collecting WHILE importing both
+    write the corpus, serialised by the single-writer gate. Pausable + resumable."""
+    from src.ingest.import_job import get_import_manager
+
+    s = get_import_manager().status()
+    if s["state"] in ("idle", "done") and not s.get("running"):
+        return []
+    state = {"running": "running", "paused": "paused", "error": "failed"}.get(s["state"], s["state"])
+    total = s.get("files_total") or 0
+    prog = (
+        {"done": s.get("files_done", 0), "total": total, "unit": "files", "percent": s.get("percent", 0.0)}
+        if total
+        else None
+    )
+    actions = ["pause", "cancel"] if state == "running" else (["resume", "cancel"] if state in ("paused", "failed") else [])
+    folder = s.get("folder") or "a folder"
+    return [
+        {
+            "id": "newsletter-import",
+            "kind": "import",
+            "label": f"Importing newsletters from {folder}",
+            "state": state,
+            "progress": prog,
+            "eta_seconds": s.get("eta_seconds"),
+            "error": s.get("error"),
+            "actions": actions,
+        }
+    ]
+
+
 @router.get("/history")
 def jobs_history(limit: int = 20) -> dict:
     """Recent COMPLETED collection passes (the History tab) — newest first, with the
@@ -276,6 +308,7 @@ def list_jobs() -> dict:
     jobs.extend(_dump_jobs())
     jobs.extend(_osm_jobs())
     jobs.extend(_folder_backup_jobs())
+    jobs.extend(_import_jobs())
     jobs.extend(_task_jobs())
     f = _live_fetch()
     if f:
@@ -351,6 +384,11 @@ def cancel_job(job_id: str) -> dict:
 
         get_folder_manager().pause()
         return {"cancelled": job_id, "detail": "folder backup paused (resumable from Settings → Data & backup)"}
+    if job_id == "newsletter-import":
+        from src.ingest.import_job import get_import_manager
+
+        get_import_manager().pause()
+        return {"cancelled": job_id, "detail": "newsletter import paused (resumable from Settings → Newsletters)"}
     if job_id == "collect:current":
         from src.ingest import activate_kill_switch, kill_switch_active
         from src.scheduler.runner import get_scheduler
@@ -399,4 +437,12 @@ def resume_job(job_id: str) -> dict:
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"resumed": job_id, "detail": "folder backup resumed"}
+    if job_id == "newsletter-import":
+        from src.ingest.import_job import get_import_manager
+
+        try:
+            get_import_manager().resume()
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"resumed": job_id, "detail": "newsletter import resumed"}
     raise HTTPException(status_code=404, detail=f"unknown or unresumable job {job_id!r}")

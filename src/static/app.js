@@ -1126,7 +1126,7 @@
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       if (cat === "data") { modelsBackupStatus(); _fbStartPoll(); }  // models backup + the large-data folder backup (§2.A)
-      if (cat === "newsletters") loadNewsletterRemoveCount();  // show the remove panel only when there's something to remove
+      if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
     }
     function buildDrawer() {
       const ui = getUi();
@@ -3332,6 +3332,53 @@
     }
 
     // -- Remove imported newsletters (the "replace the faulty ones" loop) ------ //
+    // -- Server-side .eml FOLDER import as a pausable job (§2.B; 20 GB+ sets) ---- //
+    let _nlImportPoll = null;
+    async function startFolderImport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const folder = ($("nl-folder").value || "").trim();
+      if (!folder) { toast(t("Enter a folder path on this machine."), "warn"); return; }
+      btn.disabled = true;
+      try {
+        await api("/api/newsletters/import-folder", { method: "POST", body: JSON.stringify({ folder }) });
+        _folderImportStartPoll();
+      } catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
+    }
+    async function folderImportAction(action, btn) {
+      btn.disabled = true;
+      try { await api("/api/newsletters/import-folder/" + action, { method: "POST" }); _folderImportRefresh(); }
+      catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
+    }
+    function _folderImportStartPoll() {
+      if (_nlImportPoll) clearInterval(_nlImportPoll);
+      _folderImportRefresh();
+      _nlImportPoll = setInterval(_folderImportRefresh, 1500);
+    }
+    async function _folderImportRefresh() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prog = $("nl-folder-progress"); if (!prog) return;
+      let s;
+      try { s = await api("/api/newsletters/import-folder/status"); } catch (e) { return; }
+      const active = s.state === "running" || s.state === "paused";
+      if (!active && _nlImportPoll) { clearInterval(_nlImportPoll); _nlImportPoll = null; }
+      $("nl-folder-controls").style.display = active ? "" : "none";
+      if ($("nl-folder-pause")) $("nl-folder-pause").style.display = s.state === "running" ? "" : "none";
+      if ($("nl-folder-resume")) $("nl-folder-resume").style.display = s.state === "paused" ? "" : "none";
+      const tl = s.tally || {};
+      const eta = (s.eta_seconds != null) ? ` · ~${Math.max(1, Math.round(s.eta_seconds / 60))} ${t("min left")}` : "";
+      if (active) {
+        prog.innerHTML = `${esc(t("Importing"))}… ${s.percent || 0}% (${s.files_done}/${s.files_total}) · ` +
+          `${(tl.stored || 0)} ${esc(t("imported"))}, ${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}` +
+          (s.state === "paused" ? ` (${esc(t("paused"))})` : eta);
+      } else if (s.state === "done") {
+        prog.innerHTML = `<b>${esc(t("Done."))}</b> ${(tl.stored || 0)} ${esc(t("imported"))}, ` +
+          `${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}.`;
+        if (typeof loadNewsletterRemoveCount === "function") loadNewsletterRemoveCount();
+      } else if (s.state === "error") {
+        prog.innerHTML = `<span class="note err">${esc(s.error || t("failed"))}</span>`;
+      } else { prog.textContent = ""; }
+    }
+
     // Restore is additive-only, so excluding newsletters from a backup never purges
     // the live corpus — this action does. The panel shows only when there's something
     // to remove; removal needs an explicit confirm and nudges "back up first".

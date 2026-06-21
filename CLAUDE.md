@@ -1034,9 +1034,28 @@ ruling, a contingency, or a deliberate-omission note.
   "Too many files" at ~1300; `import_newsletters` is now `async` + parses the form itself
   (`await request.form(max_files=_MAX_UPLOAD_FILES=5000, max_fields=…)`) with an honest "use the folder
   import for a very large set" 400 above the cap. test_repo_invariants::test_newsletter_import_perf_and_
-  upload_cap. REMAINING (the bigger half of §2.B): the server-side folder-path IMPORT JOB (pausable,
-  task-manager-visible — mirrors the §2.A FolderBackupManager pattern; a DB-writer job taking the
-  single-writer gate), next.
+  upload_cap.
+  **FOLDER-IMPORT JOB SHIPPED 2026-06-21 (§2.B, the bigger half; branch claude/amazing-tesla-z6bwkm,
+  draft PR onto 0.09; backend VERIFIED py3.11, frontend BROWSER-UNVERIFIED per fork-3):** the 20 GB+
+  case the upload can't handle. `src/ingest/import_job.py:NewsletterImportManager` is a pausable,
+  task-manager-visible DB-WRITER job mirroring the §2.A FolderBackupManager: a worker thread enumerates
+  every `.eml` under a SERVER-SIDE folder path, reads them in `_FILE_CHUNK=500` groups (bounds RAM on a
+  20 GB+ folder), and imports each group via the batched `ingest_emails` over a gated `SessionLocal`
+  session — so it takes the SINGLE-WRITER GATE per batch commit and arbitrates with the scrape (kind=
+  "import" joins the `db_writers` set). PAUSE = stop-event (stops between chunks); RESUME is idempotent
+  by construction (content-hash dedup + an in-memory processed-paths set so progress CONTINUES, never
+  re-imports — the resume carries `_done` forward, set BEFORE the worker reads it to avoid a race);
+  honest rule-of-three ETA from files-done/elapsed (only once >0). ZERO network (local disk read).
+  API (`src/api/ingestion.py`): `POST /api/newsletters/import-folder` (400 bad folder / 409 already
+  running) + `/import-folder/status` + `/import-folder/{pause|resume|cancel}`. Surfaced in `/api/jobs`
+  (`_import_jobs`, kind="import", task-manager cancel=resumable pause / resume routed). Frontend: a
+  Settings → Newsletters "Import a whole folder" section (path input + live progress poll + pause/
+  resume). tests/test_newsletter_import_job.py (5: imports a folder, idempotent re-import dedups,
+  resume skips already-done, bad-folder ValueError, status/ETA shape — via a StaticPool in-memory DB so
+  the worker's own session sees the schema) + test_repo_invariants::test_newsletter_folder_import_job.
+  §2.B is now COMPLETE (live-remove + batched commits + upload-cap + the folder-import job). REMAINING:
+  human click-through (fork-3); a persisted cursor so resume survives an app restart (today the in-
+  memory done-set is lost on restart → resume re-scans, dedup-safe but slower); key the panel ×12.
   **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
   importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
   leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional
