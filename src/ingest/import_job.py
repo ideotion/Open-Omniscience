@@ -8,17 +8,21 @@ The maintainer needs to import a FOLDER of 20 GB+ newsletters (field test 2026-0
 the browser file-picker can't select a folder, and a synchronous request would block.
 This runs a server-side folder path as a background JOB, mirroring the download managers
 (DumpDownloadManager / FolderBackupManager): a worker thread, pause via a stop-event,
-idempotent resume, progress + a rule-of-three ETA, surfaced in /api/jobs.
+resume from a PERSISTED cursor, progress + a rule-of-three ETA, surfaced in /api/jobs.
 
 It is a DB-WRITER job (kind="import"), so it takes the SINGLE-WRITER GATE per batch
 commit (via the gated SessionLocal) and arbitrates with the scrape exactly like any
-other writer — never a silent collision. ZERO network (local disk read). Resume is
-idempotent: the corpus dedups by content hash, and we also remember processed file
-paths in-memory so a resume continues progress instead of re-scanning from zero.
+other writer — never a silent collision. ZERO network (local disk read).
+
+RESUME is robust two ways: (1) a small on-disk cursor (the count of files processed,
+in stable sorted order) so a resume — even after an APP RESTART — continues instead of
+re-scanning a 100k-file folder from zero; and (2) the corpus dedups by content hash, so
+even if the folder changed under us a re-processed message is never stored twice.
 """
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -31,6 +35,7 @@ from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS, ingest_emails
 _FILE_CHUNK = 500
 _IMPORT_SOURCE_DOMAIN = NEWSLETTER_SOURCE_DOMAINS[0]  # "newsletters.import.local"
 _IMPORT_SOURCE_NAME = "Imported newsletters (.eml)"
+_STATE_FILE = "newsletter_import.json"
 
 
 def _default_session():
@@ -53,31 +58,88 @@ def _import_source(session):
 
 
 def _eml_files(folder: Path) -> list[Path]:
-    """Every ``.eml`` (case-insensitive) under ``folder``, recursively, sorted."""
+    """Every ``.eml`` (case-insensitive) under ``folder``, recursively, sorted (the
+    stable order the resume cursor counts against)."""
     out = {p.resolve() for p in folder.rglob("*.eml") if p.is_file()}
     out |= {p.resolve() for p in folder.rglob("*.EML") if p.is_file()}
     return sorted(out)
 
 
 class NewsletterImportManager:
-    """ONE pausable server-side .eml folder import at a time. In-memory state; the
-    corpus (content-hash dedup) is the durable progress — a resume re-imports nothing
-    that's already stored, and the processed-paths set keeps progress continuous."""
+    """ONE pausable server-side .eml folder import at a time. Progress is a CURSOR (the
+    count of files processed in sorted order), persisted to ``data_dir()`` so a resume
+    survives an app restart; the corpus's content-hash dedup is the correctness net."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, state_path: Path | None = None) -> None:
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._state = "idle"  # idle|running|paused|done|error|cancelled
         self._folder: str | None = None
         self._files: list[Path] = []
-        self._done: set[str] = set()  # processed paths (resume + progress)
+        self._cursor = 0  # next file index to process
         self._tally: dict[str, int] = {}
         self._error: str | None = None
         self._cancelled = False
         self._started_at: float | None = None
         self._session_factory = None  # test seam
+        self._state_path_override = state_path
+        self._load_persisted()
 
+    # -- persistence -------------------------------------------------------- #
+    def _state_path(self) -> Path:
+        if self._state_path_override is not None:
+            return self._state_path_override
+        from src.paths import data_dir
+
+        return data_dir() / _STATE_FILE
+
+    def _save(self) -> None:
+        """Persist the resume cursor (best-effort; a write hiccup never breaks import)."""
+        try:
+            p = self._state_path()
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(
+                json.dumps(
+                    {
+                        "folder": self._folder,
+                        "cursor": self._cursor,
+                        "total": len(self._files),
+                        "tally": self._tally,
+                        "state": self._state,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def _clear_state(self) -> None:
+        try:
+            self._state_path().unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _load_persisted(self) -> None:
+        """On first construction (app start), restore an INTERRUPTED import as PAUSED so
+        the user can resume it from the task manager / Settings."""
+        try:
+            raw = self._state_path().read_text(encoding="utf-8")
+            d = json.loads(raw)
+        except (OSError, ValueError):
+            return
+        if d.get("state") not in ("running", "paused"):
+            return
+        folder = d.get("folder")
+        if not folder or not Path(folder).is_dir():
+            return
+        self._folder = folder
+        self._files = _eml_files(Path(folder))
+        self._cursor = min(int(d.get("cursor") or 0), len(self._files))
+        self._tally = dict(d.get("tally") or {})
+        self._state = "paused"  # an interrupted run is resumable, never silently lost
+
+    # -- lifecycle ---------------------------------------------------------- #
     def _alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
@@ -87,10 +149,10 @@ class NewsletterImportManager:
         *,
         _files: list[Path] | None = None,
         _session_factory=None,
-        _done: set[str] | None = None,
+        _cursor: int = 0,
     ) -> dict:
         """Validate the folder + launch the worker. RuntimeError if already running,
-        ValueError on a bad folder. ``_done`` (resume) is the already-processed set."""
+        ValueError on a bad folder. ``_cursor`` (resume) is where to continue."""
         with self._lock:
             if self._alive():
                 raise RuntimeError("A folder import is already running.")
@@ -103,11 +165,13 @@ class NewsletterImportManager:
             self._state = "running"
             self._folder = str(p)
             self._files = files
-            self._done = set(_done) if _done else set()  # set BEFORE the thread reads it
-            self._tally = {}  # resume() restores the carried tally after this returns
+            self._cursor = max(0, min(_cursor, len(files)))
+            if _cursor <= 0:
+                self._tally = {}
             self._error = None
             self._started_at = time.monotonic()
             self._session_factory = _session_factory
+            self._save()
             self._thread = threading.Thread(
                 target=self._run, args=(files, _session_factory), daemon=True, name="newsletter-import"
             )
@@ -119,72 +183,76 @@ class NewsletterImportManager:
             session = (session_factory or _default_session)()
             try:
                 source = _import_source(session)
-                chunk_raws: list[bytes] = []
-                chunk_paths: list[str] = []
-                for fp in files:
+                i = self._cursor
+                while i < len(files):
                     if self._stop.is_set():
                         break
-                    key = str(fp)
-                    if key in self._done:
-                        continue
-                    try:
-                        chunk_raws.append(Path(fp).read_bytes())
-                        chunk_paths.append(key)
-                    except OSError:
-                        with self._lock:
-                            self._done.add(key)
-                            self._tally["unreadable"] = self._tally.get("unreadable", 0) + 1
-                        continue
-                    if len(chunk_raws) >= _FILE_CHUNK:
-                        self._ingest_chunk(session, source, chunk_raws, chunk_paths)
-                        chunk_raws, chunk_paths = [], []
-                if chunk_raws and not self._stop.is_set():
-                    self._ingest_chunk(session, source, chunk_raws, chunk_paths)
+                    chunk = files[i : i + _FILE_CHUNK]
+                    raws: list[bytes] = []
+                    unreadable = 0
+                    for fp in chunk:
+                        try:
+                            raws.append(Path(fp).read_bytes())
+                        except OSError:
+                            unreadable += 1
+                    if raws:
+                        tally = ingest_emails(session, source, raws)
+                    else:
+                        tally = {}
+                    i += len(chunk)  # the whole chunk is now processed (readable or not)
+                    with self._lock:
+                        for k, v in tally.items():
+                            self._tally[k] = self._tally.get(k, 0) + int(v)
+                        if unreadable:
+                            self._tally["unreadable"] = self._tally.get("unreadable", 0) + unreadable
+                        self._cursor = i
+                        self._save()
                 with self._lock:
                     if self._stop.is_set():
                         self._state = "cancelled" if self._cancelled else "paused"
                     else:
                         self._state = "done"
+                    self._save()
+                    if self._state in ("done", "cancelled"):
+                        self._clear_state()
             finally:
                 session.close()
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             with self._lock:
                 self._state = "error"
                 self._error = str(exc)
-
-    def _ingest_chunk(self, session, source, raws: list[bytes], paths: list[str]) -> None:
-        tally = ingest_emails(session, source, raws)
-        with self._lock:
-            for k, v in tally.items():
-                self._tally[k] = self._tally.get(k, 0) + int(v)
-            self._done.update(paths)
+                self._save()
 
     def pause(self) -> None:
-        self._stop.set()  # the worker stops between chunks; state -> paused
+        self._stop.set()  # the worker stops between chunks; state -> paused (persisted)
 
     def resume(self) -> dict:
         with self._lock:
             if self._state not in ("paused", "error", "cancelled"):
                 raise RuntimeError("Nothing paused to resume.")
-            folder, files, sf = self._folder, list(self._files), self._session_factory
-            done = set(self._done)
+            folder, files, sf, cursor = self._folder, list(self._files), self._session_factory, self._cursor
             tally = dict(self._tally)
         if folder is None:
             raise RuntimeError("No previous import to resume.")
-        out = self.start(folder, _files=files, _session_factory=sf, _done=done)
+        out = self.start(folder, _files=files, _session_factory=sf, _cursor=cursor)
         with self._lock:  # carry the prior tally forward (progress continues)
             self._tally = tally
+            self._save()
         return out
 
     def cancel(self) -> None:
         with self._lock:
             self._cancelled = True
         self._stop.set()
+        if not self._alive():  # already idle/paused — clear the persisted state now
+            with self._lock:
+                self._state = "cancelled"
+                self._clear_state()
 
     def status(self) -> dict:
         with self._lock:
             total = len(self._files)
-            done = len(self._done)
+            done = self._cursor
             eta_s = None
             if self._started_at is not None and done > 0 and done < total:
                 elapsed = max(0.001, time.monotonic() - self._started_at)
