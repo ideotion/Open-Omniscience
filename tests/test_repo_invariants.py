@@ -535,6 +535,26 @@ def test_offline_map_merged_list_state_and_planet_skips_downloaded():
     assert 'if (tbl) tbl.innerHTML = ""' in app
 
 
+def test_backup_can_exclude_newsletters():
+    """Maintainer field test 2026-06-21: the Full-backup UI offers 'what to back up'
+    tickboxes; unticking 'Imported newsletters' backs up WITHOUT the .eml/mailbox
+    articles (so faulty imports can be replaced by re-importing). Wired end to end."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
+    art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
+    # UI: the tickbox exists + a "what to back up" fieldset
+    assert 'id="v2-incl-newsletters"' in html and "What to back up" in html
+    # frontend sends include_newsletters from the checkbox
+    assert "include_newsletters" in app and 'v2-incl-newsletters' in app
+    # backend: the body field + threaded into write_backup_v2 + the filter
+    assert "include_newsletters" in bk
+    assert "def _drop_newsletter_articles(" in art and "def write_backup_v2(" in art
+    assert "include_newsletters: bool = True" in art, "default keeps newsletters (no silent change)"
+    # the filter targets the real newsletter source domains
+    assert "newsletters.import.local" in art and "mailbox.import.local" in art
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():

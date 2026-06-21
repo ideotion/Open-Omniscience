@@ -1269,10 +1269,17 @@
       <div id="backup-status" class="hint">Checking backend…</div>
 
       <h3 style="margin-bottom:6px">Full backup — one signed archive</h3>
-      <p class="muted" style="margin-top:0">One file carries everything: articles, keywords, Wikipedia and law
+      <p class="muted" style="margin-top:0">One file carries your data: articles, keywords, Wikipedia and law
         snapshots, market series, events, settings, annotations and the custody log — with a signed manifest, so
         tampering is detectable. Encrypted with a passphrase by default; there is no recovery for a lost passphrase.</p>
       <p class="hint" style="margin-top:0">An encrypted backup is almost exactly the same file size as a plaintext one — AES-256-GCM adds only a fixed ~64 bytes of overhead, so the size matching is expected, not a sign it isn't encrypted. You can confirm any backup is genuine ciphertext in the Restore preview below (it reports “encrypted (AES-256-GCM)”).</p>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
+        <legend class="muted" style="padding:0 6px">What to back up</legend>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always included)</span></label>
+        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-incl-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to back up without them (e.g. to re-import fixed ones)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use the separate “Local LLM models” backup above</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— large files, separate backup (coming soon)</span></label>
+      </fieldset>
       <div class="row">
         <div style="flex:2"><label for="v2-pass">Passphrase</label>
           <input id="v2-pass" type="password" autocomplete="new-password" placeholder="a strong, memorable passphrase"></div>

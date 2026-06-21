@@ -1071,6 +1071,29 @@ ruling, a contingency, or a deliberate-omission note.
   bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
   summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
   limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **SELECTIVE BACKUP — "WHAT TO BACK UP" TICKBOXES + EXCLUDE NEWSLETTERS SHIPPED 2026-06-21 (maintainer
+  field test; branch claude/keen-lamport-b4t3rh, PR #420; backend stdlib-VERIFIED, frontend browser-
+  unverified per fork-3):** the maintainer curated a corpus incl. faulty .eml imports and wants to back
+  up WITHOUT them, then re-import fixed ones to replace the faulty (restore is additive, so leaving the
+  bad ones out of the backup + a future clean re-import is the path). DELIVERED the core, reliably: the
+  Full-backup UI gains a "What to back up" fieldset — ☑ Articles & corpus data (always) · ☑ Imported
+  newsletters (.eml/mailbox, UNTICK to exclude) · Local LLM models (points to the existing SEPARATE
+  models backup) · Offline maps · Wikipedia dumps (DISABLED "coming soon" — honest, NOT faked: file-
+  member backup needs the ruled-but-unbuilt additive-restore FILE placement, a reliability-critical
+  piece I won't ship unverified). BACKEND: `BackupBody.include_newsletters` (default True — no silent
+  change) → `write_backup_v2(..., include_newsletters=)` → `_collect_members(...)` runs
+  `_drop_newsletter_articles()` on the DISPOSABLE PLAINTEXT corpus snapshot ONLY (never the live DB):
+  finds the `newsletters.import.local` + `mailbox.import.local` source ids, deletes their articles AND
+  every dependent row (each table with an `article_id` column — verified ALL FKs to articles.id use that
+  name, so no orphan survives the restore's foreign_key_check), VACUUMs; the empty source rows are LEFT
+  (a future re-import re-attaches). RESTORE NEEDS NO CHANGE (the merge just sees a corpus with fewer
+  articles — fully additive-restore-compatible). tests/test_backup_newsletter_filter.py (stdlib-only,
+  RAN GREEN here: drops only newsletter articles+dependents, keeps the real ones + non-article tables,
+  no-newsletter-source = no-op) + test_repo_invariants::test_backup_can_exclude_newsletters (the UI
+  tickbox + the end-to-end wiring). New UI strings English (the backup panel is largely un-keyed
+  English; gate stays 100%). REMAINING (the maintainer's fuller vision): maps + wiki-dump backup as
+  file members (needs the additive-restore file-placement, ruled-but-unbuilt — build with the wiki-dump
+  inclusion together); fold the separate models backup into the same tickbox flow.
 - **OFFLINE-MAP TAB — ONE STATE-AWARE LIST + PLANET SKIPS DOWNLOADED SHIPPED 2026-06-21 (maintainer
   field test; branch claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified per fork-3):**
   Settings → Offline map had TWO lists (the catalogue with bare Download buttons + a separate jobs

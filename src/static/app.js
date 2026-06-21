@@ -3339,8 +3339,12 @@
       if (!plaintext && !pass) { out.textContent = t("Choose a passphrase first (or use the deliberate unencrypted option)."); return; }
       out.textContent = t("Building the archive…");
       try {
+        const nlEl = $("v2-incl-newsletters");
+        const inclNl = nlEl ? !!nlEl.checked : true;   // "what to back up": newsletters toggle
+        const body = plaintext ? {plaintext: true} : {passphrase: pass};
+        body.include_newsletters = inclNl;
         const r = await fetch("/api/backup/v2", {method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify(plaintext ? {plaintext: true} : {passphrase: pass})});
+          body: JSON.stringify(body)});
         if (!r.ok) { const d = await r.json().catch(() => ({}));
           throw new Error(d.detail || r.statusText); }
         const blob = await r.blob();

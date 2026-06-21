@@ -56,6 +56,10 @@ _PENDING: dict[str, StagedArtifact] = {}
 class BackupBody(BaseModel):
     passphrase: str | None = None
     plaintext: bool = False
+    # What to back up (maintainer 2026-06-21). The corpus is always included; this
+    # toggles whether imported-newsletter (.eml/mailbox) articles ride along — so a
+    # user fixing faulty imports can back up WITHOUT them, then re-import clean ones.
+    include_newsletters: bool = True
 
 
 @router.post("/v2")
@@ -88,7 +92,11 @@ def backup_v2(body: BackupBody) -> FileResponse:
     Path(tmp).unlink(missing_ok=True)
     dest = Path(tmp)
     try:
-        write_backup_v2(dest, passphrase=None if body.plaintext else body.passphrase)
+        write_backup_v2(
+            dest,
+            passphrase=None if body.plaintext else body.passphrase,
+            include_newsletters=body.include_newsletters,
+        )
     except (BackupError, ArtifactError) as exc:
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
