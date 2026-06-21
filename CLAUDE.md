@@ -3833,6 +3833,23 @@ ruling, a contingency, or a deliberate-omission note.
   REMAINING (genuine polish/focused-session work): persisted import cursor across app restart; the
   installed/catalog table COMPACTION; human click-through across the new surfaces; key any longer
   English-fallback panel paragraphs.
+- **FIELD-TEST FOLLOW-UP BATCH 4 (2026-06-21, branch claude/amazing-tesla-z6bwkm, draft PR onto 0.09 —
+  the maintainer's "proceed with everything you can continue, then list all remaining"; the last
+  in-sandbox-buildable polish):** SHIPPED (each its own entry above, this is the roll-up): (a) the §2.B
+  PERSISTED IMPORT CURSOR (resume survives an app restart — entry above; backend VERIFIED py3.11);
+  (b) a determinate `<progress>` bar on the .eml folder-import UI (driven by the existing status poll's
+  percent); (c) §4 i18n — 54 more clean single-text-node chrome strings keyed ×12 across THREE batches
+  (the large-data folder backup/restore panels + the backup/restore "What to back up/restore" selection
+  fieldsets + the newsletter-remove panel + the §2.D "Sort by"/"Order" sort controls + the markets
+  Page/CSV/RSS/Proxy URL·Currency·CSS-selector labels + the diagnostics download buttons + Synthesis/
+  shutdown/When-Where-Who), so audit-chrome untranslatable 166→110, gate 1591 ×12 = 100% (non-en
+  AI-drafted, FLAGGED for native review). VERIFIED-NO-CHANGE (assessed, no code): §2.C installed/catalog
+  table COMPACTION is genuinely cosmetic (already tabular; the load-bearing queue+status section shipped
+  in #427) — skipped as a low-value browser-unverified change. The ~110 remaining audit strings are
+  data/examples/proper-nouns (stay literal) + the inline-`<a>/<b>`-tagged help paragraphs (the heavier
+  de-tagging slice). All frontend BROWSER-UNVERIFIED per fork-3. THE BRIEF'S BUILD QUEUE IS NOW EXHAUSTED
+  of in-sandbox-buildable items; what's left is human click-through + live-corpus measurement + genuine
+  focused-session features (the final remaining list handed to the maintainer in chat).
 - **TRENDING COVERING INDEX (brief §3.E, the #1 perf hotspot; branch claude/amazing-tesla-z6bwkm,
   draft PR onto 0.09; backend VERIFIED py3.11):** `/api/insights/trending-windows` (~20s idle / ~98s
   under load, polled from Home) is observed_on-WINDOWED, so the corpus-wide keyword counters can't
