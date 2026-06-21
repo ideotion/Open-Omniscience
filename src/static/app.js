@@ -135,7 +135,11 @@
     // Language -> Finish. The encryption choice is made in the DB-unlock/install
     // flow (not a wizard placeholder) and sources auto-seed on boot, so the two
     // inert "Coming soon" steps were removed (maintainer 2026-06-18).
-    const _GW_STEPS = ["lang", "finish"];
+    // The first-launch flow now chooses the language FIRST (unlock.html, #420) and
+    // a permanent top-bar switcher (invariant #15) always changes it, so the wizard's
+    // language step is redundant (§2.5, autonomous 2026-06-21). Dropped from the flow;
+    // the #guide-wizard lang DOM + _gwRenderLangs stay unreachable (the Desk lesson).
+    const _GW_STEPS = ["finish"];
     let _gwIdx = 0;
     function _guideState() {
       try { return JSON.parse(localStorage.getItem(_GUIDE_KEY)) || {}; } catch { return {}; }
@@ -6784,6 +6788,32 @@
       finally { _indexing = false; }
     }
 
+    // Maintenance: FORCE-re-index the WHOLE corpus (not just un-indexed articles) —
+    // recomputes keywords/metadata with the current engine. Drains stale rows an old
+    // engine produced (e.g. pre-markup-strip CSS keywords). Heavy; loops batches with
+    // a visible cursor so a big corpus never hangs the request. Confirm first.
+    let _reindexAllRunning = false;
+    async function reindexAllCorpus(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_reindexAllRunning) return;
+      if (!confirm(t("Re-index every article with the current engine? This is heavy on a large corpus but runs in the background."))) return;
+      _reindexAllRunning = true;
+      if (btn) btn.disabled = true;
+      const st = $("reindex-all-status");
+      let after = 0, total = 0, guard = 0;
+      try {
+        for (;;) {
+          const r = await api(`/api/insights/reindex-all?limit=300&after_id=${after}`, { method: "POST" });
+          total += r.reindexed || 0;
+          after = r.last_id || after;
+          if (st) st.textContent = `${total} ${t("re-indexed")}${r.remaining ? ` · ${r.remaining.toLocaleString()} ${t("to go")}` : ""}`;
+          if (r.done || ++guard > 5000) break;
+        }
+        if (st) st.textContent = `${total} ${t("re-indexed")} · ${t("done")}`;
+      } catch (e) { if (st) st.textContent = esc(e.message); }
+      finally { _reindexAllRunning = false; if (btn) btn.disabled = false; }
+    }
+
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
     // openCorpus is RETIRED here (THEME-3, 2026-06-19): the legacy #corpus-win keyword
@@ -9161,8 +9191,14 @@
             + `<span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span>`;
           actions = `<button class="tiny secondary" onclick="pauseOsm(${esc(JSON.stringify(d.key))})">${esc(t("Pause"))}</button>`;
         } else if (d.status === "queued") {
-          stateHtml = `<span class="pill warn">${esc(t("Queued"))}</span>`;
-          actions = `<button class="tiny secondary" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Cancel"))}</button>`;
+          const qpos = d.queue_position;
+          const queued = _osmDownloads.filter((x) => x.status === "queued" && x.queue_position != null)
+            .sort((a, b) => a.queue_position - b.queue_position).map((x) => x.key);
+          const qi = queued.indexOf(d.key);
+          stateHtml = `<span class="pill warn">${esc(t("Queued"))}${qpos ? ` #${qpos}` : ""}</span>`;
+          if (qi > 0) actions += `<button class="tiny secondary" onclick="osmMove(${esc(JSON.stringify(d.key))}, -1)" title="${esc(t("Move earlier in the queue"))}">↑</button> `;
+          if (qi >= 0 && qi < queued.length - 1) actions += `<button class="tiny secondary" onclick="osmMove(${esc(JSON.stringify(d.key))}, 1)" title="${esc(t("Move later in the queue"))}">↓</button> `;
+          actions += `<button class="tiny secondary" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Cancel"))}</button>`;
         } else if (d.status === "done") {
           stateHtml = `<span class="pill ok">${esc(t("Downloaded"))} ✓ <span class="muted">${humanBytes(d.downloaded_bytes || d.total_bytes || r.size_estimate_bytes)}</span></span>`;
           actions = `<button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
@@ -9221,6 +9257,23 @@
       }
       toast(`${t("Queued")} ${started} ${t("regions")}${skip.length ? ` · ${skip.length} ${t("already present")}` : ""}`);
       _osmPoll();
+    }
+    // Reorder a QUEUED region download (same prioritisation control as the task
+    // manager's dump/OSM reorder). Optimistic: renumber the cached queue + repaint
+    // immediately, THEN persist via the geo reorder endpoint, THEN reconcile.
+    async function osmMove(key, dir) {
+      const queued = _osmDownloads.filter((x) => x.status === "queued" && x.queue_position != null)
+        .sort((a, b) => a.queue_position - b.queue_position);
+      const i = queued.findIndex((x) => x.key === key);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= queued.length) return;
+      [queued[i], queued[j]] = [queued[j], queued[i]];
+      queued.forEach((x, k) => { x.queue_position = k + 1; });   // optimistic renumber
+      _renderOsmList();
+      try {
+        await api("/api/geo/downloads/reorder", { method: "POST", body: JSON.stringify({ keys: queued.map((x) => x.key) }) });
+      } catch (e) { /* reconcile from backend truth */ }
+      loadOsmMap();
     }
     async function pauseOsm(key) {
       try { await api("/api/geo/downloads/pause?key=" + encodeURIComponent(key), { method: "POST" }); loadOsmMap(); }
@@ -9421,6 +9474,29 @@
           || `<option value="">—</option>`;
         if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
       } catch (e) { /* reader box is optional */ }
+    }
+    // Substring TITLE search over a downloaded edition's multistream index (local,
+    // zero network, bounded). Honest scope: titles only — page bodies are not
+    // full-text-searched (decompressing every block per query is out of scope).
+    async function dumpSearchTitles() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const wiki = $("dumpread-wiki").value.trim();
+      const q = $("dumpread-title").value.trim();
+      const out = $("dumpread-out");
+      if (!wiki) { out.innerHTML = `<div class="note err">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
+      if (!q) { out.innerHTML = `<div class="note err">${esc(t("Enter a page title."))}</div>`; return; }
+      out.textContent = t("Loading…");
+      try {
+        const d = await api(`/api/wiki/dumps/search?wiki=${encodeURIComponent(wiki)}&q=${encodeURIComponent(q)}`);
+        const items = d.items || [];
+        if (!items.length) {
+          out.innerHTML = `<div class="note">${esc(t("No matching titles in this dump's index."))} <span class="muted">(${d.scanned} ${t("index lines scanned")}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div>`;
+          return;
+        }
+        const rows = items.map(it =>
+          `<li><a href="#" onclick="$('dumpread-title').value=${esc(JSON.stringify(it.title))};dumpReadPage();return false">${esc(it.title)}</a></li>`).join("");
+        out.innerHTML = `<div class="card"><div class="muted small">${esc(t("Title matches in your downloaded dump — click one to read its wikitext. Bodies are not full-text-searched."))} <span class="muted">(${d.scanned} ${t("index lines scanned")}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div><ul>${rows}</ul></div>`;
+      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     async function dumpReadPage() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);

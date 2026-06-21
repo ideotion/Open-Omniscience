@@ -130,6 +130,66 @@ def test_world_map_fullscreen_uses_the_fullscreen_api():
     assert "osm-region-row" in app, "each region row renders with a direct Download button"
 
 
+def test_reindex_whole_corpus_action_is_discoverable():
+    """§3.F (autonomous 2026-06-21): a FORCE re-index of ALL articles must exist and
+    be discoverable — the drain for stale metadata an old engine produced (e.g.
+    pre-markup-strip CSS keywords). backfill_corpus only touches un-indexed articles,
+    so a dedicated paged reindex_all_batch + endpoint + Settings button are needed."""
+    store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "def reindex_all_batch(" in store, "a force-all re-index batch helper must exist"
+    api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert "/reindex-all" in api, "the reindex-all endpoint must be registered"
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "reindexAllCorpus(" in html, "a discoverable re-index button must exist"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function reindexAllCorpus(" in app and "/api/insights/reindex-all" in app
+
+
+def test_downloaded_dump_title_search_exists():
+    """§2.4 (autonomous 2026-06-21): downloaded wiki dumps gain a bounded TITLE
+    search over the multistream index (honest scope: titles only, not page bodies —
+    decompressing every block per query is out of scope). Surfaced in the Settings
+    dump-reader UI, not the per-keystroke omnibar (a multi-million-line scan must
+    never run interactively)."""
+    dr = (_SRC / "wiki" / "dumpread.py").read_text(encoding="utf-8")
+    assert "def search_titles(" in dr, "the dump title-search core must exist"
+    assert "scan_cap" in dr and '"capped"' in dr, "the scan must be bounded + report capping"
+    api = (_SRC / "api" / "wiki.py").read_text(encoding="utf-8")
+    assert "/dumps/search" in api, "the dump search endpoint must be registered"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function dumpSearchTitles(" in app and "/api/wiki/dumps/search" in app, (
+        "the Settings dump reader must offer a title search"
+    )
+
+
+def test_guided_wizard_language_step_consolidated():
+    """§2.5 (autonomous 2026-06-21): the first-launch flow picks the language FIRST
+    (unlock.html) + a permanent top-bar switcher always changes it, so the guided
+    wizard no longer carries a redundant language step. The lang DOM/helper stay
+    (unreachable) per the Desk lesson — nothing silently lost."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'const _GW_STEPS = ["finish"];' in app, "the wizard lang step must be dropped"
+    # The lang rendering helper is kept (unreachable, not deleted).
+    assert "function _gwRenderLangs(" in app, "the lang helper must be preserved (Desk lesson)"
+
+
+def test_offline_map_queued_rows_can_be_reordered():
+    """§2.3 (autonomous 2026-06-21): the Settings → Offline-map row list lets the
+    operator reorder QUEUED region downloads (the same prioritisation control the
+    task manager already offers), optimistically + persisted via the geo endpoint."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "async function osmMove(key, dir)" in app, "an osmMove reorder helper must exist"
+    assert "/api/geo/downloads/reorder" in app, "reorder must persist via the geo endpoint"
+    # The queued row renders ↑/↓ controls calling osmMove.
+    render = app.split("function _renderOsmList(", 1)[1].split("\n    }", 1)[0]
+    assert "osmMove(" in render and "queue_position" in render, (
+        "queued rows must render ↑/↓ reorder controls keyed on queue_position"
+    )
+    # The backend exposes queue_position on the downloads list so the UI can order them.
+    osm = (_SRC / "geo" / "osm_downloads.py").read_text(encoding="utf-8")
+    assert '"queue_position"' in osm, "osm downloads list must expose queue_position"
+
+
 def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
     """Field test 2026-06-19 THEME-2 (#14/#15): the "near in space & time" co-occurrence
     is capped to a TIGHT fixed window (it used the slider's span/12 ~166y, linking events

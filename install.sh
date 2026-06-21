@@ -22,6 +22,7 @@
 # Unattended env vars (also used by CI):
 #   OO_COMPONENTS="analysis"       extras to add on top of core (comma-separated)
 #   OO_MAKE_LAUNCHER=1             create the desktop launcher (default yes; 0 to skip)
+#   OO_AUTOSTART=1                 enable login autostart (opt-in; default off; boots offline)
 #   OO_PYTHON=python3.13           interpreter to use
 #   OO_SKIP_PIP=1 / OO_SKIP_DB=1   skip the pip install / db init (testing only)
 #
@@ -432,6 +433,52 @@ EOF
     say "    ${BLU}http://127.0.0.1:8000${RST}. Close that window to stop the app."
 }
 
+setup_autostart() {
+    # OPT-IN ONLY (maintainer 2026-06-21: never add login-autostart silently). The
+    # app boots in AIRPLANE mode (zero network) so launching at login is safe; going
+    # online still passes the one consent popup inside the app.
+    [ "${OO_AUTOSTART:-0}" = "1" ] || return 0
+
+    local os; os="$(uname -s)"
+    if [ "$os" = "Darwin" ]; then
+        local la="$HOME/Library/LaunchAgents"
+        mkdir -p "$la"
+        local plist="$la/com.open-omniscience.autostart.plist"
+        cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.open-omniscience.autostart</string>
+  <key>ProgramArguments</key><array>
+    <string>$SRC_DIR/scripts/launch.sh</string><string>console</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+</dict></plist>
+EOF
+        ok "Enabled login autostart (launches in airplane mode). Remove: rm '$plist'"
+        return 0
+    fi
+
+    # Linux: an XDG autostart entry (~/.config/autostart). Honoured by GNOME/KDE/etc.
+    local ad="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+    mkdir -p "$ad"
+    local af="$ad/$APP_NAME.desktop"
+    local icon_console="$SRC_DIR/assets/icon.png"; [ -f "$icon_console" ] || icon_console="$SRC_DIR/assets/icon.svg"
+    cat > "$af" <<EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Open Omniscience
+Comment=Start Open Omniscience at login (boots offline / airplane mode)
+Exec="$SRC_DIR/scripts/launch.sh" console
+Icon=$icon_console
+Terminal=true
+X-GNOME-Autostart-enabled=true
+EOF
+    chmod +x "$af"
+    ok "Enabled login autostart (launches in airplane mode). Remove: rm '$af'"
+}
+
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
@@ -442,6 +489,7 @@ do_install() {
     pip_install "$extras"
     init_database
     make_launcher
+    setup_autostart
     say ""
     ok "${BOLD}Install complete.${RST} App + data live under: $SRC_DIR"
     say "  Re-launch any time from your applications menu, or with:"
@@ -536,6 +584,8 @@ do_uninstall() {
     local apps_uninstall="$HOME/.local/share/applications/$APP_NAME-uninstall.desktop"
     local desk_file_uninstall="$desk/$APP_NAME-uninstall.desktop"
     local mac_file_uninstall="$HOME/Desktop/Uninstall Open Omniscience.command"
+    local autostart_file="${XDG_CONFIG_HOME:-$HOME/.config}/autostart/$APP_NAME.desktop"
+    local mac_autostart="$HOME/Library/LaunchAgents/com.open-omniscience.autostart.plist"
 
     say ""
     say "  The following will be ${BOLD}removed${RST}:"
@@ -549,6 +599,8 @@ do_uninstall() {
     [ -f "$mac_file" ]           && say "    • launcher:    $mac_file"
     [ -f "$mac_file_desk" ]      && say "    • launcher:    $mac_file_desk"
     [ -f "$mac_file_uninstall" ] && say "    • launcher:    $mac_file_uninstall"
+    [ -f "$autostart_file" ]     && say "    • autostart:   $autostart_file"
+    [ -f "$mac_autostart" ]      && say "    • autostart:   $mac_autostart"
     say "  Your repository ($SRC_DIR) and your data will be ${BOLD}kept${RST} unless you choose otherwise."
     say ""
 
@@ -562,7 +614,8 @@ do_uninstall() {
 
     rm -f "$apps" "$apps_desk" "$apps_uninstall" \
           "$desk_file" "$desk_file_desk" "$desk_file_uninstall" \
-          "$mac_file" "$mac_file_desk" "$mac_file_uninstall"
+          "$mac_file" "$mac_file_desk" "$mac_file_uninstall" \
+          "$autostart_file" "$mac_autostart"
     command -v update-desktop-database >/dev/null 2>&1 && \
         update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
     [ -d "$SRC_DIR/.venv" ] && rm -rf "$SRC_DIR/.venv"

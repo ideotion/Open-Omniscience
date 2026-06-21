@@ -348,6 +348,55 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
     return {"reindexed": reindexed, "failed": failed}
 
 
+def reindex_all_batch(
+    session: Session, *, extractor, limit: int = 300, after_id: int = 0
+) -> dict:
+    """FORCE-re-index a batch of ALL articles (id > ``after_id``), oldest first.
+
+    Unlike :func:`backfill_corpus` (which skips already-indexed articles), this
+    recomputes EVERY article's CORE-ENGINE metadata — needed to drain stale rows an
+    OLD engine produced (e.g. the pre-2026-06-20 .eml bodies that leaked bare CSS
+    keywords before ``strip_markup`` landed). ``index_article`` is delete-then-reinsert
+    per article, so the new engine's output overwrites the old; AI artifacts
+    (summaries/translations and the AI-derived keyword rows) are untouched. PAGED:
+    returns ``last_id`` so the
+    caller loops (after_id=last_id) until ``done``. One bad article never aborts the
+    batch. Counts only — no score."""
+    rows = (
+        session.query(Article.id)
+        .filter(Article.id > after_id)
+        .order_by(Article.id)
+        .limit(max(1, limit))
+        .all()
+    )
+    ids = [r[0] for r in rows]
+    reindexed = 0
+    failed = 0
+    last_id = after_id
+    for aid in ids:
+        art = session.get(Article, aid)
+        last_id = aid
+        if art is None:
+            continue
+        try:
+            index_article(session, art, extractor=extractor, country=art.country)
+            reindexed += 1
+        except Exception:  # noqa: BLE001 - one bad article must not abort the batch
+            session.rollback()
+            failed += 1
+            _LOG.warning("re-index of article %s failed", aid, exc_info=True)
+    remaining = (
+        session.query(Article.id).filter(Article.id > last_id).count() if ids else 0
+    )
+    return {
+        "reindexed": reindexed,
+        "failed": failed,
+        "last_id": last_id,
+        "remaining": remaining,
+        "done": not ids or remaining == 0,
+    }
+
+
 def backfill_keyword_counters(session: Session) -> dict:
     """Recompute ``Keyword.mention_count`` + ``article_count`` from the live mentions.
 

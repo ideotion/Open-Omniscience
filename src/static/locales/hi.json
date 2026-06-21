@@ -1595,5 +1595,12 @@
   "Shut down the app": "ऐप बंद करें",
   "Shut down the app (stops the server — your data is untouched)": "ऐप बंद करें (सर्वर रोकता है — आपका डेटा अछूता रहता है)",
   "CSS selector": "CSS चयनकर्ता",
-  "Test": "परीक्षण करें"
+  "Test": "परीक्षण करें",
+  "Search titles": "शीर्षक खोजें",
+  "Re-index the whole corpus": "पूरे संग्रह को पुनः अनुक्रमित करें",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "पुनः अनुक्रमण वर्तमान इंजन से प्रत्येक लेख के कीवर्ड, तिथियाँ/स्थान/इकाइयाँ और भावना की पुनर्गणना करता है — पुराने लेखों को ताज़ा करने के लिए अपग्रेड के बाद इसका उपयोग करें (उदाहरण के लिए मार्कअप-सफ़ाई सुधार से पहले आयात किए गए न्यूज़लेटरों से पुराने CSS/मार्कअप कीवर्ड हटाने हेतु)। बड़े संग्रह पर भारी; यह पृष्ठभूमि में बैच-दर-बैच चलता है। सारांश और अनुवाद अछूते रहते हैं।",
+  "Synthesize a chosen set of these articles with your local model — shared facts, disagreements, open questions, citing article numbers. You pick the members; assistance, never a verdict.": "अपने स्थानीय मॉडल से इन चुने हुए लेखों के समूह का संश्लेषण करें — साझा तथ्य, असहमतियाँ, खुले प्रश्न, लेख संख्याओं का हवाला देते हुए। सदस्य आप चुनते हैं; सहायता, कभी निर्णय नहीं।",
+  "Source name or domain (e.g. bbc.com)": "स्रोत नाम या डोमेन (जैसे bbc.com)",
+  "The scaling benchmark times the heavy read paths against your real corpus, several runs each, and reports cold vs warm timings per case — so we can check that big corpora stay fast on modest hardware. It records your corpus size, the keyword-counter freshness and the engine mode alongside the numbers so the results are interpretable. Read-only and local; nothing is transmitted.": "स्केलिंग बेंचमार्क आपके वास्तविक संग्रह पर भारी पठन-पथों को मापता है, प्रत्येक के कई रन, और प्रति मामले ठंडे बनाम गर्म समय की रिपोर्ट देता है — यह जाँचने के लिए कि बड़े संग्रह साधारण हार्डवेयर पर तेज़ बने रहें। यह आपके संग्रह का आकार, कीवर्ड-काउंटर की ताज़गी और इंजन मोड को संख्याओं के साथ दर्ज करता है ताकि परिणाम व्याख्या-योग्य हों। केवल-पठन और स्थानीय; कुछ भी प्रेषित नहीं होता।",
+  "Synthesize a chosen set of your results with your local model — shared facts, disagreements, open questions, citing article numbers. You pick the members; assistance, never a verdict.": "अपने स्थानीय मॉडल से अपने चुने हुए परिणामों के समूह का संश्लेषण करें — साझा तथ्य, असहमतियाँ, खुले प्रश्न, लेख संख्याओं का हवाला देते हुए। सदस्य आप चुनते हैं; सहायता, कभी निर्णय नहीं।"
 }

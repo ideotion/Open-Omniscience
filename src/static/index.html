@@ -1156,7 +1156,7 @@
           <input id="dumpread-title" placeholder="Exact page title (a case-insensitive match is offered and labelled)…"
                  onkeydown="if(event.key==='Enter')dumpReadPage()">
         </div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="dumpSearchTitles()">Search titles</button> <button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
       </div>
       <div class="hint">Reading happens entirely on this machine: the dump's index is scanned for the title, then one small
         block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.</div>
@@ -1318,7 +1318,7 @@
       <div id="backup-status" class="hint">Checking backend…</div>
 
       <h3 style="margin-bottom:6px">Full backup — one signed archive</h3>
-      <p class="muted" style="margin-top:0">One file carries your data: articles, keywords, Wikipedia and law
+      <p class="muted" style="margin-top:0">One file carries everything: articles, keywords, Wikipedia and law
         snapshots, market series, events, settings, annotations and the custody log — with a signed manifest, so
         tampering is detectable. Encrypted with a passphrase by default; there is no recovery for a lost passphrase.</p>
       <p class="hint" style="margin-top:0">An encrypted backup is almost exactly the same file size as a plaintext one — AES-256-GCM adds only a fixed ~64 bytes of overhead, so the size matching is expected, not a sign it isn't encrypted. You can confirm any backup is genuine ciphertext in the Restore preview below (it reports “encrypted (AES-256-GCM)”).</p>
@@ -1405,6 +1405,11 @@
         <button class="secondary" onclick="window.open('/api/diagnostics/benchmark','_blank')">Download scaling benchmark (.json)</button>
         <button onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Download debug bundle (.json)</button>
       </div>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="reindexAllCorpus(this)">Re-index the whole corpus</button>
+        <span id="reindex-all-status" class="muted small"></span>
+      </div>
+      <div class="hint">Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.</div>
       <div class="hint">The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.</div>
       <div class="hint">The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.</div>
       <div class="hint">The scaling benchmark times the heavy read paths against your real corpus, several runs each, and reports cold vs warm timings per case — so we can check that big corpora stay fast on modest hardware. It records your corpus size, the keyword-counter freshness and the engine mode alongside the numbers so the results are interpretable. Read-only and local; nothing is transmitted.</div>

@@ -94,6 +94,40 @@ def test_unattended_install_creates_launcher(tmp_path):
     assert (home / "Desktop/open-omniscience.desktop").is_file()
 
 
+def test_login_autostart_is_opt_in(tmp_path):
+    """§2.6 (autonomous 2026-06-21): login autostart is OPT-IN (OO_AUTOSTART=1) and
+    never created silently; the entry launches in airplane mode (boots offline)."""
+    home = tmp_path / "home"
+    home.mkdir()
+    base_env = {
+        "HOME": str(home),
+        "PATH": os.environ["PATH"],
+        "OO_SKIP_PIP": "1",
+        "OO_SKIP_DB": "1",
+        "OO_COMPONENTS": "",
+        "OO_MAKE_LAUNCHER": "0",
+    }
+    autostart = home / ".config/autostart/open-omniscience.desktop"
+
+    # Default: no autostart entry is created.
+    r = subprocess.run(
+        ["bash", str(REPO / "install.sh"), "--unattended"], capture_output=True, text=True, env=base_env
+    )
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert not autostart.exists(), "autostart must NOT be created by default"
+
+    # Opt-in: OO_AUTOSTART=1 creates the XDG autostart entry.
+    r = subprocess.run(
+        ["bash", str(REPO / "install.sh"), "--unattended"], capture_output=True, text=True,
+        env={**base_env, "OO_AUTOSTART": "1"},
+    )
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert autostart.is_file(), "OO_AUTOSTART=1 must create the autostart entry"
+    body = autostart.read_text(encoding="utf-8")
+    assert f'Exec="{REPO}/scripts/launch.sh" console' in body
+    assert "X-GNOME-Autostart-enabled=true" in body
+
+
 def test_unattended_install_without_launcher_opt_out(tmp_path):
     home = tmp_path / "home"
     home.mkdir()

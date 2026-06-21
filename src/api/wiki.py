@@ -356,6 +356,19 @@ def dumps_page(wiki: str, title: str) -> dict:
     return find_page(_validated_wiki(wiki), title.strip())
 
 
+@router.get("/dumps/search")
+def dumps_search(wiki: str, q: str, limit: int = 20) -> dict:
+    """Substring TITLE search over a downloaded edition's multistream index — local,
+    no network. Honest scope: titles only (page bodies are not full-text-searched;
+    decompressing every block per query is out of scope). Each hit opens via the
+    local dump reader (/dumps/page)."""
+    from src.wiki.dumpread import search_titles
+
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="wiki and q are required.")
+    return search_titles(_validated_wiki(wiki), q.strip(), limit=max(1, min(limit, 100)))
+
+
 class IngestDumpPages(BaseModel):
     wiki: str
     titles: list[str]

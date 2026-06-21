@@ -233,7 +233,18 @@ class OsmDownloadManager:
 
     def list(self) -> list[dict]:
         with self._lock:
-            return [e.to_dict() for e in self._entries.values()]
+            order = [
+                k for k in self._order
+                if self._entries.get(k) and self._entries[k].status == "queued"
+            ]
+            out = []
+            for e in self._entries.values():
+                d = e.to_dict()
+                # Queue position lets the Settings list render + reorder the queue,
+                # the same prioritisation control the task manager already offers.
+                d["queue_position"] = (order.index(e.key) + 1) if e.key in order else None
+                out.append(d)
+            return out
 
     # -- size probe -------------------------------------------------------- #
 
