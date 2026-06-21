@@ -1596,5 +1596,7 @@
   "Shut down the app (stops the server — your data is untouched)": "关闭应用（停止服务器——你的数据不受影响）",
   "CSS selector": "CSS 选择器",
   "Test": "测试",
-  "Search titles": "搜索标题"
+  "Search titles": "搜索标题",
+  "Re-index the whole corpus": "重新索引整个语料库",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "重新索引会用当前引擎重新计算每篇文章的关键词、日期/地点/实体和情感——升级后用它刷新较旧的文章（例如清除在标记清理修复之前导入的新闻通讯中过时的 CSS/标记关键词）。在大型语料库上很重；它会在后台分批运行。摘要和翻译不受影响。"
 }

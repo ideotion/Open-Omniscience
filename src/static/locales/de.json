@@ -1596,5 +1596,7 @@
   "Shut down the app (stops the server — your data is untouched)": "App herunterfahren (stoppt den Server — Ihre Daten bleiben unberührt)",
   "CSS selector": "CSS-Selektor",
   "Test": "Testen",
-  "Search titles": "Titel suchen"
+  "Search titles": "Titel suchen",
+  "Re-index the whole corpus": "Gesamten Korpus neu indizieren",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "Die Neuindizierung berechnet Schlüsselwörter, Daten/Orte/Entitäten und Stimmung jedes Artikels mit der aktuellen Engine neu — nach einem Upgrade zu verwenden, um ältere Artikel zu aktualisieren (etwa um veraltete CSS-/Markup-Schlüsselwörter aus vor der Markup-Bereinigung importierten Newslettern zu entfernen). Bei großem Korpus aufwendig; läuft im Hintergrund, Stapel für Stapel. Zusammenfassungen und Übersetzungen bleiben unberührt."
 }

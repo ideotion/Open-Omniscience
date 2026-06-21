@@ -1596,5 +1596,7 @@
   "Shut down the app (stops the server — your data is untouched)": "إيقاف التطبيق (يوقف الخادم — بياناتك تبقى سليمة)",
   "CSS selector": "محدِّد CSS",
   "Test": "اختبار",
-  "Search titles": "البحث في العناوين"
+  "Search titles": "البحث في العناوين",
+  "Re-index the whole corpus": "إعادة فهرسة المجموعة بأكملها",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "تعيد الفهرسة حساب الكلمات المفتاحية والتواريخ/الأماكن/الكيانات والمشاعر لكل مقال بالمحرك الحالي — استخدمها بعد الترقية لتحديث المقالات الأقدم (مثلاً لإزالة كلمات CSS/الترميز القديمة من النشرات المستوردة قبل إصلاح تنظيف الترميز). ثقيلة على مجموعة كبيرة؛ تعمل في الخلفية دفعة بدفعة. لا تُمسّ الملخصات والترجمات."
 }

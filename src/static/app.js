@@ -6788,6 +6788,32 @@
       finally { _indexing = false; }
     }
 
+    // Maintenance: FORCE-re-index the WHOLE corpus (not just un-indexed articles) —
+    // recomputes keywords/metadata with the current engine. Drains stale rows an old
+    // engine produced (e.g. pre-markup-strip CSS keywords). Heavy; loops batches with
+    // a visible cursor so a big corpus never hangs the request. Confirm first.
+    let _reindexAllRunning = false;
+    async function reindexAllCorpus(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_reindexAllRunning) return;
+      if (!confirm(t("Re-index every article with the current engine? This is heavy on a large corpus but runs in the background."))) return;
+      _reindexAllRunning = true;
+      if (btn) btn.disabled = true;
+      const st = $("reindex-all-status");
+      let after = 0, total = 0, guard = 0;
+      try {
+        for (;;) {
+          const r = await api(`/api/insights/reindex-all?limit=300&after_id=${after}`, { method: "POST" });
+          total += r.reindexed || 0;
+          after = r.last_id || after;
+          if (st) st.textContent = `${total} ${t("re-indexed")}${r.remaining ? ` · ${r.remaining.toLocaleString()} ${t("to go")}` : ""}`;
+          if (r.done || ++guard > 5000) break;
+        }
+        if (st) st.textContent = `${total} ${t("re-indexed")} · ${t("done")}`;
+      } catch (e) { if (st) st.textContent = esc(e.message); }
+      finally { _reindexAllRunning = false; if (btn) btn.disabled = false; }
+    }
+
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
     // openCorpus is RETIRED here (THEME-3, 2026-06-19): the legacy #corpus-win keyword

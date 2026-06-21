@@ -1596,5 +1596,7 @@
   "Shut down the app (stops the server — your data is untouched)": "Éteindre l'application (arrête le serveur — vos données sont intactes)",
   "CSS selector": "Sélecteur CSS",
   "Test": "Tester",
-  "Search titles": "Rechercher des titres"
+  "Search titles": "Rechercher des titres",
+  "Re-index the whole corpus": "Réindexer tout le corpus",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "La réindexation recalcule les mots-clés, dates/lieux/entités et le sentiment de chaque article avec le moteur actuel — à utiliser après une mise à jour pour rafraîchir les articles plus anciens (par exemple pour purger les mots-clés CSS/balisage obsolètes des newsletters importées avant la correction du nettoyage du balisage). Lourd sur un grand corpus ; s'exécute en arrière-plan, lot par lot. Les résumés et traductions ne sont pas touchés."
 }

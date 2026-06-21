@@ -1596,5 +1596,7 @@
   "Shut down the app (stops the server — your data is untouched)": "অ্যাপ বন্ধ করুন (সার্ভার থামায় — আপনার ডেটা অক্ষত থাকে)",
   "CSS selector": "CSS নির্বাচক",
   "Test": "পরীক্ষা করুন",
-  "Search titles": "শিরোনাম খুঁজুন"
+  "Search titles": "শিরোনাম খুঁজুন",
+  "Re-index the whole corpus": "সম্পূর্ণ কর্পাস পুনঃসূচীকরণ করুন",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "পুনঃসূচীকরণ বর্তমান ইঞ্জিন দিয়ে প্রতিটি নিবন্ধের কীওয়ার্ড, তারিখ/স্থান/সত্তা ও অনুভূতি পুনরায় গণনা করে — পুরোনো নিবন্ধ রিফ্রেশ করতে আপগ্রেডের পরে এটি ব্যবহার করুন (যেমন মার্কআপ-পরিচ্ছন্নতা সংশোধনের আগে আমদানি করা নিউজলেটার থেকে পুরোনো CSS/মার্কআপ কীওয়ার্ড সরাতে)। বড় কর্পাসে ভারী; এটি পটভূমিতে ব্যাচে ব্যাচে চলে। সারসংক্ষেপ ও অনুবাদ অক্ষত থাকে।"
 }

@@ -174,6 +174,22 @@ def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depen
     return backfill_corpus(db, extractor=get_extractor("baseline"), limit=limit)
 
 
+@router.post("/reindex-all")
+def insights_reindex_all(
+    limit: int = Query(300, ge=1, le=2000),
+    after_id: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> dict:
+    """FORCE-re-index a batch of ALL articles (not just un-indexed ones) — the
+    maintenance drain for stale keyword/metadata an OLD extraction engine produced
+    (e.g. pre-2026-06-20 .eml bodies that leaked bare CSS keywords). Heavy; call
+    repeatedly with ``after_id=last_id`` until ``done``."""
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import reindex_all_batch
+
+    return reindex_all_batch(db, extractor=get_extractor("baseline"), limit=limit, after_id=after_id)
+
+
 @router.get("/corpus-keywords")
 def insights_corpus_keywords(
     query: str | None = None,

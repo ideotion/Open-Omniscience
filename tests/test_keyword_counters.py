@@ -209,3 +209,44 @@ def test_backfill_corpus_path_maintains_counters(db):
     r = backfill_corpus(db, extractor=BaselineExtractor(), limit=10)
     assert r["indexed"] == 2
     assert_counters_match_join(db)
+
+
+def test_reindex_all_batch_refreshes_every_article_paged(db):
+    """§3.F: reindex_all_batch FORCE-re-indexes ALL articles (not just un-indexed)
+    so a markup/extractor fix can drain stale rows. It pages via last_id and reports
+    done; counters stay consistent after the drain."""
+    from src.analytics.store import reindex_all_batch
+
+    a1 = _article(db, "h1", "Trade policy and climate policy shaped the talks.")
+    a2 = _article(db, "h2", "Energy policy and climate policy dominated the debate.")
+    a3 = _article(db, "h3", "Election results surprised analysts across the region.")
+    for art in (a1, a2, a3):
+        index_article(db, art, extractor=BaselineExtractor())
+    assert_counters_match_join(db)
+
+    # Page in batches of 2: first batch covers a1+a2, second a3, then done.
+    r1 = reindex_all_batch(db, extractor=BaselineExtractor(), limit=2, after_id=0)
+    assert r1["reindexed"] == 2 and r1["last_id"] == a2.id and r1["done"] is False
+    r2 = reindex_all_batch(db, extractor=BaselineExtractor(), limit=2, after_id=r1["last_id"])
+    assert r2["reindexed"] == 1 and r2["done"] is True and r2["remaining"] == 0
+    assert_counters_match_join(db)
+
+
+def test_reindex_all_batch_drains_stale_keywords(db):
+    """A re-index after an extractor fix removes keywords the old run produced. Simulate
+    by indexing markup-y content, then re-indexing after stripping it: the stale tokens go."""
+    from src.analytics.extract import strip_markup
+    from src.analytics.store import reindex_all_batch
+
+    art = _article(db, "h1", '<div class="x" style="max-width:10px">Trade policy and climate policy here.</div>')
+    # Simulate an OLD engine that did NOT strip markup: index the raw content directly.
+    art.content = '<div class="x" style="max-width:10px">Trade policy and climate policy here.</div>'
+    db.commit()
+    index_article(db, art, extractor=BaselineExtractor())
+    # The current engine strips markup, so a re-index must not leave CSS/markup tokens.
+    reindex_all_batch(db, extractor=BaselineExtractor(), limit=10, after_id=0)
+    assert_counters_match_join(db)
+    terms = {k.normalized_term for k in db.query(Keyword).filter(Keyword.mention_count > 0).all()}
+    assert "div" not in terms and "max-width" not in terms, "stale markup keywords must be drained"
+    # The current strip would have removed them at index time anyway (sanity).
+    assert "<div" not in strip_markup(art.content)

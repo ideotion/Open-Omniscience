@@ -1596,5 +1596,7 @@
   "Shut down the app (stops the server — your data is untouched)": "Shut down the app (stops the server — your data is untouched)",
   "CSS selector": "CSS selector",
   "Test": "Test",
-  "Search titles": "Search titles"
+  "Search titles": "Search titles",
+  "Re-index the whole corpus": "Re-index the whole corpus",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched."
 }

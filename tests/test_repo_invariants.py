@@ -130,6 +130,21 @@ def test_world_map_fullscreen_uses_the_fullscreen_api():
     assert "osm-region-row" in app, "each region row renders with a direct Download button"
 
 
+def test_reindex_whole_corpus_action_is_discoverable():
+    """§3.F (autonomous 2026-06-21): a FORCE re-index of ALL articles must exist and
+    be discoverable — the drain for stale metadata an old engine produced (e.g.
+    pre-markup-strip CSS keywords). backfill_corpus only touches un-indexed articles,
+    so a dedicated paged reindex_all_batch + endpoint + Settings button are needed."""
+    store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "def reindex_all_batch(" in store, "a force-all re-index batch helper must exist"
+    api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert "/reindex-all" in api, "the reindex-all endpoint must be registered"
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "reindexAllCorpus(" in html, "a discoverable re-index button must exist"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function reindexAllCorpus(" in app and "/api/insights/reindex-all" in app
+
+
 def test_downloaded_dump_title_search_exists():
     """§2.4 (autonomous 2026-06-21): downloaded wiki dumps gain a bounded TITLE
     search over the multistream index (honest scope: titles only, not page bodies —

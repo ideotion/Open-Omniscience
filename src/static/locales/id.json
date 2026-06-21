@@ -1596,5 +1596,7 @@
   "Shut down the app (stops the server — your data is untouched)": "Matikan aplikasi (menghentikan server — data Anda tetap utuh)",
   "CSS selector": "Pemilih CSS",
   "Test": "Uji",
-  "Search titles": "Cari judul"
+  "Search titles": "Cari judul",
+  "Re-index the whole corpus": "Indeks ulang seluruh korpus",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "Pengindeksan ulang menghitung ulang kata kunci, tanggal/tempat/entitas, dan sentimen setiap artikel dengan mesin saat ini — gunakan setelah peningkatan untuk menyegarkan artikel lama (misalnya untuk membersihkan kata kunci CSS/markup usang dari buletin yang diimpor sebelum perbaikan pembersihan markup). Berat pada korpus besar; berjalan di latar belakang batch demi batch. Ringkasan dan terjemahan tidak tersentuh."
 }

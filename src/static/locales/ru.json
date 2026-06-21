@@ -1596,5 +1596,7 @@
   "Shut down the app (stops the server — your data is untouched)": "Выключить приложение (останавливает сервер — ваши данные не затрагиваются)",
   "CSS selector": "CSS-селектор",
   "Test": "Проверить",
-  "Search titles": "Искать заголовки"
+  "Search titles": "Искать заголовки",
+  "Re-index the whole corpus": "Переиндексировать весь корпус",
+  "Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs in the background batch by batch. Summaries and translations are left untouched.": "Переиндексация пересчитывает ключевые слова, даты/места/сущности и тональность каждой статьи текущим движком — используйте после обновления, чтобы обновить старые статьи (например, чтобы убрать устаревшие CSS/разметочные ключевые слова из рассылок, импортированных до исправления очистки разметки). Тяжело на большом корпусе; выполняется в фоне, партия за партией. Сводки и переводы не затрагиваются."
 }
