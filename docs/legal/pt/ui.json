@@ -1,0 +1,17 @@
+{
+  "heading": "Documentos jurídicos",
+  "intro": "Antes de começar, leia e aceite estes documentos. Regem a utilização deste software e dos seus resultados gerados por IA. Não acrescentam qualquer restrição à GNU GPL v3 (a licença do código); a versão francesa é a autêntica.",
+  "draft_note": "Rascunhos de trabalho — não constituem aconselhamento jurídico; devem ser revistos por um profissional qualificado.",
+  "translation_note": "Tradução automática — a versão francesa é o texto autêntico.",
+  "open": "Abrir",
+  "accept_label": "Li e aceito estes documentos.",
+  "accept_btn": "Aceitar e continuar",
+  "decline_btn": "Recusar",
+  "download_btn": "Descarregar os documentos",
+  "decline_warn": "Recusar irá DESINSTALAR a aplicação e apagar permanentemente todos os seus ficheiros e dados neste computador. Esta ação é irreversível. (Poderá sempre reinstalá-la mais tarde.)",
+  "decline_type": "Para confirmar, escreva UNINSTALL:",
+  "decline_confirm_btn": "Desinstalar e apagar tudo",
+  "decline_cancel_btn": "Cancelar",
+  "uninstalling": "A desinstalar — a aplicação está a encerrar e os seus ficheiros estão a ser removidos. Pode fechar esta janela.",
+  "error": "Não foi possível carregar os documentos jurídicos."
+}

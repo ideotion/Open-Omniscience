@@ -1,0 +1,17 @@
+{
+  "heading": "Documentos legales",
+  "intro": "Antes de empezar, lea y acepte estos documentos. Rigen el uso de este software y de sus resultados generados por IA. No añaden ninguna restricción a la GNU GPL v3 (la licencia del código); la versión francesa es la auténtica.",
+  "draft_note": "Borradores de trabajo — no constituyen asesoramiento jurídico; deben ser revisados por un profesional cualificado.",
+  "translation_note": "Traducción automática — la versión francesa es el texto auténtico.",
+  "open": "Abrir",
+  "accept_label": "He leído y acepto estos documentos.",
+  "accept_btn": "Aceptar y continuar",
+  "decline_btn": "Rechazar",
+  "download_btn": "Descargar los documentos",
+  "decline_warn": "Rechazar DESINSTALARÁ la aplicación y borrará de forma permanente todos sus archivos y datos en este equipo. Esta acción es irreversible. (Siempre podrá reinstalarla más tarde.)",
+  "decline_type": "Para confirmar, escriba UNINSTALL:",
+  "decline_confirm_btn": "Desinstalar y borrar todo",
+  "decline_cancel_btn": "Cancelar",
+  "uninstalling": "Desinstalando — la aplicación se está cerrando y sus archivos se están eliminando. Puede cerrar esta ventana.",
+  "error": "No se han podido cargar los documentos legales."
+}
