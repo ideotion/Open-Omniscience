@@ -1595,5 +1595,6 @@
   "Shut down the app": "ऐप बंद करें",
   "Shut down the app (stops the server — your data is untouched)": "ऐप बंद करें (सर्वर रोकता है — आपका डेटा अछूता रहता है)",
   "CSS selector": "CSS चयनकर्ता",
-  "Test": "परीक्षण करें"
+  "Test": "परीक्षण करें",
+  "Search titles": "शीर्षक खोजें"
 }

@@ -171,6 +171,67 @@ def find_page(wiki: str, title: str, *, base_dir: Path | None = None) -> dict:
     return page
 
 
+def search_titles(
+    wiki: str,
+    query: str,
+    *,
+    limit: int = 20,
+    scan_cap: int = 4_000_000,
+    base_dir: Path | None = None,
+) -> dict:
+    """Substring TITLE search over a downloaded edition's multistream index.
+
+    HONEST SCOPE: this searches TITLES only. The index lists every page's
+    ``offset:pageid:title`` so a title scan is cheap and bounded; full-text over
+    page BODIES would mean decompressing every bz2 block (the whole dump) per query,
+    which is out of scope here — stated in ``note``. Each hit carries enough to read
+    the page via ``find_page`` (the local dump reader). Always returns a dict; the
+    linear scan is capped at ``scan_cap`` lines (``scanned``/``capped`` reported)."""
+    wiki = validate_wiki_code(wiki)
+    paths = dump_paths(wiki, base_dir)
+    if not paths["index"].exists():
+        return {
+            "wiki": wiki.lower(), "query": query, "items": [], "scanned": 0,
+            "reason": "no-index", "legacy_file_present": paths["legacy"].exists(),
+        }
+    want = query.strip().casefold()
+    items: list[dict] = []
+    scanned = 0
+    capped = False
+    t0 = time.monotonic()
+    if want:
+        with bz2.open(paths["index"], "rt", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                scanned += 1
+                if scanned > scan_cap:
+                    capped = True
+                    break
+                parts = line.rstrip("\n").split(":", 2)
+                if len(parts) != 3:
+                    continue
+                title = parts[2]
+                if want in title.casefold():
+                    items.append({"title": title, "pageid": int(parts[1]), "wiki": wiki.lower()})
+                    if len(items) >= max(1, limit):
+                        break
+    return {
+        "wiki": wiki.lower(),
+        "query": query,
+        "items": items,
+        "scanned": scanned,
+        "capped": capped,
+        "scan_seconds": round(time.monotonic() - t0, 3),
+        "method": (
+            "multistream index scanned linearly for titles containing the query — "
+            "local files only, no network"
+        ),
+        "note": (
+            "TITLE matches in your downloaded dump (a snapshot as of the dump date); "
+            "page bodies are not full-text-searched — open a title to read its wikitext"
+        ),
+    }
+
+
 def readable_wikis(base_dir: Path | None = None) -> list[str]:
     """Editions whose multistream data+index pair is fully present on disk."""
     if base_dir is None:

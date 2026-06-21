@@ -1595,5 +1595,6 @@
   "Shut down the app": "Выключить приложение",
   "Shut down the app (stops the server — your data is untouched)": "Выключить приложение (останавливает сервер — ваши данные не затрагиваются)",
   "CSS selector": "CSS-селектор",
-  "Test": "Проверить"
+  "Test": "Проверить",
+  "Search titles": "Искать заголовки"
 }

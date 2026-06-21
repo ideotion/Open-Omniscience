@@ -1156,7 +1156,7 @@
           <input id="dumpread-title" placeholder="Exact page title (a case-insensitive match is offered and labelled)…"
                  onkeydown="if(event.key==='Enter')dumpReadPage()">
         </div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="dumpSearchTitles()">Search titles</button> <button class="secondary" onclick="dumpReadPage()">Read locally</button></div>
       </div>
       <div class="hint">Reading happens entirely on this machine: the dump's index is scanned for the title, then one small
         block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.</div>

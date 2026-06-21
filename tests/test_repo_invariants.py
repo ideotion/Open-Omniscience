@@ -130,6 +130,23 @@ def test_world_map_fullscreen_uses_the_fullscreen_api():
     assert "osm-region-row" in app, "each region row renders with a direct Download button"
 
 
+def test_downloaded_dump_title_search_exists():
+    """§2.4 (autonomous 2026-06-21): downloaded wiki dumps gain a bounded TITLE
+    search over the multistream index (honest scope: titles only, not page bodies —
+    decompressing every block per query is out of scope). Surfaced in the Settings
+    dump-reader UI, not the per-keystroke omnibar (a multi-million-line scan must
+    never run interactively)."""
+    dr = (_SRC / "wiki" / "dumpread.py").read_text(encoding="utf-8")
+    assert "def search_titles(" in dr, "the dump title-search core must exist"
+    assert "scan_cap" in dr and '"capped"' in dr, "the scan must be bounded + report capping"
+    api = (_SRC / "api" / "wiki.py").read_text(encoding="utf-8")
+    assert "/dumps/search" in api, "the dump search endpoint must be registered"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function dumpSearchTitles(" in app and "/api/wiki/dumps/search" in app, (
+        "the Settings dump reader must offer a title search"
+    )
+
+
 def test_guided_wizard_language_step_consolidated():
     """§2.5 (autonomous 2026-06-21): the first-launch flow picks the language FIRST
     (unlock.html) + a permanent top-bar switcher always changes it, so the guided

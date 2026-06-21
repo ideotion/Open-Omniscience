@@ -1595,5 +1595,6 @@
   "Shut down the app": "অ্যাপ বন্ধ করুন",
   "Shut down the app (stops the server — your data is untouched)": "অ্যাপ বন্ধ করুন (সার্ভার থামায় — আপনার ডেটা অক্ষত থাকে)",
   "CSS selector": "CSS নির্বাচক",
-  "Test": "পরীক্ষা করুন"
+  "Test": "পরীক্ষা করুন",
+  "Search titles": "শিরোনাম খুঁজুন"
 }

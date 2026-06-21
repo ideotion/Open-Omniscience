@@ -1595,5 +1595,6 @@
   "Shut down the app": "إيقاف التطبيق",
   "Shut down the app (stops the server — your data is untouched)": "إيقاف التطبيق (يوقف الخادم — بياناتك تبقى سليمة)",
   "CSS selector": "محدِّد CSS",
-  "Test": "اختبار"
+  "Test": "اختبار",
+  "Search titles": "البحث في العناوين"
 }

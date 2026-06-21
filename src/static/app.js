@@ -9449,6 +9449,29 @@
         if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
       } catch (e) { /* reader box is optional */ }
     }
+    // Substring TITLE search over a downloaded edition's multistream index (local,
+    // zero network, bounded). Honest scope: titles only — page bodies are not
+    // full-text-searched (decompressing every block per query is out of scope).
+    async function dumpSearchTitles() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const wiki = $("dumpread-wiki").value.trim();
+      const q = $("dumpread-title").value.trim();
+      const out = $("dumpread-out");
+      if (!wiki) { out.innerHTML = `<div class="note err">${esc(t("No readable dump yet — download a multistream dump above; its index rides along automatically."))}</div>`; return; }
+      if (!q) { out.innerHTML = `<div class="note err">${esc(t("Enter a page title."))}</div>`; return; }
+      out.textContent = t("Loading…");
+      try {
+        const d = await api(`/api/wiki/dumps/search?wiki=${encodeURIComponent(wiki)}&q=${encodeURIComponent(q)}`);
+        const items = d.items || [];
+        if (!items.length) {
+          out.innerHTML = `<div class="note">${esc(t("No matching titles in this dump's index."))} <span class="muted">(${d.scanned} ${t("index lines scanned")}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div>`;
+          return;
+        }
+        const rows = items.map(it =>
+          `<li><a href="#" onclick="$('dumpread-title').value=${esc(JSON.stringify(it.title))};dumpReadPage();return false">${esc(it.title)}</a></li>`).join("");
+        out.innerHTML = `<div class="card"><div class="muted small">${esc(t("Title matches in your downloaded dump — click one to read its wikitext. Bodies are not full-text-searched."))} <span class="muted">(${d.scanned} ${t("index lines scanned")}${d.capped ? ", " + esc(t("scan capped")) : ""})</span></div><ul>${rows}</ul></div>`;
+      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
     async function dumpReadPage() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const wiki = $("dumpread-wiki").value.trim();

@@ -1595,5 +1595,6 @@
   "Shut down the app": "关闭应用",
   "Shut down the app (stops the server — your data is untouched)": "关闭应用（停止服务器——你的数据不受影响）",
   "CSS selector": "CSS 选择器",
-  "Test": "测试"
+  "Test": "测试",
+  "Search titles": "搜索标题"
 }

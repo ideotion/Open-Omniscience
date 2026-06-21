@@ -1595,5 +1595,6 @@
   "Shut down the app": "アプリを終了",
   "Shut down the app (stops the server — your data is untouched)": "アプリを終了（サーバーを停止します——データはそのまま残ります）",
   "CSS selector": "CSS セレクター",
-  "Test": "テスト"
+  "Test": "テスト",
+  "Search titles": "タイトルを検索"
 }

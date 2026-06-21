@@ -105,6 +105,36 @@ def test_find_page_absent_title_reports_scan(tmp_path):
     assert r["index_lines_scanned"] == 3
 
 
+def test_search_titles_substring_matches(tmp_path):
+    from src.wiki.dumpread import search_titles
+
+    _build_multistream(tmp_path)
+    # Substring, case-insensitive: "gamma" matches "Gamma Ray".
+    r = search_titles("zz", "gamma", base_dir=tmp_path)
+    titles = [it["title"] for it in r["items"]]
+    assert titles == ["Gamma Ray"]
+    assert r["scanned"] == 3 and r["capped"] is False
+    # "a" matches all three titles (Alpha, Beta, Gamma Ray).
+    r2 = search_titles("zz", "a", base_dir=tmp_path)
+    assert {it["title"] for it in r2["items"]} == {"Alpha", "Beta", "Gamma Ray"}
+    # No match returns an empty, honest result (not an error).
+    r3 = search_titles("zz", "zzzz", base_dir=tmp_path)
+    assert r3["items"] == [] and "note" in r3
+    # No dump on disk -> honest reason, never a crash.
+    r4 = search_titles("qq", "x", base_dir=tmp_path)
+    assert r4["items"] == [] and r4["reason"] == "no-index"
+
+
+def test_search_titles_respects_limit_and_scan_cap(tmp_path):
+    from src.wiki.dumpread import search_titles
+
+    _build_multistream(tmp_path)
+    r = search_titles("zz", "a", base_dir=tmp_path, limit=1)
+    assert len(r["items"]) == 1
+    capped = search_titles("zz", "a", base_dir=tmp_path, scan_cap=1)
+    assert capped["capped"] is True and capped["scanned"] == 2
+
+
 def test_legacy_single_stream_reported_honestly(tmp_path):
     from src.wiki.dumpread import find_page
     from src.wiki.dumps import dump_filename

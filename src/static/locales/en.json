@@ -1595,5 +1595,6 @@
   "Shut down the app": "Shut down the app",
   "Shut down the app (stops the server — your data is untouched)": "Shut down the app (stops the server — your data is untouched)",
   "CSS selector": "CSS selector",
-  "Test": "Test"
+  "Test": "Test",
+  "Search titles": "Search titles"
 }
