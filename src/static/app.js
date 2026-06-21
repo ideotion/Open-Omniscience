@@ -8849,63 +8849,129 @@
     // table. Starting a download is a NETWORK action, so it passes the ONE consent
     // popup (ensureOnline, invariant #14) and is refused while airplane mode is on
     // (the backend's guarded factory enforces the kill switch too).
+    // ONE merged list (maintainer 2026-06-21): every region with its LIVE download
+    // state — not-downloaded · queued · downloading (% + bar) · paused · downloaded ✓ —
+    // joined from the catalogue + the downloads manager, so the two old separate lists
+    // (catalogue + a jobs table) are assembled into one. Clicking a button gives instant
+    // feedback. "Whole planet" downloads only the continents you DON'T already have.
+    let _osmRegions = [], _osmDownloads = [];
     async function loadOsmMap() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const list = $("osm-region-list"); if (!list) return;
       try {
-        const d = await api("/api/geo/regions");
-        const rows = (d.regions || []).map(r =>
-          `<div class="osm-region-row">
-            <span class="osm-region-name"><strong>${esc(r.name)}</strong> <span class="muted">· ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</span></span>
-            <button class="tiny danger" onclick="startOsmDownload(${esc(JSON.stringify(r.code))})">${esc(t("Download"))}</button>
-          </div>`).join("");
-        list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
+        const [rg, dl] = await Promise.all([
+          api("/api/geo/regions"),
+          api("/api/geo/downloads").catch(() => ({ downloads: [] })),
+        ]);
+        _osmRegions = rg.regions || [];
+        _osmDownloads = dl.downloads || [];
         const note = $("osm-size-note"), asof = $("osm-size-asof");
-        if (note && asof && d.size_estimate_as_of) { asof.textContent = d.size_estimate_as_of; note.hidden = false; }
+        if (note && asof && rg.size_estimate_as_of) { asof.textContent = rg.size_estimate_as_of; note.hidden = false; }
+        _renderOsmList();
       } catch (e) { list.innerHTML = `<div class="muted">${esc(t("Could not load regions."))}</div>`; }
-      loadOsmDownloads();
+      const tbl = $("osm-dl-table"); if (tbl) tbl.innerHTML = "";   // merged into the list above
     }
-    async function loadOsmDownloads() {
+    // Legacy callers (start/pause/delete pollers) refresh the merged list.
+    function loadOsmDownloads() { return loadOsmMap(); }
+
+    function _osmDlByCode() { const m = {}; for (const d of _osmDownloads) m[d.code] = d; return m; }
+    function _osmContinents() { return _osmRegions.filter((r) => r.code !== "planet"); }
+
+    function _renderOsmList() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tbl = $("osm-dl-table"); if (!tbl) return;
-      try {
-        const d = await api("/api/geo/downloads");
-        if (!d.downloads.length) { tbl.innerHTML = `<tr><td class="muted">${esc(t("No offline downloads."))}</td></tr>`; return; }
-        tbl.innerHTML = `<tr><th>${esc(t("Region"))}</th><th>${esc(t("Progress"))}</th><th>${esc(t("Status"))}</th><th></th></tr>` +
-          d.downloads.map(e => `<tr>
-            <td><strong>${esc(e.name || e.code)}</strong></td>
-            <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:(e.size_estimate_bytes?` <span class="muted">~${humanBytes(e.size_estimate_bytes)}</span>`:"")}</td>
-            <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
-            <td style="white-space:nowrap">
-              ${e.status==='downloading'?`<button class="tiny secondary" onclick="pauseOsm(${esc(JSON.stringify(e.key))})">${esc(t("Pause"))}</button>`:
-                (e.status!=='done'?`<button class="tiny secondary" onclick="resumeOsm(${esc(JSON.stringify(e.code))})">${esc(t("Resume"))}</button>`:"")}
-              <button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(e.key))})">${esc(t("Delete"))}</button>
-            </td></tr>`).join("");
-      } catch (e) { /* downloads optional — degrade quietly */ }
+      const list = $("osm-region-list"); if (!list) return;
+      const byCode = _osmDlByCode();
+      const continents = _osmContinents();
+      const doneCodes = new Set(continents.filter((r) => (byCode[r.code] || {}).status === "done").map((r) => r.code));
+      const rows = _osmRegions.map((r) => {
+        const d = byCode[r.code], isPlanet = r.code === "planet";
+        const meta = `<span class="muted">· ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</span>`;
+        let stateHtml = "", actions = "";
+        if (isPlanet) {
+          const missing = continents.filter((c) => !doneCodes.has(c.code));
+          if (!missing.length) stateHtml = `<span class="pill ok">${esc(t("All continents downloaded"))} ✓</span>`;
+          else {
+            stateHtml = `<span class="muted">${doneCodes.size}/${continents.length} ${esc(t("continents"))}</span>`;
+            actions = `<button class="tiny danger" onclick="startPlanetDownload(this)">${esc(t("Download missing continents"))}</button>`;
+          }
+        } else if (!d) {
+          actions = `<button class="tiny danger" onclick="startOsmDownload(${esc(JSON.stringify(r.code))}, this)">${esc(t("Download"))}</button>`;
+        } else if (d.status === "downloading") {
+          const pct = (d.percent != null) ? d.percent : (d.total_bytes ? Math.floor(100 * d.downloaded_bytes / d.total_bytes) : 0);
+          stateHtml = `<span class="pill">${esc(t("Downloading"))} ${pct}%</span>`
+            + `<progress max="100" value="${pct}" style="width:110px;vertical-align:middle"></progress>`
+            + `<span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span>`;
+          actions = `<button class="tiny secondary" onclick="pauseOsm(${esc(JSON.stringify(d.key))})">${esc(t("Pause"))}</button>`;
+        } else if (d.status === "queued") {
+          stateHtml = `<span class="pill warn">${esc(t("Queued"))}</span>`;
+          actions = `<button class="tiny secondary" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Cancel"))}</button>`;
+        } else if (d.status === "done") {
+          stateHtml = `<span class="pill ok">${esc(t("Downloaded"))} ✓ <span class="muted">${humanBytes(d.downloaded_bytes || d.total_bytes || r.size_estimate_bytes)}</span></span>`;
+          actions = `<button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
+        } else {   // paused | error
+          stateHtml = `<span class="pill ${d.status === "error" ? "err" : "warn"}">${esc(t(d.status))}</span>${d.error ? ` <span class="muted">${esc(d.error)}</span>` : ""}`;
+          actions = `<button class="tiny secondary" onclick="resumeOsm(${esc(JSON.stringify(d.code))}, this)">${esc(t("Resume"))}</button>`
+            + ` <button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
+        }
+        return `<div class="osm-region-row">
+          <span class="osm-region-name"><strong>${esc(r.name)}</strong> ${meta}${isPlanet ? ` <span class="muted">— ${esc(t("downloads each continent you don't have yet"))}</span>` : ""}</span>
+          <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${stateHtml} ${actions}</span>
+        </div>`;
+      }).join("");
+      list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
     }
-    async function startOsmDownload(code) {
+
+    function _osmPoll() {
+      loadOsmMap();
+      let n = 0; const poll = setInterval(() => { loadOsmMap(); if (++n > 40) clearInterval(poll); }, 3000);
+    }
+    async function startOsmDownload(code, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const c = code || ($("osm-region") ? $("osm-region").value : "");  // list rows pass the code directly
+      const c = code || "";
       if (!c) return;
-      // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown
-      // in the region list, the download is a visible task-manager job, and the ONE
-      // network-consent popup (ensureOnline) below is the only gate that matters.
-      if (!await ensureOnline(t("Download an offline map region"))) return;
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }   // instant feedback
+      // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown in
+      // the row; the ONE network-consent popup (ensureOnline) is the only gate that matters.
+      if (!await ensureOnline(t("Download an offline map region"))) { loadOsmMap(); return; }
       try {
-        await api("/api/geo/downloads/start", {method:"POST", body: JSON.stringify({code: c})});
-        toast(t("Download started.")); loadOsmDownloads();
-        let n=0; const poll=setInterval(()=>{ loadOsmDownloads(); if(++n>40) clearInterval(poll); }, 3000);
-      } catch (e) { toast("Start failed: " + e.message, "err"); }
+        await api("/api/geo/downloads/start", { method: "POST", body: JSON.stringify({ code: c }) });
+        toast(t("Download started.")); _osmPoll();
+      } catch (e) { toast("Start failed: " + e.message, "err"); loadOsmMap(); }
     }
-    function resumeOsm(code) { startOsmDownload(code); }
+    function resumeOsm(code, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) { btn.disabled = true; btn.textContent = t("Resuming…"); }
+      return startOsmDownload(code);
+    }
+    // "Whole planet" = download every continent you don't already hold (skips the
+    // downloaded ones — maintainer 2026-06-21: never re-fetch parts you already have).
+    // The continent extracts together cover the planet, so this is the same coverage
+    // WITHOUT re-downloading (a single monolithic planet file cannot skip parts).
+    async function startPlanetDownload(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      if (!await ensureOnline(t("Download the offline world map"))) { loadOsmMap(); return; }
+      const byCode = _osmDlByCode();
+      const busy = (c) => { const s = (byCode[c.code] || {}).status; return s === "done" || s === "downloading" || s === "queued"; };
+      const continents = _osmContinents();
+      const todo = continents.filter((c) => !busy(c)), skip = continents.filter(busy);
+      if (!todo.length) { toast(t("All continents are already downloaded or in progress.")); loadOsmMap(); return; }
+      let started = 0;
+      for (const c of todo) {
+        try { await api("/api/geo/downloads/start", { method: "POST", body: JSON.stringify({ code: c.code }) }); started++; }
+        catch (e) { /* one region failing must not abort the rest */ }
+      }
+      toast(`${t("Queued")} ${started} ${t("regions")}${skip.length ? ` · ${skip.length} ${t("already present")}` : ""}`);
+      _osmPoll();
+    }
     async function pauseOsm(key) {
-      try { await api("/api/geo/downloads/pause?key="+encodeURIComponent(key), {method:"POST"}); loadOsmDownloads(); }
+      try { await api("/api/geo/downloads/pause?key=" + encodeURIComponent(key), { method: "POST" }); loadOsmMap(); }
       catch (e) { toast("Pause failed: " + e.message, "err"); }
     }
     async function deleteOsm(key) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!confirm(t("Delete this download and its file?"))) return;
-      try { await api("/api/geo/downloads?key="+encodeURIComponent(key), {method:"DELETE"}); loadOsmDownloads(); }
+      try { await api("/api/geo/downloads?key=" + encodeURIComponent(key), { method: "DELETE" }); loadOsmMap(); }
       catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 

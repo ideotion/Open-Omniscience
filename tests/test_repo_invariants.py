@@ -508,6 +508,33 @@ def test_task_manager_reorder_moves_rows_optimistically():
     assert tmv.index("renderQueue(_jobs") < tmv.index("reorderEp("), "repaint must precede the POST"
 
 
+def test_offline_map_merged_list_state_and_planet_skips_downloaded():
+    """Maintainer field test 2026-06-21: the Offline-map tab assembles the catalogue +
+    downloads into ONE state-aware list (not-downloaded/queued/downloading%/paused/done),
+    download clicks give instant feedback, and 'Whole planet' downloads only the
+    continents you DON'T already have (never re-fetches downloaded parts)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # ONE merged list: loadOsmMap fetches BOTH endpoints and joins by code
+    lm = app[app.index("async function loadOsmMap("):]
+    lm = lm[: lm.index("\n    }")]
+    assert "/api/geo/regions" in lm and "/api/geo/downloads" in lm and "Promise.all" in lm
+    assert "function _renderOsmList(" in app and "_osmDlByCode" in app
+    # state-aware row rendering with a visible progress bar
+    rl = app[app.index("function _renderOsmList("):]
+    rl = rl[: rl.index("\n    }\n")]
+    for tok in ['t("Downloading")', 't("Downloaded")', 't("Queued")', "<progress"]:
+        assert tok in rl, f"missing state token {tok}"
+    # instant feedback on click
+    assert 't("Starting…")' in app, "download click gives instant feedback"
+    # 'Whole planet' = download only the MISSING continents (skip done/downloading/queued)
+    pd = app[app.index("async function startPlanetDownload("):]
+    pd = pd[: pd.index("\n    }")]
+    assert "_osmContinents()" in pd and "already present" in pd
+    assert '"done"' in pd and '"downloading"' in pd and '"queued"' in pd, "skip already-held parts"
+    # the old separate downloads table is merged away (cleared)
+    assert 'if (tbl) tbl.innerHTML = ""' in app
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():

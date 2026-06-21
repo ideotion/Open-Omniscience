@@ -1071,6 +1071,23 @@ ruling, a contingency, or a deliberate-omission note.
   bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
   summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
   limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **OFFLINE-MAP TAB — ONE STATE-AWARE LIST + PLANET SKIPS DOWNLOADED SHIPPED 2026-06-21 (maintainer
+  field test; branch claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified per fork-3):**
+  Settings → Offline map had TWO lists (the catalogue with bare Download buttons + a separate jobs
+  table) and a Download button gave no state feedback. Now ONE merged list: `loadOsmMap` fetches BOTH
+  `/api/geo/regions` + `/api/geo/downloads` (Promise.all) and `_renderOsmList` joins them by `code`, so
+  each region row shows its LIVE state — not-downloaded (Download) · queued (Cancel) · downloading (%
+  + a `<progress>` bar + bytes, Pause) · paused/error (Resume + Delete) · downloaded ✓ (size + Delete);
+  the old `#osm-dl-table` is cleared (merged, nothing lost — all controls moved to the rows). Clicking
+  a button gives INSTANT feedback (the button disables + "Starting…"/"Resuming…" before the await; the
+  3 s poll then repaints the real state). "WHOLE PLANET" no longer offers the 72 GB monolithic file
+  (which cannot skip parts) — its button (`startPlanetDownload`) downloads only the CONTINENTS you don't
+  already hold (skips done/downloading/queued), so it NEVER re-fetches downloaded parts (maintainer's
+  ask); the planet row shows "N/M continents" or "All continents downloaded ✓". The continent extracts
+  together cover the planet, stated in the row hint. test_offline_map_merged_list_state_and_planet_skips_downloaded.
+  New strings via t() (English-fallback; gate 100%). REMAINING: per-row reorder ↑/↓ (the task manager
+  has it); key the new strings ×12; the monolithic-planet code path is now UI-unreachable (backend
+  get_region("planet") still exists, harmless).
 - **BULK TRANSLATE/SUMMARY QUEUE + TASK-MANAGER OPTIMISTIC REORDER SHIPPED 2026-06-21 (maintainer
   field test; branch claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified per fork-3):**
   (1) QUEUE — a long batch translation blocked starting another. Batch translate/summarize is now a
