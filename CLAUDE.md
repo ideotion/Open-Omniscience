@@ -1009,6 +1009,20 @@ ruling, a contingency, or a deliberate-omission note.
   test_llm_pill_shows_count_and_opens_ai_settings. REMAINING: the AI-tab Ollama BINARY installer
   (still blocked offline on per-OS checksums) for end-to-end in-app install; consolidate the now-
   redundant guided-wizard language step; the model-store-readable step (was install.sh's job).
+- **CHROME REWORK BATCH 2026-06-20 (maintainer rapid field test; branch claude/keen-lamport-b4t3rh,
+  PR #420; ALL frontend, BROWSER-UNVERIFIED — node-checked + invariant-guarded):** a run of chrome
+  rulings. SHIPPED: (a) the ANALYSIS sidebar tab is REMOVED — analyses run via search (omnibar/
+  palette → a spawned analysis window) or by clicking into other tabs; the #tab-analyze PANEL +
+  showTab("analyze")/openAnalysisFor/openAnalysisForIds stay (completes the UI-rethink "the empty
+  Analysis entry goes away"); test #22 no longer requires data-tab="analyze", test_search_retired
+  asserts the nav-item is GONE. (b) the OMNIBAR fills the status-bar width — dropped .omni
+  max-width:560px + removed the .spacer div (it now flex-grows); removed the verbose placeholder
+  text (.ph span), kept the magnifier + the keyed aria-label. PENDING (this batch, building next):
+  (c) move ALL facet subtabs (the ooSubtabs nav.tabs across Insights/Settings/markets/agenda/
+  analysis/task-manager/corpus) to a strip JUST UNDER the status bar at the top of the screen
+  (UI-rethink item 1/B: status bar → full-width facet-subtab strip → sidebar + content); (d) the
+  Advanced-search language field → a dropdown of FULL language names with flags; (e) the standalone
+  task-manager (/tasks taskmanager.html) top/status bar must be IDENTICAL to the main app's.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features

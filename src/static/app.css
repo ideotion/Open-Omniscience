@@ -128,7 +128,7 @@
     .icon-btn:hover { color:var(--fg); background:var(--panel); border-color:var(--border); }
     .icon-btn svg { width:18px; height:18px; display:block; }
     #hamburger { display:none; }
-    .omni { flex:1; max-width:560px; display:flex; align-items:center; gap:9px; cursor:text;
+    .omni { flex:1; display:flex; align-items:center; gap:9px; cursor:text;
       background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:8px 12px;
       color:var(--muted); font-size:13.5px; }
     .omni:hover { border-color:var(--accent); }

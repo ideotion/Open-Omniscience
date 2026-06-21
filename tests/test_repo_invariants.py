@@ -1130,8 +1130,9 @@ def test_ui_invariants():
     # 22. The analysis window (Group F, keystone #4): a full-screen #analyze tab
     #     driven by the universal subtab component, fed by the article-SET keyword
     #     endpoint, opened from the Search tab's Analyze button. Counts, no verdict.
-    assert 'id="tab-analyze"' in html and 'data-tab="analyze"' in html, (
-        "the analysis tab + its sidebar entry must exist (Group F)"
+    assert 'id="tab-analyze"' in html, (
+        "the analysis window panel must exist (Group F); the Analysis SIDEBAR entry was "
+        "retired 2026-06-20 — it is reached via search / openAnalysisFor, not a sidebar tab"
     )
     assert 'ooSubtabs($("an-subtabs")' in html, (
         "the analysis window must use THE universal subtab component"
@@ -1891,8 +1892,10 @@ def test_search_retired_from_sidebar_but_reachable():
     assert 'id="tab-search"' in html, "the search page is KEPT (nothing lost)"
     assert "function doSearch" in html, "Boolean search still exists"
     assert 'showTab("search")' in html, "search stays reachable (omnibar/palette entry points)"
-    # the sidebar still lists tabs (invariant #2 not regressed)
-    assert '<button class="nav-item" data-tab="analyze">' in html and '<button class="nav-item" data-tab="home">' in html
+    # Analysis is no longer a sidebar tab (retired 2026-06-20 — reached via search /
+    # openAnalysisFor); the sidebar still lists its other tabs (invariant #2 not regressed).
+    assert '<button class="nav-item" data-tab="analyze">' not in html, "Analysis sidebar tab retired"
+    assert '<button class="nav-item" data-tab="insights">' in html and '<button class="nav-item" data-tab="home">' in html
 
 
 def test_analysis_mindmap_subtab():
