@@ -588,6 +588,21 @@ def test_gui_shutdown_button_and_endpoint():
     assert "wipe" not in sd.lower() and "rmtree" not in sd.lower(), "shutdown must not delete anything"
 
 
+def test_uninstall_and_shutdown_replace_ui_with_terminal_overlay():
+    """Maintainer 2026-06-21: after uninstall (and shutdown) the browser must not keep
+    showing a clickable app against a dead server. Both replace the UI with a full-screen
+    terminal overlay (blocking the dead tabs) + a best-effort window.close()."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _terminalOverlay(" in app
+    assert "window.close()" in app, "best-effort close (works only for script-opened tabs)"
+    # both the shutdown button and the uninstall flow use it
+    ov = app[app.index("function _terminalOverlay("):]
+    ov = ov[: ov.index("\n    }")]
+    assert "position:fixed;inset:0" in ov and "z-index:99999" in ov, "must cover/disable the UI"
+    assert "_terminalOverlay(" in app[app.index("async function appShutdown("):]
+    assert "_terminalOverlay(" in app[app.index("async function uninstallApp("):]
+
+
 def test_airplane_flash_feedback_is_consistent_everywhere():
     """Maintainer 2026-06-21: clicking the airplane button must give the SAME visual
     feedback everywhere. The app fires a direction-aware full-screen #net-flash

@@ -848,6 +848,23 @@
       const w = window.open("/tasks", "oo-tasks");
       if (w && w.focus) { try { w.focus(); } catch (_) { /* popup blocked / cross-tab */ } }
     }
+    // A full-screen terminal overlay that REPLACES the UI when the app stops
+    // (shutdown or uninstall) — so the user can't keep clicking dead tabs against a
+    // server that's gone (maintainer 2026-06-21). It also attempts window.close():
+    // browsers only let a script close a script-opened tab, so this is best-effort —
+    // the overlay is the reliable end-state + tells the user to close the tab.
+    function _terminalOverlay(message, { tryClose = false } = {}) {
+      let o = document.getElementById("oo-terminal-overlay");
+      if (!o) { o = document.createElement("div"); o.id = "oo-terminal-overlay"; document.body.appendChild(o); }
+      o.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;"
+        + "justify-content:center;text-align:center;padding:24px;font-size:18px;line-height:1.5;"
+        + "background:var(--bg,#111);color:var(--fg,#eee)";
+      o.textContent = message;
+      if (tryClose) {
+        // Give the message a moment, then try to close (works only if scriptable).
+        setTimeout(() => { try { window.close(); } catch (e) { /* not scriptable */ } }, 1200);
+      }
+    }
     // Shut the app down from the GUI (a visual equivalent of Ctrl-C; maintainer
     // 2026-06-21). Confirms first, then stops the server process — NOT uninstall,
     // NOT panic: the data directory, corpus and keys are untouched.
@@ -858,12 +875,7 @@
       try {
         await api("/api/system/shutdown", {method: "POST", body: JSON.stringify({confirm: true})});
       } catch (e) { /* the server may drop the connection as it exits — expected */ }
-      let o = document.getElementById("shutdown-overlay");
-      if (!o) { o = document.createElement("div"); o.id = "shutdown-overlay"; document.body.appendChild(o); }
-      o.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;"
-        + "justify-content:center;text-align:center;padding:24px;font-size:18px;"
-        + "background:var(--bg,#111);color:var(--fg,#eee)";
-      o.textContent = t("The app is shutting down — you can close this tab.");
+      _terminalOverlay(t("The app is shutting down — you can close this tab."), {tryClose: true});
     }
     // Esc closes the task manager; Tab is trapped inside it (OO-D13-001).
     function vitalsKey(e) {
@@ -3707,9 +3719,15 @@
             remove_folder: sel.remove_folder, wipe_data: sel.wipe_data})});
         if (!r.scheduled) { $("uninstall-result").textContent = r.note || "Nothing to remove."; return; }
         $("uninstall-result").innerHTML =
-          `<span class="pill warn">uninstalling</span> ${esc(r.note || "")} ` +
-          `<span class="muted">This page will stop responding.</span>`;
+          `<span class="pill warn">uninstalling</span> ${esc(r.note || "")}`;
         toast("Uninstalling — the app is stopping.", "warn");
+        // The server is about to SIGTERM itself; replace the whole UI with a terminal
+        // screen so the user can't keep clicking dead tabs, and try to close the tab
+        // (best-effort — browsers only close script-opened tabs). Maintainer 2026-06-21.
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        _terminalOverlay(
+          t("Open Omniscience has been uninstalled and the app has stopped. You can close this window."),
+          {tryClose: true});
       } catch (e) { toast("Uninstall failed: " + e.message, "err"); }
     }
 

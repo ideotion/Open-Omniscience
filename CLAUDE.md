@@ -1109,7 +1109,15 @@ ruling, a contingency, or a deliberate-omission note.
   It is NOT uninstall and NOT panic — the data dir/corpus/keys are UNTOUCHED (a regression-guard asserts
   the module contains no wipe/rmtree). A full-screen "shutting down — close this tab" overlay replaces
   the UI. tests/test_shutdown.py (confirm-required + arms-once, `_arm` injected so the test never kills
-  the runner) + test_repo_invariants::test_gui_shutdown_button_and_endpoint. ALSO FIXED the `test` lane
+  the runner) + test_repo_invariants::test_gui_shutdown_button_and_endpoint. **UNINSTALL/SHUTDOWN NOW
+  REPLACE THE UI WITH A TERMINAL OVERLAY (maintainer 2026-06-21: after uninstall the browser stayed
+  clickable against a dead server — "feels weird"):** a shared `_terminalOverlay(message,{tryClose})`
+  (full-screen, z-index 99999, covers the sidebar+tabs so dead tabs can't be clicked) replaces the UI
+  when the app stops; both `appShutdown` and `uninstallApp` call it after the server is scheduled to
+  SIGTERM. It also attempts `window.close()` — best-effort ONLY (browsers close just script-opened tabs,
+  and the launcher opens a normal tab via xdg-open, so close usually no-ops), with the overlay as the
+  reliable end-state telling the user to close the window. test_repo_invariants::
+  test_uninstall_and_shutdown_replace_ui_with_terminal_overlay. ALSO FIXED the `test` lane
   bandit red (commit 2888e3b): the new backup f-string SQL (`_delete_in`/`_drop_newsletter_articles`)
   tripped B608 (Medium) — added the established `# noqa: S608  # nosec B608 - <reason>` per line (table/
   col validated against `_SAFE_TABLE`; values are bound `?` params), matching merge.py/diagnostics.py.
