@@ -1,0 +1,109 @@
+"""Tests for the legal document serving / download / decline-uninstall endpoints.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+No browser, no real uninstall: the HTTP tests mount only the legal router, and the
+decline test stubs the uninstall so nothing is ever removed.
+"""
+
+from __future__ import annotations
+
+import io
+import zipfile
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _app() -> FastAPI:
+    from src.api.legal import router
+
+    a = FastAPI()
+    a.include_router(router)
+    return a
+
+
+def test_documents_payload_fr_is_canonical():
+    from src.legal.documents import documents_payload
+
+    p = documents_payload("fr")
+    assert p["lang"] == "fr" and p["authoritative_lang"] == "fr"
+    assert p["is_translation"] is False
+    assert p["version"]  # a concrete version, not empty
+    assert p["confirm_word"] == "UNINSTALL"
+    assert len(p["documents"]) == 4 and all(d["markdown"].strip() for d in p["documents"])
+    assert p["ui"]["accept_btn"] and "fait foi" in p["ui"]["translation_note"]
+
+
+def test_documents_unknown_lang_falls_back_to_english_chrome():
+    from src.legal.documents import documents_payload
+
+    p = documents_payload("zzz")  # unknown -> English chrome, French document fallback
+    assert p["lang"] == "en"
+    assert p["ui"]["accept_btn"] == "Accept and continue"
+    assert len(p["documents"]) == 4
+
+
+def test_documents_endpoint_marks_translation():
+    c = TestClient(_app())
+    body = c.get("/api/legal/documents?lang=en").json()
+    assert body["lang"] == "en" and body["is_translation"] is True
+    assert len(body["documents"]) == 4  # at least the French canonical (fallback)
+    assert body["ui"]["heading"]
+
+
+def test_download_returns_a_zip_of_the_documents():
+    c = TestClient(_app())
+    r = c.get("/api/legal/download?lang=fr")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/zip")
+    assert "attachment" in r.headers["content-disposition"]
+    names = zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+    assert "CGU.md" in names and "README.txt" in names
+
+
+def test_decline_requires_typed_confirmation():
+    import src.api.legal as legal_api
+
+    calls: list[int] = []
+    orig = legal_api.perform_decline_uninstall
+    legal_api.perform_decline_uninstall = lambda: (calls.append(1), {"scheduled": True, "note": "stub"})[1]
+    try:
+        c = TestClient(_app())
+        # Wrong word -> 400, no uninstall.
+        assert c.post("/api/legal/decline", json={"confirm": True, "word": "nope"}).status_code == 400
+        # Not confirmed -> 400, no uninstall.
+        assert c.post("/api/legal/decline", json={"confirm": False, "word": "UNINSTALL"}).status_code == 400
+        assert calls == []
+        # Correct typed confirmation -> the (stubbed) uninstall fires.
+        r = c.post("/api/legal/decline", json={"confirm": True, "word": "UNINSTALL"})
+        assert r.status_code == 200 and r.json()["scheduled"] is True
+        assert calls == [1]
+    finally:
+        legal_api.perform_decline_uninstall = orig
+
+
+def test_legal_endpoints_are_reachable_while_locked():
+    from src.api.unlock import ALLOWED_WHILE_LOCKED
+
+    assert "/api/legal/" in ALLOWED_WHILE_LOCKED
+
+
+def test_unlock_first_launch_inserts_legal_step_before_passphrase():
+    """The first-launch flow goes language -> ACCEPT LEGAL -> passphrase; decline needs
+    a typed confirmation and uninstalls. Browser-unverified; this pins the wiring."""
+    html = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+    assert 'id="view-legal"' in html
+    # the language choice routes THROUGH the legal step (not straight to the passphrase)
+    assert "showLegalStep(code)" in html
+    # the four legal endpoints are used
+    for ep in ("/api/legal/documents", "/api/legal/consent", "/api/legal/decline", "/api/legal/download"):
+        assert ep in html, f"unlock.html must use {ep}"
+    # the destructive decline requires a typed confirmation (never a bare click)
+    assert 'id="lg-decline-confirm"' in html and "_legalWord" in html
+    # accept records consent then advances to the passphrase view (never bypassing it)
+    assert "legalToPassphrase(" in html
