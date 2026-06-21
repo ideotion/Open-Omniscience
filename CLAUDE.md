@@ -1034,14 +1034,19 @@ ruling, a contingency, or a deliberate-omission note.
   as the app (omni search + health/LLM pills + airplane plane-glyph with FILL=offline + language flag
   menu + help), reusing app.css; the old bespoke .tm-head/✈/select bar is gone; omni/help/go-online
   route into the app (the ONE consent popup lives there); test_task_manager_status_bar_and_sessions
-  updated to the app-identical bar. PENDING (this batch, building next): (c) move ALL facet subtabs
-  (the ooSubtabs nav.tabs across Insights/Settings/markets/agenda/analysis/task-manager/corpus) to a
-  strip JUST UNDER the status bar at the top of the screen (UI-rethink item 1/B: status bar →
-  full-width facet-subtab strip → sidebar + content); (f) ADVANCED-SEARCH SORTING + FILTERING by
-  METADATA (maintainer 2026-06-20, "important" — enables thinner corpus creation): sort/filter
-  articles per language · per date · per source · alphabetically · broadly per-metadata, AND when any
-  filter is active show a "filtered" indicator on ALL tabs (same convention as the active search-terms
-  indicator) so the corpus scope is always visible.
+  updated to the app-identical bar. (c) SHIPPED: a sticky `.chrome` wraps the topbar + a new `#subtab-strip`; `_relocateSubtabs(name)`
+  (called in showTab) moves the active tab's ooSubtabs nav (an-subtabs/ins-subtabs/set-subtabs/
+  agenda-views/indices-cats/commodities-cats) INTO the strip JUST UNDER the status bar — moving the
+  DOM node preserves its listeners + state; the strip hides on tabs with no facet subtabs; the
+  topbar's own position:sticky moved to `.chrome` (one pin, no pixel-guess of the bar height).
+  test_facet_subtabs_relocated_to_top_strip. REMAINING refinement: Home card-families (dynamic) + a
+  full-width-over-sidebar variant. PENDING (this batch, building next): (f) ADVANCED-SEARCH SORTING +
+  FILTERING by METADATA (maintainer 2026-06-20, "important" — enables thinner corpus creation):
+  sort/filter articles per language · per date · per source · alphabetically · broadly per-metadata,
+  AND when any filter is active show a "filtered" indicator on ALL tabs (same convention as the active
+  search-terms indicator) so the corpus scope is always visible; (g) ARTICLES-TAB PAGINATION
+  (maintainer 2026-06-20): a 1000-result search shows only the first few with no way to page — add
+  next/prev + "Page X of Y" controls BOTH above and below the results list.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features

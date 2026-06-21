@@ -902,6 +902,26 @@
     };
     const _loaded = new Set();
 
+    // Facet subtabs live JUST UNDER the status bar (maintainer 2026-06-20): each tab's
+    // ooSubtabs nav is relocated into #subtab-strip the first time the tab is shown —
+    // moving the DOM node preserves its listeners + active state — then only the active
+    // tab's nav is displayed. Tabs without facet subtabs hide the strip.
+    const _SUBTAB_NAV = {
+      analyze: "an-subtabs", insights: "ins-subtabs", settings: "set-subtabs",
+      agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
+    };
+    function _relocateSubtabs(name) {
+      const strip = $("subtab-strip"); if (!strip) return;
+      const id = _SUBTAB_NAV[name];
+      if (id) { const nav = $(id); if (nav && nav.parentNode !== strip) strip.appendChild(nav); }
+      let any = false;
+      Array.prototype.forEach.call(strip.children, (ch) => {
+        const on = !!id && ch.id === id;
+        ch.style.display = on ? "" : "none";
+        if (on) any = true;
+      });
+      strip.hidden = !any;
+    }
     function showTab(name, push = true) {
       if (name === "database") name = "library";  // legacy #database deep-links
       if (name === "ingest") {  // Collect moved into Settings → Collect (content-first §6)
@@ -927,6 +947,7 @@
       });
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
+      _relocateSubtabs(name);   // move this tab's facet subtabs into the top strip (under the status bar)
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
       // THEME-3: opening Analysis hydrates the restored active tab the first time (the
       // strip is restored at boot; the active tab's data loads lazily here), or shows

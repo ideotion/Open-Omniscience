@@ -87,6 +87,9 @@
 
     <div class="main-col">
       <!-- ============================ TOP BAR ========================== -->
+      <!-- Chrome: the status bar + the facet-subtab strip pin together at the top
+           (maintainer 2026-06-20: all facet subtabs moved just under the status bar). -->
+      <div class="chrome">
       <header class="topbar">
         <button class="icon-btn" id="hamburger" onclick="document.body.classList.toggle('nav-open')" title="Menu" aria-label="Open navigation menu">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
@@ -114,6 +117,11 @@
         <button class="icon-btn" onclick="showTab('help')" title="Help &amp; documentation" aria-label="Help and documentation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></button>
       </header>
+      <!-- Facet subtabs (Insights · Settings · Markets · Agenda · Analysis …) are
+           relocated into this strip at runtime by _relocateSubtabs() in app.js, so they
+           render JUST UNDER the status bar. Hidden on tabs that have no facet subtabs. -->
+      <div id="subtab-strip" class="subtab-strip" hidden></div>
+      </div><!-- /.chrome -->
 
       <div id="vitals-pop" class="vitals-pop taskmgr" hidden role="dialog" aria-modal="true" aria-label="Task manager" onkeydown="vitalsKey(event)">
         <div class="vitals-head"><b>Task manager</b>

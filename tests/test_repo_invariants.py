@@ -415,6 +415,21 @@ def test_advanced_search_language_is_a_flag_dropdown():
     )
 
 
+def test_facet_subtabs_relocated_to_top_strip():
+    """Maintainer field test 2026-06-20: all facet subtabs render JUST UNDER the status
+    bar. A sticky .chrome wraps the topbar + a #subtab-strip; showTab relocates each
+    tab's ooSubtabs nav into the strip (moving the node keeps its listeners + state)."""
+    html = _ui_source()
+    assert 'class="chrome"' in html and 'id="subtab-strip"' in html, "the chrome + subtab strip must exist"
+    assert ".chrome { position:sticky; top:0" in html, "the chrome must pin the status bar + strip at the top"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _relocateSubtabs(" in app and "_relocateSubtabs(name)" in app, (
+        "showTab must relocate the active tab's facet subtabs into the strip"
+    )
+    for navid in ("an-subtabs", "ins-subtabs", "set-subtabs", "agenda-views", "indices-cats", "commodities-cats"):
+        assert navid in app, f"the subtab-nav relocation map must cover {navid}"
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
