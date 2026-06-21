@@ -1003,7 +1003,10 @@ ruling, a contingency, or a deliberate-omission note.
   straight to unlock as before. This BUILDS the wizard's deferred encryption-choice/language-first
   flow (#24). Reuses the EXISTING "Choose your language" i18n key ×12 (already shipped for the
   guided wizard — no new key, no locale churn). Enforced by test_repo_invariants.py::
-  test_seamless_install_and_language_first_first_launch. REMAINING: the AI-tab Ollama BINARY installer
+  test_seamless_install_and_language_first_first_launch. ALSO (same PR): the top-bar LLM pill now
+  reads "<N> LLM" (count first, no "models"/✓) and CLICKING it opens Settings → AI (the models
+  subtab, which re-checks health) instead of only re-checking — openAiSettings(); +1 i18n key ×12;
+  test_llm_pill_shows_count_and_opens_ai_settings. REMAINING: the AI-tab Ollama BINARY installer
   (still blocked offline on per-OS checksums) for end-to-end in-app install; consolidate the now-
   redundant guided-wizard language step; the model-store-readable step (was install.sh's job).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked

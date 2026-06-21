@@ -384,6 +384,25 @@ def test_seamless_install_and_language_first_first_launch():
     )
 
 
+def test_llm_pill_shows_count_and_opens_ai_settings():
+    """Maintainer field test 2026-06-20: the top-bar LLM pill reads "<N> LLM" (the
+    count in front, no "models" word, no checkmark), and clicking it opens
+    Settings -> AI (the "models" subtab) instead of only re-checking health."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "`${h.installed_models.length} LLM`" in app, (
+        "the LLM pill must read '<N> LLM' (count in front, no 'models')"
+    )
+    assert "LLM ✓ (" not in app and "} models)`" not in app, (
+        "the old 'LLM ✓ (N models)' pill format must be gone"
+    )
+    assert "el.onclick = openAiSettings" in app and "function openAiSettings()" in app, (
+        "clicking the LLM pill must open AI settings (openAiSettings)"
+    )
+    assert 'select("models")' in app, (
+        "openAiSettings must navigate to Settings -> the AI/models subtab"
+    )
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():

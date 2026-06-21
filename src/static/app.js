@@ -10392,24 +10392,33 @@
     // so a once-at-boot check goes stale "offline". This re-checks on: boot, going
     // online (_paintNetwork), opening Settings → Models, after any LLM action, when the
     // tab regains focus, and on click — so it tracks a model that started/stopped later.
+    // The LLM pill opens Settings → AI (the "models" subtab); selecting it also
+    // re-checks health (showSetCat("models") -> loadLlmHealth). Maintainer 2026-06-20:
+    // the pill click should take the user to the AI tab, not just silently re-check.
+    function openAiSettings() {
+      showTab("settings");
+      try { (_setSubtabs || { select: showSetCat }).select("models"); }
+      catch (e) { showSetCat("models"); }
+    }
     async function loadLlmHealth() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("llm");
       if (!el) return;
       el.style.cursor = "pointer";
-      el.onclick = loadLlmHealth;   // assignment (not addEventListener) so it never stacks
+      el.onclick = openAiSettings;   // click -> Settings → AI (which also re-checks health)
       try {
         const h = await api("/api/llm/health");
         if (h.available) {
           el.className = "pill ok";
-          el.textContent = `LLM ✓ (${h.installed_models.length} models)`;
-          el.title = t("Local model — click to re-check");
+          // "<N> LLM" — the count in front, no "models" word (maintainer 2026-06-20).
+          el.textContent = `${h.installed_models.length} LLM`;
+          el.title = t("Local LLM — click to open AI settings");
         } else {
           el.className = "pill warn";
           el.textContent = t("LLM offline");
-          el.title = (h.detail ? h.detail + " — " : "") + t("Local model — click to re-check");
+          el.title = (h.detail ? h.detail + " — " : "") + t("Local LLM — click to open AI settings");
         }
-      } catch (e) { el.textContent = "LLM —"; el.title = t("Local model — click to re-check"); }
+      } catch (e) { el.textContent = "LLM —"; el.title = t("Local LLM — click to open AI settings"); }
     }
 
     async function summarize(id, btn) {
