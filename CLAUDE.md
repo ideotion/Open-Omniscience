@@ -1080,11 +1080,20 @@ ruling, a contingency, or a deliberate-omission note.
   DOM node preserves its listeners + state; the strip hides on tabs with no facet subtabs; the
   topbar's own position:sticky moved to `.chrome` (one pin, no pixel-guess of the bar height).
   test_facet_subtabs_relocated_to_top_strip. REMAINING refinement: Home card-families (dynamic) + a
-  full-width-over-sidebar variant. PENDING (this batch, building next): (f) ADVANCED-SEARCH SORTING +
-  FILTERING by METADATA (maintainer 2026-06-20, "important" — enables thinner corpus creation):
-  sort/filter articles per language · per date · per source · alphabetically · broadly per-metadata,
-  AND when any filter is active show a "filtered" indicator on ALL tabs (same convention as the active
-  search-terms indicator) so the corpus scope is always visible. (g) SHIPPED: the analysis Articles
+  full-width-over-sidebar variant. (f) ADVANCED-SEARCH SORTING by METADATA — BACKEND SHIPPED 2026-06-21
+  (brief §2.D, maintainer "important"; branch claude/amazing-tesla-z6bwkm, draft PR onto 0.09; logic
+  VERIFIED via standalone repro since src.api.main needs the crypto extra here → test runs in CI):
+  `/api/articles` gained `sort_by` (date|source|title|language) + `sort_dir` (asc|desc, default desc) —
+  an HONEST metadata ordering, NEVER a relevance/quality score. Threaded through `_query_articles` in
+  BOTH paths: the no-query browse path uses SQL `ORDER BY` (text fields via `COLLATE NOCASE` so
+  alphabetical is case-insensitive AND matches the FTS path — SQLite's binary collation otherwise sorts
+  all capitals before lowercase), the FTS path sorts the fetched rows in Python by the same key
+  (overriding relevance only when `sort_by` is set, else relevance preserved). 400 on an invalid
+  sort_by/sort_dir. The existing source/date/language/tag FILTERS were already present (per-metadata
+  filtering = done; this adds the SORT half). tests/test_search_sort.py (browse + FTS, every field
+  asc/desc, default-recency-unchanged; skip-guarded for the no-crypto sandbox, runs in CI). REMAINING:
+  the UI sort control in the Advanced-search tab + the cross-tab "filtered" indicator (the frontend
+  half — browser-unverified, next). (g) SHIPPED: the analysis Articles
   list is PAGINATED — `_anLoadArticles(p,page)` fetches /api/articles by limit+offset (page size 50,
   `total` drives the page count), renders Prev/Next + "Page X of Y" controls BOTH above and below the
   table, loadAnalysis seeds page 0; test_analysis_articles_paginated. PENDING: (h) LLM MODEL DOWNLOAD
