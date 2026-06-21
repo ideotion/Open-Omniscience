@@ -1160,6 +1160,25 @@ ruling, a contingency, or a deliberate-omission note.
   preview (the token commit inherits the filtered copy). NO merge-engine change (the filter is a pre-merge
   step on the disposable staged copy). test_repo_invariants::test_restore_can_exclude_newsletters.
   REMAINING (restore side): maps/wiki/models restore = when those become backup file members.
+  **LARGE-DATA BACKUP ARCHITECTURE DECIDED 2026-06-21 (maintainer AskUserQuestion → "Copy to a folder/
+  drive"; BUILD PENDING — this resolves the long-standing "BACKUPS MUST INCLUDE WIKIPEDIA DUMPS" +
+  models/maps rulings, which were deferred precisely for this reason):** VERIFIED the current oo-backup-2
+  is in-memory + 2 GiB-capped END TO END and browser-delivered — restore does `await file.read()` (whole
+  upload into RAM) → `decrypt_bytes(blob)` → `zipfile.ZipFile(io.BytesIO(blob))` with `_MAX_RESTORE_BYTES
+  = 2 GiB`; an encrypted backup does `encrypt_bytes(zip_path.read_bytes())` (whole archive in RAM); models
+  export does `out.write(srcf.read())` per blob. So it PHYSICALLY cannot carry wiki dumps (enwiki ≈20 GB)
+  + maps (planet ≈72 GB) — folding them in would OOM + blow the cap + exceed browser download/upload.
+  CHOSEN BUILD (server-side, never the browser): a destination DIRECTORY the user picks (e.g. an external
+  drive mounted on the machine) into which the app STREAMS wiki_dumps/ + osm_regions/ + the Ollama model
+  store FILE-BY-FILE (shutil.copyfileobj, bounded buffer) with a manifest + sha256 dedup (skip an
+  unchanged blob), and a restore that copies them BACK ADDITIVELY (skip-if-present, never overwrite a
+  differing local file). Wiki/OSM/model blobs are PUBLIC + re-downloadable ⇒ copied AS-IS (no whole-file
+  encryption — that is what makes 100 GB feasible; the encrypted CORPUS backup is unchanged). Skip
+  non-`done` downloads (ongoing-downloads-never-backed-up principle). This is a substantial reliability-
+  critical build ("entirely reliable or it should not exist"); design points to settle at build: the
+  destination-path picker UX (server-side path input, validated, must exist + be writable), free-disk
+  preflight, a visible task-manager job over the long copy (pausable), and whether models ride the same
+  folder backup or stay the separate `.oomodels` (lean: same folder, one "large data" backup).
 - **ONGOING DOWNLOADS
   NEVER BACKED UP (maintainer 2026-06-21, reassurance + transparency):** maps + wiki dumps live in
   `osm_regions/` + `wiki_dumps/`, which are EXCLUDED BY CONSTRUCTION (never collected as members), so a
