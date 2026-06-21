@@ -208,7 +208,7 @@ def _delete_in(cur: sqlite3.Cursor, table: str, col: str, ids: list[int]) -> Non
     for i in range(0, len(ids), 900):
         chunk = ids[i : i + 900]
         q = ",".join("?" * len(chunk))
-        cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)
+        cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)  # noqa: S608  # nosec B608 - table/col validated against _SAFE_TABLE; values are bound params
 
 
 def _drop_newsletter_articles(db_path: Path) -> int:
@@ -225,19 +225,19 @@ def _drop_newsletter_articles(db_path: Path) -> int:
         cur = con.cursor()
         marks = ",".join("?" * len(_NEWSLETTER_DOMAINS))
         src_ids = [r[0] for r in cur.execute(
-            f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]
+            f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 - marks is only ?-placeholders; domains are bound params
         if not src_ids:
             return 0
         sq = ",".join("?" * len(src_ids))
         art_ids = [r[0] for r in cur.execute(
-            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]
+            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 - sq is only ?-placeholders; ids are bound params
         if not art_ids:
             return 0
         tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
         for t in tables:
             if t == "articles" or not _SAFE_TABLE.match(t):
                 continue
-            cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]
+            cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]  # noqa: S608  # nosec B608 - t validated against _SAFE_TABLE (from the schema, not input)
             if "article_id" in cols:
                 _delete_in(cur, t, "article_id", art_ids)
         _delete_in(cur, "articles", "id", art_ids)

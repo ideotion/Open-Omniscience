@@ -555,6 +555,23 @@ def test_backup_can_exclude_newsletters():
     assert "newsletters.import.local" in art and "mailbox.import.local" in art
 
 
+def test_gui_shutdown_button_and_endpoint():
+    """Maintainer field test 2026-06-21: the status bar has a shutdown (power) button
+    that confirms, then stops the server (the GUI equivalent of Ctrl-C) — NOT uninstall
+    or panic (data untouched)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    sysapi = (_SRC / "api" / "system.py").read_text(encoding="utf-8")
+    assert 'id="app-shutdown"' in html and 'onclick="appShutdown()"' in html
+    assert "async function appShutdown(" in app and "/api/system/shutdown" in app
+    assert "confirm(" in app, "a confirmation prompt must precede shutdown"
+    assert '@router.post("/shutdown")' in sysapi and "confirmation required" in sysapi
+    # the shutdown helper must require confirm + must not be the uninstall/panic path
+    sd = (_SRC / "safety" / "shutdown.py").read_text(encoding="utf-8")
+    assert "def request_shutdown(" in sd and "confirm" in sd
+    assert "wipe" not in sd.lower() and "rmtree" not in sd.lower(), "shutdown must not delete anything"
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():

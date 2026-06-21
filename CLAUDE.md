@@ -1071,6 +1071,18 @@ ruling, a contingency, or a deliberate-omission note.
   bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
   summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
   limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **GUI SHUTDOWN BUTTON SHIPPED 2026-06-21 (maintainer field test; branch claude/keen-lamport-b4t3rh,
+  PR #420; backend stdlib-VERIFIED, frontend browser-unverified):** turning the app off needed a
+  terminal Ctrl-C — now a status-bar POWER button (`#app-shutdown`) → `appShutdown()` confirms then
+  POSTs `/api/system/shutdown {confirm:true}` → `src/safety/shutdown.py:request_shutdown` disposes the
+  DB engine (avoids SQLCipher codec-teardown noise) + SIGTERMs self after ~1 s (response flushed first).
+  It is NOT uninstall and NOT panic — the data dir/corpus/keys are UNTOUCHED (a regression-guard asserts
+  the module contains no wipe/rmtree). A full-screen "shutting down — close this tab" overlay replaces
+  the UI. tests/test_shutdown.py (confirm-required + arms-once, `_arm` injected so the test never kills
+  the runner) + test_repo_invariants::test_gui_shutdown_button_and_endpoint. ALSO FIXED the `test` lane
+  bandit red (commit 2888e3b): the new backup f-string SQL (`_delete_in`/`_drop_newsletter_articles`)
+  tripped B608 (Medium) — added the established `# noqa: S608  # nosec B608 - <reason>` per line (table/
+  col validated against `_SAFE_TABLE`; values are bound `?` params), matching merge.py/diagnostics.py.
 - **UNIFIED SEARCH NOW SEARCHES WIKIPEDIA ARTICLE CONTENT SHIPPED 2026-06-21 (maintainer field test;
   branch claude/keen-lamport-b4t3rh, PR #420; backend py_compile-VERIFIED, frontend browser-unverified):**
   the omnibar/palette wiki group (`/api/search/omni` `_wiki_group`) matched ONLY watched-page TITLES.

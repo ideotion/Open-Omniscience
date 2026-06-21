@@ -848,6 +848,23 @@
       const w = window.open("/tasks", "oo-tasks");
       if (w && w.focus) { try { w.focus(); } catch (_) { /* popup blocked / cross-tab */ } }
     }
+    // Shut the app down from the GUI (a visual equivalent of Ctrl-C; maintainer
+    // 2026-06-21). Confirms first, then stops the server process — NOT uninstall,
+    // NOT panic: the data directory, corpus and keys are untouched.
+    async function appShutdown() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.")))
+        return;
+      try {
+        await api("/api/system/shutdown", {method: "POST", body: JSON.stringify({confirm: true})});
+      } catch (e) { /* the server may drop the connection as it exits — expected */ }
+      let o = document.getElementById("shutdown-overlay");
+      if (!o) { o = document.createElement("div"); o.id = "shutdown-overlay"; document.body.appendChild(o); }
+      o.style.cssText = "position:fixed;inset:0;z-index:9999;display:flex;align-items:center;"
+        + "justify-content:center;text-align:center;padding:24px;font-size:18px;"
+        + "background:var(--bg,#111);color:var(--fg,#eee)";
+      o.textContent = t("The app is shutting down — you can close this tab.");
+    }
     // Esc closes the task manager; Tab is trapped inside it (OO-D13-001).
     function vitalsKey(e) {
       if (e.key === "Escape") { e.preventDefault(); if (_vitalsOpen) toggleVitals(); return; }
