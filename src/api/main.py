@@ -1503,12 +1503,20 @@ def main() -> None:
         sys.exit(run_doctor())
     if argv and argv[0] in ("-h", "--help", "help"):
         print(
-            "Usage: open-omniscience [serve|doctor|panic] [--ephemeral]\n"
-            "  serve       (default) run the local web app at http://127.0.0.1:8000\n"
-            "  doctor      print a health-check report (Python, data, db, LLM, launcher)\n"
-            "  panic       irreversibly wipe the local data dir (asks to confirm)\n"
-            "  --ephemeral run against a throwaway temp data dir, wiped on exit\n"
+            "Usage: open-omniscience [serve|doctor|panic|terms|accept-terms] [--ephemeral]\n"
+            "  serve        (default) run the local web app at http://127.0.0.1:8000\n"
+            "  doctor       print a health-check report (Python, data, db, LLM, launcher)\n"
+            "  panic        irreversibly wipe the local data dir (asks to confirm)\n"
+            "  terms        show the legal documents to accept (docs/legal/) and the consent status\n"
+            "  accept-terms record explicit acceptance of the legal documents (asks to confirm)\n"
+            "  --ephemeral  run against a throwaway temp data dir, wiped on exit\n"
         )
+        return
+    if argv and argv[0] in ("terms", "show-terms"):
+        _terms_cli()
+        return
+    if argv and argv[0] in ("accept-terms", "accept"):
+        _accept_terms_cli(force=("--yes" in argv or "-y" in argv))
         return
     if argv and argv[0] == "panic":
         _panic_cli(force=("--yes" in argv or "-y" in argv))
@@ -1533,6 +1541,44 @@ def _panic_cli(*, force: bool) -> None:
     report = panic_wipe(confirm=True)
     print(f"Wiped {report['files_wiped']}/{report['files_seen']} files under {report['data_dir']}.")
     print(report["limit"])
+
+
+def _terms_cli() -> None:
+    """Show the legal documents and the current local acceptance status."""
+    from src.legal.consent import consent_status, notice_text
+
+    print(notice_text())
+    status = consent_status()
+    if status["required"]:
+        print("Statut : NON accepté sur cette machine. / Status: NOT accepted on this machine.")
+    else:
+        print(
+            f"Statut : accepté (version {status['accepted_version']}, "
+            f"le {status['accepted_at']}). / Status: accepted."
+        )
+
+
+def _accept_terms_cli(*, force: bool) -> None:
+    """Record explicit acceptance of the legal documents from the CLI.
+
+    Interactive by design (asks the user to type a confirmation) -- it only runs
+    when the user invokes ``accept-terms`` deliberately, never during ``serve``.
+    """
+    from src.legal.consent import CONSENT_DOC_VERSION, notice_text, record_consent
+
+    print(notice_text())
+    if not force:
+        ans = input(
+            "Pour accepter ces documents, tapez 'j'accepte' (ou 'accept') : "
+        )
+        if ans.strip().lower() not in ("j'accepte", "jaccepte", "accept", "i accept"):
+            print("Acceptation annulée. / Acceptance cancelled.")
+            return
+    record = record_consent(CONSENT_DOC_VERSION, actor="cli")
+    print(
+        f"Accepté et enregistré localement (version {record['version']}, "
+        f"{record['accepted_at']}). / Recorded locally."
+    )
 
 
 def _run_ephemeral(argv: list[str]) -> None:
@@ -1561,6 +1607,17 @@ def _run_ephemeral(argv: list[str]) -> None:
 
 def _serve() -> None:
     import uvicorn
+
+    # First-run legal notice (non-blocking): point the user at the documents to
+    # accept. Acceptance itself happens via the web UI modal or `accept-terms`;
+    # this never blocks startup (see docs/legal/IMPLEMENTATION_NOTES.md).
+    try:
+        from src.legal.consent import needs_acceptance, notice_text
+
+        if needs_acceptance():
+            print(notice_text())
+    except Exception:  # noqa: BLE001 - a notice must never break startup
+        pass
 
     # Preconfigure the database on first run so a fresh install is immediately
     # usable (the curated catalog is seeded only when the sources table is empty).

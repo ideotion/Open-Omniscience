@@ -45,6 +45,7 @@ def wire(app) -> None:
     from src.api.integrity import router as integrity_router
     from src.api.jobs import router as jobs_router
     from src.api.law import router as law_router
+    from src.api.legal import router as legal_router
     from src.api.link_analysis import router as link_analysis_router
     from src.api.link_preview import router as link_preview_router
     from src.api.llm import router as llm_router
@@ -83,6 +84,7 @@ def wire(app) -> None:
         integrity_router,
         annotations_router,
         law_router,
+        legal_router,
         link_analysis_router,
         link_preview_router,
         wiki_router,

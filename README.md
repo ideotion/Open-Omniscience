@@ -244,6 +244,7 @@ The docs are consolidated into a small set of complete guides
 - **[ETHICS](docs/ETHICS.md)** — principles, compliance (GPLv3), third-party notices.
 - **[SECURITY](docs/SECURITY.md)** — threat model, local-first posture, the security audit.
 - **[CONTRIBUTING](docs/CONTRIBUTING.md)** — how to contribute + the versioning policy.
+- **[Legal & governance](docs/legal/README.md)** — legal notice, CGU, privacy (RGPD) and acceptable-use charter (French review drafts).
 - **[CHANGES](docs/CHANGES.md)** — changelog · **[HISTORY](docs/HISTORY.md)** — audits & quality archive.
 
 ## 🔒 Security model
@@ -262,10 +263,25 @@ choice; the app never shows a lock screen over a plaintext file (that would be
 fabricated security). See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) and
 [docs/SECURITY.md](docs/SECURITY.md).
 
-## 📜 License
+## 📜 License & legal
 
-[GNU GPLv3](LICENSE).
+[GNU GPLv3](LICENSE) — you may **use, study, modify and redistribute** the code,
+**including commercially**. Ethical use is a **charter / moral commitment**
+(see [docs/legal/CHARTE_USAGE.md](docs/legal/CHARTE_USAGE.md) and
+[docs/ETHICS.md](docs/ETHICS.md)), **not** a restriction on the GPLv3 grant.
+
+A layered set of **legal & governance documents** (in French) covers the *use* of the
+running software and its AI-derived outputs — areas the GPLv3 does not address. On the
+**code** license, the **GPLv3 prevails** over these terms in case of conflict:
+
+- [Mentions légales](docs/legal/MENTIONS_LEGALES.md) — legal notice
+- [CGU](docs/legal/CGU.md) — terms of use (incl. the AI-output disclaimer)
+- [Politique de confidentialité](docs/legal/POLITIQUE_DE_CONFIDENTIALITE.md) — privacy (RGPD)
+- [Charte d'usage](docs/legal/CHARTE_USAGE.md) — acceptable-use charter
+- [Index](docs/legal/README.md)
+
+> These documents are **review-ready drafts**, not legal advice.
 
 ---
 
-*© 2026 Ideotion — built for investigative journalism, honestly.*
+*© 2026 Ideotion — distributed under the [GNU GPL v3](LICENSE); built for investigative journalism, honestly.*
