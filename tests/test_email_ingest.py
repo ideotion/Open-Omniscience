@@ -38,6 +38,35 @@ Content-Type: text/html; charset=utf-8
 <html><body><h1>Markets</h1><p>Rare earth prices climbed today.</p></body></html>
 """
 
+# A real-world-noisy HTML newsletter: <style>/<script> blocks, an Outlook/MSO
+# conditional comment, a plain comment, and undecoded entities (field test 2026-06-20).
+HTML_NOISY = b"""From: News <n@news.example>
+Subject: Noisy newsletter
+Message-ID: <noisy@news.example>
+Date: Wed, 29 Apr 2026 21:05:00 +0000
+Content-Type: text/html; charset=utf-8
+
+<html><head><style>*{box-sizing:border-box} @media (max-width:520px){.x{display:none}}</style>
+<script>var x=1;</script></head>
+<body>
+<!--[if mso]><table><tr><td>Outlook only</td></tr></table><![endif]-->
+<!-- a plain comment -->
+<h1>DeepSeek&rsquo;s new bet</h1>
+<p>Parallel ecosystems&#8202;in China&nbsp;and US.&copy; 2026</p>
+</body></html>
+"""
+
+
+def test_strip_html_drops_style_script_comments_and_decodes_entities():
+    # The field-test bug: CSS from <style>, JS from <script>, comment fragments and
+    # raw HTML entities leaked into the stored body. None of that may survive.
+    b = parse_email(HTML_NOISY).body_text
+    assert "box-sizing" not in b and "@media" not in b and "var x" not in b, "CSS/JS leaked"
+    assert "-->" not in b and "Outlook only" not in b and "plain comment" not in b, "comment leaked"
+    assert not any(e in b for e in ("&#8202;", "&nbsp;", "&copy;", "&rsquo;")), "entities not decoded"
+    assert "DeepSeek’s new bet" in b and "© 2026" in b, "entities must decode to characters"
+    assert "Parallel ecosystems in China and US." in b, "spaces must collapse; real text intact"
+
 
 def test_parse_plain_email():
     p = parse_email(PLAIN)

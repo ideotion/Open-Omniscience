@@ -156,6 +156,21 @@ _MONTHS.update({
     # oktober/november/december) are already present via the Nordic/German/Indonesian
     # tables. Same months in Afrikaans.
     "maart": 3, "augustus": 8,
+    # Greek (date-diagnostics 2026-06-21: el coverage 8.5 %, in_month_vocab=FALSE —
+    # the month names were entirely absent). Nominative + genitive (Greek dates use the
+    # genitive: "5 Μαΐου 2024"). Greek script, so no Latin collision; a month only fires
+    # next to a day/year, so prose homographs are safe.
+    "ιανουάριος": 1, "ιανουαρίου": 1, "φεβρουάριος": 2, "φεβρουαρίου": 2,
+    "μάρτιος": 3, "μαρτίου": 3, "απρίλιος": 4, "απριλίου": 4, "μάιος": 5, "μαΐου": 5,
+    "ιούνιος": 6, "ιουνίου": 6, "ιούλιος": 7, "ιουλίου": 7, "αύγουστος": 8, "αυγούστου": 8,
+    "σεπτέμβριος": 9, "σεπτεμβρίου": 9, "οκτώβριος": 10, "οκτωβρίου": 10,
+    "νοέμβριος": 11, "νοεμβρίου": 11, "δεκέμβριος": 12, "δεκεμβρίου": 12,
+    # Slovenian (date-diagnostics 2026-06-21: sl coverage 6.2 %, in_month_vocab=FALSE).
+    # Genitive forms ("5. junija 2024") + the months not already in the table; the
+    # nominatives januar/februar (German) and marec (Slovak) are already present, so
+    # only the Slovenian-specific forms are added here. "marca" omitted (collision).
+    "januarja": 1, "februarja": 2, "aprila": 4,
+    "junij": 6, "junija": 6, "julij": 7, "julija": 7,
 })
 _MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 

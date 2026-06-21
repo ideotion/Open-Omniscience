@@ -42,10 +42,10 @@
         <div class="nav-group" data-grp="investigate">
           <div class="gl">Investigate</div>
           <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
-          <!-- Search retired from the sidebar (ruled "one search entry"): the omnibar
-               (↵ -> Analysis window) is the entry; #tab-search stays reachable via the
-               palette "Run a search" + the omnibar "Run the full Boolean search" item. -->
-          <button class="nav-item" data-tab="analyze"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6M11 8v6"/></svg><span>Analysis</span></button>
+          <!-- Search AND Analysis retired from the sidebar (ruled 2026-06-20): analyses run
+               via search (the omnibar/palette -> a spawned analysis window) or by clicking into
+               the other tabs. #tab-analyze + #tab-search stay registered and reachable via
+               showTab()/openAnalysisFor() + the palette -- nothing is lost. -->
           <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
           <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>World map</span></button>
           <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
@@ -87,6 +87,9 @@
 
     <div class="main-col">
       <!-- ============================ TOP BAR ========================== -->
+      <!-- Chrome: the status bar + the facet-subtab strip pin together at the top
+           (maintainer 2026-06-20: all facet subtabs moved just under the status bar). -->
+      <div class="chrome">
       <header class="topbar">
         <button class="icon-btn" id="hamburger" onclick="document.body.classList.toggle('nav-open')" title="Menu" aria-label="Open navigation menu">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
@@ -94,9 +97,7 @@
              aria-label="Search everything — articles, dates, locations, settings, etc." aria-keyshortcuts="Control+K"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPalette();}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <span class="ph">Search everything — data, tools, actions, docs…</span>
         </div>
-        <div class="spacer"></div>
         <div class="status-cluster" id="statusCluster">
           <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click to open the task manager" tabindex="0" style="cursor:pointer" onclick="openTaskManager()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTaskManager();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
@@ -115,7 +116,14 @@
         </button>
         <button class="icon-btn" onclick="showTab('help')" title="Help &amp; documentation" aria-label="Help and documentation">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></button>
+        <button class="icon-btn" id="app-shutdown" onclick="appShutdown()" title="Shut down the app (stops the server — your data is untouched)" aria-label="Shut down the app">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v9"/><path d="M6.4 6.4a8 8 0 1 0 11.2 0"/></svg></button>
       </header>
+      <!-- Facet subtabs (Insights · Settings · Markets · Agenda · Analysis …) are
+           relocated into this strip at runtime by _relocateSubtabs() in app.js, so they
+           render JUST UNDER the status bar. Hidden on tabs that have no facet subtabs. -->
+      <div id="subtab-strip" class="subtab-strip" hidden></div>
+      </div><!-- /.chrome -->
 
       <div id="vitals-pop" class="vitals-pop taskmgr" hidden role="dialog" aria-modal="true" aria-label="Task manager" onkeydown="vitalsKey(event)">
         <div class="vitals-head"><b>Task manager</b>
@@ -233,7 +241,7 @@
         <button class="secondary" onclick="exportMethods()"
           title="A Markdown document recording the verbatim query, app version and per-article provenance — for verdicts and peer review. Records selection only; concludes nothing.">Methods appendix</button>
         <button class="secondary" onclick="synthesizeResults(this)"
-          title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
+          title="Synthesize a chosen set of your results with your local model — shared facts, disagreements, open questions, citing article numbers. You pick the members; assistance, never a verdict.">Synthesize results</button>
         <button class="secondary" onclick="bulkLlm('summarize','search')"
           title="Summarize every matched article with your local model — stored with its model and date, never analysed for keywords.">Summarize all</button>
         <button class="secondary" onclick="bulkLlm('translate','search')"
@@ -243,6 +251,7 @@
       </div>
       <div id="search-meta" class="hint"></div>
       <div id="bulk-llm-search" class="bulk-llm" style="display:none;margin-top:10px"></div>
+      <div id="bulk-queue-search" class="bulk-queue" style="margin-top:8px"></div>
       <div style="overflow:auto; margin-top:10px;"><table id="results"></table></div>
     </section>
     </div>
@@ -295,7 +304,7 @@
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Source</span>
             <input id="an-adv-source" style="max-width:150px"></label>
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Language</span>
-            <input id="an-adv-lang" style="max-width:80px" placeholder="en"></label>
+            <select id="an-adv-lang" style="max-width:170px"></select></label>
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">From</span>
             <input id="an-adv-from" type="date"></label>
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">To</span>
@@ -310,13 +319,14 @@
         <button class="ghost tiny" onclick="exportResults('json', anParams())">Export JSON</button>
         <button class="ghost tiny" onclick="exportMethods(anQuery())" title="Signed, reproducible record of the query + method behind this analysis">Methods appendix</button>
         <button class="ghost tiny" onclick="exportEvidence(anQuery())" title="Signed, tamper-evident bundle of the analysed articles">Export signed evidence</button>
-        <button class="ghost tiny" onclick="synthesizeResults(this, anQuery(), 'an-synth')" title="One local-LLM synthesis across the top results (max 20) — shared facts, disagreements, open questions, citing article numbers. Assistance, never a verdict.">Synthesize results</button>
+        <button class="ghost tiny" onclick="synthesizeResults(this, anParams())" title="Synthesize a chosen set of these articles with your local model — shared facts, disagreements, open questions, citing article numbers. You pick the members; assistance, never a verdict.">Synthesize results</button>
         <button class="ghost tiny" onclick="bulkLlm('summarize','an')" title="Summarize every matched article with your local model — stored with its model and date, never analysed for keywords.">Summarize all</button>
         <button class="ghost tiny" onclick="bulkLlm('translate','an')" title="Translate every matched article with your local model — stored with its model and date, never analysed for keywords.">Translate all</button>
         <button class="ghost tiny" onclick="aiRunPrompt('an')" title="Run one of your custom AI extractors over these articles — results are stored as AI-derived metadata of that type, labelled unreliable, never the trusted keyword index.">Run extractor</button>
       </div>
       <div id="an-synth" style="display:none;margin-top:8px"></div>
       <div id="bulk-llm-an" class="bulk-llm" style="display:none;margin-top:8px"></div>
+      <div id="bulk-queue-an" class="bulk-queue" style="margin-top:8px"></div>
     </section>
     </div>
 
@@ -1261,10 +1271,17 @@
       <div id="backup-status" class="hint">Checking backend…</div>
 
       <h3 style="margin-bottom:6px">Full backup — one signed archive</h3>
-      <p class="muted" style="margin-top:0">One file carries everything: articles, keywords, Wikipedia and law
+      <p class="muted" style="margin-top:0">One file carries your data: articles, keywords, Wikipedia and law
         snapshots, market series, events, settings, annotations and the custody log — with a signed manifest, so
         tampering is detectable. Encrypted with a passphrase by default; there is no recovery for a lost passphrase.</p>
       <p class="hint" style="margin-top:0">An encrypted backup is almost exactly the same file size as a plaintext one — AES-256-GCM adds only a fixed ~64 bytes of overhead, so the size matching is expected, not a sign it isn't encrypted. You can confirm any backup is genuine ciphertext in the Restore preview below (it reports “encrypted (AES-256-GCM)”).</p>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
+        <legend class="muted" style="padding:0 6px">What to back up</legend>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always included)</span></label>
+        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-incl-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to back up without them (e.g. to re-import fixed ones)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use the separate “Local LLM models” backup above</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— large files, separate backup (coming soon)</span></label>
+      </fieldset>
       <div class="row">
         <div style="flex:2"><label for="v2-pass">Passphrase</label>
           <input id="v2-pass" type="password" autocomplete="new-password" placeholder="a strong, memorable passphrase"></div>
@@ -1291,6 +1308,14 @@
           <input id="v2-restore-pass" type="password" autocomplete="off" placeholder="empty for an unencrypted archive"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="v2Preview()">Preview merge</button></div>
       </div>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
+        <legend class="muted" style="padding:0 6px">What to restore</legend>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always merged)</span></label>
+        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-restore-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to restore everything except them</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use the separate “Local LLM models” restore above</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— not carried in this archive yet</span></label>
+        <div class="hint" style="margin-top:4px">The preview reflects your choice — what you preview is exactly what gets merged.</div>
+      </fieldset>
       <div id="v2-preview" style="display:none">
         <div id="v2-verify" class="hint"></div>
         <div id="v2-plan"></div>
@@ -1324,6 +1349,7 @@
       <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
       <div class="row" style="margin-top:6px">
         <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Download keyword log (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">Download ALL keywords (.zip)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Download keyword self-test (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Download keyword-engine report (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Download date-extraction log (.json)</button>
@@ -1810,6 +1836,23 @@
     </div>
     <div id="chart-enlarge-body" style="padding:14px 16px"></div>
     <div id="chart-enlarge-note" class="card-caveat" style="padding:0 16px 14px"></div>
+  </dialog>
+
+  <!-- Synthesis window (maintainer 2026-06-21): "synthesize results" opens here as a
+       roomy, article-style document. Step 1 shows the EXACT member selection (which
+       articles, of how many, by relevance) so the choice is transparent and the user
+       picks the members. Step 2 shows the synthesis + caveat + provenance + the full
+       corpus of synthesized articles WITH their metadata; export (Markdown / standalone
+       page) + copy. Native showModal() traps focus (OO-D13-001). -->
+  <dialog id="synth-window" style="width:min(900px,96vw);max-height:92vh;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
+      <b id="synth-win-title" style="font-size:15px">Synthesis</b>
+      <span style="margin-inline-start:auto"></span>
+      <div id="synth-win-actions" style="display:flex;gap:6px"></div>
+      <button class="icon-btn" onclick="document.getElementById('synth-window').close()" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div id="synth-win-body" style="padding:14px 18px;overflow:auto;max-height:calc(92vh - 56px)"></div>
   </dialog>
 
   <!-- Local link preview (invariant #6 extension, first target: Home-card

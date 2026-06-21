@@ -107,8 +107,37 @@ def _apply_target(template: str, target: str) -> str:
     return f"{template}\n\nTranslate into {target}."
 
 
+# A short, IN-LANGUAGE directive appended to the summary/synthesis system prompt so a
+# small model RELIABLY writes its answer in the UI language (maintainer 2026-06-21: a
+# weak model often echoed the SOURCE language despite the English "{language}" pin).
+# Keyed by UI language code; the instruction is written natively in that language so the
+# operative command is in the same language we want the output in. (We keep the tuned
+# English prompt BODY — translating multi-sentence instructions across 12 languages risks
+# DEGRADING a weak model's compliance; forcing the OUTPUT language is the reliable win.)
+_NATIVE_DIRECTIVE = {
+    "en": "Write your entire response in English.",
+    "fr": "Rédige l'intégralité de ta réponse en français.",
+    "de": "Schreibe deine gesamte Antwort auf Deutsch.",
+    "es": "Escribe toda tu respuesta en español.",
+    "pt": "Escreve toda a tua resposta em português.",
+    "it": "Scrivi tutta la tua risposta in italiano.",
+    "nl": "Schrijf je volledige antwoord in het Nederlands.",
+    "ru": "Напиши весь ответ на русском языке.",
+    "ar": "اكتب إجابتك كاملةً باللغة العربية.",
+    "zh": "请用中文写出全部回答。",
+    "ja": "回答はすべて日本語で書いてください。",
+    "hi": "अपना पूरा उत्तर हिन्दी में लिखें।",
+    "bn": "আপনার সম্পূর্ণ উত্তর বাংলায় লিখুন।",
+    "id": "Tulis seluruh jawabanmu dalam bahasa Indonesia.",
+}
+
+
 def _build_prompting(
-    op: str, *, target: str | None = None, output_language: str | None = None
+    op: str,
+    *,
+    target: str | None = None,
+    output_language: str | None = None,
+    output_lang_code: str | None = None,
 ) -> tuple[str, str, str]:
     """Resolve ``(system_prompt, prompt_version, prompt_text)`` for an op.
 
@@ -124,6 +153,10 @@ def _build_prompting(
     "English" (a neutral default for multilingual inputs). ``target`` is the translate
     output language. A custom prompt may include ``{language}`` too — we substitute it
     either way, so operator prompts can pin the language as well.
+
+    ``output_lang_code`` (maintainer 2026-06-21) is the UI language CODE; when given for
+    summary/synthesis we append a native-language directive (``_NATIVE_DIRECTIVE``) so a
+    weak model actually answers in the UI language instead of echoing the source.
     """
     s = _llm_settings()
     overrides = {
@@ -152,6 +185,10 @@ def _build_prompting(
         lang = (output_language or "").strip() or "the same language as the article"
         system = template.replace("{language}", lang)
         version = "summary-custom" if is_custom else SUMMARY_PROMPT_VERSION
+    if op in ("summary", "synthesis"):
+        directive = _NATIVE_DIRECTIVE.get((output_lang_code or "").strip().lower())
+        if directive:
+            system = f"{system}\n\n{directive}"
     return system, version, system
 
 
@@ -516,6 +553,7 @@ class SynthesizeRequest(BaseModel):
     query: str | None = None
     model: str | None = None
     output_language: str | None = None  # v2 language pin (default English for synthesis)
+    ui_lang: str | None = None  # UI language CODE -> native output directive (2026-06-21)
 
 
 @router.post("/synthesize")
@@ -541,13 +579,20 @@ def synthesize_articles(
         )
 
     truncated = False
+    total_matched = 0
     if req.article_ids:
         articles = db.query(Article).filter(Article.id.in_(req.article_ids)).all()
+        total_matched = len(req.article_ids)
     elif req.query:
         try:
             ids = search_ids(db, req.query) or []
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+        # How the members are chosen (maintainer asked): the query path takes the
+        # search-relevance order from FTS, then the TOP N (the model bound). The
+        # frontend lets the user pick the exact members (sent as article_ids) so this
+        # silent truncation is no longer the only path.
+        total_matched = len(ids)
         if len(ids) > _SYNTHESIS_MAX_ARTICLES:
             ids, truncated = ids[:_SYNTHESIS_MAX_ARTICLES], True
         articles = db.query(Article).filter(Article.id.in_(ids)).all()
@@ -558,18 +603,43 @@ def synthesize_articles(
     if not articles:
         raise HTTPException(status_code=404, detail="No matching articles with content.")
 
-    per_article = max(400, _SYNTHESIS_BUDGET_CHARS // len(articles))
+    ordered = sorted(articles, key=lambda x: x.id)
+    per_article = max(400, _SYNTHESIS_BUDGET_CHARS // len(ordered))
     parts = []
-    for i, a in enumerate(sorted(articles, key=lambda x: x.id), 1):
+    members = []
+    for i, a in enumerate(ordered, 1):
         src = a.source.name if a.source else "unknown source"
         pub = a.published_at.date().isoformat() if a.published_at else "undated"
         parts.append(
             f"[{i}] {a.title or '(untitled)'} ({src}, {pub})\n{a.content[:per_article]}"
         )
-    prompt = "\n\n---\n\n".join(parts)
+        members.append(
+            {
+                "n": i,
+                "id": a.id,
+                "title": a.title or "",
+                "source": src,
+                "published_at": a.published_at.isoformat() if a.published_at else "",
+                "url": a.url or "",
+                "language": a.language or "",
+            }
+        )
+    excerpts = "\n\n---\n\n".join(parts)
+    # Wrap the excerpts with an explicit directive at BOTH ends. A weak instruct model
+    # otherwise misread the numbered list and asked "which one should I summarize?"
+    # (maintainer 2026-06-21). The instruction is repeated AFTER the excerpts because a
+    # small model weights the last instruction most.
+    prompt = (
+        f"Synthesize ALL {len(ordered)} excerpts below into ONE combined synthesis with "
+        "the three labeled parts described in your instructions. Do not ask which one to "
+        "use and do not summarize a single excerpt — cover every excerpt together.\n\n"
+        f"{excerpts}\n\n"
+        f"Now write the combined three-part synthesis of all {len(ordered)} excerpts above, "
+        "citing the bracketed source numbers."
+    )
     model = req.model or active_model()
     system, prompt_version, prompt_text = _build_prompting(
-        "synthesis", output_language=req.output_language
+        "synthesis", output_language=req.output_language, output_lang_code=req.ui_lang
     )
 
     try:
@@ -581,8 +651,8 @@ def synthesize_articles(
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    member_ids = [a.id for a in sorted(articles, key=lambda x: x.id)]
-    for a in articles:
+    member_ids = [a.id for a in ordered]
+    for a in ordered:
         db.add(
             ArticleAnalysis(
                 article_id=a.id,
@@ -602,7 +672,10 @@ def synthesize_articles(
         "prompt_version": prompt_version,
         "member_ids": member_ids,
         "member_count": len(member_ids),
+        "members": members,
+        "total_matched": total_matched,
         "truncated": truncated,
+        "max_articles": _SYNTHESIS_MAX_ARTICLES,
         "result": result.text,
         "caveat": (
             "A synthesis is reading assistance over the listed member articles only -- "
@@ -619,7 +692,11 @@ def synthesize_articles(
 # Unlike /synthesize (ONE combined output), bulk runs the local model over EACH
 # article independently and stores a per-article result. A local CPU model over many
 # articles is slow by nature, so we:
-#   * cap the set (no unbounded fan-out),
+#   * process the WHOLE matched set — UNCAPPED (maintainer 2026-06-20). The run is a
+#     visible, abortable task-manager job, so the user controls the (long) fan-out.
+#   * SKIP work that need not run: a translate run NEVER re-translates and NEVER touches
+#     an article already in the target language; summaries skip the already-summarized.
+#     The start event reports `to_process` so the user sees how many will actually run.
 #   * stream HONEST per-article progress as NDJSON (invariant #20 — never a fabricated
 #     bar/ETA; only what actually completed),
 #   * rely on the client's per-call kill-switch check (airplane mode aborts loudly),
@@ -627,7 +704,24 @@ def synthesize_articles(
 #     a prior one (the latest is shown first; older ones fold away in the reader).
 # These rows are NOT keyword-indexed (they live in article_analyses, never in
 # articles.content), so bulk output never pollutes the keyword analytics.
-_BULK_MAX_ARTICLES = 500
+
+# code -> English name (mirrors the frontend _LANG_EN) so a translate run can skip an
+# article already written in the target language.
+_LANG_EN = {
+    "en": "English", "fr": "French", "de": "German", "es": "Spanish", "pt": "Portuguese",
+    "ru": "Russian", "ar": "Arabic", "zh": "Chinese", "ja": "Japanese", "hi": "Hindi",
+    "bn": "Bengali", "id": "Indonesian", "it": "Italian", "nl": "Dutch",
+}
+
+
+def _is_target_language(article_lang: str | None, target_name: str) -> bool:
+    """True when an article is ALREADY in the translation target (so it is skipped).
+    Unknown language -> False (never skip on a guess)."""
+    code = (article_lang or "").strip().lower()
+    if not code:
+        return False
+    tgt = (target_name or "").strip().lower()
+    return code == tgt or _LANG_EN.get(code, "").lower() == tgt
 
 
 class BulkLLMRequest(BaseModel):
@@ -640,9 +734,10 @@ class BulkLLMRequest(BaseModel):
     end_date: str | None = None
     target_language: str = "English"
     output_language: str | None = None  # v2 language pin for the summarize op
+    ui_lang: str | None = None  # UI language CODE -> native output directive (2026-06-21)
     model: str | None = None
     skip_existing: bool = True
-    limit: int = 200
+    limit: int = 0  # 0 = no cap (process the whole matched set)
 
 
 @router.post("/bulk")
@@ -662,7 +757,10 @@ def bulk_llm(
     op = (req.op or "").strip().lower()
     if op not in {"summarize", "translate"}:
         raise HTTPException(status_code=400, detail="op must be 'summarize' or 'translate'.")
-    cap = max(1, min(req.limit or 200, _BULK_MAX_ARTICLES))
+    # UNCAPPED (maintainer 2026-06-20): process the WHOLE matched set. A positive `limit`
+    # is an optional explicit bound; the default (<=0) means no cap. (The FTS path already
+    # materialises the full match, so this is the same memory profile as the export path.)
+    cap = req.limit if (req.limit and req.limit > 0) else None
 
     # Resolve the article set (the analysis window's own selection logic).
     if req.article_ids:
@@ -672,8 +770,8 @@ def bulk_llm(
             if isinstance(v, int) and v not in seen:
                 seen.add(v)
                 ordered.append(v)
-        requested = len(ordered)
-        ids = ordered[:cap]
+        ids = ordered if cap is None else ordered[:cap]
+        requested = len(ids)
         by_id = {a.id: a for a in db.query(Article).filter(Article.id.in_(ids)).all()}
         articles = [by_id[i] for i in ids if i in by_id]
     elif any([req.query, req.source, req.language, req.start_date, req.end_date]):
@@ -688,10 +786,11 @@ def bulk_llm(
     else:
         raise HTTPException(status_code=400, detail="Provide article_ids or a query/filter.")
 
-    # Snapshot the plain fields the stream needs, so it never depends on the request's
+    # Snapshot the plain fields the stream needs (+ the article LANGUAGE so a translate run
+    # can skip articles already in the target language), so it never depends on the request's
     # ORM session staying open while the (slow) model runs.
     work = [
-        (a.id, a.title or "(untitled)", a.content or "")
+        (a.id, a.title or "(untitled)", a.content or "", a.language)
         for a in articles
         if a.content
     ]
@@ -704,7 +803,7 @@ def bulk_llm(
     if op == "summarize":
         kind = "summary"
         system, prompt_version, prompt_text = _build_prompting(
-            "summary", output_language=req.output_language
+            "summary", output_language=req.output_language, output_lang_code=req.ui_lang
         )
     else:
         kind = "translation"
@@ -723,8 +822,21 @@ def bulk_llm(
             ex = ex.filter(ArticleAnalysis.prompt_version == prompt_version)
         already = {r[0] for r in ex.all()}
 
+    # A translate run NEVER translates an article already in the target language
+    # (maintainer 2026-06-20) — unconditional, independent of skip_existing.
+    same_lang: set[int] = set()
+    if op == "translate":
+        same_lang = {w[0] for w in work if _is_target_language(w[3], target)}
+
     total = len(work)
-    capped = requested > total
+    # The count that will ACTUALLY run the model (shown up front so the user sees how many
+    # articles are subject to translation / summarization): matched minus the already-done
+    # (when skipping) and minus the already-in-target-language ones.
+    to_process = sum(
+        1 for w in work
+        if w[0] not in same_lang and not (req.skip_existing and w[0] in already)
+    )
+    capped = False  # no cap anymore; kept for response compatibility
 
     # Make the run VISIBLE in the task manager ("is an LLM translating?"): one task
     # for the whole bulk run, progress = articles done / total (the model's REAL
@@ -744,7 +856,8 @@ def bulk_llm(
 
         yield emit({
             "event": "start", "op": op, "total": total, "requested": requested,
-            "capped": capped, "model": model,
+            "to_process": to_process, "already_done": len(already),
+            "same_language": len(same_lang), "capped": capped, "model": model,
             "target_language": target if op == "translate" else None,
         })
         stored = skipped = failed = 0
@@ -752,8 +865,14 @@ def bulk_llm(
 
         try:
           with SessionLocal() as s:
-            for i, (aid, title, content) in enumerate(work, 1):
+            for i, (aid, title, content, _lang) in enumerate(work, 1):
                 _bgtasks.update(_tok, done=i)
+                if aid in same_lang:
+                    skipped += 1
+                    yield emit({"event": "item", "i": i, "total": total,
+                                "article_id": aid, "title": title, "status": "skipped",
+                                "reason": "already in target language"})
+                    continue
                 if req.skip_existing and aid in already:
                     skipped += 1
                     yield emit({"event": "item", "i": i, "total": total,

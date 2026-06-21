@@ -32,6 +32,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import zipfile
@@ -66,6 +67,13 @@ _ANNOTATIONS_DIR = "annotations"
 _KEYS_DIR = "keys"
 _CUSTODY_DB = "custody_log.db"
 _WIKI_DUMPS_DIR = "wiki_dumps"
+_OSM_DIR = "osm_regions"  # offline-map downloads (src/geo/osm_downloads.py)
+
+# Source domains under which imported newsletters live (src/api/ingestion.py). A
+# backup can EXCLUDE them (maintainer 2026-06-21: re-import fixed .eml to replace
+# faulty ones), so the corpus snapshot is filtered to drop their articles.
+_NEWSLETTER_DOMAINS = ("newsletters.import.local", "mailbox.import.local")
+_SAFE_TABLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")  # guard table names from the schema
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 _ZIP_MAGIC = b"PK\x03\x04"
@@ -162,25 +170,88 @@ def _corpus_stats(corpus_snapshot: Path) -> dict:
 
 def _excluded_inventory() -> list[dict]:
     """What this artifact deliberately does NOT contain, and why (manifest-listed,
-    never silent -- D3)."""
+    never silent -- D3).
+
+    Large, re-downloadable artifact directories are excluded BY CONSTRUCTION (never
+    collected as members), which ALSO means an in-progress download (a partial file in
+    one of these dirs) can never end up in a backup half-written (maintainer 2026-06-21:
+    ongoing downloads must not be backed up to avoid corruption). They are listed here
+    so the omission is transparent + re-fetchable after restore.
+    """
     out: list[dict] = []
-    dumps = data_dir() / _WIKI_DUMPS_DIR
-    if dumps.is_dir():
-        files = [p for p in dumps.rglob("*") if p.is_file()]
-        if files:
-            out.append(
-                {
-                    "name": _WIKI_DUMPS_DIR,
-                    "reason": "re-downloadable offline Wikipedia dumps (design D3); "
-                    "re-download via Settings after restore",
-                    "files": len(files),
-                    "bytes": sum(p.stat().st_size for p in files),
-                }
-            )
+    for name, why in (
+        (_WIKI_DUMPS_DIR, "re-downloadable offline Wikipedia dumps (design D3); "
+                          "re-download via Settings after restore"),
+        (_OSM_DIR, "re-downloadable offline-map (OSM) region extracts; in-progress "
+                   "downloads are never backed up — re-download via Settings after restore"),
+    ):
+        d = data_dir() / name
+        if d.is_dir():
+            files = [p for p in d.rglob("*") if p.is_file()]
+            if files:
+                out.append(
+                    {
+                        "name": name,
+                        "reason": why,
+                        "files": len(files),
+                        "bytes": sum(p.stat().st_size for p in files),
+                    }
+                )
     return out
 
 
-def _collect_members(include_keys: bool, tmp_dir: Path) -> list[Member]:
+def _delete_in(cur: sqlite3.Cursor, table: str, col: str, ids: list[int]) -> None:
+    """DELETE FROM <table> WHERE <col> IN (ids), chunked under SQLite's variable cap.
+    ``table``/``col`` come from the schema (PRAGMA), validated as plain identifiers."""
+    if not (_SAFE_TABLE.match(table) and _SAFE_TABLE.match(col)):
+        return
+    for i in range(0, len(ids), 900):
+        chunk = ids[i : i + 900]
+        q = ",".join("?" * len(chunk))
+        cur.execute(f"DELETE FROM {table} WHERE {col} IN ({q})", chunk)  # noqa: S608  # nosec B608 - table/col validated against _SAFE_TABLE; values are bound params
+
+
+def _drop_newsletter_articles(db_path: Path) -> int:
+    """Remove imported-newsletter articles from a PLAINTEXT corpus snapshot copy.
+
+    Operates ONLY on the disposable backup snapshot (never the live DB). Deletes the
+    newsletter-source articles AND every dependent row (any table with an ``article_id``
+    column — all FKs to articles.id use that name), so the restore's foreign_key_check
+    finds no orphans. The empty source rows are LEFT (harmless; a future re-import of
+    fixed .eml re-attaches to them). Returns the number of articles dropped.
+    """
+    con = sqlite3.connect(str(db_path))
+    try:
+        cur = con.cursor()
+        marks = ",".join("?" * len(_NEWSLETTER_DOMAINS))
+        src_ids = [r[0] for r in cur.execute(
+            f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 - marks is only ?-placeholders; domains are bound params
+        if not src_ids:
+            return 0
+        sq = ",".join("?" * len(src_ids))
+        art_ids = [r[0] for r in cur.execute(
+            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 - sq is only ?-placeholders; ids are bound params
+        if not art_ids:
+            return 0
+        tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        for t in tables:
+            if t == "articles" or not _SAFE_TABLE.match(t):
+                continue
+            cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]  # noqa: S608  # nosec B608 - t validated against _SAFE_TABLE (from the schema, not input)
+            if "article_id" in cols:
+                _delete_in(cur, t, "article_id", art_ids)
+        _delete_in(cur, "articles", "id", art_ids)
+        con.commit()
+        cur.execute("VACUUM")
+        con.commit()
+        return len(art_ids)
+    finally:
+        con.close()
+
+
+def _collect_members(
+    include_keys: bool, tmp_dir: Path, include_newsletters: bool = True
+) -> list[Member]:
     """Snapshot the databases into tmp_dir and inventory every side file."""
     from src.backup.sqlite_backup import live_db_path
 
@@ -188,6 +259,8 @@ def _collect_members(include_keys: bool, tmp_dir: Path) -> list[Member]:
 
     corpus_snap = tmp_dir / "corpus.db"
     snapshot_sqlite(live_db_path(), corpus_snap)
+    if not include_newsletters:
+        _drop_newsletter_articles(corpus_snap)  # filter the disposable copy only
     members.append(Member("corpus.db", "corpus", corpus_snap))
 
     custody_src = data_dir() / _CUSTODY_DB
@@ -221,12 +294,16 @@ def _collect_members(include_keys: bool, tmp_dir: Path) -> list[Member]:
 # --------------------------------------------------------------------------- #
 #  Write
 # --------------------------------------------------------------------------- #
-def write_backup_v2(dest: Path, passphrase: str | None = None) -> dict:
+def write_backup_v2(
+    dest: Path, passphrase: str | None = None, *, include_newsletters: bool = True
+) -> dict:
     """Build a complete oo-backup-2 artifact at ``dest``.
 
     ``passphrase`` set -> the ZIP is wrapped in the OOENC1 envelope and the
     signing keys ARE included; plaintext (no passphrase) -> keys are EXCLUDED
-    and the manifest says so (D2). Returns the manifest envelope.
+    and the manifest says so (D2). ``include_newsletters=False`` filters the
+    corpus snapshot to drop imported-newsletter articles (maintainer 2026-06-21).
+    Returns the manifest envelope.
     """
     from src.reporting.evidence import (
         canonical_bytes,
@@ -242,7 +319,7 @@ def write_backup_v2(dest: Path, passphrase: str | None = None) -> dict:
     tmp_dir = dest.parent / f".bak-build-{secrets.token_hex(6)}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     try:
-        members = _collect_members(include_keys, tmp_dir)
+        members = _collect_members(include_keys, tmp_dir, include_newsletters)
         for m in members:
             m.sha256 = _sha256_file(m.path)
             m.bytes = m.path.stat().st_size

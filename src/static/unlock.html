@@ -35,6 +35,12 @@
   .note p { margin:4px 0; }
   .err { color:var(--err); font-size:13px; min-height:18px; margin-top:10px; text-align:center; }
   .tm { font-size:12px; }
+  .lang-list { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; }
+  .lang-btn { display:flex; align-items:center; gap:8px; width:100%; margin:0; padding:10px 12px;
+    background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:8px;
+    font-size:15px; font-weight:500; cursor:pointer; text-align:start; }
+  .lang-btn:hover, .lang-btn:focus { border-color:var(--accent); outline:2px solid var(--accent); }
+  .lang-btn .flag { font-size:18px; line-height:1; }
   .hidden { display:none; }
 </style>
 </head>
@@ -47,6 +53,14 @@
     <path d="M11 12.5 H21 M11 16 H21 M11 19.5 H21 M13.4 10 V22 M16 10 V22 M18.6 10 V22" stroke-width="1.6" stroke-linecap="round"/>
     <path d="M6.5 11.5 L4.6 9.9 M25.5 11.5 L27.4 9.9 M6.5 20.5 L4.6 22.1 M25.5 20.5 L27.4 22.1" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
   </svg></div>
+
+  <!-- First launch (fresh store) leads with LANGUAGE selection, not the passphrase
+       (maintainer 2026-06-20). Picking one translates this page and persists oo.lang
+       (shared with the app), then the create-passphrase view follows. -->
+  <div id="view-language" class="hidden">
+    <h1>Choose your language</h1>
+    <div id="lang-list" class="lang-list"></div>
+  </div>
 
   <div id="view-unlock" class="hidden">
     <h1>Unlock your corpus</h1>
@@ -97,14 +111,49 @@
       return data;
     }
 
+    // First launch leads with LANGUAGE selection, not the passphrase (maintainer
+    // 2026-06-20). Picking a language persists it (localStorage oo.lang, shared with
+    // the app) and translates this page, THEN the create-passphrase view is shown --
+    // encryption-by-default is preserved, just reordered after the language choice.
+    // Native name is the identifier (invariant #15); the flag is visual convention only.
+    const LANGS = [
+      ["en", "\u{1F1EC}\u{1F1E7}", "English"],   ["fr", "\u{1F1EB}\u{1F1F7}", "Français"],
+      ["es", "\u{1F1EA}\u{1F1F8}", "Español"],   ["de", "\u{1F1E9}\u{1F1EA}", "Deutsch"],
+      ["zh", "\u{1F1E8}\u{1F1F3}", "中文"],       ["hi", "\u{1F1EE}\u{1F1F3}", "हिन्दी"],
+      ["ar", "\u{1F1F8}\u{1F1E6}", "العربية"],  ["bn", "\u{1F1E7}\u{1F1E9}", "বাংলা"],
+      ["ru", "\u{1F1F7}\u{1F1FA}", "Русский"],  ["pt", "\u{1F1F5}\u{1F1F9}", "Português"],
+      ["id", "\u{1F1EE}\u{1F1E9}", "Bahasa Indonesia"], ["ja", "\u{1F1EF}\u{1F1F5}", "日本語"],
+    ];
+    function showLanguageStep() {
+      const list = $("lang-list");
+      list.innerHTML = "";
+      for (const [code, flag, name] of LANGS) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "lang-btn"; b.setAttribute("lang", code);
+        const f = document.createElement("span");
+        f.className = "flag"; f.setAttribute("aria-hidden", "true"); f.textContent = flag;
+        const nm = document.createElement("span"); nm.textContent = name;
+        b.append(f, nm);
+        b.addEventListener("click", () => pickLanguage(code));
+        list.appendChild(b);
+      }
+      $("view-language").classList.remove("hidden");
+      const first = list.querySelector("button"); if (first) first.focus();
+    }
+    async function pickLanguage(code) {
+      try { if (window.OOI18N && OOI18N.setLang) await OOI18N.setLang(code); } catch (e) {}
+      $("view-language").classList.add("hidden");
+      $("view-create").classList.remove("hidden");
+      const pw1 = $("pw1"); if (pw1) pw1.focus();
+    }
+
     async function boot() {
       try {
         const s = await (await fetch("/api/system/lock-state")).json();
-        const view = s.state === "locked" ? "view-unlock"
-                   : s.state === "fresh" ? "view-create" : "view-open";
+        if (s.state === "fresh") { showLanguageStep(); return; }  // first launch: language first
+        const view = s.state === "locked" ? "view-unlock" : "view-open";
         $(view).classList.remove("hidden");
         if (view === "view-unlock") $("pw").focus();
-        if (view === "view-create") $("pw1").focus();
       } catch (e) { $("view-unlock").classList.remove("hidden"); }
     }
 

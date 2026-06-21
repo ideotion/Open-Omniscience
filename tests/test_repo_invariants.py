@@ -338,6 +338,286 @@ def test_oosubtabs_queries_buttons_live_and_markets_keep_selection():
     assert "_mktCat = key" in app and "indexOf(_mktCat)" in app
 
 
+def test_seamless_install_and_language_first_first_launch():
+    """Maintainer field test 2026-06-20: (1) the installer asks NOTHING and never
+    provisions Ollama (that moved ENTIRELY to Settings -> AI); (2) first launch (a
+    FRESH store) leads with LANGUAGE selection, not the passphrase -- while keeping
+    encryption-by-default (the create-passphrase step just follows the language step)."""
+    installer = (_ROOT / "install.sh").read_text(encoding="utf-8")
+    # (1) Ollama install is fully out of the installer: no provisioning function, no
+    # third-party installer, no model pulls. (configure_ollama_store_access stays defined,
+    # pinned by tests/test_installer.py, but is no longer called by the default install.)
+    assert "maybe_setup_ollama" not in installer, (
+        "Ollama provisioning must be removed from the installer (moved to Settings -> AI)"
+    )
+    assert "ollama.com/install.sh" not in installer and "ollama pull" not in installer, (
+        "the installer must never download/run Ollama or pull a model"
+    )
+    # No interactive component/launcher prompts -- seamless install.
+    assert 'CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression}"' in installer
+    assert 'whiptail --title "Open Omniscience -- choose components"' not in installer, (
+        "the component-selection menu must be gone (seamless install asks nothing)"
+    )
+    assert 'local want="${OO_MAKE_LAUNCHER:-1}"' in installer, (
+        "the launcher is created by default, no prompt (OO_MAKE_LAUNCHER=0 still opts out)"
+    )
+
+    # (2) The fresh-store first launch shows a language step FIRST.
+    unlock = (_SRC / "static" / "unlock.html").read_text(encoding="utf-8")
+    assert 'id="view-language"' in unlock and "showLanguageStep" in unlock, (
+        "fresh first launch must offer a language step (view-language / showLanguageStep)"
+    )
+    assert 'if (s.state === "fresh") { showLanguageStep(); return; }' in unlock, (
+        "a FRESH store must route to the language step, not straight to the passphrase"
+    )
+    # The choice persists + translates via the shared i18n engine (oo.lang).
+    assert "OOI18N.setLang(code)" in unlock, (
+        "the language choice must persist + translate via OOI18N.setLang"
+    )
+    # Encryption-by-default is PRESERVED: the create-passphrase view still exists and
+    # simply follows the language step.
+    assert "pickLanguage" in unlock and '$("view-create").classList.remove("hidden")' in unlock, (
+        "after choosing a language, the create-passphrase view must follow"
+    )
+    assert 'id="view-create"' in unlock and "create-db" in unlock, (
+        "the passphrase create flow must remain (encryption-by-default, just reordered)"
+    )
+
+
+def test_llm_pill_shows_count_and_opens_ai_settings():
+    """Maintainer field test 2026-06-20: the top-bar LLM pill reads "<N> LLM" (the
+    count in front, no "models" word, no checkmark), and clicking it opens
+    Settings -> AI (the "models" subtab) instead of only re-checking health."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "`${h.installed_models.length} LLM`" in app, (
+        "the LLM pill must read '<N> LLM' (count in front, no 'models')"
+    )
+    assert "LLM ✓ (" not in app and "} models)`" not in app, (
+        "the old 'LLM ✓ (N models)' pill format must be gone"
+    )
+    assert "el.onclick = openAiSettings" in app and "function openAiSettings()" in app, (
+        "clicking the LLM pill must open AI settings (openAiSettings)"
+    )
+    assert 'select("models")' in app, (
+        "openAiSettings must navigate to Settings -> the AI/models subtab"
+    )
+
+
+def test_advanced_search_language_is_a_flag_dropdown():
+    """Maintainer field test 2026-06-20: the Advanced-search language field is a <select>
+    of full language names with flags (built from LANGS_12 in JS), not a free-text input."""
+    html = _ui_source()
+    assert '<select id="an-adv-lang"' in html, "the Advanced language field must be a <select>"
+    assert '<input id="an-adv-lang"' not in html, "the old free-text language input must be gone"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _anFillLangSelect()" in app and "of LANGS_12" in app, (
+        "the language <select> must be populated from LANGS_12 (flag + native name)"
+    )
+
+
+def test_facet_subtabs_relocated_to_top_strip():
+    """Maintainer field test 2026-06-20: all facet subtabs render JUST UNDER the status
+    bar. A sticky .chrome wraps the topbar + a #subtab-strip; showTab relocates each
+    tab's ooSubtabs nav into the strip (moving the node keeps its listeners + state)."""
+    html = _ui_source()
+    assert 'class="chrome"' in html and 'id="subtab-strip"' in html, "the chrome + subtab strip must exist"
+    assert ".chrome { position:sticky; top:0" in html, "the chrome must pin the status bar + strip at the top"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _relocateSubtabs(" in app and "_relocateSubtabs(name)" in app, (
+        "showTab must relocate the active tab's facet subtabs into the strip"
+    )
+    for navid in ("an-subtabs", "ins-subtabs", "set-subtabs", "agenda-views", "indices-cats", "commodities-cats"):
+        assert navid in app, f"the subtab-nav relocation map must cover {navid}"
+
+
+def test_analysis_articles_paginated():
+    """Maintainer field test 2026-06-20: the analysis Articles list is PAGINATED — a
+    1000-result search is browsable with Prev/Next + 'Page X of Y' controls shown BOTH
+    above and below the list (/api/articles already supports limit+offset)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _anLoadArticles(" in app and "function _anArtGo(" in app and "_anArtPager(" in app
+    assert 'q.set("offset"' in app and 'q.set("limit"' in app, "pagination must fetch by limit+offset"
+    assert "_anLoadArticles(p, 0)" in app, "loadAnalysis must use the paginated loader"
+    assert app.count("+ pager") >= 2, "the pager must render BOTH above and below the results list"
+    assert 't("Page")' in app and 't("of")' in app, "the 'Page X of Y' control must exist"
+
+
+def test_synthesis_opens_a_window_with_selection_metadata_and_export():
+    """Maintainer field test 2026-06-21: 'synthesize results' opens a roomy, article-style
+    WINDOW that (1) makes the member selection TRANSPARENT (which articles, of how many,
+    by relevance) and lets the user pick, (2) shows the full corpus of synthesized
+    articles WITH metadata, (3) is exportable/copyable, (4) writes in the UI language."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # the dialog window exists with a title + actions slot + body
+    assert 'id="synth-window"' in html and 'id="synth-win-body"' in html
+    assert 'id="synth-win-actions"' in html and 'id="synth-win-title"' in html
+    # synthesizeResults opens the window (not the old inline #synth-result card)
+    assert "synth-window" in app and ".showModal()" in app
+    assert "function synthesizeResults(" in app
+    # selection step: a candidate pool + checkboxes + a bounded count
+    assert "_synthRenderSelect" in app and "synth-cb" in app and "_synthCount" in app
+    assert "_SYNTH_MAX" in app, "the bound must be explicit/visible in the selection step"
+    # the user-chosen ids drive the run (no silent top-20 truncation as the only path)
+    assert "article_ids: ids" in app and "ui_lang: code" in app, "send chosen ids + UI language"
+    # result step shows member metadata + export/copy
+    assert "_synthRenderResult" in app and "r.members" in app
+    assert "_synthExport" in app and "_synthAsMarkdown" in app and "_synthCopy" in app
+    # the candidate fetch uses the new /api/articles ids param for a seeded corpus
+    assert 'cp.set("ids"' in app
+
+
+def test_bulk_translate_summary_runs_are_queued():
+    """Maintainer field test 2026-06-21: batch translate/summarize runs are QUEUED — a
+    new batch can be added while one is ongoing; they run ONE AT A TIME, each snapshots
+    its selection, and the queue is visible with per-job cancel in a persistent panel."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # persistent queue containers (survive the config panel / extractor reusing the mount)
+    assert 'id="bulk-queue-search"' in html and 'id="bulk-queue-an"' in html
+    # queue machinery
+    assert "let _bulkQueue" in app and "_bulkActive" in app and "function _bulkPump(" in app
+    assert "function _bulkRunJob(" in app and "function bulkJobCancel(" in app
+    # bulkLlmRun ENQUEUES (snapshots a job) + pumps, instead of running inline
+    assert "_bulkQueue.push(job)" in app and "_bulkPump()" in app
+    # one at a time: the pump returns if a job is already active
+    assert "if (_bulkActive) return;" in app
+    # the queue renders into every .bulk-queue container with a per-job Cancel
+    assert 'querySelectorAll(".bulk-queue")' in app and "bulkJobCancel(" in app
+    # the custom-extractor path keeps its own abort (not broken by the queue refactor)
+    assert "function bulkLlmStop(" in app and "_bulkJobAbort" in app
+
+
+def test_task_manager_reorder_moves_rows_optimistically():
+    """Maintainer field test 2026-06-21: prioritising/moving a download in the task
+    manager must VISUALLY move the row immediately — not wait for the backend round-trip
+    or the next poll. Both task managers (in-app + the standalone /tasks page) renumber
+    the cached queue and REPAINT before the POST, then reconcile."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    # in-app: a paint-from-cache path + jobMove repaints before awaiting the reorder POST
+    assert "function _paintJobs(" in app, "render-from-cache path for an instant move"
+    mv = app[app.index("async function jobMove("):]
+    mv = mv[: mv.index("\n    }")]
+    assert "queue_position = idx + 1" in mv and "_paintJobs()" in mv, "optimistic renumber + repaint"
+    assert mv.index("_paintJobs()") < mv.index("_reorderEndpoint"), "repaint must precede the POST"
+    # standalone /tasks: same — renumber + re-render before the POST
+    tmv = tm[tm.index("move: async function"):]
+    tmv = tmv[: tmv.index("\n    }")]
+    assert "queue_position = idx + 1" in tmv and "renderQueue(_jobs" in tmv
+    assert tmv.index("renderQueue(_jobs") < tmv.index("reorderEp("), "repaint must precede the POST"
+
+
+def test_offline_map_merged_list_state_and_planet_skips_downloaded():
+    """Maintainer field test 2026-06-21: the Offline-map tab assembles the catalogue +
+    downloads into ONE state-aware list (not-downloaded/queued/downloading%/paused/done),
+    download clicks give instant feedback, and 'Whole planet' downloads only the
+    continents you DON'T already have (never re-fetches downloaded parts)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # ONE merged list: loadOsmMap fetches BOTH endpoints and joins by code
+    lm = app[app.index("async function loadOsmMap("):]
+    lm = lm[: lm.index("\n    }")]
+    assert "/api/geo/regions" in lm and "/api/geo/downloads" in lm and "Promise.all" in lm
+    assert "function _renderOsmList(" in app and "_osmDlByCode" in app
+    # state-aware row rendering with a visible progress bar
+    rl = app[app.index("function _renderOsmList("):]
+    rl = rl[: rl.index("\n    }\n")]
+    for tok in ['t("Downloading")', 't("Downloaded")', 't("Queued")', "<progress"]:
+        assert tok in rl, f"missing state token {tok}"
+    # instant feedback on click
+    assert 't("Starting…")' in app, "download click gives instant feedback"
+    # 'Whole planet' = download only the MISSING continents (skip done/downloading/queued)
+    pd = app[app.index("async function startPlanetDownload("):]
+    pd = pd[: pd.index("\n    }")]
+    assert "_osmContinents()" in pd and "already present" in pd
+    assert '"done"' in pd and '"downloading"' in pd and '"queued"' in pd, "skip already-held parts"
+    # the old separate downloads table is merged away (cleared)
+    assert 'if (tbl) tbl.innerHTML = ""' in app
+
+
+def test_backup_can_exclude_newsletters():
+    """Maintainer field test 2026-06-21: the Full-backup UI offers 'what to back up'
+    tickboxes; unticking 'Imported newsletters' backs up WITHOUT the .eml/mailbox
+    articles (so faulty imports can be replaced by re-importing). Wired end to end."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
+    art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
+    # UI: the tickbox exists + a "what to back up" fieldset
+    assert 'id="v2-incl-newsletters"' in html and "What to back up" in html
+    # frontend sends include_newsletters from the checkbox
+    assert "include_newsletters" in app and 'v2-incl-newsletters' in app
+    # backend: the body field + threaded into write_backup_v2 + the filter
+    assert "include_newsletters" in bk
+    assert "def _drop_newsletter_articles(" in art and "def write_backup_v2(" in art
+    assert "include_newsletters: bool = True" in art, "default keeps newsletters (no silent change)"
+    # the filter targets the real newsletter source domains
+    assert "newsletters.import.local" in art and "mailbox.import.local" in art
+
+
+def test_restore_can_exclude_newsletters():
+    """Maintainer field test 2026-06-21: selective RESTORE — 'what to restore' lets the
+    user drop imported newsletters from the merge (symmetric to backup). The staged
+    plaintext corpus is filtered BEFORE the merge, so the preview reflects the commit."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
+    # UI: a "what to restore" fieldset + the newsletter toggle
+    assert 'id="v2-restore-newsletters"' in html and "What to restore" in html
+    # frontend sends include_newsletters at preview (token commit inherits the filter)
+    assert 'fd.append("include_newsletters"' in app
+    # backend: the filter runs on the STAGED copy before the merge (reuses the tested helper)
+    assert "def _apply_restore_selection(" in bk and "_drop_newsletter_articles" in bk
+    assert "include_newsletters: bool = Form(True)" in bk
+
+
+def test_gui_shutdown_button_and_endpoint():
+    """Maintainer field test 2026-06-21: the status bar has a shutdown (power) button
+    that confirms, then stops the server (the GUI equivalent of Ctrl-C) — NOT uninstall
+    or panic (data untouched)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    sysapi = (_SRC / "api" / "system.py").read_text(encoding="utf-8")
+    assert 'id="app-shutdown"' in html and 'onclick="appShutdown()"' in html
+    assert "async function appShutdown(" in app and "/api/system/shutdown" in app
+    assert "confirm(" in app, "a confirmation prompt must precede shutdown"
+    assert '@router.post("/shutdown")' in sysapi and "confirmation required" in sysapi
+    # the shutdown helper must require confirm + must not be the uninstall/panic path
+    sd = (_SRC / "safety" / "shutdown.py").read_text(encoding="utf-8")
+    assert "def request_shutdown(" in sd and "confirm" in sd
+    assert "wipe" not in sd.lower() and "rmtree" not in sd.lower(), "shutdown must not delete anything"
+
+
+def test_uninstall_and_shutdown_replace_ui_with_terminal_overlay():
+    """Maintainer 2026-06-21: after uninstall (and shutdown) the browser must not keep
+    showing a clickable app against a dead server. Both replace the UI with a full-screen
+    terminal overlay (blocking the dead tabs) + a best-effort window.close()."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _terminalOverlay(" in app
+    assert "window.close()" in app, "best-effort close (works only for script-opened tabs)"
+    # both the shutdown button and the uninstall flow use it
+    ov = app[app.index("function _terminalOverlay("):]
+    ov = ov[: ov.index("\n    }")]
+    assert "position:fixed;inset:0" in ov and "z-index:99999" in ov, "must cover/disable the UI"
+    assert "_terminalOverlay(" in app[app.index("async function appShutdown("):]
+    assert "_terminalOverlay(" in app[app.index("async function uninstallApp("):]
+
+
+def test_airplane_flash_feedback_is_consistent_everywhere():
+    """Maintainer 2026-06-21: clicking the airplane button must give the SAME visual
+    feedback everywhere. The app fires a direction-aware full-screen #net-flash
+    (.go-on/.go-off, animated in the shared app.css); the standalone /tasks page must
+    fire the same flash when engaging airplane (the toggle that happens there)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    assert "#net-flash" in css and ".go-off" in css and "@keyframes netflash" in css
+    assert 'classList.add(online ? "go-on" : "go-off")' in app, "the app fires the flash"
+    # /tasks reuses app.css and fires the identical flash on engage-airplane
+    assert "function flashNet(" in tm and 'classList.add(online ? "go-on" : "go-off")' in tm
+    assert "flashNet(false)" in tm
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
@@ -1065,8 +1345,9 @@ def test_ui_invariants():
     # 22. The analysis window (Group F, keystone #4): a full-screen #analyze tab
     #     driven by the universal subtab component, fed by the article-SET keyword
     #     endpoint, opened from the Search tab's Analyze button. Counts, no verdict.
-    assert 'id="tab-analyze"' in html and 'data-tab="analyze"' in html, (
-        "the analysis tab + its sidebar entry must exist (Group F)"
+    assert 'id="tab-analyze"' in html, (
+        "the analysis window panel must exist (Group F); the Analysis SIDEBAR entry was "
+        "retired 2026-06-20 — it is reached via search / openAnalysisFor, not a sidebar tab"
     )
     assert 'ooSubtabs($("an-subtabs")' in html, (
         "the analysis window must use THE universal subtab component"
@@ -1777,14 +2058,15 @@ def test_analysis_window_absorbs_exports():
 
 
 def test_analysis_window_absorbs_synthesize():
-    """Item I: Synthesize is reachable from the analysis window too (its own query +
-    a dedicated panel), so the last Search-tab capability is mirrored. The Search-tab
-    call stays back-compatible (optional query/mount args)."""
+    """Item I: Synthesize is reachable from the analysis window too, so the last
+    Search-tab capability is mirrored. REWORKED 2026-06-21: it now opens the synthesis
+    WINDOW over a user-chosen member set (the window's selection/metadata/export
+    behaviour is pinned by test_synthesis_opens_a_window_with_selection_metadata_and_export);
+    the analysis window wires its OWN corpus (anParams), the Search tab the no-arg call."""
     html = _ui_source()
-    assert "function synthesizeResults(btn, qArg, mountId)" in html, "synthesize must take optional query + mount"
-    assert "synthesizeResults(this, anQuery(), 'an-synth')" in html, "analysis window wires its own query + panel"
-    assert 'id="an-synth"' in html, "a synthesis result panel in the analysis window"
-    assert "synthesizeResults(this)" in html, "the Search-tab call site stays back-compatible"
+    assert "function synthesizeResults(btn, arg)" in html, "synthesize takes (btn, query|params)"
+    assert "synthesizeResults(this, anParams())" in html, "analysis window wires its own corpus"
+    assert "synthesizeResults(this)" in html, "the Search-tab call stays (no-arg) — nothing lost"
 
 
 def test_omnibar_enter_opens_analysis_window():
@@ -1826,8 +2108,10 @@ def test_search_retired_from_sidebar_but_reachable():
     assert 'id="tab-search"' in html, "the search page is KEPT (nothing lost)"
     assert "function doSearch" in html, "Boolean search still exists"
     assert 'showTab("search")' in html, "search stays reachable (omnibar/palette entry points)"
-    # the sidebar still lists tabs (invariant #2 not regressed)
-    assert '<button class="nav-item" data-tab="analyze">' in html and '<button class="nav-item" data-tab="home">' in html
+    # Analysis is no longer a sidebar tab (retired 2026-06-20 — reached via search /
+    # openAnalysisFor); the sidebar still lists its other tabs (invariant #2 not regressed).
+    assert '<button class="nav-item" data-tab="analyze">' not in html, "Analysis sidebar tab retired"
+    assert '<button class="nav-item" data-tab="insights">' in html and '<button class="nav-item" data-tab="home">' in html
 
 
 def test_analysis_mindmap_subtab():
@@ -3028,10 +3312,13 @@ def test_task_manager_status_bar_and_sessions(monkeypatch=None):
     picker + help; the Up-next list is a full vertical list; History is reframed
     as 'online sessions'; Performance adapts to window size (auto-fit grid)."""
     tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
-    # status bar: airplane control + language select (i18n auto-wires #oo-lang-select) + help
+    # Status bar: now IDENTICAL to the app's top bar (maintainer 2026-06-20) — the same
+    # header.topbar markup (omni search + health/LLM pills + airplane + language flag + help).
     assert 'id="tm-status"' in tm, "the status bar must exist"
-    assert 'id="tm-air"' in tm and "function paintAir()" in tm, "the airplane control must exist"
-    assert 'id="oo-lang-select"' in tm and "TM_LANGS" in tm, "a language picker with the 12 locales"
+    assert 'class="topbar"' in tm and 'class="omni"' in tm, "the app's top-bar markup is reused"
+    assert 'id="net-toggle"' in tm and "function paintAir()" in tm, "the airplane control must exist"
+    assert 'id="lang-switch"' in tm and 'id="lang-menu"' in tm and "TM_LANGS" in tm, "the app's language flag menu"
+    assert 'id="health"' in tm and 'id="llm"' in tm, "the health + LLM pills mirror the app"
     assert 'id="tm-help"' in tm, "a help affordance must exist (minus search)"
     # Up-next is a full vertical list (not a chip cloud)
     assert '<ol class="tm-upnext">' in tm, "Up-next must render as a full vertical list"

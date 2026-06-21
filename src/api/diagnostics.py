@@ -238,6 +238,7 @@ def _keyword_zip(
     entries_by_lang: dict,
     stopword_candidates: dict,
     ring_candidates: dict,
+    page_info: dict | None = None,
 ) -> Response:
     """Build the per-language keyword-log ZIP, guaranteed under the byte cap.
 
@@ -298,6 +299,9 @@ def _keyword_zip(
             "keywords_in_archive": total_kw,
             "keywords_omitted_to_fit": sum(omitted.values()),
             "max_bytes": max_bytes,
+            # Paging: per_lang/page/pages_total/has_more let the caller export the
+            # WHOLE corpus across several files when one page would exceed the cap.
+            **(page_info or {}),
             "note": (
                 "Per-language split of the keyword diagnostics log, zipped to keep the "
                 "shared file small (the single-file log had grown to ~20 MB). Read "
@@ -393,6 +397,28 @@ def keyword_log(
             "or 'zip' — a per-language split archive kept under ~20 MB (summary.json "
             "+ keywords/<lang>.json + manifest.json). The recommended share format: "
             "every keyword, no ~20 MB single blob."
+        ),
+    ),
+    per_lang: int = Query(
+        _MAX_KEYWORDS_PER_LANG,
+        ge=1,
+        le=1_000_000,
+        description=(
+            "ZIP only: how many keywords PER dominant language to export (default "
+            f"{_MAX_KEYWORDS_PER_LANG}). Raise it to export far more — even the whole "
+            "corpus — in one sizeable archive (the ~20 MB byte cap still applies and, "
+            "if hit, trims the lowest-mention keywords per language and records it). "
+            "Combine with `page` to walk through everything in digestible chunks."
+        ),
+    ),
+    page: int = Query(
+        1,
+        ge=1,
+        description=(
+            "ZIP only: 1-indexed page through the per-language keyword list (page N = "
+            "keywords ranked [(N-1)*per_lang : N*per_lang] by mentions). The manifest "
+            "reports pages_total + has_more so the full set can be exported across "
+            "several files."
         ),
     ),
 ) -> Response:
@@ -504,6 +530,15 @@ def keyword_log(
             # Totals, mentions-desc — an index-only scan of ix_mention_covering,
             # iterated as tuples; the quota decides survivors ON THE FLY, so the
             # 228k-keyword aggregation never materialises as ORM objects.
+            # Page-aware per-language quota. The JSON path keeps the classic top-
+            # _MAX_KEYWORDS_PER_LANG cap (lo=0); the ZIP path can raise per_lang and
+            # page through the WHOLE corpus in digestible chunks (maintainer 2026-06-21:
+            # "export more keywords — there were 200k+"). per_lang_seen tracks the total
+            # ranked position per language (for paging + pages_total/has_more).
+            eff_per_lang = per_lang if fmt == "zip" else _MAX_KEYWORDS_PER_LANG
+            lo = (page - 1) * eff_per_lang if fmt == "zip" else 0
+            hi = lo + eff_per_lang
+            per_lang_seen: dict[str, int] = {}
             per_lang_taken: dict[str, int] = {}
             capped_langs: set[str] = set()
             survivors: list[tuple[int, int, int, str | None, str | None]] = []
@@ -518,19 +553,25 @@ def keyword_log(
             for kid, m, a, first, last in db.execute(totals_sql):
                 seen.add(kid)
                 dom = dom_lang.get(kid) or stored_lang.get(kid) or "?"
-                taken = per_lang_taken.get(dom, 0)
-                if taken >= _MAX_KEYWORDS_PER_LANG:
+                idx = per_lang_seen.get(dom, 0)
+                per_lang_seen[dom] = idx + 1
+                if idx < lo:
+                    continue
+                if idx >= hi:
                     capped_langs.add(dom)
                     continue
-                per_lang_taken[dom] = taken + 1
+                per_lang_taken[dom] = per_lang_taken.get(dom, 0) + 1
                 survivors.append((kid, int(m), int(a), first, last))
             for kid in sorted(set(stored_lang) - seen):  # zero-mention keywords
                 dom = stored_lang.get(kid) or "?"
-                taken = per_lang_taken.get(dom, 0)
-                if taken >= _MAX_KEYWORDS_PER_LANG:
+                idx = per_lang_seen.get(dom, 0)
+                per_lang_seen[dom] = idx + 1
+                if idx < lo:
+                    continue
+                if idx >= hi:
                     capped_langs.add(dom)
                     continue
-                per_lang_taken[dom] = taken + 1
+                per_lang_taken[dom] = per_lang_taken.get(dom, 0) + 1
                 survivors.append((kid, 0, 0, None, None))
 
             survivor_ids = [s[0] for s in survivors]
@@ -743,6 +784,17 @@ def keyword_log(
         yield "}}"
 
     if fmt == "zip":
+        # Paging facts so the caller can walk the WHOLE corpus across files.
+        pages_total = max(
+            (-(-t // eff_per_lang) for t in per_lang_seen.values()), default=1
+        )
+        page_info = {
+            "page": page,
+            "per_lang": eff_per_lang,
+            "pages_total": pages_total,
+            "has_more": any(t > hi for t in per_lang_seen.values()),
+            "keywords_total_corpus": sum(per_lang_seen.values()),
+        }
         return _keyword_zip(
             corpus=corpus,
             method=method,
@@ -757,6 +809,7 @@ def keyword_log(
             ),
             stopword_candidates=stopword_candidates,
             ring_candidates=ring_candidates,
+            page_info=page_info,
         )
 
     kind_tag = "digest" if digest else "log"

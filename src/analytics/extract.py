@@ -341,6 +341,25 @@ _EXTRA_STOPWORD_TEXT = (
     "във която което защото със срещу така една както още дали трябва бъде беше пред "  # Bulgarian
     "вече също кой бил чрез тези тази един "  # Bulgarian
     "про він під також після які який від але вже його вони має мають лише коли цього всі "  # Ukrainian
+    # 2026-06-21 keyword-log (29k-article corpus): more CSS/markup leaked into the
+    # unknown-language ('?') bucket (table/width/div/block-1/max-width/font-size) — the
+    # root fix is HTML/CSS stripping before extraction (flagged), this stops the markup
+    # that still leaks. Only UNAMBIGUOUS CSS/HTML tokens (never natural content in any
+    # language); dual-use (table/width/body/icon) deliberately left OUT.
+    "div span max-width font-size font-family "
+    # de dialectal weekday the month/weekday pass missed (Saturday).
+    "sonnabend "
+    # Pure grammar still leaking in the higher-volume corpora (analyzer high-confidence,
+    # hand-filtered per the standing rule: accented OR unambiguous grammar, no English/
+    # name homograph, no cross-language content collision).
+    "tras ante sino eso hoy ahora esto además cómo "   # Spanish
+    "degli sulla sua sia "                                # Italian
+    "pela aos pode "                                      # Portuguese
+    "jako który gdy "                                     # Polish
+    "več prav danes "                                     # Slovenian
+    "får läs "                                            # Swedish
+    "flere opp "                                          # Norwegian
+    "aynı karşı "                                         # Turkish (accented; promotes toward managed)
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any

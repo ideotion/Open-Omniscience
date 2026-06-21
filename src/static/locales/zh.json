@@ -569,6 +569,7 @@
   "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "当前没有正在运行的任务——活动任务（采集流程、下载、正在进行的抓取）会显示在这里。",
   "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "队列为空——等待中的下载会按顺序显示在这里；用箭头可以重新排序。",
   "Welcome to Open Omniscience": "欢迎使用 Open Omniscience",
+  "Any language": "任何语言",
   "Choose your language": "选择您的语言",
   "The whole interface switches as you pick. You can change this anytime in Settings.": "随您的选择，整个界面即时切换。您可以随时在“设置”中更改。",
   "Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.": "为整个界面选择语言。母语名称才是真正的标识——旗帜只是视觉提示。",
@@ -1222,6 +1223,7 @@
   "Estimate size": "估算大小",
   "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "可选、体积大，且与实时变更跟踪分开。在下面选择一个语言版本，下载官方维基媒体的当前文本转储(可续传，支持暂停/继续)。版本以平铺方式列出 — 你的语言在前，然后是最大的版本;当你点击\"估算大小\"时，真实的下载大小会从服务器读取 — 不做任何猜测。enwiki ≈ 数十 GB;大多数版本要小得多。基线仅用于离线阅读/搜索 — 上面的变更跟踪并不需要它们。",
   "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "列表仅限本应用的语言 — 即本应用能够读取和分析的版本。在框中输入即可按名称、自称或代码筛选。每个版本会内联显示一个粗略的大小档位和估算的下载大小，而\"估算大小\"会从服务器报告确切的当前转储大小。你也可以输入任何未列出的版本代码。",
+  "Local LLM — click to open AI settings": "本地 LLM — 点击打开 AI 设置",
   "Local LLM models (separate backup)": "本地 LLM 模型(单独备份)",
   "Ollama models live outside your corpus, so they are NOT in the full backup. Back them up separately to avoid re-downloading (multi-GB; slow over Tor). Restore is additive and bit-identical — existing blobs are skipped, never overwritten.": "Ollama 模型位于你的语料库之外，因此不包含在完整备份中。请单独备份以避免重新下载(数 GB；通过 Tor 很慢)。恢复是增量且逐位相同的 — 已存在的数据块会被跳过，绝不覆盖。",
   "Checking the local model store…": "正在检查本地模型存储…",
@@ -1506,5 +1508,8 @@
   "Stored locally in app_settings.json under the data directory — no telemetry, nothing leaves the machine.": "本地存储在数据目录下的 app_settings.json 中——无遥测，没有任何内容离开本机。",
   "Restore is additive-only: use the merge restore above — it complements your corpus and never replaces it. (The destructive replace-restore was removed; a raw .db download is a snapshot for manual/advanced use.)": "恢复仅为追加式：使用上方的合并恢复——它会补充你的语料库，绝不替换。（破坏性的替换式恢复已被移除；原始 .db 下载是供手动/高级用途的快照。）",
   "\"Dumb\" keywords (function words like the, you, not, one) are removed automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or comma-separated), set the minimum length, and toggle options. Excluding hides a keyword everywhere (reversibly — stored mentions are kept). You can also click the ✕ next to any keyword in Insights.": "“无意义”关键词（如 the、you、not、one 等功能词）会被内置的多语言停用词表自动移除。在下方微调：排除额外词项（每行一个或以逗号分隔）、设置最小长度并切换选项。排除会在所有位置隐藏某关键词（可逆——已存储的提及会保留）。你也可以在 Insights 中点击任意关键词旁的 ✕。",
-  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "虚拟环境和桌面启动器总会被移除；应用文件夹和你的数据是否一并移除取决于所选模式。你也可以在终端中运行：./install.sh --uninstall"
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "虚拟环境和桌面启动器总会被移除；应用文件夹和你的数据是否一并移除取决于所选模式。你也可以在终端中运行：./install.sh --uninstall",
+  "The app is shutting down — you can close this tab.": "应用正在关闭——您可以关闭此标签页。",
+  "Open Omniscience has been uninstalled and the app has stopped. You can close this window.": "Open Omniscience 已卸载，应用已停止。您可以关闭此窗口。",
+  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "关闭应用？服务器将停止，您需要重新启动它。您的数据不受影响。"
 }

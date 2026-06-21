@@ -142,6 +142,40 @@ def test_keyword_zip_trims_per_language_when_over_cap(tmp_path, monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_keyword_zip_paging_exports_more_and_walks_the_full_set(tmp_path):
+    """Maintainer 2026-06-21: export MORE than the top-5000/lang — per_lang raises the
+    per-language quota and page walks through the whole corpus in digestible files."""
+    def _kw(content: bytes) -> set:
+        mem = _open_zip(content)
+        out = set()
+        for n in mem:
+            if n.startswith("keywords/") and n.endswith(".json"):
+                for k in json.loads(mem[n])["keywords"]:
+                    out.add((k["language"], k["normalized"]))
+        return out
+
+    app, client = _client(tmp_path)
+    try:
+        with client:
+            # per_lang=1, page 1 = the top keyword per language; more remain
+            r1 = client.get("/api/diagnostics/keywords?format=zip&per_lang=1&page=1")
+            m1 = json.loads(_open_zip(r1.content)["manifest.json"])
+            assert m1["per_lang"] == 1 and m1["page"] == 1
+            assert m1["has_more"] is True and m1["pages_total"] >= 2
+            # page 2 is the NEXT slice — disjoint from page 1 (no double-export)
+            r2 = client.get("/api/diagnostics/keywords?format=zip&per_lang=1&page=2")
+            p1, p2 = _kw(r1.content), _kw(r2.content)
+            assert p1 and p2 and p1.isdisjoint(p2)
+            # a big per_lang exports the WHOLE set in one archive (nothing left over)
+            rall = client.get("/api/diagnostics/keywords?format=zip&per_lang=1000000")
+            mall = json.loads(_open_zip(rall.content)["manifest.json"])
+            assert mall["has_more"] is False
+            assert mall["keywords_in_archive"] == mall["keywords_total_corpus"]
+            assert mall["keywords_in_archive"] >= m1["keywords_in_archive"]
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_analyzer_reads_the_zip(tmp_path):
     app, client = _client(tmp_path)
     try:

@@ -25,12 +25,31 @@ import logging
 import os
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from src.monitoring.activity import activity_monitor
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 _LOG = logging.getLogger(__name__)
+
+
+class ShutdownBody(BaseModel):
+    confirm: bool = False
+
+
+@router.post("/shutdown")
+def system_shutdown(body: ShutdownBody) -> dict:
+    """Stop the app from the GUI (a power button + confirm) — the equivalent of Ctrl-C.
+
+    NOT uninstall, NOT panic: the data directory, corpus and keys are untouched; the
+    server process simply exits. ``confirm`` must be true.
+    """
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirmation required to shut down")
+    from src.safety.shutdown import request_shutdown
+
+    return request_shutdown(confirm=True)
 
 # Process handle + start time, resolved once. psutil is a core dependency, but we
 # stay defensive: if it is somehow unavailable the endpoint still returns the
