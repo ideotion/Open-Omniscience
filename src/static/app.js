@@ -606,9 +606,18 @@
     async function _renderJobs() {
       const elA = $("jobs-body"), elQ = $("queue-body");
       if (!elA && !elQ) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       try { _jobsData = await api("/api/jobs"); }
       catch { if (elA) elA.innerHTML = ""; if (elQ) elQ.innerHTML = ""; return; }
+      _paintJobs();
+    }
+    // Render from the cached _jobsData (no fetch) — so an optimistic reorder can move
+    // a row INSTANTLY before the backend round-trip (maintainer 2026-06-21: prioritising
+    // in the task manager must visually move the item).
+    function _paintJobs() {
+      const elA = $("jobs-body"), elQ = $("queue-body");
+      if (!elA && !elQ) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (!_jobsData) return;
       const jobs = (_jobsData.jobs || []).filter(j => j.state !== "done");
       // Queue = jobs waiting their turn (each manager's single-download queue, in
       // order). Per-kind queued keys (dumps + OSM each have their OWN order), so a
@@ -674,14 +683,21 @@
     }
     async function jobMove(key, dir, kind) {
       const jobs = (_jobsData && _jobsData.jobs) || [];
-      const queued = jobs.filter(j => j.state === "queued" && j.kind === kind)
-                         .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0))
-                         .map(_dlKey);
+      const queuedJobs = jobs.filter(j => j.state === "queued" && j.kind === kind)
+                             .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0));
+      const queued = queuedJobs.map(_dlKey);
       const i = queued.indexOf(key);
       if (i < 0 || i + dir < 0 || i + dir >= queued.length) return;
       [queued[i], queued[i + dir]] = [queued[i + dir], queued[i]];
+      // OPTIMISTIC: renumber the cached jobs to the new order and repaint NOW, so the
+      // row visibly moves immediately (the backend round-trip + next poll reconcile it).
+      queued.forEach((k, idx) => {
+        const j = queuedJobs.find(x => _dlKey(x) === k);
+        if (j) j.queue_position = idx + 1;
+      });
+      _paintJobs();
       try { await api(_reorderEndpoint(kind), {method: "POST", body: JSON.stringify({keys: queued})}); _renderJobs(); }
-      catch (e) { toast(e.message, "err"); }
+      catch (e) { toast(e.message, "err"); _renderJobs(); }   // revert to backend truth on failure
     }
     // ---- Schedule tab (CLAUDE.md #20 REMAINING "Sources/Schedule") ---- //
     // Reads the SAME _actData that _pollVitals already fetched from

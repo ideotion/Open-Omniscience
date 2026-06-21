@@ -1071,6 +1071,26 @@ ruling, a contingency, or a deliberate-omission note.
   bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
   summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
   limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **BULK TRANSLATE/SUMMARY QUEUE + TASK-MANAGER OPTIMISTIC REORDER SHIPPED 2026-06-21 (maintainer
+  field test; branch claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified per fork-3):**
+  (1) QUEUE — a long batch translation blocked starting another. Batch translate/summarize is now a
+  client-side QUEUE: `bulkLlmRun` ENQUEUES a job (snapshotting its selection at enqueue, so it targets
+  the right articles even after the search changes) + `_bulkPump` runs them ONE AT A TIME (a single CPU
+  model can't run them well in parallel; `if (_bulkActive) return`). A persistent `.bulk-queue` panel
+  (sibling of the config panel, in BOTH the search + analysis surfaces, so it survives the config panel
+  being hidden / the custom-extractor reusing the mount) shows each job (Queued / Running n/N / Done /
+  Cancelled / Stopped) with per-job Cancel + Clear finished. Own AbortController (`_bulkJobAbort`) leaves
+  the custom-extractor's `bulkLlmStop`/`_bulkAbort` untouched. The Start button → "Add to queue"; the
+  panel-level button → "Hide" (never cancels work). test_bulk_translate_summary_runs_are_queued. (2)
+  REORDER — prioritising/moving a download in the task manager didn't visibly move the row (it relied on
+  the backend round-trip + the next poll). Now OPTIMISTIC in BOTH task managers: `jobMove` (in-app, via a
+  new `_paintJobs` render-from-cache split of `_renderJobs`) and `TM.move` (standalone /tasks) renumber
+  the cached queue `queue_position` and REPAINT immediately, THEN POST `/api/jobs/{dumps,osm}/reorder`,
+  THEN `_renderJobs`/`refresh` to reconcile (revert to backend truth on error). Keys/backend were
+  already correct (`_dlKey` == `e['key']`; manager.reorder persists; /api/jobs recomputes queue_position)
+  — the gap was purely the missing instant repaint. test_task_manager_reorder_moves_rows_optimistically.
+  REMAINING: surface the client-side bulk QUEUE in the backend task manager too (only the ACTIVE run is
+  in /api/jobs today); key the new queue strings ×12.
 - **SYNTHESIS REWORK — WINDOW + TRANSPARENT SELECTION + UI-LANGUAGE + EXPORT SHIPPED 2026-06-21
   (maintainer field test, 4 messages; branch claude/keen-lamport-b4t3rh, PR #420; backend
   py_compile-VERIFIED, frontend browser-unverified per fork-3):** answers the maintainer's questions +

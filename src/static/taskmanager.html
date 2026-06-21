@@ -492,13 +492,20 @@
     },
     move: async function (key, dir, kind) {
       var jobs = (_jobs && _jobs.jobs) || [];
-      var q = jobs.filter(function (j) { return j.state === "queued" && j.kind === kind; })
-                  .sort(function (a, b) { return (a.queue_position || 0) - (b.queue_position || 0); }).map(dlKey);
+      var qJobs = jobs.filter(function (j) { return j.state === "queued" && j.kind === kind; })
+                      .sort(function (a, b) { return (a.queue_position || 0) - (b.queue_position || 0); });
+      var q = qJobs.map(dlKey);
       var i = q.indexOf(key);
       if (i < 0 || i + dir < 0 || i + dir >= q.length) return;
       var tmp = q[i]; q[i] = q[i + dir]; q[i + dir] = tmp;
+      // OPTIMISTIC: renumber the cached jobs + repaint NOW so the row visibly moves
+      // immediately (the backend POST + next refresh reconcile it).
+      q.forEach(function (k, idx) {
+        for (var n = 0; n < qJobs.length; n++) { if (dlKey(qJobs[n]) === k) { qJobs[n].queue_position = idx + 1; break; } }
+      });
+      if (_jobs) { renderProcesses(_jobs, window._act); renderQueue(_jobs, window._act); }
       try { await api(reorderEp(kind), { method: "POST", body: JSON.stringify({ keys: q }) }); refresh(); }
-      catch (e) { toast(e.message, "err"); }
+      catch (e) { toast(e.message, "err"); refresh(); }
     }
   };
 

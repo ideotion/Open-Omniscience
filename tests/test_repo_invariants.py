@@ -488,6 +488,26 @@ def test_bulk_translate_summary_runs_are_queued():
     assert "function bulkLlmStop(" in app and "_bulkJobAbort" in app
 
 
+def test_task_manager_reorder_moves_rows_optimistically():
+    """Maintainer field test 2026-06-21: prioritising/moving a download in the task
+    manager must VISUALLY move the row immediately — not wait for the backend round-trip
+    or the next poll. Both task managers (in-app + the standalone /tasks page) renumber
+    the cached queue and REPAINT before the POST, then reconcile."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    # in-app: a paint-from-cache path + jobMove repaints before awaiting the reorder POST
+    assert "function _paintJobs(" in app, "render-from-cache path for an instant move"
+    mv = app[app.index("async function jobMove("):]
+    mv = mv[: mv.index("\n    }")]
+    assert "queue_position = idx + 1" in mv and "_paintJobs()" in mv, "optimistic renumber + repaint"
+    assert mv.index("_paintJobs()") < mv.index("_reorderEndpoint"), "repaint must precede the POST"
+    # standalone /tasks: same — renumber + re-render before the POST
+    tmv = tm[tm.index("move: async function"):]
+    tmv = tmv[: tmv.index("\n    }")]
+    assert "queue_position = idx + 1" in tmv and "renderQueue(_jobs" in tmv
+    assert tmv.index("renderQueue(_jobs") < tmv.index("reorderEp("), "repaint must precede the POST"
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
