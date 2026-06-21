@@ -251,6 +251,78 @@ def _folder_backup_jobs() -> list[dict]:
     ]
 
 
+def _import_jobs() -> list[dict]:
+    """The server-side .eml folder import as a visible job (§2.B). It is a DB-WRITER
+    (kind="import"), so it joins the arbitration set — collecting WHILE importing both
+    write the corpus, serialised by the single-writer gate. Pausable + resumable."""
+    from src.ingest.import_job import get_import_manager
+
+    s = get_import_manager().status()
+    if s["state"] in ("idle", "done") and not s.get("running"):
+        return []
+    state = {"running": "running", "paused": "paused", "error": "failed"}.get(s["state"], s["state"])
+    total = s.get("files_total") or 0
+    prog = (
+        {"done": s.get("files_done", 0), "total": total, "unit": "files", "percent": s.get("percent", 0.0)}
+        if total
+        else None
+    )
+    actions = ["pause", "cancel"] if state == "running" else (["resume", "cancel"] if state in ("paused", "failed") else [])
+    folder = s.get("folder") or "a folder"
+    return [
+        {
+            "id": "newsletter-import",
+            "kind": "import",
+            "label": f"Importing newsletters from {folder}",
+            "state": state,
+            "progress": prog,
+            "eta_seconds": s.get("eta_seconds"),
+            "error": s.get("error"),
+            "actions": actions,
+        }
+    ]
+
+
+def _model_pull_jobs() -> list[dict]:
+    """Model downloads as visible jobs (§2.C1): one active pull, the rest queued.
+    A NETWORK job (clearnet via the Ollama process) — NOT a DB writer. Ollama's pull
+    is not resumable, so the only action is cancel."""
+    from src.llm.pull_queue import get_pull_manager
+
+    s = get_pull_manager().status()
+    jobs: list[dict] = []
+    a = s.get("active")
+    if a:
+        total = a.get("total")
+        jobs.append(
+            {
+                "id": f"model-pull:{a['model']}",
+                "kind": "model-pull",
+                "label": f"Downloading model {a['model']}",
+                "state": "running",
+                "detail": a.get("status"),
+                "progress": (
+                    {"done": a.get("completed") or 0, "total": total, "unit": "bytes",
+                     "percent": a.get("percent", 0.0)}
+                    if total else None
+                ),
+                "actions": ["cancel"],
+            }
+        )
+    for i, m in enumerate(s.get("queue", [])):
+        jobs.append(
+            {
+                "id": f"model-pull:{m}",
+                "kind": "model-pull",
+                "label": f"Model {m}",
+                "state": "queued",
+                "queue_position": i + 1,
+                "actions": ["cancel"],
+            }
+        )
+    return jobs
+
+
 @router.get("/history")
 def jobs_history(limit: int = 20) -> dict:
     """Recent COMPLETED collection passes (the History tab) — newest first, with the
@@ -276,6 +348,8 @@ def list_jobs() -> dict:
     jobs.extend(_dump_jobs())
     jobs.extend(_osm_jobs())
     jobs.extend(_folder_backup_jobs())
+    jobs.extend(_import_jobs())
+    jobs.extend(_model_pull_jobs())
     jobs.extend(_task_jobs())
     f = _live_fetch()
     if f:
@@ -351,6 +425,17 @@ def cancel_job(job_id: str) -> dict:
 
         get_folder_manager().pause()
         return {"cancelled": job_id, "detail": "folder backup paused (resumable from Settings → Data & backup)"}
+    if job_id == "newsletter-import":
+        from src.ingest.import_job import get_import_manager
+
+        get_import_manager().pause()
+        return {"cancelled": job_id, "detail": "newsletter import paused (resumable from Settings → Newsletters)"}
+    if job_id.startswith("model-pull:"):
+        # Ollama's pull is not resumable, so cancel ABORTS the download (queued or active).
+        from src.llm.pull_queue import get_pull_manager
+
+        get_pull_manager().cancel(job_id.split(":", 1)[1])
+        return {"cancelled": job_id, "detail": "model download cancelled"}
     if job_id == "collect:current":
         from src.ingest import activate_kill_switch, kill_switch_active
         from src.scheduler.runner import get_scheduler
@@ -399,4 +484,12 @@ def resume_job(job_id: str) -> dict:
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"resumed": job_id, "detail": "folder backup resumed"}
+    if job_id == "newsletter-import":
+        from src.ingest.import_job import get_import_manager
+
+        try:
+            get_import_manager().resume()
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"resumed": job_id, "detail": "newsletter import resumed"}
     raise HTTPException(status_code=404, detail=f"unknown or unresumable job {job_id!r}")

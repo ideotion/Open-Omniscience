@@ -268,6 +268,56 @@ def remove_imported_newsletters(
     return {"removed": True, **result}
 
 
+# --------------------------------------------------------------------------- #
+# Server-side .eml FOLDER import as a pausable, task-manager-visible job (§2.B):
+# the 20 GB+ case the small-file upload can't handle. Zero network (local disk).
+# --------------------------------------------------------------------------- #
+class FolderImportBody(BaseModel):
+    folder: str
+
+
+@router.post("/newsletters/import-folder")
+def start_folder_import(body: FolderImportBody) -> dict:
+    """Start importing every ``.eml`` under a server-side folder path as a background
+    job (pausable, visible in the task manager). 400 on a bad folder; 409 if one runs."""
+    from src.ingest.import_job import get_import_manager
+
+    try:
+        return get_import_manager().start(body.folder)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/newsletters/import-folder/status")
+def folder_import_status() -> dict:
+    """Live state of the (single) folder-import job — for the UI + /api/jobs."""
+    from src.ingest.import_job import get_import_manager
+
+    return get_import_manager().status()
+
+
+@router.post("/newsletters/import-folder/{action}")
+def folder_import_action(action: str) -> dict:
+    """Pause / resume / cancel the running folder import."""
+    from src.ingest.import_job import get_import_manager
+
+    mgr = get_import_manager()
+    if action == "pause":
+        mgr.pause()
+    elif action == "resume":
+        try:
+            return mgr.resume()
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    elif action == "cancel":
+        mgr.cancel()
+    else:
+        raise HTTPException(status_code=404, detail=f"unknown action {action}")
+    return mgr.status()
+
+
 # A dedicated, FILTERABLE provenance bucket for LIVE mailbox (IMAP/POP3) imports —
 # DISTINCT from the file-.eml bucket so live-vs-file provenance stays separable (the
 # ledger's email-vs-web separability principle). DISABLED: the scheduler never touches

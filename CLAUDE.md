@@ -1034,9 +1034,28 @@ ruling, a contingency, or a deliberate-omission note.
   "Too many files" at ~1300; `import_newsletters` is now `async` + parses the form itself
   (`await request.form(max_files=_MAX_UPLOAD_FILES=5000, max_fields=…)`) with an honest "use the folder
   import for a very large set" 400 above the cap. test_repo_invariants::test_newsletter_import_perf_and_
-  upload_cap. REMAINING (the bigger half of §2.B): the server-side folder-path IMPORT JOB (pausable,
-  task-manager-visible — mirrors the §2.A FolderBackupManager pattern; a DB-writer job taking the
-  single-writer gate), next.
+  upload_cap.
+  **FOLDER-IMPORT JOB SHIPPED 2026-06-21 (§2.B, the bigger half; branch claude/amazing-tesla-z6bwkm,
+  draft PR onto 0.09; backend VERIFIED py3.11, frontend BROWSER-UNVERIFIED per fork-3):** the 20 GB+
+  case the upload can't handle. `src/ingest/import_job.py:NewsletterImportManager` is a pausable,
+  task-manager-visible DB-WRITER job mirroring the §2.A FolderBackupManager: a worker thread enumerates
+  every `.eml` under a SERVER-SIDE folder path, reads them in `_FILE_CHUNK=500` groups (bounds RAM on a
+  20 GB+ folder), and imports each group via the batched `ingest_emails` over a gated `SessionLocal`
+  session — so it takes the SINGLE-WRITER GATE per batch commit and arbitrates with the scrape (kind=
+  "import" joins the `db_writers` set). PAUSE = stop-event (stops between chunks); RESUME is idempotent
+  by construction (content-hash dedup + an in-memory processed-paths set so progress CONTINUES, never
+  re-imports — the resume carries `_done` forward, set BEFORE the worker reads it to avoid a race);
+  honest rule-of-three ETA from files-done/elapsed (only once >0). ZERO network (local disk read).
+  API (`src/api/ingestion.py`): `POST /api/newsletters/import-folder` (400 bad folder / 409 already
+  running) + `/import-folder/status` + `/import-folder/{pause|resume|cancel}`. Surfaced in `/api/jobs`
+  (`_import_jobs`, kind="import", task-manager cancel=resumable pause / resume routed). Frontend: a
+  Settings → Newsletters "Import a whole folder" section (path input + live progress poll + pause/
+  resume). tests/test_newsletter_import_job.py (5: imports a folder, idempotent re-import dedups,
+  resume skips already-done, bad-folder ValueError, status/ETA shape — via a StaticPool in-memory DB so
+  the worker's own session sees the schema) + test_repo_invariants::test_newsletter_folder_import_job.
+  §2.B is now COMPLETE (live-remove + batched commits + upload-cap + the folder-import job). REMAINING:
+  human click-through (fork-3); a persisted cursor so resume survives an app restart (today the in-
+  memory done-set is lost on restart → resume re-scans, dedup-safe but slower); key the panel ×12.
   **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
   importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
   leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional
@@ -1110,9 +1129,12 @@ ruling, a contingency, or a deliberate-omission note.
   (Relevance/recency · Date · Source · Title A–Z · Language) + Order (Desc/Asc) selects; `anParams()`
   appends sort_by/sort_dir (only the Articles list reads them; insights endpoints ignore the extras; the
   card-seeded article_ids path keeps its explicit order). test_repo_invariants::
-  test_advanced_search_sort_by_metadata. REMAINING: the cross-tab "filtered" indicator (when any
-  filter/sort is active, show it on ALL tabs like the active-search-terms chip — a larger cross-cutting
-  frontend change, browser-unverified, next). (g) SHIPPED: the analysis Articles
+  test_advanced_search_sort_by_metadata. FILTERED-INDICATOR SHIPPED 2026-06-21 (browser-unverified):
+  when any filter/sort is active, `anRunAdvanced` shows a "Filtered" scope chip + a summary
+  (`_anFilterSummary`: source/language/date-range/sort) in the analysis window. HONEST REFRAME of the
+  brief's "on ALL tabs": the filters are ANALYSIS-SCOPED (they refine the analysis corpus, not Home/
+  Markets/etc.), so a global chip would mislead — the honest place is the analysis window where the
+  filter applies. test_repo_invariants::test_filtered_indicator_and_tag_autobackfill. (g) SHIPPED: the analysis Articles
   list is PAGINATED — `_anLoadArticles(p,page)` fetches /api/articles by limit+offset (page size 50,
   `total` drives the page count), renders Prev/Next + "Page X of Y" controls BOTH above and below the
   table, loadAnalysis seeds page 0; test_analysis_articles_paginated. PENDING: (h) LLM MODEL DOWNLOAD
@@ -1124,6 +1146,26 @@ ruling, a contingency, or a deliberate-omission note.
   Pull must give immediate visual FEEDBACK; and lift a pulled model OUT of the catalog list INTO a TOP
   section that shows per-model STATUS (Pulling · Queued · Available · Active) + a progress bar. (h)+(h2)
   are one cohesive rework of the Settings → AI subtab + the download queue — build together.
+  **MODEL-DOWNLOAD QUEUE + DOWNLOADS SECTION SHIPPED 2026-06-21 (§2.C; branch claude/amazing-tesla-z6bwkm,
+  draft PR onto 0.09; backend VERIFIED py3.11, frontend BROWSER-UNVERIFIED per fork-3):** (C1, the queue)
+  `src/llm/pull_queue.py:ModelPullManager` — pulls run ONE AT A TIME via a single pump thread; the rest
+  QUEUE. Each is cancellable: a queued model is removed, the ACTIVE pull is ABORTED (Ollama's /api/pull
+  is NOT resumable, so cancel — never a fabricated pause/resume; invariant #20). Wraps the existing
+  `OllamaClient.pull` generator (honest real bytes: status/total/completed/percent); the client is
+  injectable for tests. Bad model names rejected (charset + no `..`). API (`src/api/llm.py`): `POST
+  /pull/queue` (enqueue) + `GET /pull/status` (active+queue+history) + `POST /pull/cancel`; the old
+  streaming `/pull` stays for the single path (Desk lesson). Surfaced in `/api/jobs` (`_model_pull_jobs`,
+  kind="model-pull" = a NETWORK job not a DB-writer; active=running+progress, queued with positions;
+  task-manager cancel routed). (C2, the AI tab) `pullModel` now ENQUEUES with INSTANT feedback ("Queued
+  …") instead of a frozen streaming button, and a new top `#llm-downloads` section polls `/pull/status`
+  to show the active pull (Pulling + a `<progress>` bar + status%) + the queued models, each with a
+  Cancel button; when the queue drains it refreshes the installed list (a finished pull appears as
+  Available/Active) and stops polling. tests/test_model_pull_queue.py (5: one-at-a-time + order,
+  cancel-queued, cancel-active-aborts, bad-name, idempotent-enqueue/status — via an injected fake client
+  with a release event for deterministic active/cancel timing) + test_repo_invariants::
+  test_model_download_queue. REMAINING: human click-through (fork-3); the installed/catalog table
+  COMPACTION polish (it's already tabular; the queue+status section was the load-bearing C2 ask); key the
+  new strings ×12.
 - **BULK LLM TOOLS — UNCAPPED + SKIP-SAME-LANGUAGE + TO-DO COUNT SHIPPED 2026-06-20 (maintainer field
   test; branch claude/keen-lamport-b4t3rh, PR #420; backend py_compile-VERIFIED, frontend browser-
   unverified):** (i) bulk summarize/translate (`/api/llm/bulk`) AND the AI extractor (`/api/ai/
@@ -3763,6 +3805,23 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD-TEST FOLLOW-UP BATCH 3 (2026-06-21, branch claude/amazing-tesla-z6bwkm, draft PR #427 onto
+  0.09 — the maintainer asked to "continue until the end / address EVERY item"; finishes the brief's
+  build queue):** per-item shipped notes live in their own ledger entries; this is the roll-up.
+  SHIPPED: §2.B FOLDER-IMPORT JOB (pausable DB-writer, reuses batched ingest_emails — entry above) ·
+  §2.C MODEL-DOWNLOAD QUEUE + AI-tab downloads section (entry above) · §2.D FILTERED-INDICATOR (analysis-
+  scoped chip — entry above) · §3.H one-time silent baseline-tag AUTO-BACKFILL when the Keywords explorer
+  opens empty (auto-index #21 pattern; `_kxAutoBackfilled` guard, local/idempotent/no-network; the
+  explicit "Apply baseline tags" button stays) · §4 i18n TAIL (26 new this-session strings keyed ×12 —
+  folder-backup/restore + newsletter-remove + folder-import + model-downloads + the filtered indicator;
+  non-en AI-drafted, FLAGGED for native review; gate 1537 ×12 = 100%). VERIFIED-NO-CHANGE: §3.G month
+  vocab already complete for all 12 UI locales (only zh/ja missing = the deferred CJK segmentation; no
+  safe speculative stopword additions without the maintainer's exported log) · §3.I polling backoff
+  already engaged everywhere (`_adaptivePoll` on both chrome polls + the /tasks `loop()` adaptive).
+  Backends VERIFIED py3.11 (import-job + pull-queue tests); all frontend BROWSER-UNVERIFIED per fork-3.
+  REMAINING (genuine polish/focused-session work): persisted import cursor across app restart; the
+  installed/catalog table COMPACTION; human click-through across the new surfaces; key any longer
+  English-fallback panel paragraphs.
 - **TRENDING COVERING INDEX (brief §3.E, the #1 perf hotspot; branch claude/amazing-tesla-z6bwkm,
   draft PR onto 0.09; backend VERIFIED py3.11):** `/api/insights/trending-windows` (~20s idle / ~98s
   under load, polled from Home) is observed_on-WINDOWED, so the corpus-wide keyword counters can't

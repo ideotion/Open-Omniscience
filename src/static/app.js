@@ -1119,14 +1119,14 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
-      if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); }  // LLM-management subtab (Q6) — also re-check the pill
+      if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); }  // LLM-management subtab (Q6) — also re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       if (cat === "data") { modelsBackupStatus(); _fbStartPoll(); }  // models backup + the large-data folder backup (§2.A)
-      if (cat === "newsletters") loadNewsletterRemoveCount();  // show the remove panel only when there's something to remove
+      if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
     }
     function buildDrawer() {
       const ui = getUi();
@@ -2921,44 +2921,56 @@
     // Pull a model: a NETWORK action over CLEARNET via the Ollama process (NOT this
     // app's Tor proxy), so it passes the ONE consent popup (ensureOnline, invariant
     // #14) and is refused under airplane mode (the backend OllamaClient enforces the
-    // kill switch too). Streams Ollama's REAL NDJSON progress (invariant #20 — never
-    // a fabricated bar); degrades to a status line, never throws.
+    // kill switch too). §2.C1: pulls are QUEUED (one at a time) + visible in the task
+    // manager — clicking Pull enqueues + gives instant feedback, never a frozen button.
+    let _llmPullPoll = null;
     async function pullModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!tag) return;
       if (!await ensureOnline(t("Pull a local model (downloads over the clear internet via Ollama)"))) return;
       const prog = $("llm-pull-progress");
-      if (prog) prog.textContent = t("Starting…") + " " + tag;
+      if (prog) prog.textContent = t("Queued") + " " + tag + "…";  // instant feedback
       try {
-        const resp = await fetch("/api/llm/pull", {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({model: tag}),
-        });
-        if (!resp.ok || !resp.body) {
-          if (prog) prog.textContent = t("Pull failed.") + " (" + resp.status + ")";
-          return;
-        }
-        const reader = resp.body.getReader();
-        const dec = new TextDecoder();
-        let buf = "";
-        for (;;) {
-          const {done, value} = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, {stream: true});
-          const lines = buf.split("\n");
-          buf = lines.pop();   // keep the partial last line for the next chunk
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            let o; try { o = JSON.parse(line); } catch { continue; }
-            if (o.error) { if (prog) prog.textContent = t("Pull failed:") + " " + o.error; return; }
-            const pct = (o.total && o.completed) ? " — " + Math.round(100 * o.completed / o.total) + "%" : "";
-            if (prog) prog.textContent = tag + ": " + (o.status || "") + pct;
-          }
-        }
-        if (prog) prog.textContent = t("Pulled") + " " + tag;
+        await api("/api/llm/pull/queue", {method: "POST", body: JSON.stringify({model: tag})});
         const el = $("llm-pull-tag"); if (el) el.value = "";
-        loadLlmModels();
+        _llmPullStartPoll();
       } catch (e) { if (prog) prog.textContent = t("Pull failed:") + " " + e.message; }
+    }
+    async function cancelPull(model) {
+      try { await api("/api/llm/pull/cancel", {method: "POST", body: JSON.stringify({model})}); _llmPullRefresh(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    function _llmPullStartPoll() {
+      if (_llmPullPoll) clearInterval(_llmPullPoll);
+      _llmPullRefresh();
+      _llmPullPoll = setInterval(_llmPullRefresh, 1500);
+    }
+    async function _llmPullRefresh() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("llm-downloads"); if (!box) return;
+      let s;
+      try { s = await api("/api/llm/pull/status"); } catch (e) { return; }
+      const active = s.active, queue = s.queue || [];
+      if (!active && !queue.length) {
+        box.style.display = "none"; box.innerHTML = "";
+        if (_llmPullPoll) { clearInterval(_llmPullPoll); _llmPullPoll = null; loadLlmModels(); }  // a finished pull now shows as installed
+        return;
+      }
+      let html = `<h3 style="margin:0 0 6px">${esc(t("Downloads"))}</h3>`;
+      if (active) {
+        const pct = active.percent || 0;
+        html += `<div class="row" style="align-items:center;gap:8px;margin-bottom:4px">` +
+          `<code>${esc(active.model)}</code> <span class="pill">${esc(t("Pulling"))}</span> ` +
+          `<span class="muted">${esc(active.status || "")} ${pct}%</span>` +
+          `<button class="tiny danger" onclick="cancelPull(${esc(JSON.stringify(active.model))})">${esc(t("Cancel"))}</button></div>` +
+          `<progress value="${pct}" max="100" style="width:100%"></progress>`;
+      }
+      for (const m of queue) {
+        html += `<div class="row" style="align-items:center;gap:8px;margin-top:4px">` +
+          `<code>${esc(m)}</code> <span class="pill muted">${esc(t("Queued"))}</span>` +
+          `<button class="tiny secondary" onclick="cancelPull(${esc(JSON.stringify(m))})">${esc(t("Cancel"))}</button></div>`;
+      }
+      box.innerHTML = html; box.style.display = "";
     }
 
     // --- LLM behaviour & prompts (Settings → Models) --------------------------- //
@@ -3332,6 +3344,53 @@
     }
 
     // -- Remove imported newsletters (the "replace the faulty ones" loop) ------ //
+    // -- Server-side .eml FOLDER import as a pausable job (§2.B; 20 GB+ sets) ---- //
+    let _nlImportPoll = null;
+    async function startFolderImport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const folder = ($("nl-folder").value || "").trim();
+      if (!folder) { toast(t("Enter a folder path on this machine."), "warn"); return; }
+      btn.disabled = true;
+      try {
+        await api("/api/newsletters/import-folder", { method: "POST", body: JSON.stringify({ folder }) });
+        _folderImportStartPoll();
+      } catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
+    }
+    async function folderImportAction(action, btn) {
+      btn.disabled = true;
+      try { await api("/api/newsletters/import-folder/" + action, { method: "POST" }); _folderImportRefresh(); }
+      catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
+    }
+    function _folderImportStartPoll() {
+      if (_nlImportPoll) clearInterval(_nlImportPoll);
+      _folderImportRefresh();
+      _nlImportPoll = setInterval(_folderImportRefresh, 1500);
+    }
+    async function _folderImportRefresh() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prog = $("nl-folder-progress"); if (!prog) return;
+      let s;
+      try { s = await api("/api/newsletters/import-folder/status"); } catch (e) { return; }
+      const active = s.state === "running" || s.state === "paused";
+      if (!active && _nlImportPoll) { clearInterval(_nlImportPoll); _nlImportPoll = null; }
+      $("nl-folder-controls").style.display = active ? "" : "none";
+      if ($("nl-folder-pause")) $("nl-folder-pause").style.display = s.state === "running" ? "" : "none";
+      if ($("nl-folder-resume")) $("nl-folder-resume").style.display = s.state === "paused" ? "" : "none";
+      const tl = s.tally || {};
+      const eta = (s.eta_seconds != null) ? ` · ~${Math.max(1, Math.round(s.eta_seconds / 60))} ${t("min left")}` : "";
+      if (active) {
+        prog.innerHTML = `${esc(t("Importing"))}… ${s.percent || 0}% (${s.files_done}/${s.files_total}) · ` +
+          `${(tl.stored || 0)} ${esc(t("imported"))}, ${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}` +
+          (s.state === "paused" ? ` (${esc(t("paused"))})` : eta);
+      } else if (s.state === "done") {
+        prog.innerHTML = `<b>${esc(t("Done."))}</b> ${(tl.stored || 0)} ${esc(t("imported"))}, ` +
+          `${(tl.duplicate || 0)} ${esc(t("duplicates skipped"))}.`;
+        if (typeof loadNewsletterRemoveCount === "function") loadNewsletterRemoveCount();
+      } else if (s.state === "error") {
+        prog.innerHTML = `<span class="note err">${esc(s.error || t("failed"))}</span>`;
+      } else { prog.textContent = ""; }
+    }
+
     // Restore is additive-only, so excluding newsletters from a backup never purges
     // the live corpus — this action does. The panel shows only when there's something
     // to remove; removal needs an explicit confirm and nudges "back up first".
@@ -6426,6 +6485,7 @@
     }
 
     // -- Keyword explorer (Item AC: explore by tag, hide, apply baseline tags) ---- //
+    let _kxAutoBackfilled = false;
     async function loadKeywordExplorer() {
       const box = $("kx-facets");
       if (!box) return;
@@ -6433,6 +6493,15 @@
       $("kx-keywords").innerHTML = "";
       try {
         const f = await api("/api/insights/keyword-tags/facets");
+        // §3.H: tagging at ingest is forward-only, so a pre-existing corpus shows no
+        // tags until a backfill runs. Auto-apply the baseline tags ONCE (silent, local,
+        // idempotent — the auto-index #21 pattern) when the explorer opens empty.
+        const empty = (f.axes || ["type", "topic"]).every(ax => !((f.facets && f.facets[ax]) || []).length);
+        if (empty && !_kxAutoBackfilled) {
+          _kxAutoBackfilled = true;
+          try { await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"}); } catch (e) {}
+          return loadKeywordExplorer();  // re-render with the freshly applied tags (guard prevents a loop)
+        }
         box.innerHTML = (f.axes || ["type", "topic"]).map(ax => {
           const tags = (f.facets && f.facets[ax]) || [];
           const chips = tags.length ? tags.map(t =>
@@ -9693,6 +9762,20 @@
     }
     // Advanced tab: refine the ACTIVE tab in-place (updates its seed, never spawns a
     // new tab). loadAnalysis re-runs EVERY subtab from the params.
+    // The active filters/sort, summarised — so the corpus SCOPE is always visible in
+    // the analysis window (§2.D; the filters are analysis-scoped, so the honest place
+    // for the indicator is here, not a misleading app-wide chip).
+    function _anFilterSummary() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const parts = [];
+      const src = ($("an-adv-source").value || "").trim(); if (src) parts.push(t("source") + ": " + src);
+      const lang = ($("an-adv-lang").value || "").trim(); if (lang) parts.push(t("language") + ": " + lang);
+      const from = $("an-adv-from").value, to = $("an-adv-to").value;
+      if (from || to) parts.push((from || "…") + " → " + (to || "…"));
+      const sb = $("an-adv-sort") && $("an-adv-sort").value;
+      if (sb) parts.push(t("sorted") + ": " + sb + " " + (($("an-adv-dir") && $("an-adv-dir").value) === "asc" ? "↑" : "↓"));
+      return parts;
+    }
     function anRunAdvanced() {
       _anIds = null;   // refining via Advanced search replaces any fixed article set
       _anCommodity = null;   // a refined search is no longer the commodity overlay
@@ -9708,7 +9791,10 @@
         _anRenderStrip(); _anSaveTabs();
       }
       $("an-query").textContent = q ? `“${q}”` : "(all articles matching your filters)";
-      $("an-adv-note").textContent = tt("Analysis updated — see the other tabs.");
+      const fs = _anFilterSummary();
+      $("an-adv-note").innerHTML = fs.length
+        ? `<span class="pill">${esc(tt("Filtered"))}</span> ${fs.map(esc).join(" · ")}`
+        : tt("Analysis updated — see the other tabs.");
       loadAnalysis(anParams());
     }
     function anSelectTab(key) {
