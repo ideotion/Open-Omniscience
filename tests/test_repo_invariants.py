@@ -3108,10 +3108,13 @@ def test_task_manager_status_bar_and_sessions(monkeypatch=None):
     picker + help; the Up-next list is a full vertical list; History is reframed
     as 'online sessions'; Performance adapts to window size (auto-fit grid)."""
     tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
-    # status bar: airplane control + language select (i18n auto-wires #oo-lang-select) + help
+    # Status bar: now IDENTICAL to the app's top bar (maintainer 2026-06-20) — the same
+    # header.topbar markup (omni search + health/LLM pills + airplane + language flag + help).
     assert 'id="tm-status"' in tm, "the status bar must exist"
-    assert 'id="tm-air"' in tm and "function paintAir()" in tm, "the airplane control must exist"
-    assert 'id="oo-lang-select"' in tm and "TM_LANGS" in tm, "a language picker with the 12 locales"
+    assert 'class="topbar"' in tm and 'class="omni"' in tm, "the app's top-bar markup is reused"
+    assert 'id="net-toggle"' in tm and "function paintAir()" in tm, "the airplane control must exist"
+    assert 'id="lang-switch"' in tm and 'id="lang-menu"' in tm and "TM_LANGS" in tm, "the app's language flag menu"
+    assert 'id="health"' in tm and 'id="llm"' in tm, "the health + LLM pills mirror the app"
     assert 'id="tm-help"' in tm, "a help affordance must exist (minus search)"
     # Up-next is a full vertical list (not a chip cloud)
     assert '<ol class="tm-upnext">' in tm, "Up-next must render as a full vertical list"

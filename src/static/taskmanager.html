@@ -112,22 +112,36 @@
 </style>
 </head>
 <body>
-  <div class="tm-head">
-    <!-- the canonical ASCII eye (invariant #5): pointed-oval + grid iris -->
-    <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3.2"/>
-    </svg>
-    <h1 data-i18n>Task manager</h1>
-    <!-- Status bar (P2-12): the SPA top-bar controls MINUS search — airplane,
-         language, help. Engaging airplane is the safe direction (no consent);
-         going ONLINE routes back to the app where the ONE consent popup lives. -->
-    <div class="tm-status" id="tm-status">
-      <button class="tm-sbtn" id="tm-air" type="button" title="Network mode" aria-label="Network mode">✈</button>
-      <select class="tm-sel" id="oo-lang-select" aria-label="Language" title="Language"></select>
-      <a class="tm-sbtn" id="tm-help" href="/#help" title="Help" aria-label="Help">?</a>
+  <!-- Status bar: IDENTICAL to the main app's top bar (maintainer 2026-06-20) — the
+       SAME header.topbar markup + app.css classes (omni search, health + LLM pills,
+       airplane, language flag menu, help). No hamburger (no sidebar here) and no
+       task-manager button (this IS the task manager). Omni + help route into the app;
+       going ONLINE still routes to the app, where the ONE consent popup lives. -->
+  <header class="topbar">
+    <div class="omni" id="tm-omni" role="button" tabindex="0"
+         title="Search everything — articles, dates, locations, settings, etc."
+         aria-label="Search everything — articles, dates, locations, settings, etc.">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    </div>
+    <div class="status-cluster" id="tm-status">
+      <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
+      <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
       <span class="muted" id="tm-conn" data-i18n>Live</span>
     </div>
-  </div>
+    <button class="icon-btn" id="net-toggle" type="button" data-i18n-dyn
+      title="Airplane mode — filled means offline: every new network request is refused instantly."
+      aria-label="Airplane mode (network on/off)">
+      <svg id="net-plane" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+           stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></button>
+    <button class="icon-btn" id="lang-switch" type="button" title="Change language"
+            aria-label="Change language" aria-haspopup="menu" style="min-width:64px;gap:5px">
+      <span id="lang-flag" aria-hidden="true">🌐</span><span id="lang-code" style="font-size:12px;letter-spacing:.4px"></span>
+    </button>
+    <a class="icon-btn" id="tm-help" href="/#help" title="Help &amp; documentation" aria-label="Help and documentation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.3 2.4c-.8.3-1.3 1-1.3 1.8v.3"/><path d="M12 17h.01"/></svg></a>
+  </header>
+  <div id="lang-menu" role="menu" hidden
+       style="position:fixed;z-index:300;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:70vh;overflow:auto"></div>
   <!-- Always-visible resource summary (state + CPU/RAM/↓/jobs) -->
   <div class="tm-summary" id="tm-summary"></div>
   <nav class="tm-tabs" id="tm-tabs" role="tablist">
@@ -528,51 +542,108 @@
     });
   }
 
-  // ---- status bar (P2-12): language picker + airplane control ---- //
-  // The 12 UI locales (code, native name — the native name is the identifier,
-  // invariant #15; the flag stays in the SPA's richer picker). The i18n engine
-  // auto-wires #oo-lang-select (sets value + a change->setLang listener); we only
-  // populate the options + apply the saved language.
+  // ---- status bar: IDENTICAL to the app's top bar (maintainer 2026-06-20) ---- //
+  // The 12 UI locales as [code, flag, native] — native name is the identifier
+  // (invariant #15), the flag a visual cue. A flag button + popup menu mirrors the
+  // app's #lang-switch; picking one calls OOI18N.setLang (the i18n engine translates).
   var TM_LANGS = [
-    ["en", "English"], ["fr", "Français"], ["es", "Español"], ["de", "Deutsch"],
-    ["zh", "中文"], ["hi", "हिन्दी"], ["ar", "العربية"], ["bn", "বাংলা"],
-    ["ru", "Русский"], ["pt", "Português"], ["id", "Bahasa Indonesia"], ["ja", "日本語"]
+    ["en", "🇬🇧", "English"], ["fr", "🇫🇷", "Français"], ["es", "🇪🇸", "Español"], ["de", "🇩🇪", "Deutsch"],
+    ["zh", "🇨🇳", "中文"], ["hi", "🇮🇳", "हिन्दी"], ["ar", "🇸🇦", "العربية"], ["bn", "🇧🇩", "বাংলা"],
+    ["ru", "🇷🇺", "Русский"], ["pt", "🇵🇹", "Português"], ["id", "🇮🇩", "Bahasa Indonesia"], ["ja", "🇯🇵", "日本語"]
   ];
-  (function initLangSelect() {
-    var sel = $("oo-lang-select"); if (!sel) return;
-    sel.innerHTML = TM_LANGS.map(function (l) {
-      return '<option value="' + l[0] + '">' + esc(l[1]) + "</option>";
+  function _langCur() { try { return (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; } catch (e) { return "en"; } }
+  function _paintLangButton() {
+    var row = TM_LANGS.filter(function (l) { return l[0] === _langCur(); })[0] || TM_LANGS[0];
+    var f = $("lang-flag"), k = $("lang-code");
+    if (f) f.textContent = row[1];
+    if (k) k.textContent = row[0].toUpperCase();
+  }
+  function toggleLangMenu(ev) {
+    ev.stopPropagation();
+    var menu = $("lang-menu"); if (!menu) return;
+    if (!menu.hidden) { menu.hidden = true; return; }
+    var cur = _langCur();
+    menu.innerHTML = TM_LANGS.map(function (l) {
+      var on = l[0] === cur;
+      return '<div role="menuitem" tabindex="0" data-lang="' + l[0] + '"' +
+        ' style="display:flex;align-items:center;gap:9px;padding:7px 12px;border-radius:7px;cursor:pointer' + (on ? ";font-weight:700" : "") + '"' +
+        " onmouseover=\"this.style.background='var(--line)'\" onmouseout=\"this.style.background=''\">" +
+        '<span aria-hidden="true">' + l[1] + "</span><span>" + esc(l[2]) + "</span>" +
+        (on ? '<span style="margin-inline-start:auto">✓</span>' : "") + "</div>";
     }).join("");
-    var cur = "en";
-    try { cur = (window.OOI18N && OOI18N.current && OOI18N.current()) || localStorage.getItem("oo.lang") || "en"; } catch (e) { /* default en */ }
-    sel.value = cur;   // i18n.js' init also syncs this + adds the change listener
+    Array.prototype.forEach.call(menu.children, function (d) {
+      d.addEventListener("click", function () { pickLang(d.getAttribute("data-lang")); });
+    });
+    var r = $("lang-switch").getBoundingClientRect(), rtl = document.documentElement.dir === "rtl";
+    menu.style.top = (r.bottom + 6) + "px";
+    menu.style.left = rtl ? r.left + "px" : "";
+    menu.style.right = rtl ? "" : (window.innerWidth - r.right) + "px";
+    menu.hidden = false;
+    var closer = function (e) { if (!menu.contains(e.target)) { menu.hidden = true; document.removeEventListener("click", closer, true); } };
+    document.addEventListener("click", closer, true);
+  }
+  async function pickLang(code) {
+    var menu = $("lang-menu"); if (menu) menu.hidden = true;
+    try { if (window.OOI18N && OOI18N.setLang) await OOI18N.setLang(code); } catch (e) {}
+    _paintLangButton();
+  }
+  (function wireChrome() {
+    var ls = $("lang-switch"); if (ls) ls.addEventListener("click", toggleLangMenu);
+    var o = $("tm-omni");      // the search bar routes to the app (search/palette live there)
+    if (o) {
+      var go = function () { location.href = "/"; };
+      o.addEventListener("click", go);
+      o.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    }
+    _paintLangButton();
   })();
   // Airplane: ENGAGING airplane is the safe direction (no consent) and can happen
   // from anywhere; GOING ONLINE crosses the network and must pass the ONE consent
   // popup, which lives in the app — so when offline the button routes back to "/".
-  // The button's state is repainted by renderSummary from /api/scheduler/activity.
+  // State repainted by renderSummary from /api/scheduler/activity; the plane glyph
+  // FILLS when offline (invariant #14), exactly like the app.
   var _tmOnline = null;
   function paintAir() {
-    var b = $("tm-air"); if (!b) return;
+    var b = $("net-toggle"), plane = $("net-plane"); if (!b) return;
     if (_tmOnline === false) {
-      b.className = "tm-sbtn off"; b.textContent = "✈";
-      b.title = t("Airplane mode — engaged. Click to go online in the app (you'll be asked to confirm).");
-    } else if (_tmOnline === true) {
-      b.className = "tm-sbtn on"; b.textContent = "✈";
-      b.title = t("Online. Click to go offline (airplane mode) — stops all collection.");
-    } else { b.className = "tm-sbtn"; b.title = t("Network mode"); }
+      if (plane) plane.setAttribute("fill", "currentColor");
+      b.style.color = "var(--err)";
+      b.title = t("Offline (airplane mode) — click to go online in the app; you'll be asked to confirm first.");
+    } else {
+      if (plane) plane.setAttribute("fill", "none");
+      b.style.color = "";
+      b.title = t("Online — click to go offline (airplane mode); stops all collection.");
+    }
   }
   (function wireAir() {
-    var b = $("tm-air"); if (!b) return;
+    var b = $("net-toggle"); if (!b) return;
     b.addEventListener("click", async function () {
       if (_tmOnline === false) { location.href = "/"; return; }   // go online → the app's consent popup
-      // online (or unknown) → engage airplane directly (safe, no socket opens)
       try { await api("/api/system/network", { method: "POST", body: JSON.stringify({ online: false }) }); _tmOnline = false; paintAir(); refresh(); }
       catch (e) { toast(e.message, "err"); }
     });
   })();
+  // The health + LLM pills mirror the app's (the LLM pill reads "<N> LLM"; both route
+  // into the app on click — health/LLM management live there).
+  async function loadHealth() {
+    var el = $("health"); if (!el) return;
+    try { var h = await api("/api/health"); var ok = h && (h.status === "ok" || h.ok === true || h.healthy === true);
+      el.innerHTML = '<span class="dot"></span> ' + esc(ok ? t("healthy") : t("degraded"));
+    } catch (e) { el.innerHTML = '<span class="dot"></span> ' + esc(t("offline")); }
+  }
+  async function loadLlm() {
+    var el = $("llm"); if (!el) return;
+    el.style.cursor = "pointer"; el.onclick = function () { location.href = "/"; };
+    try { var h = await api("/api/llm/health");
+      if (h && h.available) { el.className = "pill ok"; el.textContent = (h.installed_models ? h.installed_models.length : 0) + " LLM"; }
+      else { el.className = "pill warn"; el.textContent = t("LLM offline"); }
+    } catch (e) { el.className = "pill"; el.textContent = "LLM —"; }
+  }
 
   applyLang();
+  _paintLangButton();
+  loadHealth(); loadLlm();
+  setInterval(function () { loadHealth(); loadLlm(); }, 15000);  // health/LLM poll, low-frequency
   selectPanel("processes");
   loop();
 })();

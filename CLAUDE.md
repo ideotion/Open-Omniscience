@@ -1030,11 +1030,18 @@ ruling, a contingency, or a deliberate-omission note.
   text (.ph span), kept the magnifier + the keyed aria-label. (d) SHIPPED: the Advanced-search
   language field is now a <select> of FULL language names + flags (built from LANGS_12 in JS so the
   autonyms stay native per #15; +1 i18n key "Any language" ×12; test_advanced_search_language_is_a_flag_dropdown).
-  PENDING (this batch, building next): (c) move ALL facet subtabs (the ooSubtabs nav.tabs across
-  Insights/Settings/markets/agenda/analysis/task-manager/corpus) to a strip JUST UNDER the status
-  bar at the top of the screen (UI-rethink item 1/B: status bar → full-width facet-subtab strip →
-  sidebar + content); (e) the standalone task-manager (/tasks taskmanager.html) top/status bar must
-  be IDENTICAL to the main app's.
+  (e) SHIPPED: the standalone task-manager (/tasks) status bar is now the SAME header.topbar markup
+  as the app (omni search + health/LLM pills + airplane plane-glyph with FILL=offline + language flag
+  menu + help), reusing app.css; the old bespoke .tm-head/✈/select bar is gone; omni/help/go-online
+  route into the app (the ONE consent popup lives there); test_task_manager_status_bar_and_sessions
+  updated to the app-identical bar. PENDING (this batch, building next): (c) move ALL facet subtabs
+  (the ooSubtabs nav.tabs across Insights/Settings/markets/agenda/analysis/task-manager/corpus) to a
+  strip JUST UNDER the status bar at the top of the screen (UI-rethink item 1/B: status bar →
+  full-width facet-subtab strip → sidebar + content); (f) ADVANCED-SEARCH SORTING + FILTERING by
+  METADATA (maintainer 2026-06-20, "important" — enables thinner corpus creation): sort/filter
+  articles per language · per date · per source · alphabetically · broadly per-metadata, AND when any
+  filter is active show a "filtered" indicator on ALL tabs (same convention as the active search-terms
+  indicator) so the corpus scope is always visible.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features
