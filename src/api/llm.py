@@ -346,6 +346,37 @@ def llm_pull(req: ModelRequest, client: OllamaClient = Depends(get_llm_client)):
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
 
+# Model-download QUEUE (§2.C1): pulls run one at a time, the rest queue, each
+# cancellable. The streaming /pull above stays for the single-pull path; the queue
+# is the multi-pull path surfaced in the task manager.
+@router.post("/pull/queue")
+def llm_pull_queue(req: ModelRequest) -> dict:
+    """Add a model to the pull queue (one active pull at a time). The frontend gates
+    this through the ONE network consent first (clearnet egress via Ollama, Q9)."""
+    from src.llm.pull_queue import get_pull_manager
+
+    try:
+        return get_pull_manager().enqueue(req.model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/pull/status")
+def llm_pull_status() -> dict:
+    """The active pull + queued models + recent history (for the AI tab + /api/jobs)."""
+    from src.llm.pull_queue import get_pull_manager
+
+    return get_pull_manager().status()
+
+
+@router.post("/pull/cancel")
+def llm_pull_cancel(req: ModelRequest) -> dict:
+    """Cancel a queued model (removed) or the active pull (aborted — not resumable)."""
+    from src.llm.pull_queue import get_pull_manager
+
+    return get_pull_manager().cancel(req.model)
+
+
 @router.post("/remove")
 def llm_remove(req: ModelRequest, client: OllamaClient = Depends(get_llm_client)) -> dict:
     """Remove an installed model via the LOCAL Ollama process."""

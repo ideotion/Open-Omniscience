@@ -1143,6 +1143,26 @@ ruling, a contingency, or a deliberate-omission note.
   Pull must give immediate visual FEEDBACK; and lift a pulled model OUT of the catalog list INTO a TOP
   section that shows per-model STATUS (Pulling · Queued · Available · Active) + a progress bar. (h)+(h2)
   are one cohesive rework of the Settings → AI subtab + the download queue — build together.
+  **MODEL-DOWNLOAD QUEUE + DOWNLOADS SECTION SHIPPED 2026-06-21 (§2.C; branch claude/amazing-tesla-z6bwkm,
+  draft PR onto 0.09; backend VERIFIED py3.11, frontend BROWSER-UNVERIFIED per fork-3):** (C1, the queue)
+  `src/llm/pull_queue.py:ModelPullManager` — pulls run ONE AT A TIME via a single pump thread; the rest
+  QUEUE. Each is cancellable: a queued model is removed, the ACTIVE pull is ABORTED (Ollama's /api/pull
+  is NOT resumable, so cancel — never a fabricated pause/resume; invariant #20). Wraps the existing
+  `OllamaClient.pull` generator (honest real bytes: status/total/completed/percent); the client is
+  injectable for tests. Bad model names rejected (charset + no `..`). API (`src/api/llm.py`): `POST
+  /pull/queue` (enqueue) + `GET /pull/status` (active+queue+history) + `POST /pull/cancel`; the old
+  streaming `/pull` stays for the single path (Desk lesson). Surfaced in `/api/jobs` (`_model_pull_jobs`,
+  kind="model-pull" = a NETWORK job not a DB-writer; active=running+progress, queued with positions;
+  task-manager cancel routed). (C2, the AI tab) `pullModel` now ENQUEUES with INSTANT feedback ("Queued
+  …") instead of a frozen streaming button, and a new top `#llm-downloads` section polls `/pull/status`
+  to show the active pull (Pulling + a `<progress>` bar + status%) + the queued models, each with a
+  Cancel button; when the queue drains it refreshes the installed list (a finished pull appears as
+  Available/Active) and stops polling. tests/test_model_pull_queue.py (5: one-at-a-time + order,
+  cancel-queued, cancel-active-aborts, bad-name, idempotent-enqueue/status — via an injected fake client
+  with a release event for deterministic active/cancel timing) + test_repo_invariants::
+  test_model_download_queue. REMAINING: human click-through (fork-3); the installed/catalog table
+  COMPACTION polish (it's already tabular; the queue+status section was the load-bearing C2 ask); key the
+  new strings ×12.
 - **BULK LLM TOOLS — UNCAPPED + SKIP-SAME-LANGUAGE + TO-DO COUNT SHIPPED 2026-06-20 (maintainer field
   test; branch claude/keen-lamport-b4t3rh, PR #420; backend py_compile-VERIFIED, frontend browser-
   unverified):** (i) bulk summarize/translate (`/api/llm/bulk`) AND the AI extractor (`/api/ai/

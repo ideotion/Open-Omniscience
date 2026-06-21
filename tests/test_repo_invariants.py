@@ -595,6 +595,25 @@ def test_remove_imported_newsletters_live_action():
     assert "/api/newsletters/remove-imported" in app
 
 
+def test_model_download_queue():
+    """Brief §2.C1: model pulls are a QUEUED, task-manager-visible job (one active, the
+    rest queue, each cancellable — Ollama's pull is not resumable so cancel, not pause).
+    The AI tab enqueues with instant feedback + a live downloads/status section."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    llm = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
+    jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
+    mgr = (_SRC / "llm" / "pull_queue.py").read_text(encoding="utf-8")
+    assert "class ModelPullManager" in mgr and "def enqueue(" in mgr and "def cancel(" in mgr
+    # one active pull at a time (a single pump thread)
+    assert 'name="model-pull"' in mgr
+    assert '"/pull/queue"' in llm and '"/pull/status"' in llm and '"/pull/cancel"' in llm
+    assert "def _model_pull_jobs(" in jobs and '"model-pull:"' in jobs
+    # UI: enqueue (instant feedback) + the downloads section
+    assert 'id="llm-downloads"' in html
+    assert "/api/llm/pull/queue" in app and "function _llmPullRefresh(" in app
+
+
 def test_newsletter_folder_import_job():
     """Brief §2.B: a SERVER-SIDE .eml FOLDER import runs as a pausable, task-manager-
     visible DB-writer job (the 20 GB+ case the upload can't handle). Reuses the batched
