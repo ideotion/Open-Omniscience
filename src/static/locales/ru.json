@@ -1511,5 +1511,9 @@
   "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "Виртуальное окружение и ярлыки рабочего стола удаляются всегда; уйдут ли также папка приложения и ваши данные, зависит от режима. Можно также запустить в терминале: ./install.sh --uninstall",
   "The app is shutting down — you can close this tab.": "Приложение завершает работу — можно закрыть эту вкладку.",
   "Open Omniscience has been uninstalled and the app has stopped. You can close this window.": "Open Omniscience удалён, приложение остановлено. Можно закрыть это окно.",
-  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "Завершить работу приложения? Сервер остановится, и его нужно будет запустить заново. Ваши данные не затрагиваются."
+  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "Завершить работу приложения? Сервер остановится, и его нужно будет запустить заново. Ваши данные не затрагиваются.",
+  "Relevance / recency": "Релевантность / новизна",
+  "Title (A–Z)": "Заголовок (А–Я)",
+  "Descending": "По убыванию",
+  "Ascending": "По возрастанию"
 }
