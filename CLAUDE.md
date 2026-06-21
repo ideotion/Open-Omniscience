@@ -3816,6 +3816,38 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD-TEST REMAINDER BATCH 5 (2026-06-21, branch claude/magical-brown-49m9nd, draft PR onto 0.09 —
+  the autonomous-session brief's §2/§3 remainder; backends VERIFIED py3.11, all frontend
+  BROWSER-UNVERIFIED per fork-3):** SHIPPED, each its own slice: (§2.3) OFFLINE-MAP per-row reorder —
+  queued OSM region downloads now show their queue position (#N) + ↑/↓ controls in the Settings list
+  (`osmMove`, optimistic renumber+repaint then `/api/geo/downloads/reorder`); `osm_downloads.list()`
+  now exposes `queue_position`. (§2.6) OPT-IN LOGIN AUTOSTART — `install.sh setup_autostart` gated on
+  `OO_AUTOSTART=1` (default off; never silent): Linux XDG `~/.config/autostart` entry, macOS
+  LaunchAgent, both launching `launch.sh console`; safe because boot is airplane (zero network);
+  uninstall removes it; `test_login_autostart_is_opt_in`. (§2.5) GUIDED-WIZARD language step DROPPED
+  (`_GW_STEPS=["finish"]`) — redundant after the #420 language-first first-launch + the permanent
+  top-bar switcher; the lang DOM/`_gwRenderLangs` stay unreachable (Desk lesson). (§2.4) WIKI-DUMP
+  TITLE SEARCH — `dumpread.search_titles` = a bounded, case-insensitive substring scan of the
+  multistream index (scan_cap + capped/scanned reported); HONEST scope = TITLES only (page BODIES are
+  not full-text-searched — decompressing every bz2 block per query is out of scope, stated in the
+  note); `GET /api/wiki/dumps/search` + a "Search titles" button in the Settings dump-reader (NOT the
+  per-keystroke omnibar — a multi-million-line scan must never run interactively). (§3.F) DISCOVERABLE
+  FORCE RE-INDEX — `store.reindex_all_batch` (paged FORCE re-index of ALL articles, not just
+  un-indexed, last_id cursor + done) + `POST /api/insights/reindex-all` + a Settings → Diagnostics
+  "Re-index the whole corpus" button (loops batches, confirm, visible progress) — the drain for stale
+  metadata an old engine produced (pre-markup-strip CSS keywords); summaries/translations untouched;
+  tests/test_keyword_counters.py +2 (paged + counters-stay-consistent). (§2.1) i18n — audit-chrome
+  untranslatable 110→105 (realigned the drifted "One file carries everything" key + keyed the two
+  Synthesize title attrs, the Source-name placeholder, the scaling-benchmark hint; "Search titles" +
+  the re-index strings keyed too); gate 100% (1598 ×12); non-en AI-drafted, FLAGGED for native review.
+  (§2.2) ASSESSED no-op: the ACTIVE bulk run is already surfaced in the task manager (llm.py
+  register/update/finish with done/total); the BROWSER-only bulk queue would require backend SHADOW
+  STATE, against the tasks.py no-shadow-state principle — deliberately not built. Static invariant
+  guards added for each frontend slice. REMAINING (§3 gated on the maintainer's live corpus / a
+  networked machine + §4 decisions): trending-windows per-day rollup ONLY if the covering index proves
+  insufficient on the real 2.4M-mention DB; persisted columnar (httpfs crypto-extension packaging);
+  the Ollama binary installer (per-OS checksums); CJK segmentation; no_stoplist stoplist growth from
+  the exported log; human click-through of every frontend slice.
 - **FIRST-LAUNCH LEGAL-ACCEPTANCE GATE + LEGAL DOCS ×12 UI LANGUAGES (2026-06-21, maintainer-asked
   "translate all legal information into all UI languages" + an install accept/decline flow; branch
   claude/quirky-goodall-86u3ex; SHIPPED via PRs #425/#426/#428/#429/#430, ALL MERGED to 0.09;
