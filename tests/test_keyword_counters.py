@@ -250,3 +250,60 @@ def test_reindex_all_batch_drains_stale_keywords(db):
     assert "div" not in terms and "max-width" not in terms, "stale markup keywords must be drained"
     # The current strip would have removed them at index time anyway (sanity).
     assert "<div" not in strip_markup(art.content)
+
+
+def test_prune_orphan_keywords_removes_only_mention_less(db):
+    """Keyword reduction (2026-06-21): prune_orphan_keywords GCs keywords with NO
+    mentions left (the markup-drain / merge-orphan backlog) while keeping every keyword
+    that still has a mention — junk-removal, never a cap."""
+    from src.analytics.store import prune_orphan_keywords
+    from src.database.models import Keyword, KeywordMention
+
+    a1 = _article(db, "h1", "Trade policy and climate policy shaped the talks.")
+    index_article(db, a1, extractor=BaselineExtractor())
+    assert_counters_match_join(db)
+
+    # Inject an ORPHAN keyword (no mentions) — simulates a term left after a re-index drain.
+    orphan = Keyword(term="divstyle", normalized_term="divstyle", language="en")
+    db.add(orphan)
+    db.commit()
+    before = db.query(func.count(Keyword.id)).scalar()
+    has_mentions = {kid for (kid,) in db.query(KeywordMention.keyword_id).distinct()}
+
+    r = prune_orphan_keywords(db)
+    assert r["pruned"] >= 1
+    # The orphan is gone; every keyword that had a mention survives.
+    assert db.query(Keyword).filter_by(normalized_term="divstyle").one_or_none() is None
+    surviving = {k.id for k in db.query(Keyword).all()}
+    assert has_mentions <= surviving, "a keyword with mentions must never be pruned"
+    assert db.query(func.count(Keyword.id)).scalar() == before - r["pruned"]
+    assert_counters_match_join(db)
+
+
+def test_prune_keeps_curated_orphan(db):
+    """A mention-less keyword that the user curated into a family override is KEPT."""
+    from src.analytics.store import prune_orphan_keywords
+    from src.database.models import Keyword, KeywordFamilyOverride
+
+    kw = Keyword(term="merged", normalized_term="merged", language="en")
+    db.add(kw)
+    db.add(KeywordFamilyOverride(normalized_term="merged", family_key="fam"))
+    db.commit()
+    r = prune_orphan_keywords(db)
+    assert r["kept_curated"] >= 1
+    assert db.query(Keyword).filter_by(normalized_term="merged").one_or_none() is not None
+
+
+def test_mention_distribution_counts_orphans(db):
+    """The engine report's mention_distribution surfaces the prunable (zero-mention)
+    bucket so the keyword count is explainable before pruning."""
+    from src.analytics.engine_report import _mention_distribution
+    from src.database.models import Keyword
+
+    a1 = _article(db, "h1", "Energy policy and climate policy dominated the debate.")
+    index_article(db, a1, extractor=BaselineExtractor())
+    db.add(Keyword(term="orphanx", normalized_term="orphanx", language="en"))
+    db.commit()
+    dist = _mention_distribution(db)
+    assert dist["zero_mention"] >= 1
+    assert "by_mentions" in dist and "51+" in dist["by_mentions"]

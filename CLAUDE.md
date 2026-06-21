@@ -3816,6 +3816,30 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **KEYWORD-COUNT REDUCTION + RING-LOOP (2026-06-21, maintainer "reduce the ~500K keywords / download rings
+  through diagnostics to auto-improve the engine"; branch claude/magical-brown-49m9nd, draft PR onto 0.09;
+  backend VERIFIED py3.11 harness, frontend BROWSER-UNVERIFIED per fork-3):** the honest read recorded —
+  ~500K keywords is mostly JUNK (markup tokens + unmanaged-language function words + merge-orphans), NOT
+  legitimate rare terms, so the reduction is junk-REMOVAL (aligned with the no-arbitrary-cap policy), not a
+  cap. SHIPPED: (1) MEASURE — `engine_report._mention_distribution` adds a `composition.mention_distribution`
+  block (zero_mention [prunable orphans] · single_article · by-mention tiers 1/2-5/6-50/51+) from the cheap
+  denormalised counters, so the 500K is explainable before cutting (the existing `_extraction_noise`
+  markup/elision/digit classes already quantify the markup share). (2) GC — `store.prune_orphan_keywords`
+  deletes keywords with NO `KeywordMention` rows (authoritative anti-join, not the maybe-stale counter) —
+  pure cleanup (every view reads mentions/counters, which are 0 for an orphan), CURATION-SAFE (a
+  normalized_term referenced by a family override / super-group member is KEPT), takes the single-writer
+  gate, chunked under the 999-var cap, deletes KeywordTag dependents. The intended workflow = re-index (the
+  §3.F force re-index drains markup via `strip_markup`) → prune (the now-zero-mention markup keywords GC away).
+  `POST /api/insights/prune-keywords` + a Settings → Diagnostics "Prune unused keywords" button (confirm +
+  status). tests/test_keyword_counters.py +3 (prunes only mention-less, keeps curated orphan, distribution
+  surfaces the bucket) + a static invariant. (3) RING LOOP — recorded, no redundant build: the keyword
+  diagnostics zip ALREADY carries the cross-language `ring_candidates` gap digest and
+  `generate_wikidata_rings.py --from-log` ALREADY consumes it, so the loop is export-log → run generator on a
+  NETWORKED machine (Wikidata 403 in-sandbox) → I vet (the ~6% first-hit-wrong rate makes auto-trust degrade
+  quality — never auto-merge) + commit + re-measure `translation_coverage`. A live in-app Wikidata importer
+  stays the candidate-review design from the 2026-06-21 chat (consented/airplane-gated/guarded factory/
+  task-manager job, candidates not auto-trusted). i18n: +2 keys ×12 (Prune button + hint; non-en AI-drafted,
+  flagged), gate 100%, audit untranslatable held at 105.
 - **FIELD-TEST REMAINDER BATCH 5 (2026-06-21, branch claude/magical-brown-49m9nd, draft PR onto 0.09 —
   the autonomous-session brief's §2/§3 remainder; backends VERIFIED py3.11, all frontend
   BROWSER-UNVERIFIED per fork-3):** SHIPPED, each its own slice: (§2.3) OFFLINE-MAP per-row reorder —
