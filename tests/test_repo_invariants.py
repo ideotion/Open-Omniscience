@@ -1928,14 +1928,15 @@ def test_analysis_window_absorbs_exports():
 
 
 def test_analysis_window_absorbs_synthesize():
-    """Item I: Synthesize is reachable from the analysis window too (its own query +
-    a dedicated panel), so the last Search-tab capability is mirrored. The Search-tab
-    call stays back-compatible (optional query/mount args)."""
+    """Item I: Synthesize is reachable from the analysis window too, so the last
+    Search-tab capability is mirrored. REWORKED 2026-06-21: it now opens the synthesis
+    WINDOW over a user-chosen member set (the window's selection/metadata/export
+    behaviour is pinned by test_synthesis_opens_a_window_with_selection_metadata_and_export);
+    the analysis window wires its OWN corpus (anParams), the Search tab the no-arg call."""
     html = _ui_source()
-    assert "function synthesizeResults(btn, qArg, mountId)" in html, "synthesize must take optional query + mount"
-    assert "synthesizeResults(this, anQuery(), 'an-synth')" in html, "analysis window wires its own query + panel"
-    assert 'id="an-synth"' in html, "a synthesis result panel in the analysis window"
-    assert "synthesizeResults(this)" in html, "the Search-tab call site stays back-compatible"
+    assert "function synthesizeResults(btn, arg)" in html, "synthesize takes (btn, query|params)"
+    assert "synthesizeResults(this, anParams())" in html, "analysis window wires its own corpus"
+    assert "synthesizeResults(this)" in html, "the Search-tab call stays (no-arg) — nothing lost"
 
 
 def test_omnibar_enter_opens_analysis_window():
