@@ -3685,6 +3685,28 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **MARKUP STRIP AT THE EXTRACTION CHOKEPOINT (brief §3.F, the 36.5k `?`-bucket root cause; branch
+  claude/amazing-tesla-z6bwkm, draft PR onto 0.09; backend VERIFIED py3.11):** the keyword tokenizer
+  `_WORD_RE` mints `div`/`span`/`max-width`/`font-size`/`font-family` directly from any raw HTML/CSS in
+  a stored body (CSS property names with hyphens tokenise as ONE word) — the live log's 36,519-keyword
+  unknown-language junk bucket. The web scrape path is clean (trafilatura), so the leak is .eml-before-
+  the-2026-06-20-`_strip_html`-fix / wiki / future paths; rather than chase each, we defend at the ONE
+  place every path passes through. NEW `strip_markup(text)` in `src/analytics/extract.py` (called at the
+  top of BOTH `BaselineExtractor.extract` + `SpacyExtractor.extract`): drops `<style>`/`<script>` BLOCKS
+  first (CSS/JS must never survive as body text), then HTML comments (incl. MSO conditional comments
+  containing '>'), then every remaining tag, then decodes HTML entities (so `&nbsp;`/`&copy;` don't
+  become `nbsp`/`copy` keywords). HONEST + SURGICAL: a precise `_has_markup` gate runs the strip ONLY
+  when a real tag/style/comment/entity is present, so CLEAN text (the overwhelming majority) is returned
+  BYTE-IDENTICAL — keyword `first_offset`s into the stored body stay exact; the tag regex
+  `</?[a-zA-Z][\w-]*(\s[^<>]*?)?/?>` matches `<div class>`/`<br/>`/`</p>` but NOT an angle-bracketed URL
+  `<https://x>` or prose "x < y > z". Applied at index time, so a re-index/backfill cleans existing rows
+  (FORWARD case fully fixed; already-stored BARE CSS without tags still needs a re-import — noted). NO
+  score, no behaviour change for clean corpora. tests/test_keyword_extract_strips_markup.py (byte-
+  identical clean text, no-URL-eating, style/tag/comment/entity removal, extract mints no CSS/HTML
+  keyword, end-to-end index_article stays clean + counters consistent); keyword self-test (22 cases × 11
+  langs) + analytics_extract/store/counters/families regression all green; ruff F/B clean. REMAINING:
+  the bare-CSS-leftover re-import path (per the 2026-06-20 .eml content-quality fix); broader stoplist
+  growth is brief §3.G.
 - **IN-APP SCALING BENCHMARK 2026-06-20 (maintainer-asked "add a benchmark so we can live test
   this; include detailed benchmark logs I'll pass on"; branch claude/modest-hopper-gisgst, draft
   PR #419 onto 0.09; backend VERIFIED py3.11):** the data-architecture scaling work was proven
@@ -4998,7 +5020,12 @@ ruling, a contingency, or a deliberate-omission note.
   'important'=42k mentions), supergroups cold ~15s; the persisted COLUMNAR store is unavailable
   (in-memory) pending the httpfs crypto-extension packaging decision; activity+vitals polled 1281×
   in 26 min. (2) The `?` unknown-language bucket = 36,519 keywords (CSS/HTML leak = an HTML-stripping
-  gap before extraction, the real root; stoplisting the markup only mitigates). (3) translation_coverage
+  gap before extraction, the real root; stoplisting the markup only mitigates) — **ROOT-CAUSE FIX
+  SHIPPED 2026-06-21 (branch claude/amazing-tesla-z6bwkm, see the shipped-log "MARKUP STRIP AT THE
+  EXTRACTION CHOKEPOINT" entry): `BaselineExtractor.extract`/`SpacyExtractor.extract` now `strip_markup`
+  the body before tokenising, so a re-index drains the bucket and any future leak is caught by
+  construction** (already-stored BARE CSS without tags — pre-2026-06-20 .eml — still needs a re-import,
+  the standing path). (3) translation_coverage
   11.8% / tag_coverage 0% (run the baseline-tag backfill on this corpus). (4) no_stoplist langs
   (uk/tr/ro/ur/th/cs/ca/fi/hi/et/vi/sk) + zh/ja unsegmented still leak. (5) network preflight: the
   50-source sample was all `unreachable` (likely the Tor/airplane population, not a bug — re-check
