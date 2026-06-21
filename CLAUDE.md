@@ -3816,6 +3816,37 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIRST-LAUNCH LEGAL-ACCEPTANCE GATE + LEGAL DOCS ×12 UI LANGUAGES (2026-06-21, maintainer-asked
+  "translate all legal information into all UI languages" + an install accept/decline flow; branch
+  claude/quirky-goodall-86u3ex; SHIPPED via PRs #425/#426/#428/#429/#430, ALL MERGED to 0.09;
+  mechanism backend-VERIFIED py3.11, frontend BROWSER-UNVERIFIED per fork-3):** THREE maintainer
+  rulings (AskUserQuestion): (a) DECLINE = confirm-then-UNINSTALL (typed `UNINSTALL`, reuses
+  `src/safety/uninstall.request_uninstall` SECURE mode — venv/launchers/app-folder removed + data&keys
+  wiped); (b) translations AI-DRAFTED, FRENCH AUTHORITATIVE (flagged for native review); (c) the gate
+  lives in the FIRST-LAUNCH GUI (`unlock.html`) BETWEEN language and passphrase, reusing the merged
+  `/api/legal/consent` gate — the bash installer stays seamless (no legal prompt there).
+  MECHANISM: `src/legal/documents.py` = per-language loader (`docs/legal/<lang>/*.md`; the FRENCH
+  canonical `docs/legal/*.md` is the FALLBACK, so the gate worked in all 12 from day one) + chrome
+  strings (en/fr built-in, others `docs/legal/<lang>/ui.json`; the typed-confirm word is the
+  language-neutral ASCII "UNINSTALL", never localized input) + `build_download_zip` +
+  `perform_decline_uninstall`. `src/api/legal.py`: GET `/documents`, GET `/download` (.zip), POST
+  `/decline` (requires confirm AND word==UNINSTALL → uninstall). `/api/legal/` added to
+  `ALLOWED_WHILE_LOCKED` (unlock.py) since the step runs PRE-DB. `unlock.html`: a `view-legal` step —
+  SAFE in-page markdown render (escape-first; links shown as TEXT, no navigation away), Download, a
+  required "I accept" checkbox → Accept (records consent + advances to the passphrase), or Decline →
+  typed-UNINSTALL confirm panel → uninstall + a terminal overlay. `CONSENT_DOC_VERSION` 0.draft→1.0-draft.
+  GPLv3/C3 honesty: declining conditions USE of this build, NOT the GPLv3 code grant (re-install/fork
+  always possible) — stated in the docs. TRANSLATIONS: all 4 user-facing docs (MENTIONS_LEGALES · CGU ·
+  POLITIQUE_DE_CONFIDENTIALITE · CHARTE_USAGE) + ui.json in en·es·pt·de·id·zh·ar(RTL)·ru·hi·bn·ja (fr
+  canonical); markdown structure / `[À COMPLÉTER]` placeholders / statute refs / email / GPL preserved;
+  up-links got one extra `../` for the subdir depth; each file carries a top machine-translation +
+  French-authoritative note. THE SUB-AGENT TRANSLATION ROUTE FAILED HERE (each agent context-starved by
+  this giant CLAUDE.md → produced nothing) ⇒ translations were authored DIRECTLY, ~2 langs/PR.
+  tests/test_legal_documents.py (documents/download/decline endpoints + the locked allowlist + an
+  unlock-flow static guard) + a 12-language completeness sweep (each native + ui-complete + UNINSTALL
+  preserved). REMAINING: human click-through + a real decline test in a throwaway env (fork-3); the
+  docs' `Version:`/`Date:` stay `[À COMPLÉTER]` (maintainer finalizes + bump `CONSENT_DOC_VERSION` to
+  match); native review of the 11 non-fr translations.
 - **FIELD-TEST FOLLOW-UP BATCH 3 (2026-06-21, branch claude/amazing-tesla-z6bwkm, draft PR #427 onto
   0.09 — the maintainer asked to "continue until the end / address EVERY item"; finishes the brief's
   build queue):** per-item shipped notes live in their own ledger entries; this is the roll-up.
