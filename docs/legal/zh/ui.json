@@ -1,0 +1,17 @@
+{
+  "heading": "法律文件",
+  "intro": "开始之前，请阅读并接受这些文件。它们规范您对本软件及其 AI 生成结果的使用。它们不对 GNU GPL v3（代码许可证）增加任何限制；以法文版为准。",
+  "draft_note": "工作草稿——并非法律意见；须由合格的专业人士审阅。",
+  "translation_note": "机器翻译——以法文版为具有法律效力的文本。",
+  "open": "打开",
+  "accept_label": "我已阅读并接受这些文件。",
+  "accept_btn": "接受并继续",
+  "decline_btn": "拒绝",
+  "download_btn": "下载文件",
+  "decline_warn": "拒绝将会卸载（UNINSTALL）本应用，并永久删除其在本机上的所有文件和数据。此操作无法撤销。（您随时可以稍后重新安装。）",
+  "decline_type": "如需确认，请输入 UNINSTALL：",
+  "decline_confirm_btn": "卸载并删除全部",
+  "decline_cancel_btn": "取消",
+  "uninstalling": "正在卸载——应用正在关闭，其文件正在被移除。您可以关闭此窗口。",
+  "error": "无法加载法律文件。"
+}
