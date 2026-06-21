@@ -130,6 +130,17 @@ def test_world_map_fullscreen_uses_the_fullscreen_api():
     assert "osm-region-row" in app, "each region row renders with a direct Download button"
 
 
+def test_guided_wizard_language_step_consolidated():
+    """§2.5 (autonomous 2026-06-21): the first-launch flow picks the language FIRST
+    (unlock.html) + a permanent top-bar switcher always changes it, so the guided
+    wizard no longer carries a redundant language step. The lang DOM/helper stay
+    (unreachable) per the Desk lesson — nothing silently lost."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'const _GW_STEPS = ["finish"];' in app, "the wizard lang step must be dropped"
+    # The lang rendering helper is kept (unreachable, not deleted).
+    assert "function _gwRenderLangs(" in app, "the lang helper must be preserved (Desk lesson)"
+
+
 def test_offline_map_queued_rows_can_be_reordered():
     """§2.3 (autonomous 2026-06-21): the Settings → Offline-map row list lets the
     operator reorder QUEUED region downloads (the same prioritisation control the

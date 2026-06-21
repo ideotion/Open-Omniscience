@@ -135,7 +135,11 @@
     // Language -> Finish. The encryption choice is made in the DB-unlock/install
     // flow (not a wizard placeholder) and sources auto-seed on boot, so the two
     // inert "Coming soon" steps were removed (maintainer 2026-06-18).
-    const _GW_STEPS = ["lang", "finish"];
+    // The first-launch flow now chooses the language FIRST (unlock.html, #420) and
+    // a permanent top-bar switcher (invariant #15) always changes it, so the wizard's
+    // language step is redundant (§2.5, autonomous 2026-06-21). Dropped from the flow;
+    // the #guide-wizard lang DOM + _gwRenderLangs stay unreachable (the Desk lesson).
+    const _GW_STEPS = ["finish"];
     let _gwIdx = 0;
     function _guideState() {
       try { return JSON.parse(localStorage.getItem(_GUIDE_KEY)) || {}; } catch { return {}; }
