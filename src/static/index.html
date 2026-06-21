@@ -1349,6 +1349,7 @@
       <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
       <div class="row" style="margin-top:6px">
         <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Download keyword log (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">Download ALL keywords (.zip)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Download keyword self-test (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Download keyword-engine report (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Download date-extraction log (.json)</button>

@@ -5020,3 +5020,16 @@ ruling, a contingency, or a deliberate-omission note.
   summary + shards into the doc it already expects). tests/test_keyword_log_zip.py
   (split/bounded, per-language trim when over cap, analyzer reads it, default JSON
   unchanged).
+  **PAGED / FULL EXPORT ADDED 2026-06-21 (maintainer: "the diag tools don't offer to send
+  MORE keywords despite there being 200k+"):** the export was limited not by the byte cap
+  but by `_MAX_KEYWORDS_PER_LANG=5000` — only 137k of 461k were exported. Measured: 137k
+  keywords = 4.4 MB compressed, so the 20 MB cap can hold ~625k → the WHOLE corpus fits one
+  archive. Added `?format=zip&per_lang=N&page=P` (ZIP-only; bounded per_lang≤1,000,000,
+  page≥1): `per_lang` raises the per-language quota (page through with `page`), the manifest
+  now reports `per_lang/page/pages_total/has_more/keywords_total_corpus` so the full set can
+  be exported across digestible files. The JSON path is UNTOUCHED (eff_per_lang=_MAX, lo=0,
+  page ignored → byte-identical; contract intact). The heavy per-keyword language-signature
+  scan barely grows (tail keywords are low-mention). A new "Download ALL keywords (.zip)"
+  Settings button uses `per_lang=1000000` (one ~15 MB archive of all 461k). tests/
+  test_keyword_log_zip.py::test_keyword_zip_paging_exports_more_and_walks_the_full_set
+  (page 1≠page 2 disjoint, has_more, full export = whole corpus).
