@@ -19,7 +19,13 @@ from sqlalchemy.orm import Session
 from src.database.models import Source
 from src.database.session import get_db
 from src.ingest import EthicalFetcher  # noqa: F401 (kept for type/back-compat)
-from src.ingest.email import fetch_imap, fetch_mailbox, ingest_emails
+from src.ingest.email import (
+    count_imported_newsletters,
+    delete_imported_newsletters,
+    fetch_imap,
+    fetch_mailbox,
+    ingest_emails,
+)
 from src.ingest.pipeline import ingest_source, ingest_url
 from src.ingest.seed_sources import seed_default_sources
 from src.safety.fetcher import make_fetcher
@@ -212,6 +218,35 @@ def import_newsletters(
         "received": len(files),
         "tally": tally,
     }
+
+
+class RemoveNewslettersBody(BaseModel):
+    confirm: bool = False
+
+
+@router.get("/newsletters/imported-count")
+def imported_newsletters_count(db: Session = Depends(get_db)) -> dict:
+    """How many imported-newsletter articles the live corpus holds (drives the confirm
+    preview + showing the maintenance button only when there is something to remove)."""
+    return {"count": count_imported_newsletters(db)}
+
+
+@router.post("/newsletters/remove-imported")
+def remove_imported_newsletters(
+    body: RemoveNewslettersBody, db: Session = Depends(get_db)
+) -> dict:
+    """Remove ALL imported-newsletter (.eml + mailbox) articles from the LIVE corpus.
+
+    The "replace the faulty ones" loop: restore is additive-only, so excluding
+    newsletters from a backup never purges the live corpus — this does. Deletes the
+    newsletter-source articles AND every dependent row, leaving the (empty) source rows
+    so a future clean re-import re-attaches. Reversible ONLY via a prior backup — the UI
+    nudges "back up first" and requires an explicit confirm. Local-only, no network.
+    """
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirm:true is required")
+    result = delete_imported_newsletters(db)
+    return {"removed": True, **result}
 
 
 # A dedicated, FILTERABLE provenance bucket for LIVE mailbox (IMAP/POP3) imports —

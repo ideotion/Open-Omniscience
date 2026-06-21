@@ -571,6 +571,30 @@ def test_restore_can_exclude_newsletters():
     assert "include_newsletters: bool = Form(True)" in bk
 
 
+def test_remove_imported_newsletters_live_action():
+    """Brief §2.B: a LIVE 'remove imported newsletters' maintenance action purges the
+    newsletter articles from the running corpus (restore is additive-only, so the backup
+    tickbox alone never removes them) — closing the 'replace the faulty ones' loop. The
+    confirm-required endpoint + the Settings button/handler + the 'back up first' nudge."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    ing = (_SRC / "api" / "ingestion.py").read_text(encoding="utf-8")
+    email = (_SRC / "ingest" / "email.py").read_text(encoding="utf-8")
+    # backend: the count + confirm-required remove endpoints
+    assert '"/newsletters/imported-count"' in ing and '"/newsletters/remove-imported"' in ing
+    assert "confirm:true is required" in ing
+    # backend: the live-remove + count helpers + the single source of truth for domains
+    assert "def delete_imported_newsletters(" in email and "def count_imported_newsletters(" in email
+    assert "NEWSLETTER_SOURCE_DOMAINS" in email
+    assert "backfill_keyword_counters" in email, "counters reconciled after the bulk delete"
+    assert "with write_lock():" in email, "the bulk delete takes the single-writer gate"
+    # UI: the panel (shown only when there's something to remove) + the two buttons
+    assert 'id="nl-remove-panel"' in html and 'onclick="removeImportedNewsletters(' in html
+    assert 'onclick="downloadBackupFirst(' in html  # the back-up-first nudge
+    assert "function removeImportedNewsletters(" in app and "function loadNewsletterRemoveCount(" in app
+    assert "/api/newsletters/remove-imported" in app
+
+
 def test_gui_shutdown_button_and_endpoint():
     """Maintainer field test 2026-06-21: the status bar has a shutdown (power) button
     that confirms, then stops the server (the GUI equivalent of Ctrl-C) — NOT uninstall

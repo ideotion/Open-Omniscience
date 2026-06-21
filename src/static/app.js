@@ -1126,6 +1126,7 @@
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       if (cat === "data") modelsBackupStatus();        // the opt-in LLM-models companion backup (PR 6)
+      if (cat === "newsletters") loadNewsletterRemoveCount();  // show the remove panel only when there's something to remove
     }
     function buildDrawer() {
       const ui = getUi();
@@ -3327,6 +3328,61 @@
         toast(t("Newsletters imported."), "ok");
       } catch (e) {
         $("nl-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+      } finally { btn.disabled = false; }
+    }
+
+    // -- Remove imported newsletters (the "replace the faulty ones" loop) ------ //
+    // Restore is additive-only, so excluding newsletters from a backup never purges
+    // the live corpus — this action does. The panel shows only when there's something
+    // to remove; removal needs an explicit confirm and nudges "back up first".
+    async function loadNewsletterRemoveCount() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("nl-remove-panel"), lab = $("nl-remove-count");
+      if (!panel) return;
+      try {
+        const d = await api("/api/newsletters/imported-count");
+        const n = d.count || 0;
+        panel.style.display = n > 0 ? "" : "none";
+        if (lab) lab.textContent = n > 0 ? `${n.toLocaleString()} ${t("imported newsletters in your corpus")}` : "";
+      } catch (e) { panel.style.display = "none"; }
+    }
+    async function downloadBackupFirst(btn) {
+      // Same encrypted-backup path the uninstall flow uses (a real, restorable backup).
+      const pass = prompt("Choose a passphrase to encrypt the backup (you'll need it to restore):");
+      if (!pass) { toast("Backup cancelled.", "err"); return; }
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/safety/backup/encrypted",
+          {method: "POST", headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({passphrase: pass})});
+        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || res.statusText); }
+        const blob = await res.blob(), url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "open-omniscience-backup.ooenc";
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        toast("Backup downloaded — save it, then you can remove the newsletters.", "ok");
+      } catch (e) { toast("Backup failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
+    }
+    async function removeImportedNewsletters(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let n = 0;
+      try { n = (await api("/api/newsletters/imported-count")).count || 0; } catch (e) {}
+      if (!n) { toast(t("No imported newsletters to remove."), "warn"); loadNewsletterRemoveCount(); return; }
+      if (!confirm(t("Remove") + ` ${n.toLocaleString()} ` +
+          t("imported newsletters from your corpus? This cannot be undone except from a backup."))) return;
+      btn.disabled = true;
+      $("nl-remove-result").textContent = t("Removing…");
+      try {
+        const d = await api("/api/newsletters/remove-imported",
+          {method: "POST", body: JSON.stringify({confirm: true})});
+        $("nl-remove-result").innerHTML =
+          `<b>${(d.removed_articles || 0).toLocaleString()}</b> ${esc(t("imported newsletters removed."))} ` +
+          esc(t("Re-import the cleaned files to replace them."));
+        toast(t("Imported newsletters removed."), "ok");
+        loadNewsletterRemoveCount();
+      } catch (e) {
+        $("nl-remove-result").innerHTML = `<span class="note err">${esc(t("Removal failed"))}: ${esc(e.message)}</span>`;
       } finally { btn.disabled = false; }
     }
     // -- Pull from a mailbox (IMAP/POP3) — ruling #11. English-only; the anonymise +

@@ -1001,6 +1001,28 @@ ruling, a contingency, or a deliberate-omission note.
   backup-first nudge) so deleting the faulty set + re-importing clean actually REPLACES them
   (restore is additive-only, so the selective-backup tickbox alone never purges the live
   corpus — this closes the loop).
+  **LIVE-REMOVE ACTION SHIPPED 2026-06-21 (branch claude/amazing-tesla-z6bwkm, draft PR #423 onto
+  0.09; backend VERIFIED py3.11, frontend BROWSER-UNVERIFIED per fork-3):** `src/ingest/email.py`
+  gained `delete_imported_newsletters(session)` (+ `count_imported_newsletters` + the single-source
+  `NEWSLETTER_SOURCE_DOMAINS` tuple) — the LIVE analog of the backup-snapshot `_drop_newsletter_articles`:
+  finds the .eml + mailbox source ids, deletes their articles AND every dependent row (each mapped
+  table with an `article_id` column, via `Base.metadata.sorted_tables`, chunked under the 999-var cap),
+  LEAVES the empty source rows (a clean re-import re-attaches), takes the SINGLE-WRITER GATE
+  (`write_lock()`), and reconciles the denormalised keyword counters (`backfill_keyword_counters` — the
+  bulk DELETE bypasses index_article's per-article counter maintenance, so they'd over-count). The
+  article DELETE fires the `article_fts_ad` trigger, so the SEARCH INDEX is cleaned automatically (no
+  stale FTS rows = a removed article never reappears in search — proven in the test). API (`src/api/
+  ingestion.py`): `GET /api/newsletters/imported-count` (drives the confirm preview + shows the panel
+  only when >0) + `POST /api/newsletters/remove-imported` (confirm:true required, 400 otherwise).
+  Frontend: a Settings → Newsletters "Remove imported newsletters" panel (visible only when count>0)
+  with a "Back up first" button (the encrypted-backup path the uninstall flow uses) + a confirm. NEW
+  strings are English-fallback via `t()` (i18n gate stays 100%; keyable in the §4 tail). tests/
+  test_newsletter_remove.py (5: removes only newsletter articles+dependents, KEEPS source rows + web
+  articles, counters reconciled == live aggregate, FTS cleaned for removed articles via ensure_fts,
+  no-newsletter-source = no-op, + a drift guard that the live + backup domain constants AGREE) +
+  test_repo_invariants::test_remove_imported_newsletters_live_action. REMAINING (the rest of §2.B): the
+  server-side folder-path IMPORT JOB (pausable, task-manager-visible, batch commits) + the small-upload
+  max_files 400 fix — the bigger half, next.
   **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
   importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
   leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional

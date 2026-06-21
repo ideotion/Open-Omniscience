@@ -408,3 +408,72 @@ def ingest_eml_directory(
     pattern = "**/*.eml" if recursive else "*.eml"
     paths = sorted(root.glob(pattern)) + sorted(root.glob(pattern[:-4] + ".EML"))
     return ingest_eml_files(session, source, paths)
+
+
+# The two dedicated, FILTERABLE newsletter provenance buckets: locally-imported
+# .eml files and live IMAP/POP3 mailbox pulls. The single source of truth for
+# "which sources hold imported newsletters" — reused by the backup snapshot filter
+# (src.backup.artifact) and the live-remove maintenance action below.
+NEWSLETTER_SOURCE_DOMAINS: tuple[str, ...] = (
+    "newsletters.import.local",
+    "mailbox.import.local",
+)
+
+
+def _newsletter_article_ids(session: Session) -> list[int]:
+    """Live ids of every article that arrived via an imported-newsletter source."""
+    src_ids = [
+        s for (s,) in session.query(Source.id).filter(Source.domain.in_(NEWSLETTER_SOURCE_DOMAINS))
+    ]
+    if not src_ids:
+        return []
+    return [a for (a,) in session.query(Article.id).filter(Article.source_id.in_(src_ids))]
+
+
+def count_imported_newsletters(session: Session) -> int:
+    """How many imported-newsletter articles the live corpus holds (for the confirm)."""
+    return len(_newsletter_article_ids(session))
+
+
+def delete_imported_newsletters(session: Session) -> dict:
+    """Remove imported-newsletter articles from the LIVE corpus (the "replace the faulty
+    ones" loop).
+
+    Restore is additive-only, so excluding newsletters from a *backup* never purges the
+    *live* corpus — this is the action that does. It deletes the .eml + mailbox source
+    articles AND every dependent row (any mapped table with an ``article_id`` column —
+    every FK to ``articles.id`` uses that name), then reconciles the denormalised keyword
+    counters so trending/top stay exact (the bulk DELETE bypasses ``index_article``'s
+    per-article counter maintenance). The empty source rows are LEFT, so a future clean
+    re-import re-attaches to them. The article DELETE fires the ``article_fts_ad`` trigger,
+    so the search index is cleaned automatically.
+
+    Reversible only via a prior backup (the caller nudges "back up first"). Counts only;
+    takes the single-writer gate so it never races a scrape/import write.
+    """
+    from src.database.models import Base
+    from src.database.writer import write_lock
+
+    art_ids = _newsletter_article_ids(session)
+    if not art_ids:
+        return {"removed_articles": 0, "domains": list(NEWSLETTER_SOURCE_DOMAINS)}
+
+    dep_tables = [
+        t
+        for t in Base.metadata.sorted_tables
+        if t.name != "articles" and "article_id" in t.columns
+    ]
+    with write_lock():
+        for lo in range(0, len(art_ids), 900):  # under SQLite's 999-variable cap
+            chunk = art_ids[lo : lo + 900]
+            for t in dep_tables:
+                session.execute(t.delete().where(t.c.article_id.in_(chunk)))
+            session.execute(Article.__table__.delete().where(Article.__table__.c.id.in_(chunk)))
+        session.commit()
+
+    # The bulk delete didn't go through index_article, so the denormalised
+    # Keyword.mention_count / article_count are now stale — repair them authoritatively.
+    from src.analytics.store import backfill_keyword_counters
+
+    backfill_keyword_counters(session)
+    return {"removed_articles": len(art_ids), "domains": list(NEWSLETTER_SOURCE_DOMAINS)}
