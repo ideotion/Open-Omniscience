@@ -9161,8 +9161,14 @@
             + `<span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span>`;
           actions = `<button class="tiny secondary" onclick="pauseOsm(${esc(JSON.stringify(d.key))})">${esc(t("Pause"))}</button>`;
         } else if (d.status === "queued") {
-          stateHtml = `<span class="pill warn">${esc(t("Queued"))}</span>`;
-          actions = `<button class="tiny secondary" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Cancel"))}</button>`;
+          const qpos = d.queue_position;
+          const queued = _osmDownloads.filter((x) => x.status === "queued" && x.queue_position != null)
+            .sort((a, b) => a.queue_position - b.queue_position).map((x) => x.key);
+          const qi = queued.indexOf(d.key);
+          stateHtml = `<span class="pill warn">${esc(t("Queued"))}${qpos ? ` #${qpos}` : ""}</span>`;
+          if (qi > 0) actions += `<button class="tiny secondary" onclick="osmMove(${esc(JSON.stringify(d.key))}, -1)" title="${esc(t("Move earlier in the queue"))}">↑</button> `;
+          if (qi >= 0 && qi < queued.length - 1) actions += `<button class="tiny secondary" onclick="osmMove(${esc(JSON.stringify(d.key))}, 1)" title="${esc(t("Move later in the queue"))}">↓</button> `;
+          actions += `<button class="tiny secondary" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Cancel"))}</button>`;
         } else if (d.status === "done") {
           stateHtml = `<span class="pill ok">${esc(t("Downloaded"))} ✓ <span class="muted">${humanBytes(d.downloaded_bytes || d.total_bytes || r.size_estimate_bytes)}</span></span>`;
           actions = `<button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
@@ -9221,6 +9227,23 @@
       }
       toast(`${t("Queued")} ${started} ${t("regions")}${skip.length ? ` · ${skip.length} ${t("already present")}` : ""}`);
       _osmPoll();
+    }
+    // Reorder a QUEUED region download (same prioritisation control as the task
+    // manager's dump/OSM reorder). Optimistic: renumber the cached queue + repaint
+    // immediately, THEN persist via the geo reorder endpoint, THEN reconcile.
+    async function osmMove(key, dir) {
+      const queued = _osmDownloads.filter((x) => x.status === "queued" && x.queue_position != null)
+        .sort((a, b) => a.queue_position - b.queue_position);
+      const i = queued.findIndex((x) => x.key === key);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= queued.length) return;
+      [queued[i], queued[j]] = [queued[j], queued[i]];
+      queued.forEach((x, k) => { x.queue_position = k + 1; });   // optimistic renumber
+      _renderOsmList();
+      try {
+        await api("/api/geo/downloads/reorder", { method: "POST", body: JSON.stringify({ keys: queued.map((x) => x.key) }) });
+      } catch (e) { /* reconcile from backend truth */ }
+      loadOsmMap();
     }
     async function pauseOsm(key) {
       try { await api("/api/geo/downloads/pause?key=" + encodeURIComponent(key), { method: "POST" }); loadOsmMap(); }

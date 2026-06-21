@@ -130,6 +130,23 @@ def test_world_map_fullscreen_uses_the_fullscreen_api():
     assert "osm-region-row" in app, "each region row renders with a direct Download button"
 
 
+def test_offline_map_queued_rows_can_be_reordered():
+    """§2.3 (autonomous 2026-06-21): the Settings → Offline-map row list lets the
+    operator reorder QUEUED region downloads (the same prioritisation control the
+    task manager already offers), optimistically + persisted via the geo endpoint."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "async function osmMove(key, dir)" in app, "an osmMove reorder helper must exist"
+    assert "/api/geo/downloads/reorder" in app, "reorder must persist via the geo endpoint"
+    # The queued row renders ↑/↓ controls calling osmMove.
+    render = app.split("function _renderOsmList(", 1)[1].split("\n    }", 1)[0]
+    assert "osmMove(" in render and "queue_position" in render, (
+        "queued rows must render ↑/↓ reorder controls keyed on queue_position"
+    )
+    # The backend exposes queue_position on the downloads list so the UI can order them.
+    osm = (_SRC / "geo" / "osm_downloads.py").read_text(encoding="utf-8")
+    assert '"queue_position"' in osm, "osm downloads list must expose queue_position"
+
+
 def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
     """Field test 2026-06-19 THEME-2 (#14/#15): the "near in space & time" co-occurrence
     is capped to a TIGHT fixed window (it used the slider's span/12 ~166y, linking events
