@@ -1231,6 +1231,34 @@ ruling, a contingency, or a deliberate-omission note.
   SAME FOLDER backup (one "large data" backup, not the separate .oomodels). Build it fully autonomously —
   no questions.** The full build spec + acceptance criteria live in
   `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-21.md` §2.A.
+  **SHIPPED 2026-06-21 (branch claude/amazing-tesla-z6bwkm, draft PR onto 0.09; backend VERIFIED py3.11
+  — 23 tests; frontend BROWSER-UNVERIFIED per fork-3):** `src/backup/folder_backup.py` is the pure,
+  fully-tested CORE (the maintainer's "entirely reliable or it should not exist" bar = the test suite):
+  STREAMING ATOMIC copy (`_atomic_copy` = temp `.oopart` + fsync + `os.replace`, so a paused mid-file
+  copy never leaves a corrupt dest), NAME+SIZE dedup (models are content-addressed `blobs/sha256-…` so
+  same-name ⇒ identical; dumps/maps immutable), ADDITIVE restore (skip-if-present, NEVER overwrites a
+  differing local file), free-disk + writable-dir PREFLIGHT, and `collect_items` reading ONLY the
+  download managers' DONE state (partials never ride into a backup — a download writes resumably into
+  its dest, so only the manager knows what's finished). Public re-downloadable blobs are copied AS-IS
+  (NOT whole-file encrypted — what makes 100 GB feasible); the private corpus stays in the encrypted
+  oo-backup-2. A `FolderBackupManager` (singleton, one giant copy at a time, worker thread + stop-event
+  PAUSE, idempotent RESUME = re-plan + skip already-copied, IN-MEMORY state since the dest dir IS the
+  durable progress — no fragile cursor to corrupt). API (`src/api/backup_v2.py`): `POST /folder/plan`
+  (preflight: files + needs-X vs Y-free, no start), `/folder/start`, `/folder/restore`, `/folder/status`,
+  `/folder/{pause|resume|cancel}`. Surfaced in `/api/jobs` (`_folder_backup_jobs`, kind="folder-backup",
+  pause/resume/cancel routed; task-manager cancel = resumable pause like a dump, full cancel in Settings).
+  Frontend: a Settings → Data & backup "Large data backup (folder / external drive)" panel (server-side
+  path input + wiki/maps/models tickboxes + Check-space preflight + live progress poll + pause/resume +
+  a restore-from-folder section); the old "What to back up/restore" wiki/maps "coming soon" rows now
+  point to it. The separate `.oomodels` panel STAYS (Desk lesson; models also ride the folder backup as
+  the "models" category). NEW UI strings English-fallback via `t()` (i18n gate 100%; keyable in §4).
+  tests/test_folder_backup.py (15: collect done-only/skip-partials, model dedup, copy+dedup-on-2nd-run,
+  changed-size-recopied, pause-leaves-no-manifest-then-resume-completes, atomic-stop-no-corrupt,
+  additive-restore-never-overwrites-local, selected-categories, preflight/validate, manager
+  complete/restore/out-of-space/stopped→paused-vs-cancelled) + tests/test_folder_backup_api.py (7,
+  minimal-app) + test_repo_invariants::test_large_data_folder_backup. REMAINING: human click-through
+  (fork-3); a sudo-helper for the protected systemd Ollama store (out of scope, noted in §4); key the
+  panel strings ×12.
 - **ONGOING DOWNLOADS
   NEVER BACKED UP (maintainer 2026-06-21, reassurance + transparency):** maps + wiki dumps live in
   `osm_regions/` + `wiki_dumps/`, which are EXCLUDED BY CONSTRUCTION (never collected as members), so a

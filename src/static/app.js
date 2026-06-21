@@ -1125,7 +1125,7 @@
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
-      if (cat === "data") modelsBackupStatus();        // the opt-in LLM-models companion backup (PR 6)
+      if (cat === "data") { modelsBackupStatus(); _fbStartPoll(); }  // models backup + the large-data folder backup (§2.A)
       if (cat === "newsletters") loadNewsletterRemoveCount();  // show the remove panel only when there's something to remove
     }
     function buildDrawer() {
@@ -3445,6 +3445,88 @@
     }
     // Local LLM models — an OPT-IN companion backup (models live outside the corpus,
     // so they are a SEPARATE artifact; restore is additive + bit-identical). PR 6.
+    // -- Large data backup: stream wiki dumps + maps + models to a folder/drive --- //
+    // Server-side copy (never the browser). The corpus stays in the encrypted full
+    // backup; these public re-downloadable blobs are copied as-is. Pausable job.
+    let _fbPoll = null;
+    function _fbCats() {
+      const c = [];
+      if ($("fb-wiki") && $("fb-wiki").checked) c.push("wiki_dumps");
+      if ($("fb-osm") && $("fb-osm").checked) c.push("osm_regions");
+      if ($("fb-models") && $("fb-models").checked) c.push("models");
+      return c;
+    }
+    async function folderBackupPlan(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dest = ($("fb-dest").value || "").trim();
+      if (!dest) { toast(t("Enter a destination folder."), "warn"); return; }
+      btn.disabled = true; $("fb-plan").textContent = t("Checking…");
+      try {
+        const d = await api("/api/backup/folder/plan",
+          { method: "POST", body: JSON.stringify({ dest, categories: _fbCats() }) });
+        $("fb-plan").innerHTML =
+          `${(d.files || 0).toLocaleString()} ${esc(t("files"))} · ${esc(t("needs"))} <b>${esc(d.needed_human)}</b> · ` +
+          `${esc(d.free_human)} ${esc(t("free"))}` +
+          (d.enough_space ? "" : ` <span class="warn">— ${esc(t("not enough space"))}</span>`);
+      } catch (e) { $("fb-plan").innerHTML = `<span class="note err">${esc(e.message)}</span>`; }
+      finally { btn.disabled = false; }
+    }
+    async function folderBackupStart(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dest = ($("fb-dest").value || "").trim();
+      if (!dest) { toast(t("Enter a destination folder."), "warn"); return; }
+      btn.disabled = true;
+      try {
+        await api("/api/backup/folder/start",
+          { method: "POST", body: JSON.stringify({ dest, categories: _fbCats() }) });
+        _fbStartPoll();
+      } catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
+    }
+    async function folderRestoreStart(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const src = ($("fb-src").value || "").trim();
+      if (!src) { toast(t("Enter a folder to restore from."), "warn"); return; }
+      btn.disabled = true;
+      try {
+        await api("/api/backup/folder/restore",
+          { method: "POST", body: JSON.stringify({ src, categories: _fbCats() }) });
+        _fbStartPoll();
+      } catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
+    }
+    async function folderBackupAction(action, btn) {
+      btn.disabled = true;
+      try { await api("/api/backup/folder/" + action, { method: "POST" }); _fbRefresh(); }
+      catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
+    }
+    function _fbStartPoll() {
+      if (_fbPoll) clearInterval(_fbPoll);
+      _fbRefresh();
+      _fbPoll = setInterval(_fbRefresh, 1500);
+    }
+    async function _fbRefresh() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prog = $("fb-progress"); if (!prog) return;
+      let s;
+      try { s = await api("/api/backup/folder/status"); } catch (e) { return; }
+      const active = s.state === "running" || s.state === "paused";
+      if (!active && _fbPoll) { clearInterval(_fbPoll); _fbPoll = null; }
+      $("fb-controls").style.display = active ? "" : "none";
+      if ($("fb-pause")) $("fb-pause").style.display = s.state === "running" ? "" : "none";
+      if ($("fb-resume")) $("fb-resume").style.display = s.state === "paused" ? "" : "none";
+      const p = s.progress || {};
+      const verb = s.mode === "restore" ? t("Restoring") : t("Backing up");
+      if (active) {
+        const pct = p.bytes_total ? Math.round(100 * (p.bytes_copied || 0) / p.bytes_total) : 0;
+        prog.innerHTML = `${esc(verb)}… ${pct}% · ${(p.copied || 0)} ${esc(t("copied"))}, ` +
+          `${(p.skipped || 0)} ${esc(t("skipped"))}` + (s.state === "paused" ? ` (${esc(t("paused"))})` : "");
+      } else if (s.state === "done") {
+        prog.innerHTML = `<b>${esc(t("Done."))}</b> ${(p.copied || 0)} ${esc(t("copied"))}, ` +
+          `${(p.restored || 0)} ${esc(t("restored"))}, ${(p.skipped || 0)} ${esc(t("skipped"))}.`;
+      } else if (s.state === "error") {
+        prog.innerHTML = `<span class="note err">${esc(s.error || t("failed"))}</span>`;
+      } else { prog.textContent = ""; }
+    }
+
     async function modelsBackupStatus() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("models-bk-status"); if (!el) return;

@@ -595,6 +595,32 @@ def test_remove_imported_newsletters_live_action():
     assert "/api/newsletters/remove-imported" in app
 
 
+def test_large_data_folder_backup():
+    """Brief §2.A: a SERVER-SIDE 'copy to a folder/drive' backup streams the big public
+    re-downloadable blobs (Wikipedia dumps + OSM maps + Ollama models) into a user-chosen
+    directory — too big for the in-memory encrypted oo-backup-2. Pausable job + endpoints
+    + the Settings panel; the corpus stays in the encrypted backup (these copied as-is)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
+    jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
+    lib = (_SRC / "backup" / "folder_backup.py").read_text(encoding="utf-8")
+    # library: the reliable core (atomic copy, dedup, additive restore, pausable job)
+    assert "def write_folder_backup(" in lib and "def restore_folder_backup(" in lib
+    assert "def _atomic_copy(" in lib and "class FolderBackupManager" in lib
+    assert "never overwrite a local file" in lib  # additive restore
+    assert "copied as-is" in lib  # public blobs NOT whole-file encrypted (makes 100 GB feasible)
+    # endpoints: plan/start/restore + status
+    for ep in ('"/folder/plan"', '"/folder/start"', '"/folder/restore"', '"/folder/status"'):
+        assert ep in bk, ep
+    # /api/jobs surfaces it as a pausable file job
+    assert "def _folder_backup_jobs(" in jobs and '"folder-backup"' in jobs
+    # UI: the panel + the server-side path + the actions
+    assert 'id="folder-backup-panel"' in html and 'id="fb-dest"' in html
+    assert 'onclick="folderBackupStart(' in html and 'onclick="folderRestoreStart(' in html
+    assert "function folderBackupStart(" in app and "/api/backup/folder/start" in app
+
+
 def test_gui_shutdown_button_and_endpoint():
     """Maintainer field test 2026-06-21: the status bar has a shutdown (power) button
     that confirms, then stops the server (the GUI equivalent of Ctrl-C) — NOT uninstall
