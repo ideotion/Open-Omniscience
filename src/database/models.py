@@ -1601,6 +1601,17 @@ class KeywordMention(Base):
         # each, under SQLCipher). Also in maintenance.HOT_INDEXES (boot
         # self-heal) and migration e2f3a4b5c6d7.
         Index("ix_mention_covering", "keyword_id", "article_id", "count", "observed_on"),
+        # Covering index for the TIME-WINDOWED trending aggregation (the #1 perf
+        # hotspot: /api/insights/trending-windows, polled from Home — ~20s idle /
+        # ~98s under load on a 2.4M-mention corpus). `trending()._counts` runs
+        # `SELECT keyword_id, SUM(count) WHERE observed_on IN [lo,hi) GROUP BY
+        # keyword_id`; the keyword_id-leading covering index above can't serve an
+        # observed_on RANGE, and the plain observed_on index forces a heap page
+        # read (a SQLCipher decrypt) per in-range row. Leading with observed_on +
+        # carrying keyword_id, count makes it an index-only ("USING COVERING
+        # INDEX") range scan. Counters are corpus-wide; the per-day trend window
+        # needs THIS. Also in maintenance.HOT_INDEXES + migration b4c5d6e7f8a9.
+        Index("ix_mention_date_keyword", "observed_on", "keyword_id", "count"),
     )
 
     def __repr__(self) -> str:

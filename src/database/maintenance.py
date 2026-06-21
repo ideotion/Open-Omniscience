@@ -43,6 +43,14 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS ix_mention_covering ON keyword_mentions "
         "(keyword_id, article_id, count, observed_on)"
     ),
+    # Covering index for the time-windowed trending aggregation (the #1 perf
+    # hotspot; see the KeywordMention model). Leads with observed_on so
+    # `SUM(count) WHERE observed_on IN [lo,hi) GROUP BY keyword_id` becomes an
+    # index-only range scan instead of a heap page read (a decrypt) per row.
+    "ix_mention_date_keyword": (
+        "CREATE INDEX IF NOT EXISTS ix_mention_date_keyword ON keyword_mentions "
+        "(observed_on, keyword_id, count)"
+    ),
 }
 
 

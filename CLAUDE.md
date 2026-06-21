@@ -3685,6 +3685,28 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **TRENDING COVERING INDEX (brief §3.E, the #1 perf hotspot; branch claude/amazing-tesla-z6bwkm,
+  draft PR onto 0.09; backend VERIFIED py3.11):** `/api/insights/trending-windows` (~20s idle / ~98s
+  under load, polled from Home) is observed_on-WINDOWED, so the corpus-wide keyword counters can't
+  serve it; `trending()._counts` runs `SELECT keyword_id, SUM(count) WHERE observed_on IN [lo,hi)
+  GROUP BY keyword_id` over 2.4M mention rows. The existing `ix_mention_covering` LEADS with
+  keyword_id (can't serve an observed_on RANGE) and the plain `observed_on` index forces a HEAP page
+  read = a SQLCipher DECRYPT per in-range row — THAT is the cost. CHOSE A COVERING INDEX over the
+  brief's per-day ROLLUP table (the honest engineering call, like the associations PR-3 chose counters
+  over DuckDB): `ix_mention_date_keyword (observed_on, keyword_id, count)` makes `_counts` an
+  index-only "USING COVERING INDEX" range scan (verified with EXPLAIN QUERY PLAN — no heap access),
+  targeting the actual decrypt cost. WINS over the rollup: ZERO drift (it's an index, SQLite maintains
+  it, always correct — no new table, no index-time delta maintenance to get wrong, no backfill, no
+  reconcile), and the QUERY CODE IS UNCHANGED (the planner picks it up transparently). Added to the
+  KeywordMention model + maintenance.HOT_INDEXES (boot self-heal, idempotent) + migration b4c5d6e7f8a9
+  (off head e4f5a6b7c8d9 — single head verified; collision with the pre-existing a3b4c5d6e7f8 caught +
+  avoided). tests/test_trending_index.py (5: index created from model, the `_counts` plan uses the
+  covering index, results IDENTICAL with vs without it, self-heal recreates it idempotently, migration
+  cols == model cols). NO query-logic change ⇒ trending output byte-identical. REMAINING: if the index
+  proves insufficient on the live 2.4M-mention corpus, the per-day rollup is the next lever (measure
+  the EXPLAIN/timing on the real DB first — don't add a drift surface speculatively); the country-
+  filtered `_counts` stays on the heap (rare path, no country column in the index — the hot Home path
+  is no-country).
 - **MARKUP STRIP AT THE EXTRACTION CHOKEPOINT (brief §3.F, the 36.5k `?`-bucket root cause; branch
   claude/amazing-tesla-z6bwkm, draft PR onto 0.09; backend VERIFIED py3.11):** the keyword tokenizer
   `_WORD_RE` mints `div`/`span`/`max-width`/`font-size`/`font-family` directly from any raw HTML/CSS in
@@ -5015,8 +5037,14 @@ ruling, a contingency, or a deliberate-omission note.
   `dateextract._MONTHS`, VERIFIED live ("5 Μαΐου 2024"→2024-05-05, "5. junija 2024"→2024-06-05);
   tests/test_dateextract.py + the stopword self-test cover it. FLAGGED (bigger, not in this batch):
   (1) PERF — `/api/insights/trending-windows` is the #1 hotspot at ~20s idle / ~98s under load (it's
-  observed_on-WINDOWED so the corpus-wide counters don't apply; needs a per-day mention ROLLUP table
-  or a stale-while-revalidate guarantee on the Home poll); associations ~6s (busiest keyword
+  observed_on-WINDOWED so the corpus-wide counters don't apply) — **ADDRESSED 2026-06-21 with a
+  COVERING INDEX rather than the brief's drift-prone rollup (the honest engineering call; see the
+  shipped-log "TRENDING COVERING INDEX" entry): `ix_mention_date_keyword (observed_on, keyword_id,
+  count)` turns `trending()._counts` from a per-row HEAP-decrypt range scan into an index-only
+  ("USING COVERING INDEX") scan — zero drift, no new table/backfill/maintenance code, query logic
+  unchanged. The remaining ~98s-under-load is the TTL cache going cold while the server is busy;
+  warm_cache + the index now make cold recompute cheap (a per-day rollup is still the option if the
+  index proves insufficient on the live corpus — measure first).** associations ~6s (busiest keyword
   'important'=42k mentions), supergroups cold ~15s; the persisted COLUMNAR store is unavailable
   (in-memory) pending the httpfs crypto-extension packaging decision; activity+vitals polled 1281×
   in 26 min. (2) The `?` unknown-language bucket = 36,519 keywords (CSS/HTML leak = an HTML-stripping
