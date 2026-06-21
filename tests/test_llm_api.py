@@ -59,7 +59,7 @@ def teardown_function(_fn):
     app.dependency_overrides.pop(get_llm_client, None)
 
 
-def _seed_article() -> int:
+def _seed_article(lang: str = "en") -> int:
     init_db()
     with session_scope() as s:
         domain = f"llm-{uuid.uuid4().hex[:8]}.example"
@@ -72,7 +72,7 @@ def _seed_article() -> int:
             source_id=src.id,
             title="An article about rivers",
             content="A long body about rivers and floods. " * 30,
-            language="en",
+            language=lang,
             hash=uuid.uuid4().hex + uuid.uuid4().hex,
         )
         s.add(a)
@@ -366,6 +366,30 @@ def test_bulk_translate_records_target_language(tmp_path, monkeypatch):
         a = client.get(f"/api/llm/articles/{ids[0]}/analyses?kind=translation").json()
         assert a["analyses"][0]["target_language"] == "German"
     assert any("German" in (s or "") for _p, _m, s in fake.calls)  # target reached the model
+
+
+def test_bulk_translate_skips_articles_already_in_target_language(tmp_path, monkeypatch):
+    """Never translate an article already in the target language, and report how many WILL
+    be translated up front (maintainer 2026-06-20)."""
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    _override(_FakeOllama())
+    de = _seed_article(lang="de")   # already German -> must be skipped
+    en = _seed_article(lang="en")   # English -> must be translated to German
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/llm/bulk",
+            json={"op": "translate", "article_ids": [de, en], "target_language": "German"},
+        )
+        ev = _ndjson(r.text)
+        start = ev[0]
+        assert start["event"] == "start" and start["total"] == 2
+        assert start["to_process"] == 1 and start["same_language"] == 1
+        done = ev[-1]
+        assert done["stored"] == 1 and done["skipped"] == 1
+    assert len(_stored(de, "translation")) == 0   # the German article was NOT translated
+    assert len(_stored(en, "translation")) == 1
 
 
 def test_bulk_requires_a_selection_and_validates_op():

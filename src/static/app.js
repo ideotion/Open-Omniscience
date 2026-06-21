@@ -10243,7 +10243,12 @@
             let o; try { o = JSON.parse(line); } catch (e) { continue; }
             if (o.event === "start") {
               total = o.total;
-              if (prog) prog.textContent = t("Processing") + " 0/" + total + (o.capped ? " " + t("(capped)") : "") + "…";
+              // Show how many will ACTUALLY run (excludes already-done + already-in-target-language).
+              const todo = (o.to_process != null) ? o.to_process : total;
+              const skip = Math.max(0, total - todo);
+              const verb = op === "translate" ? t("to translate") : t("to summarize");
+              if (prog) prog.textContent = todo + " " + verb
+                + (skip > 0 ? " · " + skip + " " + t("skipped") : "") + "…";
             } else if (o.event === "item") {
               done++;
               if (o.status === "stored") storedN++;

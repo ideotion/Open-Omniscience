@@ -1056,6 +1056,21 @@ ruling, a contingency, or a deliberate-omission note.
   Pull must give immediate visual FEEDBACK; and lift a pulled model OUT of the catalog list INTO a TOP
   section that shows per-model STATUS (Pulling · Queued · Available · Active) + a progress bar. (h)+(h2)
   are one cohesive rework of the Settings → AI subtab + the download queue — build together.
+- **BULK LLM TOOLS — UNCAPPED + SKIP-SAME-LANGUAGE + TO-DO COUNT SHIPPED 2026-06-20 (maintainer field
+  test; branch claude/keen-lamport-b4t3rh, PR #420; backend py_compile-VERIFIED, frontend browser-
+  unverified):** (i) bulk summarize/translate (`/api/llm/bulk`) AND the AI extractor (`/api/ai/
+  keywords/extract` + the custom-prompt `run`) NO LONGER CAP at 200/500 — they process the WHOLE
+  matched set (`limit<=0` = no cap; the FTS path already materialises the full match = the same
+  memory profile as the uncapped export; the run is a visible, abortable task-manager job). Removed
+  `_BULK_MAX_ARTICLES` + `_AI_EXTRACT_MAX`. (ii) a TRANSLATE run NEVER translates an article ALREADY
+  in the target language (`_is_target_language` via a backend `_LANG_EN` code→name map; unconditional,
+  independent of skip_existing; unknown language → never skip on a guess). (iii) the bulk `start`
+  event now reports `to_process` (+ `same_language`/`already_done`) = the count that will ACTUALLY run
+  the model, shown up front in the UI ("N to translate/summarize · M skipped"). tests/test_llm_api.py
+  ::test_bulk_translate_skips_articles_already_in_target_language (+ `_seed_article(lang=)`); existing
+  bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
+  summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
+  limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features

@@ -619,7 +619,11 @@ def synthesize_articles(
 # Unlike /synthesize (ONE combined output), bulk runs the local model over EACH
 # article independently and stores a per-article result. A local CPU model over many
 # articles is slow by nature, so we:
-#   * cap the set (no unbounded fan-out),
+#   * process the WHOLE matched set — UNCAPPED (maintainer 2026-06-20). The run is a
+#     visible, abortable task-manager job, so the user controls the (long) fan-out.
+#   * SKIP work that need not run: a translate run NEVER re-translates and NEVER touches
+#     an article already in the target language; summaries skip the already-summarized.
+#     The start event reports `to_process` so the user sees how many will actually run.
 #   * stream HONEST per-article progress as NDJSON (invariant #20 — never a fabricated
 #     bar/ETA; only what actually completed),
 #   * rely on the client's per-call kill-switch check (airplane mode aborts loudly),
@@ -627,7 +631,24 @@ def synthesize_articles(
 #     a prior one (the latest is shown first; older ones fold away in the reader).
 # These rows are NOT keyword-indexed (they live in article_analyses, never in
 # articles.content), so bulk output never pollutes the keyword analytics.
-_BULK_MAX_ARTICLES = 500
+
+# code -> English name (mirrors the frontend _LANG_EN) so a translate run can skip an
+# article already written in the target language.
+_LANG_EN = {
+    "en": "English", "fr": "French", "de": "German", "es": "Spanish", "pt": "Portuguese",
+    "ru": "Russian", "ar": "Arabic", "zh": "Chinese", "ja": "Japanese", "hi": "Hindi",
+    "bn": "Bengali", "id": "Indonesian", "it": "Italian", "nl": "Dutch",
+}
+
+
+def _is_target_language(article_lang: str | None, target_name: str) -> bool:
+    """True when an article is ALREADY in the translation target (so it is skipped).
+    Unknown language -> False (never skip on a guess)."""
+    code = (article_lang or "").strip().lower()
+    if not code:
+        return False
+    tgt = (target_name or "").strip().lower()
+    return code == tgt or _LANG_EN.get(code, "").lower() == tgt
 
 
 class BulkLLMRequest(BaseModel):
@@ -642,7 +663,7 @@ class BulkLLMRequest(BaseModel):
     output_language: str | None = None  # v2 language pin for the summarize op
     model: str | None = None
     skip_existing: bool = True
-    limit: int = 200
+    limit: int = 0  # 0 = no cap (process the whole matched set)
 
 
 @router.post("/bulk")
@@ -662,7 +683,10 @@ def bulk_llm(
     op = (req.op or "").strip().lower()
     if op not in {"summarize", "translate"}:
         raise HTTPException(status_code=400, detail="op must be 'summarize' or 'translate'.")
-    cap = max(1, min(req.limit or 200, _BULK_MAX_ARTICLES))
+    # UNCAPPED (maintainer 2026-06-20): process the WHOLE matched set. A positive `limit`
+    # is an optional explicit bound; the default (<=0) means no cap. (The FTS path already
+    # materialises the full match, so this is the same memory profile as the export path.)
+    cap = req.limit if (req.limit and req.limit > 0) else None
 
     # Resolve the article set (the analysis window's own selection logic).
     if req.article_ids:
@@ -672,8 +696,8 @@ def bulk_llm(
             if isinstance(v, int) and v not in seen:
                 seen.add(v)
                 ordered.append(v)
-        requested = len(ordered)
-        ids = ordered[:cap]
+        ids = ordered if cap is None else ordered[:cap]
+        requested = len(ids)
         by_id = {a.id: a for a in db.query(Article).filter(Article.id.in_(ids)).all()}
         articles = [by_id[i] for i in ids if i in by_id]
     elif any([req.query, req.source, req.language, req.start_date, req.end_date]):
@@ -688,10 +712,11 @@ def bulk_llm(
     else:
         raise HTTPException(status_code=400, detail="Provide article_ids or a query/filter.")
 
-    # Snapshot the plain fields the stream needs, so it never depends on the request's
+    # Snapshot the plain fields the stream needs (+ the article LANGUAGE so a translate run
+    # can skip articles already in the target language), so it never depends on the request's
     # ORM session staying open while the (slow) model runs.
     work = [
-        (a.id, a.title or "(untitled)", a.content or "")
+        (a.id, a.title or "(untitled)", a.content or "", a.language)
         for a in articles
         if a.content
     ]
@@ -723,8 +748,21 @@ def bulk_llm(
             ex = ex.filter(ArticleAnalysis.prompt_version == prompt_version)
         already = {r[0] for r in ex.all()}
 
+    # A translate run NEVER translates an article already in the target language
+    # (maintainer 2026-06-20) — unconditional, independent of skip_existing.
+    same_lang: set[int] = set()
+    if op == "translate":
+        same_lang = {w[0] for w in work if _is_target_language(w[3], target)}
+
     total = len(work)
-    capped = requested > total
+    # The count that will ACTUALLY run the model (shown up front so the user sees how many
+    # articles are subject to translation / summarization): matched minus the already-done
+    # (when skipping) and minus the already-in-target-language ones.
+    to_process = sum(
+        1 for w in work
+        if w[0] not in same_lang and not (req.skip_existing and w[0] in already)
+    )
+    capped = False  # no cap anymore; kept for response compatibility
 
     # Make the run VISIBLE in the task manager ("is an LLM translating?"): one task
     # for the whole bulk run, progress = articles done / total (the model's REAL
@@ -744,7 +782,8 @@ def bulk_llm(
 
         yield emit({
             "event": "start", "op": op, "total": total, "requested": requested,
-            "capped": capped, "model": model,
+            "to_process": to_process, "already_done": len(already),
+            "same_language": len(same_lang), "capped": capped, "model": model,
             "target_language": target if op == "translate" else None,
         })
         stored = skipped = failed = 0
@@ -752,8 +791,14 @@ def bulk_llm(
 
         try:
           with SessionLocal() as s:
-            for i, (aid, title, content) in enumerate(work, 1):
+            for i, (aid, title, content, _lang) in enumerate(work, 1):
                 _bgtasks.update(_tok, done=i)
+                if aid in same_lang:
+                    skipped += 1
+                    yield emit({"event": "item", "i": i, "total": total,
+                                "article_id": aid, "title": title, "status": "skipped",
+                                "reason": "already in target language"})
+                    continue
                 if req.skip_existing and aid in already:
                     skipped += 1
                     yield emit({"event": "item", "i": i, "total": total,

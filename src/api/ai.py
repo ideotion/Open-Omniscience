@@ -35,9 +35,9 @@ from src.llm.ollama import OllamaClient
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
-# Bound the fan-out: a local CPU model over a large set is slow, and this is a
-# convenience batch, not an unbounded crawl.
-_AI_EXTRACT_MAX = 500
+# UNCAPPED (maintainer 2026-06-20): the extractor runs over the WHOLE matched set. The run
+# is a visible, abortable task-manager job, so the (slow) fan-out is the user's choice; an
+# explicit positive `limit` is an optional bound, the default (<=0) means no cap.
 
 _LENS_NOTE = (
     "AI-derived keywords — a separate, model-generated lens, NOT the trusted keyword "
@@ -59,7 +59,7 @@ def _resolve_work(
     language: str | None,
     start_date: str | None,
     end_date: str | None,
-    cap: int,
+    cap: int | None,
 ) -> list[ArticleWork]:
     """Shared article selection (mirrors the analysis window): an explicit ``article_ids``
     set wins, else the search filters resolve the set. Returns ArticleWork snapshots for
@@ -71,7 +71,8 @@ def _resolve_work(
             if isinstance(v, int) and v not in seen:
                 seen.add(v)
                 ids.append(v)
-        ids = ids[:cap]
+        if cap is not None:
+            ids = ids[:cap]
         by_id = {a.id: a for a in db.query(Article).filter(Article.id.in_(ids)).all()}
         articles = [by_id[i] for i in ids if i in by_id]
     elif any([query, source, language, start_date, end_date]):
@@ -106,7 +107,7 @@ class AiExtractRequest(BaseModel):
     max_terms: int = 20
     model: str | None = None
     skip_existing: bool = True
-    limit: int = 200
+    limit: int = 0  # 0 = no cap (process the whole matched set)
 
 
 @router.post("/keywords/extract")
@@ -119,7 +120,7 @@ def extract_keywords(
     model, storing them in the ``ai_keyword`` table. Selection mirrors the analysis
     window: an explicit ``article_ids`` set wins, else the search filters resolve the
     set. Streams NDJSON honest progress (invariant #20)."""
-    cap = max(1, min(req.limit or 200, _AI_EXTRACT_MAX))
+    cap = req.limit if (req.limit and req.limit > 0) else None  # uncapped by default (2026-06-20)
     work = _resolve_work(
         db, article_ids=req.article_ids, query=req.query, source=req.source,
         language=req.language, start_date=req.start_date, end_date=req.end_date, cap=cap,
@@ -364,7 +365,7 @@ class AiPromptRunRequest(BaseModel):
     model: str | None = None
     max_terms: int = 20
     skip_existing: bool = True
-    limit: int = 200
+    limit: int = 0  # 0 = no cap (process the whole matched set)
 
 
 @router.post("/prompts/{prompt_id}/run")
@@ -381,7 +382,7 @@ def run_custom_prompt(
     p = db.get(AiCustomPrompt, prompt_id)
     if p is None:
         raise HTTPException(status_code=404, detail=f"Custom prompt {prompt_id} not found.")
-    cap = max(1, min(req.limit or 200, _AI_EXTRACT_MAX))
+    cap = req.limit if (req.limit and req.limit > 0) else None  # uncapped by default (2026-06-20)
     work = _resolve_work(
         db, article_ids=req.article_ids, query=req.query, source=req.source,
         language=req.language, start_date=req.start_date, end_date=req.end_date, cap=cap,
