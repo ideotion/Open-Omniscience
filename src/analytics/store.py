@@ -358,7 +358,8 @@ def reindex_all_batch(
     OLD engine produced (e.g. the pre-2026-06-20 .eml bodies that leaked bare CSS
     keywords before ``strip_markup`` landed). ``index_article`` is delete-then-reinsert
     per article, so the new engine's output overwrites the old; AI artifacts
-    (article_analyses / ai_keyword) are untouched. PAGED: returns ``last_id`` so the
+    (summaries/translations and the AI-derived keyword rows) are untouched. PAGED:
+    returns ``last_id`` so the
     caller loops (after_id=last_id) until ``done``. One bad article never aborts the
     batch. Counts only — no score."""
     rows = (
