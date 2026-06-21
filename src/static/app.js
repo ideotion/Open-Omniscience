@@ -9554,6 +9554,10 @@
       const lang = $("an-adv-lang").value.trim(); if (lang) p.set("language", lang);
       if ($("an-adv-from").value) p.set("start_date", $("an-adv-from").value);
       if ($("an-adv-to").value) p.set("end_date", $("an-adv-to").value);
+      // Metadata sort (brief §2.D) — honest ordering, never a score. Only the
+      // Articles list (/api/articles) reads these; insights endpoints ignore them.
+      const sb = $("an-adv-sort") && $("an-adv-sort").value;
+      if (sb) { p.set("sort_by", sb); p.set("sort_dir", ($("an-adv-dir") && $("an-adv-dir").value) || "desc"); }
       return p;
     }
     // === THEME-3 (2026-06-19): analysis-window-per-query ====================== //

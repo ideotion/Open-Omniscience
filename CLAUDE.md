@@ -1091,9 +1091,14 @@ ruling, a contingency, or a deliberate-omission note.
   (overriding relevance only when `sort_by` is set, else relevance preserved). 400 on an invalid
   sort_by/sort_dir. The existing source/date/language/tag FILTERS were already present (per-metadata
   filtering = done; this adds the SORT half). tests/test_search_sort.py (browse + FTS, every field
-  asc/desc, default-recency-unchanged; skip-guarded for the no-crypto sandbox, runs in CI). REMAINING:
-  the UI sort control in the Advanced-search tab + the cross-tab "filtered" indicator (the frontend
-  half — browser-unverified, next). (g) SHIPPED: the analysis Articles
+  asc/desc, default-recency-unchanged; skip-guarded for the no-crypto sandbox, runs in CI). FRONTEND
+  SHIPPED 2026-06-21 (browser-unverified per fork-3): the Advanced-search panel gained Sort-by
+  (Relevance/recency · Date · Source · Title A–Z · Language) + Order (Desc/Asc) selects; `anParams()`
+  appends sort_by/sort_dir (only the Articles list reads them; insights endpoints ignore the extras; the
+  card-seeded article_ids path keeps its explicit order). test_repo_invariants::
+  test_advanced_search_sort_by_metadata. REMAINING: the cross-tab "filtered" indicator (when any
+  filter/sort is active, show it on ALL tabs like the active-search-terms chip — a larger cross-cutting
+  frontend change, browser-unverified, next). (g) SHIPPED: the analysis Articles
   list is PAGINATED — `_anLoadArticles(p,page)` fetches /api/articles by limit+offset (page size 50,
   `total` drives the page count), renders Prev/Next + "Page X of Y" controls BOTH above and below the
   table, loadAnalysis seeds page 0; test_analysis_articles_paginated. PENDING: (h) LLM MODEL DOWNLOAD

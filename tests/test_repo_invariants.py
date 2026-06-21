@@ -595,6 +595,23 @@ def test_remove_imported_newsletters_live_action():
     assert "/api/newsletters/remove-imported" in app
 
 
+def test_advanced_search_sort_by_metadata():
+    """Brief §2.D ('important'): /api/articles can sort by a metadata field (date|source|
+    title|language) — an honest ordering, never a relevance/quality score — surfaced as a
+    Sort control in the Advanced-search panel."""
+    main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # backend: the params + the valid-field set + case-insensitive alphabetical
+    assert "sort_by:" in main and "sort_dir:" in main and "_SORT_FIELDS" in main
+    assert 'collate("NOCASE")' in main  # case-insensitive alphabetical, both paths agree
+    # no score: the sort fields are pure metadata
+    assert '{"date", "source", "title", "language"}' in main
+    # UI: the sort + order selects + they feed the query
+    assert 'id="an-adv-sort"' in html and 'id="an-adv-dir"' in html
+    assert 'p.set("sort_by"' in app and 'p.set("sort_dir"' in app
+
+
 def test_large_data_folder_backup():
     """Brief §2.A: a SERVER-SIDE 'copy to a folder/drive' backup streams the big public
     re-downloadable blobs (Wikipedia dumps + OSM maps + Ollama models) into a user-chosen
