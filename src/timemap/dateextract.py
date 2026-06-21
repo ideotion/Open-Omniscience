@@ -166,10 +166,11 @@ _MONTHS.update({
     "σεπτέμβριος": 9, "σεπτεμβρίου": 9, "οκτώβριος": 10, "οκτωβρίου": 10,
     "νοέμβριος": 11, "νοεμβρίου": 11, "δεκέμβριος": 12, "δεκεμβρίου": 12,
     # Slovenian (date-diagnostics 2026-06-21: sl coverage 6.2 %, in_month_vocab=FALSE).
-    # Nominative + genitive ("5. junija 2024"); "marca" omitted (collides with the
-    # genitive forms already excluded above). Overlaps with existing keys are harmless.
-    "januar": 1, "januarja": 1, "februar": 2, "februarja": 2, "marec": 3,
-    "aprila": 4, "junij": 6, "junija": 6, "julij": 7, "julija": 7,
+    # Genitive forms ("5. junija 2024") + the months not already in the table; the
+    # nominatives januar/februar (German) and marec (Slovak) are already present, so
+    # only the Slovenian-specific forms are added here. "marca" omitted (collision).
+    "januarja": 1, "februarja": 2, "aprila": 4,
+    "junij": 6, "junija": 6, "julij": 7, "julija": 7,
 })
 _MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 
