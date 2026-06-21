@@ -1187,8 +1187,10 @@
             run: () => showTab("sources")}));
         } else if (g.kind === "wiki") {
           const grp = head(t("Wikipedia"), g);
+          // A content hit carries a reader url (open the LOCAL article); a watched-page
+          // title hit (no url) jumps to the Wikipedia settings/tracker.
           items.forEach(it => out.push({grp, label: it.title, sub: it.wiki || "",
-            run: () => showTab("wiki")}));
+            run: it.url ? (() => window.open(it.url, "_blank")) : (() => showTab("wiki"))}));
         } else if (g.kind === "law") {
           const grp = head(t("World law"), g);
           items.forEach(it => out.push({grp, label: it.title,

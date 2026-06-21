@@ -1071,6 +1071,20 @@ ruling, a contingency, or a deliberate-omission note.
   bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
   summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
   limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **UNIFIED SEARCH NOW SEARCHES WIKIPEDIA ARTICLE CONTENT SHIPPED 2026-06-21 (maintainer field test;
+  branch claude/keen-lamport-b4t3rh, PR #420; backend py_compile-VERIFIED, frontend browser-unverified):**
+  the omnibar/palette wiki group (`/api/search/omni` `_wiki_group`) matched ONLY watched-page TITLES.
+  Now it searches wiki ARTICLE CONTENT: `WikiPage.baseline_text` is stored COMPRESSED (no SQL LIKE), so
+  content search runs over the FTS-indexed CORPUS articles produced by the watched-page→corpus sync
+  (source domain `xx.wikipedia.org`). `_wiki_group` runs `search_ids` (FTS, ranked), filters the hits to
+  Wikipedia-edition sources (`domain LIKE %wikipedia.org`, bounded `_WIKI_SCAN_CAP=2000` chunked scan),
+  returns the top 3 as reader links (article_id + `/api/articles/{id}/view`, the edition parsed from the
+  domain) with the real total; when NO indexed wiki content matches it FALLS BACK to the watched-pages
+  title catalog (prior behaviour preserved — the existing title test still passes). Frontend: a wiki
+  item with a `url` opens the LOCAL reader, a title-only item jumps to Settings → Wikipedia. HONEST GAP
+  stated: downloaded offline DUMPS are files, NOT full-text-searched yet (the standing remaining item).
+  tests/test_search_omni.py::test_omni_wiki_group_searches_wikipedia_article_content (a wikipedia.org
+  article found by content → reader link + edition). REMAINING: full-text search over downloaded dumps.
 - **SELECTIVE BACKUP — "WHAT TO BACK UP" TICKBOXES + EXCLUDE NEWSLETTERS SHIPPED 2026-06-21 (maintainer
   field test; branch claude/keen-lamport-b4t3rh, PR #420; backend stdlib-VERIFIED, frontend browser-
   unverified per fork-3):** the maintainer curated a corpus incl. faulty .eml imports and wants to back

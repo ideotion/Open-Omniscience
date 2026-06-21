@@ -110,16 +110,87 @@ def _sources_group(db: Session, q: str) -> dict:
     }
 
 
+_WIKI_DOMAIN_LIKE = "%wikipedia.org"  # the wiki corpus source convention (xx.wikipedia.org)
+_WIKI_SCAN_CAP = 2000  # bound the wiki-membership scan over FTS hits (omnibar speed)
+
+
 def _wiki_group(db: Session, q: str) -> dict:
+    """Wikipedia: search the wiki ARTICLE CONTENT, not only watched-page titles
+    (maintainer 2026-06-21). Wiki page text (WikiPage.baseline_text) is stored
+    COMPRESSED, so content search runs over the FTS-indexed corpus articles produced by
+    the watched-page -> corpus sync (source domain ``xx.wikipedia.org``). When no indexed
+    wiki content matches, fall back to the watched-pages title catalog (the prior
+    behaviour). Downloaded offline DUMPS are files, not full-text-searched yet."""
+    # 1) content hits among Wikipedia-edition articles, in FTS rank order (bounded).
+    try:
+        ids = search_ids(db, q)
+    except SearchQueryError:
+        try:
+            ids = search_ids(db, '"' + q.replace('"', " ") + '"')
+        except SearchQueryError:
+            ids = []
+    window = ids[:_WIKI_SCAN_CAP]
+    content_items: list[dict] = []
+    content_total = 0
+    if window:
+        wiki_set: set[int] = set()
+        for i in range(0, len(window), 900):
+            chunk = window[i : i + 900]
+            for (aid,) in (
+                db.query(Article.id)
+                .join(Source, Article.source_id == Source.id)
+                .filter(Article.id.in_(chunk), Source.domain.like(_WIKI_DOMAIN_LIKE))
+                .all()
+            ):
+                wiki_set.add(aid)
+        ranked = [a for a in window if a in wiki_set]
+        content_total = len(ranked)
+        top = ranked[:_PER_GROUP]
+        if top:
+            got = (
+                db.query(Article.id, Article.title, Article.published_at, Source.domain)
+                .join(Source, Article.source_id == Source.id)
+                .filter(Article.id.in_(top))
+                .all()
+            )
+            by = {r[0]: r for r in got}
+            for aid in top:
+                if aid in by:
+                    dom = by[aid][3] or ""
+                    edition = dom.split(".", 1)[0] if dom.endswith("wikipedia.org") else ""
+                    content_items.append(
+                        {
+                            "article_id": aid,
+                            "title": by[aid][1],
+                            "wiki": edition,
+                            "url": f"/api/articles/{aid}/view",  # the LOCAL reader (invariant #6)
+                            "published_at": by[aid][2].isoformat() if by[aid][2] else None,
+                        }
+                    )
+    # 2) watched-page TITLE catalog (fills remaining slots / the no-content fallback).
     pat = "%" + _like_escape(q) + "%"
     base = db.query(WikiPage).filter(WikiPage.title.ilike(pat, escape="\\"))
+    if content_total:
+        title_items = []
+        if len(content_items) < _PER_GROUP:
+            for p in base.order_by(WikiPage.title).limit(_PER_GROUP - len(content_items)).all():
+                title_items.append({"page_id": p.id, "title": p.title, "wiki": p.wiki})
+        capped = len(ids) > len(window)
+        return {
+            "kind": "wiki",
+            "items": content_items + title_items,
+            "total": content_total,
+            "note": "FTS5 content match over your Wikipedia corpus"
+            + (" (within the top results)" if capped else "")
+            + (" + watched-page titles" if title_items else ""),
+        }
     total = base.count()
     rows = base.order_by(WikiPage.title).limit(_PER_GROUP).all()
     return {
         "kind": "wiki",
         "items": [{"page_id": p.id, "title": p.title, "wiki": p.wiki} for p in rows],
         "total": total,
-        "note": "title contains-match over your watched-pages list",
+        "note": "title match over your watched-pages list (no indexed Wikipedia content matched)",
     }
 
 
