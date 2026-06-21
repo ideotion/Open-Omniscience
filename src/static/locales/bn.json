@@ -1511,5 +1511,9 @@
   "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "ভার্চুয়ালএন্ভ ও ডেস্কটপ লঞ্চার সবসময় সরানো হয়; অ্যাপ ফোল্ডার ও আপনার ডেটাও যাবে কিনা তা মোডের উপর নির্ভর করে। আপনি এটি টার্মিনালেও চালাতে পারেন: ./install.sh --uninstall",
   "The app is shutting down — you can close this tab.": "অ্যাপটি বন্ধ হচ্ছে — আপনি এই ট্যাবটি বন্ধ করতে পারেন।",
   "Open Omniscience has been uninstalled and the app has stopped. You can close this window.": "Open Omniscience আনইনস্টল করা হয়েছে এবং অ্যাপটি বন্ধ হয়ে গেছে। আপনি এই উইন্ডোটি বন্ধ করতে পারেন।",
-  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "অ্যাপটি বন্ধ করবেন? সার্ভার বন্ধ হয়ে যাবে এবং আপনাকে এটি আবার চালু করতে হবে। আপনার ডেটা অক্ষত থাকে।"
+  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "অ্যাপটি বন্ধ করবেন? সার্ভার বন্ধ হয়ে যাবে এবং আপনাকে এটি আবার চালু করতে হবে। আপনার ডেটা অক্ষত থাকে।",
+  "Relevance / recency": "প্রাসঙ্গিকতা / সাম্প্রতিকতা",
+  "Title (A–Z)": "শিরোনাম (A–Z)",
+  "Descending": "অবরোহী",
+  "Ascending": "আরোহী"
 }

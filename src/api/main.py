@@ -476,6 +476,24 @@ def _structured_filters(
     return filters
 
 
+# Advanced-search sorting (brief §2.D, "important" — thinner corpus creation): order
+# articles by a chosen METADATA field instead of always recency/relevance. These are
+# honest orderings of real metadata, never a relevance/quality score.
+_SORT_FIELDS = {"date", "source", "title", "language"}
+
+
+def _python_sort_key(sort_by: str):
+    """Key for sorting fetched Article rows (the FTS path) by a metadata field."""
+    if sort_by == "title":
+        return lambda a: (a.title or "").casefold()
+    if sort_by == "language":
+        return lambda a: (a.language or "")
+    if sort_by == "source":
+        return lambda a: (a.source.name if a.source else "").casefold()
+    # date: tz-normalise so naive (SQLite) + any aware values stay comparable.
+    return lambda a: (a.published_at.replace(tzinfo=None) if a.published_at else datetime.min)
+
+
 def _query_articles(
     session,
     *,
@@ -487,12 +505,16 @@ def _query_articles(
     tags: str | None,
     limit: int | None,
     offset: int,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
 ) -> tuple[list, int]:
     """Return ``(articles, total)`` applying full-text search + structured filters.
 
     Text search uses SQLite FTS5 (real Boolean AND/OR/NOT, phrases, parenthesised
     precedence) and orders results by relevance; otherwise results are ordered by
-    recency. ``limit=None`` returns every match (used by export).
+    recency. ``sort_by`` (date|source|title|language) overrides that order with a
+    metadata ordering (``sort_dir`` asc|desc, default desc). ``limit=None`` returns
+    every match (used by export).
     """
     from sqlalchemy import and_
 
@@ -504,6 +526,7 @@ def _query_articles(
         language=language,
         tags=tags,
     )
+    descending = (sort_dir or "desc").lower() != "asc"
 
     fts_ids: list | None = None
     if query:
@@ -520,19 +543,34 @@ def _query_articles(
         if filters:
             q = q.filter(and_(*filters))
         rows = q.all()
-        rank = {aid: i for i, aid in enumerate(fts_ids)}
-        rows.sort(key=lambda a: rank.get(a.id, 1 << 30))
+        if sort_by in _SORT_FIELDS:
+            rows.sort(key=_python_sort_key(sort_by), reverse=descending)
+        else:  # default: relevance order
+            rank = {aid: i for i, aid in enumerate(fts_ids)}
+            rows.sort(key=lambda a: rank.get(a.id, 1 << 30))
         total = len(rows)
         if limit is not None:
             rows = rows[offset : offset + limit]
         return rows, total
 
-    # No text query: browse by recency.
+    # No text query: browse by the chosen metadata order (default recency).
     q = session.query(Article)
     if filters:
         q = q.filter(and_(*filters))
     total = q.count()
-    q = q.order_by(Article.published_at.desc(), Article.id.desc())
+    if sort_by == "source":
+        # COLLATE NOCASE so alphabetical order is case-insensitive AND matches the
+        # FTS path's Python casefold (otherwise SQLite's binary collation sorts all
+        # capitals before lowercase — "Zeta" before "apple").
+        q = q.outerjoin(Source, Article.source_id == Source.id)
+        order_col = Source.name.collate("NOCASE")
+    elif sort_by == "title":
+        order_col = Article.title.collate("NOCASE")
+    elif sort_by == "language":
+        order_col = Article.language
+    else:  # date / default
+        order_col = Article.published_at
+    q = q.order_by(order_col.desc() if descending else order_col.asc(), Article.id.desc())
     if limit is not None:
         q = q.offset(offset).limit(limit)
     return q.all(), total
@@ -550,6 +588,8 @@ async def search_articles(
     language: str | None = None,
     tags: str | None = None,
     ids: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -565,6 +605,9 @@ async def search_articles(
     - end_date: Filter by end date (YYYY-MM-DD).
     - language: Filter by language code (e.g., "en", "fr").
     - tags: Filter by source tags (comma-separated).
+    - sort_by: Order by a metadata field (date|source|title|language). Default:
+      relevance for a text query, else recency. Honest metadata order, never a score.
+    - sort_dir: asc|desc (default desc).
     - limit: Maximum number of results to return (default: 100).
     - offset: Offset for pagination (default: 0).
     """
@@ -574,6 +617,12 @@ async def search_articles(
         raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset must be non-negative")
+    if sort_by is not None and sort_by not in _SORT_FIELDS:
+        raise HTTPException(
+            status_code=400, detail=f"sort_by must be one of {sorted(_SORT_FIELDS)}"
+        )
+    if sort_dir is not None and sort_dir.lower() not in ("asc", "desc"):
+        raise HTTPException(status_code=400, detail="sort_dir must be asc or desc")
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
 
@@ -614,6 +663,8 @@ async def search_articles(
         tags=tags,
         limit=limit,
         offset=offset,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
 
     results = [

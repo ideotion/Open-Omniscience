@@ -367,3 +367,127 @@ async def models_import(file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail=f"models import failed: {exc}") from exc
     finally:
         dest.unlink(missing_ok=True)
+
+
+# --------------------------------------------------------------------------- #
+# Large-data "copy to a folder/drive" backup (brief §2.A) — wiki dumps + OSM
+# maps + Ollama models streamed SERVER-SIDE into a user-chosen directory. These
+# public, re-downloadable blobs are copied as-is (the encrypted corpus stays in
+# oo-backup-2); the copy is a pausable, task-manager-visible job.
+# --------------------------------------------------------------------------- #
+_FOLDER_CATEGORIES = ("wiki_dumps", "osm_regions", "models")
+
+
+class FolderBackupBody(BaseModel):
+    dest: str
+    categories: list[str] | None = None  # None = all three
+
+
+class FolderRestoreBody(BaseModel):
+    src: str
+    categories: list[str] | None = None
+
+
+def _folder_categories(cats: list[str] | None) -> list[str]:
+    return [c for c in (cats or _FOLDER_CATEGORIES) if c in _FOLDER_CATEGORIES]
+
+
+@router.get("/folder/status")
+def folder_backup_status() -> dict:
+    """Live state of the (single) folder backup/restore job — for the UI + /api/jobs."""
+    from src.backup.folder_backup import get_folder_manager
+
+    return get_folder_manager().status()
+
+
+@router.post("/folder/plan")
+def folder_backup_plan(body: FolderBackupBody) -> dict:
+    """Preflight WITHOUT starting: validate the destination, enumerate the completed
+    dumps/maps/models, and report the size to copy vs free space at the destination —
+    so the UI shows an honest 'needs X, Y free' before the user commits."""
+    from src.backup.folder_backup import (
+        collect_items,
+        free_bytes,
+        human_bytes,
+        needed_bytes,
+        validate_dest,
+    )
+
+    cats = _folder_categories(body.categories)
+    try:
+        destp = validate_dest(body.dest)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    items = collect_items(
+        include_wiki="wiki_dumps" in cats,
+        include_osm="osm_regions" in cats,
+        include_models="models" in cats,
+    )
+    per_cat: dict[str, dict] = {}
+    for c in cats:
+        ci = [it for it in items if it.category == c]
+        per_cat[c] = {"files": len(ci), "bytes": sum(it.size for it in ci)}
+    need = needed_bytes(destp, items)
+    free = free_bytes(destp)
+    return {
+        "dest": str(destp),
+        "categories": cats,
+        "files": len(items),
+        "total_bytes": sum(it.size for it in items),
+        "needed_bytes": need,
+        "needed_human": human_bytes(need),
+        "free_bytes": free,
+        "free_human": human_bytes(free),
+        "enough_space": need <= free,
+        "by_category": per_cat,
+    }
+
+
+@router.post("/folder/start")
+def folder_backup_start(body: FolderBackupBody) -> dict:
+    """Start (or restart/resume) the folder backup. 400 on a bad destination or
+    insufficient free space; 409 if one is already running."""
+    from src.backup.folder_backup import get_folder_manager
+
+    try:
+        return get_folder_manager().start(body.dest, _folder_categories(body.categories))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/folder/restore")
+def folder_backup_restore(body: FolderRestoreBody) -> dict:
+    """Restore a folder backup ADDITIVELY back into the live locations (skip-if-present,
+    never overwriting a differing local dump/blob)."""
+    from src.backup.folder_backup import get_folder_manager
+
+    try:
+        return get_folder_manager().start(
+            body.src, _folder_categories(body.categories), mode="restore"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/folder/{action}")
+def folder_backup_action(action: str) -> dict:
+    """Pause / resume / cancel the running folder job (routed to the owner)."""
+    from src.backup.folder_backup import get_folder_manager
+
+    mgr = get_folder_manager()
+    if action == "pause":
+        mgr.pause()
+    elif action == "resume":
+        try:
+            return mgr.resume()
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    elif action == "cancel":
+        mgr.cancel()
+    else:
+        raise HTTPException(status_code=404, detail=f"unknown action {action}")
+    return mgr.status()

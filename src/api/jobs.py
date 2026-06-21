@@ -216,6 +216,41 @@ def _task_jobs() -> list[dict]:
     return out
 
 
+def _folder_backup_jobs() -> list[dict]:
+    """The large-data 'copy to a folder/drive' backup/restore as a visible job (brief
+    §2.A) — a FILE copy (no DB-writer contention), pausable + resumable. Aggregated
+    live from the folder-backup manager; surfaces only while it is active."""
+    from src.backup.folder_backup import get_folder_manager
+
+    s = get_folder_manager().status()
+    if s["state"] in ("idle", "done") and not s.get("running"):
+        return []
+    state = {"running": "running", "paused": "paused", "error": "failed"}.get(s["state"], s["state"])
+    p = s.get("progress") or {}
+    prog = None
+    if p.get("bytes_total"):
+        done, total = int(p.get("bytes_copied") or 0), int(p["bytes_total"])
+        prog = {"done": done, "total": total, "unit": "bytes",
+                "percent": round(100 * done / total, 1) if total else 0.0}
+    verb = "Restoring" if s.get("mode") == "restore" else "Backing up"
+    actions = []
+    if state == "running":
+        actions = ["pause", "cancel"]
+    elif state in ("paused", "failed"):
+        actions = ["resume", "cancel"]
+    return [
+        {
+            "id": "folder-backup",
+            "kind": "folder-backup",
+            "label": f"{verb} to {s.get('dest') or 'a folder'}",
+            "state": state,
+            "progress": prog,
+            "error": s.get("error"),
+            "actions": actions,
+        }
+    ]
+
+
 @router.get("/history")
 def jobs_history(limit: int = 20) -> dict:
     """Recent COMPLETED collection passes (the History tab) — newest first, with the
@@ -240,6 +275,7 @@ def list_jobs() -> dict:
         jobs.append(j)
     jobs.extend(_dump_jobs())
     jobs.extend(_osm_jobs())
+    jobs.extend(_folder_backup_jobs())
     jobs.extend(_task_jobs())
     f = _live_fetch()
     if f:
@@ -308,6 +344,13 @@ def cancel_job(job_id: str) -> dict:
         if not ok:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
         return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → Offline map)"}
+    if job_id == "folder-backup":
+        # Task-manager "cancel"/"pause" PAUSE the folder copy (resumable, like a dump);
+        # a true abandon lives in the dedicated Settings → Data & backup controls.
+        from src.backup.folder_backup import get_folder_manager
+
+        get_folder_manager().pause()
+        return {"cancelled": job_id, "detail": "folder backup paused (resumable from Settings → Data & backup)"}
     if job_id == "collect:current":
         from src.ingest import activate_kill_switch, kill_switch_active
         from src.scheduler.runner import get_scheduler
@@ -346,4 +389,14 @@ def resume_job(job_id: str) -> dict:
         if get_osm_manager().resume(key) is None:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
         return {"resumed": job_id, "detail": "download resumed"}
+    if job_id == "folder-backup":
+        # Local disk copy — no network/airplane gate (the frontend's ensureOnline is a
+        # no-op when offline); resume re-plans + skips already-copied files.
+        from src.backup.folder_backup import get_folder_manager
+
+        try:
+            get_folder_manager().resume()
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"resumed": job_id, "detail": "folder backup resumed"}
     raise HTTPException(status_code=404, detail=f"unknown or unresumable job {job_id!r}")

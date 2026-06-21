@@ -1511,5 +1511,9 @@
   "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "Lingkungan virtual dan peluncur desktop selalu dihapus; apakah folder aplikasi dan data Anda ikut terhapus tergantung pada mode. Anda juga dapat menjalankannya di terminal: ./install.sh --uninstall",
   "The app is shutting down — you can close this tab.": "Aplikasi sedang ditutup — Anda dapat menutup tab ini.",
   "Open Omniscience has been uninstalled and the app has stopped. You can close this window.": "Open Omniscience telah dihapus dan aplikasi telah berhenti. Anda dapat menutup jendela ini.",
-  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "Matikan aplikasi? Server akan berhenti dan Anda perlu menjalankannya kembali. Data Anda tidak terpengaruh."
+  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "Matikan aplikasi? Server akan berhenti dan Anda perlu menjalankannya kembali. Data Anda tidak terpengaruh.",
+  "Relevance / recency": "Relevansi / terkini",
+  "Title (A–Z)": "Judul (A–Z)",
+  "Descending": "Menurun",
+  "Ascending": "Menaik"
 }

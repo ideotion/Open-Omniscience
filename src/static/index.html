@@ -309,6 +309,19 @@
             <input id="an-adv-from" type="date"></label>
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">To</span>
             <input id="an-adv-to" type="date"></label>
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Sort by</span>
+            <select id="an-adv-sort" style="max-width:150px">
+              <option value="">Relevance / recency</option>
+              <option value="date">Date</option>
+              <option value="source">Source</option>
+              <option value="title">Title (A–Z)</option>
+              <option value="language">Language</option>
+            </select></label>
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Order</span>
+            <select id="an-adv-dir" style="max-width:130px">
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select></label>
           <button class="primary" onclick="anRunAdvanced()">Run analysis</button>
         </div>
         <div id="an-adv-note" class="muted" style="margin-top:8px"></div>
@@ -1266,6 +1279,39 @@
         <label class="switch" style="margin-top:0"><input type="file" id="models-bk-file" accept=".oomodels" onchange="modelsBackupImport(this)" style="display:none"><button class="secondary" onclick="document.getElementById('models-bk-file').click()">Restore models…</button></label>
       </div>
     </section>
+    <section class="panel" id="folder-backup-panel">
+      <div class="phead"><h2>Large data backup (folder / external drive)</h2></div>
+      <p class="muted" style="margin-top:0">Wikipedia dumps, offline maps and LLM models are large, public, re-downloadable files — too big for the encrypted full backup. Copy them server-side into a folder you choose on this machine (e.g. an external drive's mount path). They are copied as-is (not encrypted — that is what makes 100&nbsp;GB feasible); your private corpus stays in the encrypted full backup. A second run re-copies nothing unchanged, restore is additive (a file you already have is never overwritten), and in-progress downloads are skipped.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:2"><label for="fb-dest">Destination folder (on this machine)</label>
+          <input id="fb-dest" placeholder="/mnt/external-drive/oo-large-backup" size="32"></div>
+      </div>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
+        <legend class="muted" style="padding:0 6px">What to include</legend>
+        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="fb-wiki" checked> Wikipedia dumps</label>
+        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="fb-osm" checked> Offline maps (OSM)</label>
+        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="fb-models" checked> Local LLM models</label>
+      </fieldset>
+      <div class="row" style="gap:8px">
+        <button class="secondary" onclick="folderBackupPlan(this)">Check space</button>
+        <button onclick="folderBackupStart(this)">Back up to folder</button>
+      </div>
+      <div id="fb-plan" class="hint" style="margin-top:6px"></div>
+      <div id="fb-progress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
+      <div class="row" id="fb-controls" style="gap:8px;margin-top:6px;display:none">
+        <button class="secondary" id="fb-pause" onclick="folderBackupAction('pause', this)">Pause</button>
+        <button class="secondary" id="fb-resume" onclick="folderBackupAction('resume', this)" style="display:none">Resume</button>
+        <button class="secondary" id="fb-cancel" onclick="folderBackupAction('cancel', this)">Cancel</button>
+      </div>
+      <hr>
+      <h3 style="margin-bottom:6px">Restore large data from a folder</h3>
+      <p class="muted" style="margin-top:0">Copy Wikipedia dumps, maps and models BACK from a folder backup into this machine, additively — a file you already have is kept, never overwritten.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap">
+        <div style="flex:2"><label for="fb-src">Folder to restore from</label>
+          <input id="fb-src" placeholder="/mnt/external-drive/oo-large-backup" size="32"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="folderRestoreStart(this)">Restore from folder</button></div>
+      </div>
+    </section>
     <section class="panel" id="backup-panel">
       <h2>Backup &amp; restore</h2>
       <div id="backup-status" class="hint">Checking backend…</div>
@@ -1280,7 +1326,7 @@
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always included)</span></label>
         <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-incl-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to back up without them (e.g. to re-import fixed ones)</span></label>
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use the separate “Local LLM models” backup above</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— large files, separate backup (coming soon)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— large files: use the “Large data backup (folder / external drive)” panel above</span></label>
       </fieldset>
       <div class="row">
         <div style="flex:2"><label for="v2-pass">Passphrase</label>
@@ -1313,7 +1359,7 @@
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always merged)</span></label>
         <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-restore-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to restore everything except them</span></label>
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use the separate “Local LLM models” restore above</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— not carried in this archive yet</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— restore these from the “Large data backup” panel above</span></label>
         <div class="hint" style="margin-top:4px">The preview reflects your choice — what you preview is exactly what gets merged.</div>
       </fieldset>
       <div id="v2-preview" style="display:none">

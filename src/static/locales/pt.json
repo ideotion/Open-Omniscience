@@ -1511,5 +1511,9 @@
   "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "O ambiente virtual e os lançadores da área de trabalho são sempre removidos; se a pasta do aplicativo e seus dados também vão depende do modo. Você também pode executá-lo em um terminal: ./install.sh --uninstall",
   "The app is shutting down — you can close this tab.": "A aplicação está a encerrar — podes fechar este separador.",
   "Open Omniscience has been uninstalled and the app has stopped. You can close this window.": "O Open Omniscience foi desinstalado e a aplicação parou. Podes fechar esta janela.",
-  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "Encerrar a aplicação? O servidor vai parar e terás de reiniciá-lo. Os teus dados não são alterados."
+  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "Encerrar a aplicação? O servidor vai parar e terás de reiniciá-lo. Os teus dados não são alterados.",
+  "Relevance / recency": "Relevância / recência",
+  "Title (A–Z)": "Título (A–Z)",
+  "Descending": "Decrescente",
+  "Ascending": "Crescente"
 }

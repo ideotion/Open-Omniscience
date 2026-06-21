@@ -1511,5 +1511,9 @@
   "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall",
   "The app is shutting down — you can close this tab.": "The app is shutting down — you can close this tab.",
   "Open Omniscience has been uninstalled and the app has stopped. You can close this window.": "Open Omniscience has been uninstalled and the app has stopped. You can close this window.",
-  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched."
+  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.",
+  "Relevance / recency": "Relevance / recency",
+  "Title (A–Z)": "Title (A–Z)",
+  "Descending": "Descending",
+  "Ascending": "Ascending"
 }
