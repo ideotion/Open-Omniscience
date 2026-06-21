@@ -1043,19 +1043,30 @@ ruling, a contingency, or a deliberate-omission note.
   20 GB+ folder), and imports each group via the batched `ingest_emails` over a gated `SessionLocal`
   session — so it takes the SINGLE-WRITER GATE per batch commit and arbitrates with the scrape (kind=
   "import" joins the `db_writers` set). PAUSE = stop-event (stops between chunks); RESUME is idempotent
-  by construction (content-hash dedup + an in-memory processed-paths set so progress CONTINUES, never
-  re-imports — the resume carries `_done` forward, set BEFORE the worker reads it to avoid a race);
-  honest rule-of-three ETA from files-done/elapsed (only once >0). ZERO network (local disk read).
-  API (`src/api/ingestion.py`): `POST /api/newsletters/import-folder` (400 bad folder / 409 already
-  running) + `/import-folder/status` + `/import-folder/{pause|resume|cancel}`. Surfaced in `/api/jobs`
-  (`_import_jobs`, kind="import", task-manager cancel=resumable pause / resume routed). Frontend: a
-  Settings → Newsletters "Import a whole folder" section (path input + live progress poll + pause/
-  resume). tests/test_newsletter_import_job.py (5: imports a folder, idempotent re-import dedups,
-  resume skips already-done, bad-folder ValueError, status/ETA shape — via a StaticPool in-memory DB so
-  the worker's own session sees the schema) + test_repo_invariants::test_newsletter_folder_import_job.
-  §2.B is now COMPLETE (live-remove + batched commits + upload-cap + the folder-import job). REMAINING:
-  human click-through (fork-3); a persisted cursor so resume survives an app restart (today the in-
-  memory done-set is lost on restart → resume re-scans, dedup-safe but slower); key the panel ×12.
+  two ways (content-hash dedup is the correctness net + a PERSISTED on-disk CURSOR so progress CONTINUES,
+  never re-imports); honest rule-of-three ETA from files-done/elapsed (only once >0). ZERO network (local
+  disk read). API (`src/api/ingestion.py`): `POST /api/newsletters/import-folder` (400 bad folder / 409
+  already running) + `/import-folder/status` + `/import-folder/{pause|resume|cancel}`. Surfaced in
+  `/api/jobs` (`_import_jobs`, kind="import", task-manager cancel=resumable pause / resume routed).
+  Frontend: a Settings → Newsletters "Import a whole folder" section (path input + live progress poll +
+  pause/resume). tests/test_newsletter_import_job.py (6) + test_repo_invariants::
+  test_newsletter_folder_import_job. §2.B is now COMPLETE (live-remove + batched commits + upload-cap +
+  the folder-import job).
+  **PERSISTED IMPORT CURSOR SHIPPED 2026-06-21 (the flagged §2.B remaining; branch claude/amazing-tesla-
+  z6bwkm, draft PR onto 0.09; backend VERIFIED py3.11):** the folder-import resume was IN-MEMORY (a
+  `_done` paths set lost on an app restart → a resume re-scanned a 100k-file folder from zero, dedup-safe
+  but slow). Replaced it with a small on-disk INDEX CURSOR (`data_dir()/newsletter_import.json` =
+  {folder, cursor, total, tally, state}, `state_path` override for tests): the worker advances + `_save`s
+  the cursor per `_FILE_CHUNK` (the dest-dir-is-the-durable-progress pattern from FolderBackupManager —
+  one tiny atomic write per chunk, never a fragile per-file cursor), and the singleton's constructor
+  `_load_persisted()`s an INTERRUPTED run (state running|paused, folder still a dir) back as PAUSED so the
+  user resumes it from the task manager / Settings — never silently lost. `cancel`/done CLEAR the state
+  file. The cursor counts against the STABLE sorted `_eml_files` order, so even a folder that changed
+  under us resumes safely (the content-hash dedup is still the net). tests/test_newsletter_import_job.py
+  (+1 `test_persisted_cursor_survives_an_app_restart`: Manager A persists at cursor 3 → a fresh Manager B
+  loads it as paused at files_done==3 → resume → done, count==6, state file cleared) +
+  test_repo_invariants asserts `_load_persisted`/`_save`/`_STATE_FILE`. REMAINING: human click-through
+  (fork-3); key the panel ×12.
   **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
   importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
   leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional
@@ -3822,6 +3833,23 @@ ruling, a contingency, or a deliberate-omission note.
   REMAINING (genuine polish/focused-session work): persisted import cursor across app restart; the
   installed/catalog table COMPACTION; human click-through across the new surfaces; key any longer
   English-fallback panel paragraphs.
+- **FIELD-TEST FOLLOW-UP BATCH 4 (2026-06-21, branch claude/amazing-tesla-z6bwkm, draft PR onto 0.09 —
+  the maintainer's "proceed with everything you can continue, then list all remaining"; the last
+  in-sandbox-buildable polish):** SHIPPED (each its own entry above, this is the roll-up): (a) the §2.B
+  PERSISTED IMPORT CURSOR (resume survives an app restart — entry above; backend VERIFIED py3.11);
+  (b) a determinate `<progress>` bar on the .eml folder-import UI (driven by the existing status poll's
+  percent); (c) §4 i18n — 54 more clean single-text-node chrome strings keyed ×12 across THREE batches
+  (the large-data folder backup/restore panels + the backup/restore "What to back up/restore" selection
+  fieldsets + the newsletter-remove panel + the §2.D "Sort by"/"Order" sort controls + the markets
+  Page/CSV/RSS/Proxy URL·Currency·CSS-selector labels + the diagnostics download buttons + Synthesis/
+  shutdown/When-Where-Who), so audit-chrome untranslatable 166→110, gate 1591 ×12 = 100% (non-en
+  AI-drafted, FLAGGED for native review). VERIFIED-NO-CHANGE (assessed, no code): §2.C installed/catalog
+  table COMPACTION is genuinely cosmetic (already tabular; the load-bearing queue+status section shipped
+  in #427) — skipped as a low-value browser-unverified change. The ~110 remaining audit strings are
+  data/examples/proper-nouns (stay literal) + the inline-`<a>/<b>`-tagged help paragraphs (the heavier
+  de-tagging slice). All frontend BROWSER-UNVERIFIED per fork-3. THE BRIEF'S BUILD QUEUE IS NOW EXHAUSTED
+  of in-sandbox-buildable items; what's left is human click-through + live-corpus measurement + genuine
+  focused-session features (the final remaining list handed to the maintainer in chat).
 - **TRENDING COVERING INDEX (brief §3.E, the #1 perf hotspot; branch claude/amazing-tesla-z6bwkm,
   draft PR onto 0.09; backend VERIFIED py3.11):** `/api/insights/trending-windows` (~20s idle / ~98s
   under load, polled from Home) is observed_on-WINDOWED, so the corpus-wide keyword counters can't

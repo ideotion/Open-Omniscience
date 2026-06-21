@@ -3374,6 +3374,12 @@
       const active = s.state === "running" || s.state === "paused";
       if (!active && _nlImportPoll) { clearInterval(_nlImportPoll); _nlImportPoll = null; }
       $("nl-folder-controls").style.display = active ? "" : "none";
+      const bar = $("nl-folder-bar");
+      if (bar) {
+        // show the bar while a run is active OR just finished; honest determinate %
+        bar.style.display = (active || s.state === "done") ? "" : "none";
+        bar.value = s.percent || 0;
+      }
       if ($("nl-folder-pause")) $("nl-folder-pause").style.display = s.state === "running" ? "" : "none";
       if ($("nl-folder-resume")) $("nl-folder-resume").style.display = s.state === "paused" ? "" : "none";
       const tl = s.tally || {};

@@ -1641,6 +1641,7 @@
           <input id="nl-folder" placeholder="/home/you/newsletters" size="30"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
       </div>
+      <progress id="nl-folder-bar" value="0" max="100" style="width:100%;margin-top:6px;display:none"></progress>
       <div id="nl-folder-progress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
       <div class="row" id="nl-folder-controls" style="gap:8px;margin-top:6px;display:none">
         <button class="secondary" id="nl-folder-pause" onclick="folderImportAction('pause', this)">Pause</button>
