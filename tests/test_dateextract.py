@@ -104,6 +104,9 @@ def test_additional_language_months_extract():
         # were the only months absent (the rest overlapped other tables).
         ("De vergadering was op 5 maart 2024 in de stad.", "2024-03-05"),     # Dutch (March)
         ("Het besluit viel op 3 augustus 2024.", "2024-08-03"),              # Dutch (August)
+        # date-diagnostics 2026-06-21: el (8.5 %) and sl (6.2 %) had in_month_vocab=FALSE.
+        ("Η συνάντηση έγινε στις 5 Μαΐου 2024.", "2024-05-05"),               # Greek (genitive)
+        ("Sestanek je bil 5. junija 2024 v Ljubljani.", "2024-06-05"),       # Slovenian (genitive)
     ]
     for text, expected in cases:
         got = _dates(text)

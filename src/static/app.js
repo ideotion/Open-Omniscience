@@ -606,9 +606,18 @@
     async function _renderJobs() {
       const elA = $("jobs-body"), elQ = $("queue-body");
       if (!elA && !elQ) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       try { _jobsData = await api("/api/jobs"); }
       catch { if (elA) elA.innerHTML = ""; if (elQ) elQ.innerHTML = ""; return; }
+      _paintJobs();
+    }
+    // Render from the cached _jobsData (no fetch) — so an optimistic reorder can move
+    // a row INSTANTLY before the backend round-trip (maintainer 2026-06-21: prioritising
+    // in the task manager must visually move the item).
+    function _paintJobs() {
+      const elA = $("jobs-body"), elQ = $("queue-body");
+      if (!elA && !elQ) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (!_jobsData) return;
       const jobs = (_jobsData.jobs || []).filter(j => j.state !== "done");
       // Queue = jobs waiting their turn (each manager's single-download queue, in
       // order). Per-kind queued keys (dumps + OSM each have their OWN order), so a
@@ -674,14 +683,21 @@
     }
     async function jobMove(key, dir, kind) {
       const jobs = (_jobsData && _jobsData.jobs) || [];
-      const queued = jobs.filter(j => j.state === "queued" && j.kind === kind)
-                         .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0))
-                         .map(_dlKey);
+      const queuedJobs = jobs.filter(j => j.state === "queued" && j.kind === kind)
+                             .sort((a, b) => (a.queue_position || 0) - (b.queue_position || 0));
+      const queued = queuedJobs.map(_dlKey);
       const i = queued.indexOf(key);
       if (i < 0 || i + dir < 0 || i + dir >= queued.length) return;
       [queued[i], queued[i + dir]] = [queued[i + dir], queued[i]];
+      // OPTIMISTIC: renumber the cached jobs to the new order and repaint NOW, so the
+      // row visibly moves immediately (the backend round-trip + next poll reconcile it).
+      queued.forEach((k, idx) => {
+        const j = queuedJobs.find(x => _dlKey(x) === k);
+        if (j) j.queue_position = idx + 1;
+      });
+      _paintJobs();
       try { await api(_reorderEndpoint(kind), {method: "POST", body: JSON.stringify({keys: queued})}); _renderJobs(); }
-      catch (e) { toast(e.message, "err"); }
+      catch (e) { toast(e.message, "err"); _renderJobs(); }   // revert to backend truth on failure
     }
     // ---- Schedule tab (CLAUDE.md #20 REMAINING "Sources/Schedule") ---- //
     // Reads the SAME _actData that _pollVitals already fetched from
@@ -832,6 +848,35 @@
       const w = window.open("/tasks", "oo-tasks");
       if (w && w.focus) { try { w.focus(); } catch (_) { /* popup blocked / cross-tab */ } }
     }
+    // A full-screen terminal overlay that REPLACES the UI when the app stops
+    // (shutdown or uninstall) — so the user can't keep clicking dead tabs against a
+    // server that's gone (maintainer 2026-06-21). It also attempts window.close():
+    // browsers only let a script close a script-opened tab, so this is best-effort —
+    // the overlay is the reliable end-state + tells the user to close the tab.
+    function _terminalOverlay(message, { tryClose = false } = {}) {
+      let o = document.getElementById("oo-terminal-overlay");
+      if (!o) { o = document.createElement("div"); o.id = "oo-terminal-overlay"; document.body.appendChild(o); }
+      o.style.cssText = "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;"
+        + "justify-content:center;text-align:center;padding:24px;font-size:18px;line-height:1.5;"
+        + "background:var(--bg,#111);color:var(--fg,#eee)";
+      o.textContent = message;
+      if (tryClose) {
+        // Give the message a moment, then try to close (works only if scriptable).
+        setTimeout(() => { try { window.close(); } catch (e) { /* not scriptable */ } }, 1200);
+      }
+    }
+    // Shut the app down from the GUI (a visual equivalent of Ctrl-C; maintainer
+    // 2026-06-21). Confirms first, then stops the server process — NOT uninstall,
+    // NOT panic: the data directory, corpus and keys are untouched.
+    async function appShutdown() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.")))
+        return;
+      try {
+        await api("/api/system/shutdown", {method: "POST", body: JSON.stringify({confirm: true})});
+      } catch (e) { /* the server may drop the connection as it exits — expected */ }
+      _terminalOverlay(t("The app is shutting down — you can close this tab."), {tryClose: true});
+    }
     // Esc closes the task manager; Tab is trapped inside it (OO-D13-001).
     function vitalsKey(e) {
       if (e.key === "Escape") { e.preventDefault(); if (_vitalsOpen) toggleVitals(); return; }
@@ -902,6 +947,26 @@
     };
     const _loaded = new Set();
 
+    // Facet subtabs live JUST UNDER the status bar (maintainer 2026-06-20): each tab's
+    // ooSubtabs nav is relocated into #subtab-strip the first time the tab is shown —
+    // moving the DOM node preserves its listeners + active state — then only the active
+    // tab's nav is displayed. Tabs without facet subtabs hide the strip.
+    const _SUBTAB_NAV = {
+      analyze: "an-subtabs", insights: "ins-subtabs", settings: "set-subtabs",
+      agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
+    };
+    function _relocateSubtabs(name) {
+      const strip = $("subtab-strip"); if (!strip) return;
+      const id = _SUBTAB_NAV[name];
+      if (id) { const nav = $(id); if (nav && nav.parentNode !== strip) strip.appendChild(nav); }
+      let any = false;
+      Array.prototype.forEach.call(strip.children, (ch) => {
+        const on = !!id && ch.id === id;
+        ch.style.display = on ? "" : "none";
+        if (on) any = true;
+      });
+      strip.hidden = !any;
+    }
     function showTab(name, push = true) {
       if (name === "database") name = "library";  // legacy #database deep-links
       if (name === "ingest") {  // Collect moved into Settings → Collect (content-first §6)
@@ -927,12 +992,14 @@
       });
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
+      _relocateSubtabs(name);   // move this tab's facet subtabs into the top strip (under the status bar)
       if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
       // THEME-3: opening Analysis hydrates the restored active tab the first time (the
       // strip is restored at boot; the active tab's data loads lazily here), or shows
       // the launcher empty state when there are no tabs.
       if (name === "analyze" && !_anHydrated) {
         _anHydrated = true;
+        _anFillLangSelect();   // populate the Advanced language <select> (flags + names)
         const tb = _anActiveId ? _anTabs.find(x => x.id === _anActiveId) : null;
         if (tb) { _anRenderStrip(); _anApplySeed(tb); }
         else if (!_anTabs.length) _anShowEmpty();
@@ -1149,8 +1216,10 @@
             run: () => showTab("sources")}));
         } else if (g.kind === "wiki") {
           const grp = head(t("Wikipedia"), g);
+          // A content hit carries a reader url (open the LOCAL article); a watched-page
+          // title hit (no url) jumps to the Wikipedia settings/tracker.
           items.forEach(it => out.push({grp, label: it.title, sub: it.wiki || "",
-            run: () => showTab("wiki")}));
+            run: it.url ? (() => window.open(it.url, "_blank")) : (() => showTab("wiki"))}));
         } else if (g.kind === "law") {
           const grp = head(t("World law"), g);
           items.forEach(it => out.push({grp, label: it.title,
@@ -3301,8 +3370,12 @@
       if (!plaintext && !pass) { out.textContent = t("Choose a passphrase first (or use the deliberate unencrypted option)."); return; }
       out.textContent = t("Building the archive…");
       try {
+        const nlEl = $("v2-incl-newsletters");
+        const inclNl = nlEl ? !!nlEl.checked : true;   // "what to back up": newsletters toggle
+        const body = plaintext ? {plaintext: true} : {passphrase: pass};
+        body.include_newsletters = inclNl;
         const r = await fetch("/api/backup/v2", {method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify(plaintext ? {plaintext: true} : {passphrase: pass})});
+          body: JSON.stringify(body)});
         if (!r.ok) { const d = await r.json().catch(() => ({}));
           throw new Error(d.detail || r.statusText); }
         const blob = await r.blob();
@@ -3395,6 +3468,10 @@
       out.textContent = t("Previewing — nothing is changed yet…");
       const fd = new FormData();
       fd.append("file", f); fd.append("passphrase", $("v2-restore-pass").value || "");
+      // "What to restore": the staged corpus is filtered at preview time, so the
+      // token-based commit restores exactly what the preview shows.
+      const nlEl = $("v2-restore-newsletters");
+      fd.append("include_newsletters", (nlEl ? !!nlEl.checked : true) ? "true" : "false");
       try {
         const r = await fetch("/api/backup/v2/restore/preview", {method: "POST", body: fd});
         const body = await r.json();
@@ -3642,9 +3719,15 @@
             remove_folder: sel.remove_folder, wipe_data: sel.wipe_data})});
         if (!r.scheduled) { $("uninstall-result").textContent = r.note || "Nothing to remove."; return; }
         $("uninstall-result").innerHTML =
-          `<span class="pill warn">uninstalling</span> ${esc(r.note || "")} ` +
-          `<span class="muted">This page will stop responding.</span>`;
+          `<span class="pill warn">uninstalling</span> ${esc(r.note || "")}`;
         toast("Uninstalling — the app is stopping.", "warn");
+        // The server is about to SIGTERM itself; replace the whole UI with a terminal
+        // screen so the user can't keep clicking dead tabs, and try to close the tab
+        // (best-effort — browsers only close script-opened tabs). Maintainer 2026-06-21.
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        _terminalOverlay(
+          t("Open Omniscience has been uninstalled and the app has stopped. You can close this window."),
+          {tryClose: true});
       } catch (e) { toast("Uninstall failed: " + e.message, "err"); }
     }
 
@@ -8811,63 +8894,129 @@
     // table. Starting a download is a NETWORK action, so it passes the ONE consent
     // popup (ensureOnline, invariant #14) and is refused while airplane mode is on
     // (the backend's guarded factory enforces the kill switch too).
+    // ONE merged list (maintainer 2026-06-21): every region with its LIVE download
+    // state — not-downloaded · queued · downloading (% + bar) · paused · downloaded ✓ —
+    // joined from the catalogue + the downloads manager, so the two old separate lists
+    // (catalogue + a jobs table) are assembled into one. Clicking a button gives instant
+    // feedback. "Whole planet" downloads only the continents you DON'T already have.
+    let _osmRegions = [], _osmDownloads = [];
     async function loadOsmMap() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const list = $("osm-region-list"); if (!list) return;
       try {
-        const d = await api("/api/geo/regions");
-        const rows = (d.regions || []).map(r =>
-          `<div class="osm-region-row">
-            <span class="osm-region-name"><strong>${esc(r.name)}</strong> <span class="muted">· ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</span></span>
-            <button class="tiny danger" onclick="startOsmDownload(${esc(JSON.stringify(r.code))})">${esc(t("Download"))}</button>
-          </div>`).join("");
-        list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
+        const [rg, dl] = await Promise.all([
+          api("/api/geo/regions"),
+          api("/api/geo/downloads").catch(() => ({ downloads: [] })),
+        ]);
+        _osmRegions = rg.regions || [];
+        _osmDownloads = dl.downloads || [];
         const note = $("osm-size-note"), asof = $("osm-size-asof");
-        if (note && asof && d.size_estimate_as_of) { asof.textContent = d.size_estimate_as_of; note.hidden = false; }
+        if (note && asof && rg.size_estimate_as_of) { asof.textContent = rg.size_estimate_as_of; note.hidden = false; }
+        _renderOsmList();
       } catch (e) { list.innerHTML = `<div class="muted">${esc(t("Could not load regions."))}</div>`; }
-      loadOsmDownloads();
+      const tbl = $("osm-dl-table"); if (tbl) tbl.innerHTML = "";   // merged into the list above
     }
-    async function loadOsmDownloads() {
+    // Legacy callers (start/pause/delete pollers) refresh the merged list.
+    function loadOsmDownloads() { return loadOsmMap(); }
+
+    function _osmDlByCode() { const m = {}; for (const d of _osmDownloads) m[d.code] = d; return m; }
+    function _osmContinents() { return _osmRegions.filter((r) => r.code !== "planet"); }
+
+    function _renderOsmList() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const tbl = $("osm-dl-table"); if (!tbl) return;
-      try {
-        const d = await api("/api/geo/downloads");
-        if (!d.downloads.length) { tbl.innerHTML = `<tr><td class="muted">${esc(t("No offline downloads."))}</td></tr>`; return; }
-        tbl.innerHTML = `<tr><th>${esc(t("Region"))}</th><th>${esc(t("Progress"))}</th><th>${esc(t("Status"))}</th><th></th></tr>` +
-          d.downloads.map(e => `<tr>
-            <td><strong>${esc(e.name || e.code)}</strong></td>
-            <td>${humanBytes(e.downloaded_bytes)}${e.total_bytes?` / ${humanBytes(e.total_bytes)} (${e.percent}%)`:(e.size_estimate_bytes?` <span class="muted">~${humanBytes(e.size_estimate_bytes)}</span>`:"")}</td>
-            <td><span class="pill ${e.status==='done'?'ok':e.status==='error'?'err':e.status==='downloading'?'':'warn'}">${esc(e.status)}</span>${e.error?` <span class="muted">${esc(e.error)}</span>`:""}</td>
-            <td style="white-space:nowrap">
-              ${e.status==='downloading'?`<button class="tiny secondary" onclick="pauseOsm(${esc(JSON.stringify(e.key))})">${esc(t("Pause"))}</button>`:
-                (e.status!=='done'?`<button class="tiny secondary" onclick="resumeOsm(${esc(JSON.stringify(e.code))})">${esc(t("Resume"))}</button>`:"")}
-              <button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(e.key))})">${esc(t("Delete"))}</button>
-            </td></tr>`).join("");
-      } catch (e) { /* downloads optional — degrade quietly */ }
+      const list = $("osm-region-list"); if (!list) return;
+      const byCode = _osmDlByCode();
+      const continents = _osmContinents();
+      const doneCodes = new Set(continents.filter((r) => (byCode[r.code] || {}).status === "done").map((r) => r.code));
+      const rows = _osmRegions.map((r) => {
+        const d = byCode[r.code], isPlanet = r.code === "planet";
+        const meta = `<span class="muted">· ~${humanBytes(r.size_estimate_bytes)} · ${esc(r.continent)}</span>`;
+        let stateHtml = "", actions = "";
+        if (isPlanet) {
+          const missing = continents.filter((c) => !doneCodes.has(c.code));
+          if (!missing.length) stateHtml = `<span class="pill ok">${esc(t("All continents downloaded"))} ✓</span>`;
+          else {
+            stateHtml = `<span class="muted">${doneCodes.size}/${continents.length} ${esc(t("continents"))}</span>`;
+            actions = `<button class="tiny danger" onclick="startPlanetDownload(this)">${esc(t("Download missing continents"))}</button>`;
+          }
+        } else if (!d) {
+          actions = `<button class="tiny danger" onclick="startOsmDownload(${esc(JSON.stringify(r.code))}, this)">${esc(t("Download"))}</button>`;
+        } else if (d.status === "downloading") {
+          const pct = (d.percent != null) ? d.percent : (d.total_bytes ? Math.floor(100 * d.downloaded_bytes / d.total_bytes) : 0);
+          stateHtml = `<span class="pill">${esc(t("Downloading"))} ${pct}%</span>`
+            + `<progress max="100" value="${pct}" style="width:110px;vertical-align:middle"></progress>`
+            + `<span class="muted" style="font-size:12px">${humanBytes(d.downloaded_bytes)}${d.total_bytes ? ` / ${humanBytes(d.total_bytes)}` : ""}</span>`;
+          actions = `<button class="tiny secondary" onclick="pauseOsm(${esc(JSON.stringify(d.key))})">${esc(t("Pause"))}</button>`;
+        } else if (d.status === "queued") {
+          stateHtml = `<span class="pill warn">${esc(t("Queued"))}</span>`;
+          actions = `<button class="tiny secondary" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Cancel"))}</button>`;
+        } else if (d.status === "done") {
+          stateHtml = `<span class="pill ok">${esc(t("Downloaded"))} ✓ <span class="muted">${humanBytes(d.downloaded_bytes || d.total_bytes || r.size_estimate_bytes)}</span></span>`;
+          actions = `<button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
+        } else {   // paused | error
+          stateHtml = `<span class="pill ${d.status === "error" ? "err" : "warn"}">${esc(t(d.status))}</span>${d.error ? ` <span class="muted">${esc(d.error)}</span>` : ""}`;
+          actions = `<button class="tiny secondary" onclick="resumeOsm(${esc(JSON.stringify(d.code))}, this)">${esc(t("Resume"))}</button>`
+            + ` <button class="tiny danger" onclick="deleteOsm(${esc(JSON.stringify(d.key))})">${esc(t("Delete"))}</button>`;
+        }
+        return `<div class="osm-region-row">
+          <span class="osm-region-name"><strong>${esc(r.name)}</strong> ${meta}${isPlanet ? ` <span class="muted">— ${esc(t("downloads each continent you don't have yet"))}</span>` : ""}</span>
+          <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${stateHtml} ${actions}</span>
+        </div>`;
+      }).join("");
+      list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
     }
-    async function startOsmDownload(code) {
+
+    function _osmPoll() {
+      loadOsmMap();
+      let n = 0; const poll = setInterval(() => { loadOsmMap(); if (++n > 40) clearInterval(poll); }, 3000);
+    }
+    async function startOsmDownload(code, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const c = code || ($("osm-region") ? $("osm-region").value : "");  // list rows pass the code directly
+      const c = code || "";
       if (!c) return;
-      // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown
-      // in the region list, the download is a visible task-manager job, and the ONE
-      // network-consent popup (ensureOnline) below is the only gate that matters.
-      if (!await ensureOnline(t("Download an offline map region"))) return;
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }   // instant feedback
+      // No extra "are you sure" confirm (field test 2026-06-19 #15): the size is shown in
+      // the row; the ONE network-consent popup (ensureOnline) is the only gate that matters.
+      if (!await ensureOnline(t("Download an offline map region"))) { loadOsmMap(); return; }
       try {
-        await api("/api/geo/downloads/start", {method:"POST", body: JSON.stringify({code: c})});
-        toast(t("Download started.")); loadOsmDownloads();
-        let n=0; const poll=setInterval(()=>{ loadOsmDownloads(); if(++n>40) clearInterval(poll); }, 3000);
-      } catch (e) { toast("Start failed: " + e.message, "err"); }
+        await api("/api/geo/downloads/start", { method: "POST", body: JSON.stringify({ code: c }) });
+        toast(t("Download started.")); _osmPoll();
+      } catch (e) { toast("Start failed: " + e.message, "err"); loadOsmMap(); }
     }
-    function resumeOsm(code) { startOsmDownload(code); }
+    function resumeOsm(code, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) { btn.disabled = true; btn.textContent = t("Resuming…"); }
+      return startOsmDownload(code);
+    }
+    // "Whole planet" = download every continent you don't already hold (skips the
+    // downloaded ones — maintainer 2026-06-21: never re-fetch parts you already have).
+    // The continent extracts together cover the planet, so this is the same coverage
+    // WITHOUT re-downloading (a single monolithic planet file cannot skip parts).
+    async function startPlanetDownload(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      if (!await ensureOnline(t("Download the offline world map"))) { loadOsmMap(); return; }
+      const byCode = _osmDlByCode();
+      const busy = (c) => { const s = (byCode[c.code] || {}).status; return s === "done" || s === "downloading" || s === "queued"; };
+      const continents = _osmContinents();
+      const todo = continents.filter((c) => !busy(c)), skip = continents.filter(busy);
+      if (!todo.length) { toast(t("All continents are already downloaded or in progress.")); loadOsmMap(); return; }
+      let started = 0;
+      for (const c of todo) {
+        try { await api("/api/geo/downloads/start", { method: "POST", body: JSON.stringify({ code: c.code }) }); started++; }
+        catch (e) { /* one region failing must not abort the rest */ }
+      }
+      toast(`${t("Queued")} ${started} ${t("regions")}${skip.length ? ` · ${skip.length} ${t("already present")}` : ""}`);
+      _osmPoll();
+    }
     async function pauseOsm(key) {
-      try { await api("/api/geo/downloads/pause?key="+encodeURIComponent(key), {method:"POST"}); loadOsmDownloads(); }
+      try { await api("/api/geo/downloads/pause?key=" + encodeURIComponent(key), { method: "POST" }); loadOsmMap(); }
       catch (e) { toast("Pause failed: " + e.message, "err"); }
     }
     async function deleteOsm(key) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!confirm(t("Delete this download and its file?"))) return;
-      try { await api("/api/geo/downloads?key="+encodeURIComponent(key), {method:"DELETE"}); loadOsmDownloads(); }
+      try { await api("/api/geo/downloads?key=" + encodeURIComponent(key), { method: "DELETE" }); loadOsmMap(); }
       catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 
@@ -9238,6 +9387,18 @@
     // The SAME params, built from the analysis window's own Advanced inputs — so the
     // window's exports describe exactly the article set it is analysing (the Search-tab
     // capabilities are absorbed here, toward the one-search-entry goal).
+    // Populate the Advanced-search language <select> once: "Any language" + the 12 UI
+    // languages as flag + native name (maintainer 2026-06-20). Built in JS so the autonym
+    // labels stay native (invariant #15) and out of the static-HTML dropdown i18n gate.
+    function _anFillLangSelect() {
+      const sel = $("an-adv-lang");
+      if (!sel || sel.tagName !== "SELECT" || sel.options.length) return;   // once
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const opts = ['<option value="">' + esc(t("Any language")) + "</option>"];
+      for (const [code, flag, name] of LANGS_12)
+        opts.push('<option value="' + code + '">' + flag + " " + esc(name) + "</option>");
+      sel.innerHTML = opts.join("");
+    }
     function anQuery() { return ($("an-adv-query").value || "").trim(); }
     // The EXACT article set behind a clicked card (maintainer-ruled 2026-06-16). When
     // set, the analysis window's corpus IS precisely these articles — every subtab
@@ -9298,6 +9459,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anIds = (tb.kind === "ids" && Array.isArray(tb.ids)) ? tb.ids.slice(0, 5000) : null;
       _anCommodity = tb.commodity || null;
+      _anFillLangSelect();   // ensure the language <select> is built before seeding it
       $("an-adv-query").value = tb.query || "";
       $("an-adv-source").value = tb.src || "";
       $("an-adv-lang").value = tb.lang || "";
@@ -9902,6 +10064,57 @@
         }
       } catch (e) { /* annotation is best-effort, never breaks the list */ }
     }
+    // The Articles subtab is PAGINATED (maintainer 2026-06-20): a 1000-result search is
+    // browsable page by page with Prev/Next + "Page X of Y" controls BOTH above and below
+    // the list. /api/articles already supports limit+offset; `total` drives the page count.
+    // _anArtParams remembers the active corpus so paging re-fetches the same selection.
+    const _AN_ART_PAGE = 50;
+    let _anArtParams = null, _anArtPage = 0;
+    function _anArtPager(total, pages) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (pages <= 1) return "";
+      const cur = _anArtPage;
+      const lbl = esc(t("Page")) + " " + (cur + 1) + " " + esc(t("of")) + " " + pages
+        + ' <span class="muted">(' + total.toLocaleString() + " " + esc(t("Articles")) + ")</span>";
+      return '<div class="an-pager" style="display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap">'
+        + '<button class="tiny ghost" ' + (cur <= 0 ? "disabled" : "") + ' onclick="_anArtGo(' + (cur - 1) + ')">' + esc(t("← Previous")) + "</button>"
+        + "<span>" + lbl + "</span>"
+        + '<button class="tiny ghost" ' + (cur >= pages - 1 ? "disabled" : "") + ' onclick="_anArtGo(' + (cur + 1) + ')">' + esc(t("Next →")) + "</button></div>";
+    }
+    function _anArtGo(page) {
+      if (!_anArtParams) return;
+      _anLoadArticles(_anArtParams, page);
+      var a = $("an-articles"); if (a && a.scrollIntoView) a.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+    async function _anLoadArticles(p, page) {
+      const arts = $("an-articles"); if (!arts) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anArtParams = p; _anArtPage = Math.max(0, page | 0);
+      arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const q = new URLSearchParams(p);
+        q.set("limit", String(_AN_ART_PAGE));
+        q.set("offset", String(_anArtPage * _AN_ART_PAGE));
+        const d = await api("/api/articles?" + q.toString());
+        const total = d.total || 0, pages = Math.max(1, Math.ceil(total / _AN_ART_PAGE));
+        if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1);   // clamp after a narrower filter
+        const rows = (d.results || []).map((a) =>
+          `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
+          + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
+          + `<td>${esc(a.source || "")}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
+          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
+          + `<td style="white-space:nowrap">`
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`).join("");
+        const pager = _anArtPager(total, pages);
+        arts.innerHTML = `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
+          + pager
+          + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
+          + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`
+          + pager;
+        annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
+      } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
     async function loadAnalysis(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const kw = $("an-keywords"), arts = $("an-articles");
@@ -9935,22 +10148,7 @@
           renderAnMindmap(g, mm);
         }
       } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
-      try {
-        const p2 = new URLSearchParams(p); p2.set("limit", "100");
-        const d = await api("/api/articles?" + p2.toString());
-        const rows = (d.results || []).map((a) =>
-          `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
-          + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
-          + `<td>${esc(a.source || "")}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
-          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
-          + `<td style="white-space:nowrap">`
-          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
-          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`).join("");
-        arts.innerHTML = `<div class="hint">${(d.total || 0).toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
-          + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
-          + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`;
-        annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
-      } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      _anLoadArticles(p, 0);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
       // When/Where/Who deduced across the matched articles (counts, never confirmed).
       try {
         const d = await api("/api/insights/corpus-www?" + p.toString());
@@ -10054,29 +10252,184 @@
       window.open("/api/articles/export?" + params.toString(), "_blank");
     }
 
-    async function synthesizeResults(btn, qArg, mountId) {
-      // RM-12: one bounded synthesis call across the current results (max 20).
-      // qArg/mountId let the analysis window reuse this with its OWN query + a panel.
-      const q = (qArg != null ? qArg : $("q").value.trim());
-      if (!q) { toast("Run a search first.", "err"); return; }
-      btn.disabled = true; btn.textContent = "Synthesizing…";
+    // --- Synthesis window (maintainer 2026-06-21) ----------------------------- //
+    // "Synthesize results" opens a roomy, article-style WINDOW. Step 1 makes the member
+    // selection TRANSPARENT (which articles, of how many, by search relevance) and lets
+    // the user pick exactly which to include — no silent "top 20" truncation. Step 2
+    // shows the synthesis + caveat + provenance + the FULL corpus of synthesized
+    // articles WITH metadata, plus export (.md / standalone page) + copy. The synthesis
+    // is written in the UI language (the backend appends a native-language directive +
+    // a robust "synthesize ALL excerpts" prompt so a weak model no longer bails).
+    const _SYNTH_MAX = 20;        // mirrors the backend bound (small-CPU-model context)
+    let _synthData = null;        // last result, for export/copy
+    let _synthCandidates = null;  // {params, total, results} for the selection step
+    const _synthT = () => ((window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s));
+
+    function _synthCandidateParams(arg) {
+      // arg: a URLSearchParams (analysis window) | a query string | null (search tab).
+      if (arg instanceof URLSearchParams) return arg;
+      if (arg != null) { const p = new URLSearchParams(); const q = (arg || "").trim(); if (q) p.set("query", q); return p; }
+      return searchParams();   // search tab: respect query + active filters
+    }
+    async function synthesizeResults(btn, arg) {
+      const t = _synthT();
+      const p = _synthCandidateParams(arg);
+      const hasSel = p.get("query") || p.get("source") || p.get("language")
+        || p.get("start_date") || p.get("end_date") || p.get("article_ids");
+      if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      const dlg = $("synth-window"); if (!dlg) return;
+      $("synth-win-actions").innerHTML = "";
+      $("synth-win-title").textContent = t("Synthesis");
+      $("synth-win-body").innerHTML = `<p class="muted">${esc(t("Loading articles…"))}</p>`;
+      if (!dlg.open) dlg.showModal();
+      // Fetch a candidate pool a bit larger than the synthesis bound so the user has a
+      // real choice; /api/articles uses `ids` for an explicit set, else the query.
+      const cp = new URLSearchParams(p);
+      if (cp.get("article_ids")) { cp.set("ids", cp.get("article_ids")); cp.delete("article_ids"); }
+      cp.set("limit", "60");
       try {
-        const r = await api("/api/llm/synthesize",
-          {method: "POST", body: JSON.stringify({query: q, output_language: _uiLangName()})});
-        let box = $(mountId || "synth-result");
-        if (!box) {
-          box = document.createElement("div");
-          box.id = "synth-result"; box.className = "card";
-          $("results").parentNode.insertBefore(box, $("results"));
-        }
-        box.className = "card"; box.style.display = "";
-        box.innerHTML = `<span class="chip">synthesis · ${esc(r.model)} · ` +
-          `${r.member_count} articles${r.truncated ? " (top 20 of more)" : ""}</span>` +
-          `<p style="white-space:pre-wrap">${esc(r.result)}</p>` +
-          `<div class="hint">${esc(r.caveat)} Members: ${r.member_ids.map(i =>
-            `<a href="/api/articles/${i}/view" target="_blank" rel="noopener">#${i}</a>`).join(" ")}</div>`;
-      } catch (e) { toast("Synthesis failed: " + e.message, "err"); }
-      finally { btn.disabled = false; btn.textContent = "Synthesize results"; }
+        const data = await api("/api/articles?" + cp.toString());
+        _synthCandidates = { total: data.total, results: data.results || [] };
+        _synthRenderSelect();
+      } catch (e) { $("synth-win-body").innerHTML = `<p class="card-caveat">${esc(t("Could not load articles."))} ${esc(e.message)}</p>`; }
+    }
+
+    function _synthRenderSelect() {
+      const t = _synthT();
+      const c = _synthCandidates; if (!c) return;
+      const rows = c.results;
+      $("synth-win-actions").innerHTML = "";
+      $("synth-win-title").textContent = t("Synthesis");
+      if (!rows.length) { $("synth-win-body").innerHTML = `<p class="muted">${esc(t("No matching articles to synthesize."))}</p>`; return; }
+      const preset = Math.min(_SYNTH_MAX, rows.length);
+      const list = rows.map((a, i) => `
+        <label style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);align-items:flex-start">
+          <input type="checkbox" class="synth-cb" value="${a.id}" ${i < preset ? "checked" : ""} onchange="_synthCount()">
+          <span style="flex:1">
+            <span style="font-weight:600">${esc(a.title) || '<span class="muted">(untitled)</span>'}</span>
+            <span class="muted" style="display:block;font-size:12px">${esc(a.source || "")} · ${esc((a.published_at || "").slice(0, 10)) || t("undated")} · ${esc((a.language || "?").toUpperCase())}
+              · <a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a></span>
+          </span>
+        </label>`).join("");
+      $("synth-win-body").innerHTML = `
+        <div class="hint" style="margin-bottom:10px">${esc(t("A synthesis reads a bounded set of articles with a local model and writes what they agree on, where they disagree, and what they leave open — citing each source by number. It is reading assistance, never a verdict."))}</div>
+        <div class="card" style="margin-bottom:12px">
+          <div>${esc(t("Matched"))}: <b>${c.total}</b>${c.total > rows.length ? ` <span class="muted">(${esc(t("showing the top"))} ${rows.length} ${esc(t("by search relevance"))})</span>` : ""}</div>
+          <div class="muted" style="font-size:12px;margin-top:4px">${esc(t("Pick up to"))} ${_SYNTH_MAX} ${esc(t("articles. The most relevant are pre-selected — refine your search to change the pool. (A small local model can only synthesize a bounded set well.)"))}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+          <span id="synth-count" class="chip"></span>
+          <button class="ghost tiny" onclick="_synthSelectAll(true)">${esc(t("Select first"))} ${_SYNTH_MAX}</button>
+          <button class="ghost tiny" onclick="_synthSelectAll(false)">${esc(t("Clear"))}</button>
+          <span style="margin-inline-start:auto"></span>
+          <button class="primary" id="synth-run-btn" onclick="_synthRun()">${esc(t("Run synthesis"))}</button>
+        </div>
+        <div>${list}</div>`;
+      _synthCount();
+    }
+
+    function _synthSelectAll(on) {
+      const cbs = Array.from(document.querySelectorAll("#synth-win-body .synth-cb"));
+      let n = 0;
+      for (const cb of cbs) { cb.checked = on && n < _SYNTH_MAX; if (cb.checked) n++; }
+      _synthCount();
+    }
+    function _synthCount() {
+      const t = _synthT();
+      const n = document.querySelectorAll("#synth-win-body .synth-cb:checked").length;
+      const el = $("synth-count"); if (el) el.textContent = `${t("Selected")}: ${n} / ${_SYNTH_MAX}`;
+      const btn = $("synth-run-btn");
+      if (btn) { btn.disabled = (n < 1 || n > _SYNTH_MAX); btn.title = n > _SYNTH_MAX ? t("Too many — uncheck some.") : ""; }
+    }
+
+    async function _synthRun() {
+      const t = _synthT();
+      const ids = Array.from(document.querySelectorAll("#synth-win-body .synth-cb:checked"))
+        .map((cb) => Number(cb.value)).filter((n) => n);
+      if (!ids.length) { toast(t("Select at least one article."), "err"); return; }
+      if (ids.length > _SYNTH_MAX) { toast(t("Too many — uncheck some."), "err"); return; }
+      const btn = $("synth-run-btn"); if (btn) { btn.disabled = true; btn.textContent = t("Synthesizing…"); }
+      const code = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+      try {
+        const r = await api("/api/llm/synthesize", { method: "POST",
+          body: JSON.stringify({ article_ids: ids, output_language: _uiLangName(), ui_lang: code }) });
+        _synthData = r;
+        _synthRenderResult();
+      } catch (e) {
+        toast(t("Synthesis failed: ") + e.message, "err");
+        if (btn) { btn.disabled = false; btn.textContent = t("Run synthesis"); }
+      }
+    }
+
+    function _synthRenderResult() {
+      const t = _synthT();
+      const r = _synthData; if (!r) return;
+      $("synth-win-actions").innerHTML = `
+        <button class="ghost tiny" onclick="_synthCopy()" title="${esc(t("Copy the synthesis text"))}">${esc(t("Copy"))}</button>
+        <button class="ghost tiny" onclick="_synthExport('md')">${esc(t("Export .md"))}</button>
+        <button class="ghost tiny" onclick="_synthExport('html')">${esc(t("Open as a page ↗"))}</button>`;
+      const members = (r.members || []).map((m) => `
+        <li style="padding:6px 0;border-bottom:1px solid var(--line)">
+          <span style="font-weight:600">[${m.n}] ${esc(m.title) || '<span class="muted">(untitled)</span>'}</span>
+          <div class="muted" style="font-size:12px">${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10)) || t("undated")} · ${esc((m.language || "?").toUpperCase())}
+            · <a href="/api/articles/${m.id}/view" target="_blank" rel="noopener">${esc(t("open"))}</a>${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>
+        </li>`).join("");
+      $("synth-win-body").innerHTML = `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <span class="chip">${esc(t("synthesis"))} · ${esc(r.model || "")}</span>
+          <span class="chip">${r.member_count} ${esc(t("articles"))}</span>
+          ${r.truncated ? `<span class="chip" title="${esc(t("Only the bounded set was synthesized."))}">${esc(t("top"))} ${r.max_articles} ${esc(t("of"))} ${r.total_matched}</span>` : ""}
+        </div>
+        <div style="white-space:pre-wrap;line-height:1.55">${esc(r.result || "")}</div>
+        <div class="card-caveat" style="margin-top:10px">${esc(r.caveat || "")}</div>
+        <h3 style="margin:16px 0 6px;font-size:14px">${esc(t("Synthesized corpus"))} (${(r.members || []).length})</h3>
+        <ul style="list-style:none;padding:0;margin:0">${members}</ul>
+        <div style="margin-top:12px"><button class="secondary tiny" onclick="_synthRenderSelect()">${esc(t("← Change selection"))}</button></div>`;
+    }
+
+    function _synthAsMarkdown() {
+      const t = _synthT(); const r = _synthData; if (!r) return "";
+      const out = [`# ${t("Synthesis")}`, "",
+        `*${t("Local model")}: ${r.model || "?"} · ${r.member_count} ${t("articles")} · ${new Date().toISOString().slice(0, 10)}*`,
+        "", (r.result || ""), "", `> ${r.caveat || ""}`, "", `## ${t("Synthesized corpus")}`];
+      for (const m of (r.members || []))
+        out.push(`${m.n}. ${m.title || "(untitled)"} — ${m.source || ""}${m.published_at ? " (" + m.published_at.slice(0, 10) + ")" : ""}${m.language ? " [" + m.language + "]" : ""}${m.url ? " " + m.url : ""}`);
+      return out.join("\n");
+    }
+    function _synthAsHtml() {
+      const t = _synthT(); const r = _synthData; if (!r) return "";
+      const rows = (r.members || []).map((m) =>
+        `<li><b>[${m.n}] ${esc(m.title || "(untitled)")}</b><br><small>${esc(m.source || "")} · ${esc((m.published_at || "").slice(0, 10))} · ${esc((m.language || "").toUpperCase())}${m.url ? " · " + esc(m.url) : ""}</small></li>`).join("");
+      return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(t("Synthesis"))}</title>`
+        + `<style>body{font:16px/1.6 system-ui,sans-serif;max-width:760px;margin:32px auto;padding:0 16px;color:#1a1a1a}`
+        + `.meta{color:#666;font-size:13px}blockquote{color:#555;border-left:3px solid #ddd;padding-left:12px}`
+        + `pre{white-space:pre-wrap;font:inherit}ul{padding-left:18px}li{margin:6px 0}</style></head><body>`
+        + `<h1>${esc(t("Synthesis"))}</h1>`
+        + `<p class="meta">${esc(t("Local model"))}: ${esc(r.model || "?")} · ${r.member_count} ${esc(t("articles"))} · ${new Date().toISOString().slice(0, 10)}</p>`
+        + `<pre>${esc(r.result || "")}</pre>`
+        + `<blockquote>${esc(r.caveat || "")}</blockquote>`
+        + `<h2>${esc(t("Synthesized corpus"))}</h2><ul>${rows}</ul></body></html>`;
+    }
+    function _synthDownload(name, mime, text) {
+      const blob = new Blob([text], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    function _synthExport(fmt) {
+      const t = _synthT(); if (!_synthData) return;
+      if (fmt === "md") { _synthDownload("synthesis.md", "text/markdown", _synthAsMarkdown()); return; }
+      const html = _synthAsHtml();
+      const w = window.open("", "_blank");
+      if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); }
+      else { _synthDownload("synthesis.html", "text/html", html); toast(t("Saved synthesis.html"), "ok"); }
+    }
+    function _synthCopy() {
+      const t = _synthT(); if (!_synthData) return;
+      const txt = _synthData.result || "";
+      if (navigator.clipboard && navigator.clipboard.writeText)
+        navigator.clipboard.writeText(txt).then(() => toast(t("Copied."), "ok"), () => toast(t("Copy failed."), "err"));
     }
 
     // --- Bulk summarize / translate over the matched set (local model) --------- //
@@ -10096,6 +10449,30 @@
       return _LANG_EN[code] || "English";
     }
     function _bulkParams(ctx) { return ctx === "an" ? anParams() : searchParams(); }
+    // --- Bulk summarize / translate QUEUE (maintainer 2026-06-21) -------------- //
+    // Several batch runs can be QUEUED: start a long translation, keep searching, and
+    // queue more from new results — they run ONE AT A TIME (a single local CPU model
+    // can't do them well in parallel). Each job SNAPSHOTS its selection at enqueue, so
+    // it targets the right articles even after you change the search. The active run also
+    // appears in the task manager; this client-side queue manages the pending ones. The
+    // queue lives in a persistent sibling (.bulk-queue) so it survives the config panel
+    // being hidden or the custom-extractor panel reusing the same mount.
+    let _bulkQueue = [];        // jobs, see _bulkSelLabel for the shape
+    let _bulkActive = null;     // the running job (one at a time)
+    let _bulkJobAbort = null;   // its AbortController (separate from _bulkAbort = extractor)
+    let _bulkJobSeq = 1;
+
+    function _bulkSelLabel(op, body) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const verb = op === "translate" ? t("Translate") : t("Summarize");
+      let what;
+      if (body.article_ids) what = body.article_ids.length + " " + t("selected");
+      else if (body.query) what = '"' + body.query + '"';
+      else what = t("filtered set");
+      const into = op === "translate" && body.target_language ? " → " + body.target_language : "";
+      return verb + " " + what + into;
+    }
+
     function bulkLlm(op, ctx) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
@@ -10108,29 +10485,37 @@
       const heading = isTr ? t("Translate all matched articles") : t("Summarize all matched articles");
       const tgt = isTr
         ? `<label class="muted" style="margin-inline-end:4px" for="bulk-tgt-${ctx}">${esc(t("Into"))}</label>`
-          + `<input id="bulk-tgt-${ctx}" value="English" style="max-width:150px">`
+          + `<input id="bulk-tgt-${ctx}" value="${esc(_uiLangName())}" style="max-width:150px">`
         : "";
       mount.style.display = "";
       mount.innerHTML = `<div class="card">
         <div style="font-weight:600;margin-bottom:4px">${esc(heading)}</div>
-        <div class="hint" style="margin-bottom:8px">${esc(t("Runs a local model over each article — this can take a while. Each result is stored with its model and date; nothing leaves your machine, and keyword analysis is never affected."))}</div>
+        <div class="hint" style="margin-bottom:8px">${esc(t("Runs a local model over each article — this can take a while. Each result is stored with its model and date; nothing leaves your machine, and keyword analysis is never affected. You can queue several runs; they process one at a time."))}</div>
         <div class="row" style="gap:12px;align-items:center;flex-wrap:wrap">
           ${tgt}
           <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="bulk-skip-${ctx}" checked> ${esc(t("Skip articles already done"))}</label>
-          <button class="primary" id="bulk-start-${ctx}" onclick="bulkLlmRun('${op}','${ctx}')">${esc(t("Start"))}</button>
-          <button class="ghost tiny" onclick="bulkLlmStop('${ctx}')">${esc(t("Cancel"))}</button>
+          <button class="primary" id="bulk-start-${ctx}" onclick="bulkLlmRun('${op}','${ctx}')">${esc(t("Add to queue"))}</button>
+          <button class="ghost tiny" onclick="bulkPanelHide('${ctx}')">${esc(t("Hide"))}</button>
         </div>
-        <div id="bulk-prog-${ctx}" class="hint" style="margin-top:8px"></div>
       </div>`;
+      _bulkRenderQueue();
     }
+    // Hides the CONFIG panel only — queued/running jobs persist (the maintainer keeps
+    // searching while a translation runs). Never cancels work.
+    function bulkPanelHide(ctx) {
+      const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
+      if (mount) mount.style.display = "none";
+    }
+    // Back-compat: the custom-extractor panel's Cancel still aborts its own run + hides.
     function bulkLlmStop(ctx) {
       if (_bulkAbort) { try { _bulkAbort.abort(); } catch (e) { /* already done */ } _bulkAbort = null; }
       const mount = $(ctx === "an" ? "bulk-llm-an" : "bulk-llm-search");
       if (mount) mount.style.display = "none";
     }
-    async function bulkLlmRun(op, ctx) {
+
+    // Enqueue a bulk run (snapshot the current selection) and pump the queue.
+    function bulkLlmRun(op, ctx) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const prog = $("bulk-prog-" + ctx), startBtn = $("bulk-start-" + ctx);
       const p = _bulkParams(ctx);
       const skipEl = $("bulk-skip-" + ctx);
       const body = { op, skip_existing: !!(skipEl && skipEl.checked) };
@@ -10143,23 +10528,46 @@
         if (p.get("start_date")) body.start_date = p.get("start_date");
         if (p.get("end_date")) body.end_date = p.get("end_date");
       }
-      if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || "English"; }
-      else { body.output_language = _uiLangName(); }   // summaries come back in the UI language (v2 pin)
-      if (startBtn) startBtn.disabled = true;
-      if (prog) prog.textContent = t("Starting…");
-      _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
-      let done = 0, storedN = 0, skippedN = 0, failedN = 0, total = 0;
-      const tally = () => `(${storedN} ${t("stored")} · ${skippedN} ${t("skipped")} · ${failedN} ${t("failed")})`;
+      const hasSel = body.article_ids || body.query || body.source || body.language || body.start_date || body.end_date;
+      if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || _uiLangName(); }
+      else { body.output_language = _uiLangName(); body.ui_lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; }
+      const job = { id: _bulkJobSeq++, op, body, label: _bulkSelLabel(op, body),
+        status: "queued", total: 0, done: 0, storedN: 0, skippedN: 0, failedN: 0, todo: null, skip: 0, err: "" };
+      _bulkQueue.push(job);
+      const ahead = _bulkQueue.filter((j) => j.status === "queued").length - 1;
+      toast(_bulkActive ? `${t("Queued")} (${ahead} ${t("ahead")})` : t("Started."), "ok");
+      _bulkRenderQueue();
+      _bulkPump();
+    }
+
+    async function _bulkPump() {
+      if (_bulkActive) return;                       // one model run at a time
+      const job = _bulkQueue.find((j) => j.status === "queued");
+      if (!job) return;
+      _bulkActive = job; job.status = "running";
+      _bulkRenderQueue();
+      try { await _bulkRunJob(job); }
+      finally {
+        _bulkActive = null; _bulkJobAbort = null;
+        loadLlmHealth();                             // a fresh signal of whether Ollama is up
+        _bulkRenderQueue();
+        _bulkPump();                                 // next in line
+      }
+    }
+
+    async function _bulkRunJob(job) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _bulkJobAbort = ("AbortController" in window) ? new AbortController() : null;
       try {
         const resp = await fetch("/api/llm/bulk", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body), signal: _bulkAbort ? _bulkAbort.signal : undefined,
+          body: JSON.stringify(job.body), signal: _bulkJobAbort ? _bulkJobAbort.signal : undefined,
         });
         if (!resp.ok || !resp.body) {
           let detail = "HTTP " + resp.status;
           try { const j = await resp.json(); if (j.detail) detail = j.detail; } catch (e) { /* keep status */ }
-          if (prog) prog.innerHTML = `<span class="note err">${esc(detail)}</span>`;
-          if (startBtn) startBtn.disabled = false; return;
+          job.status = "error"; job.err = detail; _bulkRenderQueue(); return;
         }
         const reader = resp.body.getReader(), dec = new TextDecoder(); let buf = "";
         for (;;) {
@@ -10171,31 +10579,71 @@
             if (!line.trim()) continue;
             let o; try { o = JSON.parse(line); } catch (e) { continue; }
             if (o.event === "start") {
-              total = o.total;
-              if (prog) prog.textContent = t("Processing") + " 0/" + total + (o.capped ? " " + t("(capped)") : "") + "…";
+              job.total = o.total;
+              job.todo = (o.to_process != null) ? o.to_process : o.total;
+              job.skip = Math.max(0, job.total - job.todo);
             } else if (o.event === "item") {
-              done++;
-              if (o.status === "stored") storedN++;
-              else if (o.status === "skipped") skippedN++;
-              else if (o.status === "failed") failedN++;
-              if (prog) prog.textContent = t("Processing") + " " + done + "/" + total + "… " + tally();
+              job.done++;
+              if (o.status === "stored") job.storedN++;
+              else if (o.status === "skipped") job.skippedN++;
+              else if (o.status === "failed") job.failedN++;
             } else if (o.event === "done") {
-              if (o.aborted) {
-                if (prog) prog.innerHTML = `<span class="note err">${esc(t("Stopped:"))} ${esc(o.reason || "")}</span> ${tally()}`;
-              } else {
-                if (prog) prog.innerHTML = `<b>${esc(t("Done."))}</b> ${tally()} `
-                  + `<span class="muted">${esc(t("Open an article to read its summary or translation."))}</span>`;
-              }
+              if (o.aborted) { job.status = "error"; job.err = o.reason || t("Stopped"); }
+              else job.status = "done";
             }
+            _bulkRenderQueue();
           }
         }
+        if (job.status === "running") job.status = "done";  // stream ended cleanly
       } catch (e) {
-        if (e && e.name === "AbortError") { if (prog) prog.textContent = t("Cancelled."); }
-        else if (prog) prog.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
+        if (e && e.name === "AbortError") { job.status = "cancelled"; }
+        else { job.status = "error"; job.err = (e && e.message) || "error"; }
       } finally {
-        if (startBtn) startBtn.disabled = false; _bulkAbort = null;
-        loadLlmHealth();   // an LLM run is a fresh signal of whether Ollama is up
+        _bulkRenderQueue();
       }
+    }
+
+    function bulkJobCancel(id) {
+      const job = _bulkQueue.find((j) => j.id === id);
+      if (!job) return;
+      if (job.status === "running") { if (_bulkJobAbort) { try { _bulkJobAbort.abort(); } catch (e) { /* already */ } } }
+      else if (job.status === "queued") { job.status = "cancelled"; }
+      _bulkRenderQueue();
+    }
+    function bulkJobClearDone() {
+      _bulkQueue = _bulkQueue.filter((j) => j.status === "queued" || j.status === "running");
+      _bulkRenderQueue();
+    }
+
+    function _bulkJobLine(job) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tally = `(${job.storedN} ${t("stored")} · ${job.skippedN} ${t("skipped")} · ${job.failedN} ${t("failed")})`;
+      let state = "";
+      if (job.status === "queued") state = `<span class="chip">${esc(t("Queued"))}</span>`;
+      else if (job.status === "running") {
+        const head = job.total ? `${job.done}/${job.total}` : t("starting…");
+        state = `<span class="chip" style="background:var(--accent);color:#fff">${esc(t("Running"))} ${esc(head)}</span> <span class="muted">${esc(tally)}</span>`;
+      } else if (job.status === "done") state = `<b>${esc(t("Done."))}</b> <span class="muted">${esc(tally)}</span>`;
+      else if (job.status === "cancelled") state = `<span class="muted">${esc(t("Cancelled."))}</span>`;
+      else if (job.status === "error") state = `<span class="note err">${esc(t("Stopped:"))} ${esc(job.err)}</span> <span class="muted">${esc(tally)}</span>`;
+      const cancel = (job.status === "queued" || job.status === "running")
+        ? `<button class="ghost tiny" onclick="bulkJobCancel(${job.id})" style="margin-inline-start:auto">${esc(t("Cancel"))}</button>` : "";
+      return `<div class="row" style="gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+        <span style="font-weight:600">${esc(job.label)}</span> ${state} ${cancel}</div>`;
+    }
+    function _bulkRenderQueue() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const conts = document.querySelectorAll(".bulk-queue");
+      if (!conts.length) return;
+      let html = "";
+      if (_bulkQueue.length) {
+        const anyDone = _bulkQueue.some((j) => j.status === "done" || j.status === "cancelled" || j.status === "error");
+        html = `<div class="card"><div style="font-weight:600;margin-bottom:4px">${esc(t("Translation & summary queue"))}</div>`
+          + _bulkQueue.map(_bulkJobLine).join("")
+          + (anyDone ? `<div style="margin-top:6px"><button class="ghost tiny" onclick="bulkJobClearDone()">${esc(t("Clear finished"))}</button></div>` : "")
+          + `</div>`;
+      }
+      conts.forEach((c) => { c.innerHTML = html; });
     }
 
     // Per-article Summarize / Translate from the analysis Articles list (the
@@ -10392,24 +10840,33 @@
     // so a once-at-boot check goes stale "offline". This re-checks on: boot, going
     // online (_paintNetwork), opening Settings → Models, after any LLM action, when the
     // tab regains focus, and on click — so it tracks a model that started/stopped later.
+    // The LLM pill opens Settings → AI (the "models" subtab); selecting it also
+    // re-checks health (showSetCat("models") -> loadLlmHealth). Maintainer 2026-06-20:
+    // the pill click should take the user to the AI tab, not just silently re-check.
+    function openAiSettings() {
+      showTab("settings");
+      try { (_setSubtabs || { select: showSetCat }).select("models"); }
+      catch (e) { showSetCat("models"); }
+    }
     async function loadLlmHealth() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("llm");
       if (!el) return;
       el.style.cursor = "pointer";
-      el.onclick = loadLlmHealth;   // assignment (not addEventListener) so it never stacks
+      el.onclick = openAiSettings;   // click -> Settings → AI (which also re-checks health)
       try {
         const h = await api("/api/llm/health");
         if (h.available) {
           el.className = "pill ok";
-          el.textContent = `LLM ✓ (${h.installed_models.length} models)`;
-          el.title = t("Local model — click to re-check");
+          // "<N> LLM" — the count in front, no "models" word (maintainer 2026-06-20).
+          el.textContent = `${h.installed_models.length} LLM`;
+          el.title = t("Local LLM — click to open AI settings");
         } else {
           el.className = "pill warn";
           el.textContent = t("LLM offline");
-          el.title = (h.detail ? h.detail + " — " : "") + t("Local model — click to re-check");
+          el.title = (h.detail ? h.detail + " — " : "") + t("Local LLM — click to open AI settings");
         }
-      } catch (e) { el.textContent = "LLM —"; el.title = t("Local model — click to re-check"); }
+      } catch (e) { el.textContent = "LLM —"; el.title = t("Local LLM — click to open AI settings"); }
     }
 
     async function summarize(id, btn) {

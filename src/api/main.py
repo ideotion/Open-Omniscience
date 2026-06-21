@@ -549,6 +549,7 @@ async def search_articles(
     end_date: str | None = None,
     language: str | None = None,
     tags: str | None = None,
+    ids: str | None = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -575,6 +576,33 @@ async def search_articles(
         raise HTTPException(status_code=400, detail="offset must be non-negative")
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
+
+    # Explicit id set (e.g. a card-seeded analysis corpus): fetch exactly those
+    # articles, preserving the requested order. Bypasses FTS; bounded to 1000.
+    if ids:
+        id_list = [int(x) for x in ids.split(",") if x.strip().lstrip("-").isdigit()][:1000]
+        by_id = {
+            a.id: a
+            for a in (db.query(Article).filter(Article.id.in_(id_list)).all() if id_list else [])
+        }
+        ordered = [by_id[i] for i in id_list if i in by_id]
+        results = [
+            {
+                "id": a.id,
+                "title": a.title,
+                "url": a.url,
+                "canonical_url": a.canonical_url,
+                "source": a.source.name if a.source else "Unknown",
+                "published_at": a.published_at.isoformat() if a.published_at else None,
+                "language": a.language,
+                "content": (a.content[:500] + "...")
+                if a.content and len(a.content) > 500
+                else (a.content or ""),
+                "hash": a.hash,
+            }
+            for a in ordered
+        ]
+        return {"total": len(ordered), "limit": limit, "offset": 0, "results": results}
 
     articles, total = _query_articles(
         db,

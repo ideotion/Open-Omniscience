@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from email.header import decode_header
 from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
+from html import unescape
 from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError
@@ -33,7 +34,13 @@ from src.database.models import Article, Source
 from src.privacy.link_sanitizer import SanitizeStats, sanitize_text
 from src.utils.url_utils import generate_content_hash
 
-_TAG_RE = re.compile(r"<[^>]+>")
+# Order matters in _strip_html: <style>/<script> BLOCKS (content + tags) and HTML
+# COMMENTS must go BEFORE the generic tag strip — otherwise the CSS/JS text survives
+# as body content and Outlook/MSO conditional comments (which contain '>') defeat a
+# naive <[^>]+> regex, leaking '-->' fragments. (Field test 2026-06-20.)
+_STYLE_SCRIPT_RE = re.compile(r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>", re.DOTALL)
 
 
 @dataclass
@@ -66,8 +73,20 @@ def _decode_part(part: Message) -> str:
         return payload.decode("utf-8", errors="replace")
 
 
-def _strip_html(html: str) -> str:
-    text = _TAG_RE.sub(" ", html)
+def _strip_html(html_text: str) -> str:
+    """Reduce an HTML email part to clean, readable plain text.
+
+    Drops <style>/<script> blocks ENTIRELY (their CSS/JS must never survive as body
+    text), then HTML comments (incl. MSO conditional comments containing '>'), then
+    every remaining tag, then DECODES HTML entities (&nbsp;, &#8202;, &copy;,
+    &rsquo; …) and collapses whitespace — including non-breaking / hair / zero-width
+    spaces — so the stored copy carries no markup noise (field test 2026-06-20).
+    """
+    text = _STYLE_SCRIPT_RE.sub(" ", html_text)
+    text = _COMMENT_RE.sub(" ", text)
+    text = _TAG_RE.sub(" ", text)
+    text = unescape(text)
+    text = text.replace("\u200b", "").replace("\ufeff", "")  # strip zero-width chars
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -82,7 +101,9 @@ def _extract_body(msg: Message) -> str:
             elif ctype == "text/html" and html is None:
                 html = part
         if plain is not None:
-            return _decode_part(plain).strip()
+            txt = _decode_part(plain).strip()
+            if txt:  # fall through to HTML when the text/plain part is empty
+                return txt
         if html is not None:
             return _strip_html(_decode_part(html))
         return ""

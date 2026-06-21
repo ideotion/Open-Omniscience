@@ -961,6 +961,307 @@ ruling, a contingency, or a deliberate-omission note.
   hardening + .eml file/dir ingest + tests) [first PR]; S2 metadata+provenance
   schema + the eTLD+1 PSL resolver + silent auto-attach; S3 upload API + the
   import-progress/UNDO WINDOW + the import-time disclosure ×12 + USER_MANUAL.
+- **NEWSLETTER BATCH-IMPORT OVERHAUL (maintainer field test 2026-06-20; PENDING — building
+  on branch claude/keen-lamport-b4t3rh):** the .eml importer must scale to a FOLDER of
+  20GB+ newsletters. SIX asks: (1) FOLDER/BATCH import — the file picker can't select a
+  folder; (2) HTTP 400 at ~1300 files — ROOT CAUSE = Starlette's MultiPartParser default
+  max_files=1000 (600 works, 1300 → "Too many files" 400; no override in the repo); (3) a
+  PROGRESS BAR (imported / estimated-total) + a rule-of-three ETA, able to show a 20GB+
+  import in flight; (4) the import must APPEAR IN THE TASK MANAGER and be PAUSABLE; (5)
+  PERFORMANCE — slow while hardware doesn't peak (ROOT CAUSE = ingest_emails commits PER
+  MESSAGE = fsync/SQLCipher-codec-bound + serialized, NOT CPU-bound); (6) NAMING — clarify
+  app-wide that the DB "article count" is articles AND newsletters; coin a unifying term.
+  ARCHITECTURE (autonomous, dictated by 20GB+pause): a SERVER-SIDE folder-path import run
+  as a pausable background JOB mirroring DumpDownloadManager (persisted state under
+  data_dir, worker thread, pause via stop-event + persisted cursor, resume via re-start,
+  progress done/total, surfaced in /api/jobs + pause/resume routed in jobs.py). The backend
+  ALREADY has ingest_eml_directory()/ingest_eml_files() (unused). ZERO network (local disk
+  read — no airplane gate; it IS a DB-WRITER job kind="import", already in the /api/jobs
+  arbitration set). KEEP the small-file upload too (Desk lesson) + fix its 400 honestly.
+  PERF FIX: batch commits (every N rows, not per-row) + optional bounded parse worker pool.
+  NAMING is display-only (the backend stat KEY stays `articles` for API stability; only the
+  HOME_STAT_LABELS/Database label changes, ×12). TWO OPEN QUESTIONS asked 2026-06-20:
+  import mechanism (server-side path vs browser folder-picker upload) + the unifying name
+  (Documents vs …) — RECORD the answers here + ship.
+  **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
+  importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
+  leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional
+  comments containing `>`, which defeat a naive `<[^>]+>` regex → stray `-->`) and UNDECODED HTML
+  entities (`&nbsp;`/`&#8202;`/`&copy;`/`&rsquo;`) into the stored body. FIX: drop `<style>`/`<script>`
+  blocks + comments BEFORE the tag strip, then `html.unescape` + strip zero-width chars + collapse
+  whitespace; `_extract_body` now falls back to HTML when the text/plain part is EMPTY. Already-
+  imported newsletters keep the old junk (re-import to clean — the cleaner body hashes differently,
+  so a re-import stores a fresh clean copy, it won't dedup against the junky one). tests/
+  test_email_ingest.py::test_strip_html_drops_style_script_comments_and_decodes_entities.
+- **SEAMLESS INSTALL + OLLAMA→AI-TAB + LANGUAGE-FIRST FIRST LAUNCH (maintainer field test
+  2026-06-20; branch claude/keen-lamport-b4t3rh, draft PR #420 onto 0.09):** THREE rulings —
+  (1) move Ollama installation ENTIRELY to Settings → AI (the installer no longer asks for or
+  downloads Ollama/models); (2) the installer asks NOTHING — seamless from start to app launch;
+  (3) first app launch leads with LANGUAGE SELECTION, not the passphrase. SHIPPING (install.sh):
+  choose_components no longer prompts (installs the default core+analysis+compression set;
+  OO_COMPONENTS still overrides), make_launcher creates the launcher without asking
+  (OO_MAKE_LAUNCHER=0 still opts out), and maybe_setup_ollama is REMOVED from do_install (no
+  Ollama install/model-pull/prompt in install; configure_ollama_store_access stays defined +
+  test-pinned but uncalled — provisioning is the AI tab's job now). The seamless flow still ends
+  at maybe_launch (the app opens). The download-size estimate + uninstall confirmations STAY
+  (uninstall is destructive — "don't ask" was about INSTALL). SHIPPING (first launch, unlock.html):
+  on a FRESH store (state="fresh") a LANGUAGE step shows FIRST (the 12 native-name choices, RTL-
+  aware via OOI18N.setLang which persists oo.lang + translates the page), THEN the create-passphrase
+  view (now in the chosen language). ENCRYPTION-BY-DEFAULT IS PRESERVED (non-negotiable): the
+  passphrase step is REORDERED after language, never removed — language→passphrase on the pre-DB
+  page, then the main app's guided wizard handles sources→first-collect. "locked" (returning) →
+  straight to unlock as before. This BUILDS the wizard's deferred encryption-choice/language-first
+  flow (#24). Reuses the EXISTING "Choose your language" i18n key ×12 (already shipped for the
+  guided wizard — no new key, no locale churn). Enforced by test_repo_invariants.py::
+  test_seamless_install_and_language_first_first_launch. ALSO (same PR): the top-bar LLM pill now
+  reads "<N> LLM" (count first, no "models"/✓) and CLICKING it opens Settings → AI (the models
+  subtab, which re-checks health) instead of only re-checking — openAiSettings(); +1 i18n key ×12;
+  test_llm_pill_shows_count_and_opens_ai_settings. REMAINING: the AI-tab Ollama BINARY installer
+  (still blocked offline on per-OS checksums) for end-to-end in-app install; consolidate the now-
+  redundant guided-wizard language step; the model-store-readable step (was install.sh's job).
+- **CHROME REWORK BATCH 2026-06-20 (maintainer rapid field test; branch claude/keen-lamport-b4t3rh,
+  PR #420; ALL frontend, BROWSER-UNVERIFIED — node-checked + invariant-guarded):** a run of chrome
+  rulings. SHIPPED: (a) the ANALYSIS sidebar tab is REMOVED — analyses run via search (omnibar/
+  palette → a spawned analysis window) or by clicking into other tabs; the #tab-analyze PANEL +
+  showTab("analyze")/openAnalysisFor/openAnalysisForIds stay (completes the UI-rethink "the empty
+  Analysis entry goes away"); test #22 no longer requires data-tab="analyze", test_search_retired
+  asserts the nav-item is GONE. (b) the OMNIBAR fills the status-bar width — dropped .omni
+  max-width:560px + removed the .spacer div (it now flex-grows); removed the verbose placeholder
+  text (.ph span), kept the magnifier + the keyed aria-label. (d) SHIPPED: the Advanced-search
+  language field is now a <select> of FULL language names + flags (built from LANGS_12 in JS so the
+  autonyms stay native per #15; +1 i18n key "Any language" ×12; test_advanced_search_language_is_a_flag_dropdown).
+  (e) SHIPPED: the standalone task-manager (/tasks) status bar is now the SAME header.topbar markup
+  as the app (omni search + health/LLM pills + airplane plane-glyph with FILL=offline + language flag
+  menu + help), reusing app.css; the old bespoke .tm-head/✈/select bar is gone; omni/help/go-online
+  route into the app (the ONE consent popup lives there); test_task_manager_status_bar_and_sessions
+  updated to the app-identical bar. (c) SHIPPED: a sticky `.chrome` wraps the topbar + a new `#subtab-strip`; `_relocateSubtabs(name)`
+  (called in showTab) moves the active tab's ooSubtabs nav (an-subtabs/ins-subtabs/set-subtabs/
+  agenda-views/indices-cats/commodities-cats) INTO the strip JUST UNDER the status bar — moving the
+  DOM node preserves its listeners + state; the strip hides on tabs with no facet subtabs; the
+  topbar's own position:sticky moved to `.chrome` (one pin, no pixel-guess of the bar height).
+  test_facet_subtabs_relocated_to_top_strip. REMAINING refinement: Home card-families (dynamic) + a
+  full-width-over-sidebar variant. PENDING (this batch, building next): (f) ADVANCED-SEARCH SORTING +
+  FILTERING by METADATA (maintainer 2026-06-20, "important" — enables thinner corpus creation):
+  sort/filter articles per language · per date · per source · alphabetically · broadly per-metadata,
+  AND when any filter is active show a "filtered" indicator on ALL tabs (same convention as the active
+  search-terms indicator) so the corpus scope is always visible. (g) SHIPPED: the analysis Articles
+  list is PAGINATED — `_anLoadArticles(p,page)` fetches /api/articles by limit+offset (page size 50,
+  `total` drives the page count), renders Prev/Next + "Page X of Y" controls BOTH above and below the
+  table, loadAnalysis seeds page 0; test_analysis_articles_paginated. PENDING: (h) LLM MODEL DOWNLOAD
+  QUEUE (maintainer 2026-06-20): pulling several models at once OVERLAPS visually + starts them all at
+  once — make model pulls a QUEUED, task-manager-visible job (like wiki dumps: one at a time, the rest
+  queue) with a CANCEL action (ollama /api/pull isn't resumable, so cancel not pause), so the user can
+  queue several downloads and manage them from the task manager. ALSO (h2, the AI-tab models UI,
+  maintainer 2026-06-20): the Settings → AI model LIST is poorly displayed — make it COMPACT; clicking
+  Pull must give immediate visual FEEDBACK; and lift a pulled model OUT of the catalog list INTO a TOP
+  section that shows per-model STATUS (Pulling · Queued · Available · Active) + a progress bar. (h)+(h2)
+  are one cohesive rework of the Settings → AI subtab + the download queue — build together.
+- **BULK LLM TOOLS — UNCAPPED + SKIP-SAME-LANGUAGE + TO-DO COUNT SHIPPED 2026-06-20 (maintainer field
+  test; branch claude/keen-lamport-b4t3rh, PR #420; backend py_compile-VERIFIED, frontend browser-
+  unverified):** (i) bulk summarize/translate (`/api/llm/bulk`) AND the AI extractor (`/api/ai/
+  keywords/extract` + the custom-prompt `run`) NO LONGER CAP at 200/500 — they process the WHOLE
+  matched set (`limit<=0` = no cap; the FTS path already materialises the full match = the same
+  memory profile as the uncapped export; the run is a visible, abortable task-manager job). Removed
+  `_BULK_MAX_ARTICLES` + `_AI_EXTRACT_MAX`. (ii) a TRANSLATE run NEVER translates an article ALREADY
+  in the target language (`_is_target_language` via a backend `_LANG_EN` code→name map; unconditional,
+  independent of skip_existing; unknown language → never skip on a guess). (iii) the bulk `start`
+  event now reports `to_process` (+ `same_language`/`already_done`) = the count that will ACTUALLY run
+  the model, shown up front in the UI ("N to translate/summarize · M skipped"). tests/test_llm_api.py
+  ::test_bulk_translate_skips_articles_already_in_target_language (+ `_seed_article(lang=)`); existing
+  bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
+  summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
+  limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **AIRPLANE-BUTTON FLASH PARITY EVERYWHERE SHIPPED 2026-06-21 (maintainer field test; branch
+  claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified):** clicking the airplane button
+  must give the SAME visual feedback everywhere. The app fired a direction-aware full-screen `#net-flash`
+  (`.go-on` live-accent / `.go-off` calm-muted, animated by `@keyframes netflash` in the SHARED app.css),
+  but the standalone /tasks page only repainted the button on engage-airplane. Added a `flashNet(online)`
+  mirroring the app + the matching "Offline — every new network request is refused…" toast to the /tasks
+  airplane click (go-off happens there; go-online still routes to "/" where the app's consent + flash
+  fire). Other airplane surfaces (net-coach, GUI gallery skins) already reuse the app's `toggleNetwork`,
+  so they flash. test_repo_invariants::test_airplane_flash_feedback_is_consistent_everywhere.
+- **LAUNCHER ROBUSTNESS + MODELS-EXPORT-BUTTON FIX + REINSTALL-KEEPS-LOGS (maintainer field test
+  2026-06-21; branch claude/keen-lamport-b4t3rh, PR #420; bash -n + py_compile-VERIFIED):** (1) desktop
+  icon failed to start the app after an OS restart, fixed by reinstall → most likely a venv broken by a
+  system-Python change (a venv is tied to its python minor version). `scripts/launch.sh` now activates
+  best-effort and, if `open-omniscience` isn't on PATH after activation, prints a CLEAR actionable
+  message ("environment looks broken … re-run the installer: <path>/install.sh") and HOLDS the window
+  (read -p) instead of exiting cryptically (which made the icon's terminal vanish before the error was
+  read). PLUS the `.desktop` `Exec=` paths are now QUOTED (`"$SRC_DIR/scripts/launch.sh" console` +
+  the uninstall one) so an install path WITH SPACES can't break double-click launch. (2) ANSWERED the
+  maintainer's "does reinstall replace the diagnostics logs?" — NO: install.sh/do_install NEVER touches
+  `data_dir()` (`~/.local/share/open-omniscience`, OUTSIDE the code tree where the .jsonl diagnostics +
+  corpus + keys live); its only `rm` are old Desk-launcher files + the `.venv` (recreated). data_dir is
+  removed ONLY by `--uninstall` AND only after an explicit "Are you sure? Permanently delete…" (default
+  no). So reinstalling is safe for logs/corpus/keys. (3) "Download models backup" "doesn't work":
+  `models_export` used `default_store()` (readable stores) while `store_status()` detects the PROTECTED
+  systemd Ollama store (`/usr/share/ollama/.ollama/models`, owned by the `ollama` user) — so with a
+  service-install Ollama the export 404'd or built a near-empty archive while status looked fine. Now it
+  refuses HONESTLY with the actionable `store_status().hint` (set OLLAMA_MODELS to a path you own / pull
+  a model first) when there are no readable models — surfaced in the button's toast. REMAINING: an
+  optional login-autostart (the maintainer expected auto-launch on boot — opt-in, airplane-safe; not
+  added silently); make the protected systemd store exportable via a sudo-helper (out of scope now).
+- **GUI SHUTDOWN BUTTON SHIPPED 2026-06-21 (maintainer field test; branch claude/keen-lamport-b4t3rh,
+  PR #420; backend stdlib-VERIFIED, frontend browser-unverified):** turning the app off needed a
+  terminal Ctrl-C — now a status-bar POWER button (`#app-shutdown`) → `appShutdown()` confirms then
+  POSTs `/api/system/shutdown {confirm:true}` → `src/safety/shutdown.py:request_shutdown` disposes the
+  DB engine (avoids SQLCipher codec-teardown noise) + SIGTERMs self after ~1 s (response flushed first).
+  It is NOT uninstall and NOT panic — the data dir/corpus/keys are UNTOUCHED (a regression-guard asserts
+  the module contains no wipe/rmtree). A full-screen "shutting down — close this tab" overlay replaces
+  the UI. tests/test_shutdown.py (confirm-required + arms-once, `_arm` injected so the test never kills
+  the runner) + test_repo_invariants::test_gui_shutdown_button_and_endpoint. **UNINSTALL/SHUTDOWN NOW
+  REPLACE THE UI WITH A TERMINAL OVERLAY (maintainer 2026-06-21: after uninstall the browser stayed
+  clickable against a dead server — "feels weird"):** a shared `_terminalOverlay(message,{tryClose})`
+  (full-screen, z-index 99999, covers the sidebar+tabs so dead tabs can't be clicked) replaces the UI
+  when the app stops; both `appShutdown` and `uninstallApp` call it after the server is scheduled to
+  SIGTERM. It also attempts `window.close()` — best-effort ONLY (browsers close just script-opened tabs,
+  and the launcher opens a normal tab via xdg-open, so close usually no-ops), with the overlay as the
+  reliable end-state telling the user to close the window. test_repo_invariants::
+  test_uninstall_and_shutdown_replace_ui_with_terminal_overlay. ALSO FIXED the `test` lane
+  bandit red (commit 2888e3b): the new backup f-string SQL (`_delete_in`/`_drop_newsletter_articles`)
+  tripped B608 (Medium) — added the established `# noqa: S608  # nosec B608 - <reason>` per line (table/
+  col validated against `_SAFE_TABLE`; values are bound `?` params), matching merge.py/diagnostics.py.
+- **UNIFIED SEARCH NOW SEARCHES WIKIPEDIA ARTICLE CONTENT SHIPPED 2026-06-21 (maintainer field test;
+  branch claude/keen-lamport-b4t3rh, PR #420; backend py_compile-VERIFIED, frontend browser-unverified):**
+  the omnibar/palette wiki group (`/api/search/omni` `_wiki_group`) matched ONLY watched-page TITLES.
+  Now it searches wiki ARTICLE CONTENT: `WikiPage.baseline_text` is stored COMPRESSED (no SQL LIKE), so
+  content search runs over the FTS-indexed CORPUS articles produced by the watched-page→corpus sync
+  (source domain `xx.wikipedia.org`). `_wiki_group` runs `search_ids` (FTS, ranked), filters the hits to
+  Wikipedia-edition sources (`domain LIKE %wikipedia.org`, bounded `_WIKI_SCAN_CAP=2000` chunked scan),
+  returns the top 3 as reader links (article_id + `/api/articles/{id}/view`, the edition parsed from the
+  domain) with the real total; when NO indexed wiki content matches it FALLS BACK to the watched-pages
+  title catalog (prior behaviour preserved — the existing title test still passes). Frontend: a wiki
+  item with a `url` opens the LOCAL reader, a title-only item jumps to Settings → Wikipedia. HONEST GAP
+  stated: downloaded offline DUMPS are files, NOT full-text-searched yet (the standing remaining item).
+  tests/test_search_omni.py::test_omni_wiki_group_searches_wikipedia_article_content (a wikipedia.org
+  article found by content → reader link + edition). REMAINING: full-text search over downloaded dumps.
+- **SELECTIVE BACKUP — "WHAT TO BACK UP" TICKBOXES + EXCLUDE NEWSLETTERS SHIPPED 2026-06-21 (maintainer
+  field test; branch claude/keen-lamport-b4t3rh, PR #420; backend stdlib-VERIFIED, frontend browser-
+  unverified per fork-3):** the maintainer curated a corpus incl. faulty .eml imports and wants to back
+  up WITHOUT them, then re-import fixed ones to replace the faulty (restore is additive, so leaving the
+  bad ones out of the backup + a future clean re-import is the path). DELIVERED the core, reliably: the
+  Full-backup UI gains a "What to back up" fieldset — ☑ Articles & corpus data (always) · ☑ Imported
+  newsletters (.eml/mailbox, UNTICK to exclude) · Local LLM models (points to the existing SEPARATE
+  models backup) · Offline maps · Wikipedia dumps (DISABLED "coming soon" — honest, NOT faked: file-
+  member backup needs the ruled-but-unbuilt additive-restore FILE placement, a reliability-critical
+  piece I won't ship unverified). BACKEND: `BackupBody.include_newsletters` (default True — no silent
+  change) → `write_backup_v2(..., include_newsletters=)` → `_collect_members(...)` runs
+  `_drop_newsletter_articles()` on the DISPOSABLE PLAINTEXT corpus snapshot ONLY (never the live DB):
+  finds the `newsletters.import.local` + `mailbox.import.local` source ids, deletes their articles AND
+  every dependent row (each table with an `article_id` column — verified ALL FKs to articles.id use that
+  name, so no orphan survives the restore's foreign_key_check), VACUUMs; the empty source rows are LEFT
+  (a future re-import re-attaches). RESTORE NEEDS NO CHANGE (the merge just sees a corpus with fewer
+  articles — fully additive-restore-compatible). tests/test_backup_newsletter_filter.py (stdlib-only,
+  RAN GREEN here: drops only newsletter articles+dependents, keeps the real ones + non-article tables,
+  no-newsletter-source = no-op) + test_repo_invariants::test_backup_can_exclude_newsletters (the UI
+  tickbox + the end-to-end wiring). New UI strings English (the backup panel is largely un-keyed
+  English; gate stays 100%). REMAINING (the maintainer's fuller vision): maps + wiki-dump backup as
+  file members (needs the additive-restore file-placement, ruled-but-unbuilt — build with the wiki-dump
+  inclusion together); fold the separate models backup into the same tickbox flow. **SELECTIVE RESTORE
+  SHIPPED 2026-06-21 (maintainer reiterated "what to restore: articles/maps/eml/wikipedia/models"):**
+  symmetric to backup — the Restore section gains a "What to restore" fieldset (Articles always · Imported
+  newsletters toggle · Models=separate restore · Maps/Wiki=not-in-archive). `_apply_restore_selection`
+  runs the SAME stdlib-tested `_drop_newsletter_articles` on the STAGED PLAINTEXT corpus copy BEFORE the
+  merge — so unticking newsletters restores everything except them, and the PREVIEW reflects the COMMIT
+  (the token's staged copy is already filtered at preview time; a direct-file commit filters at commit).
+  `restore_preview`/`restore_commit` gain `include_newsletters: bool = Form(True)`; the SPA sends it at
+  preview (the token commit inherits the filtered copy). NO merge-engine change (the filter is a pre-merge
+  step on the disposable staged copy). test_repo_invariants::test_restore_can_exclude_newsletters.
+  REMAINING (restore side): maps/wiki/models restore = when those become backup file members.
+  **LARGE-DATA BACKUP ARCHITECTURE DECIDED 2026-06-21 (maintainer AskUserQuestion → "Copy to a folder/
+  drive"; BUILD PENDING — this resolves the long-standing "BACKUPS MUST INCLUDE WIKIPEDIA DUMPS" +
+  models/maps rulings, which were deferred precisely for this reason):** VERIFIED the current oo-backup-2
+  is in-memory + 2 GiB-capped END TO END and browser-delivered — restore does `await file.read()` (whole
+  upload into RAM) → `decrypt_bytes(blob)` → `zipfile.ZipFile(io.BytesIO(blob))` with `_MAX_RESTORE_BYTES
+  = 2 GiB`; an encrypted backup does `encrypt_bytes(zip_path.read_bytes())` (whole archive in RAM); models
+  export does `out.write(srcf.read())` per blob. So it PHYSICALLY cannot carry wiki dumps (enwiki ≈20 GB)
+  + maps (planet ≈72 GB) — folding them in would OOM + blow the cap + exceed browser download/upload.
+  CHOSEN BUILD (server-side, never the browser): a destination DIRECTORY the user picks (e.g. an external
+  drive mounted on the machine) into which the app STREAMS wiki_dumps/ + osm_regions/ + the Ollama model
+  store FILE-BY-FILE (shutil.copyfileobj, bounded buffer) with a manifest + sha256 dedup (skip an
+  unchanged blob), and a restore that copies them BACK ADDITIVELY (skip-if-present, never overwrite a
+  differing local file). Wiki/OSM/model blobs are PUBLIC + re-downloadable ⇒ copied AS-IS (no whole-file
+  encryption — that is what makes 100 GB feasible; the encrypted CORPUS backup is unchanged). Skip
+  non-`done` downloads (ongoing-downloads-never-backed-up principle). This is a substantial reliability-
+  critical build ("entirely reliable or it should not exist"); design points to settle at build: the
+  destination-path picker UX (server-side path input, validated, must exist + be writable), free-disk
+  preflight, a visible task-manager job over the long copy (pausable), and whether models ride the same
+  folder backup or stay the separate `.oomodels` (lean: same folder, one "large data" backup).
+- **ONGOING DOWNLOADS
+  NEVER BACKED UP (maintainer 2026-06-21, reassurance + transparency):** maps + wiki dumps live in
+  `osm_regions/` + `wiki_dumps/`, which are EXCLUDED BY CONSTRUCTION (never collected as members), so a
+  partial/in-progress download can never ride into a backup half-written (no corruption). Made the OSM
+  maps dir EXPLICIT in `_excluded_inventory` (it listed only wiki_dumps before — maps were silently
+  dropped); the manifest now transparently lists both as excluded/re-downloadable. When the file-member
+  backup IS built, it must skip non-`done` downloads (the same principle).
+- **OFFLINE-MAP TAB — ONE STATE-AWARE LIST + PLANET SKIPS DOWNLOADED SHIPPED 2026-06-21 (maintainer
+  field test; branch claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified per fork-3):**
+  Settings → Offline map had TWO lists (the catalogue with bare Download buttons + a separate jobs
+  table) and a Download button gave no state feedback. Now ONE merged list: `loadOsmMap` fetches BOTH
+  `/api/geo/regions` + `/api/geo/downloads` (Promise.all) and `_renderOsmList` joins them by `code`, so
+  each region row shows its LIVE state — not-downloaded (Download) · queued (Cancel) · downloading (%
+  + a `<progress>` bar + bytes, Pause) · paused/error (Resume + Delete) · downloaded ✓ (size + Delete);
+  the old `#osm-dl-table` is cleared (merged, nothing lost — all controls moved to the rows). Clicking
+  a button gives INSTANT feedback (the button disables + "Starting…"/"Resuming…" before the await; the
+  3 s poll then repaints the real state). "WHOLE PLANET" no longer offers the 72 GB monolithic file
+  (which cannot skip parts) — its button (`startPlanetDownload`) downloads only the CONTINENTS you don't
+  already hold (skips done/downloading/queued), so it NEVER re-fetches downloaded parts (maintainer's
+  ask); the planet row shows "N/M continents" or "All continents downloaded ✓". The continent extracts
+  together cover the planet, stated in the row hint. test_offline_map_merged_list_state_and_planet_skips_downloaded.
+  New strings via t() (English-fallback; gate 100%). REMAINING: per-row reorder ↑/↓ (the task manager
+  has it); key the new strings ×12; the monolithic-planet code path is now UI-unreachable (backend
+  get_region("planet") still exists, harmless).
+- **BULK TRANSLATE/SUMMARY QUEUE + TASK-MANAGER OPTIMISTIC REORDER SHIPPED 2026-06-21 (maintainer
+  field test; branch claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified per fork-3):**
+  (1) QUEUE — a long batch translation blocked starting another. Batch translate/summarize is now a
+  client-side QUEUE: `bulkLlmRun` ENQUEUES a job (snapshotting its selection at enqueue, so it targets
+  the right articles even after the search changes) + `_bulkPump` runs them ONE AT A TIME (a single CPU
+  model can't run them well in parallel; `if (_bulkActive) return`). A persistent `.bulk-queue` panel
+  (sibling of the config panel, in BOTH the search + analysis surfaces, so it survives the config panel
+  being hidden / the custom-extractor reusing the mount) shows each job (Queued / Running n/N / Done /
+  Cancelled / Stopped) with per-job Cancel + Clear finished. Own AbortController (`_bulkJobAbort`) leaves
+  the custom-extractor's `bulkLlmStop`/`_bulkAbort` untouched. The Start button → "Add to queue"; the
+  panel-level button → "Hide" (never cancels work). test_bulk_translate_summary_runs_are_queued. (2)
+  REORDER — prioritising/moving a download in the task manager didn't visibly move the row (it relied on
+  the backend round-trip + the next poll). Now OPTIMISTIC in BOTH task managers: `jobMove` (in-app, via a
+  new `_paintJobs` render-from-cache split of `_renderJobs`) and `TM.move` (standalone /tasks) renumber
+  the cached queue `queue_position` and REPAINT immediately, THEN POST `/api/jobs/{dumps,osm}/reorder`,
+  THEN `_renderJobs`/`refresh` to reconcile (revert to backend truth on error). Keys/backend were
+  already correct (`_dlKey` == `e['key']`; manager.reorder persists; /api/jobs recomputes queue_position)
+  — the gap was purely the missing instant repaint. test_task_manager_reorder_moves_rows_optimistically.
+  REMAINING: surface the client-side bulk QUEUE in the backend task manager too (only the ACTIVE run is
+  in /api/jobs today); key the new queue strings ×12.
+- **SYNTHESIS REWORK — WINDOW + TRANSPARENT SELECTION + UI-LANGUAGE + EXPORT SHIPPED 2026-06-21
+  (maintainer field test, 4 messages; branch claude/keen-lamport-b4t3rh, PR #420; backend
+  py_compile-VERIFIED, frontend browser-unverified per fork-3):** answers the maintainer's questions +
+  fixes the broken output. WAS: "Synthesize results" silently took the TOP 20 FTS-relevance matches
+  (the 20 = a context-safety bound `_SYNTHESIS_MAX_ARTICLES`; the 24k-char budget ÷ N excerpts), one
+  generate call, rendered INLINE in a small card; a weak model BAILED ("clarify which specific
+  article…") or echoed the SOURCE language despite the English `{language}` pin. NOW: (1) opens a roomy
+  article-style WINDOW (`<dialog id="synth-window">`); (2) TRANSPARENT SELECTION step — fetches a
+  candidate pool (`/api/articles?…&limit=60`, NEW `ids=` param for a card-seeded analysis corpus,
+  preserves order, bounded 1000), shows "Matched: M (top R by search relevance)", lists candidates
+  with metadata + reader links + checkboxes (first ≤20 pre-checked, live "Selected k/20", Run disabled
+  outside 1..20) so the USER picks the members (sent as explicit `article_ids` — no silent truncation
+  as the only path); (3) RESULT step shows the synthesis + caveat + provenance chips + the FULL
+  synthesized corpus WITH each article's metadata (title/source/date/lang/reader/source↗), "← Change
+  selection"; (4) EXPORT — Copy, Export .md (Blob download), "Open as a page ↗" (a standalone HTML doc
+  in a new tab, Ctrl-S saveable, falls back to download); (5) UI-LANGUAGE OUTPUT — the SPA sends
+  `ui_lang` (code) + `output_language` (English name); `_build_prompting` now appends a NATIVE-language
+  directive (`_NATIVE_DIRECTIVE` ×14 langs, e.g. fr "Rédige l'intégralité de ta réponse en français.")
+  to the summary/synthesis system prompt so a weak model actually writes in the UI language (the tuned
+  ENGLISH instruction BODY is KEPT — translating multi-sentence prompts ×12 risks DEGRADING a weak
+  model's compliance; forcing the OUTPUT language is the reliable win, applied to BULK SUMMARIES too);
+  (6) ROBUST PROMPT — the excerpts are wrapped "Synthesize ALL N excerpts… do not ask which one…" +
+  repeated AFTER the excerpts (small models weight the last instruction), killing the bail. Response
+  gains `members[]` (n/id/title/source/published_at/url/language) + `total_matched` + `max_articles`.
+  The 20 bound STAYS (a small CPU model can only synthesize a bounded set well) but is now VISIBLE +
+  user-controlled, not silent. tests: test_llm_api (member metadata + total_matched; fr native
+  directive in system + "Synthesize ALL" in prompt), test_api_search (the `ids=` set, order-preserving,
+  drops unknown ids), test_repo_invariants::test_synthesis_opens_a_window_with_selection_metadata_and_export.
+  All new window strings via `t()` (English-fallback, i18n gate 100%; keyable later). REMAINING: key
+  the window chrome ×12; optionally a persisted/saveable synthesis "document" (today export is the save
+  path); full multi-paragraph prompt-body localization if the native directive proves insufficient.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features
@@ -4659,6 +4960,27 @@ ruling, a contingency, or a deliberate-omission note.
   bundle, on-click only, never auto-transmitted. Maintainer protocol: click
   through the app, send the bundle. Temporal map ships PRECONFIGURED
   (bundled Natural Earth coastline, invariant-tested).
+  **DIAGNOSTIC BATCH ANALYZED 2026-06-21 (maintainer sent 8 logs from the live 29k-article /
+  2.4M-mention / 1 GB-encrypted corpus; branch claude/keen-lamport-b4t3rh, PR #420):** SHIPPED the
+  log-driven fixes: (a) STOPWORDS — a conservative 2026-06-21 `_EXTRA_STOPWORD_TEXT` batch from the
+  analyzer's high-confidence bucket (more CSS leaking into the `?` unknown-lang bucket: div/span/
+  max-width/font-size/font-family; de weekday `sonnabend`; pure grammar in es/it/pt/pl/sl/sv/nb/tr —
+  accented-or-unambiguous-grammar rule, content/homographs EXCLUDED e.g. law/city/power/company/
+  market/media/newsletter/twitter/table/width all LEFT as content); (b) DATE VOCAB — Greek (el, was
+  8.5% cov, in_month_vocab=FALSE) + Slovenian (sl, 6.2%) month names (nominative+genitive) added to
+  `dateextract._MONTHS`, VERIFIED live ("5 Μαΐου 2024"→2024-05-05, "5. junija 2024"→2024-06-05);
+  tests/test_dateextract.py + the stopword self-test cover it. FLAGGED (bigger, not in this batch):
+  (1) PERF — `/api/insights/trending-windows` is the #1 hotspot at ~20s idle / ~98s under load (it's
+  observed_on-WINDOWED so the corpus-wide counters don't apply; needs a per-day mention ROLLUP table
+  or a stale-while-revalidate guarantee on the Home poll); associations ~6s (busiest keyword
+  'important'=42k mentions), supergroups cold ~15s; the persisted COLUMNAR store is unavailable
+  (in-memory) pending the httpfs crypto-extension packaging decision; activity+vitals polled 1281×
+  in 26 min. (2) The `?` unknown-language bucket = 36,519 keywords (CSS/HTML leak = an HTML-stripping
+  gap before extraction, the real root; stoplisting the markup only mitigates). (3) translation_coverage
+  11.8% / tag_coverage 0% (run the baseline-tag backfill on this corpus). (4) no_stoplist langs
+  (uk/tr/ro/ur/th/cs/ca/fi/hi/et/vi/sk) + zh/ja unsegmented still leak. (5) network preflight: the
+  50-source sample was all `unreachable` (likely the Tor/airplane population, not a bug — re-check
+  online). Full prioritised report handed to the maintainer in chat.
   **DATE-EXTRACTION LOG ADDED 2026-06-16 (maintainer-asked: "gather extracted date
   information so I send it to you to optimize the extractor"):** `GET
   /api/diagnostics/dates` + a Settings → Diagnostics button "Download
@@ -4698,3 +5020,16 @@ ruling, a contingency, or a deliberate-omission note.
   summary + shards into the doc it already expects). tests/test_keyword_log_zip.py
   (split/bounded, per-language trim when over cap, analyzer reads it, default JSON
   unchanged).
+  **PAGED / FULL EXPORT ADDED 2026-06-21 (maintainer: "the diag tools don't offer to send
+  MORE keywords despite there being 200k+"):** the export was limited not by the byte cap
+  but by `_MAX_KEYWORDS_PER_LANG=5000` — only 137k of 461k were exported. Measured: 137k
+  keywords = 4.4 MB compressed, so the 20 MB cap can hold ~625k → the WHOLE corpus fits one
+  archive. Added `?format=zip&per_lang=N&page=P` (ZIP-only; bounded per_lang≤1,000,000,
+  page≥1): `per_lang` raises the per-language quota (page through with `page`), the manifest
+  now reports `per_lang/page/pages_total/has_more/keywords_total_corpus` so the full set can
+  be exported across digestible files. The JSON path is UNTOUCHED (eff_per_lang=_MAX, lo=0,
+  page ignored → byte-identical; contract intact). The heavy per-keyword language-signature
+  scan barely grows (tail keywords are low-mention). A new "Download ALL keywords (.zip)"
+  Settings button uses `per_lang=1000000` (one ~15 MB archive of all 461k). tests/
+  test_keyword_log_zip.py::test_keyword_zip_paging_exports_more_and_walks_the_full_set
+  (page 1≠page 2 disjoint, has_more, full export = whole corpus).

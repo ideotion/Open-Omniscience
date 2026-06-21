@@ -20,11 +20,8 @@
 #   ./install.sh --help
 #
 # Unattended env vars (also used by CI):
-#   OO_COMPONENTS="analysis,llm"   extras to add on top of core (comma-separated)
-#   OO_WITH_OLLAMA=1               install Ollama if missing (asks consent unless unattended)
-#   OO_OLLAMA_MODEL="granite4:micro"  model to pull (empty = none; Apache-2.0)
-#   OO_OLLAMA_READABLE=0           don't make the Ollama model store backup-readable
-#   OO_MAKE_LAUNCHER=1             create the desktop launcher
+#   OO_COMPONENTS="analysis"       extras to add on top of core (comma-separated)
+#   OO_MAKE_LAUNCHER=1             create the desktop launcher (default yes; 0 to skip)
 #   OO_PYTHON=python3.13           interpreter to use
 #   OO_SKIP_PIP=1 / OO_SKIP_DB=1   skip the pip install / db init (testing only)
 #
@@ -171,32 +168,11 @@ print_download_estimate() {
 # into the result. Returning through a global keeps the menu and the value separate.
 CHOSEN_EXTRAS=""
 choose_components() {
-    if [ "$UNATTENDED" = "1" ] || [ "$INTERACTIVE" = "0" ]; then
-        CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression}"
-        return
-    fi
-    if [ "$HAVE_WHIPTAIL" = "1" ]; then
-        # Strip whiptail's surrounding quotes and join selections with commas.
-        CHOSEN_EXTRAS="$(whiptail --title "Open Omniscience -- choose components" \
-            --checklist "Core (scrape, store, search, export) is always installed.\nSelect optional add-ons (Space to toggle, Enter to confirm):" \
-            16 74 3 \
-            "analysis"    "Quantitative analysis, keywords, framing (~90 MB)"   ON \
-            "compression" "Storage compression accelerators, zstandard+lz4 (~7 MB)" ON \
-            "llm"         "Local LLM via Ollama (+~1 GB Ollama & a model later)" OFF \
-            3>&1 1>&2 2>&3 < "$TTY_IN" | tr -d '"' | tr ' ' ',')"
-        return
-    fi
-    say ""
-    say "${BOLD}Choose components${RST} (Core is always installed):"
-    local extras=""
-    if ask_yn "Install Analysis tools (keywords, framing, sentiment)? (~90 MB download)" y; then extras="analysis"; fi
-    if ask_yn "Install storage Compression accelerators (zstandard, lz4 -- smaller database)? (~7 MB)" y; then
-        extras="${extras:+$extras,}compression"
-    fi
-    if ask_yn "Install Local-LLM tools (summarize / translate via Ollama)? (Ollama adds ~1 GB later)" n; then
-        extras="${extras:+$extras,}llm"
-    fi
-    CHOSEN_EXTRAS="$extras"
+    # Seamless install (maintainer 2026-06-20): NO component menu, NO prompts. Install
+    # the sensible default set -- Core (always) + Analysis + Compression. Power users
+    # and CI can still override with OO_COMPONENTS="...". Ollama / local-LLM provisioning
+    # is never offered here; it lives entirely in the app's Settings -> AI tab.
+    CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression}"
 }
 
 # ask_yn "question" default(y/n) -> returns 0 for yes
@@ -301,8 +277,12 @@ _seed_sources() {
 }
 
 # --------------------------------------------------------------------------- #
-# Optional: local LLM (Ollama). Transparent and opt-in -- we show the exact
-# command and ask before running any third-party installer.
+# Local LLM (Ollama): NOT provisioned by the installer (maintainer 2026-06-20).
+# Installing Ollama, pulling/removing models and choosing the active model all live
+# in the app's Settings -> AI tab. The helper below only makes an ALREADY-installed
+# model store readable for in-app backup; it is retained (and pinned by
+# tests/test_installer.py) but NOT called by the default install -- the AI tab owns
+# provisioning, so the installer never runs a third-party installer or prompts.
 # --------------------------------------------------------------------------- #
 # Make Ollama's model store readable so the in-app "Back up models" works without
 # the user touching systemd (maintainer 2026-06-18: this app targets journalists,
@@ -349,82 +329,13 @@ configure_ollama_store_access() {
     fi
 }
 
-maybe_setup_ollama() {
-    local extras="$1"
-    case ",$extras," in *,llm,*) : ;; *) return 0 ;; esac
-
-    # Honest network notice (0.0.8): provisioning the LLM needs clearnet; using
-    # the app afterwards does not. Said once, up front, so an at-risk operator
-    # can decide when/where to do this step.
-    say ""
-    say "  ${DIM}Note: downloading Ollama and a model needs a DIRECT internet connection${RST}"
-    say "  ${DIM}— it will NOT work over Tor. This is a one-time provisioning step.${RST}"
-    say "  ${DIM}Afterwards the app runs fully offline: the LLM never touches the network,${RST}"
-    say "  ${DIM}and source collection can route through your proxy (Settings → Safety →${RST}"
-    say "  ${DIM}Protected mode). If this machine can't use clearnet, skip the LLM here and${RST}"
-    say "  ${DIM}provision on a connected machine, then copy ~/.ollama/models across (USB).${RST}"
-
-    if command -v ollama >/dev/null 2>&1; then
-        ok "Ollama is already installed ($(ollama --version 2>/dev/null | head -1))"
-    else
-        local want="${OO_WITH_OLLAMA:-}"
-        if [ -z "$want" ]; then
-            say ""
-            say "  Ollama runs the local language models. Its official installer is:"
-            say "    ${DIM}curl -fsSL https://ollama.com/install.sh | sh${RST}"
-            say "    ${DIM}The Ollama runtime is ~1 GB to download; a model is extra (~0.8–2.7 GB).${RST}"
-            if ask_yn "Install Ollama now (downloads & runs the official installer, ~1 GB)?" n; then want=1; else want=0; fi
-        fi
-        if [ "$want" = "1" ]; then
-            step "Installing Ollama (official installer)"
-            if command -v curl >/dev/null 2>&1; then
-                curl -fsSL https://ollama.com/install.sh | sh || warn "Ollama install failed; you can install it later and re-run with the LLM option."
-            else
-                warn "curl not found; install Ollama manually from https://ollama.com then re-run."
-            fi
-        else
-            warn "Skipping Ollama. The LLM tools will return a clear 'unavailable' until Ollama is running."
-            return 0
-        fi
-    fi
-
-    # Pull a model.
-    local model="${OO_OLLAMA_MODEL:-}"
-    if [ -z "$model" ] && [ "$UNATTENDED" != "1" ]; then
-        if [ "$HAVE_WHIPTAIL" = "1" ]; then
-            model=$(whiptail --title "Download a local model" --menu \
-                "Pick a small model to download now (you can pull others later).\nThe defaults below use permissive Apache-2.0/MIT licenses:" 18 78 5 \
-                "granite4:micro" "~2.1 GB  IBM Granite 4.0 (Apache-2.0) — recommended default" \
-                "qwen3:1.7b"     "~1.4 GB  Alibaba Qwen3 (Apache-2.0), small" \
-                "mistral:7b"     "~4.4 GB  Mistral 7B (Apache-2.0), mid-range" \
-                "gemma3:1b"      "~0.8 GB  Google Gemma 3 (Gemma license — use limits)" \
-                "none"           "Skip — pick from more models in-app later" 3>&1 1>&2 2>&3) || model="none"
-        else
-            if ask_yn "Download a small default model now (granite4:micro, ~2.1 GB, Apache-2.0)?" y; then
-                model="granite4:micro"; else model="none"; fi
-        fi
-    fi
-    if [ -n "$model" ] && [ "$model" != "none" ]; then
-        if command -v ollama >/dev/null 2>&1; then
-            step "Pulling model: $model"
-            ollama pull "$model" || warn "Could not pull $model; you can run 'ollama pull $model' later."
-        else
-            warn "Ollama not available; skipping model download."
-        fi
-    fi
-
-    # After install + pull, make the model store backup-readable (Linux service case).
-    configure_ollama_store_access
-}
-
 # --------------------------------------------------------------------------- #
 # Double-click launcher (desktop integration)
 # --------------------------------------------------------------------------- #
 make_launcher() {
-    local want="${OO_MAKE_LAUNCHER:-}"
-    if [ -z "$want" ]; then
-        if ask_yn "Create a double-click 'Open Omniscience' launcher (apps menu + Desktop)?" y; then want=1; else want=0; fi
-    fi
+    # Seamless: create the launcher by default, no prompt (maintainer 2026-06-20).
+    # OO_MAKE_LAUNCHER=0 still opts out (tests + power users).
+    local want="${OO_MAKE_LAUNCHER:-1}"
     [ "$want" = "1" ] || return 0
 
     chmod +x "$SRC_DIR/scripts/launch.sh" 2>/dev/null || true
@@ -472,7 +383,7 @@ Type=Application
 Name=$2
 GenericName=Intelligence Platform
 Comment=$3
-Exec=$SRC_DIR/scripts/launch.sh $4
+Exec="$SRC_DIR/scripts/launch.sh" $4
 Icon=$5
 Terminal=true
 Categories=Utility;News;Office;
@@ -500,7 +411,7 @@ Type=Application
 Name=Uninstall Open Omniscience
 GenericName=Uninstaller
 Comment=Remove the Open Omniscience virtualenv and launchers (your data is kept unless you confirm)
-Exec=$SRC_DIR/install.sh --uninstall
+Exec="$SRC_DIR/install.sh" --uninstall
 Icon=$icon_console
 Terminal=true
 Categories=Utility;
@@ -530,7 +441,6 @@ do_install() {
     create_venv
     pip_install "$extras"
     init_database
-    maybe_setup_ollama "$extras"
     make_launcher
     say ""
     ok "${BOLD}Install complete.${RST} App + data live under: $SRC_DIR"

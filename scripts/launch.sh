@@ -45,7 +45,19 @@ if [ ! -d .venv ]; then
     exit 1
 fi
 # shellcheck disable=SC1091
-. .venv/bin/activate
+. .venv/bin/activate || true
+# A venv breaks if the system Python changed under it (e.g. an OS update between
+# launches) -- the app then fails to start from the icon until reinstalled. Detect
+# that HERE and tell the user exactly what to do, instead of exiting cryptically
+# (which can make the launcher window vanish before the error is read).
+if ! command -v open-omniscience >/dev/null 2>&1; then
+    echo "Open Omniscience can't start: its Python environment looks broken" >&2
+    echo "(this usually happens when the system Python changed after an OS update)." >&2
+    echo "Repair it by re-running the installer:" >&2
+    echo "    $DIR/install.sh" >&2
+    read -r -p "Press Enter to close..." _ || true
+    exit 1
+fi
 
 bold=$'\033[1m'; blu=$'\033[36m'; rst=$'\033[0m'
 [ -f "$DIR/assets/logo.txt" ] && { printf '\n%s' "$blu$bold"; cat "$DIR/assets/logo.txt"; printf '%s' "$rst"; }

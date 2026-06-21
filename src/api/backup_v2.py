@@ -56,6 +56,10 @@ _PENDING: dict[str, StagedArtifact] = {}
 class BackupBody(BaseModel):
     passphrase: str | None = None
     plaintext: bool = False
+    # What to back up (maintainer 2026-06-21). The corpus is always included; this
+    # toggles whether imported-newsletter (.eml/mailbox) articles ride along — so a
+    # user fixing faulty imports can back up WITHOUT them, then re-import clean ones.
+    include_newsletters: bool = True
 
 
 @router.post("/v2")
@@ -88,7 +92,11 @@ def backup_v2(body: BackupBody) -> FileResponse:
     Path(tmp).unlink(missing_ok=True)
     dest = Path(tmp)
     try:
-        write_backup_v2(dest, passphrase=None if body.plaintext else body.passphrase)
+        write_backup_v2(
+            dest,
+            passphrase=None if body.plaintext else body.passphrase,
+            include_newsletters=body.include_newsletters,
+        )
     except (BackupError, ArtifactError) as exc:
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -122,17 +130,37 @@ def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: bool) -> None:
+    """Selective restore (maintainer 2026-06-21): drop a category from the STAGED
+    plaintext corpus copy BEFORE the merge reads it, so the preview reflects exactly
+    what the commit will do (they share the filtered staged copy). Reuses the
+    backup-side, stdlib-tested filter. Only newsletters are filterable in the main
+    artifact today (maps/wiki/models are separate/excluded)."""
+    if include_newsletters:
+        return
+    from src.backup.artifact import _drop_newsletter_articles
+
+    try:
+        _drop_newsletter_articles(staged.corpus_path)
+    except Exception:  # noqa: BLE001 - never block a restore on the optional filter
+        _LOG.warning("restore: newsletter filter on the staged corpus failed", exc_info=True)
+
+
 @router.post("/v2/restore/preview")
 async def restore_preview(
     file: UploadFile = File(...),
     passphrase: str = Form(""),
     allow_unverified: bool = Form(False),
+    include_newsletters: bool = Form(True),
 ) -> dict:
     """Stage an artifact and return the dry-run merge plan + verification verdicts.
 
     Nothing in the live corpus changes. The returned token authorises ONE commit
-    of exactly this staged artifact."""
+    of exactly this staged artifact. ``include_newsletters=false`` drops imported
+    newsletters from the staged corpus so the preview AND the eventual commit
+    (which reuses this filtered staged copy) restore everything else."""
     staged = _stage_upload(await file.read(), passphrase or None)
+    _apply_restore_selection(staged, include_newsletters=include_newsletters)
     try:
         report = run_restore(staged, commit=False, allow_unverified=allow_unverified)
     except MergeError as exc:
@@ -164,10 +192,13 @@ async def restore_commit(
     file: UploadFile | None = File(None),
     passphrase: str = Form(""),
     allow_unverified: bool = Form(False),
+    include_newsletters: bool = Form(True),
 ) -> dict:
     """Merge a previously previewed artifact (token) -- or stage+merge directly
     when called with a file. The merge re-plans against the CURRENT corpus at
-    commit time; the preview is advisory, the commit's own verification decides."""
+    commit time; the preview is advisory, the commit's own verification decides.
+    A token's staged copy already reflects the preview's selection; a direct-file
+    commit applies ``include_newsletters`` here."""
     if token:
         staged = _PENDING.pop(token, None)
         if staged is None or not staged.staging_dir.exists():
@@ -175,8 +206,10 @@ async def restore_commit(
                 status_code=409,
                 detail="unknown or expired preview token -- preview again",
             )
+        # token path: the staged corpus was already filtered at preview time.
     elif file is not None:
         staged = _stage_upload(await file.read(), passphrase or None)
+        _apply_restore_selection(staged, include_newsletters=include_newsletters)
     else:
         raise HTTPException(status_code=400, detail="provide a preview token or a file")
     try:
@@ -268,11 +301,27 @@ def models_export(body: ModelsExportBody) -> FileResponse:
 
     from starlette.background import BackgroundTask
 
-    from src.backup.ollama_models import build_models_archive, default_store
+    from src.backup.ollama_models import (
+        build_models_archive,
+        default_store,
+        list_models,
+        store_status,
+    )
 
     store = default_store()
-    if not store.exists():
-        raise HTTPException(status_code=404, detail="no local Ollama model store found")
+    # Refuse HONESTLY with an actionable reason when there is nothing to export, instead
+    # of a misleading 404 or a near-empty archive (maintainer 2026-06-21: the button
+    # "doesn't work"). The commonest case is a systemd-service Ollama whose models live
+    # in a protected dir the app can't read — store_status() carries the exact hint
+    # (set OLLAMA_MODELS to a path you own); an empty store says "pull a model first".
+    models = list_models(store) if store.exists() else []
+    if not models:
+        status = store_status()
+        detail = status.get("hint") or (
+            "No Ollama models found to back up — pull a model first, or set OLLAMA_MODELS "
+            "if your models live elsewhere."
+        )
+        raise HTTPException(status_code=409, detail=detail)
     ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     fd, tmp = tempfile.mkstemp(prefix="oo-models-", suffix=".oomodels", dir=_staging_dir())
     os.close(fd)

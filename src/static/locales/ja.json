@@ -569,6 +569,7 @@
   "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "現在実行中のものはありません。アクティブなタスク（収集パス、ダウンロード、通信中の取得）はここに表示されます。",
   "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "待機列は空です。順番待ちのダウンロードはここに順に表示されます。矢印で並べ替えできます。",
   "Welcome to Open Omniscience": "Open Omniscience へようこそ",
+  "Any language": "すべての言語",
   "Choose your language": "言語を選択してください",
   "The whole interface switches as you pick. You can change this anytime in Settings.": "選択に合わせてインターフェース全体が切り替わります。いつでも設定から変更できます。",
   "Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.": "インターフェース全体の言語を選びます。本当の識別子は現地語の名称です。旗は視覚的な目印にすぎません。",
@@ -1222,6 +1223,7 @@
   "Estimate size": "サイズを推定",
   "Optional, heavy, and separate from live change-tracking. Pick a language edition below and download the official Wikimedia current-text dump (resumable, with pause/resume). Editions are listed flat — your languages first, then the largest editions; the real download size is read from the server when you click Estimate size — nothing is guessed. enwiki ≈ tens of GB; most editions are far smaller. Baselines are only for offline reading/search — the change-tracking above does not need them.": "任意で大容量、ライブの変更追跡とは別物です。下で言語版を選び、公式 Wikimedia の現在テキストのダンプをダウンロードします(再開可能、一時停止/再開付き)。版はフラットに一覧表示され — あなたの言語が先、その後に最大の版が続きます。実際のダウンロードサイズは「サイズを推定」をクリックするとサーバーから読み取られ、推測は一切しません。enwiki ≈ 数十 GB。ほとんどの版ははるかに小さいです。ベースラインはオフラインの閲覧/検索専用で — 上記の変更追跡には不要です。",
   "The list is limited to the app's languages — the editions this app can read and analyze. Type in the box to filter by name, autonym or code. Each edition shows a coarse size tier and an estimated download size inline, while Estimate size reports the exact current dump size from the server. You can also type any edition code that isn't listed.": "一覧はアプリの言語 — このアプリが読み取り・分析できる版 — に限られます。ボックスに入力して、名称・自称・コードで絞り込めます。各版には大まかなサイズ段階と推定ダウンロードサイズがインラインで表示され、「サイズを推定」はサーバーから正確な現在のダンプサイズを報告します。一覧にない版コードを入力することもできます。",
+  "Local LLM — click to open AI settings": "ローカル LLM — クリックして AI 設定を開く",
   "Local LLM models (separate backup)": "ローカル LLM モデル(別途バックアップ)",
   "Ollama models live outside your corpus, so they are NOT in the full backup. Back them up separately to avoid re-downloading (multi-GB; slow over Tor). Restore is additive and bit-identical — existing blobs are skipped, never overwritten.": "Ollama のモデルはコーパスの外にあるため、完全バックアップには含まれません。再ダウンロードを避けるため別途バックアップしてください(数 GB、Tor 経由では低速)。復元は加算的でビット単位で同一です — 既存のブロブはスキップされ、上書きされることはありません。",
   "Checking the local model store…": "ローカルのモデルストアを確認中…",
@@ -1506,5 +1508,8 @@
   "Stored locally in app_settings.json under the data directory — no telemetry, nothing leaves the machine.": "データディレクトリ内の app_settings.json にローカル保存されます——テレメトリなし、何も端末から外に出ません。",
   "Restore is additive-only: use the merge restore above — it complements your corpus and never replaces it. (The destructive replace-restore was removed; a raw .db download is a snapshot for manual/advanced use.)": "復元は追加のみです：上のマージ復元を使ってください——コーパスを補完し、決して置き換えません。（破壊的な置換復元は削除されました。生の .db ダウンロードは手動／上級用途のスナップショットです。）",
   "\"Dumb\" keywords (function words like the, you, not, one) are removed automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or comma-separated), set the minimum length, and toggle options. Excluding hides a keyword everywhere (reversibly — stored mentions are kept). You can also click the ✕ next to any keyword in Insights.": "「役に立たない」キーワード（the, you, not, one のような機能語）は、組み込みの多言語ストップワード一覧によって自動的に除去されます。下で微調整：追加の語を除外（1 行に 1 つ、またはカンマ区切り）、最小長を設定、オプションを切り替えます。除外するとそのキーワードはどこでも非表示になります（可逆——保存済みの言及は保持されます）。Insights で任意のキーワードの横の ✕ をクリックすることもできます。",
-  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "仮想環境とデスクトップのランチャーは常に削除されます。アプリのフォルダーとあなたのデータも削除されるかはモードによります。ターミナルで実行することもできます：./install.sh --uninstall"
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "仮想環境とデスクトップのランチャーは常に削除されます。アプリのフォルダーとあなたのデータも削除されるかはモードによります。ターミナルで実行することもできます：./install.sh --uninstall",
+  "The app is shutting down — you can close this tab.": "アプリを終了しています — このタブを閉じてかまいません。",
+  "Open Omniscience has been uninstalled and the app has stopped. You can close this window.": "Open Omniscience はアンインストールされ、アプリは停止しました。このウィンドウを閉じてかまいません。",
+  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "アプリを終了しますか？サーバーが停止し、再起動が必要になります。データはそのまま保持されます。"
 }

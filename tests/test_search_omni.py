@@ -90,6 +90,45 @@ def test_omni_federates_with_disclosed_totals(client, omni_seed):
     assert "index-backed" in d["method"]
 
 
+def test_omni_wiki_group_searches_wikipedia_article_content(client):
+    """Maintainer 2026-06-21: the unified search must also search Wikipedia ARTICLES.
+    A wiki-edition corpus article (source xx.wikipedia.org) is found by CONTENT (FTS),
+    surfaced in the wiki group as a reader link — not only by watched-page title."""
+    from src.database.models import Article, Source
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        wsrc = Source(name="Wikipedia (en)", domain="en.wikipedia.org")
+        s.add(wsrc)
+        s.flush()
+        a = Article(
+            url="https://en.wikipedia.org/wiki/Zorblax",
+            canonical_url="https://en.wikipedia.org/wiki/Zorblax",
+            source_id=wsrc.id,
+            title="Zorblax",
+            language="en",
+            content="Zorblax is a fictional zibblequark studied only in tests.",
+            hash="zwiki" + "d" * 59,
+            published_at=datetime.now(UTC),
+        )
+        s.add(a)
+        s.flush()
+        aid, sid = a.id, wsrc.id
+    try:
+        d = client.get("/api/search/omni", params={"q": "zibblequark"}).json()
+        wiki = _group(d, "wiki")
+        assert wiki["total"] >= 1, wiki
+        it = wiki["items"][0]
+        assert it.get("article_id") == aid  # a CONTENT hit (not a title-only hit)
+        assert it["url"] == f"/api/articles/{aid}/view"  # opens the LOCAL reader
+        assert it["wiki"] == "en"  # edition parsed from the source domain
+        assert "content match" in wiki["note"]
+    finally:
+        with session_scope() as s:
+            s.execute(text(f"DELETE FROM articles WHERE id = {aid}"))  # noqa: S608
+            s.execute(text(f"DELETE FROM sources WHERE id = {sid}"))  # noqa: S608
+
+
 def test_omni_source_match_by_name_and_domain(client, omni_seed):
     d = client.get("/api/search/omni", params={"q": "omnibargazette"}).json()
     assert _group(d, "sources")["total"] == 1
