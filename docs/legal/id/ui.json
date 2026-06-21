@@ -1,0 +1,17 @@
+{
+  "heading": "Dokumen hukum",
+  "intro": "Sebelum memulai, harap baca dan terima dokumen-dokumen ini. Dokumen ini mengatur penggunaan perangkat lunak ini dan hasil yang dihasilkan AI. Dokumen ini tidak menambahkan pembatasan apa pun pada GNU GPL v3 (lisensi kode); versi Prancis yang berlaku.",
+  "draft_note": "Draf kerja — bukan nasihat hukum; harus ditinjau oleh profesional yang berkualifikasi.",
+  "translation_note": "Terjemahan mesin — versi Prancis adalah teks yang sah.",
+  "open": "Buka",
+  "accept_label": "Saya telah membaca dan menerima dokumen-dokumen ini.",
+  "accept_btn": "Terima dan lanjutkan",
+  "decline_btn": "Tolak",
+  "download_btn": "Unduh dokumen",
+  "decline_warn": "Menolak akan MEN-COPOT-PASANG aplikasi dan menghapus secara permanen semua berkas dan datanya di komputer ini. Tindakan ini tidak dapat dibatalkan. (Anda selalu dapat memasangnya kembali nanti.)",
+  "decline_type": "Untuk mengonfirmasi, ketik UNINSTALL:",
+  "decline_confirm_btn": "Copot pasang dan hapus semuanya",
+  "decline_cancel_btn": "Batal",
+  "uninstalling": "Mencopot pemasangan — aplikasi sedang ditutup dan berkasnya sedang dihapus. Anda dapat menutup jendela ini.",
+  "error": "Tidak dapat memuat dokumen hukum."
+}
