@@ -12,7 +12,7 @@ across requests.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -185,11 +185,16 @@ def _get_newsletter_source(db: Session) -> Source:
     return src
 
 
+# Starlette's MultiPartParser defaults to max_files=1000, so a selection of ~1300
+# .eml files returned HTTP 400 "Too many files" (maintainer field test 2026-06-20).
+# We parse the form ourselves with a higher cap for this local, single-user upload.
+# A TRULY huge set (20 GB+) is the server-side folder-import job's job; this upload
+# path comfortably handles thousands.
+_MAX_UPLOAD_FILES = 5000
+
+
 @router.post("/newsletters/import")
-def import_newsletters(
-    files: list[UploadFile] = File(..., description="local .eml files to import"),
-    db: Session = Depends(get_db),
-) -> dict:
+async def import_newsletters(request: Request, db: Session = Depends(get_db)) -> dict:
     """Import local ``.eml`` newsletter files into the unified corpus, ANONYMISED at
     ingest. **ZERO network**: each file is parsed, de-tracked and stored locally —
     nothing is ever fetched (tracker pixels / wrapped links are NEVER followed, so an
@@ -197,16 +202,30 @@ def import_newsletters(
     returned tally reports exactly what anonymisation stripped (recipient echoes
     redacted, tracker query-params removed, server-side tracker wrappers flagged) so
     the user sees it honestly. Local-only, single-user, loopback by design.
+
+    The form is parsed with ``max_files`` raised above Starlette's 1000 default so a
+    large selection no longer 400s; a truly huge set should use the folder import.
     """
+    try:
+        form = await request.form(max_files=_MAX_UPLOAD_FILES, max_fields=_MAX_UPLOAD_FILES + 100)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many files in one upload (cap {_MAX_UPLOAD_FILES}). For a very large "
+                f"set, import from a folder instead. ({exc})"
+            ),
+        ) from exc
+    files = [v for v in form.getlist("files") if hasattr(v, "filename")]
     raws: list[bytes] = []
     skipped_non_eml = 0
     for f in files:
-        name = (f.filename or "").lower()
+        name = (getattr(f, "filename", "") or "").lower()
         if not name.endswith(".eml"):
             skipped_non_eml += 1
             continue
         try:
-            raws.append(f.file.read())
+            raws.append(await f.read())
         except Exception:
             skipped_non_eml += 1
     source = _get_newsletter_source(db)

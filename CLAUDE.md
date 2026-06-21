@@ -1020,9 +1020,23 @@ ruling, a contingency, or a deliberate-omission note.
   test_newsletter_remove.py (5: removes only newsletter articles+dependents, KEEPS source rows + web
   articles, counters reconciled == live aggregate, FTS cleaned for removed articles via ensure_fts,
   no-newsletter-source = no-op, + a drift guard that the live + backup domain constants AGREE) +
-  test_repo_invariants::test_remove_imported_newsletters_live_action. REMAINING (the rest of §2.B): the
-  server-side folder-path IMPORT JOB (pausable, task-manager-visible, batch commits) + the small-upload
-  max_files 400 fix — the bigger half, next.
+  test_repo_invariants::test_remove_imported_newsletters_live_action.
+  **BATCH-COMMITS + UPLOAD-CAP SHIPPED 2026-06-21 (§2.B items 2+5; branch claude/amazing-tesla-z6bwkm,
+  draft PR onto 0.09; backend VERIFIED py3.11):** (5, perf) `ingest_emails` committed PER MESSAGE
+  (fsync/SQLCipher-codec bound — slow on a 20 GB+ folder while hardware idles); now BATCHES commits
+  (every `commit_batch`, default `OO_EMAIL_COMMIT_BATCH=200`). Correctness preserved BY CONSTRUCTION: a
+  message is deduped against the DB AND within the uncommitted batch (`batch_keys`), and if a batch
+  commit ever races a unique-index collision the batch is REDONE one message at a time (`_commit_one`),
+  so a single conflict never drops its batch-mates (NO data loss — the standing rule). Exact dedup tally
+  unchanged. tests/test_email_ingest.py (+2: cross-batch dedup with commit_batch=2 == stored 3/dup 1 +
+  actually-committed; the autoflush-OFF collision path falls back per-message = stored 1/dup 1, no loss).
+  (2, the 400) the upload endpoint hit Starlette's `MultiPartParser` `max_files=1000` default → HTTP 400
+  "Too many files" at ~1300; `import_newsletters` is now `async` + parses the form itself
+  (`await request.form(max_files=_MAX_UPLOAD_FILES=5000, max_fields=…)`) with an honest "use the folder
+  import for a very large set" 400 above the cap. test_repo_invariants::test_newsletter_import_perf_and_
+  upload_cap. REMAINING (the bigger half of §2.B): the server-side folder-path IMPORT JOB (pausable,
+  task-manager-visible — mirrors the §2.A FolderBackupManager pattern; a DB-writer job taking the
+  single-writer gate), next.
   **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
   importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
   leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional

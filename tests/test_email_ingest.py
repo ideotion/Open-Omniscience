@@ -8,7 +8,7 @@ tested with an injected fake connection.
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, Source
@@ -195,6 +195,58 @@ def test_links_are_detracked_on_ingest():
     assert tally["tracker_params_stripped"] >= 1
     assert tally["trackers_flagged"] == 1
     s.close()
+
+
+def _eml(subject: str, body: str, mid: str) -> bytes:
+    return (
+        f"From: N <n@news.example>\nSubject: {subject}\n"
+        f"Message-ID: <{mid}@news.example>\nDate: Mon, 05 Jan 2026 18:00:00 +0000\n"
+        f"Content-Type: text/plain; charset=utf-8\n\n{body}\n"
+    ).encode()
+
+
+def test_ingest_emails_batched_commit_dedups_across_batches():
+    # Batched commits (perf) must keep the exact dedup tally. m3 shares m1's body
+    # (=> same content hash) but a different Message-ID, so it dedups on the hash.
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    src = Source(name="N", domain="nl.test")
+    s.add(src)
+    s.commit()
+    msgs = [
+        _eml("A", "body one about elections", "m1"),
+        _eml("B", "body two about inflation", "m2"),
+        _eml("A2", "body one about elections", "m3"),  # dup hash of m1
+        _eml("C", "body three about drought", "m4"),
+    ]
+    tally = ingest_emails(s, src, msgs, commit_batch=2)
+    assert tally["stored"] == 3 and tally["duplicate"] == 1
+    assert s.query(Article).count() == 3  # actually committed
+    # A later call dedups against the DB too.
+    again = ingest_emails(s, src, [msgs[0]], commit_batch=2)
+    assert again["stored"] == 0 and again["duplicate"] == 1
+
+
+def test_batched_commit_falls_back_per_message_on_collision():
+    # autoflush OFF -> the in-batch existence check can't see a same-hash sibling, so
+    # the batch flush hits the unique index; the per-message fallback must store one
+    # and count the other a duplicate (NO data loss — the maintainer's standing rule).
+    engine = create_engine("sqlite:///:memory:", future=True)
+
+    @event.listens_for(engine, "connect")
+    def _fk(dbapi_conn, _rec):  # noqa: ANN001
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True, autoflush=False)()
+    src = Source(name="N", domain="nl.test")
+    s.add(src)
+    s.commit()
+    msgs = [_eml("A", "identical body text here", "m1"), _eml("B", "identical body text here", "m2")]
+    tally = ingest_emails(s, src, msgs, commit_batch=10)  # both in one batch
+    assert tally["stored"] == 1 and tally["duplicate"] == 1
+    assert s.query(Article).count() == 1
 
 
 def test_ingest_eml_directory_reads_files(tmp_path):

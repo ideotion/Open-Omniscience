@@ -595,6 +595,19 @@ def test_remove_imported_newsletters_live_action():
     assert "/api/newsletters/remove-imported" in app
 
 
+def test_newsletter_import_perf_and_upload_cap():
+    """Brief §2.B: .eml ingest BATCHES commits (per-message fsync was the bottleneck on a
+    20 GB+ folder) with a per-message fallback so a collision never loses data; and the
+    upload endpoint raises Starlette's max_files=1000 default (HTTP 400 at ~1300 files)."""
+    email = (_SRC / "ingest" / "email.py").read_text(encoding="utf-8")
+    ing = (_SRC / "api" / "ingestion.py").read_text(encoding="utf-8")
+    # batched commits + the no-data-loss fallback
+    assert "commit_batch" in email and "OO_EMAIL_COMMIT_BATCH" in email
+    assert "def _flush(" in email and "def _commit_one(" in email
+    # the upload cap is raised above Starlette's 1000 default via manual form parsing
+    assert "_MAX_UPLOAD_FILES" in ing and "request.form(max_files=" in ing
+
+
 def test_advanced_search_sort_by_metadata():
     """Brief §2.D ('important'): /api/articles can sort by a metadata field (date|source|
     title|language) — an honest ordering, never a relevance/quality score — surfaced as a

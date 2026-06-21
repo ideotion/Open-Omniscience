@@ -315,13 +315,49 @@ def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) 
 
 
 
-def ingest_emails(session: Session, source: Source, raw_messages: list[bytes]) -> dict[str, int]:
+def _email_article(source: Source, parsed: ParsedEmail, content_hash: str, canonical: str) -> Article:
+    now = datetime.now(UTC)
+    return Article(
+        url=canonical,
+        canonical_url=canonical,
+        source_id=source.id,
+        title=parsed.subject,
+        content=parsed.body_text,
+        published_at=parsed.date,
+        author=parsed.from_addr,
+        hash=content_hash,
+        word_count=len(parsed.body_text.split()),
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def ingest_emails(
+    session: Session, source: Source, raw_messages: list[bytes], *, commit_batch: int | None = None
+) -> dict[str, int]:
     """Parse and store raw emails as Article rows, deduplicated by content hash.
 
     Emails are anonymised at ingest (recipient never stored, recipient echoes
     redacted, links de-tracked). The tally surfaces what anonymisation did so the
     caller can show the user honest counts.
+
+    PERFORMANCE (field test 2026-06-20: a 20 GB+ folder is slow while hardware idles):
+    commits are BATCHED (every ``commit_batch`` rows, default ``OO_EMAIL_COMMIT_BATCH``
+    = 200) instead of one fsync per message — the .eml import is fsync/SQLCipher-codec
+    bound, not CPU bound. Correctness is preserved: messages are deduped against the DB
+    AND within the uncommitted batch, and if a batch commit ever races a unique-index
+    collision the batch is REDONE one message at a time, so a single conflict never
+    drops the rest (no data loss — the maintainer's standing rule).
     """
+    import os
+
+    if commit_batch is None:
+        try:
+            commit_batch = int(os.getenv("OO_EMAIL_COMMIT_BATCH", "200"))
+        except ValueError:
+            commit_batch = 200
+    commit_batch = max(1, commit_batch)
+
     tally = {
         "stored": 0,
         "duplicate": 0,
@@ -330,6 +366,48 @@ def ingest_emails(session: Session, source: Source, raw_messages: list[bytes]) -
         "tracker_params_stripped": 0,
         "trackers_flagged": 0,
     }
+    # Added-but-not-yet-committed: (parsed, hash, canonical) — kept so a batch that
+    # fails on commit can be re-applied one message at a time without re-parsing.
+    pending: list[tuple[ParsedEmail, str, str]] = []
+    batch_keys: set[tuple[str, str]] = set()
+
+    def _exists(content_hash: str, canonical: str) -> bool:
+        return (
+            session.query(Article.id)
+            .filter((Article.hash == content_hash) | (Article.canonical_url == canonical))
+            .first()
+            is not None
+        )
+
+    def _commit_one(parsed: ParsedEmail, content_hash: str, canonical: str) -> None:
+        # The safe per-message path used on the rare batch-commit collision: re-check
+        # (the batch rolled back; a concurrent writer may have inserted), then commit.
+        if _exists(content_hash, canonical):
+            tally["duplicate"] += 1
+            return
+        session.add(_email_article(source, parsed, content_hash, canonical))
+        try:
+            session.commit()
+            tally["stored"] += 1
+        except IntegrityError:
+            session.rollback()
+            tally["duplicate"] += 1
+
+    def _flush() -> None:
+        if not pending:
+            return
+        try:
+            session.commit()
+            tally["stored"] += len(pending)
+        except IntegrityError:
+            # A unique-index race the in-batch/DB dedup didn't catch: redo this batch
+            # one at a time so the collision never drops its batch-mates.
+            session.rollback()
+            for parsed, h, canon in pending:
+                _commit_one(parsed, h, canon)
+        pending.clear()
+        batch_keys.clear()
+
     for raw in raw_messages:
         parsed = parse_email(raw)
         tally["recipient_redactions"] += parsed.redactions
@@ -340,38 +418,18 @@ def ingest_emails(session: Session, source: Source, raw_messages: list[bytes]) -
             continue
         content_hash = generate_content_hash(parsed.body_text)
         canonical = f"imap:{parsed.message_id}"
-        exists = (
-            session.query(Article.id)
-            .filter((Article.hash == content_hash) | (Article.canonical_url == canonical))
-            .first()
-        )
-        if exists:
+        key = (content_hash, canonical)
+        # In-batch dedup: two identical messages in the SAME uncommitted batch would
+        # collide on the unique index at flush — count the later one as a duplicate now.
+        if key in batch_keys or _exists(content_hash, canonical):
             tally["duplicate"] += 1
             continue
-        now = datetime.now(UTC)
-        session.add(
-            Article(
-                url=canonical,
-                canonical_url=canonical,
-                source_id=source.id,
-                title=parsed.subject,
-                content=parsed.body_text,
-                published_at=parsed.date,
-                author=parsed.from_addr,
-                hash=content_hash,
-                word_count=len(parsed.body_text.split()),
-                created_at=now,
-                updated_at=now,
-            )
-        )
-        try:
-            session.commit()
-            tally["stored"] += 1
-        except IntegrityError:
-            # A concurrent/duplicate insert (the unique hash/canonical_url) raced the
-            # _exists check. Roll back so the next message isn't aborted, count as dup.
-            session.rollback()
-            tally["duplicate"] += 1
+        session.add(_email_article(source, parsed, content_hash, canonical))
+        pending.append((parsed, content_hash, canonical))
+        batch_keys.add(key)
+        if len(pending) >= commit_batch:
+            _flush()
+    _flush()
     return tally
 
 
