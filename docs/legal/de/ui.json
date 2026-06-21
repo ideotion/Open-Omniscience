@@ -1,0 +1,17 @@
+{
+  "heading": "Rechtsdokumente",
+  "intro": "Bitte lesen und akzeptieren Sie diese Dokumente, bevor Sie beginnen. Sie regeln die Nutzung dieser Software und ihrer KI-generierten Ergebnisse. Sie fügen der GNU GPL v3 (der Lizenz des Codes) keine Einschränkung hinzu; maßgeblich ist die französische Fassung.",
+  "draft_note": "Arbeitsentwürfe — keine Rechtsberatung; von einer qualifizierten Fachperson zu prüfen.",
+  "translation_note": "Maschinelle Übersetzung — maßgeblich ist die französische Fassung.",
+  "open": "Öffnen",
+  "accept_label": "Ich habe diese Dokumente gelesen und akzeptiere sie.",
+  "accept_btn": "Akzeptieren und fortfahren",
+  "decline_btn": "Ablehnen",
+  "download_btn": "Dokumente herunterladen",
+  "decline_warn": "Bei Ablehnung wird die App DEINSTALLIERT und alle ihre Dateien und Daten auf diesem Gerät werden dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden. (Sie können sie später jederzeit neu installieren.)",
+  "decline_type": "Geben Sie zur Bestätigung UNINSTALL ein:",
+  "decline_confirm_btn": "Deinstallieren und alles löschen",
+  "decline_cancel_btn": "Abbrechen",
+  "uninstalling": "Wird deinstalliert — die App wird beendet und ihre Dateien werden entfernt. Sie können dieses Fenster schließen.",
+  "error": "Die Rechtsdokumente konnten nicht geladen werden."
+}
