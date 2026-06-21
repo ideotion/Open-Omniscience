@@ -569,6 +569,7 @@
   "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "当前没有正在运行的任务——活动任务（采集流程、下载、正在进行的抓取）会显示在这里。",
   "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "队列为空——等待中的下载会按顺序显示在这里；用箭头可以重新排序。",
   "Welcome to Open Omniscience": "欢迎使用 Open Omniscience",
+  "Any language": "任何语言",
   "Choose your language": "选择您的语言",
   "The whole interface switches as you pick. You can change this anytime in Settings.": "随您的选择，整个界面即时切换。您可以随时在“设置”中更改。",
   "Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.": "为整个界面选择语言。母语名称才是真正的标识——旗帜只是视觉提示。",

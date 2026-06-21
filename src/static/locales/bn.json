@@ -569,6 +569,7 @@
   "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "এই মুহূর্তে কিছু চলছে না — সক্রিয় কাজ (একটি সংগ্রহ পাস, ডাউনলোড, চলমান অনুরোধ) এখানে দেখা যাবে।",
   "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "সারি খালি — অপেক্ষমাণ ডাউনলোডগুলি এখানে ক্রমানুসারে দেখা যাবে; ক্রম বদলাতে তীর ব্যবহার করুন।",
   "Welcome to Open Omniscience": "Open Omniscience-এ স্বাগতম",
+  "Any language": "যেকোনো ভাষা",
   "Choose your language": "আপনার ভাষা নির্বাচন করুন",
   "The whole interface switches as you pick. You can change this anytime in Settings.": "আপনি নির্বাচন করার সাথে সাথে পুরো ইন্টারফেস বদলে যায়। আপনি যেকোনো সময় সেটিংসে এটি পরিবর্তন করতে পারেন।",
   "Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.": "পুরো ইন্টারফেসের জন্য ভাষা বেছে নিন। স্থানীয় নামই আসল শনাক্তকারী — পতাকা কেবল একটি দৃশ্যগত ইঙ্গিত।",

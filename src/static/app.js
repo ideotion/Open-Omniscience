@@ -933,6 +933,7 @@
       // the launcher empty state when there are no tabs.
       if (name === "analyze" && !_anHydrated) {
         _anHydrated = true;
+        _anFillLangSelect();   // populate the Advanced language <select> (flags + names)
         const tb = _anActiveId ? _anTabs.find(x => x.id === _anActiveId) : null;
         if (tb) { _anRenderStrip(); _anApplySeed(tb); }
         else if (!_anTabs.length) _anShowEmpty();
@@ -9238,6 +9239,18 @@
     // The SAME params, built from the analysis window's own Advanced inputs — so the
     // window's exports describe exactly the article set it is analysing (the Search-tab
     // capabilities are absorbed here, toward the one-search-entry goal).
+    // Populate the Advanced-search language <select> once: "Any language" + the 12 UI
+    // languages as flag + native name (maintainer 2026-06-20). Built in JS so the autonym
+    // labels stay native (invariant #15) and out of the static-HTML dropdown i18n gate.
+    function _anFillLangSelect() {
+      const sel = $("an-adv-lang");
+      if (!sel || sel.tagName !== "SELECT" || sel.options.length) return;   // once
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const opts = ['<option value="">' + esc(t("Any language")) + "</option>"];
+      for (const [code, flag, name] of LANGS_12)
+        opts.push('<option value="' + code + '">' + flag + " " + esc(name) + "</option>");
+      sel.innerHTML = opts.join("");
+    }
     function anQuery() { return ($("an-adv-query").value || "").trim(); }
     // The EXACT article set behind a clicked card (maintainer-ruled 2026-06-16). When
     // set, the analysis window's corpus IS precisely these articles — every subtab
@@ -9298,6 +9311,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anIds = (tb.kind === "ids" && Array.isArray(tb.ids)) ? tb.ids.slice(0, 5000) : null;
       _anCommodity = tb.commodity || null;
+      _anFillLangSelect();   // ensure the language <select> is built before seeding it
       $("an-adv-query").value = tb.query || "";
       $("an-adv-source").value = tb.src || "";
       $("an-adv-lang").value = tb.lang || "";

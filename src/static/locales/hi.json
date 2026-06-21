@@ -569,6 +569,7 @@
   "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "अभी कुछ नहीं चल रहा — सक्रिय कार्य (एक संग्रह चक्र, डाउनलोड, चालू अनुरोध) यहाँ दिखते हैं।",
   "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "कतार खाली है — अपनी बारी की प्रतीक्षा कर रहे डाउनलोड यहाँ क्रम में दिखते हैं; क्रम बदलने के लिए तीरों का उपयोग करें।",
   "Welcome to Open Omniscience": "Open Omniscience में आपका स्वागत है",
+  "Any language": "कोई भी भाषा",
   "Choose your language": "अपनी भाषा चुनें",
   "The whole interface switches as you pick. You can change this anytime in Settings.": "आपकी पसंद के अनुसार पूरा इंटरफ़ेस बदल जाता है। आप इसे सेटिंग्स में कभी भी बदल सकते हैं।",
   "Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.": "पूरे इंटरफ़ेस की भाषा चुनें। मूल नाम ही असली पहचान है — झंडे केवल एक दृश्य संकेत हैं।",

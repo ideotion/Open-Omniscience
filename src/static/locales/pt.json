@@ -569,6 +569,7 @@
   "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "Nada em execução agora — as tarefas ativas (uma passagem de recolha, transferências, o pedido em curso) aparecem aqui.",
   "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "A fila está vazia — as transferências em espera aparecem aqui, por ordem; use as setas para reordená-las.",
   "Welcome to Open Omniscience": "Bem-vindo ao Open Omniscience",
+  "Any language": "Qualquer idioma",
   "Choose your language": "Escolha o seu idioma",
   "The whole interface switches as you pick. You can change this anytime in Settings.": "Toda a interface muda conforme você escolhe. Pode alterar isto a qualquer momento em Configurações.",
   "Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.": "Escolha o idioma de toda a interface. O nome nativo é o identificador real — as bandeiras são apenas uma pista visual.",

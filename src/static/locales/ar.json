@@ -569,6 +569,7 @@
   "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "لا شيء قيد التشغيل الآن — تظهر هنا المهام النشطة (جولة جمع، تنزيلات، الطلب الجاري).",
   "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "قائمة الانتظار فارغة — تظهر هنا التنزيلات المنتظرة بالترتيب؛ استخدم الأسهم لإعادة ترتيبها.",
   "Welcome to Open Omniscience": "مرحبًا بك في Open Omniscience",
+  "Any language": "أي لغة",
   "Choose your language": "اختر لغتك",
   "The whole interface switches as you pick. You can change this anytime in Settings.": "تتبدّل الواجهة بالكامل أثناء اختيارك. يمكنك تغيير ذلك في أي وقت من الإعدادات.",
   "Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.": "اختر لغة الواجهة بأكملها. الاسم الأصلي هو المعرّف الحقيقي — والأعلام مجرد دلالة بصرية.",

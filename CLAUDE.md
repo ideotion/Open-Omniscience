@@ -1017,12 +1017,14 @@ ruling, a contingency, or a deliberate-omission note.
   Analysis entry goes away"); test #22 no longer requires data-tab="analyze", test_search_retired
   asserts the nav-item is GONE. (b) the OMNIBAR fills the status-bar width — dropped .omni
   max-width:560px + removed the .spacer div (it now flex-grows); removed the verbose placeholder
-  text (.ph span), kept the magnifier + the keyed aria-label. PENDING (this batch, building next):
-  (c) move ALL facet subtabs (the ooSubtabs nav.tabs across Insights/Settings/markets/agenda/
-  analysis/task-manager/corpus) to a strip JUST UNDER the status bar at the top of the screen
-  (UI-rethink item 1/B: status bar → full-width facet-subtab strip → sidebar + content); (d) the
-  Advanced-search language field → a dropdown of FULL language names with flags; (e) the standalone
-  task-manager (/tasks taskmanager.html) top/status bar must be IDENTICAL to the main app's.
+  text (.ph span), kept the magnifier + the keyed aria-label. (d) SHIPPED: the Advanced-search
+  language field is now a <select> of FULL language names + flags (built from LANGS_12 in JS so the
+  autonyms stay native per #15; +1 i18n key "Any language" ×12; test_advanced_search_language_is_a_flag_dropdown).
+  PENDING (this batch, building next): (c) move ALL facet subtabs (the ooSubtabs nav.tabs across
+  Insights/Settings/markets/agenda/analysis/task-manager/corpus) to a strip JUST UNDER the status
+  bar at the top of the screen (UI-rethink item 1/B: status bar → full-width facet-subtab strip →
+  sidebar + content); (e) the standalone task-manager (/tasks taskmanager.html) top/status bar must
+  be IDENTICAL to the main app's.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features

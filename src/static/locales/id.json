@@ -569,6 +569,7 @@
   "Nothing running right now — active tasks (a collection pass, downloads, the fetch on the wire) appear here.": "Tidak ada yang berjalan saat ini — tugas aktif (satu putaran pengumpulan, unduhan, permintaan yang sedang berlangsung) muncul di sini.",
   "The queue is empty — downloads waiting their turn appear here, in order; use the arrows to reorder them.": "Antrean kosong — unduhan yang menunggu giliran muncul di sini, berurutan; gunakan panah untuk menyusun ulang.",
   "Welcome to Open Omniscience": "Selamat datang di Open Omniscience",
+  "Any language": "Bahasa apa saja",
   "Choose your language": "Pilih bahasa Anda",
   "The whole interface switches as you pick. You can change this anytime in Settings.": "Seluruh antarmuka berganti saat Anda memilih. Anda dapat mengubahnya kapan saja di Pengaturan.",
   "Pick the language for the whole interface. The native name is the real identifier — flags are only a visual cue.": "Pilih bahasa untuk seluruh antarmuka. Nama asli adalah pengenal yang sebenarnya — bendera hanya petunjuk visual.",

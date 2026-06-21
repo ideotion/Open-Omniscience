@@ -403,6 +403,18 @@ def test_llm_pill_shows_count_and_opens_ai_settings():
     )
 
 
+def test_advanced_search_language_is_a_flag_dropdown():
+    """Maintainer field test 2026-06-20: the Advanced-search language field is a <select>
+    of full language names with flags (built from LANGS_12 in JS), not a free-text input."""
+    html = _ui_source()
+    assert '<select id="an-adv-lang"' in html, "the Advanced language field must be a <select>"
+    assert '<input id="an-adv-lang"' not in html, "the old free-text language input must be gone"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _anFillLangSelect()" in app and "of LANGS_12" in app, (
+        "the language <select> must be populated from LANGS_12 (flag + native name)"
+    )
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
