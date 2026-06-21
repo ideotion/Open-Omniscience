@@ -747,6 +747,17 @@ ruling, a contingency, or a deliberate-omission note.
   YOURSELF and proceed. Reserve AskUserQuestion strictly for genuine rulings
   (ambiguous architecture, ethics/security trade-offs, irreversible/outward-facing
   actions). Sequencing/prioritization across the queue is mine to decide.**
+  **AUTONOMY HARDENED FURTHER (maintainer ruled 2026-06-21, verbatim "Change the
+  ruling, I don't want to be asked anything. … This session should be completely
+  autonomous"): for the upcoming build session that executes
+  `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-21.md`, DO NOT ask ANYTHING — make
+  EVERY decision yourself, including the few that earlier briefs marked as "ask first."
+  All of that brief's prior §1 questions are now ANSWERED (keep "Article" naming /
+  server-side backup path / models in the same folder backup); there are no remaining
+  questions to put. Pick the most honest, conservative default and proceed; record the
+  choice in this ledger. This applies to that build queue specifically; the general
+  AskUserQuestion carve-outs above still hold for a genuinely NEW ethics/irreversible
+  surface not covered by the brief.**
   Reality-check verdict recorded: the ledger and RC gate are ACCURATE (1118
   tests collected as of 2026-06-14; 28 gap claims verified in code; no shipped
   claim found false).
@@ -980,9 +991,16 @@ ruling, a contingency, or a deliberate-omission note.
   arbitration set). KEEP the small-file upload too (Desk lesson) + fix its 400 honestly.
   PERF FIX: batch commits (every N rows, not per-row) + optional bounded parse worker pool.
   NAMING is display-only (the backend stat KEY stays `articles` for API stability; only the
-  HOME_STAT_LABELS/Database label changes, ×12). TWO OPEN QUESTIONS asked 2026-06-20:
-  import mechanism (server-side path vs browser folder-picker upload) + the unifying name
-  (Documents vs …) — RECORD the answers here + ship.
+  HOME_STAT_LABELS/Database label changes, ×12). **BOTH OPEN QUESTIONS RESOLVED 2026-06-21
+  (maintainer): (1) import mechanism = the SERVER-SIDE folder-path job (confirmed); (2)
+  unifying name = KEEP "Article" FOR NOW (no rename — the naming slice is dropped; revisit
+  later if asked).** So build the server-side folder job + the small-upload 400 fix + batch
+  commits; do NOT change the display label. ADDED ASK (maintainer 2026-06-21, the "replace
+  the old faulty ones" workflow): a LIVE "remove imported newsletters" maintenance action
+  (reuse `src/backup/artifact.py:_drop_newsletter_articles` logic on the LIVE DB, guarded,
+  backup-first nudge) so deleting the faulty set + re-importing clean actually REPLACES them
+  (restore is additive-only, so the selective-backup tickbox alone never purges the live
+  corpus — this closes the loop).
   **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
   importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
   leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional
@@ -1187,6 +1205,10 @@ ruling, a contingency, or a deliberate-omission note.
   destination-path picker UX (server-side path input, validated, must exist + be writable), free-disk
   preflight, a visible task-manager job over the long copy (pausable), and whether models ride the same
   folder backup or stay the separate `.oomodels` (lean: same folder, one "large data" backup).
+  **CONFIRMED 2026-06-21 (maintainer): the SERVER-SIDE destination PATH is approved, and MODELS RIDE THE
+  SAME FOLDER backup (one "large data" backup, not the separate .oomodels). Build it fully autonomously —
+  no questions.** The full build spec + acceptance criteria live in
+  `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-21.md` §2.A.
 - **ONGOING DOWNLOADS
   NEVER BACKED UP (maintainer 2026-06-21, reassurance + transparency):** maps + wiki dumps live in
   `osm_regions/` + `wiki_dumps/`, which are EXCLUDED BY CONSTRUCTION (never collected as members), so a

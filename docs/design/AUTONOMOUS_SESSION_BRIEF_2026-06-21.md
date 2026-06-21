@@ -61,37 +61,36 @@ are NOT repeated — only what is left.
    the old one is made unreachable (not deleted) and an absorption test proves nothing was
    lost.
 
-8. **Autonomy:** choose sequencing/prioritisation yourself; do NOT ask "which next." Use
-   `AskUserQuestion` ONLY for the genuine rulings flagged in §1 (ambiguous architecture,
-   ethics trade-offs, irreversible/outward-facing actions, or a name the maintainer must
-   own).
+8. **Autonomy — this session asks NOTHING.** Maintainer ruling 2026-06-21 (verbatim "Change
+   the ruling, I don't want to be asked anything. … This session should be completely
+   autonomous"). Make EVERY decision yourself — choose the most honest, conservative default
+   and proceed; record each non-trivial choice in `CLAUDE.md`. There are **no open questions**
+   (the three that earlier drafts flagged are answered in §1). Do **not** call
+   `AskUserQuestion` for anything in this brief. (The only exception is a genuinely NEW
+   ethics/irreversible/outward-facing surface that this brief does not cover — then default to
+   the conservative, reversible choice and note it; don't block.)
 
 ---
 
-## §1 — Genuine rulings to get FIRST (ask via AskUserQuestion, then build)
+## §1 — All decisions resolved (do NOT ask — these were open, now answered 2026-06-21)
 
-Resolve these before building the items that depend on them; build everything else
-meanwhile.
+There are **no open questions**. The three the earlier draft flagged are now decided by the
+maintainer (2026-06-21):
 
-1. **The unifying NAME for "articles + newsletters" (blocks item B's naming slice).** The
-   DB stat key stays `articles` for API stability; only the DISPLAY label changes ×12
-   (`HOME_STAT_LABELS` / the Database label). The maintainer ruled this is display-only and
-   wants to "coin a unifying term." Candidates to offer: **Documents · Records · Items ·
-   Entries** (recommend "Documents"). One question, single-select.
+1. **Unifying NAME for "articles + newsletters" → KEEP "Article" for now.** No rename. The
+   naming slice of item B is **dropped** (do not change `HOME_STAT_LABELS` / the Database
+   label). Revisit only if the maintainer asks later.
 
-2. **Large-data backup — destination-path UX (item A).** The mechanism is decided
-   ("Copy to a folder/drive" = server-side streaming). The one sub-decision worth confirming:
-   the destination is a **server-side filesystem path the user types/picks** (validated:
-   exists + writable + enough free space). Confirm that's acceptable vs. any alternative the
-   maintainer prefers, and whether models ride the SAME folder backup or stay the separate
-   `.oomodels` artifact (lean: **same folder, one "large data" backup**).
+2. **Large-data backup destination → SERVER-SIDE PATH, confirmed.** The user picks/types a
+   server-side filesystem path (validate: exists + writable + enough free space). Never the
+   browser.
 
-3. **Auto-promote cited origins (optional, only if you reach the discovery backlog).** Not
-   from this session's core; skip unless time permits — it's a real ethics ruling
-   (auto-enabling scraping vs the review gate).
+3. **Models in the large-data backup → SAME folder backup.** One "large data" backup carries
+   wiki dumps + maps + models together (not the separate `.oomodels`). Keep the old
+   `.oomodels` endpoints working (Desk lesson) but fold the UI into the one flow.
 
-Everything in §2–§4 below is already-decided or pure engineering — **do NOT ask, just
-build.**
+(Auto-promoting cited discovery origins remains a genuine ethics ruling and is **out of scope**
+for this brief — don't touch it.)
 
 ---
 
@@ -188,6 +187,23 @@ raise the limit by parsing with an explicit `await request.form(max_files=…, m
 message). **Perf fix:** batch commits (every N rows, not per-row) in the directory ingest
 path; optionally a bounded parse worker pool feeding the single writer.
 
+**Naming: KEEP "Article"** (maintainer 2026-06-21, §1.1). Do NOT rename the display label;
+the naming slice is dropped.
+
+**Added — a LIVE "remove imported newsletters" action (closes the "replace the faulty ones"
+loop).** The maintainer curated a corpus with faulty `.eml` imports and wants the NEXT clean
+import to **replace** them. Restore is additive-only, and the shipped selective-backup
+tickbox only excludes newsletters from a *backup* — it does not purge the *live* corpus. So
+add a guarded Settings action that runs the SAME logic as
+`src/backup/artifact.py::_drop_newsletter_articles` (delete the `newsletters.import.local` +
+`mailbox.import.local` source articles AND every dependent row, leave the empty source rows
+for re-attach) but on the **live DB** (single-writer gate; a "back up first?" nudge like the
+uninstall flow; reversible only via a prior backup — say so). Then the workflow is: remove
+faulty → re-import clean (the cleaner `_strip_html` body hashes differently, so it won't
+dedup against the junk). Add a test that it deletes only newsletter articles + dependents and
+leaves the source rows + non-newsletter articles intact (mirror
+`test_backup_newsletter_filter`, on a live session).
+
 **Acceptance.**
 - A server-side folder path imports all `.eml` recursively as a background job with
   done/total progress + a rule-of-three ETA, visible in the task manager, pausable/resumable.
@@ -196,8 +212,8 @@ path; optionally a bounded parse worker pool feeding the single writer.
 - Commits are batched (prove via a timing/commit-count test or a structural assertion).
 - All the existing anonymise-at-ingest guarantees hold (recipient never stored, no raw
   retention, tracker-link detox, **N files ⇒ 0 sockets** — keep that invariant test).
-- Naming: `HOME_STAT_LABELS` / the Database label show the chosen term ×12; the API key
-  stays `articles`.
+- The live "remove imported newsletters" action purges only newsletter articles + dependents
+  (source rows kept); a re-import then re-attaches. (No rename — "Article" stays, §1.1.)
 
 **Files.** `src/ingest/email.py` (batch-commit the directory path), new
 `src/ingest/import_job.py` (the pausable job manager) or fold into an existing manager
@@ -362,6 +378,24 @@ ring generator's output passes the vetting guard; no fabricated rings.
 actually engaged** on both chrome polls and the standalone `/tasks` page; tighten if a poll
 slipped through. Low effort; mostly verification.
 
+### J. Other diagnostic findings (lower priority / known gates — don't lose them)
+
+- **`/api/insights/associations` cold ~6 s** (busiest keyword "important" ≈ 42k mentions) and
+  **supergroups cold ~15 s.** Both already have the TTL cache for re-opens; the cold cost is
+  inherent whole-corpus co-occurrence. The real lever is the **persisted columnar store** —
+  which is **gated on the per-OS httpfs/OpenSSL crypto-extension PACKAGING DECISION** (until
+  then the DuckDB engine runs **in-memory**, so it gives no cross-restart gain and the hot
+  endpoints lean on the counters). If you can bundle the per-OS httpfs crypto extension
+  locally (verified offline, never auto-downloaded — that's the blocker), persisted-encrypted
+  columnar becomes available and these accelerate; otherwise leave them on the counters/cache
+  and note it. See the DATA-ARCHITECTURE entry in `CLAUDE.md` for the full state.
+- **Network preflight: the 50-source sample was all `unreachable`.** This is almost certainly
+  the **Tor/airplane population**, not a bug (premium news 403s over Tor are expected, and the
+  app boots in airplane mode). Re-check ONLINE before treating it as a regression; surface it
+  honestly via the existing transport-aware verdicts; do not "fix" by weakening robots/Tor.
+- **HTML-strip ties into §3.F:** the same CSS-leak inflates the corpus the perf items pay for,
+  so shipping F first makes E/J cheaper.
+
 ---
 
 ## §4 — i18n + polish tail (small REMAINING items from shipped slices)
@@ -391,6 +425,12 @@ batch them.
   real follow-up).
 - **Consolidate the guided-wizard language step** (now partly redundant with the
   language-first first-launch shipped in #420).
+- **Synthesis (low priority):** an optional persisted/saveable synthesis "document" (today
+  Copy / Export .md / Open-as-page is the save path); full multi-paragraph prompt-BODY
+  localization only if the native-language directive proves insufficient (the output-language
+  pin already works — don't translate the tuned English prompt bodies unless evidence says a
+  weak model needs it).
+- **Bulk queue:** key the queue panel strings ×12 (it ships English-fallback today).
 
 ---
 
