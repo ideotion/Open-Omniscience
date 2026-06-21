@@ -1508,5 +1508,8 @@
   "Stored locally in app_settings.json under the data directory — no telemetry, nothing leaves the machine.": "本地存储在数据目录下的 app_settings.json 中——无遥测，没有任何内容离开本机。",
   "Restore is additive-only: use the merge restore above — it complements your corpus and never replaces it. (The destructive replace-restore was removed; a raw .db download is a snapshot for manual/advanced use.)": "恢复仅为追加式：使用上方的合并恢复——它会补充你的语料库，绝不替换。（破坏性的替换式恢复已被移除；原始 .db 下载是供手动/高级用途的快照。）",
   "\"Dumb\" keywords (function words like the, you, not, one) are removed automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or comma-separated), set the minimum length, and toggle options. Excluding hides a keyword everywhere (reversibly — stored mentions are kept). You can also click the ✕ next to any keyword in Insights.": "“无意义”关键词（如 the、you、not、one 等功能词）会被内置的多语言停用词表自动移除。在下方微调：排除额外词项（每行一个或以逗号分隔）、设置最小长度并切换选项。排除会在所有位置隐藏某关键词（可逆——已存储的提及会保留）。你也可以在 Insights 中点击任意关键词旁的 ✕。",
-  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "虚拟环境和桌面启动器总会被移除；应用文件夹和你的数据是否一并移除取决于所选模式。你也可以在终端中运行：./install.sh --uninstall"
+  "The virtualenv and desktop launchers are always removed; whether the app folder and your data go too depends on the mode. You can also run it in a terminal: ./install.sh --uninstall": "虚拟环境和桌面启动器总会被移除；应用文件夹和你的数据是否一并移除取决于所选模式。你也可以在终端中运行：./install.sh --uninstall",
+  "The app is shutting down — you can close this tab.": "应用正在关闭——您可以关闭此标签页。",
+  "Open Omniscience has been uninstalled and the app has stopped. You can close this window.": "Open Omniscience 已卸载，应用已停止。您可以关闭此窗口。",
+  "Shut down the app? The server will stop and you'll need to relaunch it. Your data is untouched.": "关闭应用？服务器将停止，您需要重新启动它。您的数据不受影响。"
 }
