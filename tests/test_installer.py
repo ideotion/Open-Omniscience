@@ -80,7 +80,9 @@ def test_unattended_install_creates_launcher(tmp_path):
     desktop = home / ".local/share/applications/open-omniscience.desktop"
     assert desktop.is_file(), "applications-menu launcher not created"
     body = desktop.read_text(encoding="utf-8")
-    assert f"Exec={REPO}/scripts/launch.sh" in body
+    # the Exec path is double-quoted (freedesktop spec) so an install path with
+    # spaces can't break double-click launch (field test 2026-06-21).
+    assert f'Exec="{REPO}/scripts/launch.sh"' in body
     # Prefer the PNG (rendered more reliably than SVG across desktops); it is
     # committed, so the launcher should point at it.
     assert f"Icon={REPO}/assets/icon.png" in body
