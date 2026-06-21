@@ -1071,6 +1071,27 @@ ruling, a contingency, or a deliberate-omission note.
   bulk tests stay green (the en fixtures are not same-language as German). The reader's single-article
   summarize/translate is unaffected; synthesis's `_SYNTHESIS_MAX_ARTICLES=20` (a real context-window
   limit) is intentionally KEPT. +3 i18n-fallback strings (to translate · to summarize · skipped).
+- **LAUNCHER ROBUSTNESS + MODELS-EXPORT-BUTTON FIX + REINSTALL-KEEPS-LOGS (maintainer field test
+  2026-06-21; branch claude/keen-lamport-b4t3rh, PR #420; bash -n + py_compile-VERIFIED):** (1) desktop
+  icon failed to start the app after an OS restart, fixed by reinstall → most likely a venv broken by a
+  system-Python change (a venv is tied to its python minor version). `scripts/launch.sh` now activates
+  best-effort and, if `open-omniscience` isn't on PATH after activation, prints a CLEAR actionable
+  message ("environment looks broken … re-run the installer: <path>/install.sh") and HOLDS the window
+  (read -p) instead of exiting cryptically (which made the icon's terminal vanish before the error was
+  read). PLUS the `.desktop` `Exec=` paths are now QUOTED (`"$SRC_DIR/scripts/launch.sh" console` +
+  the uninstall one) so an install path WITH SPACES can't break double-click launch. (2) ANSWERED the
+  maintainer's "does reinstall replace the diagnostics logs?" — NO: install.sh/do_install NEVER touches
+  `data_dir()` (`~/.local/share/open-omniscience`, OUTSIDE the code tree where the .jsonl diagnostics +
+  corpus + keys live); its only `rm` are old Desk-launcher files + the `.venv` (recreated). data_dir is
+  removed ONLY by `--uninstall` AND only after an explicit "Are you sure? Permanently delete…" (default
+  no). So reinstalling is safe for logs/corpus/keys. (3) "Download models backup" "doesn't work":
+  `models_export` used `default_store()` (readable stores) while `store_status()` detects the PROTECTED
+  systemd Ollama store (`/usr/share/ollama/.ollama/models`, owned by the `ollama` user) — so with a
+  service-install Ollama the export 404'd or built a near-empty archive while status looked fine. Now it
+  refuses HONESTLY with the actionable `store_status().hint` (set OLLAMA_MODELS to a path you own / pull
+  a model first) when there are no readable models — surfaced in the button's toast. REMAINING: an
+  optional login-autostart (the maintainer expected auto-launch on boot — opt-in, airplane-safe; not
+  added silently); make the protected systemd store exportable via a sudo-helper (out of scope now).
 - **GUI SHUTDOWN BUTTON SHIPPED 2026-06-21 (maintainer field test; branch claude/keen-lamport-b4t3rh,
   PR #420; backend stdlib-VERIFIED, frontend browser-unverified):** turning the app off needed a
   terminal Ctrl-C — now a status-bar POWER button (`#app-shutdown`) → `appShutdown()` confirms then

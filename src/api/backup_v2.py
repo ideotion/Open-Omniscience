@@ -276,11 +276,27 @@ def models_export(body: ModelsExportBody) -> FileResponse:
 
     from starlette.background import BackgroundTask
 
-    from src.backup.ollama_models import build_models_archive, default_store
+    from src.backup.ollama_models import (
+        build_models_archive,
+        default_store,
+        list_models,
+        store_status,
+    )
 
     store = default_store()
-    if not store.exists():
-        raise HTTPException(status_code=404, detail="no local Ollama model store found")
+    # Refuse HONESTLY with an actionable reason when there is nothing to export, instead
+    # of a misleading 404 or a near-empty archive (maintainer 2026-06-21: the button
+    # "doesn't work"). The commonest case is a systemd-service Ollama whose models live
+    # in a protected dir the app can't read — store_status() carries the exact hint
+    # (set OLLAMA_MODELS to a path you own); an empty store says "pull a model first".
+    models = list_models(store) if store.exists() else []
+    if not models:
+        status = store_status()
+        detail = status.get("hint") or (
+            "No Ollama models found to back up — pull a model first, or set OLLAMA_MODELS "
+            "if your models live elsewhere."
+        )
+        raise HTTPException(status_code=409, detail=detail)
     ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     fd, tmp = tempfile.mkstemp(prefix="oo-models-", suffix=".oomodels", dir=_staging_dir())
     os.close(fd)
