@@ -1001,6 +1001,28 @@ ruling, a contingency, or a deliberate-omission note.
   backup-first nudge) so deleting the faulty set + re-importing clean actually REPLACES them
   (restore is additive-only, so the selective-backup tickbox alone never purges the live
   corpus — this closes the loop).
+  **LIVE-REMOVE ACTION SHIPPED 2026-06-21 (branch claude/amazing-tesla-z6bwkm, draft PR #423 onto
+  0.09; backend VERIFIED py3.11, frontend BROWSER-UNVERIFIED per fork-3):** `src/ingest/email.py`
+  gained `delete_imported_newsletters(session)` (+ `count_imported_newsletters` + the single-source
+  `NEWSLETTER_SOURCE_DOMAINS` tuple) — the LIVE analog of the backup-snapshot `_drop_newsletter_articles`:
+  finds the .eml + mailbox source ids, deletes their articles AND every dependent row (each mapped
+  table with an `article_id` column, via `Base.metadata.sorted_tables`, chunked under the 999-var cap),
+  LEAVES the empty source rows (a clean re-import re-attaches), takes the SINGLE-WRITER GATE
+  (`write_lock()`), and reconciles the denormalised keyword counters (`backfill_keyword_counters` — the
+  bulk DELETE bypasses index_article's per-article counter maintenance, so they'd over-count). The
+  article DELETE fires the `article_fts_ad` trigger, so the SEARCH INDEX is cleaned automatically (no
+  stale FTS rows = a removed article never reappears in search — proven in the test). API (`src/api/
+  ingestion.py`): `GET /api/newsletters/imported-count` (drives the confirm preview + shows the panel
+  only when >0) + `POST /api/newsletters/remove-imported` (confirm:true required, 400 otherwise).
+  Frontend: a Settings → Newsletters "Remove imported newsletters" panel (visible only when count>0)
+  with a "Back up first" button (the encrypted-backup path the uninstall flow uses) + a confirm. NEW
+  strings are English-fallback via `t()` (i18n gate stays 100%; keyable in the §4 tail). tests/
+  test_newsletter_remove.py (5: removes only newsletter articles+dependents, KEEPS source rows + web
+  articles, counters reconciled == live aggregate, FTS cleaned for removed articles via ensure_fts,
+  no-newsletter-source = no-op, + a drift guard that the live + backup domain constants AGREE) +
+  test_repo_invariants::test_remove_imported_newsletters_live_action. REMAINING (the rest of §2.B): the
+  server-side folder-path IMPORT JOB (pausable, task-manager-visible, batch commits) + the small-upload
+  max_files 400 fix — the bigger half, next.
   **CONTENT-QUALITY FIX SHIPPED 2026-06-20 (separate from the batch-import overhaul; same .eml
   importer; VERIFIED on the maintainer's real Reuters .eml):** `_strip_html` (src/ingest/email.py)
   leaked CSS from `<style>`, JS from `<script>`, comment fragments (incl. Outlook/MSO conditional
@@ -3685,6 +3707,50 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **TRENDING COVERING INDEX (brief §3.E, the #1 perf hotspot; branch claude/amazing-tesla-z6bwkm,
+  draft PR onto 0.09; backend VERIFIED py3.11):** `/api/insights/trending-windows` (~20s idle / ~98s
+  under load, polled from Home) is observed_on-WINDOWED, so the corpus-wide keyword counters can't
+  serve it; `trending()._counts` runs `SELECT keyword_id, SUM(count) WHERE observed_on IN [lo,hi)
+  GROUP BY keyword_id` over 2.4M mention rows. The existing `ix_mention_covering` LEADS with
+  keyword_id (can't serve an observed_on RANGE) and the plain `observed_on` index forces a HEAP page
+  read = a SQLCipher DECRYPT per in-range row — THAT is the cost. CHOSE A COVERING INDEX over the
+  brief's per-day ROLLUP table (the honest engineering call, like the associations PR-3 chose counters
+  over DuckDB): `ix_mention_date_keyword (observed_on, keyword_id, count)` makes `_counts` an
+  index-only "USING COVERING INDEX" range scan (verified with EXPLAIN QUERY PLAN — no heap access),
+  targeting the actual decrypt cost. WINS over the rollup: ZERO drift (it's an index, SQLite maintains
+  it, always correct — no new table, no index-time delta maintenance to get wrong, no backfill, no
+  reconcile), and the QUERY CODE IS UNCHANGED (the planner picks it up transparently). Added to the
+  KeywordMention model + maintenance.HOT_INDEXES (boot self-heal, idempotent) + migration b4c5d6e7f8a9
+  (off head e4f5a6b7c8d9 — single head verified; collision with the pre-existing a3b4c5d6e7f8 caught +
+  avoided). tests/test_trending_index.py (5: index created from model, the `_counts` plan uses the
+  covering index, results IDENTICAL with vs without it, self-heal recreates it idempotently, migration
+  cols == model cols). NO query-logic change ⇒ trending output byte-identical. REMAINING: if the index
+  proves insufficient on the live 2.4M-mention corpus, the per-day rollup is the next lever (measure
+  the EXPLAIN/timing on the real DB first — don't add a drift surface speculatively); the country-
+  filtered `_counts` stays on the heap (rare path, no country column in the index — the hot Home path
+  is no-country).
+- **MARKUP STRIP AT THE EXTRACTION CHOKEPOINT (brief §3.F, the 36.5k `?`-bucket root cause; branch
+  claude/amazing-tesla-z6bwkm, draft PR onto 0.09; backend VERIFIED py3.11):** the keyword tokenizer
+  `_WORD_RE` mints `div`/`span`/`max-width`/`font-size`/`font-family` directly from any raw HTML/CSS in
+  a stored body (CSS property names with hyphens tokenise as ONE word) — the live log's 36,519-keyword
+  unknown-language junk bucket. The web scrape path is clean (trafilatura), so the leak is .eml-before-
+  the-2026-06-20-`_strip_html`-fix / wiki / future paths; rather than chase each, we defend at the ONE
+  place every path passes through. NEW `strip_markup(text)` in `src/analytics/extract.py` (called at the
+  top of BOTH `BaselineExtractor.extract` + `SpacyExtractor.extract`): drops `<style>`/`<script>` BLOCKS
+  first (CSS/JS must never survive as body text), then HTML comments (incl. MSO conditional comments
+  containing '>'), then every remaining tag, then decodes HTML entities (so `&nbsp;`/`&copy;` don't
+  become `nbsp`/`copy` keywords). HONEST + SURGICAL: a precise `_has_markup` gate runs the strip ONLY
+  when a real tag/style/comment/entity is present, so CLEAN text (the overwhelming majority) is returned
+  BYTE-IDENTICAL — keyword `first_offset`s into the stored body stay exact; the tag regex
+  `</?[a-zA-Z][\w-]*(\s[^<>]*?)?/?>` matches `<div class>`/`<br/>`/`</p>` but NOT an angle-bracketed URL
+  `<https://x>` or prose "x < y > z". Applied at index time, so a re-index/backfill cleans existing rows
+  (FORWARD case fully fixed; already-stored BARE CSS without tags still needs a re-import — noted). NO
+  score, no behaviour change for clean corpora. tests/test_keyword_extract_strips_markup.py (byte-
+  identical clean text, no-URL-eating, style/tag/comment/entity removal, extract mints no CSS/HTML
+  keyword, end-to-end index_article stays clean + counters consistent); keyword self-test (22 cases × 11
+  langs) + analytics_extract/store/counters/families regression all green; ruff F/B clean. REMAINING:
+  the bare-CSS-leftover re-import path (per the 2026-06-20 .eml content-quality fix); broader stoplist
+  growth is brief §3.G.
 - **IN-APP SCALING BENCHMARK 2026-06-20 (maintainer-asked "add a benchmark so we can live test
   this; include detailed benchmark logs I'll pass on"; branch claude/modest-hopper-gisgst, draft
   PR #419 onto 0.09; backend VERIFIED py3.11):** the data-architecture scaling work was proven
@@ -4993,12 +5059,23 @@ ruling, a contingency, or a deliberate-omission note.
   `dateextract._MONTHS`, VERIFIED live ("5 Μαΐου 2024"→2024-05-05, "5. junija 2024"→2024-06-05);
   tests/test_dateextract.py + the stopword self-test cover it. FLAGGED (bigger, not in this batch):
   (1) PERF — `/api/insights/trending-windows` is the #1 hotspot at ~20s idle / ~98s under load (it's
-  observed_on-WINDOWED so the corpus-wide counters don't apply; needs a per-day mention ROLLUP table
-  or a stale-while-revalidate guarantee on the Home poll); associations ~6s (busiest keyword
+  observed_on-WINDOWED so the corpus-wide counters don't apply) — **ADDRESSED 2026-06-21 with a
+  COVERING INDEX rather than the brief's drift-prone rollup (the honest engineering call; see the
+  shipped-log "TRENDING COVERING INDEX" entry): `ix_mention_date_keyword (observed_on, keyword_id,
+  count)` turns `trending()._counts` from a per-row HEAP-decrypt range scan into an index-only
+  ("USING COVERING INDEX") scan — zero drift, no new table/backfill/maintenance code, query logic
+  unchanged. The remaining ~98s-under-load is the TTL cache going cold while the server is busy;
+  warm_cache + the index now make cold recompute cheap (a per-day rollup is still the option if the
+  index proves insufficient on the live corpus — measure first).** associations ~6s (busiest keyword
   'important'=42k mentions), supergroups cold ~15s; the persisted COLUMNAR store is unavailable
   (in-memory) pending the httpfs crypto-extension packaging decision; activity+vitals polled 1281×
   in 26 min. (2) The `?` unknown-language bucket = 36,519 keywords (CSS/HTML leak = an HTML-stripping
-  gap before extraction, the real root; stoplisting the markup only mitigates). (3) translation_coverage
+  gap before extraction, the real root; stoplisting the markup only mitigates) — **ROOT-CAUSE FIX
+  SHIPPED 2026-06-21 (branch claude/amazing-tesla-z6bwkm, see the shipped-log "MARKUP STRIP AT THE
+  EXTRACTION CHOKEPOINT" entry): `BaselineExtractor.extract`/`SpacyExtractor.extract` now `strip_markup`
+  the body before tokenising, so a re-index drains the bucket and any future leak is caught by
+  construction** (already-stored BARE CSS without tags — pre-2026-06-20 .eml — still needs a re-import,
+  the standing path). (3) translation_coverage
   11.8% / tag_coverage 0% (run the baseline-tag backfill on this corpus). (4) no_stoplist langs
   (uk/tr/ro/ur/th/cs/ca/fi/hi/et/vi/sk) + zh/ja unsegmented still leak. (5) network preflight: the
   50-source sample was all `unreachable` (likely the Tor/airplane population, not a bug — re-check

@@ -30,6 +30,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
+from html import unescape
 
 from src.services.stopwords import stopwords_manager
 
@@ -40,6 +41,57 @@ _WORD_RE = re.compile(r"[^\W\d_][\w'’\-]*", re.UNICODE)
 _DEFAULT_MAX_TERMS = 80
 _DEFAULT_MAX_ENTITIES = 80
 _MIN_TERM_LEN = 3
+
+# --------------------------------------------------------------------------- #
+# Markup strip at the extraction chokepoint (field diagnostics 2026-06-21)
+# --------------------------------------------------------------------------- #
+# When a stored article body still carries raw HTML/CSS — a pre-2026-06-20 .eml
+# import, or any fetch path that kept markup — the word tokenizer mints `div`,
+# `span`, `max-width`, `font-size` … as "keywords" (the live log showed a 36.5k
+# unknown-language junk bucket dominated by exactly these). The web scrape path
+# is clean (trafilatura), but we defend at the ONE place every path passes
+# through — keyword extraction — so a re-index cleans existing rows regardless of
+# which path stored the markup, and any future leak is caught by construction.
+#
+# A real tag is `<`/`</` immediately followed by a tag-name letter, ending in a
+# whitespace/`/`/`>`-bounded close: this matches `<div>`, `<div class="x">`,
+# `<br/>`, `</p>` but NOT an angle-bracketed URL `<https://x>` or prose like
+# "x < y > z", so clean text is left byte-for-byte identical (keyword offsets
+# into the stored body stay exact).
+_MARKUP_STYLE_SCRIPT_RE = re.compile(
+    r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL
+)
+_MARKUP_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_MARKUP_TAG_RE = re.compile(r"</?[a-zA-Z][\w-]*(\s[^<>]*?)?/?>", re.DOTALL)
+_MARKUP_ENTITY_RE = re.compile(r"&[#a-zA-Z][#a-zA-Z0-9]*;")
+
+
+def _has_markup(text: str) -> bool:
+    """Cheap, precise gate: True only when an actual strip would change ``text``."""
+    return bool(
+        _MARKUP_TAG_RE.search(text)
+        or _MARKUP_STYLE_SCRIPT_RE.search(text)
+        or _MARKUP_COMMENT_RE.search(text)
+        or _MARKUP_ENTITY_RE.search(text)
+    )
+
+
+def strip_markup(text: str) -> str:
+    """Drop HTML/CSS markup from ``text``; return it unchanged when there is none.
+
+    Order matters (the email ``_strip_html`` lesson): <style>/<script> BLOCKS go
+    first (their CSS/JS must never survive as body text), then HTML comments
+    (incl. MSO conditional comments containing '>'), then every remaining tag,
+    then HTML entities are decoded (so `&nbsp;`/`&copy;` don't become `nbsp`/
+    `copy` keywords). Clean text is returned byte-identical so a term's recorded
+    first-offset still points at the right place in the stored article body.
+    """
+    if not _has_markup(text):
+        return text
+    out = _MARKUP_STYLE_SCRIPT_RE.sub(" ", text)
+    out = _MARKUP_COMMENT_RE.sub(" ", out)
+    out = _MARKUP_TAG_RE.sub(" ", out)
+    return unescape(out)
 
 # All-caps tokens that are NOT entities (emphasis / chrome / titles), so the
 # acronym detector doesn't mistake them for organisations. Kept deliberately small
@@ -534,6 +586,7 @@ class BaselineExtractor:
     def extract(self, text: str, *, title: str = "", language: str = "en") -> list[ExtractedTerm]:
         if not text or not text.strip():
             return []
+        text = strip_markup(text)  # never mint div/span/max-width/font-size keywords
         entities = self._entities(text)
         ent_norms = {e.normalized for e in entities}
         # Topical terms. A term whose normalized form is in the gazetteer is promoted
@@ -591,6 +644,7 @@ class SpacyExtractor:
     def extract(self, text: str, *, title: str = "", language: str = "en") -> list[ExtractedTerm]:
         if not text or not text.strip():
             return []
+        text = strip_markup(text)  # never mint div/span/max-width/font-size keywords
         doc = self._nlp(text[:1_000_000])  # spaCy default max length guard
         ents: dict[str, ExtractedTerm] = {}
         for ent in doc.ents:

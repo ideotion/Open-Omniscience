@@ -1605,6 +1605,17 @@
       </div>
       <div id="mbox-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
     </section>
+    <section class="panel" id="nl-remove-panel" style="display:none">
+      <h2>Remove imported newsletters</h2>
+      <p class="hint">Delete every imported-newsletter article (.eml + mailbox) from your corpus — for replacing a faulty set with a cleaned re-import. Restoring a backup is additive, so leaving newsletters out of a backup never removes them from the live corpus; this does.</p>
+      <p class="hint" style="margin-top:5px"><span class="warn">This cannot be undone except from a backup.</span> It removes the articles and all their analysis (keywords, dates, places); the empty newsletter source stays so a clean re-import re-attaches.</p>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="secondary" id="nl-backup-first-btn" onclick="downloadBackupFirst(this)">Back up first</button>
+        <button class="secondary" id="nl-remove-btn" onclick="removeImportedNewsletters(this)">Remove imported newsletters</button>
+        <span id="nl-remove-count" class="muted"></span>
+      </div>
+      <div id="nl-remove-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+    </section>
     </div>
 
     <!-- =========================== LIBRARY =========================== -->
