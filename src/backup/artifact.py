@@ -67,6 +67,7 @@ _ANNOTATIONS_DIR = "annotations"
 _KEYS_DIR = "keys"
 _CUSTODY_DB = "custody_log.db"
 _WIKI_DUMPS_DIR = "wiki_dumps"
+_OSM_DIR = "osm_regions"  # offline-map downloads (src/geo/osm_downloads.py)
 
 # Source domains under which imported newsletters live (src/api/ingestion.py). A
 # backup can EXCLUDE them (maintainer 2026-06-21: re-import fixed .eml to replace
@@ -169,21 +170,33 @@ def _corpus_stats(corpus_snapshot: Path) -> dict:
 
 def _excluded_inventory() -> list[dict]:
     """What this artifact deliberately does NOT contain, and why (manifest-listed,
-    never silent -- D3)."""
+    never silent -- D3).
+
+    Large, re-downloadable artifact directories are excluded BY CONSTRUCTION (never
+    collected as members), which ALSO means an in-progress download (a partial file in
+    one of these dirs) can never end up in a backup half-written (maintainer 2026-06-21:
+    ongoing downloads must not be backed up to avoid corruption). They are listed here
+    so the omission is transparent + re-fetchable after restore.
+    """
     out: list[dict] = []
-    dumps = data_dir() / _WIKI_DUMPS_DIR
-    if dumps.is_dir():
-        files = [p for p in dumps.rglob("*") if p.is_file()]
-        if files:
-            out.append(
-                {
-                    "name": _WIKI_DUMPS_DIR,
-                    "reason": "re-downloadable offline Wikipedia dumps (design D3); "
-                    "re-download via Settings after restore",
-                    "files": len(files),
-                    "bytes": sum(p.stat().st_size for p in files),
-                }
-            )
+    for name, why in (
+        (_WIKI_DUMPS_DIR, "re-downloadable offline Wikipedia dumps (design D3); "
+                          "re-download via Settings after restore"),
+        (_OSM_DIR, "re-downloadable offline-map (OSM) region extracts; in-progress "
+                   "downloads are never backed up — re-download via Settings after restore"),
+    ):
+        d = data_dir() / name
+        if d.is_dir():
+            files = [p for p in d.rglob("*") if p.is_file()]
+            if files:
+                out.append(
+                    {
+                        "name": name,
+                        "reason": why,
+                        "files": len(files),
+                        "bytes": sum(p.stat().st_size for p in files),
+                    }
+                )
     return out
 
 

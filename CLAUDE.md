@@ -1093,7 +1093,13 @@ ruling, a contingency, or a deliberate-omission note.
   tickbox + the end-to-end wiring). New UI strings English (the backup panel is largely un-keyed
   English; gate stays 100%). REMAINING (the maintainer's fuller vision): maps + wiki-dump backup as
   file members (needs the additive-restore file-placement, ruled-but-unbuilt — build with the wiki-dump
-  inclusion together); fold the separate models backup into the same tickbox flow.
+  inclusion together); fold the separate models backup into the same tickbox flow. **ONGOING DOWNLOADS
+  NEVER BACKED UP (maintainer 2026-06-21, reassurance + transparency):** maps + wiki dumps live in
+  `osm_regions/` + `wiki_dumps/`, which are EXCLUDED BY CONSTRUCTION (never collected as members), so a
+  partial/in-progress download can never ride into a backup half-written (no corruption). Made the OSM
+  maps dir EXPLICIT in `_excluded_inventory` (it listed only wiki_dumps before — maps were silently
+  dropped); the manifest now transparently lists both as excluded/re-downloadable. When the file-member
+  backup IS built, it must skip non-`done` downloads (the same principle).
 - **OFFLINE-MAP TAB — ONE STATE-AWARE LIST + PLANET SKIPS DOWNLOADED SHIPPED 2026-06-21 (maintainer
   field test; branch claude/keen-lamport-b4t3rh, PR #420; frontend, browser-unverified per fork-3):**
   Settings → Offline map had TWO lists (the catalogue with bare Download buttons + a separate jobs
