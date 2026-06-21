@@ -70,7 +70,8 @@ def test_collect_model_items_dedups_blobs(tmp_path):
     _write(store / "blobs" / "sha256-aaa", b"a" * 10)
     _write(store / "blobs" / "sha256-bbb", b"b" * 20)
     (store / "manifests" / "reg/lib/m" / "latest").write_text(
-        json.dumps({"config": {"digest": "sha256:aaa"}, "layers": [{"digest": "sha256:bbb"}]})
+        json.dumps({"config": {"digest": "sha256:aaa"}, "layers": [{"digest": "sha256:bbb"}]}),
+        encoding="utf-8",
     )
     items = collect_model_items(store)
     rels = {i.rel for i in items}
@@ -186,7 +187,7 @@ def test_validate_dest(tmp_path):
     # creatable (writable parent) is OK
     assert validate_dest(tmp_path / "new") == (tmp_path / "new").resolve()
     f = tmp_path / "file"
-    f.write_text("x")
+    f.write_text("x", encoding="utf-8")
     with pytest.raises(ValueError):
         validate_dest(f)  # a file is not a folder
     with pytest.raises(ValueError):
