@@ -66,6 +66,10 @@ ALLOWED_WHILE_LOCKED = (
     "/api/system/unlock",
     "/api/system/create-db",
     "/api/health",
+    # The first-launch legal-consent step runs BEFORE the store exists (between the
+    # language and passphrase steps), so its endpoints must answer while fresh/locked:
+    # read/accept the documents, download them, or decline (which uninstalls).
+    "/api/legal/",
     "/static/",
     "/favicon",
 )

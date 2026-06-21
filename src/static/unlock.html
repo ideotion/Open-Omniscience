@@ -42,6 +42,27 @@
   .lang-btn:hover, .lang-btn:focus { border-color:var(--accent); outline:2px solid var(--accent); }
   .lang-btn .flag { font-size:18px; line-height:1; }
   .hidden { display:none; }
+  .card.wide { width:min(680px, 94vw); }
+  button.secondary, button.ghost { background:var(--bg); color:var(--fg); border:1px solid var(--border); }
+  button.ghost { font-weight:500; }
+  button.danger { background:var(--err); }
+  .legal-docs { max-height:40vh; overflow:auto; margin-top:12px; padding:4px 12px;
+    border:1px solid var(--border); border-radius:8px; text-align:start; font-size:12.5px; }
+  .legal-docs h2 { font-size:15px; margin:14px 0 6px; color:var(--fg); }
+  .legal-docs h3 { font-size:13.5px; margin:12px 0 4px; color:var(--fg); }
+  .legal-docs p { color:var(--fg); margin:6px 0; }
+  .legal-docs blockquote { margin:6px 0; padding:6px 10px; border-inline-start:3px solid var(--warn);
+    background:var(--bg); border-radius:4px; }
+  .legal-docs ul { margin:6px 0; padding-inline-start:20px; }
+  .legal-docs hr { border:0; border-top:1px solid var(--border); margin:10px 0; }
+  .legal-docs .doc-sep { border-top:2px solid var(--accent); margin:16px 0 0; }
+  .accept-row { display:flex; align-items:flex-start; gap:8px; margin-top:14px; font-size:13px; color:var(--fg); }
+  .accept-row input { margin-top:3px; }
+  .note.danger { border-color:var(--err); }
+  .note.danger p { color:var(--err); }
+  input[type=text] { width:100%; padding:10px 12px; border-radius:8px;
+    border:1px solid var(--border); background:var(--bg); color:var(--fg); font-size:15px; }
+  input[type=text]:focus { outline:2px solid var(--accent); border-color:transparent; }
 </style>
 </head>
 <body>
@@ -60,6 +81,31 @@
   <div id="view-language" class="hidden">
     <h1>Choose your language</h1>
     <div id="lang-list" class="lang-list"></div>
+  </div>
+
+  <!-- First-launch legal step (maintainer 2026-06-21): after the language choice and
+       BEFORE the passphrase, the user must read + accept the legal documents (shown in
+       their language; French is authoritative). Declining UNINSTALLS the app (typed
+       confirmation). Chrome strings come from /api/legal/documents (no global i18n
+       churn); the document text is the translated markdown, rendered safely. -->
+  <div id="view-legal" class="hidden">
+    <h1 id="lg-heading"></h1>
+    <p id="lg-intro"></p>
+    <div class="note"><p id="lg-draft"></p><p id="lg-trans" class="hidden"></p></div>
+    <div id="lg-docs" class="legal-docs" tabindex="0"></div>
+    <button type="button" id="lg-download" class="secondary"></button>
+    <label class="accept-row"><input type="checkbox" id="lg-check"><span id="lg-accept-label"></span></label>
+    <button id="lg-accept" disabled></button>
+    <button type="button" id="lg-decline" class="ghost"></button>
+    <div class="err" id="lg-msg"></div>
+    <!-- Decline -> typed-confirm sub-panel (an accidental click can never uninstall). -->
+    <div id="lg-decline-panel" class="hidden">
+      <div class="note danger"><p id="lg-decline-warn"></p></div>
+      <label for="lg-decline-input" id="lg-decline-type"></label>
+      <input type="text" id="lg-decline-input" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <button id="lg-decline-confirm" class="danger" disabled></button>
+      <button type="button" id="lg-decline-cancel" class="ghost"></button>
+    </div>
   </div>
 
   <div id="view-unlock" class="hidden">
@@ -143,8 +189,92 @@
     async function pickLanguage(code) {
       try { if (window.OOI18N && OOI18N.setLang) await OOI18N.setLang(code); } catch (e) {}
       $("view-language").classList.add("hidden");
+      showLegalStep(code);   // accept the legal documents BEFORE the passphrase
+    }
+
+    // ---- First-launch legal step (chrome strings come from the endpoint) ---- //
+    let _legalLang = "en", _legalVersion = "", _legalWord = "UNINSTALL";
+    function escHtml(s) {
+      return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    }
+    // Minimal, SAFE markdown -> HTML for OUR OWN trusted legal text: escape first,
+    // then render headings / blockquotes / lists / bold / rules. Links become plain
+    // text (no navigating away from this first-launch page).
+    function renderLegalMarkdown(md) {
+      const inline = (s) => escHtml(s)
+        .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+        .replace(/`([^`]+)`/g, "$1")
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+      let html = "", inList = false, inQuote = false;
+      const closeList = () => { if (inList) { html += "</ul>"; inList = false; } };
+      const closeQuote = () => { if (inQuote) { html += "</blockquote>"; inQuote = false; } };
+      for (const raw of md.split(/\r?\n/)) {
+        const line = raw.replace(/\s+$/, "");
+        if (/^#{1,6}\s/.test(line)) {
+          closeList(); closeQuote();
+          const tag = line.match(/^#+/)[0].length <= 2 ? "h2" : "h3";
+          html += "<" + tag + ">" + inline(line.replace(/^#+\s*/, "")) + "</" + tag + ">";
+        } else if (/^>\s?/.test(line)) {
+          closeList(); if (!inQuote) { html += "<blockquote>"; inQuote = true; }
+          html += "<div>" + inline(line.replace(/^>\s?/, "")) + "</div>";
+        } else if (/^[-*]\s/.test(line)) {
+          closeQuote(); if (!inList) { html += "<ul>"; inList = true; }
+          html += "<li>" + inline(line.replace(/^[-*]\s/, "")) + "</li>";
+        } else if (/^(---+|\*\*\*+)$/.test(line)) {
+          closeList(); closeQuote(); html += "<hr>";
+        } else if (line.trim() === "") {
+          closeList(); closeQuote();
+        } else {
+          closeQuote(); closeList(); html += "<p>" + inline(line) + "</p>";
+        }
+      }
+      closeList(); closeQuote();
+      return html;
+    }
+    async function showLegalStep(code) {
+      _legalLang = code;
+      try {
+        const data = await (await fetch("/api/legal/documents?lang=" + encodeURIComponent(code))).json();
+        _legalVersion = data.version || "";
+        _legalWord = data.confirm_word || "UNINSTALL";
+        const ui = data.ui || {};
+        $("lg-heading").textContent = ui.heading || "Legal documents";
+        $("lg-intro").textContent = ui.intro || "";
+        $("lg-draft").textContent = ui.draft_note || "";
+        const trans = $("lg-trans");
+        if (data.is_translation) { trans.textContent = ui.translation_note || ""; trans.classList.remove("hidden"); }
+        else trans.classList.add("hidden");
+        $("lg-accept-label").textContent = ui.accept_label || "I have read and accept these documents.";
+        $("lg-accept").textContent = ui.accept_btn || "Accept and continue";
+        $("lg-decline").textContent = ui.decline_btn || "Decline";
+        $("lg-download").textContent = ui.download_btn || "Download the documents";
+        $("lg-decline-warn").textContent = ui.decline_warn || "";
+        $("lg-decline-type").textContent = ui.decline_type || "To confirm, type UNINSTALL:";
+        $("lg-decline-confirm").textContent = ui.decline_confirm_btn || "Uninstall and delete everything";
+        $("lg-decline-cancel").textContent = ui.decline_cancel_btn || "Cancel";
+        const docs = (data.documents || []).map((d, i) =>
+          (i ? '<div class="doc-sep"></div>' : "") + renderLegalMarkdown(d.markdown || "")).join("");
+        $("lg-docs").innerHTML = docs || ("<p>" + escHtml(ui.error || "Could not load the legal documents.") + "</p>");
+      } catch (e) {
+        $("lg-msg").textContent = (e && e.message) || "Could not load the legal documents.";
+      }
+      const card = document.querySelector(".card"); if (card) card.classList.add("wide");
+      $("view-legal").classList.remove("hidden");
+      $("lg-docs").focus();
+    }
+    function legalToPassphrase() {
+      const card = document.querySelector(".card"); if (card) card.classList.remove("wide");
+      $("view-legal").classList.add("hidden");
       $("view-create").classList.remove("hidden");
       const pw1 = $("pw1"); if (pw1) pw1.focus();
+    }
+    function showUninstalling(msg) {
+      const card = document.querySelector(".card");
+      card.classList.remove("wide");
+      card.innerHTML = "<h1>Open Omniscience</h1>";
+      const p = document.createElement("p");
+      p.style.textAlign = "center"; p.textContent = msg;
+      card.appendChild(p);
     }
 
     async function boot() {
@@ -170,11 +300,39 @@
     }
 
     document.addEventListener("click", (ev) => {
-      if (ev.target.id === "btn-unlock")
+      const id = ev.target.id;
+      if (id === "btn-unlock")
         go(ev.target, () => post("/api/system/unlock", { passphrase: $("pw").value }));
-      if (ev.target.id === "btn-create")
+      if (id === "btn-create")
         go(ev.target, () => post("/api/system/create-db",
           { passphrase: $("pw1").value, confirm: $("pw2").value }));
+      // --- legal step ---
+      if (id === "lg-download")
+        window.location = "/api/legal/download?lang=" + encodeURIComponent(_legalLang);
+      if (id === "lg-accept") {
+        const b = ev.target; b.disabled = true; $("lg-msg").textContent = "";
+        post("/api/legal/consent", { version: _legalVersion })
+          .then(() => legalToPassphrase())
+          .catch((e) => { $("lg-msg").textContent = e.message; b.disabled = false; });
+      }
+      if (id === "lg-decline") { $("lg-decline-panel").classList.remove("hidden"); $("lg-decline-input").focus(); }
+      if (id === "lg-decline-cancel") {
+        $("lg-decline-panel").classList.add("hidden");
+        $("lg-decline-input").value = ""; $("lg-decline-confirm").disabled = true; $("lg-msg").textContent = "";
+      }
+      if (id === "lg-decline-confirm") {
+        const b = ev.target; b.disabled = true; $("lg-msg").textContent = "";
+        post("/api/legal/decline", { confirm: true, word: $("lg-decline-input").value.trim() })
+          .then((r) => showUninstalling((r && r.note) || "Uninstalling — you can close this window."))
+          .catch((e) => { $("lg-msg").textContent = e.message; b.disabled = false; });
+      }
+    });
+    document.addEventListener("change", (ev) => {
+      if (ev.target.id === "lg-check") $("lg-accept").disabled = !ev.target.checked;
+    });
+    document.addEventListener("input", (ev) => {
+      if (ev.target.id === "lg-decline-input")
+        $("lg-decline-confirm").disabled = ev.target.value.trim() !== _legalWord;
     });
     document.addEventListener("keydown", (ev) => {
       if (ev.key !== "Enter") return;
