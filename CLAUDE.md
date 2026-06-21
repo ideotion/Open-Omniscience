@@ -1044,9 +1044,14 @@ ruling, a contingency, or a deliberate-omission note.
   FILTERING by METADATA (maintainer 2026-06-20, "important" — enables thinner corpus creation):
   sort/filter articles per language · per date · per source · alphabetically · broadly per-metadata,
   AND when any filter is active show a "filtered" indicator on ALL tabs (same convention as the active
-  search-terms indicator) so the corpus scope is always visible; (g) ARTICLES-TAB PAGINATION
-  (maintainer 2026-06-20): a 1000-result search shows only the first few with no way to page — add
-  next/prev + "Page X of Y" controls BOTH above and below the results list.
+  search-terms indicator) so the corpus scope is always visible. (g) SHIPPED: the analysis Articles
+  list is PAGINATED — `_anLoadArticles(p,page)` fetches /api/articles by limit+offset (page size 50,
+  `total` drives the page count), renders Prev/Next + "Page X of Y" controls BOTH above and below the
+  table, loadAnalysis seeds page 0; test_analysis_articles_paginated. PENDING: (h) LLM MODEL DOWNLOAD
+  QUEUE (maintainer 2026-06-20): pulling several models at once OVERLAPS visually + starts them all at
+  once — make model pulls a QUEUED, task-manager-visible job (like wiki dumps: one at a time, the rest
+  queue) with a CANCEL action (ollama /api/pull isn't resumable, so cancel not pause), so the user can
+  queue several downloads and manage them from the task manager.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features

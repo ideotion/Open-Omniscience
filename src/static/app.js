@@ -9937,6 +9937,57 @@
         }
       } catch (e) { /* annotation is best-effort, never breaks the list */ }
     }
+    // The Articles subtab is PAGINATED (maintainer 2026-06-20): a 1000-result search is
+    // browsable page by page with Prev/Next + "Page X of Y" controls BOTH above and below
+    // the list. /api/articles already supports limit+offset; `total` drives the page count.
+    // _anArtParams remembers the active corpus so paging re-fetches the same selection.
+    const _AN_ART_PAGE = 50;
+    let _anArtParams = null, _anArtPage = 0;
+    function _anArtPager(total, pages) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (pages <= 1) return "";
+      const cur = _anArtPage;
+      const lbl = esc(t("Page")) + " " + (cur + 1) + " " + esc(t("of")) + " " + pages
+        + ' <span class="muted">(' + total.toLocaleString() + " " + esc(t("Articles")) + ")</span>";
+      return '<div class="an-pager" style="display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap">'
+        + '<button class="tiny ghost" ' + (cur <= 0 ? "disabled" : "") + ' onclick="_anArtGo(' + (cur - 1) + ')">' + esc(t("← Previous")) + "</button>"
+        + "<span>" + lbl + "</span>"
+        + '<button class="tiny ghost" ' + (cur >= pages - 1 ? "disabled" : "") + ' onclick="_anArtGo(' + (cur + 1) + ')">' + esc(t("Next →")) + "</button></div>";
+    }
+    function _anArtGo(page) {
+      if (!_anArtParams) return;
+      _anLoadArticles(_anArtParams, page);
+      var a = $("an-articles"); if (a && a.scrollIntoView) a.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+    async function _anLoadArticles(p, page) {
+      const arts = $("an-articles"); if (!arts) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      _anArtParams = p; _anArtPage = Math.max(0, page | 0);
+      arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const q = new URLSearchParams(p);
+        q.set("limit", String(_AN_ART_PAGE));
+        q.set("offset", String(_anArtPage * _AN_ART_PAGE));
+        const d = await api("/api/articles?" + q.toString());
+        const total = d.total || 0, pages = Math.max(1, Math.ceil(total / _AN_ART_PAGE));
+        if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1);   // clamp after a narrower filter
+        const rows = (d.results || []).map((a) =>
+          `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
+          + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
+          + `<td>${esc(a.source || "")}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
+          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
+          + `<td style="white-space:nowrap">`
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`).join("");
+        const pager = _anArtPager(total, pages);
+        arts.innerHTML = `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
+          + pager
+          + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
+          + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`
+          + pager;
+        annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
+      } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
     async function loadAnalysis(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const kw = $("an-keywords"), arts = $("an-articles");
@@ -9970,22 +10021,7 @@
           renderAnMindmap(g, mm);
         }
       } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
-      try {
-        const p2 = new URLSearchParams(p); p2.set("limit", "100");
-        const d = await api("/api/articles?" + p2.toString());
-        const rows = (d.results || []).map((a) =>
-          `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
-          + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
-          + `<td>${esc(a.source || "")}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
-          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
-          + `<td style="white-space:nowrap">`
-          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
-          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`).join("");
-        arts.innerHTML = `<div class="hint">${(d.total || 0).toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
-          + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
-          + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`;
-        annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
-      } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      _anLoadArticles(p, 0);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
       // When/Where/Who deduced across the matched articles (counts, never confirmed).
       try {
         const d = await api("/api/insights/corpus-www?" + p.toString());

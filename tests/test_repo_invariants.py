@@ -430,6 +430,18 @@ def test_facet_subtabs_relocated_to_top_strip():
         assert navid in app, f"the subtab-nav relocation map must cover {navid}"
 
 
+def test_analysis_articles_paginated():
+    """Maintainer field test 2026-06-20: the analysis Articles list is PAGINATED — a
+    1000-result search is browsable with Prev/Next + 'Page X of Y' controls shown BOTH
+    above and below the list (/api/articles already supports limit+offset)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _anLoadArticles(" in app and "function _anArtGo(" in app and "_anArtPager(" in app
+    assert 'q.set("offset"' in app and 'q.set("limit"' in app, "pagination must fetch by limit+offset"
+    assert "_anLoadArticles(p, 0)" in app, "loadAnalysis must use the paginated loader"
+    assert app.count("+ pager") >= 2, "the pager must render BOTH above and below the results list"
+    assert 't("Page")' in app and 't("of")' in app, "the 'Page X of Y' control must exist"
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
