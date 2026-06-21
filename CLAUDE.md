@@ -1140,7 +1140,18 @@ ruling, a contingency, or a deliberate-omission note.
   tickbox + the end-to-end wiring). New UI strings English (the backup panel is largely un-keyed
   English; gate stays 100%). REMAINING (the maintainer's fuller vision): maps + wiki-dump backup as
   file members (needs the additive-restore file-placement, ruled-but-unbuilt — build with the wiki-dump
-  inclusion together); fold the separate models backup into the same tickbox flow. **ONGOING DOWNLOADS
+  inclusion together); fold the separate models backup into the same tickbox flow. **SELECTIVE RESTORE
+  SHIPPED 2026-06-21 (maintainer reiterated "what to restore: articles/maps/eml/wikipedia/models"):**
+  symmetric to backup — the Restore section gains a "What to restore" fieldset (Articles always · Imported
+  newsletters toggle · Models=separate restore · Maps/Wiki=not-in-archive). `_apply_restore_selection`
+  runs the SAME stdlib-tested `_drop_newsletter_articles` on the STAGED PLAINTEXT corpus copy BEFORE the
+  merge — so unticking newsletters restores everything except them, and the PREVIEW reflects the COMMIT
+  (the token's staged copy is already filtered at preview time; a direct-file commit filters at commit).
+  `restore_preview`/`restore_commit` gain `include_newsletters: bool = Form(True)`; the SPA sends it at
+  preview (the token commit inherits the filtered copy). NO merge-engine change (the filter is a pre-merge
+  step on the disposable staged copy). test_repo_invariants::test_restore_can_exclude_newsletters.
+  REMAINING (restore side): maps/wiki/models restore = when those become backup file members.
+- **ONGOING DOWNLOADS
   NEVER BACKED UP (maintainer 2026-06-21, reassurance + transparency):** maps + wiki dumps live in
   `osm_regions/` + `wiki_dumps/`, which are EXCLUDED BY CONSTRUCTION (never collected as members), so a
   partial/in-progress download can never ride into a backup half-written (no corruption). Made the OSM

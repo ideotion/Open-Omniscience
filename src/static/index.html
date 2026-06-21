@@ -1308,6 +1308,14 @@
           <input id="v2-restore-pass" type="password" autocomplete="off" placeholder="empty for an unencrypted archive"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="v2Preview()">Preview merge</button></div>
       </div>
+      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
+        <legend class="muted" style="padding:0 6px">What to restore</legend>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always merged)</span></label>
+        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-restore-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to restore everything except them</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use the separate “Local LLM models” restore above</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— not carried in this archive yet</span></label>
+        <div class="hint" style="margin-top:4px">The preview reflects your choice — what you preview is exactly what gets merged.</div>
+      </fieldset>
       <div id="v2-preview" style="display:none">
         <div id="v2-verify" class="hint"></div>
         <div id="v2-plan"></div>

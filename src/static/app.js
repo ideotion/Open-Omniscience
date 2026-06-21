@@ -3456,6 +3456,10 @@
       out.textContent = t("Previewing — nothing is changed yet…");
       const fd = new FormData();
       fd.append("file", f); fd.append("passphrase", $("v2-restore-pass").value || "");
+      // "What to restore": the staged corpus is filtered at preview time, so the
+      // token-based commit restores exactly what the preview shows.
+      const nlEl = $("v2-restore-newsletters");
+      fd.append("include_newsletters", (nlEl ? !!nlEl.checked : true) ? "true" : "false");
       try {
         const r = await fetch("/api/backup/v2/restore/preview", {method: "POST", body: fd});
         const body = await r.json();

@@ -555,6 +555,22 @@ def test_backup_can_exclude_newsletters():
     assert "newsletters.import.local" in art and "mailbox.import.local" in art
 
 
+def test_restore_can_exclude_newsletters():
+    """Maintainer field test 2026-06-21: selective RESTORE — 'what to restore' lets the
+    user drop imported newsletters from the merge (symmetric to backup). The staged
+    plaintext corpus is filtered BEFORE the merge, so the preview reflects the commit."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
+    # UI: a "what to restore" fieldset + the newsletter toggle
+    assert 'id="v2-restore-newsletters"' in html and "What to restore" in html
+    # frontend sends include_newsletters at preview (token commit inherits the filter)
+    assert 'fd.append("include_newsletters"' in app
+    # backend: the filter runs on the STAGED copy before the merge (reuses the tested helper)
+    assert "def _apply_restore_selection(" in bk and "_drop_newsletter_articles" in bk
+    assert "include_newsletters: bool = Form(True)" in bk
+
+
 def test_gui_shutdown_button_and_endpoint():
     """Maintainer field test 2026-06-21: the status bar has a shutdown (power) button
     that confirms, then stops the server (the GUI equivalent of Ctrl-C) — NOT uninstall
