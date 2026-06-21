@@ -4960,6 +4960,27 @@ ruling, a contingency, or a deliberate-omission note.
   bundle, on-click only, never auto-transmitted. Maintainer protocol: click
   through the app, send the bundle. Temporal map ships PRECONFIGURED
   (bundled Natural Earth coastline, invariant-tested).
+  **DIAGNOSTIC BATCH ANALYZED 2026-06-21 (maintainer sent 8 logs from the live 29k-article /
+  2.4M-mention / 1 GB-encrypted corpus; branch claude/keen-lamport-b4t3rh, PR #420):** SHIPPED the
+  log-driven fixes: (a) STOPWORDS — a conservative 2026-06-21 `_EXTRA_STOPWORD_TEXT` batch from the
+  analyzer's high-confidence bucket (more CSS leaking into the `?` unknown-lang bucket: div/span/
+  max-width/font-size/font-family; de weekday `sonnabend`; pure grammar in es/it/pt/pl/sl/sv/nb/tr —
+  accented-or-unambiguous-grammar rule, content/homographs EXCLUDED e.g. law/city/power/company/
+  market/media/newsletter/twitter/table/width all LEFT as content); (b) DATE VOCAB — Greek (el, was
+  8.5% cov, in_month_vocab=FALSE) + Slovenian (sl, 6.2%) month names (nominative+genitive) added to
+  `dateextract._MONTHS`, VERIFIED live ("5 Μαΐου 2024"→2024-05-05, "5. junija 2024"→2024-06-05);
+  tests/test_dateextract.py + the stopword self-test cover it. FLAGGED (bigger, not in this batch):
+  (1) PERF — `/api/insights/trending-windows` is the #1 hotspot at ~20s idle / ~98s under load (it's
+  observed_on-WINDOWED so the corpus-wide counters don't apply; needs a per-day mention ROLLUP table
+  or a stale-while-revalidate guarantee on the Home poll); associations ~6s (busiest keyword
+  'important'=42k mentions), supergroups cold ~15s; the persisted COLUMNAR store is unavailable
+  (in-memory) pending the httpfs crypto-extension packaging decision; activity+vitals polled 1281×
+  in 26 min. (2) The `?` unknown-language bucket = 36,519 keywords (CSS/HTML leak = an HTML-stripping
+  gap before extraction, the real root; stoplisting the markup only mitigates). (3) translation_coverage
+  11.8% / tag_coverage 0% (run the baseline-tag backfill on this corpus). (4) no_stoplist langs
+  (uk/tr/ro/ur/th/cs/ca/fi/hi/et/vi/sk) + zh/ja unsegmented still leak. (5) network preflight: the
+  50-source sample was all `unreachable` (likely the Tor/airplane population, not a bug — re-check
+  online). Full prioritised report handed to the maintainer in chat.
   **DATE-EXTRACTION LOG ADDED 2026-06-16 (maintainer-asked: "gather extracted date
   information so I send it to you to optimize the extractor"):** `GET
   /api/diagnostics/dates` + a Settings → Diagnostics button "Download
