@@ -1051,7 +1051,11 @@ ruling, a contingency, or a deliberate-omission note.
   QUEUE (maintainer 2026-06-20): pulling several models at once OVERLAPS visually + starts them all at
   once — make model pulls a QUEUED, task-manager-visible job (like wiki dumps: one at a time, the rest
   queue) with a CANCEL action (ollama /api/pull isn't resumable, so cancel not pause), so the user can
-  queue several downloads and manage them from the task manager.
+  queue several downloads and manage them from the task manager. ALSO (h2, the AI-tab models UI,
+  maintainer 2026-06-20): the Settings → AI model LIST is poorly displayed — make it COMPACT; clicking
+  Pull must give immediate visual FEEDBACK; and lift a pulled model OUT of the catalog list INTO a TOP
+  section that shows per-model STATUS (Pulling · Queued · Available · Active) + a progress bar. (h)+(h2)
+  are one cohesive rework of the Settings → AI subtab + the download queue — build together.
 - **V0.1 ALPHA PREP — TWO ACTION PLANS DELIVERED (maintainer-asked
   2026-06-12): (A) user-centric reflections** (FUTURE_DEVELOPMENTS §
   "User-centric reflections": 6 scenarios, 6 contradictions faced, features
