@@ -3713,3 +3713,38 @@ def test_auto_update_note_removed_and_country_names_localized():
     # name, not the raw uppercased 2-letter code.
     assert 'ooRegionName(meta.country, meta.country.toUpperCase())' in app
     assert 'ooRegionName(m.country, m.country)' in app
+
+
+def test_server_side_folder_picker_wired():
+    """Field test 2026-06-22 #8: "Browse buttons, never manual path typing". A
+    traversal-safe /api/fs/list backs a folder picker wired into the folder-backup
+    destination + the .eml folder-import path inputs (folders only, never file names)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # Browse buttons on both server-side path inputs + the picker dialog.
+    assert "ooFolderPicker('fb-dest'" in html, "no Browse on the folder-backup destination"
+    assert "ooFolderPicker('nl-folder'" in html, "no Browse on the .eml folder import"
+    assert 'id="folder-picker"' in html
+    # The picker reads the traversal-safe backend and uses addEventListener (no inline onclick).
+    assert "function ooFolderPicker(" in app and "/api/fs/list" in app
+    assert 'el.addEventListener("click"' in app  # row navigation is delegated, not inline
+    # The router is wired into the spine.
+    wiring = (_SRC / "api" / "_wiring.py").read_text(encoding="utf-8")
+    assert "files_router" in wiring
+
+
+def test_restore_auto_detects_encryption_client_side():
+    """Field test 2026-06-22 #10: restore reads the file's OOENC1 magic LOCALLY and
+    shows the passphrase field only for an encrypted backup (no upload-to-check); a
+    plaintext archive needs none. The magic matches read_artifact's exact signature."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'onchange="v2DetectEncryption()"' in html
+    assert 'id="v2-restore-pass-wrap"' in html and "hidden" in html
+    assert "function v2DetectEncryption(" in app
+    # reads only the first 8 bytes locally, compares the OOENC1 magic bytes.
+    assert "f.slice(0, 8).arrayBuffer()" in app
+    assert "0x4f, 0x4f, 0x45, 0x4e, 0x43, 0x31, 0x00, 0x00" in app  # "OOENC1\\0\\0"
+    # backend already raises the matching clear error (the source of truth).
+    art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
+    assert 'blob[:8] == b"OOENC1\\x00\\x00"' in art

@@ -38,6 +38,7 @@ def wire(app) -> None:
     from src.api.database import router as database_router
     from src.api.diagnostics import router as diagnostics_router
     from src.api.events import router as events_router
+    from src.api.files import router as files_router
     from src.api.geo import router as geo_router
     from src.api.hazards import router as hazards_router
     from src.api.ingestion import router as ingestion_router
@@ -95,6 +96,7 @@ def wire(app) -> None:
         unlock_router,
         hazards_router,
         events_router,
+        files_router,
         geo_router,
         stats_router,
         watches_router,

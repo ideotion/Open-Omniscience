@@ -3816,6 +3816,34 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 SESSION — POST-MERGE CONTINUATION (PR #439 merged; new draft PR onto 0.09, branch re-cut from
+  the merged 0.09 per protocol). SERVER-SIDE FOLDER PICKER (brief #8, "Browse buttons, never manual path
+  typing"; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED per fork-3):** the folder-backup destination
+  + the .eml folder-import took a server-side path the user had to TYPE (a browser file dialog can't return a
+  host path). NEW `src/api/files.py` `GET /api/fs/list?path=&show_hidden=` lists a directory's SUBDIRECTORIES
+  only — NEVER file contents, never even file names — traversal-safe by construction (`_safe_resolve` →
+  real abs path; an unreadable dir lists nothing; a non-existent/non-dir path falls back to home, never a
+  500), bounded `_MAX_ENTRIES=2000`, reports `writable` so the picker can gate a backup destination. Loopback-
+  only single-user app, consistent with the existing local trust model (the unlock screen already lists
+  key-file names). Wired into the spine (`_wiring.py`). Frontend: a reusable `ooFolderPicker(inputId,
+  requireWritable)` + `#folder-picker` dialog (delegated row navigation via addEventListener, native
+  showModal focus-trap) + a "Browse…" button beside `fb-dest` (folder backup) and `nl-folder` (.eml import).
+  New strings English-fallback via `t()` (i18n gate stays 100%; keyable later). tests/test_fs_browser.py (6:
+  folders-only/hidden/parent/fallbacks/bounded) + test_repo_invariants::test_server_side_folder_picker_wired
+  + test_api_wiring (router in the spine). **ALSO #10 ENCRYPTION AUTO-DETECT ON RESTORE (frontend, same PR
+  #441):** the backend already detects the OOENC1 magic + raises a clear "passphrase required" — so the fix
+  is CLIENT-SIDE: `v2DetectEncryption()` reads the chosen file's FIRST 8 BYTES locally (no upload-to-check,
+  `f.slice(0,8)`) and shows the passphrase field ONLY for an encrypted backup (a plaintext archive needs
+  none), with an honest "Encrypted/Plaintext" hint; degrades to showing the field on any read error. The
+  magic bytes match read_artifact's exact signature. test_repo_invariants::
+  test_restore_auto_detects_encryption_client_side. **FLAKY-TEST FIX (caught by the macOS observation lane;
+  it would flake the BLOCKING Linux lane too):** `test_summary_flags_a_lock_error_in_the_current_session`
+  (shipped #439 P0-5) hardcoded the error's `at`="12:00" but `note_boot()` stamps the REAL wall clock — so it
+  passed only when the suite ran before noon UTC (Linux 11:08 ✓) and failed after (macOS 13:27 ✗). Fixed to a
+  far-future `at` (unambiguously "this session" at any run time). LESSON: never compare a hardcoded timestamp
+  against a real-`now` marker in a test. REMAINING (the larger backups redesign #7/#9/#11/#12):
+  unify the include/restore selection UI, encryption-as-an-in-flow EXPORT option, direct-import-with-summary,
+  progress bars both directions, restore-as-a-task-manager-job (P0-2 slowness folds here).
 - **2026-06-22 AUTONOMOUS SESSION (the field-test brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-22.md`;
   ONE branch claude/keen-davinci-jvsmfh per the harness git-constraint, draft PR onto 0.09; backend VERIFIED
   py3.13 venv, frontend BROWSER-UNVERIFIED per fork-3). HONEST FINDING on P0-1 (the headline "data is locked

@@ -3667,6 +3667,27 @@
       if (quiet > 0) html += `<div class="muted" style="font-size:12px;margin-top:4px">${quiet} ${esc(t("further table(s) with no changes."))}</div>`;
       return html;
     }
+    // Encryption auto-detect (field test 2026-06-22 #10): read the chosen file's
+    // first 8 bytes LOCALLY (no upload-to-check) and look for the OOENC1 magic — the
+    // exact same signature read_artifact uses — so the passphrase field appears ONLY
+    // for an encrypted backup; a plaintext archive needs none. Degrades safely: on any
+    // read error it just shows the field (the old always-visible behaviour).
+    async function v2DetectEncryption() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const wrap = $("v2-restore-pass-wrap"), note = $("v2-restore-enc");
+      const f = $("v2-restore-file").files[0];
+      if (!f) { if (wrap) wrap.hidden = true; if (note) note.textContent = ""; return; }
+      let encrypted = true;  // safe default: if we can't read the header, show the field
+      try {
+        const buf = new Uint8Array(await f.slice(0, 8).arrayBuffer());
+        const magic = [0x4f, 0x4f, 0x45, 0x4e, 0x43, 0x31, 0x00, 0x00];  // "OOENC1\0\0"
+        encrypted = magic.every((b, i) => buf[i] === b);
+      } catch (_e) { encrypted = true; }
+      if (wrap) wrap.hidden = !encrypted;
+      if (note) note.textContent = encrypted
+        ? t("Encrypted backup — enter its passphrase.")
+        : t("Plaintext archive — no passphrase needed.");
+    }
     async function v2Preview() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const f = $("v2-restore-file").files[0];
@@ -7853,6 +7874,50 @@
         if (!_ooLangDN[ui]) _ooLangDN[ui] = new Intl.DisplayNames([ui], { type: "language" });
         return _ooLangDN[ui].of(lc) || fallback || lc;
       } catch { return fallback || lc; }
+    }
+
+    // Server-side folder picker (field test 2026-06-22 #8: "Browse buttons, never
+    // manual path typing"). Lists subdirectories via /api/fs/list (folders only,
+    // never file names) so the user can pick a backup destination / .eml import
+    // folder ON THIS MACHINE without typing the path. Writes the chosen absolute
+    // path into the given input. Listeners are addEventListener (no inline onclick).
+    let _fpState = { inputId: null, requireWritable: false, current: null };
+    async function ooFolderPicker(inputId, requireWritable) {
+      _fpState = { inputId, requireWritable: !!requireWritable, current: null };
+      const inp = $(inputId);
+      await _fpNav((inp && inp.value || "").trim() || null);
+      const dlg = $("folder-picker");
+      if (dlg && dlg.showModal) dlg.showModal();
+    }
+    async function _fpNav(path) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s) => s;
+      let d;
+      try {
+        d = await api("/api/fs/list?show_hidden=false" + (path ? "&path=" + encodeURIComponent(path) : ""));
+      } catch (e) {
+        $("fp-list").innerHTML = `<div class="muted" style="padding:10px">${esc(e.message)}</div>`;
+        return;
+      }
+      _fpState.current = d.path;
+      $("fp-path").textContent = d.path;
+      const rows = [];
+      if (d.parent) rows.push(`<div class="fp-row" data-path="${esc(d.parent)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">⬆ ${esc(t("Parent folder"))}</div>`);
+      for (const e of (d.entries || [])) rows.push(`<div class="fp-row" data-path="${esc(e.path)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">📁 ${esc(e.name)}</div>`);
+      if (!(d.entries || []).length) rows.push(`<div class="muted" style="padding:10px">${esc(t("No sub-folders here."))}</div>`);
+      $("fp-list").innerHTML = rows.join("");
+      $("fp-list").querySelectorAll(".fp-row").forEach(el => el.addEventListener("click", () => _fpNav(el.dataset.path)));
+      const useBtn = $("fp-use");
+      const blocked = _fpState.requireWritable && d.writable === false;
+      if (useBtn) useBtn.disabled = !!blocked;
+      $("fp-note").textContent = blocked
+        ? t("This folder is not writable — pick another for a backup destination.")
+        : (d.truncated ? t("Showing the first folders only.") : "");
+    }
+    function ooFolderPickerUse() {
+      const inp = $(_fpState.inputId);
+      if (inp && _fpState.current) { inp.value = _fpState.current; inp.dispatchEvent(new Event("change")); }
+      const dlg = $("folder-picker");
+      if (dlg) dlg.close();
     }
 
     let _ooMapGeo = null;                            // cached world_countries.json

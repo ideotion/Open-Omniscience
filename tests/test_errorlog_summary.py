@@ -63,9 +63,13 @@ def test_summary_counts_problems_since_the_latest_boot(monkeypatch, tmp_path):
 def test_summary_flags_a_lock_error_in_the_current_session(monkeypatch, tmp_path):
     _fresh(monkeypatch, tmp_path)
     errorlog.note_boot()
+    # The error's `at` must be AFTER the boot marker, which note_boot() stamps with
+    # the REAL wall clock — so a hardcoded "12:00" was brittle (it passed only when
+    # the suite ran before noon UTC; it flaked the macOS lane that ran at 13:27).
+    # A far-future timestamp is unambiguously "this session" regardless of run time.
     errorlog._append(
         {
-            "at": "2026-06-22T12:00:00+00:00",
+            "at": "2099-12-31T23:59:59+00:00",
             "level": "ERROR",
             "logger": "src.ingest.pipeline",
             "message": "x",

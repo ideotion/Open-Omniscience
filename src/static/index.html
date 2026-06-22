@@ -1284,6 +1284,7 @@
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="fb-dest">Destination folder (on this machine)</label>
           <input id="fb-dest" placeholder="/mnt/external-drive/oo-large-backup" size="32"></div>
+        <button class="secondary" type="button" onclick="ooFolderPicker('fb-dest', true)">Browse…</button>
       </div>
       <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
         <legend class="muted" style="padding:0 6px">What to include</legend>
@@ -1348,11 +1349,12 @@
         taken before anything is applied, and the merge refuses to proceed if verification fails.</p>
       <div class="row">
         <div style="flex:2"><label for="v2-restore-file">Backup file</label>
-          <input type="file" id="v2-restore-file" accept=".oobak,.ooenc,application/octet-stream"></div>
-        <div style="flex:2"><label for="v2-restore-pass">Passphrase for this file</label>
+          <input type="file" id="v2-restore-file" accept=".oobak,.ooenc,application/octet-stream" onchange="v2DetectEncryption()"></div>
+        <div style="flex:2" id="v2-restore-pass-wrap" hidden><label for="v2-restore-pass">Passphrase for this file</label>
           <input id="v2-restore-pass" type="password" autocomplete="off" placeholder="empty for an unencrypted archive"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="v2Preview()">Preview merge</button></div>
       </div>
+      <div id="v2-restore-enc" class="hint muted" style="margin-top:2px"></div>
       <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
         <legend class="muted" style="padding:0 6px">What to restore</legend>
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always merged)</span></label>
@@ -1645,6 +1647,7 @@
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="nl-folder">Folder path (on this machine)</label>
           <input id="nl-folder" placeholder="/home/you/newsletters" size="30"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('nl-folder', false)">Browse…</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
       </div>
       <progress id="nl-folder-bar" value="0" max="100" style="width:100%;margin-top:6px;display:none"></progress>
@@ -1944,6 +1947,22 @@
     <div id="lp-out" style="margin-top:10px"></div>
     <div style="margin-top:12px;display:flex;justify-content:flex-end">
       <button class="secondary" onclick="document.getElementById('link-preview').close()">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="folder-picker" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:0">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px">
+      <strong>Pick a folder</strong>
+      <span class="muted" style="margin-left:auto;font-size:12px">on this machine</span>
+    </div>
+    <div style="padding:10px 16px">
+      <div id="fp-path" class="muted" style="font-size:12px;word-break:break-all;margin-bottom:6px"></div>
+      <div id="fp-list" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></div>
+      <div id="fp-note" class="hint" style="margin-top:6px"></div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end">
+      <button class="secondary" type="button" onclick="document.getElementById('folder-picker').close()">Cancel</button>
+      <button id="fp-use" type="button" onclick="ooFolderPickerUse()">Use this folder</button>
     </div>
   </dialog>
 
