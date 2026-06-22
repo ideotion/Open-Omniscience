@@ -3816,6 +3816,20 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — DEAD CALENDAR FEEDS EXCLUDED FROM AUTO-IMPORT (§7; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the per-pass
+  `auto_import_due_feeds` round-robin included the ~238 robots-disallowed `google-hol-*` (calendar.google.com)
+  + 16 `webcal.guru` feeds, and because "google-hol-*" sorts BEFORE the working "wph-*" ids, the round-robin
+  attempted ~254 GUARANTEED-DEAD feeds (each costing a robots fetch the fail-closed fetcher refuses) for
+  many passes, STARVING the 239 working WorldPublicHoliday feeds. Added `_AUTO_IMPORT_SKIP_HOSTS`
+  (field-verified robots-disallowed hosts, recorded in configs/calendar_feeds.yml's header) and skip them
+  in the due-list build. RECONCILES the "stays-listed-with-honest-verdict" choice: `load_families` is
+  UNTOUCHED — the feeds stay in the directory, the UI shows their honest verdict, the operator can still
+  verify/import them manually; only the AUTOMATIC round-robin skips them (never a fabricated verdict — each
+  is the host's own robots choice). tests/test_calendar_autoimport.py (the dead hosts stay listed but are
+  never auto-fetched; the working wph host IS reached). REMAINING (networked machine): replacement FRED ids
+  for the dead gold/silver/sawnwood commodity series; raw.githubusercontent.com calendar feed is robots-
+  UNDETERMINED (not confirmed-disallowed), so left in the round-robin (the backoff handles it).
 - **2026-06-22 FIELD-TEST REMAINDER — BOOT-COLD CACHE WARM (§1.3 read-path tail; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the in-memory insights
   read cache is empty after a restart, so the FIRST Home/Insights open paid the cold whole-corpus
