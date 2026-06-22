@@ -1965,9 +1965,12 @@ def test_sources_tab_moved_into_settings():
     assert 'if (name === "sources")' in html and '_setSubtabs.select("sources")' in html, (
         "showTab('sources') must redirect to Settings → Sources"
     )
-    assert 'if (cat === "sources") { loadManagedSources(); loadCandidates(); }' in html, (
-        "the Sources subtab must run the managed-sources + candidates onShow loads"
-    )
+    # The Sources subtab runs its onShow loads (loadSrcFacets feeds the #23 multi-select
+    # dropdowns; managed-sources + candidates as before). Assert each call, not the exact
+    # line, so adding an onShow load never reddens this verbatim check again.
+    src_onshow = html.split('if (cat === "sources") {', 1)[1].split("}", 1)[0]
+    for call in ("loadSrcFacets()", "loadManagedSources()", "loadCandidates()"):
+        assert call in src_onshow, f"the Sources subtab onShow must run {call}"
 
 
 def test_wikipedia_tab_moved_into_settings():
@@ -3498,6 +3501,32 @@ def test_task_manager_displays_actual_language_and_tag_strata():
     # hot poll) — the loop runs over rows, not a fresh DB call.
     plan_preview_body = runner.split("def plan_preview", 1)[1].split("\ndef ", 1)[0]
     assert "for r in rows:" in plan_preview_body and "lang_n[_source_lang(r)]" in plan_preview_body
+
+
+def test_sidebar_is_a_flat_list_without_section_headers():
+    """Field test 2026-06-22 (#22 flatten + #17 remove sidebar-visibility): the sidebar
+    is ONE flat list — the Investigate/Collect/Trust section headers (.gl labels +
+    .nav-group wrappers) are gone, and the 'Tools shown in the sidebar' checklist +
+    the hide-a-tab feature are removed. Every tab stays present + reachable (invariant
+    #2: lists all tabs)."""
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    nav = html.split('id="navGroups"', 1)[1].split("</nav>", 1)[0]
+    # No section-header markup left in the live nav (comments may mention them).
+    assert '<div class="gl">' not in nav and '<div class="nav-group"' not in nav, (
+        "the sidebar must be a flat list — no .gl headers / .nav-group wrappers"
+    )
+    assert 'class="nav-groups flat"' in html, "the nav must carry the flat marker"
+    # All the core tabs are still there (nothing lost by the flatten).
+    for tab in ("home", "insights", "timemap", "law", "agenda", "indices", "markets", "library"):
+        assert f'data-tab="{tab}"' in nav, f"flat sidebar lost the {tab} tab"
+    # The sidebar-visibility feature is gone (checklist host + toggle fn + persistence).
+    # (Checked via the removed identifiers, not the human label — an explanatory comment
+    # may still NAME the removed feature.)
+    assert 'id="dr-modules"' not in html, "the 'Tools shown in the sidebar' checklist must be removed"
+    assert "toggleModule" not in app, "the hide-a-tab toggle must be removed"
+    # The collapse-to-rail control STAYS (that is a different feature, invariant #2).
+    assert "toggleSidebar" in app and 'id="sb-collapse"' in html
 
 
 def test_sources_have_multi_select_dropdown_filters():

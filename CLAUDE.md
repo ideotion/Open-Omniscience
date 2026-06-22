@@ -3816,6 +3816,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — FLAT SIDEBAR + REMOVE SIDEBAR-VISIBILITY (§4 #22 + #17 part; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; frontend BROWSER-UNVERIFIED per fork-3):** the sidebar
+  section headers (Investigate/Collect/Trust .gl labels + .nav-group wrappers) are GONE — one FLAT list
+  (`nav.nav-groups.flat`), same order, all tabs present + reachable (invariant #2 intact; also via the
+  command palette). The outdated "Tools shown in the sidebar" checklist (#17) + the whole hide-a-tab
+  visibility feature are removed: `dr-modules` host gone, `toggleModule` gone, `ui.hidden` dropped from
+  UI_DEFAULTS + the applyUi nav-item-hiding/group-collapse logic + the buildDrawer checklist build all
+  removed (a legacy `ui.hidden` in stored prefs is simply ignored). The collapse-to-rail control STAYS (a
+  different feature). NOT in this slice (noted): #20 custody→Settings move (custody stays in the flat list
+  for now); #17's "fuse Appearance + GUI into one section" (a larger Settings reorg). test_repo_invariants::
+  test_sidebar_is_a_flat_list_without_section_headers. ALSO fixed the CI BLOCKER from the #23 commit:
+  test_sources_tab_moved_into_settings asserted the `sources` onShow line VERBATIM, which #23 changed by
+  adding loadSrcFacets() — rewritten to assert each onShow call individually (so adding a load never reddens
+  it again). LESSON: run the FULL test_repo_invariants after a frontend change — a line an invariant asserts
+  verbatim can break even when the new feature's own tests pass.
 - **2026-06-22 FIELD-TEST REMAINDER — SOURCES MULTI-SELECT FILTERS (§5 #23; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED
   per fork-3):** Settings → Sources filters converted from single text inputs to multi-select DROPDOWNS fed

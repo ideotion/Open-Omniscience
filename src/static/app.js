@@ -1049,7 +1049,7 @@
 
     // -- Appearance / customization (local-only, never transmitted) --------- //
     const UI_KEY = "oo.ui";
-    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, face:"", sidebar:"expanded", hidden:[]};
+    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, face:"", sidebar:"expanded"};
     const THEMES = [
       {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"slate",name:"Slate",c:"#7aa2f7"},
       {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"arctic",name:"Arctic",c:"#88c0d0"},
@@ -1094,15 +1094,9 @@
       if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
       r.style.fontSize = (ui.font || 100) + "%";
       if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
-      // Module visibility: hide chosen tools (and any group left entirely empty).
-      const hidden = new Set(ui.hidden || []);
-      document.querySelectorAll(".nav-item[data-tab]").forEach(b => {
-        b.style.display = hidden.has(b.dataset.tab) ? "none" : "";
-      });
-      document.querySelectorAll(".nav-group").forEach(g => {
-        const any = [...g.querySelectorAll(".nav-item[data-tab]")].some(b => b.style.display !== "none");
-        g.style.display = any ? "" : "none";
-      });
+      // The sidebar-visibility feature was removed (#17, 2026-06-22): the flat nav is
+      // always complete (every tab also reachable via the palette), so no nav-item is
+      // ever hidden here. A legacy ui.hidden in stored prefs is simply ignored.
     }
     function setTheme(t)   { const u = getUi(); u.theme = t;   saveUi(u); applyUi(u); buildDrawer(); syncThemeSelect(); }
     function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
@@ -1111,11 +1105,6 @@
     function setFont(v)    { const u = getUi(); u.font = +v;   saveUi(u); applyUi(u); $("dr-font-val").textContent = v + "%"; }
     function setSidebar(s) { const u = getUi(); u.sidebar = s; saveUi(u); applyUi(u); buildDrawer(); }
     function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
-    function toggleModule(id, show) {
-      const u = getUi(); const set = new Set(u.hidden || []);
-      show ? set.delete(id) : set.add(id);
-      u.hidden = [...set]; saveUi(u); applyUi(u);
-    }
     function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
       toast("Appearance reset to defaults."); }
     function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
@@ -1166,10 +1155,7 @@
       $("dr-sidebar").innerHTML = [["expanded", "Expanded"], ["collapsed", "Collapsed"]].map(([v, l]) =>
         `<button class="${v === ui.sidebar ? "sel" : ""}" onclick="setSidebar('${v}')">${l}</button>`).join("");
       $("dr-font").value = ui.font; $("dr-font-val").textContent = ui.font + "%";
-      const hidden = new Set(ui.hidden || []);
-      $("dr-modules").innerHTML = NAV.filter(n => !LOCKED.has(n.id)).map(n =>
-        `<label><input type="checkbox" ${hidden.has(n.id) ? "" : "checked"}
-           onchange="toggleModule('${n.id}', this.checked)"> ${esc(n.label)}</label>`).join("");
+      // (The "Tools shown in the sidebar" checklist was removed — #17, 2026-06-22.)
     }
 
     // -- Command palette = the OMNIBAR (Ctrl/⌘-K; T13 slice 1) -------------- //

@@ -38,39 +38,32 @@
         <div class="txt"><b>Open Omniscience</b><span id="version" hidden>v—</span></div>
       </div>
 
-      <nav class="nav-groups" id="navGroups" aria-label="Primary">
-        <div class="nav-group" data-grp="investigate">
-          <div class="gl">Investigate</div>
-          <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
-          <!-- Search AND Analysis retired from the sidebar (ruled 2026-06-20): analyses run
-               via search (the omnibar/palette -> a spawned analysis window) or by clicking into
-               the other tabs. #tab-analyze + #tab-search stay registered and reachable via
-               showTab()/openAnalysisFor() + the palette -- nothing is lost. -->
-          <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
-          <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>World map</span></button>
-          <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
-          <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
-          <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
-          <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
-        </div>
-        <div class="nav-group" data-grp="collect">
-          <div class="gl">Collect</div>
-          <button class="nav-item" data-tab="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg><span>Library</span></button>
-        </div>
-        <div class="nav-group" data-grp="trust">
-          <div class="gl">Trust</div>
-          <button class="nav-item" data-tab="custody"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Evidence &amp; custody</span></button>
-        </div>
+      <!-- FLAT nav (maintainer-ruled 2026-06-22, #22): the section headers
+           (Investigate/Collect/Trust) are GONE — every tab is one flat list, in the
+           same order. The .nav-group wrappers + .gl labels were removed; the
+           sidebar-visibility checklist (#17) is gone too, so all tabs are always
+           reachable here (also via the command palette + showTab deep-links). -->
+      <nav class="nav-groups flat" id="navGroups" aria-label="Primary">
+        <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
+        <!-- Search AND Analysis retired from the sidebar (ruled 2026-06-20): analyses run
+             via search (the omnibar/palette -> a spawned analysis window) or by clicking into
+             the other tabs. #tab-analyze + #tab-search stay registered and reachable via
+             showTab()/openAnalysisFor() + the palette -- nothing is lost. -->
+        <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
+        <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>World map</span></button>
+        <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
+        <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
+        <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
+        <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
+        <button class="nav-item" data-tab="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg><span>Library</span></button>
+        <button class="nav-item" data-tab="custody"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Evidence &amp; custody</span></button>
         <!-- Source integrity DISSOLVED from the sidebar (maintainer-ruled, content-first):
              coordination is now surfaced automatically (Leads + the analysis Related view +
              inline list/reader badges). The manual desk (collapse-to-one-voice, source
              profiles, web-of-trust annotations) is preserved + reachable from Settings →
              Safety; nothing is lost. Fuller ambient-absorption is the remaining work. -->
         <!-- System nav-group removed (maintainer-ruled 2026-06-15): Help & docs left the
-             sidebar — the top-bar "?" icon (showTab('help')) is the single entry, mirroring
-             how Settings was handled. The tab stays registered + LOCKED (see TABS below) so
-             the icon, the command palette and deep-links keep working. -->
-
+             sidebar — the top-bar "?" icon (showTab('help')) is the single entry. -->
       </nav>
 
       <div class="sb-foot">
@@ -903,8 +896,9 @@
       <div class="seg"><div class="sl">Text size · <span id="dr-font-val">100%</span></div>
         <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
       <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
-      <div class="seg"><div class="sl">Tools shown in the sidebar</div>
-        <div class="modlist" id="dr-modules"></div></div>
+      <!-- "Tools shown in the sidebar" checklist removed (maintainer-ruled 2026-06-22,
+           #17): it listed moved/dissolved tabs and was outdated; the sidebar is now a
+           flat, always-complete list (every tab also reachable via the command palette). -->
       <div class="seg"><button class="secondary" onclick="resetUi()">Reset appearance to defaults</button></div>
     </section>
     </div>
