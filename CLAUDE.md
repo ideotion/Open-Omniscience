@@ -3816,6 +3816,32 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **GOVERNMENTS TAB — rename World Law + per-country data + map (maintainer chat directive 2026-06-22:
+  "Change World Law into Governments. Diversify the subtabs. I want per-country data with GDP, labor, life
+  expectancy, population, public deficit + all commonly-used country indices. The law will be a tab,
+  another tab will be a world map with per-country data visualization (color, selectable, data history)."
+  branch claude/trusting-maxwell-p7y2g8, draft PR onto 0.09):** built on the EXISTING substrate — `StatFigure`
+  (per-country/indicator/year vintaged store) + `src/stats/fetch.fetch_worldbank(code,"all")` + `ooMap`
+  (choropleth) + `ooSubtabs`. PLAN: Governments tab with subtabs **Countries · Map · Law** (Law = the existing
+  tracker as a subtab; Map = an ooMap choropleth of a selectable indicator with a year/history slider;
+  Countries = per-country indicators + history). **SLICE 1 — BACKEND SHIPPED (VERIFIED py3.13):**
+  `src/stats/indicators.py` = a curated catalog of 12 World Bank series (GDP/GDP-per-capita/GDP-growth/
+  inflation · population/pop-growth · life-expectancy · unemployment/labour-force · net-lending-deficit/
+  central-debt · Gini), dated by `CATALOG_REVISED` (deliberately NOT an `*_AS_OF` constant — codes are stable
+  references, the DATA is vintaged per fetch, so it stays out of the external-artifact registry); codes
+  believed-correct but a WRONG code fails LOUDLY (empty series → "no data", never fabricated; verify on a
+  networked box). `src/api/governments.py` (wired into the spine): `GET /indicators` (catalog), `GET /map?
+  indicator=&year=` (per-country latest-or-year value + the years present for the slider; 404 on an unknown
+  indicator), `GET /country/{iso}` (all curated indicators + latest non-null + bounded history per indicator;
+  a published gap stays None, never zero), `POST /load-standard` (the ONE networked action — fetch the curated
+  set for ALL countries via fetch_worldbank, airplane-gated up front → 409, records subscriptions, degrades
+  loudly per-indicator). All reads over the existing vintaged store (no network); honesty carried (producer's
+  published value never a score, gaps never zero, producers never averaged). tests/test_governments_api.py (6:
+  catalog/no-score-field, map latest-per-country + specific-year + 404, country all-indicators-with-gap,
+  airplane refusal). REMAINING: SLICE 2 (frontend — rename World Law→Governments label/i18n/NAV + restructure
+  the tab into ooSubtabs with Law as a subtab + the Countries view) + SLICE 3 (the Map subtab: ooMap fed by
+  /map with an indicator picker + year/history slider + selectable country detail); a bundled offline
+  indicator snapshot (needs a networked-machine WB fetch — 403 in-sandbox; fetch-on-demand works meanwhile).
 - **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
   empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the

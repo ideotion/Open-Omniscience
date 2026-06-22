@@ -1,0 +1,183 @@
+"""Governments tab API (field test 2026-06-22): per-country indicators + the map.
+
+The Governments tab (renamed from World Law) shows per-country data — GDP, population,
+life expectancy, labour, public finance + common indices — drawn from the curated
+indicator catalog (``src/stats/indicators``) over the existing vintaged ``StatFigure``
+store. These endpoints are READS (no network); the ONE networked action is
+``POST /load-standard``, which fetches the curated set for ALL countries through the
+guarded official-statistics path (airplane-gated, consented in the UI).
+
+Honesty (carried from the stats layer): every value is a STANCED producer's published
+figure (World Bank), never a credibility score; a missing value is a published GAP, not
+zero; producers are shown, never averaged; public-finance/inequality series are patchy.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from src.database.session import get_db, session_scope
+from src.stats import indicators as ind
+from src.stats.store import list_figures
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/governments", tags=["Governments"])
+
+_CAVEAT = (
+    "Each value is a producer's published figure (World Bank), never a credibility "
+    "score. A missing value is a published gap, not zero. Public-finance and inequality "
+    "series have patchy country coverage by nature."
+)
+# A generous read bound: one indicator across ~200 countries x ~65 years is well under
+# this; it caps a pathological store, never the normal case.
+_READ_CAP = 60000
+
+
+def _figures(db: Session, *, series_id: str | None = None, ref_area: str | None = None) -> list[dict]:
+    """Latest-vintage figures for one indicator and/or one country (no network)."""
+    return list_figures(
+        db, series_id=series_id, ref_area=ref_area, latest_vintage_only=True, limit=_READ_CAP
+    )["figures"]
+
+
+def _latest_by_country(figs: list[dict], *, year: str | None = None) -> tuple[list[dict], list[str]]:
+    """Collapse per-indicator figures to ONE value per country (the requested year, or
+    the most recent available), plus the sorted years present (for the slider). A None
+    value (published gap) is kept as None — never coerced to zero."""
+    years = sorted({str(f["time_period"]) for f in figs if f.get("time_period")})
+    by_country: dict[str, dict] = {}
+    for f in figs:
+        area = (f.get("ref_area") or "").upper()
+        period = str(f.get("time_period") or "")
+        if not area or not period:
+            continue
+        if year and period != str(year):
+            continue
+        prev = by_country.get(area)
+        # keep the most recent period per country (when no specific year is asked)
+        if prev is None or period > str(prev["year"]):
+            by_country[area] = {"country": area, "value": f.get("value"), "year": period}
+    return list(by_country.values()), years
+
+
+@router.get("/indicators")
+def list_indicators() -> dict:
+    """The curated per-country indicator catalog (codes are stable; the data is fetched
+    live + vintaged elsewhere). Counts only, no score."""
+    return {
+        "indicators": ind.INDICATOR_CATALOG,
+        "catalog_revised": ind.CATALOG_REVISED,
+        "agency": ind.AGENCY,
+        "caveat": _CAVEAT,
+    }
+
+
+@router.get("/map")
+def map_data(indicator: str, year: str | None = None, db: Session = Depends(get_db)) -> dict:
+    """Per-country value for ONE indicator (the choropleth feed): the requested ``year``
+    or the latest available per country, plus the years present (the history slider)."""
+    meta = ind.indicator_meta(indicator)
+    if meta is None:
+        raise HTTPException(status_code=404, detail=f"unknown indicator: {indicator!r}")
+    figs = _figures(db, series_id=indicator)
+    by_country, years = _latest_by_country(figs, year=year)
+    return {
+        "indicator": meta,
+        "year": year,
+        "years": years,
+        "by_country": by_country,
+        "located": len(by_country),
+        "caveat": _CAVEAT,
+    }
+
+
+@router.get("/country/{iso}")
+def country_data(iso: str, history: int = 30, db: Session = Depends(get_db)) -> dict:
+    """All curated indicators for ONE country: the latest value + a bounded history
+    series per indicator (for the per-country sparklines). Indicators with no stored
+    figures are reported with a null latest (a published/unfetched gap, never zero)."""
+    iso = (iso or "").strip().upper()
+    if not iso:
+        raise HTTPException(status_code=422, detail="a country ISO code is required")
+    figs = _figures(db, ref_area=iso)
+    by_series: dict[str, list[dict]] = {}
+    for f in figs:
+        by_series.setdefault(f.get("series_id") or "", []).append(f)
+    out: list[dict] = []
+    for meta in ind.INDICATOR_CATALOG:
+        rows = sorted(
+            (f for f in by_series.get(meta["id"], []) if f.get("time_period")),
+            key=lambda f: str(f["time_period"]),
+        )
+        series = [{"year": str(f["time_period"]), "value": f.get("value")} for f in rows]
+        # latest = the most recent NON-NULL value (a published gap doesn't mask the value)
+        latest = next((s for s in reversed(series) if s["value"] is not None), None)
+        out.append({
+            **meta,
+            "latest": latest,                       # {year, value} or None
+            "series": series[-max(1, history):] if series else [],
+        })
+    return {"country": iso, "indicators": out, "caveat": _CAVEAT}
+
+
+class LoadStandardBody(BaseModel):
+    indicators: list[str] | None = None  # subset of the catalog; None/empty = all curated
+
+
+@router.post("/load-standard")
+def load_standard(body: LoadStandardBody | None = None) -> dict:
+    """Fetch the curated indicator set for ALL countries (the one-click "load country
+    data"). The ONE networked action: it refuses up front under airplane mode (409,
+    never a traceback), routes through the guarded factory, stores each as a vintaged
+    figure, and records a subscription so the scheduler can refresh new vintages. A
+    transport failure on one indicator degrades LOUDLY (recorded), never aborts the set
+    or fabricates a figure."""
+    from src.ingest import kill_switch_active
+    from src.stats import fetch as statfetch
+    from src.stats.store import store_figures
+
+    wanted = [c for c in (body.indicators if body else None) or ind.indicator_ids() if ind.is_curated(c)]
+    if not wanted:
+        raise HTTPException(status_code=422, detail="no curated indicators selected")
+    # Refuse up front, before any DB session, so airplane mode is a clean 409.
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+
+    per_indicator: list[dict] = []
+    total_fetched = total_stored = 0
+    refused = False
+    with session_scope() as db:
+        for code in wanted:
+            try:
+                figures = statfetch.fetch_worldbank(code, "all")
+            except RuntimeError as exc:  # the kill-switch up-front refusal
+                refused = True
+                per_indicator.append({"indicator": code, "status": "refused", "detail": str(exc)})
+                break  # airplane mode: stop — every subsequent fetch would refuse too
+            except Exception as exc:  # noqa: BLE001 - transport/decode: degrade loudly, continue
+                logger.warning("governments load-standard: %s failed", code, exc_info=True)
+                per_indicator.append({"indicator": code, "status": "error", "detail": str(exc)[:200]})
+                continue
+            tally = store_figures(db, figures)
+            total_fetched += len(figures)
+            total_stored += tally.get("stored", 0)
+            per_indicator.append({"indicator": code, "status": "ok", "fetched": len(figures), **tally})
+            try:
+                from src.stats.subscriptions import record_subscription
+
+                record_subscription(db, source="worldbank", indicator=code, country="all")
+            except Exception:  # noqa: BLE001 - tracking is additive, never blocks the fetch
+                pass
+    if refused:
+        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+    return {
+        "requested": wanted,
+        "fetched": total_fetched,
+        "stored": total_stored,
+        "per_indicator": per_indicator,
+        "caveat": _CAVEAT,
+    }
