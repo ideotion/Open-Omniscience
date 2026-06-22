@@ -1406,6 +1406,7 @@
         <button onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Download debug bundle (.json)</button>
       </div>
       <div class="row" style="margin-top:6px">
+        <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
         <button class="secondary" onclick="reindexAllCorpus(this)">Re-index the whole corpus</button>
         <button class="secondary" onclick="pruneKeywords(this)">Prune unused keywords</button>
         <span id="reindex-all-status" class="muted small"></span>

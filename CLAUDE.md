@@ -3840,6 +3840,18 @@ ruling, a contingency, or a deliberate-omission note.
   stays the candidate-review design from the 2026-06-21 chat (consented/airplane-gated/guarded factory/
   task-manager job, candidates not auto-trusted). i18n: +2 keys ×12 (Prune button + hint; non-en AI-drafted,
   flagged), gate 100%, audit untranslatable held at 105.
+  **FOLLOW-UP 2026-06-21 (maintainer "proceed" on the pre-test prep offer; same branch, new draft PR onto
+  0.09):** (1) ONE-CLICK CLEANUP — a "Clean up keywords (re-index, then prune)" button chains the recommended
+  order in one action (`cleanupKeywords` reuses confirm-free cores `_reindexAllLoop`/`_pruneCore`, also used
+  by the two granular buttons which STAY); +2 keys ×12 (button + title), gate 100%, audit held at 105;
+  test_repo_invariants extended. (2) `docs/testing/LEGAL_DECLINE_UNINSTALL_TEST.md` — throwaway-VM steps for
+  the first-launch legal **decline = SECURE uninstall** path (irreversible: wipes data+keys+folder via
+  `request_uninstall(confirm,remove_folder,wipe_data)`), incl. the non-destructive `GET /api/safety/uninstall/
+  plan` dry-run, the typed `UNINSTALL` confirm, the surviving `~/.open-omniscience-uninstall.log`, and the
+  accept-path sanity. PRE-TEST CHECKLIST handed to the maintainer in chat: run cleanup on the live corpus +
+  measure via the engine report's `mention_distribution`; browser click-through of the fork-3 unverified
+  surfaces; check live `trending-windows` timing (rollup only if still slow); export the keyword log for the
+  ring+stoplist round; manual Ollama install for AI features; the VM decline test.
 - **FIELD-TEST REMAINDER BATCH 5 (2026-06-21, branch claude/magical-brown-49m9nd, draft PR onto 0.09 —
   the autonomous-session brief's §2/§3 remainder; backends VERIFIED py3.11, all frontend
   BROWSER-UNVERIFIED per fork-3):** SHIPPED, each its own slice: (§2.3) OFFLINE-MAP per-row reorder —

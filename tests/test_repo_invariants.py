@@ -143,6 +143,12 @@ def test_prune_unused_keywords_action_is_discoverable():
     assert "mention_distribution" in er, "the report must surface the mention distribution"
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     assert "function pruneKeywords(" in app and "/api/insights/prune-keywords" in app
+    # The one-click "clean up" chains re-index THEN prune (the recommended order) so
+    # the operator runs one action, reusing the confirm-free cores.
+    assert "function cleanupKeywords(" in app, "the one-click clean-up convenience must exist"
+    assert "_reindexAllLoop(" in app and "_pruneCore(" in app, "it must reuse the shared cores"
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "cleanupKeywords(" in html, "the one-click clean-up button must be discoverable"
 
 
 def test_reindex_whole_corpus_action_is_discoverable():
