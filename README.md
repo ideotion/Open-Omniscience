@@ -244,6 +244,7 @@ The docs are consolidated into a small set of complete guides
 - **[ETHICS](docs/ETHICS.md)** — principles, compliance (GPLv3), third-party notices.
 - **[SECURITY](docs/SECURITY.md)** — threat model, local-first posture, the security audit.
 - **[CONTRIBUTING](docs/CONTRIBUTING.md)** — how to contribute + the versioning policy.
+- **[CODE OF CONDUCT](docs/CODE_OF_CONDUCT.md)** — Contributor Covenant 2.1.
 - **[Legal & governance](docs/legal/README.md)** — legal notice, CGU, privacy (RGPD) and acceptable-use charter (French review drafts).
 - **[CHANGES](docs/CHANGES.md)** — changelog · **[HISTORY](docs/HISTORY.md)** — audits & quality archive.
 
