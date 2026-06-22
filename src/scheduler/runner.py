@@ -65,6 +65,20 @@ def round_robin_interleave(sources: list, *, rng: random.Random | None = None) -
     return out
 
 
+def _source_lang(s) -> str:
+    """A source's stratum LANGUAGE (the bucket stratified_interleave round-robins by);
+    blank/missing share an '·unknown' bucket so they are never dropped."""
+    return (getattr(s, "language", None) or "").strip().lower() or "·unknown"
+
+
+def _source_tag(s) -> str:
+    """A source's stratum TAG = its FIRST tag (a multi-tag source picks one
+    representative); blank/missing share an '·untagged' bucket."""
+    raw = getattr(s, "tags", None) or ""
+    first = raw.split(",")[0].strip().lower() if raw else ""
+    return first or "·untagged"
+
+
 def stratified_interleave(sources: list, *, rng: random.Random | None = None) -> list:
     """Order sources with TRUE per-pass randomness, fairly STRATIFIED by LANGUAGE
     then by SOURCE TAG (maintainer-ruled 2026-06-17 — supersedes the per-country
@@ -84,17 +98,9 @@ def stratified_interleave(sources: list, *, rng: random.Random | None = None) ->
         return []
     chooser = rng or random
 
-    def _lang(s) -> str:
-        return (getattr(s, "language", None) or "").strip().lower() or "·unknown"
-
-    def _tag(s) -> str:
-        raw = getattr(s, "tags", None) or ""
-        first = raw.split(",")[0].strip().lower() if raw else ""
-        return first or "·untagged"
-
     by_lang: dict[str, dict[str, list]] = {}
     for s in sources:
-        by_lang.setdefault(_lang(s), {}).setdefault(_tag(s), []).append(s)
+        by_lang.setdefault(_source_lang(s), {}).setdefault(_source_tag(s), []).append(s)
 
     # Flatten each language into a tag-round-robin (tag order + within-tag shuffled).
     lang_queues: list[list] = []
@@ -260,6 +266,7 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     the last run's real pages/source when known, else 1 feed fetch each).
     """
     targets: list[str] = []
+    strata: dict[str, list[dict]] = {"languages": [], "tags": []}
     total = 0
     if settings.mode in ("rss", "crawl"):
         base = select_sources(session, settings)
@@ -276,6 +283,34 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
         # Same stratified (language + tag, true-random) ordering the pass uses.
         rows = stratified_interleave(rows)
         targets = [r.domain for r in rows[:8]]
+        # Show the ACTUAL strata the pass interleaves by (field test 2026-06-22, #5):
+        # not just the claim "stratified by language & tag" but the languages/tags
+        # present. Derived from the bounded sample ALREADY fetched (zero extra query —
+        # /api/scheduler/activity is the hot poll, never add an unbounded DISTINCT scan),
+        # so it is a representative sample of the highest-priority due sources, not the
+        # whole catalogue — and the pass RE-RANDOMISES every time, so this is a glimpse
+        # of the rotation, never a fixed queue. The "·unknown"/"·untagged" buckets are
+        # the same ones stratified_interleave uses (never dropped).
+        lang_n: dict[str, int] = {}
+        tag_n: dict[str, int] = {}
+        for r in rows:
+            lang_n[_source_lang(r)] = lang_n.get(_source_lang(r), 0) + 1
+            tag_n[_source_tag(r)] = tag_n.get(_source_tag(r), 0) + 1
+        strata = {
+            "languages": [
+                {"key": k, "n": n}
+                for k, n in sorted(lang_n.items(), key=lambda kv: (-kv[1], kv[0]))[:12]
+            ],
+            "tags": [
+                {"key": k, "n": n}
+                for k, n in sorted(tag_n.items(), key=lambda kv: (-kv[1], kv[0]))[:12]
+            ],
+            "sampled": len(rows),
+            "note": (
+                "Languages & tags among the next sources sampled; the pass re-randomises "
+                "by language & tag every time (a rotation, not a fixed queue)."
+            ),
+        }
         delays = [max((r.rate_limit_ms or 1000) / 1000.0, 1.0) for r in rows] or [1.0]
         median_delay = sorted(delays)[len(delays) // 2]
         per_source = 1.0
@@ -302,6 +337,7 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
         "mode": settings.mode,
         "planned_total": total,
         "next_targets": targets,
+        "strata": strata,
         "estimated_seconds": est,
         "estimate_method": method,
     }

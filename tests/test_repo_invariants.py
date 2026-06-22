@@ -3474,6 +3474,32 @@ def test_task_manager_shows_pass_phase_and_upcoming_sources():
         assert key in en, f"missing i18n key: {key!r}"
 
 
+def test_task_manager_displays_actual_language_and_tag_strata():
+    """Field test 2026-06-22 (#5): the queue preview must DISPLAY the actual strata it
+    interleaves by (the languages + tags present, with real counts), not just claim
+    'stratified by language and tag'. Both surfaces read plan.strata (derived cheaply
+    from the bounded sample plan_preview already fetched — no new unbounded scan on the
+    hot poll). The backend plan_preview must emit the strata."""
+    tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    for src, name in ((tm, "taskmanager.html"), (app, "app.js")):
+        assert "plan.strata" in src, f"{name}: must read the actual strata from the plan"
+        assert 'st.languages' in src and 'st.tags' in src, (
+            f"{name}: must render BOTH language and tag strata"
+        )
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    # plan_preview emits the strata, derived from the already-fetched bounded sample
+    # (no unbounded DISTINCT scan on the hot /api/scheduler/activity poll).
+    assert '"strata": strata' in runner, "plan_preview must return the strata"
+    assert "_source_lang" in runner and "_source_tag" in runner, (
+        "strata must reuse the SAME bucketing stratified_interleave uses"
+    )
+    # The strata are counted from the already-fetched `rows` sample (no new query on the
+    # hot poll) — the loop runs over rows, not a fresh DB call.
+    plan_preview_body = runner.split("def plan_preview", 1)[1].split("\ndef ", 1)[0]
+    assert "for r in rows:" in plan_preview_body and "lang_n[_source_lang(r)]" in plan_preview_body
+
+
 def test_airplane_button_has_no_perpetual_animation():
     """Airplane mode is the idle/default state, so a forever-running animation on
     the network button repaints every frame at rest — it pinned the browser near

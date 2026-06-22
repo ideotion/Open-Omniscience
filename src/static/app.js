@@ -660,6 +660,24 @@
             `<div class="muted" style="font-size:11px;padding:2px 0 6px">` +
             esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) +
             `</div>`;
+          // Show the ACTUAL strata the pass interleaves by (#5): the languages & tags
+          // present, with real counts — not just the claim "stratified". A "·"-prefixed
+          // key is the unknown/untagged bucket (shown muted). Sampled from the next
+          // sources, re-randomised every pass (the note above already states it).
+          const st = plan.strata || {};
+          const _stratHtml = (rows) => (rows || []).map(x => {
+            const bucket = String(x.key || "").startsWith("·");
+            const label = bucket ? esc(t(x.key === "·untagged" ? "untagged" : "unknown")) : esc(x.key);
+            return `<span class="cap-chip${bucket ? " muted" : ""}">${label}<span class="muted"> ·${x.n}</span></span>`;
+          }).join("");
+          if ((st.languages || []).length) {
+            qHtml += `<div class="vrow"><span class="vk">${esc(t("Languages"))}</span>` +
+              `<span class="vv cap-chips">${_stratHtml(st.languages)}</span></div>`;
+          }
+          if ((st.tags || []).length) {
+            qHtml += `<div class="vrow"><span class="vk">${esc(t("Tags"))}</span>` +
+              `<span class="vv cap-chips">${_stratHtml(st.tags)}</span></div>`;
+          }
         }
         elQ.innerHTML = qHtml;
       }

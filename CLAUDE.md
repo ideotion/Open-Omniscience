@@ -3816,6 +3816,19 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — TASK-MANAGER SHOWS THE ACTUAL STRATA (§5 #5; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED
+  per fork-3):** the Queue preview claimed "stratified by language and tag" but never SHOWED the strata.
+  `plan_preview` now emits `strata` = {languages:[{key,n}], tags:[{key,n}], sampled, note} derived from the
+  bounded `rows` sample it ALREADY fetches (ZERO extra query — /api/scheduler/activity is the hot poll, so
+  NO unbounded SELECT DISTINCT was added, per the brief's perf caveat); the counts are real, the
+  ·unknown/·untagged buckets are the SAME ones `stratified_interleave` uses (extracted to shared module
+  helpers `_source_lang`/`_source_tag`), and the honest "a rotation, re-randomised every pass, not a fixed
+  queue" note travels with it. Frontend: both the in-app task manager (app.js) + the standalone /tasks page
+  render language/tag chips with counts under "Up next this pass". tests/test_collection_activity.py (real
+  counts, blank-tag bucketed) + test_repo_invariants::test_task_manager_displays_actual_language_and_tag_strata.
+  HONEST SCOPE: the sample is the highest-priority due sources (a representative glimpse, stated), not the
+  whole 3,200-source catalogue.
 - **2026-06-22 FIELD-TEST REMAINDER — DEAD CALENDAR FEEDS EXCLUDED FROM AUTO-IMPORT (§7; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the per-pass
   `auto_import_due_feeds` round-robin included the ~238 robots-disallowed `google-hol-*` (calendar.google.com)

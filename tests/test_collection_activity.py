@@ -93,6 +93,42 @@ def test_plan_preview_targets_and_estimate(monkeypatch, tmp_path):
     assert "assumption" in plan["estimate_method"]  # honesty: stated, not promised
 
 
+def test_plan_preview_reports_actual_language_and_tag_strata(monkeypatch, tmp_path):
+    """Field test 2026-06-22 (#5): the queue preview must DISPLAY the actual strata it
+    interleaves by (languages + tags), derived cheaply from the bounded sample already
+    fetched, with the honest re-randomisation note — not just claim 'stratified'."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base, Source
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    seed = [
+        ("en", "news"), ("en", "news"), ("en", "science"),
+        ("fr", "news"), ("de", "finance"), ("ar", ""),  # blank tag -> ·untagged bucket
+    ]
+    for i, (lang, tags) in enumerate(seed):
+        s.add(Source(name=f"S{i}", domain=f"s{i}.test", rss_url=f"https://s{i}.test/f.xml",
+                     enabled=True, language=lang, tags=tags))
+    s.commit()
+
+    plan = plan_preview(s, SchedulerSettings(mode="rss"), last_result=None)
+    strata = plan["strata"]
+    langs = {x["key"]: x["n"] for x in strata["languages"]}
+    tags = {x["key"]: x["n"] for x in strata["tags"]}
+    assert langs == {"en": 3, "fr": 1, "de": 1, "ar": 1}  # real counts, no fabrication
+    assert tags["news"] == 3 and tags["science"] == 1 and tags["finance"] == 1
+    assert tags["·untagged"] == 1  # the blank-tag source is bucketed, never dropped
+    assert strata["sampled"] == 6
+    # The honest caveat travels with it (a rotation, never a fixed queue).
+    assert "re-randomises" in strata["note"]
+
+
 def test_activity_endpoint_shape():
     from fastapi.testclient import TestClient
 
