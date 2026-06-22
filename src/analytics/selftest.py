@@ -229,6 +229,83 @@ _CASES: tuple[Challenge, ...] = (
         term=("assemblée", "euros"),
         absent=("l'assemblée", "d'euros", "qu'il"),
     ),
+    # 2026-06-22 field test, remainder batch: each newly-MANAGED language gets a
+    # NON-VACUOUS guard — a content noun MUST survive (proves the script tokenises
+    # whole words) AND a >=3-char grammar word MUST be filtered (proves the stoplist,
+    # not the length filter). Distinct-script (fa/ur/uk) cannot collide; the Latin
+    # ones use accented/long grammar so the union stays safe.
+    Challenge(
+        "persian_function_words_filtered",
+        "Persian (Arabic script) grammar is filtered while a content noun survives",
+        "دولت برای مردم سیاست اقتصادی را تغییر داد و رشد کرد.",
+        language="fa", term=("سیاست",), absent=("برای", "این"),
+    ),
+    Challenge(
+        "urdu_function_words_filtered",
+        "Urdu (Arabic script) grammar is filtered while a content noun survives",
+        "حکومت نے معیشت کی پالیسی تبدیل کرنے کا فیصلہ کیا، یہ آسان نہیں تھا۔",
+        language="ur", term=("معیشت",), absent=("نہیں", "کیونکہ"),
+    ),
+    Challenge(
+        "ukrainian_function_words_filtered",
+        "Ukrainian (Cyrillic) grammar is filtered while a content noun survives",
+        "Уряд змінить економічну політику країни, тому що ситуація триває.",
+        language="uk", term=("політику",), absent=("тому", "коли"),
+    ),
+    Challenge(
+        "romanian_function_words_filtered",
+        "Romanian grammar (accented/long) is filtered while a content noun survives",
+        "Guvernul va schimba politica economică deoarece situația continuă.",
+        language="ro", term=("politica",), absent=("deoarece", "pentru"),
+    ),
+    Challenge(
+        "czech_function_words_filtered",
+        "Czech grammar (accented/long) is filtered while a content noun survives",
+        "Vláda změní hospodářskou politiku, protože ekonomika zpomaluje.",
+        language="cs", term=("politiku",), absent=("protože", "která"),
+    ),
+    Challenge(
+        "slovak_function_words_filtered",
+        "Slovak grammar (accented/long) is filtered while a content noun survives",
+        "Vláda zmení hospodársku politiku, pretože ekonomika spomaľuje.",
+        language="sk", term=("politiku",), absent=("pretože", "ktorý"),
+    ),
+    Challenge(
+        "catalan_function_words_filtered",
+        "Catalan grammar (accented/long) is filtered while a content noun survives",
+        "El govern canviarà la política econòmica però la regió continua.",
+        language="ca", term=("política",), absent=("però", "aquest"),
+    ),
+    Challenge(
+        "swahili_function_words_filtered",
+        "Swahili grammar (distinctive) is filtered while a content noun survives",
+        "Serikali itabadilisha sera ya uchumi lakini hali katika nchi inaendelea.",
+        language="sw", term=("uchumi",), absent=("lakini", "katika"),
+    ),
+    Challenge(
+        "azerbaijani_function_words_filtered",
+        "Azerbaijani grammar (accented) is filtered while a content noun survives",
+        "Hökumət iqtisadi siyasəti dəyişəcək, çünki vəziyyət üçün davam edir.",
+        language="az", term=("iqtisadi",), absent=("çünki", "üçün"),
+    ),
+    Challenge(
+        "estonian_function_words_filtered",
+        "Estonian grammar (accented/long) is filtered while a content noun survives",
+        "Valitsus muudab majanduspoliitikat, sest olukord samuti halveneb.",
+        language="et", term=("olukord",), absent=("sest", "samuti"),
+    ),
+    Challenge(
+        "turkish_function_words_filtered",
+        "Turkish grammar is filtered while a content noun survives (agglutinative)",
+        "Hükümet ekonomik politikayı değiştirecek çünkü durum için kötüleşiyor.",
+        language="tr", term=("ekonomik",), absent=("için", "çünkü"),
+    ),
+    Challenge(
+        "finnish_function_words_filtered",
+        "Finnish grammar is filtered while a content noun survives (agglutinative)",
+        "Hallitus muuttaa talouspolitiikkaa, koska tilanne että jatkuu edelleen.",
+        language="fi", term=("tilanne",), absent=("että", "koska"),
+    ),
 )
 
 

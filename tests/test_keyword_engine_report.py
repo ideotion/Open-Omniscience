@@ -100,7 +100,7 @@ def test_extraction_noise_flags_actionable_classes():
 def test_language_status_is_honest():
     assert _lang_status("zh") == "unsegmented" and _lang_status("ja") == "unsegmented"
     assert _lang_status("en") == "functional" and _lang_status("ru") == "functional"
-    assert _lang_status("tr") == "no_stoplist" and _lang_status("xx") == "no_stoplist"
+    assert _lang_status("vi") == "no_stoplist" and _lang_status("xx") == "no_stoplist"
 
 
 def test_acronym_predicate():

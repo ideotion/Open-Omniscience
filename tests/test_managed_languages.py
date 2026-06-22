@@ -20,17 +20,21 @@ from src.analytics.managed import (
 def test_managed_language_classification():
     assert is_managed("en") and is_managed("EN") and is_managed("en-US")
     assert is_managed("fr") and is_managed("ar") and is_managed("ru")
-    assert not is_managed("tr") and not is_managed("zh") and not is_managed("")
+    assert not is_managed("vi") and not is_managed("zh") and not is_managed("")
     # el/bg gained hand-filtered Greek/Cyrillic grammar stoplists (2026-06-18) -> managed.
     assert is_managed("el") and is_managed("bg")
+    # 2026-06-22 remainder batch promoted tr/uk/fa/ur/ro/cs/sk/ca/sw/az/et/fi/bs/hr.
+    assert is_managed("tr") and is_managed("uk") and is_managed("fa") and is_managed("ur")
     # Unmanaged = a KNOWN language we cannot analyse; unknown/empty is NOT unmanaged
-    # (we never disable what we cannot classify).
-    assert is_unmanaged("tr") and is_unmanaged("uk") and is_unmanaged("zh")
+    # (we never disable what we cannot classify). vi is syllable-segmented, th/zh/ja
+    # are unsegmented — all still unmanaged.
+    assert is_unmanaged("vi") and is_unmanaged("th") and is_unmanaged("zh")
     assert not is_unmanaged("en")
     assert not is_unmanaged("") and not is_unmanaged(None)
     assert language_status("en") == "functional"
     assert language_status("zh") == "unsegmented"
-    assert language_status("tr") == "no_stoplist"
+    assert language_status("th") == "unsegmented"  # Thai: no spaces + Mn vowel marks
+    assert language_status("vi") == "no_stoplist"   # syllable-segmented, words fragment
     assert language_status("") == "unknown"
     assert normalize_lang("pt-BR") == "pt" and normalize_lang("EN_us") == "en"
 
@@ -71,25 +75,25 @@ def test_seeder_disables_new_unmanaged_language_sources():
     s = _mem_session()
     rows = [
         {"name": "EN news", "domain": "en.test", "language": "en"},   # managed -> enabled
-        {"name": "TR news", "domain": "tr.test", "language": "tr"},   # unmanaged -> disabled
+        {"name": "VI news", "domain": "vi.test", "language": "vi"},   # no_stoplist -> disabled
         {"name": "ZH news", "domain": "zh.test", "language": "zh"},   # unsegmented -> disabled
         {"name": "No lang", "domain": "x.test"},                      # unknown -> stays enabled
-        {"name": "TR forced", "domain": "tr2.test", "language": "tr", "enabled": True},  # explicit wins
+        {"name": "VI forced", "domain": "vi2.test", "language": "vi", "enabled": True},  # explicit wins
     ]
     res = upsert_sources(s, rows)
     assert res["created"] == 5
     by_domain = {x.domain: x for x in s.query(Source).all()}
     assert by_domain["en.test"].enabled is True
-    assert by_domain["tr.test"].enabled is False
+    assert by_domain["vi.test"].enabled is False
     assert by_domain["zh.test"].enabled is False
     assert by_domain["x.test"].enabled is True
-    assert by_domain["tr2.test"].enabled is True  # explicit enabled overrides the gate
+    assert by_domain["vi2.test"].enabled is True  # explicit enabled overrides the gate
 
     # Re-seeding must NOT flip the operator's choice on an existing source.
-    s.query(Source).filter_by(domain="tr.test").update({"enabled": True})
+    s.query(Source).filter_by(domain="vi.test").update({"enabled": True})
     s.commit()
-    upsert_sources(s, [{"name": "TR news", "domain": "tr.test", "language": "tr"}])
-    assert s.query(Source).filter_by(domain="tr.test").first().enabled is True
+    upsert_sources(s, [{"name": "VI news", "domain": "vi.test", "language": "vi"}])
+    assert s.query(Source).filter_by(domain="vi.test").first().enabled is True
 
 
 def test_disable_unmanaged_languages_endpoint(tmp_path):
@@ -102,8 +106,8 @@ def test_disable_unmanaged_languages_endpoint(tmp_path):
     s = _mem_session()
     s.add_all([
         Source(name="EN", domain="en.test", language="en", enabled=True),
-        Source(name="TR", domain="tr.test", language="tr", enabled=True),
-        Source(name="UK", domain="uk.test", language="uk", enabled=True),
+        Source(name="VI", domain="vi.test", language="vi", enabled=True),
+        Source(name="TH", domain="th.test", language="th", enabled=True),
         Source(name="ZH", domain="zh.test", language="zh", enabled=True),
     ])
     s.commit()
@@ -118,8 +122,8 @@ def test_disable_unmanaged_languages_endpoint(tmp_path):
     try:
         with TestClient(app) as c:
             r = c.get("/api/sources/unmanaged-languages").json()
-            assert r["enabled_unmanaged"] == 3  # tr, uk, zh
-            assert set(r["by_language"]) == {"tr", "uk", "zh"}
+            assert r["enabled_unmanaged"] == 3  # vi, th, zh
+            assert set(r["by_language"]) == {"vi", "th", "zh"}
             assert "en" in r["managed_languages"]
 
             d = c.post("/api/sources/disable-unmanaged-languages").json()
@@ -127,7 +131,7 @@ def test_disable_unmanaged_languages_endpoint(tmp_path):
             # Kept (not deleted), only disabled.
             assert s.query(Source).count() == 4
             assert s.query(Source).filter_by(domain="en.test").first().enabled is True
-            assert s.query(Source).filter_by(domain="tr.test").first().enabled is False
+            assert s.query(Source).filter_by(domain="vi.test").first().enabled is False
             # Idempotent: nothing left to disable.
             assert c.post("/api/sources/disable-unmanaged-languages").json()["disabled"] == 0
     finally:
