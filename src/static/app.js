@@ -6793,6 +6793,24 @@
     // engine produced (e.g. pre-markup-strip CSS keywords). Heavy; loops batches with
     // a visible cursor so a big corpus never hangs the request. Confirm first.
     let _reindexAllRunning = false;
+    // Core loops (no confirm) so the individual buttons AND the one-click
+    // "Clean up keywords" can reuse them. Each writes to the shared status span.
+    async function _reindexAllLoop(st, t) {
+      let after = 0, total = 0, guard = 0;
+      for (;;) {
+        const r = await api(`/api/insights/reindex-all?limit=300&after_id=${after}`, { method: "POST" });
+        total += r.reindexed || 0;
+        after = r.last_id || after;
+        if (st) st.textContent = `${total} ${t("re-indexed")}${r.remaining ? ` · ${r.remaining.toLocaleString()} ${t("to go")}` : ""}`;
+        if (r.done || ++guard > 5000) break;
+      }
+      return total;
+    }
+    async function _pruneCore(st, t) {
+      if (st) st.textContent = t("Pruning…");
+      const r = await api("/api/insights/prune-keywords", { method: "POST" });
+      return r;
+    }
     async function reindexAllCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (_reindexAllRunning) return;
@@ -6800,15 +6818,8 @@
       _reindexAllRunning = true;
       if (btn) btn.disabled = true;
       const st = $("reindex-all-status");
-      let after = 0, total = 0, guard = 0;
       try {
-        for (;;) {
-          const r = await api(`/api/insights/reindex-all?limit=300&after_id=${after}`, { method: "POST" });
-          total += r.reindexed || 0;
-          after = r.last_id || after;
-          if (st) st.textContent = `${total} ${t("re-indexed")}${r.remaining ? ` · ${r.remaining.toLocaleString()} ${t("to go")}` : ""}`;
-          if (r.done || ++guard > 5000) break;
-        }
+        const total = await _reindexAllLoop(st, t);
         if (st) st.textContent = `${total} ${t("re-indexed")} · ${t("done")}`;
       } catch (e) { if (st) st.textContent = esc(e.message); }
       finally { _reindexAllRunning = false; if (btn) btn.disabled = false; }
@@ -6822,12 +6833,29 @@
       if (!confirm(t("Delete keywords that have no mentions left? This is cleanup — keywords still in use, and any you curated, are kept."))) return;
       const st = $("reindex-all-status");
       if (btn) btn.disabled = true;
-      if (st) st.textContent = t("Pruning…");
       try {
-        const r = await api("/api/insights/prune-keywords", { method: "POST" });
+        const r = await _pruneCore(st, t);
         if (st) st.textContent = `${(r.pruned || 0).toLocaleString()} ${t("unused keywords removed")}${r.kept_curated ? ` · ${r.kept_curated} ${t("curated kept")}` : ""}`;
       } catch (e) { if (st) st.textContent = esc(e.message); }
       finally { if (btn) btn.disabled = false; }
+    }
+
+    // One-click "Clean up keywords": re-index the whole corpus (drains markup junk)
+    // THEN prune the now-orphaned keywords — the recommended order in one action, so
+    // the operator doesn't have to run two buttons and remember the sequence.
+    async function cleanupKeywords(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_reindexAllRunning) return;
+      if (!confirm(t("Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept."))) return;
+      _reindexAllRunning = true;
+      if (btn) btn.disabled = true;
+      const st = $("reindex-all-status");
+      try {
+        const total = await _reindexAllLoop(st, t);
+        const r = await _pruneCore(st, t);
+        if (st) st.textContent = `${total} ${t("re-indexed")} · ${(r.pruned || 0).toLocaleString()} ${t("unused keywords removed")}${r.kept_curated ? ` · ${r.kept_curated} ${t("curated kept")}` : ""} · ${t("done")}`;
+      } catch (e) { if (st) st.textContent = esc(e.message); }
+      finally { _reindexAllRunning = false; if (btn) btn.disabled = false; }
     }
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
