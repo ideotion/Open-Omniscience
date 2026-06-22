@@ -3852,6 +3852,16 @@ ruling, a contingency, or a deliberate-omission note.
   measure via the engine report's `mention_distribution`; browser click-through of the fork-3 unverified
   surfaces; check live `trending-windows` timing (rollup only if still slow); export the keyword log for the
   ring+stoplist round; manual Ollama install for AI features; the VM decline test.
+- **INSTALL NETWORK-RESILIENCE (2026-06-21 field test — a Qubes disp VM curl|bash install died with a
+  MISLEADING pip "ResolutionImpossible / regex no matching distribution"; branch claude/magical-brown-49m9nd,
+  draft PR onto 0.09; bash -n + test VERIFIED):** ROOT CAUSE was a NETWORK/DNS dropout mid-resolution
+  (`Temporary failure in name resolution` / `Read timed out` for files.pythonhosted.org), not a real
+  dependency conflict — pip's default 15s timeout made it backtrack through every nltk/networkx/lxml version
+  then blame `regex`. `install.sh:pip_install` now uses `--retries 5 --timeout 60`, retries the whole
+  `pip install -e` step up to 3× with backoff (cached wheels resume), and on persistent failure prints an
+  HONEST network message (check `getent hosts files.pythonhosted.org`; re-run, wheels are cached) instead of
+  echoing pip's confusing resolver error. tests/test_installer.py::test_pip_install_is_network_resilient.
+  Immediate user fix handed over: re-run `./install.sh --unattended` once DNS resolves.
 - **FIELD-TEST REMAINDER BATCH 5 (2026-06-21, branch claude/magical-brown-49m9nd, draft PR onto 0.09 —
   the autonomous-session brief's §2/§3 remainder; backends VERIFIED py3.11, all frontend
   BROWSER-UNVERIFIED per fork-3):** SHIPPED, each its own slice: (§2.3) OFFLINE-MAP per-row reorder —
