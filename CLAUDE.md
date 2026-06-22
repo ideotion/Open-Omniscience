@@ -3836,7 +3836,12 @@ ruling, a contingency, or a deliberate-omission note.
   `f.slice(0,8)`) and shows the passphrase field ONLY for an encrypted backup (a plaintext archive needs
   none), with an honest "Encrypted/Plaintext" hint; degrades to showing the field on any read error. The
   magic bytes match read_artifact's exact signature. test_repo_invariants::
-  test_restore_auto_detects_encryption_client_side. REMAINING (the larger backups redesign #7/#9/#11/#12):
+  test_restore_auto_detects_encryption_client_side. **FLAKY-TEST FIX (caught by the macOS observation lane;
+  it would flake the BLOCKING Linux lane too):** `test_summary_flags_a_lock_error_in_the_current_session`
+  (shipped #439 P0-5) hardcoded the error's `at`="12:00" but `note_boot()` stamps the REAL wall clock — so it
+  passed only when the suite ran before noon UTC (Linux 11:08 ✓) and failed after (macOS 13:27 ✗). Fixed to a
+  far-future `at` (unambiguously "this session" at any run time). LESSON: never compare a hardcoded timestamp
+  against a real-`now` marker in a test. REMAINING (the larger backups redesign #7/#9/#11/#12):
   unify the include/restore selection UI, encryption-as-an-in-flow EXPORT option, direct-import-with-summary,
   progress bars both directions, restore-as-a-task-manager-job (P0-2 slowness folds here).
 - **2026-06-22 AUTONOMOUS SESSION (the field-test brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-22.md`;
