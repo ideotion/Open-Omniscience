@@ -56,12 +56,14 @@
         <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
         <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
         <button class="nav-item" data-tab="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="7.5" ry="3"/><path d="M4.5 5.5v13c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-13"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg><span>Library</span></button>
-        <button class="nav-item" data-tab="custody"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6z"/><path d="m9 12 2 2 4-4"/></svg><span>Evidence &amp; custody</span></button>
-        <!-- Source integrity DISSOLVED from the sidebar (maintainer-ruled, content-first):
-             coordination is now surfaced automatically (Leads + the analysis Related view +
-             inline list/reader badges). The manual desk (collapse-to-one-voice, source
-             profiles, web-of-trust annotations) is preserved + reachable from Settings →
-             Safety; nothing is lost. Fuller ambient-absorption is the remaining work. -->
+        <!-- Evidence & custody DISSOLVED from the sidebar (maintainer-ruled 2026-06-22, #20,
+             completing the Trust-group dissolution): custody is an ACTION on content, so it
+             moves to Settings → Safety (the showTab('custody') button there) — the #tab-custody
+             page + all its tools stay (Desk lesson), reachable from Settings + the palette.
+             Source integrity was dissolved the same way earlier (content-first): coordination
+             surfaces automatically (Leads + the analysis Related view + inline badges); the
+             manual desk lives in Settings → Safety too. Nothing is lost. -->
+        <!-- The crypto-UI simplification (#20 "make it foolproof") is the remaining half. -->
         <!-- System nav-group removed (maintainer-ruled 2026-06-15): Help & docs left the
              sidebar — the top-bar "?" icon (showTab('help')) is the single entry. -->
       </nav>
@@ -1697,6 +1699,11 @@
       <div class="phead"><h2>Source integrity</h2></div>
       <p class="muted" style="margin-top:0">Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.</p>
       <button class="secondary" onclick="showTab('integrity')">Open the source-integrity desk →</button>
+    </section>
+    <section class="panel">
+      <div class="phead"><h2>Evidence &amp; custody</h2></div>
+      <p class="muted" style="margin-top:0">Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel.</p>
+      <button class="secondary" onclick="showTab('custody')">Open evidence &amp; custody →</button>
     </section>
     <section class="panel" id="safety-panel">
       <div class="phead"><h2>Safety &amp; at-risk use</h2></div>

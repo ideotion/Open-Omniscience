@@ -3529,6 +3529,23 @@ def test_sidebar_is_a_flat_list_without_section_headers():
     assert "toggleSidebar" in app and 'id="sb-collapse"' in html
 
 
+def test_custody_dissolved_from_sidebar_but_reachable_from_settings():
+    """Field test 2026-06-22 (#20): Evidence & custody is an ACTION on content, so it
+    leaves the sidebar (completing the Trust-group dissolution) and moves to Settings →
+    Safety — but the Desk lesson holds: the page + tools stay, reachable from Settings
+    (a showTab('custody') button) and the command palette (custody is in NAV)."""
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    nav = html.split('id="navGroups"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-tab="custody"' not in nav, "the custody sidebar button must be removed"
+    # Reachable from Settings → Safety + preserved (the page + the save action stay).
+    assert "showTab('custody')" in html, "Settings → Safety must carry a custody entry point"
+    assert 'id="tab-custody"' in html, "the custody tab-page must be preserved (Desk lesson)"
+    assert "saveCustody" in app, "the custody controls must be preserved"
+    # Still palette-reachable (NAV keeps the entry).
+    assert '{id:"custody"' in app, "custody must stay registered in NAV for the palette/deep-links"
+
+
 def test_sources_have_multi_select_dropdown_filters():
     """Field test 2026-06-22 (#23): the Settings → Sources filters are multi-select
     DROPDOWNS fed by a facets endpoint (Language/Country/Type/Tags), with a tag any|all

@@ -3816,6 +3816,15 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — CUSTODY DISSOLVED FROM THE SIDEBAR (§5 #20, structural half; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; frontend BROWSER-UNVERIFIED per fork-3):** "Evidence &
+  custody" is an ACTION on content, so it leaves the (now flat) sidebar — completing the Trust-group
+  dissolution started by #22 — and moves to Settings → Safety (a `showTab('custody')` button, mirroring the
+  earlier integrity dissolution). DESK LESSON honored: the `#tab-custody` page + all its tools (saveCustody,
+  the post-quantum/OTS controls) stay, reachable from Settings + the command palette (custody stays in NAV).
+  test_repo_invariants::test_custody_dissolved_from_sidebar_but_reachable_from_settings. The flat sidebar is
+  now home/insights/timemap/law/agenda/indices/markets/library. REMAINING for #20: the crypto-UI
+  "make it foolproof" simplification (plain-language controls + #oo-tip detail) — a separate UX rework.
 - **2026-06-22 FIELD-TEST REMAINDER — FLAT SIDEBAR + REMOVE SIDEBAR-VISIBILITY (§4 #22 + #17 part; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; frontend BROWSER-UNVERIFIED per fork-3):** the sidebar
   section headers (Investigate/Collect/Trust .gl labels + .nav-group wrappers) are GONE — one FLAT list
