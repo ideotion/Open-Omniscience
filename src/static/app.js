@@ -1659,7 +1659,7 @@
           rows.push(`<div>${esc(t("A stored local copy exists — read it without going online:"))} <a href="${esc(d.local_article.reader_url)}" target="_blank" rel="noopener">${esc(d.local_article.title || "")}</a></div>`);
         }
         if (d.known_source) {
-          rows.push(`<div>${esc(t("Known source in your catalog:"))} <b>${esc(d.known_source.name)}</b>${d.known_source.country ? ` <span class="muted">(${esc(String(d.known_source.country).toUpperCase())})</span>` : ""}</div>`);
+          rows.push(`<div>${esc(t("Known source in your catalog:"))} <b>${esc(d.known_source.name)}</b>${d.known_source.country ? ` <span class="muted">(${esc(ooRegionName(d.known_source.country, String(d.known_source.country).toUpperCase()))})</span>` : ""}</div>`);
         }
         rows.push(`<div>${esc(t("Articles in your corpus citing this URL:"))} <b>${d.cited_by_articles}</b></div>`);
         if ((d.citing_examples || []).length) {
@@ -1873,7 +1873,7 @@
           dim("Coordination", co.is_member ? `Member of ${co.actors.length} detected actor(s).` : "No coordination detected.", co.method, co.caveat) +
           dim("Novelty (originates vs echoes)", nv.mean_ratio==null ? "Not enough data." : `Mean novelty <b>${nv.mean_ratio}</b> over ${nv.n} articles.`, nv.method, nv.caveat) +
           dim("Output capacity", `${oc.articles} articles · ~${oc.per_day}/day (corpus median ${oc.corpus_median_per_day}/day).`, oc.method, oc.caveat) +
-          dim("Transparency", `${esc(tr.country||"?")} · ${esc(tr.language||"?")} · ownership: ${(tr.ownership_tags||[]).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).join(", ")||"—"}`, tr.method, tr.caveat) +
+          dim("Transparency", `${esc(tr.country?ooRegionName(tr.country,tr.country):"?")} · ${esc(tr.language?ooLangName(tr.language):"?")} · ownership: ${(tr.ownership_tags||[]).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).join(", ")||"—"}`, tr.method, tr.caveat) +
           dim("Track record", `${rec.total_articles} articles in your corpus.`, rec.method, rec.caveat);
       } catch (e) { out.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
     }
@@ -7041,7 +7041,7 @@
       const cards = rows.map(r => {
         const meta = byDom[(r.domain || "").toLowerCase()] || byName[r.name] || {};
         const facts = [];
-        if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(meta.country.toUpperCase())}`);
+        if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(ooRegionName(meta.country, meta.country.toUpperCase()))}`);
         if (meta.region) facts.push(`${esc(t("Region"))}: ${esc(meta.region)}`);
         if (meta.language) facts.push(`${esc(t("Language"))}: ${esc(ooLangName(meta.language, meta.language))}`);
         if (meta.source_type) facts.push(`${esc(t("Type"))}: ${esc(meta.source_type)}`);
@@ -7505,7 +7505,7 @@
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
-               <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
+               <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(ooRegionName(m.country, m.country)):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
                  ${m.article_id?`· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>`:""}${m.url?`· ${extLink(m.url, "source ↗", "muted")}`:""}</div>
                <div>${esc(m.snippet)}</div></div>`).join("")
           : '<div class="muted">No context snippets.</div>';

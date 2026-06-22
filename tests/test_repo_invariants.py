@@ -3697,3 +3697,19 @@ def test_warm_cache_keys_match_the_trending_windows_requests():
         f"app.js requests trending-windows shapes {missing} that warm_cache does NOT "
         f"warm (warmed={warmed}); align WARM_TRENDING_* or the user pays the cold query"
     )
+
+
+def test_auto_update_note_removed_and_country_names_localized():
+    """Field test 2026-06-22 #15 (the standalone "Updates automatically in the
+    background." board notes are redundant -> removed) + #19 (displayed country
+    NAMES are localized via the CLDR helper ooRegionName, superseding the old
+    "codes stay" — the flag-emoji/anchors/provenance correctly keep the code)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "Updates automatically in the background." not in html, (
+        "the redundant auto-update note is back (#15)"
+    )
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # The source-profile "Country:" fact + the map-mention readout show the localized
+    # name, not the raw uppercased 2-letter code.
+    assert 'ooRegionName(meta.country, meta.country.toUpperCase())' in app
+    assert 'ooRegionName(m.country, m.country)' in app
