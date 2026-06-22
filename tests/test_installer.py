@@ -107,7 +107,14 @@ def test_login_autostart_is_opt_in(tmp_path):
         "OO_COMPONENTS": "",
         "OO_MAKE_LAUNCHER": "0",
     }
-    autostart = home / ".config/autostart/open-omniscience.desktop"
+    # The entry is platform-specific: an XDG .desktop on Linux, a LaunchAgent plist
+    # on macOS (the install.sh setup_autostart branches on `uname -s`).
+    if sys.platform == "darwin":
+        autostart = home / "Library/LaunchAgents/com.open-omniscience.autostart.plist"
+        marker = f"{REPO}/scripts/launch.sh"
+    else:
+        autostart = home / ".config/autostart/open-omniscience.desktop"
+        marker = "X-GNOME-Autostart-enabled=true"
 
     # Default: no autostart entry is created.
     r = subprocess.run(
@@ -116,7 +123,7 @@ def test_login_autostart_is_opt_in(tmp_path):
     assert r.returncode == 0, r.stderr + r.stdout
     assert not autostart.exists(), "autostart must NOT be created by default"
 
-    # Opt-in: OO_AUTOSTART=1 creates the XDG autostart entry.
+    # Opt-in: OO_AUTOSTART=1 creates the platform-appropriate autostart entry.
     r = subprocess.run(
         ["bash", str(REPO / "install.sh"), "--unattended"], capture_output=True, text=True,
         env={**base_env, "OO_AUTOSTART": "1"},
@@ -124,8 +131,7 @@ def test_login_autostart_is_opt_in(tmp_path):
     assert r.returncode == 0, r.stderr + r.stdout
     assert autostart.is_file(), "OO_AUTOSTART=1 must create the autostart entry"
     body = autostart.read_text(encoding="utf-8")
-    assert f'Exec="{REPO}/scripts/launch.sh" console' in body
-    assert "X-GNOME-Autostart-enabled=true" in body
+    assert f'{REPO}/scripts/launch.sh' in body and marker in body
 
 
 def test_unattended_install_without_launcher_opt_out(tmp_path):

@@ -130,6 +130,21 @@ def test_world_map_fullscreen_uses_the_fullscreen_api():
     assert "osm-region-row" in app, "each region row renders with a direct Download button"
 
 
+def test_prune_unused_keywords_action_is_discoverable():
+    """Keyword reduction (2026-06-21): a junk-removal GC (delete keywords with zero
+    mentions) must exist + be discoverable. It is cleanup, NOT the rejected arbitrary
+    cap — a keyword with any mention is never touched. The engine report surfaces the
+    prunable bucket so the count is explainable first."""
+    store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "def prune_orphan_keywords(" in store, "the orphan-keyword GC must exist"
+    api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert "/prune-keywords" in api, "the prune endpoint must be registered"
+    er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
+    assert "mention_distribution" in er, "the report must surface the mention distribution"
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function pruneKeywords(" in app and "/api/insights/prune-keywords" in app
+
+
 def test_reindex_whole_corpus_action_is_discoverable():
     """§3.F (autonomous 2026-06-21): a FORCE re-index of ALL articles must exist and
     be discoverable — the drain for stale metadata an old engine produced (e.g.

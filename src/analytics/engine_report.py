@@ -170,6 +170,37 @@ def _performance(session: Session, sample_articles: int) -> dict:
     }
 
 
+def _mention_distribution(session: Session) -> dict:
+    """How the keyword count splits by support — the answer to "why so many keywords?".
+
+    Cheap O(keywords) reads of the denormalised counters (never a mention scan). The
+    ``zero_mention`` bucket is the prunable backlog: keywords no view references (their
+    only contribution was deleted/merged, or they were markup tokens drained by a
+    re-index). ``single_article`` = hapax (one article only). Counts only — no score."""
+
+    def c(*filters) -> int:
+        q = session.query(func.count(Keyword.id))
+        for f in filters:
+            q = q.filter(f)
+        return int(q.scalar() or 0)
+
+    mc = Keyword.mention_count
+    return {
+        "method": (
+            "Keywords bucketed by their maintained mention/article counters. "
+            "zero_mention = prunable orphans (no view references them). No score."
+        ),
+        "zero_mention": c(mc == 0),
+        "single_article": c(Keyword.article_count == 1),
+        "by_mentions": {
+            "1": c(mc == 1),
+            "2-5": c(mc >= 2, mc <= 5),
+            "6-50": c(mc >= 6, mc <= 50),
+            "51+": c(mc >= 51),
+        },
+    }
+
+
 def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles: int = 25) -> dict:
     """Compute the efficacy + performance report (bounded, read-only, no score)."""
     from src.analytics.equivalence import is_ring_term, load_rings
@@ -234,6 +265,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             "entities": int(entities),
             "terms": int(total) - int(entities),
             "ngrams": int(ngrams),
+            "mention_distribution": _mention_distribution(session),
         },
         "entity_precision": {
             "entities": int(entities),

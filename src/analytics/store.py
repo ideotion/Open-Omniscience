@@ -397,6 +397,79 @@ def reindex_all_batch(
     }
 
 
+def prune_orphan_keywords(session: Session, *, chunk: int = 500) -> dict:
+    """Delete keywords that NO view references — pure garbage collection, never a cap.
+
+    A keyword with ZERO ``KeywordMention`` rows contributes nothing to any analytic
+    (every view reads mentions or the counters, which are 0). These accumulate when an
+    article is re-indexed/deleted and a term it alone carried drops out — notably after
+    the markup re-index drain, where leaked ``<div>``/``font-size`` tokens lose all
+    clean mentions. This removes ONLY those inert rows; it never touches a keyword that
+    still has mentions, so it is junk-removal, NOT the (rejected) arbitrary cap.
+
+    Curation-safe: a keyword whose ``normalized_term`` is referenced by a family override
+    or a super-group member is KEPT even if momentarily mention-less (the user's
+    structure must survive). Takes the single-writer gate; chunked under the 999-variable
+    limit. Counts only — no score."""
+    from sqlalchemy import func, select
+
+    from src.database.models import KeywordFamilyOverride, KeywordSuperGroupMember
+    from src.database.writer import write_lock
+
+    total = int(session.query(func.count(Keyword.id)).scalar() or 0)
+    # Authoritative orphan test: id NOT present in the mentions table (not the counter,
+    # which could be momentarily stale) — one anti-join over the indexed keyword_id.
+    mentioned = select(KeywordMention.keyword_id).distinct().scalar_subquery()
+    candidate_ids = [
+        kid for (kid,) in session.query(Keyword.id).filter(Keyword.id.notin_(mentioned)).all()
+    ]
+    if not candidate_ids:
+        return {"keywords": total, "orphans": 0, "pruned": 0, "kept_curated": 0}
+
+    # Protect curated structure (overrides / super-group members reference the term).
+    curated_terms = {
+        t for (t,) in session.query(KeywordFamilyOverride.normalized_term).all()
+    } | {
+        t for (t,) in session.query(KeywordSuperGroupMember.normalized_term).all()
+    }
+    prunable: list[int] = []
+    kept_curated = 0
+    for i in range(0, len(candidate_ids), 900):
+        batch = candidate_ids[i : i + 900]
+        for kid, term in session.query(Keyword.id, Keyword.normalized_term).filter(
+            Keyword.id.in_(batch)
+        ):
+            if term in curated_terms:
+                kept_curated += 1
+            else:
+                prunable.append(kid)
+
+    pruned = 0
+    with write_lock():
+        for i in range(0, len(prunable), chunk):
+            batch = prunable[i : i + chunk]
+            try:
+                session.query(KeywordTag).filter(KeywordTag.keyword_id.in_(batch)).delete(
+                    synchronize_session=False
+                )
+                pruned += (
+                    session.query(Keyword).filter(Keyword.id.in_(batch)).delete(
+                        synchronize_session=False
+                    )
+                    or 0
+                )
+                session.commit()
+            except Exception:  # noqa: BLE001 - one bad chunk must not abort the GC
+                session.rollback()
+                _LOG.warning("orphan-keyword prune chunk failed", exc_info=True)
+    return {
+        "keywords": total,
+        "orphans": len(candidate_ids),
+        "pruned": int(pruned),
+        "kept_curated": kept_curated,
+    }
+
+
 def backfill_keyword_counters(session: Session) -> dict:
     """Recompute ``Keyword.mention_count`` + ``article_count`` from the live mentions.
 

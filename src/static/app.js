@@ -6814,6 +6814,22 @@
       finally { _reindexAllRunning = false; if (btn) btn.disabled = false; }
     }
 
+    // Garbage-collect keywords that no view references (zero mentions) — the cleanup
+    // that shrinks an inflated keyword count after a re-index drains markup junk. Pure
+    // GC, not a cap: any keyword with a mention, and any curated term, is kept.
+    async function pruneKeywords(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Delete keywords that have no mentions left? This is cleanup — keywords still in use, and any you curated, are kept."))) return;
+      const st = $("reindex-all-status");
+      if (btn) btn.disabled = true;
+      if (st) st.textContent = t("Pruning…");
+      try {
+        const r = await api("/api/insights/prune-keywords", { method: "POST" });
+        if (st) st.textContent = `${(r.pruned || 0).toLocaleString()} ${t("unused keywords removed")}${r.kept_curated ? ` · ${r.kept_curated} ${t("curated kept")}` : ""}`;
+      } catch (e) { if (st) st.textContent = esc(e.message); }
+      finally { if (btn) btn.disabled = false; }
+    }
+
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
     // openCorpus is RETIRED here (THEME-3, 2026-06-19): the legacy #corpus-win keyword

@@ -174,6 +174,16 @@ def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depen
     return backfill_corpus(db, extractor=get_extractor("baseline"), limit=limit)
 
 
+@router.post("/prune-keywords")
+def insights_prune_keywords(db: Session = Depends(get_db)) -> dict:
+    """Garbage-collect keywords that no view references (zero mentions) — the cleanup
+    that shrinks an inflated keyword count after a markup re-index drain. Pure GC, not a
+    cap: a keyword with any mention is never touched; curated terms are kept."""
+    from src.analytics.store import prune_orphan_keywords
+
+    return prune_orphan_keywords(db)
+
+
 @router.post("/reindex-all")
 def insights_reindex_all(
     limit: int = Query(300, ge=1, le=2000),
