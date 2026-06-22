@@ -3848,7 +3848,22 @@ ruling, a contingency, or a deliberate-omission note.
     `autoIndexInsights` now runs ONE bounded pass (<=40 batches, was 500) then COOLS DOWN (60 s; Infinity on a
     drained or genuinely-stuck backlog), so the poll can't storm the writer. test_repo_invariants::
     test_auto_index_insights_is_throttled_not_a_per_tick_storm. node --check + ruff F,B clean.
-  REMAINING P0: P0-2 restore UNIQUE-collision + slowness, P0-3 empty Home resilience, P0-4 trending-windows
+  - **P0-2 restore UNIQUE-collision + honest error (the maintainer's OWN backup failed to preview):** ROOT
+    CAUSE = the merge dedup key for `article_mentioned_dates` checked `snippet` instead of `precision`, but
+    the real UNIQUE is `(article_id, mentioned_on, precision)` — so an incoming date row with the same
+    date+precision but a different snippet passed the NOT-EXISTS guard then violated the constraint
+    ("UNIQUE constraint failed: article_mentioned_dates.article_id, mentioned_on, precision"). Fixed `md_key`
+    to match the constraint EXACTLY + switched to `INSERT OR IGNORE` (belt-and-braces against an old backup
+    whose own table predates the constraint and carries dups; `_insert_tracked`'s rowid watermark still
+    counts only landed rows). Places/entities aren't merged verbatim (only dates were), so the collision was
+    isolated to this one table. Also FIXED the misleading classification: a constraint clash was reported as
+    "may be from an incompatible version" — `backup_v2._restore_error()` now distinguishes a `sqlite3.
+    IntegrityError` (data-merge conflict, not a version issue) from a real schema gap (no such table/column),
+    both still JSON (never a plain-text 500). tests/test_merge_dates_collision.py (2: deduped-article
+    same-date-precision-diff-snippet no longer crashes + local kept; an incoming corpus with its own dup
+    date rows merges via INSERT OR IGNORE). The slowness half (236 s/preview) folds into the P1 import/export
+    redesign (restore as a task-manager job). mypy 126≤127, ruff F,B clean, torture suite 10/10 green.
+  REMAINING P0: P0-2 restore slowness (→ P1 backups job), P0-3 empty Home resilience, P0-4 trending-windows
   rollup perf — next slices.
 - **KEYWORD-COUNT REDUCTION + RING-LOOP (2026-06-21, maintainer "reduce the ~500K keywords / download rings
   through diagnostics to auto-improve the engine"; branch claude/magical-brown-49m9nd, draft PR onto 0.09;

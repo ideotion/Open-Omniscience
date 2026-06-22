@@ -1448,6 +1448,7 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
             except ValueError:
                 continue
 
+    _recent_errors = recent_errors(300)
     payload = {
         "runtime": runtime,
         "corpus": corpus,
@@ -1472,7 +1473,7 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
         # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
         # opt-out. Will be removed when the cycle ends.
         "field_test": _field_test_results(),
-        "errors": recent_errors(300),
+        "errors": _recent_errors,
         # Honest metadata so a reader can tell whether the error window is CURRENT
         # (the rolling file survives reinstalls, so old-session errors can look
         # live). "*_this_session" counts are since the latest boot marker, so a
@@ -1485,7 +1486,7 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
             "exported only on the operator's click."
         ),
     }
-    body = envelope(kind="debug-bundle", query={}, count=len(payload["errors"]), payload=payload)
+    body = envelope(kind="debug-bundle", query={}, count=len(_recent_errors), payload=payload)
     fname = f"oo-debug-bundle-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
     return JSONResponse(
         body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}

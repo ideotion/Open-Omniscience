@@ -140,11 +140,11 @@ def summary() -> dict:
             "locked_errors_this_session": 0,
             "note": "no error log yet — logging is installed at boot",
         }
-    ats = [r.get("at") for r in records if r.get("at")]
-    last_boot = max(
-        (r["at"] for r in records if r.get("level") == _BOOT_LEVEL and r.get("at")),
-        default=None,
-    )
+    ats: list[str] = [str(r["at"]) for r in records if r.get("at")]
+    boots: list[str] = [
+        str(r["at"]) for r in records if r.get("level") == _BOOT_LEVEL and r.get("at")
+    ]
+    last_boot: str | None = max(boots) if boots else None
 
     def _is_problem(r: dict) -> bool:
         return r.get("level") in _PROBLEM_LEVELS
