@@ -3816,6 +3816,23 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 SESSION — POST-MERGE CONTINUATION (PR #439 merged; new draft PR onto 0.09, branch re-cut from
+  the merged 0.09 per protocol). SERVER-SIDE FOLDER PICKER (brief #8, "Browse buttons, never manual path
+  typing"; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED per fork-3):** the folder-backup destination
+  + the .eml folder-import took a server-side path the user had to TYPE (a browser file dialog can't return a
+  host path). NEW `src/api/files.py` `GET /api/fs/list?path=&show_hidden=` lists a directory's SUBDIRECTORIES
+  only — NEVER file contents, never even file names — traversal-safe by construction (`_safe_resolve` →
+  real abs path; an unreadable dir lists nothing; a non-existent/non-dir path falls back to home, never a
+  500), bounded `_MAX_ENTRIES=2000`, reports `writable` so the picker can gate a backup destination. Loopback-
+  only single-user app, consistent with the existing local trust model (the unlock screen already lists
+  key-file names). Wired into the spine (`_wiring.py`). Frontend: a reusable `ooFolderPicker(inputId,
+  requireWritable)` + `#folder-picker` dialog (delegated row navigation via addEventListener, native
+  showModal focus-trap) + a "Browse…" button beside `fb-dest` (folder backup) and `nl-folder` (.eml import).
+  New strings English-fallback via `t()` (i18n gate stays 100%; keyable later). tests/test_fs_browser.py (6:
+  folders-only/hidden/parent/fallbacks/bounded) + test_repo_invariants::test_server_side_folder_picker_wired
+  + test_api_wiring (router in the spine). REMAINING (the larger backups redesign #7/#9/#10/#11/#12): unify
+  the include/restore selection UI, encryption-as-an-in-flow-option + auto-detect, direct-import-with-summary,
+  progress bars both directions, restore-as-a-task-manager-job (P0-2 slowness folds here).
 - **2026-06-22 AUTONOMOUS SESSION (the field-test brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-22.md`;
   ONE branch claude/keen-davinci-jvsmfh per the harness git-constraint, draft PR onto 0.09; backend VERIFIED
   py3.13 venv, frontend BROWSER-UNVERIFIED per fork-3). HONEST FINDING on P0-1 (the headline "data is locked

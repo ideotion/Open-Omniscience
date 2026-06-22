@@ -7855,6 +7855,50 @@
       } catch { return fallback || lc; }
     }
 
+    // Server-side folder picker (field test 2026-06-22 #8: "Browse buttons, never
+    // manual path typing"). Lists subdirectories via /api/fs/list (folders only,
+    // never file names) so the user can pick a backup destination / .eml import
+    // folder ON THIS MACHINE without typing the path. Writes the chosen absolute
+    // path into the given input. Listeners are addEventListener (no inline onclick).
+    let _fpState = { inputId: null, requireWritable: false, current: null };
+    async function ooFolderPicker(inputId, requireWritable) {
+      _fpState = { inputId, requireWritable: !!requireWritable, current: null };
+      const inp = $(inputId);
+      await _fpNav((inp && inp.value || "").trim() || null);
+      const dlg = $("folder-picker");
+      if (dlg && dlg.showModal) dlg.showModal();
+    }
+    async function _fpNav(path) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s) => s;
+      let d;
+      try {
+        d = await api("/api/fs/list?show_hidden=false" + (path ? "&path=" + encodeURIComponent(path) : ""));
+      } catch (e) {
+        $("fp-list").innerHTML = `<div class="muted" style="padding:10px">${esc(e.message)}</div>`;
+        return;
+      }
+      _fpState.current = d.path;
+      $("fp-path").textContent = d.path;
+      const rows = [];
+      if (d.parent) rows.push(`<div class="fp-row" data-path="${esc(d.parent)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">⬆ ${esc(t("Parent folder"))}</div>`);
+      for (const e of (d.entries || [])) rows.push(`<div class="fp-row" data-path="${esc(e.path)}" style="padding:6px 10px;cursor:pointer;border-bottom:1px solid var(--line)">📁 ${esc(e.name)}</div>`);
+      if (!(d.entries || []).length) rows.push(`<div class="muted" style="padding:10px">${esc(t("No sub-folders here."))}</div>`);
+      $("fp-list").innerHTML = rows.join("");
+      $("fp-list").querySelectorAll(".fp-row").forEach(el => el.addEventListener("click", () => _fpNav(el.dataset.path)));
+      const useBtn = $("fp-use");
+      const blocked = _fpState.requireWritable && d.writable === false;
+      if (useBtn) useBtn.disabled = !!blocked;
+      $("fp-note").textContent = blocked
+        ? t("This folder is not writable — pick another for a backup destination.")
+        : (d.truncated ? t("Showing the first folders only.") : "");
+    }
+    function ooFolderPickerUse() {
+      const inp = $(_fpState.inputId);
+      if (inp && _fpState.current) { inp.value = _fpState.current; inp.dispatchEvent(new Event("change")); }
+      const dlg = $("folder-picker");
+      if (dlg) dlg.close();
+    }
+
     let _ooMapGeo = null;                            // cached world_countries.json
     async function _ooMapGeoLoad() {
       if (_ooMapGeo !== null) return _ooMapGeo;

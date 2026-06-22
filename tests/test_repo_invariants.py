@@ -3713,3 +3713,21 @@ def test_auto_update_note_removed_and_country_names_localized():
     # name, not the raw uppercased 2-letter code.
     assert 'ooRegionName(meta.country, meta.country.toUpperCase())' in app
     assert 'ooRegionName(m.country, m.country)' in app
+
+
+def test_server_side_folder_picker_wired():
+    """Field test 2026-06-22 #8: "Browse buttons, never manual path typing". A
+    traversal-safe /api/fs/list backs a folder picker wired into the folder-backup
+    destination + the .eml folder-import path inputs (folders only, never file names)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # Browse buttons on both server-side path inputs + the picker dialog.
+    assert "ooFolderPicker('fb-dest'" in html, "no Browse on the folder-backup destination"
+    assert "ooFolderPicker('nl-folder'" in html, "no Browse on the .eml folder import"
+    assert 'id="folder-picker"' in html
+    # The picker reads the traversal-safe backend and uses addEventListener (no inline onclick).
+    assert "function ooFolderPicker(" in app and "/api/fs/list" in app
+    assert 'el.addEventListener("click"' in app  # row navigation is delegated, not inline
+    # The router is wired into the spine.
+    wiring = (_SRC / "api" / "_wiring.py").read_text(encoding="utf-8")
+    assert "files_router" in wiring

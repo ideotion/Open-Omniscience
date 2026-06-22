@@ -1284,6 +1284,7 @@
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="fb-dest">Destination folder (on this machine)</label>
           <input id="fb-dest" placeholder="/mnt/external-drive/oo-large-backup" size="32"></div>
+        <button class="secondary" type="button" onclick="ooFolderPicker('fb-dest', true)">Browse…</button>
       </div>
       <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
         <legend class="muted" style="padding:0 6px">What to include</legend>
@@ -1645,6 +1646,7 @@
       <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
         <div style="flex:2"><label for="nl-folder">Folder path (on this machine)</label>
           <input id="nl-folder" placeholder="/home/you/newsletters" size="30"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('nl-folder', false)">Browse…</button></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
       </div>
       <progress id="nl-folder-bar" value="0" max="100" style="width:100%;margin-top:6px;display:none"></progress>
@@ -1944,6 +1946,22 @@
     <div id="lp-out" style="margin-top:10px"></div>
     <div style="margin-top:12px;display:flex;justify-content:flex-end">
       <button class="secondary" onclick="document.getElementById('link-preview').close()">Close</button>
+    </div>
+  </dialog>
+
+  <dialog id="folder-picker" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:0">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px">
+      <strong>Pick a folder</strong>
+      <span class="muted" style="margin-left:auto;font-size:12px">on this machine</span>
+    </div>
+    <div style="padding:10px 16px">
+      <div id="fp-path" class="muted" style="font-size:12px;word-break:break-all;margin-bottom:6px"></div>
+      <div id="fp-list" style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:8px"></div>
+      <div id="fp-note" class="hint" style="margin-top:6px"></div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end">
+      <button class="secondary" type="button" onclick="document.getElementById('folder-picker').close()">Cancel</button>
+      <button id="fp-use" type="button" onclick="ooFolderPickerUse()">Use this folder</button>
     </div>
   </dialog>
 
