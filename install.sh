@@ -239,9 +239,38 @@ pip_install() {
     print_download_estimate "$extras"
     if [ "${OO_SKIP_PIP:-0}" = "1" ]; then warn "OO_SKIP_PIP=1 -- skipping pip install ($spec)"; return; fi
     step "Installing the app: $spec"
-    python -m pip install --upgrade pip setuptools wheel >/dev/null
-    python -m pip install -e "$spec"
-    ok "Python packages installed"
+    # Network resilience: a flaky link (notably Qubes disposable VMs / Tor netvms)
+    # can drop DNS mid-resolution. pip's default 15s timeout then makes it BACKTRACK
+    # through every version and emit a MISLEADING "ResolutionImpossible / no matching
+    # distribution" when the real cause was a dropped connection. So: longer timeout +
+    # more retries, and retry the whole step with backoff. Already-downloaded wheels
+    # are cached, so each attempt resumes rather than restarts.
+    local pip_opts="--retries 5 --timeout 60"
+    python -m pip install $pip_opts --upgrade pip setuptools wheel >/dev/null 2>&1 || true
+    local attempt delay=4
+    for attempt in 1 2 3; do
+        if python -m pip install $pip_opts -e "$spec"; then
+            ok "Python packages installed"
+            return 0
+        fi
+        if [ "$attempt" -lt 3 ]; then
+            warn "pip install failed (attempt $attempt/3) -- likely a network hiccup; retrying in ${delay}s..."
+            sleep "$delay"; delay=$((delay * 4))
+        fi
+    done
+    # Persistent failure: be HONEST about the most common cause instead of echoing
+    # pip's confusing resolver error.
+    echo ""
+    warn "Could not install the Python packages after 3 attempts."
+    echo "     This is almost always a NETWORK problem, not a dependency conflict:"
+    echo "       • pip messages like 'Temporary failure in name resolution',"
+    echo "         'Read timed out', or 'ResolutionImpossible / no matching distribution'"
+    echo "         usually mean the connection dropped mid-download."
+    echo "     Try:"
+    echo "       1. Check connectivity + DNS:  getent hosts files.pythonhosted.org"
+    echo "       2. Re-run the installer -- downloaded wheels are cached, so it resumes:"
+    echo "            cd \"$SRC_DIR\" && ./install.sh --unattended"
+    die "Python package installation failed (see network guidance above)."
 }
 
 init_database() {

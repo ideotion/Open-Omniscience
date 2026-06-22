@@ -344,3 +344,18 @@ def test_ollama_store_access_guards_are_noops():
     env = {k: v for k, v in os.environ.items() if k != "OO_OLLAMA_READABLE"}
     r2 = subprocess.run(["bash", "-c", harness], capture_output=True, text=True, env=env)
     assert r2.returncode == 0 and "CHMOD" not in r2.stdout
+
+
+def test_pip_install_is_network_resilient():
+    """Field test 2026-06-21: a flaky link (Qubes disposable VM / Tor netvm) dropped
+    DNS mid-resolution, so pip backtracked and emitted a MISLEADING
+    'ResolutionImpossible / no matching distribution' for regex. The installer must
+    harden the pip step (longer timeout + retries + retry-the-step) and degrade with
+    an HONEST network message, not echo pip's confusing resolver error."""
+    sh = (REPO / "install.sh").read_text(encoding="utf-8")
+    assert "--retries" in sh and "--timeout 60" in sh, "pip must use more retries + a longer timeout"
+    # The whole step retries with backoff.
+    assert "attempt in 1 2 3" in sh, "the pip install step must retry on failure"
+    # Honest network guidance on persistent failure (not pip's misleading conflict).
+    assert "getent hosts files.pythonhosted.org" in sh
+    assert "downloaded wheels are cached" in sh
