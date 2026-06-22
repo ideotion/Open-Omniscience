@@ -180,3 +180,54 @@ def track_watched(session, fetcher, *, limit_documents: int = 50) -> dict:
         elif status == "unchanged":
             tally["unchanged"] += 1
     return tally
+
+
+def auto_track_due(session, fetcher, *, batch: int = 5, min_interval_hours: float = 24.0) -> dict:
+    """Track a BOUNDED, freshness-gated batch of watched legal documents per collect pass
+    (field test 2026-06-22, #18: the World-law tab was empty because law is only tracked
+    in mode=="law", never in the default rss pass).
+
+    Mirrors the calendar/markets auto-load: at most ``batch`` documents per call, chosen
+    ROUND-ROBIN by least-recently-checked (never-checked first), and a document checked
+    within ``min_interval_hours`` is skipped — so legal sites are polled politely over
+    successive passes (per-host politeness + robots fail-closed + the kill switch all ride
+    the shared fetcher; this only schedules the existing tracker). Best-effort + idempotent
+    (track_document dedups by content hash); never raises for one bad document. Returns the
+    same tally shape as track_watched plus ``due`` (how many were eligible)."""
+    from datetime import timedelta
+
+    cutoff = datetime.now(UTC) - timedelta(hours=min_interval_hours)
+    q = session.query(LawDocument).filter_by(watched=True).filter(
+        # never-checked (NULL) OR stale beyond the interval
+        (LawDocument.last_checked_at.is_(None)) | (LawDocument.last_checked_at < cutoff)
+    )
+    due_total = q.count()
+    # least-recently-checked first; NULLs (never checked) sort first so a fresh corpus
+    # builds its baselines before re-checking anything.
+    docs = (
+        q.order_by(LawDocument.last_checked_at.is_(None).desc(), LawDocument.last_checked_at.asc())
+        .limit(max(0, batch))
+        .all()
+    )
+    tally = {"documents": 0, "baselines": 0, "changed": 0, "flagged": 0,
+             "errors": 0, "unchanged": 0, "due": due_total}
+    for doc in docs:
+        try:
+            res = track_document(session, fetcher, doc)
+        except Exception:  # noqa: BLE001 - one bad document must not abort the batch
+            _LOG.warning("law auto-track: document %s failed", doc.id, exc_info=True)
+            tally["errors"] += 1
+            continue
+        tally["documents"] += 1
+        status = res.get("status")
+        if status == "baseline":
+            tally["baselines"] += 1
+        elif status == "changed":
+            tally["changed"] += 1
+            if res.get("flagged"):
+                tally["flagged"] += 1
+        elif status == "error":
+            tally["errors"] += 1
+        elif status == "unchanged":
+            tally["unchanged"] += 1
+    return tally

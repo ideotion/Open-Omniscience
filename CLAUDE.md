@@ -3816,6 +3816,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
+  empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the
+  default rss collect pass — the SAME gap markets had before its per-pass auto-load. `src/law/track.py:
+  auto_track_due` = a BOUNDED, freshness-gated, round-robin batch (default 5 docs/pass, min_interval 24h,
+  least-recently-checked first via `last_checked_at` NULLs-first) wired into the scheduler's post-pass
+  housekeeping (runner.py, after the market auto-load), gated by `auto_track_law` (getattr-default True,
+  mirroring `auto_import_calendars`). So watched legal docs (registered `watched=True` from configs/legal.yml)
+  build baselines + surface changes over time WITHOUT hammering legal sites — per-host politeness + robots
+  fail-closed + the kill switch (airplane) all ride the shared fetcher; best-effort (one bad doc never aborts
+  the pass). tests/test_law.py::test_auto_track_due_is_freshness_gated_and_bounded (bounded/round-robin/
+  freshness; an UNWATCHED doc is never fetched). REMAINING for #18 (the larger halves): the per-country legal-
+  source catalog for every UI language (a languages→countries map + curated sourced portals, large hand-
+  curation — the configs/legal.yml set today is ~30 portals, mostly anglophone/EU) + the tab's full content-
+  first revamp (data-dense, version-tracking UI). These are separate, larger builds.
 - **2026-06-22 FIELD-TEST REMAINDER — CUSTODY DISSOLVED FROM THE SIDEBAR (§5 #20, structural half; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; frontend BROWSER-UNVERIFIED per fork-3):** "Evidence &
   custody" is an ACTION on content, so it leaves the (now flat) sidebar — completing the Trust-group
