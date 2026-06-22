@@ -145,6 +145,28 @@ def run_deferred_startup() -> None:
     except Exception as exc:  # noqa: BLE001 - never block startup on metrics
         logger.warning(f"Could not initialise metrics at startup: {exc}")
 
+    # Boot-cold cache warm (field test 2026-06-22, §1.3): the in-memory insights read
+    # cache is empty after a restart, so the FIRST Home/Insights open pays the cold
+    # whole-corpus aggregation. warm_cache already runs after each scrape pass, but at
+    # boot no pass has run (airplane mode), so a user who boots and stays offline still
+    # hits the cold query on the first click. Pre-compute the default views ONCE in a
+    # background thread — the SAME local DB read, just moved off the user's first click.
+    # Non-blocking, best-effort, zero network. Gated by OO_NO_SCHEDULER so tests/headless
+    # setups (which run synchronously and manage their own state) skip the bg thread.
+    if os.getenv("OO_NO_SCHEDULER", "0") != "1":
+        import threading
+
+        def _warm_insights_cache() -> None:
+            try:
+                from src.api.insights import warm_cache
+
+                with session_scope() as session:  # own session: created inside the thread
+                    warm_cache(session)
+            except Exception:  # noqa: BLE001 - a cache warm must never affect the app
+                logger.warning("boot-time insights cache warm failed", exc_info=True)
+
+        threading.Thread(target=_warm_insights_cache, name="oo-warm-cache", daemon=True).start()
+
     # Content-first (maintainer 2026-06-13): the app BOOTS IN AIRPLANE MODE
     # (offline) every time — nothing scrapes until the operator crosses online
     # once (the one consent, POST /api/scheduler/start), after which collection

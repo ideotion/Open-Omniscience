@@ -3816,6 +3816,18 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — BOOT-COLD CACHE WARM (§1.3 read-path tail; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the in-memory insights
+  read cache is empty after a restart, so the FIRST Home/Insights open paid the cold whole-corpus
+  aggregation (warm_cache runs after a scrape pass, but boot is AIRPLANE mode -> no pass; a user who boots
+  + stays offline still hit the cold query). `run_deferred_startup` now kicks `warm_cache` in a DAEMON
+  thread (non-blocking, best-effort, zero network — the same local DB read moved off the first click;
+  its own session created inside the thread), gated by OO_NO_SCHEDULER so tests/headless skip it.
+  test_repo_invariants::test_startup_warms_the_insights_cache. The tl-decoupling (non-English UI recomputes
+  the aggregation per language because the cache key includes `tl`) stays a DEFERRED follow-up: a clean
+  decouple risks REDUCING translation coverage (the cached untranslated payload lacks the `stored_lang`
+  fallback map `_annotate_translations` uses for rows without a stored language) — a correctness risk
+  not worth taking for a single-user-modest perf win; flagged in src/api/insights.py:warm_cache.
 - **2026-06-22 FIELD-TEST REMAINDER — KEYWORD-ENGINE & DATE-VOCAB BATCH (the §3 brief tail; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13 venv).** Two slices:
   (1) **NO_STOPLIST TAIL → MANAGED.** Promoted 14 languages to `MANAGED_LANGUAGES` after verifying each

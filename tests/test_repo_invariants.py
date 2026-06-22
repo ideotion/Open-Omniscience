@@ -3568,6 +3568,21 @@ def test_startup_seeds_the_source_catalog_at_unlock():
     )
 
 
+def test_startup_warms_the_insights_cache():
+    """Boot-cold fix (field test 2026-06-22, §1.3): the in-memory insights read cache
+    is empty after a restart, so without a boot warm the first Home/Insights open pays
+    the cold whole-corpus aggregation (warm_cache runs after a scrape pass, but boot is
+    airplane mode -> no pass). run_deferred_startup must kick warm_cache in a background
+    (non-blocking) thread, gated by OO_NO_SCHEDULER so tests/headless skip it."""
+    main_src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    deferred = main_src.split("def run_deferred_startup", 1)[1].split("\ndef ", 1)[0]
+    assert "warm_cache" in deferred, "run_deferred_startup must warm the insights cache at boot"
+    # It must be backgrounded (a daemon Thread), never run inline (would block startup).
+    assert "Thread(" in deferred and "daemon=True" in deferred, (
+        "the boot cache warm must run in a daemon thread so it never blocks startup"
+    )
+
+
 def test_llm_catalog_tags_are_pullable_and_embeddings_labelled():
     """Every suggested model must be PULLABLE — its tag has to satisfy the same
     strict regex the /api/llm/pull endpoint enforces (src/api/llm.py:_MODEL_RE), so
