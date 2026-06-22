@@ -3500,6 +3500,30 @@ def test_task_manager_displays_actual_language_and_tag_strata():
     assert "for r in rows:" in plan_preview_body and "lang_n[_source_lang(r)]" in plan_preview_body
 
 
+def test_sources_have_multi_select_dropdown_filters():
+    """Field test 2026-06-22 (#23): the Settings → Sources filters are multi-select
+    DROPDOWNS fed by a facets endpoint (Language/Country/Type/Tags), with a tag any|all
+    toggle and the free-text title search kept. Backend: a cheap facets endpoint + the
+    list endpoints accept comma-separated OR-within multi-values."""
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    # The four multi-select <details> dropdowns + the tag any/all toggle + kept search.
+    for el in ("src-msel-language", "src-msel-country", "src-msel-source_type", "src-msel-tag"):
+        assert f'id="{el}"' in html, f"missing multi-select dropdown {el}"
+    assert 'id="src-tag-all"' in html, "tags need an any|all toggle"
+    assert 'id="src-search"' in html, "the free-text title search must be kept"
+    # Frontend reads the facets + builds comma-separated OR-within params.
+    assert "loadSrcFacets" in app and "/api/sources/facets" in app
+    assert "mselValues" in app and 'p.set("tag_mode", "all")' in app
+    # Localized full names on the language/country option labels (#19).
+    assert "ooLangName" in app and "ooRegionName" in app
+    # Backends: the facets endpoint + multi-value filtering on both list endpoints.
+    sm = (_SRC / "api" / "source_management.py").read_text(encoding="utf-8")
+    assert '@router.get("/facets"' in sm, "a /api/sources/facets endpoint must exist"
+    sio = (_SRC / "api" / "source_io.py").read_text(encoding="utf-8")
+    assert "tag_mode" in sio and ".in_(" in sio, "catalog/sources must support OR-within multi-values"
+
+
 def test_airplane_button_has_no_perpetual_animation():
     """Airplane mode is the idle/default state, so a forever-running animation on
     the network button repaints every frame at rest — it pinned the browser near

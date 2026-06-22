@@ -73,6 +73,7 @@ def list_sources(
     language: str | None = None,
     source_type: str | None = None,
     tag: str | None = None,
+    tag_mode: str = "any",
     enabled: bool | None = None,
     sort: str = Query("name"),
     order: str = Query("asc", pattern="^(asc|desc)$"),
@@ -83,9 +84,20 @@ def list_sources(
     """Filterable, sortable source list with per-source article counts.
 
     Powers the Sources tab's quick filters + sortable columns. Filters: free-text
-    (name/domain), country, language, source_type, tag (substring), enabled. Sort
-    by any of: name, domain, source_type, country, language, priority, articles.
+    (name/domain), country, language, source_type, tag, enabled. Sort by any of:
+    name, domain, source_type, country, language, priority, articles.
+
+    MULTI-SELECT (field test 2026-06-22, #23): country/language/source_type/tag accept
+    COMMA-SEPARATED values — WITHIN a filter the values are OR'd (French OR English),
+    ACROSS filters they are AND'd (French/English AND tagged news). ``tag_mode`` toggles
+    tags between ``any`` (OR, default) and ``all`` (a source must carry EVERY tag). A
+    single value still works exactly as before (backward compatible).
     """
+    from sqlalchemy import and_, or_
+
+    def _vals(raw: str | None) -> list[str]:
+        return [v.strip() for v in (raw or "").split(",") if v.strip()]
+
     art_count = func.count(Article.id).label("articles")
     base = db.query(Source, art_count).outerjoin(Article, Article.source_id == Source.id)
 
@@ -96,19 +108,24 @@ def list_sources(
             func.lower(Source.name).like(func.lower(like))
             | func.lower(Source.domain).like(func.lower(like))
         )
-    if country:
+    countries = _vals(country)
+    if countries:
         # Forgiving filter through the one conversion layer: ?country=France,
-        # ?country=FR and ?country=fr all match the canonical stored code.
+        # ?country=FR and ?country=fr all match the canonical stored code. OR within.
         from src.catalog.countries import normalize_country
 
-        cc = normalize_country(country) or country.strip().lower()
-        filters.append(func.lower(Source.country) == cc)
-    if language:
-        filters.append(func.lower(Source.language) == language.strip().lower())
-    if source_type:
-        filters.append(func.lower(Source.source_type) == source_type.strip().lower())
-    if tag:
-        filters.append(Source.tags.ilike(f"%{tag.strip()}%"))
+        ccs = [normalize_country(c) or c.strip().lower() for c in countries]
+        filters.append(func.lower(Source.country).in_(ccs))
+    langs = _vals(language)
+    if langs:
+        filters.append(func.lower(Source.language).in_([x.lower() for x in langs]))
+    types = _vals(source_type)
+    if types:
+        filters.append(func.lower(Source.source_type).in_([x.lower() for x in types]))
+    tag_list = _vals(tag)
+    if tag_list:
+        conds = [Source.tags.ilike(f"%{t}%") for t in tag_list]
+        filters.append(and_(*conds) if tag_mode == "all" else or_(*conds))
     if enabled is not None:
         filters.append(Source.enabled.is_(enabled))
     for f in filters:

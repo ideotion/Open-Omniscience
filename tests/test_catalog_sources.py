@@ -88,6 +88,38 @@ def test_filter_by_country_and_tag(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_multi_select_filters_or_within_and_across(tmp_path):
+    """#23: comma-separated values OR within a filter, AND across filters."""
+    app, client = _client(tmp_path)
+    try:
+        with client:
+            # WITHIN language = OR: fr OR en -> all three sources
+            r = client.get("/api/catalog/sources?language=fr,en").json()
+            assert {s["domain"] for s in r["sources"]} == {"alpha.test", "beta.test", "gamma.test"}
+            # ACROSS filters = AND: (fr OR en) AND type=news -> beta (financial) drops out
+            r = client.get("/api/catalog/sources?language=fr,en&source_type=news").json()
+            assert {s["domain"] for s in r["sources"]} == {"alpha.test", "gamma.test"}
+            # country multi-select still normalises each value (FR/us mixed-case)
+            r = client.get("/api/catalog/sources?country=FR,US").json()
+            assert {s["domain"] for s in r["sources"]} == {"alpha.test", "beta.test", "gamma.test"}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_tag_mode_any_vs_all(tmp_path):
+    app, client = _client(tmp_path)
+    try:
+        with client:
+            # any (default): politics OR climate
+            r = client.get("/api/catalog/sources?tag=politics,climate").json()
+            assert {s["domain"] for s in r["sources"]} == {"alpha.test", "gamma.test"}
+            # all: must carry BOTH politics AND world -> only alpha
+            r = client.get("/api/catalog/sources?tag=politics,world&tag_mode=all").json()
+            assert {s["domain"] for s in r["sources"]} == {"alpha.test"}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_sort_and_search(tmp_path):
     app, client = _client(tmp_path)
     try:

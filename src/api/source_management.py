@@ -222,6 +222,11 @@ async def list_sources(
     enabled: bool | None = None,
     priority: int | None = None,
     tags: str | None = None,
+    tag_mode: str = "any",
+    languages: str | None = None,
+    countries: str | None = None,
+    types: str | None = None,
+    q: str | None = None,
     group_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
@@ -230,39 +235,65 @@ async def list_sources(
     """
     List all sources with optional filters.
 
+    Multi-select filters (field test 2026-06-22, #23): ``languages``/``countries``/
+    ``types``/``tags`` are comma-separated. Semantics are EXPLICIT — WITHIN a filter
+    the values are OR'd (French OR English), ACROSS filters they are AND'd (French/
+    English AND tagged news). ``tag_mode`` toggles tags between ``any`` (OR, default)
+    and ``all`` (AND — a source must carry every selected tag). ``q`` is a free-text
+    substring over name/domain. Filtering happens in SQL BEFORE pagination (so a filter
+    spans the whole catalogue, not just the first page).
+
     Parameters:
     - enabled: Filter by enabled status
     - priority: Filter by priority level
-    - tags: Filter by tags (comma-separated)
+    - tags / tag_mode: tags (comma-separated) with any|all combination
+    - languages / countries / types: comma-separated, OR within each
+    - q: free-text name/domain substring
     - group_id: Filter by group ID
-    - limit: Maximum number of results
-    - offset: Offset for pagination
+    - limit / offset: pagination
     """
-    logger.info(f"List sources request: enabled={enabled}, priority={priority}, tags={tags}")
+    logger.info(
+        "List sources: enabled=%s tags=%s langs=%s countries=%s types=%s q=%s",
+        enabled, tags, languages, countries, types, q,
+    )
+
+    from sqlalchemy import and_, or_
+
+    from src.database.models import Source
+
+    def _vals(raw: str | None) -> list[str]:
+        return [v.strip() for v in (raw or "").split(",") if v.strip()]
 
     with SourceManager(session=db) as manager:
-        # Start with all sources
         if group_id:
+            # Legacy group filter keeps its existing path (in-memory, group sizes are small).
             sources = manager.get_sources_by_group(group_id)
+            if enabled is not None:
+                sources = [s for s in sources if s.enabled == enabled]
+            if priority is not None:
+                sources = [s for s in sources if s.priority == priority]
         else:
-            sources = manager.get_all_sources(limit=limit, offset=offset)
-
-        # Apply filters
-        if enabled is not None:
-            sources = [s for s in sources if s.enabled == enabled]
-
-        if priority is not None:
-            sources = [s for s in sources if s.priority == priority]
-
-        if tags:
-            tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
+            query = db.query(Source)
+            if enabled is not None:
+                query = query.filter(Source.enabled.is_(enabled))
+            if priority is not None:
+                query = query.filter(Source.priority == priority)
+            langs, ctrys, tps = _vals(languages), _vals(countries), _vals(types)
+            if langs:
+                query = query.filter(Source.language.in_(langs))          # OR within
+            if ctrys:
+                query = query.filter(Source.country.in_(ctrys))           # OR within
+            if tps:
+                query = query.filter(Source.source_type.in_(tps))         # OR within
+            tag_list = _vals(tags)
             if tag_list:
-                filtered_sources = []
-                for source in sources:
-                    source_tags = [t.strip() for t in (source.tags or "").split(",") if t.strip()]
-                    if any(tag in source_tags for tag in tag_list):
-                        filtered_sources.append(source)
-                sources = filtered_sources
+                conds = [Source.tags.ilike(f"%{t}%") for t in tag_list]
+                query = query.filter(and_(*conds) if tag_mode == "all" else or_(*conds))
+            if q:
+                like = f"%{q.strip()}%"
+                query = query.filter(or_(Source.name.ilike(like), Source.domain.ilike(like)))
+            query = query.order_by(Source.priority.asc(), Source.id.asc())
+            sources = query.offset(offset).limit(limit).all()
 
         # Format results
         results = [
@@ -288,6 +319,53 @@ async def list_sources(
         ]
 
         return results
+
+
+@router.get("/facets", response_model=dict)
+@limiter.limit("120/hour")
+async def source_facets(
+    request: Request,
+    enabled_only: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Distinct catalog values (with real counts) for the Sources multi-select filters
+    (field test 2026-06-22, #23): languages · countries · types · tags. ONE column-
+    projected query over the small (~3.2k-row) sources table — never the N+1 article/
+    group loads list_sources does — so it is cheap on the encrypted store. Counts only,
+    no score. `enabled_only` restricts to the active set (the default shows everything so
+    a user can find a disabled source to enable)."""
+    from src.database.models import Source
+
+    q = db.query(Source.language, Source.country, Source.source_type, Source.tags)
+    if enabled_only:
+        q = q.filter(Source.enabled.is_(True))
+    lang_n: dict[str, int] = {}
+    country_n: dict[str, int] = {}
+    type_n: dict[str, int] = {}
+    tag_n: dict[str, int] = {}
+    for language, country, source_type, tags in q:
+        if language:
+            lang_n[language] = lang_n.get(language, 0) + 1
+        if country:
+            country_n[country] = country_n.get(country, 0) + 1
+        if source_type:
+            type_n[source_type] = type_n.get(source_type, 0) + 1
+        for t in (tags or "").split(","):
+            t = t.strip()
+            if t:
+                tag_n[t] = tag_n.get(t, 0) + 1
+
+    def _facet(counts: dict[str, int]) -> list[dict]:
+        # Most-common first, then alphabetical — a stable, honest ordering (no score).
+        return [{"key": k, "n": n} for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+    return {
+        "languages": _facet(lang_n),
+        "countries": _facet(country_n),
+        "types": _facet(type_n),
+        "tags": _facet(tag_n),
+        "enabled_only": enabled_only,
+    }
 
 
 @router.get("/{source_id}", response_model=dict)

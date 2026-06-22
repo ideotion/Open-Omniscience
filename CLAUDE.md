@@ -3816,6 +3816,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — SOURCES MULTI-SELECT FILTERS (§5 #23; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED
+  per fork-3):** Settings → Sources filters converted from single text inputs to multi-select DROPDOWNS fed
+  by a cheap facets endpoint. Backend: NEW `GET /api/sources/facets` (distinct languages/countries/types/tags
+  + real counts via ONE column-projected query over the ~3.2k-row sources table — never the N+1 article load,
+  cheap on the encrypted store; counts only, no score) + multi-value filtering on BOTH list endpoints
+  (`/api/catalog/sources` the table + `/api/sources/` the picker): country/language/source_type/tag accept
+  COMMA-SEPARATED values, OR WITHIN a filter, AND ACROSS filters, + `tag_mode` any|all; `/api/catalog/sources`
+  filters in SQL BEFORE pagination (so a filter spans the whole catalogue) and country values still normalise
+  (FR/France/fr). Single-value calls stay backward-compatible. Frontend: four `<details class="msel">` native-
+  disclosure checklist dropdowns (no fragile positioning/click-outside JS), filled by `loadSrcFacets`, option
+  labels localised to full names via ooLangName/ooRegionName (#19), tag any|all toggle, free-text search kept;
+  theme-aware `.msel` CSS (all 17 themes). tests/test_source_facets_filters.py (5) + test_catalog_sources.py
+  (+2 multi-select) + test_repo_invariants::test_sources_have_multi_select_dropdown_filters. New UI strings
+  English-fallback via t() (gate 100%). REMAINING: human click-through (fork-3); key the new strings ×12.
 - **2026-06-22 FIELD-TEST REMAINDER — TASK-MANAGER SHOWS THE ACTUAL STRATA (§5 #5; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED
   per fork-3):** the Queue preview claimed "stratified by language and tag" but never SHOWED the strata.

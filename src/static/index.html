@@ -1589,11 +1589,17 @@
       <div class="row">
         <div style="flex:2"><label for="src-search">Search</label>
           <input id="src-search" placeholder="name or domain" onkeydown="if(event.key==='Enter')applySrcFilters()"></div>
-        <div><label for="src-country">Country</label><input id="src-country" placeholder="fr"></div>
-        <div><label for="src-language">Language</label><input id="src-language" placeholder="en"></div>
-        <div><label for="src-type">Type</label><input id="src-type" placeholder="news"></div>
-        <div><label for="src-tag">Tag</label><input id="src-tag" placeholder="politics"></div>
-        <div><label for="src-enabled">Enabled</label><select id="src-enabled">
+        <!-- Multi-select dropdown filters (#23): each <details> is a native disclosure
+             "dropdown" of checkboxes filled from /api/sources/facets. Within a filter
+             the checked values are OR'd; across filters they are AND'd. -->
+        <div><label>Language</label><details class="msel" id="src-msel-language"><summary>Any</summary><div class="msel-list"></div></details></div>
+        <div><label>Country</label><details class="msel" id="src-msel-country"><summary>Any</summary><div class="msel-list"></div></details></div>
+        <div><label>Type</label><details class="msel" id="src-msel-source_type"><summary>Any</summary><div class="msel-list"></div></details></div>
+        <div><label>Tags</label><details class="msel" id="src-msel-tag"><summary>Any</summary>
+          <div class="msel-mode"><label class="hint" title="Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.">
+            <input type="checkbox" id="src-tag-all" onchange="applySrcFilters()"> match all tags</label></div>
+          <div class="msel-list"></div></details></div>
+        <div><label for="src-enabled">Enabled</label><select id="src-enabled" onchange="applySrcFilters()">
           <option value="">any</option><option value="true">enabled</option><option value="false">disabled</option></select></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="applySrcFilters()">Filter</button>
           <button class="secondary" onclick="clearSrcFilters()">Clear</button></div>

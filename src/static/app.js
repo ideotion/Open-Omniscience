@@ -1140,7 +1140,7 @@
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
-      if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
+      if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); }  // LLM-management subtab (Q6) — also re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
@@ -4286,11 +4286,45 @@
     // Source-management list state: filters + sort + paging.
     const SRC = {offset: 0, limit: 50, sort: "name", order: "asc"};
 
+    // Multi-select dropdown filters (#23): each <details class="msel"> is a checklist.
+    // Within a filter the checked values are OR'd; across filters AND'd; tags add an
+    // any|all toggle. Read only the checklist's own checkboxes (NOT the tag-mode box).
+    function mselValues(id) {
+      const det = $(id); if (!det) return [];
+      const list = det.querySelector(".msel-list");
+      return list ? [...list.querySelectorAll("input:checked")].map(c => c.value) : [];
+    }
+    function updateMselSummary(id) {
+      const det = $(id); if (!det) return;
+      const sum = det.querySelector("summary"); if (!sum) return;
+      const v = mselValues(id);
+      sum.textContent = v.length === 0 ? t("Any") : (v.length === 1 ? v[0] : v.length + " " + t("selected"));
+    }
+    async function loadSrcFacets() {
+      let f; try { f = await api("/api/sources/facets"); } catch (e) { return; }
+      const fill = (id, rows, labeler) => {
+        const det = $(id); if (!det) return;
+        const list = det.querySelector(".msel-list"); if (!list) return;
+        list.innerHTML = (rows || []).length
+          ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}" onchange="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
+          : `<div class="muted" style="padding:4px">—</div>`;
+      };
+      fill("src-msel-language", f.languages, k => (typeof ooLangName === "function" ? ooLangName(k, k) : k));
+      fill("src-msel-country", f.countries, k => (typeof ooRegionName === "function" ? ooRegionName(k, k) : k));
+      fill("src-msel-source_type", f.types);
+      fill("src-msel-tag", f.tags);
+      ["src-msel-language", "src-msel-country", "src-msel-source_type", "src-msel-tag"].forEach(updateMselSummary);
+    }
+    function srcMselChanged(id) { updateMselSummary(id); applySrcFilters(); }
+
     function srcQuery() {
       const p = new URLSearchParams();
-      const map = {q: "src-search", country: "src-country", language: "src-language",
-                   source_type: "src-type", tag: "src-tag"};
-      for (const [k, id] of Object.entries(map)) { const v = $(id).value.trim(); if (v) p.set(k, v); }
+      const q = $("src-search").value.trim(); if (q) p.set("q", q);
+      const lang = mselValues("src-msel-language"); if (lang.length) p.set("language", lang.join(","));
+      const country = mselValues("src-msel-country"); if (country.length) p.set("country", country.join(","));
+      const types = mselValues("src-msel-source_type"); if (types.length) p.set("source_type", types.join(","));
+      const tags = mselValues("src-msel-tag");
+      if (tags.length) { p.set("tag", tags.join(",")); if ($("src-tag-all") && $("src-tag-all").checked) p.set("tag_mode", "all"); }
       const en = $("src-enabled").value; if (en) p.set("enabled", en);
       p.set("sort", SRC.sort); p.set("order", SRC.order);
       p.set("limit", SRC.limit); p.set("offset", SRC.offset);
@@ -4299,7 +4333,12 @@
 
     function applySrcFilters() { SRC.offset = 0; loadManagedSources(); }
     function clearSrcFilters() {
-      ["src-search","src-country","src-language","src-type","src-tag"].forEach(id => $(id).value = "");
+      $("src-search").value = "";
+      ["src-msel-language", "src-msel-country", "src-msel-source_type", "src-msel-tag"].forEach(id => {
+        const det = $(id); if (det) det.querySelectorAll(".msel-list input").forEach(c => { c.checked = false; });
+        updateMselSummary(id);
+      });
+      if ($("src-tag-all")) $("src-tag-all").checked = false;
       $("src-enabled").value = ""; SRC.offset = 0; loadManagedSources();
     }
     function srcPage(dir) {
@@ -4353,14 +4392,26 @@
       </tr>`;
     }
 
-    function srcFilterTag(tag) { $("src-tag").value = tag; applySrcFilters(); }
+    // Check one option in a multi-select checklist by value (used by tag pills + the
+    // coverage→sources jump). If the facets list hasn't loaded the value yet, no-op.
+    function srcMselCheck(id, value) {
+      const det = $(id); if (!det) return false;
+      const cb = [...det.querySelectorAll(".msel-list input")].find(c => c.value === value);
+      if (cb) { cb.checked = true; updateMselSummary(id); return true; }
+      return false;
+    }
+    function srcFilterTag(tag) { srcMselCheck("src-msel-tag", tag); applySrcFilters(); }
 
     // Jump from the Database coverage view to the matching sources.
     function openSourcesForKeyword(code, tag) {
       clearSrcFilters();
-      if (code && code !== "(none)") $("src-country").value = code;
-      if (tag) $("src-tag").value = tag;
-      showTab("sources"); applySrcFilters();
+      showTab("sources");
+      // Facets fill on tab open; wait a tick so the checkboxes exist, then check them.
+      loadSrcFacets().then(() => {
+        if (code && code !== "(none)") srcMselCheck("src-msel-country", code);
+        if (tag) srcMselCheck("src-msel-tag", tag);
+        applySrcFilters();
+      });
     }
 
     async function updateSource(id, body) {
