@@ -285,7 +285,19 @@ def index_article(
         www["dates"] = _store_dates(session, article)
         www["places"] = _store_places(session, article)
         www["entities_stored"] = _store_ents(session, article)
-    except Exception:  # noqa: BLE001 - deductions are a bonus, never a blocker
+    except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
+        # A transient 'database is locked' here must NOT be swallowed: doing so
+        # leaves the session in a failed-flush state, so the line-below commit
+        # then raises "transaction has been rolled back ... Original exception was:
+        # database is locked" and the WHOLE article's keyword+WWW indexing is lost
+        # (field log 2026-06-17 scheduler rollback). Re-raise lock errors so the
+        # caller's run_write_with_retry rolls back and re-runs this idempotent
+        # index instead of dropping data. Genuine extraction bugs stay swallowed
+        # (a bad date parse must never cost the article its keywords).
+        from src.database.write import is_locked_error
+
+        if is_locked_error(exc):
+            raise
         _LOG.warning("when/where/who persistence failed for %s", article.id, exc_info=True)
     session.commit()
     return {

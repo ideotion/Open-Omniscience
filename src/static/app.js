@@ -6773,18 +6773,38 @@
     // never thinks about it (UI_SHELL_REDESIGN §6). Best-effort + bounded; the
     // visible "N to index" count ticks down to 0 on its own.
     let _indexing = false;
+    let _autoIndexCooldownUntil = 0;      // throttles the 6 s status poll's re-kick
+    let _autoIndexLastRemaining = -1;     // detects a genuinely stuck backlog
     async function autoIndexInsights() {
       if (_indexing) return;
+      // The status poll (every 6 s) calls this whenever there's a backlog; without
+      // a cooldown it re-kicks a fresh drain on every tick — the field-test storm
+      // (P0-5: /api/insights/reindex called 1,326×/369 s, each batch a heavy write
+      // contending with the live scrape). Run ONE bounded pass, then cool down.
+      if (Date.now() < _autoIndexCooldownUntil) return;
       _indexing = true;
       try {
-        let guard = 0;
+        let guard = 0, startRemaining = -1, lastRemaining = 0;
         for (;;) {
           const r = await api("/api/insights/reindex?limit=300", {method: "POST"});
+          if (startRemaining < 0) startRemaining = r.remaining;
+          lastRemaining = r.remaining;
           const rem = $("ins-remaining");
           if (rem) rem.innerHTML = r.remaining ? `· <strong>${r.remaining.toLocaleString()}</strong> to index` : "";
-          if (r.remaining === 0 || r.indexed === 0 || ++guard > 500) break;
+          // Bound each pass to 40 batches (~12k articles): plenty to drain a normal
+          // corpus in one go, but never the old 500-batch (150k) blast.
+          if (r.remaining === 0 || r.indexed === 0 || ++guard >= 40) break;
         }
-      } catch (_e) { /* silent: background indexing is best-effort */ }
+        if (lastRemaining > 0 && lastRemaining >= startRemaining && lastRemaining === _autoIndexLastRemaining) {
+          // No progress across two passes ⇒ the backlog is stuck (un-indexable
+          // articles). Stop re-attempting this session rather than hammer forever.
+          _autoIndexCooldownUntil = Infinity;
+        } else {
+          // Cool down so the 6 s poll can't re-kick; the next pass continues the drain.
+          _autoIndexCooldownUntil = lastRemaining > 0 ? Date.now() + 60000 : Infinity;
+        }
+        _autoIndexLastRemaining = lastRemaining;
+      } catch (_e) { _autoIndexCooldownUntil = Date.now() + 60000; }  /* best-effort */
       finally { _indexing = false; }
     }
 

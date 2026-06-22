@@ -3655,3 +3655,22 @@ def test_tentative_llm_keyword_translation_is_wired_and_flagged():
     assert "AI-generated tentative translation — unreliable, not verified." in html
     # explicit, gated action (the button only appears when something needs it).
     assert "Translate the rest (AI, tentative)" in html and "d.terms.some(_anKwNeedsTentative)" in html
+
+
+def test_auto_index_insights_is_throttled_not_a_per_tick_storm():
+    """P0-5 (field test 2026-06-22): the Insights status poll (every 6 s) re-kicked a
+    fresh re-index drain on every tick — /api/insights/reindex was called 1,326×/369 s,
+    each batch a heavy write contending with the live scrape. autoIndexInsights now runs
+    ONE bounded pass (<=40 batches, not the old 500) then cools down, and stops on a
+    genuinely stuck backlog — so the 6 s poll can no longer storm the writer."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # The function gained a cooldown gate so a poll within the window is a no-op.
+    assert "_autoIndexCooldownUntil" in app, "auto-index lost its cooldown throttle"
+    assert "if (Date.now() < _autoIndexCooldownUntil) return;" in app, (
+        "the 6 s poll can still re-kick a fresh drain every tick"
+    )
+    # Each pass is bounded to a sane batch count, never the old 150k-article blast.
+    assert "++guard >= 40" in app, "the per-pass batch bound regressed"
+    assert "++guard > 500)" not in app, "the old 500-batch (150k-article) blast is back"
+    # A stuck backlog must stop re-attempting (Infinity cooldown), not hammer forever.
+    assert "_autoIndexCooldownUntil = Infinity" in app

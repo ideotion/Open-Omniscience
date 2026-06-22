@@ -197,6 +197,7 @@ def _maybe_index_keywords(session: Session, article: Article, source: Source) ->
     try:
         from src.analytics.extract import get_extractor
         from src.analytics.store import index_article
+        from src.database.write import run_write_with_retry
 
         city = None
         try:
@@ -204,8 +205,20 @@ def _maybe_index_keywords(session: Session, article: Article, source: Source) ->
             city = meta.city if meta else None
         except Exception:  # noqa: BLE001 - metadata is optional
             city = None
-        index_article(
-            session, article, extractor=get_extractor("baseline"), country=source.country, city=city
+        # The single-writer gate (keystone #1) serialises writers so a lock should
+        # never occur; this retry is belt-and-braces for a transient lock (gate
+        # disabled, a restore's FTS rebuild racing the live engine, etc.) so the
+        # already-fetched article never loses its keyword/when/where/who indexing
+        # to a dropped transaction (field log 2026-06-17: 62 such losses, pre-gate).
+        # index_article is idempotent (delete-then-reinsert), so a rollback + re-run
+        # reproduces the full result.
+        extractor = get_extractor("baseline")
+        run_write_with_retry(
+            lambda: index_article(
+                session, article, extractor=extractor, country=source.country, city=city
+            ),
+            session=session,
+            label=f"index_article[{article.id}]",
         )
     except Exception:  # noqa: BLE001 - analytics is auxiliary; never fail ingestion
         session.rollback()
@@ -230,34 +243,49 @@ def _maybe_index_links(session: Session, article: Article, html: str | None, bas
         return
     try:
         from src.database.models import ArticleLink
+        from src.database.write import run_write_with_retry
         from src.services.link_analyzer import LinkExtractor
 
         links = LinkExtractor().extract_links(html, base_url=base_url, article_id=article.id)
-        seen: set[str] = set()
-        rows: list[ArticleLink] = []
-        for ln in links:
-            if ln.get("link_type") != "external":
-                continue
-            nu = ln.get("normalized_url") or ln.get("url")
-            if not nu or nu in seen:
-                continue
-            seen.add(nu)
-            text = ln.get("link_text") or None
-            rows.append(
-                ArticleLink(
-                    article_id=article.id,
-                    url=(ln.get("url") or nu)[:1000],
-                    normalized_url=nu[:1000],
-                    link_text=text[:500] if text else None,
-                    position=ln.get("position"),
-                    link_type="external",
+
+        def _build_rows() -> list[ArticleLink]:
+            # Rebuilt inside the retry's work callable: a rollback on a transient
+            # lock expunges pending objects, so the rows must be fresh each attempt.
+            seen: set[str] = set()
+            out: list[ArticleLink] = []
+            for ln in links:
+                if ln.get("link_type") != "external":
+                    continue
+                nu = ln.get("normalized_url") or ln.get("url")
+                if not nu or nu in seen:
+                    continue
+                seen.add(nu)
+                ltext = ln.get("link_text") or None
+                out.append(
+                    ArticleLink(
+                        article_id=article.id,
+                        url=(ln.get("url") or nu)[:1000],
+                        normalized_url=nu[:1000],
+                        link_text=ltext[:500] if ltext else None,
+                        position=ln.get("position"),
+                        link_type="external",
+                    )
                 )
-            )
-            if len(rows) >= 300:  # guard against pathological link-farm pages
-                break
-        if rows:
-            session.add_all(rows)
-            session.commit()
+                if len(out) >= 300:  # guard against pathological link-farm pages
+                    break
+            return out
+
+        def _work() -> None:
+            rows = _build_rows()
+            if rows:
+                session.add_all(rows)
+                session.commit()
+
+        # Belt-and-braces retry (the single-writer gate makes a lock unlikely, but
+        # a dropped transaction here lost link indexing 87× in the 2026-06-17 field
+        # log). A lock fails the commit atomically (nothing persisted), so a
+        # rollback + rebuild is collision-free.
+        run_write_with_retry(_work, session=session, label=f"index_links[{article.id}]")
     except Exception:  # noqa: BLE001 - link analysis is auxiliary; never fail ingestion
         session.rollback()
         import logging

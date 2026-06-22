@@ -3816,6 +3816,40 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 AUTONOMOUS SESSION (the field-test brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-22.md`;
+  ONE branch claude/keen-davinci-jvsmfh per the harness git-constraint, draft PR onto 0.09; backend VERIFIED
+  py3.13 venv, frontend BROWSER-UNVERIFIED per fork-3). HONEST FINDING on P0-1 (the headline "data is locked
+  data-loss"): the 149 `database is locked` errors in the bundle are dated 2026-06-17 — they PREDATE the
+  `do_orm_execute` single-writer-gate fix (writer.py, merged 2026-06-18 in #384). Audited every write path:
+  the gate is registered on SessionLocal + covers ORM flush AND bulk DML; busy_timeout=30000 on every pooled
+  connection; the raw writers (maintenance VACUUM/ANALYZE, email, store, FTS rebuild) all take write_lock or
+  run pre-scheduler; migrate.py only touches staged files. So P0-1's specific storm is ALREADY closed; the
+  maintainer believed it live because the bundle captured a STALE error window (exactly P0-5's warning).**
+  SHIPPED anyway as warranted defence-in-depth + the trustworthiness fix that lets the maintainer SEE it's
+  closed:
+  - **P0-1 defence-in-depth (data-loss class):** `index_article`'s when/where/who block RE-RAISES a lock
+    error instead of swallowing-without-rollback (the swallow poisoned the final commit → the scheduler's
+    "transaction has been rolled back … Original exception was: database is locked"); non-lock WWW errors
+    stay swallowed (a bad date parse must never cost the article its keywords). The two best-effort ingest
+    sub-writes (`_maybe_index_keywords` → idempotent index_article; `_maybe_index_links` → rebuild-rows
+    work) now run through `run_write_with_retry`, so a transient lock (gate disabled / a restore FTS rebuild
+    racing the live engine) RETRIES instead of dropping data; an exhausted lock still degrades gracefully
+    (logs, never breaks ingestion). Past-session losses recover via the existing backfill/reindex paths.
+    tests/test_ingest_index_retry.py (3: retry recovers keywords, exhausted-lock-doesn't-break-ingest,
+    non-lock-WWW-keeps-keywords).
+  - **P0-5 trustworthy diagnostics:** `errorlog.install()` now writes a session-start BOOT marker, and
+    `errorlog.summary()` reports records/first_at/last_at/last_session_started_at + problems_total/
+    problems_this_session + locked_errors_total/**locked_errors_this_session** — wired into the debug bundle
+    as `error_log`. So a future bundle answers "is the data-loss happening NOW?" directly (a clean current
+    session reads `locked_errors_this_session: 0` even while the file still holds an old session's errors).
+    tests/test_errorlog_summary.py (5).
+  - **P0-5 reindex hammering:** the Insights status poll (every 6 s) re-kicked a fresh re-index drain on
+    every tick (1,326 `/api/insights/reindex` calls / 369 s, each a heavy write contending with the scrape).
+    `autoIndexInsights` now runs ONE bounded pass (<=40 batches, was 500) then COOLS DOWN (60 s; Infinity on a
+    drained or genuinely-stuck backlog), so the poll can't storm the writer. test_repo_invariants::
+    test_auto_index_insights_is_throttled_not_a_per_tick_storm. node --check + ruff F,B clean.
+  REMAINING P0: P0-2 restore UNIQUE-collision + slowness, P0-3 empty Home resilience, P0-4 trending-windows
+  rollup perf — next slices.
 - **KEYWORD-COUNT REDUCTION + RING-LOOP (2026-06-21, maintainer "reduce the ~500K keywords / download rings
   through diagnostics to auto-improve the engine"; branch claude/magical-brown-49m9nd, draft PR onto 0.09;
   backend VERIFIED py3.11 harness, frontend BROWSER-UNVERIFIED per fork-3):** the honest read recorded —

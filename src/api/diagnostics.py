@@ -1365,6 +1365,7 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     from src.monitoring import feed_preflight
     from src.monitoring.collect_perf import recent_samples as _collect_perf_samples
     from src.monitoring.errorlog import recent_errors
+    from src.monitoring.errorlog import summary as error_log_summary
     from src.monitoring.field_test import recent_results as _field_test_results
     from src.monitoring.preflight import recent_results as source_results
     from src.paths import data_dir as _data_dir
@@ -1472,6 +1473,12 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
         # opt-out. Will be removed when the cycle ends.
         "field_test": _field_test_results(),
         "errors": recent_errors(300),
+        # Honest metadata so a reader can tell whether the error window is CURRENT
+        # (the rolling file survives reinstalls, so old-session errors can look
+        # live). "*_this_session" counts are since the latest boot marker, so a
+        # clean current run reads zero — the direct answer to "is the data-loss
+        # happening now?" (P0-5; field test 2026-06-22).
+        "error_log": error_log_summary(),
         "method": (
             "Verbatim runtime facts, tracking states, network verdicts, per-click "
             "import outcomes and the rolling WARNING+ error log. Nothing inferred; "
