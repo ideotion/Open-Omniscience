@@ -3863,8 +3863,19 @@ ruling, a contingency, or a deliberate-omission note.
     same-date-precision-diff-snippet no longer crashes + local kept; an incoming corpus with its own dup
     date rows merges via INSERT OR IGNORE). The slowness half (236 s/preview) folds into the P1 import/export
     redesign (restore as a task-manager job). mypy 126≤127, ruff F,B clean, torture suite 10/10 green.
-  REMAINING P0: P0-2 restore slowness (→ P1 backups job), P0-3 empty Home resilience, P0-4 trending-windows
-  rollup perf — next slices.
+  - **P0-3 empty Home despite ~7,800 articles:** Home was NOT a blank div — `renderBriefing` already renders
+    the honest "No Leads yet" empty state and `loadHome` already has independent per-section try/catches (a
+    slow `trending-windows` can't blank it). The real cause: the briefing cache (`briefing_cache.json`) is
+    refreshed ONLY by the scheduler post-pass, but the app BOOTS IN AIRPLANE MODE (scheduler idle), so a
+    cache built when the corpus was tiny (or from a rolled-back pre-gate pass) left Home empty forever —
+    `get_briefing(force=False)` returned it verbatim. FIX: `refresh_briefing` records the corpus size
+    (`article_count`) in the cache, and `get_briefing` recomputes ONCE when the corpus has grown materially
+    since (`_is_cache_stale`: grew ≥25 AND ≥10%); a stable corpus still reads the cache instantly (bounded,
+    so no per-poll churn even if producers genuinely yield 0 cards — the new cache records the current size).
+    tests/test_briefing_stale_cache.py (3: stale-logic, recompute-a-stale-empty-cache, fresh-cache-served-
+    verbatim). Backend-testable; the producers-genuinely-fire question can't be reproduced without the live
+    corpus, but a stale cache was the load-bearing cause (boot-airplane + the pre-gate pass rollbacks).
+  REMAINING P0: P0-2 restore slowness (→ P1 backups job), P0-4 trending-windows rollup perf — next slice.
 - **KEYWORD-COUNT REDUCTION + RING-LOOP (2026-06-21, maintainer "reduce the ~500K keywords / download rings
   through diagnostics to auto-improve the engine"; branch claude/magical-brown-49m9nd, draft PR onto 0.09;
   backend VERIFIED py3.11 harness, frontend BROWSER-UNVERIFIED per fork-3):** the honest read recorded —

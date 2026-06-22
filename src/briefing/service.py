@@ -35,6 +35,41 @@ def _cache_path():
     return data_dir() / "briefing_cache.json"
 
 
+# A cache is STALE once the corpus has grown by this fraction AND this many
+# articles since it was generated — only then is recomputing (run_all, heavy)
+# worth it. Bounds the regen frequency: normal online operation refreshes the
+# cache post-pass, so this safety net fires rarely (e.g. boot-airplane, or a bulk
+# import without a scrape pass), not on every Home poll.
+_STALE_GROWTH_FRAC = 0.10
+_STALE_GROWTH_MIN = 25
+
+
+def _article_count(session) -> int:
+    """Cheap indexed COUNT of articles (the corpus size; no score, no scan)."""
+    from sqlalchemy import func
+
+    from src.database.models import Article
+
+    try:
+        return int(session.query(func.count(Article.id)).scalar() or 0)
+    except Exception:  # noqa: BLE001 - a count failure must never break the feed
+        return 0
+
+
+def _is_cache_stale(session, payload: dict) -> bool:
+    """True iff the corpus has grown materially since the cache was generated, so
+    the cached cards no longer reflect the corpus (the empty-Home-despite-data bug).
+    A cache with no recorded count (pre-this-change) is treated as stale once."""
+    cached = payload.get("article_count")
+    current = _article_count(session)
+    if cached is None:
+        # Unknown baseline: refresh once only if the corpus is non-trivial, so an
+        # already-empty corpus doesn't trigger a pointless recompute.
+        return current >= _STALE_GROWTH_MIN
+    grew = current - int(cached)
+    return grew >= _STALE_GROWTH_MIN and grew >= int(cached) * _STALE_GROWTH_FRAC
+
+
 def _dismissed_path():
     from src.paths import data_dir
 
@@ -112,6 +147,12 @@ def refresh_briefing(session) -> dict:
     payload = {
         "version": CACHE_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
+        # The corpus size at generation time, so get_briefing can detect a STALE
+        # cache (the corpus grew but the scheduler hasn't refreshed — e.g. the app
+        # boots in airplane mode, so the scheduler is idle and a briefing built when
+        # the corpus was tiny would otherwise show an empty Home forever despite a
+        # large corpus; P0-3, field test 2026-06-22).
+        "article_count": _article_count(session),
         "cards": _sorted(cards),
     }
     path = _cache_path()
@@ -169,8 +210,17 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
 
 
 def get_briefing(session, *, force: bool = False, include_dismissed: bool = False) -> dict:
-    """Return the cached briefing (computing once if absent or ``force``)."""
+    """Return the cached briefing (computing once if absent, ``force``, or STALE).
+
+    Stale-recompute (P0-3): the scheduler refreshes the cache after each scrape, but
+    the app boots in airplane mode (scheduler idle), so a briefing built when the
+    corpus was small would otherwise leave Home empty forever despite a large corpus.
+    If the corpus has grown materially since the cache, recompute once — bounded so a
+    stable corpus always reads the cache instantly."""
     payload = None if force else _read_cache()
+    if payload is not None and _is_cache_stale(session, payload):
+        _LOG.info("briefing cache is stale (corpus grew); recomputing")
+        payload = None
     if payload is None:
         payload = refresh_briefing(session)
     view = _present(payload, include_dismissed=include_dismissed)
