@@ -9,7 +9,17 @@ silent degradation — see [DESIGN.md](DESIGN.md) §3.
 ```bash
 python3.13 -m venv .venv && . .venv/bin/activate
 pip install -e ".[analysis,dev]"
-pytest -q          # 800+ tests, ~2.5 min
+pytest -q          # full suite, a few minutes
+```
+
+`pyproject.toml` stays the single source of truth for dependencies (we install
+latest-within-floors so CI catches upstream breakage early). For a **reproducible /
+release install** there is an optional hash-pinned lock derived from it:
+
+```bash
+pip install -r requirements.lock          # exact, hash-verified core + analysis pins
+# regenerate after a dependency change:
+pip-compile --generate-hashes --extra analysis -o requirements.lock pyproject.toml
 ```
 
 ## Workflow
@@ -29,6 +39,11 @@ pytest -q          # 800+ tests, ~2.5 min
   (`src/analysis`), never a constant.
 - Ingestion goes through the single ethical fetcher (robots fail-closed, rate-limited).
 - Fabricated/dead code belongs in `quarantine/` (documented), not `src/`.
+
+## Code of conduct
+
+By participating you agree to abide by the [Code of Conduct](CODE_OF_CONDUCT.md)
+(Contributor Covenant 2.1). Report concerns privately to open-omniscience@ideotion.com.
 
 ## License
 

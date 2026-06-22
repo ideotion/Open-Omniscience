@@ -80,8 +80,12 @@ same cross-origin refusal middleware as the rest of the API.
 
 ## Reporting a vulnerability
 
-Open a GitHub issue (or email open-omniscience@ideotion.com) with steps to
-reproduce. Because the app is loopback/single-user, the main risk surface is the
+**Please do not open a public issue for a security vulnerability.** Report it
+privately by email to **open-omniscience@ideotion.com** with steps to reproduce;
+we aim to acknowledge within a few days. A public GitHub issue is appropriate only
+for non-sensitive, already-public security-hardening discussion.
+
+Because the app is loopback/single-user, the main risk surface is the
 ethical-fetch path and the evidence-verification guarantees above.
 
 ---
