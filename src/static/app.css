@@ -89,6 +89,7 @@
     .brand .txt b { font-size:15px; font-weight:700; letter-spacing:.01em; display:block; }
     .brand .txt span { font-size:11px; color:var(--muted); }
     .nav-groups { flex:1; padding:4px 10px 12px; }
+    .nav-groups.flat { padding-top:10px; }  /* flat list (#22): no group headers to space it */
     .nav-group { margin-top:14px; }
     .nav-group > .gl { font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
       color:var(--muted); padding:0 10px 6px; white-space:nowrap; }
@@ -271,6 +272,26 @@
     .cap-chip { font-size:10.5px; border:1px solid var(--border); border-radius:99px;
       padding:1px 8px; color:var(--fg-soft, var(--fg)); background:var(--panel2);
       max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    /* Multi-select dropdown filter (#23): a native <details> disclosure of checkboxes —
+       no positioning/click-outside JS, works across all themes via the palette vars. */
+    .msel { position:relative; display:inline-block; }
+    .msel > summary { list-style:none; cursor:pointer; user-select:none;
+      border:1px solid var(--border); border-radius:6px; background:var(--panel2);
+      padding:6px 22px 6px 8px; min-width:90px; color:var(--fg);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; position:relative; }
+    .msel > summary::-webkit-details-marker { display:none; }
+    .msel > summary::after { content:"▾"; position:absolute; right:8px; color:var(--muted); }
+    .msel[open] > summary { border-color:var(--accent); }
+    .msel .msel-list, .msel .msel-mode { position:absolute; z-index:30; margin-top:3px;
+      max-height:260px; overflow:auto; min-width:180px; background:var(--panel);
+      border:1px solid var(--border); border-radius:6px; padding:4px;
+      box-shadow:0 6px 18px rgba(0,0,0,.35); }
+    .msel .msel-mode { position:static; box-shadow:none; border:0; padding:2px 4px 4px;
+      border-bottom:1px solid var(--border-soft, var(--border)); margin:0; }
+    .msel-opt { display:flex; align-items:center; gap:6px; padding:3px 6px; font-size:12px;
+      border-radius:4px; cursor:pointer; white-space:nowrap; }
+    .msel-opt:hover { background:var(--panel2); }
+    .msel-opt input { width:auto; margin:0; }
     .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
     .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
       padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }

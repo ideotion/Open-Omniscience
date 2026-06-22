@@ -3816,6 +3816,60 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
+  empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the
+  default rss collect pass — the SAME gap markets had before its per-pass auto-load. `src/law/track.py:
+  auto_track_due` = a BOUNDED, freshness-gated, round-robin batch (default 5 docs/pass, min_interval 24h,
+  least-recently-checked first via `last_checked_at` NULLs-first) wired into the scheduler's post-pass
+  housekeeping (runner.py, after the market auto-load), gated by `auto_track_law` (getattr-default True,
+  mirroring `auto_import_calendars`). So watched legal docs (registered `watched=True` from configs/legal.yml)
+  build baselines + surface changes over time WITHOUT hammering legal sites — per-host politeness + robots
+  fail-closed + the kill switch (airplane) all ride the shared fetcher; best-effort (one bad doc never aborts
+  the pass). tests/test_law.py::test_auto_track_due_is_freshness_gated_and_bounded (bounded/round-robin/
+  freshness; an UNWATCHED doc is never fetched). REMAINING for #18 (the larger halves): the per-country legal-
+  source catalog for every UI language (a languages→countries map + curated sourced portals, large hand-
+  curation — the configs/legal.yml set today is ~30 portals, mostly anglophone/EU) + the tab's full content-
+  first revamp (data-dense, version-tracking UI). These are separate, larger builds.
+- **2026-06-22 FIELD-TEST REMAINDER — CUSTODY DISSOLVED FROM THE SIDEBAR (§5 #20, structural half; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; frontend BROWSER-UNVERIFIED per fork-3):** "Evidence &
+  custody" is an ACTION on content, so it leaves the (now flat) sidebar — completing the Trust-group
+  dissolution started by #22 — and moves to Settings → Safety (a `showTab('custody')` button, mirroring the
+  earlier integrity dissolution). DESK LESSON honored: the `#tab-custody` page + all its tools (saveCustody,
+  the post-quantum/OTS controls) stay, reachable from Settings + the command palette (custody stays in NAV).
+  test_repo_invariants::test_custody_dissolved_from_sidebar_but_reachable_from_settings. The flat sidebar is
+  now home/insights/timemap/law/agenda/indices/markets/library. REMAINING for #20: the crypto-UI
+  "make it foolproof" simplification (plain-language controls + #oo-tip detail) — a separate UX rework.
+- **2026-06-22 FIELD-TEST REMAINDER — FLAT SIDEBAR + REMOVE SIDEBAR-VISIBILITY (§4 #22 + #17 part; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; frontend BROWSER-UNVERIFIED per fork-3):** the sidebar
+  section headers (Investigate/Collect/Trust .gl labels + .nav-group wrappers) are GONE — one FLAT list
+  (`nav.nav-groups.flat`), same order, all tabs present + reachable (invariant #2 intact; also via the
+  command palette). The outdated "Tools shown in the sidebar" checklist (#17) + the whole hide-a-tab
+  visibility feature are removed: `dr-modules` host gone, `toggleModule` gone, `ui.hidden` dropped from
+  UI_DEFAULTS + the applyUi nav-item-hiding/group-collapse logic + the buildDrawer checklist build all
+  removed (a legacy `ui.hidden` in stored prefs is simply ignored). The collapse-to-rail control STAYS (a
+  different feature). NOT in this slice (noted): #20 custody→Settings move (custody stays in the flat list
+  for now); #17's "fuse Appearance + GUI into one section" (a larger Settings reorg). test_repo_invariants::
+  test_sidebar_is_a_flat_list_without_section_headers. ALSO fixed the CI BLOCKER from the #23 commit:
+  test_sources_tab_moved_into_settings asserted the `sources` onShow line VERBATIM, which #23 changed by
+  adding loadSrcFacets() — rewritten to assert each onShow call individually (so adding a load never reddens
+  it again). LESSON: run the FULL test_repo_invariants after a frontend change — a line an invariant asserts
+  verbatim can break even when the new feature's own tests pass.
+- **2026-06-22 FIELD-TEST REMAINDER — SOURCES MULTI-SELECT FILTERS (§5 #23; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED
+  per fork-3):** Settings → Sources filters converted from single text inputs to multi-select DROPDOWNS fed
+  by a cheap facets endpoint. Backend: NEW `GET /api/sources/facets` (distinct languages/countries/types/tags
+  + real counts via ONE column-projected query over the ~3.2k-row sources table — never the N+1 article load,
+  cheap on the encrypted store; counts only, no score) + multi-value filtering on BOTH list endpoints
+  (`/api/catalog/sources` the table + `/api/sources/` the picker): country/language/source_type/tag accept
+  COMMA-SEPARATED values, OR WITHIN a filter, AND ACROSS filters, + `tag_mode` any|all; `/api/catalog/sources`
+  filters in SQL BEFORE pagination (so a filter spans the whole catalogue) and country values still normalise
+  (FR/France/fr). Single-value calls stay backward-compatible. Frontend: four `<details class="msel">` native-
+  disclosure checklist dropdowns (no fragile positioning/click-outside JS), filled by `loadSrcFacets`, option
+  labels localised to full names via ooLangName/ooRegionName (#19), tag any|all toggle, free-text search kept;
+  theme-aware `.msel` CSS (all 17 themes). tests/test_source_facets_filters.py (5) + test_catalog_sources.py
+  (+2 multi-select) + test_repo_invariants::test_sources_have_multi_select_dropdown_filters. New UI strings
+  English-fallback via t() (gate 100%). REMAINING: human click-through (fork-3); key the new strings ×12.
 - **2026-06-22 FIELD-TEST REMAINDER — TASK-MANAGER SHOWS THE ACTUAL STRATA (§5 #5; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED
   per fork-3):** the Queue preview claimed "stratified by language and tag" but never SHOWED the strata.

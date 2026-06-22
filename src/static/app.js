@@ -1049,7 +1049,7 @@
 
     // -- Appearance / customization (local-only, never transmitted) --------- //
     const UI_KEY = "oo.ui";
-    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, face:"", sidebar:"expanded", hidden:[]};
+    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, face:"", sidebar:"expanded"};
     const THEMES = [
       {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"slate",name:"Slate",c:"#7aa2f7"},
       {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"arctic",name:"Arctic",c:"#88c0d0"},
@@ -1094,15 +1094,9 @@
       if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
       r.style.fontSize = (ui.font || 100) + "%";
       if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
-      // Module visibility: hide chosen tools (and any group left entirely empty).
-      const hidden = new Set(ui.hidden || []);
-      document.querySelectorAll(".nav-item[data-tab]").forEach(b => {
-        b.style.display = hidden.has(b.dataset.tab) ? "none" : "";
-      });
-      document.querySelectorAll(".nav-group").forEach(g => {
-        const any = [...g.querySelectorAll(".nav-item[data-tab]")].some(b => b.style.display !== "none");
-        g.style.display = any ? "" : "none";
-      });
+      // The sidebar-visibility feature was removed (#17, 2026-06-22): the flat nav is
+      // always complete (every tab also reachable via the palette), so no nav-item is
+      // ever hidden here. A legacy ui.hidden in stored prefs is simply ignored.
     }
     function setTheme(t)   { const u = getUi(); u.theme = t;   saveUi(u); applyUi(u); buildDrawer(); syncThemeSelect(); }
     function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
@@ -1111,11 +1105,6 @@
     function setFont(v)    { const u = getUi(); u.font = +v;   saveUi(u); applyUi(u); $("dr-font-val").textContent = v + "%"; }
     function setSidebar(s) { const u = getUi(); u.sidebar = s; saveUi(u); applyUi(u); buildDrawer(); }
     function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
-    function toggleModule(id, show) {
-      const u = getUi(); const set = new Set(u.hidden || []);
-      show ? set.delete(id) : set.add(id);
-      u.hidden = [...set]; saveUi(u); applyUi(u);
-    }
     function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
       toast("Appearance reset to defaults."); }
     function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
@@ -1140,7 +1129,7 @@
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
-      if (cat === "sources") { loadManagedSources(); loadCandidates(); }  // moved Sources onShow
+      if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); }  // LLM-management subtab (Q6) — also re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
@@ -1166,10 +1155,7 @@
       $("dr-sidebar").innerHTML = [["expanded", "Expanded"], ["collapsed", "Collapsed"]].map(([v, l]) =>
         `<button class="${v === ui.sidebar ? "sel" : ""}" onclick="setSidebar('${v}')">${l}</button>`).join("");
       $("dr-font").value = ui.font; $("dr-font-val").textContent = ui.font + "%";
-      const hidden = new Set(ui.hidden || []);
-      $("dr-modules").innerHTML = NAV.filter(n => !LOCKED.has(n.id)).map(n =>
-        `<label><input type="checkbox" ${hidden.has(n.id) ? "" : "checked"}
-           onchange="toggleModule('${n.id}', this.checked)"> ${esc(n.label)}</label>`).join("");
+      // (The "Tools shown in the sidebar" checklist was removed — #17, 2026-06-22.)
     }
 
     // -- Command palette = the OMNIBAR (Ctrl/⌘-K; T13 slice 1) -------------- //
@@ -4286,11 +4272,45 @@
     // Source-management list state: filters + sort + paging.
     const SRC = {offset: 0, limit: 50, sort: "name", order: "asc"};
 
+    // Multi-select dropdown filters (#23): each <details class="msel"> is a checklist.
+    // Within a filter the checked values are OR'd; across filters AND'd; tags add an
+    // any|all toggle. Read only the checklist's own checkboxes (NOT the tag-mode box).
+    function mselValues(id) {
+      const det = $(id); if (!det) return [];
+      const list = det.querySelector(".msel-list");
+      return list ? [...list.querySelectorAll("input:checked")].map(c => c.value) : [];
+    }
+    function updateMselSummary(id) {
+      const det = $(id); if (!det) return;
+      const sum = det.querySelector("summary"); if (!sum) return;
+      const v = mselValues(id);
+      sum.textContent = v.length === 0 ? t("Any") : (v.length === 1 ? v[0] : v.length + " " + t("selected"));
+    }
+    async function loadSrcFacets() {
+      let f; try { f = await api("/api/sources/facets"); } catch (e) { return; }
+      const fill = (id, rows, labeler) => {
+        const det = $(id); if (!det) return;
+        const list = det.querySelector(".msel-list"); if (!list) return;
+        list.innerHTML = (rows || []).length
+          ? rows.map(x => `<label class="msel-opt"><input type="checkbox" value="${esc(x.key)}" onchange="srcMselChanged('${id}')"> ${esc(labeler ? labeler(x.key) : x.key)} <span class="muted">·${x.n}</span></label>`).join("")
+          : `<div class="muted" style="padding:4px">—</div>`;
+      };
+      fill("src-msel-language", f.languages, k => (typeof ooLangName === "function" ? ooLangName(k, k) : k));
+      fill("src-msel-country", f.countries, k => (typeof ooRegionName === "function" ? ooRegionName(k, k) : k));
+      fill("src-msel-source_type", f.types);
+      fill("src-msel-tag", f.tags);
+      ["src-msel-language", "src-msel-country", "src-msel-source_type", "src-msel-tag"].forEach(updateMselSummary);
+    }
+    function srcMselChanged(id) { updateMselSummary(id); applySrcFilters(); }
+
     function srcQuery() {
       const p = new URLSearchParams();
-      const map = {q: "src-search", country: "src-country", language: "src-language",
-                   source_type: "src-type", tag: "src-tag"};
-      for (const [k, id] of Object.entries(map)) { const v = $(id).value.trim(); if (v) p.set(k, v); }
+      const q = $("src-search").value.trim(); if (q) p.set("q", q);
+      const lang = mselValues("src-msel-language"); if (lang.length) p.set("language", lang.join(","));
+      const country = mselValues("src-msel-country"); if (country.length) p.set("country", country.join(","));
+      const types = mselValues("src-msel-source_type"); if (types.length) p.set("source_type", types.join(","));
+      const tags = mselValues("src-msel-tag");
+      if (tags.length) { p.set("tag", tags.join(",")); if ($("src-tag-all") && $("src-tag-all").checked) p.set("tag_mode", "all"); }
       const en = $("src-enabled").value; if (en) p.set("enabled", en);
       p.set("sort", SRC.sort); p.set("order", SRC.order);
       p.set("limit", SRC.limit); p.set("offset", SRC.offset);
@@ -4299,7 +4319,12 @@
 
     function applySrcFilters() { SRC.offset = 0; loadManagedSources(); }
     function clearSrcFilters() {
-      ["src-search","src-country","src-language","src-type","src-tag"].forEach(id => $(id).value = "");
+      $("src-search").value = "";
+      ["src-msel-language", "src-msel-country", "src-msel-source_type", "src-msel-tag"].forEach(id => {
+        const det = $(id); if (det) det.querySelectorAll(".msel-list input").forEach(c => { c.checked = false; });
+        updateMselSummary(id);
+      });
+      if ($("src-tag-all")) $("src-tag-all").checked = false;
       $("src-enabled").value = ""; SRC.offset = 0; loadManagedSources();
     }
     function srcPage(dir) {
@@ -4353,14 +4378,26 @@
       </tr>`;
     }
 
-    function srcFilterTag(tag) { $("src-tag").value = tag; applySrcFilters(); }
+    // Check one option in a multi-select checklist by value (used by tag pills + the
+    // coverage→sources jump). If the facets list hasn't loaded the value yet, no-op.
+    function srcMselCheck(id, value) {
+      const det = $(id); if (!det) return false;
+      const cb = [...det.querySelectorAll(".msel-list input")].find(c => c.value === value);
+      if (cb) { cb.checked = true; updateMselSummary(id); return true; }
+      return false;
+    }
+    function srcFilterTag(tag) { srcMselCheck("src-msel-tag", tag); applySrcFilters(); }
 
     // Jump from the Database coverage view to the matching sources.
     function openSourcesForKeyword(code, tag) {
       clearSrcFilters();
-      if (code && code !== "(none)") $("src-country").value = code;
-      if (tag) $("src-tag").value = tag;
-      showTab("sources"); applySrcFilters();
+      showTab("sources");
+      // Facets fill on tab open; wait a tick so the checkboxes exist, then check them.
+      loadSrcFacets().then(() => {
+        if (code && code !== "(none)") srcMselCheck("src-msel-country", code);
+        if (tag) srcMselCheck("src-msel-tag", tag);
+        applySrcFilters();
+      });
     }
 
     async function updateSource(id, body) {

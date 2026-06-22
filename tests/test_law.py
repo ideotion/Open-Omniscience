@@ -88,6 +88,36 @@ def test_seed_sources_and_register_documents(db):
     assert register_documents(db)["created"] == 0
 
 
+def test_auto_track_due_is_freshness_gated_and_bounded(db):
+    """#18: a per-pass auto-track that builds baselines over time WITHOUT hammering —
+    bounded batch, round-robin by least-recently-checked, freshness-gated."""
+    from src.law.track import auto_track_due
+
+    for i in range(5):
+        db.add(LawDocument(jurisdiction="uk", title=f"Act {i}",
+                           url=f"https://example.test/act{i}", watched=True))
+    # an UNWATCHED doc must never be tracked
+    db.add(LawDocument(jurisdiction="uk", title="Unwatched",
+                       url="https://example.test/x", watched=False))
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+
+    r1 = auto_track_due(db, fetcher, batch=2)
+    assert r1["documents"] == 2 and r1["baselines"] == 2  # bounded to the batch
+    assert r1["due"] == 5                                  # 5 watched, none checked yet
+    # The just-tracked two are now fresh -> the next pass picks DIFFERENT docs.
+    r2 = auto_track_due(db, fetcher, batch=2)
+    assert r2["documents"] == 2 and r2["due"] == 3
+    r3 = auto_track_due(db, fetcher, batch=2)
+    assert r3["documents"] == 1 and r3["due"] == 1        # the 5th + last
+    # All five watched docs now have a baseline; the unwatched one was never fetched.
+    assert db.query(LawRevision).count() == 5
+    assert db.query(LawDocument).filter_by(watched=False).first().last_checked_at is None
+    # Everything is fresh now -> nothing due.
+    assert auto_track_due(db, fetcher, batch=2)["due"] == 0
+
+
 # --------------------------------------------------------------------------- #
 #  Tracking: baseline → unchanged → change (flagged) → revert
 # --------------------------------------------------------------------------- #

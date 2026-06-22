@@ -266,7 +266,8 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     the last run's real pages/source when known, else 1 feed fetch each).
     """
     targets: list[str] = []
-    strata: dict[str, list[dict]] = {"languages": [], "tags": []}
+    # Holds list-of-dict facets PLUS scalar 'sampled'/'note', so the value type is object.
+    strata: dict[str, object] = {"languages": [], "tags": []}
     total = 0
     if settings.mode in ("rss", "crawl"):
         base = select_sources(session, settings)
@@ -836,6 +837,23 @@ class BackgroundScheduler:
                         _LOG.info("market auto-load: %s price points", feeds.get("imported"))
             except Exception:  # noqa: BLE001 - never fail the scrape on market auto-load
                 _LOG.warning("market auto-load failed", exc_info=True)
+            # Law auto-track (field test 2026-06-22, #18: the World-law tab was empty
+            # because legal documents are only tracked in mode=="law", never in the
+            # default rss pass). A BOUNDED, freshness-gated, round-robin batch per pass
+            # (like the calendar/markets auto-load) so watched legal documents build
+            # baselines + surface changes over time WITHOUT hammering legal sites
+            # (politeness/robots/kill-switch ride the shared fetcher). Best-effort;
+            # opt-out via auto_track_law.
+            try:
+                if getattr(settings, "auto_track_law", True):
+                    from src.law.track import auto_track_due
+
+                    law_res = auto_track_due(session, fetcher)
+                    if law_res.get("documents"):
+                        result["law_tracked"] = law_res.get("documents", 0)
+                        _LOG.info("law auto-track: %s", law_res)
+            except Exception:  # noqa: BLE001 - never fail the scrape on law auto-track
+                _LOG.warning("law auto-track failed", exc_info=True)
             # TEMPORARY (0.0.8 live-test cycle): exercise every fetch surface
             # once and log verbatim outcomes for the maintainer's debug bundle.
             # Self-improvement instrumentation only; OO_FIELD_TEST=0 disables;

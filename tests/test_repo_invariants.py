@@ -1965,9 +1965,12 @@ def test_sources_tab_moved_into_settings():
     assert 'if (name === "sources")' in html and '_setSubtabs.select("sources")' in html, (
         "showTab('sources') must redirect to Settings → Sources"
     )
-    assert 'if (cat === "sources") { loadManagedSources(); loadCandidates(); }' in html, (
-        "the Sources subtab must run the managed-sources + candidates onShow loads"
-    )
+    # The Sources subtab runs its onShow loads (loadSrcFacets feeds the #23 multi-select
+    # dropdowns; managed-sources + candidates as before). Assert each call, not the exact
+    # line, so adding an onShow load never reddens this verbatim check again.
+    src_onshow = html.split('if (cat === "sources") {', 1)[1].split("}", 1)[0]
+    for call in ("loadSrcFacets()", "loadManagedSources()", "loadCandidates()"):
+        assert call in src_onshow, f"the Sources subtab onShow must run {call}"
 
 
 def test_wikipedia_tab_moved_into_settings():
@@ -3498,6 +3501,73 @@ def test_task_manager_displays_actual_language_and_tag_strata():
     # hot poll) — the loop runs over rows, not a fresh DB call.
     plan_preview_body = runner.split("def plan_preview", 1)[1].split("\ndef ", 1)[0]
     assert "for r in rows:" in plan_preview_body and "lang_n[_source_lang(r)]" in plan_preview_body
+
+
+def test_sidebar_is_a_flat_list_without_section_headers():
+    """Field test 2026-06-22 (#22 flatten + #17 remove sidebar-visibility): the sidebar
+    is ONE flat list — the Investigate/Collect/Trust section headers (.gl labels +
+    .nav-group wrappers) are gone, and the 'Tools shown in the sidebar' checklist +
+    the hide-a-tab feature are removed. Every tab stays present + reachable (invariant
+    #2: lists all tabs)."""
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    nav = html.split('id="navGroups"', 1)[1].split("</nav>", 1)[0]
+    # No section-header markup left in the live nav (comments may mention them).
+    assert '<div class="gl">' not in nav and '<div class="nav-group"' not in nav, (
+        "the sidebar must be a flat list — no .gl headers / .nav-group wrappers"
+    )
+    assert 'class="nav-groups flat"' in html, "the nav must carry the flat marker"
+    # All the core tabs are still there (nothing lost by the flatten).
+    for tab in ("home", "insights", "timemap", "law", "agenda", "indices", "markets", "library"):
+        assert f'data-tab="{tab}"' in nav, f"flat sidebar lost the {tab} tab"
+    # The sidebar-visibility feature is gone (checklist host + toggle fn + persistence).
+    # (Checked via the removed identifiers, not the human label — an explanatory comment
+    # may still NAME the removed feature.)
+    assert 'id="dr-modules"' not in html, "the 'Tools shown in the sidebar' checklist must be removed"
+    assert "toggleModule" not in app, "the hide-a-tab toggle must be removed"
+    # The collapse-to-rail control STAYS (that is a different feature, invariant #2).
+    assert "toggleSidebar" in app and 'id="sb-collapse"' in html
+
+
+def test_custody_dissolved_from_sidebar_but_reachable_from_settings():
+    """Field test 2026-06-22 (#20): Evidence & custody is an ACTION on content, so it
+    leaves the sidebar (completing the Trust-group dissolution) and moves to Settings →
+    Safety — but the Desk lesson holds: the page + tools stay, reachable from Settings
+    (a showTab('custody') button) and the command palette (custody is in NAV)."""
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    nav = html.split('id="navGroups"', 1)[1].split("</nav>", 1)[0]
+    assert 'data-tab="custody"' not in nav, "the custody sidebar button must be removed"
+    # Reachable from Settings → Safety + preserved (the page + the save action stay).
+    assert "showTab('custody')" in html, "Settings → Safety must carry a custody entry point"
+    assert 'id="tab-custody"' in html, "the custody tab-page must be preserved (Desk lesson)"
+    assert "saveCustody" in app, "the custody controls must be preserved"
+    # Still palette-reachable (NAV keeps the entry).
+    assert '{id:"custody"' in app, "custody must stay registered in NAV for the palette/deep-links"
+
+
+def test_sources_have_multi_select_dropdown_filters():
+    """Field test 2026-06-22 (#23): the Settings → Sources filters are multi-select
+    DROPDOWNS fed by a facets endpoint (Language/Country/Type/Tags), with a tag any|all
+    toggle and the free-text title search kept. Backend: a cheap facets endpoint + the
+    list endpoints accept comma-separated OR-within multi-values."""
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    # The four multi-select <details> dropdowns + the tag any/all toggle + kept search.
+    for el in ("src-msel-language", "src-msel-country", "src-msel-source_type", "src-msel-tag"):
+        assert f'id="{el}"' in html, f"missing multi-select dropdown {el}"
+    assert 'id="src-tag-all"' in html, "tags need an any|all toggle"
+    assert 'id="src-search"' in html, "the free-text title search must be kept"
+    # Frontend reads the facets + builds comma-separated OR-within params.
+    assert "loadSrcFacets" in app and "/api/sources/facets" in app
+    assert "mselValues" in app and 'p.set("tag_mode", "all")' in app
+    # Localized full names on the language/country option labels (#19).
+    assert "ooLangName" in app and "ooRegionName" in app
+    # Backends: the facets endpoint + multi-value filtering on both list endpoints.
+    sm = (_SRC / "api" / "source_management.py").read_text(encoding="utf-8")
+    assert '@router.get("/facets"' in sm, "a /api/sources/facets endpoint must exist"
+    sio = (_SRC / "api" / "source_io.py").read_text(encoding="utf-8")
+    assert "tag_mode" in sio and ".in_(" in sio, "catalog/sources must support OR-within multi-values"
 
 
 def test_airplane_button_has_no_perpetual_animation():

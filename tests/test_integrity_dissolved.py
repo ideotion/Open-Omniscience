@@ -22,7 +22,9 @@ _JS = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
 
 
 def test_integrity_left_the_sidebar():
-    nav = _HTML.split('data-grp="trust"', 1)[1].split("</div>", 1)[0]
+    # The sidebar is now a FLAT list (#22, 2026-06-22) — no per-group anchors — so check
+    # the whole nav for the absence of the integrity button.
+    nav = _HTML.split('id="navGroups"', 1)[1].split("</nav>", 1)[0]
     assert 'data-tab="integrity"' not in nav, "the Source-integrity sidebar button must be removed"
 
 
