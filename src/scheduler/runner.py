@@ -266,7 +266,8 @@ def plan_preview(session, settings: SchedulerSettings, *, last_result: dict | No
     the last run's real pages/source when known, else 1 feed fetch each).
     """
     targets: list[str] = []
-    strata: dict[str, list[dict]] = {"languages": [], "tags": []}
+    # Holds list-of-dict facets PLUS scalar 'sampled'/'note', so the value type is object.
+    strata: dict[str, object] = {"languages": [], "tags": []}
     total = 0
     if settings.mode in ("rss", "crawl"):
         base = select_sources(session, settings)
