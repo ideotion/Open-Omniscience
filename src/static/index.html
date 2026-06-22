@@ -1349,11 +1349,12 @@
         taken before anything is applied, and the merge refuses to proceed if verification fails.</p>
       <div class="row">
         <div style="flex:2"><label for="v2-restore-file">Backup file</label>
-          <input type="file" id="v2-restore-file" accept=".oobak,.ooenc,application/octet-stream"></div>
-        <div style="flex:2"><label for="v2-restore-pass">Passphrase for this file</label>
+          <input type="file" id="v2-restore-file" accept=".oobak,.ooenc,application/octet-stream" onchange="v2DetectEncryption()"></div>
+        <div style="flex:2" id="v2-restore-pass-wrap" hidden><label for="v2-restore-pass">Passphrase for this file</label>
           <input id="v2-restore-pass" type="password" autocomplete="off" placeholder="empty for an unencrypted archive"></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="v2Preview()">Preview merge</button></div>
       </div>
+      <div id="v2-restore-enc" class="hint muted" style="margin-top:2px"></div>
       <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
         <legend class="muted" style="padding:0 6px">What to restore</legend>
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always merged)</span></label>

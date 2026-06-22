@@ -3731,3 +3731,20 @@ def test_server_side_folder_picker_wired():
     # The router is wired into the spine.
     wiring = (_SRC / "api" / "_wiring.py").read_text(encoding="utf-8")
     assert "files_router" in wiring
+
+
+def test_restore_auto_detects_encryption_client_side():
+    """Field test 2026-06-22 #10: restore reads the file's OOENC1 magic LOCALLY and
+    shows the passphrase field only for an encrypted backup (no upload-to-check); a
+    plaintext archive needs none. The magic matches read_artifact's exact signature."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'onchange="v2DetectEncryption()"' in html
+    assert 'id="v2-restore-pass-wrap"' in html and "hidden" in html
+    assert "function v2DetectEncryption(" in app
+    # reads only the first 8 bytes locally, compares the OOENC1 magic bytes.
+    assert "f.slice(0, 8).arrayBuffer()" in app
+    assert "0x4f, 0x4f, 0x45, 0x4e, 0x43, 0x31, 0x00, 0x00" in app  # "OOENC1\\0\\0"
+    # backend already raises the matching clear error (the source of truth).
+    art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
+    assert 'blob[:8] == b"OOENC1\\x00\\x00"' in art

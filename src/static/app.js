@@ -3667,6 +3667,27 @@
       if (quiet > 0) html += `<div class="muted" style="font-size:12px;margin-top:4px">${quiet} ${esc(t("further table(s) with no changes."))}</div>`;
       return html;
     }
+    // Encryption auto-detect (field test 2026-06-22 #10): read the chosen file's
+    // first 8 bytes LOCALLY (no upload-to-check) and look for the OOENC1 magic — the
+    // exact same signature read_artifact uses — so the passphrase field appears ONLY
+    // for an encrypted backup; a plaintext archive needs none. Degrades safely: on any
+    // read error it just shows the field (the old always-visible behaviour).
+    async function v2DetectEncryption() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const wrap = $("v2-restore-pass-wrap"), note = $("v2-restore-enc");
+      const f = $("v2-restore-file").files[0];
+      if (!f) { if (wrap) wrap.hidden = true; if (note) note.textContent = ""; return; }
+      let encrypted = true;  // safe default: if we can't read the header, show the field
+      try {
+        const buf = new Uint8Array(await f.slice(0, 8).arrayBuffer());
+        const magic = [0x4f, 0x4f, 0x45, 0x4e, 0x43, 0x31, 0x00, 0x00];  // "OOENC1\0\0"
+        encrypted = magic.every((b, i) => buf[i] === b);
+      } catch (_e) { encrypted = true; }
+      if (wrap) wrap.hidden = !encrypted;
+      if (note) note.textContent = encrypted
+        ? t("Encrypted backup — enter its passphrase.")
+        : t("Plaintext archive — no passphrase needed.");
+    }
     async function v2Preview() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const f = $("v2-restore-file").files[0];
