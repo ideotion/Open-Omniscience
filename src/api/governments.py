@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.catalog.countries import to_iso2, to_iso3
 from src.database.session import get_db, session_scope
 from src.stats import indicators as ind
 from src.stats.store import list_figures
@@ -51,16 +52,19 @@ def _latest_by_country(figs: list[dict], *, year: str | None = None) -> tuple[li
     years = sorted({str(f["time_period"]) for f in figs if f.get("time_period")})
     by_country: dict[str, dict] = {}
     for f in figs:
-        area = (f.get("ref_area") or "").upper()
+        iso3 = (f.get("ref_area") or "").upper()
+        # The choropleth + Intl.DisplayNames key on alpha-2; WB stores alpha-3. A
+        # non-country AGGREGATE (WLD/EUU/ARB...) has no alpha-2 -> dropped, never mapped.
+        iso2 = to_iso2(iso3)
         period = str(f.get("time_period") or "")
-        if not area or not period:
+        if not iso2 or not period:
             continue
         if year and period != str(year):
             continue
-        prev = by_country.get(area)
+        prev = by_country.get(iso2)
         # keep the most recent period per country (when no specific year is asked)
         if prev is None or period > str(prev["year"]):
-            by_country[area] = {"country": area, "value": f.get("value"), "year": period}
+            by_country[iso2] = {"country": iso2, "iso3": iso3, "value": f.get("value"), "year": period}
     return list(by_country.values()), years
 
 
@@ -100,10 +104,11 @@ def country_data(iso: str, history: int = 30, db: Session = Depends(get_db)) -> 
     """All curated indicators for ONE country: the latest value + a bounded history
     series per indicator (for the per-country sparklines). Indicators with no stored
     figures are reported with a null latest (a published/unfetched gap, never zero)."""
-    iso = (iso or "").strip().upper()
-    if not iso:
+    # Accept alpha-2 OR alpha-3; the stored ref_area is alpha-3 (WB), so query that form.
+    iso3 = to_iso3(iso) or (iso or "").strip().upper()
+    if not iso3:
         raise HTTPException(status_code=422, detail="a country ISO code is required")
-    figs = _figures(db, ref_area=iso)
+    figs = _figures(db, ref_area=iso3)
     by_series: dict[str, list[dict]] = {}
     for f in figs:
         by_series.setdefault(f.get("series_id") or "", []).append(f)
@@ -121,7 +126,7 @@ def country_data(iso: str, history: int = 30, db: Session = Depends(get_db)) -> 
             "latest": latest,                       # {year, value} or None
             "series": series[-max(1, history):] if series else [],
         })
-    return {"country": iso, "indicators": out, "caveat": _CAVEAT}
+    return {"country": iso3, "iso2": to_iso2(iso3), "indicators": out, "caveat": _CAVEAT}
 
 
 class LoadStandardBody(BaseModel):

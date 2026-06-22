@@ -932,7 +932,7 @@
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"timemap",  label:"World map",          grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
-      {id:"law",      label:"World law",          grp:"Investigate"},
+      {id:"law",      label:"Governments",        grp:"Investigate"},
       {id:"agenda",   label:"Agenda",             grp:"Investigate"},
       {id:"indices",  label:"Indices",            grp:"Investigate"},
       {id:"markets",  label:"Commodities",        grp:"Investigate"},
@@ -959,7 +959,7 @@
       markets: loadMarkets,
       insights: loadInsights,
       timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
-      law: loadLaw,
+      law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
       agenda: loadAgenda,
       library: () => { loadCoverage(); },    // stats handled by the live poller (startLive)
       custody: loadCustody,
@@ -976,6 +976,7 @@
     const _SUBTAB_NAV = {
       analyze: "an-subtabs", insights: "ins-subtabs", settings: "set-subtabs",
       agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
+      law: "gov-subtabs",   // Governments: Countries · Map · Law
     };
     function _relocateSubtabs(name) {
       const strip = $("subtab-strip"); if (!strip) return;
@@ -2649,6 +2650,181 @@
       box.innerHTML = `<p class="hint">${esc(AG.caveat)} · showing ${rows.length} of ${AG.events.length}</p>` +
         Object.entries(groups).map(([k, list]) =>
           `<h3 style="font-size:13px;margin:12px 0 6px">${esc(k)} <span class="muted">${list.length}</span></h3>` + list.map(agRow).join("")).join("");
+    }
+
+    // ===================================================================== //
+    //  GOVERNMENTS tab (maintainer chat 2026-06-22): per-country data + a
+    //  world-map choropleth + the law tracker, as subtabs over the existing
+    //  vintaged official-statistics store (/api/governments/*). Honesty carried:
+    //  a value is a producer's published figure (never a score), a gap is a gap.
+    // ===================================================================== //
+    let _govSubtabs = null, _govInds = null, _govMapData = null, _govMapInit = false, _govCountriesInit = false;
+
+    function _govCompact(v) {
+      const a = Math.abs(v);
+      if (a >= 1e12) return (v / 1e12).toFixed(a >= 1e13 ? 0 : 1) + "T";
+      if (a >= 1e9) return (v / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
+      if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+      if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "k";
+      return fmtNum(v, 1);
+    }
+    function _govFmt(v, unit) {
+      if (v == null || !isFinite(v)) return "—";
+      if (unit === "%") return fmtNum(v, 1) + "%";
+      if (unit === "years" || unit === "index") return fmtNum(v, 1);
+      if (unit === "USD") return "$" + _govCompact(v);
+      if (unit === "people") return _govCompact(v);
+      return fmtNum(v, 2);
+    }
+
+    async function loadGovIndicators() {
+      if (_govInds) return _govInds;
+      try { _govInds = (await api("/api/governments/indicators")).indicators || []; }
+      catch (e) { _govInds = []; }
+      return _govInds;
+    }
+
+    // Entry point (TAB_LOADERS.law): wire the subtabs once, then show the default.
+    async function loadGovernments() {
+      const nav = $("gov-subtabs");
+      // {initial:"countries"} fires showGovView("countries") on creation; on a re-open
+      // select() re-paints the nav highlight AND fires the loader (stays in sync).
+      if (nav && !_govSubtabs) _govSubtabs = ooSubtabs(nav, showGovView, {initial: "countries"});
+      else if (_govSubtabs) _govSubtabs.select("countries");
+    }
+    function showGovView(cat) {
+      ["countries", "map", "law"].forEach(v =>
+        { const el = $("gov-" + v); if (el) el.style.display = (v === cat) ? "" : "none"; });
+      if (cat === "countries") loadGovCountries();
+      else if (cat === "map") loadGovMap();
+      else if (cat === "law") loadLaw();
+    }
+
+    // ---- Countries subtab ---- //
+    async function loadGovCountries() {
+      if (_govCountriesInit) return;
+      _govCountriesInit = true;
+      const sel = $("gov-country"); if (!sel) return;
+      await loadGovIndicators();
+      // Derive the available countries from a populous indicator's coverage.
+      let rows = [];
+      try { rows = (await api("/api/governments/map?indicator=SP.POP.TOTL")).by_country || []; }
+      catch (e) { rows = []; }
+      if (!rows.length) {
+        // try GDP as a fallback before declaring the store empty
+        try { rows = (await api("/api/governments/map?indicator=NY.GDP.MKTP.CD")).by_country || []; }
+        catch (e) { rows = []; }
+      }
+      const codes = [...new Set(rows.map(r => r.country))].sort(
+        (a, b) => ooRegionName(a, a).localeCompare(ooRegionName(b, b)));
+      if (!codes.length) {
+        sel.innerHTML = "";
+        $("gov-country-data").innerHTML =
+          `<div class="muted">${esc(t("No country data yet — use “Load standard country data” (online) to fetch it from the World Bank."))}</div>`;
+        return;
+      }
+      sel.innerHTML = codes.map(c => `<option value="${esc(c)}">${esc(ooRegionName(c, c))}</option>`).join("");
+      loadGovCountry(codes[0]);
+    }
+    async function loadGovCountry(iso) {
+      const host = $("gov-country-data"); if (!host || !iso) return;
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      let d; try { d = await api("/api/governments/country/" + encodeURIComponent(iso)); }
+      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
+      // group indicators by category
+      const cats = {};
+      (d.indicators || []).forEach(i => { (cats[i.category] = cats[i.category] || []).push(i); });
+      const block = (ind) => {
+        const latest = ind.latest;
+        const val = latest ? _govFmt(latest.value, ind.unit) : "—";
+        const yr = latest ? ` <span class="muted">(${esc(latest.year)})</span>` : "";
+        const spark = (ind.series && ind.series.length > 1)
+          ? dashChartSvg(ind.series.filter(p => p.value != null).map(p => ({observed_on: p.year + "-01-01", price: p.value})), "")
+          : "";
+        return `<div class="gov-ind">
+          <div class="gov-ind-label">${esc(ind.label)}</div>
+          <div class="gov-ind-val">${esc(val)}${yr}</div>
+          <div class="gov-ind-spark">${spark}</div></div>`;
+      };
+      host.innerHTML = Object.keys(cats).map(c =>
+        `<h3 style="font-size:13px;margin:14px 0 6px;text-transform:capitalize">${esc(c)}</h3>
+         <div class="gov-ind-grid">${cats[c].map(block).join("")}</div>`).join("")
+        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat || "")}</div>`;
+    }
+
+    // ---- Map subtab ---- //
+    async function loadGovMap() {
+      const sel = $("gov-map-ind"); if (!sel) return;
+      if (!_govMapInit) {
+        _govMapInit = true;
+        await loadGovIndicators();
+        sel.innerHTML = (_govInds || []).map(i => `<option value="${esc(i.id)}">${esc(i.label)}</option>`).join("");
+      }
+      const indicator = sel.value || (_govInds && _govInds[0] && _govInds[0].id);
+      if (!indicator) return;
+      const host = $("gov-map-host");
+      if (host) host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try { _govMapData = await api("/api/governments/map?indicator=" + encodeURIComponent(indicator)); }
+      catch (e) { _govMapData = null; }
+      // year selector from the data's years (latest first); "" = latest available per country
+      const ysel = $("gov-map-year");
+      if (ysel && _govMapData) {
+        const years = (_govMapData.years || []).slice().reverse();
+        ysel.innerHTML = `<option value="">${esc(t("Latest available"))}</option>`
+          + years.map(y => `<option value="${esc(y)}">${esc(y)}</option>`).join("");
+      }
+      renderGovMap();
+    }
+    async function renderGovMap() {
+      const host = $("gov-map-host"); if (!host) return;
+      const sel = $("gov-map-ind"), ysel = $("gov-map-year");
+      const indicator = sel && sel.value, year = ysel && ysel.value;
+      let data = _govMapData;
+      // a specific year needs its own fetch (the cached payload is "latest per country")
+      if (year && (!data || data.year !== year)) {
+        try { data = await api("/api/governments/map?indicator=" + encodeURIComponent(indicator) + "&year=" + encodeURIComponent(year)); }
+        catch (e) { data = null; }
+      }
+      if (!data || !(data.by_country || []).length) {
+        host.innerHTML = `<div class="muted">${esc(t("No country data yet — use the Countries tab to load it (online)."))}</div>`;
+        $("gov-map-caveat").textContent = "";
+        return;
+      }
+      const meta = data.indicator || {};
+      const values = {}, names = {};
+      (data.by_country || []).forEach(r => {
+        if (r.value != null) values[r.country] = r.value;
+        names[r.country] = ooRegionName(r.country, r.country);
+      });
+      await ooMap(host, {
+        values, names,
+        scale: "sequential", label: meta.label || "", unit: meta.unit || "",
+        valueLabel: (iso, v) => `${ooRegionName(iso, iso)}: ${_govFmt(v, meta.unit)}`,
+        caveat: data.caveat || "",
+        onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
+          if (_govSubtabs) _govSubtabs.select("countries");
+          const cs = $("gov-country");
+          if (cs) { cs.value = iso; if (cs.value === iso) loadGovCountry(iso); }
+        },
+      });
+      $("gov-map-caveat").textContent = (meta.label ? meta.label + " · " : "")
+        + (data.year ? data.year + " · " : t("Latest available") + " · ") + (data.caveat || "");
+    }
+
+    async function govLoadStandard(btn) {
+      if (typeof ensureOnline === "function" && !(await ensureOnline())) return;  // the ONE consent
+      const old = btn && btn.textContent;
+      if (btn) { btn.disabled = true; btn.textContent = t("Loading…"); }
+      try {
+        const r = await api("/api/governments/load-standard", {method: "POST", body: JSON.stringify({})});
+        toast(t("Loaded country data:") + " " + (r.stored || 0) + " " + t("figures."), "ok");
+        _govCountriesInit = false; _govMapInit = false; _govMapData = null;
+        loadGovCountries();
+      } catch (e) {
+        toast((e && e.message) || t("Could not load country data."), "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = old || t("Load standard country data"); }
+      }
     }
 
     async function loadLaw() {

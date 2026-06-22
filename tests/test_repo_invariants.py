@@ -3529,6 +3529,36 @@ def test_sidebar_is_a_flat_list_without_section_headers():
     assert "toggleSidebar" in app and 'id="sb-collapse"' in html
 
 
+def test_world_law_renamed_governments_with_subtabs():
+    """Maintainer chat 2026-06-22: World Law -> Governments, diversified into subtabs
+    (Countries · Map · Law). The tab id stays "law" (the code anchor, timemap precedent);
+    the LABEL is "Governments" (keyed x12). The existing law tracker is preserved as the
+    Law subtab (Desk lesson — nothing lost); the Map subtab reuses ooMap fed by the
+    per-country stats endpoint."""
+    import json as _json
+
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    # Nav relabelled (anchor stays data-tab="law").
+    assert '<span>Governments</span>' in html and 'data-tab="law"' in html
+    # The 3 subtabs + their panes.
+    nav = html.split('id="gov-subtabs"', 1)[1].split("</nav>", 1)[0]
+    for sub in ("countries", "map", "law"):
+        assert f'data-tab="{sub}"' in nav, f"Governments missing the {sub} subtab"
+    for pane in ("gov-countries", "gov-map", "gov-law"):
+        assert f'id="{pane}"' in html, f"missing pane {pane}"
+    # The existing law tracker is PRESERVED inside the Law subtab (Desk lesson).
+    assert 'id="law-status"' in html and 'id="law-changes"' in html and 'id="law-docs"' in html
+    # JS wiring: subtabs + the three loaders + the consented load + the map reuses ooMap.
+    assert "function loadGovernments" in app and "function showGovView" in app
+    assert "function loadGovCountry" in app and "function loadGovMap" in app
+    assert "govLoadStandard" in app and "ensureOnline" in app  # the ONE consent on the fetch
+    assert "/api/governments/" in app and "await ooMap(" in app  # the map reuses ooMap
+    # The label is keyed x12 (gate stays 100%).
+    en = _json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert en.get("Governments") == "Governments"
+
+
 def test_custody_dissolved_from_sidebar_but_reachable_from_settings():
     """Field test 2026-06-22 (#20): Evidence & custody is an ACTION on content, so it
     leaves the sidebar (completing the Trust-group dissolution) and moves to Settings →

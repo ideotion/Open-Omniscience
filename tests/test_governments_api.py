@@ -31,13 +31,16 @@ def client():
                            poolclass=StaticPool, future=True)
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
+    # Real WB data stores the alpha-3 code (FRA/USA) — the map endpoint converts to
+    # alpha-2 for the choropleth. An AGGREGATE (WLD) must be dropped (no alpha-2).
     s.add_all([
-        _fig("FR", "NY.GDP.MKTP.CD", 2021, 2.9e12),
-        _fig("FR", "NY.GDP.MKTP.CD", 2022, 3.0e12),
-        _fig("FR", "SP.POP.TOTL", 2022, 67_900_000),
-        _fig("FR", "GC.NLD.TOTL.GD.ZS", 2022, None),   # a published gap
-        _fig("US", "NY.GDP.MKTP.CD", 2022, 25.0e12),
-        _fig("US", "NY.GDP.MKTP.CD", 2021, 23.0e12),
+        _fig("FRA", "NY.GDP.MKTP.CD", 2021, 2.9e12),
+        _fig("FRA", "NY.GDP.MKTP.CD", 2022, 3.0e12),
+        _fig("FRA", "SP.POP.TOTL", 2022, 67_900_000),
+        _fig("FRA", "GC.NLD.TOTL.GD.ZS", 2022, None),   # a published gap
+        _fig("USA", "NY.GDP.MKTP.CD", 2022, 25.0e12),
+        _fig("USA", "NY.GDP.MKTP.CD", 2021, 23.0e12),
+        _fig("WLD", "NY.GDP.MKTP.CD", 2022, 100.0e12),  # aggregate -> never on the map
     ])
     s.commit()
     app.dependency_overrides[get_db] = lambda: s
@@ -65,9 +68,11 @@ def test_indicators_catalog(client):
 def test_map_latest_per_country(client):
     r = client.get("/api/governments/map", params={"indicator": "NY.GDP.MKTP.CD"}).json()
     by = {c["country"]: c for c in r["by_country"]}
-    # the LATEST period per country (2022 for both), not an older year
-    assert by["FR"]["year"] == "2022" and by["FR"]["value"] == 3.0e12
-    assert by["US"]["year"] == "2022" and by["US"]["value"] == 25.0e12
+    # keyed by alpha-2 for the choropleth (converted from the stored alpha-3)
+    assert by["fr"]["year"] == "2022" and by["fr"]["value"] == 3.0e12
+    assert by["fr"]["iso3"] == "FRA"
+    assert by["us"]["year"] == "2022" and by["us"]["value"] == 25.0e12
+    assert "wld" not in by and "WLD" not in by  # the aggregate is dropped, never mapped
     assert r["years"] == ["2021", "2022"]   # the slider's history range
     assert r["indicator"]["label"].startswith("GDP")
 
@@ -76,7 +81,7 @@ def test_map_specific_year(client):
     r = client.get("/api/governments/map",
                    params={"indicator": "NY.GDP.MKTP.CD", "year": "2021"}).json()
     by = {c["country"]: c for c in r["by_country"]}
-    assert by["FR"]["value"] == 2.9e12 and by["US"]["value"] == 23.0e12
+    assert by["fr"]["value"] == 2.9e12 and by["us"]["value"] == 23.0e12
 
 
 def test_map_unknown_indicator_404(client):
@@ -84,8 +89,9 @@ def test_map_unknown_indicator_404(client):
 
 
 def test_country_data_all_indicators_with_gap(client):
-    r = client.get("/api/governments/country/FR").json()
-    assert r["country"] == "FR"
+    # accepts alpha-2 ("fr") and resolves to the stored alpha-3 ("FRA")
+    r = client.get("/api/governments/country/fr").json()
+    assert r["country"] == "FRA" and r["iso2"] == "fr"
     by = {i["id"]: i for i in r["indicators"]}
     # every curated indicator is listed, even with no data (a gap, never zero)
     assert "SP.DYN.LE00.IN" in by and by["SP.DYN.LE00.IN"]["latest"] is None

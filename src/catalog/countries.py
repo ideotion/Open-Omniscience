@@ -599,6 +599,56 @@ CONTINENTS: tuple[str, ...] = (
 )
 
 
+# ISO 3166-1 alpha-3 -> alpha-2 (lowercased). World Bank / SDMX figures store the
+# alpha-3 code (e.g. "FRA"); the map (world_countries.json) and Intl.DisplayNames use
+# alpha-2 ("fr"), so the Governments tab needs this bridge. Sovereign states + the
+# territories the WB reports; aggregates (WLD/EUU/ARB...) have no alpha-2 and are simply
+# absent (so they never colour the choropleth — honest). Kosovo uses the WB "XKX" -> the
+# user-assigned "xk" the rest of this module already recognises.
+_ISO3_TO_2_TEXT = """
+afg:af alb:al dza:dz and:ad ago:ao atg:ag arg:ar arm:am aus:au aut:at aze:az bhs:bs
+bhr:bh bgd:bd brb:bb blr:by bel:be blz:bz ben:bj btn:bt bol:bo bih:ba bwa:bw bra:br
+brn:bn bgr:bg bfa:bf bdi:bi cpv:cv khm:kh cmr:cm can:ca caf:cf tcd:td chl:cl chn:cn
+col:co com:km cog:cg cod:cd cri:cr civ:ci hrv:hr cub:cu cyp:cy cze:cz dnk:dk dji:dj
+dma:dm dom:do ecu:ec egy:eg slv:sv gnq:gq eri:er est:ee swz:sz eth:et fji:fj fin:fi
+fra:fr gab:ga gmb:gm geo:ge deu:de gha:gh grc:gr grd:gd gtm:gt gin:gn gnb:gw guy:gy
+hti:ht hnd:hn hun:hu isl:is ind:in idn:id irn:ir irq:iq irl:ie isr:il ita:it jam:jm
+jpn:jp jor:jo kaz:kz ken:ke kir:ki prk:kp kor:kr kwt:kw kgz:kg lao:la lva:lv lbn:lb
+lso:ls lbr:lr lby:ly lie:li ltu:lt lux:lu mdg:mg mwi:mw mys:my mdv:mv mli:ml mlt:mt
+mhl:mh mrt:mr mus:mu mex:mx fsm:fm mda:md mco:mc mng:mn mne:me mar:ma moz:mz mmr:mm
+nam:na nru:nr npl:np nld:nl nzl:nz nic:ni ner:ne nga:ng mkd:mk nor:no omn:om pak:pk
+plw:pw pan:pa png:pg pry:py per:pe phl:ph pol:pl prt:pt qat:qa rou:ro rus:ru rwa:rw
+kna:kn lca:lc vct:vc wsm:ws smr:sm stp:st sau:sa sen:sn srb:rs syc:sc sle:sl sgp:sg
+svk:sk svn:si slb:sb som:so zaf:za ssd:ss esp:es lka:lk sdn:sd sur:sr swe:se che:ch
+syr:sy tjk:tj tza:tz tha:th tls:tl tgo:tg ton:to tto:tt tun:tn tur:tr tkm:tm tuv:tv
+uga:ug ukr:ua are:ae gbr:gb usa:us ury:uy uzb:uz vut:vu ven:ve vnm:vn yem:ye zmb:zm
+zwe:zw hkg:hk mac:mo pri:pr twn:tw pse:ps grl:gl xkx:xk ncl:nc pyf:pf abw:aw cuw:cw
+sxm:sx tca:tc vir:vi asm:as gum:gu mnp:mp vgb:vg cym:ky bmu:bm fro:fo gib:gi imn:im
+"""
+ISO3_TO_ISO2: dict[str, str] = dict(pair.split(":") for pair in _ISO3_TO_2_TEXT.split())
+ISO2_TO_ISO3: dict[str, str] = {v: k for k, v in ISO3_TO_ISO2.items()}
+
+
+def to_iso2(code: str | None) -> str | None:
+    """Normalise an ISO country code to lowercase alpha-2: an alpha-2 passes through,
+    an alpha-3 (the WB/SDMX storage form) converts. Returns None for an unknown code or
+    a non-country aggregate (WLD/EUU/...), so callers drop it honestly."""
+    c = (code or "").strip().lower()
+    if len(c) == 2:
+        return c
+    return ISO3_TO_ISO2.get(c)
+
+
+def to_iso3(code: str | None) -> str | None:
+    """Normalise to UPPERCASE alpha-3 (the stored ref_area form): alpha-3 passes
+    through, alpha-2 converts. Returns None for an unknown code."""
+    c = (code or "").strip().lower()
+    if len(c) == 3:
+        return c.upper()
+    iso3 = ISO2_TO_ISO3.get(c)
+    return iso3.upper() if iso3 else None
+
+
 def _slug(value: str) -> str:
     """Lowercase, strip accents, unify separators -- the alias lookup key."""
     s = unicodedata.normalize("NFKD", value)

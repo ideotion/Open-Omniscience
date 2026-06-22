@@ -3838,10 +3838,26 @@ ruling, a contingency, or a deliberate-omission note.
   loudly per-indicator). All reads over the existing vintaged store (no network); honesty carried (producer's
   published value never a score, gaps never zero, producers never averaged). tests/test_governments_api.py (6:
   catalog/no-score-field, map latest-per-country + specific-year + 404, country all-indicators-with-gap,
-  airplane refusal). REMAINING: SLICE 2 (frontend — rename World Law→Governments label/i18n/NAV + restructure
-  the tab into ooSubtabs with Law as a subtab + the Countries view) + SLICE 3 (the Map subtab: ooMap fed by
-  /map with an indicator picker + year/history slider + selectable country detail); a bundled offline
-  indicator snapshot (needs a networked-machine WB fetch — 403 in-sandbox; fetch-on-demand works meanwhile).
+  airplane refusal). **ISO BRIDGE (enabling data):** WB stores alpha-3 (FRA) but ooMap + Intl.DisplayNames
+  use alpha-2 (fr), so added the ISO 3166-1 `ISO3_TO_ISO2`/`ISO2_TO_ISO3` maps + `to_iso2`/`to_iso3` to
+  src/catalog/countries.py (aggregates WLD/EUU have no alpha-2 → dropped from the choropleth, never mapped);
+  the /map endpoint returns alpha-2, /country accepts either; self-checking test (well-formed, unique,
+  spot-checked majors). **SLICE 2+3 — FRONTEND SHIPPED (BROWSER-UNVERIFIED per fork-3):** World Law→Governments
+  (nav span + NAV label + "Governments" key ×12 [en/fr/de/es/pt/it/nl/ru/ar/zh/ja/hi/bn/id…]; tab id stays
+  "law", timemap→"World map" precedent). #tab-law restructured into ooSubtabs **Countries · Map · Law**
+  (relocated to the top facet strip via _SUBTAB_NAV; TAB_LOADERS.law → loadGovernments). COUNTRIES subtab:
+  a country picker (from the stats coverage) → per-country indicators grouped by category with the latest
+  value (+year) + a dashChartSvg history sparkline (Item-Y honest), `_govFmt` compact units ($3.0T, 67.9M,
+  %). MAP subtab: ooMap choropleth fed by /map, an Indicator picker + a Year selector (history; "" = latest
+  per country), valueLabel via the smart formatter + ooRegionName, click-a-country → its Countries detail.
+  "Load standard country data" → ensureOnline (the ONE consent #14) → POST /load-standard → reload. The
+  existing law tracker is PRESERVED as the Law subtab (Desk lesson — law-status/changes/docs all kept).
+  New UI strings English-fallback via t() (gate 100%). test_repo_invariants::
+  test_world_law_renamed_governments_with_subtabs. VERIFIED: full suite 2069 passed, mypy 126≤127, ruff F/B
+  clean, i18n 100%, node --check. REMAINING: a bundled offline indicator snapshot (needs a networked-machine
+  WB fetch — 403 in-sandbox; fetch-on-demand works meanwhile); human click-through across themes/breakpoints;
+  a Compare subtab (multi-country side-by-side) + per-country flag/name polish; key the new English-fallback
+  strings ×12.
 - **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
   empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the
