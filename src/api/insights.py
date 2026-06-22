@@ -46,6 +46,12 @@ _VALID_KINDS = ("term", "entity", "person", "org", "location")
 # is WARMED in the background after each scrape (warm_cache), so even the first open
 # rarely hits a cold query. OO_INSIGHTS_CACHE_TTL overrides; 0 disables.
 _CACHE_TTL_S = int(_os.getenv("OO_INSIGHTS_CACHE_TTL", "120"))
+
+# The (limit, series_top) shapes the UI actually requests for trending-windows — the
+# warmer MUST mirror these or it warms keys nothing reads (P0-4). Kept in sync with
+# src/static/app.js (loadHomeTrends / loadTrendWindows) by a test_repo_invariants guard.
+WARM_TRENDING_HOME = (4, 4)
+WARM_TRENDING_INSIGHTS = (8, 5)
 _read_cache = SimpleCache(max_size=128, default_ttl=max(1, _CACHE_TTL_S))
 
 
@@ -613,15 +619,29 @@ def warm_cache(db: Session) -> dict:
         _LOG.warning("columnar read-model refresh failed during warm_cache", exc_info=True)
 
     warmed: list[str] = []
-    specs: list[tuple[str, object]] = [
-        # Home "Trending now" calls series_top=5; the Insights default is series_top=0.
-        (_ckey("trending-windows", country=None, kind=None, limit=10, series_top=5),
-         lambda: rm.trending_windows(db, country=None, kind=None, limit=10, series_top=5)),
-        (_ckey("trending-windows", country=None, kind=None, limit=10, series_top=0),
-         lambda: rm.trending_windows(db, country=None, kind=None, limit=10, series_top=0)),
+    # Warm the EXACT keys the surfaces request, or the warm value is never a hit and
+    # the user pays the cold heavy query themselves (P0-4, field test 2026-06-22: the
+    # old limit=10 keys matched NOTHING — Home asks limit=4/series_top=4, Insights
+    # limit=8/series_top=5 — and they ALSO omitted `tl`, which the endpoint always
+    # includes, so warming was dead for trending-windows). The key params here MUST
+    # mirror src/static/app.js (loadHomeTrends + loadTrendWindows); the WARM_TRENDING_*
+    # constants are asserted against app.js in tests so a drift reddens CI. Warmed for
+    # the English (tl=None) path — a non-English UI still recomputes once (a follow-up:
+    # decouple the cheap translation annotation from the expensive aggregation cache).
+    specs: list[tuple[str, object]] = []
+    for lim, st in (WARM_TRENDING_HOME, WARM_TRENDING_INSIGHTS):
+        specs.append(
+            (
+                _ckey("trending-windows", country=None, kind=None, limit=lim, series_top=st, tl=None),
+                lambda lim=lim, st=st: rm.trending_windows(
+                    db, country=None, kind=None, limit=lim, series_top=st, target_lang=None
+                ),
+            )
+        )
+    specs.append(
         (_ckey("top", days=None, country=None, kind=None, limit=20, group=True),
-         lambda: rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True)),
-    ]
+         lambda: rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True))
+    )
     if _CACHE_TTL_S <= 0:
         return {"warmed": warmed, "disabled": True}
     for key, compute in specs:

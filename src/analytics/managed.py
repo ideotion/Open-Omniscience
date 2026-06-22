@@ -29,6 +29,12 @@ MANAGED_LANGUAGES: frozenset[str] = frozenset(
         # GREEK/CYRILLIC scripts, so no Latin-corpus collision). These were the
         # highest-volume no_stoplist languages (el 4992, bg 3090 keywords).
         "el", "bg",
+        # 2026-06-22 field test: hi (Devanagari) + bn (Bengali) are UI languages that
+        # were no_stoplist (leaking grammar into the index). Distinct scripts -> the
+        # global stopword union is collision-free; pure-grammar stoplists added in
+        # src/analytics/extract.py. (zh/ja stay UNSEGMENTED — a stoplist can't fix the
+        # missing word segmentation.)
+        "hi", "bn",
     }
 )
 # No word segmentation -> keyword extraction is broken regardless of a stoplist.

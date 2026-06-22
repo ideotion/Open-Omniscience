@@ -3816,6 +3816,109 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 AUTONOMOUS SESSION (the field-test brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-22.md`;
+  ONE branch claude/keen-davinci-jvsmfh per the harness git-constraint, draft PR onto 0.09; backend VERIFIED
+  py3.13 venv, frontend BROWSER-UNVERIFIED per fork-3). HONEST FINDING on P0-1 (the headline "data is locked
+  data-loss"): the 149 `database is locked` errors in the bundle are dated 2026-06-17 — they PREDATE the
+  `do_orm_execute` single-writer-gate fix (writer.py, merged 2026-06-18 in #384). Audited every write path:
+  the gate is registered on SessionLocal + covers ORM flush AND bulk DML; busy_timeout=30000 on every pooled
+  connection; the raw writers (maintenance VACUUM/ANALYZE, email, store, FTS rebuild) all take write_lock or
+  run pre-scheduler; migrate.py only touches staged files. So P0-1's specific storm is ALREADY closed; the
+  maintainer believed it live because the bundle captured a STALE error window (exactly P0-5's warning).**
+  SHIPPED anyway as warranted defence-in-depth + the trustworthiness fix that lets the maintainer SEE it's
+  closed:
+  - **P0-1 defence-in-depth (data-loss class):** `index_article`'s when/where/who block RE-RAISES a lock
+    error instead of swallowing-without-rollback (the swallow poisoned the final commit → the scheduler's
+    "transaction has been rolled back … Original exception was: database is locked"); non-lock WWW errors
+    stay swallowed (a bad date parse must never cost the article its keywords). The two best-effort ingest
+    sub-writes (`_maybe_index_keywords` → idempotent index_article; `_maybe_index_links` → rebuild-rows
+    work) now run through `run_write_with_retry`, so a transient lock (gate disabled / a restore FTS rebuild
+    racing the live engine) RETRIES instead of dropping data; an exhausted lock still degrades gracefully
+    (logs, never breaks ingestion). Past-session losses recover via the existing backfill/reindex paths.
+    tests/test_ingest_index_retry.py (3: retry recovers keywords, exhausted-lock-doesn't-break-ingest,
+    non-lock-WWW-keeps-keywords).
+  - **P0-5 trustworthy diagnostics:** `errorlog.install()` now writes a session-start BOOT marker, and
+    `errorlog.summary()` reports records/first_at/last_at/last_session_started_at + problems_total/
+    problems_this_session + locked_errors_total/**locked_errors_this_session** — wired into the debug bundle
+    as `error_log`. So a future bundle answers "is the data-loss happening NOW?" directly (a clean current
+    session reads `locked_errors_this_session: 0` even while the file still holds an old session's errors).
+    tests/test_errorlog_summary.py (5).
+  - **P0-5 reindex hammering:** the Insights status poll (every 6 s) re-kicked a fresh re-index drain on
+    every tick (1,326 `/api/insights/reindex` calls / 369 s, each a heavy write contending with the scrape).
+    `autoIndexInsights` now runs ONE bounded pass (<=40 batches, was 500) then COOLS DOWN (60 s; Infinity on a
+    drained or genuinely-stuck backlog), so the poll can't storm the writer. test_repo_invariants::
+    test_auto_index_insights_is_throttled_not_a_per_tick_storm. node --check + ruff F,B clean.
+  - **P0-2 restore UNIQUE-collision + honest error (the maintainer's OWN backup failed to preview):** ROOT
+    CAUSE = the merge dedup key for `article_mentioned_dates` checked `snippet` instead of `precision`, but
+    the real UNIQUE is `(article_id, mentioned_on, precision)` — so an incoming date row with the same
+    date+precision but a different snippet passed the NOT-EXISTS guard then violated the constraint
+    ("UNIQUE constraint failed: article_mentioned_dates.article_id, mentioned_on, precision"). Fixed `md_key`
+    to match the constraint EXACTLY + switched to `INSERT OR IGNORE` (belt-and-braces against an old backup
+    whose own table predates the constraint and carries dups; `_insert_tracked`'s rowid watermark still
+    counts only landed rows). Places/entities aren't merged verbatim (only dates were), so the collision was
+    isolated to this one table. Also FIXED the misleading classification: a constraint clash was reported as
+    "may be from an incompatible version" — `backup_v2._restore_error()` now distinguishes a `sqlite3.
+    IntegrityError` (data-merge conflict, not a version issue) from a real schema gap (no such table/column),
+    both still JSON (never a plain-text 500). tests/test_merge_dates_collision.py (2: deduped-article
+    same-date-precision-diff-snippet no longer crashes + local kept; an incoming corpus with its own dup
+    date rows merges via INSERT OR IGNORE). The slowness half (236 s/preview) folds into the P1 import/export
+    redesign (restore as a task-manager job). mypy 126≤127, ruff F,B clean, torture suite 10/10 green.
+  - **P0-3 empty Home despite ~7,800 articles:** Home was NOT a blank div — `renderBriefing` already renders
+    the honest "No Leads yet" empty state and `loadHome` already has independent per-section try/catches (a
+    slow `trending-windows` can't blank it). The real cause: the briefing cache (`briefing_cache.json`) is
+    refreshed ONLY by the scheduler post-pass, but the app BOOTS IN AIRPLANE MODE (scheduler idle), so a
+    cache built when the corpus was tiny (or from a rolled-back pre-gate pass) left Home empty forever —
+    `get_briefing(force=False)` returned it verbatim. FIX: `refresh_briefing` records the corpus size
+    (`article_count`) in the cache, and `get_briefing` recomputes ONCE when the corpus has grown materially
+    since (`_is_cache_stale`: grew ≥25 AND ≥10%); a stable corpus still reads the cache instantly (bounded,
+    so no per-poll churn even if producers genuinely yield 0 cards — the new cache records the current size).
+    tests/test_briefing_stale_cache.py (3: stale-logic, recompute-a-stale-empty-cache, fresh-cache-served-
+    verbatim). Backend-testable; the producers-genuinely-fire question can't be reproduced without the live
+    corpus, but a stale cache was the load-bearing cause (boot-airplane + the pre-gate pass rollbacks).
+  - **P0-4 read-path perf — the warm-cache key mismatch (NOT a rollup):** MEASURED first (the ledger's own
+    "measure EXPLAIN before adding a drift surface"): on a synthetic PLAINTEXT 600k-mention corpus the covering
+    index `ix_mention_date_keyword` is used optimally (`SEARCH … USING COVERING INDEX`, one `_counts(30d)` =
+    0.1s, full `trending_windows` ~1s). So the field's 18s is the SQLCipher PER-PAGE DECRYPT of the index
+    range scan — the query plan is already optimal, and a per-day rollup's benefit is data-distribution-
+    dependent + UNMEASURABLE without the live encrypted DB ⇒ NOT built (respects the no-speculative-drift
+    caution). THE REAL BUG: `warm_cache` warmed `trending-windows` with `limit=10` and NO `tl` param, but the
+    UI requests `limit=4&series_top=4` (Home) / `limit=8&series_top=5` (Insights) and the endpoint key ALWAYS
+    includes `tl` — so the warm value matched NOTHING and the user paid the cold decrypt every TTL expiry.
+    FIX: `WARM_TRENDING_HOME=(4,4)` + `WARM_TRENDING_INSIGHTS=(8,5)` constants; warm_cache warms those exact
+    keys with `tl=None`, so after each scrape pass the English Home/Insights trends are a cache HIT (cost
+    moved off the request path). tests/test_insights_cache.py corrected (it had codified the broken limit=10
+    key) + test_repo_invariants::test_warm_cache_keys_match_the_trending_windows_requests (greps app.js so the
+    shapes can't silently drift again). REMAINING (follow-ups, not blocking): the cost is still cold on
+    boot-airplane (no pass yet) + for a NON-English UI (the `tl`-keyed cache recomputes per language — decouple
+    the cheap translation annotation from the expensive aggregation cache); the per-day rollup stays the next
+    lever IF measured insufficient on the real corpus (EXPLAIN/time it on the live DB first).
+  - **CI FIXES (caught by the PR's own CI on the slices above):** (a) mypy +2 from slice 1 (errorlog min/max
+    over Any|None → typed `list[str]`; diagnostics `len(payload["errors"])` → a typed local) — now 126≤127;
+    (b) `_restore_error` broadened version-detection to include "migration"/"incompatible" (a "staged
+    migration failed on an ancient corpus" IS a version issue — test_restore_preview_robust_errors expects
+    "incompatible version"); (c) test_briefing_stale_cache.py used positional/bare write_text/read_text →
+    `encoding="utf-8"` (test_utf8_file_io hygiene). The macOS "Portability observation" lanes are
+    observation-only (not blocking).
+  REMAINING P0: P0-2 restore slowness (→ P1 backups job) — folds into the import/export redesign. P0 core
+  reliability + perf complete; next: P1 keyword-engine quick wins, then the backups redesign.
+  - **P1 KEYWORD ENGINE — hi/bn made GENUINELY functional (deeper than the brief's "stoplist" ask):** the
+    engine report flagged hi (Hindi) + bn (Bengali) — UI languages — as `no_stoplist`. INVESTIGATING revealed
+    the real defect is the TOKENIZER, not a missing stoplist: `_WORD_RE` excluded Indic combining marks
+    (matras/viramas are Unicode Mn, not `\w`), so "सरकार" split at the ा matra into "सरक"+"र" — Hindi/Bengali
+    keywords were MANGLED. A stoplist alone would have been dishonest (promoting a broken language to managed).
+    FIX (additive, byte-safe for other scripts): `_WORD_RE` now allows Devanagari (U+0900-0903/093A-094F/
+    0951-0957/0962-0963) + Bengali (U+0981-0983/09BC/09BE-09CD/09D7/09E2-09E3) marks ONLY as word
+    CONTINUATIONS — Latin/Cyrillic/Greek/Arabic tokens use none of these codepoints, so they're unchanged
+    (proven). THEN added hand-filtered pure-grammar hi/bn stoplists to `_EXTRA_STOPWORD_TEXT` (distinct
+    scripts ⇒ collision-free global union) and promoted hi+bn to `MANAGED_LANGUAGES`. zh/ja STAY unsegmented
+    (a stoplist can't fix missing segmentation — honest). Verified the whole loop: सरकার/জনগণের now extract
+    whole, ≥3-char grammar (लिए/नहीं/করেছে/জন্য) is stoplist-filtered, all 27 keyword self-test cases pass
+    (was 25/27 — the 2 new hi/bn cases assert a content noun survives = non-vacuous). tests/
+    test_indic_tokenizer.py (6) + 2 selftest cases. ruff/mypy clean; 62 extraction/keyword/managed tests
+    green. REMAINING keyword-engine (need the live corpus / a networked machine, per the brief): run the
+    orphan-prune + tag-backfill on the 7.8k corpus (existing tools/buttons); grow rings via
+    generate_wikidata_rings.py --from-log (corpus-driven); the other date-gap langs (uk/vi/et/th/ur) + CJK
+    年月日 depth.
 - **KEYWORD-COUNT REDUCTION + RING-LOOP (2026-06-21, maintainer "reduce the ~500K keywords / download rings
   through diagnostics to auto-improve the engine"; branch claude/magical-brown-49m9nd, draft PR onto 0.09;
   backend VERIFIED py3.11 harness, frontend BROWSER-UNVERIFIED per fork-3):** the honest read recorded —

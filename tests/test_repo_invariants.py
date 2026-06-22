@@ -3655,3 +3655,61 @@ def test_tentative_llm_keyword_translation_is_wired_and_flagged():
     assert "AI-generated tentative translation — unreliable, not verified." in html
     # explicit, gated action (the button only appears when something needs it).
     assert "Translate the rest (AI, tentative)" in html and "d.terms.some(_anKwNeedsTentative)" in html
+
+
+def test_auto_index_insights_is_throttled_not_a_per_tick_storm():
+    """P0-5 (field test 2026-06-22): the Insights status poll (every 6 s) re-kicked a
+    fresh re-index drain on every tick — /api/insights/reindex was called 1,326×/369 s,
+    each batch a heavy write contending with the live scrape. autoIndexInsights now runs
+    ONE bounded pass (<=40 batches, not the old 500) then cools down, and stops on a
+    genuinely stuck backlog — so the 6 s poll can no longer storm the writer."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # The function gained a cooldown gate so a poll within the window is a no-op.
+    assert "_autoIndexCooldownUntil" in app, "auto-index lost its cooldown throttle"
+    assert "if (Date.now() < _autoIndexCooldownUntil) return;" in app, (
+        "the 6 s poll can still re-kick a fresh drain every tick"
+    )
+    # Each pass is bounded to a sane batch count, never the old 150k-article blast.
+    assert "++guard >= 40" in app, "the per-pass batch bound regressed"
+    assert "++guard > 500)" not in app, "the old 500-batch (150k-article) blast is back"
+    # A stuck backlog must stop re-attempting (Infinity cooldown), not hammer forever.
+    assert "_autoIndexCooldownUntil = Infinity" in app
+
+
+def test_warm_cache_keys_match_the_trending_windows_requests():
+    """P0-4 (field test 2026-06-22): warm_cache must warm the EXACT (limit, series_top)
+    shapes the UI requests for /api/insights/trending-windows, or the warm value is
+    never a cache hit and the user pays the cold heavy query. This guards against the
+    silent drift that caused it (the old warm key used limit=10, which NOTHING asked
+    for). Every trending-windows request shape in app.js must be a warmed constant."""
+    import re
+
+    from src.api.insights import WARM_TRENDING_HOME, WARM_TRENDING_INSIGHTS
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    shapes = set()
+    for m in re.finditer(r"/api/insights/trending-windows\?limit=(\d+)&series_top=(\d+)", app):
+        shapes.add((int(m.group(1)), int(m.group(2))))
+    assert shapes, "no trending-windows request found in app.js (pattern moved?)"
+    warmed = {tuple(WARM_TRENDING_HOME), tuple(WARM_TRENDING_INSIGHTS)}
+    missing = shapes - warmed
+    assert not missing, (
+        f"app.js requests trending-windows shapes {missing} that warm_cache does NOT "
+        f"warm (warmed={warmed}); align WARM_TRENDING_* or the user pays the cold query"
+    )
+
+
+def test_auto_update_note_removed_and_country_names_localized():
+    """Field test 2026-06-22 #15 (the standalone "Updates automatically in the
+    background." board notes are redundant -> removed) + #19 (displayed country
+    NAMES are localized via the CLDR helper ooRegionName, superseding the old
+    "codes stay" — the flag-emoji/anchors/provenance correctly keep the code)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert "Updates automatically in the background." not in html, (
+        "the redundant auto-update note is back (#15)"
+    )
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # The source-profile "Country:" fact + the map-mention readout show the localized
+    # name, not the raw uppercased 2-letter code.
+    assert 'ooRegionName(meta.country, meta.country.toUpperCase())' in app
+    assert 'ooRegionName(m.country, m.country)' in app

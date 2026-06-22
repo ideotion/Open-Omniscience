@@ -1659,7 +1659,7 @@
           rows.push(`<div>${esc(t("A stored local copy exists — read it without going online:"))} <a href="${esc(d.local_article.reader_url)}" target="_blank" rel="noopener">${esc(d.local_article.title || "")}</a></div>`);
         }
         if (d.known_source) {
-          rows.push(`<div>${esc(t("Known source in your catalog:"))} <b>${esc(d.known_source.name)}</b>${d.known_source.country ? ` <span class="muted">(${esc(String(d.known_source.country).toUpperCase())})</span>` : ""}</div>`);
+          rows.push(`<div>${esc(t("Known source in your catalog:"))} <b>${esc(d.known_source.name)}</b>${d.known_source.country ? ` <span class="muted">(${esc(ooRegionName(d.known_source.country, String(d.known_source.country).toUpperCase()))})</span>` : ""}</div>`);
         }
         rows.push(`<div>${esc(t("Articles in your corpus citing this URL:"))} <b>${d.cited_by_articles}</b></div>`);
         if ((d.citing_examples || []).length) {
@@ -1873,7 +1873,7 @@
           dim("Coordination", co.is_member ? `Member of ${co.actors.length} detected actor(s).` : "No coordination detected.", co.method, co.caveat) +
           dim("Novelty (originates vs echoes)", nv.mean_ratio==null ? "Not enough data." : `Mean novelty <b>${nv.mean_ratio}</b> over ${nv.n} articles.`, nv.method, nv.caveat) +
           dim("Output capacity", `${oc.articles} articles · ~${oc.per_day}/day (corpus median ${oc.corpus_median_per_day}/day).`, oc.method, oc.caveat) +
-          dim("Transparency", `${esc(tr.country||"?")} · ${esc(tr.language||"?")} · ownership: ${(tr.ownership_tags||[]).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).join(", ")||"—"}`, tr.method, tr.caveat) +
+          dim("Transparency", `${esc(tr.country?ooRegionName(tr.country,tr.country):"?")} · ${esc(tr.language?ooLangName(tr.language):"?")} · ownership: ${(tr.ownership_tags||[]).join(", ")||"—"} · leaning: ${(tr.leaning_tags||[]).join(", ")||"—"}`, tr.method, tr.caveat) +
           dim("Track record", `${rec.total_articles} articles in your corpus.`, rec.method, rec.caveat);
       } catch (e) { out.innerHTML = '<div class="muted">' + esc(e.message) + '</div>'; }
     }
@@ -6773,18 +6773,38 @@
     // never thinks about it (UI_SHELL_REDESIGN §6). Best-effort + bounded; the
     // visible "N to index" count ticks down to 0 on its own.
     let _indexing = false;
+    let _autoIndexCooldownUntil = 0;      // throttles the 6 s status poll's re-kick
+    let _autoIndexLastRemaining = -1;     // detects a genuinely stuck backlog
     async function autoIndexInsights() {
       if (_indexing) return;
+      // The status poll (every 6 s) calls this whenever there's a backlog; without
+      // a cooldown it re-kicks a fresh drain on every tick — the field-test storm
+      // (P0-5: /api/insights/reindex called 1,326×/369 s, each batch a heavy write
+      // contending with the live scrape). Run ONE bounded pass, then cool down.
+      if (Date.now() < _autoIndexCooldownUntil) return;
       _indexing = true;
       try {
-        let guard = 0;
+        let guard = 0, startRemaining = -1, lastRemaining = 0;
         for (;;) {
           const r = await api("/api/insights/reindex?limit=300", {method: "POST"});
+          if (startRemaining < 0) startRemaining = r.remaining;
+          lastRemaining = r.remaining;
           const rem = $("ins-remaining");
           if (rem) rem.innerHTML = r.remaining ? `· <strong>${r.remaining.toLocaleString()}</strong> to index` : "";
-          if (r.remaining === 0 || r.indexed === 0 || ++guard > 500) break;
+          // Bound each pass to 40 batches (~12k articles): plenty to drain a normal
+          // corpus in one go, but never the old 500-batch (150k) blast.
+          if (r.remaining === 0 || r.indexed === 0 || ++guard >= 40) break;
         }
-      } catch (_e) { /* silent: background indexing is best-effort */ }
+        if (lastRemaining > 0 && lastRemaining >= startRemaining && lastRemaining === _autoIndexLastRemaining) {
+          // No progress across two passes ⇒ the backlog is stuck (un-indexable
+          // articles). Stop re-attempting this session rather than hammer forever.
+          _autoIndexCooldownUntil = Infinity;
+        } else {
+          // Cool down so the 6 s poll can't re-kick; the next pass continues the drain.
+          _autoIndexCooldownUntil = lastRemaining > 0 ? Date.now() + 60000 : Infinity;
+        }
+        _autoIndexLastRemaining = lastRemaining;
+      } catch (_e) { _autoIndexCooldownUntil = Date.now() + 60000; }  /* best-effort */
       finally { _indexing = false; }
     }
 
@@ -7021,7 +7041,7 @@
       const cards = rows.map(r => {
         const meta = byDom[(r.domain || "").toLowerCase()] || byName[r.name] || {};
         const facts = [];
-        if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(meta.country.toUpperCase())}`);
+        if (meta.country) facts.push(`${esc(t("Country"))}: ${esc(ooRegionName(meta.country, meta.country.toUpperCase()))}`);
         if (meta.region) facts.push(`${esc(t("Region"))}: ${esc(meta.region)}`);
         if (meta.language) facts.push(`${esc(t("Language"))}: ${esc(ooLangName(meta.language, meta.language))}`);
         if (meta.source_type) facts.push(`${esc(t("Type"))}: ${esc(meta.source_type)}`);
@@ -7485,7 +7505,7 @@
         loadFraming(r.term);
         $("ins-context").innerHTML = (ctx.mentions || []).length
           ? ctx.mentions.map(m => `<div class="note" style="max-width:none;margin-bottom:6px">
-               <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(m.country):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
+               <div style="font-size:12px" class="muted">${esc(m.source||"")}${m.country?" · "+esc(ooRegionName(m.country, m.country)):""}${m.city?" · "+esc(m.city):""}${m.observed_on?" · "+esc(m.observed_on):""}
                  ${m.article_id?`· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>`:""}${m.url?`· ${extLink(m.url, "source ↗", "muted")}`:""}</div>
                <div>${esc(m.snippet)}</div></div>`).join("")
           : '<div class="muted">No context snippets.</div>';

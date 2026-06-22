@@ -693,9 +693,16 @@ def _merge_article_derivations(con, batch_id, results) -> None:
     results["article_analyses"] = an
 
     md = DomainResult()
+    # The dedup key MUST match the real UNIQUE constraint
+    # (uq_amd_article_date = article_id, mentioned_on, precision). The old key used
+    # `snippet` instead of `precision`, so an incoming row with the same date+precision
+    # but a different snippet passed this NOT-EXISTS guard and then violated the unique
+    # constraint -> "UNIQUE constraint failed: article_mentioned_dates.article_id,
+    # mentioned_on, precision" on restore (P0-2, field test 2026-06-22; the maintainer's
+    # own backup failed to preview). Match the constraint exactly.
     md_key = (
         "t.article_id = ma.new AND t.mentioned_on = i.mentioned_on"
-        " AND COALESCE(t.snippet,'') = COALESCE(i.snippet,'')"
+        " AND t.precision = i.precision"
     )
     md.duplicate = _count(
         con,
@@ -703,10 +710,15 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE EXISTS (SELECT 1 FROM article_mentioned_dates t WHERE {md_key})",
     )
+    # INSERT OR IGNORE is belt-and-braces: even if the INCOMING corpus itself carries
+    # duplicate (article, date, precision) rows (an old backup predating the unique
+    # constraint), or two map to the same local id, the second is silently skipped
+    # rather than aborting the whole restore. _insert_tracked counts only rows that
+    # actually landed (rowid watermark), so an ignored row is correctly not counted.
     md.new = _insert_tracked(
         con, batch_id, "article_mentioned_dates",
-        "INSERT INTO article_mentioned_dates (article_id, mentioned_on, precision, snippet,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        " confidence, extractor, status, created_at)"
+        "INSERT OR IGNORE INTO article_mentioned_dates (article_id, mentioned_on, precision,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " snippet, confidence, extractor, status, created_at)"
         " SELECT ma.new, i.mentioned_on, i.precision, i.snippet, i.confidence, i.extractor,"
         " i.status, i.created_at"
         " FROM inc.article_mentioned_dates i JOIN temp.map_articles ma ON ma.old = i.article_id"
