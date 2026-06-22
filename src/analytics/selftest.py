@@ -170,6 +170,31 @@ _CASES: tuple[Challenge, ...] = (
         absent=("maandag", "zaterdag", "omdat"),
     ),
     Challenge(
+        # 2026-06-22 field test: hi/bn were UI languages but no_stoplist. Distinct
+        # scripts -> the union is collision-free. A content noun is asserted as a term
+        # so the case is NON-VACUOUS (it proves the script IS extracted AND the grammar
+        # is filtered, not that nothing tokenised).
+        "hindi_function_words_filtered",
+        "Hindi (Devanagari) grammar words are filtered while a content noun survives",
+        # The content noun survives = the Mn-matra tokenizer fix works (सरकार no longer
+        # splits at the ा matra). The absent words are >=3 chars, so they prove the
+        # STOPLIST (not the <3-char length filter): लिए / नहीं are in the hi block.
+        "सरकार ने जनता के लिए यह फैसला नहीं बदला और नीति वही रही।",
+        language="hi",
+        term=("सरकार",),
+        absent=("लिए", "नहीं"),
+    ),
+    Challenge(
+        "bengali_function_words_filtered",
+        "Bengali grammar words are filtered while a content noun survives",
+        # করেছে / জন্য are >=3 chars and in the bn block -> they prove the stoplist;
+        # সরকার surviving proves the Bengali matra/virama tokenizer fix.
+        "সরকার নতুন নীতি ঘোষণা করেছে এবং জনগণের জন্য নয়।",
+        language="bn",
+        term=("সরকার",),
+        absent=("করেছে", "জন্য"),
+    ),
+    Challenge(
         "spanish_sentence_initial_not_entity",
         "a Romance sentence-initial capital is a term, not an entity (Title-case is not a signal)",
         "Mercados cayeron ayer. Inversores temían una recesión y un crecimiento más lento.",

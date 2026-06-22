@@ -36,7 +36,19 @@ from src.services.stopwords import stopwords_manager
 
 # A word token: starts with a (unicode) letter, may contain letters, marks,
 # apostrophes and hyphens. Digits-only / punctuation tokens are ignored.
-_WORD_RE = re.compile(r"[^\W\d_][\w'’\-]*", re.UNICODE)
+# Indic combining marks (Unicode category Mn/Mc): dependent vowel signs (matras),
+# the virama, anusvara/visarga/candrabindu, nukta. Python's stdlib `\w` does NOT
+# match these (they're Marks, not alphanumerics), so "सरकार" used to split at the ा
+# matra into "सरक"+"र" — Hindi/Bengali keywords were mangled, not merely unstoplisted
+# (field test 2026-06-22). Allowing them ONLY as word CONTINUATIONS is additive: no
+# Latin/Cyrillic/Greek/Arabic token uses these codepoints, so those scripts are
+# byte-unchanged. (Other Indic/Thai scripts have the same need but are out of scope —
+# zh/ja stay unsegmented regardless.)
+_DEVANAGARI_MARKS = "ऀ-ःऺ-ॏ॑-ॗॢॣ"
+_BENGALI_MARKS = "ঁ-ঃ়া-্ৗৢৣ"
+_WORD_RE = re.compile(
+    rf"[^\W\d_][\w'’\-{_DEVANAGARI_MARKS}{_BENGALI_MARKS}]*", re.UNICODE
+)
 
 _DEFAULT_MAX_TERMS = 80
 _DEFAULT_MAX_ENTITIES = 80
@@ -412,6 +424,17 @@ _EXTRA_STOPWORD_TEXT = (
     "får läs "                                            # Swedish
     "flere opp "                                          # Norwegian
     "aynı karşı "                                         # Turkish (accented; promotes toward managed)
+    # 2026-06-22 (field test, engine report): hi + bn are UI languages but were
+    # no_stoplist, leaking grammar into the index ("give them stoplists … hi/bn no
+    # longer no_stoplist"). DEVANAGARI + BENGALI scripts, so the global union can
+    # NEVER collide with a Latin/Cyrillic/Greek corpus language. Hand-filtered to
+    # PURE grammar (postpositions, pronouns, conjunctions, common auxiliaries);
+    # content nouns, names and months were excluded on purpose. Both promote to
+    # MANAGED (src/analytics/managed.py).
+    "का की के को में से पर ने और या भी है हैं था थे थी कि जो नहीं तो ही लिए तक साथ बाद पहले हुआ हुई हुए "  # Hindi
+    "एक इस उस अपने अपनी कर करने किया रहा रही रहे गया गई गए "  # Hindi
+    "এর এবং ও কে থেকে যে এই সেই করে করা হয় হয়েছে ছিল না কি যা তার জন্য কিন্তু বা আর হবে হয়ে নিয়ে "  # Bengali
+    "একটি দিয়ে সঙ্গে পরে আগে করেন করেছে "  # Bengali
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any

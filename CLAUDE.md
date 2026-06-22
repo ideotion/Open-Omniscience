@@ -3901,6 +3901,24 @@ ruling, a contingency, or a deliberate-omission note.
     observation-only (not blocking).
   REMAINING P0: P0-2 restore slowness (→ P1 backups job) — folds into the import/export redesign. P0 core
   reliability + perf complete; next: P1 keyword-engine quick wins, then the backups redesign.
+  - **P1 KEYWORD ENGINE — hi/bn made GENUINELY functional (deeper than the brief's "stoplist" ask):** the
+    engine report flagged hi (Hindi) + bn (Bengali) — UI languages — as `no_stoplist`. INVESTIGATING revealed
+    the real defect is the TOKENIZER, not a missing stoplist: `_WORD_RE` excluded Indic combining marks
+    (matras/viramas are Unicode Mn, not `\w`), so "सरकार" split at the ा matra into "सरक"+"र" — Hindi/Bengali
+    keywords were MANGLED. A stoplist alone would have been dishonest (promoting a broken language to managed).
+    FIX (additive, byte-safe for other scripts): `_WORD_RE` now allows Devanagari (U+0900-0903/093A-094F/
+    0951-0957/0962-0963) + Bengali (U+0981-0983/09BC/09BE-09CD/09D7/09E2-09E3) marks ONLY as word
+    CONTINUATIONS — Latin/Cyrillic/Greek/Arabic tokens use none of these codepoints, so they're unchanged
+    (proven). THEN added hand-filtered pure-grammar hi/bn stoplists to `_EXTRA_STOPWORD_TEXT` (distinct
+    scripts ⇒ collision-free global union) and promoted hi+bn to `MANAGED_LANGUAGES`. zh/ja STAY unsegmented
+    (a stoplist can't fix missing segmentation — honest). Verified the whole loop: सरकার/জনগণের now extract
+    whole, ≥3-char grammar (लिए/नहीं/করেছে/জন্য) is stoplist-filtered, all 27 keyword self-test cases pass
+    (was 25/27 — the 2 new hi/bn cases assert a content noun survives = non-vacuous). tests/
+    test_indic_tokenizer.py (6) + 2 selftest cases. ruff/mypy clean; 62 extraction/keyword/managed tests
+    green. REMAINING keyword-engine (need the live corpus / a networked machine, per the brief): run the
+    orphan-prune + tag-backfill on the 7.8k corpus (existing tools/buttons); grow rings via
+    generate_wikidata_rings.py --from-log (corpus-driven); the other date-gap langs (uk/vi/et/th/ur) + CJK
+    年月日 depth.
 - **KEYWORD-COUNT REDUCTION + RING-LOOP (2026-06-21, maintainer "reduce the ~500K keywords / download rings
   through diagnostics to auto-improve the engine"; branch claude/magical-brown-49m9nd, draft PR onto 0.09;
   backend VERIFIED py3.11 harness, frontend BROWSER-UNVERIFIED per fork-3):** the honest read recorded —
