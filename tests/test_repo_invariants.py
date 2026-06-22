@@ -3674,3 +3674,26 @@ def test_auto_index_insights_is_throttled_not_a_per_tick_storm():
     assert "++guard > 500)" not in app, "the old 500-batch (150k-article) blast is back"
     # A stuck backlog must stop re-attempting (Infinity cooldown), not hammer forever.
     assert "_autoIndexCooldownUntil = Infinity" in app
+
+
+def test_warm_cache_keys_match_the_trending_windows_requests():
+    """P0-4 (field test 2026-06-22): warm_cache must warm the EXACT (limit, series_top)
+    shapes the UI requests for /api/insights/trending-windows, or the warm value is
+    never a cache hit and the user pays the cold heavy query. This guards against the
+    silent drift that caused it (the old warm key used limit=10, which NOTHING asked
+    for). Every trending-windows request shape in app.js must be a warmed constant."""
+    import re
+
+    from src.api.insights import WARM_TRENDING_HOME, WARM_TRENDING_INSIGHTS
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    shapes = set()
+    for m in re.finditer(r"/api/insights/trending-windows\?limit=(\d+)&series_top=(\d+)", app):
+        shapes.add((int(m.group(1)), int(m.group(2))))
+    assert shapes, "no trending-windows request found in app.js (pattern moved?)"
+    warmed = {tuple(WARM_TRENDING_HOME), tuple(WARM_TRENDING_INSIGHTS)}
+    missing = shapes - warmed
+    assert not missing, (
+        f"app.js requests trending-windows shapes {missing} that warm_cache does NOT "
+        f"warm (warmed={warmed}); align WARM_TRENDING_* or the user pays the cold query"
+    )

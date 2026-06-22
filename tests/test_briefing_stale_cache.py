@@ -58,7 +58,7 @@ def _write_cache(cards: list, article_count) -> None:
     }
     if article_count is not None:
         payload["article_count"] = article_count
-    service._cache_path().write_text(json.dumps(payload), "utf-8")
+    service._cache_path().write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_is_cache_stale_logic(monkeypatch):
@@ -80,7 +80,7 @@ def test_get_briefing_recomputes_a_stale_cache(corpus, monkeypatch):
     view = service.get_briefing(corpus)
     assert view["buckets"], "a stale empty cache was served instead of recomputing"
     # The fresh cache records the new corpus size so it won't re-trigger.
-    assert json.loads(service._cache_path().read_text())["article_count"] == 1000
+    assert json.loads(service._cache_path().read_text(encoding="utf-8"))["article_count"] == 1000
 
 
 def test_fresh_cache_is_served_without_recompute(corpus, monkeypatch):

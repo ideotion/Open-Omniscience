@@ -43,15 +43,22 @@ def _restore_error(action: str, exc: Exception) -> HTTPException:
     Always JSON {detail} (the SPA reads res.json(); never a plain-text 500)."""
     msg = str(exc)
     low = msg.lower()
+    # A real version/schema gap: a staged migration failed, or the corpus uses a
+    # table/column this build doesn't know. "incompatible version" is accurate here.
+    is_version = (
+        "migration" in low
+        or "incompatible" in low
+        or "no such table" in low
+        or "no such column" in low
+        or "schema" in low
+    )
     if isinstance(exc, sqlite3.IntegrityError):
         detail = (
             f"the backup's data conflicts with your corpus on a database constraint "
             f"(e.g. a duplicate row) while merging — this is a data-merge issue, not a "
             f"version mismatch: {msg}"
         )
-    elif isinstance(exc, sqlite3.OperationalError) and (
-        "no such table" in low or "no such column" in low or "schema" in low
-    ):
+    elif is_version:
         detail = f"could not {action} this backup (it may be from an incompatible version): {msg}"
     else:
         detail = f"could not {action} this backup: {msg}"

@@ -50,9 +50,15 @@ def test_warm_cache_populates_the_keys_the_endpoints_use(monkeypatch):
 
     res = ins.warm_cache(db=object())
     assert len(res["warmed"]) == 3
-    # The EXACT key the Home "Trending now" panel requests is now a cache hit.
-    home_key = ins._ckey("trending-windows", country=None, kind=None, limit=10, series_top=5)
-    assert ins._read_cache.get(home_key) is not None
+    # The EXACT keys Home + Insights request must each be a cache HIT — including the
+    # `tl` param the endpoint always adds (P0-4: the old warm key used limit=10 and
+    # omitted tl, so it matched NOTHING the UI asks for and the user paid cold).
+    for lim, st in (ins.WARM_TRENDING_HOME, ins.WARM_TRENDING_INSIGHTS):
+        key = ins._ckey(
+            "trending-windows", country=None, kind=None,
+            limit=lim, series_top=st, tl=ins._tlang(None),
+        )
+        assert ins._read_cache.get(key) is not None, f"warm missed the UI key {lim}/{st}"
     # A second warm within the TTL recomputes nothing (all keys already fresh).
     assert ins.warm_cache(db=object())["warmed"] == []
 

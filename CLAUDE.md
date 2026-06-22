@@ -3875,7 +3875,32 @@ ruling, a contingency, or a deliberate-omission note.
     tests/test_briefing_stale_cache.py (3: stale-logic, recompute-a-stale-empty-cache, fresh-cache-served-
     verbatim). Backend-testable; the producers-genuinely-fire question can't be reproduced without the live
     corpus, but a stale cache was the load-bearing cause (boot-airplane + the pre-gate pass rollbacks).
-  REMAINING P0: P0-2 restore slowness (→ P1 backups job), P0-4 trending-windows rollup perf — next slice.
+  - **P0-4 read-path perf — the warm-cache key mismatch (NOT a rollup):** MEASURED first (the ledger's own
+    "measure EXPLAIN before adding a drift surface"): on a synthetic PLAINTEXT 600k-mention corpus the covering
+    index `ix_mention_date_keyword` is used optimally (`SEARCH … USING COVERING INDEX`, one `_counts(30d)` =
+    0.1s, full `trending_windows` ~1s). So the field's 18s is the SQLCipher PER-PAGE DECRYPT of the index
+    range scan — the query plan is already optimal, and a per-day rollup's benefit is data-distribution-
+    dependent + UNMEASURABLE without the live encrypted DB ⇒ NOT built (respects the no-speculative-drift
+    caution). THE REAL BUG: `warm_cache` warmed `trending-windows` with `limit=10` and NO `tl` param, but the
+    UI requests `limit=4&series_top=4` (Home) / `limit=8&series_top=5` (Insights) and the endpoint key ALWAYS
+    includes `tl` — so the warm value matched NOTHING and the user paid the cold decrypt every TTL expiry.
+    FIX: `WARM_TRENDING_HOME=(4,4)` + `WARM_TRENDING_INSIGHTS=(8,5)` constants; warm_cache warms those exact
+    keys with `tl=None`, so after each scrape pass the English Home/Insights trends are a cache HIT (cost
+    moved off the request path). tests/test_insights_cache.py corrected (it had codified the broken limit=10
+    key) + test_repo_invariants::test_warm_cache_keys_match_the_trending_windows_requests (greps app.js so the
+    shapes can't silently drift again). REMAINING (follow-ups, not blocking): the cost is still cold on
+    boot-airplane (no pass yet) + for a NON-English UI (the `tl`-keyed cache recomputes per language — decouple
+    the cheap translation annotation from the expensive aggregation cache); the per-day rollup stays the next
+    lever IF measured insufficient on the real corpus (EXPLAIN/time it on the live DB first).
+  - **CI FIXES (caught by the PR's own CI on the slices above):** (a) mypy +2 from slice 1 (errorlog min/max
+    over Any|None → typed `list[str]`; diagnostics `len(payload["errors"])` → a typed local) — now 126≤127;
+    (b) `_restore_error` broadened version-detection to include "migration"/"incompatible" (a "staged
+    migration failed on an ancient corpus" IS a version issue — test_restore_preview_robust_errors expects
+    "incompatible version"); (c) test_briefing_stale_cache.py used positional/bare write_text/read_text →
+    `encoding="utf-8"` (test_utf8_file_io hygiene). The macOS "Portability observation" lanes are
+    observation-only (not blocking).
+  REMAINING P0: P0-2 restore slowness (→ P1 backups job) — folds into the import/export redesign. P0 core
+  reliability + perf complete; next: P1 keyword-engine quick wins, then the backups redesign.
 - **KEYWORD-COUNT REDUCTION + RING-LOOP (2026-06-21, maintainer "reduce the ~500K keywords / download rings
   through diagnostics to auto-improve the engine"; branch claude/magical-brown-49m9nd, draft PR onto 0.09;
   backend VERIFIED py3.11 harness, frontend BROWSER-UNVERIFIED per fork-3):** the honest read recorded —
