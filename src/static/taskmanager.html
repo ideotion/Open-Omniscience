@@ -321,6 +321,24 @@
         '<ol class="tm-upnext">' + ups.map(function (d) { return "<li>" + esc(d) + "</li>"; }).join("") +
         (more ? '<li class="muted">+' + more + " " + esc(t("more")) + "</li>" : "") + "</ol>" +
         '<div class="vnote">' + esc(t("Order is re-randomised every pass — stratified by language and tag, not a fixed queue.")) + "</div>";
+      // The ACTUAL strata the pass interleaves by (#5): real counts per language & tag.
+      var st = plan.strata || {};
+      var stratHtml = function (rows) {
+        return (rows || []).map(function (x) {
+          var bucket = String(x.key || "").charAt(0) === "·";
+          var label = bucket ? esc(t(x.key === "·untagged" ? "untagged" : "unknown")) : esc(x.key);
+          return '<span class="cap-chip' + (bucket ? " muted" : "") + '">' + label +
+            '<span class="muted"> ·' + x.n + "</span></span>";
+        }).join("");
+      };
+      if ((st.languages || []).length) {
+        qHtml += '<div class="vrow"><span class="vk">' + esc(t("Languages")) +
+          '</span><span class="vv cap-chips">' + stratHtml(st.languages) + "</span></div>";
+      }
+      if ((st.tags || []).length) {
+        qHtml += '<div class="vrow"><span class="vk">' + esc(t("Tags")) +
+          '</span><span class="vv cap-chips">' + stratHtml(st.tags) + "</span></div>";
+      }
     }
     $("queue-body").innerHTML = qHtml;
   }

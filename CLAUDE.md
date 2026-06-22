@@ -3816,6 +3816,71 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-22 FIELD-TEST REMAINDER — TASK-MANAGER SHOWS THE ACTUAL STRATA (§5 #5; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED
+  per fork-3):** the Queue preview claimed "stratified by language and tag" but never SHOWED the strata.
+  `plan_preview` now emits `strata` = {languages:[{key,n}], tags:[{key,n}], sampled, note} derived from the
+  bounded `rows` sample it ALREADY fetches (ZERO extra query — /api/scheduler/activity is the hot poll, so
+  NO unbounded SELECT DISTINCT was added, per the brief's perf caveat); the counts are real, the
+  ·unknown/·untagged buckets are the SAME ones `stratified_interleave` uses (extracted to shared module
+  helpers `_source_lang`/`_source_tag`), and the honest "a rotation, re-randomised every pass, not a fixed
+  queue" note travels with it. Frontend: both the in-app task manager (app.js) + the standalone /tasks page
+  render language/tag chips with counts under "Up next this pass". tests/test_collection_activity.py (real
+  counts, blank-tag bucketed) + test_repo_invariants::test_task_manager_displays_actual_language_and_tag_strata.
+  HONEST SCOPE: the sample is the highest-priority due sources (a representative glimpse, stated), not the
+  whole 3,200-source catalogue.
+- **2026-06-22 FIELD-TEST REMAINDER — DEAD CALENDAR FEEDS EXCLUDED FROM AUTO-IMPORT (§7; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the per-pass
+  `auto_import_due_feeds` round-robin included the ~238 robots-disallowed `google-hol-*` (calendar.google.com)
+  + 16 `webcal.guru` feeds, and because "google-hol-*" sorts BEFORE the working "wph-*" ids, the round-robin
+  attempted ~254 GUARANTEED-DEAD feeds (each costing a robots fetch the fail-closed fetcher refuses) for
+  many passes, STARVING the 239 working WorldPublicHoliday feeds. Added `_AUTO_IMPORT_SKIP_HOSTS`
+  (field-verified robots-disallowed hosts, recorded in configs/calendar_feeds.yml's header) and skip them
+  in the due-list build. RECONCILES the "stays-listed-with-honest-verdict" choice: `load_families` is
+  UNTOUCHED — the feeds stay in the directory, the UI shows their honest verdict, the operator can still
+  verify/import them manually; only the AUTOMATIC round-robin skips them (never a fabricated verdict — each
+  is the host's own robots choice). tests/test_calendar_autoimport.py (the dead hosts stay listed but are
+  never auto-fetched; the working wph host IS reached). REMAINING (networked machine): replacement FRED ids
+  for the dead gold/silver/sawnwood commodity series; raw.githubusercontent.com calendar feed is robots-
+  UNDETERMINED (not confirmed-disallowed), so left in the round-robin (the backoff handles it).
+- **2026-06-22 FIELD-TEST REMAINDER — BOOT-COLD CACHE WARM (§1.3 read-path tail; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the in-memory insights
+  read cache is empty after a restart, so the FIRST Home/Insights open paid the cold whole-corpus
+  aggregation (warm_cache runs after a scrape pass, but boot is AIRPLANE mode -> no pass; a user who boots
+  + stays offline still hit the cold query). `run_deferred_startup` now kicks `warm_cache` in a DAEMON
+  thread (non-blocking, best-effort, zero network — the same local DB read moved off the first click;
+  its own session created inside the thread), gated by OO_NO_SCHEDULER so tests/headless skip it.
+  test_repo_invariants::test_startup_warms_the_insights_cache. The tl-decoupling (non-English UI recomputes
+  the aggregation per language because the cache key includes `tl`) stays a DEFERRED follow-up: a clean
+  decouple risks REDUCING translation coverage (the cached untranslated payload lacks the `stored_lang`
+  fallback map `_annotate_translations` uses for rows without a stored language) — a correctness risk
+  not worth taking for a single-user-modest perf win; flagged in src/api/insights.py:warm_cache.
+- **2026-06-22 FIELD-TEST REMAINDER — KEYWORD-ENGINE & DATE-VOCAB BATCH (the §3 brief tail; branch
+  claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13 venv).** Two slices:
+  (1) **NO_STOPLIST TAIL → MANAGED.** Promoted 14 languages to `MANAGED_LANGUAGES` after verifying each
+  tokenises WHOLE words (empirical 2026-06-22) + giving each a pure-grammar stoplist: fa/ur (Arabic
+  script), uk (Cyrillic, the gated 2026-06-18 set expanded), ro/cs/sk/ca/sw/az/et (Latin), tr/fi
+  (stoplists already present, just promoted), bs/hr (share the sr-Latin stoplist already in the union).
+  COLLISION DISCIPLINE: distinct-script langs are collision-free by construction; Latin additions are
+  length>=4 / accented-only so a content-word clash in es/it/pt/en/de/nl is impossible (hand-excluded
+  ro"cine"/sk"bola,bolo"/ca"sense,fins"/sw"wake,sana,kama" etc.). TOKENIZER: `_WORD_RE` gained Arabic
+  combining marks (`_ARABIC_MARKS`) as word CONTINUATIONS (additive — undiacritized text byte-unchanged,
+  proven; only JOINS a diacritized word a mark would split, like the Devanagari/Bengali fix). th (Thai)
+  → UNSEGMENTED (no inter-word spaces + Mn vowel marks shatter it — a stoplist can't fix segmentation,
+  honest); vi stays no_stoplist (syllable-segmented — "kinh tế" splits). 12 NON-VACUOUS selftest cases
+  added (content noun survives + >=3-char grammar filtered; selftest now 39/39). tests/
+  test_arabic_tokenizer.py (additivity) + updated test_managed_languages/test_keyword_engine_report/
+  test_stopword_candidates (tr/uk were the no_stoplist examples → swapped to vi/th).
+  (2) **DATE VOCABULARY.** uk Cyrillic months (nominative+genitive+locative, distinct from the Latin-
+  derived ru set), et-specific months (jaanuar/veebruar/märts/aprill/juuni/juuli/oktoober/detsember),
+  ur Arabic-script months (Urdu letters ک/ی → distinct strings from the Arabic set) all added to
+  `_MONTHS`; vi "tháng N" NUMBER patterns (`_VI_DMY_RE`/`_VI_MY_RE`/`_VI_DM_NOYEAR_RE` — vi months are
+  numbers, not names); th Thai-script months (`_TH_MONTHS`) with Buddhist-Era→CE conversion (`_be_to_ce`,
+  BE floor 2200; CE years kept; Thai/Eastern-Arabic digits parse via \d). A month/number only fires next
+  to a day/year, so recall rises without inventing dates from prose. tests/test_dateextract_more_languages.py.
+  mypy 126<=127, ruff F/B clean. REMAINING (the live-corpus / networked-machine items): orphan-prune +
+  tag-backfill RUNS on the live corpus; ring generation (Wikidata 403); zh/ja segmentation decision;
+  the remaining Latin no_stoplist langs await the exported per-language keyword log (the maintainer's loop).
 - **2026-06-22 SESSION — POST-MERGE CONTINUATION (PR #439 merged; new draft PR onto 0.09, branch re-cut from
   the merged 0.09 per protocol). SERVER-SIDE FOLDER PICKER (brief #8, "Browse buttons, never manual path
   typing"; backend VERIFIED py3.13, frontend BROWSER-UNVERIFIED per fork-3):** the folder-backup destination

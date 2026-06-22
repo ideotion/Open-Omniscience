@@ -31,6 +31,7 @@ from contextlib import suppress
 from datetime import UTC, date, datetime
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml
 
@@ -40,6 +41,17 @@ CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "calendar_feeds
 
 _MAX_FEED_BYTES = 5 * 1024 * 1024  # an .ics beyond this is refused, not truncated
 _MAX_EVENTS_PER_FEED = 3000  # bounded import, like every other scan
+
+# Hosts whose robots.txt DISALLOWS their iCal endpoints (field-verified 2026-06-11,
+# recorded in configs/calendar_feeds.yml's header): the fail-closed fetcher refuses
+# every feed on them, so the per-pass auto-import round-robin would burn slots + a
+# robots fetch on guaranteed-dead feeds — and because "google-hol-*" sorts BEFORE the
+# working "wph-*" ids, the ~238 dead Google feeds starved the 239 working
+# WorldPublicHoliday feeds for many passes (field test 2026-06-22). These feeds STAY
+# LISTED in the directory with their honest verdict (load_families is untouched, the UI
+# shows them, the operator can still verify/import them manually) — only the AUTOMATIC
+# round-robin skips them. NOT a fabricated verdict: each is the host's own robots choice.
+_AUTO_IMPORT_SKIP_HOSTS: frozenset[str] = frozenset({"calendar.google.com", "www.webcal.guru"})
 
 
 # --------------------------------------------------------------------------- #
@@ -406,6 +418,12 @@ def auto_import_due_feeds(fetcher, *, batch: int = 8, min_interval_hours: float 
     due: list[tuple[str, str]] = []
     for fam in load_families():
         for feed in fam["feeds"]:
+            # Skip feeds on a field-verified robots-disallowed host: the fetcher would
+            # refuse them anyway, and including them starves the working feeds in the
+            # round-robin. They stay LISTED (load_families is untouched) — only the
+            # automatic import skips them.
+            if urlparse(feed.get("url", "")).netloc in _AUTO_IMPORT_SKIP_HOSTS:
+                continue
             last = state.get(feed["id"])
             if last:
                 try:

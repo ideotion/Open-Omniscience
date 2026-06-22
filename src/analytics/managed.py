@@ -35,10 +35,30 @@ MANAGED_LANGUAGES: frozenset[str] = frozenset(
         # src/analytics/extract.py. (zh/ja stay UNSEGMENTED — a stoplist can't fix the
         # missing word segmentation.)
         "hi", "bn",
+        # 2026-06-22 field test, remainder batch. All verified to tokenise WHOLE words
+        # (the managed bar) on 2026-06-22 and given pure-grammar stoplists in
+        # src/analytics/extract.py — so their sources stop seeding disabled:
+        #   fa/ur  Arabic script (distinct -> collision-free stoplist; the tokenizer now
+        #          keeps diacritized words whole via _ARABIC_MARKS).
+        #   uk     Cyrillic (the gated 2026-06-18 set expanded to a full stoplist; the
+        #          union filters it regardless of the ru-mislabel noise that gated it).
+        #   ro/cs/sk/ca/sw/az/et  Latin; stoplists added with length>=4 / accented-only
+        #          words so a content-word collision in es/it/pt/en/de/nl is impossible.
+        #   tr/fi  agglutinative but space-segmented (whole words); their stoplists were
+        #          already present from the 2026-06-12/17 evidence passes — promoted now.
+        #   bs/hr  share the Serbian-Latin stoplist already in the union (sr is managed).
+        # (vi stays unmanaged: it is SYLLABLE-segmented — "kinh tế" splits — so words
+        # fragment; th is UNSEGMENTED below. Both verified 2026-06-22.)
+        "fa", "ur", "uk", "ro", "cs", "sk", "ca", "sw", "az", "et",
+        "tr", "fi", "bs", "hr",
     }
 )
 # No word segmentation -> keyword extraction is broken regardless of a stoplist.
-UNSEGMENTED: frozenset[str] = frozenset({"zh", "ja"})
+# th (Thai) added 2026-06-22: Thai has no inter-word spaces AND its vowel marks are
+# Mn, so the tokenizer shatters a Thai run into mark-bounded fragments (verified) —
+# a stoplist cannot fix missing segmentation, so it is honestly UNSEGMENTED, not
+# no_stoplist. (vi is syllable-segmented, a milder case kept as no_stoplist.)
+UNSEGMENTED: frozenset[str] = frozenset({"zh", "ja", "th"})
 
 
 def normalize_lang(lang: str | None) -> str:

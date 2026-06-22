@@ -46,8 +46,17 @@ from src.services.stopwords import stopwords_manager
 # zh/ja stay unsegmented regardless.)
 _DEVANAGARI_MARKS = "ऀ-ःऺ-ॏ॑-ॗॢॣ"
 _BENGALI_MARKS = "ঁ-ঃ়া-্ৗৢৣ"
+# Arabic-script combining marks (harakat/tashkeel, superscript alef, Quranic signs):
+# category Mn — NOT matched by \w, so a *diacritized* Persian/Urdu/Arabic word would
+# split at a mark exactly like the Devanagari matra bug. Allowed ONLY as word
+# CONTINUATIONS, which is additive: undiacritized text (the common news case — the
+# fa/ur samples tokenise whole with or without this) is byte-unchanged; this only
+# JOINS a token a mark would otherwise split, never splits one. Defined with \u
+# escapes in a NORMAL string (the literal mark glyphs are hard to embed) then
+# interpolated into the raw char class, mirroring the Devanagari/Bengali ranges.
+_ARABIC_MARKS = "ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۤۧۨ-ۭ"
 _WORD_RE = re.compile(
-    rf"[^\W\d_][\w'’\-{_DEVANAGARI_MARKS}{_BENGALI_MARKS}]*", re.UNICODE
+    rf"[^\W\d_][\w'’\-{_DEVANAGARI_MARKS}{_BENGALI_MARKS}{_ARABIC_MARKS}]*", re.UNICODE
 )
 
 _DEFAULT_MAX_TERMS = 80
@@ -435,6 +444,57 @@ _EXTRA_STOPWORD_TEXT = (
     "एक इस उस अपने अपनी कर करने किया रहा रही रहे गया गई गए "  # Hindi
     "এর এবং ও কে থেকে যে এই সেই করে করা হয় হয়েছে ছিল না কি যা তার জন্য কিন্তু বা আর হবে হয়ে নিয়ে "  # Bengali
     "একটি দিয়ে সঙ্গে পরে আগে করেন করেছে "  # Bengali
+    # ----------------------------------------------------------------------- #
+    # 2026-06-22 field test, remainder batch (engine report no_stoplist tail).
+    # Adding more of the corpus languages the engine could not analyse. Two
+    # collision-safety classes, both honouring the standing union rule:
+    #   (1) DISTINCT-SCRIPT languages are collision-free by construction — Arabic
+    #       script (fa/ur) and Cyrillic (uk expansion) can NEVER overlap a Latin/
+    #       Greek content word; cross-script overlap (fa↔ar, uk↔ru/bg) is fine (a
+    #       shared function word is a stopword in each). Hand-filtered to PURE
+    #       grammar (pronouns, prepositions, conjunctions, common auxiliaries).
+    #   (2) LATIN languages add ONLY length>=4 distinctive grammar OR accented
+    #       words (the accent/length makes a content-word collision in es/it/pt/
+    #       en/de/nl effectively impossible); every short unaccented homograph was
+    #       EXCLUDED by hand (ro "cine"=es cinema; sk "bola/bolo"=es/pt ball/cake;
+    #       ca "sense/fins"=en sense/fins; sw "wake/sana/kama"=en wake / es heal /
+    #       name). These languages tokenise whole words (verified 2026-06-22), so
+    #       they promote to MANAGED in src/analytics/managed.py.
+    # Persian (fa) — Arabic script:
+    "و یا اما ولی که نه بله این آن در از به با برای را تا هم اگر چون بین است بود باشد "
+    "می خود کرد شد های هایی آنها او ما شما من تو ها هر همه چه کجا کی چرا چگونه نیز "
+    "هنوز فقط بسیار بیشتر کمتر دیگر بدون روی زیر تنها یعنی پس نیست "
+    # Urdu (ur) — Arabic script:
+    "اور یا لیکن مگر کہ نہیں ہاں یہ وہ میں سے پر کو کا کی کے نے ہے ہیں تھا تھے تھی بھی "
+    "اگر کیونکہ جو کیا کون کہاں کب کیسے کیوں ہم تم آپ یہاں وہاں صرف بہت زیادہ کم سب ہر "
+    "بغیر درمیان تک ساتھ بعد پہلے رہا رہی رہے گیا گئی گئے "
+    # Ukrainian (uk) — Cyrillic; expands the gated 2026-06-18 set into a full
+    # function-word stoplist (the union filters these regardless of the ru-mislabel
+    # noise that kept uk gated; uk tokenises whole words, so it promotes now).
+    "і та й або але не так як що це цей ця ці у в до від за над під при про без для по "
+    "о об його її їх наш ваш мій твій свій хто де коли чому навіщо тому також вже ще "
+    "лише дуже більше менше кожен весь вся все інший якщо бо між через був була було "
+    "бути є має мають можна щоб під час "
+    # Romanian (ro) — Latin, len>=4 / accented (short homographs excluded):
+    "și să că între fără când această aceasta dintre pentru prin despre asupra sunt "
+    "acest unde foarte fiecare deoarece către după însă doar mult puțin către sau "
+    # Czech (cs) — Latin, len>=4 / accented ('ale'=ale beer, 'ano'=pt year EXCLUDED):
+    "nebo která které jsou byla bylo být mají svůj náš váš velmi více méně každý "
+    "všechno protože mezi pokud jako když ačkoli avšak také však "
+    # Slovak (sk) — Latin, len>=4 / accented ('bola/bolo'=es/pt ball/cake EXCLUDED):
+    "alebo ktorý ktorá ktoré prečo bol byť majú svoj veľmi viac menej každý všetko "
+    "pretože medzi keď však tiež sú "
+    # Catalan (ca) — Latin, len>=4 / accented ('sense'=en, 'fins'=en EXCLUDED):
+    "però perquè aquest aquesta aquests aquestes això aquell aquella són està seva "
+    "seves quan molt menys tota totes altres aquí "
+    # Swahili (sw) — Latin, distinctive ('wake'/'sana'/'kama' EXCLUDED):
+    "kwamba lakini katika kutoka ambaye ambao ambayo ndiyo hapana huyu sababu wangu "
+    "wako hivyo zaidi kila wote bila "
+    # Azerbaijani (az) — Latin, accented ('amma'/'kimi' name homographs EXCLUDED):
+    "çünki lakin üçün qədər əvvəl əgər necə niyə deyil çox harada ilə hər yox "
+    # Estonian (et) — Latin, len>=4 / accented ('aga'=name homograph EXCLUDED):
+    "sest kõik väga samuti kuid nende olla kõige ainult palju vähem rohkem teine "
+    "teised või üks kaks kolm "
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any

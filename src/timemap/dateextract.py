@@ -171,6 +171,28 @@ _MONTHS.update({
     # only the Slovenian-specific forms are added here. "marca" omitted (collision).
     "januarja": 1, "februarja": 2, "aprila": 4,
     "junij": 6, "junija": 6, "julij": 7, "julija": 7,
+    # Ukrainian (Cyrillic) — Slavic month names, DISTINCT from the Latin-derived
+    # Russian set already in this table (no overlap). Dates use the genitive
+    # ("5 травня 2024 року"), so nominative + genitive are both included; the
+    # trailing "року" (=year) is ignored by the regex. (date-diagnostics: uk had
+    # NO month vocabulary, so coverage was ~0 despite war-coverage volume.)
+    "січень": 1, "січня": 1, "січні": 1, "лютий": 2, "лютого": 2, "лютому": 2,
+    "березень": 3, "березня": 3, "березні": 3, "квітень": 4, "квітня": 4, "квітні": 4,
+    "травень": 5, "травня": 5, "травні": 5, "червень": 6, "червня": 6, "червні": 6,
+    "липень": 7, "липня": 7, "липні": 7, "серпень": 8, "серпня": 8, "серпні": 8,
+    "вересень": 9, "вересня": 9, "вересні": 9, "жовтень": 10, "жовтня": 10, "жовтні": 10,
+    "листопад": 11, "листопада": 11, "листопаді": 11, "грудень": 12, "грудня": 12, "грудні": 12,
+    # Estonian — the names not already covered by other tables (mai/august/september/
+    # november are shared). Estonian dates are nominative ("5. mai 2024"); the
+    # double-vowel/double-l forms are et-specific so they don't collide.
+    "jaanuar": 1, "veebruar": 2, "märts": 3, "aprill": 4, "juuni": 6, "juuli": 7,
+    "oktoober": 10, "detsember": 12,
+    # Urdu (Arabic script) — Gregorian month names spelled with Urdu letters (ک U+06A9,
+    # ی U+06CC), so they are DISTINCT strings from the Arabic-script set above (مارچ≠مارس,
+    # اکتوبر[Urdu ک]≠اكتوبر[Arabic ك]). Eastern-Arabic digits parse via \d. A month only
+    # fires next to a day/year, so prose homographs stay safe.
+    "جنوری": 1, "فروری": 2, "مارچ": 3, "اپریل": 4, "مئی": 5, "جولائی": 7,
+    "اگست": 8, "ستمبر": 9, "اکتوبر": 10, "نومبر": 11, "دسمبر": 12,
 })
 _MONTH_ALT = "|".join(sorted(_MONTHS, key=len, reverse=True))  # longest first so 'sept' beats 'sep'
 
@@ -230,6 +252,39 @@ _CJK_MD_RE = re.compile(rf"({_CJK_D}{{1,2}})\s*月\s*({_CJK_D}{{1,2}})\s*日")  
 def _cjk_int(s: str) -> int:
     """Parse a CJK date number tolerant of full-width digits (２０２４ -> 2024)."""
     return int(s.translate(_FW_DIGITS))
+
+
+# Vietnamese: the month is written as a NUMBER after "tháng" ("ngày 5 tháng 5 năm
+# 2024"), so the name table can't help — these read the number directly. (Plain
+# numeric "5/5/2024" already resolves via _NUM_DMY_RE with language=vi -> DMY.) The
+# full-date pattern runs FIRST (its day match claims the span before the month-only
+# pattern can). Vietnamese is syllable-segmented (so its KEYWORDS stay unmanaged),
+# but these explicit date markers are unambiguous regardless.
+_VI_DMY_RE = re.compile(r"\bngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})\b", re.I)
+_VI_DM_NOYEAR_RE = re.compile(r"\bngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\b(?!\s+năm)", re.I)
+_VI_MY_RE = re.compile(r"\btháng\s+(\d{1,2})\s*(?:năm\s+|/)(\d{4})\b", re.I)
+
+# Thai: month NAMES in Thai script; the year is usually the Buddhist Era (BE = CE +
+# 543), often introduced by "พ.ศ.". Thai has no inter-word spaces, so whitespace is
+# optional around the parts; the specific multi-char Thai month string + an adjacent
+# 4-digit year keeps it precise. A BE year (>= _BE_FLOOR) is converted to CE; a year
+# already in the plausible CE window is kept as-is (some Thai sites use CE). Thai
+# digits (๐-๙) parse via \d. (Thai KEYWORDS are unsegmented; these date markers are
+# still extractable.)
+_TH_MONTHS = {
+    "มกราคม": 1, "กุมภาพันธ์": 2, "มีนาคม": 3, "เมษายน": 4, "พฤษภาคม": 5, "มิถุนายน": 6,
+    "กรกฎาคม": 7, "สิงหาคม": 8, "กันยายน": 9, "ตุลาคม": 10, "พฤศจิกายน": 11, "ธันวาคม": 12,
+}
+_TH_ALT = "|".join(_TH_MONTHS)
+_TH_PE = r"(?:พ\.?\s*ศ\.?\s*)?"  # optional "พ.ศ." (B.E.) marker
+_TH_DMY_RE = re.compile(rf"(\d{{1,2}})\s*({_TH_ALT})\s*{_TH_PE}(\d{{4}})")
+_TH_MY_RE = re.compile(rf"({_TH_ALT})\s*{_TH_PE}(\d{{4}})")
+_BE_FLOOR = 2200  # CE 2200 is far beyond the window, so any year >= this is Buddhist Era
+
+
+def _be_to_ce(year: int) -> int:
+    """A Buddhist-Era year (>= _BE_FLOOR) -> CE; a year already in CE is unchanged."""
+    return year - 543 if year >= _BE_FLOOR else year
 
 
 # Plausible window for a *mentioned* date: deep history up to a little ahead of "now".
@@ -325,6 +380,15 @@ def extract_dates(
         d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), _cjk_int(m.group(3)), today)
         if d and claim(*m.span()):
             add(d, "day", m)
+    for m in _VI_DMY_RE.finditer(text):  # ngày 5 tháng 5 năm 2024 (Vietnamese day)
+        d = _valid(int(m.group(3)), int(m.group(2)), int(m.group(1)), today)
+        if d and claim(*m.span()):
+            add(d, "day", m)
+    for m in _TH_DMY_RE.finditer(text):  # 5 มกราคม 2567 (Thai day; BE -> CE)
+        mon = _TH_MONTHS.get(m.group(2))
+        d = _valid(_be_to_ce(int(m.group(3))), mon, int(m.group(1)), today) if mon else None
+        if d and claim(*m.span()):
+            add(d, "day", m)
     # Numeric dates — language picks the order when ambiguous; never guessed.
     mdy_first = (language or "").lower().startswith("en")
     for m in _NUM_YMD_RE.finditer(text):
@@ -353,6 +417,15 @@ def extract_dates(
         d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), 1, today)
         if d and claim(*m.span()):
             add(d, "month", m)
+    for m in _VI_MY_RE.finditer(text):  # tháng 5 năm 2024 / tháng 5/2024 (month precision)
+        d = _valid(int(m.group(2)), int(m.group(1)), 1, today)
+        if d and claim(*m.span()):
+            add(d, "month", m)
+    for m in _TH_MY_RE.finditer(text):  # มกราคม 2567 (Thai month precision; BE -> CE)
+        mon = _TH_MONTHS.get(m.group(1))
+        d = _valid(_be_to_ce(int(m.group(2))), mon, 1, today) if mon else None
+        if d and claim(*m.span()):
+            add(d, "month", m)
 
     # ---- anchored resolution (needs the article's publication date) -------- #
     if anchor is not None:
@@ -377,6 +450,10 @@ def extract_dates(
                     add(d, "day", m)
         for m in _CJK_MD_RE.finditer(text):  # 5月11日 with no year -> nearest to the anchor
             d = nearest_year(_cjk_int(m.group(1)), _cjk_int(m.group(2)))
+            if d and claim(*m.span()):
+                add(d, "day", m)
+        for m in _VI_DM_NOYEAR_RE.finditer(text):  # ngày 5 tháng 5 (no year) -> nearest
+            d = nearest_year(int(m.group(2)), int(m.group(1)))
             if d and claim(*m.span()):
                 add(d, "day", m)
         for m in _REL_RE.finditer(text):
