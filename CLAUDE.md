@@ -3816,6 +3816,36 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-23 KEYWORD REDUCTION §2.5 — DIGIT-HEAVY CODE-TOKEN EXTRACTION FILTER (the next lever on the
+  ~400k keywords; branch claude/nice-davinci-bqufft, draft PR onto 0.09; backend VERIFIED py3.11 venv):**
+  the 2026-06-23 live log (27,303 articles / 406,723 keywords) showed a ~35k bucket of alphanumeric CODE
+  tokens (A-10C, internal ids, model-variant cruft, clock timecodes 1h15) minted as junk keywords —
+  "NOT yet filtered at extraction." HONEST FINDING that shaped the design: they CANNOT be separated from
+  real digit-bearing terms by a digit RATIO — the maintainer's OWN keep/drop examples (`a-10` keep vs
+  `a-10c` drop) are shape-identical modulo a trailing letter, and "mostly digits" applied literally drops
+  `a-10`/`f-18` (the must-keeps). The discriminator that WORKS is the count of letter<->digit TRANSITIONS:
+  a real designation keeps its digits in ONE run (a-10, f-18, covid-19, g7, g20, cop26, b52, mp3, web3,
+  x86 = exactly 1 transition), a code ALTERNATES (a-10c, a1b2, x1y2z3 = >= 2). `src/analytics/extract.py`:
+  `_alnum_transitions` + `_is_code_token` (drop >= 2-transition tokens) wired at the ONE extraction
+  chokepoint — the `_terms` unigram + n-gram filters AND `_entities` (so an A-10C-style code is not
+  preserved as a fake acronym either). The handful of REAL multi-transition terms (influenza subtypes
+  H1N1/H5N1…, the marker A1C) are an allowlist `_CODE_TOKEN_KEEP` — exactly the _ACRONYM_STOP /
+  _PLURAL_DENYLIST pattern, tunable from the diagnostics logs; `OO_CODE_TOKEN_FILTER=0` disables. PLUS a
+  CONSERVATIVE glued-digit-prefix catch in the unigram loop: a digit-bearing token glued immediately AFTER a
+  digit in the source (1h15 -> h15, 3a4b -> a4b) is always a tokenizer split of a larger code (real prose
+  space-separates numbers) — this catches the clock-timecode fragments that are single-transition and so
+  invisible to the transition rule. TOKEN-LEVEL (no text mutation) ⇒ clean-text first-offsets stay EXACT
+  (the strip_markup contract). HONEST SCOPE stated: this does NOT catch single-transition `letterN` tokens
+  (b52/mp3-shaped) because they are shape-identical to real designations — a re-index drains the catchable
+  ones and the rest surface in the next log for the loop. tests/test_keyword_code_tokens.py (hard keep/drop
+  fixture proving NO real term is lost: 18 keepers incl. flu subtypes survive, 8 codes drop, env kill-switch,
+  end-to-end index_article stays clean + counters consistent) + 2 in-app self-test golden cases
+  (digit_code_tokens_dropped + clock_timecode_fragments_dropped, so a regression reddens the maintainer's
+  exported keyword self-test AND CI). 90 keyword/analytics/selftest/extract tests + 122/125 repo-invariants
+  green (the 3 non-greens are the py3.11-vs-py3.13 `[T]`-generic parse + package-metadata env gaps, not the
+  change). ruff F/B clean; extract.py adds 0 mypy errors. REMAINING §2.5: measure the real reduction on the
+  live corpus after a re-index (the maintainer's loop); single-transition `letterN` junk stays unfilterable
+  by shape (honest limit).
 - **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
   empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the

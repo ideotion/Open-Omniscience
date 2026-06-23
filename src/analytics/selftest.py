@@ -306,6 +306,28 @@ _CASES: tuple[Challenge, ...] = (
         "Hallitus muuttaa talouspolitiikkaa, koska tilanne että jatkuu edelleen.",
         language="fi", term=("tilanne",), absent=("että", "koska"),
     ),
+    # 2026-06-23 field test: a ~35k bucket of digit-heavy CODE tokens (A-10C, internal
+    # ids, model-variant cruft) leaked as keywords. They drop by letter<->digit
+    # transition count (>= 2), while one-transition designations (a-10, f-18, g7) and
+    # allowlisted real multi-transition terms (h1n1) survive. Non-vacuous: a real
+    # designation MUST stay while the multi-segment code MUST go.
+    Challenge(
+        "digit_code_tokens_dropped",
+        "multi-segment alphanumeric codes (A-10C, a1b2) are dropped; real designations stay",
+        "The A-10C variant and the a1b2 sensor were tested; the A-10, the F-18 and the "
+        "H1N1 response shaped the wider economy.",
+        term=("a-10", "f-18", "economy"),
+        absent=("a-10c", "A-10C", "a1b2"),
+    ),
+    Challenge(
+        # 1h15 / 12h00 tokenise to h15 / h00 (the leading digit can't start a token);
+        # the glued-digit-prefix rule drops these clock-time fragments.
+        "clock_timecode_fragments_dropped",
+        "clock timecodes (1h15, 12h00) do not leave h15/h00 keyword fragments",
+        "The session opened at 1h15 and closed at 12h00 after a debate about elections.",
+        term=("elections",),
+        absent=("h15", "h00"),
+    ),
 )
 
 
