@@ -359,3 +359,64 @@ def test_pip_install_is_network_resilient():
     # Honest network guidance on persistent failure (not pip's misleading conflict).
     assert "getent hosts files.pythonhosted.org" in sh
     assert "downloaded wheels are cached" in sh
+
+
+def test_bootstrap_recovers_from_a_diverged_or_force_updated_branch():
+    """Field test 2026-06-23: a force-update of origin/0.09 + a stray local commit made
+    `git pull --ff-only` dead-end the bootstrap with a raw git hint. The update block
+    must fast-forward when possible, snap a CLEAN checkout to upstream on divergence,
+    and refuse (with guidance) only when there are local uncommitted changes."""
+    sh = (REPO / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
+    assert "merge --ff-only FETCH_HEAD" in sh, "must try a fast-forward to the fetched tip"
+    assert "git -C \"$INSTALL_DIR\" status --porcelain" in sh, "must check for local changes"
+    assert "reset --hard FETCH_HEAD" in sh, "a clean checkout must snap to upstream on divergence"
+    assert "Update aborted to protect your local changes" in sh, "dirty tree -> honest guidance, not a reset"
+
+
+def test_bootstrap_divergence_recovery_mechanism_works(tmp_path):
+    """Prove the recovery git commands actually do the right thing: after origin's
+    history is REWRITTEN (force-update), a clean install checkout snaps to the new tip
+    via fetch + ff-only-fails + reset --hard FETCH_HEAD."""
+    import subprocess as sp
+
+    def git(*a, cwd):
+        return sp.run(["git", *a], cwd=cwd, capture_output=True, text=True,
+                      env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+
+    origin = tmp_path / "origin"; origin.mkdir()
+    git("init", "-b", "0.09", cwd=origin)
+    (origin / "f.txt").write_text("v1", encoding="utf-8")
+    git("add", "-A", cwd=origin); git("commit", "-m", "v1", cwd=origin)
+
+    clone = tmp_path / "clone"
+    sp.run(["git", "clone", str(origin), str(clone)], capture_output=True, text=True)
+
+    # Origin's history is REWRITTEN (amend = a force-update / new SHA, not a child).
+    (origin / "f.txt").write_text("v2", encoding="utf-8")
+    git("add", "-A", cwd=origin); git("commit", "--amend", "-m", "v2-rewritten", cwd=origin)
+
+    # The bootstrap recovery sequence on a CLEAN checkout:
+    git("fetch", "origin", "0.09", cwd=clone)
+    ff = git("merge", "--ff-only", "FETCH_HEAD", cwd=clone)
+    assert ff.returncode != 0, "ff-only must fail on a rewritten history (the dead-end)"
+    assert git("status", "--porcelain", cwd=clone).stdout.strip() == "", "checkout is clean"
+    reset = git("reset", "--hard", "FETCH_HEAD", cwd=clone)
+    assert reset.returncode == 0
+    assert (clone / "f.txt").read_text(encoding="utf-8") == "v2", "snapped to the rewritten upstream"
+
+
+def test_pip_install_handles_out_of_disk_and_redirects_tmpdir():
+    """Field test 2026-06-23 (Qubes disposable VM): pip hit 'No space left on device'
+    unpacking big wheels because /tmp is a small RAM-backed tmpfs, even though the home
+    volume had room. The installer must (a) point pip's TMPDIR at the install volume and
+    (b) DISTINGUISH a disk-full failure from a network one (the prior message wrongly
+    said 'almost always a NETWORK problem')."""
+    sh = (REPO / "install.sh").read_text(encoding="utf-8")
+    # TMPDIR is redirected off /tmp for the pip step.
+    assert 'TMPDIR="$pip_tmp" python -m pip install' in sh, "pip must run with a roomy TMPDIR"
+    assert "oo-pip-build" in sh
+    # Disk-full is detected and given its OWN guidance (df + Qubes private storage), not network.
+    assert "No space left on device|Errno 28" in sh, "must detect the disk-full error"
+    assert "df -h /tmp" in sh and "private storage" in sh, "disk-full needs disk guidance"
+    assert "out of disk space" in sh.lower()

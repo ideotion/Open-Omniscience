@@ -46,8 +46,27 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     # Default to whatever branch the checkout is already on.
     ref="${BRANCH:-$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD)}"
     git -C "$INSTALL_DIR" fetch --depth 1 origin "$ref"
-    git -C "$INSTALL_DIR" checkout "$ref"
-    git -C "$INSTALL_DIR" pull --ff-only origin "$ref"
+    git -C "$INSTALL_DIR" checkout "$ref" 2>/dev/null || true
+    # Try a fast-forward to the freshly-fetched tip. If that fails, the branches
+    # have DIVERGED -- usually because the published branch was force-updated
+    # (history rewritten) and/or the install copy carries a stray commit. ff-only
+    # then aborts with a raw git hint, dead-ending the user. Handle it honestly:
+    if git -C "$INSTALL_DIR" merge --ff-only FETCH_HEAD 2>/dev/null; then
+        :  # up to date / fast-forwarded
+    elif [ -n "$(git -C "$INSTALL_DIR" status --porcelain)" ]; then
+        # The user has uncommitted local changes -- never discard them silently.
+        printf '%sCannot update automatically: you have local changes and the published branch moved.%s\n' "$ylw" "$rst"
+        echo "  Save or discard your changes, then re-run this installer:"
+        echo "    cd \"$INSTALL_DIR\""
+        echo "    git stash                     # keep them, OR"
+        echo "    git reset --hard origin/$ref  # discard them and match the published branch"
+        die "Update aborted to protect your local changes."
+    else
+        # A clean install checkout is meant to MIRROR the published branch, so snap
+        # to it (this is the safe, expected recovery from a force-update).
+        printf '%sPublished branch was updated; snapping this clean checkout to match it...%s\n' "$ylw" "$rst"
+        git -C "$INSTALL_DIR" reset --hard FETCH_HEAD
+    fi
 elif [ -e "$INSTALL_DIR" ]; then
     die "$INSTALL_DIR exists but is not a git checkout. Move it aside or set OO_INSTALL_DIR, then re-run."
 else

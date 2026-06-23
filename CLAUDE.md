@@ -3816,6 +3816,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **INSTALL/BOOTSTRAP FIELD-TEST FIXES (2026-06-23, Qubes disposable VM; branch claude/magical-brown-49m9nd,
+  stacked on the stopwords PR #446; bash -n + tests VERIFIED):** TWO real field failures. (1) BOOTSTRAP
+  DIVERGENCE — origin/0.09 was FORCE-UPDATED (history rewritten) + the install checkout had a stray commit,
+  so `git pull --ff-only` dead-ended with a raw git hint. `scripts/bootstrap.sh` now tries
+  `git merge --ff-only FETCH_HEAD`; on divergence it SNAPS a CLEAN checkout to upstream (`reset --hard
+  FETCH_HEAD` — the expected recovery for an install copy that mirrors origin) and only REFUSES (with
+  stash/reset guidance) when there are uncommitted local changes — never the raw dead-end. (2) PIP "No space
+  left on device (Errno 28)" — pip unpacks big scientific wheels (scipy 35MB/numpy/pandas) in TMPDIR, which on
+  Qubes is /tmp = a SMALL RAM-backed tmpfs, so it fails even though the private/home volume has room (the
+  maintainer confirmed plenty of space). `install.sh:pip_install` now points `TMPDIR` at the install volume
+  (`$XDG_CACHE_HOME/oo-pip-build`) AND CLASSIFIES the failure: disk-full gets its OWN guidance (`df -h /tmp …`
+  + Qubes private-storage hint, stop — retrying won't clear a full disk), network keeps the retry+DNS message.
+  CORRECTS the prior over-broad "almost always a NETWORK problem" message that misdiagnosed this Errno-28 case.
+  tests/test_installer.py (+3: bootstrap ff-fallback/clean-snap/dirty-guard content + a REAL git divergence-
+  recovery behavioural test; pip TMPDIR + disk-full classification). 26 installer tests pass.
 - **STOPWORDS-ISO LANGUAGE-SCOPED LISTS (2026-06-23, maintainer field logs: "400k keywords, address it for
   good"; branch claude/magical-brown-49m9nd, draft PR onto 0.09; backend VERIFIED py3.11):** the 2026-06-23
   keyword-engine report (27,303 articles / 406,723 keywords / 1.8M mentions) showed ~88k keywords leaking
