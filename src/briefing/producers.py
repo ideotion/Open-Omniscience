@@ -1861,6 +1861,87 @@ def recycled_claim(session) -> list[Card]:
     return cards
 
 
+_MAX_HEADLINE_BODY = 4
+
+
+def headline_body_mismatch(session) -> list[Card]:
+    """Surface a RECENT article whose headline leads with content the body does not
+    substantiate (manipulation-pattern card #7, ruling #13).
+
+    Names a STRUCTURE, never intent: lexical divergence d_lex (headline content words
+    vs the body's top words — language-agnostic) and, for English only, a headline-vs-
+    body sentiment gap. The signal carries its COMPONENTS, never a clickbait score; the
+    innocent twin (a summarising / metaphorical headline) is stated beside the pattern.
+    """
+    try:
+        from src.analytics.headline_body import (
+            HEADLINE_BODY_CAVEAT,
+            find_headline_body_mismatch,
+        )
+
+        found = find_headline_body_mismatch(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("headline-body-mismatch scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_HEADLINE_BODY]:
+        title = it["title"] or "(untitled)"
+        if len(title) > 70:
+            title = title[:67] + "…"
+        absent = it.get("absent_terms", [])
+        absent_str = ", ".join(absent[:4]) + ("…" if len(absent) > 4 else "")
+        gap_clause = (
+            f" Its tone also diverges (sentiment gap {it['sentiment_gap']})."
+            if it.get("sentiment_gap") is not None
+            and it["sentiment_gap"] >= found["sentiment_gap_min"]
+            else ""
+        )
+        cards.append(
+            Card(
+                type="headline_body_mismatch",
+                title=f"Headline ≠ body: {title}",
+                summary=(
+                    "The headline leads with terms the article body barely covers"
+                    + (f" ({absent_str})" if absent_str else "")
+                    + f" — lexical divergence {it['lexical_div']}.{gap_clause} A "
+                    "summarising or metaphorical headline does this innocently. Read both "
+                    "and judge."
+                ),
+                bucket="debunk",
+                signal={
+                    "metric": "lexical_div",
+                    "value": it["lexical_div"],
+                    "sentiment_gap": it.get("sentiment_gap"),
+                    "lang": it.get("lang"),
+                    "absent_terms": absent,
+                    "n_absent": len(absent),
+                },
+                method=found.get("method", ""),
+                caveat=HEADLINE_BODY_CAVEAT,
+                # article = corpus of 1: the card opens the analysis window over it.
+                article_ids=[it["article_id"]],
+                n=1,
+                key=f"hbmismatch:{it['article_id']}",
+                trigger=_trigger(
+                    "The headline names things the article itself barely discusses. A "
+                    "summarising or metaphorical headline does this innocently — but it is "
+                    "also how a misleading headline works. Read both and judge.",
+                    [
+                        ("Lexical divergence", f"{it['lexical_div']} (>= {found['d_min']} fires)"),
+                        (
+                            "Sentiment gap (English only)",
+                            str(it["sentiment_gap"]) if it.get("sentiment_gap") is not None else "—",
+                        ),
+                        ("Headline terms absent from the body", absent_str or "—"),
+                        ("Language", it.get("lang") or "unknown"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -1885,6 +1966,7 @@ _DEFAULT_PRODUCERS = (
     ("watch_matches", watch_matches),
     ("source_laundering", source_laundering),
     ("recycled_claim", recycled_claim),
+    ("headline_body_mismatch", headline_body_mismatch),
 )
 
 

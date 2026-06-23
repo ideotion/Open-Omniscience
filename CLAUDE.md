@@ -585,10 +585,10 @@ ruling, a contingency, or a deliberate-omission note.
   the pattern. A recycled_claim PRODUCER (bucket="watch", no-score schema, _trigger) auto-surfaces it
   as a Home Lead; GET /api/insights/recycled-claims for exploration. tests/test_recycled_claim.py (6:
   fires on recent-dup-of-old, short-gap-isn't-recycled, two-old-without-recent-doesn't-fire,
-  single-source-flagged, unrelated-text-no-cluster, endpoint). REMAINING: the other 6 cards
-  (astroturf/copypasta partly covered by echo_chamber; headline-body-mismatch, outrage-intensity,
-  flood/bury, manufactured-emergence, event-timed-op still to build); the elections/civic vertical.
-  SEQUENCING: (1) is the lead. Record-only here; build across stacked PRs onto 0.09.
+  single-source-flagged, unrelated-text-no-cluster, endpoint). CARD #7 HEADLINE-BODY-MISMATCH SHIPPED
+  2026-06-23 (see the shipped-log entry). REMAINING: the other 5 cards (astroturf/copypasta partly
+  covered by echo_chamber; outrage-intensity, flood/bury, manufactured-emergence, event-timed-op still
+  to build); the elections/civic vertical. SEQUENCING: (1) is the lead. Build across stacked PRs onto 0.09.
 - **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run
   UNSUPERVISED.** SCOPE = the V0.1 RC mandate IN FULL ('absolutely everything' from
   this ledger + FUTURE_DEVELOPMENTS): every RC-BLOCKING + SHOULD + POST row in
@@ -3816,6 +3816,29 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-23 MANIPULATION CARD #7 — HEADLINE-BODY MISMATCH (§6, ruling #13; branch claude/nice-davinci-
+  bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** the 3rd of the nine manipulation-pattern
+  cards (after #6 source-laundering + the near-dup recycled-claim), built to the maintainer's documented
+  spine (FUTURE_DEVELOPMENTS card #7). `src/analytics/headline_body.py:find_headline_body_mismatch` names a
+  STRUCTURE never intent: per RECENT article, lexical divergence `d_lex = 1 - |H ∩ B_top| / |H|` (the
+  headline's content UNIGRAMS H vs the body's top unigrams B_top — same extractor for both, so LANGUAGE-
+  AGNOSTIC, works in every language the extractor supports) + an English-only headline-vs-body VADER
+  sentiment gap `Δs` (None for non-English — never a fabricated neutral, the standing B1 disclosure).
+  Fires when `|H| >= min_headline_terms` AND (`d_lex >= d_min` OR `Δs >= gap_min`) — a DIVERGENCE card
+  (bucket `debunk`), so it fires per-article (the convergence "no single-signal" gate is for the cross-source
+  coordination cards, not this one). HONESTY by construction: the signal carries its COMPONENTS (lexical_div,
+  sentiment_gap, lang, the exact absent headline terms), NEVER a blended "clickbait score"; the innocent twin
+  (a summarising/metaphorical headline does exactly this) is stated beside the pattern; precision-biased
+  (strict d_min=0.67 + min 3 headline terms, so a punchy 1-word headline never trivially fires); bounded
+  (recent pool, body capped at 8000 chars — its lead carries the salient terms). DESIGN CALL recorded:
+  H/B_top restricted to UNIGRAMS — a title bigram rarely appears verbatim among the body's top terms even
+  on-topic, which would inflate d_lex (a match case dropped 0.5→0.125 with unigrams = far below threshold,
+  far fewer FPs). Wired as a fail-safe-LAST producer (`headline_body_mismatch` → a `debunk` Home Lead over
+  the exact article, article=corpus-of-1) + `GET /api/insights/headline-body-mismatch` (cached). tests/
+  test_headline_body.py (7: fires on divergence, silent on an on-topic headline, thin-headline-never-fires,
+  sentiment English-only, item carries components+no-score, bounded-to-recent, producer emits a valid
+  debunk Card) + the existing all-producers card-shape/_trigger sweep covers it automatically. ruff F/B
+  clean; headline_body.py 0 mypy errors.
 - **2026-06-23 P0 §3.1 — INGEST-UNDER-PARALLEL-LOAD WRITER-GATE REGRESSION TEST (branch
   claude/nice-davinci-bqufft, draft PR #447 onto 0.09; logic VERIFIED py3.11, the pytest version runs in
   CI py3.13):** the 2026-06-22 audit confirmed the single-writer gate (keystone #1) covers every write

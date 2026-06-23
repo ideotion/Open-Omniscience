@@ -808,6 +808,27 @@ def insights_recycled_claims(
     )
 
 
+@router.get("/headline-body-mismatch")
+def insights_headline_body_mismatch(
+    recent_days: int = Query(14, ge=1, le=3650, description="recent window to scan"),
+    d_min: float = Query(0.67, ge=0.0, le=1.0, description="lexical-divergence fire threshold"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Recent articles whose HEADLINE leads with content the body does not substantiate
+    (manipulation-pattern card #7). Names the STRUCTURE, never intent: real ratios
+    (lexical divergence + an English-only sentiment gap), no score; a summarising or
+    metaphorical headline does this innocently — stated beside the pattern."""
+    from src.analytics.headline_body import find_headline_body_mismatch
+
+    return _cached(
+        _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit),
+        lambda: find_headline_body_mismatch(
+            db, recent_days=recent_days, d_min=d_min, max_items=limit
+        ),
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None
