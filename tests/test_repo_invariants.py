@@ -3925,3 +3925,27 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # The live hard-linking fix: cache version bumped so a pre-fix cached briefing
     # (cards without article_ids) is recomputed once.
     assert 'CACHE_VERSION = "oo-briefing-cache-2"' in svc
+
+
+def test_governments_sources_facets_strata_strings_are_keyed():
+    """Field report 2026-06-22: the Governments UI, the Sources multi-select facet
+    filters and the task-manager language/tag strata shipped with English-fallback
+    strings (gate stayed 100% but non-English users saw English there). They are now
+    keyed; this pins that they stay keyed (the --min 100 gate then guarantees x12)."""
+    import json
+
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    must_be_keyed = [
+        # Governments UI
+        "Countries", "Law", "Country data", "Load standard country data",
+        "World map — per-country data", "Indicator", "Latest available",
+        "Could not load this country.", "Loaded country data:",
+        "No country data yet — use the Countries tab to load it (online).",
+        # Sources multi-select facet filters
+        "Any", "match all tags", "selected",
+        "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.",
+        # task-manager strata buckets
+        "untagged", "unknown",
+    ]
+    missing = [s for s in must_be_keyed if s not in en]
+    assert not missing, f"these strings regressed to English-fallback (not keyed): {missing}"
