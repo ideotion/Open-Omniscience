@@ -3816,6 +3816,24 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-23 P0 §3.1 — INGEST-UNDER-PARALLEL-LOAD WRITER-GATE REGRESSION TEST (branch
+  claude/nice-davinci-bqufft, draft PR #447 onto 0.09; logic VERIFIED py3.11, the pytest version runs in
+  CI py3.13):** the 2026-06-22 audit confirmed the single-writer gate (keystone #1) covers every write
+  path and the 149 `database is locked` errors predate the do_orm_execute fix (#384) — but the corpus runs
+  up to ~50 PARALLEL collect workers against one encrypted writer and the EXISTING data-loss proof
+  (test_write_gate_dataloss.py) raced `import_points` (market data) against a single Article store, NOT the
+  full `index_article` keyword/When-Where-Who sub-writes + denormalised-counter deltas under many concurrent
+  ingests — the exact production shape, and newly relevant since §2.5 touched the extraction path. Added
+  `test_parallel_index_article_loses_no_keyword_or_date_rows`: 6 workers × 15 articles each ingest +
+  index_article concurrently against the real gated `SessionLocal`, all sharing the keywords (inflation/
+  elections/economy) and the date "15 September 2024" so those counter deltas + that date row are written
+  under MAXIMUM contention. Asserts ZERO dropped rows (90 articles, 90 date rows, a shared keyword has
+  exactly 90 mentions), EXACT denormalised counters (article_count==90, mention_count==live for the shared
+  keywords), the counter==join invariant for EVERY keyword (no drift anywhere), no `database is locked`, no
+  deadlock, no gate leak. CANNOT run in the py3.11 sandbox (the file imports src/database/write.py which uses
+  a PEP 695 `def f[T]()` generic = py3.12+ only — the documented CI-covers-it limit), so the LOGIC was
+  proven against a file-based WAL engine wired with the REAL gate handlers (register_write_gate): 90/90
+  articles + dates, exact counters, ZERO drift, 3.0s, no errors. ruff F/B clean.
 - **2026-06-23 KEYWORD REDUCTION §2.5 — DIGIT-HEAVY CODE-TOKEN EXTRACTION FILTER (the next lever on the
   ~400k keywords; branch claude/nice-davinci-bqufft, draft PR onto 0.09; backend VERIFIED py3.11 venv):**
   the 2026-06-23 live log (27,303 articles / 406,723 keywords) showed a ~35k bucket of alphanumeric CODE
