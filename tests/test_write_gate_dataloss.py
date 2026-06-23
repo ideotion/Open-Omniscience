@@ -227,10 +227,14 @@ def test_parallel_index_article_loses_no_keyword_or_date_rows():
 
     n_workers, articles_per_worker = 6, 15
     total = n_workers * articles_per_worker
-    # Shared content (high counter contention) + a unique marker for a unique hash.
+    # A coined keyword created ONLY by this test (pure letters so the code-token
+    # filter keeps it, no other test uses it) -> its corpus-wide counters are
+    # provably exact regardless of what else lives in the shared test DB. The shared
+    # natural keywords give a second, MY-article-scoped check that extraction landed.
+    sentinel = "zzqxsentinel"
     body = (
         "the WHO summit in Berlin on 15 September 2024 discussed inflation and "
-        "elections across the wider economy worldwide"
+        f"elections across the wider economy worldwide {sentinel}"
     )
 
     errors: list[BaseException] = []
@@ -298,26 +302,34 @@ def test_parallel_index_article_loses_no_keyword_or_date_rows():
         )
         assert n_dates == total, f"date rows dropped: {n_dates} != {total}"
 
-        # ZERO dropped mention rows + EXACT counters: a shared keyword appears once
-        # per article, so its article_count must equal the article total AND its
-        # live mention count must match its (denormalised) counter exactly.
-        for term in ("inflation", "elections", "economy"):
-            kw = s.query(Keyword).filter_by(normalized_term=term).one()
-            live = s.query(KeywordMention).filter_by(keyword_id=kw.id).count()
-            assert live == total, f"mention rows dropped for {term!r}: {live} != {total}"
-            assert kw.article_count == total, (
-                f"counter drift for {term!r}: article_count={kw.article_count} != {total}"
-            )
-            assert kw.mention_count == live, (
-                f"mention_count counter drift for {term!r}: {kw.mention_count} != {live}"
-            )
+        # ZERO dropped mention rows + EXACT counters, proven on the SENTINEL keyword
+        # (created only by this test, so its corpus-wide counters are provably exact).
+        # A missing gate would drop a mention row OR drift the per-article counter
+        # delta under contention -- both caught here.
+        kw = s.query(Keyword).filter_by(normalized_term=sentinel).one()
+        live = s.query(KeywordMention).filter_by(keyword_id=kw.id).count()
+        assert live == total, f"sentinel mention rows dropped: {live} != {total}"
+        assert kw.article_count == total, (
+            f"sentinel article_count drift: {kw.article_count} != {total}"
+        )
+        assert kw.mention_count == total, (
+            f"sentinel mention_count drift: {kw.mention_count} != {total}"
+        )
 
-        # The counter==join invariant holds for EVERY keyword (no drift anywhere).
-        for kw in s.query(Keyword).all():
-            live = s.query(KeywordMention).filter_by(keyword_id=kw.id).count()
-            assert kw.article_count == live, (
-                f"counter drift for {kw.normalized_term!r}: {kw.article_count} != {live}"
+        # The shared natural keywords also all landed -- scoped to MY articles so the
+        # check is robust to a shared test DB other tests have written to (NEVER assert
+        # corpus-wide positive facts against the shared singleton -- CLAUDE.md).
+        for term in ("inflation", "elections", "economy"):
+            kw2 = s.query(Keyword).filter_by(normalized_term=term).one()
+            mine = (
+                s.query(KeywordMention)
+                .filter(
+                    KeywordMention.keyword_id == kw2.id,
+                    KeywordMention.article_id.in_(ids),
+                )
+                .count()
             )
+            assert mine == total, f"mention rows dropped for {term!r}: {mine} != {total}"
 
     assert not write_gate.stats()["held"]  # no gate leak past the storm
     assert time.monotonic() - started < 90

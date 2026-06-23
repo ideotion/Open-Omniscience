@@ -3825,12 +3825,17 @@ ruling, a contingency, or a deliberate-omission note.
   full `index_article` keyword/When-Where-Who sub-writes + denormalised-counter deltas under many concurrent
   ingests — the exact production shape, and newly relevant since §2.5 touched the extraction path. Added
   `test_parallel_index_article_loses_no_keyword_or_date_rows`: 6 workers × 15 articles each ingest +
-  index_article concurrently against the real gated `SessionLocal`, all sharing the keywords (inflation/
-  elections/economy) and the date "15 September 2024" so those counter deltas + that date row are written
-  under MAXIMUM contention. Asserts ZERO dropped rows (90 articles, 90 date rows, a shared keyword has
-  exactly 90 mentions), EXACT denormalised counters (article_count==90, mention_count==live for the shared
-  keywords), the counter==join invariant for EVERY keyword (no drift anywhere), no `database is locked`, no
-  deadlock, no gate leak. CANNOT run in the py3.11 sandbox (the file imports src/database/write.py which uses
+  index_article concurrently against the real gated `SessionLocal`, all sharing a coined SENTINEL keyword
+  + natural keywords + the date "15 September 2024" so those counter deltas + that date row are written
+  under MAXIMUM contention. Asserts ZERO dropped rows (90 articles, 90 date rows, the sentinel has exactly
+  90 mentions) and EXACT denormalised counters on the SENTINEL (article_count==mention_count==90). KEY
+  LESSON (CI caught it on the macOS portability lane FIRST, then the blocking Linux lane — the P0-5 reason
+  to investigate observation lanes): the first draft asserted the counter==join invariant for EVERY keyword
+  in the DB, which reddened on `france` (article_count=2, 0 mentions) — drift another test DELIBERATELY
+  injects into the SHARED test DB; the ledger's own rule "never assert positive facts against the shared
+  mutable singleton" applies. FIXED: the exact-counter proof uses a coined sentinel keyword no other test
+  touches (pollution-free), and the natural-keyword check is MY-article-scoped (`article_id.in_(my_ids)`).
+  No `database is locked`, no deadlock, no gate leak. CANNOT run in the py3.11 sandbox (the file imports src/database/write.py which uses
   a PEP 695 `def f[T]()` generic = py3.12+ only — the documented CI-covers-it limit), so the LOGIC was
   proven against a file-based WAL engine wired with the REAL gate handlers (register_write_gate): 90/90
   articles + dates, exact counters, ZERO drift, 3.0s, no errors. ruff F/B clean.
