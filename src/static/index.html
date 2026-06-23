@@ -51,7 +51,7 @@
              showTab()/openAnalysisFor() + the palette -- nothing is lost. -->
         <button class="nav-item" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16"/><path d="M8 16l3-4 3 3 5-7"/></svg><span>Insights</span></button>
         <button class="nav-item" data-tab="timemap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/><circle cx="16" cy="8" r="1.6" fill="currentColor" stroke="none"/></svg><span>World map</span></button>
-        <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M7 7l-3 6h6z"/><path d="M17 7l-3 6h6z"/><path d="M8 21h8"/></svg><span>World law</span></button>
+        <button class="nav-item" data-tab="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V9l7-5 7 5v12"/><path d="M9 21v-6h6v6"/><path d="M9 11h.01M15 11h.01"/></svg><span>Governments</span></button>
         <button class="nav-item" data-tab="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span>Agenda</span></button>
         <button class="nav-item" data-tab="indices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V4M16 20V14M22 20V8"/></svg><span>Indices</span></button>
         <button class="nav-item adv" data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-9"/><path d="M16 7h4v4"/></svg><span>Commodities</span><span class="badge">adv</span></button>
@@ -419,7 +419,52 @@
     </div>
 
     <!-- ============================= LAW ============================ -->
+    <!-- GOVERNMENTS (renamed from World Law, maintainer chat 2026-06-22): per-country
+         data + a world-map choropleth + the law tracker, as subtabs. The tab id stays
+         "law" (the code anchor) while the label is "Governments" — the timemap→"World
+         map" precedent (url anchors stay code identifiers, labels translate). -->
     <div class="tab-page" id="tab-law">
+      <nav class="tabs" id="gov-subtabs" role="tablist" aria-label="Governments sections">
+        <button class="active" data-tab="countries">Countries</button>
+        <button data-tab="map">Map</button>
+        <button data-tab="law">Law</button>
+      </nav>
+
+      <!-- Countries: per-country indicators (GDP/population/life-expectancy/labour/
+           public finance + indices) over the vintaged official-statistics store. -->
+      <div class="gov-view" id="gov-countries">
+        <section class="panel">
+          <div class="phead"><h2>Country data</h2><span class="sp"></span>
+            <button class="secondary" id="gov-load-btn" onclick="govLoadStandard(this)"
+              title="Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).">Load standard country data</button></div>
+          <p class="hint">Per-country official statistics (World Bank): GDP, population, life
+            expectancy, labour, public finance + common indices. Each value is a
+            producer's published figure, never a credibility score; a missing value
+            is a published gap, not zero; producers are shown, never averaged.</p>
+          <div class="row"><div style="flex:1;max-width:360px"><label for="gov-country">Country</label>
+            <select id="gov-country" onchange="loadGovCountry(this.value)"></select></div></div>
+          <div id="gov-country-data" style="margin-top:12px"><div class="muted">Loading…</div></div>
+        </section>
+      </div>
+
+      <!-- Map: an ooMap choropleth of a selectable indicator, with a year/history
+           selector and click-a-country -> its detail (opens the Countries subtab). -->
+      <div class="gov-view" id="gov-map" style="display:none">
+        <section class="panel">
+          <div class="phead"><h2>World map — per-country data</h2><span class="sp"></span></div>
+          <div class="row">
+            <div style="flex:1;max-width:360px"><label for="gov-map-ind">Indicator</label>
+              <select id="gov-map-ind" onchange="loadGovMap()"></select></div>
+            <div><label for="gov-map-year">Year</label>
+              <select id="gov-map-year" onchange="renderGovMap()"></select></div>
+          </div>
+          <div id="gov-map-host" style="margin-top:12px;min-height:340px"></div>
+          <div id="gov-map-caveat" class="card-caveat" style="margin-top:8px"></div>
+        </section>
+      </div>
+
+      <!-- Law: the existing change-tracker, now a subtab. -->
+      <div class="gov-view" id="gov-law" style="display:none">
       <section class="panel">
         <h2>World law — change tracking</h2>
         <p class="hint">Aggregate the <b>law</b> — statutes, gazettes, IP records — from official
@@ -444,6 +489,7 @@
         <h2>Tracked laws</h2>
         <div style="overflow:auto"><table id="law-docs"></table></div>
       </section>
+      </div><!-- /gov-law -->
     </div>
 
     <!-- ========================== INTEGRITY ========================= -->
@@ -1391,15 +1437,17 @@
       <h2>Diagnostics log</h2>
       <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
       <div class="row" style="margin-top:6px">
-        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Download keyword log (.zip)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">Download ALL keywords (.zip)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Download keyword self-test (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Download keyword-engine report (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Download date-extraction log (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/network','_blank')">Download network log (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/performance','_blank')">Download performance report (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/benchmark','_blank')">Download scaling benchmark (.json)</button>
-        <button onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Download debug bundle (.json)</button>
+        <button onclick="window.open('/api/diagnostics/all','_blank')" title="Every diagnostics log in one archive — one click instead of nine. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Keyword log (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">All keywords (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Keyword self-test (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Keyword-engine report (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/home-cards?download=1','_blank')" title="For every Home card (Lead): does clicking it open its EXACT corpus (hard-linked) or a fuzzy text search that loses it (search-fallback)? Flags the mismatches.">Home-card diagnostics (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Date-extraction log (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/network','_blank')">Network log (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/performance','_blank')">Performance report (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/benchmark','_blank')">Scaling benchmark (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Debug bundle (.json)</button>
       </div>
       <div class="row" style="margin-top:6px">
         <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>

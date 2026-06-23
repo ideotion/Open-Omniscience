@@ -23,7 +23,15 @@ from src.briefing.registry import run_all
 
 _LOG = logging.getLogger(__name__)
 
-CACHE_VERSION = "oo-briefing-cache-1"
+# Bumped 1->2 (field report 2026-06-22): a card-SHAPE change (set-based producers now
+# carry article_ids, so a card hard-links to its EXACT corpus instead of falling back
+# to a fuzzy text search of its seed term) does NOT trip the corpus-growth staleness
+# check, so an existing install kept serving pre-fix cards (clicking source-laundering
+# searched the origin domain and loaded tens of thousands of articles, not the card's
+# exact citing set). Bumping the version forces ONE recompute so live cards gain their
+# article_ids. The home-card click diagnostics tool (GET /api/diagnostics/home-cards)
+# is the recurring check that every card hard-links.
+CACHE_VERSION = "oo-briefing-cache-2"
 
 # Register the built-in producers once, at import.
 register_default_producers()

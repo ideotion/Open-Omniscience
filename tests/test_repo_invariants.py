@@ -1620,28 +1620,44 @@ def test_ui_invariants():
         "function renderAnPrice(", 1
     )[1][:1500], "the graph causation caveat was removed (maintainer 2026-06-17)"
     # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
-    #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
-    #     .card-caveat line on the card FACE, NEVER hidden. (P2-2 decluttering, field
-    #     test 2026-06-19: the verbose Method + "why" moved into a per-card "?"
-    #     affordance (.card-info) — the caveat stays on the face; only the verbose
-    #     method/math layers. This regressed once: the .mc block held BOTH behind a
-    #     default-OFF checkbox.)
-    assert 'class="card-caveat">${esc(c.caveat)}' in html, (
-        "every briefing card must render its caveat VISIBLE BY DEFAULT (CLAUDE.md "
-        "informed-consent: caveats are never hidden behind a calm-UI toggle)"
+    #     CLAUDE.md Non-negotiables). AMENDED 2026-06-23 (flip cards): a Lead card now
+    #     has a FRONT (the lead at a glance) + a BACK; the CAVEAT renders in a visible
+    #     .card-caveat line on the card BACK — an equal side revealed by ONE flip, never
+    #     a hidden toggle/checkbox — right beside the action that opens its corpus. It is
+    #     in the DOM by default (not behind [hidden]); only the FRONT is decluttered.
+    card_html = html.split("function cardHtml(", 1)[1].split("\n    function ", 1)[0]
+    assert "card-face card-front" in card_html and "card-face card-back" in card_html, (
+        "Lead cards must have a flip FRONT + BACK (maintainer 2026-06-23)"
     )
-    # The verbose method/why now live in the per-card "?" affordance (infoBlock); the
-    # caveat is NOT inside it (it stays visible on the face).
-    info_block = html.split("const infoBlock = ", 1)[1].split(': "";', 1)[0]
-    assert "_methodInfo" in info_block and "_whyPlain" in info_block, (
-        "the method + why must live in the per-card '?' affordance (infoBlock)"
+    assert '<p class="card-caveat">${esc(c.caveat)}</p>' in card_html, (
+        "every Lead card must render its caveat VISIBLE BY DEFAULT in a .card-caveat "
+        "line (CLAUDE.md informed-consent: never hidden behind a calm-UI toggle)"
     )
-    assert "c.caveat" not in info_block, (
-        "the per-card caveat must NOT be moved into the '?' affordance — it stays "
-        "VISIBLE on the card face (CLAUDE.md informed-consent mandate)"
+    # The caveat sits on the BACK face, NOT the front (decluttered) — and not behind a toggle.
+    front_region = card_html.split("card-face card-front", 1)[1].split("card-face card-back", 1)[0]
+    assert "card-caveat" not in front_region, (
+        "the caveat must be on the card BACK, not the front face (maintainer 2026-06-23)"
     )
-    assert "esc(c.method)" in html.split("const _methodInfo = ", 1)[1][:120], (
-        "the verbose method must render inside the per-card '?' affordance"
+    back_region = card_html.split("card-face card-back", 1)[1]
+    assert "${caveatLine}" in back_region, "the caveat must render on the card BACK face"
+    # The verbose method renders on the back (the flip IS the detail layer now).
+    assert "esc(c.method)" in card_html and 'class="mc"' in card_html, (
+        "the method must render on the card back (the flip replaced the per-card '?')"
+    )
+    # Clicking flips; the standardized, family-themed button opens the corpus IN A NEW WINDOW.
+    assert "function leadFlip(" in html and 'onclick="leadFlip(this,event)"' in card_html, (
+        "clicking a Lead card must flip it (maintainer 2026-06-23)"
+    )
+    assert "function openCardCorpus(" in html and 'window.open("/?"' in html, (
+        "the back's 'Open corpus' button must open the card's corpus in a new window"
+    )
+    assert 'class="lead-open"' in card_html, "the back needs the standardized themed open-corpus button"
+    assert "_hydrateCardCorpus" in html and '"corpus"' in html, (
+        "a boot deep-link must hydrate the analysis from ?corpus= in the new window"
+    )
+    # Equal-size, family-themed flip cards (CSS): a 3D flip + a fixed height + --fam theming.
+    assert "rotateY(180deg)" in html and "--lead-h" in html and ".lead-open" in html, (
+        "Lead cards must be equal-size flip cards themed by family (--fam)"
     )
     # The caveat colour must be theme-aware (var(--caveat)), not a hardcoded hex that
     # fails WCAG AA on light themes — the most ethically important strings stay legible.
@@ -3529,6 +3545,36 @@ def test_sidebar_is_a_flat_list_without_section_headers():
     assert "toggleSidebar" in app and 'id="sb-collapse"' in html
 
 
+def test_world_law_renamed_governments_with_subtabs():
+    """Maintainer chat 2026-06-22: World Law -> Governments, diversified into subtabs
+    (Countries · Map · Law). The tab id stays "law" (the code anchor, timemap precedent);
+    the LABEL is "Governments" (keyed x12). The existing law tracker is preserved as the
+    Law subtab (Desk lesson — nothing lost); the Map subtab reuses ooMap fed by the
+    per-country stats endpoint."""
+    import json as _json
+
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    # Nav relabelled (anchor stays data-tab="law").
+    assert '<span>Governments</span>' in html and 'data-tab="law"' in html
+    # The 3 subtabs + their panes.
+    nav = html.split('id="gov-subtabs"', 1)[1].split("</nav>", 1)[0]
+    for sub in ("countries", "map", "law"):
+        assert f'data-tab="{sub}"' in nav, f"Governments missing the {sub} subtab"
+    for pane in ("gov-countries", "gov-map", "gov-law"):
+        assert f'id="{pane}"' in html, f"missing pane {pane}"
+    # The existing law tracker is PRESERVED inside the Law subtab (Desk lesson).
+    assert 'id="law-status"' in html and 'id="law-changes"' in html and 'id="law-docs"' in html
+    # JS wiring: subtabs + the three loaders + the consented load + the map reuses ooMap.
+    assert "function loadGovernments" in app and "function showGovView" in app
+    assert "function loadGovCountry" in app and "function loadGovMap" in app
+    assert "govLoadStandard" in app and "ensureOnline" in app  # the ONE consent on the fetch
+    assert "/api/governments/" in app and "await ooMap(" in app  # the map reuses ooMap
+    # The label is keyed x12 (gate stays 100%).
+    en = _json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert en.get("Governments") == "Governments"
+
+
 def test_custody_dissolved_from_sidebar_but_reachable_from_settings():
     """Field test 2026-06-22 (#20): Evidence & custody is an ACTION on content, so it
     leaves the sidebar (completing the Trust-group dissolution) and moves to Settings →
@@ -3859,3 +3905,63 @@ def test_restore_auto_detects_encryption_client_side():
     # backend already raises the matching clear error (the source of truth).
     art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
     assert 'blob[:8] == b"OOENC1\\x00\\x00"' in art
+
+
+def test_home_card_click_diagnostics_and_download_all_wired():
+    """Field report 2026-06-22: a RECURRING home-card click diagnostic ("what does
+    clicking each Lead induce — its EXACT corpus or a fuzzy search that loses it") +
+    a single "All diagnostics" download. Also pins the live fix: the briefing cache
+    version was bumped so existing installs recompute and cards gain article_ids."""
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    cd = (_SRC / "briefing" / "card_diagnostics.py").read_text(encoding="utf-8")
+    svc = (_SRC / "briefing" / "service.py").read_text(encoding="utf-8")
+
+    # The recurring tool: the per-card click classifier + its seed-query replica.
+    assert "def card_click_diagnostics(" in cd
+    assert "def card_seed_query(" in cd
+    # The endpoints exist and are downloadable.
+    assert '@router.get("/home-cards")' in diag
+    assert "card_click_diagnostics" in diag
+    assert '@router.get("/all")' in diag and "def all_diagnostics(" in diag
+    # The all-bundle gathers the other logs (each wrapped so one failure can't abort it).
+    for member in ("debug-bundle.json", "home-cards.json", "keyword-engine.json"):
+        assert member in diag
+    assert ".error.txt" in diag  # per-member failure is recorded, never fatal
+
+    # The Settings -> Diagnostics buttons: the new ones + the dense row shed the
+    # redundant "Download " prefix (screen space). The "All diagnostics" button leads.
+    assert "/api/diagnostics/home-cards?download=1" in html
+    assert "window.open('/api/diagnostics/all'" in html
+    assert ">All diagnostics (.zip)<" in html
+    assert ">Keyword log (.zip)<" in html  # de-prefixed
+    assert ">Debug bundle (.json)<" in html  # de-prefixed
+    assert "Download keyword log (.zip)" not in html  # the old verbose label is gone
+
+    # The live hard-linking fix: cache version bumped so a pre-fix cached briefing
+    # (cards without article_ids) is recomputed once.
+    assert 'CACHE_VERSION = "oo-briefing-cache-2"' in svc
+
+
+def test_governments_sources_facets_strata_strings_are_keyed():
+    """Field report 2026-06-22: the Governments UI, the Sources multi-select facet
+    filters and the task-manager language/tag strata shipped with English-fallback
+    strings (gate stayed 100% but non-English users saw English there). They are now
+    keyed; this pins that they stay keyed (the --min 100 gate then guarantees x12)."""
+    import json
+
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    must_be_keyed = [
+        # Governments UI
+        "Countries", "Law", "Country data", "Load standard country data",
+        "World map — per-country data", "Indicator", "Latest available",
+        "Could not load this country.", "Loaded country data:",
+        "No country data yet — use the Countries tab to load it (online).",
+        # Sources multi-select facet filters
+        "Any", "match all tags", "selected",
+        "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.",
+        # task-manager strata buckets
+        "untagged", "unknown",
+    ]
+    missing = [s for s in must_be_keyed if s not in en]
+    assert not missing, f"these strings regressed to English-fallback (not keyed): {missing}"

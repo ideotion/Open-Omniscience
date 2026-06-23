@@ -280,6 +280,21 @@ ruling, a contingency, or a deliberate-omission note.
    custody OTS warning adopt the same variable. Label/title re-keyed ×12. Enforced
    in test_ui_invariants (#23): the caveat must render in `.card-caveat` and must NOT
    appear inside the `hidden` `.mc` block.
+   **AMENDED 2026-06-23 (FLIP-CARD REDESIGN — maintainer-directed): the briefing card is
+   now a two-sided FLIP card** (front = the lead at a glance; back = caveat + method +
+   why + evidence + the action). The caveat MOVED OFF THE FRONT (it "took too much
+   space") onto the BACK — but this STILL satisfies informed-consent-by-LAYERING because
+   the back is an EQUAL side of the card revealed by ONE flip (a click), NOT a calm-UI
+   toggle/checkbox/`[hidden]` block: it is in the DOM by default, rendered in the visible
+   `.card-caveat` line right BESIDE the "Open corpus" action, so the user reads the
+   warning exactly as they go to explore. The front is decluttered; the per-card "?"
+   affordance (P2-2 infoBlock) is RETIRED — the flip IS the detail layer. test #23
+   updated: the caveat renders in `.card-caveat` on the `card-face card-back` (NOT the
+   `card-front`), the method renders on the back, and `leadFlip`/`openCardCorpus`/the
+   `?corpus=` boot deep-link exist. (Full flip-card entry in the Shipped-batch-log
+   2026-06-23.) REMAINING nicety: also surface the caveat INSIDE the analysis window the
+   corpus opens (today it travels on the back beside the open action + the analysis has
+   its own per-subtab caveats).
 30. **ALTERNATIVE-INTERFACES "GUIs" GALLERY (ruled 2026-06-17; BUILT 2026-06-17 on
    branch `claude/exciting-lovelace-1gyszi`, draft PR, BROWSER-UNVERIFIED):** a SANDBOX
    gallery of EIGHT opt-in alternative interfaces in Settings → GUIs (subtab
@@ -3816,6 +3831,74 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **HOME-CARD FLIP REDESIGN (maintainer chat 2026-06-23: "make them look more like cards · families themed ·
+  all same size · a front and a back, clicking flips with a nice animation · spread info onto both sides ·
+  move the orange caveat off the card, put it in the analysis · on the back a standardized themed button that
+  opens the card's corpus IN A NEW WINDOW"; branch claude/trusting-maxwell-p7y2g8, draft PR #445 onto 0.09;
+  FRONTEND, BROWSER-UNVERIFIED per fork-3):** the briefing Lead card is now a two-sided 3D FLIP card. FRONT =
+  the lead at a glance (family-themed chip + title + summary[line-clamped] + signal + a "Details & corpus ⟲"
+  hint); BACK = caveat + Method + "Why am I seeing this?" plain + the exact-math `<details>` + evidence + the
+  action row. `cardHtml` restructured into `.card-inner > .card-face.card-front + .card-face.card-back`; CSS
+  scoped to `.brief-bucket .card` (every OTHER `.card` — empty state, tiles — UNTOUCHED): fixed `height:
+  var(--lead-h,292px)` = ALL CARDS SAME SIZE, `transform:rotateY(180deg)` flip with a `prefers-reduced-motion`
+  off-switch, `backface-visibility:hidden`. FAMILY THEMING: each bucket already sets `--fam` (a per-family
+  hue); the faces' top-border + chip + the standardized `.lead-open` button are themed with `var(--fam)`.
+  CLICK FLIPS (`leadFlip`/`leadFlipKey` — Enter/Space, inner controls excluded; the card is `role="button"
+  tabindex=0`). The CAVEAT MOVED OFF THE FRONT onto the back (informed-consent PRESERVED — see invariant #23
+  amendment: the back is an equal side one flip away, NOT a hidden toggle, beside the open action). The
+  standardized themed "Open corpus ↗" button opens the card's corpus IN A NEW WINDOW — `openCardCorpus(ids)` /
+  `openCardCorpusQuery(seed)` → `window.open("/?corpus=…"|"/?analyze=…")`; a boot deep-link
+  `_hydrateCardCorpus()` hydrates the fresh SPA tab (`showTab("analyze")` + `openAnalysisForIds`/`openAnalysisFor`).
+  Exact set when the card carries `article_ids` (the 5 set-based producers), else the seed query (the
+  home-card diagnostic flags any that lose their corpus). The per-card "?" affordance (P2-2) is RETIRED — the
+  flip is the detail layer. +4 i18n keys ×12 (Method · Open corpus · Details & corpus · "Open this Lead's
+  corpus in a new window"; non-en AI-drafted, flagged). test_ui_invariants #23 rewritten (flip front/back +
+  caveat-on-back-not-front + method-on-back + leadFlip + openCardCorpus + window.open + the boot deep-link +
+  the equal-size/`--fam` CSS); node --check + full test_repo_invariants (128) + i18n --min 100 (1627 ×12) green.
+  REMAINING: human click-through across themes/breakpoints (fork-3); also render the caveat INSIDE the opened
+  analysis window (today it travels on the back beside the open action + the analysis has its own subtab caveats).
+- **GOVERNMENTS TAB — rename World Law + per-country data + map (maintainer chat directive 2026-06-22:
+  "Change World Law into Governments. Diversify the subtabs. I want per-country data with GDP, labor, life
+  expectancy, population, public deficit + all commonly-used country indices. The law will be a tab,
+  another tab will be a world map with per-country data visualization (color, selectable, data history)."
+  branch claude/trusting-maxwell-p7y2g8, draft PR onto 0.09):** built on the EXISTING substrate — `StatFigure`
+  (per-country/indicator/year vintaged store) + `src/stats/fetch.fetch_worldbank(code,"all")` + `ooMap`
+  (choropleth) + `ooSubtabs`. PLAN: Governments tab with subtabs **Countries · Map · Law** (Law = the existing
+  tracker as a subtab; Map = an ooMap choropleth of a selectable indicator with a year/history slider;
+  Countries = per-country indicators + history). **SLICE 1 — BACKEND SHIPPED (VERIFIED py3.13):**
+  `src/stats/indicators.py` = a curated catalog of 12 World Bank series (GDP/GDP-per-capita/GDP-growth/
+  inflation · population/pop-growth · life-expectancy · unemployment/labour-force · net-lending-deficit/
+  central-debt · Gini), dated by `CATALOG_REVISED` (deliberately NOT an `*_AS_OF` constant — codes are stable
+  references, the DATA is vintaged per fetch, so it stays out of the external-artifact registry); codes
+  believed-correct but a WRONG code fails LOUDLY (empty series → "no data", never fabricated; verify on a
+  networked box). `src/api/governments.py` (wired into the spine): `GET /indicators` (catalog), `GET /map?
+  indicator=&year=` (per-country latest-or-year value + the years present for the slider; 404 on an unknown
+  indicator), `GET /country/{iso}` (all curated indicators + latest non-null + bounded history per indicator;
+  a published gap stays None, never zero), `POST /load-standard` (the ONE networked action — fetch the curated
+  set for ALL countries via fetch_worldbank, airplane-gated up front → 409, records subscriptions, degrades
+  loudly per-indicator). All reads over the existing vintaged store (no network); honesty carried (producer's
+  published value never a score, gaps never zero, producers never averaged). tests/test_governments_api.py (6:
+  catalog/no-score-field, map latest-per-country + specific-year + 404, country all-indicators-with-gap,
+  airplane refusal). **ISO BRIDGE (enabling data):** WB stores alpha-3 (FRA) but ooMap + Intl.DisplayNames
+  use alpha-2 (fr), so added the ISO 3166-1 `ISO3_TO_ISO2`/`ISO2_TO_ISO3` maps + `to_iso2`/`to_iso3` to
+  src/catalog/countries.py (aggregates WLD/EUU have no alpha-2 → dropped from the choropleth, never mapped);
+  the /map endpoint returns alpha-2, /country accepts either; self-checking test (well-formed, unique,
+  spot-checked majors). **SLICE 2+3 — FRONTEND SHIPPED (BROWSER-UNVERIFIED per fork-3):** World Law→Governments
+  (nav span + NAV label + "Governments" key ×12 [en/fr/de/es/pt/it/nl/ru/ar/zh/ja/hi/bn/id…]; tab id stays
+  "law", timemap→"World map" precedent). #tab-law restructured into ooSubtabs **Countries · Map · Law**
+  (relocated to the top facet strip via _SUBTAB_NAV; TAB_LOADERS.law → loadGovernments). COUNTRIES subtab:
+  a country picker (from the stats coverage) → per-country indicators grouped by category with the latest
+  value (+year) + a dashChartSvg history sparkline (Item-Y honest), `_govFmt` compact units ($3.0T, 67.9M,
+  %). MAP subtab: ooMap choropleth fed by /map, an Indicator picker + a Year selector (history; "" = latest
+  per country), valueLabel via the smart formatter + ooRegionName, click-a-country → its Countries detail.
+  "Load standard country data" → ensureOnline (the ONE consent #14) → POST /load-standard → reload. The
+  existing law tracker is PRESERVED as the Law subtab (Desk lesson — law-status/changes/docs all kept).
+  New UI strings English-fallback via t() (gate 100%). test_repo_invariants::
+  test_world_law_renamed_governments_with_subtabs. VERIFIED: full suite 2069 passed, mypy 126≤127, ruff F/B
+  clean, i18n 100%, node --check. REMAINING: a bundled offline indicator snapshot (needs a networked-machine
+  WB fetch — 403 in-sandbox; fetch-on-demand works meanwhile); human click-through across themes/breakpoints;
+  a Compare subtab (multi-country side-by-side) + per-country flag/name polish; key the new English-fallback
+  strings ×12.
 - **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
   empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the
