@@ -10580,6 +10580,23 @@
       _anLoadArticles(_anArtParams, page);
       var a = $("an-articles"); if (a && a.scrollIntoView) a.scrollIntoView({ block: "start", behavior: "smooth" });
     }
+    // Tone chip (stored sentiment, VADER English-only — a signal, never a verdict) +
+    // a "deduced" language hint (the §2.6 secondary/detected language, shown only when
+    // the source left the article untagged). Null-safe: renders nothing when absent.
+    function _anToneChip(a) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let out = "";
+      if (a && a.sentiment_label) {
+        const c = a.sentiment_label === "positive" ? "var(--ok)"
+          : (a.sentiment_label === "negative" ? "var(--err)" : "var(--muted)");
+        const sc = (a.sentiment_score != null) ? " " + Number(a.sentiment_score).toFixed(2) : "";
+        out += ` <span style="color:${c};font-size:.85em" title="${esc(t("Tone (VADER, English-only) — a signal, not a verdict."))}">${esc(t(a.sentiment_label))}${esc(sc)}</span>`;
+      }
+      if (a && a.detected_language && !a.language) {
+        out += ` <span class="muted" style="font-size:.85em" title="${esc(t("Language deduced offline — the source did not tag it."))}">${esc(t("deduced"))}: ${esc(String(a.detected_language).toUpperCase())}</span>`;
+      }
+      return out;
+    }
     async function _anLoadArticles(p, page) {
       const arts = $("an-articles"); if (!arts) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -10595,7 +10612,7 @@
         const rows = (d.results || []).map((a) =>
           `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
           + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
-          + `<td>${esc(a.source || "")}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
+          + `<td>${esc(a.source || "")}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
           + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
           + `<td style="white-space:nowrap">`
           + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `

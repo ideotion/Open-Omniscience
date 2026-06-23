@@ -666,6 +666,9 @@ async def search_articles(
                 "source": a.source.name if a.source else "Unknown",
                 "published_at": a.published_at.isoformat() if a.published_at else None,
                 "language": a.language,
+                # SECONDARY/DEDUCED language (§2.6): set only when `language` is absent;
+                # the UI shows it as "deduced", never as the authoritative language.
+                "detected_language": a.detected_language,
                 # Stored sentiment (VADER at ingest/re-index, English-only) -- null for
                 # non-English / not-yet-re-indexed articles, never a fabricated neutral.
                 "sentiment_score": a.sentiment_score,
@@ -702,6 +705,9 @@ async def search_articles(
             "source": a.source.name if a.source else "Unknown",
             "published_at": a.published_at.isoformat() if a.published_at else None,
             "language": a.language,
+            # SECONDARY/DEDUCED language (§2.6): set only when `language` is absent;
+            # the UI shows it as "deduced", never as the authoritative language.
+            "detected_language": a.detected_language,
             # Stored sentiment (VADER at ingest/re-index, English-only) -- null for
             # non-English / not-yet-re-indexed articles, never a fabricated neutral.
             "sentiment_score": a.sentiment_score,

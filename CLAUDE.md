@@ -3896,9 +3896,13 @@ ruling, a contingency, or a deliberate-omission note.
   (dans/avec/pour/entre/des) are FILTERED instead of minted (proven end-to-end). tests/
   test_language_detection.py (4: detect en/fr/short→None/empty→None/ko-unsupported→None; untagged-foreign→
   deduced+right-stoplist; authoritative-never-overwritten; unknown-stays-None — the lib-dependent ones
-  importorskip py3langid so the core-only lane skips them). ruff F/B clean. REMAINING: surface
-  `detected_language` as "deduced" in the reader/lists (frontend follow-on); measure the live-corpus "?"-
-  bucket reduction after a re-index.
+  importorskip py3langid so the core-only lane skips them). ruff F/B clean. FRONTEND SHIPPED 2026-06-23
+  (browser-unverified per fork-3): `/api/articles` exposes `detected_language` (both serialisation paths)
+  and the analysis Articles list renders a `_anToneChip` — a sentiment tone chip (stored VADER, English-only,
+  "a signal not a verdict") + a "deduced: XX" language hint shown ONLY when the source left the article
+  untagged; null-safe, theme-coloured (var(--ok)/--err/--muted), English-fallback strings (i18n gate 100%).
+  test_repo_invariants::test_articles_endpoint_serialises_stored_sentiment extended. REMAINING: surface it in
+  the standalone reader too; measure the live-corpus "?"-bucket reduction after a re-index.
 - **2026-06-23 §6 — /api/articles EXPOSES STORED SENTIMENT (branch claude/nice-davinci-bqufft, draft PR
   #447 onto 0.09):** the `Article.sentiment_score`/`sentiment_label` columns are populated at ingest/
   re-index (VADER English-only) but the article-LIST endpoint never returned them, so the analysis Articles
