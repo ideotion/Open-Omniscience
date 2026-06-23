@@ -328,6 +328,15 @@ _CASES: tuple[Challenge, ...] = (
         term=("elections",),
         absent=("h15", "h00"),
     ),
+    Challenge(
+        # §2.6: an underscore inside a token = a CSS/template/code identifier (no natural
+        # orthography uses a word-internal underscore), so it is dropped; real words stay.
+        "underscore_identifiers_dropped",
+        "underscore code/template identifiers (gd_combo_table) are dropped; real words stay",
+        "The newsletter used a gd_combo_table layout while covering the elections.",
+        term=("elections", "newsletter"),
+        absent=("gd_combo_table",),
+    ),
 )
 
 
