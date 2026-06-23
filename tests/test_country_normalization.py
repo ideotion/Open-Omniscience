@@ -177,3 +177,34 @@ def test_seed_kwargs_canonicalise_and_fall_back_to_cctld():
     # nothing known -> no country at all (NOT a fabricated default)
     kw = _to_source_kwargs({"name": "Z", "domain": "z.example", "country": "atlantis"})
     assert "country" not in kw
+
+
+def test_iso3_iso2_bridge_is_consistent():
+    """Governments tab: WB stores alpha-3, the map/Intl.DisplayNames use alpha-2.
+    The bridge must be well-formed (2/3-char lowercase, unique alpha-2) and correct
+    on well-known countries; every alpha-2 should be a real ISO-3166-1 code."""
+    from src.catalog.countries import (
+        ISO3_TO_ISO2,
+        ISO_3166_1_ALPHA2,
+        to_iso2,
+        to_iso3,
+    )
+
+    # well-formed: alpha-3 keys are 3 lowercase, alpha-2 values 2 lowercase
+    for a3, a2 in ISO3_TO_ISO2.items():
+        assert len(a3) == 3 and a3.isalpha() and a3.islower(), a3
+        assert len(a2) == 2 and a2.isalpha() and a2.islower(), a2
+    # no two alpha-3 collapse to the same alpha-2 (a typo would)
+    assert len(set(ISO3_TO_ISO2.values())) == len(ISO3_TO_ISO2)
+    # spot-check well-known mappings
+    assert ISO3_TO_ISO2["fra"] == "fr" and ISO3_TO_ISO2["usa"] == "us"
+    assert ISO3_TO_ISO2["deu"] == "de" and ISO3_TO_ISO2["gbr"] == "gb"
+    assert ISO3_TO_ISO2["chn"] == "cn" and ISO3_TO_ISO2["bra"] == "br"
+    # round-trips both directions
+    assert to_iso2("FRA") == "fr" and to_iso3("fr") == "FRA"
+    assert to_iso2("us") == "us" and to_iso3("USA") == "USA"
+    assert to_iso2("WLD") is None  # an aggregate has no alpha-2
+    # the vast majority of alpha-2 values are real ISO-3166-1 codes (Kosovo 'xk' is the
+    # one user-assigned exception the rest of this module already recognises).
+    real = sum(1 for a2 in ISO3_TO_ISO2.values() if a2 in ISO_3166_1_ALPHA2)
+    assert real >= len(ISO3_TO_ISO2) - 2

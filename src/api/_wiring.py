@@ -40,6 +40,7 @@ def wire(app) -> None:
     from src.api.events import router as events_router
     from src.api.files import router as files_router
     from src.api.geo import router as geo_router
+    from src.api.governments import router as governments_router
     from src.api.hazards import router as hazards_router
     from src.api.ingestion import router as ingestion_router
     from src.api.insights import router as insights_router
@@ -99,6 +100,7 @@ def wire(app) -> None:
         files_router,
         geo_router,
         stats_router,
+        governments_router,
         watches_router,
         weather_router,
         search_omni_router,
