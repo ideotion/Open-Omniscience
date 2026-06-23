@@ -666,6 +666,10 @@ async def search_articles(
                 "source": a.source.name if a.source else "Unknown",
                 "published_at": a.published_at.isoformat() if a.published_at else None,
                 "language": a.language,
+                # Stored sentiment (VADER at ingest/re-index, English-only) -- null for
+                # non-English / not-yet-re-indexed articles, never a fabricated neutral.
+                "sentiment_score": a.sentiment_score,
+                "sentiment_label": a.sentiment_label,
                 "content": (a.content[:500] + "...")
                 if a.content and len(a.content) > 500
                 else (a.content or ""),
@@ -698,6 +702,10 @@ async def search_articles(
             "source": a.source.name if a.source else "Unknown",
             "published_at": a.published_at.isoformat() if a.published_at else None,
             "language": a.language,
+            # Stored sentiment (VADER at ingest/re-index, English-only) -- null for
+            # non-English / not-yet-re-indexed articles, never a fabricated neutral.
+            "sentiment_score": a.sentiment_score,
+            "sentiment_label": a.sentiment_label,
             "content": (a.content[:500] + "...")
             if a.content and len(a.content) > 500
             else (a.content or ""),

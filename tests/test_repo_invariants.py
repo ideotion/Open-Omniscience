@@ -166,6 +166,18 @@ def test_reindex_whole_corpus_action_is_discoverable():
     assert "function reindexAllCorpus(" in app and "/api/insights/reindex-all" in app
 
 
+def test_articles_endpoint_serialises_stored_sentiment():
+    """§6: the /api/articles list exposes the stored sentiment (populated at ingest /
+    re-index, VADER English-only) so lists / cards can show tone without an extra framing
+    call -- null for non-English / not-yet-re-indexed articles, never a fabricated neutral.
+    Both serialisation paths (the ids-seeded path + the query path) must carry it."""
+    main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
+    assert main.count('"sentiment_score": a.sentiment_score') >= 2, (
+        "both /api/articles serialisation paths must expose sentiment_score"
+    )
+    assert main.count('"sentiment_label": a.sentiment_label') >= 2
+
+
 def test_downloaded_dump_title_search_exists():
     """§2.4 (autonomous 2026-06-21): downloaded wiki dumps gain a bounded TITLE
     search over the multistream index (honest scope: titles only, not page bodies —

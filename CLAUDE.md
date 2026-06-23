@@ -3816,6 +3816,15 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-23 §6 — /api/articles EXPOSES STORED SENTIMENT (branch claude/nice-davinci-bqufft, draft PR
+  #447 onto 0.09):** the `Article.sentiment_score`/`sentiment_label` columns are populated at ingest/
+  re-index (VADER English-only) but the article-LIST endpoint never returned them, so the analysis Articles
+  list + search results couldn't show tone without an extra /api/framing call. Added both fields to BOTH
+  `/api/articles` serialisation paths (the `ids=`-seeded + the query path) — honest: null for non-English /
+  not-yet-re-indexed articles, NEVER a fabricated neutral. Backend-only; the frontend tone display is the
+  follow-on (the inline-dup-badge pattern shows the lists can annotate rows). test_repo_invariants::
+  test_articles_endpoint_serialises_stored_sentiment (both paths carry it); ruff clean. The endpoint-level
+  test needs the app/crypto (CI-only); existing /api/articles tests pass with the additive fields.
 - **2026-06-23 MANIPULATION CARD #7 — HEADLINE-BODY MISMATCH (§6, ruling #13; branch claude/nice-davinci-
   bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** the 3rd of the nine manipulation-pattern
   cards (after #6 source-laundering + the near-dup recycled-claim), built to the maintainer's documented
