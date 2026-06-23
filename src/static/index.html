@@ -1437,15 +1437,17 @@
       <h2>Diagnostics log</h2>
       <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
       <div class="row" style="margin-top:6px">
-        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Download keyword log (.zip)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">Download ALL keywords (.zip)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Download keyword self-test (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Download keyword-engine report (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Download date-extraction log (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/network','_blank')">Download network log (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/performance','_blank')">Download performance report (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/benchmark','_blank')">Download scaling benchmark (.json)</button>
-        <button onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Download debug bundle (.json)</button>
+        <button onclick="window.open('/api/diagnostics/all','_blank')" title="Every diagnostics log in one archive — one click instead of nine. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Keyword log (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">All keywords (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Keyword self-test (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Keyword-engine report (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/home-cards?download=1','_blank')" title="For every Home card (Lead): does clicking it open its EXACT corpus (hard-linked) or a fuzzy text search that loses it (search-fallback)? Flags the mismatches.">Home-card diagnostics (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Date-extraction log (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/network','_blank')">Network log (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/performance','_blank')">Performance report (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/benchmark','_blank')">Scaling benchmark (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Debug bundle (.json)</button>
       </div>
       <div class="row" style="margin-top:6px">
         <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>

@@ -3889,3 +3889,39 @@ def test_restore_auto_detects_encryption_client_side():
     # backend already raises the matching clear error (the source of truth).
     art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
     assert 'blob[:8] == b"OOENC1\\x00\\x00"' in art
+
+
+def test_home_card_click_diagnostics_and_download_all_wired():
+    """Field report 2026-06-22: a RECURRING home-card click diagnostic ("what does
+    clicking each Lead induce — its EXACT corpus or a fuzzy search that loses it") +
+    a single "All diagnostics" download. Also pins the live fix: the briefing cache
+    version was bumped so existing installs recompute and cards gain article_ids."""
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    cd = (_SRC / "briefing" / "card_diagnostics.py").read_text(encoding="utf-8")
+    svc = (_SRC / "briefing" / "service.py").read_text(encoding="utf-8")
+
+    # The recurring tool: the per-card click classifier + its seed-query replica.
+    assert "def card_click_diagnostics(" in cd
+    assert "def card_seed_query(" in cd
+    # The endpoints exist and are downloadable.
+    assert '@router.get("/home-cards")' in diag
+    assert "card_click_diagnostics" in diag
+    assert '@router.get("/all")' in diag and "def all_diagnostics(" in diag
+    # The all-bundle gathers the other logs (each wrapped so one failure can't abort it).
+    for member in ("debug-bundle.json", "home-cards.json", "keyword-engine.json"):
+        assert member in diag
+    assert ".error.txt" in diag  # per-member failure is recorded, never fatal
+
+    # The Settings -> Diagnostics buttons: the new ones + the dense row shed the
+    # redundant "Download " prefix (screen space). The "All diagnostics" button leads.
+    assert "/api/diagnostics/home-cards?download=1" in html
+    assert "window.open('/api/diagnostics/all'" in html
+    assert ">All diagnostics (.zip)<" in html
+    assert ">Keyword log (.zip)<" in html  # de-prefixed
+    assert ">Debug bundle (.json)<" in html  # de-prefixed
+    assert "Download keyword log (.zip)" not in html  # the old verbose label is gone
+
+    # The live hard-linking fix: cache version bumped so a pre-fix cached briefing
+    # (cards without article_ids) is recomputed once.
+    assert 'CACHE_VERSION = "oo-briefing-cache-2"' in svc
