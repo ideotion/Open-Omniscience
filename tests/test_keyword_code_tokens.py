@@ -43,11 +43,13 @@ _KEEP = [
     "h1n1", "h5n1", "h3n2", "h7n9", "a1c",          # allowlisted real multi-transition
 ]
 
-# Multi-segment alphanumeric codes / IDs / model-variant cruft that must be DROPPED.
+# Multi-segment alphanumeric codes / IDs / model-variant cruft + underscore
+# identifiers (CSS / template / code) that must be DROPPED.
 _DROP = [
     "a-10c", "b-52h",            # model variants (a-10/b52 stay; the -C/-H cruft goes)
     "a1b2", "x1y2z3", "gd1x2y",  # internal IDs
     "section3a", "r2d2", "c3po",  # doc refs / fictional codes
+    "gd_combo_table", "font_family", "utm_source", "user_name",  # underscore identifiers
 ]
 
 
@@ -80,9 +82,18 @@ def test_is_code_token_drops_multi_segment_codes():
 
 
 def test_is_code_token_never_touches_a_pure_word():
-    # No digits -> never a code token, regardless of length or hyphens.
+    # No digits, no underscore -> never a code token, regardless of length or hyphens.
     for w in ("prime-minister", "anti-government", "self-driving", "neighbourhood"):
         assert not _is_code_token(w)
+
+
+def test_underscore_tokens_are_code_identifiers():
+    # An underscore inside a token = a CSS / template / code identifier, never a
+    # natural-language word (no orthography uses a word-internal underscore). The one
+    # real underscore term (x86_64) is allowlisted.
+    for w in ("gd_combo_table", "font_family", "utm_source", "user_name", "mso_normal"):
+        assert _is_code_token(w), w
+    assert not _is_code_token("x86_64")  # allowlisted real term
 
 
 def test_code_filter_is_env_killable(monkeypatch):

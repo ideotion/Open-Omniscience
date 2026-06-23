@@ -3883,8 +3883,15 @@ ruling, a contingency, or a deliberate-omission note.
   invisible to the transition rule. TOKEN-LEVEL (no text mutation) ⇒ clean-text first-offsets stay EXACT
   (the strip_markup contract). HONEST SCOPE stated: this does NOT catch single-transition `letterN` tokens
   (b52/mp3-shaped) because they are shape-identical to real designations — a re-index drains the catchable
-  ones and the rest surface in the next log for the loop. tests/test_keyword_code_tokens.py (hard keep/drop
-  fixture proving NO real term is lost: 18 keepers incl. flu subtypes survive, 8 codes drop, env kill-switch,
+  ones and the rest surface in the next log for the loop. **§2.6 UNDERSCORE-IDENTIFIER EXTENSION (same
+  commit/PR):** `_is_code_token` ALSO drops any token containing an `_` (gd_combo_table — the maintainer's
+  named "?"-bucket CSS/template junk; font_family; utm_source) — NO natural orthography in any of the 12+
+  supported languages uses a word-internal underscore, so it is false-positive-safe for real WORDS (a
+  natural phrase splits on its space); the one common real underscore term `x86_64` is allowlisted. This is
+  the safe, log-free, dependency-free half of §2.6 (the count-reducing language-detection half stays gated
+  on the live log + a dependency decision). tests/test_keyword_code_tokens.py (hard keep/drop
+  fixture proving NO real term is lost: keepers incl. flu subtypes + x86_64 survive, digit-codes + underscore
+  identifiers drop, env kill-switch,
   end-to-end index_article stays clean + counters consistent) + 2 in-app self-test golden cases
   (digit_code_tokens_dropped + clock_timecode_fragments_dropped, so a regression reddens the maintainer's
   exported keyword self-test AND CI). 90 keyword/analytics/selftest/extract tests + 122/125 repo-invariants

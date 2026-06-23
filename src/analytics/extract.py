@@ -162,6 +162,7 @@ _CODE_TOKEN_KEEP: frozenset[str] = frozenset(
         "h1n1", "h1n2", "h2n2", "h3n2", "h3n8", "h5n1", "h5n6", "h5n8",
         "h7n7", "h7n9", "h9n2", "h10n8",
         "a1c",  # hemoglobin A1c (diabetes marker)
+        "x86_64",  # the one common underscore-bearing real term (CPU architecture)
     }
 )
 
@@ -189,16 +190,24 @@ def _alnum_transitions(word: str) -> int:
 
 
 def _is_code_token(word: str) -> bool:
-    """True for a multi-segment alphanumeric CODE token that should never be a keyword.
+    """True for a CODE / identifier token that should never be a natural-language keyword.
 
-    A pure word (no digits) is never a code token. A real digit-bearing designation
-    (one letter<->digit transition) is kept; an allowlisted real multi-transition term
-    (H1N1, A1C) is kept; everything with >= 2 transitions is dropped. Case-insensitive.
+    Two cases, both case-insensitive, both behind ``OO_CODE_TOKEN_FILTER``:
+      * an UNDERSCORE inside the token (gd_combo_table, font_family, utm_source) — a CSS
+        / template / code identifier; NO natural orthography in any supported language
+        uses a word-internal underscore, so this is false-positive-safe for real words
+        (the ~35k "?"-bucket of newsletter/CSS template artefacts, field log 2026-06-23);
+      * a multi-segment alphanumeric code (>= 2 letter<->digit transitions: a-10c, a1b2).
+    A pure word (no underscore, no digits) is never a code token; a real one-transition
+    designation (a-10, covid-19, g7, mp3) is kept; the handful of real multi-transition /
+    underscore terms (H1N1, A1C, x86_64) are allowlisted in ``_CODE_TOKEN_KEEP``.
     """
     if os.getenv("OO_CODE_TOKEN_FILTER", "1") == "0":
         return False
     if word.casefold() in _CODE_TOKEN_KEEP:
         return False
+    if "_" in word:
+        return True
     return _alnum_transitions(word) >= 2
 
 
