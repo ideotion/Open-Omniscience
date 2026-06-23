@@ -26,6 +26,7 @@ Every term records which extractor produced it; an entity ``kind`` is a
 
 from __future__ import annotations
 
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -132,6 +133,82 @@ def _is_caps_run_word(w: str) -> bool:
     both to spot an acronym candidate and to detect an all-caps headline/shout run.
     """
     return len(w) >= 2 and w.isupper() and any(c.isalpha() for c in w)
+
+
+# --------------------------------------------------------------------------- #
+# Digit-heavy "code" tokens (field diagnostics 2026-06-23)
+# --------------------------------------------------------------------------- #
+# The live keyword log showed a ~35k bucket of alphanumeric code tokens (A-10C,
+# internal IDs, model-variant cruft, clock timecodes 1h15) minted as junk
+# keywords. They cannot be separated from REAL digit-bearing terms by a digit
+# RATIO — the maintainer's own keep/drop examples (a-10 keep vs a-10c drop) are
+# shape-identical modulo a trailing letter. The discriminator that works is the
+# number of letter<->digit transitions: a real designation keeps its digits in ONE
+# run (a-10, f-18, covid-19, g7, g20, cop26, b52, mp3, web3, x86 = exactly 1
+# transition), while a code / ID / variant ALTERNATES (a-10c, a1b2, x1y2z3 = >= 2).
+# We drop the >= 2-transition tokens. The handful of REAL multi-transition terms
+# (influenza subtypes H1N1/H5N1…, the diabetes marker A1C) are an allowlisted
+# exception — exactly the _ACRONYM_STOP / _PLURAL_DENYLIST pattern, tunable from the
+# diagnostics logs. This is deliberately CONSERVATIVE: a single-transition timecode
+# fragment like `h15` (from `1h15`) is shape-identical to `b52`/`mp3` and so cannot
+# be caught this way — instead the unigram loop drops a digit-bearing token that is
+# glued immediately AFTER a digit in the source (1h15 -> h15, 3a4b -> a4b), which is
+# always a tokenizer split of a larger code (real prose space-separates numbers).
+# OO_CODE_TOKEN_FILTER=0 disables the whole rule.
+_CODE_TOKEN_KEEP: frozenset[str] = frozenset(
+    {
+        # influenza A subtypes (hemagglutinin Hx / neuraminidase Nx) — real epidemic
+        # terms with >= 2 transitions; never let the code rule eat them.
+        "h1n1", "h1n2", "h2n2", "h3n2", "h3n8", "h5n1", "h5n6", "h5n8",
+        "h7n7", "h7n9", "h9n2", "h10n8",
+        "a1c",  # hemoglobin A1c (diabetes marker)
+        "x86_64",  # the one common underscore-bearing real term (CPU architecture)
+    }
+)
+
+
+def _alnum_transitions(word: str) -> int:
+    """Count letter<->digit class changes across a token's alphanumerics.
+
+    Hyphens, apostrophes and underscores are not a class and are skipped, so
+    ``a-10`` and ``a10`` both count 1. ``a10`` -> 1, ``a10c`` -> 2, ``h1n1`` -> 3,
+    ``covid19`` -> 1, ``mp3`` -> 1, a pure word (no digits) -> 0.
+    """
+    prev = ""  # "L" | "D"
+    n = 0
+    for ch in word:
+        if ch.isdigit():
+            cur = "D"
+        elif ch.isalpha():
+            cur = "L"
+        else:
+            continue
+        if prev and cur != prev:
+            n += 1
+        prev = cur
+    return n
+
+
+def _is_code_token(word: str) -> bool:
+    """True for a CODE / identifier token that should never be a natural-language keyword.
+
+    Two cases, both case-insensitive, both behind ``OO_CODE_TOKEN_FILTER``:
+      * an UNDERSCORE inside the token (gd_combo_table, font_family, utm_source) — a CSS
+        / template / code identifier; NO natural orthography in any supported language
+        uses a word-internal underscore, so this is false-positive-safe for real words
+        (the ~35k "?"-bucket of newsletter/CSS template artefacts, field log 2026-06-23);
+      * a multi-segment alphanumeric code (>= 2 letter<->digit transitions: a-10c, a1b2).
+    A pure word (no underscore, no digits) is never a code token; a real one-transition
+    designation (a-10, covid-19, g7, mp3) is kept; the handful of real multi-transition /
+    underscore terms (H1N1, A1C, x86_64) are allowlisted in ``_CODE_TOKEN_KEEP``.
+    """
+    if os.getenv("OO_CODE_TOKEN_FILTER", "1") == "0":
+        return False
+    if word.casefold() in _CODE_TOKEN_KEEP:
+        return False
+    if "_" in word:
+        return True
+    return _alnum_transitions(word) >= 2
 
 
 # Curated extra stoplist: very common function words / fillers that the per-language
@@ -599,6 +676,10 @@ class BaselineExtractor:
                 continue
             if surface.casefold() in _ACRONYM_STOP:
                 continue
+            if _is_code_token(surface):
+                # A-10C-style multi-segment code, not a real acronym entity (G7 /
+                # COVID-19 are one transition and survive; H1N1 is allowlisted).
+                continue
             # A real acronym stands out against mixed-case neighbours; an all-caps
             # token ADJACENT to another all-caps word is part of a HEADLINE/shout run
             # (catches the first & last word of the run, not just the middle).
@@ -641,19 +722,29 @@ class BaselineExtractor:
             counts[term] += 1
             first_at.setdefault(term, offset)
 
-        # Unigrams (content words only).
+        # Unigrams (content words only). Drop digit-heavy CODE tokens (A-10C, a1b2 —
+        # see _is_code_token) and glued <digits><token> fragments (1h15 -> h15), which
+        # leaked ~35k junk keywords; real designations (a-10, covid-19, b52, mp3) stay.
         for word, off in toks:
-            if len(word) >= _MIN_TERM_LEN and word not in stop and not word.isdigit():
-                _record(word, off)
+            if len(word) < _MIN_TERM_LEN or word in stop or word.isdigit():
+                continue
+            if _is_code_token(word):
+                continue
+            if off > 0 and text[off - 1].isdigit() and any(c.isdigit() for c in word):
+                continue  # tokenizer split of a glued code/timecode (1h15 -> h15)
+            _record(word, off)
         # Bigrams / trigrams over the raw token stream, dropping ones bounded by
         # stopwords so phrases stay meaningful ("prime minister", not "of the").
         for size in (2, 3):
             for k in range(len(toks) - size + 1):
                 window = toks[k : k + size]
                 words = [w for w, _ in window]
-                # Drop a phrase if ANY token is a stopword or too short/numeric, so
-                # fillers don't leak inside n-grams ("not one bit", "economy is not").
-                if any(w in stop or len(w) < _MIN_TERM_LEN or w.isdigit() for w in words):
+                # Drop a phrase if ANY token is a stopword, too short/numeric, or a
+                # code token, so fillers/codes don't leak inside n-grams.
+                if any(
+                    w in stop or len(w) < _MIN_TERM_LEN or w.isdigit() or _is_code_token(w)
+                    for w in words
+                ):
                     continue
                 phrase = " ".join(words)
                 _record(phrase, window[0][1])

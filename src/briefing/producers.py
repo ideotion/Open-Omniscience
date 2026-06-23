@@ -1861,6 +1861,215 @@ def recycled_claim(session) -> list[Card]:
     return cards
 
 
+_MAX_HEADLINE_BODY = 4
+
+
+def headline_body_mismatch(session) -> list[Card]:
+    """Surface a RECENT article whose headline leads with content the body does not
+    substantiate (manipulation-pattern card #7, ruling #13).
+
+    Names a STRUCTURE, never intent: lexical divergence d_lex (headline content words
+    vs the body's top words — language-agnostic) and, for English only, a headline-vs-
+    body sentiment gap. The signal carries its COMPONENTS, never a clickbait score; the
+    innocent twin (a summarising / metaphorical headline) is stated beside the pattern.
+    """
+    try:
+        from src.analytics.headline_body import (
+            HEADLINE_BODY_CAVEAT,
+            find_headline_body_mismatch,
+        )
+
+        found = find_headline_body_mismatch(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("headline-body-mismatch scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_HEADLINE_BODY]:
+        title = it["title"] or "(untitled)"
+        if len(title) > 70:
+            title = title[:67] + "…"
+        absent = it.get("absent_terms", [])
+        absent_str = ", ".join(absent[:4]) + ("…" if len(absent) > 4 else "")
+        gap_clause = (
+            f" Its tone also diverges (sentiment gap {it['sentiment_gap']})."
+            if it.get("sentiment_gap") is not None
+            and it["sentiment_gap"] >= found["sentiment_gap_min"]
+            else ""
+        )
+        cards.append(
+            Card(
+                type="headline_body_mismatch",
+                title=f"Headline ≠ body: {title}",
+                summary=(
+                    "The headline leads with terms the article body barely covers"
+                    + (f" ({absent_str})" if absent_str else "")
+                    + f" — lexical divergence {it['lexical_div']}.{gap_clause} A "
+                    "summarising or metaphorical headline does this innocently. Read both "
+                    "and judge."
+                ),
+                bucket="debunk",
+                signal={
+                    "metric": "lexical_div",
+                    "value": it["lexical_div"],
+                    "sentiment_gap": it.get("sentiment_gap"),
+                    "lang": it.get("lang"),
+                    "absent_terms": absent,
+                    "n_absent": len(absent),
+                },
+                method=found.get("method", ""),
+                caveat=HEADLINE_BODY_CAVEAT,
+                # article = corpus of 1: the card opens the analysis window over it.
+                article_ids=[it["article_id"]],
+                n=1,
+                key=f"hbmismatch:{it['article_id']}",
+                trigger=_trigger(
+                    "The headline names things the article itself barely discusses. A "
+                    "summarising or metaphorical headline does this innocently — but it is "
+                    "also how a misleading headline works. Read both and judge.",
+                    [
+                        ("Lexical divergence", f"{it['lexical_div']} (>= {found['d_min']} fires)"),
+                        (
+                            "Sentiment gap (English only)",
+                            str(it["sentiment_gap"]) if it.get("sentiment_gap") is not None else "—",
+                        ),
+                        ("Headline terms absent from the body", absent_str or "—"),
+                        ("Language", it.get("lang") or "unknown"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
+_MAX_EMERGENCE = 4
+
+
+def manufactured_emergence(session) -> list[Card]:
+    """Surface a NEW keyword that appeared wide-and-sudden across many sources with NO
+    datable anchor (manipulation-pattern card #3, ruling #13; the full anchor-gated form).
+
+    Names a STRUCTURE, never intent: born-wide independence is distinct SOURCES (a chatty
+    source can't manufacture it); the anchor gate suppresses genuine breaking news (which
+    leaves a datable trace); the innocent twin + the false-negative caveat are stated.
+    """
+    try:
+        from src.analytics.emergence import EMERGENCE_CAVEAT, find_manufactured_emergence
+
+        found = find_manufactured_emergence(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("manufactured-emergence scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_EMERGENCE]:
+        term = it["term"]
+        cards.append(
+            Card(
+                type="manufactured_emergence",
+                title=f"Appeared everywhere at once: “{term}”",
+                summary=(
+                    f"“{term}” has almost no prior history yet showed up in "
+                    f"{it['recent_articles']} articles across {it['recent_sources']} distinct "
+                    "sources at once, and the articles cite no datable event to anchor it. "
+                    "Breaking news also appears wide and fast — but usually with a datable "
+                    "trigger. Read the sources and judge."
+                ),
+                bucket="rising",
+                signal={
+                    "metric": "recent_sources",
+                    "value": it["recent_sources"],
+                    "recent_articles": it["recent_articles"],
+                    "prior_count": it["prior_count"],
+                    "anchored": it["anchored"],
+                },
+                method=found.get("method", ""),
+                caveat=EMERGENCE_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["recent_articles"],
+                key=f"emergence:{term}",
+                trigger=_trigger(
+                    "A term with almost no past suddenly turned up across many separate "
+                    "sources, and none of the articles points to a datable event behind it. "
+                    "Real breaking news does this too — but it usually has a datable trigger; "
+                    "an anchor-less one is worth a look. Read the sources and judge.",
+                    [
+                        ("Distinct sources (born wide)", str(it["recent_sources"])),
+                        ("Recent articles", str(it["recent_articles"])),
+                        ("Prior-period mentions", f"{it['prior_count']} (≈ new)"),
+                        ("Datable anchor near onset", "none found"),
+                        ("Minimum sources to surface", f">= {found['min_sources']} ✓"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
+_MAX_FLOOD = 4
+
+
+def flooded_topic(session) -> list[Card]:
+    """Surface a SOURCE flooding a single topic far above its OWN history
+    (manipulation-pattern card #4, ruling #13 + Q8 — the flood half).
+
+    Names a STRUCTURE, never intent: the comparison is the source's own prior share
+    (a two-proportion z-test), so a source that always covers a beat heavily does not
+    flag; the innocent twin (volume is not importance) is stated; no score.
+    """
+    try:
+        from src.analytics.concentration import FLOOD_CAVEAT, find_flooded_topics
+
+        found = find_flooded_topics(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("flood scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_FLOOD]:
+        pct_now = round(100 * it["share_now"])
+        pct_base = round(100 * it["baseline_share"])
+        cards.append(
+            Card(
+                type="flooded_topic",
+                title=f"{it['source']} is flooding “{it['term']}”",
+                summary=(
+                    f"{it['source']} gave {pct_now}% of its recent coverage to "
+                    f"“{it['term']}” ({it['recent_articles']} of {it['recent_total']} "
+                    f"articles), vs {pct_base}% historically. Volume isn't importance — a "
+                    "big story legitimately dominates — so read it and judge."
+                ),
+                bucket="overtold",
+                signal={
+                    "metric": "share_zscore",
+                    "value": it["share_zscore"],
+                    "share_now": it["share_now"],
+                    "baseline_share": it["baseline_share"],
+                    "recent_articles": it["recent_articles"],
+                    "recent_total": it["recent_total"],
+                    "source": it["source"],
+                },
+                method=found.get("method", ""),
+                caveat=FLOOD_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["recent_articles"],
+                key=f"flood:{it['source_id']}:{it['term']}",
+                trigger=_trigger(
+                    "One source is giving an unusually large slice of its recent coverage to "
+                    "a single topic, far above its own past. A genuinely big story does this "
+                    "too — volume is not importance — so read it and judge.",
+                    [
+                        ("Recent share of this source's coverage", f"{pct_now}%"),
+                        ("Its historical share", f"{pct_base}%"),
+                        ("Jump (two-proportion z)", str(it["share_zscore"])),
+                        ("Recent articles on the topic", f"{it['recent_articles']} of {it['recent_total']}"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -1885,6 +2094,9 @@ _DEFAULT_PRODUCERS = (
     ("watch_matches", watch_matches),
     ("source_laundering", source_laundering),
     ("recycled_claim", recycled_claim),
+    ("headline_body_mismatch", headline_body_mismatch),
+    ("manufactured_emergence", manufactured_emergence),
+    ("flooded_topic", flooded_topic),
 )
 
 

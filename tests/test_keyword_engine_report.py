@@ -97,6 +97,23 @@ def test_extraction_noise_flags_actionable_classes():
     assert noise["scanned"] == 4 and noise["total_flagged"] == 3
 
 
+def test_extraction_noise_flags_code_tokens():
+    """The PROJECTED §2.5/§2.6 reduction: digit-segmented codes + underscore identifiers
+    the extraction code-token filter drops are surfaced as a ``code_token`` class, so the
+    maintainer can measure the backlog the next re-index removes from the same report."""
+    s = _sess()
+    s.add(Source(name="Src", domain="s.test"))
+    s.flush()
+    _kw(s, "a-10c", "a-10c")                      # multi-segment code
+    _kw(s, "gd_combo_table", "gd_combo_table")    # underscore template identifier
+    _kw(s, "elections", "elections")              # clean content keyword (kept)
+    s.commit()
+    cls = keyword_engine_report(s, top_n=50, sample_articles=1)["extraction_noise"]["classes"]
+    assert "code_token" in cls
+    ex = cls["code_token"]["examples"]
+    assert "a-10c" in ex and "gd_combo_table" in ex and "elections" not in ex
+
+
 def test_language_status_is_honest():
     assert _lang_status("zh") == "unsegmented" and _lang_status("ja") == "unsegmented"
     assert _lang_status("en") == "functional" and _lang_status("ru") == "functional"

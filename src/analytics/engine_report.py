@@ -58,7 +58,7 @@ def _extraction_noise(session: Session, cap: int = 60000) -> dict:
     backlog shrink after a re-index / a new batch lands."""
     import re
 
-    from src.analytics.extract import _ELISION  # the Romance-elision detector
+    from src.analytics.extract import _ELISION, _is_code_token  # elision + code-token
 
     rows = session.query(Keyword.normalized_term).limit(cap).all()
     terms = [r[0] or "" for r in rows]
@@ -79,6 +79,10 @@ def _extraction_noise(session: Session, cap: int = 60000) -> dict:
         },
         "has_markup_char": {
             "what": "a token containing a markup/structural character (<, >, {, }, =, /, ;) — almost always leaked HTML/CSS",
+            "count": 0, "examples": [],
+        },
+        "code_token": {
+            "what": "a digit-segmented code or underscore identifier the extraction code-token filter (§2.5/§2.6) drops on re-index (a-10c, gd_combo_table) — the PROJECTED reduction; a re-index clears it",
             "count": 0, "examples": [],
         },
     }
@@ -104,6 +108,10 @@ def _extraction_noise(session: Session, cap: int = 60000) -> dict:
         alpha = sum(1 for ch in t if ch.isalpha())
         if digits and digits >= max(1, alpha):
             _hit("mostly_digits", t)
+        # The extraction code-token filter drops these on the next re-index (an n-gram
+        # carrying a code token is dropped too, so check every token in the keyword).
+        if any(_is_code_token(w) for w in t.split()):
+            _hit("code_token", t)
 
     total_noise = sum(c["count"] for c in classes.values())
     return {

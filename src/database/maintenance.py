@@ -238,6 +238,67 @@ def ensure_article_ip_columns(engine: Engine) -> list[str]:
     return added
 
 
+# Secondary/deduced language column (field §2.6). Same additive self-heal as the IP /
+# identity columns: create_all builds it on a fresh DB, this ALTERs an existing one, and
+# not every install runs alembic. No backfill -- it populates forward at ingest/re-index
+# (only for articles whose authoritative `language` is NULL).
+_ARTICLE_DETECTED_LANG_COLUMN: dict[str, str] = {
+    "detected_language": "ALTER TABLE articles ADD COLUMN detected_language VARCHAR(10)",
+}
+
+
+def ensure_article_detected_language_column(engine: Engine) -> list[str]:
+    """Self-heal the ``articles.detected_language`` column (idempotent, additive)."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_DETECTED_LANG_COLUMN.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added articles deduced-language column(s): {', '.join(added)}")
+    return added
+
+
+def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
+    """Self-heal the denormalised ``keyword_mentions.source_id`` column + its index.
+
+    Additive, NO backfill: a re-index fills it forward (index_article sets it from the
+    article's source) -- deliberately NOT a multi-million-row boot UPDATE join. So
+    per-source analytics (flood/bury) grow as the corpus is re-indexed. Idempotent.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='keyword_mentions'")
+        ).fetchone()
+        if not has_table:
+            return []
+        cols = {r[1] for r in conn.execute(text("PRAGMA table_info(keyword_mentions)")).fetchall()}
+        if "source_id" not in cols:
+            conn.execute(text("ALTER TABLE keyword_mentions ADD COLUMN source_id INTEGER"))
+            added.append("source_id")
+        idx = {r[1] for r in conn.execute(text("PRAGMA index_list(keyword_mentions)")).fetchall()}
+        if "ix_keyword_mentions_source_id" not in idx:
+            conn.execute(
+                text("CREATE INDEX ix_keyword_mentions_source_id ON keyword_mentions(source_id)")
+            )
+            added.append("ix_keyword_mentions_source_id")
+    if added:
+        _LOG.info(f"added keyword_mentions source denormalisation: {', '.join(added)}")
+    return added
+
+
 # Denormalised corpus-wide keyword counters (perf workstream 2026-06-18) for stores
 # created before these columns existed. create_all builds them on a fresh DB but never
 # ALTERs an existing table, and not every install runs alembic — so an existing corpus

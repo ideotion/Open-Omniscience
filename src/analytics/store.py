@@ -188,19 +188,39 @@ def index_article(
     """Extract + store mentions for one article (idempotent). Returns a small tally."""
     content = article.get_content() if hasattr(article, "get_content") else (article.content or "")
 
+    # SECONDARY/DEDUCED language (field §2.6, maintainer ruling Q3): when the
+    # authoritative `language` (source/extractor) is absent, deduce it OFFLINE
+    # (confidence-gated, never a guess) and store it in `detected_language` WITHOUT
+    # touching `language`. `known_lang` (asserted first, then deduced) drives extraction
+    # + sentiment + the keyword's analytic language, so a foreign UNTAGGED article gets
+    # the RIGHT stoplist instead of leaking its function words as keywords.
+    if not (article.language or "").strip() and not (
+        getattr(article, "detected_language", None) or ""
+    ).strip():
+        from src.analytics.langdetect import detect_language
+
+        deduced = detect_language(content)
+        if deduced:
+            article.detected_language = deduced
+    known_lang = (
+        (article.language or "").strip()
+        or (getattr(article, "detected_language", None) or "").strip()
+        or None
+    )
+
     # Sentiment at ingest (language-aware, honest): VADER scores ENGLISH articles
     # and stores the result on the article; every other language stays NULL — never
     # a fabricated neutral. Runs on the one per-article hook, so ingest / re-index /
     # backfill all populate the (previously dead) sentiment columns.
     from src.analytics.sentiment import score_article
 
-    article.sentiment_score, article.sentiment_label = score_article(content, article.language)
+    article.sentiment_score, article.sentiment_label = score_article(content, known_lang)
 
     terms = extractor.extract(
         content or "",
         title=article.title or "",
-        language=article.language or "en",  # extractor needs SOME stoplist; "en" here
-        # is an extraction working assumption, never stored as the keyword's language.
+        language=known_lang or "en",  # extractor needs SOME stoplist; "en" here is an
+        # extraction working assumption, never stored as the keyword's language.
     )
 
     observed = article.published_at or article.created_at
@@ -245,7 +265,7 @@ def index_article(
             self_suppressed += 1
             continue
         kw = _get_or_create_keyword(
-            session, t, language=article.language, extractor=extractor.name
+            session, t, language=known_lang, extractor=extractor.name
         )
         session.add(
             KeywordMention(
@@ -256,6 +276,7 @@ def index_article(
                 observed_on=observed_on,
                 country=cc,
                 city=city,
+                source_id=article.source_id,  # denormalised (like observed_on/country)
                 extractor=extractor.name,
             )
         )

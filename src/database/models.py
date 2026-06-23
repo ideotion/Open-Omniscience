@@ -532,7 +532,13 @@ class Article(Base):
     # Compressed version of content for storage optimization
     compressed_content: Mapped[bytes | None] = mapped_column(LargeBinary)
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
-    language: Mapped[str | None] = mapped_column(String(10))
+    language: Mapped[str | None] = mapped_column(String(10))  # AUTHORITATIVE (source/extractor); NULL when untagged
+    # SECONDARY / DEDUCED language (field §2.6, maintainer ruling Q3): set ONLY when
+    # `language` is absent, by offline confidence-gated detection (src/analytics/
+    # langdetect.py). Never overwrites the authoritative `language`; used as the
+    # extraction + keyword-analytic fallback so a foreign untagged article gets the
+    # right stoplist. NULL when truly unknown (the detector never guesses).
+    detected_language: Mapped[str | None] = mapped_column(String(10))
     hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
     # K1/K2 identity seams (data-architecture Slice 5). Additive, never reformat `hash`:
     #   * content_multihash -- the SELF-DESCRIBING content hash ("sha2-256:<hex>"),
@@ -1582,6 +1588,11 @@ class KeywordMention(Base):
     observed_on: Mapped[date | None] = mapped_column(Date, index=True)  # denormalised article date (for trends)
     country: Mapped[str | None] = mapped_column(String(2))  # denormalised source country (for the map)
     city: Mapped[str | None] = mapped_column(String(120))  # denormalised source city, when known
+    # Denormalised source id (like observed_on/country) so per-SOURCE analytics (the
+    # flood/bury concentration card #4) avoid the keyword_mentions->articles decrypt trap.
+    # Populated forward at index time; a re-index fills it for an existing corpus (no heavy
+    # boot backfill over millions of rows). Indexed for the GROUP BY source_id scan.
+    source_id: Mapped[int | None] = mapped_column(Integer, index=True)
     extractor: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
