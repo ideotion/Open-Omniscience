@@ -98,6 +98,11 @@ analysis = [
     "networkx>=3.3",
     "nltk>=3.8.1",
     "vaderSentiment>=3.3.2",
+    # Offline language detection (pure-Python, bundled model, NO network) for the
+    # "secondary/deduced" language of articles the source/extractor left untagged --
+    # so a foreign article gets the right stoplist instead of leaking function words
+    # (field §2.6). Gated like VADER: a core install simply leaves the language NULL.
+    "py3langid>=0.3",
 ]
 
 # Optional real Named-Entity Recognition for the Insights tab (people / orgs /

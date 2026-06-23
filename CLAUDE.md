@@ -387,6 +387,27 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **MAINTAINER FINALIZATION RULINGS 2026-06-23 (verbatim "proceed in full autonomy [on] everything we are
+  currently listing"; answered a 20-question yes/no finalize-everything list ALL YES + "you decide what's
+  best" on PR strategy + priorities — NO further questions, build it all):** binding decisions that unblock
+  the deferred queue:
+  (1) keyword digit-code + underscore filters STAY on by default; (2) the underscore rule eating technical
+  `snake_case`/handles is an ACCEPTED casualty for a news corpus; (3) BUILD §2.6 offline language detection
+  — add a pure-Python, no-network lib (py3langid) — and the detected language is **SECONDARY/DEDUCED
+  metadata** (never overwrites the source/trafilatura-asserted `Article.language`; used only as a deduced
+  fallback for extraction + the keyword's analytic language, labelled deduced, two-class model); (4) brand/
+  company tokens (govdelivery) STAY content, never stoplisted; (5) the single-transition `letterN` filter
+  limit is ACCEPTED; (6) BUILD the remaining manipulation cards; (7) manufactured-emergence = build the FULL
+  honest version INCLUDING the "no datable primary anchor" check (so it doesn't fire on all breaking news);
+  (8) BUILD the per-source concentration primitive flood/bury needs; (9) cards STAY auto-surfacing as Home
+  Leads; (10) BUILD browser-unverified frontend (conservative + node-check + invariant-guarded + flagged,
+  fork-3); (11) BUILD the §5.1 source-tag analysis filter (thread `tags` through the corpus-* endpoints
+  too); (12) BUILD the world-map "Sources by location" bubble subtab (country|IP toggle); (13) BUILD the
+  sentiment tone chip in the analysis Articles + search lists; (14) BUILD additive-restore FILE-member
+  placement (CI-gated torture); (15) BUILD restore-as-a-task-manager-job; (16) BUILD Wikipedia-dump
+  full-text search; (17) DO documentation slices (USER_MANUAL + docs↔app reciprocity, RC-blocking); (18)
+  BUILD the agenda content batch; (19)+(20) PR strategy + prioritization are MINE to decide (multiple PRs
+  fine). EXECUTION: ship across slices, verify each, full autonomy, no more questions.
 - **DATA-ARCHITECTURE & DURABILITY SKELETON (maintainer design session 2026-06-19; ARCHITECTURE-OF-
   RECORD delivered, build BRIEF ready, code NOT started — full design in
   `docs/design/DATA_ARCHITECTURE_SKELETON.md`; the paste-ready autonomous-session build brief in
@@ -3816,6 +3837,27 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-23 §2.6 — OFFLINE SECONDARY/DEDUCED LANGUAGE DETECTION (maintainer ruling Q3; the count-reducing
+  half; branch claude/nice-davinci-bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** articles
+  the source/extractor left untagged (notably .eml) extracted under the English working-assumption stoplist,
+  so a genuinely FOREIGN one leaked its function words as keywords (the "?"-language bucket). `src/analytics/
+  langdetect.py:detect_language` deduces the language OFFLINE (py3langid — pure-Python, bundled model, ZERO
+  network; added to the `[analysis]` extra so a core install simply gets None, gated like VADER). HONEST by
+  construction: it NEVER guesses (None for <200 chars, confidence <0.90, or a language OUTSIDE the app's
+  SUPPORTED set — a Korean article is detected `ko`, which we can't analyse, so it stays honestly unknown
+  rather than force-fit), deterministic, full model + accept-only-if-supported. SECONDARY/DEDUCED metadata
+  (Q3): a NEW `Article.detected_language` column (migration c5d6e7f8a9b0 off head b4c5d6e7f8a9 — single-head
+  verified; + `ensure_article_detected_language_column` boot self-heal, no backfill) is set ONLY when the
+  authoritative `language` is absent and NEVER overwrites it (the two-class asserted-vs-deduced model). In
+  `index_article` a `known_lang` = (asserted || deduced || None) now drives extraction (right stoplist),
+  sentiment, AND the keyword's analytic language — so an untagged French article: `language` stays None,
+  `detected_language="fr"`, its keywords are labelled `fr` (OUT of the "?" bucket), and its function words
+  (dans/avec/pour/entre/des) are FILTERED instead of minted (proven end-to-end). tests/
+  test_language_detection.py (4: detect en/fr/short→None/empty→None/ko-unsupported→None; untagged-foreign→
+  deduced+right-stoplist; authoritative-never-overwritten; unknown-stays-None — the lib-dependent ones
+  importorskip py3langid so the core-only lane skips them). ruff F/B clean. REMAINING: surface
+  `detected_language` as "deduced" in the reader/lists (frontend follow-on); measure the live-corpus "?"-
+  bucket reduction after a re-index.
 - **2026-06-23 §6 — /api/articles EXPOSES STORED SENTIMENT (branch claude/nice-davinci-bqufft, draft PR
   #447 onto 0.09):** the `Article.sentiment_score`/`sentiment_label` columns are populated at ingest/
   re-index (VADER English-only) but the article-LIST endpoint never returned them, so the analysis Articles

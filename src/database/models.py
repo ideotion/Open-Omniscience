@@ -532,7 +532,13 @@ class Article(Base):
     # Compressed version of content for storage optimization
     compressed_content: Mapped[bytes | None] = mapped_column(LargeBinary)
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
-    language: Mapped[str | None] = mapped_column(String(10))
+    language: Mapped[str | None] = mapped_column(String(10))  # AUTHORITATIVE (source/extractor); NULL when untagged
+    # SECONDARY / DEDUCED language (field §2.6, maintainer ruling Q3): set ONLY when
+    # `language` is absent, by offline confidence-gated detection (src/analytics/
+    # langdetect.py). Never overwrites the authoritative `language`; used as the
+    # extraction + keyword-analytic fallback so a foreign untagged article gets the
+    # right stoplist. NULL when truly unknown (the detector never guesses).
+    detected_language: Mapped[str | None] = mapped_column(String(10))
     hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # SHA-256 hash length is 64
     # K1/K2 identity seams (data-architecture Slice 5). Additive, never reformat `hash`:
     #   * content_multihash -- the SELF-DESCRIBING content hash ("sha2-256:<hex>"),
