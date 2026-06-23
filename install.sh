@@ -239,27 +239,47 @@ pip_install() {
     print_download_estimate "$extras"
     if [ "${OO_SKIP_PIP:-0}" = "1" ]; then warn "OO_SKIP_PIP=1 -- skipping pip install ($spec)"; return; fi
     step "Installing the app: $spec"
-    # Network resilience: a flaky link (notably Qubes disposable VMs / Tor netvms)
-    # can drop DNS mid-resolution. pip's default 15s timeout then makes it BACKTRACK
-    # through every version and emit a MISLEADING "ResolutionImpossible / no matching
-    # distribution" when the real cause was a dropped connection. So: longer timeout +
-    # more retries, and retry the whole step with backoff. Already-downloaded wheels
-    # are cached, so each attempt resumes rather than restarts.
+    # Resilience for two field-test failures (Qubes disposable VMs especially):
+    #  * NETWORK: a flaky link drops DNS mid-resolution; pip's default 15s timeout
+    #    then BACKTRACKS through every version and emits a MISLEADING
+    #    "ResolutionImpossible / no matching distribution". -> longer timeout + retries.
+    #  * DISK: pip unpacks big scientific wheels (scipy/numpy/pandas) in TMPDIR, which
+    #    on Qubes is /tmp = a SMALL RAM-backed tmpfs, so it hits "No space left on
+    #    device (Errno 28)" even though the private (home) volume has plenty of room.
+    #    -> point TMPDIR at the install volume so unpacking has space.
     local pip_opts="--retries 5 --timeout 60"
-    python -m pip install $pip_opts --upgrade pip setuptools wheel >/dev/null 2>&1 || true
+    local pip_tmp="${XDG_CACHE_HOME:-$HOME/.cache}/oo-pip-build"
+    mkdir -p "$pip_tmp"
+    local log; log="$(mktemp "${pip_tmp}/pip-log-XXXXXX" 2>/dev/null || echo "${pip_tmp}/pip.log")"
+    TMPDIR="$pip_tmp" python -m pip install $pip_opts --upgrade pip setuptools wheel >/dev/null 2>&1 || true
     local attempt delay=4
     for attempt in 1 2 3; do
-        if python -m pip install $pip_opts -e "$spec"; then
-            ok "Python packages installed"
-            return 0
+        if TMPDIR="$pip_tmp" python -m pip install $pip_opts -e "$spec" 2>&1 | tee "$log"; then
+            rm -f "$log"; ok "Python packages installed"; return 0
+        fi
+        # Disk-full will NOT clear by retrying the same install -- diagnose + stop.
+        if grep -qiE "No space left on device|Errno 28" "$log" 2>/dev/null; then
+            echo ""
+            warn "Out of disk space while installing (pip: 'No space left on device')."
+            echo "     pip unpacks large packages in a temp dir. On Qubes, /tmp is a small"
+            echo "     RAM-backed volume, so this can hit even when your home volume is fine."
+            echo "     This installer already points pip's temp at: $pip_tmp"
+            echo "     Check what is actually full (look at the 'Avail' column):"
+            echo "         df -h /tmp \"$pip_tmp\" \"$SRC_DIR\""
+            echo "     Fixes: free space on the FULL volume, or in Qubes increase this VM's"
+            echo "       private storage (Qube Settings -> Disk storage), then re-run:"
+            echo "         cd \"$SRC_DIR\" && ./install.sh --unattended"
+            rm -f "$log"
+            die "Python package installation failed: out of disk space (see guidance above)."
         fi
         if [ "$attempt" -lt 3 ]; then
             warn "pip install failed (attempt $attempt/3) -- likely a network hiccup; retrying in ${delay}s..."
             sleep "$delay"; delay=$((delay * 4))
         fi
     done
-    # Persistent failure: be HONEST about the most common cause instead of echoing
-    # pip's confusing resolver error.
+    rm -f "$log"
+    # Persistent NON-disk failure: be HONEST about the most common cause (network)
+    # instead of echoing pip's confusing resolver error.
     echo ""
     warn "Could not install the Python packages after 3 attempts."
     echo "     This is almost always a NETWORK problem, not a dependency conflict:"

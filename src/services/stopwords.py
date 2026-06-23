@@ -303,10 +303,22 @@ class StopwordsManager:
         for lang, words in self.LANGUAGE_STOPWORDS.items():
             self.language_stopwords[lang] = words.copy()
 
+        # LANGUAGE-SCOPED stoplists vendored from stopwords-iso (MIT) for languages
+        # the engine could tokenise but had no stoplist for (their function words
+        # leaked as keywords). Kept SEPARATE from ``language_stopwords`` on purpose:
+        # ``global_stopwords()`` unions ``language_stopwords`` language-agnostically,
+        # so folding these in would let a word grammatical in one language (vi "nam")
+        # hide a content word ("Nam") in another. ``get_stopwords(lang)`` returns them
+        # only for THAT language (extraction is language-scoped), so the collision
+        # cannot happen. (2026-06-23 keyword-engine report; STOPWORDS_ISO_AS_OF.)
+        self.scoped_stopwords: dict[str, set[str]] = _load_scoped_stopwords()
+
     def get_stopwords(self, language="en"):
         lang = language.lower()
         if lang in self.language_stopwords:
             stopwords = self.language_stopwords[lang].copy()
+        elif lang in self.scoped_stopwords:
+            stopwords = self.scoped_stopwords[lang].copy()  # its OWN list, not English
         else:
             stopwords = self.default_stopwords.copy()
         stopwords.update(self.custom_stopwords)
@@ -315,6 +327,33 @@ class StopwordsManager:
     def filter_stopwords(self, words, language="en"):
         stopwords = self.get_stopwords(language)
         return [word for word in words if word.lower() not in stopwords]
+
+
+# Dated provenance for the vendored stopwords-iso snapshot (registered in
+# configs/external_artifacts.yml; the freshness/protocol guard enforces it).
+STOPWORDS_ISO_AS_OF = "2026-06"
+
+
+def _load_scoped_stopwords() -> dict[str, set[str]]:
+    """Load the vendored per-language stopword lists (configs/stopwords_iso/*.txt).
+
+    Network-free; missing dir = no-op (the engine simply keeps those languages
+    no_stoplist). One file per ISO-639-1 code, one lowercased word per line."""
+    import pathlib
+
+    base = pathlib.Path(__file__).resolve().parents[2] / "configs" / "stopwords_iso"
+    out: dict[str, set[str]] = {}
+    if not base.is_dir():
+        return out
+    for f in base.glob("*.txt"):
+        words = {
+            w.strip().lower()
+            for w in f.read_text(encoding="utf-8").splitlines()
+            if w.strip()
+        }
+        if words:
+            out[f.stem.lower()] = words
+    return out
 
 
 stopwords_manager = StopwordsManager()

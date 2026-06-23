@@ -102,6 +102,18 @@ artifacts:
     freshness: {max_age_months: 18}
     last_verified: "2026-06-17"
 
+  - id: stopwords-iso
+    title: Multilingual stopword lists (stopwords-iso subset)
+    kind: dated-data
+    description: Vendored per-language stopword lists (configs/stopwords_iso/*.txt) for the space-segmented languages the engine could tokenise but had no stoplist for; applied language-scoped.
+    upstream: https://github.com/stopwords-iso/stopwords-iso (PyPI stopwordsiso)
+    check_upstream: "re-fetch the stopwords-iso snapshot; community-maintained"
+    license: MIT
+    pin: {file: src/services/stopwords.py, const: STOPWORDS_ISO_AS_OF}
+    refresh: "python scripts/build_stopwords.py on a networked machine; bump STOPWORDS_ISO_AS_OF"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-06-23"
+
   - id: stats-api-shapes
     title: Official-statistics API shapes
     kind: dated-data
