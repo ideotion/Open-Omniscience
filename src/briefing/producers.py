@@ -1942,6 +1942,70 @@ def headline_body_mismatch(session) -> list[Card]:
     return cards
 
 
+_MAX_EMERGENCE = 4
+
+
+def manufactured_emergence(session) -> list[Card]:
+    """Surface a NEW keyword that appeared wide-and-sudden across many sources with NO
+    datable anchor (manipulation-pattern card #3, ruling #13; the full anchor-gated form).
+
+    Names a STRUCTURE, never intent: born-wide independence is distinct SOURCES (a chatty
+    source can't manufacture it); the anchor gate suppresses genuine breaking news (which
+    leaves a datable trace); the innocent twin + the false-negative caveat are stated.
+    """
+    try:
+        from src.analytics.emergence import EMERGENCE_CAVEAT, find_manufactured_emergence
+
+        found = find_manufactured_emergence(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("manufactured-emergence scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_EMERGENCE]:
+        term = it["term"]
+        cards.append(
+            Card(
+                type="manufactured_emergence",
+                title=f"Appeared everywhere at once: “{term}”",
+                summary=(
+                    f"“{term}” has almost no prior history yet showed up in "
+                    f"{it['recent_articles']} articles across {it['recent_sources']} distinct "
+                    "sources at once, and the articles cite no datable event to anchor it. "
+                    "Breaking news also appears wide and fast — but usually with a datable "
+                    "trigger. Read the sources and judge."
+                ),
+                bucket="rising",
+                signal={
+                    "metric": "recent_sources",
+                    "value": it["recent_sources"],
+                    "recent_articles": it["recent_articles"],
+                    "prior_count": it["prior_count"],
+                    "anchored": it["anchored"],
+                },
+                method=found.get("method", ""),
+                caveat=EMERGENCE_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["recent_articles"],
+                key=f"emergence:{term}",
+                trigger=_trigger(
+                    "A term with almost no past suddenly turned up across many separate "
+                    "sources, and none of the articles points to a datable event behind it. "
+                    "Real breaking news does this too — but it usually has a datable trigger; "
+                    "an anchor-less one is worth a look. Read the sources and judge.",
+                    [
+                        ("Distinct sources (born wide)", str(it["recent_sources"])),
+                        ("Recent articles", str(it["recent_articles"])),
+                        ("Prior-period mentions", f"{it['prior_count']} (≈ new)"),
+                        ("Datable anchor near onset", "none found"),
+                        ("Minimum sources to surface", f">= {found['min_sources']} ✓"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -1967,6 +2031,7 @@ _DEFAULT_PRODUCERS = (
     ("source_laundering", source_laundering),
     ("recycled_claim", recycled_claim),
     ("headline_body_mismatch", headline_body_mismatch),
+    ("manufactured_emergence", manufactured_emergence),
 )
 
 

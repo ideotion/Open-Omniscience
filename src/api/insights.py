@@ -829,6 +829,27 @@ def insights_headline_body_mismatch(
     )
 
 
+@router.get("/manufactured-emergence")
+def insights_manufactured_emergence(
+    recent_days: int = Query(7, ge=1, le=365, description="onset window"),
+    min_sources: int = Query(3, ge=2, le=100, description="distinct sources to be 'born wide'"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """New keywords that appeared wide-and-sudden across many sources with NO datable
+    anchor (manipulation-pattern card #3). Names the STRUCTURE, never intent: born-wide
+    independence is distinct SOURCES, the anchor gate suppresses genuine breaking news,
+    and the false-negative caveat is stated. No score."""
+    from src.analytics.emergence import find_manufactured_emergence
+
+    return _cached(
+        _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit),
+        lambda: find_manufactured_emergence(
+            db, recent_days=recent_days, min_sources=min_sources, max_items=limit
+        ),
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None

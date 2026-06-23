@@ -606,10 +606,11 @@ ruling, a contingency, or a deliberate-omission note.
   the pattern. A recycled_claim PRODUCER (bucket="watch", no-score schema, _trigger) auto-surfaces it
   as a Home Lead; GET /api/insights/recycled-claims for exploration. tests/test_recycled_claim.py (6:
   fires on recent-dup-of-old, short-gap-isn't-recycled, two-old-without-recent-doesn't-fire,
-  single-source-flagged, unrelated-text-no-cluster, endpoint). CARD #7 HEADLINE-BODY-MISMATCH SHIPPED
-  2026-06-23 (see the shipped-log entry). REMAINING: the other 5 cards (astroturf/copypasta partly
-  covered by echo_chamber; outrage-intensity, flood/bury, manufactured-emergence, event-timed-op still
-  to build); the elections/civic vertical. SEQUENCING: (1) is the lead. Build across stacked PRs onto 0.09.
+  single-source-flagged, unrelated-text-no-cluster, endpoint). CARDS #7 HEADLINE-BODY-MISMATCH +
+  #3 MANUFACTURED-EMERGENCE SHIPPED 2026-06-23 (see the shipped-log entries; #3 is the FULL anchor-gated
+  form per ruling Q7). REMAINING: the other 3 cards (astroturf/copypasta partly covered by echo_chamber;
+  outrage-intensity [secondary/annotates], flood/bury [Q8: build the concentration primitive], event-timed-op
+  [composition of #3+#6+agenda] still to build); the elections/civic vertical. Build across stacked PRs onto 0.09.
 - **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run
   UNSUPERVISED.** SCOPE = the V0.1 RC mandate IN FULL ('absolutely everything' from
   this ledger + FUTURE_DEVELOPMENTS): every RC-BLOCKING + SHOULD + POST row in
@@ -3837,6 +3838,23 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-23 MANIPULATION CARD #3 — MANUFACTURED EMERGENCE (full anchor-gated form, ruling Q7; branch
+  claude/nice-davinci-bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** the 4th manipulation
+  card (after #6 source-laundering, #1 recycled-claim, #7 headline-body). `src/analytics/emergence.py:
+  find_manufactured_emergence` names a STRUCTURE never intent: a keyword with ≈0 prior history (prior-period
+  distinct-article count ≤ max_prior) that appears RECENTLY across MANY DISTINCT SOURCES ("born wide" —
+  independence is sources, NEVER article count, so a chatty single source can't manufacture it). The maintainer
+  approved the FULL version WITH the ANCHOR GATE (Q7): it fires ONLY when the emergent articles cite NO datable
+  primary anchor (no ArticleMentionedDate within anchor_lookback_days of the onset) — so genuine breaking news
+  (which leaves a datable trace) is SUPPRESSED, making it precision-biased instead of firing on every big story.
+  HONESTY: real measured COMPONENTS (prior_count≈0, recent_sources, recent_articles, anchored=False) never a
+  blended score; the anchor gate biases toward silence; the innocent twin + the FALSE-NEGATIVE caveat ("a missing
+  anchor may just mean we didn't ingest the trigger or the extractor missed the date") travel with every item;
+  bounded scan. Wired as a fail-safe-LAST producer (`manufactured_emergence` → a `rising` Home Lead over the
+  exact article set) + `GET /api/insights/manufactured-emergence` (cached). tests/test_emergence.py (5: fires on
+  new+wide+unanchored, silent when anchored / single-source / not-new, no-score+caveat) + the all-producers
+  card-shape sweep. ruff F/B clean. NOTE: "born-wide ratio β=day1/peak" is the documented refinement (left to a
+  follow-on; the prior≈0 + distinct-source breadth + anchor gate is the honest core).
 - **2026-06-23 §2.6 — OFFLINE SECONDARY/DEDUCED LANGUAGE DETECTION (maintainer ruling Q3; the count-reducing
   half; branch claude/nice-davinci-bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** articles
   the source/extractor left untagged (notably .eml) extracted under the English working-assumption stoplist,
