@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "कोई भी: चुने गए किसी भी टैग वाला स्रोत। सभी: चुने गए हर टैग वाला स्रोत।",
   "selected": "चयनित",
   "untagged": "बिना टैग",
-  "unknown": "अज्ञात"
+  "unknown": "अज्ञात",
+  "Method": "विधि",
+  "Open corpus": "कोष खोलें",
+  "Details & corpus": "विवरण और कोष",
+  "Open this Lead's corpus in a new window": "इस सुराग का कोष नई विंडो में खोलें"
 }

@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "Apa saja: sumber dengan tag apa pun yang dipilih. Semua: sumber dengan setiap tag yang dipilih.",
   "selected": "dipilih",
   "untagged": "tanpa tag",
-  "unknown": "tidak diketahui"
+  "unknown": "tidak diketahui",
+  "Method": "Metode",
+  "Open corpus": "Buka korpus",
+  "Details & corpus": "Detail & korpus",
+  "Open this Lead's corpus in a new window": "Buka korpus petunjuk ini di jendela baru"
 }

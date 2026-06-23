@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "いずれか：選択したタグのいずれかを持つソース。すべて：選択したタグをすべて持つソース。",
   "selected": "件選択",
   "untagged": "タグなし",
-  "unknown": "不明"
+  "unknown": "不明",
+  "Method": "方法",
+  "Open corpus": "コーパスを開く",
+  "Details & corpus": "詳細とコーパス",
+  "Open this Lead's corpus in a new window": "この手がかりのコーパスを新しいウィンドウで開く"
 }

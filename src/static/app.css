@@ -528,7 +528,36 @@
     .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:12px; }
     /* Family-type accent (UI_SHELL_REDESIGN §5): each bucket sets --fam (a hue),
        cards inherit it as a left accent so the feed stays scannable even in "All". */
-    .brief-bucket .card { border-left:3px solid var(--fam, var(--border)); }
+    /* Flip Lead cards (maintainer 2026-06-23): equal-size, family-themed cards with a
+       FRONT (the lead at a glance) and a BACK (caveat + method + evidence + a themed
+       "open corpus" action). Clicking flips with a 3D animation. The informed-consent
+       caveat lives on the BACK — an equal side revealed by ONE flip, never a hidden
+       toggle (#23 amended) — beside the action that opens its corpus. Scoped to
+       .brief-bucket so every other .card (empty state, tiles) is untouched. */
+    .brief-bucket .card { position:relative; height:var(--lead-h,292px); padding:0; gap:0;
+      background:transparent; border:0; border-radius:var(--radius-sm); perspective:1200px;
+      cursor:pointer; }
+    .brief-bucket .card .card-inner { position:absolute; inset:0; transform-style:preserve-3d;
+      transition:transform .55s cubic-bezier(.2,.7,.2,1); }
+    .brief-bucket .card.flipped .card-inner { transform:rotateY(180deg); }
+    .brief-bucket .card .card-face { position:absolute; inset:0; display:flex; flex-direction:column;
+      gap:8px; padding:14px; border:1px solid var(--border); border-top:3px solid var(--fam,var(--accent));
+      border-radius:var(--radius-sm); background:var(--panel2); box-shadow:var(--shadow,0 1px 3px rgba(0,0,0,.18));
+      backface-visibility:hidden; -webkit-backface-visibility:hidden; }
+    .brief-bucket .card .card-front { overflow:hidden; }
+    .brief-bucket .card .card-back { transform:rotateY(180deg); overflow-y:auto; }
+    .brief-bucket .card:hover .card-face { border-color:var(--fam,var(--accent)); }
+    .brief-bucket .card .chip { border-color:var(--fam,var(--border)); color:var(--fam,var(--muted)); }
+    .brief-bucket .card h4 { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    .brief-bucket .card .card-front .sum { display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden; }
+    .lead-flip-hint { margin-top:auto; font-size:11px; color:var(--muted); align-self:flex-end; }
+    .lead-flip-hint.back { align-self:flex-start; }
+    /* The standardized, family-themed "open corpus (new window)" button on the back. */
+    .lead-open { background:color-mix(in srgb, var(--fam,var(--accent)) 22%, var(--panel2));
+      border:1px solid var(--fam,var(--accent)); color:var(--fg); font-weight:600; border-radius:6px;
+      padding:5px 11px; cursor:pointer; }
+    .lead-open:hover { background:color-mix(in srgb, var(--fam,var(--accent)) 34%, var(--panel2)); }
+    @media (prefers-reduced-motion: reduce) { .brief-bucket .card .card-inner { transition:none; } }
     nav.tabs.home-fam { margin:2px 0 4px; }
     nav.tabs .fam-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
       margin-inline-end:6px; vertical-align:middle; }

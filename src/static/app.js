@@ -1523,11 +1523,40 @@
       if (c.key && String(c.key).trim()) return String(c.key).trim();
       return (c.title || "").replace(/[“”"]/g, "").trim();
     }
+    // Click a Lead card to FLIP it (front <-> back). Inner controls (buttons/links/
+    // inputs) are not flip triggers. Keyboard: Enter/Space flips when focused.
+    function leadFlip(card, ev) {
+      if (ev && ev.target && ev.target.closest("button,a,input,label,details,summary")) return;
+      card.classList.toggle("flipped");
+    }
+    function leadFlipKey(card, ev) {
+      if ((ev.key === "Enter" || ev.key === " ") &&
+          !(ev.target && ev.target.closest("button,a,input,label,details,summary"))) {
+        ev.preventDefault();
+        card.classList.toggle("flipped");
+      }
+    }
+    // Open the card's corpus IN A NEW WINDOW (maintainer 2026-06-23) — a real browser
+    // tab the SPA hydrates from the URL (boot handler below), so the analysis lives
+    // outside the current view. Exact set when the card carries article_ids, else the
+    // seed query (the diagnostic flags any card whose query loses its corpus).
+    function openCardCorpus(ids, label) {
+      const p = new URLSearchParams();
+      p.set("corpus", (ids || []).join(","));
+      if (label) p.set("label", label);
+      window.open("/?" + p.toString(), "_blank", "noopener");
+    }
+    function openCardCorpusQuery(q) {
+      const p = new URLSearchParams();
+      p.set("analyze", q || "");
+      window.open("/?" + p.toString(), "_blank", "noopener");
+    }
     function cardHtml(c) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sig = c.signal || {};
       const sigLine = (sig.metric != null && sig.value != null)
         ? `<div class="sig">${esc(sig.metric)} = ${esc(sig.value)}${c.n != null ? " · n=" + c.n : ""}</div>` : "";
-      const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).map(e => {
+      const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).slice(0, 3).map(e => {
         const label = esc(e.title || e.url);
         const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
         // External evidence opens the LOCAL preview first (invariant #6
@@ -1568,59 +1597,61 @@
         const qp = new URLSearchParams({view: c.recipe.view, ...(c.recipe.params || {})});
         recipeBtn = `<a class="btnlike tiny" href="/investigate?${qp.toString()}" target="_blank" rel="noopener" title="Opens a dedicated investigation view in a new tab">Open investigation ↗</a>`;
       }
-      // P2-2 declutter (field test 2026-06-19): the verbose "Why am I seeing this?"
-      // (plain sentence + exact math) and the Method live behind ONE per-card "?"
-      // affordance at the BOTTOM-RIGHT (in .acts), NOT inline on the card face. The
-      // CAVEAT stays VISIBLE on the card (#23 / informed-consent — never hidden); only
-      // the verbose method/math layers (and the analysis window the card opens shows
-      // the full context). Labels + the plain sentence are CONSTANT English strings
-      // (i18n-translated); values are numbers/symbols (language-neutral).
+      // Flip cards (maintainer 2026-06-23): the front is the lead at a glance; the
+      // BACK carries the method + the exact math + the caveat + evidence + the action
+      // row. The verbose "why"/math is no longer behind a per-card "?" — the flip IS
+      // the detail layer (the back has room). Labels are i18n-translated; math values
+      // are numbers/symbols (language-neutral).
       const _whyRows = (c.trigger && c.trigger.math || []).map(r =>
         `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
       const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(c.trigger.plain)}</p>` : "";
-      const _methodInfo = c.method ? `<div class="mc"><b>Method:</b> ${esc(c.method)}</div>` : "";
-      const infoBlock = (_whyPlain || _whyRows || _methodInfo)
-        ? `<details class="card-info"><summary title="Why am I seeing this — method &amp; the exact math" aria-label="Why am I seeing this — method and the exact math">?</summary>
-            <div class="card-info-body">
-              ${_whyPlain}
-              ${_whyRows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${_whyRows}</table>` : ""}
-              ${_methodInfo}
-            </div></details>`
-        : "";
-      // EVERY card is clickable (maintainer 2026-06-16): the card body opens the
-      // unified analysis window over the card's article selection (never the
-      // standalone /investigate new tab — that stays as the explicit "Open
-      // investigation ↗" button below). Clicks on inner controls are ignored.
-      const _aq = cardAnalyzeQuery(c);
-      // Set-based cards (echo / convergence) carry their EXACT article set: open the
-      // analysis window over precisely those ids. Keyword/topic/whole-corpus cards
-      // fall back to the query (which reproduces their selection via the same search).
-      const _aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
-      const _aOpen = _aIds
-        ? `openAnalysisForIds(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))})`
-        : `openAnalysisFor(${esc(JSON.stringify(_aq))})`;
-      const cardOpen = _aq
-        ? ` style="cursor:pointer" title="Open in analysis — the article selection behind this Lead" onclick="if(!event.target.closest('button,a,details,summary,input,label'))${_aOpen}"`
-        : "";
-      // The CAVEAT is visible by default (informed-consent mandate: never hidden
-      // behind a calm-UI toggle). Only the verbose Method/math stays in the
-      // toggled .mc block below. Matches the corpus-tier .tier-caveat pattern.
+      const methodBlock = c.method ? `<div class="mc"><b>${esc(t("Method"))}:</b> ${esc(c.method)}</div>` : "";
+      const mathBlock = _whyRows
+        ? `<details class="card-info"><summary>${esc(t("The exact math"))}</summary>
+             <table class="why-math">${_whyRows}</table></details>` : "";
+      // The CAVEAT is VISIBLE on the BACK — an equal side of the card, revealed by ONE
+      // flip (never a hidden toggle), right beside the action that opens its corpus
+      // (#23 amended 2026-06-23 / informed-consent preserved by LAYERING, not hiding).
       const caveatLine = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
-      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}"${cardOpen}>
-        <span class="chip">${esc(c.type.replace(/_/g,' '))}</span>
-        <h4>${esc(c.title)}</h4>
-        <p class="sum">${esc(c.summary)}</p>
-        ${caveatLine}
-        ${sigLine}
-        ${evidBlock}
-        ${weatherBox}
-        <div class="acts">
-          ${recipeBtn}
-          ${weatherBtn}
-          <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
-          ${collapseBtn}
-          ${dismiss}
-          ${infoBlock}
+      // The standardized, family-themed "open corpus" button — opens the card's corpus
+      // IN A NEW WINDOW (exact set when the card carries article_ids, else the seed query).
+      const _aq = cardAnalyzeQuery(c);
+      const _aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
+      const _openCorpus = _aIds
+        ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))})`
+        : `openCardCorpusQuery(${esc(JSON.stringify(_aq))})`;
+      const openBtn = _aq
+        ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
+        : "";
+      const chip = `<span class="chip">${esc(c.type.replace(/_/g, " "))}</span>`;
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" tabindex="0" role="button" aria-label="${esc(c.title)}" onclick="leadFlip(this,event)" onkeydown="leadFlipKey(this,event)">
+        <div class="card-inner">
+          <div class="card-face card-front">
+            ${chip}
+            <h4>${esc(c.title)}</h4>
+            <p class="sum">${esc(c.summary)}</p>
+            ${sigLine}
+            <span class="lead-flip-hint">${esc(t("Details & corpus"))} ⟲</span>
+          </div>
+          <div class="card-face card-back">
+            ${chip}
+            ${caveatLine}
+            ${methodBlock}
+            ${(_whyPlain || mathBlock) ? `<div class="why-mathlabel">${esc(t("Why am I seeing this?"))}</div>` : ""}
+            ${_whyPlain}
+            ${mathBlock}
+            ${evidBlock}
+            ${weatherBox}
+            <div class="acts">
+              ${openBtn}
+              ${recipeBtn}
+              ${weatherBtn}
+              <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
+              ${collapseBtn}
+              ${dismiss}
+            </div>
+            <span class="lead-flip-hint back">⟲ ${esc(t("Back"))}</span>
+          </div>
         </div></div>`;
     }
 
@@ -11861,6 +11892,25 @@
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     // showTab itself maps legacy aliases (#database -> #library) and falls back.
     showTab((location.hash || "#home").slice(1), false);  // initial render: replace, don't push
+
+    // Deep-link a Lead's corpus opened "in a new window" (maintainer 2026-06-23): a
+    // card's back button does window.open("/?corpus=1,2,3&label=…"); this fresh SPA
+    // tab hydrates the analysis over that exact set (or ?analyze=<seed> for a query
+    // card). Runs once at boot; the params are left in the URL only for this hydration.
+    (function _hydrateCardCorpus() {
+      try {
+        const sp = new URLSearchParams(location.search);
+        const corpus = sp.get("corpus"), analyze = sp.get("analyze");
+        if (!corpus && !analyze) return;
+        showTab("analyze", false);
+        if (corpus) {
+          const ids = corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+          if (ids.length) openAnalysisForIds(ids, sp.get("label") || "");
+        } else if (analyze) {
+          openAnalysisFor(analyze);
+        }
+      } catch (e) { /* a malformed deep link must never break boot */ }
+    })();
 
     // Wire the universal subtab grammar on every multi-section surface (one
     // component, three surfaces). No opts.initial: each surface keeps its

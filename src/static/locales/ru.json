@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "Любой: источник с ЛЮБЫМ выбранным тегом. Все: источник со ВСЕМИ выбранными тегами.",
   "selected": "выбрано",
   "untagged": "без тега",
-  "unknown": "неизвестно"
+  "unknown": "неизвестно",
+  "Method": "Метод",
+  "Open corpus": "Открыть корпус",
+  "Details & corpus": "Подробности и корпус",
+  "Open this Lead's corpus in a new window": "Открыть корпус этой зацепки в новом окне"
 }

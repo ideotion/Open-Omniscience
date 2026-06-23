@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "N’importe lequel : une source ayant au moins un tag choisi. Tous : une source ayant tous les tags choisis.",
   "selected": "sélectionné(s)",
   "untagged": "sans tag",
-  "unknown": "inconnu"
+  "unknown": "inconnu",
+  "Method": "Méthode",
+  "Open corpus": "Ouvrir le corpus",
+  "Details & corpus": "Détails et corpus",
+  "Open this Lead's corpus in a new window": "Ouvrir le corpus de cette piste dans une nouvelle fenêtre"
 }

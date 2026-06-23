@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.",
   "selected": "selected",
   "untagged": "untagged",
-  "unknown": "unknown"
+  "unknown": "unknown",
+  "Method": "Method",
+  "Open corpus": "Open corpus",
+  "Details & corpus": "Details & corpus",
+  "Open this Lead's corpus in a new window": "Open this Lead's corpus in a new window"
 }

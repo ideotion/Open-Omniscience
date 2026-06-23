@@ -280,6 +280,21 @@ ruling, a contingency, or a deliberate-omission note.
    custody OTS warning adopt the same variable. Label/title re-keyed ×12. Enforced
    in test_ui_invariants (#23): the caveat must render in `.card-caveat` and must NOT
    appear inside the `hidden` `.mc` block.
+   **AMENDED 2026-06-23 (FLIP-CARD REDESIGN — maintainer-directed): the briefing card is
+   now a two-sided FLIP card** (front = the lead at a glance; back = caveat + method +
+   why + evidence + the action). The caveat MOVED OFF THE FRONT (it "took too much
+   space") onto the BACK — but this STILL satisfies informed-consent-by-LAYERING because
+   the back is an EQUAL side of the card revealed by ONE flip (a click), NOT a calm-UI
+   toggle/checkbox/`[hidden]` block: it is in the DOM by default, rendered in the visible
+   `.card-caveat` line right BESIDE the "Open corpus" action, so the user reads the
+   warning exactly as they go to explore. The front is decluttered; the per-card "?"
+   affordance (P2-2 infoBlock) is RETIRED — the flip IS the detail layer. test #23
+   updated: the caveat renders in `.card-caveat` on the `card-face card-back` (NOT the
+   `card-front`), the method renders on the back, and `leadFlip`/`openCardCorpus`/the
+   `?corpus=` boot deep-link exist. (Full flip-card entry in the Shipped-batch-log
+   2026-06-23.) REMAINING nicety: also surface the caveat INSIDE the analysis window the
+   corpus opens (today it travels on the back beside the open action + the analysis has
+   its own per-subtab caveats).
 30. **ALTERNATIVE-INTERFACES "GUIs" GALLERY (ruled 2026-06-17; BUILT 2026-06-17 on
    branch `claude/exciting-lovelace-1gyszi`, draft PR, BROWSER-UNVERIFIED):** a SANDBOX
    gallery of EIGHT opt-in alternative interfaces in Settings → GUIs (subtab
@@ -3816,6 +3831,32 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **HOME-CARD FLIP REDESIGN (maintainer chat 2026-06-23: "make them look more like cards · families themed ·
+  all same size · a front and a back, clicking flips with a nice animation · spread info onto both sides ·
+  move the orange caveat off the card, put it in the analysis · on the back a standardized themed button that
+  opens the card's corpus IN A NEW WINDOW"; branch claude/trusting-maxwell-p7y2g8, draft PR #445 onto 0.09;
+  FRONTEND, BROWSER-UNVERIFIED per fork-3):** the briefing Lead card is now a two-sided 3D FLIP card. FRONT =
+  the lead at a glance (family-themed chip + title + summary[line-clamped] + signal + a "Details & corpus ⟲"
+  hint); BACK = caveat + Method + "Why am I seeing this?" plain + the exact-math `<details>` + evidence + the
+  action row. `cardHtml` restructured into `.card-inner > .card-face.card-front + .card-face.card-back`; CSS
+  scoped to `.brief-bucket .card` (every OTHER `.card` — empty state, tiles — UNTOUCHED): fixed `height:
+  var(--lead-h,292px)` = ALL CARDS SAME SIZE, `transform:rotateY(180deg)` flip with a `prefers-reduced-motion`
+  off-switch, `backface-visibility:hidden`. FAMILY THEMING: each bucket already sets `--fam` (a per-family
+  hue); the faces' top-border + chip + the standardized `.lead-open` button are themed with `var(--fam)`.
+  CLICK FLIPS (`leadFlip`/`leadFlipKey` — Enter/Space, inner controls excluded; the card is `role="button"
+  tabindex=0`). The CAVEAT MOVED OFF THE FRONT onto the back (informed-consent PRESERVED — see invariant #23
+  amendment: the back is an equal side one flip away, NOT a hidden toggle, beside the open action). The
+  standardized themed "Open corpus ↗" button opens the card's corpus IN A NEW WINDOW — `openCardCorpus(ids)` /
+  `openCardCorpusQuery(seed)` → `window.open("/?corpus=…"|"/?analyze=…")`; a boot deep-link
+  `_hydrateCardCorpus()` hydrates the fresh SPA tab (`showTab("analyze")` + `openAnalysisForIds`/`openAnalysisFor`).
+  Exact set when the card carries `article_ids` (the 5 set-based producers), else the seed query (the
+  home-card diagnostic flags any that lose their corpus). The per-card "?" affordance (P2-2) is RETIRED — the
+  flip is the detail layer. +4 i18n keys ×12 (Method · Open corpus · Details & corpus · "Open this Lead's
+  corpus in a new window"; non-en AI-drafted, flagged). test_ui_invariants #23 rewritten (flip front/back +
+  caveat-on-back-not-front + method-on-back + leadFlip + openCardCorpus + window.open + the boot deep-link +
+  the equal-size/`--fam` CSS); node --check + full test_repo_invariants (128) + i18n --min 100 (1627 ×12) green.
+  REMAINING: human click-through across themes/breakpoints (fork-3); also render the caveat INSIDE the opened
+  analysis window (today it travels on the back beside the open action + the analysis has its own subtab caveats).
 - **GOVERNMENTS TAB — rename World Law + per-country data + map (maintainer chat directive 2026-06-22:
   "Change World Law into Governments. Diversify the subtabs. I want per-country data with GDP, labor, life
   expectancy, population, public deficit + all commonly-used country indices. The law will be a tab,

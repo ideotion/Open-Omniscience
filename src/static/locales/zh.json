@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "任一：含任意所选标签的来源。全部：含全部所选标签的来源。",
   "selected": "已选",
   "untagged": "无标签",
-  "unknown": "未知"
+  "unknown": "未知",
+  "Method": "方法",
+  "Open corpus": "打开语料库",
+  "Details & corpus": "详情与语料库",
+  "Open this Lead's corpus in a new window": "在新窗口中打开该线索的语料库"
 }

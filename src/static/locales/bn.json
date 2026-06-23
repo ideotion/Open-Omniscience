@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "যেকোনো: নির্বাচিত যেকোনো ট্যাগযুক্ত একটি উৎস। সব: নির্বাচিত প্রতিটি ট্যাগযুক্ত একটি উৎস।",
   "selected": "নির্বাচিত",
   "untagged": "ট্যাগবিহীন",
-  "unknown": "অজানা"
+  "unknown": "অজানা",
+  "Method": "পদ্ধতি",
+  "Open corpus": "কর্পাস খুলুন",
+  "Details & corpus": "বিবরণ ও কর্পাস",
+  "Open this Lead's corpus in a new window": "এই সূত্রের কর্পাস একটি নতুন উইন্ডোতে খুলুন"
 }

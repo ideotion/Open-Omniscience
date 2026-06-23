@@ -1620,28 +1620,44 @@ def test_ui_invariants():
         "function renderAnPrice(", 1
     )[1][:1500], "the graph causation caveat was removed (maintainer 2026-06-17)"
     # 23. Caveats are VISIBLE BY DEFAULT (permanent informed-consent invariant —
-    #     CLAUDE.md Non-negotiables): a briefing card's CAVEAT renders in a visible
-    #     .card-caveat line on the card FACE, NEVER hidden. (P2-2 decluttering, field
-    #     test 2026-06-19: the verbose Method + "why" moved into a per-card "?"
-    #     affordance (.card-info) — the caveat stays on the face; only the verbose
-    #     method/math layers. This regressed once: the .mc block held BOTH behind a
-    #     default-OFF checkbox.)
-    assert 'class="card-caveat">${esc(c.caveat)}' in html, (
-        "every briefing card must render its caveat VISIBLE BY DEFAULT (CLAUDE.md "
-        "informed-consent: caveats are never hidden behind a calm-UI toggle)"
+    #     CLAUDE.md Non-negotiables). AMENDED 2026-06-23 (flip cards): a Lead card now
+    #     has a FRONT (the lead at a glance) + a BACK; the CAVEAT renders in a visible
+    #     .card-caveat line on the card BACK — an equal side revealed by ONE flip, never
+    #     a hidden toggle/checkbox — right beside the action that opens its corpus. It is
+    #     in the DOM by default (not behind [hidden]); only the FRONT is decluttered.
+    card_html = html.split("function cardHtml(", 1)[1].split("\n    function ", 1)[0]
+    assert "card-face card-front" in card_html and "card-face card-back" in card_html, (
+        "Lead cards must have a flip FRONT + BACK (maintainer 2026-06-23)"
     )
-    # The verbose method/why now live in the per-card "?" affordance (infoBlock); the
-    # caveat is NOT inside it (it stays visible on the face).
-    info_block = html.split("const infoBlock = ", 1)[1].split(': "";', 1)[0]
-    assert "_methodInfo" in info_block and "_whyPlain" in info_block, (
-        "the method + why must live in the per-card '?' affordance (infoBlock)"
+    assert '<p class="card-caveat">${esc(c.caveat)}</p>' in card_html, (
+        "every Lead card must render its caveat VISIBLE BY DEFAULT in a .card-caveat "
+        "line (CLAUDE.md informed-consent: never hidden behind a calm-UI toggle)"
     )
-    assert "c.caveat" not in info_block, (
-        "the per-card caveat must NOT be moved into the '?' affordance — it stays "
-        "VISIBLE on the card face (CLAUDE.md informed-consent mandate)"
+    # The caveat sits on the BACK face, NOT the front (decluttered) — and not behind a toggle.
+    front_region = card_html.split("card-face card-front", 1)[1].split("card-face card-back", 1)[0]
+    assert "card-caveat" not in front_region, (
+        "the caveat must be on the card BACK, not the front face (maintainer 2026-06-23)"
     )
-    assert "esc(c.method)" in html.split("const _methodInfo = ", 1)[1][:120], (
-        "the verbose method must render inside the per-card '?' affordance"
+    back_region = card_html.split("card-face card-back", 1)[1]
+    assert "${caveatLine}" in back_region, "the caveat must render on the card BACK face"
+    # The verbose method renders on the back (the flip IS the detail layer now).
+    assert "esc(c.method)" in card_html and 'class="mc"' in card_html, (
+        "the method must render on the card back (the flip replaced the per-card '?')"
+    )
+    # Clicking flips; the standardized, family-themed button opens the corpus IN A NEW WINDOW.
+    assert "function leadFlip(" in html and 'onclick="leadFlip(this,event)"' in card_html, (
+        "clicking a Lead card must flip it (maintainer 2026-06-23)"
+    )
+    assert "function openCardCorpus(" in html and 'window.open("/?"' in html, (
+        "the back's 'Open corpus' button must open the card's corpus in a new window"
+    )
+    assert 'class="lead-open"' in card_html, "the back needs the standardized themed open-corpus button"
+    assert "_hydrateCardCorpus" in html and '"corpus"' in html, (
+        "a boot deep-link must hydrate the analysis from ?corpus= in the new window"
+    )
+    # Equal-size, family-themed flip cards (CSS): a 3D flip + a fixed height + --fam theming.
+    assert "rotateY(180deg)" in html and "--lead-h" in html and ".lead-open" in html, (
+        "Lead cards must be equal-size flip cards themed by family (--fam)"
     )
     # The caveat colour must be theme-aware (var(--caveat)), not a hardcoded hex that
     # fails WCAG AA on light themes — the most ethically important strings stay legible.

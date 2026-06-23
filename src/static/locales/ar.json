@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "أي: مصدر يحمل أيًّا من الوسوم المختارة. الكل: مصدر يحمل كل الوسوم المختارة.",
   "selected": "محدد",
   "untagged": "بدون وسم",
-  "unknown": "غير معروف"
+  "unknown": "غير معروف",
+  "Method": "الطريقة",
+  "Open corpus": "فتح المجموعة",
+  "Details & corpus": "التفاصيل والمجموعة",
+  "Open this Lead's corpus in a new window": "فتح مجموعة هذا الخيط في نافذة جديدة"
 }

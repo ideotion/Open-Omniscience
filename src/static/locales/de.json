@@ -1627,5 +1627,9 @@
   "Any: a source with ANY chosen tag. All: a source with EVERY chosen tag.": "Beliebig: eine Quelle mit IRGENDEINEM gewählten Tag. Alle: eine Quelle mit JEDEM gewählten Tag.",
   "selected": "ausgewählt",
   "untagged": "ohne Tag",
-  "unknown": "unbekannt"
+  "unknown": "unbekannt",
+  "Method": "Methode",
+  "Open corpus": "Korpus öffnen",
+  "Details & corpus": "Details & Korpus",
+  "Open this Lead's corpus in a new window": "Den Korpus dieser Spur in einem neuen Fenster öffnen"
 }
