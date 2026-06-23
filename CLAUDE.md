@@ -3816,6 +3816,27 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **STOPWORDS-ISO LANGUAGE-SCOPED LISTS (2026-06-23, maintainer field logs: "400k keywords, address it for
+  good"; branch claude/magical-brown-49m9nd, draft PR onto 0.09; backend VERIFIED py3.11):** the 2026-06-23
+  keyword-engine report (27,303 articles / 406,723 keywords / 1.8M mentions) showed ~88k keywords leaking
+  FUNCTION WORDS in space-segmented languages. The PARALLEL session already PROMOTED those languages to
+  managed (2026-06-22, in 0.09: tr/ro/uk/fi/ur/cs/ca/sk/et/hi/bn/fa/sw/az/bs/hr managed, th unsegmented) with
+  HAND-BUILT grammar stoplists in extract.py applied via the GLOBAL union — but conservatively (length>=4 /
+  accented-only to dodge cross-language collisions), so they MISS short function words (tr ise/ilk, ro
+  sau/iar/cum, fi ole/eli, cs jen/pak/než). COMPLEMENT, not replace: vendored a SUBSET of stopwords-iso (MIT)
+  for the 14 space-segmented langs → `configs/stopwords_iso/<lang>.txt` (5,670 words) applied LANGUAGE-SCOPED
+  via a NEW `stopwords_manager.scoped_stopwords` channel (`get_stopwords(lang)` returns the lang's OWN list;
+  kept OUT of the language-agnostic `global_stopwords()` union so a word grammatical in one language [vi nam]
+  can never hide content [Nam] in another). On re-index the short function words now drop too.
+  `STOPWORDS_ISO_AS_OF="2026-06"` + registry entry (configs/external_artifacts.yml) + `scripts/build_stopwords.py`
+  (networked refresh). tests/test_stopwords_iso.py (4). managed.py UNTOUCHED (parallel owns it). KEY FINDING:
+  the 2026-06-23 report was from an OUTDATED app build — the latest 0.09 already promotes those langs, so
+  UPDATE → re-index → prune already drops most of the ~88k. REMAINING (noted, parallel owns extraction): ~35k
+  digit-heavy code tokens (A-10C/1h15 — drop_numeric only hides PURE-digit at query time); the "?" 30k
+  unknown-language bucket (English gov-newsletter boilerplate govdelivery/gd_combo_table + undetected English
+  → needs language detection + .eml boilerplate filtering); translation_coverage 13.4% (rings); tag_coverage
+  0% (run baseline-tag backfill). The 287k single-article hapax (71%) is the LEGITIMATE multilingual long
+  tail — policy-protected (no arbitrary cap).
 - **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
   empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the
