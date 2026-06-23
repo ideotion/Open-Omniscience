@@ -3896,9 +3896,12 @@ ruling, a contingency, or a deliberate-omission note.
   (digit_code_tokens_dropped + clock_timecode_fragments_dropped, so a regression reddens the maintainer's
   exported keyword self-test AND CI). 90 keyword/analytics/selftest/extract tests + 122/125 repo-invariants
   green (the 3 non-greens are the py3.11-vs-py3.13 `[T]`-generic parse + package-metadata env gaps, not the
-  change). ruff F/B clean; extract.py adds 0 mypy errors. REMAINING §2.5: measure the real reduction on the
-  live corpus after a re-index (the maintainer's loop); single-transition `letterN` junk stays unfilterable
-  by shape (honest limit).
+  change). ruff F/B clean; extract.py adds 0 mypy errors. MEASUREMENT TOOL SHIPPED (same PR): the
+  keyword-engine report's `_extraction_noise` audit gained a `code_token` class (using the live
+  `_is_code_token`) that counts how many EXISTING keywords the next re-index will drop — so the maintainer
+  measures the PROJECTED §2.5/§2.6 reduction in the same report they already export (tests/
+  test_keyword_engine_report.py +1). REMAINING §2.5: measure the real reduction on the live corpus after a
+  re-index (the maintainer's loop); single-transition `letterN` junk stays unfilterable by shape (honest limit).
 - **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
   empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the
