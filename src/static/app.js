@@ -932,7 +932,7 @@
       {id:"insights", label:"Insights",           grp:"Investigate"},
       {id:"timemap",  label:"World map",          grp:"Investigate"},
       {id:"wiki",     label:"Wikipedia",          grp:"Investigate"},
-      {id:"law",      label:"World law",          grp:"Investigate"},
+      {id:"law",      label:"Governments",        grp:"Investigate"},
       {id:"agenda",   label:"Agenda",             grp:"Investigate"},
       {id:"indices",  label:"Indices",            grp:"Investigate"},
       {id:"markets",  label:"Commodities",        grp:"Investigate"},
@@ -959,7 +959,7 @@
       markets: loadMarkets,
       insights: loadInsights,
       timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
-      law: loadLaw,
+      law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
       agenda: loadAgenda,
       library: () => { loadCoverage(); },    // stats handled by the live poller (startLive)
       custody: loadCustody,
@@ -976,6 +976,7 @@
     const _SUBTAB_NAV = {
       analyze: "an-subtabs", insights: "ins-subtabs", settings: "set-subtabs",
       agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
+      law: "gov-subtabs",   // Governments: Countries · Map · Law
     };
     function _relocateSubtabs(name) {
       const strip = $("subtab-strip"); if (!strip) return;
@@ -1522,11 +1523,40 @@
       if (c.key && String(c.key).trim()) return String(c.key).trim();
       return (c.title || "").replace(/[“”"]/g, "").trim();
     }
+    // Click a Lead card to FLIP it (front <-> back). Inner controls (buttons/links/
+    // inputs) are not flip triggers. Keyboard: Enter/Space flips when focused.
+    function leadFlip(card, ev) {
+      if (ev && ev.target && ev.target.closest("button,a,input,label,details,summary")) return;
+      card.classList.toggle("flipped");
+    }
+    function leadFlipKey(card, ev) {
+      if ((ev.key === "Enter" || ev.key === " ") &&
+          !(ev.target && ev.target.closest("button,a,input,label,details,summary"))) {
+        ev.preventDefault();
+        card.classList.toggle("flipped");
+      }
+    }
+    // Open the card's corpus IN A NEW WINDOW (maintainer 2026-06-23) — a real browser
+    // tab the SPA hydrates from the URL (boot handler below), so the analysis lives
+    // outside the current view. Exact set when the card carries article_ids, else the
+    // seed query (the diagnostic flags any card whose query loses its corpus).
+    function openCardCorpus(ids, label) {
+      const p = new URLSearchParams();
+      p.set("corpus", (ids || []).join(","));
+      if (label) p.set("label", label);
+      window.open("/?" + p.toString(), "_blank", "noopener");
+    }
+    function openCardCorpusQuery(q) {
+      const p = new URLSearchParams();
+      p.set("analyze", q || "");
+      window.open("/?" + p.toString(), "_blank", "noopener");
+    }
     function cardHtml(c) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sig = c.signal || {};
       const sigLine = (sig.metric != null && sig.value != null)
         ? `<div class="sig">${esc(sig.metric)} = ${esc(sig.value)}${c.n != null ? " · n=" + c.n : ""}</div>` : "";
-      const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).map(e => {
+      const evid = (c.evidence || []).filter(e => e && (e.url || e.title)).slice(0, 3).map(e => {
         const label = esc(e.title || e.url);
         const meta = [e.source, (e.published_at || "").slice(0,10)].filter(Boolean).map(esc).join(" · ");
         // External evidence opens the LOCAL preview first (invariant #6
@@ -1567,59 +1597,61 @@
         const qp = new URLSearchParams({view: c.recipe.view, ...(c.recipe.params || {})});
         recipeBtn = `<a class="btnlike tiny" href="/investigate?${qp.toString()}" target="_blank" rel="noopener" title="Opens a dedicated investigation view in a new tab">Open investigation ↗</a>`;
       }
-      // P2-2 declutter (field test 2026-06-19): the verbose "Why am I seeing this?"
-      // (plain sentence + exact math) and the Method live behind ONE per-card "?"
-      // affordance at the BOTTOM-RIGHT (in .acts), NOT inline on the card face. The
-      // CAVEAT stays VISIBLE on the card (#23 / informed-consent — never hidden); only
-      // the verbose method/math layers (and the analysis window the card opens shows
-      // the full context). Labels + the plain sentence are CONSTANT English strings
-      // (i18n-translated); values are numbers/symbols (language-neutral).
+      // Flip cards (maintainer 2026-06-23): the front is the lead at a glance; the
+      // BACK carries the method + the exact math + the caveat + evidence + the action
+      // row. The verbose "why"/math is no longer behind a per-card "?" — the flip IS
+      // the detail layer (the back has room). Labels are i18n-translated; math values
+      // are numbers/symbols (language-neutral).
       const _whyRows = (c.trigger && c.trigger.math || []).map(r =>
         `<tr><td>${esc(r.label)}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
       const _whyPlain = (c.trigger && c.trigger.plain) ? `<p class="why-plain">${esc(c.trigger.plain)}</p>` : "";
-      const _methodInfo = c.method ? `<div class="mc"><b>Method:</b> ${esc(c.method)}</div>` : "";
-      const infoBlock = (_whyPlain || _whyRows || _methodInfo)
-        ? `<details class="card-info"><summary title="Why am I seeing this — method &amp; the exact math" aria-label="Why am I seeing this — method and the exact math">?</summary>
-            <div class="card-info-body">
-              ${_whyPlain}
-              ${_whyRows ? `<div class="why-mathlabel">The exact math</div><table class="why-math">${_whyRows}</table>` : ""}
-              ${_methodInfo}
-            </div></details>`
-        : "";
-      // EVERY card is clickable (maintainer 2026-06-16): the card body opens the
-      // unified analysis window over the card's article selection (never the
-      // standalone /investigate new tab — that stays as the explicit "Open
-      // investigation ↗" button below). Clicks on inner controls are ignored.
-      const _aq = cardAnalyzeQuery(c);
-      // Set-based cards (echo / convergence) carry their EXACT article set: open the
-      // analysis window over precisely those ids. Keyword/topic/whole-corpus cards
-      // fall back to the query (which reproduces their selection via the same search).
-      const _aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
-      const _aOpen = _aIds
-        ? `openAnalysisForIds(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))})`
-        : `openAnalysisFor(${esc(JSON.stringify(_aq))})`;
-      const cardOpen = _aq
-        ? ` style="cursor:pointer" title="Open in analysis — the article selection behind this Lead" onclick="if(!event.target.closest('button,a,details,summary,input,label'))${_aOpen}"`
-        : "";
-      // The CAVEAT is visible by default (informed-consent mandate: never hidden
-      // behind a calm-UI toggle). Only the verbose Method/math stays in the
-      // toggled .mc block below. Matches the corpus-tier .tier-caveat pattern.
+      const methodBlock = c.method ? `<div class="mc"><b>${esc(t("Method"))}:</b> ${esc(c.method)}</div>` : "";
+      const mathBlock = _whyRows
+        ? `<details class="card-info"><summary>${esc(t("The exact math"))}</summary>
+             <table class="why-math">${_whyRows}</table></details>` : "";
+      // The CAVEAT is VISIBLE on the BACK — an equal side of the card, revealed by ONE
+      // flip (never a hidden toggle), right beside the action that opens its corpus
+      // (#23 amended 2026-06-23 / informed-consent preserved by LAYERING, not hiding).
       const caveatLine = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
-      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}"${cardOpen}>
-        <span class="chip">${esc(c.type.replace(/_/g,' '))}</span>
-        <h4>${esc(c.title)}</h4>
-        <p class="sum">${esc(c.summary)}</p>
-        ${caveatLine}
-        ${sigLine}
-        ${evidBlock}
-        ${weatherBox}
-        <div class="acts">
-          ${recipeBtn}
-          ${weatherBtn}
-          <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
-          ${collapseBtn}
-          ${dismiss}
-          ${infoBlock}
+      // The standardized, family-themed "open corpus" button — opens the card's corpus
+      // IN A NEW WINDOW (exact set when the card carries article_ids, else the seed query).
+      const _aq = cardAnalyzeQuery(c);
+      const _aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
+      const _openCorpus = _aIds
+        ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))})`
+        : `openCardCorpusQuery(${esc(JSON.stringify(_aq))})`;
+      const openBtn = _aq
+        ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
+        : "";
+      const chip = `<span class="chip">${esc(c.type.replace(/_/g, " "))}</span>`;
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" tabindex="0" role="button" aria-label="${esc(c.title)}" onclick="leadFlip(this,event)" onkeydown="leadFlipKey(this,event)">
+        <div class="card-inner">
+          <div class="card-face card-front">
+            ${chip}
+            <h4>${esc(c.title)}</h4>
+            <p class="sum">${esc(c.summary)}</p>
+            ${sigLine}
+            <span class="lead-flip-hint">${esc(t("Details & corpus"))} ⟲</span>
+          </div>
+          <div class="card-face card-back">
+            ${chip}
+            ${caveatLine}
+            ${methodBlock}
+            ${(_whyPlain || mathBlock) ? `<div class="why-mathlabel">${esc(t("Why am I seeing this?"))}</div>` : ""}
+            ${_whyPlain}
+            ${mathBlock}
+            ${evidBlock}
+            ${weatherBox}
+            <div class="acts">
+              ${openBtn}
+              ${recipeBtn}
+              ${weatherBtn}
+              <button class="secondary tiny" onclick="addToDraft('${c.id}')">+ Add to draft</button>
+              ${collapseBtn}
+              ${dismiss}
+            </div>
+            <span class="lead-flip-hint back">⟲ ${esc(t("Back"))}</span>
+          </div>
         </div></div>`;
     }
 
@@ -2649,6 +2681,181 @@
       box.innerHTML = `<p class="hint">${esc(AG.caveat)} · showing ${rows.length} of ${AG.events.length}</p>` +
         Object.entries(groups).map(([k, list]) =>
           `<h3 style="font-size:13px;margin:12px 0 6px">${esc(k)} <span class="muted">${list.length}</span></h3>` + list.map(agRow).join("")).join("");
+    }
+
+    // ===================================================================== //
+    //  GOVERNMENTS tab (maintainer chat 2026-06-22): per-country data + a
+    //  world-map choropleth + the law tracker, as subtabs over the existing
+    //  vintaged official-statistics store (/api/governments/*). Honesty carried:
+    //  a value is a producer's published figure (never a score), a gap is a gap.
+    // ===================================================================== //
+    let _govSubtabs = null, _govInds = null, _govMapData = null, _govMapInit = false, _govCountriesInit = false;
+
+    function _govCompact(v) {
+      const a = Math.abs(v);
+      if (a >= 1e12) return (v / 1e12).toFixed(a >= 1e13 ? 0 : 1) + "T";
+      if (a >= 1e9) return (v / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
+      if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+      if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "k";
+      return fmtNum(v, 1);
+    }
+    function _govFmt(v, unit) {
+      if (v == null || !isFinite(v)) return "—";
+      if (unit === "%") return fmtNum(v, 1) + "%";
+      if (unit === "years" || unit === "index") return fmtNum(v, 1);
+      if (unit === "USD") return "$" + _govCompact(v);
+      if (unit === "people") return _govCompact(v);
+      return fmtNum(v, 2);
+    }
+
+    async function loadGovIndicators() {
+      if (_govInds) return _govInds;
+      try { _govInds = (await api("/api/governments/indicators")).indicators || []; }
+      catch (e) { _govInds = []; }
+      return _govInds;
+    }
+
+    // Entry point (TAB_LOADERS.law): wire the subtabs once, then show the default.
+    async function loadGovernments() {
+      const nav = $("gov-subtabs");
+      // {initial:"countries"} fires showGovView("countries") on creation; on a re-open
+      // select() re-paints the nav highlight AND fires the loader (stays in sync).
+      if (nav && !_govSubtabs) _govSubtabs = ooSubtabs(nav, showGovView, {initial: "countries"});
+      else if (_govSubtabs) _govSubtabs.select("countries");
+    }
+    function showGovView(cat) {
+      ["countries", "map", "law"].forEach(v =>
+        { const el = $("gov-" + v); if (el) el.style.display = (v === cat) ? "" : "none"; });
+      if (cat === "countries") loadGovCountries();
+      else if (cat === "map") loadGovMap();
+      else if (cat === "law") loadLaw();
+    }
+
+    // ---- Countries subtab ---- //
+    async function loadGovCountries() {
+      if (_govCountriesInit) return;
+      _govCountriesInit = true;
+      const sel = $("gov-country"); if (!sel) return;
+      await loadGovIndicators();
+      // Derive the available countries from a populous indicator's coverage.
+      let rows = [];
+      try { rows = (await api("/api/governments/map?indicator=SP.POP.TOTL")).by_country || []; }
+      catch (e) { rows = []; }
+      if (!rows.length) {
+        // try GDP as a fallback before declaring the store empty
+        try { rows = (await api("/api/governments/map?indicator=NY.GDP.MKTP.CD")).by_country || []; }
+        catch (e) { rows = []; }
+      }
+      const codes = [...new Set(rows.map(r => r.country))].sort(
+        (a, b) => ooRegionName(a, a).localeCompare(ooRegionName(b, b)));
+      if (!codes.length) {
+        sel.innerHTML = "";
+        $("gov-country-data").innerHTML =
+          `<div class="muted">${esc(t("No country data yet — use “Load standard country data” (online) to fetch it from the World Bank."))}</div>`;
+        return;
+      }
+      sel.innerHTML = codes.map(c => `<option value="${esc(c)}">${esc(ooRegionName(c, c))}</option>`).join("");
+      loadGovCountry(codes[0]);
+    }
+    async function loadGovCountry(iso) {
+      const host = $("gov-country-data"); if (!host || !iso) return;
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      let d; try { d = await api("/api/governments/country/" + encodeURIComponent(iso)); }
+      catch (e) { host.innerHTML = `<div class="muted">${esc(t("Could not load this country."))}</div>`; return; }
+      // group indicators by category
+      const cats = {};
+      (d.indicators || []).forEach(i => { (cats[i.category] = cats[i.category] || []).push(i); });
+      const block = (ind) => {
+        const latest = ind.latest;
+        const val = latest ? _govFmt(latest.value, ind.unit) : "—";
+        const yr = latest ? ` <span class="muted">(${esc(latest.year)})</span>` : "";
+        const spark = (ind.series && ind.series.length > 1)
+          ? dashChartSvg(ind.series.filter(p => p.value != null).map(p => ({observed_on: p.year + "-01-01", price: p.value})), "")
+          : "";
+        return `<div class="gov-ind">
+          <div class="gov-ind-label">${esc(ind.label)}</div>
+          <div class="gov-ind-val">${esc(val)}${yr}</div>
+          <div class="gov-ind-spark">${spark}</div></div>`;
+      };
+      host.innerHTML = Object.keys(cats).map(c =>
+        `<h3 style="font-size:13px;margin:14px 0 6px;text-transform:capitalize">${esc(c)}</h3>
+         <div class="gov-ind-grid">${cats[c].map(block).join("")}</div>`).join("")
+        + `<div class="card-caveat" style="margin-top:10px">${esc(d.caveat || "")}</div>`;
+    }
+
+    // ---- Map subtab ---- //
+    async function loadGovMap() {
+      const sel = $("gov-map-ind"); if (!sel) return;
+      if (!_govMapInit) {
+        _govMapInit = true;
+        await loadGovIndicators();
+        sel.innerHTML = (_govInds || []).map(i => `<option value="${esc(i.id)}">${esc(i.label)}</option>`).join("");
+      }
+      const indicator = sel.value || (_govInds && _govInds[0] && _govInds[0].id);
+      if (!indicator) return;
+      const host = $("gov-map-host");
+      if (host) host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try { _govMapData = await api("/api/governments/map?indicator=" + encodeURIComponent(indicator)); }
+      catch (e) { _govMapData = null; }
+      // year selector from the data's years (latest first); "" = latest available per country
+      const ysel = $("gov-map-year");
+      if (ysel && _govMapData) {
+        const years = (_govMapData.years || []).slice().reverse();
+        ysel.innerHTML = `<option value="">${esc(t("Latest available"))}</option>`
+          + years.map(y => `<option value="${esc(y)}">${esc(y)}</option>`).join("");
+      }
+      renderGovMap();
+    }
+    async function renderGovMap() {
+      const host = $("gov-map-host"); if (!host) return;
+      const sel = $("gov-map-ind"), ysel = $("gov-map-year");
+      const indicator = sel && sel.value, year = ysel && ysel.value;
+      let data = _govMapData;
+      // a specific year needs its own fetch (the cached payload is "latest per country")
+      if (year && (!data || data.year !== year)) {
+        try { data = await api("/api/governments/map?indicator=" + encodeURIComponent(indicator) + "&year=" + encodeURIComponent(year)); }
+        catch (e) { data = null; }
+      }
+      if (!data || !(data.by_country || []).length) {
+        host.innerHTML = `<div class="muted">${esc(t("No country data yet — use the Countries tab to load it (online)."))}</div>`;
+        $("gov-map-caveat").textContent = "";
+        return;
+      }
+      const meta = data.indicator || {};
+      const values = {}, names = {};
+      (data.by_country || []).forEach(r => {
+        if (r.value != null) values[r.country] = r.value;
+        names[r.country] = ooRegionName(r.country, r.country);
+      });
+      await ooMap(host, {
+        values, names,
+        scale: "sequential", label: meta.label || "", unit: meta.unit || "",
+        valueLabel: (iso, v) => `${ooRegionName(iso, iso)}: ${_govFmt(v, meta.unit)}`,
+        caveat: data.caveat || "",
+        onCountry: (iso) => {   // click a country -> its detail in the Countries subtab
+          if (_govSubtabs) _govSubtabs.select("countries");
+          const cs = $("gov-country");
+          if (cs) { cs.value = iso; if (cs.value === iso) loadGovCountry(iso); }
+        },
+      });
+      $("gov-map-caveat").textContent = (meta.label ? meta.label + " · " : "")
+        + (data.year ? data.year + " · " : t("Latest available") + " · ") + (data.caveat || "");
+    }
+
+    async function govLoadStandard(btn) {
+      if (typeof ensureOnline === "function" && !(await ensureOnline())) return;  // the ONE consent
+      const old = btn && btn.textContent;
+      if (btn) { btn.disabled = true; btn.textContent = t("Loading…"); }
+      try {
+        const r = await api("/api/governments/load-standard", {method: "POST", body: JSON.stringify({})});
+        toast(t("Loaded country data:") + " " + (r.stored || 0) + " " + t("figures."), "ok");
+        _govCountriesInit = false; _govMapInit = false; _govMapData = null;
+        loadGovCountries();
+      } catch (e) {
+        toast((e && e.message) || t("Could not load country data."), "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = old || t("Load standard country data"); }
+      }
     }
 
     async function loadLaw() {
@@ -10580,6 +10787,23 @@
       _anLoadArticles(_anArtParams, page);
       var a = $("an-articles"); if (a && a.scrollIntoView) a.scrollIntoView({ block: "start", behavior: "smooth" });
     }
+    // Tone chip (stored sentiment, VADER English-only — a signal, never a verdict) +
+    // a "deduced" language hint (the §2.6 secondary/detected language, shown only when
+    // the source left the article untagged). Null-safe: renders nothing when absent.
+    function _anToneChip(a) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let out = "";
+      if (a && a.sentiment_label) {
+        const c = a.sentiment_label === "positive" ? "var(--ok)"
+          : (a.sentiment_label === "negative" ? "var(--err)" : "var(--muted)");
+        const sc = (a.sentiment_score != null) ? " " + Number(a.sentiment_score).toFixed(2) : "";
+        out += ` <span style="color:${c};font-size:.85em" title="${esc(t("Tone (VADER, English-only) — a signal, not a verdict."))}">${esc(t(a.sentiment_label))}${esc(sc)}</span>`;
+      }
+      if (a && a.detected_language && !a.language) {
+        out += ` <span class="muted" style="font-size:.85em" title="${esc(t("Language deduced offline — the source did not tag it."))}">${esc(t("deduced"))}: ${esc(String(a.detected_language).toUpperCase())}</span>`;
+      }
+      return out;
+    }
     async function _anLoadArticles(p, page) {
       const arts = $("an-articles"); if (!arts) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -10595,7 +10819,7 @@
         const rows = (d.results || []).map((a) =>
           `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
           + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
-          + `<td>${esc(a.source || "")}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
+          + `<td>${esc(a.source || "")}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
           + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
           + `<td style="white-space:nowrap">`
           + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
@@ -11685,6 +11909,25 @@
     // Honour a deep-link like /#sources on first load; otherwise land on Home.
     // showTab itself maps legacy aliases (#database -> #library) and falls back.
     showTab((location.hash || "#home").slice(1), false);  // initial render: replace, don't push
+
+    // Deep-link a Lead's corpus opened "in a new window" (maintainer 2026-06-23): a
+    // card's back button does window.open("/?corpus=1,2,3&label=…"); this fresh SPA
+    // tab hydrates the analysis over that exact set (or ?analyze=<seed> for a query
+    // card). Runs once at boot; the params are left in the URL only for this hydration.
+    (function _hydrateCardCorpus() {
+      try {
+        const sp = new URLSearchParams(location.search);
+        const corpus = sp.get("corpus"), analyze = sp.get("analyze");
+        if (!corpus && !analyze) return;
+        showTab("analyze", false);
+        if (corpus) {
+          const ids = corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+          if (ids.length) openAnalysisForIds(ids, sp.get("label") || "");
+        } else if (analyze) {
+          openAnalysisFor(analyze);
+        }
+      } catch (e) { /* a malformed deep link must never break boot */ }
+    })();
 
     // Wire the universal subtab grammar on every multi-section surface (one
     // component, three surfaces). No opts.initial: each surface keeps its

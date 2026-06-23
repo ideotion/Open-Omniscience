@@ -280,6 +280,21 @@ ruling, a contingency, or a deliberate-omission note.
    custody OTS warning adopt the same variable. Label/title re-keyed ×12. Enforced
    in test_ui_invariants (#23): the caveat must render in `.card-caveat` and must NOT
    appear inside the `hidden` `.mc` block.
+   **AMENDED 2026-06-23 (FLIP-CARD REDESIGN — maintainer-directed): the briefing card is
+   now a two-sided FLIP card** (front = the lead at a glance; back = caveat + method +
+   why + evidence + the action). The caveat MOVED OFF THE FRONT (it "took too much
+   space") onto the BACK — but this STILL satisfies informed-consent-by-LAYERING because
+   the back is an EQUAL side of the card revealed by ONE flip (a click), NOT a calm-UI
+   toggle/checkbox/`[hidden]` block: it is in the DOM by default, rendered in the visible
+   `.card-caveat` line right BESIDE the "Open corpus" action, so the user reads the
+   warning exactly as they go to explore. The front is decluttered; the per-card "?"
+   affordance (P2-2 infoBlock) is RETIRED — the flip IS the detail layer. test #23
+   updated: the caveat renders in `.card-caveat` on the `card-face card-back` (NOT the
+   `card-front`), the method renders on the back, and `leadFlip`/`openCardCorpus`/the
+   `?corpus=` boot deep-link exist. (Full flip-card entry in the Shipped-batch-log
+   2026-06-23.) REMAINING nicety: also surface the caveat INSIDE the analysis window the
+   corpus opens (today it travels on the back beside the open action + the analysis has
+   its own per-subtab caveats).
 30. **ALTERNATIVE-INTERFACES "GUIs" GALLERY (ruled 2026-06-17; BUILT 2026-06-17 on
    branch `claude/exciting-lovelace-1gyszi`, draft PR, BROWSER-UNVERIFIED):** a SANDBOX
    gallery of EIGHT opt-in alternative interfaces in Settings → GUIs (subtab
@@ -387,6 +402,27 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **MAINTAINER FINALIZATION RULINGS 2026-06-23 (verbatim "proceed in full autonomy [on] everything we are
+  currently listing"; answered a 20-question yes/no finalize-everything list ALL YES + "you decide what's
+  best" on PR strategy + priorities — NO further questions, build it all):** binding decisions that unblock
+  the deferred queue:
+  (1) keyword digit-code + underscore filters STAY on by default; (2) the underscore rule eating technical
+  `snake_case`/handles is an ACCEPTED casualty for a news corpus; (3) BUILD §2.6 offline language detection
+  — add a pure-Python, no-network lib (py3langid) — and the detected language is **SECONDARY/DEDUCED
+  metadata** (never overwrites the source/trafilatura-asserted `Article.language`; used only as a deduced
+  fallback for extraction + the keyword's analytic language, labelled deduced, two-class model); (4) brand/
+  company tokens (govdelivery) STAY content, never stoplisted; (5) the single-transition `letterN` filter
+  limit is ACCEPTED; (6) BUILD the remaining manipulation cards; (7) manufactured-emergence = build the FULL
+  honest version INCLUDING the "no datable primary anchor" check (so it doesn't fire on all breaking news);
+  (8) BUILD the per-source concentration primitive flood/bury needs; (9) cards STAY auto-surfacing as Home
+  Leads; (10) BUILD browser-unverified frontend (conservative + node-check + invariant-guarded + flagged,
+  fork-3); (11) BUILD the §5.1 source-tag analysis filter (thread `tags` through the corpus-* endpoints
+  too); (12) BUILD the world-map "Sources by location" bubble subtab (country|IP toggle); (13) BUILD the
+  sentiment tone chip in the analysis Articles + search lists; (14) BUILD additive-restore FILE-member
+  placement (CI-gated torture); (15) BUILD restore-as-a-task-manager-job; (16) BUILD Wikipedia-dump
+  full-text search; (17) DO documentation slices (USER_MANUAL + docs↔app reciprocity, RC-blocking); (18)
+  BUILD the agenda content batch; (19)+(20) PR strategy + prioritization are MINE to decide (multiple PRs
+  fine). EXECUTION: ship across slices, verify each, full autonomy, no more questions.
 - **DATA-ARCHITECTURE & DURABILITY SKELETON (maintainer design session 2026-06-19; ARCHITECTURE-OF-
   RECORD delivered, build BRIEF ready, code NOT started — full design in
   `docs/design/DATA_ARCHITECTURE_SKELETON.md`; the paste-ready autonomous-session build brief in
@@ -585,10 +621,15 @@ ruling, a contingency, or a deliberate-omission note.
   the pattern. A recycled_claim PRODUCER (bucket="watch", no-score schema, _trigger) auto-surfaces it
   as a Home Lead; GET /api/insights/recycled-claims for exploration. tests/test_recycled_claim.py (6:
   fires on recent-dup-of-old, short-gap-isn't-recycled, two-old-without-recent-doesn't-fire,
-  single-source-flagged, unrelated-text-no-cluster, endpoint). REMAINING: the other 6 cards
-  (astroturf/copypasta partly covered by echo_chamber; headline-body-mismatch, outrage-intensity,
-  flood/bury, manufactured-emergence, event-timed-op still to build); the elections/civic vertical.
-  SEQUENCING: (1) is the lead. Record-only here; build across stacked PRs onto 0.09.
+  single-source-flagged, unrelated-text-no-cluster, endpoint). CARDS #7 HEADLINE-BODY-MISMATCH +
+  #3 MANUFACTURED-EMERGENCE + #4 FLOOD SHIPPED 2026-06-23 (see the shipped-log entries; #3 = the FULL
+  anchor-gated form per Q7; #4 = the FLOOD half + the foundational `KeywordMention.source_id` denormalisation
+  it needed). REMAINING cards: the BURY half of #4 (a source UNDER-covering a topic big elsewhere — needs a
+  real external trigger); event-timed-op [#3+#6+agenda] needs the elections CANDIDATE ROSTER (design-only/
+  deferred); outrage-intensity is SECONDARY (annotates another card, never a standalone Lead);
+  astroturf/copypasta partly covered by echo_chamber. So 4 of the 9 cards now ship as producers
+  (source-laundering #6, recycled-claim #1, headline-body #7, emergence #3, flood #4 = 5 actually); the rest
+  are foundation-gated.
 - **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run
   UNSUPERVISED.** SCOPE = the V0.1 RC mandate IN FULL ('absolutely everything' from
   this ledger + FUTURE_DEVELOPMENTS): every RC-BLOCKING + SHOULD + POST row in
@@ -3852,6 +3893,230 @@ ruling, a contingency, or a deliberate-omission note.
   → needs language detection + .eml boilerplate filtering); translation_coverage 13.4% (rings); tag_coverage
   0% (run baseline-tag backfill). The 287k single-article hapax (71%) is the LEGITIMATE multilingual long
   tail — policy-protected (no arbitrary cap).
+- **2026-06-23 MANIPULATION CARD #4 — FLOOD + the foundational KeywordMention.source_id DENORMALISATION (Q8;
+  branch claude/nice-davinci-bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** the flood half
+  of card #4. FOUNDATION FIRST: `KeywordMention` denormalised observed_on/country from the source but NOT
+  source_id, so a per-source topic-share test would hit the keyword_mentions→articles content-decrypt trap
+  over millions of rows. Added a denormalised `KeywordMention.source_id` (model + migration d6e7f8a9b0c1 off
+  head c5d6e7f8a9b0 — single-head verified; index; boot self-heal `ensure_keyword_mention_source_column`
+  add-only with NO multi-million-row backfill — set FORWARD in index_article like observed_on/country, so a
+  re-index populates an existing corpus). `src/analytics/concentration.py:find_flooded_topics` then reads
+  source_id ONLY (km-only queries, no content decrypt): per source with enough recent + prior articles, a
+  TWO-PROPORTION z-test of its recent share of a keyword vs its OWN prior share. HONESTY: the comparison is
+  the source's OWN history (a source that always covers a beat heavily doesn't flag — no jump = no z); the
+  signal carries its COMPONENTS (z, share_now, baseline_share, counts) — `share_zscore` is a sanctioned
+  statistic, NOT a banned composite (no _BANNED_FIELD_FRAGMENT); a minimum prior sample degrades to silence;
+  the innocent twin "volume isn't importance" is stated; bounded. Wired as a fail-safe-LAST producer
+  (`flooded_topic` → an `overtold` Home Lead) + `GET /api/insights/flooded-topics` (cached). tests/
+  test_concentration.py (5: fires on a flood, silent when consistently-high / thin-baseline / below-min-share,
+  no-score+caveat) + the all-producers sweep + store/counters regression (the new source_id wiring doesn't
+  break index_article). ruff F/B clean. The BURY half (under-covering vs an external trigger) is the
+  follow-on; coverage grows as the corpus is re-indexed (source_id is forward-filled).
+- **2026-06-23 MANIPULATION CARD #3 — MANUFACTURED EMERGENCE (full anchor-gated form, ruling Q7; branch
+  claude/nice-davinci-bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** the 4th manipulation
+  card (after #6 source-laundering, #1 recycled-claim, #7 headline-body). `src/analytics/emergence.py:
+  find_manufactured_emergence` names a STRUCTURE never intent: a keyword with ≈0 prior history (prior-period
+  distinct-article count ≤ max_prior) that appears RECENTLY across MANY DISTINCT SOURCES ("born wide" —
+  independence is sources, NEVER article count, so a chatty single source can't manufacture it). The maintainer
+  approved the FULL version WITH the ANCHOR GATE (Q7): it fires ONLY when the emergent articles cite NO datable
+  primary anchor (no ArticleMentionedDate within anchor_lookback_days of the onset) — so genuine breaking news
+  (which leaves a datable trace) is SUPPRESSED, making it precision-biased instead of firing on every big story.
+  HONESTY: real measured COMPONENTS (prior_count≈0, recent_sources, recent_articles, anchored=False) never a
+  blended score; the anchor gate biases toward silence; the innocent twin + the FALSE-NEGATIVE caveat ("a missing
+  anchor may just mean we didn't ingest the trigger or the extractor missed the date") travel with every item;
+  bounded scan. Wired as a fail-safe-LAST producer (`manufactured_emergence` → a `rising` Home Lead over the
+  exact article set) + `GET /api/insights/manufactured-emergence` (cached). tests/test_emergence.py (5: fires on
+  new+wide+unanchored, silent when anchored / single-source / not-new, no-score+caveat) + the all-producers
+  card-shape sweep. ruff F/B clean. NOTE: "born-wide ratio β=day1/peak" is the documented refinement (left to a
+  follow-on; the prior≈0 + distinct-source breadth + anchor gate is the honest core).
+- **2026-06-23 §2.6 — OFFLINE SECONDARY/DEDUCED LANGUAGE DETECTION (maintainer ruling Q3; the count-reducing
+  half; branch claude/nice-davinci-bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** articles
+  the source/extractor left untagged (notably .eml) extracted under the English working-assumption stoplist,
+  so a genuinely FOREIGN one leaked its function words as keywords (the "?"-language bucket). `src/analytics/
+  langdetect.py:detect_language` deduces the language OFFLINE (py3langid — pure-Python, bundled model, ZERO
+  network; added to the `[analysis]` extra so a core install simply gets None, gated like VADER). HONEST by
+  construction: it NEVER guesses (None for <200 chars, confidence <0.90, or a language OUTSIDE the app's
+  SUPPORTED set — a Korean article is detected `ko`, which we can't analyse, so it stays honestly unknown
+  rather than force-fit), deterministic, full model + accept-only-if-supported. SECONDARY/DEDUCED metadata
+  (Q3): a NEW `Article.detected_language` column (migration c5d6e7f8a9b0 off head b4c5d6e7f8a9 — single-head
+  verified; + `ensure_article_detected_language_column` boot self-heal, no backfill) is set ONLY when the
+  authoritative `language` is absent and NEVER overwrites it (the two-class asserted-vs-deduced model). In
+  `index_article` a `known_lang` = (asserted || deduced || None) now drives extraction (right stoplist),
+  sentiment, AND the keyword's analytic language — so an untagged French article: `language` stays None,
+  `detected_language="fr"`, its keywords are labelled `fr` (OUT of the "?" bucket), and its function words
+  (dans/avec/pour/entre/des) are FILTERED instead of minted (proven end-to-end). tests/
+  test_language_detection.py (4: detect en/fr/short→None/empty→None/ko-unsupported→None; untagged-foreign→
+  deduced+right-stoplist; authoritative-never-overwritten; unknown-stays-None — the lib-dependent ones
+  importorskip py3langid so the core-only lane skips them). ruff F/B clean. FRONTEND SHIPPED 2026-06-23
+  (browser-unverified per fork-3): `/api/articles` exposes `detected_language` (both serialisation paths)
+  and the analysis Articles list renders a `_anToneChip` — a sentiment tone chip (stored VADER, English-only,
+  "a signal not a verdict") + a "deduced: XX" language hint shown ONLY when the source left the article
+  untagged; null-safe, theme-coloured (var(--ok)/--err/--muted), English-fallback strings (i18n gate 100%).
+  test_repo_invariants::test_articles_endpoint_serialises_stored_sentiment extended. REMAINING: surface it in
+  the standalone reader too; measure the live-corpus "?"-bucket reduction after a re-index.
+- **2026-06-23 §6 — /api/articles EXPOSES STORED SENTIMENT (branch claude/nice-davinci-bqufft, draft PR
+  #447 onto 0.09):** the `Article.sentiment_score`/`sentiment_label` columns are populated at ingest/
+  re-index (VADER English-only) but the article-LIST endpoint never returned them, so the analysis Articles
+  list + search results couldn't show tone without an extra /api/framing call. Added both fields to BOTH
+  `/api/articles` serialisation paths (the `ids=`-seeded + the query path) — honest: null for non-English /
+  not-yet-re-indexed articles, NEVER a fabricated neutral. Backend-only; the frontend tone display is the
+  follow-on (the inline-dup-badge pattern shows the lists can annotate rows). test_repo_invariants::
+  test_articles_endpoint_serialises_stored_sentiment (both paths carry it); ruff clean. The endpoint-level
+  test needs the app/crypto (CI-only); existing /api/articles tests pass with the additive fields.
+- **2026-06-23 MANIPULATION CARD #7 — HEADLINE-BODY MISMATCH (§6, ruling #13; branch claude/nice-davinci-
+  bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** the 3rd of the nine manipulation-pattern
+  cards (after #6 source-laundering + the near-dup recycled-claim), built to the maintainer's documented
+  spine (FUTURE_DEVELOPMENTS card #7). `src/analytics/headline_body.py:find_headline_body_mismatch` names a
+  STRUCTURE never intent: per RECENT article, lexical divergence `d_lex = 1 - |H ∩ B_top| / |H|` (the
+  headline's content UNIGRAMS H vs the body's top unigrams B_top — same extractor for both, so LANGUAGE-
+  AGNOSTIC, works in every language the extractor supports) + an English-only headline-vs-body VADER
+  sentiment gap `Δs` (None for non-English — never a fabricated neutral, the standing B1 disclosure).
+  Fires when `|H| >= min_headline_terms` AND (`d_lex >= d_min` OR `Δs >= gap_min`) — a DIVERGENCE card
+  (bucket `debunk`), so it fires per-article (the convergence "no single-signal" gate is for the cross-source
+  coordination cards, not this one). HONESTY by construction: the signal carries its COMPONENTS (lexical_div,
+  sentiment_gap, lang, the exact absent headline terms), NEVER a blended "clickbait score"; the innocent twin
+  (a summarising/metaphorical headline does exactly this) is stated beside the pattern; precision-biased
+  (strict d_min=0.67 + min 3 headline terms, so a punchy 1-word headline never trivially fires); bounded
+  (recent pool, body capped at 8000 chars — its lead carries the salient terms). DESIGN CALL recorded:
+  H/B_top restricted to UNIGRAMS — a title bigram rarely appears verbatim among the body's top terms even
+  on-topic, which would inflate d_lex (a match case dropped 0.5→0.125 with unigrams = far below threshold,
+  far fewer FPs). Wired as a fail-safe-LAST producer (`headline_body_mismatch` → a `debunk` Home Lead over
+  the exact article, article=corpus-of-1) + `GET /api/insights/headline-body-mismatch` (cached). tests/
+  test_headline_body.py (7: fires on divergence, silent on an on-topic headline, thin-headline-never-fires,
+  sentiment English-only, item carries components+no-score, bounded-to-recent, producer emits a valid
+  debunk Card) + the existing all-producers card-shape/_trigger sweep covers it automatically. ruff F/B
+  clean; headline_body.py 0 mypy errors.
+- **2026-06-23 P0 §3.1 — INGEST-UNDER-PARALLEL-LOAD WRITER-GATE REGRESSION TEST (branch
+  claude/nice-davinci-bqufft, draft PR #447 onto 0.09; logic VERIFIED py3.11, the pytest version runs in
+  CI py3.13):** the 2026-06-22 audit confirmed the single-writer gate (keystone #1) covers every write
+  path and the 149 `database is locked` errors predate the do_orm_execute fix (#384) — but the corpus runs
+  up to ~50 PARALLEL collect workers against one encrypted writer and the EXISTING data-loss proof
+  (test_write_gate_dataloss.py) raced `import_points` (market data) against a single Article store, NOT the
+  full `index_article` keyword/When-Where-Who sub-writes + denormalised-counter deltas under many concurrent
+  ingests — the exact production shape, and newly relevant since §2.5 touched the extraction path. Added
+  `test_parallel_index_article_loses_no_keyword_or_date_rows`: 6 workers × 15 articles each ingest +
+  index_article concurrently against the real gated `SessionLocal`, all sharing a coined SENTINEL keyword
+  + natural keywords + the date "15 September 2024" so those counter deltas + that date row are written
+  under MAXIMUM contention. Asserts ZERO dropped rows (90 articles, 90 date rows, the sentinel has exactly
+  90 mentions) and EXACT denormalised counters on the SENTINEL (article_count==mention_count==90). KEY
+  LESSON (CI caught it on the macOS portability lane FIRST, then the blocking Linux lane — the P0-5 reason
+  to investigate observation lanes): the first draft asserted the counter==join invariant for EVERY keyword
+  in the DB, which reddened on `france` (article_count=2, 0 mentions) — drift another test DELIBERATELY
+  injects into the SHARED test DB; the ledger's own rule "never assert positive facts against the shared
+  mutable singleton" applies. FIXED: the exact-counter proof uses a coined sentinel keyword no other test
+  touches (pollution-free), and the natural-keyword check is MY-article-scoped (`article_id.in_(my_ids)`).
+  No `database is locked`, no deadlock, no gate leak. CANNOT run in the py3.11 sandbox (the file imports src/database/write.py which uses
+  a PEP 695 `def f[T]()` generic = py3.12+ only — the documented CI-covers-it limit), so the LOGIC was
+  proven against a file-based WAL engine wired with the REAL gate handlers (register_write_gate): 90/90
+  articles + dates, exact counters, ZERO drift, 3.0s, no errors. ruff F/B clean.
+- **2026-06-23 KEYWORD REDUCTION §2.5 — DIGIT-HEAVY CODE-TOKEN EXTRACTION FILTER (the next lever on the
+  ~400k keywords; branch claude/nice-davinci-bqufft, draft PR onto 0.09; backend VERIFIED py3.11 venv):**
+  the 2026-06-23 live log (27,303 articles / 406,723 keywords) showed a ~35k bucket of alphanumeric CODE
+  tokens (A-10C, internal ids, model-variant cruft, clock timecodes 1h15) minted as junk keywords —
+  "NOT yet filtered at extraction." HONEST FINDING that shaped the design: they CANNOT be separated from
+  real digit-bearing terms by a digit RATIO — the maintainer's OWN keep/drop examples (`a-10` keep vs
+  `a-10c` drop) are shape-identical modulo a trailing letter, and "mostly digits" applied literally drops
+  `a-10`/`f-18` (the must-keeps). The discriminator that WORKS is the count of letter<->digit TRANSITIONS:
+  a real designation keeps its digits in ONE run (a-10, f-18, covid-19, g7, g20, cop26, b52, mp3, web3,
+  x86 = exactly 1 transition), a code ALTERNATES (a-10c, a1b2, x1y2z3 = >= 2). `src/analytics/extract.py`:
+  `_alnum_transitions` + `_is_code_token` (drop >= 2-transition tokens) wired at the ONE extraction
+  chokepoint — the `_terms` unigram + n-gram filters AND `_entities` (so an A-10C-style code is not
+  preserved as a fake acronym either). The handful of REAL multi-transition terms (influenza subtypes
+  H1N1/H5N1…, the marker A1C) are an allowlist `_CODE_TOKEN_KEEP` — exactly the _ACRONYM_STOP /
+  _PLURAL_DENYLIST pattern, tunable from the diagnostics logs; `OO_CODE_TOKEN_FILTER=0` disables. PLUS a
+  CONSERVATIVE glued-digit-prefix catch in the unigram loop: a digit-bearing token glued immediately AFTER a
+  digit in the source (1h15 -> h15, 3a4b -> a4b) is always a tokenizer split of a larger code (real prose
+  space-separates numbers) — this catches the clock-timecode fragments that are single-transition and so
+  invisible to the transition rule. TOKEN-LEVEL (no text mutation) ⇒ clean-text first-offsets stay EXACT
+  (the strip_markup contract). HONEST SCOPE stated: this does NOT catch single-transition `letterN` tokens
+  (b52/mp3-shaped) because they are shape-identical to real designations — a re-index drains the catchable
+  ones and the rest surface in the next log for the loop. **§2.6 UNDERSCORE-IDENTIFIER EXTENSION (same
+  commit/PR):** `_is_code_token` ALSO drops any token containing an `_` (gd_combo_table — the maintainer's
+  named "?"-bucket CSS/template junk; font_family; utm_source) — NO natural orthography in any of the 12+
+  supported languages uses a word-internal underscore, so it is false-positive-safe for real WORDS (a
+  natural phrase splits on its space); the one common real underscore term `x86_64` is allowlisted. This is
+  the safe, log-free, dependency-free half of §2.6 (the count-reducing language-detection half stays gated
+  on the live log + a dependency decision). tests/test_keyword_code_tokens.py (hard keep/drop
+  fixture proving NO real term is lost: keepers incl. flu subtypes + x86_64 survive, digit-codes + underscore
+  identifiers drop, env kill-switch,
+  end-to-end index_article stays clean + counters consistent) + 2 in-app self-test golden cases
+  (digit_code_tokens_dropped + clock_timecode_fragments_dropped, so a regression reddens the maintainer's
+  exported keyword self-test AND CI). 90 keyword/analytics/selftest/extract tests + 122/125 repo-invariants
+  green (the 3 non-greens are the py3.11-vs-py3.13 `[T]`-generic parse + package-metadata env gaps, not the
+  change). ruff F/B clean; extract.py adds 0 mypy errors. MEASUREMENT TOOL SHIPPED (same PR): the
+  keyword-engine report's `_extraction_noise` audit gained a `code_token` class (using the live
+  `_is_code_token`) that counts how many EXISTING keywords the next re-index will drop — so the maintainer
+  measures the PROJECTED §2.5/§2.6 reduction in the same report they already export (tests/
+  test_keyword_engine_report.py +1). REMAINING §2.5: measure the real reduction on the live corpus after a
+  re-index (the maintainer's loop); single-transition `letterN` junk stays unfilterable by shape (honest limit).
+- **HOME-CARD FLIP REDESIGN (maintainer chat 2026-06-23: "make them look more like cards · families themed ·
+  all same size · a front and a back, clicking flips with a nice animation · spread info onto both sides ·
+  move the orange caveat off the card, put it in the analysis · on the back a standardized themed button that
+  opens the card's corpus IN A NEW WINDOW"; branch claude/trusting-maxwell-p7y2g8, draft PR #445 onto 0.09;
+  FRONTEND, BROWSER-UNVERIFIED per fork-3):** the briefing Lead card is now a two-sided 3D FLIP card. FRONT =
+  the lead at a glance (family-themed chip + title + summary[line-clamped] + signal + a "Details & corpus ⟲"
+  hint); BACK = caveat + Method + "Why am I seeing this?" plain + the exact-math `<details>` + evidence + the
+  action row. `cardHtml` restructured into `.card-inner > .card-face.card-front + .card-face.card-back`; CSS
+  scoped to `.brief-bucket .card` (every OTHER `.card` — empty state, tiles — UNTOUCHED): fixed `height:
+  var(--lead-h,292px)` = ALL CARDS SAME SIZE, `transform:rotateY(180deg)` flip with a `prefers-reduced-motion`
+  off-switch, `backface-visibility:hidden`. FAMILY THEMING: each bucket already sets `--fam` (a per-family
+  hue); the faces' top-border + chip + the standardized `.lead-open` button are themed with `var(--fam)`.
+  CLICK FLIPS (`leadFlip`/`leadFlipKey` — Enter/Space, inner controls excluded; the card is `role="button"
+  tabindex=0`). The CAVEAT MOVED OFF THE FRONT onto the back (informed-consent PRESERVED — see invariant #23
+  amendment: the back is an equal side one flip away, NOT a hidden toggle, beside the open action). The
+  standardized themed "Open corpus ↗" button opens the card's corpus IN A NEW WINDOW — `openCardCorpus(ids)` /
+  `openCardCorpusQuery(seed)` → `window.open("/?corpus=…"|"/?analyze=…")`; a boot deep-link
+  `_hydrateCardCorpus()` hydrates the fresh SPA tab (`showTab("analyze")` + `openAnalysisForIds`/`openAnalysisFor`).
+  Exact set when the card carries `article_ids` (the 5 set-based producers), else the seed query (the
+  home-card diagnostic flags any that lose their corpus). The per-card "?" affordance (P2-2) is RETIRED — the
+  flip is the detail layer. +4 i18n keys ×12 (Method · Open corpus · Details & corpus · "Open this Lead's
+  corpus in a new window"; non-en AI-drafted, flagged). test_ui_invariants #23 rewritten (flip front/back +
+  caveat-on-back-not-front + method-on-back + leadFlip + openCardCorpus + window.open + the boot deep-link +
+  the equal-size/`--fam` CSS); node --check + full test_repo_invariants (128) + i18n --min 100 (1627 ×12) green.
+  REMAINING: human click-through across themes/breakpoints (fork-3); also render the caveat INSIDE the opened
+  analysis window (today it travels on the back beside the open action + the analysis has its own subtab caveats).
+- **GOVERNMENTS TAB — rename World Law + per-country data + map (maintainer chat directive 2026-06-22:
+  "Change World Law into Governments. Diversify the subtabs. I want per-country data with GDP, labor, life
+  expectancy, population, public deficit + all commonly-used country indices. The law will be a tab,
+  another tab will be a world map with per-country data visualization (color, selectable, data history)."
+  branch claude/trusting-maxwell-p7y2g8, draft PR onto 0.09):** built on the EXISTING substrate — `StatFigure`
+  (per-country/indicator/year vintaged store) + `src/stats/fetch.fetch_worldbank(code,"all")` + `ooMap`
+  (choropleth) + `ooSubtabs`. PLAN: Governments tab with subtabs **Countries · Map · Law** (Law = the existing
+  tracker as a subtab; Map = an ooMap choropleth of a selectable indicator with a year/history slider;
+  Countries = per-country indicators + history). **SLICE 1 — BACKEND SHIPPED (VERIFIED py3.13):**
+  `src/stats/indicators.py` = a curated catalog of 12 World Bank series (GDP/GDP-per-capita/GDP-growth/
+  inflation · population/pop-growth · life-expectancy · unemployment/labour-force · net-lending-deficit/
+  central-debt · Gini), dated by `CATALOG_REVISED` (deliberately NOT an `*_AS_OF` constant — codes are stable
+  references, the DATA is vintaged per fetch, so it stays out of the external-artifact registry); codes
+  believed-correct but a WRONG code fails LOUDLY (empty series → "no data", never fabricated; verify on a
+  networked box). `src/api/governments.py` (wired into the spine): `GET /indicators` (catalog), `GET /map?
+  indicator=&year=` (per-country latest-or-year value + the years present for the slider; 404 on an unknown
+  indicator), `GET /country/{iso}` (all curated indicators + latest non-null + bounded history per indicator;
+  a published gap stays None, never zero), `POST /load-standard` (the ONE networked action — fetch the curated
+  set for ALL countries via fetch_worldbank, airplane-gated up front → 409, records subscriptions, degrades
+  loudly per-indicator). All reads over the existing vintaged store (no network); honesty carried (producer's
+  published value never a score, gaps never zero, producers never averaged). tests/test_governments_api.py (6:
+  catalog/no-score-field, map latest-per-country + specific-year + 404, country all-indicators-with-gap,
+  airplane refusal). **ISO BRIDGE (enabling data):** WB stores alpha-3 (FRA) but ooMap + Intl.DisplayNames
+  use alpha-2 (fr), so added the ISO 3166-1 `ISO3_TO_ISO2`/`ISO2_TO_ISO3` maps + `to_iso2`/`to_iso3` to
+  src/catalog/countries.py (aggregates WLD/EUU have no alpha-2 → dropped from the choropleth, never mapped);
+  the /map endpoint returns alpha-2, /country accepts either; self-checking test (well-formed, unique,
+  spot-checked majors). **SLICE 2+3 — FRONTEND SHIPPED (BROWSER-UNVERIFIED per fork-3):** World Law→Governments
+  (nav span + NAV label + "Governments" key ×12 [en/fr/de/es/pt/it/nl/ru/ar/zh/ja/hi/bn/id…]; tab id stays
+  "law", timemap→"World map" precedent). #tab-law restructured into ooSubtabs **Countries · Map · Law**
+  (relocated to the top facet strip via _SUBTAB_NAV; TAB_LOADERS.law → loadGovernments). COUNTRIES subtab:
+  a country picker (from the stats coverage) → per-country indicators grouped by category with the latest
+  value (+year) + a dashChartSvg history sparkline (Item-Y honest), `_govFmt` compact units ($3.0T, 67.9M,
+  %). MAP subtab: ooMap choropleth fed by /map, an Indicator picker + a Year selector (history; "" = latest
+  per country), valueLabel via the smart formatter + ooRegionName, click-a-country → its Countries detail.
+  "Load standard country data" → ensureOnline (the ONE consent #14) → POST /load-standard → reload. The
+  existing law tracker is PRESERVED as the Law subtab (Desk lesson — law-status/changes/docs all kept).
+  New UI strings English-fallback via t() (gate 100%). test_repo_invariants::
+  test_world_law_renamed_governments_with_subtabs. VERIFIED: full suite 2069 passed, mypy 126≤127, ruff F/B
+  clean, i18n 100%, node --check. REMAINING: a bundled offline indicator snapshot (needs a networked-machine
+  WB fetch — 403 in-sandbox; fetch-on-demand works meanwhile); human click-through across themes/breakpoints;
+  a Compare subtab (multi-country side-by-side) + per-country flag/name polish; key the new English-fallback
+  strings ×12.
 - **2026-06-22 FIELD-TEST REMAINDER — WORLD LAW AUTO-SCRAPE WIRING (§5 #18, the auto-scrape half; branch
   claude/trusting-maxwell-p7y2g8, draft PR onto 0.09; backend VERIFIED py3.13):** the World-law tab was
   empty (law_track 0 docs/baselines) because legal documents are tracked ONLY in `mode=="law"`, never in the

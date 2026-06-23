@@ -171,11 +171,13 @@ def init_db() -> None:
     # never adds indexes to existing tables; not every install runs alembic).
     from src.database.maintenance import (
         ensure_article_analysis_columns,
+        ensure_article_detected_language_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
         ensure_keyword_counter_columns,
+        ensure_keyword_mention_source_column,
     )
 
     # Denormalised keyword counters (+ their index, + one-time backfill) BEFORE the
@@ -187,6 +189,12 @@ def init_db() -> None:
 
     # Source IP provenance columns (self-heal for pre-existing stores; no backfill).
     ensure_article_ip_columns(engine)
+
+    # Secondary/deduced language column (field §2.6; self-heal, populates forward).
+    ensure_article_detected_language_column(engine)
+
+    # Denormalised keyword_mentions.source_id (flood/bury card; self-heal, no backfill).
+    ensure_keyword_mention_source_column(engine)
 
     ensure_hot_indexes(engine)
 

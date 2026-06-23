@@ -808,6 +808,67 @@ def insights_recycled_claims(
     )
 
 
+@router.get("/headline-body-mismatch")
+def insights_headline_body_mismatch(
+    recent_days: int = Query(14, ge=1, le=3650, description="recent window to scan"),
+    d_min: float = Query(0.67, ge=0.0, le=1.0, description="lexical-divergence fire threshold"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Recent articles whose HEADLINE leads with content the body does not substantiate
+    (manipulation-pattern card #7). Names the STRUCTURE, never intent: real ratios
+    (lexical divergence + an English-only sentiment gap), no score; a summarising or
+    metaphorical headline does this innocently — stated beside the pattern."""
+    from src.analytics.headline_body import find_headline_body_mismatch
+
+    return _cached(
+        _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit),
+        lambda: find_headline_body_mismatch(
+            db, recent_days=recent_days, d_min=d_min, max_items=limit
+        ),
+    )
+
+
+@router.get("/manufactured-emergence")
+def insights_manufactured_emergence(
+    recent_days: int = Query(7, ge=1, le=365, description="onset window"),
+    min_sources: int = Query(3, ge=2, le=100, description="distinct sources to be 'born wide'"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """New keywords that appeared wide-and-sudden across many sources with NO datable
+    anchor (manipulation-pattern card #3). Names the STRUCTURE, never intent: born-wide
+    independence is distinct SOURCES, the anchor gate suppresses genuine breaking news,
+    and the false-negative caveat is stated. No score."""
+    from src.analytics.emergence import find_manufactured_emergence
+
+    return _cached(
+        _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit),
+        lambda: find_manufactured_emergence(
+            db, recent_days=recent_days, min_sources=min_sources, max_items=limit
+        ),
+    )
+
+
+@router.get("/flooded-topics")
+def insights_flooded_topics(
+    recent_days: int = Query(7, ge=1, le=365, description="recent window"),
+    z_min: float = Query(2.5, ge=0.0, le=20.0, description="share-jump z-score fire threshold"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Sources flooding a single topic far above their OWN history (manipulation card #4).
+    A two-proportion z-test of the source's recent share vs its prior share — names the
+    STRUCTURE, never intent; the innocent twin (volume isn't importance) is stated; no
+    score. Reads the denormalised source_id, so it covers re-indexed articles."""
+    from src.analytics.concentration import find_flooded_topics
+
+    return _cached(
+        _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit),
+        lambda: find_flooded_topics(db, recent_days=recent_days, z_min=z_min, max_items=limit),
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None

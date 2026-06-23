@@ -41,14 +41,23 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import Integer, create_engine, event
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-from src.database.models import Article, CommodityPrice, Source
+from src.analytics.extract import BaselineExtractor
+from src.analytics.store import index_article
+from src.database.models import (
+    Article,
+    ArticleMentionedDate,
+    CommodityPrice,
+    Keyword,
+    KeywordMention,
+    Source,
+)
 from src.database.session import SessionLocal, init_db, session_scope
 from src.database.write import is_locked_error
 from src.database.writer import (
@@ -190,6 +199,140 @@ def test_concurrent_import_and_scrape_lose_no_data():
     assert sum(r["imported"] for r in import_results) == expected_prices
     assert not write_gate.stats()["held"]  # no leak past the storm
     assert time.monotonic() - started < 60
+
+
+# --------------------------------------------------------------------------- #
+# (1b) Integration: the FULL index_article pipeline under parallel ingest load
+# --------------------------------------------------------------------------- #
+
+
+def test_parallel_index_article_loses_no_keyword_or_date_rows():
+    """Many workers each ingest + index_article concurrently against the real
+    gated ``SessionLocal``; ZERO keyword / mention / date rows are dropped and the
+    denormalised keyword COUNTERS stay exact (field brief 2026-06-23 §3.1).
+
+    Production runs up to ~50 parallel collect workers against one encrypted
+    writer; ``index_article`` does several sub-writes per article (Keyword + a
+    KeywordMention + the When/Where/Who rows) AND maintains the denormalised
+    ``Keyword.mention_count`` / ``article_count`` via per-article deltas. If the
+    single-writer gate let two such ingests interleave, a mention row could be
+    lost OR a counter delta could be applied on a stale read. Every article here
+    shares the keywords ("inflation", "elections", "economy", "summit") and the
+    date "15 September 2024", so those keywords' counter deltas + that date's row
+    are written under maximum contention — the strongest test of the gate."""
+    init_db()
+    tag = "ix" + uuid.uuid4().hex[:6]
+    source_id = _make_source(tag)
+    ext = BaselineExtractor()
+
+    n_workers, articles_per_worker = 6, 15
+    total = n_workers * articles_per_worker
+    # A coined keyword created ONLY by this test (pure letters so the code-token
+    # filter keeps it, no other test uses it) -> its corpus-wide counters are
+    # provably exact regardless of what else lives in the shared test DB. The shared
+    # natural keywords give a second, MY-article-scoped check that extraction landed.
+    sentinel = "zzqxsentinel"
+    body = (
+        "the WHO summit in Berlin on 15 September 2024 discussed inflation and "
+        f"elections across the wider economy worldwide {sentinel}"
+    )
+
+    errors: list[BaseException] = []
+    locked_errors: list[BaseException] = []
+
+    def _record(exc: BaseException) -> None:
+        errors.append(exc)
+        if is_locked_error(exc):
+            locked_errors.append(exc)
+
+    def ingest_worker(w: int) -> None:
+        s = SessionLocal()
+        try:
+            for k in range(articles_per_worker):
+                uniq = f"{tag}-{w}-{k}-{uuid.uuid4().hex}"
+                a = Article(
+                    url=f"https://{tag}.example/{uniq}",
+                    canonical_url=f"https://{tag}.example/{uniq}",
+                    source_id=source_id,
+                    title=f"Report {uniq}",
+                    content=f"Report on {body}.",
+                    hash=uniq,
+                    language="en",
+                    published_at=datetime(2024, 9, 1, tzinfo=UTC),
+                )
+                s.add(a)
+                s.flush()  # assign id (takes the gate)
+                index_article(s, a, extractor=ext)  # sub-writes + commit, gated
+        except BaseException as exc:  # noqa: BLE001 - capture for the assertion
+            _record(exc)
+        finally:
+            s.close()
+
+    threads = [
+        threading.Thread(target=ingest_worker, args=(w,), name=f"ingest-{w}")
+        for w in range(n_workers)
+    ]
+    started = time.monotonic()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(90)
+
+    alive = [t.name for t in threads if t.is_alive()]
+    assert not alive, f"ingest workers did not finish (possible deadlock): {alive}"
+    assert locked_errors == [], (
+        f"a worker hit 'database is locked' under parallel ingest: {locked_errors!r}"
+    )
+    assert errors == [], f"a concurrent ingest worker failed unexpectedly: {errors!r}"
+
+    with session_scope() as s:
+        ids = [
+            r[0]
+            for r in s.query(Article.id).filter(
+                Article.url.like(f"https://{tag}.example/%")
+            )
+        ]
+        assert len(ids) == total, f"articles lost: {len(ids)} != {total}"
+
+        # ZERO dropped date rows: every article's When-row landed under contention.
+        n_dates = (
+            s.query(ArticleMentionedDate)
+            .filter(ArticleMentionedDate.article_id.in_(ids))
+            .count()
+        )
+        assert n_dates == total, f"date rows dropped: {n_dates} != {total}"
+
+        # ZERO dropped mention rows + EXACT counters, proven on the SENTINEL keyword
+        # (created only by this test, so its corpus-wide counters are provably exact).
+        # A missing gate would drop a mention row OR drift the per-article counter
+        # delta under contention -- both caught here.
+        kw = s.query(Keyword).filter_by(normalized_term=sentinel).one()
+        live = s.query(KeywordMention).filter_by(keyword_id=kw.id).count()
+        assert live == total, f"sentinel mention rows dropped: {live} != {total}"
+        assert kw.article_count == total, (
+            f"sentinel article_count drift: {kw.article_count} != {total}"
+        )
+        assert kw.mention_count == total, (
+            f"sentinel mention_count drift: {kw.mention_count} != {total}"
+        )
+
+        # The shared natural keywords also all landed -- scoped to MY articles so the
+        # check is robust to a shared test DB other tests have written to (NEVER assert
+        # corpus-wide positive facts against the shared singleton -- CLAUDE.md).
+        for term in ("inflation", "elections", "economy"):
+            kw2 = s.query(Keyword).filter_by(normalized_term=term).one()
+            mine = (
+                s.query(KeywordMention)
+                .filter(
+                    KeywordMention.keyword_id == kw2.id,
+                    KeywordMention.article_id.in_(ids),
+                )
+                .count()
+            )
+            assert mine == total, f"mention rows dropped for {term!r}: {mine} != {total}"
+
+    assert not write_gate.stats()["held"]  # no gate leak past the storm
+    assert time.monotonic() - started < 90
 
 
 # --------------------------------------------------------------------------- #
