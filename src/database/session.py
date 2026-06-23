@@ -177,6 +177,7 @@ def init_db() -> None:
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
         ensure_keyword_counter_columns,
+        ensure_keyword_mention_source_column,
     )
 
     # Denormalised keyword counters (+ their index, + one-time backfill) BEFORE the
@@ -191,6 +192,9 @@ def init_db() -> None:
 
     # Secondary/deduced language column (field §2.6; self-heal, populates forward).
     ensure_article_detected_language_column(engine)
+
+    # Denormalised keyword_mentions.source_id (flood/bury card; self-heal, no backfill).
+    ensure_keyword_mention_source_column(engine)
 
     ensure_hot_indexes(engine)
 

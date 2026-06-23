@@ -607,10 +607,14 @@ ruling, a contingency, or a deliberate-omission note.
   as a Home Lead; GET /api/insights/recycled-claims for exploration. tests/test_recycled_claim.py (6:
   fires on recent-dup-of-old, short-gap-isn't-recycled, two-old-without-recent-doesn't-fire,
   single-source-flagged, unrelated-text-no-cluster, endpoint). CARDS #7 HEADLINE-BODY-MISMATCH +
-  #3 MANUFACTURED-EMERGENCE SHIPPED 2026-06-23 (see the shipped-log entries; #3 is the FULL anchor-gated
-  form per ruling Q7). REMAINING: the other 3 cards (astroturf/copypasta partly covered by echo_chamber;
-  outrage-intensity [secondary/annotates], flood/bury [Q8: build the concentration primitive], event-timed-op
-  [composition of #3+#6+agenda] still to build); the elections/civic vertical. Build across stacked PRs onto 0.09.
+  #3 MANUFACTURED-EMERGENCE + #4 FLOOD SHIPPED 2026-06-23 (see the shipped-log entries; #3 = the FULL
+  anchor-gated form per Q7; #4 = the FLOOD half + the foundational `KeywordMention.source_id` denormalisation
+  it needed). REMAINING cards: the BURY half of #4 (a source UNDER-covering a topic big elsewhere — needs a
+  real external trigger); event-timed-op [#3+#6+agenda] needs the elections CANDIDATE ROSTER (design-only/
+  deferred); outrage-intensity is SECONDARY (annotates another card, never a standalone Lead);
+  astroturf/copypasta partly covered by echo_chamber. So 4 of the 9 cards now ship as producers
+  (source-laundering #6, recycled-claim #1, headline-body #7, emergence #3, flood #4 = 5 actually); the rest
+  are foundation-gated.
 - **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run
   UNSUPERVISED.** SCOPE = the V0.1 RC mandate IN FULL ('absolutely everything' from
   this ledger + FUTURE_DEVELOPMENTS): every RC-BLOCKING + SHOULD + POST row in
@@ -3838,6 +3842,25 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **2026-06-23 MANIPULATION CARD #4 — FLOOD + the foundational KeywordMention.source_id DENORMALISATION (Q8;
+  branch claude/nice-davinci-bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** the flood half
+  of card #4. FOUNDATION FIRST: `KeywordMention` denormalised observed_on/country from the source but NOT
+  source_id, so a per-source topic-share test would hit the keyword_mentions→articles content-decrypt trap
+  over millions of rows. Added a denormalised `KeywordMention.source_id` (model + migration d6e7f8a9b0c1 off
+  head c5d6e7f8a9b0 — single-head verified; index; boot self-heal `ensure_keyword_mention_source_column`
+  add-only with NO multi-million-row backfill — set FORWARD in index_article like observed_on/country, so a
+  re-index populates an existing corpus). `src/analytics/concentration.py:find_flooded_topics` then reads
+  source_id ONLY (km-only queries, no content decrypt): per source with enough recent + prior articles, a
+  TWO-PROPORTION z-test of its recent share of a keyword vs its OWN prior share. HONESTY: the comparison is
+  the source's OWN history (a source that always covers a beat heavily doesn't flag — no jump = no z); the
+  signal carries its COMPONENTS (z, share_now, baseline_share, counts) — `share_zscore` is a sanctioned
+  statistic, NOT a banned composite (no _BANNED_FIELD_FRAGMENT); a minimum prior sample degrades to silence;
+  the innocent twin "volume isn't importance" is stated; bounded. Wired as a fail-safe-LAST producer
+  (`flooded_topic` → an `overtold` Home Lead) + `GET /api/insights/flooded-topics` (cached). tests/
+  test_concentration.py (5: fires on a flood, silent when consistently-high / thin-baseline / below-min-share,
+  no-score+caveat) + the all-producers sweep + store/counters regression (the new source_id wiring doesn't
+  break index_article). ruff F/B clean. The BURY half (under-covering vs an external trigger) is the
+  follow-on; coverage grows as the corpus is re-indexed (source_id is forward-filled).
 - **2026-06-23 MANIPULATION CARD #3 — MANUFACTURED EMERGENCE (full anchor-gated form, ruling Q7; branch
   claude/nice-davinci-bqufft, draft PR #447 onto 0.09; backend VERIFIED py3.11 venv):** the 4th manipulation
   card (after #6 source-laundering, #1 recycled-claim, #7 headline-body). `src/analytics/emergence.py:

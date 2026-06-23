@@ -1588,6 +1588,11 @@ class KeywordMention(Base):
     observed_on: Mapped[date | None] = mapped_column(Date, index=True)  # denormalised article date (for trends)
     country: Mapped[str | None] = mapped_column(String(2))  # denormalised source country (for the map)
     city: Mapped[str | None] = mapped_column(String(120))  # denormalised source city, when known
+    # Denormalised source id (like observed_on/country) so per-SOURCE analytics (the
+    # flood/bury concentration card #4) avoid the keyword_mentions->articles decrypt trap.
+    # Populated forward at index time; a re-index fills it for an existing corpus (no heavy
+    # boot backfill over millions of rows). Indexed for the GROUP BY source_id scan.
+    source_id: Mapped[int | None] = mapped_column(Integer, index=True)
     extractor: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 

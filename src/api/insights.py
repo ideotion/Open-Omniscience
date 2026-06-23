@@ -850,6 +850,25 @@ def insights_manufactured_emergence(
     )
 
 
+@router.get("/flooded-topics")
+def insights_flooded_topics(
+    recent_days: int = Query(7, ge=1, le=365, description="recent window"),
+    z_min: float = Query(2.5, ge=0.0, le=20.0, description="share-jump z-score fire threshold"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Sources flooding a single topic far above their OWN history (manipulation card #4).
+    A two-proportion z-test of the source's recent share vs its prior share — names the
+    STRUCTURE, never intent; the innocent twin (volume isn't importance) is stated; no
+    score. Reads the denormalised source_id, so it covers re-indexed articles."""
+    from src.analytics.concentration import find_flooded_topics
+
+    return _cached(
+        _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit),
+        lambda: find_flooded_topics(db, recent_days=recent_days, z_min=z_min, max_items=limit),
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None

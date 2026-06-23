@@ -276,6 +276,7 @@ def index_article(
                 observed_on=observed_on,
                 country=cc,
                 city=city,
+                source_id=article.source_id,  # denormalised (like observed_on/country)
                 extractor=extractor.name,
             )
         )

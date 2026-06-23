@@ -2006,6 +2006,70 @@ def manufactured_emergence(session) -> list[Card]:
     return cards
 
 
+_MAX_FLOOD = 4
+
+
+def flooded_topic(session) -> list[Card]:
+    """Surface a SOURCE flooding a single topic far above its OWN history
+    (manipulation-pattern card #4, ruling #13 + Q8 — the flood half).
+
+    Names a STRUCTURE, never intent: the comparison is the source's own prior share
+    (a two-proportion z-test), so a source that always covers a beat heavily does not
+    flag; the innocent twin (volume is not importance) is stated; no score.
+    """
+    try:
+        from src.analytics.concentration import FLOOD_CAVEAT, find_flooded_topics
+
+        found = find_flooded_topics(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("flood scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_FLOOD]:
+        pct_now = round(100 * it["share_now"])
+        pct_base = round(100 * it["baseline_share"])
+        cards.append(
+            Card(
+                type="flooded_topic",
+                title=f"{it['source']} is flooding “{it['term']}”",
+                summary=(
+                    f"{it['source']} gave {pct_now}% of its recent coverage to "
+                    f"“{it['term']}” ({it['recent_articles']} of {it['recent_total']} "
+                    f"articles), vs {pct_base}% historically. Volume isn't importance — a "
+                    "big story legitimately dominates — so read it and judge."
+                ),
+                bucket="overtold",
+                signal={
+                    "metric": "share_zscore",
+                    "value": it["share_zscore"],
+                    "share_now": it["share_now"],
+                    "baseline_share": it["baseline_share"],
+                    "recent_articles": it["recent_articles"],
+                    "recent_total": it["recent_total"],
+                    "source": it["source"],
+                },
+                method=found.get("method", ""),
+                caveat=FLOOD_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["recent_articles"],
+                key=f"flood:{it['source_id']}:{it['term']}",
+                trigger=_trigger(
+                    "One source is giving an unusually large slice of its recent coverage to "
+                    "a single topic, far above its own past. A genuinely big story does this "
+                    "too — volume is not importance — so read it and judge.",
+                    [
+                        ("Recent share of this source's coverage", f"{pct_now}%"),
+                        ("Its historical share", f"{pct_base}%"),
+                        ("Jump (two-proportion z)", str(it["share_zscore"])),
+                        ("Recent articles on the topic", f"{it['recent_articles']} of {it['recent_total']}"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -2032,6 +2096,7 @@ _DEFAULT_PRODUCERS = (
     ("recycled_claim", recycled_claim),
     ("headline_body_mismatch", headline_body_mismatch),
     ("manufactured_emergence", manufactured_emergence),
+    ("flooded_topic", flooded_topic),
 )
 
 
