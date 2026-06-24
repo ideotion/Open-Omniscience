@@ -294,17 +294,12 @@ def _collect_members(
 # --------------------------------------------------------------------------- #
 #  Write
 # --------------------------------------------------------------------------- #
-def write_backup_v2(
-    dest: Path, passphrase: str | None = None, *, include_newsletters: bool = True
-) -> dict:
-    """Build a complete oo-backup-2 artifact at ``dest``.
-
-    ``passphrase`` set -> the ZIP is wrapped in the OOENC1 envelope and the
-    signing keys ARE included; plaintext (no passphrase) -> keys are EXCLUDED
-    and the manifest says so (D2). ``include_newsletters=False`` filters the
-    corpus snapshot to drop imported-newsletter articles (maintainer 2026-06-21).
-    Returns the manifest envelope.
-    """
+def _build_backup_zip(
+    tmp_dir: Path, *, include_keys: bool, include_newsletters: bool
+) -> tuple[Path, dict]:
+    """Collect members, build + Ed25519-sign the manifest, and write the oo-backup-2 ZIP
+    into ``tmp_dir``. Returns (zip_path, signed envelope). Shared by the single-file
+    backup (write_backup_v2) and the volume-set backup (write_volume_backup)."""
     from src.reporting.evidence import (
         canonical_bytes,
         load_or_create_signing_key,
@@ -312,59 +307,79 @@ def write_backup_v2(
     )
     from src.utils.export_envelope import app_version
 
-    include_keys = passphrase is not None
     # Materialise the signing key BEFORE collecting members: a first-ever encrypted
     # backup must carry the very key that signs its manifest.
     key = load_or_create_signing_key()
+    members = _collect_members(include_keys, tmp_dir, include_newsletters)
+    for m in members:
+        m.sha256 = _sha256_file(m.path)
+        m.bytes = m.path.stat().st_size
+
+    from src.database.migrate import file_revision
+
+    corpus_snap = next(m for m in members if m.role == "corpus").path
+    manifest = {
+        "backup_schema": BACKUP_SCHEMA,
+        "app_version": app_version(),
+        "alembic_rev": file_revision(corpus_snap),
+        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "encrypted": include_keys,
+        "keys_included": include_keys,
+        "members": [
+            {"name": m.name, "role": m.role, "sha256": m.sha256, "bytes": m.bytes}
+            for m in members
+        ],
+        "excluded": _excluded_inventory(),
+        "corpus": _corpus_stats(corpus_snap),
+    }
+    envelope = {
+        "manifest": manifest,
+        "signature": key.sign(canonical_bytes(manifest)).hex(),
+        "public_key": public_key_hex(key),
+        "algorithm": "ed25519",
+    }
+
+    zip_path = tmp_dir / "artifact.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr(
+            "manifest.json",
+            json.dumps(envelope, ensure_ascii=False, indent=1),
+            compress_type=zipfile.ZIP_DEFLATED,
+        )
+        for m in members:
+            # Databases are stored uncompressed (they hash cheaply and barely
+            # compress); text members deflate.
+            ctype = (
+                zipfile.ZIP_STORED
+                if m.role in ("corpus", "custody")
+                else zipfile.ZIP_DEFLATED
+            )
+            zf.write(m.path, m.name, compress_type=ctype)
+    return zip_path, envelope
+
+
+def write_backup_v2(
+    dest: Path, passphrase: str | None = None, *, include_newsletters: bool = True
+) -> dict:
+    """Build a complete oo-backup-2 artifact at ``dest`` (the SINGLE-FILE path).
+
+    ``passphrase`` set -> the ZIP is wrapped in the OOENC1 envelope and the
+    signing keys ARE included; plaintext (no passphrase) -> keys are EXCLUDED
+    and the manifest says so (D2). ``include_newsletters=False`` filters the
+    corpus snapshot to drop imported-newsletter articles (maintainer 2026-06-21).
+    Returns the manifest envelope.
+
+    NOTE: the encrypted single-file path is one-shot AES-GCM (~2 GiB cap, whole
+    archive in RAM) -- fine for small corpora + browser download. A corpus that
+    exceeds the cap uses :func:`write_volume_backup` (server-side volume set).
+    """
+    include_keys = passphrase is not None
     tmp_dir = dest.parent / f".bak-build-{secrets.token_hex(6)}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     try:
-        members = _collect_members(include_keys, tmp_dir, include_newsletters)
-        for m in members:
-            m.sha256 = _sha256_file(m.path)
-            m.bytes = m.path.stat().st_size
-
-        from src.database.migrate import file_revision
-
-        corpus_snap = next(m for m in members if m.role == "corpus").path
-        manifest = {
-            "backup_schema": BACKUP_SCHEMA,
-            "app_version": app_version(),
-            "alembic_rev": file_revision(corpus_snap),
-            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
-            "encrypted": include_keys,
-            "keys_included": include_keys,
-            "members": [
-                {"name": m.name, "role": m.role, "sha256": m.sha256, "bytes": m.bytes}
-                for m in members
-            ],
-            "excluded": _excluded_inventory(),
-            "corpus": _corpus_stats(corpus_snap),
-        }
-        envelope = {
-            "manifest": manifest,
-            "signature": key.sign(canonical_bytes(manifest)).hex(),
-            "public_key": public_key_hex(key),
-            "algorithm": "ed25519",
-        }
-
-        zip_path = tmp_dir / "artifact.zip"
-        with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr(
-                "manifest.json",
-                json.dumps(envelope, ensure_ascii=False, indent=1),
-                compress_type=zipfile.ZIP_DEFLATED,
-            )
-            for m in members:
-                # Databases are stored uncompressed (they hash cheaply and barely
-                # compress); text members deflate.
-                ctype = (
-                    zipfile.ZIP_STORED
-                    if m.role in ("corpus", "custody")
-                    else zipfile.ZIP_DEFLATED
-                )
-                zf.write(m.path, m.name, compress_type=ctype)
-
+        zip_path, envelope = _build_backup_zip(
+            tmp_dir, include_keys=include_keys, include_newsletters=include_newsletters
+        )
         dest.parent.mkdir(parents=True, exist_ok=True)
         if passphrase is not None:
             from src.safety.crypto import encrypt_bytes
@@ -380,6 +395,85 @@ def write_backup_v2(
         import shutil
 
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def write_volume_backup(
+    dest_dir: Path,
+    passphrase: str,
+    *,
+    include_newsletters: bool = True,
+    volume_size: int | None = None,
+    parity_fraction: float = 0.1,
+) -> dict:
+    """Build the LARGE encrypted backup as a SET of <600 MB volumes + parity into the
+    server-side directory ``dest_dir`` (field test 2026-06-24; maintainer "volumes +
+    parity"). No 2 GiB cap, never the whole archive in RAM. The same signed oo-backup-2
+    ZIP is built, then streamed-sliced into independently-authenticated OOENC2 volumes
+    (each < 600 MB) with a manifest, and Reed-Solomon parity volumes so a corrupt/lost
+    volume -- including a corpus volume -- can be rebuilt. Always encrypted (a passphrase
+    is required). Returns a summary dict."""
+    from src.backup.parity import parity_available, write_parity
+    from src.backup.volumes import VOLUME_SIZE_DEFAULT, write_volume_set
+
+    if not passphrase:
+        raise ArtifactError("the volume backup is always encrypted: a passphrase is required")
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    tmp_dir = dest / f".bak-build-{secrets.token_hex(6)}"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        zip_path, envelope = _build_backup_zip(
+            tmp_dir, include_keys=True, include_newsletters=include_newsletters
+        )
+        vmanifest = write_volume_set(
+            zip_path, dest, passphrase, volume_size=volume_size or VOLUME_SIZE_DEFAULT
+        )
+        parity = None
+        if parity_available():
+            parity = write_parity(dest, parity_fraction=parity_fraction)
+        return {
+            "envelope": envelope,
+            "volumes": len(vmanifest["volumes"]),
+            "plaintext_bytes": vmanifest["plaintext_bytes"],
+            "parity": parity,  # None if numpy/[analysis] absent -> volumes-only (honest)
+            "parity_available": parity_available(),
+            "dest": str(dest),
+        }
+    finally:
+        import shutil
+
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def read_volume_backup(
+    src_dir: Path, passphrase: str, staging_root: Path | None = None
+) -> StagedArtifact:
+    """Verify + (parity-)recover + reassemble a volume-set backup from the server-side
+    directory ``src_dir``, then stage it like any oo-backup-2 artifact. Streams the
+    reassembly to disk (never the whole archive in RAM, no 2 GiB cap). Raises loudly on
+    unrecoverable corruption (named volumes) or a checksum/signature failure."""
+    import shutil
+
+    from src.backup.volumes import read_volume_set
+
+    staging = (staging_root or data_dir()) / f".restore-{secrets.token_hex(8)}"
+    staging.mkdir(parents=True, exist_ok=False)
+    temp_zip = staging / "_reassembled.zip"
+    try:
+        read_volume_set(src_dir, passphrase, temp_zip)  # verify + parity recover + checksum
+        with open(temp_zip, "rb") as fh:
+            if fh.read(4) != _ZIP_MAGIC:
+                raise ArtifactError("reassembled archive is not an oo-backup-2 zip")
+        with zipfile.ZipFile(temp_zip) as zf:
+            names = set(zf.namelist())
+            if "manifest.json" not in names or "corpus.db" not in names:
+                raise ArtifactError("zip is not an oo-backup-2 artifact (missing manifest/corpus)")
+            _safe_extract(zf, staging)
+        temp_zip.unlink(missing_ok=True)
+        return _finalize_staged(staging, was_encrypted=True)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
 
 # --------------------------------------------------------------------------- #
@@ -445,7 +539,13 @@ def read_artifact(
         if "manifest.json" not in names or "corpus.db" not in names:
             raise ArtifactError("zip is not an oo-backup-2 artifact (missing manifest/corpus)")
         _safe_extract(zf, staging)
+    return _finalize_staged(staging, was_encrypted)
 
+
+def _finalize_staged(staging: Path, was_encrypted: bool) -> StagedArtifact:
+    """Validate the manifest, verify its signature + member hashes, and build the
+    StagedArtifact for an ALREADY-EXTRACTED oo-backup-2 staging dir. Shared by the
+    in-memory upload path (read_artifact) and the volume-set path (read_volume_backup)."""
     envelope = json.loads((staging / "manifest.json").read_text("utf-8"))
     manifest = envelope.get("manifest") or {}
     if manifest.get("backup_schema") != BACKUP_SCHEMA:
