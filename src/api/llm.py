@@ -203,6 +203,9 @@ class SummarizeRequest(BaseModel):
     # The language to WRITE the summary in (v2 language pin). The SPA passes the
     # current UI language; unset = "the same language as the article" (faithful).
     output_language: str | None = None
+    # UI language CODE -> the native-language output directive (remark 13, 2026-06-24):
+    # single-article summaries must come out in the UI language like bulk/synthesis do.
+    ui_lang: str | None = None
 
 
 class TranslateRequest(BaseModel):
@@ -407,7 +410,7 @@ def summarize_article(
 
     model = req.model or active_model()
     system, prompt_version, prompt_text = _build_prompting(
-        "summary", output_language=req.output_language
+        "summary", output_language=req.output_language, output_lang_code=req.ui_lang
     )
     prompt = f"Article title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     # Visible in the task manager while the model runs ("is an LLM working?").

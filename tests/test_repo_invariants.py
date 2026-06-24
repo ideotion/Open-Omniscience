@@ -2405,6 +2405,19 @@ def test_settings_chrome_cleanups():
     assert "_wireSidebarEmptyClickToggle" in html and "toggleSidebar()" in html
 
 
+def test_ai_output_in_ui_language_and_prompt_relocalization():
+    """Field remark 13: single-article summarize sends the UI language CODE (ui_lang) so the
+    summary comes out in the UI language (like bulk/synthesis); single-article translate
+    defaults to the UI language, not hardcoded English; the AI prompt editor re-renders on a
+    language switch (its English prompt BODIES stay English by design — only the chrome
+    relocalizes, and the OUTPUT language is the reliable lever)."""
+    html = _ui_source()
+    assert "ui_lang: (window.OOI18N && OOI18N.current)" in html, "summarize must send the UI language code"
+    assert 'target_language: "English"' not in html, "single-article translate must not hardcode English"
+    assert "target_language: _uiLangName()" in html, "translate defaults to the UI language"
+    assert "oo:langchange" in html and "loadLlmPrompts()" in html, "prompt editor re-renders on langchange"
+
+
 def test_cjk_keyword_disclosure():
     """Audit-07 B1: keyword extraction does not segment CJK, so CJK keyword
     aggregates are unreliable — the analysis window discloses this VISIBLY (with a

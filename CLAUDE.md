@@ -4104,6 +4104,26 @@ ruling, a contingency, or a deliberate-omission note.
   brand) while `gd_combo_table` still drops. Verified by reading `_is_code_token` (pure: `gd_combo_table` has "_" →
   dropped; `govdelivery` is a 0-transition pure word → kept). A regression now reddens the maintainer's exported
   keyword self-test AND CI. No new filter needed (the bucket reduction is the already-shipped §2.6 work).
+  **TIER 3.11 — AI PROMPT LOCALIZATION + OUTPUT IN THE UI LANGUAGE (remark 13; backend VERIFIED py_compile, frontend
+  BROWSER-UNVERIFIED per fork-3):** the prompt-editor LABELS are static HTML already keyed ×12 (auto-translated by
+  the i18n DOM walker on setLang), and the prompt BODIES stay ENGLISH BY DESIGN (translating multi-sentence system
+  prompts degrades a weak local model — the reliable lever is OUTPUT language). The real gaps (output not in the UI
+  language for SINGLE-article ops, while bulk/synthesis were already wired): (a) backend `/api/llm/articles/{id}/
+  summarize` gained a `ui_lang` field → passed as `output_lang_code` to `_build_prompting` so the `_NATIVE_DIRECTIVE`
+  is appended (a single-article summary now comes out in the UI language); (b) frontend single-article `summarize()`
+  sends `ui_lang: OOI18N.current()`; (c) frontend single-article `translateArticle()` defaults `target_language` to
+  `_uiLangName()` (the UI language) instead of hardcoded "English". Plus `loadLlmPrompts()` added to the
+  `oo:langchange` listener (gated on the AI panel being visible) so the editor refreshes on a language switch.
+  tests/test_llm_api.py::test_output_language_pins_the_summary_prompt extended (ui_lang "fr" → "français" directive) +
+  test_repo_invariants::test_ai_output_in_ui_language_and_prompt_relocalization. node --check + i18n 100%. REMAINING:
+  human click-through (fork-3).
+  **TIER 2.6 — UNIFIED IMPORT/EXPORT = DESIGN DOC (remarks 2/5/6; a large frontend consolidation, browser-unverifiable
+  + big, deferred per §8 to a click-through session):** `docs/design/UNIFIED_IMPORT_EXPORT.md` specifies ONE Import +
+  ONE Export/Backup entry, each → an options pop-up → file/folder pick, REUSING the shipped backends (no new backend):
+  6a Import routes to restore/volume/folder + the TWO newsletter paths (upload + folder job) + mailbox + models; 6b
+  Export mandates the OOENC2 streaming-volume path for the encrypted corpus (NOT the legacy 2 GiB single-file) + the
+  large-data folder backup + plaintext + models. Honesty guards: an absorption test (every existing import/export type
+  still reachable), the OOENC2-path guard, owner-reported-only progress, visible disclosures.
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/
