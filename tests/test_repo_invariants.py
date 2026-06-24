@@ -2352,6 +2352,22 @@ def test_omnibar_enter_opens_analysis_window():
     assert i_search_item < i_analysis_item, "Analysis must be unshifted after Search (=> index 0, default Enter)"
 
 
+def test_library_world_map_and_unlocated_donut():
+    """Field remark 10: the Library 'World coverage' renders a per-country ARTICLE-count
+    world map (the shared ooMap) + a donut of the 'no country' articles by language (full
+    names via ooLangName). The catalogue-reach table is kept (Desk lesson)."""
+    html = _ui_source()
+    assert 'id="coverage-map"' in html and 'id="coverage-unlocated"' in html
+    assert "function ooDonut" in html, "the reusable donut renderer is required"
+    assert "async function renderCoverageMap" in html
+    assert "renderCoverageMap();" in html, "loadCoverage must trigger the map/donut"
+    # the map plots ARTICLE counts via ooMap; the donut reads the per-language unlocated bucket.
+    assert "r.articles" in html and "ooMap(mapHost" in html
+    assert "by_language" in html and "ooLangName(" in html
+    # the catalogue-reach table is preserved (nothing lost).
+    assert 'id="coverage-table"' in html
+
+
 def test_cjk_keyword_disclosure():
     """Audit-07 B1: keyword extraction does not segment CJK, so CJK keyword
     aggregates are unreliable — the analysis window discloses this VISIBLY (with a

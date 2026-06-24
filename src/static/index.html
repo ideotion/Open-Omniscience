@@ -350,9 +350,13 @@
 
     <section class="panel">
       <h2>World coverage</h2>
-      <div class="hint" style="margin-bottom:10px">How many countries the source catalog reaches
-        (by each source's country, scored against ISO&nbsp;3166). Measured from the data; refreshes live.
-        <strong>Click a country or a topic keyword</strong> to see the matching sources.</div>
+      <div class="hint" style="margin-bottom:10px">A world map of how many ARTICLES you have collected per
+        country (by each source's catalogued country). Measured from the data; refreshes live.
+        <strong>Click a country</strong> to filter the catalogue table below to it.</div>
+      <div id="coverage-map" style="margin-bottom:10px"><div class="muted">Loading…</div></div>
+      <div id="coverage-unlocated" style="margin-bottom:10px"></div>
+      <div class="hint" style="margin-bottom:6px;margin-top:14px">Source-catalogue reach (how many countries
+        the catalog spans, scored against ISO&nbsp;3166):</div>
       <div id="coverage-summary" class="stat-grid"><div class="muted">Loading…</div></div>
       <div id="coverage-regions" class="hint" style="margin-top:10px"></div>
       <div class="row" style="margin-top:10px">

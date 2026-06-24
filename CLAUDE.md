@@ -4035,6 +4035,22 @@ ruling, a contingency, or a deliberate-omission note.
   incremental MERGE, or the rollup double-counts; normal ingest must NOT bump it). 12-item VERIFY checklist +
   rejected-alternatives. D2–D4 are buildable+parity-provable IN-MEMORY now; the perf payoff is D1-gated (the
   persisted encrypted DuckDB store needs the maintainer's per-OS httpfs binaries — 5B).
+  **TIER 2.4 — LIBRARY WORLD MAP (remark 10; backend VERIFIED py-logic, frontend BROWSER-UNVERIFIED per fork-3):**
+  the Library "World coverage" was a TABLE; now it leads with a per-country ARTICLE-count world map + a donut of
+  the 'no country' articles by language. BACKEND: `queries.source_country_counts` gained a `by_language` breakdown
+  in the `unlocated` bucket — a column-projected `Article.language` count over the indexed source_id join filtered
+  to country-less sources (NEVER a content decrypt; matches the existing unlocated definition country IS NULL/empty);
+  flows through `/api/insights/map-coverage` unchanged. FRONTEND: a NEW reusable `ooDonut(host, data, opts)` SVG
+  renderer (stroke-dasharray per slice — robust for any slice count incl. a single full ring; evenly-spaced hues;
+  honest total + per-slice counts, no score) + `renderCoverageMap()` reusing the shared `ooMap` choropleth for the
+  Articles dimension (centroid fallback for microstates, ooRegionName names, click-a-country → filters the
+  catalogue table below) + the donut (full language names via ooLangName, "Unknown language" for null-lang, honest
+  empty state). The catalogue-REACH table/summary/regions are KEPT below (Desk lesson — a different measure: catalog
+  span vs collected articles). New strings English-fallback via `t()` (i18n --min 100 still 100%; keyable in §4).
+  tests/test_map_coverage.py::test_unlocated_articles_have_a_per_language_breakdown (private language codes, located
+  source doesn't leak) + test_repo_invariants::test_library_world_map_and_unlocated_donut. node --check clean.
+  REMAINING: Tier 2.5 (the Library central dashboard — remark 16, same tab); human click-through (fork-3); key the
+  new strings ×12.
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/

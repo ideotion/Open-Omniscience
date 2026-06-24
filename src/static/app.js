@@ -4441,7 +4441,109 @@
     let _covTick = 0;         // slow-cadence counter for the library live poller
     let _covStamp = "";       // last payload fingerprint (skip repaint when unchanged)
 
+    // Reusable self-contained SVG DONUT (no deps; like ooChart/ooMap) — categorical
+    // proportions with a legend. data: [{label, value}] (labels already display-ready).
+    // Stroke-dasharray on one circle per slice handles any slice count AND the single
+    // full-ring case robustly. Honest: shows the real total + per-slice counts; no score.
+    // Colours are evenly-spaced hues so any number of categories stays distinguishable.
+    function ooDonut(host, data, opts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const el = (typeof host === "string") ? document.getElementById(host) : host;
+      if (!el) return;
+      opts = opts || {};
+      const items = (data || []).filter(d => d && d.value > 0).slice().sort((a, b) => b.value - a.value);
+      const total = items.reduce((s, d) => s + d.value, 0);
+      if (!items.length || total <= 0) {
+        el.innerHTML = `<div class="muted">${esc(opts.empty || t("Nothing to chart."))}</div>`;
+        return;
+      }
+      const size = opts.size || 184, cx = size / 2, cy = size / 2;
+      const sw = size * 0.16, rMid = size * 0.42 - sw / 2;
+      const C = 2 * Math.PI * rMid;
+      const color = i => `hsl(${Math.round(i * 360 / items.length) % 360} 60% 55%)`;
+      let acc = 0;
+      const slices = items.map((d, i) => {
+        const frac = d.value / total;
+        const seg = `<circle cx="${cx}" cy="${cy}" r="${rMid.toFixed(2)}" fill="none" stroke="${color(i)}"`
+          + ` stroke-width="${sw.toFixed(2)}" stroke-dasharray="${(frac * C).toFixed(2)} ${C.toFixed(2)}"`
+          + ` stroke-dashoffset="${(-acc * C).toFixed(2)}"><title>${esc(d.label)}: ${esc(fmtNum(d.value))}`
+          + `${opts.unit ? " " + esc(opts.unit) : ""} (${Math.round(frac * 100)}%)</title></circle>`;
+        acc += frac;
+        return seg;
+      }).join("");
+      const legend = items.map((d, i) =>
+        `<div style="display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.6">`
+        + `<span style="width:10px;height:10px;border-radius:2px;background:${color(i)};flex:none"></span>`
+        + `<span>${esc(d.label)}</span>`
+        + `<span class="muted" style="margin-left:auto">${esc(fmtNum(d.value))} · ${Math.round(d.value / total * 100)}%</span></div>`
+      ).join("");
+      el.innerHTML =
+        `<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">`
+        + `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(opts.aria || "")}" style="flex:none">`
+        + `<g transform="rotate(-90 ${cx} ${cy})">${slices}</g>`
+        + `<text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="${(size * 0.17).toFixed(0)}" font-weight="700" fill="currentColor">${esc(fmtNum(total))}</text>`
+        + `<text x="${cx}" y="${(cy + size * 0.13).toFixed(0)}" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.6">${esc(opts.centerLabel || "")}</text>`
+        + `</svg><div style="flex:1;min-width:160px;max-height:200px;overflow:auto">${legend}</div></div>`;
+    }
+
+    // Library "World coverage" map (field remark 10): per-country ARTICLE counts via the
+    // shared ooMap choropleth + a donut of the 'no country' articles by language. Its own
+    // stamp so a live poll only repaints when the data actually changes (no zoom-reset churn).
+    let _covMapStamp = "";
+    async function renderCoverageMap() {
+      const mapHost = $("coverage-map");
+      if (!mapHost) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      let d;
+      try { d = await api("/api/insights/map-coverage"); }
+      catch (e) { mapHost.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const stamp = JSON.stringify([d.by_country, d.unlocated]);
+      if (stamp === _covMapStamp) return;   // live poll: unchanged, no repaint
+      _covMapStamp = stamp;
+      const values = {}, names = {}, points = [];
+      (d.by_country || []).forEach(r => {
+        names[r.country] = ooRegionName(r.country, r.name);
+        const v = r.articles;
+        if (v != null && isFinite(v) && v > 0) {
+          values[r.country] = v;
+          if (r.lat != null && r.lon != null) {
+            points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: names[r.country] });
+          }
+        }
+      });
+      const unloc = (d.unlocated && d.unlocated.articles) || 0;
+      ooMap(mapHost, {
+        values, names, points, unit: t("articles"),
+        valueLabel: (iso, v) => `${fmtNum(v)} ${t("articles")}`,
+        // click a country -> filter the catalogue table below to it (ties the map to the table).
+        onCountry: (code) => { const f = $("cov-filter"); if (f) { f.value = names[code] || code; renderCoverageTable(); } },
+        aria: t("Articles collected per country."),
+        method: t("Articles collected, grouped by each source's catalogued country (ISO-2). Counts only, no score."),
+        caveat: t("Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below.")
+          + (unloc ? `  ${fmtNum(unloc)} ${t("with no country.")}` : ""),
+      });
+      // donut: the 'no country' articles by language (full names via ooLangName).
+      const donutHost = $("coverage-unlocated");
+      if (donutHost) {
+        const byLang = (d.unlocated && d.unlocated.by_language) || {};
+        const ddata = Object.keys(byLang).map(code => ({
+          value: byLang[code], label: code ? ooLangName(code, code) : t("Unknown language"),
+        })).filter(x => x.value > 0);
+        if (!ddata.length) {
+          donutHost.innerHTML = `<div class="muted">${esc(t("All collected articles have a country."))}</div>`;
+        } else {
+          const tot = ddata.reduce((s, x) => s + x.value, 0);
+          donutHost.innerHTML =
+            `<div class="hint" style="margin-bottom:6px">${esc(fmtNum(tot))} ${esc(t("articles with no country, by language"))}</div>`
+            + `<div id="cov-donut-svg"></div>`;
+          ooDonut("cov-donut-svg", ddata, { unit: t("articles"), centerLabel: t("articles"),
+            aria: t("Articles with no country, by language.") });
+        }
+      }
+    }
+
     async function loadCoverage() {
+      renderCoverageMap();   // fire-and-forget the world map + unlocated donut (own stamp)
       const el = $("coverage-summary");
       if (!_covStamp) el.innerHTML = '<div class="muted">Loading…</div>';
       try {

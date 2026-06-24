@@ -748,6 +748,23 @@ def source_country_counts(session) -> dict:
     kws: dict[str, int] = {
         (cc or "").strip().lower(): int(n or 0) for cc, n in kw_rows
     }
+    # Per-LANGUAGE breakdown of the UNLOCATED articles (source has no country) — the
+    # donut for the Library world map (field remark 10: "all 'no country' articles shown
+    # with a circular graph with per-language quantity"). Column-projected (Article.language
+    # + a COUNT over the indexed source_id join) — never decrypts article content. Matches
+    # the unlocated definition used above: country IS NULL or empty after trim.
+    unloc_lang_rows = (
+        session.query(Article.language, func.count(Article.id))
+        .join(Source, Article.source_id == Source.id)
+        .filter((Source.country.is_(None)) | (func.trim(Source.country) == ""))
+        .group_by(Article.language)
+        .all()
+    )
+    unloc_by_language: dict[str, int] = {}
+    for lang, n in unloc_lang_rows:
+        unloc_by_language[(lang or "").strip().lower()] = unloc_by_language.get(
+            (lang or "").strip().lower(), 0
+        ) + int(n or 0)
 
     by_country: list[dict] = []
     unlocated_sources = 0
@@ -778,6 +795,8 @@ def source_country_counts(session) -> dict:
             "sources": unlocated_sources,
             "articles": arts.get("", {}).get("articles", 0),
             "keywords": kws.get("", 0),
+            # {language_code_or_"": count} — the donut (remark 10). "" = no/unknown language.
+            "by_language": unloc_by_language,
         },
         "total_sources": total_sources,
         "total_articles": sum(v.get("articles", 0) for v in arts.values()),
