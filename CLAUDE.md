@@ -4095,6 +4095,15 @@ ruling, a contingency, or a deliberate-omission note.
   nav-item/button/a/input/label/select/textarea so navigation + the `#sb-collapse`/`#sb-expand` buttons are
   unaffected). div/section balance verified; node --check + i18n 100%. test_repo_invariants::
   test_settings_chrome_cleanups + the updated #30 test. REMAINING: human click-through (fork-3).
+  **TIER 4.15 — GOV-NEWSLETTER BOILERPLATE (remark 15 in the to-do; backend VERIFIED py-logic):** the "?"-bucket
+  junk is the §2.6 underscore template ids (`gd_combo_table` — ALREADY dropped by the shipped `_is_code_token`
+  "_"-rule + the `underscore_identifiers_dropped` self-test case) + undetected-English (the shipped §2.6 langdetect),
+  NOT the brand name. RECONCILED with the 2026-06-23 finalization ruling (4) — "brand/company tokens (govdelivery)
+  STAY content, never stoplisted": extended the `underscore_identifiers_dropped` self-test golden case to ALSO
+  assert `govdelivery` survives as a content TERM (so a future over-eager filter can't accidentally stoplist the
+  brand) while `gd_combo_table` still drops. Verified by reading `_is_code_token` (pure: `gd_combo_table` has "_" →
+  dropped; `govdelivery` is a 0-transition pure word → kept). A regression now reddens the maintainer's exported
+  keyword self-test AND CI. No new filter needed (the bucket reduction is the already-shipped §2.6 work).
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/

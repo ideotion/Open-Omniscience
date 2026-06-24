@@ -167,7 +167,7 @@
 - [ ] Run "Clean up keywords (re-index, then prune)" + measure the drop
 - [ ] Run baseline-tag backfill (tag coverage is 0%)
 - [ ] Generate translation rings from the exported keyword log (networked machine)
-- [ ] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket
+- [x] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket — DONE (2026-06-24): `gd_combo_table` (underscore template id) already drops via the shipped §2.6 `_is_code_token` rule; `govdelivery` STAYS content per ruling #4. Added a self-test golden case pinning both. The bucket's undetected-English half is the shipped §2.6 langdetect.
 - [ ] Decide zh/ja segmentation (currently no keywords for those)
 
 ### Manipulation-pattern cards (5 of 9 shipped)
