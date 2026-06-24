@@ -228,19 +228,29 @@ def insights_corpus_keywords(
     — it scopes the analysis, never a hidden cut. No score; counts only, honest caveat.
     ``target_lang`` annotates each row with its verified cross-language translation.
     """
-    ids, total = _resolve_corpus(
-        db, article_ids, query=query, source=source, start_date=start_date,
-        end_date=end_date, language=language, tags=tags, cap=cap,
-    )
-    res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit, target_lang=_tlang(target_lang))
-    res["total_matched"] = total
-    res["capped"] = total > len(ids)
-    res["method"] = "Keyword counts across the matched articles, ordered by how many mention each term."
-    res["caveat"] = (
-        f"Counts only, never a score — scoped to the top {len(ids)} matched "
-        "article(s) by relevance."
-    )
-    return res
+    # Cache by the resolved-corpus identity so re-opening a keyword / switching back to
+    # this subtab is instant instead of re-paying the search + aggregation (field test
+    # 2026-06-24: the analysis window's "Loading…"). Resolve INSIDE the compute so a hit
+    # skips the search too. TTL-disclosed (cached/computed_at), like every cached endpoint.
+    key = _ckey("corpus-keywords", ids=article_ids, q=query, src=source, sd=start_date,
+                ed=end_date, lang=language, tags=tags, kind=kind, limit=limit, cap=cap, tl=target_lang)
+
+    def _compute() -> dict:
+        ids, total = _resolve_corpus(
+            db, article_ids, query=query, source=source, start_date=start_date,
+            end_date=end_date, language=language, tags=tags, cap=cap,
+        )
+        res = q.corpus_keywords(db, article_ids=ids, kind=_kind(kind), limit=limit, target_lang=_tlang(target_lang))
+        res["total_matched"] = total
+        res["capped"] = total > len(ids)
+        res["method"] = "Keyword counts across the matched articles, ordered by how many mention each term."
+        res["caveat"] = (
+            f"Counts only, never a score — scoped to the top {len(ids)} matched "
+            "article(s) by relevance."
+        )
+        return res
+
+    return _cached(key, _compute)
 
 
 @router.get("/corpus-www")
@@ -259,18 +269,24 @@ def insights_corpus_www(
     """Who (people/orgs) + Where (places) DEDUCED across the analysis corpus (an
     explicit article-id set or the search) — the analysis window's When/Where/Who.
     Deduced from text, never confirmed; no score. Bounded to ``cap`` (disclosed)."""
-    ids, total = _resolve_corpus(
-        db, article_ids, query=query, source=source, start_date=start_date,
-        end_date=end_date, language=language, tags=tags, cap=cap,
-    )
-    return {
-        "who": q.corpus_who(db, article_ids=ids, limit=limit),
-        "where": q.corpus_where(db, article_ids=ids, limit=limit),
-        "n_articles": len(ids),
-        "total_matched": total,
-        "capped": total > len(ids),
-        "caveat": "Deduced from article text, never confirmed; counts only.",
-    }
+    key = _ckey("corpus-www", ids=article_ids, q=query, src=source, sd=start_date,
+                ed=end_date, lang=language, tags=tags, limit=limit, cap=cap)
+
+    def _compute() -> dict:
+        ids, total = _resolve_corpus(
+            db, article_ids, query=query, source=source, start_date=start_date,
+            end_date=end_date, language=language, tags=tags, cap=cap,
+        )
+        return {
+            "who": q.corpus_who(db, article_ids=ids, limit=limit),
+            "where": q.corpus_where(db, article_ids=ids, limit=limit),
+            "n_articles": len(ids),
+            "total_matched": total,
+            "capped": total > len(ids),
+            "caveat": "Deduced from article text, never confirmed; counts only.",
+        }
+
+    return _cached(key, _compute)
 
 
 @router.get("/corpus-sentiment")
@@ -290,14 +306,20 @@ def insights_corpus_sentiment(
     English-lexicon based, so the response carries the English share + a caveat that
     non-English scores are unreliable. Counts only; tone is a measured word-valence,
     never a verdict. Bounded to ``cap`` (disclosed)."""
-    ids, total = _resolve_corpus(
-        db, article_ids, query=query, source=source, start_date=start_date,
-        end_date=end_date, language=language, tags=tags, cap=cap,
-    )
-    res = q.corpus_sentiment(db, article_ids=ids)
-    res["total_matched"] = total
-    res["capped"] = total > len(ids)
-    return res
+    key = _ckey("corpus-sentiment", ids=article_ids, q=query, src=source, sd=start_date,
+                ed=end_date, lang=language, tags=tags, cap=cap)
+
+    def _compute() -> dict:
+        ids, total = _resolve_corpus(
+            db, article_ids, query=query, source=source, start_date=start_date,
+            end_date=end_date, language=language, tags=tags, cap=cap,
+        )
+        res = q.corpus_sentiment(db, article_ids=ids)
+        res["total_matched"] = total
+        res["capped"] = total > len(ids)
+        return res
+
+    return _cached(key, _compute)
 
 
 @router.get("/corpus-sources")
@@ -317,15 +339,21 @@ def insights_corpus_sources(
     search) — the source view: per-source volume, mean tone, publication span. Counts +
     dates exact; mean tone inherits the VADER English caveat. No ranking, no verdict —
     coverage, not credibility. Bounded to ``cap`` (disclosed)."""
-    ids, total = _resolve_corpus(
-        db, article_ids, query=query, source=source, start_date=start_date,
-        end_date=end_date, language=language, tags=tags, cap=cap,
-    )
-    res = q.corpus_sources(db, article_ids=ids, limit=limit)
-    res["n_articles"] = len(ids)
-    res["total_matched"] = total
-    res["capped"] = total > len(ids)
-    return res
+    key = _ckey("corpus-sources", ids=article_ids, q=query, src=source, sd=start_date,
+                ed=end_date, lang=language, tags=tags, limit=limit, cap=cap)
+
+    def _compute() -> dict:
+        ids, total = _resolve_corpus(
+            db, article_ids, query=query, source=source, start_date=start_date,
+            end_date=end_date, language=language, tags=tags, cap=cap,
+        )
+        res = q.corpus_sources(db, article_ids=ids, limit=limit)
+        res["n_articles"] = len(ids)
+        res["total_matched"] = total
+        res["capped"] = total > len(ids)
+        return res
+
+    return _cached(key, _compute)
 
 
 @router.get("/corpus-coordination")
@@ -346,14 +374,20 @@ def insights_corpus_coordination(
     near-duplication only (MinHash+LSH, high-precision); independence = distinct sources;
     counts only, NO score. Bounded to ``cap`` (disclosed) because clustering reads full
     article text."""
-    ids, total = _resolve_corpus(
-        db, article_ids, query=query, source=source, start_date=start_date,
-        end_date=end_date, language=language, tags=tags, cap=cap,
-    )
-    res = q.corpus_coordination(db, article_ids=ids)
-    res["total_matched"] = total
-    res["capped"] = total > len(ids)
-    return res
+    key = _ckey("corpus-coordination", ids=article_ids, q=query, src=source, sd=start_date,
+                ed=end_date, lang=language, tags=tags, cap=cap)
+
+    def _compute() -> dict:
+        ids, total = _resolve_corpus(
+            db, article_ids, query=query, source=source, start_date=start_date,
+            end_date=end_date, language=language, tags=tags, cap=cap,
+        )
+        res = q.corpus_coordination(db, article_ids=ids)
+        res["total_matched"] = total
+        res["capped"] = total > len(ids)
+        return res
+
+    return _cached(key, _compute)
 
 
 def _tlang(target_lang: str | None) -> str | None:

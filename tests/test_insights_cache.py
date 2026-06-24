@@ -43,6 +43,25 @@ def test_distinct_params_are_distinct_cache_entries():
     assert calls["n"] == 2 and a["v"] != b["v"]  # different params -> not shared
 
 
+def test_per_corpus_analysis_endpoints_route_through_cache():
+    """Remark 8 (field test 2026-06-24): the analysis window's per-corpus endpoints were
+    UNCACHED whole-corpus-scoped aggregations, so every keyword open / subtab switch
+    re-paid the search + GROUP BY ("Loading…"). They now route through the shared
+    _cached() (the corpus resolve moved INSIDE the compute so a cache hit skips the
+    search too), TTL-disclosed like every other cached insights endpoint."""
+    import pathlib
+
+    src = pathlib.Path(ins.__file__).read_text("utf-8")
+    for name in (
+        "corpus-keywords",
+        "corpus-www",
+        "corpus-sentiment",
+        "corpus-sources",
+        "corpus-coordination",
+    ):
+        assert f'_ckey("{name}"' in src, f"{name} must build a cache key for _cached()"
+
+
 def test_warm_cache_populates_the_keys_the_endpoints_use(monkeypatch):
     ins._read_cache._cache.clear()
     monkeypatch.setattr(ins.q, "trending_windows", lambda db, **kw: {"windows": []})
