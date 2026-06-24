@@ -2368,6 +2368,22 @@ def test_library_world_map_and_unlocated_donut():
     assert 'id="coverage-table"' in html
 
 
+def test_library_central_dashboard():
+    """Field remark 16: the Library tab is the central dashboard of everything DOWNLOADED
+    (wiki dumps, maps, market series, laws, stats, models) + EXTRAPOLATED (AI summaries/
+    translations/synthesis + keywords). Fed by ONE /api/library/overview roll-up; honest
+    counts + sizes, no score."""
+    html = _ui_source()
+    assert 'id="library-overview"' in html
+    assert "async function renderLibraryOverview" in html
+    assert "/api/library/overview" in html
+    assert "renderLibraryOverview()" in html, "must be wired into the tab onShow + poller"
+    # the two layers are labelled + the AI-derived layer is disclosed unreliable.
+    assert "Downloaded — the raw" in html and "Extrapolated — AI-derived" in html
+    # representative downloaded + extrapolated tiles.
+    assert "AI summaries" in html and "Wikipedia dumps" in html and "Offline map regions" in html
+
+
 def test_cjk_keyword_disclosure():
     """Audit-07 B1: keyword extraction does not segment CJK, so CJK keyword
     aggregates are unreliable — the analysis window discloses this VISIBLY (with a

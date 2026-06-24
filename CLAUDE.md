@@ -4058,6 +4058,27 @@ ruling, a contingency, or a deliberate-omission note.
   source doesn't leak) + test_repo_invariants::test_library_world_map_and_unlocated_donut. node --check clean.
   REMAINING: Tier 2.5 (the Library central dashboard — remark 16, same tab); human click-through (fork-3); key the
   new strings ×12.
+  **TIER 2.5 — LIBRARY CENTRAL DASHBOARD (remark 16; backend VERIFIED py-logic, frontend BROWSER-UNVERIFIED per
+  fork-3):** the Library tab is now the at-a-glance view of EVERYTHING downloaded + extrapolated. NEW
+  `GET /api/library/overview` (`src/api/library.py`, wired into `_wiring.py` spine) rolls up in ONE change-probe-
+  cached call (mirrors the Database-stats cache + freshness disclosure): the RAW/downloaded layer (Wikipedia
+  tracked pages + revisions + downloaded-dump count/bytes, OSM-region count/bytes, market price points, law
+  documents+revisions, official-statistics figures, local AI-model count/bytes) AND the DERIVED/extrapolated
+  layer (article_analyses BY KIND = AI summaries/translations/synthesis, ai_keyword total, active watches). REUSES
+  the cached `database_stats` for the core counts + DB file size (no duplicate scans); the download SIZES come
+  from the existing wiki/OSM download managers (`.list()`, filtered to status=="done" — an in-flight download is
+  never counted) + `ollama_models.store_status()`; every external read is BEST-EFFORT (a missing table/manager/
+  Ollama store degrades to null/`available:false`, never crashes a core-only install). Counts + on-disk bytes
+  ONLY, NO score (the `article_analyses` exclusion from the Database-stats corpus view is reconciled: it belongs
+  in the DERIVED layer here, the maintainer's explicit "summaries/translations/synthesis" ask, labelled AI-derived
+  unreliable). FRONTEND: a new top "Library" panel (`#library-overview`) + `renderLibraryOverview()` rendering the
+  two labelled groups as `.stat` tiles (counts via fmtNum, sizes via _fmtBytes), own stamp so the 16s poll repaints
+  only on change; wired into the tab onShow + the live poller. The Database section (store detail + reclaimable
+  bytes) + the World coverage map/table STAY below (Desk lesson). New strings English-fallback via `t()` (i18n
+  --min 100 still 100%). tests/test_library_overview.py (shape + the four sections + no-score sweep) +
+  test_api_wiring (library added to the spine sample) + test_repo_invariants::test_library_central_dashboard. node
+  --check clean. REMAINING: human click-through (fork-3); key the new strings ×12; optional per-symbol/per-agency
+  breakdowns.
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/

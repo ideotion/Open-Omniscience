@@ -961,7 +961,7 @@
       timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
       agenda: loadAgenda,
-      library: () => { loadCoverage(); },    // stats handled by the live poller (startLive)
+      library: () => { renderLibraryOverview(); loadCoverage(); },  // stats handled by the live poller (startLive)
       custody: loadCustody,
       integrity: loadIntegrity,
       settings: loadSettings,
@@ -4353,6 +4353,54 @@
 
     let DB_KEYS = null;   // current rendered stat keys (rebuild grid only when they change)
 
+    // Library central dashboard (field remark 16): the at-a-glance roll-up of everything
+    // DOWNLOADED (the raw, re-downloadable layer) + everything EXTRAPOLATED (the AI-derived
+    // layer). Honest counts + on-disk byte sizes only, no score; own stamp so the 16s poll
+    // only repaints on a real change. The Database section below keeps the store detail.
+    let _libOvStamp = "";
+    async function renderLibraryOverview() {
+      const host = $("library-overview");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      let d;
+      try { d = await api("/api/library/overview"); }
+      catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const stamp = JSON.stringify([d.downloaded, d.derived]);
+      if (stamp === _libOvStamp) return;   // live poll: unchanged, no repaint
+      _libOvStamp = stamp;
+      const num = v => (v == null ? "—" : fmtNum(v));
+      const sz = v => (v == null || !v) ? "—" : _fmtBytes(v);
+      const tile = (n, k) => `<div class="stat"><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
+      const dl = d.downloaded || {}, der = d.derived || {};
+      const wiki = dl.wikipedia || {}, maps = dl.maps || {}, laws = dl.laws || {};
+      const dlTiles = [
+        tile(num(wiki.tracked_pages), t("Wikipedia pages tracked")),
+        tile(num(wiki.revisions), t("Wikipedia revisions")),
+        tile(`${num((wiki.dumps || {}).count)} · ${sz((wiki.dumps || {}).total_bytes)}`, t("Wikipedia dumps")),
+        tile(`${num((maps.osm_regions || {}).count)} · ${sz((maps.osm_regions || {}).total_bytes)}`, t("Offline map regions")),
+        tile(num((dl.markets || {}).commodity_prices), t("Market price points")),
+        tile(num(laws.documents), t("Law documents")),
+        tile(num(laws.revisions), t("Law revisions")),
+        tile(num((dl.statistics || {}).figures), t("Official statistics figures")),
+        tile(`${num((dl.models || {}).count)} · ${sz((dl.models || {}).total_bytes)}`, t("Local AI models")),
+      ].join("");
+      // EXTRAPOLATED: each AI-analysis kind shown by name (nothing hidden) + AI keywords + watches.
+      const KIND_LABELS = { summary: t("AI summaries"), translation: t("AI translations"),
+        synthesis: t("AI syntheses"), entities: t("AI entities") };
+      const aaKinds = (der.article_analyses || {}).by_kind || {};
+      const aaTiles = Object.keys(aaKinds).length
+        ? Object.entries(aaKinds).map(([k, v]) => tile(num(v), KIND_LABELS[k] || `${t("AI")} ${esc(k)}`)).join("")
+        : tile("—", t("AI summaries"));
+      const derTiles = aaTiles
+        + tile(num((der.ai_keywords || {}).total), t("AI-extracted keywords"))
+        + tile(num(der.watches_enabled), t("Active watches"));
+      host.innerHTML =
+        `<div class="hint" style="margin-bottom:6px">${esc(t("Downloaded — the raw, re-downloadable layer:"))}</div>`
+        + `<div class="stat-grid">${dlTiles}</div>`
+        + `<div class="hint" style="margin:12px 0 6px">${esc(t("Extrapolated — AI-derived from your corpus (unreliable, never the trusted index):"))}</div>`
+        + `<div class="stat-grid">${derTiles}</div>`;
+    }
+
     async function loadDbStats() {
       const el = $("db-stats");
       try {
@@ -4387,7 +4435,7 @@
       home:     {ms: 15000, fn: () => refreshHomeLive()},
       // Stats every tick; the coverage panel every 4th (it groups all sources,
       // cheap but no need for 4s cadence) — live data, so no Refresh button.
-      library:  {ms: 4000, fn: () => { loadDbStats(); if ((++_covTick % 4) === 1) loadCoverage(); }},
+      library:  {ms: 4000, fn: () => { loadDbStats(); if ((++_covTick % 4) === 1) { loadCoverage(); renderLibraryOverview(); } }},
       ingest:   {ms: 5000, fn: () => refreshSchedulerLive()},
       insights: {ms: 6000, fn: () => loadInsights()},
       wiki:     {ms: 6000, fn: () => refreshWikiLive()},

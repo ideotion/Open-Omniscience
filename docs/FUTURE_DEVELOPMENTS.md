@@ -157,7 +157,7 @@
 - [ ] 13. AI prompts: translate the prompt textareas on language switch + verify output comes out in the UI language
 - [ ] 14. Status bar: opaque background matching the left sidebar (content shows through when scrolling)
 - [ ] 15. Sidebar: click empty space to collapse/expand + a clear maximize button in the collapsed rail
-- [ ] 16. Library tab = central dashboard of everything downloaded (maps, Wikipedia, indices, laws, stats) + extrapolated (summaries/translations/synthesis counts)
+- [x] 16. Library tab = central dashboard of everything downloaded (maps, Wikipedia, indices, laws, stats) + extrapolated (summaries/translations/synthesis counts) — DONE (2026-06-24): new `GET /api/library/overview` rolls up the downloaded layer (wiki dumps/OSM/markets/laws/stats/models, counts + on-disk bytes) + the AI-derived layer (article_analyses by kind + ai_keyword + watches); a top "Library" dashboard panel renders both. Reuses cached database_stats + the download managers; honest counts/sizes, no score. Browser-unverified (fork-3).
 
 ### Bugs
 - [x] Folder newsletter import: `UNIQUE constraint failed: articles.hash` on large multi-folder .eml imports — **fix-merged (#453)**: the hardened `ingest_emails` dedup keys on the real unique column + recovers per-message, fixing BOTH the upload endpoint AND the folder-import job (both call it). The 17:55 debug bundle confirms only HISTORICAL occurrences (locked/unique errors this session = 0) — **verify on a fresh live re-import of the 5 GB tree**.

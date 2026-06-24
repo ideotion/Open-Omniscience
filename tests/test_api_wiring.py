@@ -27,7 +27,7 @@ _WIRING = (_API / "_wiring.py").read_text(encoding="utf-8")
 
 # A spread of routers that must be wired (their modules + a known GET path each).
 _SPINE = ["system", "briefing", "scheduler", "wiki", "jobs", "unlock",
-          "source_management", "search_omni", "timemap", "reporting", "custody", "safety"]
+          "source_management", "search_omni", "timemap", "reporting", "custody", "safety", "library"]
 
 
 def test_main_delegates_all_wiring_to_wire():
