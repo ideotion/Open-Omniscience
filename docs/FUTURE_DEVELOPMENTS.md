@@ -136,60 +136,56 @@
     database-stats endpoint + the per-domain download managers); this is a presentation /
     aggregation surface — honest counts only, never a score.
 
-## CONSOLIDATED TO-DO (cross-session checklist, captured 2026-06-24)
+## CONSOLIDATED TO-DO (rechecked & complete, captured 2026-06-24)
 
-> Extracted from a parallel testing session. Overlaps the detailed **CLAUDE.md Open queue**
-> (the authoritative ledger) — kept here as a single glanceable checklist. Status flags
-> (✅ done / ◐ partial / ⏳ not started) reflect ONLY work MERGED in the 2026-06-24 diagnostics
-> session; **verify against current `0.09` before starting** — the parallel BACKUP workstream
-> (OOENC2 streaming volumes + large-data folder backup, #450/#454/#456) has also advanced.
+> The maintainer's own rechecked checklist (reconciled with the parallel testing session).
+> Overlaps the detailed **CLAUDE.md Open queue** (the authoritative ledger) — kept here as a
+> single glanceable list. Status: `[x]` done · `[~]` in progress · `[ ]` not started.
+> **Verify against current `0.09` before starting** — the parallel BACKUP workstream (OOENC2
+> streaming volumes + large-data folder backup, #450/#454/#456) and the 2026-06-24 diagnostics
+> fixes have advanced the tree.
 
-### Bugs (hit in testing)
-- [x] ✅ **DONE (#453)** Folder newsletter import `UNIQUE constraint failed: articles.hash` — the
-  hardened `ingest_emails` dedup (key on the real unique column + total recovery) fixes BOTH the
-  upload endpoint AND the folder-import job (both call it).
-- [ ] ⏳ Perf: collector is writer-bound (many parallel fetchers → 1 DB writer); batch writes / cut
-  gate contention. *(Ledger P1-C — not started.)*
-- [ ] ◐ **PARTIAL** Perf: per-keyword Insights (associations / graph / framing) freeze on the big
-  corpus. *(#455 warmed grouped top/trending off-thread; #458 cached the 5 per-corpus endpoints +
-  an honest slow-load note. REMAINING: a statement deadline + the cold FIRST-open speed — needs a
-  repro of the slowest subtab / the benchmark export, or the columnar speedup.)*
+### Your field-test remarks, 24 Jun
+- [ ] 1. Ollama installer in Settings → AI: hardware-tiered scenarios + guided model-download; lead with Mistral (mistral-small, mistral:7b)
+- [ ] 2/5/6. ONE unified Import + ONE unified Export/Backup: pop-up options → file/folder pick, on the new streaming-volume path; clear progress bar + live data-volume readout; fuse both newsletter-import paths in
+- [x] 7. Home "Loading the briefing…" hang + progress bar — DONE (#455: non-blocking background recompute + determinate progress bar)
+- [~] 8. Insights / per-keyword analysis freeze ("Loading…" forever) — in progress (#458 cached the 5 per-corpus endpoints + an honest slow-load note; #455 warmed grouped top/trending off-thread. LEFT: a statement-deadline slice + the cold FIRST-open speed — needs a slowest-subtab repro / the benchmark export, or the columnar speedup)
+- [ ] 9. Search: pressing Enter should open a new analysis window/tab
+- [ ] 10. Library tab world map: per-country article counts + a per-language donut for "no country" articles (full language names)
+- [ ] 11. Settings: fuse Appearance + GUIs into one "Graphics" subtab
+- [ ] 12. Settings: remove the top intro box on every subtab (reclaim space)
+- [ ] 13. AI prompts: translate the prompt textareas on language switch + verify output comes out in the UI language
+- [ ] 14. Status bar: opaque background matching the left sidebar (content shows through when scrolling)
+- [ ] 15. Sidebar: click empty space to collapse/expand + a clear maximize button in the collapsed rail
+- [ ] 16. Library tab = central dashboard of everything downloaded (maps, Wikipedia, indices, laws, stats) + extrapolated (summaries/translations/synthesis counts)
 
-### Features asked for, not yet built
-- [ ] Unified Import section (one entry → options pop-up covering all import types)
-- [ ] Unified Export/Backup section (one entry → options pop-up covering all export/backup types)
-- [ ] Ollama binary installer (download + verify + run the official per-OS installer) — needs per-OS
-  checksums from a networked machine
-- [ ] Include Wikipedia dumps + offline maps in backups as files (additive file-member restore).
-  *(NB: the large-data folder backup may already cover this — verify against the current backup code.)*
-- [ ] Fold the separate LLM-models backup into the one large-data backup flow
+### Bugs
+- [x] Folder newsletter import: `UNIQUE constraint failed: articles.hash` on large multi-folder .eml imports — **fix-merged (#453)**: the hardened `ingest_emails` dedup keys on the real unique column + recovers per-message, fixing BOTH the upload endpoint AND the folder-import job (both call it). The 17:55 debug bundle confirms only HISTORICAL occurrences (locked/unique errors this session = 0) — **verify on a fresh live re-import of the 5 GB tree**.
+- [ ] Collector is writer-bound (many parallel fetchers → 1 DB writer): batch writes / cut gate contention *(ledger P1-C)*
 
-### Keyword engine cleanup (run on your live corpus)
-- [ ] Run "Clean up keywords (re-index, then prune)" on the 6 GB corpus + measure the drop
+### Keyword engine cleanup (on your live corpus)
+- [ ] Run "Clean up keywords (re-index, then prune)" + measure the drop
 - [ ] Run baseline-tag backfill (tag coverage is 0%)
-- [ ] Generate translation rings from the exported keyword log on a networked machine (raises coverage)
-- [ ] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) out of the "?" bucket
-- [ ] Decide on zh/ja segmentation (currently unsegmented = no keywords for those)
+- [ ] Generate translation rings from the exported keyword log (networked machine)
+- [ ] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket
+- [ ] Decide zh/ja segmentation (currently no keywords for those)
 
 ### Manipulation-pattern cards (5 of 9 shipped)
-- [ ] Card #4 "bury" half (a source under-covering a topic that's big elsewhere)
-- [ ] Astroturf / copypasta cards
-- [ ] Outrage-intensity (annotates another card, not a standalone Lead)
-- [ ] Event-timed-op (needs the elections candidate roster)
+- [ ] #4 "bury" half · astroturf / copypasta · outrage-intensity · event-timed-op (needs elections roster)
 
 ### Release / housekeeping
-- [ ] Human click-through of all browser-unverified UI (the "needs click-through" items)
-- [ ] Flip version 0.0.9 → 0.1 once the RC-blocking items are green
+- [ ] Human click-through of all browser-unverified UI
+- [ ] Flip 0.0.9 → 0.1 when RC-blocking items are green
 - [ ] App self-update (manual git-pull: snapshot → verify → migrate → swap → rollback)
 - [ ] i18n: key the remaining English-fallback panel strings ×12
 
 ### Bigger / deferred (design-only)
 - [ ] Elections & civic vertical (needs a sourced candidate roster)
-- [ ] Persisted encrypted columnar store (needs a per-OS httpfs crypto-extension packaging decision)
+- [ ] Persisted encrypted columnar store (per-OS httpfs crypto-extension packaging decision)
 - [ ] LLM who/where/when + sentiment eval harness
 - [ ] Tor integration + per-source transport
 - [ ] Voice-only mode
-- [ ] Open Commons Mirror (separate sister project, when the app is mature)
+- [ ] Open Commons Mirror (separate sister project, when mature)
 
 ---
 
