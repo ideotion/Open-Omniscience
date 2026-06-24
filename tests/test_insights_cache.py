@@ -115,9 +115,9 @@ def test_slow_per_keyword_endpoints_run_under_a_statement_deadline():
     assert src.count("_deadlined(") >= 3, "associations + both graph paths need the deadline"
     assert "statement_deadline" in src and "StatementTimeout" in src
 
-    import src.api.framing as fr
-
-    fsrc = pathlib.Path(fr.__file__).read_text("utf-8")
+    # Read framing.py as a sibling file rather than importing it — importing pulls in
+    # vaderSentiment (the [analysis] extra), absent in the core-only CI lane.
+    fsrc = pathlib.Path(ins.__file__).with_name("framing.py").read_text("utf-8")
     assert "statement_deadline(" in fsrc and "status_code=503" in fsrc
 
 
