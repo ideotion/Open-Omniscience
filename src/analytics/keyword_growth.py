@@ -120,7 +120,7 @@ def keyword_growth_curve(session: Session) -> dict[str, Any]:
         arts_by_date[str(r.d)] = int(r.arts or 0)
 
     dates = sorted(set(new_kw_by_date) | set(toks_by_date))
-    full: list[dict[str, int]] = []
+    full: list[dict[str, Any]] = []  # each entry holds a str "date" + int counts
     cum_kw = cum_tok = cum_art = 0
     for d in dates:
         cum_kw += new_kw_by_date.get(d, 0)
