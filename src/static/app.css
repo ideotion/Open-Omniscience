@@ -125,11 +125,14 @@
        subtabs sit JUST UNDER the status bar (maintainer 2026-06-20). One sticky wrapper
        avoids guessing the bar's pixel height. */
     .chrome { position:sticky; top:0; z-index:50; }
+    /* Opaque chrome matching the left sidebar (var(--bg2)) so scrolled content never
+       shows through the sticky status bar / facet strip (remark 14). The backdrop blur
+       is dropped — pointless on an opaque background, and a GPU cost at rest. */
     .topbar { display:flex; align-items:center; gap:12px;
-      padding:11px 18px; background:color-mix(in srgb, var(--bg) 82%, transparent);
-      backdrop-filter:blur(8px); border-bottom:1px solid var(--border); }
+      padding:11px 18px; background:var(--bg2);
+      border-bottom:1px solid var(--border); }
     .subtab-strip { display:flex; align-items:center; gap:2px; flex-wrap:wrap; padding:5px 18px;
-      background:color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter:blur(8px);
+      background:var(--bg2);
       border-bottom:1px solid var(--border); }
     .subtab-strip[hidden] { display:none; }
     /* the relocated nav.tabs fills the strip; drop its own margin/under-border (the strip has one) */

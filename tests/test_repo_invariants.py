@@ -1825,11 +1825,13 @@ def test_ui_invariants():
         "the GUIs boot loader must be included in <head> (applies the chosen skin before first paint)"
     )
     assert "/static/guis/gallery.js" in html, "the GUIs gallery renderer must be included"
+    # The GUIs gallery is now folded into the unified "Graphics" subtab (Appearance +
+    # GUIs, remark 11). The #guis-gallery host is preserved (nothing lost).
     assert (
-        'data-tab="guis"' in html and 'id="set-guis"' in html and 'id="guis-gallery"' in html
-    ), "Settings must carry the GUIs subtab button + the set-guis panel + the #guis-gallery host"
-    assert 'cat === "guis"' in html and "OOGUIs.renderGallery" in html, (
-        "showSetCat() must lazy-render the gallery when the GUIs subtab is shown"
+        'data-tab="graphics"' in html and 'id="set-graphics"' in html and 'id="guis-gallery"' in html
+    ), "the Graphics subtab must carry the #guis-gallery host (Appearance + GUIs fused)"
+    assert 'cat === "graphics"' in html and "OOGUIs.renderGallery" in html, (
+        "showSetCat() must lazy-render the gallery when the Graphics subtab is shown"
     )
 
 
@@ -2382,6 +2384,25 @@ def test_library_central_dashboard():
     assert "Downloaded — the raw" in html and "Extrapolated — AI-derived" in html
     # representative downloaded + extrapolated tiles.
     assert "AI summaries" in html and "Wikipedia dumps" in html and "Offline map regions" in html
+
+
+def test_settings_chrome_cleanups():
+    """Field remarks 11/12/14/15: the Settings intro box is removed, Appearance + GUIs are
+    fused into one 'Graphics' subtab (nothing lost), the sticky chrome is opaque (matching
+    the sidebar's var(--bg2)), and the sidebar's empty space toggles collapse/expand."""
+    html = _ui_source()
+    # remark 12: the intro paragraph is gone; the subtab nav stays.
+    assert "Everything that shapes how the app looks and behaves on this" not in html
+    assert 'id="set-subtabs"' in html
+    # remark 11: one Graphics subtab holds BOTH the Appearance content + the GUIs gallery.
+    assert 'data-tab="graphics"' in html and 'id="set-graphics"' in html
+    assert 'data-tab="guis"' not in html and 'id="set-guis"' not in html
+    assert 'id="dr-themes"' in html and 'id="guis-gallery"' in html  # both contents preserved
+    # remark 14: the sticky chrome is opaque (var(--bg2), the sidebar bg) — no transparent wash.
+    assert "color-mix(in srgb, var(--bg) 82%, transparent)" not in html, "topbar must be opaque"
+    assert "background:var(--bg2)" in html
+    # remark 15: clicking the sidebar's empty space toggles collapse/expand.
+    assert "_wireSidebarEmptyClickToggle" in html and "toggleSidebar()" in html
 
 
 def test_cjk_keyword_disclosure():

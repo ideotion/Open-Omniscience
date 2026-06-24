@@ -1115,7 +1115,7 @@
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the
     // command palette and any deep link still work; closeDrawer() is a safe no-op.
-    function openDrawer()  { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("appearance"); }
+    function openDrawer()  { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("graphics"); }
     function closeDrawer() { /* drawer removed — appearance is a Settings section */ }
 
     // Settings sections (Appearance · General · Wikipedia · Data · Safety).
@@ -1125,8 +1125,11 @@
       document.querySelectorAll("#tab-settings .set-view").forEach(v =>
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
       if (cat !== "collect") stopSchedRatePoll();   // stop the live download-rate poll when leaving Collect
-      if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
-      if (cat === "guis" && window.OOGUIs && OOGUIs.renderGallery) OOGUIs.renderGallery();  // alternative-interfaces gallery
+      // Graphics = Appearance + the alternative-interfaces gallery, fused (remark 11).
+      if (cat === "graphics") {
+        buildDrawer();                                                    // (re)paint theme/accent state
+        if (window.OOGUIs && OOGUIs.renderGallery) OOGUIs.renderGallery();  // the GUIs gallery
+      }
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
@@ -12272,3 +12275,15 @@
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
     _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window subtabs
     _anRestoreTabs();   // THEME-3: restore the spawned analysis-tab strip (data loads lazily)
+
+    // Click the EMPTY space of the sidebar (not a nav item / button / link) to
+    // collapse / expand it (remark 15) — the same toggle as the #sb-collapse /
+    // #sb-expand buttons, so the whole rail is a discoverable target.
+    (function _wireSidebarEmptyClickToggle() {
+      const sb = $("sidebar");
+      if (!sb) return;
+      sb.addEventListener("click", (e) => {
+        if (e.target.closest(".nav-item, button, a, input, label, select, textarea")) return;
+        toggleSidebar();
+      });
+    })();

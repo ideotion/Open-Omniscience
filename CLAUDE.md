@@ -4079,6 +4079,22 @@ ruling, a contingency, or a deliberate-omission note.
   test_api_wiring (library added to the spine sample) + test_repo_invariants::test_library_central_dashboard. node
   --check clean. REMAINING: human click-through (fork-3); key the new strings ×12; optional per-symbol/per-agency
   breakdowns.
+  **TIER 3 CHEAP UX — remarks 11/12/14/15 (frontend, BROWSER-UNVERIFIED per fork-3):** (12) the Settings INTRO
+  BOX (h2 "Settings" + the "Everything that shapes…" paragraph + the panel wrapper) is REMOVED — the `#set-subtabs`
+  nav (relocated to the top strip anyway) is un-wrapped as a direct child of `#tab-settings`, reclaiming vertical
+  space on every subtab; no JS depended on the box. (11) APPEARANCE + GUIs FUSED into ONE "Graphics" subtab
+  (`data-tab="graphics"` / `#set-graphics`): the GUIs `<section>` (with `#guis-gallery`) MOVED inside the renamed
+  appearance panel, the standalone `#set-guis`/`data-tab="guis"` removed; `showSetCat("graphics")` now runs BOTH
+  `buildDrawer()` + `OOGUIs.renderGallery()`; `openDrawer` selects "graphics". Desk-lesson safe — both contents
+  (`#dr-themes` appearance + `#guis-gallery`) preserved; invariant #30 test updated guis→graphics (the gallery
+  host kept); gallery.js untouched (renders into `#guis-gallery`). (14) the sticky CHROME (`.topbar` +
+  `.subtab-strip`) was semi-transparent (`color-mix(var(--bg) 82/92%, transparent)` + backdrop-blur) so scrolled
+  content showed through; both now use the OPAQUE `var(--bg2)` (the left sidebar's bg, the maintainer's ask) and
+  the now-pointless backdrop-blur is dropped (a GPU cost at rest). (15) clicking the sidebar's EMPTY space toggles
+  collapse/expand (`_wireSidebarEmptyClickToggle` → the existing `toggleSidebar()`, ignoring clicks on
+  nav-item/button/a/input/label/select/textarea so navigation + the `#sb-collapse`/`#sb-expand` buttons are
+  unaffected). div/section balance verified; node --check + i18n 100%. test_repo_invariants::
+  test_settings_chrome_cleanups + the updated #30 test. REMAINING: human click-through (fork-3).
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/
