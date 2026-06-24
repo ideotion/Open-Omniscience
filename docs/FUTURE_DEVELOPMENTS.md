@@ -136,6 +136,57 @@
     database-stats endpoint + the per-domain download managers); this is a presentation /
     aggregation surface — honest counts only, never a score.
 
+## CONSOLIDATED TO-DO (rechecked & complete, captured 2026-06-24)
+
+> The maintainer's own rechecked checklist (reconciled with the parallel testing session).
+> Overlaps the detailed **CLAUDE.md Open queue** (the authoritative ledger) — kept here as a
+> single glanceable list. Status: `[x]` done · `[~]` in progress · `[ ]` not started.
+> **Verify against current `0.09` before starting** — the parallel BACKUP workstream (OOENC2
+> streaming volumes + large-data folder backup, #450/#454/#456) and the 2026-06-24 diagnostics
+> fixes have advanced the tree.
+
+### Your field-test remarks, 24 Jun
+- [ ] 1. Ollama installer in Settings → AI: hardware-tiered scenarios + guided model-download; lead with Mistral (mistral-small, mistral:7b)
+- [ ] 2/5/6. ONE unified Import + ONE unified Export/Backup: pop-up options → file/folder pick, on the new streaming-volume path; clear progress bar + live data-volume readout; fuse both newsletter-import paths in
+- [x] 7. Home "Loading the briefing…" hang + progress bar — DONE (#455: non-blocking background recompute + determinate progress bar)
+- [~] 8. Insights / per-keyword analysis freeze ("Loading…" forever) — in progress (#458 cached the 5 per-corpus endpoints + an honest slow-load note; #455 warmed grouped top/trending off-thread. LEFT: a statement-deadline slice + the cold FIRST-open speed — needs a slowest-subtab repro / the benchmark export, or the columnar speedup)
+- [ ] 9. Search: pressing Enter should open a new analysis window/tab
+- [ ] 10. Library tab world map: per-country article counts + a per-language donut for "no country" articles (full language names)
+- [ ] 11. Settings: fuse Appearance + GUIs into one "Graphics" subtab
+- [ ] 12. Settings: remove the top intro box on every subtab (reclaim space)
+- [ ] 13. AI prompts: translate the prompt textareas on language switch + verify output comes out in the UI language
+- [ ] 14. Status bar: opaque background matching the left sidebar (content shows through when scrolling)
+- [ ] 15. Sidebar: click empty space to collapse/expand + a clear maximize button in the collapsed rail
+- [ ] 16. Library tab = central dashboard of everything downloaded (maps, Wikipedia, indices, laws, stats) + extrapolated (summaries/translations/synthesis counts)
+
+### Bugs
+- [x] Folder newsletter import: `UNIQUE constraint failed: articles.hash` on large multi-folder .eml imports — **fix-merged (#453)**: the hardened `ingest_emails` dedup keys on the real unique column + recovers per-message, fixing BOTH the upload endpoint AND the folder-import job (both call it). The 17:55 debug bundle confirms only HISTORICAL occurrences (locked/unique errors this session = 0) — **verify on a fresh live re-import of the 5 GB tree**.
+- [ ] Collector is writer-bound (many parallel fetchers → 1 DB writer): batch writes / cut gate contention *(ledger P1-C)*
+
+### Keyword engine cleanup (on your live corpus)
+- [ ] Run "Clean up keywords (re-index, then prune)" + measure the drop
+- [ ] Run baseline-tag backfill (tag coverage is 0%)
+- [ ] Generate translation rings from the exported keyword log (networked machine)
+- [ ] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket
+- [ ] Decide zh/ja segmentation (currently no keywords for those)
+
+### Manipulation-pattern cards (5 of 9 shipped)
+- [ ] #4 "bury" half · astroturf / copypasta · outrage-intensity · event-timed-op (needs elections roster)
+
+### Release / housekeeping
+- [ ] Human click-through of all browser-unverified UI
+- [ ] Flip 0.0.9 → 0.1 when RC-blocking items are green
+- [ ] App self-update (manual git-pull: snapshot → verify → migrate → swap → rollback)
+- [ ] i18n: key the remaining English-fallback panel strings ×12
+
+### Bigger / deferred (design-only)
+- [ ] Elections & civic vertical (needs a sourced candidate roster)
+- [ ] Persisted encrypted columnar store (per-OS httpfs crypto-extension packaging decision)
+- [ ] LLM who/where/when + sentiment eval harness
+- [ ] Tor integration + per-source transport
+- [ ] Voice-only mode
+- [ ] Open Commons Mirror (separate sister project, when mature)
+
 ---
 
 ## The 0.0.9 sequencing (maintainer-agreed 2026-06-11)
