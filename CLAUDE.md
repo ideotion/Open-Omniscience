@@ -3909,6 +3909,45 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **FIELD-TEST DIAGNOSTICS — P0 BUG FIXES 2026-06-24 (maintainer live test of the ~60K-article corpus; 3
+  diagnostics analysed [keyword self-test 42/42, debug bundle, keyword-engine report]; branch
+  claude/happy-einstein-6ht33l, draft PR onto 0.09; backend py_compile-VERIFIED py3.11, full pytest CI [repo
+  needs py3.13]). Maintainer scope: "we just want the diagnostics to be resolved for now" + "capture all my
+  preliminary remarks into future developments, address them later." Read PR #449/#450 first per instruction
+  — #450 is the new OOENC2 streaming-volume backup; my fixes don't touch backup (no conflict).** TWO active-
+  failure bugs fixed, both the session-poisoning data-loss class:
+  (P0-A) **Newsletter import failed the WHOLE 5 GB folder with `UNIQUE constraint failed: articles.hash`**
+  (6× unhandled 500 in the bundle, `POST /api/newsletters/import`). ROOT CAUSE: `ingest_emails`' in-batch
+  dedup key was the `(content_hash, canonical)` TUPLE, but `articles.hash` is the ONLY unique column
+  (canonical_url is NOT) — so two emails with the SAME body + DIFFERENT Message-IDs (rife in a multi-folder
+  newsletter dump) got different keys, both entered one uncommitted batch, and collided at the insertmany
+  flush; under the continuously-running scraper's writer contention the collision escaped as a raw 500.
+  FIX (`src/ingest/email.py`): dedup on the real unique column (`pending_hashes`/`pending_canon` sets, key on
+  content_hash) so a same-body pair NEVER co-occupies a batch; `_flush` now catches `(IntegrityError,
+  OperationalError)` → per-message fallback; `_commit_one` wraps the commit in `run_write_with_retry` (lock →
+  retry, no data loss), counts a genuine dup, and on an exhausted lock LOGS + counts `errors` (new tally key)
+  — NEVER raises, so no message aborts the import or escapes. Endpoint (`src/api/ingestion.py`) guards
+  `ingest_emails` → clean JSON 500, never a raw unhandled. tests/test_email_ingest.py::
+  test_same_body_different_message_id_dedups_on_hash (4 same-body in one batch → stored 2/dup 2/errors 0, no
+  raise). The existing fallback test stays green (now deduped pre-flush).
+  (P0-B) **A ~4-hour scrape pass rolled back (ok:false) on `UNIQUE constraint failed: law_revisions
+  .document_id, content_hash … transaction has been rolled back`** (an older pass died the same way on
+  `database is locked`). ROOT CAUSE: `track_document` blind-`session.add(LawRevision)` + `commit()` with no
+  idempotency, and `auto_track_due`/`track_watched` caught the resulting IntegrityError but did NOT
+  `session.rollback()` — poisoning the SHARED pass session so the pass's final commit failed and every
+  scraped article rolled back. FIX (`src/law/track.py`): the two revision-writing commits now catch
+  IntegrityError → rollback → idempotent "duplicate" (baseline path re-caches `baseline_text`); BOTH batch
+  loops add `session.rollback()` in the except so one bad doc can NEVER roll back the whole pass. tests/
+  test_law.py::test_track_document_is_idempotent_on_duplicate_revision (dup absorbed, no raise, session still
+  usable).
+  REMAINING (the diagnosed PERF freezes — remarks 7/8, root-caused not yet fixed): Home briefing + Insights
+  "Loading… forever" trace to `top_terms(group=True)` = 17 s/50 rows on the 61,635-article/932,031-keyword
+  corpus run SYNCHRONOUSLY with no background offload/cache/statement-deadline/progress (P1-D/E); the writer-
+  bound collector (collect_parallelism 50 → 1 writer, measured 532,772 s cumulative gate wait / 8,294 s max,
+  P1-C); keyword maintenance (re-index→prune→tag-backfill, P1-F). The 12 field-test FEATURE remarks are
+  PARKED VERBATIM in docs/FUTURE_DEVELOPMENTS.md ("FIELD-TEST REMARKS 2026-06-24") — ollama installer/Mistral,
+  unified import/export/backup on the OOENC2 path, search→new-window, library world map, Settings Graphics
+  subtab + intro-box removal — to address after the diagnostics.
 - **KEYWORD-GROWTH (VOCABULARY) CURVE 2026-06-24 (maintainer ask at 909k keywords: "a curve of added keywords
   per total words added"; branch claude/keyword-growth, draft PR onto 0.09; backend VERIFIED py3.11, frontend
   BROWSER-UNVERIFIED per fork-3):** `src/analytics/keyword_growth.py:keyword_growth_curve` plots cumulative

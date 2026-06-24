@@ -100,7 +100,22 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
                 flagged=False,
             )
         )
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            # This (document_id, content_hash) baseline revision already exists (a
+            # concurrent pass or a re-process). IDEMPOTENT: roll back the poisoned
+            # transaction so it can NEVER roll back the whole scrape pass, then cache
+            # the baseline so the next pass takes the fast "unchanged" path.
+            session.rollback()
+            doc.baseline_text = text
+            doc.baseline_hash = h
+            doc.last_checked_at = now
+            doc.last_hash = h
+            doc.last_size = len(text)
+            doc.last_status = "baseline already recorded"
+            session.commit()
+            return {"document_id": doc.id, "status": "duplicate"}
         return {"document_id": doc.id, "status": "baseline", "size": len(text)}
 
     if h == doc.last_hash:
@@ -134,7 +149,19 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
     doc.last_hash = h
     doc.last_size = len(text)
     doc.last_status = f"changed ({delta:+d} bytes vs baseline)"
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # This (document_id, content_hash) revision already exists — a concurrent pass or
+        # a re-process. IDEMPOTENT: roll back so a duplicate can never poison and roll back
+        # the whole scrape pass, then just advance the doc's last-seen state.
+        session.rollback()
+        doc.last_checked_at = now
+        doc.last_hash = h
+        doc.last_size = len(text)
+        doc.last_status = "version already recorded"
+        session.commit()
+        return {"document_id": doc.id, "status": "duplicate"}
     return {
         "document_id": doc.id,
         "status": "changed",
@@ -165,6 +192,7 @@ def track_watched(session, fetcher, *, limit_documents: int = 50) -> dict:
             res = track_document(session, fetcher, doc)
         except Exception:  # noqa: BLE001 - one bad document must not abort the batch
             _LOG.warning("law tracking: document %s failed", doc.id, exc_info=True)
+            session.rollback()  # clear a poisoned transaction so it can't roll back the batch
             tally["errors"] += 1
             continue
         tally["documents"] += 1
@@ -216,6 +244,7 @@ def auto_track_due(session, fetcher, *, batch: int = 5, min_interval_hours: floa
             res = track_document(session, fetcher, doc)
         except Exception:  # noqa: BLE001 - one bad document must not abort the batch
             _LOG.warning("law auto-track: document %s failed", doc.id, exc_info=True)
+            session.rollback()  # clear a poisoned txn so one dup can't roll back the WHOLE pass
             tally["errors"] += 1
             continue
         tally["documents"] += 1

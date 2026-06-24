@@ -229,7 +229,14 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
         except Exception:
             skipped_non_eml += 1
     source = _get_newsletter_source(db)
-    tally = ingest_emails(db, source, raws)
+    try:
+        tally = ingest_emails(db, source, raws)
+    except Exception as exc:  # ingest_emails is total; never let storage escape as a raw 500
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Newsletter import failed while storing: {exc}",
+        ) from exc
     tally["skipped_non_eml"] = skipped_non_eml
     return {
         "source": source.name,
