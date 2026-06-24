@@ -22,6 +22,8 @@ import logging
 import re
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
+
 from src.database.models import LawDocument, LawRevision
 from src.wiki.flagging import flag_revision
 
