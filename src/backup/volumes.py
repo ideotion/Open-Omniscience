@@ -66,6 +66,11 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+class VolumeStopped(VolumeError):
+    """Raised when ``write_volume_set`` is asked to stop (``should_stop``) mid-build; the
+    partial set is incomplete and the caller cleans it up + marks the job cancelled."""
+
+
 def write_volume_set(
     src: str | os.PathLike[str],
     out_dir: str | os.PathLike[str],
@@ -73,11 +78,15 @@ def write_volume_set(
     *,
     volume_size: int = VOLUME_SIZE_DEFAULT,
     chunk_size: int = _CHUNK,
+    should_stop: Callable[[], bool] | None = None,
+    progress_cb: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Split ``src`` into encrypted volumes under ``out_dir`` and write the manifest.
 
     Streams the source once (never the whole file in RAM, no 2 GiB ceiling). Returns
-    the manifest dict. ``parity`` is left ``None`` here; slice 2 computes it."""
+    the manifest dict. ``parity`` is left ``None`` here; the caller adds it. ``should_stop``
+    (checked between volumes) raises :class:`VolumeStopped`; ``progress_cb`` reports
+    {phase, volumes_written, bytes_written} after each volume (for the task-manager job)."""
     if volume_size < 1024:
         raise VolumeError("volume size too small")
     out = Path(out_dir)
@@ -89,6 +98,8 @@ def write_volume_set(
         reader = _HashingReader(raw, whole)
         idx = 1
         while True:
+            if should_stop is not None and should_stop():
+                raise VolumeStopped("volume backup stopped")
             vpath = out / f"vol-{idx:05d}.ooenc"
             consumed = encrypt_stream_to(
                 reader, vpath, passphrase, limit=volume_size, chunk_size=chunk_size
@@ -107,6 +118,10 @@ def write_volume_set(
                 }
             )
             total += consumed
+            if progress_cb is not None:
+                progress_cb(
+                    {"phase": "volumes", "volumes_written": len(volumes), "bytes_written": total}
+                )
             idx += 1
             if consumed < volume_size:
                 break

@@ -1354,6 +1354,34 @@
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="folderRestoreStart(this)">Restore from folder</button></div>
       </div>
     </section>
+    <section class="panel" id="vbackup-panel">
+      <div class="phead"><h2>Large encrypted backup (volumes + parity)</h2></div>
+      <p class="muted" style="margin-top:0">For a corpus too big for the single-file backup (the encrypted full backup is one-shot AES-GCM, capped near 2&nbsp;GB). Writes your ENCRYPTED corpus as a set of &lt;600&nbsp;MB volumes + a manifest into a server-side folder you choose, with Reed-Solomon parity so a corrupt or lost volume — including a corpus volume — can be rebuilt. No 2&nbsp;GB cap; runs as a cancellable background job. Parity needs the analysis features; without them you get volumes only (stated when it finishes).</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:2"><label for="vb-dest">Destination folder (on this machine)</label>
+          <input id="vb-dest" placeholder="/mnt/external-drive/oo-corpus-backup" size="32"></div>
+        <button class="secondary" type="button" onclick="ooFolderPicker('vb-dest', true)">Browse…</button>
+      </div>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:2"><label for="vb-pass">Passphrase (encrypts the backup)</label>
+          <input id="vb-pass" type="password" size="32"></div>
+        <button onclick="volBackupStart(this)">Back up (volumes + parity)</button>
+        <button class="secondary" id="vb-cancel" onclick="volBackupCancel(this)" style="display:none">Cancel</button>
+      </div>
+      <div id="vb-progress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
+      <hr>
+      <h3 style="margin-bottom:6px">Restore from a volume backup folder</h3>
+      <p class="muted" style="margin-top:0">Verify + repair (from parity) + reassemble the volume set, then merge ADDITIVELY into your corpus — nothing is replaced or deleted.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap">
+        <div style="flex:2"><label for="vb-src">Folder to restore from</label>
+          <input id="vb-src" placeholder="/mnt/external-drive/oo-corpus-backup" size="32"></div>
+        <button class="secondary" type="button" onclick="ooFolderPicker('vb-src', false)">Browse…</button>
+        <div style="flex:1"><label for="vb-rpass">Passphrase</label>
+          <input id="vb-rpass" type="password" size="24"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="volRestoreStart(this)">Restore from folder</button></div>
+      </div>
+      <div id="vb-rprogress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
+    </section>
     <section class="panel" id="backup-panel">
       <h2>Backup &amp; restore</h2>
       <div id="backup-status" class="hint">Checking backend…</div>

@@ -36,6 +36,7 @@ import re
 import secrets
 import sqlite3
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -404,6 +405,8 @@ def write_volume_backup(
     include_newsletters: bool = True,
     volume_size: int | None = None,
     parity_fraction: float = 0.1,
+    should_stop: "Callable[[], bool] | None" = None,
+    progress_cb: "Callable[[dict], None] | None" = None,
 ) -> dict:
     """Build the LARGE encrypted backup as a SET of <600 MB volumes + parity into the
     server-side directory ``dest_dir`` (field test 2026-06-24; maintainer "volumes +
@@ -411,7 +414,8 @@ def write_volume_backup(
     ZIP is built, then streamed-sliced into independently-authenticated OOENC2 volumes
     (each < 600 MB) with a manifest, and Reed-Solomon parity volumes so a corrupt/lost
     volume -- including a corpus volume -- can be rebuilt. Always encrypted (a passphrase
-    is required). Returns a summary dict."""
+    is required). ``should_stop``/``progress_cb`` drive the task-manager job. Returns a
+    summary dict."""
     from src.backup.parity import parity_available, write_parity
     from src.backup.volumes import VOLUME_SIZE_DEFAULT, write_volume_set
 
@@ -422,14 +426,26 @@ def write_volume_backup(
     tmp_dir = dest / f".bak-build-{secrets.token_hex(6)}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     try:
+        if progress_cb is not None:
+            progress_cb({"phase": "building", "volumes_written": 0, "bytes_written": 0})
         zip_path, envelope = _build_backup_zip(
             tmp_dir, include_keys=True, include_newsletters=include_newsletters
         )
         vmanifest = write_volume_set(
-            zip_path, dest, passphrase, volume_size=volume_size or VOLUME_SIZE_DEFAULT
+            zip_path,
+            dest,
+            passphrase,
+            volume_size=volume_size or VOLUME_SIZE_DEFAULT,
+            should_stop=should_stop,
+            progress_cb=progress_cb,
         )
         parity = None
         if parity_available():
+            if progress_cb is not None:
+                progress_cb(
+                    {"phase": "parity", "volumes_written": len(vmanifest["volumes"]),
+                     "bytes_written": vmanifest["plaintext_bytes"]}
+                )
             parity = write_parity(dest, parity_fraction=parity_fraction)
         return {
             "envelope": envelope,

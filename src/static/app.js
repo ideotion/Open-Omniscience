@@ -3778,6 +3778,78 @@
       try { await api("/api/backup/folder/" + action, { method: "POST" }); _fbRefresh(); }
       catch (e) { toast(e.message, "err"); } finally { btn.disabled = false; }
     }
+
+    // Large ENCRYPTED backup as a volume set + Reed-Solomon parity (field test
+    // 2026-06-24; slice 1c). Server-side folder, cancellable background job.
+    // Browser-unverified (fork-3) — node-checked + invariant-guarded.
+    let _volPollTimer = null;
+    async function _volRefresh(progId, btn, cancelId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prog = $(progId);
+      try {
+        const s = await api("/api/backup/v2/volumes/status");
+        const p = s.progress || {};
+        const phase = p.phase || s.state;
+        const vols = p.volumes_written ? (" · " + p.volumes_written + " " + t("volumes")) : "";
+        const cancel = cancelId ? $(cancelId) : null;
+        if (s.state === "running") {
+          if (prog) prog.textContent = (s.mode === "restore" ? t("Restoring") : t("Backing up")) + "… " + phase + vols;
+          if (cancel) cancel.style.display = "";
+        } else {
+          if (_volPollTimer) { clearInterval(_volPollTimer); _volPollTimer = null; }
+          if (cancel) cancel.style.display = "none";
+          if (btn) btn.disabled = false;
+          const sum = s.summary || {};
+          if (s.state === "done" && s.mode === "restore") {
+            if (prog) prog.textContent = t("Restore complete.");
+          } else if (s.state === "done") {
+            const par = sum.parity_available === false ? (" " + t("(volumes only — parity needs the analysis features)")) : "";
+            if (prog) prog.textContent = t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par;
+          } else if (s.state === "cancelled") {
+            if (prog) prog.textContent = t("Cancelled.");
+          } else if (s.state === "error") {
+            if (prog) prog.textContent = t("Failed:") + " " + (s.error || t("unknown error"));
+          }
+        }
+      } catch (e) { if (prog) prog.textContent = t("Status check failed."); if (btn) btn.disabled = false; }
+    }
+    function _volStartPoll(progId, btn, cancelId) {
+      if (_volPollTimer) clearInterval(_volPollTimer);
+      _volRefresh(progId, btn, cancelId);
+      _volPollTimer = setInterval(() => _volRefresh(progId, btn, cancelId), 1500);
+    }
+    async function volBackupStart(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dest = ($("vb-dest").value || "").trim();
+      const pass = $("vb-pass").value || "";
+      if (!dest) { toast(t("Choose a destination folder."), "warn"); return; }
+      if (!pass) { toast(t("Enter a passphrase."), "warn"); return; }
+      btn.disabled = true;
+      const prog = $("vb-progress"); if (prog) prog.textContent = t("Starting…");
+      try {
+        await api("/api/backup/v2/volumes/start",
+          { method: "POST", body: JSON.stringify({ dest, passphrase: pass, include_newsletters: true, parity_fraction: 0.1 }) });
+        _volStartPoll("vb-progress", btn, "vb-cancel");
+      } catch (e) { if (prog) prog.textContent = (e.message || e); btn.disabled = false; }
+    }
+    async function volBackupCancel(_btn) {
+      try { await api("/api/backup/v2/volumes/cancel", { method: "POST" }); } catch (e) { /* best effort */ }
+    }
+    async function volRestoreStart(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const src = ($("vb-src").value || "").trim();
+      const pass = $("vb-rpass").value || "";
+      if (!src) { toast(t("Choose a folder to restore from."), "warn"); return; }
+      if (!pass) { toast(t("Enter the passphrase."), "warn"); return; }
+      if (!confirm(t("Restore merges this backup into your corpus (additive — nothing is replaced). Continue?"))) return;
+      btn.disabled = true;
+      const prog = $("vb-rprogress"); if (prog) prog.textContent = t("Starting…");
+      try {
+        await api("/api/backup/v2/volumes/restore",
+          { method: "POST", body: JSON.stringify({ src, passphrase: pass }) });
+        _volStartPoll("vb-rprogress", btn, null);
+      } catch (e) { if (prog) prog.textContent = (e.message || e); btn.disabled = false; }
+    }
     function _fbStartPoll() {
       if (_fbPoll) clearInterval(_fbPoll);
       _fbRefresh();
