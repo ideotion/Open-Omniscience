@@ -541,7 +541,7 @@ class VolumeRestoreBody(BaseModel):
     allow_unverified: bool = False
 
 
-@router.get("/volumes/status")
+@router.get("/v2/volumes/status")
 def volume_backup_status() -> dict:
     """Live state of the (single) volume backup/restore job — for the UI + /api/jobs."""
     from src.backup.volume_job import get_volume_manager
@@ -549,7 +549,7 @@ def volume_backup_status() -> dict:
     return get_volume_manager().status()
 
 
-@router.post("/volumes/start")
+@router.post("/v2/volumes/start")
 def volume_backup_start(body: VolumeBackupBody) -> dict:
     """Start the LARGE encrypted backup (volumes + parity) into a server-side directory,
     as a cancellable background job. 400 on a bad destination / missing passphrase;
@@ -569,7 +569,7 @@ def volume_backup_start(body: VolumeBackupBody) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/volumes/restore")
+@router.post("/v2/volumes/restore")
 def volume_backup_restore(body: VolumeRestoreBody) -> dict:
     """Restore a volume-set backup from a server-side directory: verify + parity-recover
     + reassemble, then merge ADDITIVELY into the live corpus (the standard merge)."""
@@ -585,7 +585,7 @@ def volume_backup_restore(body: VolumeRestoreBody) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.post("/volumes/cancel")
+@router.post("/v2/volumes/cancel")
 def volume_backup_cancel() -> dict:
     """Cancel a running volume BUILD — stops between volumes + removes the partial set.
     A restore mid-merge is atomic and not interruptible."""
