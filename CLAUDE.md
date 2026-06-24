@@ -478,6 +478,19 @@ ruling, a contingency, or a deliberate-omission note.
   task-manager window (today control is the Settings panel). IMMEDIATE WORKAROUND still valid until 1c merges:
   engage airplane mode (or shut down) → file-copy `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive —
   already SQLCipher-encrypted at rest.
+  **SLICE 1c 404 FIX 2026-06-24 (field test: "Back up (volumes + parity)" → "not found"; branch
+  claude/backup-1c-fix, draft PR onto 0.09; backend VERIFIED py3.11):** the 1c endpoints were decorated
+  `@router.get/post("/volumes/...")` but the router prefix is `/api/backup`, so the routes registered as
+  `/api/backup/volumes/...` while the deployed frontend (volBackupStart/volRestoreStart/volBackupCancel/
+  _volRefresh) POSTs/GETs `/api/backup/v2/volumes/...` (the `/v2/` family the encrypted-backup endpoints use)
+  → every volume call 404'd. FIX = add `/v2/` to the 4 volume decorators (chosen over editing the frontend,
+  for consistency with the `/v2/restore` family + the already-shipped JS), so they compose to
+  `/api/backup/v2/volumes/{start,restore,cancel,status}` = the frontend calls. The slice-1c invariant test
+  only checked both path strings existed INDEPENDENTLY (so it passed despite the mismatch) — HARDENED to
+  assert full-path AGREEMENT (backend = prefix + decorator, via regex; `frontend_routes - backend_routes`
+  must be empty), which would have caught the 404. Endpoint bodies unchanged. LESSON: a wiring test must
+  compose the actual route (prefix + decorator) and match it against the caller, never assert the two strings
+  side by side.
   (B) **UNIFIED IMPORT / EXPORT (/ BACKUP) SECTION (maintainer ruling):** collapse ALL import types and ALL
   export/backup types into ONE Import entry point + ONE Export(/Backup) entry point; each opens a FOLLOW-UP
   dialog (pop-up) to gather that action's options. Today these are scattered (newsletter .eml upload +

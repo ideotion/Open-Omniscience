@@ -4008,13 +4008,31 @@ def test_keyword_growth_curve_wired_and_decrypt_free():
 
 def test_volume_backup_job_wired_slice_1c():
     """Slice 1c: the large encrypted backup (volumes + parity) is reachable in-app — the
-    job manager, the four endpoints, the /api/jobs surface, and the Settings panel + JS."""
+    job manager, the four endpoints, the /api/jobs surface, and the Settings panel + JS.
+    CRUCIALLY: every volume route the FRONTEND calls must compose to a real backend route
+    (router prefix + decorator) — the path agreement that, when broken, gave a 404."""
+    import re
+
     assert (_SRC / "backup" / "volume_job.py").exists()
     bv = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
-    for route in ('"/volumes/start"', '"/volumes/restore"', '"/volumes/status"', '"/volumes/cancel"'):
-        assert route in bv, route
+    assert 'prefix="/api/backup"' in bv
     jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
     assert "_volume_backup_jobs" in jobs and "volume-backup" in jobs
     src = _ui_source()
     assert "volBackupStart" in src and "volRestoreStart" in src and "vb-dest" in src
-    assert "/api/backup/v2/volumes/start" in src
+
+    # The backend route for each volume endpoint = "/api/backup" + the decorator path.
+    backend_routes = {
+        "/api/backup" + m
+        for m in re.findall(r'@router\.(?:get|post)\("(/v2/volumes/[a-z]+)"\)', bv)
+    }
+    # The volume routes the frontend actually POSTs/GETs.
+    frontend_routes = set(re.findall(r'"(/api/backup/v2/volumes/[a-z]+)"', src))
+    assert frontend_routes, "frontend calls no /api/backup/v2/volumes/* route"
+    missing = frontend_routes - backend_routes
+    assert not missing, f"frontend calls volume routes with no matching backend route: {missing}"
+    # all four endpoints present
+    assert {"/api/backup/v2/volumes/" + a for a in ("start", "restore", "status", "cancel")} <= (
+        backend_routes | frontend_routes
+    )
+
