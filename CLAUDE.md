@@ -402,6 +402,41 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **FIELD TEST 2026-06-24 (maintainer running a real 59,646-article / 909,463-keyword / 6.0 GB corpus
+  scraped over a day; several findings + rulings — RECORDED, build status noted):**
+  (A) **BACKUP BROKEN AT SCALE (real bug, data-safety):** "Backup failed … Data or associated data too long.
+  Max 2**31 - 1 bytes". ROOT CAUSE CONFIRMED — `src/safety/crypto.py:encrypt_bytes` does a SINGLE
+  `AESGCM(key).encrypt(nonce, data, None)`; AES-GCM hard-caps at 2³¹−1 bytes (~2 GiB) per call AND the path
+  reads the whole archive into RAM (`encrypt_bytes(zip_path.read_bytes())`). At a 6 GB corpus the oo-backup-2
+  archive exceeds 2 GiB → the cipher refuses. The "Large data (folder/drive)" backup only covers the PUBLIC
+  re-downloadable blobs (wiki/maps/models) — it leaves the encrypted CORPUS on this same 2 GiB-capped path.
+  FIX (the right one, needs the torture suite): CHUNKED/STREAMING AEAD — frame the archive into N-MB blocks,
+  each its own nonce+tag, written straight to disk (never the whole thing in RAM) → removes the 2 GiB cap AND
+  the memory blowup, scales to any corpus. (K6 design even names `age` as the streaming archival option.)
+  IMMEDIATE WORKAROUND given the user: engage airplane mode (or shut down) → file-copy `data/
+  open_omniscience.db` (+ `-wal`/`-shm`) to a drive — it's already SQLCipher-encrypted at rest. NOT YET BUILT.
+  (B) **UNIFIED IMPORT / EXPORT (/ BACKUP) SECTION (maintainer ruling):** collapse ALL import types and ALL
+  export/backup types into ONE Import entry point + ONE Export(/Backup) entry point; each opens a FOLLOW-UP
+  dialog (pop-up) to gather that action's options. Today these are scattered (newsletter .eml upload +
+  folder-import job + mailbox pull · oo-backup-2 encrypted/plaintext · selective tickboxes · folder/large-data
+  backup · models .oomodels · restore-merge · selective restore). Consolidate to one Import + one Export, each
+  with an options dialog. NOT YET BUILT.
+  (C) **FOLDER NEWSLETTER IMPORT FAILS (real bug):** importing a ~5 GB multi-folder `.eml` tree dies with
+  `UNIQUE constraint failed: articles.hash`; per-batch works but is quantity-limited. The §2.B batched-commit
+  path (`ingest_emails` commit_batch + `_commit_one` fallback) has a dedup HOLE at the folder-import-job scale
+  — a duplicate hash reaches an INSERT instead of being caught (likely two .eml with the same content-hash in
+  the SAME uncommitted batch ACROSS subfolders, or the IntegrityError fallback not wired on the folder-job
+  path). FIX: catch the collision + dedup within the batch (the `batch_keys` set must span the whole folder
+  walk, and the `_commit_one` IntegrityError redo must be on the folder-job path). NOT YET BUILT.
+  (D) **OLLAMA "installer missing" — ANSWERED, NOT LOST:** the Settings subtab was RENAMED "Models" → "AI"
+  (`index.html:920`, Settings → AI) — that's why it feels missing; the catalog (size/RAM hints) + pull queue +
+  remove + active-model picker SHIPPED there. The BINARY installer (download+verify+RUN the official per-OS
+  Ollama installer) was NEVER built — grep finds zero install endpoints — blocked from day one on per-OS
+  installer CHECKSUMS (can't fabricate; needs a networked machine). Design/interaction is recorded (ledger +
+  FUTURE_DEVELOPMENTS); the binary-install half is the genuinely-unbuilt piece. (E) **909k KEYWORDS = mostly
+  the pre-cleanup count** — the §2.5/§2.6 + stopwords-iso reduction is forward-only at index time, so it hasn't
+  bitten; "Clean up keywords (re-index, then prune)" drains it (heavy at 6 GB). The keyword-growth curve
+  (below, SHIPPED) measures how much is junk.
 - **MAINTAINER FINALIZATION RULINGS 2026-06-23 (verbatim "proceed in full autonomy [on] everything we are
   currently listing"; answered a 20-question yes/no finalize-everything list ALL YES + "you decide what's
   best" on PR strategy + priorities — NO further questions, build it all):** binding decisions that unblock
@@ -3857,6 +3892,26 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **KEYWORD-GROWTH (VOCABULARY) CURVE 2026-06-24 (maintainer ask at 909k keywords: "a curve of added keywords
+  per total words added"; branch claude/keyword-growth, draft PR onto 0.09; backend VERIFIED py3.11, frontend
+  BROWSER-UNVERIFIED per fork-3):** `src/analytics/keyword_growth.py:keyword_growth_curve` plots cumulative
+  DISTINCT keywords against cumulative WORDS (token occurrences) added, ordered by article date. The SHAPE is
+  the diagnostic (Heaps' law): a curve that bends over = the vocabulary is SATURATING (healthy, new articles
+  reuse known words); a near-straight line (Heaps `beta` ~ 1) = new keywords still minted for almost every word
+  = the markup/code/unsegmented/function-word JUNK signature. Reports the cumulative series + a log-log Heaps
+  fit (`beta`, `K`, `r²`) + the "new keywords per 1,000 words" minting rate at the START vs END (a big drop =
+  saturating). DECRYPT-FREE BY CONSTRUCTION: every figure comes from `keyword_mentions` alone via the
+  denormalised `observed_on` + the `ix_mention_date_keyword` covering index — it NEVER joins to the encrypted
+  `articles` table (the standing perf-trap rule); cheap even at millions of mentions. Counts only, NO score;
+  undated mentions reported not dropped; honest caveats (ordered by article date = a collection-order proxy;
+  multilingual inflates the vocabulary). `GET /api/diagnostics/keyword-growth` (+`download=1`) + a Settings →
+  Diagnostics "Keyword-growth curve" button (renders a self-contained SVG of keywords-vs-words in the shared
+  `#chart-enlarge` modal, with the β + minting rate as the headline + a dashed "perfectly linear" reference
+  line; the closer the curve hugs it, the more junk) + a "(.json)" download for the maintainer↔dev loop.
+  tests/test_keyword_growth.py (4: cumulative+monotonic+decrypt-free [proven by seeding mentions with NO
+  Article rows], undated counted, Heaps fit separates saturating-vs-junk, empty-corpus honest) +
+  test_repo_invariants::test_keyword_growth_curve_wired_and_decrypt_free. REMAINING: human click-through
+  (fork-3); a log-log toggle on the in-app chart; optional x-axis = cumulative articles.
 - **INSTALL/BOOTSTRAP FIELD-TEST FIXES (2026-06-23, Qubes disposable VM; branch claude/magical-brown-49m9nd,
   stacked on the stopwords PR #446; bash -n + tests VERIFIED):** TWO real field failures. (1) BOOTSTRAP
   DIVERGENCE — origin/0.09 was FORCE-UPDATED (history rewritten) + the install checkout had a stray commit,

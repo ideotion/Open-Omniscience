@@ -1442,6 +1442,8 @@
         <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">All keywords (.zip)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Keyword self-test (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Keyword-engine report (.json)</button>
+        <button onclick="viewKeywordGrowth(this)" title="Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).">Keyword-growth curve</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keyword-growth?download=1','_blank')">Keyword-growth (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/home-cards?download=1','_blank')" title="For every Home card (Lead): does clicking it open its EXACT corpus (hard-linked) or a fuzzy text search that loses it (search-fallback)? Flags the mismatches.">Home-card diagnostics (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Date-extraction log (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/network','_blank')">Network log (.json)</button>
