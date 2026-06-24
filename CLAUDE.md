@@ -3983,7 +3983,15 @@ ruling, a contingency, or a deliberate-omission note.
   NOTE: a macOS-portability flake surfaced separately — `test_same_origin_and_no_origin_allowed` teardown
   "write gate HELD" — it hits `/api/briefing/refresh`, whose #455 BACKGROUND recompute writes on its own
   session; a pre-existing race in that merged path, NOT this read-only change [same SHA passed it in the
-  parallel push-vs-PR run; observation-only lane].) A new
+  parallel push-vs-PR run; observation-only lane]. FIXED 2026-06-24 [it later reddened the BLOCKING Core-only
+  lane too, on the sibling `test_security_headers_present` — same `/api/briefing/refresh` daemon]: the autouse
+  `_write_gate_not_leaked` conftest fixture checked `write_gate.held` IMMEDIATELY at teardown, but the #455
+  briefing-refresh DAEMON can still be mid-commit (a legitimate background writer, not a leak). It now WAITS up
+  to 5 s for the gate to DRAIN before failing — a real leak [a session flushed but never committed/closed] never
+  releases so the bounded wait still surfaces it, while a finishing background thread drains; the wait runs only
+  on the rare teardown that overlaps a background write [held==False for ~all tests = zero cost]. LESSON: an
+  autouse gate-leak assertion must tolerate the app's own legitimate async writers or it flakes on whichever
+  test happened to kick one.) A new
   `_deadlined(db, key, compute)` helper in insights.py wraps the deadline INSIDE the compute (so it runs only on
   a cache MISS — a hot TTL-cache hit never touches the connection, the #458 cache stays the primary speed lever);
   framing.py wraps its body directly (the deadline bounds the SQLCipher-decrypt of up to `limit` article bodies,
