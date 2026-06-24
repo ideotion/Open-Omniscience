@@ -3955,6 +3955,28 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **HOME BRIEFING FREEZE — NON-BLOCKING BACKGROUND RECOMPUTE + PROGRESS BAR 2026-06-24 (field-test remarks
+  7/8; branch claude/happy-einstein-6ht33l, draft PR onto 0.09; backend py_compile-VERIFIED py3.11 + node
+  --check, full pytest CI):** at 60K articles Home hung forever on "Loading the briefing…". ROOT CAUSE
+  (verified): `service.get_briefing` recomputed SYNCHRONOUSLY on the request when the cache was stale/absent
+  (`refresh_briefing` → all producers + `warm_cache`, whole-corpus GROUP BYs over 932K keywords = minutes;
+  `top_terms(group=True)` alone measured 17 s/50 rows in the keyword-engine report). Since the app boots in
+  AIRPLANE mode the scheduler is idle, so the on-demand recompute (the P0-3 stale-cache fix) ran on the GET
+  and blocked it. FIX: a new `background=True` path (the HTTP endpoints only) NEVER recomputes on the request
+  thread — it kicks ONE background daemon recompute (its OWN session via `session_scope`, idempotent under
+  concurrent Home polls, guarded by `_refresh_lock`) and returns instantly: the stale cards under a slim
+  "updating…" banner, or an honest `building` placeholder when there's no cache, with a `refreshing` flag +
+  `{done,total}` PROGRESS. `run_all(session, on_progress=)` publishes per-producer progress; the frontend
+  `renderBriefing` shows a determinate `<progress>` ("Building your briefing… N/M analyses" — honest: counts
+  analyses, NOT time) and re-polls every 1.5 s until cards land. `background=False` (tests / scheduler /
+  explicit callers) keeps the SYNCHRONOUS recompute unchanged (test_briefing.py green). The HTTP GET +
+  POST /refresh both pass background=True (neither blocks). BONUS for remark 8: `warm_cache` runs INSIDE the
+  background `refresh_briefing`, so the grouped `top_terms`/trending Insights views are warmed off-thread too
+  (the per-keyword analysis endpoints — associations/graph/framing — still need their own statement-deadline
+  slice; flagged). tests/test_briefing_api.py::test_briefing_get_is_nonblocking + the existing briefing
+  tests stay green (the synchronous default path is untouched). REMAINING: i18n-key the 3 new strings
+  (English-fallback via t() now, gate green); the per-keyword Insights "Loading… forever" statement-deadline
+  fix (remark 8 proper); human click-through of the progress UI (fork-3).
 - **FIELD-TEST DIAGNOSTICS — P0 BUG FIXES 2026-06-24 (maintainer live test of the ~60K-article corpus; 3
   diagnostics analysed [keyword self-test 42/42, debug bundle, keyword-engine report]; branch
   claude/happy-einstein-6ht33l, draft PR onto 0.09; backend py_compile-VERIFIED py3.11, full pytest CI [repo
