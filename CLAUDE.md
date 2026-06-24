@@ -4024,6 +4024,17 @@ ruling, a contingency, or a deliberate-omission note.
   ZERO new i18n keys (reused t("Search")/t("Analysis"); ↗ is a glyph). node --check clean; test_repo_invariants
   ::test_omnibar_enter_opens_analysis_window updated to assert the new-tab opener + the ?analyze= deep-link +
   the ordering. REMAINING: human click-through (fork-3).
+  **5A-bis D0 — SCALING DESIGN DOC SHIPPED:** `docs/design/SCALING_DERIVED_LAYER_1000X.md` is the source-of-truth
+  for the derived-layer scaling workstream (the deep fix for remark 8). It EXTENDS the shipped seam
+  (`readmodel.py` top_terms/trending/.../source_country_counts all v1-delegate; `columnar.py` connect/keyword_agg/
+  oo_meta/encryption_gate/secure_crypto_available/build_keyword_read_model/top_terms_raw; the
+  `ix_mention_date_keyword` covering index) — never recreates them. Captures the `keyword_daily` + `source_coverage`
+  rollups, the stream-from-SQLCipher-INTO-DuckDB-group-THERE full build, the incremental MERGE on the
+  `keyword_mentions.id` watermark + the corpus-epoch full-rebuild gate, AND the critical TRAP (index_article does
+  delete-then-reinsert, so every re-index/prune/restore path MUST bump the epoch → full rebuild, never an
+  incremental MERGE, or the rollup double-counts; normal ingest must NOT bump it). 12-item VERIFY checklist +
+  rejected-alternatives. D2–D4 are buildable+parity-provable IN-MEMORY now; the perf payoff is D1-gated (the
+  persisted encrypted DuckDB store needs the maintainer's per-OS httpfs binaries — 5B).
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/
