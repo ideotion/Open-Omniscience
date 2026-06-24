@@ -22,6 +22,7 @@ def _fresh(monkeypatch, tmp_path):
     """Point the log at a tmp file and reset module state for an isolated run."""
     monkeypatch.setattr(errorlog, "_log_path", lambda: tmp_path / "app_errors.jsonl")
     errorlog._installed = False
+    errorlog._http_last.clear()  # reset the cross-test HTTP-error throttle state
     # Detach any handler a prior test/install left on the root logger.
     root = logging.getLogger()
     for h in list(root.handlers):
@@ -86,7 +87,51 @@ def test_empty_log_is_honest(monkeypatch, tmp_path):
     s = errorlog.summary()
     assert s["records"] == 0
     assert s["problems_total"] == 0
+    assert s["http_errors_total"] == 0
+    assert s["http_status_breakdown"] == {}
     assert "note" in s
+
+
+def test_http_error_is_recorded_and_counted(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    errorlog.note_boot()
+    errorlog.note_http_error("POST", "/api/backup/v2/volumes/start", 404)
+    errorlog.note_http_error("GET", "/api/something", 500)
+
+    recs = errorlog.recent_errors()
+    http = [r for r in recs if r.get("level") == errorlog._HTTP_LEVEL]
+    assert len(http) == 2
+    assert {r["status"] for r in http} == {404, 500}
+    assert any("404" in r["message"] and "volumes/start" in r["message"] for r in http)
+
+    s = errorlog.summary()
+    assert s["http_errors_total"] == 2
+    assert s["http_errors_this_session"] == 2
+    assert s["http_status_breakdown"] == {"404": 1, "500": 1}
+    # An error RESPONSE is not, by itself, an app fault: it must NOT inflate the
+    # problem/lock counts the data-loss signal relies on.
+    assert s["problems_total"] == 0
+    assert s["problems_this_session"] == 0
+
+
+def test_http_error_duplicates_are_throttled(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    # Identical (method, path, status) hammered by a poll loop collapses to one
+    # record within the throttle window; a DIFFERENT status is still captured.
+    for _ in range(50):
+        errorlog.note_http_error("GET", "/api/scheduler/activity", 503)
+    errorlog.note_http_error("GET", "/api/scheduler/activity", 500)
+
+    http = [r for r in errorlog.recent_errors() if r.get("level") == errorlog._HTTP_LEVEL]
+    assert len(http) == 2, "duplicate 503s should be throttled to one; the 500 is distinct"
+    assert {r["status"] for r in http} == {503, 500}
+
+
+def test_http_error_never_raises(monkeypatch, tmp_path):
+    _fresh(monkeypatch, tmp_path)
+    # A broken append must be swallowed — diagnostics can never break the app.
+    monkeypatch.setattr(errorlog, "_append", lambda *_a, **_k: (_ for _ in ()).throw(OSError("x")))
+    errorlog.note_http_error("GET", "/api/x", 500)  # must not raise
 
 
 def test_module_imports_clean():

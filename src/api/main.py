@@ -401,6 +401,19 @@ async def monitor_requests(request: Request, call_next):
     REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(process_time)
     ACTIVE_REQUESTS.dec()
 
+    # Diagnostics: record every error RESPONSE (4xx/5xx) into the downloadable debug
+    # bundle's rolling log. This middleware is the one place that sees the final status
+    # for EVERY response — including a 404 on an unmatched route (which logs nothing) —
+    # so "every error code is in the diagnostic log" becomes literally true. Best-effort;
+    # throttled per (method, path, status); kept out of the problem/lock counts.
+    if status_code >= 400:
+        try:
+            from src.monitoring.errorlog import note_http_error
+
+            note_http_error(method, endpoint, status_code)
+        except Exception:  # noqa: BLE001 - diagnostics must never affect the response
+            pass
+
     return response
 
 

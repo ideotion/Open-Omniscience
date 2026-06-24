@@ -3963,6 +3963,34 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     assert 'CACHE_VERSION = "oo-briefing-cache-2"' in svc
 
 
+def test_http_error_responses_recorded_in_diagnostic_log():
+    """Field test 2026-06-24: "I'd like all error codes recorded into a downloadable
+    diagnostic log." Every HTTP error RESPONSE (4xx/5xx — incl. a 404 on an unmatched
+    route, which logs nothing otherwise) is captured into data/app_errors.jsonl by the
+    request middleware, which is the one place that sees the final status for EVERY
+    response. The bundle already ships that file + the summary, so the codes are
+    downloadable. The HTTP channel stays OUT of the problem/lock counts."""
+    el = (_SRC / "monitoring" / "errorlog.py").read_text(encoding="utf-8")
+    main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+
+    # The recorder exists, has its own non-problem level + a poll-storm throttle.
+    assert "def note_http_error(" in el
+    assert '_HTTP_LEVEL = "HTTP"' in el and "_HTTP_THROTTLE_S" in el
+    # HTTP is deliberately NOT a "problem" level (a 404/409 is often the right answer).
+    assert '_PROBLEM_LEVELS = {"WARNING", "ERROR", "CRITICAL"}' in el
+    # summary() surfaces the new counts (without inflating problems).
+    for key in ("http_errors_total", "http_errors_this_session", "http_status_breakdown"):
+        assert f'"{key}"' in el
+
+    # The request middleware records every >= 400 response, best-effort.
+    assert "monitor_requests" in main
+    assert "status_code >= 400" in main and "note_http_error" in main
+
+    # It rides the existing downloadable bundle (recent_errors + the summary).
+    assert "recent_errors" in diag and "error_log" in diag
+
+
 def test_governments_sources_facets_strata_strings_are_keyed():
     """Field report 2026-06-22: the Governments UI, the Sources multi-select facet
     filters and the task-manager language/tag strata shipped with English-fallback

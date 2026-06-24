@@ -3968,6 +3968,29 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
+  recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
+  PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/
+  ERROR/CRITICAL *logged* anywhere (incl. backend exceptions WITH tracebacks + the unhandled-500 handler) lands
+  in `data/app_errors.jsonl`, which rides the downloadable debug bundle (Settings → Diagnostics; `recent_errors`
+  + `error_log` summary). GAP: HTTP error *responses* (4xx/5xx the UI actually saw — a 404 on an UNMATCHED route,
+  a 409/400 HTTPException) were captured ONLY if an endpoint happened to log them; a no-route 404 logged nothing
+  (exactly the "not found" the maintainer hit before the #456 prefix fix would never have appeared in the log).
+  FIX: `errorlog.note_http_error(method, path, status)` appends a record under a NEW `_HTTP_LEVEL = "HTTP"`
+  channel, wired into the `monitor_requests` middleware (`status_code >= 400`) — the ONE place that sees the
+  final status for EVERY response, including unmatched-route 404s (it is the OUTERMOST middleware, so the 503
+  lock-gate + Starlette's no-route 404 both flow back through it). HONESTY/safety: `HTTP` is deliberately NOT in
+  `_PROBLEM_LEVELS`, so error RESPONSES (a 404/409 is often the correct answer) do NOT inflate the problems_*/
+  locked_errors_* data-loss signal; a per-(method,path,status) throttle (`_HTTP_THROTTLE_S=10s`, bounded
+  `_http_last` map) stops a poll loop flooding the capped log; best-effort try/except (diagnostics never affect
+  the response). `summary()` gained `http_errors_total` / `http_errors_this_session` (session-aware via the boot
+  marker) + `http_status_breakdown` ({"404": n, …}); the records appear in the bundle's `errors` list
+  automatically. tests/test_errorlog_summary.py (+4: recorded+counted+breakdown, problems unaffected, duplicate
+  throttle collapses but distinct status kept, never-raises) + test_repo_invariants::
+  test_http_error_responses_recorded_in_diagnostic_log (the middleware hook + the non-problem level + bundle
+  wiring). ruff F/B clean; errorlog.py 0 mypy errors. REMAINING (optional): include the HTTPException `detail`
+  string (the middleware sees only the status, not the JSON body) + a glanceable http-error count in the
+  Settings diagnostics UI.
 - **HOME BRIEFING FREEZE — NON-BLOCKING BACKGROUND RECOMPUTE + PROGRESS BAR 2026-06-24 (field-test remarks
   7/8; branch claude/happy-einstein-6ht33l, draft PR onto 0.09; backend py_compile-VERIFIED py3.11 + node
   --check, full pytest CI):** at 60K articles Home hung forever on "Loading the briefing…". ROOT CAUSE

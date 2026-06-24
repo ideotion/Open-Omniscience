@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import traceback
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -28,6 +30,21 @@ from src.paths import data_dir
 _CAP = 2000  # newest records kept; the file is trimmed when it doubles that
 _LOCK = threading.Lock()
 _installed = False
+
+# An HTTP error RESPONSE (status >= 400) returned to the client — the "not found",
+# "internal error", etc. the UI actually saw. These are NOT necessarily app faults
+# (a 404/409/400 is often the correct answer), so they get their OWN level kept OUT
+# of _PROBLEM_LEVELS: recording them makes "every error code is in the diagnostic
+# log" literally true WITHOUT muddying the problem/lock-error counts. Captured by
+# the request middleware, which is the one place that sees the final status code for
+# EVERY response — including a 404 on an unmatched route, which logs nothing today.
+_HTTP_LEVEL = "HTTP"
+# Throttle identical (method, path, status) records so a polling loop hammering one
+# failing endpoint (or every poll hitting the locked-503 gate) cannot flood the
+# capped log and evict real signal. Distinct errors are still all captured.
+_HTTP_THROTTLE_S = 10.0
+_HTTP_KEYS_CAP = 1024
+_http_last: dict[tuple[str, str, int], float] = {}
 
 # A session-start marker level. The rolling log is append-only and the data dir
 # survives reinstalls, so a bundle can show errors from a PAST session that are
@@ -92,6 +109,44 @@ def note_boot() -> None:
     )
 
 
+def note_http_error(method: str, path: str, status: int, *, detail: str | None = None) -> None:
+    """Record an HTTP error RESPONSE (status >= 400) the client received, so the
+    downloadable diagnostic log shows EVERY error code the UI saw — not only the ones
+    an endpoint happened to log (a 404 on an unmatched route logs nothing otherwise).
+
+    Best-effort; never raises. Identical (method, path, status) is throttled to once
+    per ``_HTTP_THROTTLE_S`` so a poll loop cannot flood the capped log. Level
+    ``HTTP`` keeps these out of the problem/lock counts (a response code is not, by
+    itself, an app fault)."""
+    try:
+        key = (str(method), str(path), int(status))
+        now = time.monotonic()
+        with _LOCK:
+            last = _http_last.get(key)
+            if last is not None and (now - last) < _HTTP_THROTTLE_S:
+                return
+            if len(_http_last) > _HTTP_KEYS_CAP:
+                _http_last.clear()
+            _http_last[key] = now
+        # _append (which re-acquires _LOCK) runs AFTER the `with` block releases it.
+        msg = f"HTTP {status} {method} {path}"
+        if detail:
+            msg = f"{msg} — {str(detail)[:200]}"
+        _append(
+            {
+                "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "level": _HTTP_LEVEL,
+                "logger": "http",
+                "status": status,
+                "method": str(method),
+                "path": str(path),
+                "message": msg,
+            }
+        )
+    except Exception:  # noqa: BLE001 - diagnostics must never break the app
+        return
+
+
 def install() -> None:
     """Attach the handler to the root logger (idempotent AND self-healing:
     if something cleared the root handlers — test frameworks do — re-attach).
@@ -138,6 +193,9 @@ def summary() -> dict:
             "problems_this_session": 0,
             "locked_errors_total": 0,
             "locked_errors_this_session": 0,
+            "http_errors_total": 0,
+            "http_errors_this_session": 0,
+            "http_status_breakdown": {},
             "note": "no error log yet — logging is installed at boot",
         }
     ats: list[str] = [str(r["at"]) for r in records if r.get("at")]
@@ -153,10 +211,17 @@ def summary() -> dict:
         blob = (r.get("message", "") + r.get("traceback_tail", "")).lower()
         return "database is locked" in blob
 
+    def _is_http(r: dict) -> bool:
+        return r.get("level") == _HTTP_LEVEL
+
     def _this_session(r: dict) -> bool:
         # No boot marker yet (pre-this-change logs) ⇒ count nothing as "this
         # session" rather than fabricating a boundary.
         return bool(last_boot) and bool(r.get("at")) and r["at"] >= last_boot
+
+    http_status = Counter(
+        str(r.get("status")) for r in records if _is_http(r) and r.get("status") is not None
+    )
 
     return {
         "records": len(records),
@@ -169,4 +234,7 @@ def summary() -> dict:
         "locked_errors_this_session": sum(
             1 for r in records if _is_locked(r) and _this_session(r)
         ),
+        "http_errors_total": sum(1 for r in records if _is_http(r)),
+        "http_errors_this_session": sum(1 for r in records if _is_http(r) and _this_session(r)),
+        "http_status_breakdown": dict(http_status),
     }
