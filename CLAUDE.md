@@ -426,12 +426,28 @@ ruling, a contingency, or a deliberate-omission note.
   with per-volume ciphertext SHA-256 + whole-archive plaintext SHA-256), `verify_volume_set` (names the exact
   corrupt/missing volumes WITHOUT decrypting), `read_volume_set` (verify → optional `recover` hook [the slice-2
   parity seam] → streamed decrypt+reassemble → whole-archive checksum check, raises LOUDLY naming bad volumes if
-  unrecoverable). tests/test_crypto_streaming.py (9) + tests/test_backup_volumes.py (8). REMAINING: SLICE 1b =
-  wire the volume set into the backup CREATE (folder/drive dest, reuse folder_backup) + the restore READ
-  (stream the upload, drop the 2 GiB `_MAX_RESTORE_BYTES` cap on this path); SLICE 2 = the Reed-Solomon erasure
-  parity module + recovery wired into the `recover` hook. IMMEDIATE WORKAROUND given the user meanwhile: engage
-  airplane mode (or shut down) → file-copy `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive — already
-  SQLCipher-encrypted at rest.
+  unrecoverable). tests/test_crypto_streaming.py (9) + tests/test_backup_volumes.py (8).
+  **SLICE 2 SHIPPED 2026-06-24 (branch claude/backup-parity, draft PR onto 0.09; VERIFIED py3.11+numpy, 7 tests):**
+  the Reed-Solomon erasure PARITY that actually recovers corruption. `src/backup/parity.py`: a systematic MDS
+  RS code over GF(2^8) (Cauchy generator, generator poly 0x11d) producing M parity volumes so ANY ≤M of the
+  (N data + M parity) volumes can be lost/corrupt and rebuilt EXACTLY — including a corpus volume, so a
+  monolithic SQLite corpus genuinely survives partial corruption once parity exists. `write_parity` (M =
+  parity_count or ceil(0.1·N), each parity volume = the stripe length so still <600 MB; records them + their
+  SHA-256 in the manifest `parity` block), `recover_volumes` (the read_volume_set `recover` hook: re-verifies
+  data AND parity integrity, rebuilds the erased DATA volumes from the survivors, and CHECKS each rebuilt
+  volume against its manifest SHA-256 — a wrong reconstruction is reported, never trusted; >M losses → loud
+  failure). Operates on the opaque CIPHERTEXT (parity ⟂ encryption; a rebuilt volume is then GCM-verified by
+  the normal decrypt). GF math over multi-GB volumes is numpy-vectorised (256×256 multiply table + XOR);
+  numpy is the `[analysis]` extra so the module IMPORTS without it and degrades honestly — `parity_available()`
+  False on a core install = volumes-only, recovery unavailable + reported loudly, never a silent partial
+  restore. `volumes.read_volume_set` AUTO-recovers when the manifest has parity (lazy import — the codec keeps
+  NO hard numpy dependency). tests/test_backup_parity.py (7: GF field consistency, MDS any-N-rows-invertible,
+  EXHAUSTIVE erasure recovery over every ≤M subset, manifest+sizes, restore recovers 2 corrupt data volumes,
+  restore recovers mixed data+parity loss, >M fails loudly). REMAINING: SLICE 1b = wire the volume set+parity
+  into the backup CREATE (folder/drive dest, reuse folder_backup) + the restore READ (stream the upload, drop
+  the 2 GiB `_MAX_RESTORE_BYTES` cap on this path) — the slice that makes the 6 GB backup work IN-APP.
+  IMMEDIATE WORKAROUND given the user meanwhile: engage airplane mode (or shut down) → file-copy
+  `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive — already SQLCipher-encrypted at rest.
   (B) **UNIFIED IMPORT / EXPORT (/ BACKUP) SECTION (maintainer ruling):** collapse ALL import types and ALL
   export/backup types into ONE Import entry point + ONE Export(/Backup) entry point; each opens a FOLLOW-UP
   dialog (pop-up) to gather that action's options. Today these are scattered (newsletter .eml upload +
