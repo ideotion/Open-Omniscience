@@ -3985,3 +3985,22 @@ def test_governments_sources_facets_strata_strings_are_keyed():
     ]
     missing = [s for s in must_be_keyed if s not in en]
     assert not missing, f"these strings regressed to English-fallback (not keyed): {missing}"
+
+
+def test_keyword_growth_curve_wired_and_decrypt_free():
+    """Maintainer ask 2026-06-24 (at 909k keywords): a vocabulary-growth curve —
+    cumulative keywords vs cumulative words. Pin the endpoint + the frontend View/
+    download wiring, and that the analytic reads keyword_mentions ONLY (never joins to
+    the encrypted articles table — the standing decrypt-trap rule)."""
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '"/keyword-growth"' in diag and "keyword_growth_curve" in diag
+
+    growth = (_SRC / "analytics" / "keyword_growth.py").read_text(encoding="utf-8")
+    # decrypt-free: it queries keyword_mentions and never the articles table.
+    assert "keyword_mentions" in growth
+    assert "from articles" not in growth.lower() and "join articles" not in growth.lower()
+    # (no-score is enforced on the actual payload in tests/test_keyword_growth.py)
+
+    src = _ui_source()  # index.html + app.js
+    assert "viewKeywordGrowth" in src and "_growthSvg" in src
+    assert "/api/diagnostics/keyword-growth?download=1" in src

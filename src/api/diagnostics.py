@@ -876,6 +876,27 @@ def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db))
     return JSONResponse(report, headers=headers)
 
 
+@router.get("/keyword-growth")
+def keyword_growth(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
+    """The vocabulary-growth curve: cumulative distinct keywords vs cumulative words
+    added (maintainer ask 2026-06-24, at 909k keywords).
+
+    The SHAPE diagnoses the junk fraction: a curve that bends over = the vocabulary is
+    saturating (new articles reuse known words); a near-straight line (Heaps beta ~ 1) =
+    new keywords are still minted for almost every word added (markup/code/unsegmented
+    junk). Read DECRYPT-FREE from keyword_mentions (the denormalised observed_on +
+    covering index) — no article decrypt. Counts only, NO score. With ``download=1`` it
+    returns as a dated attachment to send back for the keyword-reduction loop."""
+    from src.analytics.keyword_growth import keyword_growth_curve
+
+    curve = keyword_growth_curve(db)
+    headers = {}
+    if download:
+        fname = f"oo-keyword-growth-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(curve, headers=headers)
+
+
 @router.get("/dates")
 def date_extraction_log(
     db: Session = Depends(get_db),

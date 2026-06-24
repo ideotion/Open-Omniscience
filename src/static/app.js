@@ -7161,6 +7161,60 @@
       finally { _reindexAllRunning = false; if (btn) btn.disabled = false; }
     }
 
+    // Keyword-growth (vocabulary) curve — cumulative distinct keywords vs cumulative
+    // words added (maintainer ask 2026-06-24, at ~909k keywords). The SHAPE is the
+    // diagnostic: a line that bows BELOW the dashed origin->end reference = the
+    // vocabulary is saturating (healthy); hugging the reference = near-linear junk
+    // growth (Heaps beta ~ 1). Data is fetched decrypt-free from the diagnostic
+    // endpoint; rendered in the shared #chart-enlarge modal. Browser-unverified (fork-3).
+    function _growthSvg(series, t) {
+      if (!Array.isArray(series) || series.length < 2) {
+        return `<div class="muted">${esc(t("Not enough data yet for a curve."))}</div>`;
+      }
+      const W = 820, H = 380, padL = 70, padR = 18, padT = 16, padB = 44;
+      const xmax = Math.max(1, ...series.map((p) => p.tokens || 0));
+      const ymax = Math.max(1, ...series.map((p) => p.keywords || 0));
+      const X = (v) => padL + (v / xmax) * (W - padL - padR);
+      const Y = (v) => H - padB - (v / ymax) * (H - padT - padB);
+      const pts = series.map((p) => `${X(p.tokens || 0).toFixed(1)},${Y(p.keywords || 0).toFixed(1)}`).join(" ");
+      const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : (n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n)));
+      const grid = [0, ymax / 2, ymax].map((v) =>
+        `<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${W - padR}" y2="${Y(v).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`
+        + `<text x="${padL - 6}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--muted)">${esc(fmt(Math.round(v)))}</text>`).join("")
+        + [0, xmax / 2, xmax].map((v) =>
+          `<text x="${X(v).toFixed(1)}" y="${H - padB + 16}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(fmt(Math.round(v)))}</text>`).join("");
+      return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(t("Cumulative keywords versus cumulative words"))}" style="width:100%;height:auto;background:var(--panel2);border:1px solid var(--border);border-radius:8px">`
+        + grid
+        + `<polyline points="${X(0).toFixed(1)},${Y(0).toFixed(1)} ${X(xmax).toFixed(1)},${Y(ymax).toFixed(1)}" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="5 4"/>`
+        + `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>`
+        + `<text x="${(W / 2).toFixed(0)}" y="${H - 6}" text-anchor="middle" font-size="12" fill="var(--text)">${esc(t("Cumulative words added →"))}</text>`
+        + `<text x="14" y="${(H / 2).toFixed(0)}" text-anchor="middle" font-size="12" fill="var(--text)" transform="rotate(-90 14 ${(H / 2).toFixed(0)})">${esc(t("Cumulative keywords →"))}</text>`
+        + `</svg>`
+        + `<div class="hint muted" style="margin-top:4px">${esc(t("Dashed line = perfectly linear growth. The more the curve bows below it, the more the vocabulary is saturating (fewer junk keywords)."))}</div>`;
+    }
+    async function viewKeywordGrowth(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) btn.disabled = true;
+      try {
+        const d = await api("/api/diagnostics/keyword-growth");
+        const dlg = $("chart-enlarge"); if (!dlg) { toast(t("Could not open the chart.")); return; }
+        const ttl = $("chart-enlarge-title"); if (ttl) ttl.textContent = t("Keyword-growth curve");
+        const note = $("chart-enlarge-note");
+        if (note) { note.textContent = d.caveat || ""; note.style.display = d.caveat ? "" : "none"; }
+        const body = $("chart-enlarge-body"); if (!body) return;
+        const tot = d.totals || {}, heaps = d.heaps || {}, rate = d.minting_rate_per_1000_words || {};
+        const head = `${esc(t("Keywords"))}: <b>${(tot.keywords || 0).toLocaleString()}</b> · `
+          + `${esc(t("words"))}: <b>${(tot.tokens || 0).toLocaleString()}</b>`
+          + (heaps.beta != null ? ` · Heaps β = <b>${esc(String(heaps.beta))}</b>` : "")
+          + (rate.start != null && rate.end != null
+              ? ` · ${esc(t("new keywords / 1,000 words"))}: <b>${esc(String(rate.start))} → ${esc(String(rate.end))}</b>` : "");
+        body.innerHTML = `<div class="hint" style="margin-bottom:6px">${head}</div>` + _growthSvg(d.series, t);
+        if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
+      } catch (e) {
+        toast(t("Could not load the keyword-growth curve."));
+      } finally { if (btn) btn.disabled = false; }
+    }
+
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
     // openCorpus is RETIRED here (THEME-3, 2026-06-19): the legacy #corpus-win keyword
