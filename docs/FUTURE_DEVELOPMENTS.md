@@ -136,6 +136,61 @@
     database-stats endpoint + the per-domain download managers); this is a presentation /
     aggregation surface — honest counts only, never a score.
 
+## CONSOLIDATED TO-DO (cross-session checklist, captured 2026-06-24)
+
+> Extracted from a parallel testing session. Overlaps the detailed **CLAUDE.md Open queue**
+> (the authoritative ledger) — kept here as a single glanceable checklist. Status flags
+> (✅ done / ◐ partial / ⏳ not started) reflect ONLY work MERGED in the 2026-06-24 diagnostics
+> session; **verify against current `0.09` before starting** — the parallel BACKUP workstream
+> (OOENC2 streaming volumes + large-data folder backup, #450/#454/#456) has also advanced.
+
+### Bugs (hit in testing)
+- [x] ✅ **DONE (#453)** Folder newsletter import `UNIQUE constraint failed: articles.hash` — the
+  hardened `ingest_emails` dedup (key on the real unique column + total recovery) fixes BOTH the
+  upload endpoint AND the folder-import job (both call it).
+- [ ] ⏳ Perf: collector is writer-bound (many parallel fetchers → 1 DB writer); batch writes / cut
+  gate contention. *(Ledger P1-C — not started.)*
+- [ ] ◐ **PARTIAL** Perf: per-keyword Insights (associations / graph / framing) freeze on the big
+  corpus. *(#455 warmed grouped top/trending off-thread; #458 cached the 5 per-corpus endpoints +
+  an honest slow-load note. REMAINING: a statement deadline + the cold FIRST-open speed — needs a
+  repro of the slowest subtab / the benchmark export, or the columnar speedup.)*
+
+### Features asked for, not yet built
+- [ ] Unified Import section (one entry → options pop-up covering all import types)
+- [ ] Unified Export/Backup section (one entry → options pop-up covering all export/backup types)
+- [ ] Ollama binary installer (download + verify + run the official per-OS installer) — needs per-OS
+  checksums from a networked machine
+- [ ] Include Wikipedia dumps + offline maps in backups as files (additive file-member restore).
+  *(NB: the large-data folder backup may already cover this — verify against the current backup code.)*
+- [ ] Fold the separate LLM-models backup into the one large-data backup flow
+
+### Keyword engine cleanup (run on your live corpus)
+- [ ] Run "Clean up keywords (re-index, then prune)" on the 6 GB corpus + measure the drop
+- [ ] Run baseline-tag backfill (tag coverage is 0%)
+- [ ] Generate translation rings from the exported keyword log on a networked machine (raises coverage)
+- [ ] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) out of the "?" bucket
+- [ ] Decide on zh/ja segmentation (currently unsegmented = no keywords for those)
+
+### Manipulation-pattern cards (5 of 9 shipped)
+- [ ] Card #4 "bury" half (a source under-covering a topic that's big elsewhere)
+- [ ] Astroturf / copypasta cards
+- [ ] Outrage-intensity (annotates another card, not a standalone Lead)
+- [ ] Event-timed-op (needs the elections candidate roster)
+
+### Release / housekeeping
+- [ ] Human click-through of all browser-unverified UI (the "needs click-through" items)
+- [ ] Flip version 0.0.9 → 0.1 once the RC-blocking items are green
+- [ ] App self-update (manual git-pull: snapshot → verify → migrate → swap → rollback)
+- [ ] i18n: key the remaining English-fallback panel strings ×12
+
+### Bigger / deferred (design-only)
+- [ ] Elections & civic vertical (needs a sourced candidate roster)
+- [ ] Persisted encrypted columnar store (needs a per-OS httpfs crypto-extension packaging decision)
+- [ ] LLM who/where/when + sentiment eval harness
+- [ ] Tor integration + per-source transport
+- [ ] Voice-only mode
+- [ ] Open Commons Mirror (separate sister project, when the app is mature)
+
 ---
 
 ## The 0.0.9 sequencing (maintainer-agreed 2026-06-11)
