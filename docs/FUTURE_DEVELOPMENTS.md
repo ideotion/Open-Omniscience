@@ -121,6 +121,21 @@
     when expanded / `#sb-expand` when collapsed); this asks for the empty-space click-toggle +
     making the expand affordance as clear as the collapse one.
 
+**I. Library tab = the central view of everything downloaded + extrapolated (added 2026-06-24)**
+16. *"The library tab should show statistics about everything downloaded and about secondary
+    metadata. It should show maps, wikipedia, amount of summaries / translations / synthesis, as
+    well as indices, laws, and so forth. This should be the central view for everything downloaded
+    and everything extrapolated."*
+    — Make Library the at-a-glance DASHBOARD for the whole local corpus + its derived layers:
+    counts + sizes for downloaded MAPS (OSM regions) and WIKIPEDIA dumps; the AI artifacts
+    (summaries / translations / synthesis counts from `article_analyses`); market INDICES +
+    commodities; LAW documents/revisions; official statistics; events/agenda; etc. — i.e.
+    EVERYTHING downloaded (the public/raw layer) AND everything EXTRAPOLATED (the derived /
+    secondary-metadata layer). Pairs with remark 10 (the per-country world map + per-language
+    donut for uncountried articles) as the same tab's content. Most counters already exist (the
+    database-stats endpoint + the per-domain download managers); this is a presentation /
+    aggregation surface — honest counts only, never a score.
+
 ---
 
 ## The 0.0.9 sequencing (maintainer-agreed 2026-06-11)

@@ -3991,6 +3991,24 @@ ruling, a contingency, or a deliberate-omission note.
   wiring). ruff F/B clean; errorlog.py 0 mypy errors. REMAINING (optional): include the HTTPException `detail`
   string (the middleware sees only the status, not the JSON body) + a glanceable http-error count in the
   Settings diagnostics UI.
+- **INSIGHTS PER-CORPUS ANALYSIS CACHING + HONEST SLOW-LOAD 2026-06-24 (field-test remark 8, slice 1; branch
+  claude/happy-einstein-6ht33l, draft PR onto 0.09; backend py_compile-VERIFIED py3.11 + node --check, full
+  pytest CI):** "searching a keyword → analysis screen says Loading… indefinitely." The Insights-frozen half
+  (`top_terms(group=True)` 17 s) is already warmed off-thread by the #455 briefing fix; this addresses the
+  analysis WINDOW. FINDING: the 5 per-corpus endpoints (`corpus-keywords/www/sentiment/sources/coordination`,
+  src/api/insights.py) were UNCACHED whole-corpus-scoped aggregations (bounded to cap=1000 articles, but the
+  Overview fires 4 at once + every subtab switch / re-open re-pays the search + GROUP BY) while
+  associations/graph/top/trending were already `_cached`. FIX: wrapped all 5 in the proven `_cached`/`_ckey`
+  pattern, with `_resolve_corpus` moved INSIDE the compute so a cache HIT skips the search too; keyed by the
+  full request identity (article_ids OR query+filters+limit+cap+kind+tl); TTL-disclosed (cached/computed_at).
+  So re-opening a keyword / flipping between subtabs is now instant. FRONTEND (browser-unverified per fork-3):
+  the analysis Overview landing replaces a bare infinite "Loading…" after ~6 s with an honest "still computing
+  over your full corpus — narrow the time window to speed this up" (never a fake spinner, never a hard abort
+  that discards the in-flight result). tests/test_insights_cache.py::test_per_corpus_analysis_endpoints_route_
+  through_cache (wiring guard) + node --check. REMAINING (honest): the FIRST cold open of a keyword is still
+  bounded by aggregation speed (the columnar speedup is gated on the httpfs crypto-extension packaging
+  decision; a statement-deadline is the riskier deferred option) — needs a repro of WHICH subtab is slowest on
+  the live corpus, or the benchmark export; the slow-note is on the Overview only; key the 1 new string ×12.
 - **HOME BRIEFING FREEZE — NON-BLOCKING BACKGROUND RECOMPUTE + PROGRESS BAR 2026-06-24 (field-test remarks
   7/8; branch claude/happy-einstein-6ht33l, draft PR onto 0.09; backend py_compile-VERIFIED py3.11 + node
   --check, full pytest CI):** at 60K articles Home hung forever on "Loading the briefing…". ROOT CAUSE

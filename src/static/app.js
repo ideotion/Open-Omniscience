@@ -10451,12 +10451,23 @@
       if (_anOverviewKey === key && host.dataset.done === "1") return;  // already shown for this set
       _anOverviewKey = key; host.dataset.done = "";
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      // Honest slow-load notice (field test 2026-06-24, remark 8: a keyword's analysis
+      // hung on a bare "Loading…" at 60K). After a few seconds we say it's a large-corpus
+      // aggregation and how to speed it up (narrow the window) — never a fake spinner and
+      // never a hard abort that would discard the in-flight result.
+      const slow = setTimeout(() => {
+        if (host.dataset.done !== "1") {
+          host.innerHTML = `<div class="muted">${esc(t("Loading…"))} `
+            + `<span class="bp-detail">${esc(t("still computing over your full corpus — narrow the time window to speed this up"))}</span></div>`;
+        }
+      }, 6000);
       const qs = p.toString();
       const grab = (path) => api(path + "?" + qs).then(d => d).catch(() => null);
       const [kw, www, src, sent] = await Promise.all([
         grab("/api/insights/corpus-keywords"), grab("/api/insights/corpus-www"),
         grab("/api/insights/corpus-sources"), grab("/api/insights/corpus-sentiment"),
       ]);
+      clearTimeout(slow);
       const topKw = kw && kw.terms && kw.terms.length ? kw.terms[0] : null;
       const topPlace = www && www.where && www.where.length ? www.where[0] : null;
       const topWho = www && www.who && www.who.length ? www.who[0] : null;
