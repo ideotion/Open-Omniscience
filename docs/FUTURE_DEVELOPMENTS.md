@@ -161,7 +161,7 @@
 
 ### Bugs
 - [x] Folder newsletter import: `UNIQUE constraint failed: articles.hash` on large multi-folder .eml imports — **fix-merged (#453)**: the hardened `ingest_emails` dedup keys on the real unique column + recovers per-message, fixing BOTH the upload endpoint AND the folder-import job (both call it). The 17:55 debug bundle confirms only HISTORICAL occurrences (locked/unique errors this session = 0) — **verify on a fresh live re-import of the 5 GB tree**.
-- [ ] Collector is writer-bound (many parallel fetchers → 1 DB writer): batch writes / cut gate contention *(ledger P1-C)*
+- [~] Collector is writer-bound (many parallel fetchers → 1 DB writer): batch writes / cut gate contention *(ledger P1-C)* — DESIGN DONE (`docs/design/COLLECTOR_WRITER_BATCHING.md`: safe per-source batched store+index via `index_article(commit=False)` + the `ingest_emails` fallback; `synchronous=NORMAL` already in place). Implementation DEFERRED to a session that can run the full suite + measure on the live corpus (a blind refactor of the keystone-#1 writer hot path violates "entirely reliable or it should not exist").
 
 ### Keyword engine cleanup (on your live corpus)
 - [ ] Run "Clean up keywords (re-index, then prune)" + measure the drop

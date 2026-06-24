@@ -3977,7 +3977,13 @@ ruling, a contingency, or a deliberate-omission note.
   (`/api/insights/associations`, `/api/insights/graph` both paths, `/api/framing`) now run under the EXISTING
   `statement_deadline` mechanism (src/database/maintenance.py, OO_STATEMENT_TIMEOUT_S default 60s) so a runaway
   whole-corpus co-occurrence GROUP BY on a large encrypted corpus aborts with a typed `StatementTimeout` → an
-  honest HTTP 503 ("statement exceeded the 60s deadline and was aborted") instead of an unbounded hang. A new
+  honest HTTP 503 ("statement exceeded the 60s deadline and was aborted") instead of an unbounded hang. (CI FIX
+  in-session: the wiring test must NOT `import src.api.framing` — that pulls in vaderSentiment [the [analysis]
+  extra] and reddens the core-only lane; read framing.py's SOURCE as a sibling file, like the insights.py grep.
+  NOTE: a macOS-portability flake surfaced separately — `test_same_origin_and_no_origin_allowed` teardown
+  "write gate HELD" — it hits `/api/briefing/refresh`, whose #455 BACKGROUND recompute writes on its own
+  session; a pre-existing race in that merged path, NOT this read-only change [same SHA passed it in the
+  parallel push-vs-PR run; observation-only lane].) A new
   `_deadlined(db, key, compute)` helper in insights.py wraps the deadline INSIDE the compute (so it runs only on
   a cache MISS — a hot TTL-cache hit never touches the connection, the #458 cache stays the primary speed lever);
   framing.py wraps its body directly (the deadline bounds the SQLCipher-decrypt of up to `limit` article bodies,
@@ -3993,6 +3999,18 @@ ruling, a contingency, or a deliberate-omission note.
   through both the no-op and real-deadline paths, handler cleared in finally). REMAINING for remark 8: the deep
   cold-FIRST-open speed (the keyword_daily rollup, workstream 5A-bis D2, gated on the persisted encrypted DuckDB
   store D1); this deadline is the honest stopgap until then.
+  **TIER 1.2 — COLLECTOR WRITER-BOUND (P1-C) = DESIGN-DOC + DEFERRAL (honest §8 call, NOT a blind hot-path
+  refactor):** the only remaining contention lever is batching the data-loss-critical single-writer hot path
+  (the cheap `synchronous=NORMAL` fsync win is ALREADY in place, session.py:103). The safe design (batch a
+  source's store+index into ONE transaction via an additive `index_article(commit=False)`, with the proven
+  `ingest_emails` per-article fallback on a batch failure = no loss; counters accumulate correctly within one
+  txn = correct by construction) is fully written in `docs/design/COLLECTOR_WRITER_BATCHING.md` WITH the no-loss
+  test plan + the gate-hold tradeoff + the keyword_daily-watermark interaction. NOT IMPLEMENTED: its perf
+  benefit can only be validated on the live corpus (the motivating metric is a live measurement) and its
+  failure-mode correctness needs the full pytest suite to EXECUTE (the sandbox is py3.11/no-deps; repo needs
+  py3.13) — so per "entirely reliable or it should not exist," a blind refactor of keystone #1 is the wrong
+  call. Build it in a session that can run the suite + measure (default B=1 = byte-identical, raise
+  `OO_COLLECT_COMMIT_BATCH` to adopt).
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/
