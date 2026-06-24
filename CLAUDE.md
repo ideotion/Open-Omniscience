@@ -410,11 +410,28 @@ ruling, a contingency, or a deliberate-omission note.
   reads the whole archive into RAM (`encrypt_bytes(zip_path.read_bytes())`). At a 6 GB corpus the oo-backup-2
   archive exceeds 2 GiB → the cipher refuses. The "Large data (folder/drive)" backup only covers the PUBLIC
   re-downloadable blobs (wiki/maps/models) — it leaves the encrypted CORPUS on this same 2 GiB-capped path.
-  FIX (the right one, needs the torture suite): CHUNKED/STREAMING AEAD — frame the archive into N-MB blocks,
-  each its own nonce+tag, written straight to disk (never the whole thing in RAM) → removes the 2 GiB cap AND
-  the memory blowup, scales to any corpus. (K6 design even names `age` as the streaming archival option.)
-  IMMEDIATE WORKAROUND given the user: engage airplane mode (or shut down) → file-copy `data/
-  open_omniscience.db` (+ `-wal`/`-shm`) to a drive — it's already SQLCipher-encrypted at rest. NOT YET BUILT.
+  FIX: DECIDED 2026-06-24 (maintainer AskUserQuestion → **"Volumes + parity"**) — the large encrypted backup
+  becomes a SET of <600 MB independently-authenticated encrypted VOLUMES + a signed manifest, with REED-SOLOMON
+  erasure PARITY so a corrupt/lost volume (incl. a corpus volume) can be REBUILT (the user explicitly wanted
+  corruption survival). HONEST LIMIT stated to the user: a database is monolithic, so WITHOUT parity a corrupt
+  corpus volume can't be partially imported (other members still can) — parity is what actually recovers it.
+  Building in reliable SLICES (each fully tested — the "entirely reliable or it doesn't ship" bar):
+  **SLICE 1a SHIPPED 2026-06-24 (branch claude/backup-streaming, draft PR onto 0.09; VERIFIED py3.11, 21 tests):**
+  the streaming-AEAD foundation + the volume codec. `src/safety/crypto.py` gained the OOENC2 chunked container
+  (`encrypt_file`/`decrypt_file` + the per-volume `encrypt_stream_to` + `_encrypt_stream`/`is_streaming_magic`):
+  the standard STREAM construction — 12-byte nonce = prefix(7)|counter(4)|final-flag(1) — so a TRUNCATED,
+  REORDERED or EXTENDED stream fails GCM auth instead of yielding a partial archive (all proven in tests); no
+  2 GiB cap, never the whole file in RAM; OOENC1 `encrypt_bytes`/`decrypt_bytes` UNTOUCHED (legacy/small path).
+  `src/backup/volumes.py`: `write_volume_set` (stream-slice an archive into <600 MB OOENC2 volumes + a manifest
+  with per-volume ciphertext SHA-256 + whole-archive plaintext SHA-256), `verify_volume_set` (names the exact
+  corrupt/missing volumes WITHOUT decrypting), `read_volume_set` (verify → optional `recover` hook [the slice-2
+  parity seam] → streamed decrypt+reassemble → whole-archive checksum check, raises LOUDLY naming bad volumes if
+  unrecoverable). tests/test_crypto_streaming.py (9) + tests/test_backup_volumes.py (8). REMAINING: SLICE 1b =
+  wire the volume set into the backup CREATE (folder/drive dest, reuse folder_backup) + the restore READ
+  (stream the upload, drop the 2 GiB `_MAX_RESTORE_BYTES` cap on this path); SLICE 2 = the Reed-Solomon erasure
+  parity module + recovery wired into the `recover` hook. IMMEDIATE WORKAROUND given the user meanwhile: engage
+  airplane mode (or shut down) → file-copy `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive — already
+  SQLCipher-encrypted at rest.
   (B) **UNIFIED IMPORT / EXPORT (/ BACKUP) SECTION (maintainer ruling):** collapse ALL import types and ALL
   export/backup types into ONE Import entry point + ONE Export(/Backup) entry point; each opens a FOLLOW-UP
   dialog (pop-up) to gather that action's options. Today these are scattered (newsletter .eml upload +
