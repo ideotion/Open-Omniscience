@@ -174,7 +174,16 @@ def read_volume_set(
     out = Path(out_dir)
     status = verify_volume_set(out_dir)
     if status["bad"]:
-        unrepaired = recover(m, status["bad"]) if recover else status["bad"]
+        if recover is not None:
+            unrepaired = recover(m, status["bad"])
+        elif m.get("parity"):
+            # Auto-recover from Reed-Solomon parity (slice 2). Lazy import so the volume
+            # codec keeps NO hard dependency on parity/numpy (a core install is volumes-only).
+            from src.backup.parity import recover_volumes
+
+            unrepaired = recover_volumes(m, status["bad"], out_dir=out_dir)
+        else:
+            unrepaired = status["bad"]
         if unrepaired:
             raise VolumeError(
                 "corrupt or missing volumes that could not be recovered: "
