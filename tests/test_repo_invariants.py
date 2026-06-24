@@ -2333,16 +2333,22 @@ def test_analysis_window_absorbs_synthesize():
 
 
 def test_omnibar_enter_opens_analysis_window():
-    """Item I: the omnibar's default Enter action opens the corpus/analysis window
-    seeded with the query (ruled: Enter -> a corpus-of-articles window, not the
-    Search tab). The Boolean Search-tab item stays available (nothing lost)."""
+    """Item I + field remark 9 (2026-06-24): the omnibar's default Enter action opens the
+    corpus/analysis window seeded with the query — now in a NEW BROWSER TAB
+    (openAnalysisInNewTab → window.open ?analyze=, hydrated by _hydrateCardCorpus →
+    openAnalysisFor in the fresh tab). The in-SPA openAnalysisFor stays the opener for
+    clicking a specific result + every card/commodity entry; the Boolean Search-tab item
+    stays available (nothing lost)."""
     html = _ui_source()
     assert "function openAnalysisFor" in html, "seeded analysis-window opener required"
-    assert "run: () => openAnalysisFor(raw)" in html, "the default omnibar item opens analysis"
+    assert "function openAnalysisInNewTab" in html, "the new-browser-tab opener (remark 9) required"
+    assert "run: () => openAnalysisInNewTab(raw)" in html, "the default omnibar item opens a new tab"
+    # The new-tab opener uses the proven ?analyze= deep-link + boot hydration.
+    assert '"analyze"' in html and "_hydrateCardCorpus" in html, "?analyze= deep-link + hydration required"
     # the Analysis item is unshifted LAST so it sits at index 0 (the Enter default),
     # while the Boolean search item remains reachable.
     i_search_item = html.index('showTab("search"); setTimeout(() => { $("q").value = raw; doSearch()')
-    i_analysis_item = html.index("run: () => openAnalysisFor(raw)")
+    i_analysis_item = html.index("run: () => openAnalysisInNewTab(raw)")
     assert i_search_item < i_analysis_item, "Analysis must be unshifted after Search (=> index 0, default Enter)"
 
 

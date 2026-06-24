@@ -150,7 +150,7 @@
 - [ ] 2/5/6. ONE unified Import + ONE unified Export/Backup: pop-up options → file/folder pick, on the new streaming-volume path; clear progress bar + live data-volume readout; fuse both newsletter-import paths in
 - [x] 7. Home "Loading the briefing…" hang + progress bar — DONE (#455: non-blocking background recompute + determinate progress bar)
 - [~] 8. Insights / per-keyword analysis freeze ("Loading…" forever) — in progress (#458 cached the 5 per-corpus endpoints + an honest slow-load note; #455 warmed grouped top/trending off-thread; the 2026-06-24 autonomous session added a STATEMENT-DEADLINE guard on associations/graph/framing → typed 503 within 60s instead of an infinite hang, surfaced by the existing subtab error-notes. LEFT: the cold FIRST-open speed — the keyword_daily rollup [5A-bis D2], gated on the persisted encrypted DuckDB store [D1])
-- [ ] 9. Search: pressing Enter should open a new analysis window/tab
+- [x] 9. Search: pressing Enter should open a new analysis window/tab — DONE (2026-06-24 autonomous session): the palette Enter now calls `openAnalysisInNewTab(raw)` → `window.open("/?analyze=…")`, hydrated by the existing `_hydrateCardCorpus` boot deep-link; in-SPA `openAnalysisFor` kept for results/cards. Browser-unverified (fork-3).
 - [ ] 10. Library tab world map: per-country article counts + a per-language donut for "no country" articles (full language names)
 - [ ] 11. Settings: fuse Appearance + GUIs into one "Graphics" subtab
 - [ ] 12. Settings: remove the top intro box on every subtab (reclaim space)

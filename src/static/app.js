@@ -1261,12 +1261,14 @@
       if (raw.length >= 2) {
         live = _omniItems(raw);
         if (!_omniLive || _omniLive.q !== raw) _omniFetch(raw);
-        // Ruled: Enter -> the corpus/analysis window (default), with the Boolean
-        // Search tab still one item away (nothing lost while capability migrated).
+        // Ruled: Enter -> the corpus/analysis window (default), now opening in a NEW
+        // BROWSER TAB (field remark 9). The in-SPA spawn (openAnalysisFor) stays the
+        // default for clicking a specific result + every card/commodity entry; the
+        // Boolean Search tab is still one item away (nothing lost).
         live.unshift({grp: t("Search"), label: `${t("Run the full Boolean search for")} “${raw}”`,
           sub: "", run: () => { showTab("search"); setTimeout(() => { $("q").value = raw; doSearch(); }, 60); }});
         live.unshift({grp: t("Search"), label: `${t("Analysis")}: “${raw}”`,
-          sub: "↵", run: () => openAnalysisFor(raw)});
+          sub: "↵ ↗", run: () => openAnalysisInNewTab(raw)});
       }
       _palFiltered = [...statics, ...live];
       _palSel = 0;
@@ -1583,11 +1585,16 @@
       if (label) p.set("label", label);
       window.open("/?" + p.toString(), "_blank", "noopener");
     }
-    function openCardCorpusQuery(q) {
+    // Open a query's analysis window in a NEW BROWSER TAB (field remark 9: search +
+    // Enter should open a new tab). A fresh SPA boot hydrates ?analyze= via
+    // _hydrateCardCorpus() → openAnalysisFor(), so the new tab lands on the same
+    // analysis. Shared by the home-card flip and the omnibar/palette Enter.
+    function openAnalysisInNewTab(q) {
       const p = new URLSearchParams();
       p.set("analyze", q || "");
       window.open("/?" + p.toString(), "_blank", "noopener");
     }
+    function openCardCorpusQuery(q) { openAnalysisInNewTab(q); }
     function cardHtml(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sig = c.signal || {};

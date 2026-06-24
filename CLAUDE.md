@@ -4011,6 +4011,19 @@ ruling, a contingency, or a deliberate-omission note.
   py3.13) — so per "entirely reliable or it should not exist," a blind refactor of keystone #1 is the wrong
   call. Build it in a session that can run the suite + measure (default B=1 = byte-identical, raise
   `OO_COLLECT_COMMIT_BATCH` to adopt).
+  **TIER 2.3 — SEARCH ENTER OPENS A NEW BROWSER TAB (remark 9, frontend, BROWSER-UNVERIFIED per fork-3):** the
+  omnibar opens the command palette; typing a term + Enter ran the first item `openAnalysisFor(raw)` = an
+  IN-SPA analysis tab in the SAME browser tab. The maintainer wants a NEW browser tab. Reused the proven
+  card-flip deep-link mechanism: a new generic `openAnalysisInNewTab(q)` = `window.open("/?analyze=" + q,
+  "_blank", "noopener")`, and the existing boot `_hydrateCardCorpus()` reads `?analyze=` → `openAnalysisFor()`
+  so the fresh SPA tab lands on the same analysis. `openCardCorpusQuery` is now a one-line alias (the #23
+  flip-card test still finds it; the card path is byte-unchanged). The palette's Enter (Analysis) item now
+  calls `openAnalysisInNewTab(raw)` with `sub:"↵ ↗"` (the ↗ honestly signals a new tab). The in-SPA
+  `openAnalysisFor` STAYS the opener for clicking a specific palette result + every card/commodity/convergence
+  entry + the boot hydration (Desk lesson: nothing lost); the Boolean Search-tab item is still one item away.
+  ZERO new i18n keys (reused t("Search")/t("Analysis"); ↗ is a glyph). node --check clean; test_repo_invariants
+  ::test_omnibar_enter_opens_analysis_window updated to assert the new-tab opener + the ?analyze= deep-link +
+  the ordering. REMAINING: human click-through (fork-3).
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/
