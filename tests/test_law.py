@@ -155,6 +155,41 @@ def test_track_baseline_change_flag_revert(db):
     assert revs == 2  # baseline + the one genuine change
 
 
+def test_track_document_is_idempotent_on_duplicate_revision(db):
+    # Field test 2026-06-24: a ~4-hour scrape pass died with "UNIQUE constraint failed:
+    # law_revisions.document_id, law_revisions.content_hash ... transaction has been rolled
+    # back" — a duplicate LawRevision insert poisoned the shared pass session, rolling back
+    # every article scraped that pass. track_document must ABSORB the duplicate (idempotent),
+    # never raise, and leave the session usable.
+    doc = LawDocument(jurisdiction="xx", title="Dup Act", url="https://law.test/dup", watched=True)
+    db.add(doc)
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    assert track_document(db, fetcher, doc)["status"] == "baseline"
+    assert db.query(LawRevision).filter_by(document_id=doc.id).count() == 1
+
+    # Force the collision condition: the doc "forgot" its baseline (a prior pass rolled back
+    # the doc fields but the revision row had landed), so the baseline path re-runs against
+    # an already-present (document_id, content_hash) revision.
+    doc.baseline_text = None
+    doc.baseline_hash = None
+    doc.last_hash = None
+    db.commit()
+
+    res = track_document(db, fetcher, doc)  # same page => same content_hash => would collide
+    assert res["status"] == "duplicate"  # absorbed, not raised
+    assert db.query(LawRevision).filter_by(document_id=doc.id).count() == 1  # no duplicate row
+    assert doc.baseline_text is not None  # baseline re-cached so the next pass is "unchanged"
+
+    # The session is NOT poisoned: a further unrelated write commits cleanly. This is the
+    # exact thing that was failing — the pass's final commit raised "transaction has been
+    # rolled back due to a previous exception during flush".
+    db.add(LawDocument(jurisdiction="yy", title="Other", url="https://law.test/other"))
+    db.commit()
+    assert db.query(LawDocument).count() == 2
+
+
 def test_track_watched_tally_and_fetch_error(db):
     db.add(LawDocument(jurisdiction="uk", title="A", url="https://ex.test/a"))
     db.commit()

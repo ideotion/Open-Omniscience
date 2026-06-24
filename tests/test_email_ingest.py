@@ -249,6 +249,33 @@ def test_batched_commit_falls_back_per_message_on_collision():
     assert s.query(Article).count() == 1
 
 
+def test_same_body_different_message_id_dedups_on_hash():
+    # Field test 2026-06-24: a 5 GB folder of repeated newsletters failed the WHOLE import
+    # with "UNIQUE constraint failed: articles.hash". `articles.hash` is the ONLY unique
+    # column (canonical_url is not), so two emails with the SAME body but DIFFERENT
+    # Message-IDs must dedup on the content hash ALONE — even when several land in ONE
+    # uncommitted batch. (The old (hash, canonical) tuple key let them all in and collide
+    # at the flush insertmany.) Expect: stored once, the rest counted duplicate, NO raise,
+    # no errors, no row lost.
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True, autoflush=False)()
+    src = Source(name="N", domain="nl.test")
+    s.add(src)
+    s.commit()
+    msgs = [
+        _eml("Original", "the council voted on the budget tonight", "m1"),
+        _eml("Forwarded copy", "the council voted on the budget tonight", "m2"),  # same body
+        _eml("Third copy", "the council voted on the budget tonight", "m3"),      # same body
+        _eml("Unrelated", "a wholly separate story about the drought", "m4"),
+    ]
+    tally = ingest_emails(s, src, msgs, commit_batch=100)  # ALL in one batch
+    assert tally["stored"] == 2 and tally["duplicate"] == 2
+    assert tally["errors"] == 0
+    assert s.query(Article).count() == 2
+    s.close()
+
+
 def test_ingest_eml_directory_reads_files(tmp_path):
     (tmp_path / "one.eml").write_bytes(PLAIN)
     sub = tmp_path / "sub"

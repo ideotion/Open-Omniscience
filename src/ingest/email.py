@@ -18,6 +18,7 @@ touches mailboxes the operator explicitly configures; nothing leaves the machine
 from __future__ import annotations
 
 import email
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -27,12 +28,15 @@ from email.utils import getaddresses, parsedate_to_datetime
 from html import unescape
 from pathlib import Path
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
+from src.database.write import run_write_with_retry
 from src.privacy.link_sanitizer import SanitizeStats, sanitize_text
 from src.utils.url_utils import generate_content_hash
+
+_LOG = logging.getLogger(__name__)
 
 # Order matters in _strip_html: <style>/<script> BLOCKS (content + tags) and HTML
 # COMMENTS must go BEFORE the generic tag strip — otherwise the CSS/JS text survives
@@ -362,6 +366,7 @@ def ingest_emails(
         "stored": 0,
         "duplicate": 0,
         "empty": 0,
+        "errors": 0,
         "recipient_redactions": 0,
         "tracker_params_stripped": 0,
         "trackers_flagged": 0,
@@ -369,7 +374,16 @@ def ingest_emails(
     # Added-but-not-yet-committed: (parsed, hash, canonical) — kept so a batch that
     # fails on commit can be re-applied one message at a time without re-parsing.
     pending: list[tuple[ParsedEmail, str, str]] = []
-    batch_keys: set[tuple[str, str]] = set()
+    # In-batch dedup keyed on the ACTUAL unique column. `articles.hash` is the ONLY
+    # UNIQUE constraint (canonical_url is NOT unique), so two emails with the SAME body
+    # but DIFFERENT Message-IDs share a content_hash and MUST dedup on the hash ALONE.
+    # The old (hash, canonical) tuple key let such a pair into one uncommitted batch and
+    # collide at flush on `UNIQUE articles.hash`; under the continuously-running scraper's
+    # writer contention that collision escaped as an unhandled 500, failing the WHOLE
+    # import (field test 2026-06-24: a 5 GB folder of repeated .eml). We still track the
+    # canonical so a repeated canonical within a batch dedups too (a harmless nicety).
+    pending_hashes: set[str] = set()
+    pending_canon: set[str] = set()
 
     def _exists(content_hash: str, canonical: str) -> bool:
         return (
@@ -380,18 +394,29 @@ def ingest_emails(
         )
 
     def _commit_one(parsed: ParsedEmail, content_hash: str, canonical: str) -> None:
-        # The safe per-message path used on the rare batch-commit collision: re-check
-        # (the batch rolled back; a concurrent writer may have inserted), then commit.
+        # The safe per-message path used on a batch-commit collision: re-check (the batch
+        # rolled back; a concurrent writer may have inserted), then commit. A transient
+        # lock RETRIES (never drops fetched data — the no-data-loss rule); a genuine
+        # duplicate is counted; an exhausted lock is logged + counted, NEVER raised, so a
+        # single message can neither abort the import nor escape as an unhandled 500.
         if _exists(content_hash, canonical):
             tally["duplicate"] += 1
             return
-        session.add(_email_article(source, parsed, content_hash, canonical))
-        try:
+
+        def _work() -> None:
+            session.add(_email_article(source, parsed, content_hash, canonical))
             session.commit()
+
+        try:
+            run_write_with_retry(_work, session=session, label="newsletter import")
             tally["stored"] += 1
         except IntegrityError:
             session.rollback()
             tally["duplicate"] += 1
+        except OperationalError:
+            session.rollback()
+            tally["errors"] += 1
+            _LOG.warning("newsletter import: a message could not be stored (db locked); skipped")
 
     def _flush() -> None:
         if not pending:
@@ -399,14 +424,16 @@ def ingest_emails(
         try:
             session.commit()
             tally["stored"] += len(pending)
-        except IntegrityError:
-            # A unique-index race the in-batch/DB dedup didn't catch: redo this batch
-            # one at a time so the collision never drops its batch-mates.
+        except (IntegrityError, OperationalError):
+            # A unique-index collision the in-batch/DB dedup didn't catch, or a transient
+            # lock: redo this batch one message at a time so a single collision/lock never
+            # drops its batch-mates and never escapes as an unhandled error.
             session.rollback()
             for parsed, h, canon in pending:
                 _commit_one(parsed, h, canon)
         pending.clear()
-        batch_keys.clear()
+        pending_hashes.clear()
+        pending_canon.clear()
 
     for raw in raw_messages:
         parsed = parse_email(raw)
@@ -418,15 +445,20 @@ def ingest_emails(
             continue
         content_hash = generate_content_hash(parsed.body_text)
         canonical = f"imap:{parsed.message_id}"
-        key = (content_hash, canonical)
-        # In-batch dedup: two identical messages in the SAME uncommitted batch would
-        # collide on the unique index at flush — count the later one as a duplicate now.
-        if key in batch_keys or _exists(content_hash, canonical):
+        # In-batch dedup on the unique column (hash) + the canonical (nicety): two
+        # identical-body messages in the SAME uncommitted batch would collide on
+        # `UNIQUE articles.hash` at flush — count the later one a duplicate now.
+        if (
+            content_hash in pending_hashes
+            or canonical in pending_canon
+            or _exists(content_hash, canonical)
+        ):
             tally["duplicate"] += 1
             continue
         session.add(_email_article(source, parsed, content_hash, canonical))
         pending.append((parsed, content_hash, canonical))
-        batch_keys.add(key)
+        pending_hashes.add(content_hash)
+        pending_canon.add(canonical)
         if len(pending) >= commit_batch:
             _flush()
     _flush()
