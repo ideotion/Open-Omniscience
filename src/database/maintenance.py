@@ -426,8 +426,19 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     No-op for non-SQLite backends or when the deadline is 0/None.
     """
     limit = _deadline_seconds() if seconds is None else seconds
-    raw = session.connection().connection.dbapi_connection
-    if not limit or limit <= 0 or not hasattr(raw, "set_progress_handler"):
+    if not limit or limit <= 0:
+        # Deadline disabled — don't even acquire the connection.
+        yield
+        return
+    try:
+        raw = session.connection().connection.dbapi_connection
+    except Exception:
+        # No raw DBAPI connection available (a unit-test stub, or a
+        # non-standard session) — degrade to a no-op rather than crash; the
+        # wrapped read still runs and surfaces its own error if any.
+        yield
+        return
+    if not hasattr(raw, "set_progress_handler"):
         yield
         return
     started = time.monotonic()

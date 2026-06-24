@@ -3968,6 +3968,31 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS SESSION 2026-06-24 (the consolidated-to-do build brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md`;
+  ONE branch claude/vibrant-thompson-bez6dq per the harness git-constraint, draft PR #460 onto 0.09; backend
+  VERIFIED py3.11 standalone repro + ruff F,B, full pytest in CI). TIER 1.1 — STATEMENT-DEADLINE GUARD on the
+  slowest per-keyword reads (remark 8 finish: "When searching for a keyword, the analysis screen says Loading…
+  indefinitely"):** #455 made the briefing recompute non-blocking + #458 cached the 5 per-corpus endpoints —
+  this adds the honest STOPGAP for the cold FIRST open. The heaviest per-keyword aggregations
+  (`/api/insights/associations`, `/api/insights/graph` both paths, `/api/framing`) now run under the EXISTING
+  `statement_deadline` mechanism (src/database/maintenance.py, OO_STATEMENT_TIMEOUT_S default 60s) so a runaway
+  whole-corpus co-occurrence GROUP BY on a large encrypted corpus aborts with a typed `StatementTimeout` → an
+  honest HTTP 503 ("statement exceeded the 60s deadline and was aborted") instead of an unbounded hang. A new
+  `_deadlined(db, key, compute)` helper in insights.py wraps the deadline INSIDE the compute (so it runs only on
+  a cache MISS — a hot TTL-cache hit never touches the connection, the #458 cache stays the primary speed lever);
+  framing.py wraps its body directly (the deadline bounds the SQLCipher-decrypt of up to `limit` article bodies,
+  the dominant cost; the pure-Python VADER pass is already bounded by limit×8000 chars, stated). HARDENED
+  `statement_deadline` to degrade to a NO-OP (rather than crash) when a session can't yield a raw DBAPI
+  connection (a unit-test stub / non-standard session) AND to skip touching the connection entirely when the
+  deadline is disabled (OO_STATEMENT_TIMEOUT_S=0). The frontend already surfaces a 503: the analysis subtab
+  loaders (renderCorpusKeywords / mindmap / loadFraming) catch the `api()` throw and replace the placeholder
+  with an honest `.note.err`, so the request now RETURNS within 60s and the error shows — no frontend change
+  needed. tests/test_insights_cache.py (+2: the 3 endpoints route through the deadline; a StatementTimeout maps
+  to 503) + tests/test_perf_batch.py (+1: the no-op-on-stub-session degrade). Standalone repro proved all 6
+  control-flow cases (no-op runs body, disabled skips connection, timeout→503, normal-passthrough, 400-propagates
+  through both the no-op and real-deadline paths, handler cleared in finally). REMAINING for remark 8: the deep
+  cold-FIRST-open speed (the keyword_daily rollup, workstream 5A-bis D2, gated on the persisted encrypted DuckDB
+  store D1); this deadline is the honest stopgap until then.
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/

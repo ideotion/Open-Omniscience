@@ -100,3 +100,44 @@ def test_associations_endpoint_is_cached(monkeypatch):
     # A different term is a different cache entry (recomputed).
     ins.insights_associations(term="other", db=object())
     assert calls["n"] == 2
+
+
+def test_slow_per_keyword_endpoints_run_under_a_statement_deadline():
+    """Remark 8 (field test 2026-06-24): the heaviest per-keyword reads (associations,
+    the keyword/article graph, framing) must run under a statement DEADLINE so a
+    runaway whole-corpus aggregation on a large encrypted corpus ends in a typed 503,
+    never an infinite "Loading…". The deadline is layered on the existing TTL cache
+    (it runs INSIDE the compute, so only on a cache miss)."""
+    import pathlib
+
+    src = pathlib.Path(ins.__file__).read_text("utf-8")
+    # associations + BOTH graph paths (article-set + layered) route through the helper.
+    assert src.count("_deadlined(") >= 3, "associations + both graph paths need the deadline"
+    assert "statement_deadline" in src and "StatementTimeout" in src
+
+    import src.api.framing as fr
+
+    fsrc = pathlib.Path(fr.__file__).read_text("utf-8")
+    assert "statement_deadline(" in fsrc and "status_code=503" in fsrc
+
+
+def test_statement_timeout_maps_to_an_honest_503(monkeypatch):
+    """A StatementTimeout raised while computing a per-keyword payload becomes an
+    HTTP 503 with the deadline stated — not a 500 and not a hang (remark 8)."""
+    from fastapi import HTTPException
+
+    from src.database.maintenance import StatementTimeout
+
+    ins._read_cache._cache.clear()
+
+    def boom(db, term, **kw):
+        raise StatementTimeout("statement exceeded the 60s deadline and was aborted")
+
+    monkeypatch.setattr(ins.rm, "associations", boom)
+    try:
+        ins.insights_associations(term="runaway", db=object())
+    except HTTPException as exc:
+        assert exc.status_code == 503
+        assert "deadline" in exc.detail
+    else:
+        raise AssertionError("a StatementTimeout must surface as HTTP 503")
