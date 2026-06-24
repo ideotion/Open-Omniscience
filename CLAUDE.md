@@ -4034,7 +4034,14 @@ ruling, a contingency, or a deliberate-omission note.
   delete-then-reinsert, so every re-index/prune/restore path MUST bump the epoch → full rebuild, never an
   incremental MERGE, or the rollup double-counts; normal ingest must NOT bump it). 12-item VERIFY checklist +
   rejected-alternatives. D2–D4 are buildable+parity-provable IN-MEMORY now; the perf payoff is D1-gated (the
-  persisted encrypted DuckDB store needs the maintainer's per-OS httpfs binaries — 5B).
+  persisted encrypted DuckDB store needs the maintainer's per-OS httpfs binaries — 5B). **5B/D1 design SHIPPED:**
+  `docs/design/PERSISTED_DUCKDB_HTTPFS.md` = the offline static-OpenSSL httpfs LOAD recipe (autoinstall/autoload
+  off → SHA-256 pin-and-verify the bundled binary BEFORE LOAD from an absolute path → GCM-only ATTACH never CTR →
+  flip `secure_crypto_available()` only after the `encryption_gate` probe), the external-artifact registry entry +
+  the DuckDB↔httpfs version coupling (test-enforced), and the maintainer's networked vcpkg-static build recipe.
+  The OFFLINE-LOAD code is ours to write + an EMPTY pin table is safe to ship (a blank/zero hash keeps it
+  in-memory); the per-OS/arch binaries need a networked multi-arch build (BLOCKED in-sandbox; NEVER a fabricated
+  checksum).
   **TIER 2.4 — LIBRARY WORLD MAP (remark 10; backend VERIFIED py-logic, frontend BROWSER-UNVERIFIED per fork-3):**
   the Library "World coverage" was a TABLE; now it leads with a per-country ARTICLE-count world map + a donut of
   the 'no country' articles by language. BACKEND: `queries.source_country_counts` gained a `by_language` breakdown
