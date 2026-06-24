@@ -92,6 +92,35 @@
     shapes how the app looks and behaves on this machine. Pick a section — your choices stay
     local.\" Remove it everywhere, it will bring all content up and increase display space."*
 
+**G. AI prompt localization (added 2026-06-24)**
+13. *"The prompts in the AI setting tab don't translate while changing language. Two points
+    there: 1) they should, and 2) verify that the AI engine does use the translated prompts.
+    Synthesis, summaries and translation should be made in the UI language."*
+    — TWO asks: (a) the editable prompt textareas in Settings → AI (the summary / translate /
+    synthesis / keyword system prompts) must re-render in the active UI language on a language
+    switch; (b) VERIFY the engine actually applies the translated prompt AND emits output in
+    the UI language. Context: an `output_language` / `_NATIVE_DIRECTIVE` mechanism already
+    forces the OUTPUT language for summary/synthesis/bulk (shipped) — but a PRIOR decision
+    deliberately kept the English prompt BODY (translating multi-sentence prompts risked
+    degrading a weak local model's compliance). This remark re-opens that: localize the prompt
+    UI, and re-confirm end-to-end that synthesis/summaries/translation come out in the UI
+    language. Reconcile with the body-translation trade-off when built.
+
+**H. Chrome — status bar + left tab bar (added 2026-06-24)**
+14. *"The status bar is currently transparent. As a consequence, we can see content when
+    scrolling down. Taskbar should have the same background color as the left tab bar."*
+    — Give the top status bar / taskbar an opaque background matching the left sidebar's
+    background colour (theme-aware across all 17 themes) so scrolled content never shows
+    through it.
+15. *"Clicking on the empty space of the left tab bar should minimize / maximize it. Add a
+    maximize button for clarity when the bar is minimized, equivalent to the existing minimize
+    button that is shown when the bar is maximized."*
+    — Make the sidebar's empty area a click target that toggles collapse/expand, and ensure a
+    clearly-visible expand (maximize) affordance in the collapsed rail mirroring the existing
+    collapse button. Context: the rail already ships two CSS-toggled buttons (`#sb-collapse`
+    when expanded / `#sb-expand` when collapsed); this asks for the empty-space click-toggle +
+    making the expand affordance as clear as the collapse one.
+
 ---
 
 ## The 0.0.9 sequencing (maintainer-agreed 2026-06-11)
