@@ -4004,3 +4004,17 @@ def test_keyword_growth_curve_wired_and_decrypt_free():
     src = _ui_source()  # index.html + app.js
     assert "viewKeywordGrowth" in src and "_growthSvg" in src
     assert "/api/diagnostics/keyword-growth?download=1" in src
+
+
+def test_volume_backup_job_wired_slice_1c():
+    """Slice 1c: the large encrypted backup (volumes + parity) is reachable in-app — the
+    job manager, the four endpoints, the /api/jobs surface, and the Settings panel + JS."""
+    assert (_SRC / "backup" / "volume_job.py").exists()
+    bv = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
+    for route in ('"/volumes/start"', '"/volumes/restore"', '"/volumes/status"', '"/volumes/cancel"'):
+        assert route in bv, route
+    jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
+    assert "_volume_backup_jobs" in jobs and "volume-backup" in jobs
+    src = _ui_source()
+    assert "volBackupStart" in src and "volRestoreStart" in src and "vb-dest" in src
+    assert "/api/backup/v2/volumes/start" in src

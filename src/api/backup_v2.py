@@ -521,3 +521,76 @@ def folder_backup_action(action: str) -> dict:
     else:
         raise HTTPException(status_code=404, detail=f"unknown action {action}")
     return mgr.status()
+
+
+# --------------------------------------------------------------------------- #
+#  Large ENCRYPTED backup as a volume set + parity (field test 2026-06-24).
+#  No 2 GiB cap, never the whole archive in RAM; a corrupt/lost volume is rebuilt
+#  from Reed-Solomon parity. Written to a server-side directory, run as a job.
+# --------------------------------------------------------------------------- #
+class VolumeBackupBody(BaseModel):
+    dest: str
+    passphrase: str
+    include_newsletters: bool = True
+    parity_fraction: float = 0.1
+
+
+class VolumeRestoreBody(BaseModel):
+    src: str
+    passphrase: str
+    allow_unverified: bool = False
+
+
+@router.get("/volumes/status")
+def volume_backup_status() -> dict:
+    """Live state of the (single) volume backup/restore job — for the UI + /api/jobs."""
+    from src.backup.volume_job import get_volume_manager
+
+    return get_volume_manager().status()
+
+
+@router.post("/volumes/start")
+def volume_backup_start(body: VolumeBackupBody) -> dict:
+    """Start the LARGE encrypted backup (volumes + parity) into a server-side directory,
+    as a cancellable background job. 400 on a bad destination / missing passphrase;
+    409 if a volume backup/restore is already running."""
+    from src.backup.volume_job import get_volume_manager
+
+    try:
+        return get_volume_manager().start_backup(
+            body.dest,
+            body.passphrase,
+            include_newsletters=body.include_newsletters,
+            parity_fraction=body.parity_fraction,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/volumes/restore")
+def volume_backup_restore(body: VolumeRestoreBody) -> dict:
+    """Restore a volume-set backup from a server-side directory: verify + parity-recover
+    + reassemble, then merge ADDITIVELY into the live corpus (the standard merge)."""
+    from src.backup.volume_job import get_volume_manager
+
+    try:
+        return get_volume_manager().start_restore(
+            body.src, body.passphrase, allow_unverified=body.allow_unverified
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/volumes/cancel")
+def volume_backup_cancel() -> dict:
+    """Cancel a running volume BUILD — stops between volumes + removes the partial set.
+    A restore mid-merge is atomic and not interruptible."""
+    from src.backup.volume_job import get_volume_manager
+
+    mgr = get_volume_manager()
+    mgr.cancel()
+    return mgr.status()

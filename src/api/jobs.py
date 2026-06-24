@@ -251,6 +251,34 @@ def _folder_backup_jobs() -> list[dict]:
     ]
 
 
+def _volume_backup_jobs() -> list[dict]:
+    """The large ENCRYPTED backup as a volume set + Reed-Solomon parity (field test
+    2026-06-24) — a cancellable build, or a restore+merge. Surfaces while active; control
+    lives in the Settings panel (visibility-only here for now)."""
+    from src.backup.volume_job import get_volume_manager
+
+    s = get_volume_manager().status()
+    if s["state"] in ("idle", "done") and not s.get("running"):
+        return []
+    state = {"running": "running", "error": "failed"}.get(s["state"], s["state"])
+    p = s.get("progress") or {}
+    phase = p.get("phase") or ""
+    vols = p.get("volumes_written")
+    detail = phase + (f", {vols} volumes" if vols else "")
+    verb = "Restoring" if s.get("mode") == "restore" else "Backing up (volumes + parity)"
+    return [
+        {
+            "id": "volume-backup",
+            "kind": "volume-backup",
+            "label": f"{verb} — {detail}" if detail else verb,
+            "state": state,
+            "progress": None,
+            "error": s.get("error"),
+            "actions": [],
+        }
+    ]
+
+
 def _import_jobs() -> list[dict]:
     """The server-side .eml folder import as a visible job (§2.B). It is a DB-WRITER
     (kind="import"), so it joins the arbitration set — collecting WHILE importing both
@@ -348,6 +376,7 @@ def list_jobs() -> dict:
     jobs.extend(_dump_jobs())
     jobs.extend(_osm_jobs())
     jobs.extend(_folder_backup_jobs())
+    jobs.extend(_volume_backup_jobs())
     jobs.extend(_import_jobs())
     jobs.extend(_model_pull_jobs())
     jobs.extend(_task_jobs())

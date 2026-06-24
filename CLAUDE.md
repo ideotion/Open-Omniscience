@@ -456,12 +456,28 @@ ruling, a contingency, or a deliberate-omission note.
   STREAMED to disk) → zip extract → `_finalize_staged`; raises loudly on unrecoverable corruption / bad
   signature. tests/test_volume_backup_roundtrip.py (3, no live data dir — hand-built signed zip: full
   restore round-trip + wrong-passphrase loud + parity recovers a corrupt volume and the restore STILL verifies).
-  REMAINING (SLICE 1c, the in-app reachable surface): the create/restore ENDPOINTS (server-side dest dir, a
-  pausable task-manager JOB like FolderBackupManager for the long 6 GB build) + the Settings frontend + drop the
-  2 GiB `_MAX_RESTORE_BYTES` cap on the volume restore path. The library feature is COMPLETE + verified; 1c is
-  the mechanical (browser-unverified) plumbing. IMMEDIATE WORKAROUND given the user meanwhile: engage airplane
-  mode (or shut down) → file-copy `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive — already
-  SQLCipher-encrypted at rest.
+  **SLICE 1c SHIPPED 2026-06-24 (branch claude/backup-1c, draft PR onto 0.09; backend VERIFIED py3.11 [6 job
+  tests + 37 backup tests], frontend BROWSER-UNVERIFIED per fork-3):** the in-app reachable surface, so the
+  6 GB backup WORKS from Settings. `src/backup/volume_job.py:VolumeBackupManager` (singleton, mirrors
+  FolderBackupManager) runs `write_volume_backup`/`read_volume_backup` off the request thread as ONE cancellable
+  job (backup + restore modes; running/done/error/cancelled; progress {phase, volumes_written}; a cancelled
+  build cleans its partial volume set so it can never be mistaken for a good backup; restore mid-merge is atomic,
+  not interruptible). `write_volume_set`/`write_volume_backup` gained additive `should_stop`/`progress_cb` (the
+  job hooks; defaults preserve the verified behaviour). Endpoints (`src/api/backup_v2.py`): POST `/volumes/start`
+  (400 bad dest/no passphrase, 409 already-running), `/volumes/restore` (verify+parity-recover+reassemble →
+  additive merge), `/volumes/cancel`, GET `/volumes/status`. Surfaced in `/api/jobs` (`_volume_backup_jobs`,
+  kind="volume-backup", visibility-only — control in the Settings panel). Frontend: a Settings → Data & backup
+  "Large encrypted backup (volumes + parity)" panel (server-side dest + passphrase + Browse + cancellable
+  progress poll + a restore-from-folder section); new strings English-fallback via `t()` (i18n gate 100%).
+  tests/test_volume_job.py (6: backup→done + envelope stripped, cancel cleans the partial set, error surfaced,
+  one-at-a-time, empty-passphrase refused, restore→done — via an injected fn seam so the state machine tests
+  without a live corpus) + test_repo_invariants::test_volume_backup_job_wired_slice_1c. NOTE: the 2 GiB
+  `_MAX_RESTORE_BYTES` cap is N/A on this path — the volume restore reads a SERVER-SIDE DIR, never a 2 GiB-capped
+  upload. THE 2 GB BACKUP FIX IS NOW COMPLETE END-TO-END (engine 1a/2/1b + the in-app surface 1c). REMAINING
+  (polish): human click-through across themes (fork-3); key the panel strings ×12; a per-job cancel button in the
+  task-manager window (today control is the Settings panel). IMMEDIATE WORKAROUND still valid until 1c merges:
+  engage airplane mode (or shut down) → file-copy `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive —
+  already SQLCipher-encrypted at rest.
   (B) **UNIFIED IMPORT / EXPORT (/ BACKUP) SECTION (maintainer ruling):** collapse ALL import types and ALL
   export/backup types into ONE Import entry point + ONE Export(/Backup) entry point; each opens a FOLLOW-UP
   dialog (pop-up) to gather that action's options. Today these are scattered (newsletter .eml upload +
