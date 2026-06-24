@@ -4124,6 +4124,16 @@ ruling, a contingency, or a deliberate-omission note.
   Export mandates the OOENC2 streaming-volume path for the encrypted corpus (NOT the legacy 2 GiB single-file) + the
   large-data folder backup + plaintext + models. Honesty guards: an absorption test (every existing import/export type
   still reachable), the OOENC2-path guard, owner-reported-only progress, visible disclosures.
+  **REMARK 1 (Ollama/AI) — MISTRAL-PRIORITISED CATALOG (the verifiable half; backend VERIFIED py_compile):** the
+  maintainer wants Mistral open-models prioritised (mistral-small:latest, mistral:7b). `MODEL_CATALOG`
+  (src/llm/ollama.py — the ONE source the Settings → AI picker reads) now LEADS the permissive section with the two
+  Mistral entries (mistral:7b ~4.4 GB/8 GB-RAM accessible; mistral-small:latest ~24B/~14 GB/24 GB-RAM capable), tags
+  MAINTAINER-NAMED + sizes flagged advisory ("verify on a networked box", the catalog's standing pattern; CATALOG_AS_OF
+  unchanged so the freshness test + registry are intact; no test asserts catalog contents). DEFERRED/BLOCKED (the rest
+  of remark 1): the Ollama BINARY installer (download+verify+run the per-OS installer) stays blocked on real per-OS
+  installer CHECKSUMS (a networked machine — NEVER fabricated; the Q7=B design is in this ledger); the hardware-tier
+  SCENARIO messaging (measure RAM via vitals → recommend a fitting model) is a separate UI build. The pull/queue/
+  active-model picker already ship; this leads them with Mistral.
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/

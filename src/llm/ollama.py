@@ -47,14 +47,17 @@ MODEL_CATALOG: list[dict] = [
     # cycle; two unverifiable entries (gemma4:e4b, translategemma:4b) were removed
     # rather than shipped on faith. The runtime can still point at ANY tag via
     # OO_LLM_MODEL / the in-app "pull any tag" box -- this is only the curated list. ===
-    # --- Permissive (Apache-2.0 / MIT) — recommended ---
+    # --- Permissive (Apache-2.0 / MIT) — recommended; Mistral PRIORITISED (remark 1,
+    #     maintainer 2026-06-24); tags maintainer-named, sizes advisory (verify on a
+    #     networked box). Pick a smaller model if your RAM (min_ram_gb) is lower. ---
+    {"tag": "mistral:7b", "size": "~4.4 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Mistral 7B — prioritised; runs on ~8 GB RAM; Apache-2.0"},
+    {"tag": "mistral-small:latest", "size": "~14 GB", "min_ram_gb": 24, "license": "Apache-2.0", "note": "Mistral Small 3.x (~24B) — prioritised; capable but needs ~24 GB RAM; Apache-2.0"},
     {"tag": "granite4:350m", "size": "~0.3 GB", "min_ram_gb": 4, "license": "Apache-2.0", "note": "IBM Granite 4.0 — tiny (350M); simple tasks; Apache-2.0"},
     {"tag": "qwen3:1.7b", "size": "~1.4 GB", "min_ram_gb": 4, "license": "Apache-2.0", "note": "Alibaba Qwen3 (1.7B) — small & permissive; Apache-2.0"},
     {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.0 — small (3.4B, hybrid); the app's default; Apache-2.0"},
     {"tag": "granite4.1:3b", "size": "~2 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.1 — multilingual (3B); Apache-2.0"},
     {"tag": "qwen3:4b", "size": "~2.6 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Alibaba Qwen3 (4B) — balanced & permissive; Apache-2.0"},
     {"tag": "phi4-mini", "size": "~2.5 GB", "min_ram_gb": 8, "license": "MIT", "note": "Microsoft Phi-4-mini (3.8B) — MIT"},
-    {"tag": "mistral:7b", "size": "~4.4 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Mistral 7B — recommended mid-range; Apache-2.0"},
     {"tag": "olmo2:7b", "size": "~4.5 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Allen AI OLMo 2 (7B) — fully open; Apache-2.0"},
     {"tag": "granite4.1:8b", "size": "~5 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.1 — multilingual (8B), RAG/tools; Apache-2.0"},
     {"tag": "phi4", "size": "~9 GB", "min_ram_gb": 16, "license": "MIT", "note": "Microsoft Phi-4 (14B) — MIT; needs ~16 GB"},

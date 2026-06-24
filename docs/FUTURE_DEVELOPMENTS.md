@@ -146,7 +146,7 @@
 > fixes have advanced the tree.
 
 ### Your field-test remarks, 24 Jun
-- [ ] 1. Ollama installer in Settings → AI: hardware-tiered scenarios + guided model-download; lead with Mistral (mistral-small, mistral:7b)
+- [~] 1. Ollama installer in Settings → AI: hardware-tiered scenarios + guided model-download; lead with Mistral (mistral-small, mistral:7b) — PARTIAL (2026-06-24): the model CATALOG now leads with Mistral (mistral:7b + mistral-small:latest). DEFERRED: the binary installer (blocked on per-OS checksums, networked machine) + the hardware-tier scenario messaging.
 - [~] 2/5/6. ONE unified Import + ONE unified Export/Backup: pop-up options → file/folder pick, on the new streaming-volume path; clear progress bar + live data-volume readout; fuse both newsletter-import paths in — DESIGN DONE (`docs/design/UNIFIED_IMPORT_EXPORT.md`): one Import + one Export dialog reusing the shipped backends (OOENC2 volumes + folder backup + the two newsletter paths). Build deferred to a click-through session (large frontend, browser-unverifiable).
 - [x] 7. Home "Loading the briefing…" hang + progress bar — DONE (#455: non-blocking background recompute + determinate progress bar)
 - [~] 8. Insights / per-keyword analysis freeze ("Loading…" forever) — in progress (#458 cached the 5 per-corpus endpoints + an honest slow-load note; #455 warmed grouped top/trending off-thread; the 2026-06-24 autonomous session added a STATEMENT-DEADLINE guard on associations/graph/framing → typed 503 within 60s instead of an infinite hang, surfaced by the existing subtab error-notes. LEFT: the cold FIRST-open speed — the keyword_daily rollup [5A-bis D2], gated on the persisted encrypted DuckDB store [D1])
