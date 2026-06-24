@@ -443,11 +443,25 @@ ruling, a contingency, or a deliberate-omission note.
   restore. `volumes.read_volume_set` AUTO-recovers when the manifest has parity (lazy import — the codec keeps
   NO hard numpy dependency). tests/test_backup_parity.py (7: GF field consistency, MDS any-N-rows-invertible,
   EXHAUSTIVE erasure recovery over every ≤M subset, manifest+sizes, restore recovers 2 corrupt data volumes,
-  restore recovers mixed data+parity loss, >M fails loudly). REMAINING: SLICE 1b = wire the volume set+parity
-  into the backup CREATE (folder/drive dest, reuse folder_backup) + the restore READ (stream the upload, drop
-  the 2 GiB `_MAX_RESTORE_BYTES` cap on this path) — the slice that makes the 6 GB backup work IN-APP.
-  IMMEDIATE WORKAROUND given the user meanwhile: engage airplane mode (or shut down) → file-copy
-  `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive — already SQLCipher-encrypted at rest.
+  restore recovers mixed data+parity loss, >M fails loudly).
+  **SLICE 1b CORE SHIPPED 2026-06-24 (branch claude/backup-wiring, draft PR onto 0.09; VERIFIED py3.11, 3 round-trip
+  tests):** the artifact-level create/restore wiring. `src/backup/artifact.py` refactored to a shared
+  `_build_backup_zip` (collect members → sign manifest → zip; used by BOTH the single-file `write_backup_v2` and
+  the new volume path — behaviour of the single-file path unchanged) + a shared `_finalize_staged` (manifest
+  validate → Ed25519 signature verify → member-hash check → StagedArtifact; used by BOTH `read_artifact` and the
+  new volume path). NEW `write_volume_backup(dest_dir, passphrase, *, parity_fraction=0.1, …)` = build the signed
+  zip → `write_volume_set` (<600 MB OOENC2 volumes) → `write_parity` when numpy is present (volumes-only +
+  honest flag otherwise); NO 2 GiB cap, never the whole archive in RAM. NEW `read_volume_backup(src_dir,
+  passphrase, staging_root)` = `read_volume_set` (verify + auto parity-recover + whole-archive checksum,
+  STREAMED to disk) → zip extract → `_finalize_staged`; raises loudly on unrecoverable corruption / bad
+  signature. tests/test_volume_backup_roundtrip.py (3, no live data dir — hand-built signed zip: full
+  restore round-trip + wrong-passphrase loud + parity recovers a corrupt volume and the restore STILL verifies).
+  REMAINING (SLICE 1c, the in-app reachable surface): the create/restore ENDPOINTS (server-side dest dir, a
+  pausable task-manager JOB like FolderBackupManager for the long 6 GB build) + the Settings frontend + drop the
+  2 GiB `_MAX_RESTORE_BYTES` cap on the volume restore path. The library feature is COMPLETE + verified; 1c is
+  the mechanical (browser-unverified) plumbing. IMMEDIATE WORKAROUND given the user meanwhile: engage airplane
+  mode (or shut down) → file-copy `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive — already
+  SQLCipher-encrypted at rest.
   (B) **UNIFIED IMPORT / EXPORT (/ BACKUP) SECTION (maintainer ruling):** collapse ALL import types and ALL
   export/backup types into ONE Import entry point + ONE Export(/Backup) entry point; each opens a FOLLOW-UP
   dialog (pop-up) to gather that action's options. Today these are scattered (newsletter .eml upload +
