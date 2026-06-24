@@ -48,15 +48,19 @@ def get_briefing(
     include_dismissed: bool = False,
     db: Session = Depends(get_db),
 ) -> dict:
-    """The cached briefing feed, grouped by bucket (recomputes once if absent)."""
-    return service.get_briefing(db, force=force, include_dismissed=include_dismissed)
+    """The cached briefing feed, grouped by bucket. Recompute (when stale/absent or
+    forced) runs OFF the request thread — the request never blocks; the response
+    carries a ``refreshing`` flag + progress while a background recompute runs."""
+    return service.get_briefing(
+        db, force=force, include_dismissed=include_dismissed, background=True
+    )
 
 
 @router.post("/refresh")
 def refresh_briefing(db: Session = Depends(get_db)) -> dict:
-    """Recompute the briefing now (also done automatically after each scrape)."""
-    service.refresh_briefing(db)
-    return service.get_briefing(db)
+    """Kick a background recompute (also done automatically after each scrape) and
+    return the current feed immediately with a ``refreshing`` flag — never blocks."""
+    return service.get_briefing(db, force=True, background=True)
 
 
 @router.post("/dismiss")

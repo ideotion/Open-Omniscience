@@ -39,6 +39,20 @@ def test_refresh_recomputes(client):
     assert "cards" in r.json()
 
 
+def test_briefing_get_is_nonblocking(client):
+    # Field test 2026-06-24: the GET recompute ran SYNCHRONOUSLY on the request, so at
+    # 60K articles Home hung forever on "Loading the briefing…". The HTTP path now
+    # recomputes OFF the request thread: it returns immediately with a `refreshing`
+    # flag (and, with no cache yet, an honest `building` placeholder), never blocking.
+    r = client.get("/api/briefing")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body.get("refreshing"), bool)
+    # The placeholder/feed always carries the same keys (never an error or a blank div).
+    for key in ("generated_at", "count", "buckets", "cards", "dismissed_count"):
+        assert key in body
+
+
 def test_dismiss_and_restore_roundtrip(client):
     # Inject a card via the draft path is not how dismiss works; dismiss just records
     # an id, so any id round-trips through dismissed state honestly.

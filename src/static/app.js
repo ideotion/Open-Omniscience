@@ -1470,7 +1470,15 @@
       const feed = $("briefing-feed");
       const gen = $("brief-generated");
       if (gen) gen.textContent = data.generated_at ? (t("updated") + " " + fmtDateTime(data.generated_at)) : "";
+      // Recompute now runs OFF the request thread (field test 2026-06-24: Home froze on
+      // "Loading the briefing…" at 60K). While a background refresh runs we show a real
+      // progress bar and re-poll until cards land; if we already have (stale) cards we
+      // keep showing them under a slim "updating…" banner so Home is never blank.
+      const refreshing = !!(data.refreshing || data.building);
+      if (refreshing) _scheduleBriefRepoll(); else _cancelBriefRepoll();
+      const banner = refreshing ? briefProgressHtml(data, t) : "";
       if (!data.buckets || !data.buckets.length) {
+        if (refreshing) { feed.innerHTML = banner; return; }
         feed.innerHTML = `<div class="card">
           <h4>No Leads yet — that's expected on a young corpus</h4>
           <p class="sum">Leads are computed from YOUR collected material; an empty feed means the
@@ -1498,10 +1506,39 @@
       const famTabs = `<button class="active" data-tab="__all">${esc(t("All Leads"))}</button>`
         + data.buckets.map((b, bi) =>
             `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("");
-      feed.innerHTML = (data.buckets.length > 1
+      feed.innerHTML = banner + (data.buckets.length > 1
         ? `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>` : "") + html;
       // "All" is the default; selecting a family shows only that bucket.
       if (data.buckets.length > 1) ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: "__all"});
+    }
+
+    // The "pleasing progress bar" for a background briefing recompute (remarks 6/7).
+    // Determinate once producers report (done/total), indeterminate until then. Honest:
+    // it counts ANALYSES completed, not elapsed time (producers vary in cost), and is
+    // labelled as such — never a fabricated time estimate.
+    function briefProgressHtml(data, t) {
+      t = t || ((s) => s);
+      const p = data.progress || {};
+      const total = +p.total || 0, done = +p.done || 0;
+      const label = data.building ? t("Building your briefing…") : t("Updating your briefing…");
+      const bar = total > 0
+        ? `<progress max="${total}" value="${done}" style="width:100%;height:8px"></progress>`
+        : `<progress style="width:100%;height:8px"></progress>`;
+      const detail = total > 0 ? `${done} / ${total} ${t("analyses")}` : "";
+      return `<div class="brief-progress card" role="status" aria-live="polite" style="margin-bottom:10px">`
+        + `<div style="display:flex;justify-content:space-between;gap:8px">`
+        + `<span>${esc(label)}</span><span class="muted">${esc(detail)}</span></div>${bar}</div>`;
+    }
+    // Re-poll the briefing while a background recompute runs so the bar advances and the
+    // final cards appear without a manual reload. One timer at a time; renderBriefing
+    // cancels it on a non-refreshing payload. 1.5 s is responsive without hammering.
+    let _briefRepoll = null;
+    function _scheduleBriefRepoll() {
+      if (_briefRepoll) return;
+      _briefRepoll = setTimeout(() => { _briefRepoll = null; loadBriefing(); }, 1500);
+    }
+    function _cancelBriefRepoll() {
+      if (_briefRepoll) { clearTimeout(_briefRepoll); _briefRepoll = null; }
     }
     function selectHomeFamily(key) {
       document.querySelectorAll("#briefing-feed .brief-bucket").forEach(el => {

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import UTC, datetime
 
 from src.briefing.card import BUCKET_LABELS, BUCKETS
@@ -35,6 +36,63 @@ CACHE_VERSION = "oo-briefing-cache-2"
 
 # Register the built-in producers once, at import.
 register_default_producers()
+
+
+# --------------------------------------------------------------------------- #
+# Background-refresh coordinator. The HTTP path (get_briefing(..., background=True))
+# must NEVER recompute on the request thread — a 60K-article run_all + warm_cache takes
+# minutes, which froze Home on "Loading the briefing…" (field test 2026-06-24). It kicks
+# ONE background recompute (its OWN session) and serves the best cache it has now, plus a
+# refreshing flag + determinate progress so the UI shows a real progress bar.
+# --------------------------------------------------------------------------- #
+_refresh_lock = threading.Lock()
+_refresh_state: dict[str, int | bool] = {"refreshing": False, "done": 0, "total": 0}
+
+
+def _bg_refresh() -> None:
+    """Recompute the briefing in a daemon thread with its OWN session, publishing
+    per-producer progress. Best-effort: a failure is logged, never crashes the app."""
+    from src.database.session import session_scope
+
+    def _progress(done: int, total: int, _name: str) -> None:
+        with _refresh_lock:
+            _refresh_state["done"] = done
+            _refresh_state["total"] = total
+
+    try:
+        with session_scope() as session:
+            refresh_briefing(session, on_progress=_progress)
+    except Exception:  # noqa: BLE001 - a background refresh must never crash the app
+        _LOG.warning("background briefing refresh failed", exc_info=True)
+    finally:
+        with _refresh_lock:
+            _refresh_state["refreshing"] = False
+
+
+def _ensure_background_refresh() -> None:
+    """Start ONE background recompute if none is running (idempotent under the
+    concurrent Home polls)."""
+    with _refresh_lock:
+        if _refresh_state["refreshing"]:
+            return
+        _refresh_state["refreshing"] = True
+        _refresh_state["done"] = 0
+        _refresh_state["total"] = 0
+    threading.Thread(target=_bg_refresh, name="oo-briefing-refresh", daemon=True).start()
+
+
+def _refresh_status() -> dict:
+    """The current background-refresh state for the API view: a ``refreshing`` bool and,
+    while refreshing, a ``progress`` {done, total} for a determinate bar."""
+    with _refresh_lock:
+        refreshing = bool(_refresh_state["refreshing"])
+        status: dict = {"refreshing": refreshing}
+        if refreshing:
+            status["progress"] = {
+                "done": int(_refresh_state["done"]),
+                "total": int(_refresh_state["total"]),
+            }
+    return status
 
 
 def _cache_path():
@@ -140,8 +198,12 @@ def clear_dismissed() -> None:
     _save_dismissed(set())
 
 
-def refresh_briefing(session) -> dict:
-    """Recompute the briefing from all producers and write the cache. Returns it."""
+def refresh_briefing(session, on_progress=None) -> dict:
+    """Recompute the briefing from all producers and write the cache. Returns it.
+
+    ``on_progress(done, total, name)`` (optional) is forwarded to ``run_all`` so a
+    background recompute can publish a progress bar; callers that don't need it
+    (the scheduler, an explicit synchronous get) pass nothing — unchanged behaviour."""
     # The convergence WATCH engine is ON by default (ruling #3): evaluate saved watches
     # BEFORE producing cards, so a watch that just crossed its threshold surfaces in
     # this very refresh. Local-only; a watch problem must never block the briefing.
@@ -151,7 +213,7 @@ def refresh_briefing(session) -> dict:
         evaluate_watches(session)
     except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
         _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
-    cards = [c.to_dict() for c in run_all(session)]
+    cards = [c.to_dict() for c in run_all(session, on_progress=on_progress)]
     payload = {
         "version": CACHE_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
@@ -217,21 +279,52 @@ def _present(payload: dict, *, include_dismissed: bool) -> dict:
     }
 
 
-def get_briefing(session, *, force: bool = False, include_dismissed: bool = False) -> dict:
+def get_briefing(
+    session, *, force: bool = False, include_dismissed: bool = False, background: bool = False
+) -> dict:
     """Return the cached briefing (computing once if absent, ``force``, or STALE).
 
     Stale-recompute (P0-3): the scheduler refreshes the cache after each scrape, but
     the app boots in airplane mode (scheduler idle), so a briefing built when the
     corpus was small would otherwise leave Home empty forever despite a large corpus.
-    If the corpus has grown materially since the cache, recompute once — bounded so a
-    stable corpus always reads the cache instantly."""
-    payload = None if force else _read_cache()
-    if payload is not None and _is_cache_stale(session, payload):
-        _LOG.info("briefing cache is stale (corpus grew); recomputing")
-        payload = None
-    if payload is None:
+    If the corpus has grown materially since the cache, recompute — bounded so a
+    stable corpus always reads the cache instantly.
+
+    ``background`` (the HTTP path, field test 2026-06-24): NEVER recompute on the
+    caller's thread — a 60K-article run_all + warm_cache takes minutes and froze Home
+    on "Loading the briefing…". Kick ONE background recompute and serve the best cache
+    we have now (the stale cards, or an honest ``building`` placeholder) with a
+    ``refreshing`` flag + progress, so the request returns instantly and the UI shows a
+    progress bar. ``background=False`` (tests / scheduler / explicit in-process callers)
+    keeps the recompute SYNCHRONOUS on ``session`` — unchanged behaviour."""
+    cached = _read_cache()
+    stale = cached is not None and _is_cache_stale(session, cached)
+    need_recompute = force or cached is None or stale
+    if need_recompute and background:
+        # Off-request: kick one background recompute, serve the current cache meanwhile.
+        _ensure_background_refresh()
+        payload = cached
+    elif need_recompute:
+        if stale:
+            _LOG.info("briefing cache is stale (corpus grew); recomputing")
         payload = refresh_briefing(session)
-    view = _present(payload, include_dismissed=include_dismissed)
+    else:
+        payload = cached
+    if payload is None:
+        # Background path with no cache yet — an honest "building" placeholder that
+        # never blocks; the UI shows the progress bar and re-polls until cards land.
+        view: dict = {
+            "generated_at": None,
+            "count": 0,
+            "total": 0,
+            "dismissed_count": 0,
+            "buckets": [],
+            "cards": [],
+            "building": True,
+        }
+    else:
+        view = _present(payload, include_dismissed=include_dismissed)
+    view.update(_refresh_status())
     # Additive: the corpus maturity STAGE (descriptive, never a score) so a Home
     # reader can calibrate how much weight to give the evidence cards. Computed
     # live from real corpus facts (cheap min/max + count) — not cached, so it is

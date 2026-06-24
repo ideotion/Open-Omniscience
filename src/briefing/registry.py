@@ -38,21 +38,31 @@ def producers() -> list[tuple[str, Producer]]:
     return list(_REGISTRY)
 
 
-def run_all(session) -> list[Card]:
+def run_all(session, on_progress: Callable[[int, int, str], None] | None = None) -> list[Card]:
     """Run every registered producer, isolating failures.
 
     One misbehaving producer must never blank the whole briefing, so each is run in
     its own ``try`` and its error is logged, not raised (no silent ``pass``: the
     warning is visible).
+
+    ``on_progress(done, total, name)`` (optional) is called after each producer so a
+    background recompute can publish a determinate progress bar; it is cosmetic and is
+    never allowed to break the feed.
     """
     cards: list[Card] = []
-    for name, producer in _REGISTRY:
+    total = len(_REGISTRY)
+    for i, (name, producer) in enumerate(_REGISTRY):
         try:
             produced = producer(session) or []
         except Exception:  # noqa: BLE001 - one bad producer must not abort the feed
             _LOG.warning("briefing producer %r failed", name, exc_info=True)
-            continue
+            produced = []
         for card in produced:
             if isinstance(card, Card):
                 cards.append(card)
+        if on_progress is not None:
+            try:
+                on_progress(i + 1, total, name)
+            except Exception:  # noqa: BLE001 - progress is cosmetic, never fatal
+                pass
     return cards
