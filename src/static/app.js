@@ -10135,6 +10135,38 @@
           + (d.caveat ? `<div class="hint" style="margin-top:8px">${esc(d.caveat)}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not triangulate: ${esc(e.message)}</div>`; }
     }
+    // -- Revision anomalies (the reliable-memory check): History must not be silently
+    //    rewritten. Retrospective, names the shape not the intent, no score. English-only.
+    async function loadRevisionAnomalies() {
+      const box = $("statfig-revisions"); if (!box) return;
+      const series = ($("statfig-view-series").value || "").trim();
+      box.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const qs = series ? "?series_id=" + encodeURIComponent(series) : "";
+        const d = await api("/api/stats/revision-anomalies" + qs);
+        const items = d.anomalies || [];
+        if (!items.length) {
+          box.innerHTML = `<div class="muted">No revision anomalies. A figure needs several prior revisions before an outlier can be judged, and only a recent revision unusually large for its own history is flagged.</div>`;
+          return;
+        }
+        const rows = items.map(a => {
+          const rel = (a.rel_change != null) ? ` <span class="muted">(${(a.rel_change * 100).toFixed(1)}%)</span>` : "";
+          return `<tr>
+            <td>${esc(a.agency)}</td><td>${esc(a.series_id)}</td><td>${esc(a.ref_area)}</td><td>${esc(a.time_period)}</td>
+            <td style="text-align:right">${_statfigFmt(a.from_value)} → ${_statfigFmt(a.to_value)}</td>
+            <td style="text-align:right">${_statfigFmt(a.abs_change)}${rel}</td>
+            <td style="text-align:right">${(a.robust_z).toFixed(1)}</td>
+            <td style="text-align:right">${a.n_prior_revisions}</td>
+            <td>${esc(a.revised_at)}</td></tr>`;
+        }).join("");
+        box.innerHTML = `<div class="hint">${items.length} flagged · robust z ≥ ${esc(String(d.z_min))} · ≥ ${esc(String(d.min_prior_revisions))} prior revisions</div>`
+          + `<table><tr><th>Agency</th><th>Series</th><th>Area</th><th>Period</th>`
+          + `<th style="text-align:right">From → to</th><th style="text-align:right">Change</th>`
+          + `<th style="text-align:right">Robust z</th><th style="text-align:right">Priors</th><th>Revised at</th></tr>${rows}</table>`
+          + (d.method ? `<div class="hint" style="margin-top:8px">${esc(d.method)}</div>` : "")
+          + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not check revision anomalies: ${esc(e.message)}</div>`; }
+    }
     // -- Tracked figures (ruling #12): scheduled vintage auto-refresh. English-only.
     async function loadStatSubs() {
       const box = $("statfig-subs"); if (!box) return;

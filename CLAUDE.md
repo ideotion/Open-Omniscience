@@ -4002,6 +4002,25 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **REVISION-ANOMALIES GUI SURFACE (Settings → Statistics) 2026-06-25 (makes the merged reliable-memory
+  endpoint GUI-reachable; same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the
+  freshly-merged 0.09 after #473 merged; NEW draft PR onto 0.09; FRONTEND, BROWSER-UNVERIFIED per fork-3 —
+  node --check + grep-invariant-guarded + i18n 100%).** The reliable-memory check (`/api/stats/revision-
+  anomalies`, merged #472) had no GUI; the maintainer field-tests the GUI. Added a "Revision anomalies"
+  section to the Settings → Statistics panel (index.html, after the triangulate box): a "Check revision
+  anomalies" button → `loadRevisionAnomalies()` (app.js, beside the other `loadStatFigures`/`triangulateStat
+  Series` handlers, same `$`/`api`/`esc`/`_statfigFmt` pattern + Loading/empty/error states) fetches the
+  endpoint (optionally scoped to the typed `statfig-view-series` id, else corpus-wide) and renders the flagged
+  revisions as a table — agency·series·area·period · from→to (+rel%) · change · robust z · #priors · revised-at
+  — with the honesty envelope (the method + the innocent-twin CAVEAT) VISIBLE by default (informed-consent
+  #23), and an honest empty state ("a figure needs several prior revisions before an outlier can be judged").
+  The section's intro states the mission verbatim ("History must not be silently rewritten … retrospective …
+  names the shape … never the intent"). NO backend change; NO new i18n keys (English-fallback like the
+  adjacent figures/triangulate strings — gate stays 100%, keyable in an i18n slice); the §5B "sensitivity
+  wording" ruling still applies to this copy (already conservative). test_repo_invariants::
+  test_revision_anomalies_statistics_surface greps `_ui_source()` for the box + handler + endpoint + the
+  method/caveat render. REMAINING: human click-through (fork-3); the stat TIME-SERIES chart drawing
+  `ooViz.statSeriesPaths` (Phase B3); key the new strings ×12.
 - **ooViz HONEST-CHART PRIMITIVES + statSeriesPaths (§5B Phase B2 foundation) 2026-06-25 (same single-branch
   harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after #472 merged; NEW
   draft PR onto 0.09; FULLY node-VERIFIED here — 11/11 node tests + node --check + ruff/mypy on the wrapper,
