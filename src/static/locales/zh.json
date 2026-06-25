@@ -1661,5 +1661,10 @@
   "Large encrypted backup (volumes + parity)": "大型加密备份（卷 + 校验）",
   "Open evidence & custody →": "打开证据与保管链 →",
   "drag to pan · hover a dot for details · zoom in to read city names": "拖动以平移 · 悬停圆点查看详情 · 放大以读取城市名称",
-  "Governments sections": "政府版块"
+  "Governments sections": "政府版块",
+  "Verify + repair (from parity) + reassemble the volume set, then merge ADDITIVELY into your corpus — nothing is replaced or deleted.": "校验 + 修复（来自校验冗余）+ 重新组装卷集，然后以追加方式合并到你的语料库——不替换、不删除任何内容。",
+  "For every Home card (Lead): does clicking it open its EXACT corpus (hard-linked) or a fuzzy text search that loses it (search-fallback)? Flags the mismatches.": "对每张主页卡片（线索）：点击它会打开其精确的语料库（硬链接），还是会丢失它的模糊文本搜索（搜索回退）？标记不匹配项。",
+  "Every diagnostics log in one archive — one click instead of nine. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).": "所有诊断日志合为一个归档——一次点击而非九次。包含有限的关键词日志摘要（完整的关键词导出有自己的“All keywords”按钮）。",
+  "Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.": "语料库中的每个关键词（不仅是每种语言的前 5000 个），合为一个较大的归档——~20 MB 的上限仍然适用；若达到，清单会标明 has_more，你再获取 &page=2。",
+  "Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).": "绘制累计不同关键词数量相对于累计添加词数的曲线。曲线趋于平缓 = 词汇正在饱和（健康）；接近直线（Heaps β ≈ 1）= 几乎每个词都仍在生成新关键词（标记/代码/未分词的垃圾）。"
 }

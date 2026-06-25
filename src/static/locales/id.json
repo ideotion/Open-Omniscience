@@ -1661,5 +1661,10 @@
   "Large encrypted backup (volumes + parity)": "Cadangan terenkripsi besar (volume + paritas)",
   "Open evidence & custody →": "Buka bukti & rantai pengawasan →",
   "drag to pan · hover a dot for details · zoom in to read city names": "seret untuk menggeser · arahkan ke titik untuk detail · perbesar untuk membaca nama kota",
-  "Governments sections": "Bagian Pemerintahan"
+  "Governments sections": "Bagian Pemerintahan",
+  "Verify + repair (from parity) + reassemble the volume set, then merge ADDITIVELY into your corpus — nothing is replaced or deleted.": "Verifikasi + perbaiki (dari paritas) + susun ulang kumpulan volume, lalu gabungkan secara ADITIF ke korpus Anda — tidak ada yang diganti atau dihapus.",
+  "For every Home card (Lead): does clicking it open its EXACT corpus (hard-linked) or a fuzzy text search that loses it (search-fallback)? Flags the mismatches.": "Untuk setiap kartu beranda (petunjuk): apakah mengekliknya membuka korpus PERSISnya (tertaut keras) atau pencarian teks samar yang kehilangannya (pencarian cadangan)? Menandai ketidakcocokan.",
+  "Every diagnostics log in one archive — one click instead of nine. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).": "Semua log diagnostik dalam satu arsip — satu klik alih-alih sembilan. Memuat ringkasan log kata kunci yang dibatasi (ekspor kata kunci lengkap punya tombol 'All keywords' sendiri).",
+  "Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.": "Setiap kata kunci dalam korpus (bukan hanya 5000 teratas per bahasa), dalam satu arsip besar — batas ~20 MB tetap berlaku; jika tercapai, manifes menyebut has_more dan Anda mengambil &page=2.",
+  "Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).": "Memplot kata kunci unik kumulatif terhadap kata kumulatif yang ditambahkan. Kurva yang melengkung mendatar = kosakata menjenuh (sehat); garis hampir lurus (Heaps β ≈ 1) = kata kunci baru masih dibuat untuk hampir setiap kata (markup/kode/tak tersegmentasi = sampah)."
 }

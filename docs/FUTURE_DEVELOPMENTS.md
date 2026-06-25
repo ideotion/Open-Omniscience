@@ -178,7 +178,7 @@
 - [ ] Human click-through of all browser-unverified UI
 - [ ] Flip 0.0.9 → 0.1 when RC-blocking items are green
 - [ ] App self-update (manual git-pull: snapshot → verify → migrate → swap → rollback)
-- [~] i18n: key the remaining English-fallback panel strings ×12 — IN PROGRESS (2026-06-25): keyed 30 across two slices — the new Library/Governments/Graphics + backup labels, then the 12 diagnostics download buttons + the large-backup label + world-map drag hint (audit 140→110, gate 100%). Remaining ~110 are mostly data/examples/URLs that stay literal + the long TECHNICAL honesty paragraphs (left for native review) + the harder mid-`<a>`-link sentence fragments (de-tagging tail).
+- [~] i18n: key the remaining English-fallback panel strings ×12 — IN PROGRESS (2026-06-25): keyed 35 across three slices — the new Library/Governments/Graphics + backup labels, the 12 diagnostics download buttons + large-backup label + world-map drag hint, then 5 clean help paragraphs (volume-restore honesty line, diagnostics-archive + all-keywords + keyword-growth descriptions, technical tokens preserved). audit 140→105, gate 100%. Remaining ~105 are mostly data/examples/URLs that stay literal + the most security-/technically-dense paragraphs (custody IP/timing, AES-GCM/Reed-Solomon volume backup — left for native review) + the mid-`<a>`-link sentence fragments (de-tagging tail).
 
 ### Bigger / deferred (design-only)
 - [ ] Elections & civic vertical (needs a sourced candidate roster)
