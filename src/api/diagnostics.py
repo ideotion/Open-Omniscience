@@ -839,6 +839,26 @@ def keyword_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/ir-eval-selftest")
+def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
+    """Run the IR retrieval-eval harness self-test (keyword-engine Phase 3).
+
+    Proves the metric MECHANISM (nDCG/MRR/Recall/P@k + per-language aggregation + the
+    conflation recall/precision deltas + the regression gate) on a hand-computed fixture —
+    no DB, no network, no score. A real retrieval measurement needs a human-judged GOLD
+    SET over your own corpus (graded 0/1/2), fed to evaluate_against_corpus(); this
+    endpoint verifies the harness is correct so that measurement can be trusted. With
+    ``download=1`` it comes back as a dated attachment."""
+    from src.analytics.ir_eval import run_ir_eval_selftest
+
+    log = run_ir_eval_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-ir-eval-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/home-cards")
 def home_card_diagnostics(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """Home-card (Lead) CLICK diagnostics (field report 2026-06-22): for every card the

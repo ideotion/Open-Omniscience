@@ -318,6 +318,22 @@ def test_reconcile_keyword_language_is_wired():
     assert "reconcile_keyword_language" in job  # the cleanup flow fixes language too
 
 
+def test_ir_eval_harness_is_wired():
+    """Keyword-engine P3: an IR retrieval-eval harness (the gate for ranking/conflation
+    quality changes) — native metrics (no new dep), per-language aggregation, the
+    conflation recall/precision deltas, a regression gate, a fixture self-test, and an
+    in-app diagnostics endpoint."""
+    ev = (_SRC / "analytics" / "ir_eval.py").read_text(encoding="utf-8")
+    for fn in ("def ndcg_at_k(", "def rr_at_k(", "def recall_at_k(", "def precision_at_k(",
+               "def evaluate(", "def conflation_delta(", "def regression_check(",
+               "def evaluate_against_corpus(", "def run_ir_eval_selftest("):
+        assert fn in ev, f"ir_eval must define {fn}"
+    # honesty: per-language breakdown + no composite score; conflation reported separately
+    assert "by_language" in ev and "recall_delta" in ev and "precision_delta" in ev
+    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert "/ir-eval-selftest" in api and "run_ir_eval_selftest" in api
+
+
 def test_articles_endpoint_serialises_stored_sentiment():
     """§6: the /api/articles list exposes the stored sentiment (populated at ingest /
     re-index, VADER English-only) so lists / cards can show tone without an extra framing
