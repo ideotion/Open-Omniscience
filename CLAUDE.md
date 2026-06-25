@@ -4025,10 +4025,23 @@ ruling, a contingency, or a deliberate-omission note.
   existing core: gap→None, comparability only-when-stated, vintage `extracted_at` caller-stamped verbatim, NO
   composite score (regex-guarded over every `to_dict` key). tests/test_stats_csv_jsonstat_parse.py (16) imports
   ONLY the pure module → runs in the bare sandbox AND CI (unlike the briefing-coupled test_sdmx_parse.py). NO
-  new `*_AS_OF`/registry entry (format-only code); no UI strings (i18n untouched). NOT YET WIRED to fetch/store/
-  endpoints — the established "parser core first, live fetch next" slice (how sdmx.py itself shipped). REMAINING:
-  the OWID-CSV + Eurostat-JSON-stat fetch clients + ingest wiring (the §5B Phase A "wire Pacific Data Hub + ECB"
-  + Phase E follow-ons); bulk-ZIP-CSV (V-Dem/UCDP) is the next parser.
+  new `*_AS_OF`/registry entry (format-only code); no UI strings (i18n untouched). PLUS (same PR/branch, the
+  next pure layer — §5B Phase B1 `StatFigure[] → chart series`): `src/stats/series.py:to_chart_series` adapts a
+  figure list into a time-ordered, JSON-ready chart series with the honesty baked into its SHAPE — COMPARABILITY
+  SEGMENTATION (a new line segment starts at every unit / base-year / SA-NSA change so an "Index 2010=100" run
+  is NEVER joined to a "2015=100" one, and SA is never joined to NSA — the brief's "never compare incomparable
+  denominators silently"), a `value=None` kept in place as a GAP (the chart breaks the line, never interpolates/
+  zeroes), period parsing (annual/semester/quarter/month/week/day → a decimal-year x placed at the period
+  START) with UNPARSEABLE labels surfaced in `unparseable_periods` never positioned at a guessed x, vintage
+  dedup (latest `extracted_at` wins per [period, comparability]; ISO-8601 UTC sorts chronologically), filterable
+  by ref_area/series_id, mixed-granularity flagged, NO score (recursively regex-guarded over the whole output).
+  Pure (stdlib re/datetime + StatFigure), no ORM/network. tests/test_stats_series.py (13) imports only the pure
+  modules → runs in the sandbox AND CI. NOT YET WIRED to fetch/store/endpoints — the established "parser core
+  first, live fetch next" slice (how sdmx.py itself shipped); the adapter is the Phase B2 chart layer's input.
+  REMAINING: the ooViz/ooChart gap-subpath + comparability-break renderer (Phase B2, reuse `docs/research/
+  dataviz/honest-charts.js` `pathWithGaps`); the OWID-CSV + Eurostat-JSON-stat fetch clients + ingest wiring
+  (the §5B Phase A "wire Pacific Data Hub + ECB" + Phase E follow-ons); bulk-ZIP-CSV (V-Dem/UCDP) is the next
+  parser.
 - **STATUS-BAR TRANSPARENCY — remark 14 REOPENED + FIXED 2026-06-25 (field report: "top status bar still
   transparent, content overlaps when scrolling"; branch claude/vibrant-thompson-bez6dq, draft PR onto 0.09;
   CSS one-liner, BROWSER-UNVERIFIED per fork-3).** The #460 fix put `background:var(--bg2)` on the CHILDREN
