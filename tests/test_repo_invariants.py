@@ -100,6 +100,32 @@ def test_stat_time_series_chart_surface():
     assert "statChartGeometry: statChartGeometry" in ooviz, "it must be exported in the API"
 
 
+def test_stats_choropleth_feed_and_data_layer():
+    """§5B Phase C: the choropleth feed. store.map_figures returns ONE latest-vintage cell
+    per ref_area for a series (single-producer; several producers FLAG multi_producer and
+    are NEVER averaged), the /api/stats/map endpoint exposes it, and the pure
+    ooViz.choroplethData / symbolRadii apply the normalized-only honesty gate (a different
+    unit/base-year/SA basis is no-data, never recoloured; a level is proportional symbols).
+    The frontend ooMap render is the browser-deferred follow-on; the data layer is verified
+    here (the store CI test + the ooViz node test) and grep-guarded for regression."""
+    store_src = (_SRC / "stats" / "store.py").read_text(encoding="utf-8")
+    api_src = (_SRC / "api" / "stats.py").read_text(encoding="utf-8")
+    ooviz = (_SRC / "static" / "ooviz.js").read_text(encoding="utf-8")
+    # The store feed: one cell per area, single-producer, never averaged.
+    assert "def map_figures(" in store_src, "the choropleth store feed is missing"
+    assert "multi_producer" in store_src, "several producers must be flagged, not averaged"
+    assert "never averages producers" in store_src, "the no-average caveat must travel"
+    # The endpoint.
+    assert '@router.get("/map")' in api_src, "the /api/stats/map endpoint is missing"
+    assert "map_figures(" in api_src, "the endpoint must call the store feed"
+    # The pure honesty data layer (node-tested in tests/ooviz_node_test.js).
+    assert "function choroplethData" in ooviz, "the comparability gate must exist"
+    assert "function symbolRadii" in ooviz, "the levels->symbols companion must exist"
+    assert "choroplethData: choroplethData" in ooviz and "symbolRadii: symbolRadii" in ooviz, (
+        "both must be exported in the ooViz API"
+    )
+
+
 def test_live_language_switch_rerenders_cldr_name_surfaces():
     """Field test 2026-06-19 #16: country/continent names (CLDR-derived at render time)
     must update when the UI language changes, not only on a page refresh. i18n.setLang

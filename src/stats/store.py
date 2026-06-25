@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 from src.database.models import StatFigure as StatFigureRow
 from src.stats.revision import find_revision_anomalies
 from src.stats.sdmx import StatFigure
-from src.stats.series import to_chart_series
+from src.stats.series import _parse_period, to_chart_series
 
 
 def store_figures(session: Session, figures: Iterable[StatFigure]) -> dict:
@@ -245,6 +245,91 @@ def chart_series(
         q = q.where(StatFigureRow.agency == agency.strip().lower())
     figures = [StatFigure(**_row_dict(r)) for r in session.execute(q).scalars()]
     return to_chart_series(figures, ref_area=area, series_id=sid)
+
+
+def _period_key(label: str) -> float:
+    """A period label → a sortable decimal-year (unparseable → -inf, sorts oldest)."""
+    pos = _parse_period(label)[0]
+    return pos if pos is not None else float("-inf")
+
+
+def _area_more_recent(a: StatFigureRow, b: StatFigureRow) -> bool:
+    """Is figure ``a`` the one to show for its area over ``b``? Later period wins; a tie
+    on period falls back to the later vintage. Deterministic, no fabricated ordering."""
+    ka, kb = _period_key(a.time_period), _period_key(b.time_period)
+    if ka != kb:
+        return ka > kb
+    return a.extracted_at > b.extracted_at
+
+
+def map_figures(
+    session: Session,
+    *,
+    series_id: str,
+    agency: str | None = None,
+    time_period: str | None = None,
+    limit: int = 2000,
+) -> dict:
+    """Latest-vintage figures for ONE series across all areas — the CHOROPLETH feed.
+
+    Returns ONE cell per ``ref_area`` (the area's latest period, or ``time_period`` if
+    pinned), each carrying the producer's published value + its comparability fields
+    (unit / base_year / adjustment). The frontend ``ooViz.choroplethData`` applies the
+    honesty gate over these cells: an area on a DIFFERENT (unit, base-year, seasonal-
+    adjustment) basis is shown as no-data (NEVER recoloured to one scale), a missing
+    value is no-data (never zero), and a LEVEL indicator is shown as proportional
+    symbols, not colour.
+
+    A map is SINGLE-PRODUCER per series: when several agencies report this series and no
+    ``agency`` is pinned, the most recent VINTAGE is shown per area and ``multi_producer``
+    is flagged so the caller can pin an agency — the map NEVER averages producers and
+    never elects a 'true' one silently. ``periods`` / ``agencies`` are returned so a
+    surface can offer a period / producer selector. Counts only, NO score.
+    """
+    sid = series_id.strip()
+    q = select(StatFigureRow).where(StatFigureRow.series_id == sid)
+    if agency:
+        q = q.where(StatFigureRow.agency == agency.strip().lower())
+    if time_period:
+        q = q.where(StatFigureRow.time_period == time_period.strip())
+    rows = list(_latest_vintage(list(session.execute(q).scalars())).values())
+
+    agencies = sorted({r.agency for r in rows})
+    periods = sorted({r.time_period for r in rows}, key=lambda p: (_period_key(p), p), reverse=True)
+
+    # One cell per area: the latest period (tie → latest vintage).
+    best: dict[str, StatFigureRow] = {}
+    for r in rows:
+        cur = best.get(r.ref_area)
+        if cur is None or _area_more_recent(r, cur):
+            best[r.ref_area] = r
+    cells = [_row_dict(r) for r in best.values()]
+    cells.sort(key=lambda c: c["ref_area"])
+    total = len(cells)
+    cells = cells[: max(0, int(limit))]
+    return {
+        "series_id": sid,
+        "agency": agency.strip().lower() if agency else None,
+        "time_period": time_period.strip() if time_period else None,
+        "cells": cells,
+        "count": total,
+        "shown": len(cells),
+        "periods": periods,
+        "agencies": agencies,
+        "multi_producer": agency is None and len(agencies) > 1,
+        "method": (
+            "Latest-vintage figure per area for one series (the area's latest period "
+            "unless a period is pinned). The map's comparability gate (frontend) shows "
+            "areas on a different basis as no-data; a level is shown as proportional symbols."
+        ),
+        "caveat": (
+            "Each cell is a producer's published value, never a score. Areas on a "
+            "different unit / base year / seasonal adjustment are shown as no-data on the "
+            "map (never recoloured to one scale); a None value is a published gap, not "
+            "zero. When several producers report this series, pin an agency — the map "
+            "never averages producers."
+        ),
+    }
 
 
 # --------------------------------------------------------------------------- #

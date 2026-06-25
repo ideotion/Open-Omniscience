@@ -273,6 +273,31 @@ def figure_series(
         return chart_series(db, series_id=series_id, ref_area=ref_area, agency=agency)
 
 
+@router.get("/map")
+def figure_map(
+    series_id: str = Query(...),
+    agency: str | None = Query(None, description="pin one producer (recommended if several report)"),
+    time_period: str | None = Query(None, description="pin a period; default = each area's latest"),
+    limit: int = Query(2000, ge=1, le=5000),
+) -> dict:
+    """Latest-vintage figures for ONE series across all areas — the choropleth feed.
+
+    One cell per ``ref_area`` (the area's latest period unless ``time_period`` is pinned),
+    each carrying the producer's published value + its comparability fields. The frontend
+    ``ooViz.choroplethData`` applies the honesty gate: an area on a different unit /
+    base-year / seasonal-adjustment basis is shown as no-data (never recoloured to one
+    scale), a gap is no-data (never zero), and a LEVEL indicator is shown as proportional
+    symbols not colour. A map is single-producer — pin ``agency`` when several report the
+    series; the map never averages producers. Counts only, no score."""
+    from src.database.session import session_scope
+    from src.stats.store import map_figures
+
+    with session_scope() as db:
+        return map_figures(
+            db, series_id=series_id, agency=agency, time_period=time_period, limit=limit
+        )
+
+
 @router.get("/revision-anomalies")
 def revision_anomalies_view(
     agency: str | None = Query(None),
