@@ -2401,6 +2401,12 @@ def test_settings_chrome_cleanups():
     # remark 14: the sticky chrome is opaque (var(--bg2), the sidebar bg) — no transparent wash.
     assert "color-mix(in srgb, var(--bg) 82%, transparent)" not in html, "topbar must be opaque"
     assert "background:var(--bg2)" in html
+    # remark 14 REOPENED (field report 2026-06-25): the sticky WRAPPER itself must carry the
+    # bg, not just its children — a children-only bg let content show through when the facet
+    # strip is hidden. Guard that the .chrome rule includes the opaque background.
+    assert ".chrome { position:sticky; top:0; z-index:50; background:var(--bg2); }" in html, (
+        "the sticky .chrome wrapper must carry the opaque bg, not only .topbar/.subtab-strip"
+    )
     # remark 15: clicking the sidebar's empty space toggles collapse/expand.
     assert "_wireSidebarEmptyClickToggle" in html and "toggleSidebar()" in html
 

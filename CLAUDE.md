@@ -3971,6 +3971,17 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **STATUS-BAR TRANSPARENCY — remark 14 REOPENED + FIXED 2026-06-25 (field report: "top status bar still
+  transparent, content overlaps when scrolling"; branch claude/vibrant-thompson-bez6dq, draft PR onto 0.09;
+  CSS one-liner, BROWSER-UNVERIFIED per fork-3).** The #460 fix put `background:var(--bg2)` on the CHILDREN
+  (`.topbar` + `.subtab-strip`) but NOT on the sticky WRAPPER `.chrome` (`app.css:127`, `position:sticky;top:0`).
+  When the facet strip is HIDDEN (most tabs) or a sub-pixel seam exists, scrolled content shows through the
+  transparent wrapper — exactly the field report. FIX: `background:var(--bg2)` on `.chrome` itself (belt-and-
+  braces: the whole sticky region is opaque regardless of which children are present). Guard EXTENDED:
+  test_settings_chrome_cleanups now asserts the `.chrome` rule carries the bg (the old guard only checked the
+  children — which is how the gap slipped). FUTURE_DEVELOPMENTS remark 14 flipped [x]→[~] with the diagnosis +
+  the "if still see-through: stale build / translucent theme --bg2 / GUI-skin restyle" follow-ups. Confirm on
+  click-through. LESSON: an opaque-chrome guard must assert the STICKY CONTAINER's bg, not just its children.
 - **BRIEF-STATUS AUDIT + FUTURE_DEVELOPMENTS UNRESOLVED SECTION 2026-06-25 (maintainer-asked "add to future
   developments everything that was not or partially resolved"; branch claude/vibrant-thompson-bez6dq, draft PR
   onto 0.09; DOC-ONLY).** Ran a 6-agent parallel read-only audit (Workflow, ultracode opt-in) verifying all 31
