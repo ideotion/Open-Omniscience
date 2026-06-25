@@ -193,7 +193,11 @@ class ReindexJobManager:
 
     def _run(self) -> None:
         try:
-            from src.analytics.store import prune_orphan_keywords, reindex_all_batch
+            from src.analytics.store import (
+                prune_orphan_keywords,
+                reconcile_keyword_language,
+                reindex_all_batch,
+            )
             from src.database.models import Article
 
             session = (self._session_factory or _default_session)()
@@ -239,6 +243,14 @@ class ReindexJobManager:
                     with self._lock:
                         self._tally["pruned"] = int(pr.get("pruned", 0))
                         self._tally["kept_curated"] = int(pr.get("kept_curated", 0))
+                        self._save()
+                if completed:
+                    # P4.2: re-language keywords to their signature-majority article
+                    # language (index_article never reconciles the first-write tag), so a
+                    # cleanup also makes the stored language truthful.
+                    rl = reconcile_keyword_language(session)
+                    with self._lock:
+                        self._tally["relanguaged"] = int(rl.get("relanguaged", 0))
                         self._save()
                 if completed:
                     # Phase 1.4: refresh the planner stats after the big keyword-table

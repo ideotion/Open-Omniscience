@@ -708,6 +708,85 @@ def reconcile_keyword_counters(session: Session, *, now=None) -> dict:
     }
 
 
+def reconcile_keyword_language(
+    session: Session, *, min_articles: int = 2
+) -> dict:
+    """Set ``Keyword.language`` to the SIGNATURE-MAJORITY article language — the fix for
+    the first-write-wins language that ``index_article`` never reconciles (keyword-engine
+    P4.2; the 16% / 40%-of-head mismatch). A background pass, mirroring
+    :func:`reconcile_keyword_counters`: off the request path, counts only, no score.
+
+    Effective language of a keyword = the language of the ARTICLES that mention it,
+    by distinct-article majority — the same signal :func:`queries._ring_lang_of` uses for
+    ring membership, but written back so the stored tag becomes truthful (and gates
+    correct grouping + the later lemmatization, P4.3). A correction only happens with a
+    CLEAR majority (``> half`` of the keyword's located mentions) backed by
+    ``>= min_articles`` distinct articles, so a single stray article never flips a tag.
+
+    PERF (the SQLCipher codec column-order trap, ledger): NEVER the per-row
+    ``keyword_mentions -> articles`` join to read ``Article.language`` (that drags whole
+    ~35 KB article rows through the codec). Instead a covering article-language map (via
+    ``idx_article_language``) + a covering ``(keyword_id, article_id)`` mention scan, joined
+    in Python. There is exactly one mention per ``(keyword, article)`` (the unique index),
+    so a per-(keyword, language) row COUNT already equals COUNT(DISTINCT article_id).
+
+    Keywords whose mentions are ALL in untagged ("?") articles are LEFT as-is — the
+    query-time ``global_stopwords`` already routes every keyword (incl. unknown-language)
+    through the English + all-language stoplist, so "?" boilerplate is filtered there; an
+    aggressive email/web boilerplate denylist stays the evidence-driven stoplist process
+    (never a guess, per the no-over-stoplist discipline). Returns a small tally."""
+    # 1) article id -> language for LOCATED articles only (covering idx_article_language;
+    # no content read). Empty corpus / all-untagged -> nothing to reconcile.
+    art_lang: dict[int, str] = {}
+    for aid, lang in session.query(Article.id, Article.language).filter(
+        Article.language.isnot(None), Article.language != ""
+    ):
+        art_lang[int(aid)] = lang
+    if not art_lang:
+        return {"keywords_with_signature": 0, "relanguaged": 0, "null_to_lang": 0, "lang_to_lang": 0}
+
+    # 2) per-keyword language distribution (count == distinct articles, one mention per
+    # (keyword, article)). Covering (keyword_id, article_id) scan, streamed to bound RAM.
+    dist: dict[int, dict[str, int]] = {}
+    q = session.query(KeywordMention.keyword_id, KeywordMention.article_id)
+    for kid, aid in q.yield_per(20000):
+        lang = art_lang.get(int(aid))
+        if lang is None:
+            continue
+        d = dist.setdefault(int(kid), {})
+        d[lang] = d.get(lang, 0) + 1
+
+    # 3) decide the signature per keyword + collect the changes vs the stored language.
+    relanguaged = null_to_lang = lang_to_lang = 0
+    updates: list[dict] = []
+    for kid, stored in session.query(Keyword.id, Keyword.language):
+        langs = dist.get(int(kid))
+        if not langs:
+            continue
+        total = sum(langs.values())
+        sig_lang, sig_n = max(langs.items(), key=lambda kv: kv[1])
+        # A clear majority (> half), backed by enough distinct articles.
+        if sig_n < min_articles or sig_n * 2 <= total:
+            continue
+        if (stored or None) == sig_lang:
+            continue
+        updates.append({"id": int(kid), "language": sig_lang})
+        relanguaged += 1
+        if stored:
+            lang_to_lang += 1
+        else:
+            null_to_lang += 1
+    if updates:
+        session.bulk_update_mappings(Keyword, updates)
+        session.commit()
+    return {
+        "keywords_with_signature": len(dist),
+        "relanguaged": relanguaged,
+        "null_to_lang": null_to_lang,
+        "lang_to_lang": lang_to_lang,
+    }
+
+
 def counter_envelope(session: Session, *, window_hours: int | None = None, now=None):
     """The honesty envelope (Slice 1) over the maintained keyword counters (Slice 2).
 

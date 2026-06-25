@@ -229,3 +229,101 @@ def test_batched_reindex_failure_fallback_loses_nothing(db):
         n = db.query(KeywordMention).filter_by(article_id=a.id).count()
         assert n == 0 if a.id == bad_id else n > 0  # only the bad one lost its mentions
     assert _stored_counters(db) == _live_counters(db)  # counters exact despite the failure
+
+
+# --- Phase 4.2: reconcile_keyword_language ----------------------------------- #
+
+
+def _lang_article(db, hash_, lang):
+    a = Article(
+        url=f"https://x.test/{hash_}",
+        canonical_url=f"https://x.test/{hash_}",
+        source_id=1,
+        title="t",
+        content="body",
+        hash=hash_,
+        language=lang,
+        published_at=datetime(2024, 3, 1, tzinfo=UTC),
+        created_at=datetime.now(UTC),
+    )
+    db.add(a)
+    db.flush()
+    return a
+
+
+def _kw_row(db, term, lang):
+    k = Keyword(term=term, normalized_term=term, language=lang)
+    db.add(k)
+    db.flush()
+    return k
+
+
+def _mention_row(db, kw, art):
+    db.add(KeywordMention(keyword_id=kw.id, article_id=art.id, count=1))
+
+
+def test_reconcile_keyword_language_sets_signature_majority(db):
+    """A keyword first-written in a mis-detected language is re-languaged to its
+    signature-majority article language; NULL gets a language; low-confidence and
+    already-correct keywords are left alone."""
+    from src.analytics.store import reconcile_keyword_language
+
+    db.add(Source(name="S", domain="x.test"))
+    db.commit()
+    # K1 stored "en" but mentioned in 2 fr + 1 en article -> signature fr -> flip.
+    k1 = _kw_row(db, "inflation", "en")
+    for h, lg in [("a1", "fr"), ("a2", "fr"), ("a3", "en")]:
+        _mention_row(db, k1, _lang_article(db, h, lg))
+    # K2 stored NULL, mentioned in 2 en articles -> signature en -> set en.
+    k2 = _kw_row(db, "election", None)
+    for h in ("b1", "b2"):
+        _mention_row(db, k2, _lang_article(db, h, "en"))
+    # K3 stored "en", only 1 fr article (below min_articles) -> unchanged.
+    k3 = _kw_row(db, "drought", "en")
+    _mention_row(db, k3, _lang_article(db, "c1", "fr"))
+    # K4 stored "en", 3 en articles (already matches its signature) -> unchanged.
+    k4 = _kw_row(db, "economy", "en")
+    for h in ("d1", "d2", "d3"):
+        _mention_row(db, k4, _lang_article(db, h, "en"))
+    db.commit()
+
+    out = reconcile_keyword_language(db)
+    assert out["relanguaged"] == 2
+    assert out["lang_to_lang"] == 1 and out["null_to_lang"] == 1
+    db.expire_all()
+    assert db.get(Keyword, k1.id).language == "fr"  # en -> fr (2 fr majority)
+    assert db.get(Keyword, k2.id).language == "en"  # NULL -> en
+    assert db.get(Keyword, k3.id).language == "en"  # single article -> unchanged
+    assert db.get(Keyword, k4.id).language == "en"  # already matches -> unchanged
+
+
+def test_reconcile_keyword_language_no_majority_is_left_alone(db):
+    """A 1-fr / 1-en split has no clear majority (not > half) -> not flipped."""
+    from src.analytics.store import reconcile_keyword_language
+
+    db.add(Source(name="S", domain="x.test"))
+    db.commit()
+    k = _kw_row(db, "trade", "en")
+    _mention_row(db, k, _lang_article(db, "e1", "fr"))
+    _mention_row(db, k, _lang_article(db, "e2", "en"))
+    db.commit()
+    out = reconcile_keyword_language(db)
+    assert out["relanguaged"] == 0
+    db.expire_all()
+    assert db.get(Keyword, k.id).language == "en"  # tie -> conservative, unchanged
+
+
+def test_reconcile_keyword_language_untagged_bucket_is_noop(db):
+    """Keywords whose mentions are ALL in untagged (NULL-language) articles -> the
+    "?" bucket, left as-is (query-time global_stopwords handles those)."""
+    from src.analytics.store import reconcile_keyword_language
+
+    db.add(Source(name="S", domain="x.test"))
+    db.commit()
+    k = _kw_row(db, "inflation", "en")
+    _mention_row(db, k, _lang_article(db, "n1", None))
+    db.commit()
+    out = reconcile_keyword_language(db)
+    assert out["relanguaged"] == 0
+    db.expire_all()
+    assert db.get(Keyword, k.id).language == "en"
