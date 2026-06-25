@@ -77,18 +77,24 @@ class FigureFetchBody(BaseModel):
     """A consented, bounded official-statistics fetch request.
 
     ``source`` selects the producer family: ``worldbank`` (needs ``indicator`` +
-    optional ``country``) or ``eurostat`` / any SDMX-JSON producer (needs ``dataset``
+    optional ``country``); ``eurostat`` / any SDMX-JSON producer (needs ``dataset``
     + optional ``params``; ``agency`` defaults to ``eurostat`` but can name another
-    SDMX-JSON producer, e.g. ``imf``). The fetch egresses over the user's configured
-    transport and is REFUSED while airplane mode is engaged.
+    SDMX-JSON producer, e.g. ``imf``); or ``owid`` (Our World in Data — needs a chart
+    ``slug``, optional ``value_col`` [auto-detected for a single-metric chart] +
+    optional ``unit`` since OWID CSVs carry no machine-readable unit). The fetch
+    egresses over the user's configured transport and is REFUSED while airplane mode
+    is engaged.
     """
 
-    source: str = Field(..., description="worldbank | eurostat (SDMX-JSON)")
+    source: str = Field(..., description="worldbank | eurostat (SDMX-JSON) | owid (CSV)")
     indicator: str | None = Field(None, description="World Bank indicator id, e.g. NY.GDP.MKTP.CD")
     country: str = Field("all", description="World Bank country code or 'all'")
     dataset: str | None = Field(None, description="SDMX dataset id, e.g. nama_10_gdp")
     params: dict[str, str] | None = Field(None, description="extra SDMX query params")
     agency: str | None = Field(None, description="SDMX producer agency code (default eurostat)")
+    slug: str | None = Field(None, description="OWID grapher chart slug, e.g. co2-emissions-per-capita")
+    value_col: str | None = Field(None, description="OWID value column (auto-detected if a single metric)")
+    unit: str | None = Field(None, description="OWID unit (carried verbatim; OWID CSVs state none)")
 
 
 @router.post("/figures/fetch")
@@ -118,6 +124,15 @@ def fetch_figures(body: FigureFetchBody) -> dict:
             figures = statfetch.fetch_eurostat(
                 body.dataset, params=body.params, agency=(body.agency or "eurostat").strip().lower()
             )
+        elif src == "owid":
+            if not (body.slug and body.slug.strip()):
+                raise HTTPException(status_code=422, detail="owid fetch needs a 'slug'")
+            try:
+                figures = statfetch.fetch_owid(
+                    body.slug, value_col=body.value_col, unit=body.unit
+                )
+            except ValueError as exc:  # ambiguous value column → ask the caller to name it
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         else:
             raise HTTPException(status_code=422, detail=f"unknown stats source: {body.source!r}")
     except HTTPException:
@@ -136,16 +151,19 @@ def fetch_figures(body: FigureFetchBody) -> dict:
         tally = store_figures(db, figures)
         # Record this fetch as a TRACKED subscription so the scheduler can replay it
         # for new vintages (ruling #12). Idempotent; best-effort (never fail the fetch).
-        try:
-            from src.stats.subscriptions import record_subscription
+        # owid auto-refresh is a follow-on (the replay can't reconstruct a slug fetch yet),
+        # so only the SDMX/WB families are tracked here — never record an unreplayable sub.
+        if src in ("worldbank", "eurostat", "sdmx"):
+            try:
+                from src.stats.subscriptions import record_subscription
 
-            record_subscription(
-                db, source=src, indicator=body.indicator, country=body.country,
-                dataset=body.dataset, params=body.params,
-                agency=(body.agency or "eurostat") if src in ("eurostat", "sdmx") else None,
-            )
-        except Exception:  # noqa: BLE001 - tracking is additive, never blocks the fetch
-            pass
+                record_subscription(
+                    db, source=src, indicator=body.indicator, country=body.country,
+                    dataset=body.dataset, params=body.params,
+                    agency=(body.agency or "eurostat") if src in ("eurostat", "sdmx") else None,
+                )
+            except Exception:  # noqa: BLE001 - tracking is additive, never blocks the fetch
+                pass
     return {
         "source": src,
         "fetched": len(figures),
