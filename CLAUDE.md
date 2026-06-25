@@ -554,8 +554,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   documented in the fn]; no default change. tests/test_fts_optimize.py [merge keeps search exact;
   best-effort without an FTS table] + the invariant guard. VERIFIED here: 167 targeted green, ruff F/B,
   mypy 127≤127.) **PHASE 1 COMPLETE** (unblock-the-rebuild: 1.1 job · 1.2 keyword-only · 1.3 batched
-  commits · 1.4 tuning). NEXT: P2 (rollups
-  + DuckDB-GCM verify) · P3 (eval harness) · P4 (quality) · P5 (serving) · P6 (entities) per the brief.
+  commits · 1.4 tuning).
+  **P2.4 VERIFIED-DEFERRED (the VERIFY-FIRST DuckDB-GCM gate, tested on DuckDB 1.5.4 in the venv):
+  the hypothesis that ≥1.4 writes an authenticated AES-256-GCM store NATIVELY [without httpfs] is
+  REFUTED — 1.5.4 refuses an encrypted WRITE without `LOAD httpfs` (OpenSSL): error "DuckDB currently
+  has a read-only crypto module loaded … ensure httpfs is loaded … To write an encrypted database …
+  that is NOT securely encrypted, one can use SET force_mbedtls_unsafe='true'." The only no-httpfs
+  write path is the explicitly-UNSAFE mbedtls = the forbidden fabricated-security. SO: secure_crypto_
+  available stays gated on httpfs, the gate is NOT relaxed, the engine stays IN-MEMORY (never fabricate
+  the capability). The persisted-rollup PERF WIN remains blocked on bundling per-OS httpfs binaries
+  (OPERATIONAL, networked machine). 2nd finding: 1.5.x `enable_external_access=False` in
+  `_offline_config` ALSO blocks a file ATTACH outright — moot while httpfs gates. Recorded in
+  columnar.py's EMPIRICAL FINDING. No code change (the gate already returns False = correct).**
+  NEXT (sequencing is mine): the persisted P2.1–2.3 rollups' BIG win is now confirmed-blocked, so
+  the highest-ROI BUILDABLE-and-unblocked items are P3 (eval harness) · P4.2 (reconcile_keyword_language
+  — fixes the 16% head language mismatch) · P5.1 (BM25F + facets). In-memory rollups remain optional
+  groundwork. (P5 serving · P6 entities later.)
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +

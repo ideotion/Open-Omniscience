@@ -39,6 +39,20 @@ persisted encrypted store offline needs a per-OS ``httpfs`` extension bundled lo
 (a packaging decision); the code is ready for it the moment ``secure_crypto_available()``
 returns True. ``OO_COLUMNAR_DIR`` overrides the store directory; ``OO_COLUMNAR=0`` forces
 the engine off (always live query).
+
+VERIFY-FIRST OUTCOME — keyword-engine P2.4, tested on **DuckDB 1.5.4** (2026-06-25): the
+hypothesis that DuckDB >=1.4 WRITES an authenticated-AES-256-GCM encrypted store NATIVELY
+(without httpfs) is **REFUTED**. Writing an encrypted store still REQUIRES loading
+``httpfs`` (OpenSSL): DuckDB 1.5.4 refuses the write with "DuckDB currently has a
+read-only crypto module loaded. Please ensure httpfs is loaded using `LOAD httpfs` ... To
+write an encrypted database ... that is NOT securely encrypted, one can use SET
+force_mbedtls_unsafe = 'true'." The only no-httpfs write path is that explicitly-UNSAFE
+mbedtls — exactly the fabricated-security the project forbids. So ``secure_crypto_available``
+stays gated on httpfs; the gate is NOT relaxed; the engine stays IN-MEMORY until the per-OS
+httpfs binaries are bundled (operational/packaging, networked machine). Separately, the
+1.5.x ``enable_external_access=False`` in :func:`_offline_config` also blocks a FILE attach
+outright — a second reason the persisted file path is unavailable under the strict offline
+config; both are moot while httpfs is the gating blocker.
 """
 
 from __future__ import annotations
