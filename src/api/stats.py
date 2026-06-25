@@ -95,6 +95,8 @@ class FigureFetchBody(BaseModel):
     slug: str | None = Field(None, description="OWID grapher chart slug, e.g. co2-emissions-per-capita")
     value_col: str | None = Field(None, description="OWID value column (auto-detected if a single metric)")
     unit: str | None = Field(None, description="OWID unit (carried verbatim; OWID CSVs state none)")
+    url: str | None = Field(None, description="JSON-stat endpoint URL (Eurostat JSON-stat / IRENA / PxWeb)")
+    series_id: str | None = Field(None, description="pin a single JSON-stat series slice for unambiguous rows")
 
 
 @router.post("/figures/fetch")
@@ -132,6 +134,20 @@ def fetch_figures(body: FigureFetchBody) -> dict:
                     body.slug, value_col=body.value_col, unit=body.unit
                 )
             except ValueError as exc:  # ambiguous value column → ask the caller to name it
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        elif src in ("jsonstat", "json-stat", "pxweb"):
+            if not (body.url and body.url.strip()):
+                raise HTTPException(
+                    status_code=422,
+                    detail="jsonstat fetch needs a 'url' (the producer's JSON-stat endpoint)",
+                )
+            try:
+                figures = statfetch.fetch_jsonstat(
+                    body.url,
+                    agency=(body.agency or "jsonstat").strip().lower(),
+                    series_id=body.series_id,
+                )
+            except ValueError as exc:  # not an http(s) url → a clean 422
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
         else:
             raise HTTPException(status_code=422, detail=f"unknown stats source: {body.source!r}")

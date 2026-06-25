@@ -4002,6 +4002,32 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS BATCH 2026-06-25 (maintainer: "continue autonomously with all remaining tasks, I'll merge all
+  PRs afterwards" — the harness constrains me to ONE branch `claude/ecstatic-edison-mseu1p`, so the remaining
+  §5B/§5C arc lands as a STACKED SERIES OF COMMITS in one draft PR onto 0.09; each commit self-contained +
+  verified). Items shipped below in order.**
+- **JSON-STAT LIVE FETCH CLIENT — unlocks the parse_jsonstat parser for real data (§5B Phase E; autonomous
+  batch; backend ALGORITHM VERIFIED py3.11 standalone repro using the real `parse_jsonstat` + ruff F/B + mypy
+  0-new, the fetch/endpoint test runs in CI).** The `parse_jsonstat` parser (#469, JSON-stat v2/v1 → figures)
+  had NO live data path; this adds it (symmetric to the OWID-CSV client). NEW `fetch.fetch_jsonstat(url, *,
+  agency, series_id=None, get=None, extracted_at=None)`: JSON-stat producers (Eurostat's JSON-stat endpoint,
+  IRENA, PxWeb instances [Statistics Sweden/Norway/Finland]) have wildly different URL schemes, so the CALLER
+  supplies the documented query URL VERBATIM — we NEVER fabricate an endpoint (a wrong URL fails LOUDLY: HTTP
+  error / unreadable shape → no rows, never a fabricated figure). A non-http(s) URL is rejected LOUDLY
+  (ValueError → a clean 422). Same safety shape as the other fetchers: kill switch refuses UP FRONT (no socket
+  offline — testable with an injected getter), injectable `get`, `extracted_at` stamps the vintage; delegates
+  to the offline `parse_jsonstat` (honesty carries: a `null` cell → `value=None`, never a fabricated 0;
+  `series_id` pins a single-series slice for unambiguous rows). WIRED into `POST /api/stats/figures/fetch` as
+  `source:"jsonstat"|"json-stat"|"pxweb"` (FigureFetchBody gains `url`/`series_id`; the non-http ValueError →
+  422). Like owid, jsonstat auto-refresh is a follow-on (the URL-based fetch isn't replayable by the current
+  subscription model), so it's excluded from the WB/SDMX-scoped subscription recording — never an unreplayable
+  sub. tests/test_stats_jsonstat_fetch.py (4: caller-url passthrough + delegate + gap kept None + series_id/
+  agency/vintage carried, non-http rejected, kill-switch refuses-no-socket on injected AND default paths) —
+  CI-only (the guarded factory pulls in cryptography); the URL-guard + delegation ALGORITHM proven by a
+  standalone py3.11 repro against the real `parse_jsonstat`. ruff F/B clean; 0 new mypy errors; no UI strings.
+  The stats subsystem now has THREE live ingestion paths (WB/Eurostat SDMX-JSON · OWID CSV · JSON-stat) feeding
+  the full pipeline. REMAINING: curated JSON-stat/OWID endpoint catalogs (verify on a networked box — 403 here);
+  jsonstat/owid subscription auto-refresh.
 - **OWID-CSV LIVE FETCH CLIENT — unlocks the parse_csv parser for real data (§5B Phase A-CSV; same single-branch
   harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after #479 merged; NEW
   draft PR onto 0.09; backend ALGORITHM VERIFIED py3.11 standalone repro using the real `parse_csv` + ruff F/B +
