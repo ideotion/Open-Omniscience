@@ -4006,6 +4006,26 @@ ruling, a contingency, or a deliberate-omission note.
   PRs afterwards" — the harness constrains me to ONE branch `claude/ecstatic-edison-mseu1p`, so the remaining
   §5B/§5C arc lands as a STACKED SERIES OF COMMITS in one draft PR onto 0.09; each commit self-contained +
   verified). Items shipped below in order.**
+- **OUTRAGE-INTENSITY — the 9th manipulation measure, SECONDARY (§5C; autonomous batch; pure module VERIFIED
+  py3.11 [6 tests] + ruff F/B + mypy 0-new; the headline-body wiring runs in CI).** Per the ledger ruling
+  outrage-intensity is SECONDARY — it ANNOTATES another card, NEVER a standalone Home Lead — so this ships the
+  pure measure + wires it as a component on the existing headline-body card, with NO new producer registered.
+  `src/analytics/outrage.py:outrage_intensity(text, language)` names a STRUCTURE never intent/truth: the DENSITY
+  of curated English intensifier/loaded markers among tokens + the '!' count + ALL-CAPS-run count. HONESTY in
+  the SHAPE: ENGLISH-ONLY like the VADER baseline — a non-English / empty / UNKNOWN-language text returns a
+  stated GAP (`measured:False` + reason), NEVER a fabricated 0 (an untagged text is NOT assumed English — the
+  lexicon would mis-measure it); NO score (returns density + its COMPONENTS [matched markers, !, caps, n], no
+  `*score*`/`*rank*` key — recursively guarded); the lexicon is an explicit modest in-code HEURISTIC (not a
+  lexicon of record, not a dated `*_AS_OF` artifact → no registry entry), tunable from the diagnostics logs; the
+  innocent-twin caveat (a measured opinion/editorial naturally uses intense language) travels. PURE (stdlib re
+  only) so it imports + tests in the bare sandbox. WIRED as a SECONDARY annotation in
+  `headline_body.find_headline_body_mismatch` — each fired item gains an `outrage` component (the body's density,
+  English-only, its own caveat) decorating that card, never its own Lead. tests/test_outrage.py (6: english
+  measured+components, calm→0, non-English gap [never a 0], unknown-language not-assumed-English, empty gap,
+  caveat states structure-not-intent — all run in the sandbox) + test_headline_body.py extended (item carries
+  `outrage`, recursively no score-key). The remaining manipulation cards (bury-half of #4, event-timed-op) stay
+  external-dependency-gated (a trigger / the elections roster). REMAINING: surface the outrage annotation in the
+  analysis UI; a per-language lexicon beyond the English baseline.
 - **ooMap STATS CHOROPLETH — the §5B Phase C visible capstone (autonomous batch; backend iso2 bridge VERIFIED
   py3.11 + ruff F/B + mypy 0-new; frontend BROWSER-UNVERIFIED per fork-3 — node --check + invariant-guarded +
   i18n 100%).** Makes the whole arc visible: colour a world map by ONE official-statistics indicator, through
