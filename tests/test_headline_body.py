@@ -116,10 +116,20 @@ def test_item_carries_components_never_a_score(db):
     _art(db, 1, "Aliens spotted over the Pentagon in shocking new footage tonight", BODY)
     res = find_headline_body_mismatch(db)
     it = res["items"][0]
-    # Components present...
-    assert {"lexical_div", "sentiment_gap", "lang", "absent_terms", "headline_terms"} <= set(it)
-    # ...and NO composite-score field anywhere in the item.
-    assert not any("score" in k.lower() for k in it)
+    # Components present (incl. the SECONDARY outrage annotation)...
+    assert {"lexical_div", "sentiment_gap", "lang", "absent_terms", "headline_terms", "outrage"} <= set(it)
+    # ...and NO composite-score field name anywhere in the item, including the outrage sub-dict.
+    def _no_score_key(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                assert "score" not in str(k).lower() and "ranking" not in str(k).lower()
+                _no_score_key(v)
+        elif isinstance(o, list):
+            for x in o:
+                _no_score_key(x)
+    _no_score_key(it)
+    # The outrage annotation is a measured component (English article) or an honest gap.
+    assert "measured" in it["outrage"]
     assert res["caveat"] and res["method"]
 
 

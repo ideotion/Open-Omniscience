@@ -10202,6 +10202,63 @@
           + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not chart: ${esc(e.message)}</div>`; }
     }
+    // -- Stat choropleth (§5B Phase C): colour a world map by one indicator, through the
+    // ONE ooMap component + the node-tested ooViz.choroplethData honesty gate. English-only
+    // (matches the chart panel). The cells carry iso2 (backend bridge), so no frontend ISO
+    // map is needed. Browser-unverified per fork-3.
+    async function renderStatMap() {
+      const host = $("statfig-map"); if (!host) return;
+      const meta = $("statfig-map-meta");
+      const series = ($("statfig-view-series").value || "").trim();
+      const agency = (($("statfig-map-agency") || {}).value || "").trim();
+      const isLevel = !!($("statfig-map-level") && $("statfig-map-level").checked);
+      if (!series) { host.innerHTML = `<div class="muted">Enter a series id above, then Map by country.</div>`; if (meta) meta.textContent = ""; return; }
+      if (typeof ooViz === "undefined") { host.innerHTML = `<div class="muted">Map toolkit unavailable.</div>`; return; }
+      host.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const q = "/api/stats/map?series_id=" + encodeURIComponent(series) + (agency ? "&agency=" + encodeURIComponent(agency) : "");
+        const d = await api(q);
+        const cells = d.cells || [];
+        if (!cells.length) { host.innerHTML = `<div class="muted">No stored figures for "${esc(series)}". Fetch some above first.</div>`; if (meta) meta.textContent = ""; return; }
+        const iso2By = {}; cells.forEach(c => { iso2By[c.ref_area] = c.iso2; });
+        // The node-tested comparability gate: only areas on the modal basis are colour-eligible.
+        const cd = ooViz.choroplethData(cells.map(c => ({
+          ref_area: c.ref_area, value: c.value, unit: c.unit, base_year: c.base_year,
+          adjustment: c.adjustment, time_period: c.time_period,
+        })), { kind: isLevel ? "level" : "normalized" });
+        const multi = d.multi_producer ? "  Several producers report this series — pin a producer above; the map never averages them." : "";
+        if (cd.mode === "symbols") {
+          // A LEVEL: we do NOT fake a level choropleth (a big country would look like 'more'
+          // just for being big). Honest refusal + the comparable values as a ranked list.
+          const ranked = cd.cells.filter(c => c.comparable && typeof c.value === "number")
+            .sort((a, b) => b.value - a.value).slice(0, 30)
+            .map(c => `<tr><td>${esc(ooRegionName(iso2By[c.area] || "", c.area))}</td><td style="text-align:right">${esc(fmtNum(c.value))}</td></tr>`).join("");
+          host.innerHTML = `<div class="note">${esc(cd.refusalReason || "")}</div>`
+            + (ranked ? `<table style="margin-top:6px"><tr><th>Area</th><th style="text-align:right">Value</th></tr>${ranked}</table>` : "");
+          if (meta) meta.textContent = cd.caveat + multi;
+          return;
+        }
+        const values = {}, names = {};
+        cd.cells.forEach(c => {
+          if (!c.comparable) return;            // incomparable basis / no value → no-data hatch
+          const iso2 = iso2By[c.area];
+          if (!iso2) return;                    // a non-country aggregate (WLD/EUU) → dropped honestly
+          values[iso2] = c.value;
+          names[iso2] = (typeof ooRegionName === "function") ? ooRegionName(iso2, iso2.toUpperCase()) : iso2;
+        });
+        const unit = (cd.basis && cd.basis.unit) || "";
+        const nMapped = Object.keys(values).length;
+        if (!nMapped) { host.innerHTML = `<div class="muted">No comparable, mappable figures for this series. ${esc(cd.caveat)}</div>`; if (meta) meta.textContent = ""; return; }
+        await ooMap(host, {
+          values, names, unit,
+          valueLabel: (iso, v) => `${fmtNum(v)}${unit ? " " + unit : ""}`,
+          aria: `${series} — ${nMapped} countries with comparable data`,
+          method: d.method || "",
+          caveat: cd.caveat + multi,
+        });
+        if (meta) meta.textContent = `${cd.comparableCount} comparable · ${cd.incomparableCount} on a different basis (no-data) · ${cd.noValueCount} no value`;
+      } catch (e) { host.innerHTML = `<div class="muted">Could not map: ${esc(e && e.message || e)}</div>`; }
+    }
     // -- Tracked figures (ruling #12): scheduled vintage auto-refresh. English-only.
     async function loadStatSubs() {
       const box = $("statfig-subs"); if (!box) return;

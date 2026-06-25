@@ -70,6 +70,7 @@ def find_headline_body_mismatch(
     score. Bounded: up to ``recent_limit`` articles, body capped at ``body_max_chars``.
     """
     from src.analytics.extract import BaselineExtractor
+    from src.analytics.outrage import outrage_intensity
     from src.analytics.sentiment import score_article
     from src.database.models import Article, Source
 
@@ -139,6 +140,10 @@ def find_headline_body_mismatch(
                 "lang": lang or None,
                 "lexical_div": d_lex,
                 "sentiment_gap": s_gap,
+                # SECONDARY annotation (§5C): the body's loaded-language density — a measured
+                # COMPONENT (English-only; a stated gap otherwise), never a score, with its own
+                # innocent-twin caveat. It DECORATES this card, it is not a standalone Lead.
+                "outrage": outrage_intensity(body[:body_max_chars], lang),
                 "headline_terms": sorted(head),
                 "absent_terms": absent,
                 "when": when.date().isoformat() if when else None,

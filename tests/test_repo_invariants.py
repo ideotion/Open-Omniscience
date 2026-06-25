@@ -111,10 +111,11 @@ def test_stats_choropleth_feed_and_data_layer():
     store_src = (_SRC / "stats" / "store.py").read_text(encoding="utf-8")
     api_src = (_SRC / "api" / "stats.py").read_text(encoding="utf-8")
     ooviz = (_SRC / "static" / "ooviz.js").read_text(encoding="utf-8")
-    # The store feed: one cell per area, single-producer, never averaged.
+    # The store feed: one cell per area, single-producer, never averaged, with an iso2 bridge.
     assert "def map_figures(" in store_src, "the choropleth store feed is missing"
     assert "multi_producer" in store_src, "several producers must be flagged, not averaged"
     assert "never averages producers" in store_src, "the no-average caveat must travel"
+    assert "to_iso2" in store_src, "each cell must carry an iso2 bridge for the map renderer"
     # The endpoint.
     assert '@router.get("/map")' in api_src, "the /api/stats/map endpoint is missing"
     assert "map_figures(" in api_src, "the endpoint must call the store feed"
@@ -124,6 +125,27 @@ def test_stats_choropleth_feed_and_data_layer():
     assert "choroplethData: choroplethData" in ooviz and "symbolRadii: symbolRadii" in ooviz, (
         "both must be exported in the ooViz API"
     )
+
+
+def test_stats_choropleth_map_surface():
+    """§5B Phase C frontend: the Settings → Statistics panel maps an indicator by country
+    through the ONE ooMap component + the node-tested ooViz.choroplethData gate — incomparable
+    basis → no-data (never recoloured), a level refuses the choropleth, multi_producer flagged,
+    the cells' backend iso2 bridge keys the map. Browser-unverified per fork-3 (node-checked +
+    grep-guarded here)."""
+    base = _SRC / "static"
+    html = (base / "index.html").read_text(encoding="utf-8")
+    app = (base / "app.js").read_text(encoding="utf-8")
+    # Controls + host in the Statistics panel.
+    assert 'id="statfig-map"' in html, "the map host must exist"
+    assert 'id="statfig-map-level"' in html, "the level (count/total) toggle must exist"
+    assert "renderStatMap()" in html, "the Map button must call renderStatMap"
+    # The handler reuses ooMap + the node-tested gate, keyed by the backend iso2.
+    assert "function renderStatMap" in app, "the handler must be defined"
+    assert "/api/stats/map" in app, "it must fetch the choropleth feed"
+    assert "ooViz.choroplethData" in app, "it must apply the comparability gate"
+    assert "ooMap(host" in app, "it must render through the one ooMap component"
+    assert "c.iso2" in app or "iso2By" in app, "it must key the map on the backend iso2 bridge"
 
 
 def test_live_language_switch_rerenders_cldr_name_surfaces():

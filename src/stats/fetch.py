@@ -39,6 +39,7 @@ from src.safety.fetcher import guarded_session
 from src.stats.sdmx import (
     StatFigure,
     parse_csv,
+    parse_jsonstat,
     parse_sdmx_json,
     parse_worldbank,
 )
@@ -259,3 +260,37 @@ def fetch_owid(
         base_year=base_year,
         adjustment=adjustment,
     )
+
+
+def fetch_jsonstat(
+    url: str,
+    *,
+    agency: str,
+    series_id: str | None = None,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> list[StatFigure]:
+    """Fetch a JSON-stat dataset live and parse it into ``StatFigure`` rows.
+
+    The JSON-stat path of the stats subsystem (unlocks ``parse_jsonstat`` for live data —
+    Eurostat's JSON-stat endpoint, IRENA, and PxWeb instances [Statistics Sweden/Norway/
+    Finland] all serve JSON-stat). JSON-stat producers have wildly different URL schemes, so
+    the CALLER supplies the documented query ``url`` verbatim — we NEVER fabricate an
+    endpoint (a wrong URL fails LOUDLY: an HTTP error / a shape the parser can't read → no
+    rows, never a fabricated figure). Same safety shape as the other fetchers: the kill
+    switch refuses UP FRONT (no socket while airplane mode is engaged — testable with an
+    injected getter), ``get`` is injectable, ``extracted_at`` stamps the vintage. The decoded
+    JSON is handed to :func:`src.stats.sdmx.parse_jsonstat` — no parsing here. Pass
+    ``series_id`` to pin a single-series slice for unambiguous rows (the parser's contract).
+    """
+    if kill_switch_active():
+        raise RuntimeError("network refused: airplane mode is engaged")
+    u = (url or "").strip()
+    if not (u.startswith("https://") or u.startswith("http://")):
+        raise ValueError("fetch_jsonstat: url must be an http(s) JSON-stat endpoint")
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _default_getter
+    resp = getter(u)
+    resp.raise_for_status()
+    payload = resp.json()
+    return parse_jsonstat(payload, agency=agency, extracted_at=extracted_at, series_id=series_id)

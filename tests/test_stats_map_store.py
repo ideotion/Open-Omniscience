@@ -64,8 +64,19 @@ def _fig(
 
 
 def _assert_no_score(out: dict) -> None:
-    blob = repr(out).lower()
-    assert "score" not in blob and "ranking" not in blob, "the map must carry no score/ranking"
+    # The honesty invariant is about FIELD NAMES (keys), not values — the caveat may
+    # legitimately say "never a score". Walk keys recursively and assert none is a score/rank.
+    def walk(o: object) -> None:
+        if isinstance(o, dict):
+            for k, v in o.items():
+                kl = str(k).lower()
+                assert "score" not in kl and "ranking" not in kl, f"banned field name: {k}"
+                walk(v)
+        elif isinstance(o, list):
+            for x in o:
+                walk(x)
+
+    walk(out)
 
 
 def test_map_one_cell_per_area_at_each_area_latest_period(db):
@@ -125,6 +136,25 @@ def test_map_carries_a_gap_and_the_comparability_fields(db):
     cell = out["cells"][0]
     assert cell["value"] is None  # a gap, never a fabricated zero
     assert cell["unit"] == "Index" and cell["base_year"] == "2015" and cell["adjustment"] == "SA"
+
+
+def test_map_cells_carry_iso2_for_the_renderer(db):
+    # The producer's ref_area (alpha-3 for WB/OWID, alpha-2 for Eurostat, plus aggregates)
+    # is bridged to a lowercase alpha-2 iso2 so a map keys on it without a frontend bridge;
+    # a non-country aggregate (WLD) → None so the map drops it honestly.
+    store.store_figures(
+        db,
+        [
+            _fig("2021", 1.0, area="FRA"),  # alpha-3 → "fr"
+            _fig("2021", 2.0, area="DE"),   # alpha-2 passes through → "de"
+            _fig("2021", 9.0, area="WLD"),  # World aggregate → None (never mapped)
+        ],
+    )
+    out = store.map_figures(db, series_id="SI.POV.GINI")
+    iso = {c["ref_area"]: c["iso2"] for c in out["cells"]}
+    assert iso["FRA"] == "fr"
+    assert iso["DE"] == "de"
+    assert iso["WLD"] is None  # aggregate carries no country iso2 → the map drops it
 
 
 def test_map_empty_is_honest(db):

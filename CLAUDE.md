@@ -4002,6 +4002,81 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS BATCH 2026-06-25 (maintainer: "continue autonomously with all remaining tasks, I'll merge all
+  PRs afterwards" — the harness constrains me to ONE branch `claude/ecstatic-edison-mseu1p`, so the remaining
+  §5B/§5C arc lands as a STACKED SERIES OF COMMITS in one draft PR onto 0.09; each commit self-contained +
+  verified). Items shipped below in order. CI-FIX (PR #481 `test` lane red on my SHA): `test_stats_map_store.py`'s
+  `_assert_no_score` did a naive `repr(out).lower()` substring check, but the map CAVEAT legitimately says
+  "never a score" → tripped (it had been red since #479, which the maintainer fast-merged). Rewrote it to walk
+  KEYS recursively (the honesty invariant is about field NAMES, not values) — same fix already applied to
+  test_outrage.py. LESSON: a no-score test helper must check field NAMES, never the repr — a caveat that says
+  "never a score" is GOOD and must not trip the guard; grep `repr(.*).lower()`+score before shipping.**
+- **OUTRAGE-INTENSITY — the 9th manipulation measure, SECONDARY (§5C; autonomous batch; pure module VERIFIED
+  py3.11 [6 tests] + ruff F/B + mypy 0-new; the headline-body wiring runs in CI).** Per the ledger ruling
+  outrage-intensity is SECONDARY — it ANNOTATES another card, NEVER a standalone Home Lead — so this ships the
+  pure measure + wires it as a component on the existing headline-body card, with NO new producer registered.
+  `src/analytics/outrage.py:outrage_intensity(text, language)` names a STRUCTURE never intent/truth: the DENSITY
+  of curated English intensifier/loaded markers among tokens + the '!' count + ALL-CAPS-run count. HONESTY in
+  the SHAPE: ENGLISH-ONLY like the VADER baseline — a non-English / empty / UNKNOWN-language text returns a
+  stated GAP (`measured:False` + reason), NEVER a fabricated 0 (an untagged text is NOT assumed English — the
+  lexicon would mis-measure it); NO score (returns density + its COMPONENTS [matched markers, !, caps, n], no
+  `*score*`/`*rank*` key — recursively guarded); the lexicon is an explicit modest in-code HEURISTIC (not a
+  lexicon of record, not a dated `*_AS_OF` artifact → no registry entry), tunable from the diagnostics logs; the
+  innocent-twin caveat (a measured opinion/editorial naturally uses intense language) travels. PURE (stdlib re
+  only) so it imports + tests in the bare sandbox. WIRED as a SECONDARY annotation in
+  `headline_body.find_headline_body_mismatch` — each fired item gains an `outrage` component (the body's density,
+  English-only, its own caveat) decorating that card, never its own Lead. tests/test_outrage.py (6: english
+  measured+components, calm→0, non-English gap [never a 0], unknown-language not-assumed-English, empty gap,
+  caveat states structure-not-intent — all run in the sandbox) + test_headline_body.py extended (item carries
+  `outrage`, recursively no score-key). The remaining manipulation cards (bury-half of #4, event-timed-op) stay
+  external-dependency-gated (a trigger / the elections roster). REMAINING: surface the outrage annotation in the
+  analysis UI; a per-language lexicon beyond the English baseline.
+- **ooMap STATS CHOROPLETH — the §5B Phase C visible capstone (autonomous batch; backend iso2 bridge VERIFIED
+  py3.11 + ruff F/B + mypy 0-new; frontend BROWSER-UNVERIFIED per fork-3 — node --check + invariant-guarded +
+  i18n 100%).** Makes the whole arc visible: colour a world map by ONE official-statistics indicator, through
+  the ONE `ooMap` component + the node-tested `ooViz.choroplethData` honesty gate (#478) — NOT a second map
+  component (the "one ooMap" ruling), placed in Settings → Statistics beside the chart + revision-anomalies (its
+  own stats surface; the Governments Map subtab stays the curated-WB-country view). BACKEND: `store.map_figures`
+  now enriches each cell with an `iso2` (lowercase alpha-2 via `catalog.countries.to_iso2`: the producer's
+  ref_area — alpha-3 for WB/OWID, alpha-2 for Eurostat — converts; a non-country aggregate WLD/EUU → None so the
+  map DROPS it honestly, never plots an aggregate as a country) so the renderer keys on it with NO frontend ISO
+  table. FRONTEND `renderStatMap()` (app.js, beside renderStatChart, English-only like the chart panel): fetches
+  `/api/stats/map?series_id=&agency=`, runs `choroplethData` over the cells, and for the NORMALIZED case builds
+  `values[iso2]=value` for COMPARABLE cells only → `ooMap` colours them (an incomparable-basis or no-value cell
+  is omitted → ooMap's no-data hatch, NEVER recoloured onto one scale; a null iso2 aggregate dropped). The
+  comparability summary (N comparable · M on a different basis (no-data) · K no value) + the gate caveat are
+  VISIBLE; `multi_producer` adds a "pin a producer — the map never averages them" note. A LEVEL (the "this is a
+  count/total" checkbox → `kind:"level"`) REFUSES the choropleth honestly (`mode:"symbols"`) — shows the refusal
+  reason + the comparable values as a ranked table (true proportional-symbol rendering deferred — colouring a
+  level would make a big country look like "more" just for being big). Controls: a `statfig-map-agency` input +
+  the level checkbox + a "Map by country" button (inline onclick, matching the panel's local convention). NO new
+  i18n keys (English literals like renderStatChart → gate stays 100%). tests/test_stats_map_store.py +1
+  (iso2 bridge: FRA→fr, DE→de, WLD→None) + test_repo_invariants::test_stats_choropleth_map_surface (controls +
+  handler + ooMap reuse + choroplethData gate + the iso2 key) + the feed test asserts the to_iso2 enrichment.
+  REMAINING: true proportional-symbol rendering for levels (centroids needed); human click-through (fork-3); a
+  period/indicator picker; key the panel strings ×12 with the rest of the Statistics panel.
+- **JSON-STAT LIVE FETCH CLIENT — unlocks the parse_jsonstat parser for real data (§5B Phase E; autonomous
+  batch; backend ALGORITHM VERIFIED py3.11 standalone repro using the real `parse_jsonstat` + ruff F/B + mypy
+  0-new, the fetch/endpoint test runs in CI).** The `parse_jsonstat` parser (#469, JSON-stat v2/v1 → figures)
+  had NO live data path; this adds it (symmetric to the OWID-CSV client). NEW `fetch.fetch_jsonstat(url, *,
+  agency, series_id=None, get=None, extracted_at=None)`: JSON-stat producers (Eurostat's JSON-stat endpoint,
+  IRENA, PxWeb instances [Statistics Sweden/Norway/Finland]) have wildly different URL schemes, so the CALLER
+  supplies the documented query URL VERBATIM — we NEVER fabricate an endpoint (a wrong URL fails LOUDLY: HTTP
+  error / unreadable shape → no rows, never a fabricated figure). A non-http(s) URL is rejected LOUDLY
+  (ValueError → a clean 422). Same safety shape as the other fetchers: kill switch refuses UP FRONT (no socket
+  offline — testable with an injected getter), injectable `get`, `extracted_at` stamps the vintage; delegates
+  to the offline `parse_jsonstat` (honesty carries: a `null` cell → `value=None`, never a fabricated 0;
+  `series_id` pins a single-series slice for unambiguous rows). WIRED into `POST /api/stats/figures/fetch` as
+  `source:"jsonstat"|"json-stat"|"pxweb"` (FigureFetchBody gains `url`/`series_id`; the non-http ValueError →
+  422). Like owid, jsonstat auto-refresh is a follow-on (the URL-based fetch isn't replayable by the current
+  subscription model), so it's excluded from the WB/SDMX-scoped subscription recording — never an unreplayable
+  sub. tests/test_stats_jsonstat_fetch.py (4: caller-url passthrough + delegate + gap kept None + series_id/
+  agency/vintage carried, non-http rejected, kill-switch refuses-no-socket on injected AND default paths) —
+  CI-only (the guarded factory pulls in cryptography); the URL-guard + delegation ALGORITHM proven by a
+  standalone py3.11 repro against the real `parse_jsonstat`. ruff F/B clean; 0 new mypy errors; no UI strings.
+  The stats subsystem now has THREE live ingestion paths (WB/Eurostat SDMX-JSON · OWID CSV · JSON-stat) feeding
+  the full pipeline. REMAINING: curated JSON-stat/OWID endpoint catalogs (verify on a networked box — 403 here);
+  jsonstat/owid subscription auto-refresh.
 - **OWID-CSV LIVE FETCH CLIENT — unlocks the parse_csv parser for real data (§5B Phase A-CSV; same single-branch
   harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after #479 merged; NEW
   draft PR onto 0.09; backend ALGORITHM VERIFIED py3.11 standalone repro using the real `parse_csv` + ruff F/B +

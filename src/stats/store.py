@@ -30,6 +30,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.catalog.countries import to_iso2
 from src.database.models import StatFigure as StatFigureRow
 from src.stats.revision import find_revision_anomalies
 from src.stats.sdmx import StatFigure
@@ -303,7 +304,15 @@ def map_figures(
         cur = best.get(r.ref_area)
         if cur is None or _area_more_recent(r, cur):
             best[r.ref_area] = r
-    cells = [_row_dict(r) for r in best.values()]
+    # Each cell carries an ``iso2`` (lowercase alpha-2) so a map renderer can key on it
+    # WITHOUT a frontend ISO bridge — the producer's ref_area (often alpha-3 for WB/OWID)
+    # is converted; a non-country aggregate (WLD/EUU/…) → None, which the map drops
+    # honestly (never plotted as if it were a country).
+    cells = []
+    for r in best.values():
+        cell = _row_dict(r)
+        cell["iso2"] = to_iso2(r.ref_area)
+        cells.append(cell)
     cells.sort(key=lambda c: c["ref_area"])
     total = len(cells)
     cells = cells[: max(0, int(limit))]
