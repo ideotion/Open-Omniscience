@@ -504,6 +504,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   mode, verification gate, subagent orchestration, the phased scope with per-item build-class tags
   [BUILDABLE / VERIFY-FIRST / SEAM / OPERATIONAL], honesty non-negotiables, definition of done; points
   at the strategy doc for the per-item spec).
+- **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
+  non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
+  files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +
+  `src/database/async_db.py` already gone; `docs/archive` + `field-test-*` are deliberate history). The
+  ONLY residual debt is dead UI JS/DOM the ledger already deferred — gathered here as ONE verified
+  worklist so it isn't lost: (1) the RETIRED temporal-map functions in `src/static/app.js` (~lines
+  9318–9732: `loadTimemap`/`renderTimemap`/`buildTmap*`/`showTmapDetail`/`tmapNearby`/`onTmap*`/
+  `wireTmap*`/`tmap*Prefs`/`TMAP` state — unreachable since the Map tab routes `timemap:
+  loadOoMapCoverage`) — **but PRESERVE the SHARED helpers ooMap still uses** (`kindColor`, `TMAP_KINDS`,
+  `fmtYear`, `fmtDate`, `dateToT`, `lon2x`/`lat2y`, `tmapFindCoverage`), which are INTERLEAVED with the
+  dead ones (the ledger hazard: a wrong deletion passes `node --check` but breaks the map at runtime);
+  (2) the orphaned handlers `loadIndicesData` (app.js:5560) + `loadMarketData` (:6080) — buttons gone;
+  (3) the retired `#corpus-win` modal DOM (`index.html:1987`) + the `openCorpus(term){ openAnalysisFor
+  (term); }` wrapper + the `corpus-win` close-listener (app.js:12407) — needs the `#mm-kit` relocation
+  untangled first; (4) the orphaned `#onboard` welcome-card i18n keys (en.json:537/539/834 + ×12) — the
+  hot-conflict locale files, so coordinate with parallel sessions. **DO NOT DELETE `firstRun`
+  (app.js:4306) — it is test-pinned (test #396) + intentionally retained.** WHY DEFERRED: browser-
+  unverifiable here + the interleaved-shared-helper hazard + a parallel session merges into `0.09`
+  (deletion PRs risk conflicts in `app.js`/locales). ACCEPTANCE for the eventual pass: `node --check` +
+  the absorbed capabilities still work (the Desk lesson — the temporal map's features survive in ooMap)
+  + the relevant tests green; resolve locale conflicts ADDITIVELY.
 - **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
   research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed
