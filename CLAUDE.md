@@ -499,7 +499,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   static-embedding PER-LANGUAGE quality, every bundled lib's license (CC0-first; Wiktextract CC-BY-SA =
   a separate ruling; SPLADE never bundle). Operational/networked (maintainer steps): run cleanup
   (re-index+prune) + reconcile + baseline-tag backfill on the LIVE corpus; Wikidata Lexeme/ring + a
-  bundled segmenter/embedding/OpenTapioca index.
+  bundled segmenter/embedding/OpenTapioca index. **AUTONOMOUS-SESSION BRIEF to execute this end-to-end:
+  `docs/design/AUTONOMOUS_SESSION_BRIEF_KEYWORD_ENGINE.md`** (reset-proof operating manual — working
+  mode, verification gate, subagent orchestration, the phased scope with per-item build-class tags
+  [BUILDABLE / VERIFY-FIRST / SEAM / OPERATIONAL], honesty non-negotiables, definition of done; points
+  at the strategy doc for the per-item spec).
 - **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
   research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed
