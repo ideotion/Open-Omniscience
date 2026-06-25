@@ -4002,6 +4002,33 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **REVISION-ANOMALY DETECTOR over StatFigure vintages 2026-06-25 (§5B research's "highest-value independent
+  slice" — the reliable-memory kernel; same single-branch harness, branch `claude/ecstatic-edison-mseu1p`
+  re-cut from the freshly-merged 0.09 after #470 merged; NEW draft PR onto 0.09; backend VERIFIED py3.11
+  standalone [8 tests] + ruff F/B/full + mypy 0-new).** The project's deepest intention is reliable memory —
+  History must not be SILENTLY rewritten — and official statistics ARE rewritten every vintage. `src/stats/
+  revision.py:find_revision_anomalies(figures)` flags, RETROSPECTIVELY, when the MOST RECENT vintage moved a
+  PAST figure by a magnitude that is an outlier vs that observation's OWN earlier revisions: it groups
+  StatFigure vintages by (agency·series·area·period), orders by `extracted_at`, collapses no-change re-fetches,
+  and robust-z-scores the latest revision against the median±MAD of the cell's prior revisions (flags at
+  robust_z≥z_min[3.5] with ≥min_prior_revisions[4] non-zero-spread priors). PURE + MODEL-FREE (no FM, no
+  network — respects the no-torch-in-core + no-price-prediction non-negotiables; any FM would be an optional
+  external Ollama-style process, never a core dep). HONESTY enforced in code per the §7 non-negotiables +
+  manipulation-card doctrine: RETROSPECTIVE-ONLY (compares to EARLIER revisions, never predicts, has no band
+  to cross the last obs); NAMES THE SHAPE not the intent (an outlier-sized revision, never a manipulation
+  claim — the innocent twin [benchmark/methodology update, late source, correction] is stated in the caveat);
+  carries COMPONENTS (from/to value, abs/rel change, the cell's median±MAD revision, robust_z), NO composite
+  score (regex-guarded incl. a no-forecast/predict-key guard); a thin OR perfectly-uniform (MAD=0) history
+  DEGRADES TO SILENCE (no robust scale ⇒ no claim — a deliberate conservatism, test-pinned). Consumes
+  `list[StatFigure]` (the subsystem's pure currency, same as `to_chart_series`; the store's vintage trail maps
+  to it). tests/test_stats_revision.py (8: flags-the-outlier-with-components / order-independent / thin →
+  silence / within-spread → silence / uniform → silence / None-vintage-breaks-no-chain / no-revision → silence
+  / multi-cell-only-anomalous / retrospective+no-score). NO new `*_AS_OF`/registry entry; no UI strings. NOT
+  YET WIRED — the store-pull (load all vintages for a series → feed the detector) + an `/api/stats/revision-
+  anomalies` endpoint + a Home Lead producer are the CI-verified follow-on. OPEN (maintainer polish, non-
+  blocking — the pure core surfaces nothing to a user yet): the exact UI-facing "sensitivity wording on
+  flagging official figures" (§5B open ruling) — the method/caveat here are written conservatively
+  (descriptive · innocent-twin-first · no verdict) and are re-wordable when surfaced.
 - **BULK STATS PARSERS — wide CSV + ZIP container (V-Dem/UCDP) 2026-06-25 (§5B Phase E "bulk-ZIP-CSV"; same
   single-branch harness fallback, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09
   after #469 merged; NEW draft PR onto 0.09; backend VERIFIED py3.11 standalone [14 tests] + ruff F/B/full +
