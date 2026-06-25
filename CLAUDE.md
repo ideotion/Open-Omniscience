@@ -4002,6 +4002,36 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **ooViz CHOROPLETH DATA LAYER — the "normalized-only" ruling made concrete (§5B Phase C, the pure honesty
+  core; same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09
+  after #477 merged; NEW draft PR onto 0.09; FULLY NODE-VERIFIED [22 node tests, +8] + node --check + ruff
+  F/B + i18n gate unchanged 100%).** The §5B research's open ruling — "choropleth NORMALIZED-only; levels →
+  proportional symbols; never compare incomparable denominators silently" — built as TWO pure `src/static/
+  ooviz.js` functions whose honesty lives in the SHAPE of the output (no DOM, no network, no score, fully
+  node-testable BEFORE any browser map): (1) `choroplethData(rows, opts)` over StatFigure-shaped rows
+  {ref_area, value, unit, base_year, adjustment, time_period} enforces the COMPARABILITY GATE — only areas
+  sharing the MODAL (unit, base-year, seasonal-adjustment) basis are colour-eligible (`comparable:true`); an
+  area on a DIFFERENT basis is `comparable:false` with a reason naming the differing dimension (so the
+  renderer shows it as no-data, NEVER recoloured onto one scale — the brief's "never compare incomparable
+  denominators silently"), a missing value is its OWN no-data reason, and the colour DOMAIN spans comparable
+  values ONLY (a stray incomparable figure can't stretch the scale). It picks ONE cell per area (the requested
+  `opts.period`, else each area's LATEST via `periodToYear` — annual/semester/quarter/month/week/day decimal-
+  year, junk→NaN→raw-string tiebreak, mirroring `series.py _parse_period`). `opts.kind==="level"` (a count/
+  total like population/GDP) REFUSES the choropleth (`mode:"symbols"`, `refusedChoropleth:true`) — colouring a
+  level makes a big area look "more" just for being big — defaulting to `"normalized"` (rate/ratio/%/per-capita)
+  → `mode:"choropleth"`. (2) `symbolRadii(cells, maxRadius)` = the LEVEL companion: AREA-honest radii via the
+  existing `sqrtAreaScale` over the max comparable non-negative value (4× value → 2× radius, never 4×), with
+  incomparable/missing/NEGATIVE values `shown:false` + a reason (never a fake dot). PURE, deterministic, NO
+  score; vintage dedup is the caller's job (one value per area+period). NOT YET WIRED — the backend
+  `/api/stats/map` (latest-vintage figures per ref_area for a series) + the ooMap render (it already has
+  country fills + `to_iso2`; this is its honest stats data-prep + the symbol overlay) are the CI-verified +
+  browser-unverified follow-ons. tests/ooviz_node_test.js (+8: periodToYear, the comparability gate refuses to
+  recolour an odd-unit outlier, missing-value-is-its-own-no-data, latest-period selection, opts.period filter,
+  level→symbols refusal, area-honest+negative-not-shown radii, empty-honest) — runs in the sandbox AND CI;
+  test_ooviz.py grep-guards both functions. node --check clean; ruff F/B clean (test file); i18n 100%
+  (1669 ×12, no UI strings). REMAINING: the `/api/stats/map` endpoint + store query + the ooMap stats layer
+  (choropleth for normalized indicators, proportional symbols for levels); the OWID-CSV / Eurostat-JSON-stat
+  fetch clients that feed real data into the parsers; the §5B Phase-C choropleth UI.
 - **i18n — KEY THE NEW STATISTICS-PANEL STRINGS ×12 (§5C #17 burn-down; closes the #474/#476 loop) 2026-06-25
   (same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09
   after #476 merged; NEW draft PR onto 0.09; VERIFIED: i18n gate `--min 100` 100% [1669/1669 ×12] + audit

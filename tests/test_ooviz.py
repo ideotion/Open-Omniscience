@@ -46,6 +46,9 @@ def test_ooviz_module_is_self_contained_and_network_free():
     assert "module.exports = API" in src, "must export for the node test"
     assert "function statSeriesPaths" in src, "must carry the to_chart_series consumer"
     assert "function pathWithGaps" in src, "must carry the gap-breaking path primitive"
+    # The §5B "normalized-only" map data layer (comparability gate + levels->symbols).
+    assert "function choroplethData" in src, "must carry the choropleth comparability gate"
+    assert "function symbolRadii" in src, "must carry the area-honest proportional symbols"
     # No network surface (the math reads values the caller already has).
     for forbidden in ("fetch(", "XMLHttpRequest", "import(", "require("):
         assert forbidden not in src, f"ooViz must be network/dependency-free: found {forbidden!r}"
