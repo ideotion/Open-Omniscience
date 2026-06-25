@@ -4002,6 +4002,35 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **CHOROPLETH STORE FEED + /api/stats/map ENDPOINT (§5B Phase C, the DATA feed for the pure ooViz layer;
+  same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after
+  #478 merged; NEW draft PR onto 0.09; backend ALGORITHM VERIFIED py3.11 standalone repro + ruff F/B + mypy
+  0-new, the ORM/endpoint test runs in CI).** The backend feed for the `choroplethData` honesty layer shipped
+  in #478. `store.map_figures(session, *, series_id, agency=None, time_period=None, limit=2000)` loads the
+  matching `StatFigureRow`s, keeps the latest VINTAGE per (agency,series,area,period) via the existing
+  `_latest_vintage`, and emits ONE cell per `ref_area` — the area's LATEST period (reusing `series._parse_period`
+  via new `_period_key`/`_area_more_recent`: later period wins, tie→later vintage) or a pinned `time_period`.
+  Each cell carries the producer's published value + its comparability fields (unit/base_year/adjustment) so the
+  frontend `ooViz.choroplethData` applies the gate. HONESTY: a map is SINGLE-PRODUCER per series — when several
+  agencies report it and no `agency` is pinned, the most recent VINTAGE is shown per area and `multi_producer` is
+  FLAGGED (the caller pins an agency to disambiguate) — the map NEVER averages producers and never silently
+  elects a 'true' one; a published gap rides through as `value=None` (never a fabricated zero); `periods`/
+  `agencies` are returned so a surface can offer a period/producer selector; counts only, NO score (regex/repr
+  grep-guarded in the test). `GET /api/stats/map` (series_id required; agency/time_period/limit optional) — the
+  established stats-endpoint pattern (`session_scope` → store fn → dict), a thin wrapper identical to
+  `figure_series`. tests/test_stats_map_store.py (6: one-cell-per-area-at-each-latest-period + deterministic
+  area sort + newest-first periods, latest-vintage-wins, pin-a-period, multi-producer-flag + agency-pins-one
+  [never an average of 30 & 31], carries-a-gap + comparability fields, empty-honest) over an in-memory SQLite
+  (CI, needs sqlalchemy — the ORM pulls bleach etc. so it can't run in the bare sandbox; the ALGORITHM was
+  proven by a standalone repro mirroring all 6 cases + a mixed-granularity case, importing only the stdlib-only
+  `_parse_period`). test_repo_invariants::test_stats_choropleth_feed_and_data_layer greps the store feed (+ the
+  no-average caveat) + the endpoint + the two pure ooViz functions. ruff F/B clean; store.py + api/stats.py add
+  0 mypy errors (the 29 reported are pre-existing baseline import-closure errors in other files). NO new
+  `*_AS_OF`/registry entry; no UI strings (i18n untouched, 100%). REMAINING: the ooMap STATS LAYER (choropleth
+  for normalized indicators via `choroplethData`+`ooMap` country fills + the `to_iso2` bridge; proportional
+  symbols via `symbolRadii` for levels; an indicator/period/agency picker; the `multi_producer` flag surfaced)
+  — browser-unverified per fork-3, the next slice; the OWID-CSV / Eurostat-JSON-stat fetch clients that feed
+  real data into the parsers.
 - **ooViz CHOROPLETH DATA LAYER — the "normalized-only" ruling made concrete (§5B Phase C, the pure honesty
   core; same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09
   after #477 merged; NEW draft PR onto 0.09; FULLY NODE-VERIFIED [22 node tests, +8] + node --check + ruff
