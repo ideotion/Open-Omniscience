@@ -4002,6 +4002,25 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **REVISION-ANOMALY STORE-PULL + ENDPOINT 2026-06-25 (wires the merged detector to a reachable API; same
+  single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after #471
+  merged; NEW draft PR onto 0.09; backend ADAPTER+DETECTOR logic VERIFIED py3.11 standalone + ruff F/B/full +
+  mypy 0-new, the ORM/endpoint test runs in CI).** Makes the reliable-memory kernel reachable. `store.py`
+  gained `revision_anomalies(session, *, agency/series_id/ref_area filters, min_prior_revisions=4, z_min=3.5)`
+  — loads the FULL vintage trail (every `extracted_at`, NEVER latest-only — the revision history IS the point)
+  for the matching `StatFigureRow`s, adapts each via `StatFigure(**_row_dict(r))` (the row dict keys are
+  exactly the dataclass fields — DRY, proven standalone), and delegates to the pure merged
+  `find_revision_anomalies`. `GET /api/stats/revision-anomalies` (the established stats-endpoint pattern:
+  `session_scope` → store fn → dict) with the same filters + bounded params; the honesty envelope (method +
+  innocent-twin caveat, retrospective-only, no score) travels through unchanged. tests/
+  test_stats_revision_store.py (3: flags a stored outlier across vintages, scopes by series, empty store →
+  silent) over an in-memory SQLite (mirrors test_stats_store.py — CI, needs sqlalchemy). Also a drive-by
+  `typing.Iterable`→`collections.abc.Iterable` modernization in the edited store.py (pre-existing UP035).
+  REMAINING: the Settings → Statistics "Revision anomalies" UI surface (browser-unverifiable, the natural
+  follow-on slice — how figures/triangulate shipped backend-then-frontend); a Home Lead is NOT pursued (a
+  revision anomaly is about a stat figure, not an article corpus, so it doesn't fit the article-card model —
+  the Statistics panel is its honest home). The §5B "sensitivity wording" open ruling still applies to the
+  eventual UI copy.
 - **REVISION-ANOMALY DETECTOR over StatFigure vintages 2026-06-25 (§5B research's "highest-value independent
   slice" — the reliable-memory kernel; same single-branch harness, branch `claude/ecstatic-edison-mseu1p`
   re-cut from the freshly-merged 0.09 after #470 merged; NEW draft PR onto 0.09; backend VERIFIED py3.11

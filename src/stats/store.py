@@ -25,12 +25,13 @@ HONESTY (the Group N ruling, enforced in code, not just prose):
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.database.models import StatFigure as StatFigureRow
+from src.stats.revision import find_revision_anomalies
 from src.stats.sdmx import StatFigure
 
 
@@ -185,6 +186,39 @@ def vintages_for(
         ],
         "caveat": "Revisions are preserved as evidence; no vintage is treated as the single truth.",
     }
+
+
+def revision_anomalies(
+    session: Session,
+    *,
+    agency: str | None = None,
+    series_id: str | None = None,
+    ref_area: str | None = None,
+    min_prior_revisions: int = 4,
+    z_min: float = 3.5,
+    max_items: int = 50,
+) -> dict:
+    """Flag observations whose MOST RECENT vintage revised a past figure unusually far.
+
+    Loads the FULL vintage trail (every ``extracted_at`` for the matching figures — never
+    latest-only, the revision history is the whole point) and runs the pure, model-free
+    :func:`~src.stats.revision.find_revision_anomalies` over it. The reliable-memory check:
+    History must not be silently rewritten. Retrospective only; magnitudes only, no score.
+    """
+    q = select(StatFigureRow)
+    if agency:
+        q = q.where(StatFigureRow.agency == agency.strip().lower())
+    if series_id:
+        q = q.where(StatFigureRow.series_id == series_id.strip())
+    if ref_area:
+        q = q.where(StatFigureRow.ref_area == ref_area.strip().upper())
+    figures = [StatFigure(**_row_dict(r)) for r in session.execute(q).scalars()]
+    return find_revision_anomalies(
+        figures,
+        min_prior_revisions=min_prior_revisions,
+        z_min=z_min,
+        max_items=max_items,
+    )
 
 
 # --------------------------------------------------------------------------- #
