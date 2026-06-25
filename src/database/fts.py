@@ -30,12 +30,15 @@ then OR. So ``(a OR b) AND c`` differs from ``a OR (b AND c)`` differs from
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+
+_LOG = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # Query parsing: user Boolean syntax -> AST -> safe FTS5 MATCH string
@@ -253,6 +256,52 @@ def ensure_fts(engine: Engine) -> None:
             conn.execute(text(ddl))
         # Rebuild from base table so pre-existing rows are indexed.
         conn.execute(text("INSERT INTO article_fts(article_fts) VALUES ('rebuild')"))
+
+
+def optimize_after_bulk(session: Session) -> dict:
+    """Tuning pass after a BULK write (a whole-corpus re-index or a large article
+    import) — keyword-engine Phase 1.4. Two cheap, gated, SQLite-only steps:
+
+    * FTS5 ``'optimize'`` — merge the external-content FTS index segments that a bulk
+      article load churns into many small b-trees, for faster MATCH queries. DISTINCT
+      from ``PRAGMA optimize``; a near no-op when the index is already merged (e.g.
+      after a keyword-only re-index that never touched ``articles``).
+    * ``PRAGMA optimize`` (bounded by ``analysis_limit``) — refresh the query planner's
+      statistics after a big ``keyword_mentions`` / ``keywords`` churn so the next
+      trending / top / associations queries pick good indexes.
+
+    Both are writes (the FTS merge writes the index; ``PRAGMA optimize`` may run ANALYZE),
+    so they take the single-writer gate. Best-effort: a tuning failure (incl. a missing
+    FTS table) never breaks the caller. Returns a ``{"fts", "planner"}`` bool tally.
+
+    (The in-memory READ lever is ``cache_size`` — env ``OO_SQLITE_CACHE_MB``, default
+    64 MiB, set per connection in ``session.py``; mmap is unavailable under the SQLCipher
+    codec, so cache_size is the main one. Left at its memory-conservative default for the
+    reference AppVM; raise the env on a larger machine.)"""
+    out = {"fts": False, "planner": False}
+    bind = session.get_bind()
+    if bind is None or bind.dialect.name != "sqlite":
+        return out
+    from src.database.writer import write_lock
+
+    try:
+        with write_lock():
+            session.execute(text("INSERT INTO article_fts(article_fts) VALUES ('optimize')"))
+            session.commit()
+        out["fts"] = True
+    except Exception:  # noqa: BLE001 - a tuning step must never break the caller
+        session.rollback()
+        _LOG.warning("FTS5 optimize failed", exc_info=True)
+    try:
+        with write_lock():
+            session.execute(text("PRAGMA analysis_limit=1000"))
+            session.execute(text("PRAGMA optimize"))
+            session.commit()
+        out["planner"] = True
+    except Exception:  # noqa: BLE001 - a tuning step must never break the caller
+        session.rollback()
+        _LOG.warning("planner optimize failed", exc_info=True)
+    return out
 
 
 # Upper bound on candidate ids pulled from FTS before structured filters apply.

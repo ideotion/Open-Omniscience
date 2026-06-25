@@ -294,6 +294,13 @@ def test_reindex_background_job_is_wired():
     assert "commit_batch: int = 1" in store  # reindex_all_batch batches (default 1 = byte-identical)
     assert "_redo_committed" in store  # the no-loss fallback (mirror ingest_emails)
     assert "OO_REINDEX_COMMIT_BATCH" in job  # the job reads the batch-size knob (default 1)
+    # Phase 1.4: a tuning pass (FTS5 'optimize' segment-merge + PRAGMA optimize planner
+    # stats) wired after the bulk re-index AND the bulk newsletter import.
+    fts = (_SRC / "database" / "fts.py").read_text(encoding="utf-8")
+    assert "def optimize_after_bulk(" in fts and "VALUES ('optimize')" in fts
+    assert "optimize_after_bulk" in job  # the re-index job runs it on a complete pass
+    importjob = (_SRC / "ingest" / "import_job.py").read_text(encoding="utf-8")
+    assert "optimize_after_bulk" in importjob  # the import job runs it on completion
 
 
 def test_articles_endpoint_serialises_stored_sentiment():

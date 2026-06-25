@@ -544,7 +544,17 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   per its own doc [unmeasurable here] + the riskiest 50-worker hot-path change; the `commit=False`
   primitive now exists so it is a smaller follow-up when the maintainer can measure live.** VERIFIED
   here: 57-test ingest/index hot-path regression + 160 targeted green, ruff F/B, mypy 127≤127.)
-  REMAINING in P1: **1.4** FTS5 `'optimize'` + cache tuning. Then P2 (rollups
+  **P1.4 SHIPPED** (FTS5/SQLCipher tuning pass — `src/database/fts.py:optimize_after_bulk(session)` runs
+  the FTS5 `'optimize'` segment-merge [`INSERT INTO article_fts(article_fts) VALUES('optimize')`, DISTINCT
+  from PRAGMA optimize — verified it did NOT run before; only `'rebuild'` at init] + `PRAGMA optimize`
+  [planner stats, analysis_limit-bounded] after a bulk load; gated + SQLite-only + best-effort. Wired
+  after a COMPLETE re-index pass [keyword-table churn → planner] AND after the newsletter folder import
+  [article bulk-load → FTS segment churn]. cache_size left at the memory-conservative `OO_SQLITE_CACHE_MB`
+  default 64 MiB for the reference AppVM [mmap is unavailable under the codec so cache_size is the lever —
+  documented in the fn]; no default change. tests/test_fts_optimize.py [merge keeps search exact;
+  best-effort without an FTS table] + the invariant guard. VERIFIED here: 167 targeted green, ruff F/B,
+  mypy 127≤127.) **PHASE 1 COMPLETE** (unblock-the-rebuild: 1.1 job · 1.2 keyword-only · 1.3 batched
+  commits · 1.4 tuning). NEXT: P2 (rollups
   + DuckDB-GCM verify) · P3 (eval harness) · P4 (quality) · P5 (serving) · P6 (entities) per the brief.
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte

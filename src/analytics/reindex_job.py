@@ -240,6 +240,12 @@ class ReindexJobManager:
                         self._tally["pruned"] = int(pr.get("pruned", 0))
                         self._tally["kept_curated"] = int(pr.get("kept_curated", 0))
                         self._save()
+                if completed:
+                    # Phase 1.4: refresh the planner stats after the big keyword-table
+                    # churn (+ merge any FTS segments) so post-cleanup queries are fast.
+                    from src.database.fts import optimize_after_bulk
+
+                    optimize_after_bulk(session)
                 with self._lock:
                     if self._stop.is_set():
                         self._state = "cancelled" if self._cancelled else "paused"
