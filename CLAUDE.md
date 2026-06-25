@@ -456,6 +456,50 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     volume + classify disk-full vs network failures honestly.
 
 ## Open queue (when maintainer says proceed)
+- **KEYWORD-ENGINE OPTIMIZATION — RESEARCH FOLDED IN + IMPLEMENTATION STRATEGY (2026-06-26; maintainer
+  ran parallel internet sessions on keyword conflation + IR/search performance; outputs analyzed
+  CODE-GROUNDED + folded in; STRATEGY/DOCS-ONLY this session — the BUILD is a NEXT session):** the 3
+  research reports saved VERBATIM under `docs/research/keywords/` (FOSS conflation research; the
+  complete-log evidence addendum [supersedes a capped first pass — its 8.7% global mismatch was a cap
+  artifact, corrected to 16.2%]; the performance-first IR/computational-journalism report) + indexed in
+  `docs/research/README.md`. SYNTHESIS = `docs/design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md` (code-
+  grounded, dependency-sequenced, build-ready; every anchor verified against the tree). KEY VERDICT
+  (both research streams + the code converge — INDEPENDENTLY confirming the project's own
+  DATA_ARCHITECTURE_SKELETON / SCALING_DERIVED_LAYER_1000X): the pain is a DERIVED-STATE-REBUILD problem,
+  NOT a search-engine problem — KEEP the rule-based trusted index, fix the rebuild + the rollups + the
+  junk, AUGMENT with a LABELLED recall layer that never feeds the trusted index. CODE-GROUNDED FINDINGS:
+  (a) re-index is slow because `reindex_all_batch`/`index_article` (store.py:384/:180) force-re-extract
+  EVERYTHING per article (keywords + when/where/who + sentiment) through the single writer + a SQLCipher
+  per-page decrypt, via a CLIENT loop with NO persisted cursor (`_reindexAllLoop`, restart-from-0) →
+  Phase 1 = a BACKEND re-index JOB (persisted cursor, reuse the NewsletterImportManager pattern) + a
+  KEYWORD-ONLY re-index mode + batched commits (COLLECTOR_WRITER_BATCHING) + FTS5 `'optimize'`; (b)
+  `Keyword.language` is FIRST-WRITE-WINS, never reconciled (store.py:75) = the 16% / 40%-of-head language
+  mismatch → fix = a `reconcile_keyword_language` pass MIRRORING `reconcile_keyword_counters`
+  (store.py:558), which GATES correct lemmatization; (c) **HIGHEST-LEVERAGE — the persisted-columnar D1
+  blocker may be REMOVABLE:** `columnar.py:90 secure_crypto_available` gates on the OpenSSL `httpfs`
+  binary because the OLD DuckDB mbedtls (CBC/CTR) was "NOT securely encrypted," BUT DuckDB ≥1.4 (already
+  pinned) defaults to AUTHENTICATED AES-256-GCM via the native `ATTACH … ENCRYPTION_KEY` the code ALREADY
+  uses (`:131/259`) + the empirical `encryption_gate` (`:111`); **VERIFY the GCM claim → relax the gate
+  for the DISPOSABLE store → unblock the keyword_daily/source_coverage rollups (5A-bis) PERSISTED = the
+  real perf win** (NEVER fabricate the capability — if unconfirmed, keep the in-memory fallback + the
+  httpfs-binary path); (d) lemmatization (simplemma + an evidence-grown mislemma denylist + visible
+  `conflated_by` provenance) belongs in `families.canonical_key` (`:104`, display-time, reversible), NOT
+  `_normalize`; (e) the IR EVAL HARNESS (nDCG/MRR/Recall, pooled gold set, single-assessor-stable
+  [Voorhees], conflation recall-gain-vs-precision-loss reported SEPARATELY with n) is a genuine GAP (the
+  shipped self-test is keyword-QUALITY, not RETRIEVAL) and GATES every quality change; (f) the
+  static-embedding hybrid (model2vec/potion numpy-only [NO torch] + sqlite-vec inside the encrypted file
+  + RRF, labelled/disposable) is the one constraint-clean dense-recall layer — PILOT gated on the eval
+  harness. ALREADY-SHIPPED, don't rebuild: near-dup/coordination (`src/signals/near_dup.py`), BM25-default
+  ranking, the readmodel/columnar seam + the `ix_mention_date_keyword` covering index, the engine
+  report/self-test/growth diagnostics. PHASED PLAN (one PR per slice when built): P1 unblock the rebuild
+  → P2 rollups + the DuckDB-encryption VERIFY → P3 eval harness (parallel) → P4 keyword quality
+  (`reconcile_keyword_language` → simplemma lemmatization → th segmenter URGENT / zh degraded-not-garbage)
+  → P5 BM25F + facets + the static-embedding recall layer → P6 OpenTapioca entity→QID. SPLADE ruled OUT
+  (CC-NonCommercial weights + torch + multilingual gap). Verify-before-build: the DuckDB-1.4 GCM claim,
+  static-embedding PER-LANGUAGE quality, every bundled lib's license (CC0-first; Wiktextract CC-BY-SA =
+  a separate ruling; SPLADE never bundle). Operational/networked (maintainer steps): run cleanup
+  (re-index+prune) + reconcile + baseline-tag backfill on the LIVE corpus; Wikidata Lexeme/ring + a
+  bundled segmenter/embedding/OpenTapioca index.
 - **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
   research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed
