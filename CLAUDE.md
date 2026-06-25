@@ -4019,8 +4019,18 @@ ruling, a contingency, or a deliberate-omission note.
   min_sources silent, single-source-can't-manufacture, no-score, endpoint) + the all-producers sweep
   (test_briefing/test_producers_card_shapes iterate _DEFAULT_PRODUCERS) covers shape + trigger automatically.
   The pure helper + the full fire/wire-exclude/source-gate selection logic were proven in py3.11 standalone
-  repros before commit; py_compile + ruff F/B clean. REMAINING manipulation cards: the BURY half of #4 (needs
-  an external trigger), event-timed-op (needs the elections roster), outrage-intensity (secondary annotation).
+  repros before commit; py_compile + ruff F/B clean. **MYPY FOLLOW-UP (PR #463, 2026-06-25): the copypasta
+  card slipped 3 NEW mypy errors past #461 (the maintainer fast-merges despite a red `test` lane), tipping the
+  ratchet 127→130.** Root cause: `shared_word_ngrams` built a heterogeneous result `dict` (str/int/list values)
+  then SORTED + DEDUPED by indexing it, so `r["phrase"]`/`r["n_docs"]`/`r["doc_ids"]` typed as `object`
+  (near_dup.py:128 len/unary-minus on object ×2, :133 set(object)). FIX: sort + dedup over typed
+  `(phrase, set[str])` TUPLES, build the result dicts only at the end (behaviour byte-identical, re-verified).
+  130→127 = back to baseline. **LESSON (ledger ritual reinforced): mypy 2.1.0 IS pip-installable in the
+  py3.11 sandbox (`pip install mypy`) and type-checks CHANGED FILES via their real-file import closure even
+  without the project deps — RUN IT on any Python change (`python3 -m mypy <changed.py>`), the ratchet is a
+  BLOCKING gate; py_compile + ruff F/B alone do NOT catch it.** REMAINING manipulation cards: the BURY half of
+  #4 (needs an external trigger), event-timed-op (needs the elections roster), outrage-intensity (secondary
+  annotation).
 - **AUTONOMOUS SESSION 2026-06-24 (the consolidated-to-do build brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md`;
   ONE branch claude/vibrant-thompson-bez6dq per the harness git-constraint, draft PR #460 onto 0.09; backend
   VERIFIED py3.11 standalone repro + ruff F,B, full pytest in CI). TIER 1.1 — STATEMENT-DEADLINE GUARD on the
