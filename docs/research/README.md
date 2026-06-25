@@ -1,9 +1,11 @@
 # `docs/research/` — sourced research artifacts (reference, not status)
 
-These files are **committed reference material** for the design entry
+These files are **committed reference material** for two design tracks: the entry
 **“Statistical-data ingestion + diversified honest visualization (TimesFM, official
-statistics, data-viz)”** in [`docs/FUTURE_DEVELOPMENTS.md`](../FUTURE_DEVELOPMENTS.md).
-They are **design inputs, not shipped features and not ground truth.**
+statistics, data-viz)”** in [`docs/FUTURE_DEVELOPMENTS.md`](../FUTURE_DEVELOPMENTS.md), and the
+**keyword-engine optimization** strategy in
+[`docs/design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md`](../design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md)
+(the `keywords/` set below). They are **design inputs, not shipped features and not ground truth.**
 
 ## Provenance & honesty
 
@@ -47,6 +49,24 @@ They are **design inputs, not shipped features and not ground truth.**
   themeable + RTL + `role="img"` + data tables.
 - `check-schematics.mjs` — structural verifier for the schematics
   (run: `node check-schematics.mjs`). Both suites pass as committed.
+
+### `keywords/`
+- `keyword_conflation_FOSS_research.md` — the FOSS tool landscape for keyword **conflation /
+  normalization** (stemmers, lemmatizers — simplemma; Wikidata Lexemes CC0 / Wiktextract;
+  OpenTapioca entity-linking) + the layered L0–L3 conflation architecture, mapped to this repo.
+- `keyword_conflation_evidence_addendum.md` — the COMPLETE-log evidence pass (computed from the
+  2026-06-25 diagnostic exports: engine report, self-tests, Heaps growth, the per-language keyword
+  log) that re-prioritizes the conflation roadmap (P1 re-index → P2 fix language → P3 lemmatize →
+  P4 multilingual extraction → P5 entity-linking → P6 baseline tags) and runs an empirical
+  simplemma merge test with a starter mislemma denylist.
+- `keyword_search_and_scaling_report.md` — the performance-first IR / computational-journalism
+  report (the "serve the journalist best" question): the rebuild-and-rollup reframe, peer practice
+  (Aleph / Datashare), an evaluation harness with no user pool (nDCG/MRR/Recall, pooling,
+  single-assessor stability), and the outside-the-box recall layer (FTS5 BM25/BM25F, maintained
+  rollups, a disposable encrypted DuckDB accelerator, in-core static embeddings + sqlite-vec + RRF,
+  near-dup/coordination). **Verify-before-trust applies** — `[FLAG]`/`(verify)` tags are the
+  author's own; this repo's analysis of it (and the code-grounded corrections) lives in the
+  strategy doc.
 
 ### `sources/`
 - `diversity_catalog_report.md` + `sources.{yml,csv}` — a 105-row gap-fill **news /
