@@ -1247,6 +1247,13 @@
         <button class="secondary" onclick="renderStatChart()" title="Plot the series over time. A new line segment starts at every unit / base-year / seasonal-adjustment change (never joined); a gap is a break, never interpolated.">Chart over time</button>
       </div>
       <div id="statfig-chart" style="margin-top:10px"></div>
+      <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
+        <label>Map producer (optional)<br><input id="statfig-map-agency" placeholder="worldbank" size="12"></label>
+        <label title="A level (a count or total like population or GDP) is shown as proportional symbols, never colour — colouring a level makes a big country look like 'more' just for being big. Tick this for a count/total; leave unticked for a rate / ratio / % / per-capita indicator."><input type="checkbox" id="statfig-map-level"> This is a level (count/total)</label>
+        <button class="secondary" onclick="renderStatMap()" title="Colour a world map by this indicator (series id above). Only areas sharing the same unit / base year / seasonal adjustment are coloured; an area on a different basis is shown as no-data, never recoloured onto one scale. A level is shown as proportional symbols, not colour.">Map by country</button>
+      </div>
+      <div id="statfig-map-meta" class="muted" style="margin-top:4px;font-size:12px"></div>
+      <div id="statfig-map" style="margin-top:6px"></div>
       <div style="overflow:auto;margin-top:10px" id="statfig-table"></div>
       <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
       <div style="margin-top:14px">

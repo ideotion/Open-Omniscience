@@ -4006,6 +4006,30 @@ ruling, a contingency, or a deliberate-omission note.
   PRs afterwards" — the harness constrains me to ONE branch `claude/ecstatic-edison-mseu1p`, so the remaining
   §5B/§5C arc lands as a STACKED SERIES OF COMMITS in one draft PR onto 0.09; each commit self-contained +
   verified). Items shipped below in order.**
+- **ooMap STATS CHOROPLETH — the §5B Phase C visible capstone (autonomous batch; backend iso2 bridge VERIFIED
+  py3.11 + ruff F/B + mypy 0-new; frontend BROWSER-UNVERIFIED per fork-3 — node --check + invariant-guarded +
+  i18n 100%).** Makes the whole arc visible: colour a world map by ONE official-statistics indicator, through
+  the ONE `ooMap` component + the node-tested `ooViz.choroplethData` honesty gate (#478) — NOT a second map
+  component (the "one ooMap" ruling), placed in Settings → Statistics beside the chart + revision-anomalies (its
+  own stats surface; the Governments Map subtab stays the curated-WB-country view). BACKEND: `store.map_figures`
+  now enriches each cell with an `iso2` (lowercase alpha-2 via `catalog.countries.to_iso2`: the producer's
+  ref_area — alpha-3 for WB/OWID, alpha-2 for Eurostat — converts; a non-country aggregate WLD/EUU → None so the
+  map DROPS it honestly, never plots an aggregate as a country) so the renderer keys on it with NO frontend ISO
+  table. FRONTEND `renderStatMap()` (app.js, beside renderStatChart, English-only like the chart panel): fetches
+  `/api/stats/map?series_id=&agency=`, runs `choroplethData` over the cells, and for the NORMALIZED case builds
+  `values[iso2]=value` for COMPARABLE cells only → `ooMap` colours them (an incomparable-basis or no-value cell
+  is omitted → ooMap's no-data hatch, NEVER recoloured onto one scale; a null iso2 aggregate dropped). The
+  comparability summary (N comparable · M on a different basis (no-data) · K no value) + the gate caveat are
+  VISIBLE; `multi_producer` adds a "pin a producer — the map never averages them" note. A LEVEL (the "this is a
+  count/total" checkbox → `kind:"level"`) REFUSES the choropleth honestly (`mode:"symbols"`) — shows the refusal
+  reason + the comparable values as a ranked table (true proportional-symbol rendering deferred — colouring a
+  level would make a big country look like "more" just for being big). Controls: a `statfig-map-agency` input +
+  the level checkbox + a "Map by country" button (inline onclick, matching the panel's local convention). NO new
+  i18n keys (English literals like renderStatChart → gate stays 100%). tests/test_stats_map_store.py +1
+  (iso2 bridge: FRA→fr, DE→de, WLD→None) + test_repo_invariants::test_stats_choropleth_map_surface (controls +
+  handler + ooMap reuse + choroplethData gate + the iso2 key) + the feed test asserts the to_iso2 enrichment.
+  REMAINING: true proportional-symbol rendering for levels (centroids needed); human click-through (fork-3); a
+  period/indicator picker; key the panel strings ×12 with the rest of the Statistics panel.
 - **JSON-STAT LIVE FETCH CLIENT — unlocks the parse_jsonstat parser for real data (§5B Phase E; autonomous
   batch; backend ALGORITHM VERIFIED py3.11 standalone repro using the real `parse_jsonstat` + ruff F/B + mypy
   0-new, the fetch/endpoint test runs in CI).** The `parse_jsonstat` parser (#469, JSON-stat v2/v1 → figures)
