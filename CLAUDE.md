@@ -4002,6 +4002,46 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **OFFLINE STATS PARSERS — CSV (OWID) + JSON-stat (Eurostat/IRENA/PxWeb) 2026-06-25 (§5B Phase A-CSV +
+  Phase E parser unlock; SESSION NOTE: single-branch harness fallback — develop on
+  `claude/ecstatic-edison-mseu1p`, ONE branch, draft PR onto 0.09; the §5B research "open decisions"
+  [retrospective-only / classical-first / choropleth-normalized] are viz/forecast rulings, N/A to a pure
+  parser — the maintainer already greenlit CSV+JSON-stat parsers in 5D/5F; backend VERIFIED py3.11 standalone
+  [16 tests] + ruff F/B/full + mypy 0-new).** `src/stats/sdmx.py` only handled WB-JSON + SDMX-JSON 2.1, so
+  the research-flagged best-verified global data (OWID energy/CO₂ via CSV) and all of Eurostat + IRENA (via
+  JSON-stat) were un-ingestable. Added TWO pure parsers to the same offline parser core (no network, no ORM —
+  it takes already-decoded `str`/`dict`, the module's standing contract): (1) `parse_csv` — a tidy/long CSV
+  (the OWID grapher "Full data" shape) → `StatFigure`s; the caller maps the columns EXPLICITLY (a CSV carries
+  no self-describing dimension metadata, so the parser NEVER guesses which column is which), `ref_area` prefers
+  a stable `code_col` (ISO3) then the entity name, a blank/`NA`/`:` value cell becomes `value=None` (a published
+  gap, kept, never a fabricated 0), `series_id` + comparability fields come from the caller's curated config
+  (`None` when unstated, never inferred), a missing REQUIRED column raises loudly, header whitespace/case
+  tolerated (the only normalisations). (2) `parse_jsonstat` — JSON-stat v2 `class:"dataset"` (+ the v1
+  `{"dataset":{…}}` wrapper) → `StatFigure`s; decomposes the row-major flat `value` array/sparse object back to
+  each cell's per-dimension category id (geo→`ref_area`, time→`time_period`, indicator→`series_id` unless the
+  caller pins it, unit→label + `base_year` only when the label literally states `YYYY=100`, s_adj→`adjustment`),
+  a DENSE `null` cell kept as a gap, a SPARSE object emits only present keys, a size/category mismatch bails
+  honestly (no half-parsed rows), `index` as `{id:pos}` map OR ordered list both handled. HONESTY mirrors the
+  existing core: gap→None, comparability only-when-stated, vintage `extracted_at` caller-stamped verbatim, NO
+  composite score (regex-guarded over every `to_dict` key). tests/test_stats_csv_jsonstat_parse.py (16) imports
+  ONLY the pure module → runs in the bare sandbox AND CI (unlike the briefing-coupled test_sdmx_parse.py). NO
+  new `*_AS_OF`/registry entry (format-only code); no UI strings (i18n untouched). PLUS (same PR/branch, the
+  next pure layer — §5B Phase B1 `StatFigure[] → chart series`): `src/stats/series.py:to_chart_series` adapts a
+  figure list into a time-ordered, JSON-ready chart series with the honesty baked into its SHAPE — COMPARABILITY
+  SEGMENTATION (a new line segment starts at every unit / base-year / SA-NSA change so an "Index 2010=100" run
+  is NEVER joined to a "2015=100" one, and SA is never joined to NSA — the brief's "never compare incomparable
+  denominators silently"), a `value=None` kept in place as a GAP (the chart breaks the line, never interpolates/
+  zeroes), period parsing (annual/semester/quarter/month/week/day → a decimal-year x placed at the period
+  START) with UNPARSEABLE labels surfaced in `unparseable_periods` never positioned at a guessed x, vintage
+  dedup (latest `extracted_at` wins per [period, comparability]; ISO-8601 UTC sorts chronologically), filterable
+  by ref_area/series_id, mixed-granularity flagged, NO score (recursively regex-guarded over the whole output).
+  Pure (stdlib re/datetime + StatFigure), no ORM/network. tests/test_stats_series.py (13) imports only the pure
+  modules → runs in the sandbox AND CI. NOT YET WIRED to fetch/store/endpoints — the established "parser core
+  first, live fetch next" slice (how sdmx.py itself shipped); the adapter is the Phase B2 chart layer's input.
+  REMAINING: the ooViz/ooChart gap-subpath + comparability-break renderer (Phase B2, reuse `docs/research/
+  dataviz/honest-charts.js` `pathWithGaps`); the OWID-CSV + Eurostat-JSON-stat fetch clients + ingest wiring
+  (the §5B Phase A "wire Pacific Data Hub + ECB" + Phase E follow-ons); bulk-ZIP-CSV (V-Dem/UCDP) is the next
+  parser.
 - **STATUS-BAR TRANSPARENCY — remark 14 REOPENED + FIXED 2026-06-25 (field report: "top status bar still
   transparent, content overlaps when scrolling"; branch claude/vibrant-thompson-bez6dq, draft PR onto 0.09;
   CSS one-liner, BROWSER-UNVERIFIED per fork-3).** The #460 fix put `background:var(--bg2)` on the CHILDREN
