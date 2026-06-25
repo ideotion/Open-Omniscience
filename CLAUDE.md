@@ -504,6 +504,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   mode, verification gate, subagent orchestration, the phased scope with per-item build-class tags
   [BUILDABLE / VERIFY-FIRST / SEAM / OPERATIONAL], honesty non-negotiables, definition of done; points
   at the strategy doc for the per-item spec).
+  **BUILD SESSION 2026-06-25 (autonomous, maintainer "full authority"; HARNESS = single working branch
+  `claude/modest-gauss-9ae4mc`, so stacked COMMITS under ONE draft PR to `0.09`, each step verified
+  end-to-end before the next — the brief's harness-fallback).** EMPIRICAL WIN vs the brief's "CI-only"
+  assumption: a Python **3.13.12** venv is available here and `pip install -e ".[analysis,dev]"`
+  succeeds INCLUDING `sqlcipher3` + `cryptography` + numpy/pandas/scipy — so the **real pytest suite +
+  the mypy ratchet run LOCALLY** (`.venv`; mypy baseline=127, confirmed at 127). PER-ITEM STATUS (mark
+  as I go): **P1.1 SHIPPED** (backend re-index JOB — `src/analytics/reindex_job.py:ReindexJobManager`
+  mirrors `NewsletterImportManager`: worker thread + stop-event PAUSE + on-disk persisted CURSOR
+  [`data_dir()/reindex_job.json` = last-article-id + total/done/tally/prune_after], so a re-index now
+  SURVIVES a tab close / app restart and RESUMES from where it stopped instead of the old client loop's
+  restart-from-0 trap; drives `reindex_all_batch`; DB-WRITER kind="reindex" joins the
+  collect/import/reindex arbitration set; idempotent re-index = the no-loss net. Endpoints
+  `POST /api/insights/reindex-job{,/{action}}` + `GET .../status`; surfaced in `/api/jobs`
+  [`_reindex_jobs`, pause/resume routed]; the Settings "Clean up keywords" + "Re-index the whole corpus"
+  buttons now START the background job + poll its status [`_startReindexJob`/`_pollReindexJob`], with
+  Pause/Resume in the task manager — the legacy `_reindexAllLoop`/`_pruneCore` cores stay DEFINED as a
+  fallback + for the invariant test. tests/test_reindex_job.py [6: completion · idempotent-no-loss ·
+  pause+resume-from-cursor · persisted-cursor-survives-restart · prune_after-chains · idle/bad-resume] +
+  test_repo_invariants::test_reindex_background_job_is_wired. VERIFIED here: 6/6 + 141 invariants +
+  jobs/insights regression green, ruff F/B clean, mypy 127≤127, node --check, i18n 100%,
+  audit-chrome clean. Frontend BROWSER-UNVERIFIED per fork-3.) REMAINING in P1: **1.2** keyword-only
+  re-index scope · **1.3** batched commits · **1.4** FTS5 `'optimize'` + cache tuning. Then P2 (rollups
+  + DuckDB-GCM verify) · P3 (eval harness) · P4 (quality) · P5 (serving) · P6 (entities) per the brief.
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +

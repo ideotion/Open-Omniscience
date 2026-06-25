@@ -255,6 +255,32 @@ def test_reindex_whole_corpus_action_is_discoverable():
     assert "function reindexAllCorpus(" in app and "/api/insights/reindex-all" in app
 
 
+def test_reindex_background_job_is_wired():
+    """Keyword-engine Phase 1.1: the whole-corpus re-index runs as a pausable BACKGROUND
+    JOB with a persisted cursor (mirrors NewsletterImportManager) — it survives a tab
+    close and RESUMES from where it stopped, instead of the old client loop that
+    restarted from article 0. Guard the full wiring: the manager, the endpoints, the
+    /api/jobs surfacing + DB-writer arbitration + cancel/resume routing, and the frontend
+    start/poll + the task-manager pause/resume controls."""
+    job = (_SRC / "analytics" / "reindex_job.py").read_text(encoding="utf-8")
+    assert "class ReindexJobManager" in job and "def get_reindex_manager(" in job
+    # persisted cursor + resume (the trap fix) + pausable
+    assert "_load_persisted" in job and "def resume(" in job and "def pause(" in job
+    api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert "/reindex-job" in api and "get_reindex_manager" in api
+    jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
+    assert "def _reindex_jobs(" in jobs and "jobs.extend(_reindex_jobs())" in jobs
+    # it joins the DB-writer arbitration set (serialised with collect/import)
+    assert '("collect", "import", "reindex")' in jobs
+    # cancel/resume routed to the owning manager
+    assert 'job_id == "reindex"' in jobs and "get_reindex_manager()" in jobs
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "_startReindexJob(" in app and "_pollReindexJob(" in app
+    assert "/api/insights/reindex-job" in app
+    # the Settings buttons drive the background job (kept reindexAllCorpus/cleanupKeywords)
+    assert "reindexAllCorpus(" in app and "cleanupKeywords(" in app
+
+
 def test_articles_endpoint_serialises_stored_sentiment():
     """§6: the /api/articles list exposes the stored sentiment (populated at ingest /
     re-index, VADER English-only) so lists / cards can show tone without an extra framing
