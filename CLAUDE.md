@@ -3971,6 +3971,21 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **BRIEF-STATUS AUDIT + FUTURE_DEVELOPMENTS UNRESOLVED SECTION 2026-06-25 (maintainer-asked "add to future
+  developments everything that was not or partially resolved"; branch claude/vibrant-thompson-bez6dq, draft PR
+  onto 0.09; DOC-ONLY).** Ran a 6-agent parallel read-only audit (Workflow, ultracode opt-in) verifying all 31
+  items of `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md` against the ACTUAL tree, then wrote an
+  authoritative "AUTONOMOUS BRIEF 2026-06-24 — UNRESOLVED & PARTIAL (audited 2026-06-25)" section into
+  `docs/FUTURE_DEVELOPMENTS.md` (after the CONSOLIDATED TO-DO). HAND-CORRECTED one agent false-positive (the
+  verify-before-trust rule): 5B-4 was reported "shipped" because the generic events/calendar substrate exists,
+  but the brief's event-timed-op MANIPULATION card + the elections/civic VERTICAL (candidate roster, poll
+  analysis) are NOT built — recorded correctly as deferred. NET STATUS: NOT-STARTED = Tier1.2 collector
+  write-batching, Tier2.6 unified import/export, Tier4.13b outrage-intensity, Tier4.16 self-update, 5A-bis
+  D2/D3/D4/D5, zh/ja segmentation, event-timed-op/elections vertical; PARTIAL = Tier4.14 bury-half (flood
+  shipped), 5A-bis.D1 persisted-DuckDB (scaffold+doc; binaries blocked), Ollama binary installer (catalog
+  shipped; installer blocked on checksums), Tier3.12 i18n (~105 strings left, mostly literal/security-dense/
+  deliberately-tagged). LEDGER CORRECTION: the in-window task tracker had Tier1.2 + Tier2.6 marked "completed"
+  — that reflected DESIGN-done, not BUILT; they are design-only and corrected to pending.
 - **i18n SLICE — NEW TOP-LEVEL SURFACES ×12 2026-06-25 (the RC-gate "key the remaining English-fallback
   panel strings" item; branch claude/vibrant-thompson-bez6dq, draft PR onto 0.09; VERIFIED: gate 100%
   + audit drop + clean-append diff).** Keyed the 14 cleanest, highest-value new chrome strings from the

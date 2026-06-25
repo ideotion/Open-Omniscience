@@ -188,7 +188,39 @@
 - [ ] Voice-only mode
 - [ ] Open Commons Mirror (separate sister project, when mature)
 
+### AUTONOMOUS BRIEF 2026-06-24 — UNRESOLVED & PARTIAL (audited against the code 2026-06-25)
+
+> Authoritative status of the `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md` scope,
+> verified item-by-item against the actual tree by a 6-agent parallel audit (not from memory).
+> SHIPPED + merged into `0.09` this session: Tier 1.1 (statement-deadline guard), 2.3 (search
+> Enter→new tab), 2.4 (Library world map + donut), 2.5 (Library dashboard), 3.7–3.11 (intro-box
+> removal · Graphics fuse · opaque status bar · sidebar click-toggle · AI output-language),
+> 4.13a (copypasta card), 4.15 (gov-newsletter keyword filter), 5A-bis.D0 (scaling design doc),
+> 5B httpfs build recipe, and the 5C design docs (LLM-perception eval · Tor · voice · Mirror).
+> Everything below is what remains.
+
+**NOT STARTED (design/spec exists, no code wired):**
+- [ ] **Tier 1.2 — collector write-batching** (`docs/design/COLLECTOR_WRITER_BATCHING.md`; `Status: DESIGN, not built`). `ingest/pipeline.py` still commits per-article; `store.index_article()` has no `commit=` param. REMAINS: `index_article(commit=False)` + batch in the ingest loop + per-article fallback on batch failure + a no-loss test + `OO_COLLECT_COMMIT_BATCH`. (Deferred: needs the full suite + a live-corpus measurement — a blind refactor of keystone-#1 is too risky.)
+- [ ] **Tier 2.6 — unified Import + unified Export/Backup** (`docs/design/UNIFIED_IMPORT_EXPORT.md`; design only). Import/export controls are still scattered (`importNewsletters`, `modelsBackupImport`, `v2Backup`, `v2Preview`…). REMAINS: one Import dialog (6a) + one Export/Backup dialog (6b) on the OOENC2 streaming path, an absorption test (no capability lost), retire the scattered controls. (Deferred: large browser-unverifiable frontend.)
+- [ ] **Tier 4.13b — outrage-intensity annotation** — absent entirely. REMAINS: the whole secondary-annotation feature (a sentiment-anomaly signal annotating another card, never a standalone Lead; English-only via VADER).
+- [ ] **Tier 4.16 — app self-update mechanics** (snapshot→verify→migrate→swap→rollback, default OFF) — design-only; the maintainer's 5 open questions are unresolved. REMAINS: the whole mechanism. (Deferred: can't be end-to-end validated in-sandbox — brick risk.)
+- [ ] **5A-bis.D2 — `keyword_daily` rollup** — no `keyword_daily` in code (only `keyword_agg` counters in `columnar.py`); `readmodel.py` still delegates to live queries. REMAINS: the table, the SQLCipher→DuckDB stream+group build, the incremental MERGE, and the readmodel wiring. (Gated on D1.)
+- [ ] **5A-bis.D3 — incremental refresh + epoch full-rebuild gate** — no `last_mention_id`/`built_epoch`/`corpus_epoch`. REMAINS: the watermark + epoch tracking + the re-index/prune→force-full-rebuild gate (the double-count trap) + the append-only correctness proof. (Gated on D2.)
+- [ ] **5A-bis.D4 — `source_coverage` rollup** — no `source_coverage` table/build. REMAINS: the table + the watermark/epoch build + readmodel wiring. (Gated on D2.)
+- [ ] **5A-bis.D5 — Roaring co-occurrence bitmaps** (pyroaring) — absent. REMAINS: the dependency (new optional extra), per-keyword bitmaps in DuckDB blobs, precomputed top-K neighbours, registry entry. (Optional, off the critical path.)
+- [ ] **5B — zh/ja keyword segmentation** — no segmenter; tokenizer is space-based. REMAINS: a decision on a bundled offline segmenter (jieba/pkuseg/MeCab — license-clean, no-network) + the seam + registry entry.
+- [ ] **event-timed-op manipulation card + elections & civic VERTICAL** — the generic events/calendar substrate (`src/events/`, `/api/events`, civic categories) IS shipped, but the *manipulation card* (#3+#6+agenda composition) and the civic vertical (candidate roster, poll-analysis tiers) are NOT built. REMAINS: the card/schema + the maintainer-supplied candidate roster (a data seam).
+
+**PARTIAL (some shipped, a named piece missing):**
+- [~] **Tier 4.14 — manipulation card #4 BURY half** — the FLOOD half (`concentration.find_flooded_topics`) is shipped; the BURY half (a source UNDER-covering a topic big elsewhere) is deferred in the module docstring. REMAINS: the under-coverage detector (needs a real external trigger so it isn't corpus-bias-driven).
+- [~] **5A-bis.D1 — persisted encrypted DuckDB store** — the offline-load SCAFFOLD exists (`columnar.py` `encryption_gate`/`secure_crypto_available`/`_offline_config`, graceful in-memory fallback) + the design doc + the `external_artifacts.yml` coupling entry. REMAINS: the per-OS/arch httpfs binaries (`duckdb_ext/`, SHA-256 pins currently blank) + the pin-verify-before-LOAD code path. (Blocked: needs a networked multi-arch build — maintainer's step; never fabricate a checksum.)
+- [~] **5B — Ollama binary installer** — the Mistral-led catalog + model-pull/queue UI are shipped; the binary download-verify-run installer is NOT. REMAINS: the Settings→AI installer UI + per-OS installer checksums. (Blocked: checksums need a networked machine.)
+- [~] **Tier 3.12 — i18n keying** — 35 strings keyed this session (`--audit-chrome` 140→105, gate 100%). REMAINS: ~105 strings — mostly data/URLs/proper-nouns that correctly stay literal, the security-/technically-dense paragraphs (custody IP/timing, AES-GCM/Reed-Solomon volume backup — native review), and the mid-`<a>`-link fragments whose tags are deliberately kept (e.g. the discovery "Your query leaves this machine." privacy emphasis) — de-tagging would undo intentional emphasis, so it needs browser verification.
+
+**Operational (not code — the maintainer runs these):** keyword cleanup / baseline-tag backfill on the live corpus · translation-ring generation (networked machine, Wikidata blocked in CI) · the per-OS httpfs + Ollama binary builds · the 0.0.9→0.1 flip · human click-through of every browser-unverified UI.
+
 ---
+
 
 ## The 0.0.9 sequencing (maintainer-agreed 2026-06-11)
 
