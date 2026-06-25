@@ -59,6 +59,21 @@ def _ui_source() -> str:
     return "\n".join(parts)
 
 
+def test_revision_anomalies_statistics_surface():
+    """The merged /api/stats/revision-anomalies endpoint (the reliable-memory check) is
+    reachable from Settings → Statistics: a 'Check revision anomalies' button + a
+    #statfig-revisions box, and a loadRevisionAnomalies() that fetches the endpoint and
+    renders the flagged revisions WITH the honesty envelope (method + innocent-twin caveat)
+    visible. Browser-unverified per fork-3 — node-checked + grep-guarded here."""
+    ui = _ui_source()
+    assert 'id="statfig-revisions"' in ui, "the revision-anomalies output box must exist"
+    assert "loadRevisionAnomalies()" in ui, "the button must call loadRevisionAnomalies"
+    assert "function loadRevisionAnomalies" in ui, "the handler must be defined"
+    assert "/api/stats/revision-anomalies" in ui, "it must call the merged endpoint"
+    # The honesty envelope (method + innocent-twin caveat) must be rendered, never dropped.
+    assert "d.caveat" in ui and "d.method" in ui, "the method + caveat must render"
+
+
 def test_live_language_switch_rerenders_cldr_name_surfaces():
     """Field test 2026-06-19 #16: country/continent names (CLDR-derived at render time)
     must update when the UI language changes, not only on a page refresh. i18n.setLang

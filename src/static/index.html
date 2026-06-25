@@ -1248,6 +1248,14 @@
       <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
       <div style="margin-top:14px">
         <div class="row" style="align-items:center;justify-content:space-between">
+          <h3 style="margin:0;font-size:12px">Revision anomalies</h3>
+          <button class="secondary" onclick="loadRevisionAnomalies()" title="Flag a stored figure whose newest vintage moved a past value unusually far for that series' own revision history — retrospective, no score.">Check revision anomalies</button>
+        </div>
+        <p class="hint" style="margin-top:2px">History must not be silently rewritten. This flags an official figure whose most recent vintage revised a past value by an amount unusually large for that series' own revision history — retrospective only (never a forecast), naming the shape (an outlier-sized revision), never the intent. Leave the series id above blank to scan all stored figures.</p>
+        <div id="statfig-revisions" style="overflow:auto;margin-top:8px"></div>
+      </div>
+      <div style="margin-top:14px">
+        <div class="row" style="align-items:center;justify-content:space-between">
           <h3 style="margin:0;font-size:12px">Tracked for auto-refresh</h3>
           <button class="secondary" onclick="refreshStatSubs()" title="Replay due fetches now (also runs in the background while you are online)">Refresh due now</button>
         </div>
