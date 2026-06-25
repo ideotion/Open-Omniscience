@@ -28,13 +28,20 @@ request.
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
 
 from src.ingest import DEFAULT_USER_AGENT, kill_switch_active
 from src.safety.fetcher import guarded_session
-from src.stats.sdmx import StatFigure, parse_sdmx_json, parse_worldbank
+from src.stats.sdmx import (
+    StatFigure,
+    parse_csv,
+    parse_sdmx_json,
+    parse_worldbank,
+)
 
 # Dated provenance: the documented public JSON / SDMX-JSON endpoints as of
 # STATS_API_AS_OF. Verify-on-use — do NOT fabricate exotic endpoints; if a host
@@ -44,6 +51,12 @@ WORLDBANK_API_BASE = "https://api.worldbank.org/v2"
 EUROSTAT_API_BASE = (
     "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data"
 )
+# Our World in Data per-chart "Full data (CSV)" export. Each grapher chart exposes a
+# tidy CSV at {base}/{slug}.csv (Entity,Code,Year,<metric>). Documented OWID data-API
+# params: csvType=full (all entities/years), useColumnShortNames=true (stable machine
+# column names). Verify-on-use — a wrong slug/param fails LOUDLY (HTTP error / no rows),
+# never a fabricated figure; re-confirm against OWID's published data API if it moves.
+OWID_GRAPHER_BASE = "https://ourworldindata.org/grapher"
 
 # Generous default timeout: a fetch may egress over Tor, which is slow — a tight
 # timeout would spuriously fail honest requests. Seconds.
@@ -90,6 +103,46 @@ def eurostat_url(dataset: str, params: dict[str, str] | None = None) -> str:
         # Sorted for determinism (stable URLs across runs / circuit isolation tokens).
         url += "&" + urlencode(sorted(params.items()))
     return url
+
+
+def owid_grapher_url(slug: str) -> str:
+    """Build the Our World in Data per-chart "Full data (CSV)" URL for ``slug``.
+
+    Shape: ``{base}/{slug}.csv?v=1&csvType=full&useColumnShortNames=true`` — the
+    documented OWID data-API export (all entities/years, stable short column names). An
+    empty slug is a programming error, not a fetchable request → ``ValueError``.
+    """
+    if not slug or not slug.strip():
+        raise ValueError("owid_grapher_url: slug must be a non-empty string")
+    s = quote(slug.strip().strip("/"), safe="")
+    return f"{OWID_GRAPHER_BASE}/{s}.csv?v=1&csvType=full&useColumnShortNames=true"
+
+
+# OWID grapher CSVs are tidy: Entity, Code, Year, <one metric column>. These three are
+# the KEY columns (who / which / when); the remaining column is the observation.
+_OWID_KEY_COLS = ("entity", "code", "year")
+
+
+def _owid_value_column(text: str) -> str:
+    """Auto-detect the single observation column of a tidy OWID grapher CSV.
+
+    Returns the one header column that is NOT a key column (Entity/Code/Year,
+    case-insensitive). Raises ``ValueError`` LOUDLY when zero or several remain — the
+    caller must then pass ``value_col`` explicitly (we never guess among many). Uses the
+    csv reader so a quoted column name containing a comma is handled correctly.
+    """
+    reader = csv.reader(io.StringIO(text))
+    try:
+        header = next(reader)
+    except StopIteration as exc:
+        raise ValueError("owid: empty CSV (no header row)") from exc
+    cols = [c.lstrip("\ufeff").strip() for c in header]
+    data = [c for c in cols if c.lower() not in _OWID_KEY_COLS]
+    if len(data) == 1:
+        return data[0]
+    raise ValueError(
+        f"owid: cannot auto-detect the value column among {cols!r}; pass value_col explicitly"
+    )
 
 
 def _default_getter(url: str) -> Any:
@@ -153,3 +206,56 @@ def fetch_eurostat(
     resp.raise_for_status()
     payload = resp.json()
     return parse_sdmx_json(payload, agency=agency, extracted_at=extracted_at)
+
+
+def fetch_owid(
+    slug: str,
+    *,
+    value_col: str | None = None,
+    series_id: str | None = None,
+    agency: str = "owid",
+    area_col: str = "Entity",
+    code_col: str | None = "Code",
+    time_col: str = "Year",
+    unit: str | None = None,
+    base_year: str | None = None,
+    adjustment: str | None = None,
+    get: Getter | None = None,
+    extracted_at: str | None = None,
+) -> list[StatFigure]:
+    """Fetch an Our World in Data per-chart CSV live and parse it into ``StatFigure`` rows.
+
+    The CSV path of the stats subsystem (unlocks ``parse_csv`` for live data). Same shape
+    as the other fetchers: the kill switch refuses UP FRONT (no socket while airplane mode
+    is engaged — testable with an injected getter), ``get`` is injectable, ``extracted_at``
+    stamps the vintage. The TEXT response is handed to :func:`src.stats.sdmx.parse_csv` — no
+    parsing here.
+
+    ``value_col`` names the observation column; when omitted it is AUTO-DETECTED as the
+    single non-key column (a tidy OWID grapher CSV has exactly one), and a CSV with several
+    data columns raises LOUDLY (pass ``value_col`` explicitly — we never guess among many).
+    ``series_id`` defaults to the ``slug`` (the stable chart identifier). The comparability
+    fields (``unit`` / ``base_year`` / ``adjustment``) come from the CALLER's curated config,
+    surfaced verbatim, never inferred — OWID CSVs carry no machine-readable unit metadata.
+    """
+    if kill_switch_active():
+        raise RuntimeError("network refused: airplane mode is engaged")
+    extracted_at = extracted_at or _now_iso()
+    getter = get or _default_getter
+    resp = getter(owid_grapher_url(slug))
+    resp.raise_for_status()
+    text = resp.text
+    col = value_col if (value_col and value_col.strip()) else _owid_value_column(text)
+    return parse_csv(
+        text,
+        agency=agency,
+        series_id=(series_id.strip() if series_id and series_id.strip() else slug.strip()),
+        extracted_at=extracted_at,
+        area_col=area_col,
+        time_col=time_col,
+        value_col=col,
+        code_col=code_col,
+        unit=unit,
+        base_year=base_year,
+        adjustment=adjustment,
+    )

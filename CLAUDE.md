@@ -4002,6 +4002,37 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **OWID-CSV LIVE FETCH CLIENT — unlocks the parse_csv parser for real data (§5B Phase A-CSV; same single-branch
+  harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after #479 merged; NEW
+  draft PR onto 0.09; backend ALGORITHM VERIFIED py3.11 standalone repro using the real `parse_csv` + ruff F/B +
+  mypy 0-new, the fetch/endpoint test runs in CI).** The `parse_csv` parser (#469, OWID grapher tidy CSV → figures)
+  had NO live data path; this adds it, following the established `fetch.py` pattern (guarded factory · kill-switch
+  refusal up front · injectable getter · transport never downgraded · delegate parsing to the offline module). NEW
+  `fetch.owid_grapher_url(slug)` → the documented OWID per-chart "Full data (CSV)" export
+  `https://ourworldindata.org/grapher/<slug>.csv?v=1&csvType=full&useColumnShortNames=true` (`OWID_GRAPHER_BASE`,
+  verify-on-use — a wrong slug fails LOUDLY [HTTP error / no rows], never a fabricated figure; covered by the
+  existing `STATS_API_AS_OF`, NO new dated constant so the freshness-registry protocol guard is untouched). NEW
+  `fetch.fetch_owid(slug, *, value_col=None, series_id=None, agency="owid", area_col="Entity", code_col="Code",
+  time_col="Year", unit/base_year/adjustment=None, get=None, extracted_at=None)`: refuses UP FRONT under airplane
+  mode (no socket — testable with an injected getter), GETs the TEXT, and hands it to the real `parse_csv`.
+  `value_col` is AUTO-DETECTED as the single non-key column (a tidy OWID grapher CSV — Entity/Code/Year/<metric> —
+  has exactly one; `_owid_value_column` via the csv reader so a quoted comma'd column name is handled), and a CSV
+  with several data columns raises LOUDLY (pass `value_col` — never guess among many). `series_id` defaults to the
+  slug (the stable chart id); the comparability fields come from the caller's curated config, verbatim, never
+  inferred (OWID CSVs carry no machine-readable unit). Honesty carries through `parse_csv`: a blank cell →
+  `value=None` (a published gap, never a fabricated 0), `Code` → `ref_area`, `extracted_at` the caller vintage.
+  WIRED into the ONE networked action `POST /api/stats/figures/fetch` as `source:"owid"` (FigureFetchBody gains
+  `slug`/`value_col`/`unit`; the ambiguous-value-column ValueError → a clean 422 naming the columns). owid
+  subscription auto-refresh is a FOLLOW-ON (the replay can't reconstruct a slug fetch yet), so the subscription
+  recording is scoped to the WB/SDMX families — never records an unreplayable sub. tests/test_stats_owid_fetch.py
+  (8: url shape/encoding/empty-rejects, autodetect+delegate+gap+url-recorded, explicit value_col+unit+series_id,
+  ambiguous-raises-loudly, kill-switch-refuses-no-socket on the injected AND default-getter paths) — runs in CI
+  (the guarded factory pulls in cryptography, which panics in the bare sandbox = the documented CI-only pattern);
+  the URL + auto-detect + delegation ALGORITHM was proven by a standalone py3.11 repro importing only the
+  stdlib-only `parse_csv`. ruff F/B clean; fetch.py + api/stats.py add 0 mypy errors; no UI strings (i18n
+  untouched). REMAINING: a curated OWID slug catalog (verify slugs on a networked box — 403 here); owid
+  subscription auto-refresh; the Eurostat JSON-stat fetch client (the JSON-stat parser also lacks a live path);
+  the ooMap stats layer frontend.
 - **CHOROPLETH STORE FEED + /api/stats/map ENDPOINT (§5B Phase C, the DATA feed for the pure ooViz layer;
   same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after
   #478 merged; NEW draft PR onto 0.09; backend ALGORITHM VERIFIED py3.11 standalone repro + ruff F/B + mypy
