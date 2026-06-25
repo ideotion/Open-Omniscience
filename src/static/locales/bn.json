@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "বিশ্ব ব্যাংক থেকে প্রতিটি দেশের আদর্শ দেশ-সূচক আনুন (অনলাইন, প্রথমে সম্মতি চায়)।",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "উৎস-তালিকার পরিধি (তালিকা কতগুলি দেশ জুড়ে, ISO 3166 অনুযায়ী মূল্যায়িত):",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "প্রতি দেশে আপনি কতগুলি নিবন্ধ সংগ্রহ করেছেন তার একটি বিশ্ব মানচিত্র (প্রতিটি উৎসের তালিকাভুক্ত দেশ অনুসারে)। ডেটা থেকে পরিমাপ করা; সরাসরি রিফ্রেশ হয়।",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "আপনি যা কিছু ডাউনলোড করেছেন এবং অ্যাপ তা থেকে যা কিছু এক্সট্রাপোলেট করেছে — প্রকৃত গণনা এবং ডিস্কে আকার, কখনও অনুমান নয়।"
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "আপনি যা কিছু ডাউনলোড করেছেন এবং অ্যাপ তা থেকে যা কিছু এক্সট্রাপোলেট করেছে — প্রকৃত গণনা এবং ডিস্কে আকার, কখনও অনুমান নয়।",
+  "Debug bundle (.json)": "ডিবাগ বান্ডল (.json)",
+  "Network log (.json)": "নেটওয়ার্ক লগ (.json)",
+  "Date-extraction log (.json)": "তারিখ-নিষ্কাশন লগ (.json)",
+  "Performance report (.json)": "পারফরম্যান্স রিপোর্ট (.json)",
+  "Scaling benchmark (.json)": "স্কেলিং বেঞ্চমার্ক (.json)",
+  "Keyword self-test (.json)": "কীওয়ার্ড স্ব-পরীক্ষা (.json)",
+  "Keyword-engine report (.json)": "কীওয়ার্ড-ইঞ্জিন রিপোর্ট (.json)",
+  "Keyword-growth (.json)": "কীওয়ার্ড-বৃদ্ধি (.json)",
+  "Home-card diagnostics (.json)": "হোম-কার্ড ডায়াগনস্টিকস (.json)",
+  "Keyword log (.zip)": "কীওয়ার্ড লগ (.zip)",
+  "All diagnostics (.zip)": "সমস্ত ডায়াগনস্টিকস (.zip)",
+  "All keywords (.zip)": "সমস্ত কীওয়ার্ড (.zip)",
+  "Large encrypted backup (volumes + parity)": "বড় এনক্রিপ্টেড ব্যাকআপ (ভলিউম + প্যারিটি)",
+  "Open evidence & custody →": "প্রমাণ ও হেফাজত খুলুন →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "প্যান করতে টানুন · বিস্তারিত জানতে একটি বিন্দুতে হোভার করুন · শহরের নাম পড়তে জুম করুন",
+  "Governments sections": "সরকার বিভাগসমূহ"
 }

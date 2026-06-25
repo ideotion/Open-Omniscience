@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate."
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.",
+  "Debug bundle (.json)": "Debug bundle (.json)",
+  "Network log (.json)": "Network log (.json)",
+  "Date-extraction log (.json)": "Date-extraction log (.json)",
+  "Performance report (.json)": "Performance report (.json)",
+  "Scaling benchmark (.json)": "Scaling benchmark (.json)",
+  "Keyword self-test (.json)": "Keyword self-test (.json)",
+  "Keyword-engine report (.json)": "Keyword-engine report (.json)",
+  "Keyword-growth (.json)": "Keyword-growth (.json)",
+  "Home-card diagnostics (.json)": "Home-card diagnostics (.json)",
+  "Keyword log (.zip)": "Keyword log (.zip)",
+  "All diagnostics (.zip)": "All diagnostics (.zip)",
+  "All keywords (.zip)": "All keywords (.zip)",
+  "Large encrypted backup (volumes + parity)": "Large encrypted backup (volumes + parity)",
+  "Open evidence & custody →": "Open evidence & custody →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "drag to pan · hover a dot for details · zoom in to read city names",
+  "Governments sections": "Governments sections"
 }

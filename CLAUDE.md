@@ -3983,10 +3983,18 @@ ruling, a contingency, or a deliberate-omission note.
   matches the source apostrophe/em-dash/ellipsis exactly — the recurring i18n trap) then SURGICALLY
   appended `"key": "translation"` before each locale's closing brace (no json re-dump → zero reformat;
   diff is +15/−1 per file = the 14 new keys + a comma on the previously-last line). Non-en AI-drafted,
-  FLAGGED for native review (the long honesty paragraphs especially). gate `--min 100` 1627→1641 ×12;
-  `--audit-chrome` 140→126. REMAINING ~126 untranslatable = mostly data/examples/URLs/regexes/proper-nouns
-  that CORRECTLY stay literal (NY.GDP.MKTP.CD, ollama.com/library, you@example.com, WTI, socks5://…) + the
-  harder mid-`<a>`-link sentence FRAGMENTS that need the de-tagging restructure (the established slower tail).
+  FLAGGED for native review (the long honesty paragraphs especially). SLICE 2 (same PR) keyed 16 MORE
+  clean single-node strings the same byte-exact way — the 12 diagnostics DOWNLOAD BUTTONS (Debug bundle /
+  Network log / Date-extraction log / Performance report / Scaling benchmark / Keyword self-test /
+  Keyword-engine report / Keyword-growth / Home-card diagnostics / Keyword log / All diagnostics / All
+  keywords, the `.json`/`.zip` suffix kept literal) + Large encrypted backup (volumes + parity) + the
+  "Open evidence & custody →" link + the world-map "drag to pan · …" hint + the Governments aria string.
+  gate `--min 100` 1627→1657 ×12; `--audit-chrome` 140→110 (30 keyed across the two slices). REMAINING
+  ~110 untranslatable = mostly data/examples/URLs/regexes/proper-nouns that CORRECTLY stay literal
+  (NY.GDP.MKTP.CD, ollama.com/library, you@example.com, WTI, socks5://…) + the long TECHNICAL honesty
+  paragraphs (Reed-Solomon parity / Merkle / Heaps β / &page=2 — DELIBERATELY left for native review, an
+  AI-mistranslated technical claim is worse than readable English) + the mid-`<a>`-link sentence FRAGMENTS
+  that need the de-tagging restructure (the established slower tail).
 - **COPYPASTA MANIPULATION CARD 2026-06-25 (Tier 4.13, the astroturf/copypasta card; branch
   claude/vibrant-thompson-bez6dq, draft PR onto 0.09; pure helper + card LOGIC VERIFIED py3.11 standalone +
   ruff F/B, card/endpoint tests in CI [sqlalchemy]).** The 6th of the nine manipulation cards, built because

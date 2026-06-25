@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Ambil indikator negara standar untuk setiap negara dari Bank Dunia (daring, meminta persetujuan terlebih dahulu).",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Jangkauan katalog sumber (berapa banyak negara yang dicakup katalog, dinilai terhadap ISO 3166):",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "Peta dunia tentang berapa banyak ARTIKEL yang telah Anda kumpulkan per negara (menurut negara katalog tiap sumber). Diukur dari data; menyegarkan secara langsung.",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Semua yang telah Anda UNDUH dan semua yang telah aplikasi EKSTRAPOLASIKAN darinya — jumlah nyata dan ukuran di disk, bukan perkiraan."
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Semua yang telah Anda UNDUH dan semua yang telah aplikasi EKSTRAPOLASIKAN darinya — jumlah nyata dan ukuran di disk, bukan perkiraan.",
+  "Debug bundle (.json)": "Paket debug (.json)",
+  "Network log (.json)": "Log jaringan (.json)",
+  "Date-extraction log (.json)": "Log ekstraksi tanggal (.json)",
+  "Performance report (.json)": "Laporan kinerja (.json)",
+  "Scaling benchmark (.json)": "Tolok ukur penskalaan (.json)",
+  "Keyword self-test (.json)": "Uji-mandiri kata kunci (.json)",
+  "Keyword-engine report (.json)": "Laporan mesin kata kunci (.json)",
+  "Keyword-growth (.json)": "Pertumbuhan kata kunci (.json)",
+  "Home-card diagnostics (.json)": "Diagnostik kartu beranda (.json)",
+  "Keyword log (.zip)": "Log kata kunci (.zip)",
+  "All diagnostics (.zip)": "Semua diagnostik (.zip)",
+  "All keywords (.zip)": "Semua kata kunci (.zip)",
+  "Large encrypted backup (volumes + parity)": "Cadangan terenkripsi besar (volume + paritas)",
+  "Open evidence & custody →": "Buka bukti & rantai pengawasan →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "seret untuk menggeser · arahkan ke titik untuk detail · perbesar untuk membaca nama kota",
+  "Governments sections": "Bagian Pemerintahan"
 }

@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "جلب المؤشرات القُطرية القياسية لكل دولة من البنك الدولي (عبر الإنترنت، يطلب موافقتك أولاً).",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "نطاق فهرس المصادر (عدد الدول التي يغطيها الفهرس، مُقيَّمًا وفق ISO 3166):",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "خريطة عالمية لعدد المقالات التي جمعتها لكل دولة (حسب الدولة المفهرسة لكل مصدر). مُقاس من البيانات؛ يُحدَّث مباشرةً.",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "كل ما قمت بتنزيله وكل ما استنتجه التطبيق منه — أعداد حقيقية وأحجام على القرص، وليست تقديرًا أبدًا."
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "كل ما قمت بتنزيله وكل ما استنتجه التطبيق منه — أعداد حقيقية وأحجام على القرص، وليست تقديرًا أبدًا.",
+  "Debug bundle (.json)": "حزمة التصحيح (.json)",
+  "Network log (.json)": "سجل الشبكة (.json)",
+  "Date-extraction log (.json)": "سجل استخراج التواريخ (.json)",
+  "Performance report (.json)": "تقرير الأداء (.json)",
+  "Scaling benchmark (.json)": "اختبار قياس التوسّع (.json)",
+  "Keyword self-test (.json)": "اختبار ذاتي للكلمات المفتاحية (.json)",
+  "Keyword-engine report (.json)": "تقرير محرّك الكلمات المفتاحية (.json)",
+  "Keyword-growth (.json)": "نمو الكلمات المفتاحية (.json)",
+  "Home-card diagnostics (.json)": "تشخيص بطاقات الصفحة الرئيسية (.json)",
+  "Keyword log (.zip)": "سجل الكلمات المفتاحية (.zip)",
+  "All diagnostics (.zip)": "كل التشخيصات (.zip)",
+  "All keywords (.zip)": "كل الكلمات المفتاحية (.zip)",
+  "Large encrypted backup (volumes + parity)": "نسخة احتياطية مشفّرة كبيرة (وحدات تخزين + تماثل)",
+  "Open evidence & custody →": "فتح الأدلة وسلسلة الحيازة →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "اسحب للتحريك · مرّر فوق نقطة للتفاصيل · كبّر لقراءة أسماء المدن",
+  "Governments sections": "أقسام الحكومات"
 }
