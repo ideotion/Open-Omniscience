@@ -3971,6 +3971,22 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **i18n SLICE — NEW TOP-LEVEL SURFACES ×12 2026-06-25 (the RC-gate "key the remaining English-fallback
+  panel strings" item; branch claude/vibrant-thompson-bez6dq, draft PR onto 0.09; VERIFIED: gate 100%
+  + audit drop + clean-append diff).** Keyed the 14 cleanest, highest-value new chrome strings from the
+  prior session's surfaces — the Library/Governments/Graphics + backup/folder labels: Graphics · Menu ·
+  Browse… · Pick a folder · Use this folder · Click a country · Keyword-growth curve · Back up (volumes +
+  parity) · Restore from a volume backup folder · Passphrase (encrypts the backup) · the Governments
+  "Fetch the standard country indicators…" action · the "Source-catalogue reach…" Library line · the
+  remark-10 world-map paragraph · the remark-16 "Everything you've DOWNLOADED…" Library line. METHOD: a
+  scratchpad script resolved each key BYTE-EXACT against the live `--audit-chrome` output (so the key
+  matches the source apostrophe/em-dash/ellipsis exactly — the recurring i18n trap) then SURGICALLY
+  appended `"key": "translation"` before each locale's closing brace (no json re-dump → zero reformat;
+  diff is +15/−1 per file = the 14 new keys + a comma on the previously-last line). Non-en AI-drafted,
+  FLAGGED for native review (the long honesty paragraphs especially). gate `--min 100` 1627→1641 ×12;
+  `--audit-chrome` 140→126. REMAINING ~126 untranslatable = mostly data/examples/URLs/regexes/proper-nouns
+  that CORRECTLY stay literal (NY.GDP.MKTP.CD, ollama.com/library, you@example.com, WTI, socks5://…) + the
+  harder mid-`<a>`-link sentence FRAGMENTS that need the de-tagging restructure (the established slower tail).
 - **COPYPASTA MANIPULATION CARD 2026-06-25 (Tier 4.13, the astroturf/copypasta card; branch
   claude/vibrant-thompson-bez6dq, draft PR onto 0.09; pure helper + card LOGIC VERIFIED py3.11 standalone +
   ruff F/B, card/endpoint tests in CI [sqlalchemy]).** The 6th of the nine manipulation cards, built because

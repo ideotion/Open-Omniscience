@@ -1631,5 +1631,19 @@
   "Method": "الطريقة",
   "Open corpus": "فتح المجموعة",
   "Details & corpus": "التفاصيل والمجموعة",
-  "Open this Lead's corpus in a new window": "فتح مجموعة هذا الخيط في نافذة جديدة"
+  "Open this Lead's corpus in a new window": "فتح مجموعة هذا الخيط في نافذة جديدة",
+  "Graphics": "الرسومات",
+  "Menu": "القائمة",
+  "Browse…": "تصفح…",
+  "Pick a folder": "اختر مجلدًا",
+  "Use this folder": "استخدم هذا المجلد",
+  "Click a country": "انقر على دولة",
+  "Keyword-growth curve": "منحنى نمو الكلمات المفتاحية",
+  "Back up (volumes + parity)": "النسخ الاحتياطي (وحدات تخزين + تماثل)",
+  "Restore from a volume backup folder": "الاستعادة من مجلد نسخ احتياطي بالوحدات",
+  "Passphrase (encrypts the backup)": "عبارة المرور (تشفّر النسخة الاحتياطية)",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "جلب المؤشرات القُطرية القياسية لكل دولة من البنك الدولي (عبر الإنترنت، يطلب موافقتك أولاً).",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "نطاق فهرس المصادر (عدد الدول التي يغطيها الفهرس، مُقيَّمًا وفق ISO 3166):",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "خريطة عالمية لعدد المقالات التي جمعتها لكل دولة (حسب الدولة المفهرسة لكل مصدر). مُقاس من البيانات؛ يُحدَّث مباشرةً.",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "كل ما قمت بتنزيله وكل ما استنتجه التطبيق منه — أعداد حقيقية وأحجام على القرص، وليست تقديرًا أبدًا."
 }

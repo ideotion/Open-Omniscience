@@ -1631,5 +1631,19 @@
   "Method": "পদ্ধতি",
   "Open corpus": "কর্পাস খুলুন",
   "Details & corpus": "বিবরণ ও কর্পাস",
-  "Open this Lead's corpus in a new window": "এই সূত্রের কর্পাস একটি নতুন উইন্ডোতে খুলুন"
+  "Open this Lead's corpus in a new window": "এই সূত্রের কর্পাস একটি নতুন উইন্ডোতে খুলুন",
+  "Graphics": "গ্রাফিক্স",
+  "Menu": "মেনু",
+  "Browse…": "ব্রাউজ করুন…",
+  "Pick a folder": "একটি ফোল্ডার বেছে নিন",
+  "Use this folder": "এই ফোল্ডার ব্যবহার করুন",
+  "Click a country": "একটি দেশে ক্লিক করুন",
+  "Keyword-growth curve": "কীওয়ার্ড-বৃদ্ধি বক্ররেখা",
+  "Back up (volumes + parity)": "ব্যাকআপ নিন (ভলিউম + প্যারিটি)",
+  "Restore from a volume backup folder": "ভলিউম ব্যাকআপ ফোল্ডার থেকে পুনরুদ্ধার করুন",
+  "Passphrase (encrypts the backup)": "পাসফ্রেজ (ব্যাকআপ এনক্রিপ্ট করে)",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "বিশ্ব ব্যাংক থেকে প্রতিটি দেশের আদর্শ দেশ-সূচক আনুন (অনলাইন, প্রথমে সম্মতি চায়)।",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "উৎস-তালিকার পরিধি (তালিকা কতগুলি দেশ জুড়ে, ISO 3166 অনুযায়ী মূল্যায়িত):",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "প্রতি দেশে আপনি কতগুলি নিবন্ধ সংগ্রহ করেছেন তার একটি বিশ্ব মানচিত্র (প্রতিটি উৎসের তালিকাভুক্ত দেশ অনুসারে)। ডেটা থেকে পরিমাপ করা; সরাসরি রিফ্রেশ হয়।",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "আপনি যা কিছু ডাউনলোড করেছেন এবং অ্যাপ তা থেকে যা কিছু এক্সট্রাপোলেট করেছে — প্রকৃত গণনা এবং ডিস্কে আকার, কখনও অনুমান নয়।"
 }

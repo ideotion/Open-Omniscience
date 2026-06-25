@@ -1631,5 +1631,19 @@
   "Method": "Метод",
   "Open corpus": "Открыть корпус",
   "Details & corpus": "Подробности и корпус",
-  "Open this Lead's corpus in a new window": "Открыть корпус этой зацепки в новом окне"
+  "Open this Lead's corpus in a new window": "Открыть корпус этой зацепки в новом окне",
+  "Graphics": "Графика",
+  "Menu": "Меню",
+  "Browse…": "Обзор…",
+  "Pick a folder": "Выберите папку",
+  "Use this folder": "Использовать эту папку",
+  "Click a country": "Нажмите на страну",
+  "Keyword-growth curve": "Кривая роста ключевых слов",
+  "Back up (volumes + parity)": "Создать резервную копию (тома + чётность)",
+  "Restore from a volume backup folder": "Восстановить из папки резервной копии по томам",
+  "Passphrase (encrypts the backup)": "Парольная фраза (шифрует резервную копию)",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Получить стандартные страновые показатели для каждой страны из Всемирного банка (онлайн, сначала запрашивает согласие).",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Охват каталога источников (сколько стран охватывает каталог, оценка по ISO 3166):",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "Карта мира, показывающая, сколько СТАТЕЙ вы собрали по каждой стране (по каталогизированной стране каждого источника). Измерено по данным; обновляется в реальном времени.",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Всё, что вы ЗАГРУЗИЛИ, и всё, что приложение ЭКСТРАПОЛИРОВАЛО из этого — реальные подсчёты и размеры на диске, никогда не оценка."
 }

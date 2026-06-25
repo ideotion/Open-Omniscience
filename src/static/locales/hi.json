@@ -1631,5 +1631,19 @@
   "Method": "विधि",
   "Open corpus": "कोष खोलें",
   "Details & corpus": "विवरण और कोष",
-  "Open this Lead's corpus in a new window": "इस सुराग का कोष नई विंडो में खोलें"
+  "Open this Lead's corpus in a new window": "इस सुराग का कोष नई विंडो में खोलें",
+  "Graphics": "ग्राफ़िक्स",
+  "Menu": "मेन्यू",
+  "Browse…": "ब्राउज़ करें…",
+  "Pick a folder": "एक फ़ोल्डर चुनें",
+  "Use this folder": "इस फ़ोल्डर का उपयोग करें",
+  "Click a country": "किसी देश पर क्लिक करें",
+  "Keyword-growth curve": "कीवर्ड-वृद्धि वक्र",
+  "Back up (volumes + parity)": "बैकअप लें (वॉल्यूम + पैरिटी)",
+  "Restore from a volume backup folder": "वॉल्यूम बैकअप फ़ोल्डर से पुनर्स्थापित करें",
+  "Passphrase (encrypts the backup)": "पासफ़्रेज़ (बैकअप को एन्क्रिप्ट करता है)",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "विश्व बैंक से हर देश के मानक देश संकेतक प्राप्त करें (ऑनलाइन, पहले सहमति मांगता है)।",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "स्रोत-सूची की पहुँच (सूची कितने देशों को कवर करती है, ISO 3166 के अनुसार आंका गया):",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "एक विश्व मानचित्र जो दर्शाता है कि आपने प्रति देश कितने लेख एकत्र किए हैं (प्रत्येक स्रोत के सूचीबद्ध देश के अनुसार)। डेटा से मापा गया; लाइव रिफ़्रेश होता है।",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "वह सब कुछ जो आपने डाउनलोड किया है और वह सब कुछ जो ऐप ने उससे एक्सट्रपोलेट किया है — वास्तविक गणनाएँ और डिस्क पर आकार, कभी अनुमान नहीं।"
 }
