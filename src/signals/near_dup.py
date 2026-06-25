@@ -69,6 +69,75 @@ def shingles(text: str, k: int = 5) -> set[int]:
     return out
 
 
+def shared_word_ngrams(
+    docs: dict[str, str],
+    *,
+    k: int = 8,
+    min_docs: int = 2,
+    max_phrases: int = 200,
+) -> list[dict]:
+    """Verbatim ``k``-word phrases that appear in at least ``min_docs`` DISTINCT documents.
+
+    Unlike :func:`shingles` (which *hashes* word k-shingles for MinHash), this keeps the
+    phrase TEXT, so a caller can SHOW the copied span — the seed of the copypasta /
+    shared-talking-point card. Consecutive shared k-grams within a document are merged into
+    the longest contiguous phrase, and each reported phrase carries the documents that
+    contain it IN FULL (the intersection of its constituent k-grams' document sets), so a
+    copied sentence is reported once as its whole text rather than as many overlapping
+    windows. A phrase wholly contained (word-aligned) in a longer reported phrase over the
+    same-or-fewer documents is dropped.
+
+    Returns ``[{"phrase", "n_docs", "doc_ids"}]`` sorted by ``n_docs`` desc. Pure: no DB,
+    no network; case-folded and whitespace-normalised via the shared word tokeniser. This
+    is a *structural* measurement — shared text — never a judgement of intent or truth.
+    """
+    if k < 1 or min_docs < 2:
+        return []
+    toks = {d: _WORD_RE.findall(t.lower()) for d, t in docs.items()}
+    gram_docs: dict[tuple[str, ...], set[str]] = {}
+    for d, ws in toks.items():
+        for i in range(len(ws) - k + 1):
+            gram_docs.setdefault(tuple(ws[i : i + k]), set()).add(d)
+
+    def _shared(g: tuple[str, ...]) -> bool:
+        return len(gram_docs.get(g, ())) >= min_docs
+
+    # Walk each document, merging maximal runs of consecutive shared k-grams into spans.
+    spans: dict[str, set[str]] = {}
+    for ws in toks.values():
+        n = len(ws)
+        i = 0
+        while i <= n - k:
+            if not _shared(tuple(ws[i : i + k])):
+                i += 1
+                continue
+            j = i
+            while j + 1 <= n - k and _shared(tuple(ws[j + 1 : j + 1 + k])):
+                j += 1
+            words = ws[i : j + k]
+            # Documents containing the WHOLE span = intersection of its k-grams' doc sets.
+            common: set[str] = set.intersection(
+                *(gram_docs[tuple(words[t : t + k])] for t in range(len(words) - k + 1))
+            )
+            if len(common) >= min_docs:
+                spans.setdefault(" ".join(words), set()).update(common)
+            i = j + 1
+
+    items = [{"phrase": p, "n_docs": len(ds), "doc_ids": sorted(ds)} for p, ds in spans.items()]
+    # Drop a phrase fully contained (word-aligned) in a longer one over the same docs.
+    items.sort(key=lambda r: (-len(r["phrase"]), -r["n_docs"]))
+    kept: list[dict] = []
+    for r in items:
+        rp = f" {r['phrase']} "
+        if any(
+            rp in f" {k2['phrase']} " and set(r["doc_ids"]) <= set(k2["doc_ids"]) for k2 in kept
+        ):
+            continue
+        kept.append(r)
+    kept.sort(key=lambda r: (-r["n_docs"], -len(r["phrase"])))
+    return kept[:max_phrases]
+
+
 def _h64(s: str) -> int:
     """A stable 64-bit hash of a string (blake2b, not Python's salted hash())."""
     import hashlib

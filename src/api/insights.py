@@ -927,6 +927,29 @@ def insights_flooded_topics(
     )
 
 
+@router.get("/copypasta")
+def insights_copypasta(
+    recent_days: int = Query(14, ge=1, le=365, description="recent window to scan"),
+    k: int = Query(8, ge=3, le=40, description="minimum verbatim phrase length, in words"),
+    min_sources: int = Query(3, ge=2, le=100, description="distinct-source surfacing gate"),
+    limit: int = Query(12, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Verbatim phrases copied across many DISTINCT sources in articles that are NOT whole
+    duplicates — a coordinated talking point / copypasta (manipulation-pattern card). Names
+    the STRUCTURE, never intent: independence is distinct sources (not article count); whole-
+    article wire republish is excluded (echo_chamber's job); the innocent twin (shared quote /
+    boilerplate) is stated beside the pattern; no score."""
+    from src.analytics.copypasta import find_copypasta
+
+    return _cached(
+        _ckey("copypasta", recent_days=recent_days, k=k, min_sources=min_sources, limit=limit),
+        lambda: find_copypasta(
+            db, recent_days=recent_days, k=k, min_sources=min_sources, max_items=limit
+        ),
+    )
+
+
 def _kind(kind: str | None) -> str | None:
     """Pass through only recognised kind filters (others ignored)."""
     return kind if kind in _VALID_KINDS else None

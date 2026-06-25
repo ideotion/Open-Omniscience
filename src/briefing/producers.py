@@ -2070,6 +2070,70 @@ def flooded_topic(session) -> list[Card]:
     return cards
 
 
+_MAX_COPYPASTA = 4
+
+
+def copypasta(session) -> list[Card]:
+    """Surface verbatim text copied across many DISTINCT sources in articles that are NOT
+    whole duplicates — a coordinated talking point / copypasta (manipulation-pattern card).
+
+    Names a STRUCTURE, never intent: independence is distinct SOURCES (not article count);
+    spans whose whole articles are near-dups across that many sources are EXCLUDED as wire
+    republish (that is echo_chamber's job); the innocent twin (a shared quote / press-release
+    line / boilerplate) is stated beside the pattern. No score.
+    """
+    try:
+        from src.analytics.copypasta import COPYPASTA_CAVEAT, find_copypasta
+
+        found = find_copypasta(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("copypasta scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_COPYPASTA]:
+        phrase = it["phrase"]
+        shown = phrase if len(phrase) <= 80 else phrase[:77] + "…"
+        cards.append(
+            Card(
+                type="copypasta",
+                title=f"Identical wording in {it['distinct_sources']} sources: “{shown}”",
+                summary=(
+                    f"The verbatim phrase “{shown}” appears in {it['n_articles']} articles "
+                    f"across {it['distinct_sources']} distinct sources whose full articles are "
+                    "not duplicates of one another. A shared quote, press-release line or "
+                    "boilerplate does this innocently — read them and judge."
+                ),
+                bucket="overtold",
+                signal={
+                    "metric": "distinct_sources",
+                    "value": it["distinct_sources"],
+                    "n_articles": it["n_articles"],
+                    "n_words": it["n_words"],
+                    "sources": it["sources"],
+                },
+                method=found.get("method", ""),
+                caveat=COPYPASTA_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["n_articles"],
+                key=f"copypasta:{phrase[:60]}",
+                trigger=_trigger(
+                    "The exact same sentence turns up word-for-word across several separate "
+                    "sources, in articles that are otherwise different. A shared quote, a "
+                    "press-release line or common boilerplate explains most of these — but it "
+                    "is also how a coordinated talking point spreads. Read them and judge.",
+                    [
+                        ("Distinct sources sharing the phrase", str(it["distinct_sources"])),
+                        ("Articles", str(it["n_articles"])),
+                        ("Phrase length", f"{it['n_words']} words"),
+                        ("Whole-article wire republish", "excluded ✓"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -2097,6 +2161,7 @@ _DEFAULT_PRODUCERS = (
     ("headline_body_mismatch", headline_body_mismatch),
     ("manufactured_emergence", manufactured_emergence),
     ("flooded_topic", flooded_topic),
+    ("copypasta", copypasta),
 )
 
 

@@ -170,8 +170,9 @@
 - [x] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket — DONE (2026-06-24): `gd_combo_table` (underscore template id) already drops via the shipped §2.6 `_is_code_token` rule; `govdelivery` STAYS content per ruling #4. Added a self-test golden case pinning both. The bucket's undetected-English half is the shipped §2.6 langdetect.
 - [ ] Decide zh/ja segmentation (currently no keywords for those)
 
-### Manipulation-pattern cards (5 of 9 shipped)
-- [ ] #4 "bury" half · astroturf / copypasta · outrage-intensity · event-timed-op (needs elections roster)
+### Manipulation-pattern cards (6 of 9 shipped)
+- [x] astroturf / copypasta — DONE (2026-06-25): a SPAN-level card distinct from echo_chamber (verbatim phrase across many distinct sources in NON-duplicate articles; wire republish excluded). `src/signals/near_dup.py:shared_word_ngrams` + `src/analytics/copypasta.py` + producer + `GET /api/insights/copypasta`.
+- [ ] #4 "bury" half (needs an external trigger) · outrage-intensity (secondary annotation) · event-timed-op (needs elections roster)
 
 ### Release / housekeeping
 - [ ] Human click-through of all browser-unverified UI
