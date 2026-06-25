@@ -139,3 +139,93 @@ def test_keyword_only_scope_produces_identical_keyword_rows_to_full(db):
     index_article(db, a2, extractor=ex, scope="keywords")
     assert _kw_set(db, a1.id) == _kw_set(db, a2.id)
     assert _kw_set(db, a1.id)  # non-empty (the comparison isn't vacuous)
+
+
+# --- Phase 1.3: batched re-index commits (COLLECTOR_WRITER_BATCHING.md) ------- #
+
+
+def _mentions_snapshot(db):
+    """All (article_id, keyword_id, count) mention rows — compared across runs."""
+    return sorted(
+        (m.article_id, m.keyword_id, m.count) for m in db.query(KeywordMention).all()
+    )
+
+
+def _live_counters(db):
+    """The authoritative per-keyword counts from the live GROUP BY over mentions."""
+    from sqlalchemy import distinct, func
+
+    rows = (
+        db.query(
+            KeywordMention.keyword_id,
+            func.sum(KeywordMention.count),
+            func.count(distinct(KeywordMention.article_id)),
+        )
+        .group_by(KeywordMention.keyword_id)
+        .all()
+    )
+    return {kid: (int(s), int(a)) for kid, s, a in rows}
+
+
+def _stored_counters(db):
+    """The denormalised counters on the Keyword rows (for keywords with mentions)."""
+    return {
+        kw.id: (kw.mention_count, kw.article_count)
+        for kw in db.query(Keyword).filter(Keyword.mention_count > 0).all()
+    }
+
+
+def test_batched_reindex_matches_per_article_and_keeps_counters_exact(db):
+    """The killer no-loss assert (Phase 1.3): a batched re-index (commit_batch>1)
+    produces IDENTICAL keyword rows + IDENTICAL counters to the per-article path, and
+    the counters equal the live GROUP BY (no drift from batching)."""
+    from src.analytics.store import reindex_all_batch
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ex = BaselineExtractor()
+    # Several articles SHARING keywords, so counter deltas accumulate within a batch.
+    for i in range(7):
+        _article(db, f"h{i}", "Election results show inflation across the global economy and trade.", title=f"T{i}")
+
+    r1 = reindex_all_batch(db, extractor=ex, limit=100, commit_batch=1)  # per-article
+    assert r1["reindexed"] == 7 and r1["failed"] == 0
+    snap1, ctr1 = _mentions_snapshot(db), _stored_counters(db)
+
+    r2 = reindex_all_batch(db, extractor=ex, limit=100, commit_batch=3)  # batched (idempotent re-run)
+    assert r2["reindexed"] == 7 and r2["failed"] == 0
+    snap2, ctr2 = _mentions_snapshot(db), _stored_counters(db)
+
+    assert snap1 == snap2  # identical mention rows
+    assert ctr1 == ctr2  # identical denormalised counters
+    assert ctr2 == _live_counters(db)  # counters == the live GROUP BY (zero drift)
+
+
+def test_batched_reindex_failure_fallback_loses_nothing(db):
+    """A failure building ONE article mid-batch rolls the batch back and redoes it
+    per-article — every other article is fully indexed and the counters stay exact
+    (no half-batch, no data loss). Mirrors the proven ingest_emails fallback."""
+    from src.analytics.store import reindex_all_batch
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ex = BaselineExtractor()
+    for i in range(6):
+        _article(db, f"h{i}", "Energy prices and the drought pushed agriculture costs higher today.", title=f"T{i}")
+    arts = db.query(Article).order_by(Article.id).all()
+    bad_id = arts[2].id  # "T2" raises during extraction, mid-batch
+
+    class _FlakyExtractor:
+        name = ex.name
+
+        def extract(self, content, *, title="", language="en"):
+            if title == "T2":
+                raise RuntimeError("boom")
+            return ex.extract(content, title=title, language=language)
+
+    r = reindex_all_batch(db, extractor=_FlakyExtractor(), limit=100, commit_batch=4)
+    assert r["failed"] == 1 and r["reindexed"] == 5
+    for a in arts:
+        n = db.query(KeywordMention).filter_by(article_id=a.id).count()
+        assert n == 0 if a.id == bad_id else n > 0  # only the bad one lost its mentions
+    assert _stored_counters(db) == _live_counters(db)  # counters exact despite the failure

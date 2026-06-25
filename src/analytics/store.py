@@ -185,6 +185,7 @@ def index_article(
     country: str | None = None,
     city: str | None = None,
     scope: str = "full",
+    commit: bool = True,
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally.
 
@@ -192,7 +193,16 @@ def index_article(
     when/where/who (dates/places/entities) + sentiment; ``"keywords"`` does the keyword
     pass ONLY and leaves the dates/places/entities + sentiment untouched — ≈⅔ less work
     for a keyword-only cleanup. The language deduction stays in BOTH (it picks the
-    extraction stoplist + the keyword's analytic language)."""
+    extraction stoplist + the keyword's analytic language).
+
+    ``commit`` (keyword-engine Phase 1.3, COLLECTOR_WRITER_BATCHING.md): ``True``
+    (default) commits this article's work — byte-identical to every existing caller.
+    ``False`` leaves the mentions + counter deltas (+ when/where/who) PENDING in the
+    session so a caller can batch several articles into ONE commit (one fsync). Because
+    the counter deltas accumulate read-your-own-writes within a single transaction, a
+    batched commit equals the sum of the per-article commits exactly. A batching caller
+    MUST provide the proven rollback-then-redo-per-article fallback on a commit failure
+    (see :func:`reindex_all_batch`) so a collision/lock never drops a batch-mate."""
     content = article.get_content() if hasattr(article, "get_content") else (article.content or "")
 
     # SECONDARY/DEDUCED language (field §2.6, maintainer ruling Q3): when the
@@ -330,7 +340,8 @@ def index_article(
         if is_locked_error(exc):
             raise
         _LOG.warning("when/where/who persistence failed for %s", article.id, exc_info=True)
-    session.commit()
+    if commit:
+        session.commit()
     return {
         "article_id": article.id,
         "mentions": written,
@@ -392,7 +403,13 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
 
 
 def reindex_all_batch(
-    session: Session, *, extractor, limit: int = 300, after_id: int = 0, scope: str = "full"
+    session: Session,
+    *,
+    extractor,
+    limit: int = 300,
+    after_id: int = 0,
+    scope: str = "full",
+    commit_batch: int = 1,
 ) -> dict:
     """FORCE-re-index a batch of ALL articles (id > ``after_id``), oldest first.
 
@@ -402,9 +419,18 @@ def reindex_all_batch(
     keywords before ``strip_markup`` landed). ``index_article`` is delete-then-reinsert
     per article, so the new engine's output overwrites the old; AI artifacts
     (summaries/translations and the AI-derived keyword rows) are untouched. PAGED:
-    returns ``last_id`` so the
-    caller loops (after_id=last_id) until ``done``. One bad article never aborts the
-    batch. Counts only — no score."""
+    returns ``last_id`` so the caller loops (after_id=last_id) until ``done``. One bad
+    article never aborts the batch. Counts only — no score.
+
+    ``commit_batch`` (keyword-engine Phase 1.3, COLLECTOR_WRITER_BATCHING.md): >1 commits
+    every N articles instead of once per article — fewer fsyncs through the encrypted
+    writer on a big re-index. Default 1 = the per-article behaviour, byte-identical. NO
+    DATA LOSS: a batch-commit failure (a transient lock) OR an error building one
+    article's mentions rolls the batch back and REDOES it one article at a time (each
+    committed, a bad/locked one isolated) — the proven ``ingest_emails`` fallback;
+    re-index is idempotent, so the redo reproduces the full result. The single-writer
+    gate is HELD across a batch, so keep ``commit_batch`` modest for a background re-index
+    that must interleave with a live scrape."""
     rows = (
         session.query(Article.id)
         .filter(Article.id > after_id)
@@ -416,18 +442,75 @@ def reindex_all_batch(
     reindexed = 0
     failed = 0
     last_id = after_id
-    for aid in ids:
+    commit_batch = max(1, commit_batch)
+
+    def _reindex_one(aid: int, *, commit: bool) -> bool:
+        """Index one article: True if re-indexed, False if it was missing (deleted
+        mid-run). ``commit=False`` lets a failure PROPAGATE so the batch handler can roll
+        back and redo per-article; ``commit=True`` callers catch to isolate one article."""
         art = session.get(Article, aid)
-        last_id = aid
         if art is None:
-            continue
-        try:
-            index_article(session, art, extractor=extractor, country=art.country, scope=scope)
-            reindexed += 1
-        except Exception:  # noqa: BLE001 - one bad article must not abort the batch
-            session.rollback()
-            failed += 1
-            _LOG.warning("re-index of article %s failed", aid, exc_info=True)
+            return False
+        index_article(session, art, extractor=extractor, country=art.country, scope=scope, commit=commit)
+        return True
+
+    def _redo_committed(aids: list[int]) -> None:
+        """Re-index each article one-at-a-time, COMMITTED — the no-loss fallback after a
+        batch rollback. A bad/locked article is isolated (rollback + failed++), never
+        dropping its batch-mates (idempotent re-index reproduces the full result)."""
+        nonlocal reindexed, failed
+        for baid in aids:
+            try:
+                if _reindex_one(baid, commit=True):
+                    reindexed += 1
+            except Exception:  # noqa: BLE001 - isolate one bad/locked article
+                session.rollback()
+                failed += 1
+                _LOG.warning("re-index of article %s failed (redo)", baid, exc_info=True)
+
+    if commit_batch <= 1:
+        for aid in ids:
+            last_id = aid
+            try:
+                if _reindex_one(aid, commit=True):
+                    reindexed += 1
+            except Exception:  # noqa: BLE001 - one bad article must not abort the batch
+                session.rollback()
+                failed += 1
+                _LOG.warning("re-index of article %s failed", aid, exc_info=True)
+    else:
+        pending: list[int] = []
+
+        def _flush() -> None:
+            nonlocal reindexed
+            if not pending:
+                return
+            try:
+                session.commit()
+                reindexed += len(pending)
+            except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
+                session.rollback()
+                _redo_committed(list(pending))
+            pending.clear()
+
+        for aid in ids:
+            last_id = aid
+            try:
+                if _reindex_one(aid, commit=False):
+                    pending.append(aid)
+            except Exception:  # noqa: BLE001 - this article corrupted the in-flight batch
+                # Roll back (drops this article's partial work AND the uncommitted batch),
+                # redo the accumulated batch per-article (committed), count this one failed.
+                session.rollback()
+                redo = list(pending)
+                pending.clear()
+                _redo_committed(redo)
+                failed += 1
+                _LOG.warning("re-index of article %s failed (batch)", aid, exc_info=True)
+                continue
+            if len(pending) >= commit_batch:
+                _flush()
+        _flush()
     remaining = (
         session.query(Article.id).filter(Article.id > last_id).count() if ids else 0
     )

@@ -30,6 +30,7 @@ correctness net beneath the persisted cursor.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -203,11 +204,23 @@ class ReindexJobManager:
                         self._total = int(session.query(Article.id).count())
                     after = self._cursor
                     self._save()
+                # Phase 1.3: batch commits to cut fsyncs through the encrypted writer.
+                # Default 1 = per-article (byte-identical); the maintainer raises it +
+                # measures, mindful the gate is held across a batch (interleave w/ scrape).
+                try:
+                    commit_batch = max(1, int(os.getenv("OO_REINDEX_COMMIT_BATCH", "1") or "1"))
+                except ValueError:
+                    commit_batch = 1
                 while True:
                     if self._stop.is_set():
                         break
                     r = reindex_all_batch(
-                        session, extractor=extractor, limit=_BATCH, after_id=after, scope=self._scope
+                        session,
+                        extractor=extractor,
+                        limit=_BATCH,
+                        after_id=after,
+                        scope=self._scope,
+                        commit_batch=commit_batch,
                     )
                     after = int(r["last_id"])
                     with self._lock:

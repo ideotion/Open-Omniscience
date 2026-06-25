@@ -531,8 +531,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   status-reported] → `POST /reindex-job?scope=` [400 on a bad scope]; the Settings "Clean up keywords"
   button now uses keyword-only, "Re-index the whole corpus" stays full; default `scope="full"` =
   byte-identical [47-test ingest/index hot-path regression green]; tests in test_analytics_store.py +
-  test_reindex_job.py + the invariant scope guard. VERIFIED here.) REMAINING in P1: **1.3** batched
-  commits · **1.4** FTS5 `'optimize'` + cache tuning. Then P2 (rollups
+  test_reindex_job.py + the invariant scope guard. VERIFIED here.) **P1.3 SHIPPED** (batched commits,
+  COLLECTOR_WRITER_BATCHING.md — `index_article(commit=True)` primitive [False leaves the work PENDING
+  for a batched commit; default True byte-identical] + `reindex_all_batch(commit_batch=1)` batches every
+  N commits with the PROVEN `ingest_emails` rollback-then-redo-per-article fallback [`_redo_committed`]
+  so a lock/collision/extractor-error never drops a batch-mate [idempotent re-index reproduces it]; the
+  job reads `OO_REINDEX_COMMIT_BATCH` [default 1]. NO-LOSS tests: batched==per-article with counters ==
+  the live GROUP BY [zero drift], the failure-fallback loses nothing, AND a contention test
+  [test_write_gate_dataloss.py] — a batched re-index HOLDING the gate across a batch races concurrent
+  ingest with ZERO locks/loss + exact sentinel counters. **DECISION (autonomous, recorded): the
+  COLLECTOR-path batching [the doc's full store_fetched restructure] is DEFERRED — it is live-perf-gated
+  per its own doc [unmeasurable here] + the riskiest 50-worker hot-path change; the `commit=False`
+  primitive now exists so it is a smaller follow-up when the maintainer can measure live.** VERIFIED
+  here: 57-test ingest/index hot-path regression + 160 targeted green, ruff F/B, mypy 127≤127.)
+  REMAINING in P1: **1.4** FTS5 `'optimize'` + cache tuning. Then P2 (rollups
   + DuckDB-GCM verify) · P3 (eval harness) · P4 (quality) · P5 (serving) · P6 (entities) per the brief.
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte

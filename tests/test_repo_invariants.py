@@ -287,6 +287,13 @@ def test_reindex_background_job_is_wired():
     assert 'scope: str = "full"' in job  # the manager accepts scope
     assert "scope must be" in api  # the endpoint validates scope
     assert '_startReindexJob(true, "keywords")' in app  # cleanup uses the keyword-only scope
+    # Phase 1.3: batched commits (COLLECTOR_WRITER_BATCHING.md) — the commit primitive +
+    # the batched re-index path with the rollback-then-redo-per-article no-loss fallback.
+    assert "commit: bool = True" in store  # index_article gains the commit primitive
+    assert "if commit:" in store  # the conditional final commit
+    assert "commit_batch: int = 1" in store  # reindex_all_batch batches (default 1 = byte-identical)
+    assert "_redo_committed" in store  # the no-loss fallback (mirror ingest_emails)
+    assert "OO_REINDEX_COMMIT_BATCH" in job  # the job reads the batch-size knob (default 1)
 
 
 def test_articles_endpoint_serialises_stored_sentiment():
