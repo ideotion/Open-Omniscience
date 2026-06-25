@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from src.database.models import StatFigure as StatFigureRow
 from src.stats.revision import find_revision_anomalies
 from src.stats.sdmx import StatFigure
+from src.stats.series import to_chart_series
 
 
 def store_figures(session: Session, figures: Iterable[StatFigure]) -> dict:
@@ -219,6 +220,31 @@ def revision_anomalies(
         z_min=z_min,
         max_items=max_items,
     )
+
+
+def chart_series(
+    session: Session, *, series_id: str, ref_area: str, agency: str | None = None
+) -> dict:
+    """An honest, comparability-segmented time series for ONE (series_id, ref_area) — the
+    feed for a stat chart. Loads the matching stored figures (every vintage; the adapter
+    keeps the latest per period), adapts them to StatFigures, and runs the pure
+    :func:`~src.stats.series.to_chart_series`: a new line SEGMENT at every unit / base-year /
+    SA-NSA change (never joined across a break), a published gap kept as ``None`` (the chart
+    breaks the line, never interpolates), unparseable periods surfaced. Counts only, no score.
+
+    Optionally scope by ``agency`` — omit it only when a single producer publishes this
+    series for this area, since interleaving producers would mix their vintages (use the
+    /triangulate endpoint to compare producers side by side instead).
+    """
+    sid = series_id.strip()
+    area = ref_area.strip().upper()
+    q = select(StatFigureRow).where(
+        StatFigureRow.series_id == sid, StatFigureRow.ref_area == area
+    )
+    if agency:
+        q = q.where(StatFigureRow.agency == agency.strip().lower())
+    figures = [StatFigure(**_row_dict(r)) for r in session.execute(q).scalars()]
+    return to_chart_series(figures, ref_area=area, series_id=sid)
 
 
 # --------------------------------------------------------------------------- #

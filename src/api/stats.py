@@ -252,6 +252,27 @@ def figure_vintages(
         )
 
 
+@router.get("/figures/series")
+def figure_series(
+    series_id: str = Query(...),
+    ref_area: str = Query(...),
+    agency: str | None = Query(None, description="scope to one producer (recommended)"),
+) -> dict:
+    """An honest, comparability-segmented time series for ONE (series_id, ref_area) — the
+    feed for a stat chart (the src/stats/series.py to_chart_series output).
+
+    A new line segment starts at every unit / base-year / seasonal-adjustment change (values
+    across a break are never joined), a published gap is kept as null (the chart breaks the
+    line, never interpolates), and periods that can't be placed are listed separately. Scope
+    by ``agency`` for a single producer; omit only when one producer publishes this series
+    (use /triangulate to compare producers). Counts only, no score."""
+    from src.database.session import session_scope
+    from src.stats.store import chart_series
+
+    with session_scope() as db:
+        return chart_series(db, series_id=series_id, ref_area=ref_area, agency=agency)
+
+
 @router.get("/revision-anomalies")
 def revision_anomalies_view(
     agency: str | None = Query(None),

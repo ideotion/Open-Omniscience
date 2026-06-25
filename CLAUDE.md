@@ -4002,6 +4002,22 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **CHART-SERIES STORE-PULL + /api/stats/figures/series ENDPOINT 2026-06-25 (the honest-chart DATA FEED;
+  same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after
+  #474 merged; NEW draft PR onto 0.09; backend ADAPTER+to_chart_series logic VERIFIED py3.11 standalone + ruff
+  F/B/full + mypy 0-new, the ORM/endpoint test runs in CI).** The feed the stat time-series chart (Phase B3)
+  needs. `store.chart_series(session, *, series_id, ref_area, agency=None)` loads the matching `StatFigureRow`s
+  for ONE (series_id, ref_area), adapts each via `StatFigure(**_row_dict(r))` (same DRY adapter as the revision
+  store-pull), and runs the pure merged `to_chart_series` — so the honesty lives in the SHAPE: a new line
+  SEGMENT at every unit / base-year / SA-NSA change (NEVER joined across the break), a published gap kept as
+  `None` (the chart breaks the line, never interpolates), unparseable periods surfaced, latest-vintage-wins
+  dedup, counts only no score. `GET /api/stats/figures/series` (series_id + ref_area required, agency optional
+  — scope a single producer; omit only when one publishes the series, else use /triangulate). tests/
+  test_stats_chart_series_store.py (3: segments-at-a-base-year-break + keeps-the-gap, scopes-by-agency,
+  empty-honest) over an in-memory SQLite (CI, needs sqlalchemy). NO new `*_AS_OF`/registry; no UI strings.
+  REMAINING: the Settings → Statistics SVG time-series CHART drawing `ooViz.statSeriesPaths` over this feed
+  (Phase B3, browser-deferred — comparability breaks marked, gaps shown, the caveat visible); choropleth
+  (Phase C).
 - **REVISION-ANOMALIES GUI SURFACE (Settings → Statistics) 2026-06-25 (makes the merged reliable-memory
   endpoint GUI-reachable; same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the
   freshly-merged 0.09 after #473 merged; NEW draft PR onto 0.09; FRONTEND, BROWSER-UNVERIFIED per fork-3 —
