@@ -170,9 +170,10 @@
 - [x] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket — DONE (2026-06-24): `gd_combo_table` (underscore template id) already drops via the shipped §2.6 `_is_code_token` rule; `govdelivery` STAYS content per ruling #4. Added a self-test golden case pinning both. The bucket's undetected-English half is the shipped §2.6 langdetect.
 - [ ] Decide zh/ja segmentation (currently no keywords for those)
 
-### Manipulation-pattern cards (6 of 9 shipped)
+### Manipulation-pattern cards (7 of 9 measures built; 6 standalone producers + outrage as secondary)
 - [x] astroturf / copypasta — DONE (2026-06-25): a SPAN-level card distinct from echo_chamber (verbatim phrase across many distinct sources in NON-duplicate articles; wire republish excluded). `src/signals/near_dup.py:shared_word_ngrams` + `src/analytics/copypasta.py` + producer + `GET /api/insights/copypasta`.
-- [ ] #4 "bury" half (needs an external trigger) · outrage-intensity (secondary annotation) · event-timed-op (needs elections roster)
+- [x] outrage-intensity — DONE (2026-06-25): the 9th measure, built SECONDARY per the ruling (annotates another card, never a standalone Lead). `src/analytics/outrage.py:outrage_intensity` (loaded/intensifier density + `!` + ALL-CAPS runs; structure-not-intent; English-only with an honest gap, never a fabricated 0; no score) wired as an `outrage` component on the headline-body card. 6 sandbox tests.
+- [ ] #4 "bury" half (needs an external trigger) · event-timed-op (needs elections roster)
 
 ### Release / housekeeping
 - [ ] Human click-through of all browser-unverified UI
@@ -197,12 +198,18 @@
 > removal · Graphics fuse · opaque status bar · sidebar click-toggle · AI output-language),
 > 4.13a (copypasta card), 4.15 (gov-newsletter keyword filter), 5A-bis.D0 (scaling design doc),
 > 5B httpfs build recipe, and the 5C design docs (LLM-perception eval · Tor · voice · Mirror).
+> **Also merged this session — the whole §5B statistical-data → honest-viz arc** (see the
+> "Statistical-data ingestion + diversified honest visualization" section's BUILD STATUS block):
+> CSV/JSON-stat/bulk parsers, the `to_chart_series` adapter + `ooViz` honest-chart primitives + the
+> Settings → Statistics time-series chart, the `choroplethData` comparability gate + `symbolRadii` +
+> the `/api/stats/map` feed + the ooMap stats choropleth, the OWID + JSON-stat live fetch clients,
+> the **revision-anomaly detector** (+ store/endpoint/UI), and **4.13b outrage-intensity** (secondary).
 > Everything below is what remains.
 
 **NOT STARTED (design/spec exists, no code wired):**
 - [ ] **Tier 1.2 — collector write-batching** (`docs/design/COLLECTOR_WRITER_BATCHING.md`; `Status: DESIGN, not built`). `ingest/pipeline.py` still commits per-article; `store.index_article()` has no `commit=` param. REMAINS: `index_article(commit=False)` + batch in the ingest loop + per-article fallback on batch failure + a no-loss test + `OO_COLLECT_COMMIT_BATCH`. (Deferred: needs the full suite + a live-corpus measurement — a blind refactor of keystone-#1 is too risky.)
 - [ ] **Tier 2.6 — unified Import + unified Export/Backup** (`docs/design/UNIFIED_IMPORT_EXPORT.md`; design only). Import/export controls are still scattered (`importNewsletters`, `modelsBackupImport`, `v2Backup`, `v2Preview`…). REMAINS: one Import dialog (6a) + one Export/Backup dialog (6b) on the OOENC2 streaming path, an absorption test (no capability lost), retire the scattered controls. (Deferred: large browser-unverifiable frontend.)
-- [ ] **Tier 4.13b — outrage-intensity annotation** — absent entirely. REMAINS: the whole secondary-annotation feature (a sentiment-anomaly signal annotating another card, never a standalone Lead; English-only via VADER).
+- [x] **Tier 4.13b — outrage-intensity annotation** — DONE (2026-06-25). `src/analytics/outrage.py:outrage_intensity` (loaded/intensifier density + `!` + ALL-CAPS runs; structure-not-intent; English-only with an honest gap, never a fabricated 0; no score) wired as a SECONDARY `outrage` component on the headline-body card (never a standalone Lead). 6 sandbox tests + the headline-body test extended.
 - [ ] **Tier 4.16 — app self-update mechanics** (snapshot→verify→migrate→swap→rollback, default OFF) — design-only; the maintainer's 5 open questions are unresolved. REMAINS: the whole mechanism. (Deferred: can't be end-to-end validated in-sandbox — brick risk.)
 - [ ] **5A-bis.D2 — `keyword_daily` rollup** — no `keyword_daily` in code (only `keyword_agg` counters in `columnar.py`); `readmodel.py` still delegates to live queries. REMAINS: the table, the SQLCipher→DuckDB stream+group build, the incremental MERGE, and the readmodel wiring. (Gated on D1.)
 - [ ] **5A-bis.D3 — incremental refresh + epoch full-rebuild gate** — no `last_mention_id`/`built_epoch`/`corpus_epoch`. REMAINS: the watermark + epoch tracking + the re-index/prune→force-full-rebuild gate (the double-count trap) + the append-only correctness proof. (Gated on D2.)
@@ -2201,6 +2208,46 @@ ingestion" (above) and "De-US-centring — the remainder," and reuses the market
 `StatFigure`/`src.stats` (shipped since the 2026-06-12 design), `ooChart`/`ooMap`/`ooSubtabs`, and
 the no-torch-in-core / local-first non-negotiables.
 
+**BUILD STATUS — most of this is now SHIPPED (autonomous batch, 2026-06-25; merged to `0.09`).**
+The design below is largely realized. What landed this session (per-slice detail in the CLAUDE.md
+shipped-log):
+- **Parsers (Phase A-CSV + E):** `parse_csv` (OWID tidy/long), `parse_jsonstat` (JSON-stat v2/v1),
+  and bulk `parse_csv_wide` + `zip_csv_members`/`read_zip_member` (V-Dem/UCDP) — all pure, offline,
+  gap→`None` never a fabricated 0, comparability only-when-stated, no score.
+- **Viz adapter + honest chart (Phase B1/B2/B3):** `series.to_chart_series` (period parsing,
+  comparability SEGMENTATION, gaps kept) → `ooViz.statSeriesPaths`/`statChartGeometry` (one subpath
+  per comparability segment, a break never joined) → the Settings → Statistics time-series chart
+  (`renderStatChart`, role=img + sr-table + visible caveat).
+- **Choropleth (Phase C1/C2):** `ooViz.choroplethData` (the comparability GATE — incomparable basis →
+  no-data, never recoloured) + `symbolRadii` (levels → area-honest proportional symbols) → the
+  `store.map_figures` feed (`iso2` bridge, `multi_producer` flag, never averaged) + `/api/stats/map`
+  → the ooMap stats layer (`renderStatMap`) in Settings → Statistics.
+- **Live fetch clients:** `fetch_owid` (OWID CSV) + `fetch_jsonstat` (Eurostat/IRENA/PxWeb) — guarded
+  factory, kill-switch refusal up front, caller-supplied URL verbatim (never a fabricated endpoint),
+  wired into `POST /api/stats/figures/fetch` (`source: owid|jsonstat`). So there are now THREE live
+  ingestion paths (WB/Eurostat SDMX-JSON · OWID CSV · JSON-stat).
+- **The on-mission kernel — the revision-anomaly detector — SHIPPED:** `stats/revision.py`
+  (`find_revision_anomalies`, retrospective-only, robust-z over a figure's OWN vintage history,
+  model-free, no score, innocent-twin caveat) + `store.revision_anomalies` + `/api/stats/
+  revision-anomalies` + the Settings → Statistics "Revision anomalies" UI.
+
+**Open decisions 1–5 are now RESOLVED BY BUILDING** (the maintainer's "make all decisions"): (1)
+forecasting = **retrospective-only**, implemented (no band crosses the last observation); (2)
+classical-first, FM-not-built (the kernel is model-free); (3) sensitivity wording = neutral /
+innocent-explanation-first, implemented in the revision UI copy; (4) CSV + JSON-stat parsers =
+built; (5) choropleth normalized-only / levels→symbols = built (enforced in `choroplethData`).
+**Still open:** (6) a `global`/`transnational` region value in the source schema (news-diversity
+thread, not built); (7) key-gated stat sources (EIA/FRED/Comtrade) — deferred this cycle.
+
+**REMAINING (not built this session):** curated `configs/stat_indicators.yml` (A1 — the Governments
+tab's `src/stats/indicators.py` is a partial WB catalog) + a verified OWID-slug / JSON-stat-URL
+catalog (needs a networked box — 403 here; never a fabricated endpoint); `parse_sdmx_json`
+live-verification + Pacific/ECB wiring (A3, network); **Phase D diversified techniques** (small
+multiples · dot plot · dumbbell/slope · association scatter — the `ooViz` primitives `binCounts1D`/
+`bin2D`/`fiveNumberSummary` exist but are not yet wired to a surface); owid/jsonstat subscription
+auto-refresh; true proportional-symbol *rendering* for level choropleths (the data layer refuses +
+ranks; symbols need centroids); keying the Statistics-panel strings ×12.
+
 ### 1. Time-series foundation models (TimesFM & peers) — reliability + the ethical reframe
 
 **Reliability verdict** (full report: `docs/research/statistics/timesfm_reliability_report.md`).
@@ -2324,6 +2371,11 @@ unlock each region (the parallel "grow managed languages" track).
 
 ### 5. Sequenced build plan (one small additive PR per slice, draft onto 0.09)
 
+> **STATUS 2026-06-25:** A-CSV ✅ · B1/B2/B3 ✅ · C1/C2 ✅ · E parsers ✅ · the revision-anomaly
+> detector ✅ (all merged — see the BUILD STATUS block at the top of this section). REMAINING:
+> A1 (curated `stat_indicators.yml`) · A3 (SDMX live-verify + Pacific/ECB) · **Phase D** (the
+> diversified techniques — the `ooViz` primitives exist but aren't wired to a surface).
+
 - **Phase A — stat-data backbone.** A1: curated `configs/stat_indicators.yml` (the ~29 WB series,
   dated + freshness test; pure data, no network — proves catalog→fetch→store→chart on existing
   code). A-CSV: the CSV wide→long adapter + OWID energy/CO₂ (one small parser, biggest payoff).
@@ -2347,6 +2399,12 @@ Recommended order: A1 → A-CSV → B → C → D → E. The revision-anomaly de
 *independent* slice and owes nothing to TimesFM.
 
 ### Open decisions for the maintainer (genuine rulings, not defaults)
+
+> **RESOLVED 2026-06-25 (built, per "make all decisions"):** 1 = retrospective-only (implemented) ·
+> 2 = classical-first, FM-not-built · 3 = neutral/innocent-first wording (implemented) · 4 = CSV +
+> JSON-stat parsers built · 5 = choropleth normalized-only / levels→symbols built. **Still open:**
+> 6 (global/transnational region value) · 7 (key-gated EIA/FRED/Comtrade — deferred this cycle).
+
 1. **Forecasting at all?** Confirm the expectation/anomaly, **retrospective-only** stance (band
    never crosses the last observation) — or rule it out entirely as too close to prediction.
 2. **Classical-first, FM-maybe-never** for statistics — agree? (recommended: yes.)
