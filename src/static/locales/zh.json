@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "从世界银行获取每个国家的标准国别指标（联网，会先征得同意）。",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "来源目录覆盖范围（目录涵盖多少国家，依 ISO 3166 评估）：",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "一张世界地图，显示你在每个国家收集了多少篇文章（按每个来源在目录中的国家）。根据数据测量；实时刷新。",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "你已下载的一切，以及应用从中推算出的一切——真实的计数和磁盘占用，绝非估算。"
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "你已下载的一切，以及应用从中推算出的一切——真实的计数和磁盘占用，绝非估算。",
+  "Debug bundle (.json)": "调试包 (.json)",
+  "Network log (.json)": "网络日志 (.json)",
+  "Date-extraction log (.json)": "日期提取日志 (.json)",
+  "Performance report (.json)": "性能报告 (.json)",
+  "Scaling benchmark (.json)": "扩展基准测试 (.json)",
+  "Keyword self-test (.json)": "关键词自检 (.json)",
+  "Keyword-engine report (.json)": "关键词引擎报告 (.json)",
+  "Keyword-growth (.json)": "关键词增长 (.json)",
+  "Home-card diagnostics (.json)": "主页卡片诊断 (.json)",
+  "Keyword log (.zip)": "关键词日志 (.zip)",
+  "All diagnostics (.zip)": "全部诊断 (.zip)",
+  "All keywords (.zip)": "全部关键词 (.zip)",
+  "Large encrypted backup (volumes + parity)": "大型加密备份（卷 + 校验）",
+  "Open evidence & custody →": "打开证据与保管链 →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "拖动以平移 · 悬停圆点查看详情 · 放大以读取城市名称",
+  "Governments sections": "政府版块"
 }

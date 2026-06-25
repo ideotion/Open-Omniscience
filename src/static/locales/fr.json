@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Récupérer les indicateurs nationaux standard pour chaque pays auprès de la Banque mondiale (en ligne, demande d'abord votre consentement).",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Portée du catalogue de sources (combien de pays le catalogue couvre, évaluée selon ISO 3166) :",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "Une carte du monde indiquant combien d'ARTICLES vous avez collectés par pays (selon le pays catalogué de chaque source). Mesuré à partir des données ; actualisé en direct.",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Tout ce que vous avez TÉLÉCHARGÉ et tout ce que l'application en a EXTRAPOLÉ — des décomptes réels et des tailles sur disque, jamais une estimation."
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Tout ce que vous avez TÉLÉCHARGÉ et tout ce que l'application en a EXTRAPOLÉ — des décomptes réels et des tailles sur disque, jamais une estimation.",
+  "Debug bundle (.json)": "Lot de débogage (.json)",
+  "Network log (.json)": "Journal réseau (.json)",
+  "Date-extraction log (.json)": "Journal d'extraction de dates (.json)",
+  "Performance report (.json)": "Rapport de performance (.json)",
+  "Scaling benchmark (.json)": "Test de montée en charge (.json)",
+  "Keyword self-test (.json)": "Auto-test des mots-clés (.json)",
+  "Keyword-engine report (.json)": "Rapport du moteur de mots-clés (.json)",
+  "Keyword-growth (.json)": "Croissance des mots-clés (.json)",
+  "Home-card diagnostics (.json)": "Diagnostic des cartes d'accueil (.json)",
+  "Keyword log (.zip)": "Journal des mots-clés (.zip)",
+  "All diagnostics (.zip)": "Tous les diagnostics (.zip)",
+  "All keywords (.zip)": "Tous les mots-clés (.zip)",
+  "Large encrypted backup (volumes + parity)": "Grande sauvegarde chiffrée (volumes + parité)",
+  "Open evidence & custody →": "Ouvrir preuves et chaîne de possession →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "glissez pour déplacer · survolez un point pour les détails · zoomez pour lire les noms de villes",
+  "Governments sections": "Sections Gouvernements"
 }

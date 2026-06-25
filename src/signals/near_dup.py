@@ -123,19 +123,21 @@ def shared_word_ngrams(
                 spans.setdefault(" ".join(words), set()).update(common)
             i = j + 1
 
-    items = [{"phrase": p, "n_docs": len(ds), "doc_ids": sorted(ds)} for p, ds in spans.items()]
-    # Drop a phrase fully contained (word-aligned) in a longer one over the same docs.
-    items.sort(key=lambda r: (-len(r["phrase"]), -r["n_docs"]))
-    kept: list[dict] = []
-    for r in items:
-        rp = f" {r['phrase']} "
-        if any(
-            rp in f" {k2['phrase']} " and set(r["doc_ids"]) <= set(k2["doc_ids"]) for k2 in kept
-        ):
+    # Sort + dedup over (phrase, docs) TUPLES — keeping the heterogeneous result dicts
+    # out of the comparison logic so the keys stay precisely typed (str / set[str]) —
+    # then build the result dicts at the very end. A phrase fully contained (word-
+    # aligned) in a longer one over the same-or-fewer documents is dropped.
+    ordered = sorted(spans.items(), key=lambda kv: (-len(kv[0]), -len(kv[1])))
+    kept: list[tuple[str, set[str]]] = []
+    for phrase, ds in ordered:
+        rp = f" {phrase} "
+        if any(rp in f" {kp} " and ds <= kds for kp, kds in kept):
             continue
-        kept.append(r)
-    kept.sort(key=lambda r: (-r["n_docs"], -len(r["phrase"])))
-    return kept[:max_phrases]
+        kept.append((phrase, ds))
+    kept.sort(key=lambda kv: (-len(kv[1]), -len(kv[0])))
+    return [
+        {"phrase": p, "n_docs": len(ds), "doc_ids": sorted(ds)} for p, ds in kept[:max_phrases]
+    ]
 
 
 def _h64(s: str) -> int:

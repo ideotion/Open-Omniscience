@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "विश्व बैंक से हर देश के मानक देश संकेतक प्राप्त करें (ऑनलाइन, पहले सहमति मांगता है)।",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "स्रोत-सूची की पहुँच (सूची कितने देशों को कवर करती है, ISO 3166 के अनुसार आंका गया):",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "एक विश्व मानचित्र जो दर्शाता है कि आपने प्रति देश कितने लेख एकत्र किए हैं (प्रत्येक स्रोत के सूचीबद्ध देश के अनुसार)। डेटा से मापा गया; लाइव रिफ़्रेश होता है।",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "वह सब कुछ जो आपने डाउनलोड किया है और वह सब कुछ जो ऐप ने उससे एक्सट्रपोलेट किया है — वास्तविक गणनाएँ और डिस्क पर आकार, कभी अनुमान नहीं।"
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "वह सब कुछ जो आपने डाउनलोड किया है और वह सब कुछ जो ऐप ने उससे एक्सट्रपोलेट किया है — वास्तविक गणनाएँ और डिस्क पर आकार, कभी अनुमान नहीं।",
+  "Debug bundle (.json)": "डीबग बंडल (.json)",
+  "Network log (.json)": "नेटवर्क लॉग (.json)",
+  "Date-extraction log (.json)": "तिथि-निष्कर्षण लॉग (.json)",
+  "Performance report (.json)": "प्रदर्शन रिपोर्ट (.json)",
+  "Scaling benchmark (.json)": "स्केलिंग बेंचमार्क (.json)",
+  "Keyword self-test (.json)": "कीवर्ड स्व-परीक्षण (.json)",
+  "Keyword-engine report (.json)": "कीवर्ड-इंजन रिपोर्ट (.json)",
+  "Keyword-growth (.json)": "कीवर्ड-वृद्धि (.json)",
+  "Home-card diagnostics (.json)": "होम-कार्ड डायग्नोस्टिक्स (.json)",
+  "Keyword log (.zip)": "कीवर्ड लॉग (.zip)",
+  "All diagnostics (.zip)": "सभी डायग्नोस्टिक्स (.zip)",
+  "All keywords (.zip)": "सभी कीवर्ड (.zip)",
+  "Large encrypted backup (volumes + parity)": "बड़ा एन्क्रिप्टेड बैकअप (वॉल्यूम + पैरिटी)",
+  "Open evidence & custody →": "साक्ष्य और अभिरक्षा खोलें →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "खिसकाने के लिए खींचें · विवरण हेतु किसी बिंदु पर होवर करें · शहरों के नाम पढ़ने के लिए ज़ूम करें",
+  "Governments sections": "सरकारें अनुभाग"
 }

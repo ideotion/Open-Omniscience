@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "世界銀行から各国の標準的な国別指標を取得します（オンライン、最初に同意を求めます）。",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "ソースカタログの網羅範囲（カタログが対象とする国数、ISO 3166 に照らして評価）：",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "国ごとに収集した記事数を示す世界地図（各ソースの登録国別）。データから測定し、リアルタイムで更新されます。",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "あなたがダウンロードしたすべてと、アプリがそこから推定したすべて——実際の件数とディスク上のサイズであり、推計ではありません。"
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "あなたがダウンロードしたすべてと、アプリがそこから推定したすべて——実際の件数とディスク上のサイズであり、推計ではありません。",
+  "Debug bundle (.json)": "デバッグ一式 (.json)",
+  "Network log (.json)": "ネットワークログ (.json)",
+  "Date-extraction log (.json)": "日付抽出ログ (.json)",
+  "Performance report (.json)": "パフォーマンスレポート (.json)",
+  "Scaling benchmark (.json)": "スケーリングベンチマーク (.json)",
+  "Keyword self-test (.json)": "キーワード自己テスト (.json)",
+  "Keyword-engine report (.json)": "キーワードエンジンレポート (.json)",
+  "Keyword-growth (.json)": "キーワード増加 (.json)",
+  "Home-card diagnostics (.json)": "ホームカード診断 (.json)",
+  "Keyword log (.zip)": "キーワードログ (.zip)",
+  "All diagnostics (.zip)": "すべての診断 (.zip)",
+  "All keywords (.zip)": "すべてのキーワード (.zip)",
+  "Large encrypted backup (volumes + parity)": "大容量の暗号化バックアップ（ボリューム + パリティ）",
+  "Open evidence & custody →": "証拠と管理の連鎖を開く →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "ドラッグで移動 · 点にカーソルを合わせると詳細 · 拡大して都市名を表示",
+  "Governments sections": "「政府」セクション"
 }

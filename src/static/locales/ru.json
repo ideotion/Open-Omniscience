@@ -1645,5 +1645,21 @@
   "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Получить стандартные страновые показатели для каждой страны из Всемирного банка (онлайн, сначала запрашивает согласие).",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Охват каталога источников (сколько стран охватывает каталог, оценка по ISO 3166):",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "Карта мира, показывающая, сколько СТАТЕЙ вы собрали по каждой стране (по каталогизированной стране каждого источника). Измерено по данным; обновляется в реальном времени.",
-  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Всё, что вы ЗАГРУЗИЛИ, и всё, что приложение ЭКСТРАПОЛИРОВАЛО из этого — реальные подсчёты и размеры на диске, никогда не оценка."
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Всё, что вы ЗАГРУЗИЛИ, и всё, что приложение ЭКСТРАПОЛИРОВАЛО из этого — реальные подсчёты и размеры на диске, никогда не оценка.",
+  "Debug bundle (.json)": "Пакет отладки (.json)",
+  "Network log (.json)": "Журнал сети (.json)",
+  "Date-extraction log (.json)": "Журнал извлечения дат (.json)",
+  "Performance report (.json)": "Отчёт о производительности (.json)",
+  "Scaling benchmark (.json)": "Тест масштабирования (.json)",
+  "Keyword self-test (.json)": "Самопроверка ключевых слов (.json)",
+  "Keyword-engine report (.json)": "Отчёт движка ключевых слов (.json)",
+  "Keyword-growth (.json)": "Рост ключевых слов (.json)",
+  "Home-card diagnostics (.json)": "Диагностика карточек главной (.json)",
+  "Keyword log (.zip)": "Журнал ключевых слов (.zip)",
+  "All diagnostics (.zip)": "Все диагностики (.zip)",
+  "All keywords (.zip)": "Все ключевые слова (.zip)",
+  "Large encrypted backup (volumes + parity)": "Большая зашифрованная резервная копия (тома + чётность)",
+  "Open evidence & custody →": "Открыть доказательства и цепочку владения →",
+  "drag to pan · hover a dot for details · zoom in to read city names": "перетащите для перемещения · наведите на точку для деталей · приблизьте, чтобы прочитать названия городов",
+  "Governments sections": "Разделы «Правительства»"
 }
