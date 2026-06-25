@@ -252,6 +252,35 @@ def figure_vintages(
         )
 
 
+@router.get("/revision-anomalies")
+def revision_anomalies_view(
+    agency: str | None = Query(None),
+    series_id: str | None = Query(None),
+    ref_area: str | None = Query(None),
+    min_prior_revisions: int = Query(4, ge=2, le=50),
+    z_min: float = Query(3.5, ge=1.0, le=20.0),
+) -> dict:
+    """Observations whose MOST RECENT vintage revised a past figure unusually far for that
+    series' own revision history — the reliable-memory check.
+
+    History must not be silently rewritten. This is RETROSPECTIVE (it flags a revision that
+    already happened across stored vintages, never a forecast) and names the SHAPE (an
+    outlier-sized revision), never the intent — the innocent twin (a benchmark/methodology
+    update, a late source, a correction) travels in the caveat. Magnitudes only, no score."""
+    from src.database.session import session_scope
+    from src.stats.store import revision_anomalies
+
+    with session_scope() as db:
+        return revision_anomalies(
+            db,
+            agency=agency,
+            series_id=series_id,
+            ref_area=ref_area,
+            min_prior_revisions=min_prior_revisions,
+            z_min=z_min,
+        )
+
+
 @router.get("/triangulate")
 def triangulate_series(
     series_id: str = Query(...),
