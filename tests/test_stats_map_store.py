@@ -64,8 +64,19 @@ def _fig(
 
 
 def _assert_no_score(out: dict) -> None:
-    blob = repr(out).lower()
-    assert "score" not in blob and "ranking" not in blob, "the map must carry no score/ranking"
+    # The honesty invariant is about FIELD NAMES (keys), not values — the caveat may
+    # legitimately say "never a score". Walk keys recursively and assert none is a score/rank.
+    def walk(o: object) -> None:
+        if isinstance(o, dict):
+            for k, v in o.items():
+                kl = str(k).lower()
+                assert "score" not in kl and "ranking" not in kl, f"banned field name: {k}"
+                walk(v)
+        elif isinstance(o, list):
+            for x in o:
+                walk(x)
+
+    walk(out)
 
 
 def test_map_one_cell_per_area_at_each_area_latest_period(db):

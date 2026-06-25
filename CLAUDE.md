@@ -4005,7 +4005,12 @@ ruling, a contingency, or a deliberate-omission note.
 - **AUTONOMOUS BATCH 2026-06-25 (maintainer: "continue autonomously with all remaining tasks, I'll merge all
   PRs afterwards" — the harness constrains me to ONE branch `claude/ecstatic-edison-mseu1p`, so the remaining
   §5B/§5C arc lands as a STACKED SERIES OF COMMITS in one draft PR onto 0.09; each commit self-contained +
-  verified). Items shipped below in order.**
+  verified). Items shipped below in order. CI-FIX (PR #481 `test` lane red on my SHA): `test_stats_map_store.py`'s
+  `_assert_no_score` did a naive `repr(out).lower()` substring check, but the map CAVEAT legitimately says
+  "never a score" → tripped (it had been red since #479, which the maintainer fast-merged). Rewrote it to walk
+  KEYS recursively (the honesty invariant is about field NAMES, not values) — same fix already applied to
+  test_outrage.py. LESSON: a no-score test helper must check field NAMES, never the repr — a caveat that says
+  "never a score" is GOOD and must not trip the guard; grep `repr(.*).lower()`+score before shipping.**
 - **OUTRAGE-INTENSITY — the 9th manipulation measure, SECONDARY (§5C; autonomous batch; pure module VERIFIED
   py3.11 [6 tests] + ruff F/B + mypy 0-new; the headline-body wiring runs in CI).** Per the ledger ruling
   outrage-intensity is SECONDARY — it ANNOTATES another card, NEVER a standalone Home Lead — so this ships the
