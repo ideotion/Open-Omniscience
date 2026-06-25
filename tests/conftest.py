@@ -122,10 +122,23 @@ def _write_gate_not_leaked(request):
     """Guard against the gate-leak HANG class of bug: a test must never leave the
     single-writer gate held — the next writer would block forever (it once did,
     silently, until faulthandler pinned it). Recover the gate, then fail the
-    offending test by name so a leak surfaces as a clear failure, never a hang."""
+    offending test by name so a leak surfaces as a clear failure, never a hang.
+
+    A LEGITIMATE background writer can still be mid-commit at teardown — notably the
+    briefing-refresh DAEMON kicked by ``/api/briefing/refresh`` (non-blocking by design,
+    #455), which writes on its own session after the request returns. That is NOT a leak,
+    so when the gate is held we WAIT briefly for it to drain; a real leak (a session
+    flushed but never committed/closed) never releases, so the bounded wait still surfaces
+    it. The wait only runs on the rare teardown that overlaps a background write."""
+    import time
+
     from src.database.writer import write_gate as _g
 
     yield
+    if _g.stats()["held"]:
+        deadline = time.monotonic() + 5.0
+        while _g.stats()["held"] and time.monotonic() < deadline:
+            time.sleep(0.02)
     if _g.stats()["held"]:
         _g._reset_for_tests()  # recover so the rest of the suite still runs
         raise AssertionError(

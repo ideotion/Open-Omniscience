@@ -48,6 +48,7 @@ def wire(app) -> None:
     from src.api.jobs import router as jobs_router
     from src.api.law import router as law_router
     from src.api.legal import router as legal_router
+    from src.api.library import router as library_router
     from src.api.link_analysis import router as link_analysis_router
     from src.api.link_preview import router as link_preview_router
     from src.api.llm import router as llm_router
@@ -75,6 +76,7 @@ def wire(app) -> None:
     spine = (
         source_management_router,
         database_router,
+        library_router,
         backup_v2_router,
         settings_router,
         scheduler_router,

@@ -3968,6 +3968,180 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **AUTONOMOUS SESSION 2026-06-24 (the consolidated-to-do build brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md`;
+  ONE branch claude/vibrant-thompson-bez6dq per the harness git-constraint, draft PR #460 onto 0.09; backend
+  VERIFIED py3.11 standalone repro + ruff F,B, full pytest in CI). TIER 1.1 — STATEMENT-DEADLINE GUARD on the
+  slowest per-keyword reads (remark 8 finish: "When searching for a keyword, the analysis screen says Loading…
+  indefinitely"):** #455 made the briefing recompute non-blocking + #458 cached the 5 per-corpus endpoints —
+  this adds the honest STOPGAP for the cold FIRST open. The heaviest per-keyword aggregations
+  (`/api/insights/associations`, `/api/insights/graph` both paths, `/api/framing`) now run under the EXISTING
+  `statement_deadline` mechanism (src/database/maintenance.py, OO_STATEMENT_TIMEOUT_S default 60s) so a runaway
+  whole-corpus co-occurrence GROUP BY on a large encrypted corpus aborts with a typed `StatementTimeout` → an
+  honest HTTP 503 ("statement exceeded the 60s deadline and was aborted") instead of an unbounded hang. (CI FIX
+  in-session: the wiring test must NOT `import src.api.framing` — that pulls in vaderSentiment [the [analysis]
+  extra] and reddens the core-only lane; read framing.py's SOURCE as a sibling file, like the insights.py grep.
+  NOTE: a macOS-portability flake surfaced separately — `test_same_origin_and_no_origin_allowed` teardown
+  "write gate HELD" — it hits `/api/briefing/refresh`, whose #455 BACKGROUND recompute writes on its own
+  session; a pre-existing race in that merged path, NOT this read-only change [same SHA passed it in the
+  parallel push-vs-PR run; observation-only lane]. FIXED 2026-06-24 [it later reddened the BLOCKING Core-only
+  lane too, on the sibling `test_security_headers_present` — same `/api/briefing/refresh` daemon]: the autouse
+  `_write_gate_not_leaked` conftest fixture checked `write_gate.held` IMMEDIATELY at teardown, but the #455
+  briefing-refresh DAEMON can still be mid-commit (a legitimate background writer, not a leak). It now WAITS up
+  to 5 s for the gate to DRAIN before failing — a real leak [a session flushed but never committed/closed] never
+  releases so the bounded wait still surfaces it, while a finishing background thread drains; the wait runs only
+  on the rare teardown that overlaps a background write [held==False for ~all tests = zero cost]. LESSON: an
+  autouse gate-leak assertion must tolerate the app's own legitimate async writers or it flakes on whichever
+  test happened to kick one.) A new
+  `_deadlined(db, key, compute)` helper in insights.py wraps the deadline INSIDE the compute (so it runs only on
+  a cache MISS — a hot TTL-cache hit never touches the connection, the #458 cache stays the primary speed lever);
+  framing.py wraps its body directly (the deadline bounds the SQLCipher-decrypt of up to `limit` article bodies,
+  the dominant cost; the pure-Python VADER pass is already bounded by limit×8000 chars, stated). HARDENED
+  `statement_deadline` to degrade to a NO-OP (rather than crash) when a session can't yield a raw DBAPI
+  connection (a unit-test stub / non-standard session) AND to skip touching the connection entirely when the
+  deadline is disabled (OO_STATEMENT_TIMEOUT_S=0). The frontend already surfaces a 503: the analysis subtab
+  loaders (renderCorpusKeywords / mindmap / loadFraming) catch the `api()` throw and replace the placeholder
+  with an honest `.note.err`, so the request now RETURNS within 60s and the error shows — no frontend change
+  needed. tests/test_insights_cache.py (+2: the 3 endpoints route through the deadline; a StatementTimeout maps
+  to 503) + tests/test_perf_batch.py (+1: the no-op-on-stub-session degrade). Standalone repro proved all 6
+  control-flow cases (no-op runs body, disabled skips connection, timeout→503, normal-passthrough, 400-propagates
+  through both the no-op and real-deadline paths, handler cleared in finally). REMAINING for remark 8: the deep
+  cold-FIRST-open speed (the keyword_daily rollup, workstream 5A-bis D2, gated on the persisted encrypted DuckDB
+  store D1); this deadline is the honest stopgap until then.
+  **TIER 1.2 — COLLECTOR WRITER-BOUND (P1-C) = DESIGN-DOC + DEFERRAL (honest §8 call, NOT a blind hot-path
+  refactor):** the only remaining contention lever is batching the data-loss-critical single-writer hot path
+  (the cheap `synchronous=NORMAL` fsync win is ALREADY in place, session.py:103). The safe design (batch a
+  source's store+index into ONE transaction via an additive `index_article(commit=False)`, with the proven
+  `ingest_emails` per-article fallback on a batch failure = no loss; counters accumulate correctly within one
+  txn = correct by construction) is fully written in `docs/design/COLLECTOR_WRITER_BATCHING.md` WITH the no-loss
+  test plan + the gate-hold tradeoff + the keyword_daily-watermark interaction. NOT IMPLEMENTED: its perf
+  benefit can only be validated on the live corpus (the motivating metric is a live measurement) and its
+  failure-mode correctness needs the full pytest suite to EXECUTE (the sandbox is py3.11/no-deps; repo needs
+  py3.13) — so per "entirely reliable or it should not exist," a blind refactor of keystone #1 is the wrong
+  call. Build it in a session that can run the suite + measure (default B=1 = byte-identical, raise
+  `OO_COLLECT_COMMIT_BATCH` to adopt).
+  **TIER 2.3 — SEARCH ENTER OPENS A NEW BROWSER TAB (remark 9, frontend, BROWSER-UNVERIFIED per fork-3):** the
+  omnibar opens the command palette; typing a term + Enter ran the first item `openAnalysisFor(raw)` = an
+  IN-SPA analysis tab in the SAME browser tab. The maintainer wants a NEW browser tab. Reused the proven
+  card-flip deep-link mechanism: a new generic `openAnalysisInNewTab(q)` = `window.open("/?analyze=" + q,
+  "_blank", "noopener")`, and the existing boot `_hydrateCardCorpus()` reads `?analyze=` → `openAnalysisFor()`
+  so the fresh SPA tab lands on the same analysis. `openCardCorpusQuery` is now a one-line alias (the #23
+  flip-card test still finds it; the card path is byte-unchanged). The palette's Enter (Analysis) item now
+  calls `openAnalysisInNewTab(raw)` with `sub:"↵ ↗"` (the ↗ honestly signals a new tab). The in-SPA
+  `openAnalysisFor` STAYS the opener for clicking a specific palette result + every card/commodity/convergence
+  entry + the boot hydration (Desk lesson: nothing lost); the Boolean Search-tab item is still one item away.
+  ZERO new i18n keys (reused t("Search")/t("Analysis"); ↗ is a glyph). node --check clean; test_repo_invariants
+  ::test_omnibar_enter_opens_analysis_window updated to assert the new-tab opener + the ?analyze= deep-link +
+  the ordering. REMAINING: human click-through (fork-3).
+  **5A-bis D0 — SCALING DESIGN DOC SHIPPED:** `docs/design/SCALING_DERIVED_LAYER_1000X.md` is the source-of-truth
+  for the derived-layer scaling workstream (the deep fix for remark 8). It EXTENDS the shipped seam
+  (`readmodel.py` top_terms/trending/.../source_country_counts all v1-delegate; `columnar.py` connect/keyword_agg/
+  oo_meta/encryption_gate/secure_crypto_available/build_keyword_read_model/top_terms_raw; the
+  `ix_mention_date_keyword` covering index) — never recreates them. Captures the `keyword_daily` + `source_coverage`
+  rollups, the stream-from-SQLCipher-INTO-DuckDB-group-THERE full build, the incremental MERGE on the
+  `keyword_mentions.id` watermark + the corpus-epoch full-rebuild gate, AND the critical TRAP (index_article does
+  delete-then-reinsert, so every re-index/prune/restore path MUST bump the epoch → full rebuild, never an
+  incremental MERGE, or the rollup double-counts; normal ingest must NOT bump it). 12-item VERIFY checklist +
+  rejected-alternatives. D2–D4 are buildable+parity-provable IN-MEMORY now; the perf payoff is D1-gated (the
+  persisted encrypted DuckDB store needs the maintainer's per-OS httpfs binaries — 5B). **5B/D1 design SHIPPED:**
+  `docs/design/PERSISTED_DUCKDB_HTTPFS.md` = the offline static-OpenSSL httpfs LOAD recipe (autoinstall/autoload
+  off → SHA-256 pin-and-verify the bundled binary BEFORE LOAD from an absolute path → GCM-only ATTACH never CTR →
+  flip `secure_crypto_available()` only after the `encryption_gate` probe), the external-artifact registry entry +
+  the DuckDB↔httpfs version coupling (test-enforced), and the maintainer's networked vcpkg-static build recipe.
+  The OFFLINE-LOAD code is ours to write + an EMPTY pin table is safe to ship (a blank/zero hash keeps it
+  in-memory); the per-OS/arch binaries need a networked multi-arch build (BLOCKED in-sandbox; NEVER a fabricated
+  checksum).
+  **TIER 2.4 — LIBRARY WORLD MAP (remark 10; backend VERIFIED py-logic, frontend BROWSER-UNVERIFIED per fork-3):**
+  the Library "World coverage" was a TABLE; now it leads with a per-country ARTICLE-count world map + a donut of
+  the 'no country' articles by language. BACKEND: `queries.source_country_counts` gained a `by_language` breakdown
+  in the `unlocated` bucket — a column-projected `Article.language` count over the indexed source_id join filtered
+  to country-less sources (NEVER a content decrypt; matches the existing unlocated definition country IS NULL/empty);
+  flows through `/api/insights/map-coverage` unchanged. FRONTEND: a NEW reusable `ooDonut(host, data, opts)` SVG
+  renderer (stroke-dasharray per slice — robust for any slice count incl. a single full ring; evenly-spaced hues;
+  honest total + per-slice counts, no score) + `renderCoverageMap()` reusing the shared `ooMap` choropleth for the
+  Articles dimension (centroid fallback for microstates, ooRegionName names, click-a-country → filters the
+  catalogue table below) + the donut (full language names via ooLangName, "Unknown language" for null-lang, honest
+  empty state). The catalogue-REACH table/summary/regions are KEPT below (Desk lesson — a different measure: catalog
+  span vs collected articles). New strings English-fallback via `t()` (i18n --min 100 still 100%; keyable in §4).
+  tests/test_map_coverage.py::test_unlocated_articles_have_a_per_language_breakdown (private language codes, located
+  source doesn't leak) + test_repo_invariants::test_library_world_map_and_unlocated_donut. node --check clean.
+  REMAINING: Tier 2.5 (the Library central dashboard — remark 16, same tab); human click-through (fork-3); key the
+  new strings ×12.
+  **TIER 2.5 — LIBRARY CENTRAL DASHBOARD (remark 16; backend VERIFIED py-logic, frontend BROWSER-UNVERIFIED per
+  fork-3):** the Library tab is now the at-a-glance view of EVERYTHING downloaded + extrapolated. NEW
+  `GET /api/library/overview` (`src/api/library.py`, wired into `_wiring.py` spine) rolls up in ONE change-probe-
+  cached call (mirrors the Database-stats cache + freshness disclosure): the RAW/downloaded layer (Wikipedia
+  tracked pages + revisions + downloaded-dump count/bytes, OSM-region count/bytes, market price points, law
+  documents+revisions, official-statistics figures, local AI-model count/bytes) AND the DERIVED/extrapolated
+  layer (article_analyses BY KIND = AI summaries/translations/synthesis, ai_keyword total, active watches). REUSES
+  the cached `database_stats` for the core counts + DB file size (no duplicate scans); the download SIZES come
+  from the existing wiki/OSM download managers (`.list()`, filtered to status=="done" — an in-flight download is
+  never counted) + `ollama_models.store_status()`; every external read is BEST-EFFORT (a missing table/manager/
+  Ollama store degrades to null/`available:false`, never crashes a core-only install). Counts + on-disk bytes
+  ONLY, NO score (the `article_analyses` exclusion from the Database-stats corpus view is reconciled: it belongs
+  in the DERIVED layer here, the maintainer's explicit "summaries/translations/synthesis" ask, labelled AI-derived
+  unreliable). FRONTEND: a new top "Library" panel (`#library-overview`) + `renderLibraryOverview()` rendering the
+  two labelled groups as `.stat` tiles (counts via fmtNum, sizes via _fmtBytes), own stamp so the 16s poll repaints
+  only on change; wired into the tab onShow + the live poller. The Database section (store detail + reclaimable
+  bytes) + the World coverage map/table STAY below (Desk lesson). New strings English-fallback via `t()` (i18n
+  --min 100 still 100%). tests/test_library_overview.py (shape + the four sections + no-score sweep) +
+  test_api_wiring (library added to the spine sample) + test_repo_invariants::test_library_central_dashboard. node
+  --check clean. REMAINING: human click-through (fork-3); key the new strings ×12; optional per-symbol/per-agency
+  breakdowns.
+  **TIER 3 CHEAP UX — remarks 11/12/14/15 (frontend, BROWSER-UNVERIFIED per fork-3):** (12) the Settings INTRO
+  BOX (h2 "Settings" + the "Everything that shapes…" paragraph + the panel wrapper) is REMOVED — the `#set-subtabs`
+  nav (relocated to the top strip anyway) is un-wrapped as a direct child of `#tab-settings`, reclaiming vertical
+  space on every subtab; no JS depended on the box. (11) APPEARANCE + GUIs FUSED into ONE "Graphics" subtab
+  (`data-tab="graphics"` / `#set-graphics`): the GUIs `<section>` (with `#guis-gallery`) MOVED inside the renamed
+  appearance panel, the standalone `#set-guis`/`data-tab="guis"` removed; `showSetCat("graphics")` now runs BOTH
+  `buildDrawer()` + `OOGUIs.renderGallery()`; `openDrawer` selects "graphics". Desk-lesson safe — both contents
+  (`#dr-themes` appearance + `#guis-gallery`) preserved; invariant #30 test updated guis→graphics (the gallery
+  host kept); gallery.js untouched (renders into `#guis-gallery`). (14) the sticky CHROME (`.topbar` +
+  `.subtab-strip`) was semi-transparent (`color-mix(var(--bg) 82/92%, transparent)` + backdrop-blur) so scrolled
+  content showed through; both now use the OPAQUE `var(--bg2)` (the left sidebar's bg, the maintainer's ask) and
+  the now-pointless backdrop-blur is dropped (a GPU cost at rest). (15) clicking the sidebar's EMPTY space toggles
+  collapse/expand (`_wireSidebarEmptyClickToggle` → the existing `toggleSidebar()`, ignoring clicks on
+  nav-item/button/a/input/label/select/textarea so navigation + the `#sb-collapse`/`#sb-expand` buttons are
+  unaffected). div/section balance verified; node --check + i18n 100%. test_repo_invariants::
+  test_settings_chrome_cleanups + the updated #30 test. REMAINING: human click-through (fork-3).
+  **TIER 4.15 — GOV-NEWSLETTER BOILERPLATE (remark 15 in the to-do; backend VERIFIED py-logic):** the "?"-bucket
+  junk is the §2.6 underscore template ids (`gd_combo_table` — ALREADY dropped by the shipped `_is_code_token`
+  "_"-rule + the `underscore_identifiers_dropped` self-test case) + undetected-English (the shipped §2.6 langdetect),
+  NOT the brand name. RECONCILED with the 2026-06-23 finalization ruling (4) — "brand/company tokens (govdelivery)
+  STAY content, never stoplisted": extended the `underscore_identifiers_dropped` self-test golden case to ALSO
+  assert `govdelivery` survives as a content TERM (so a future over-eager filter can't accidentally stoplist the
+  brand) while `gd_combo_table` still drops. Verified by reading `_is_code_token` (pure: `gd_combo_table` has "_" →
+  dropped; `govdelivery` is a 0-transition pure word → kept). A regression now reddens the maintainer's exported
+  keyword self-test AND CI. No new filter needed (the bucket reduction is the already-shipped §2.6 work).
+  **TIER 3.11 — AI PROMPT LOCALIZATION + OUTPUT IN THE UI LANGUAGE (remark 13; backend VERIFIED py_compile, frontend
+  BROWSER-UNVERIFIED per fork-3):** the prompt-editor LABELS are static HTML already keyed ×12 (auto-translated by
+  the i18n DOM walker on setLang), and the prompt BODIES stay ENGLISH BY DESIGN (translating multi-sentence system
+  prompts degrades a weak local model — the reliable lever is OUTPUT language). The real gaps (output not in the UI
+  language for SINGLE-article ops, while bulk/synthesis were already wired): (a) backend `/api/llm/articles/{id}/
+  summarize` gained a `ui_lang` field → passed as `output_lang_code` to `_build_prompting` so the `_NATIVE_DIRECTIVE`
+  is appended (a single-article summary now comes out in the UI language); (b) frontend single-article `summarize()`
+  sends `ui_lang: OOI18N.current()`; (c) frontend single-article `translateArticle()` defaults `target_language` to
+  `_uiLangName()` (the UI language) instead of hardcoded "English". Plus `loadLlmPrompts()` added to the
+  `oo:langchange` listener (gated on the AI panel being visible) so the editor refreshes on a language switch.
+  tests/test_llm_api.py::test_output_language_pins_the_summary_prompt extended (ui_lang "fr" → "français" directive) +
+  test_repo_invariants::test_ai_output_in_ui_language_and_prompt_relocalization. node --check + i18n 100%. REMAINING:
+  human click-through (fork-3).
+  **TIER 2.6 — UNIFIED IMPORT/EXPORT = DESIGN DOC (remarks 2/5/6; a large frontend consolidation, browser-unverifiable
+  + big, deferred per §8 to a click-through session):** `docs/design/UNIFIED_IMPORT_EXPORT.md` specifies ONE Import +
+  ONE Export/Backup entry, each → an options pop-up → file/folder pick, REUSING the shipped backends (no new backend):
+  6a Import routes to restore/volume/folder + the TWO newsletter paths (upload + folder job) + mailbox + models; 6b
+  Export mandates the OOENC2 streaming-volume path for the encrypted corpus (NOT the legacy 2 GiB single-file) + the
+  large-data folder backup + plaintext + models. Honesty guards: an absorption test (every existing import/export type
+  still reachable), the OOENC2-path guard, owner-reported-only progress, visible disclosures.
+  **REMARK 1 (Ollama/AI) — MISTRAL-PRIORITISED CATALOG (the verifiable half; backend VERIFIED py_compile):** the
+  maintainer wants Mistral open-models prioritised (mistral-small:latest, mistral:7b). `MODEL_CATALOG`
+  (src/llm/ollama.py — the ONE source the Settings → AI picker reads) now LEADS the permissive section with the two
+  Mistral entries (mistral:7b ~4.4 GB/8 GB-RAM accessible; mistral-small:latest ~24B/~14 GB/24 GB-RAM capable), tags
+  MAINTAINER-NAMED + sizes flagged advisory ("verify on a networked box", the catalog's standing pattern; CATALOG_AS_OF
+  unchanged so the freshness test + registry are intact; no test asserts catalog contents). DEFERRED/BLOCKED (the rest
+  of remark 1): the Ollama BINARY installer (download+verify+run the per-OS installer) stays blocked on real per-OS
+  installer CHECKSUMS (a networked machine — NEVER fabricated; the Q7=B design is in this ledger); the hardware-tier
+  SCENARIO messaging (measure RAM via vitals → recommend a fitting model) is a separate UI build. The pull/queue/
+  active-model picker already ship; this leads them with Mistral.
 - **HTTP ERROR CODES → THE DOWNLOADABLE DIAGNOSTIC LOG 2026-06-24 (field test: "I'd like all error codes
   recorded into a downloadable diagnostic log — or is it already?"; branch claude/diag-http-error-log, draft
   PR onto 0.09; backend VERIFIED py3.11):** ANSWER = PARTIALLY already, now COMPLETE. Already: every WARNING/

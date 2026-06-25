@@ -202,6 +202,18 @@ def test_statement_deadline_zero_disables(client):
         assert s.execute(text("SELECT 1")).scalar() == 1
 
 
+def test_statement_deadline_is_a_noop_on_a_stub_session():
+    """A session that can't yield a raw DBAPI connection (a unit-test stub, a
+    non-standard session) degrades the deadline to a no-op instead of crashing —
+    so the per-keyword insights handlers stay unit-testable with a stub db."""
+    from src.database.maintenance import statement_deadline
+
+    ran = {"x": False}
+    with statement_deadline(object(), seconds=60):
+        ran["x"] = True
+    assert ran["x"] is True
+
+
 # --------------------------------------------------------------------------- #
 # The streamed keyword export (contract unchanged)
 # --------------------------------------------------------------------------- #

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from src.awareness.framing import compare_framing
 from src.database.fts import SearchQueryError, search_ids
+from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.models import Article
 from src.database.session import get_db
 
@@ -42,38 +43,47 @@ def framing(
     Without a query, the most recent articles are used. Articles are grouped by
     source; each source's tone (VADER), emphasised terms and headlines are returned.
     """
-    # Eager-load the source: ``a.source.name`` below otherwise fires one extra
-    # decrypt-query PER article (an N+1 that, at limit=1000, is a large hidden cost).
-    q = db.query(Article).options(joinedload(Article.source))
-    if query:
-        try:
-            ids = search_ids(db, query)
-        except SearchQueryError as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
-        if not ids:
-            return {
-                "query": query,
-                "sources_compared": 0,
-                "total_articles": 0,
-                "framing": [],
-                "shared_terms": [],
-                "caveat": "",
-            }
-        articles = q.filter(Article.id.in_(ids)).limit(limit).all()
-    else:
-        articles = q.order_by(Article.id.desc()).limit(limit).all()
+    # A statement DEADLINE bounds the heaviest part — fetching + SQLCipher-decrypting
+    # up to ``limit`` article bodies — so a pathological corpus aborts with a typed
+    # 503 instead of an unbounded "Loading…" (the field freeze, remark 8). The
+    # progress handler interrupts SQLite work; the pure-Python VADER pass is already
+    # bounded by ``limit`` × _FRAMING_MAX_CHARS, so it can't run away on its own.
+    try:
+        with statement_deadline(db):
+            # Eager-load the source: ``a.source.name`` below otherwise fires one extra
+            # decrypt-query PER article (an N+1 that, at limit=1000, is a large cost).
+            q = db.query(Article).options(joinedload(Article.source))
+            if query:
+                try:
+                    ids = search_ids(db, query)
+                except SearchQueryError as exc:
+                    raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
+                if not ids:
+                    return {
+                        "query": query,
+                        "sources_compared": 0,
+                        "total_articles": 0,
+                        "framing": [],
+                        "shared_terms": [],
+                        "caveat": "",
+                    }
+                articles = q.filter(Article.id.in_(ids)).limit(limit).all()
+            else:
+                articles = q.order_by(Article.id.desc()).limit(limit).all()
 
-    by_source: dict[str, list[dict]] = {}
-    for a in articles:
-        source = a.source.name if a.source else "Unknown"
-        by_source.setdefault(source, []).append(
-            {
-                "title": a.title,
-                "content": (a.content or "")[:_FRAMING_MAX_CHARS],
-                "url": a.url,
-                "published_at": a.published_at.isoformat() if a.published_at else None,
-            }
-        )
+            by_source: dict[str, list[dict]] = {}
+            for a in articles:
+                source = a.source.name if a.source else "Unknown"
+                by_source.setdefault(source, []).append(
+                    {
+                        "title": a.title,
+                        "content": (a.content or "")[:_FRAMING_MAX_CHARS],
+                        "url": a.url,
+                        "published_at": a.published_at.isoformat() if a.published_at else None,
+                    }
+                )
 
-    result = compare_framing(by_source)
-    return {"query": query, **result}
+            result = compare_framing(by_source)
+            return {"query": query, **result}
+    except StatementTimeout as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

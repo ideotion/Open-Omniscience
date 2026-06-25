@@ -341,6 +341,13 @@
     <!-- ============================ INGEST ============================ -->
     <div class="tab-page" id="tab-library">
     <section class="panel">
+      <h2>Library</h2>
+      <div class="hint" style="margin-bottom:10px">Everything you've DOWNLOADED and everything the app has
+        EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.</div>
+      <div id="library-overview"><div class="muted">Loading…</div></div>
+    </section>
+
+    <section class="panel">
       <h2>Database</h2>
       <div class="hint" style="margin-bottom:10px">Live counts from the unified store. Every figure is a real
         COUNT(*) or on-disk byte size — nothing is estimated.</div>
@@ -350,9 +357,13 @@
 
     <section class="panel">
       <h2>World coverage</h2>
-      <div class="hint" style="margin-bottom:10px">How many countries the source catalog reaches
-        (by each source's country, scored against ISO&nbsp;3166). Measured from the data; refreshes live.
-        <strong>Click a country or a topic keyword</strong> to see the matching sources.</div>
+      <div class="hint" style="margin-bottom:10px">A world map of how many ARTICLES you have collected per
+        country (by each source's catalogued country). Measured from the data; refreshes live.
+        <strong>Click a country</strong> to filter the catalogue table below to it.</div>
+      <div id="coverage-map" style="margin-bottom:10px"><div class="muted">Loading…</div></div>
+      <div id="coverage-unlocated" style="margin-bottom:10px"></div>
+      <div class="hint" style="margin-bottom:6px;margin-top:14px">Source-catalogue reach (how many countries
+        the catalog spans, scored against ISO&nbsp;3166):</div>
       <div id="coverage-summary" class="stat-grid"><div class="muted">Loading…</div></div>
       <div id="coverage-regions" class="hint" style="margin-top:10px"></div>
       <div class="row" style="margin-top:10px">
@@ -909,13 +920,10 @@
     <!-- ============================ WIKIPEDIA ======================== -->
     <!-- ============================ SETTINGS ========================= -->
     <div class="tab-page" id="tab-settings">
-    <section class="panel">
-      <h2>Settings</h2>
-      <p class="muted" style="margin-top:0">Everything that shapes how the app looks and behaves on this
-        machine. Pick a section — your choices stay local.</p>
-      <nav class="tabs" id="set-subtabs" style="position:static;padding:0;border:0;margin-top:8px">
-        <button class="active" data-tab="appearance">Appearance</button>
-        <button data-tab="guis">GUIs</button>
+      <!-- Intro box removed (remark 12): the subtab nav (relocated to the top strip) is
+           the only chrome Settings needs; this reclaims vertical space on every subtab. -->
+      <nav class="tabs" id="set-subtabs" style="position:static;padding:0;border:0;margin-top:2px">
+        <button class="active" data-tab="graphics">Graphics</button>
         <button data-tab="general">General</button>
         <button data-tab="models">AI</button>
         <button data-tab="keywords">Keywords</button>
@@ -929,9 +937,8 @@
         <button data-tab="data">Data &amp; backup</button>
         <button data-tab="safety">Safety</button>
       </nav>
-    </section>
 
-    <div class="set-view" id="set-appearance">
+    <div class="set-view" id="set-graphics">
     <section class="panel">
       <h2>Appearance</h2>
       <p class="hint" style="margin-top:0">Your look, your machine. These settings stay in this browser —
@@ -949,12 +956,9 @@
            flat, always-complete list (every tab also reachable via the command palette). -->
       <div class="seg"><button class="secondary" onclick="resetUi()">Reset appearance to defaults</button></div>
     </section>
-    </div>
-
-    <!-- GUIs: the alternative-interfaces gallery (maintainer-ruled 2026-06-17).
-         Filled by /static/guis/gallery.js; switching reloads to apply the skin.
-         Every interface preserves the same data + the same honesty guarantees. -->
-    <div class="set-view" id="set-guis" style="display:none">
+    <!-- GUIs: the alternative-interfaces gallery, now folded into the Graphics subtab
+         (remark 11). Filled by /static/guis/gallery.js; switching reloads to apply the
+         skin. Every interface preserves the same data + the same honesty guarantees. -->
     <section class="panel">
       <div class="phead"><h2>Alternative interfaces</h2><span class="sp"></span>
         <span class="pill warn">Experimental</span></div>

@@ -1825,11 +1825,13 @@ def test_ui_invariants():
         "the GUIs boot loader must be included in <head> (applies the chosen skin before first paint)"
     )
     assert "/static/guis/gallery.js" in html, "the GUIs gallery renderer must be included"
+    # The GUIs gallery is now folded into the unified "Graphics" subtab (Appearance +
+    # GUIs, remark 11). The #guis-gallery host is preserved (nothing lost).
     assert (
-        'data-tab="guis"' in html and 'id="set-guis"' in html and 'id="guis-gallery"' in html
-    ), "Settings must carry the GUIs subtab button + the set-guis panel + the #guis-gallery host"
-    assert 'cat === "guis"' in html and "OOGUIs.renderGallery" in html, (
-        "showSetCat() must lazy-render the gallery when the GUIs subtab is shown"
+        'data-tab="graphics"' in html and 'id="set-graphics"' in html and 'id="guis-gallery"' in html
+    ), "the Graphics subtab must carry the #guis-gallery host (Appearance + GUIs fused)"
+    assert 'cat === "graphics"' in html and "OOGUIs.renderGallery" in html, (
+        "showSetCat() must lazy-render the gallery when the Graphics subtab is shown"
     )
 
 
@@ -2333,17 +2335,87 @@ def test_analysis_window_absorbs_synthesize():
 
 
 def test_omnibar_enter_opens_analysis_window():
-    """Item I: the omnibar's default Enter action opens the corpus/analysis window
-    seeded with the query (ruled: Enter -> a corpus-of-articles window, not the
-    Search tab). The Boolean Search-tab item stays available (nothing lost)."""
+    """Item I + field remark 9 (2026-06-24): the omnibar's default Enter action opens the
+    corpus/analysis window seeded with the query — now in a NEW BROWSER TAB
+    (openAnalysisInNewTab → window.open ?analyze=, hydrated by _hydrateCardCorpus →
+    openAnalysisFor in the fresh tab). The in-SPA openAnalysisFor stays the opener for
+    clicking a specific result + every card/commodity entry; the Boolean Search-tab item
+    stays available (nothing lost)."""
     html = _ui_source()
     assert "function openAnalysisFor" in html, "seeded analysis-window opener required"
-    assert "run: () => openAnalysisFor(raw)" in html, "the default omnibar item opens analysis"
+    assert "function openAnalysisInNewTab" in html, "the new-browser-tab opener (remark 9) required"
+    assert "run: () => openAnalysisInNewTab(raw)" in html, "the default omnibar item opens a new tab"
+    # The new-tab opener uses the proven ?analyze= deep-link + boot hydration.
+    assert '"analyze"' in html and "_hydrateCardCorpus" in html, "?analyze= deep-link + hydration required"
     # the Analysis item is unshifted LAST so it sits at index 0 (the Enter default),
     # while the Boolean search item remains reachable.
     i_search_item = html.index('showTab("search"); setTimeout(() => { $("q").value = raw; doSearch()')
-    i_analysis_item = html.index("run: () => openAnalysisFor(raw)")
+    i_analysis_item = html.index("run: () => openAnalysisInNewTab(raw)")
     assert i_search_item < i_analysis_item, "Analysis must be unshifted after Search (=> index 0, default Enter)"
+
+
+def test_library_world_map_and_unlocated_donut():
+    """Field remark 10: the Library 'World coverage' renders a per-country ARTICLE-count
+    world map (the shared ooMap) + a donut of the 'no country' articles by language (full
+    names via ooLangName). The catalogue-reach table is kept (Desk lesson)."""
+    html = _ui_source()
+    assert 'id="coverage-map"' in html and 'id="coverage-unlocated"' in html
+    assert "function ooDonut" in html, "the reusable donut renderer is required"
+    assert "async function renderCoverageMap" in html
+    assert "renderCoverageMap();" in html, "loadCoverage must trigger the map/donut"
+    # the map plots ARTICLE counts via ooMap; the donut reads the per-language unlocated bucket.
+    assert "r.articles" in html and "ooMap(mapHost" in html
+    assert "by_language" in html and "ooLangName(" in html
+    # the catalogue-reach table is preserved (nothing lost).
+    assert 'id="coverage-table"' in html
+
+
+def test_library_central_dashboard():
+    """Field remark 16: the Library tab is the central dashboard of everything DOWNLOADED
+    (wiki dumps, maps, market series, laws, stats, models) + EXTRAPOLATED (AI summaries/
+    translations/synthesis + keywords). Fed by ONE /api/library/overview roll-up; honest
+    counts + sizes, no score."""
+    html = _ui_source()
+    assert 'id="library-overview"' in html
+    assert "async function renderLibraryOverview" in html
+    assert "/api/library/overview" in html
+    assert "renderLibraryOverview()" in html, "must be wired into the tab onShow + poller"
+    # the two layers are labelled + the AI-derived layer is disclosed unreliable.
+    assert "Downloaded — the raw" in html and "Extrapolated — AI-derived" in html
+    # representative downloaded + extrapolated tiles.
+    assert "AI summaries" in html and "Wikipedia dumps" in html and "Offline map regions" in html
+
+
+def test_settings_chrome_cleanups():
+    """Field remarks 11/12/14/15: the Settings intro box is removed, Appearance + GUIs are
+    fused into one 'Graphics' subtab (nothing lost), the sticky chrome is opaque (matching
+    the sidebar's var(--bg2)), and the sidebar's empty space toggles collapse/expand."""
+    html = _ui_source()
+    # remark 12: the intro paragraph is gone; the subtab nav stays.
+    assert "Everything that shapes how the app looks and behaves on this" not in html
+    assert 'id="set-subtabs"' in html
+    # remark 11: one Graphics subtab holds BOTH the Appearance content + the GUIs gallery.
+    assert 'data-tab="graphics"' in html and 'id="set-graphics"' in html
+    assert 'data-tab="guis"' not in html and 'id="set-guis"' not in html
+    assert 'id="dr-themes"' in html and 'id="guis-gallery"' in html  # both contents preserved
+    # remark 14: the sticky chrome is opaque (var(--bg2), the sidebar bg) — no transparent wash.
+    assert "color-mix(in srgb, var(--bg) 82%, transparent)" not in html, "topbar must be opaque"
+    assert "background:var(--bg2)" in html
+    # remark 15: clicking the sidebar's empty space toggles collapse/expand.
+    assert "_wireSidebarEmptyClickToggle" in html and "toggleSidebar()" in html
+
+
+def test_ai_output_in_ui_language_and_prompt_relocalization():
+    """Field remark 13: single-article summarize sends the UI language CODE (ui_lang) so the
+    summary comes out in the UI language (like bulk/synthesis); single-article translate
+    defaults to the UI language, not hardcoded English; the AI prompt editor re-renders on a
+    language switch (its English prompt BODIES stay English by design — only the chrome
+    relocalizes, and the OUTPUT language is the reliable lever)."""
+    html = _ui_source()
+    assert "ui_lang: (window.OOI18N && OOI18N.current)" in html, "summarize must send the UI language code"
+    assert 'target_language: "English"' not in html, "single-article translate must not hardcode English"
+    assert "target_language: _uiLangName()" in html, "translate defaults to the UI language"
+    assert "oo:langchange" in html and "loadLlmPrompts()" in html, "prompt editor re-renders on langchange"
 
 
 def test_cjk_keyword_disclosure():

@@ -465,6 +465,13 @@ def test_output_language_pins_the_summary_prompt(tmp_path, monkeypatch):
         # default (unset) → the faithful "same language as the article" instruction
         client.post(f"/api/llm/articles/{art_id}/summarize", json={})
         assert "same language as the article" in (fake.calls[-1][2] or "")
+        # remark 13: a ui_lang code appends the NATIVE-language output directive, so a
+        # single-article summary comes out in the UI language (like bulk/synthesis).
+        client.post(
+            f"/api/llm/articles/{art_id}/summarize",
+            json={"output_language": "French", "ui_lang": "fr"},
+        )
+        assert "français" in (fake.calls[-1][2] or "")
 
 
 def test_v2_defaults_are_honesty_first():

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from src.analytics import queries as q
 from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
+from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.session import get_db
 from src.utils.cache import SimpleCache
 
@@ -77,6 +78,29 @@ def _cached(key: str, compute):
         _read_cache.set(key, out)
         return {**out, "cached": False}
     return out
+
+
+def _deadlined(db: Session, key: str, compute):
+    """Cache + a statement DEADLINE around the heaviest per-keyword reads.
+
+    The per-keyword analysis subtabs (associations / graph / framing) are
+    whole-corpus co-occurrence aggregations that, on a large encrypted corpus,
+    could run for minutes — the field "Loading… forever" freeze (remark 8). The
+    deadline (``statement_deadline``, OO_STATEMENT_TIMEOUT_S, default 60 s) aborts
+    a runaway aggregation with a typed StatementTimeout, which we map to an honest
+    HTTP 503 ("…exceeded the Ns deadline…") instead of an unbounded hang. The
+    deadline runs INSIDE the compute, so it only fires on a cache MISS — a hot
+    cache hit never touches the connection. Layered on top of the existing TTL
+    cache + background warm (#455/#458), which remain the primary speed lever.
+    """
+    def _run():
+        with statement_deadline(db):
+            return compute()
+
+    try:
+        return _cached(key, _run)
+    except StatementTimeout as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def _resolve_corpus(
@@ -524,7 +548,7 @@ def insights_associations(
 ) -> dict:
     """Keywords co-occurring with ``term`` (PMI-ranked) — powers the mind-map."""
     key = _ckey("associations", term=term, limit=limit, min_cooccur=min_cooccur, group=group)
-    return _cached(key, lambda: rm.associations(
+    return _deadlined(db, key, lambda: rm.associations(
         db, term, limit=limit, min_cooccur=min_cooccur, group=group))
 
 
@@ -1277,8 +1301,8 @@ def insights_graph(
             end_date=None, language=None, tags=None, cap=cap,
         )
         # Cache by the exact id set so re-opening the same analysis mindmap is instant.
-        return _cached(_ckey("graph-articles", ids=",".join(map(str, ids))),
-                       lambda: rm.article_graph(db, article_ids=ids))
+        return _deadlined(db, _ckey("graph-articles", ids=",".join(map(str, ids))),
+                          lambda: rm.article_graph(db, article_ids=ids))
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():
@@ -1292,7 +1316,7 @@ def insights_graph(
             raise HTTPException(status_code=400, detail=f"bad date: {d!r}") from None
 
     key = _ckey("graph", level=level, term=term, hops=hops, days=days, start=start, end=end)
-    return _cached(key, lambda: rm.layered_graph(
+    return _deadlined(db, key, lambda: rm.layered_graph(
         db, level=level, term=term, hops=hops, days=days, start=_parse(start), end=_parse(end)
     ))
 

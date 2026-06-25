@@ -143,6 +143,56 @@ def test_keywords_and_sentiment_dimensions(seeded):
         assert not any("score" in k for k in r)
 
 
+def test_unlocated_articles_have_a_per_language_breakdown(client):
+    """Field remark 10: the 'no country' bucket carries a per-LANGUAGE article count
+    (the Library world-map donut). Column-projected, never a content decrypt; a LOCATED
+    source's article languages never leak into the unlocated breakdown."""
+    from src.analytics import queries as q
+    from src.database.models import Article, Source
+    from src.database.session import session_scope
+
+    _L1, _L2 = "qza", "qzb"  # private language codes nothing else in the suite seeds
+    made: dict = {"sources": []}
+    try:
+        with session_scope() as s:
+            # a country-LESS source with 2x _L1 + 1x _L2 articles
+            nocc = Source(name="UnlocLang", domain="unloclang.example", country=None)
+            s.add(nocc)
+            s.flush()
+            made["sources"].append(nocc.id)
+            for j, lang in enumerate([_L1, _L1, _L2]):
+                s.add(Article(
+                    url=f"https://unloclang.example/{j}",
+                    canonical_url=f"https://unloclang.example/{j}",
+                    source_id=nocc.id, title=f"ul{j}", content="x", language=lang,
+                    hash=f"ullang{j}_" + "0" * 50,
+                ))
+            # a LOCATED source whose article language must NOT leak into 'unlocated'
+            loc = Source(name="LocLang", domain="loclang.example", country=_ZY)
+            s.add(loc)
+            s.flush()
+            made["sources"].append(loc.id)
+            s.add(Article(
+                url="https://loclang.example/0", canonical_url="https://loclang.example/0",
+                source_id=loc.id, title="ll0", content="x", language=_L1,
+                hash="lllang0_" + "0" * 50,
+            ))
+        with session_scope() as s:
+            data = q.source_country_counts(s)
+        bl = data["unlocated"]["by_language"]
+        # only the country-less articles, by language — the located source's _L1 doesn't leak.
+        assert bl.get(_L1) == 2, bl
+        assert bl.get(_L2) == 1, bl
+    finally:
+        with session_scope() as s:
+            s.query(Article).filter(Article.source_id.in_(made["sources"])).delete(
+                synchronize_session=False
+            )
+            s.query(Source).filter(Source.id.in_(made["sources"])).delete(
+                synchronize_session=False
+            )
+
+
 def test_map_coverage_endpoint_enriches_and_is_honest(client, seeded):
     r = client.get("/api/insights/map-coverage")
     assert r.status_code == 200

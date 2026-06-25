@@ -961,7 +961,7 @@
       timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
       agenda: loadAgenda,
-      library: () => { loadCoverage(); },    // stats handled by the live poller (startLive)
+      library: () => { renderLibraryOverview(); loadCoverage(); },  // stats handled by the live poller (startLive)
       custody: loadCustody,
       integrity: loadIntegrity,
       settings: loadSettings,
@@ -1115,7 +1115,7 @@
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the
     // command palette and any deep link still work; closeDrawer() is a safe no-op.
-    function openDrawer()  { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("appearance"); }
+    function openDrawer()  { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("graphics"); }
     function closeDrawer() { /* drawer removed — appearance is a Settings section */ }
 
     // Settings sections (Appearance · General · Wikipedia · Data · Safety).
@@ -1125,8 +1125,11 @@
       document.querySelectorAll("#tab-settings .set-view").forEach(v =>
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
       if (cat !== "collect") stopSchedRatePoll();   // stop the live download-rate poll when leaving Collect
-      if (cat === "appearance") buildDrawer();      // (re)paint theme/accent/module state
-      if (cat === "guis" && window.OOGUIs && OOGUIs.renderGallery) OOGUIs.renderGallery();  // alternative-interfaces gallery
+      // Graphics = Appearance + the alternative-interfaces gallery, fused (remark 11).
+      if (cat === "graphics") {
+        buildDrawer();                                                    // (re)paint theme/accent state
+        if (window.OOGUIs && OOGUIs.renderGallery) OOGUIs.renderGallery();  // the GUIs gallery
+      }
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
@@ -1261,12 +1264,14 @@
       if (raw.length >= 2) {
         live = _omniItems(raw);
         if (!_omniLive || _omniLive.q !== raw) _omniFetch(raw);
-        // Ruled: Enter -> the corpus/analysis window (default), with the Boolean
-        // Search tab still one item away (nothing lost while capability migrated).
+        // Ruled: Enter -> the corpus/analysis window (default), now opening in a NEW
+        // BROWSER TAB (field remark 9). The in-SPA spawn (openAnalysisFor) stays the
+        // default for clicking a specific result + every card/commodity entry; the
+        // Boolean Search tab is still one item away (nothing lost).
         live.unshift({grp: t("Search"), label: `${t("Run the full Boolean search for")} “${raw}”`,
           sub: "", run: () => { showTab("search"); setTimeout(() => { $("q").value = raw; doSearch(); }, 60); }});
         live.unshift({grp: t("Search"), label: `${t("Analysis")}: “${raw}”`,
-          sub: "↵", run: () => openAnalysisFor(raw)});
+          sub: "↵ ↗", run: () => openAnalysisInNewTab(raw)});
       }
       _palFiltered = [...statics, ...live];
       _palSel = 0;
@@ -1583,11 +1588,16 @@
       if (label) p.set("label", label);
       window.open("/?" + p.toString(), "_blank", "noopener");
     }
-    function openCardCorpusQuery(q) {
+    // Open a query's analysis window in a NEW BROWSER TAB (field remark 9: search +
+    // Enter should open a new tab). A fresh SPA boot hydrates ?analyze= via
+    // _hydrateCardCorpus() → openAnalysisFor(), so the new tab lands on the same
+    // analysis. Shared by the home-card flip and the omnibar/palette Enter.
+    function openAnalysisInNewTab(q) {
       const p = new URLSearchParams();
       p.set("analyze", q || "");
       window.open("/?" + p.toString(), "_blank", "noopener");
     }
+    function openCardCorpusQuery(q) { openAnalysisInNewTab(q); }
     function cardHtml(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sig = c.signal || {};
@@ -4346,6 +4356,54 @@
 
     let DB_KEYS = null;   // current rendered stat keys (rebuild grid only when they change)
 
+    // Library central dashboard (field remark 16): the at-a-glance roll-up of everything
+    // DOWNLOADED (the raw, re-downloadable layer) + everything EXTRAPOLATED (the AI-derived
+    // layer). Honest counts + on-disk byte sizes only, no score; own stamp so the 16s poll
+    // only repaints on a real change. The Database section below keeps the store detail.
+    let _libOvStamp = "";
+    async function renderLibraryOverview() {
+      const host = $("library-overview");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      let d;
+      try { d = await api("/api/library/overview"); }
+      catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const stamp = JSON.stringify([d.downloaded, d.derived]);
+      if (stamp === _libOvStamp) return;   // live poll: unchanged, no repaint
+      _libOvStamp = stamp;
+      const num = v => (v == null ? "—" : fmtNum(v));
+      const sz = v => (v == null || !v) ? "—" : _fmtBytes(v);
+      const tile = (n, k) => `<div class="stat"><div class="n">${esc(n)}</div><div class="k">${esc(k)}</div></div>`;
+      const dl = d.downloaded || {}, der = d.derived || {};
+      const wiki = dl.wikipedia || {}, maps = dl.maps || {}, laws = dl.laws || {};
+      const dlTiles = [
+        tile(num(wiki.tracked_pages), t("Wikipedia pages tracked")),
+        tile(num(wiki.revisions), t("Wikipedia revisions")),
+        tile(`${num((wiki.dumps || {}).count)} · ${sz((wiki.dumps || {}).total_bytes)}`, t("Wikipedia dumps")),
+        tile(`${num((maps.osm_regions || {}).count)} · ${sz((maps.osm_regions || {}).total_bytes)}`, t("Offline map regions")),
+        tile(num((dl.markets || {}).commodity_prices), t("Market price points")),
+        tile(num(laws.documents), t("Law documents")),
+        tile(num(laws.revisions), t("Law revisions")),
+        tile(num((dl.statistics || {}).figures), t("Official statistics figures")),
+        tile(`${num((dl.models || {}).count)} · ${sz((dl.models || {}).total_bytes)}`, t("Local AI models")),
+      ].join("");
+      // EXTRAPOLATED: each AI-analysis kind shown by name (nothing hidden) + AI keywords + watches.
+      const KIND_LABELS = { summary: t("AI summaries"), translation: t("AI translations"),
+        synthesis: t("AI syntheses"), entities: t("AI entities") };
+      const aaKinds = (der.article_analyses || {}).by_kind || {};
+      const aaTiles = Object.keys(aaKinds).length
+        ? Object.entries(aaKinds).map(([k, v]) => tile(num(v), KIND_LABELS[k] || `${t("AI")} ${esc(k)}`)).join("")
+        : tile("—", t("AI summaries"));
+      const derTiles = aaTiles
+        + tile(num((der.ai_keywords || {}).total), t("AI-extracted keywords"))
+        + tile(num(der.watches_enabled), t("Active watches"));
+      host.innerHTML =
+        `<div class="hint" style="margin-bottom:6px">${esc(t("Downloaded — the raw, re-downloadable layer:"))}</div>`
+        + `<div class="stat-grid">${dlTiles}</div>`
+        + `<div class="hint" style="margin:12px 0 6px">${esc(t("Extrapolated — AI-derived from your corpus (unreliable, never the trusted index):"))}</div>`
+        + `<div class="stat-grid">${derTiles}</div>`;
+    }
+
     async function loadDbStats() {
       const el = $("db-stats");
       try {
@@ -4380,7 +4438,7 @@
       home:     {ms: 15000, fn: () => refreshHomeLive()},
       // Stats every tick; the coverage panel every 4th (it groups all sources,
       // cheap but no need for 4s cadence) — live data, so no Refresh button.
-      library:  {ms: 4000, fn: () => { loadDbStats(); if ((++_covTick % 4) === 1) loadCoverage(); }},
+      library:  {ms: 4000, fn: () => { loadDbStats(); if ((++_covTick % 4) === 1) { loadCoverage(); renderLibraryOverview(); } }},
       ingest:   {ms: 5000, fn: () => refreshSchedulerLive()},
       insights: {ms: 6000, fn: () => loadInsights()},
       wiki:     {ms: 6000, fn: () => refreshWikiLive()},
@@ -4434,7 +4492,109 @@
     let _covTick = 0;         // slow-cadence counter for the library live poller
     let _covStamp = "";       // last payload fingerprint (skip repaint when unchanged)
 
+    // Reusable self-contained SVG DONUT (no deps; like ooChart/ooMap) — categorical
+    // proportions with a legend. data: [{label, value}] (labels already display-ready).
+    // Stroke-dasharray on one circle per slice handles any slice count AND the single
+    // full-ring case robustly. Honest: shows the real total + per-slice counts; no score.
+    // Colours are evenly-spaced hues so any number of categories stays distinguishable.
+    function ooDonut(host, data, opts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const el = (typeof host === "string") ? document.getElementById(host) : host;
+      if (!el) return;
+      opts = opts || {};
+      const items = (data || []).filter(d => d && d.value > 0).slice().sort((a, b) => b.value - a.value);
+      const total = items.reduce((s, d) => s + d.value, 0);
+      if (!items.length || total <= 0) {
+        el.innerHTML = `<div class="muted">${esc(opts.empty || t("Nothing to chart."))}</div>`;
+        return;
+      }
+      const size = opts.size || 184, cx = size / 2, cy = size / 2;
+      const sw = size * 0.16, rMid = size * 0.42 - sw / 2;
+      const C = 2 * Math.PI * rMid;
+      const color = i => `hsl(${Math.round(i * 360 / items.length) % 360} 60% 55%)`;
+      let acc = 0;
+      const slices = items.map((d, i) => {
+        const frac = d.value / total;
+        const seg = `<circle cx="${cx}" cy="${cy}" r="${rMid.toFixed(2)}" fill="none" stroke="${color(i)}"`
+          + ` stroke-width="${sw.toFixed(2)}" stroke-dasharray="${(frac * C).toFixed(2)} ${C.toFixed(2)}"`
+          + ` stroke-dashoffset="${(-acc * C).toFixed(2)}"><title>${esc(d.label)}: ${esc(fmtNum(d.value))}`
+          + `${opts.unit ? " " + esc(opts.unit) : ""} (${Math.round(frac * 100)}%)</title></circle>`;
+        acc += frac;
+        return seg;
+      }).join("");
+      const legend = items.map((d, i) =>
+        `<div style="display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.6">`
+        + `<span style="width:10px;height:10px;border-radius:2px;background:${color(i)};flex:none"></span>`
+        + `<span>${esc(d.label)}</span>`
+        + `<span class="muted" style="margin-left:auto">${esc(fmtNum(d.value))} · ${Math.round(d.value / total * 100)}%</span></div>`
+      ).join("");
+      el.innerHTML =
+        `<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">`
+        + `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(opts.aria || "")}" style="flex:none">`
+        + `<g transform="rotate(-90 ${cx} ${cy})">${slices}</g>`
+        + `<text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="${(size * 0.17).toFixed(0)}" font-weight="700" fill="currentColor">${esc(fmtNum(total))}</text>`
+        + `<text x="${cx}" y="${(cy + size * 0.13).toFixed(0)}" text-anchor="middle" font-size="11" fill="currentColor" opacity="0.6">${esc(opts.centerLabel || "")}</text>`
+        + `</svg><div style="flex:1;min-width:160px;max-height:200px;overflow:auto">${legend}</div></div>`;
+    }
+
+    // Library "World coverage" map (field remark 10): per-country ARTICLE counts via the
+    // shared ooMap choropleth + a donut of the 'no country' articles by language. Its own
+    // stamp so a live poll only repaints when the data actually changes (no zoom-reset churn).
+    let _covMapStamp = "";
+    async function renderCoverageMap() {
+      const mapHost = $("coverage-map");
+      if (!mapHost) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      let d;
+      try { d = await api("/api/insights/map-coverage"); }
+      catch (e) { mapHost.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const stamp = JSON.stringify([d.by_country, d.unlocated]);
+      if (stamp === _covMapStamp) return;   // live poll: unchanged, no repaint
+      _covMapStamp = stamp;
+      const values = {}, names = {}, points = [];
+      (d.by_country || []).forEach(r => {
+        names[r.country] = ooRegionName(r.country, r.name);
+        const v = r.articles;
+        if (v != null && isFinite(v) && v > 0) {
+          values[r.country] = v;
+          if (r.lat != null && r.lon != null) {
+            points.push({ iso2: r.country, lat: r.lat, lon: r.lon, value: v, label: names[r.country] });
+          }
+        }
+      });
+      const unloc = (d.unlocated && d.unlocated.articles) || 0;
+      ooMap(mapHost, {
+        values, names, points, unit: t("articles"),
+        valueLabel: (iso, v) => `${fmtNum(v)} ${t("articles")}`,
+        // click a country -> filter the catalogue table below to it (ties the map to the table).
+        onCountry: (code) => { const f = $("cov-filter"); if (f) { f.value = names[code] || code; renderCoverageTable(); } },
+        aria: t("Articles collected per country."),
+        method: t("Articles collected, grouped by each source's catalogued country (ISO-2). Counts only, no score."),
+        caveat: t("Country is operator/catalogue-asserted; articles whose source has no country are counted but never placed on the map — see the language breakdown below.")
+          + (unloc ? `  ${fmtNum(unloc)} ${t("with no country.")}` : ""),
+      });
+      // donut: the 'no country' articles by language (full names via ooLangName).
+      const donutHost = $("coverage-unlocated");
+      if (donutHost) {
+        const byLang = (d.unlocated && d.unlocated.by_language) || {};
+        const ddata = Object.keys(byLang).map(code => ({
+          value: byLang[code], label: code ? ooLangName(code, code) : t("Unknown language"),
+        })).filter(x => x.value > 0);
+        if (!ddata.length) {
+          donutHost.innerHTML = `<div class="muted">${esc(t("All collected articles have a country."))}</div>`;
+        } else {
+          const tot = ddata.reduce((s, x) => s + x.value, 0);
+          donutHost.innerHTML =
+            `<div class="hint" style="margin-bottom:6px">${esc(fmtNum(tot))} ${esc(t("articles with no country, by language"))}</div>`
+            + `<div id="cov-donut-svg"></div>`;
+          ooDonut("cov-donut-svg", ddata, { unit: t("articles"), centerLabel: t("articles"),
+            aria: t("Articles with no country, by language.") });
+        }
+      }
+    }
+
     async function loadCoverage() {
+      renderCoverageMap();   // fire-and-forget the world map + unlocated donut (own stamp)
       const el = $("coverage-summary");
       if (!_covStamp) el.innerHTML = '<div class="muted">Loading…</div>';
       try {
@@ -11766,7 +11926,10 @@
       cell.textContent = "Summarizing locally…";
       try {
         const r = await api(`/api/llm/articles/${id}/summarize`,
-          {method: "POST", body: JSON.stringify({output_language: _uiLangName()})});
+          {method: "POST", body: JSON.stringify({output_language: _uiLangName(),
+            // the UI language CODE drives the native-output directive (remark 13) so a
+            // single-article summary comes out in the UI language, like bulk/synthesis.
+            ui_lang: (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en"})});
         // LLM output is a model artifact — fluent, and capable of being wrong. Carry a
         // constant verify-against-the-source note (B1 disclosure; auto-translated x12 by
         // the i18n observer). Data is esc()'d (innerHTML).
@@ -11781,7 +11944,9 @@
       cell.textContent = "Translating locally…";
       try {
         const r = await api(`/api/llm/articles/${id}/translate`,
-          {method: "POST", body: JSON.stringify({target_language: "English"})});
+          // Default the target to the UI language (remark 13): "translation should be made
+          // in the UI language", not always English.
+          {method: "POST", body: JSON.stringify({target_language: _uiLangName()})});
         cell.innerHTML = `<span class="muted">[${esc(r.source_language ? ooLangName(r.source_language, r.source_language) : "?")}→${esc(ooLangName(r.target_language, r.target_language))}]</span> `
           + `${esc(r.result)} <span class="muted">— ${esc(r.model)}</span>`
           + `<div class="hint muted">Generated by a local model — verify against the stored article.</div>`;
@@ -11965,6 +12130,10 @@
       } catch (_e) {}
       // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
       try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
+      // Re-render the AI prompt editor (remark 13): its labels are auto-translated by the
+      // DOM walker, but re-running loadLlmPrompts refreshes the JS-built bits + the
+      // effective-prompt placeholders if the panel is open.
+      try { if ($("set-models") && $("set-models").offsetParent !== null && typeof loadLlmPrompts === "function") loadLlmPrompts(); } catch (_e) {}
     });
 
     // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.
@@ -12115,3 +12284,15 @@
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
     _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window subtabs
     _anRestoreTabs();   // THEME-3: restore the spawned analysis-tab strip (data loads lazily)
+
+    // Click the EMPTY space of the sidebar (not a nav item / button / link) to
+    // collapse / expand it (remark 15) — the same toggle as the #sb-collapse /
+    // #sb-expand buttons, so the whole rail is a discoverable target.
+    (function _wireSidebarEmptyClickToggle() {
+      const sb = $("sidebar");
+      if (!sb) return;
+      sb.addEventListener("click", (e) => {
+        if (e.target.closest(".nav-item, button, a, input, label, select, textarea")) return;
+        toggleSidebar();
+      });
+    })();

@@ -146,28 +146,28 @@
 > fixes have advanced the tree.
 
 ### Your field-test remarks, 24 Jun
-- [ ] 1. Ollama installer in Settings → AI: hardware-tiered scenarios + guided model-download; lead with Mistral (mistral-small, mistral:7b)
-- [ ] 2/5/6. ONE unified Import + ONE unified Export/Backup: pop-up options → file/folder pick, on the new streaming-volume path; clear progress bar + live data-volume readout; fuse both newsletter-import paths in
+- [~] 1. Ollama installer in Settings → AI: hardware-tiered scenarios + guided model-download; lead with Mistral (mistral-small, mistral:7b) — PARTIAL (2026-06-24): the model CATALOG now leads with Mistral (mistral:7b + mistral-small:latest). DEFERRED: the binary installer (blocked on per-OS checksums, networked machine) + the hardware-tier scenario messaging.
+- [~] 2/5/6. ONE unified Import + ONE unified Export/Backup: pop-up options → file/folder pick, on the new streaming-volume path; clear progress bar + live data-volume readout; fuse both newsletter-import paths in — DESIGN DONE (`docs/design/UNIFIED_IMPORT_EXPORT.md`): one Import + one Export dialog reusing the shipped backends (OOENC2 volumes + folder backup + the two newsletter paths). Build deferred to a click-through session (large frontend, browser-unverifiable).
 - [x] 7. Home "Loading the briefing…" hang + progress bar — DONE (#455: non-blocking background recompute + determinate progress bar)
-- [~] 8. Insights / per-keyword analysis freeze ("Loading…" forever) — in progress (#458 cached the 5 per-corpus endpoints + an honest slow-load note; #455 warmed grouped top/trending off-thread. LEFT: a statement-deadline slice + the cold FIRST-open speed — needs a slowest-subtab repro / the benchmark export, or the columnar speedup)
-- [ ] 9. Search: pressing Enter should open a new analysis window/tab
-- [ ] 10. Library tab world map: per-country article counts + a per-language donut for "no country" articles (full language names)
-- [ ] 11. Settings: fuse Appearance + GUIs into one "Graphics" subtab
-- [ ] 12. Settings: remove the top intro box on every subtab (reclaim space)
-- [ ] 13. AI prompts: translate the prompt textareas on language switch + verify output comes out in the UI language
-- [ ] 14. Status bar: opaque background matching the left sidebar (content shows through when scrolling)
-- [ ] 15. Sidebar: click empty space to collapse/expand + a clear maximize button in the collapsed rail
-- [ ] 16. Library tab = central dashboard of everything downloaded (maps, Wikipedia, indices, laws, stats) + extrapolated (summaries/translations/synthesis counts)
+- [~] 8. Insights / per-keyword analysis freeze ("Loading…" forever) — in progress (#458 cached the 5 per-corpus endpoints + an honest slow-load note; #455 warmed grouped top/trending off-thread; the 2026-06-24 autonomous session added a STATEMENT-DEADLINE guard on associations/graph/framing → typed 503 within 60s instead of an infinite hang, surfaced by the existing subtab error-notes. LEFT: the cold FIRST-open speed — the keyword_daily rollup [5A-bis D2], gated on the persisted encrypted DuckDB store [D1])
+- [x] 9. Search: pressing Enter should open a new analysis window/tab — DONE (2026-06-24 autonomous session): the palette Enter now calls `openAnalysisInNewTab(raw)` → `window.open("/?analyze=…")`, hydrated by the existing `_hydrateCardCorpus` boot deep-link; in-SPA `openAnalysisFor` kept for results/cards. Browser-unverified (fork-3).
+- [x] 10. Library tab world map: per-country article counts + a per-language donut for "no country" articles (full language names) — DONE (2026-06-24): the Library "World coverage" now leads with an ooMap choropleth of per-country article counts + a new `ooDonut` of the unlocated-by-language bucket (full names via ooLangName). Backend `source_country_counts` gained the column-projected `by_language` breakdown. Browser-unverified (fork-3).
+- [x] 11. Settings: fuse Appearance + GUIs into one "Graphics" subtab — DONE (2026-06-24): one `data-tab="graphics"` subtab holds both the Appearance controls + the GUIs gallery (`#guis-gallery` kept). Browser-unverified (fork-3).
+- [x] 12. Settings: remove the top intro box on every subtab (reclaim space) — DONE (2026-06-24): the h2+intro panel removed, the subtab nav un-wrapped. Browser-unverified (fork-3).
+- [x] 13. AI prompts: translate the prompt textareas on language switch + verify output comes out in the UI language — DONE (2026-06-24): the labels auto-translate (static, keyed) + loadLlmPrompts re-renders on langchange; the prompt BODIES stay English by design; closed the 3 output-language gaps so single-article summarize (ui_lang) + translate (defaults to UI language) come out in the UI language like bulk/synthesis. Browser-unverified (fork-3).
+- [x] 14. Status bar: opaque background matching the left sidebar (content shows through when scrolling) — DONE (2026-06-24): `.topbar` + `.subtab-strip` now `var(--bg2)` (the sidebar bg), backdrop-blur dropped. Browser-unverified (fork-3).
+- [x] 15. Sidebar: click empty space to collapse/expand + a clear maximize button in the collapsed rail — DONE (2026-06-24): empty-space click → `toggleSidebar()` (ignoring nav items/controls); the #sb-collapse/#sb-expand affordances already existed. Browser-unverified (fork-3).
+- [x] 16. Library tab = central dashboard of everything downloaded (maps, Wikipedia, indices, laws, stats) + extrapolated (summaries/translations/synthesis counts) — DONE (2026-06-24): new `GET /api/library/overview` rolls up the downloaded layer (wiki dumps/OSM/markets/laws/stats/models, counts + on-disk bytes) + the AI-derived layer (article_analyses by kind + ai_keyword + watches); a top "Library" dashboard panel renders both. Reuses cached database_stats + the download managers; honest counts/sizes, no score. Browser-unverified (fork-3).
 
 ### Bugs
 - [x] Folder newsletter import: `UNIQUE constraint failed: articles.hash` on large multi-folder .eml imports — **fix-merged (#453)**: the hardened `ingest_emails` dedup keys on the real unique column + recovers per-message, fixing BOTH the upload endpoint AND the folder-import job (both call it). The 17:55 debug bundle confirms only HISTORICAL occurrences (locked/unique errors this session = 0) — **verify on a fresh live re-import of the 5 GB tree**.
-- [ ] Collector is writer-bound (many parallel fetchers → 1 DB writer): batch writes / cut gate contention *(ledger P1-C)*
+- [~] Collector is writer-bound (many parallel fetchers → 1 DB writer): batch writes / cut gate contention *(ledger P1-C)* — DESIGN DONE (`docs/design/COLLECTOR_WRITER_BATCHING.md`: safe per-source batched store+index via `index_article(commit=False)` + the `ingest_emails` fallback; `synchronous=NORMAL` already in place). Implementation DEFERRED to a session that can run the full suite + measure on the live corpus (a blind refactor of the keystone-#1 writer hot path violates "entirely reliable or it should not exist").
 
 ### Keyword engine cleanup (on your live corpus)
 - [ ] Run "Clean up keywords (re-index, then prune)" + measure the drop
 - [ ] Run baseline-tag backfill (tag coverage is 0%)
 - [ ] Generate translation rings from the exported keyword log (networked machine)
-- [ ] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket
+- [x] Filter English gov-newsletter boilerplate (govdelivery / gd_combo_table) from the "?" bucket — DONE (2026-06-24): `gd_combo_table` (underscore template id) already drops via the shipped §2.6 `_is_code_token` rule; `govdelivery` STAYS content per ruling #4. Added a self-test golden case pinning both. The bucket's undetected-English half is the shipped §2.6 langdetect.
 - [ ] Decide zh/ja segmentation (currently no keywords for those)
 
 ### Manipulation-pattern cards (5 of 9 shipped)

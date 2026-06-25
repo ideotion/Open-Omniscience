@@ -330,11 +330,16 @@ _CASES: tuple[Challenge, ...] = (
     ),
     Challenge(
         # §2.6: an underscore inside a token = a CSS/template/code identifier (no natural
-        # orthography uses a word-internal underscore), so it is dropped; real words stay.
+        # orthography uses a word-internal underscore), so it is dropped; real words — and
+        # the BRAND token 'govdelivery' (ruling 2026-06-23 #4: brand/company tokens stay
+        # content, never stoplisted) — stay. The gov-newsletter "?"-bucket junk is the
+        # underscore template ids (dropped here) + undetected-English (the §2.6 langdetect),
+        # NOT the brand name.
         "underscore_identifiers_dropped",
-        "underscore code/template identifiers (gd_combo_table) are dropped; real words stay",
-        "The newsletter used a gd_combo_table layout while covering the elections.",
-        term=("elections", "newsletter"),
+        "underscore code/template ids (gd_combo_table) drop; real words + the brand "
+        "'govdelivery' (ruling #4) stay content",
+        "The govdelivery newsletter used a gd_combo_table layout while covering the elections.",
+        term=("elections", "newsletter", "govdelivery"),
         absent=("gd_combo_table",),
     ),
 )
