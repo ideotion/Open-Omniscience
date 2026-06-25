@@ -208,6 +208,195 @@
     };
   }
 
+  // ----- choropleth / proportional symbols (the "normalized-only" ruling) ----- //
+
+  /** Normalise a comparability dimension (null/undefined/"" => "", trimmed). */
+  function _norm(v) {
+    return v === null || v === undefined ? "" : String(v).trim();
+  }
+  /** Human display of a comparability value ("" => an em-dash placeholder). */
+  function _show(v) {
+    var s = _norm(v);
+    return s === "" ? "—" : s;
+  }
+
+  /**
+   * Parse a stat period label to a decimal year for "latest per area" selection.
+   * Mirrors src/stats/series.py _parse_period: annual / semester / quarter / month /
+   * week / day. Unparseable => NaN (the caller falls back to a raw-string compare, so a
+   * weird label is never silently mis-ordered into "latest").
+   */
+  function periodToYear(period) {
+    if (period === null || period === undefined) return NaN;
+    var s = String(period).trim();
+    var m;
+    if (/^\d{4}$/.test(s)) return parseInt(s, 10);
+    if ((m = /^(\d{4})[-_ ]?Q([1-4])$/i.exec(s))) return parseInt(m[1], 10) + (parseInt(m[2], 10) - 1) / 4;
+    if ((m = /^(\d{4})[-_ ]?S([1-2])$/i.exec(s))) return parseInt(m[1], 10) + (parseInt(m[2], 10) - 1) / 2;
+    if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)))
+      return parseInt(m[1], 10) + (parseInt(m[2], 10) - 1) / 12 + (parseInt(m[3], 10) - 1) / 365;
+    if ((m = /^(\d{4})[-_ ]?W(\d{1,2})$/i.exec(s))) return parseInt(m[1], 10) + (parseInt(m[2], 10) - 1) / 52;
+    if ((m = /^(\d{4})[-_ ]?M?(\d{1,2})$/i.exec(s))) {
+      var mo = parseInt(m[2], 10);
+      if (mo >= 1 && mo <= 12) return parseInt(m[1], 10) + (mo - 1) / 12;
+    }
+    return NaN;
+  }
+
+  /**
+   * Build the honest data layer for a per-area map of ONE official-statistics
+   * indicator. `rows` are StatFigure-shaped: {ref_area, value, unit, base_year,
+   * adjustment, time_period}. The two honesty rules of the §5B "normalized-only"
+   * ruling live in the SHAPE of the output:
+   *
+   *   (1) COMPARABILITY GATE — only areas sharing the MODAL (unit, base year,
+   *       seasonal adjustment) basis are coloured/sized; an area on a different
+   *       basis is comparable:false with a reason, so the renderer shows it as
+   *       no-data (NEVER recoloured to fit one scale). A missing value is also
+   *       no-data, with its own reason. The value DOMAIN spans comparable values
+   *       only (a stray incomparable figure can't stretch the colour scale).
+   *
+   *   (2) LEVEL vs NORMALIZED — opts.kind==="level" (a count/total like population
+   *       or GDP) REFUSES the choropleth (mode "symbols"): colouring a level makes
+   *       a big country look "more" just for being big. The caller draws
+   *       area-proportional symbols instead (see symbolRadii). opts.kind defaults
+   *       to "normalized" (rate/ratio/%/per-capita) => mode "choropleth".
+   *
+   * One cell PER area: when opts.period is given, only that period; otherwise the
+   * LATEST period each area has (periodToYear, raw-string tiebreak). Vintage dedup
+   * is the caller's job (hand us one value per area+period). PURE, no DOM, no score.
+   */
+  function choroplethData(rows, opts) {
+    opts = opts || {};
+    rows = rows || [];
+    var kind = opts.kind === "level" ? "level" : "normalized";
+    var wantPeriod = opts.period !== undefined && opts.period !== null ? String(opts.period) : null;
+
+    // One row per area: filter to the requested period, or keep each area's latest.
+    var byArea = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var area = _norm(r.ref_area);
+      if (area === "") continue;
+      if (wantPeriod !== null && _norm(r.time_period) !== wantPeriod) continue;
+      var prev = byArea[area];
+      if (!prev) {
+        byArea[area] = r;
+        continue;
+      }
+      var ry = periodToYear(r.time_period);
+      var py = periodToYear(prev.time_period);
+      var rk = Number.isNaN(ry) ? -Infinity : ry;
+      var pk = Number.isNaN(py) ? -Infinity : py;
+      if (rk > pk || (rk === pk && String(r.time_period) > String(prev.time_period))) byArea[area] = r;
+    }
+
+    // Modal comparability basis over areas that actually carry a value.
+    var counts = {};
+    var triples = {};
+    var areas = Object.keys(byArea);
+    for (var a = 0; a < areas.length; a++) {
+      var row = byArea[areas[a]];
+      if (isMissing(row.value)) continue;
+      var key = _norm(row.unit) + "␟" + _norm(row.base_year) + "␟" + _norm(row.adjustment);
+      counts[key] = (counts[key] || 0) + 1;
+      if (!triples[key]) triples[key] = { unit: row.unit, base_year: row.base_year, adjustment: row.adjustment };
+    }
+    var basisKey = null;
+    var best = -1;
+    var keys = Object.keys(counts);
+    for (var c = 0; c < keys.length; c++) {
+      if (counts[keys[c]] > best) {
+        best = counts[keys[c]];
+        basisKey = keys[c];
+      }
+    }
+    var basis = basisKey !== null ? triples[basisKey] : null;
+
+    function basisReason(row) {
+      if (_norm(row.unit) !== _norm(basis.unit))
+        return "unit '" + _show(row.unit) + "' differs from '" + _show(basis.unit) + "'";
+      if (_norm(row.base_year) !== _norm(basis.base_year))
+        return "base year " + _show(row.base_year) + " differs from " + _show(basis.base_year);
+      if (_norm(row.adjustment) !== _norm(basis.adjustment))
+        return "adjustment '" + _show(row.adjustment) + "' differs from '" + _show(basis.adjustment) + "'";
+      return "differs from the comparable basis";
+    }
+
+    var cells = [];
+    var comparableCount = 0;
+    var incomparableCount = 0;
+    var noValueCount = 0;
+    var vmin = Infinity;
+    var vmax = -Infinity;
+    for (var k = 0; k < areas.length; k++) {
+      var rr = byArea[areas[k]];
+      var cell = { area: areas[k], value: rr.value, period: rr.time_period, comparable: false, reason: null };
+      if (isMissing(rr.value)) {
+        cell.reason = "no value for this period";
+        noValueCount += 1;
+      } else if (basis !== null && _norm(rr.unit) === _norm(basis.unit) && _norm(rr.base_year) === _norm(basis.base_year) && _norm(rr.adjustment) === _norm(basis.adjustment)) {
+        cell.comparable = true;
+        comparableCount += 1;
+        if (rr.value < vmin) vmin = rr.value;
+        if (rr.value > vmax) vmax = rr.value;
+      } else {
+        cell.reason = basisReason(rr);
+        incomparableCount += 1;
+      }
+      cells.push(cell);
+    }
+    cells.sort(function (x, y) {
+      return x.area < y.area ? -1 : x.area > y.area ? 1 : 0;
+    });
+
+    var domain = comparableCount > 0 ? [vmin, vmax] : null;
+    var caveat =
+      kind === "level"
+        ? "A level (count or total) is shown as area-proportional symbols, not colour — a choropleth would make a large area look like 'more' just for being big. Symbol area is proportional to the value."
+        : "Coloured by comparable values only — areas on a different unit, base year or seasonal adjustment show as no-data (never recoloured to one scale), as do areas with no value for this period.";
+
+    return {
+      mode: kind === "level" ? "symbols" : "choropleth",
+      refusedChoropleth: kind === "level",
+      refusalReason:
+        kind === "level"
+          ? "A level is not comparable across areas of different size; it is shown as proportional symbols."
+          : null,
+      basis: basis,
+      cells: cells,
+      comparableCount: comparableCount,
+      incomparableCount: incomparableCount,
+      noValueCount: noValueCount,
+      domain: domain,
+      caveat: caveat,
+    };
+  }
+
+  /**
+   * Area-honest proportional-symbol radii for the cells of a LEVEL indicator
+   * (choroplethData mode "symbols"). Radius via sqrtAreaScale over the maximum
+   * COMPARABLE, non-negative value, so AREA ∝ value (rule R4). A missing /
+   * incomparable / negative value is shown:false with a reason (never a fake dot).
+   */
+  function symbolRadii(cells, maxRadius) {
+    cells = cells || [];
+    maxRadius = maxRadius || 20;
+    var max = 0;
+    for (var i = 0; i < cells.length; i++) {
+      var c = cells[i];
+      if (c.comparable && !isMissing(c.value) && c.value > max) max = c.value;
+    }
+    var scale = sqrtAreaScale(max, maxRadius);
+    return cells.map(function (c) {
+      if (!c.comparable || isMissing(c.value))
+        return { area: c.area, value: c.value, r: 0, shown: false, reason: c.reason || "no comparable value" };
+      if (c.value < 0)
+        return { area: c.area, value: c.value, r: 0, shown: false, reason: "negative value — not a proportional symbol" };
+      return { area: c.area, value: c.value, r: scale(c.value), shown: true, reason: null };
+    });
+  }
+
   // ----- binning (overplotting fix that is also the honesty fix) ----- //
 
   /**
@@ -316,6 +505,9 @@
     pathWithGaps: pathWithGaps,
     statSeriesPaths: statSeriesPaths,
     statChartGeometry: statChartGeometry,
+    periodToYear: periodToYear,
+    choroplethData: choroplethData,
+    symbolRadii: symbolRadii,
     binCounts1D: binCounts1D,
     bin2D: bin2D,
     fiveNumberSummary: fiveNumberSummary,

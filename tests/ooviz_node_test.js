@@ -206,5 +206,107 @@ test("statChartGeometry: empty series is honest (no throw, a unit box)", () => {
   assert.deepEqual(g.valueDomain, [0, 1]);
 });
 
+// --------------------------------------------------------------------------- //
+// choroplethData / symbolRadii — the §5B "normalized-only" map data layer.
+// --------------------------------------------------------------------------- //
+test("periodToYear: annual/quarter/month/day parse; junk => NaN", () => {
+  assert.equal(V.periodToYear("2019"), 2019);
+  assert.equal(V.periodToYear("2019-Q3"), 2019 + 2 / 4);
+  assert.equal(V.periodToYear("2019-M07"), 2019 + 6 / 12);
+  assert.ok(Math.abs(V.periodToYear("2019-07-01") - (2019 + 6 / 12)) < 1e-9);
+  assert.ok(Number.isNaN(V.periodToYear("not-a-period")));
+});
+
+test("choroplethData: comparability gate — odd basis is no-data, never recoloured", () => {
+  // Three areas share '% of GDP'; one reports in 'current US$' — it must NOT be
+  // coloured on the same scale (it would be comparable:false, no-data).
+  const rows = [
+    { ref_area: "FR", value: 2.1, unit: "% of GDP", base_year: null, adjustment: null, time_period: "2020" },
+    { ref_area: "DE", value: 1.4, unit: "% of GDP", base_year: null, adjustment: null, time_period: "2020" },
+    { ref_area: "IT", value: 3.0, unit: "% of GDP", base_year: null, adjustment: null, time_period: "2020" },
+    { ref_area: "XX", value: 9000, unit: "current US$", base_year: null, adjustment: null, time_period: "2020" },
+  ];
+  const d = V.choroplethData(rows, { kind: "normalized" });
+  assert.equal(d.mode, "choropleth");
+  assert.equal(d.basis.unit, "% of GDP"); // the modal basis won
+  assert.equal(d.comparableCount, 3);
+  assert.equal(d.incomparableCount, 1);
+  assert.deepEqual(d.domain, [1.4, 3.0]); // the 9000 outlier never stretches the scale
+  const xx = d.cells.find((c) => c.area === "XX");
+  assert.equal(xx.comparable, false);
+  assert.ok(/unit/.test(xx.reason)); // honest reason names the difference
+});
+
+test("choroplethData: a missing value is no-data with its own reason (never zero)", () => {
+  const rows = [
+    { ref_area: "FR", value: 2.0, unit: "%", base_year: null, adjustment: null, time_period: "2021" },
+    { ref_area: "DE", value: null, unit: "%", base_year: null, adjustment: null, time_period: "2021" },
+  ];
+  const d = V.choroplethData(rows);
+  assert.equal(d.noValueCount, 1);
+  const de = d.cells.find((c) => c.area === "DE");
+  assert.equal(de.comparable, false);
+  assert.ok(/no value/.test(de.reason));
+  assert.deepEqual(d.domain, [2.0, 2.0]); // domain ignores the gap; zero-width is fine
+});
+
+test("choroplethData: keeps each area's LATEST period when none requested", () => {
+  const rows = [
+    { ref_area: "FR", value: 1.0, unit: "%", base_year: null, adjustment: null, time_period: "2019" },
+    { ref_area: "FR", value: 2.5, unit: "%", base_year: null, adjustment: null, time_period: "2021" },
+    { ref_area: "FR", value: 1.8, unit: "%", base_year: null, adjustment: null, time_period: "2020" },
+  ];
+  const d = V.choroplethData(rows);
+  assert.equal(d.cells.length, 1);
+  assert.equal(d.cells[0].value, 2.5); // 2021 wins
+  assert.equal(d.cells[0].period, "2021");
+});
+
+test("choroplethData: opts.period filters to exactly that period", () => {
+  const rows = [
+    { ref_area: "FR", value: 1.0, unit: "%", base_year: null, adjustment: null, time_period: "2019" },
+    { ref_area: "FR", value: 2.5, unit: "%", base_year: null, adjustment: null, time_period: "2021" },
+  ];
+  const d = V.choroplethData(rows, { period: "2019" });
+  assert.equal(d.cells.length, 1);
+  assert.equal(d.cells[0].value, 1.0);
+});
+
+test("choroplethData: a LEVEL refuses the choropleth (mode symbols)", () => {
+  const rows = [
+    { ref_area: "CN", value: 1.4e9, unit: "persons", base_year: null, adjustment: null, time_period: "2022" },
+    { ref_area: "FR", value: 6.8e7, unit: "persons", base_year: null, adjustment: null, time_period: "2022" },
+  ];
+  const d = V.choroplethData(rows, { kind: "level" });
+  assert.equal(d.mode, "symbols");
+  assert.equal(d.refusedChoropleth, true);
+  assert.ok(/proportional symbols/.test(d.refusalReason));
+});
+
+test("symbolRadii: AREA ∝ value (honest), incomparable/negative => not shown", () => {
+  const cells = [
+    { area: "A", value: 100, comparable: true, reason: null },
+    { area: "B", value: 25, comparable: true, reason: null }, // sqrt(25/100)=0.5 => half radius
+    { area: "C", value: 5, comparable: false, reason: "unit differs" },
+    { area: "D", value: -3, comparable: true, reason: null },
+  ];
+  const r = V.symbolRadii(cells, 20);
+  const A = r.find((x) => x.area === "A");
+  const B = r.find((x) => x.area === "B");
+  assert.equal(A.r, 20);
+  assert.equal(B.r, 10); // 4x value => 2x radius (area-honest), never 4x
+  assert.equal(r.find((x) => x.area === "C").shown, false); // incomparable not plotted
+  assert.equal(r.find((x) => x.area === "D").shown, false); // negative not a proportional symbol
+  assert.ok(/negative/.test(r.find((x) => x.area === "D").reason));
+});
+
+test("choroplethData: empty input is honest (no throw, no basis)", () => {
+  const d = V.choroplethData([], {});
+  assert.deepEqual(d.cells, []);
+  assert.equal(d.basis, null);
+  assert.equal(d.domain, null);
+  assert.equal(d.comparableCount, 0);
+});
+
 console.log("\n" + passed + " tests passed.");
 console.log("OOVIZ OK");
