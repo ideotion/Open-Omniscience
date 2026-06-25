@@ -334,6 +334,20 @@ def test_ir_eval_harness_is_wired():
     assert "/ir-eval-selftest" in api and "run_ir_eval_selftest" in api
 
 
+def test_bm25f_per_column_ranking_is_wired():
+    """Keyword-engine P5.1: FTS ranking is BM25F — bm25() weighted per column (title vs
+    body) so a title keyword outranks a body-only mention. The weights are env-tunable and
+    reversible (equal weights = the old flat rank), and bound as parameters (never
+    f-string-formatted into SQL). One change covers every consumer (search_ids is the single
+    FTS ranking entry point)."""
+    fts = (_SRC / "database" / "fts.py").read_text(encoding="utf-8")
+    assert "def _bm25_weights(" in fts
+    assert "OO_BM25_TITLE_WEIGHT" in fts and "OO_BM25_BODY_WEIGHT" in fts
+    # weighted bm25 ORDER BY with the weights as BOUND params, not string-formatted SQL
+    assert "ORDER BY bm25(article_fts, :wt, :wb)" in fts
+    assert ":wt" in fts and ":wb" in fts
+
+
 def test_articles_endpoint_serialises_stored_sentiment():
     """§6: the /api/articles list exposes the stored sentiment (populated at ingest /
     re-index, VADER English-only) so lists / cards can show tone without an extra framing
