@@ -570,6 +570,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the highest-ROI BUILDABLE-and-unblocked items are P3 (eval harness) · P4.2 (reconcile_keyword_language
   — fixes the 16% head language mismatch) · P5.1 (BM25F + facets). In-memory rollups remain optional
   groundwork. (P5 serving · P6 entities later.)
+  **PHASE 1 + P2.4 MERGED into 0.09 (PR #487).** **P4.2 SHIPPED** (new PR; reconcile_keyword_language —
+  `src/analytics/store.py:reconcile_keyword_language(session)` sets `Keyword.language` to the
+  SIGNATURE-MAJORITY article language [the fix for first-write-wins, the 16%/40%-of-head mismatch], a
+  background pass mirroring `reconcile_keyword_counters`: only flips on a CLEAR majority [`>half` of the
+  keyword's located mentions] backed by `>=2` distinct articles, so a stray article never flips a tag.
+  PERF-SAFE per the codec column-order trap: NEVER the per-row `keyword_mentions->articles` join — a
+  COVERING article-language map [`idx_article_language`, no content read] + a covering `(keyword_id,
+  article_id)` mention scan joined in Python [one mention per (kw,article) so a row count == distinct
+  articles]. Endpoint `POST /api/insights/reconcile-keyword-language`; folded into the re-index job's
+  complete-pass [so "Clean up keywords" fixes language too]. The "?" bucket [all-untagged mentions] is
+  left as-is — `global_stopwords` ALREADY routes every keyword incl. unknown-language through the
+  English+all-language stoplist at query time, so "?" boilerplate is filtered there; an aggressive
+  email/web boilerplate denylist stays the EVIDENCE-DRIVEN stoplist process [`analyze_keyword_log.py`],
+  NOT a guess [the no-over-stoplist discipline]. tests/test_analytics_store.py [signature-majority
+  flip · NULL→lang · tie-no-flip · "?"-noop] + the invariant guard. VERIFIED here: 193 targeted green,
+  ruff F/B, mypy 127≤127.) NEXT: P5.1 (BM25F + facets) · P3 (eval harness) · P4.3 (lemmatization, gated
+  on P3+P4.2).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +

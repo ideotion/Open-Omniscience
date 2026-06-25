@@ -303,6 +303,21 @@ def test_reindex_background_job_is_wired():
     assert "optimize_after_bulk" in importjob  # the import job runs it on completion
 
 
+def test_reconcile_keyword_language_is_wired():
+    """Keyword-engine P4.2: a background pass re-languages keywords to their
+    signature-majority article language (the first-write-wins tag index_article never
+    reconciles), perf-safe (no per-row keyword_mentions->articles join), exposed as an
+    endpoint AND folded into the re-index job's complete pass."""
+    store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "def reconcile_keyword_language(" in store
+    # perf-safe: reads Article.language (covering idx_article_language), NOT a per-row join
+    assert "Article.language" in store and "art_lang" in store
+    api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert "/reconcile-keyword-language" in api
+    job = (_SRC / "analytics" / "reindex_job.py").read_text(encoding="utf-8")
+    assert "reconcile_keyword_language" in job  # the cleanup flow fixes language too
+
+
 def test_articles_endpoint_serialises_stored_sentiment():
     """§6: the /api/articles list exposes the stored sentiment (populated at ingest /
     re-index, VADER English-only) so lists / cards can show tone without an extra framing

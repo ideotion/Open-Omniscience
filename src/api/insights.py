@@ -214,6 +214,17 @@ def insights_prune_keywords(db: Session = Depends(get_db)) -> dict:
     return prune_orphan_keywords(db)
 
 
+@router.post("/reconcile-keyword-language")
+def insights_reconcile_keyword_language(db: Session = Depends(get_db)) -> dict:
+    """Re-language keywords to their signature-majority article language (P4.2) — the fix
+    for the first-write-wins ``Keyword.language`` that ingest never reconciles. Background
+    pass (off the request path conceptually; bounded covering scans, no per-row article
+    join). Counts only, no score; a tag only changes on a clear majority."""
+    from src.analytics.store import reconcile_keyword_language
+
+    return reconcile_keyword_language(db)
+
+
 @router.post("/reindex-all")
 def insights_reindex_all(
     limit: int = Query(300, ge=1, le=2000),
