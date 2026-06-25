@@ -585,8 +585,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   email/web boilerplate denylist stays the EVIDENCE-DRIVEN stoplist process [`analyze_keyword_log.py`],
   NOT a guess [the no-over-stoplist discipline]. tests/test_analytics_store.py [signature-majority
   flip · NULL→lang · tie-no-flip · "?"-noop] + the invariant guard. VERIFIED here: 193 targeted green,
-  ruff F/B, mypy 127≤127.) NEXT: P5.1 (BM25F + facets) · P3 (eval harness) · P4.3 (lemmatization, gated
-  on P3+P4.2).
+  ruff F/B, mypy 127≤127.) **P3 SHIPPED** (new PR; IR retrieval-eval harness — the GATE that lets the
+  ranking/conflation quality changes [P5.1 BM25F, P4.3 lemmatization, P5.2 embeddings] be MEASURED, not
+  guessed [the measure-before-trust non-negotiable]. `src/analytics/ir_eval.py`: NATIVE pure-Python
+  metrics [nDCG@k/MRR@k/Recall@k/P@k/AP — textbook defs, unit-tested vs hand-computed values; NO new
+  `[eval]` dep to gate/degrade — the strategy allowed pytrec_eval/ranx OR native; native is leaner +
+  more reliable]; `GoldQuery` [id·query·language·axis·graded relevances 0/1/2]; `evaluate` reports
+  PER-LANGUAGE + per-axis with n stated, NEVER one pooled average alone [a method can win overall while
+  losing on Arabic], and NO composite score [each metric stands alone]; `conflation_delta` reports the
+  recall GAIN and precision CHANGE SEPARATELY + the newly-relevant vs newly-irrelevant example sets
+  [never blended]; `regression_check` fails on a metric drop beyond tol; `evaluate_against_corpus` runs
+  the LIVE FTS `search_ids` [pluggable search_fn so a BM25F/hybrid variant A/Bs via conflation_delta];
+  `run_ir_eval_selftest` proves the MECHANISM on a fixture [10/10] → `GET /api/diagnostics/ir-eval-selftest`.
+  tests/test_ir_eval.py [8: metrics vs hand-computed, per-language breakdown + no-composite, conflation
+  both-sides, regression gate, injected search_fn] + the invariant guard. VERIFIED here: 155 targeted
+  green, ruff F/B, mypy 127≤127. The one OPERATIONAL piece: a human-judged GOLD SET [graded 0/1/2 over
+  the maintainer's own corpus] — corpus-specific, can't be bundled; the harness CONSUMES it.) NEXT:
+  P5.1 (BM25F + facets, now measurable) · P4.3 (lemmatization, gated on the gold set + P4.2).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +
