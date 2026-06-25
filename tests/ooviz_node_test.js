@@ -155,5 +155,56 @@ test("statSeriesPaths: empty / missing series is honest, not a throw", () => {
   assert.deepEqual(V.statSeriesPaths({}, id, id), []);
 });
 
+// --------------------------------------------------------------------------- //
+// statChartGeometry — the pure chart math (domains, scales, paths, ticks).
+// --------------------------------------------------------------------------- //
+test("statChartGeometry: domains + ticks + one path per comparability segment", () => {
+  const series = {
+    segments: [
+      {
+        unit: "Index", base_year: "2010", adjustment: null,
+        points: [{ t: 2018, value: 100 }, { t: 2019, value: 110 }],
+      },
+      {
+        unit: "Index", base_year: "2015", adjustment: null,
+        points: [{ t: 2020, value: 50 }, { t: 2021, value: 52 }],
+      },
+    ],
+  };
+  const g = V.statChartGeometry(series, { width: 600, height: 200 });
+  assert.deepEqual(g.timeDomain, [2018, 2021]); // spans all points
+  assert.deepEqual(g.valueDomain, [50, 110]); // min/max of plottable values
+  assert.equal(g.paths.length, 2); // one subpath per comparability segment (break not joined)
+  assert.equal(g.nSegments, 2);
+  assert.equal(g.nPoints, 4);
+  assert.ok(g.xTicks.length > 0 && g.yTicks.length > 0);
+  // y ticks carry pixel positions inside the plot box.
+  for (const t of g.yTicks) assert.ok(t.y >= g.pad.t - 1e-6 && t.y <= g.height - g.pad.b + 1e-6);
+});
+
+test("statChartGeometry: a gap is ignored by the value domain, kept in the time domain", () => {
+  const series = {
+    segments: [
+      {
+        unit: null, base_year: null, adjustment: null,
+        points: [{ t: 2019, value: 10 }, { t: 2020, value: null }, { t: 2021, value: 30 }],
+      },
+    ],
+  };
+  const g = V.statChartGeometry(series);
+  assert.deepEqual(g.valueDomain, [10, 30]); // the null does not pull the domain toward 0
+  assert.deepEqual(g.timeDomain, [2019, 2021]); // but the gap year still bounds the x axis
+  assert.equal(g.paths.length, 1);
+  assert.equal((g.paths[0].d.match(/M/g) || []).length, 2); // the gap broke the line
+});
+
+test("statChartGeometry: empty series is honest (no throw, a unit box)", () => {
+  const g = V.statChartGeometry({ segments: [] });
+  assert.deepEqual(g.paths, []);
+  assert.equal(g.nPoints, 0);
+  assert.deepEqual(g.timeDomain, [0, 1]);
+  assert.deepEqual(g.valueDomain, [0, 1]);
+});
+
 console.log("\n" + passed + " tests passed.");
 console.log("OOVIZ OK");

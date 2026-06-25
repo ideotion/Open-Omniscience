@@ -4002,6 +4002,29 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **STAT TIME-SERIES CHART (§5B Phase B3) 2026-06-25 (the honest-chart payoff — draws the merged feed via the
+  merged ooViz primitives; same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the
+  freshly-merged 0.09 after #475 merged; NEW draft PR onto 0.09; the chart MATH is node-VERIFIED [14/14 node
+  tests], the SVG ASSEMBLY is BROWSER-UNVERIFIED per fork-3 — node --check + grep-invariant-guarded + i18n
+  100%).** Wires the whole stats-viz arc into a visible chart in Settings → Statistics. (1) `ooViz.statChart
+  Geometry(series, opts)` — a NEW PURE, node-tested geometry helper (added to the merged ooviz.js): from a
+  `to_chart_series` result it computes the value domain (min/max of PLOTTABLE values — a gap/None NEVER pulls
+  it toward 0), the time domain (spans ALL points incl. gaps, so a gap leaves a hole and never shifts the
+  axis), the linear scales, the pixel-space `paths` (delegates to `statSeriesPaths` — ONE per comparability
+  segment, gaps broken), and the niceTicks x/y tick positions; empty → a unit box (no throw). 3 new node tests.
+  (2) `ooviz.js` is now LOADED before app.js (`<script src="/static/ooviz.js">` after osmpbf.js → `window.
+  ooViz`). (3) Settings → Statistics gained an Area input + "Chart over time" button + `#statfig-chart`; (4)
+  `renderStatChart()` (app.js, beside the other stat handlers) fetches `/api/stats/figures/series`, runs the
+  node-tested geometry, and templates an SVG — each comparability SEGMENT a SEPARATE `<path>` (a unit/base-
+  year/SA-NSA break is a visible GAP between paths, NEVER a joined line), gridlines + value/year tick labels
+  via the smart formatter, `role="img"` + aria-label + a `.sr-only` data table (a11y, invariant #24), the
+  honesty CAVEAT visible, honest empty/error states; theme-token strokes (`var(--accent)`/`var(--muted)`).
+  NO backend change; NO new `*_AS_OF`; NO new i18n keys (English-fallback like the adjacent stat strings — gate
+  100%). test_repo_invariants::test_stat_time_series_chart_surface (ooviz-before-app load order + the controls
+  + the handler fetching the feed through `ooViz.statChartGeometry` + the caveat render + the helper
+  export). The official-statistics ingestion → honest-VIZ arc is now end-to-end (parse → adapt → feed →
+  chart). REMAINING: human click-through across themes (fork-3); key the new strings ×12; the choropleth
+  comparability precheck (Phase C); wire ooViz's pathWithGaps into the GENERAL ooChart for app-wide gap honesty.
 - **CHART-SERIES STORE-PULL + /api/stats/figures/series ENDPOINT 2026-06-25 (the honest-chart DATA FEED;
   same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after
   #474 merged; NEW draft PR onto 0.09; backend ADAPTER+to_chart_series logic VERIFIED py3.11 standalone + ruff

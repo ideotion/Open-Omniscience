@@ -154,6 +154,60 @@
     return out;
   }
 
+  /**
+   * Compute the full geometry of a stat time-series chart from a to_chart_series result.
+   * PURE (no DOM): returns pixel-space paths (one per comparability segment, gaps broken via
+   * statSeriesPaths) + axis ticks + the data domains, so the caller only templates SVG.
+   *
+   * The VALUE domain is [min,max] of the PLOTTABLE (non-gap) values — a level series is a
+   * deliberate, labelled non-zero domain (the framework allows it for lines). The TIME domain
+   * spans ALL points (gaps included), so a gap leaves a visible hole and never shifts the
+   * axis. An empty series => empty paths over a unit box (the caller shows "no data").
+   */
+  function statChartGeometry(series, opts) {
+    opts = opts || {};
+    var width = opts.width || 640;
+    var height = opts.height || 240;
+    var pad = opts.pad || { l: 52, r: 12, t: 12, b: 28 };
+    var segments = (series && series.segments) || [];
+    var ts = [];
+    var vs = [];
+    for (var i = 0; i < segments.length; i++) {
+      var pts = segments[i].points || [];
+      for (var j = 0; j < pts.length; j++) {
+        if (typeof pts[j].t === "number") ts.push(pts[j].t);
+        if (!isMissing(pts[j].value)) vs.push(pts[j].value);
+      }
+    }
+    var t0 = ts.length ? Math.min.apply(null, ts) : 0;
+    var t1 = ts.length ? Math.max.apply(null, ts) : 1;
+    var v0 = vs.length ? Math.min.apply(null, vs) : 0;
+    var v1 = vs.length ? Math.max.apply(null, vs) : 1;
+    var sx = linearScale(t0, t1, pad.l, width - pad.r);
+    var sy = linearScale(v0, v1, height - pad.b, pad.t); // inverted: larger value => higher
+    var paths = statSeriesPaths(series, sx, sy);
+    var xTicks = niceTicks(t0, t1, 6).map(function (v) {
+      return { value: v, x: sx(v) };
+    });
+    var yTicks = niceTicks(v0, v1, 5).map(function (v) {
+      return { value: v, y: sy(v) };
+    });
+    var nPoints = 0;
+    for (var k = 0; k < segments.length; k++) nPoints += (segments[k].points || []).length;
+    return {
+      width: width,
+      height: height,
+      pad: pad,
+      paths: paths,
+      xTicks: xTicks,
+      yTicks: yTicks,
+      timeDomain: [t0, t1],
+      valueDomain: [v0, v1],
+      nPoints: nPoints,
+      nSegments: segments.length,
+    };
+  }
+
   // ----- binning (overplotting fix that is also the honesty fix) ----- //
 
   /**
@@ -261,6 +315,7 @@
     mulberry32: mulberry32,
     pathWithGaps: pathWithGaps,
     statSeriesPaths: statSeriesPaths,
+    statChartGeometry: statChartGeometry,
     binCounts1D: binCounts1D,
     bin2D: bin2D,
     fiveNumberSummary: fiveNumberSummary,
