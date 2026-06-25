@@ -4002,6 +4002,23 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **i18n — KEY THE NEW STATISTICS-PANEL STRINGS ×12 (§5C #17 burn-down; closes the #474/#476 loop) 2026-06-25
+  (same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09
+  after #476 merged; NEW draft PR onto 0.09; VERIFIED: i18n gate `--min 100` 100% [1669/1669 ×12] + audit
+  drop + clean-append diff).** The revision-anomalies (#474) + stat-chart (#476) panel strings shipped
+  English-fallback; the maintainer repeatedly flags untranslated surfaces, and both ledger entries flagged
+  "key ×12" as REMAINING — done. Keyed the 7 byte-exact strings: the headings "Revision anomalies" / "Check
+  revision anomalies", the "Area (for the chart)" label + "Chart over time" button, the two button `title`
+  attrs (the "Flag a stored figure…" + "Plot the series…" hovers), and the long "History must not be silently
+  rewritten…" intro paragraph (the §5B sensitivity-wording copy — translated faithfully preserving the exact
+  claims: retrospective-only / never-a-forecast / names-the-shape-not-the-intent / no-score). Appended into all
+  12 locale files via the established TEXT-APPEND method (no json re-dump → zero reformat; diff is +8/−1 per
+  file = the 7 keys + a comma on the prior-last line), keys resolved BYTE-EXACT from the live `--audit-chrome`
+  output (the recurring apostrophe/em-dash trap). en value = the key; the 11 non-en are AI-DRAFTED, FLAGGED for
+  native review (esp. the long honesty paragraph + the ar RTL + zh/ja). Validated: every locale parses, carries
+  all 7 keys, gate stays 100%, the strings are GONE from the audit. No code change. REMAINING i18n tail: the
+  JS-rendered table headers / empty-states in those panels still need `t()` (interpolated literals, the
+  standing limitation) + the broader ~100-string audit-chrome tail.
 - **STAT TIME-SERIES CHART (§5B Phase B3) 2026-06-25 (the honest-chart payoff — draws the merged feed via the
   merged ooViz primitives; same single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the
   freshly-merged 0.09 after #475 merged; NEW draft PR onto 0.09; the chart MATH is node-VERIFIED [14/14 node
