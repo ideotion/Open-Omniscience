@@ -1241,9 +1241,12 @@
       <div id="statfig-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
       <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
         <label>View stored figures — series id<br><input id="statfig-view-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
+        <label>Area (for the chart)<br><input id="statfig-view-area" placeholder="FR" size="8"></label>
         <button class="secondary" onclick="loadStatFigures()">Show stored</button>
         <button class="secondary" onclick="triangulateStatSeries()">Triangulate producers</button>
+        <button class="secondary" onclick="renderStatChart()" title="Plot the series over time. A new line segment starts at every unit / base-year / seasonal-adjustment change (never joined); a gap is a break, never interpolated.">Chart over time</button>
       </div>
+      <div id="statfig-chart" style="margin-top:10px"></div>
       <div style="overflow:auto;margin-top:10px" id="statfig-table"></div>
       <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
       <div style="margin-top:14px">
@@ -2144,6 +2147,8 @@
   <script src="/static/i18n.js"></script>
   <!-- in-browser OSM .pbf reader (THEME-2): renders downloaded offline-map regions, zero-network -->
   <script src="/static/osmpbf.js"></script>
+  <!-- ooViz: zero-dependency honest-chart primitives (loaded before app.js as window.ooViz) -->
+  <script src="/static/ooviz.js"></script>
   <script src="/static/app.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
   <script src="/static/guis/gallery.js"></script>

@@ -10167,6 +10167,41 @@
           + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
       } catch (e) { box.innerHTML = `<div class="muted">Could not check revision anomalies: ${esc(e.message)}</div>`; }
     }
+    // -- Honest stat chart: draws /api/stats/figures/series via ooViz.statChartGeometry.
+    //    A comparability segment (unit/base-year/SA-NSA change) is its OWN path — never
+    //    joined; a gap is a break, never interpolated. role=img + a .sr-only data table.
+    function _fmtYearTick(v) { return Number.isInteger(v) ? String(v) : v.toFixed(1); }
+    async function renderStatChart() {
+      const box = $("statfig-chart"); if (!box) return;
+      const series = ($("statfig-view-series").value || "").trim();
+      const area = ($("statfig-view-area").value || "").trim();
+      if (!series || !area) { box.innerHTML = `<div class="muted">Enter a series id and an area (e.g. FR) to chart it over time.</div>`; return; }
+      if (typeof ooViz === "undefined") { box.innerHTML = `<div class="muted">Chart toolkit unavailable.</div>`; return; }
+      box.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const d = await api("/api/stats/figures/series?series_id=" + encodeURIComponent(series) + "&ref_area=" + encodeURIComponent(area));
+        const segs = d.segments || [];
+        const total = segs.reduce((acc, s) => acc + ((s.points || []).length), 0);
+        if (!total) { box.innerHTML = `<div class="muted">No figures stored for "${esc(series)}" / "${esc(area)}". Fetch some above first.</div>`; return; }
+        const W = 640, H = 240;
+        const g = ooViz.statChartGeometry(d, { width: W, height: H });
+        const yLines = g.yTicks.map(t =>
+          `<line x1="${g.pad.l}" y1="${t.y.toFixed(1)}" x2="${W - g.pad.r}" y2="${t.y.toFixed(1)}" stroke="var(--muted)" stroke-width="1" opacity="0.28"/>`
+          + `<text x="${g.pad.l - 6}" y="${(t.y + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--muted)">${esc(_statfigFmt(t.value))}</text>`).join("");
+        const xLabels = g.xTicks.map(t =>
+          `<text x="${t.x.toFixed(1)}" y="${H - g.pad.b + 14}" text-anchor="middle" font-size="10" fill="var(--muted)">${esc(_fmtYearTick(t.value))}</text>`).join("");
+        const paths = g.paths.map(p => `<path d="${esc(p.d)}" fill="none" stroke="var(--accent)" stroke-width="1.75"/>`).join("");
+        const unit = (segs[0] && segs[0].unit) ? segs[0].unit : "";
+        const breaks = g.nSegments > 1 ? ` · ${g.nSegments} segments (comparability breaks not joined)` : "";
+        const aria = `${esc(series)} for ${esc(area)}: ${total} points, ${_fmtYearTick(g.timeDomain[0])} to ${_fmtYearTick(g.timeDomain[1])}${unit ? ", " + esc(unit) : ""}`;
+        const trows = segs.flatMap(s => (s.points || []).map(p =>
+          `<tr><td>${esc(p.period)}</td><td>${p.value == null ? "—" : esc(_statfigFmt(p.value))}</td><td>${esc(s.unit || "")}</td></tr>`)).join("");
+        box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${aria}" style="max-width:${W}px;height:auto">${yLines}${xLabels}${paths}</svg>`
+          + `<div class="hint">${total} points · ${esc(area)}${unit ? " · " + esc(unit) : ""}${breaks}</div>`
+          + `<table class="sr-only"><caption>Stored values</caption><tr><th>Period</th><th>Value</th><th>Unit</th></tr>${trows}</table>`
+          + (d.caveat ? `<div class="hint" style="margin-top:6px">${esc(d.caveat)}</div>` : "");
+      } catch (e) { box.innerHTML = `<div class="muted">Could not chart: ${esc(e.message)}</div>`; }
+    }
     // -- Tracked figures (ruling #12): scheduled vintage auto-refresh. English-only.
     async function loadStatSubs() {
       const box = $("statfig-subs"); if (!box) return;

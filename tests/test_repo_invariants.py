@@ -74,6 +74,32 @@ def test_revision_anomalies_statistics_surface():
     assert "d.caveat" in ui and "d.method" in ui, "the method + caveat must render"
 
 
+def test_stat_time_series_chart_surface():
+    """Phase B3: the Settings → Statistics panel charts a stored series over time using the
+    merged /api/stats/figures/series feed + the node-tested ooViz.statChartGeometry — a
+    comparability segment is its own path (never joined), a gap is a break. Browser-unverified
+    per fork-3 — node-checked + grep-guarded here."""
+    base = _SRC / "static"
+    html = (base / "index.html").read_text(encoding="utf-8")
+    app = (base / "app.js").read_text(encoding="utf-8")
+    ooviz = (base / "ooviz.js").read_text(encoding="utf-8")
+    # ooViz is loaded as a global BEFORE app.js (so window.ooViz exists when app.js runs).
+    assert "/static/ooviz.js" in html, "ooviz.js must be loaded by index.html"
+    assert html.index("/static/ooviz.js") < html.index("/static/app.js"), "ooviz before app.js"
+    # The chart controls + container.
+    assert 'id="statfig-chart"' in html, "the chart container must exist"
+    assert 'id="statfig-view-area"' in html, "the area input must exist"
+    assert "renderStatChart()" in html, "the Chart button must call renderStatChart"
+    # The handler draws the merged feed through the merged geometry helper, caveat visible.
+    assert "function renderStatChart" in app, "the handler must be defined"
+    assert "/api/stats/figures/series" in app, "it must fetch the chart-series feed"
+    assert "ooViz.statChartGeometry" in app, "it must draw via the node-tested geometry helper"
+    assert "d.caveat" in app, "the honesty caveat must render"
+    # The geometry helper is exported by ooViz (node-tested separately).
+    assert "function statChartGeometry" in ooviz, "statChartGeometry must be defined"
+    assert "statChartGeometry: statChartGeometry" in ooviz, "it must be exported in the API"
+
+
 def test_live_language_switch_rerenders_cldr_name_surfaces():
     """Field test 2026-06-19 #16: country/continent names (CLDR-derived at render time)
     must update when the UI language changes, not only on a page refresh. i18n.setLang
