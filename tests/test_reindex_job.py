@@ -225,3 +225,19 @@ def test_idle_status_shape_and_bad_resume(env):
     assert s["state"] == "idle" and s["articles_total"] == 0 and s["eta_seconds"] is None
     with pytest.raises(RuntimeError, match="Nothing paused"):
         mgr.resume()
+
+
+def test_reindex_job_keyword_only_scope(env):
+    """Phase 1.2: the job threads scope="keywords" through to reindex_all_batch and
+    reports it in status; the run still indexes every article's keywords."""
+    Session, tmp = env
+    _seed(Session, 3)
+    mgr = _new_mgr(tmp)
+    st = mgr.start(scope="keywords", _session_factory=Session, _extractor=BaselineExtractor())
+    assert st["scope"] == "keywords"
+    _join(mgr)
+    s = mgr.status()
+    assert s["state"] == "done" and s["scope"] == "keywords"
+    with Session() as sess:
+        indexed = {row[0] for row in sess.query(KeywordMention.article_id).distinct()}
+        assert indexed == {a.id for a in sess.query(Article).all()}

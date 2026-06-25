@@ -184,8 +184,15 @@ def index_article(
     extractor,
     country: str | None = None,
     city: str | None = None,
+    scope: str = "full",
 ) -> dict:
-    """Extract + store mentions for one article (idempotent). Returns a small tally."""
+    """Extract + store mentions for one article (idempotent). Returns a small tally.
+
+    ``scope`` (keyword-engine Phase 1.2): ``"full"`` (default) recomputes keywords +
+    when/where/who (dates/places/entities) + sentiment; ``"keywords"`` does the keyword
+    pass ONLY and leaves the dates/places/entities + sentiment untouched — ≈⅔ less work
+    for a keyword-only cleanup. The language deduction stays in BOTH (it picks the
+    extraction stoplist + the keyword's analytic language)."""
     content = article.get_content() if hasattr(article, "get_content") else (article.content or "")
 
     # SECONDARY/DEDUCED language (field §2.6, maintainer ruling Q3): when the
@@ -211,10 +218,12 @@ def index_article(
     # Sentiment at ingest (language-aware, honest): VADER scores ENGLISH articles
     # and stores the result on the article; every other language stays NULL — never
     # a fabricated neutral. Runs on the one per-article hook, so ingest / re-index /
-    # backfill all populate the (previously dead) sentiment columns.
-    from src.analytics.sentiment import score_article
+    # backfill all populate the (previously dead) sentiment columns. Skipped in the
+    # keyword-only scope (a keyword cleanup leaves sentiment untouched).
+    if scope != "keywords":
+        from src.analytics.sentiment import score_article
 
-    article.sentiment_score, article.sentiment_label = score_article(content, known_lang)
+        article.sentiment_score, article.sentiment_label = score_article(content, known_lang)
 
     terms = extractor.extract(
         content or "",
@@ -295,17 +304,18 @@ def index_article(
     # and bounded; failures must never abort the keyword indexing.
     www = {"dates": 0, "places": 0, "entities_stored": 0}
     try:
-        from src.timemap.datestore import store_for_article as _store_dates
-        from src.timemap.whostore import (
-            store_entities_for_article as _store_ents,
-        )
-        from src.timemap.whostore import (
-            store_places_for_article as _store_places,
-        )
+        if scope != "keywords":  # keyword-only cleanup skips the when/where/who passes
+            from src.timemap.datestore import store_for_article as _store_dates
+            from src.timemap.whostore import (
+                store_entities_for_article as _store_ents,
+            )
+            from src.timemap.whostore import (
+                store_places_for_article as _store_places,
+            )
 
-        www["dates"] = _store_dates(session, article)
-        www["places"] = _store_places(session, article)
-        www["entities_stored"] = _store_ents(session, article)
+            www["dates"] = _store_dates(session, article)
+            www["places"] = _store_places(session, article)
+            www["entities_stored"] = _store_ents(session, article)
     except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
         # A transient 'database is locked' here must NOT be swallowed: doing so
         # leaves the session in a failed-flush state, so the line-below commit
@@ -382,7 +392,7 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
 
 
 def reindex_all_batch(
-    session: Session, *, extractor, limit: int = 300, after_id: int = 0
+    session: Session, *, extractor, limit: int = 300, after_id: int = 0, scope: str = "full"
 ) -> dict:
     """FORCE-re-index a batch of ALL articles (id > ``after_id``), oldest first.
 
@@ -412,7 +422,7 @@ def reindex_all_batch(
         if art is None:
             continue
         try:
-            index_article(session, art, extractor=extractor, country=art.country)
+            index_article(session, art, extractor=extractor, country=art.country, scope=scope)
             reindexed += 1
         except Exception:  # noqa: BLE001 - one bad article must not abort the batch
             session.rollback()

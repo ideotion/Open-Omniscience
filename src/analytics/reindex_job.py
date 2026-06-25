@@ -70,6 +70,7 @@ class ReindexJobManager:
         self._tally: dict[str, int] = {}  # reindexed / failed / pruned / kept_curated
         self._error: str | None = None
         self._cancelled = False
+        self._scope = "full"  # "full" (keywords + when/where/who + sentiment) | "keywords"
         self._prune_after = False  # chain prune_orphan_keywords at the end (the cleanup flow)
         self._started_at: float | None = None
         self._session_factory = None  # test seam
@@ -98,6 +99,7 @@ class ReindexJobManager:
                         "done": self._done,
                         "tally": self._tally,
                         "state": self._state,
+                        "scope": self._scope,
                         "prune_after": self._prune_after,
                     }
                 ),
@@ -125,6 +127,7 @@ class ReindexJobManager:
         self._total = max(0, int(d.get("total") or 0))
         self._done = max(0, int(d.get("done") or 0))
         self._tally = {str(k): int(v) for k, v in (d.get("tally") or {}).items()}
+        self._scope = "keywords" if d.get("scope") == "keywords" else "full"
         self._prune_after = bool(d.get("prune_after"))
         self._state = "paused"  # an interrupted run is resumable, never silently lost
 
@@ -150,6 +153,7 @@ class ReindexJobManager:
     def start(
         self,
         *,
+        scope: str = "full",
         prune_after: bool = False,
         _session_factory=None,
         _extractor=None,
@@ -157,15 +161,17 @@ class ReindexJobManager:
         _total: int = 0,
         _done: int = 0,
     ) -> dict:
-        """Launch the worker. RuntimeError if a re-index is already running. ``_cursor``
-        (resume) is the article id to continue AFTER; ``prune_after`` chains the
-        orphan-keyword GC when the full pass completes (the one-click cleanup flow)."""
+        """Launch the worker. RuntimeError if a re-index is already running. ``scope``
+        ("full" | "keywords") selects whether to recompute when/where/who + sentiment
+        or keywords only; ``_cursor`` (resume) is the article id to continue AFTER;
+        ``prune_after`` chains the orphan-keyword GC when the pass completes (cleanup)."""
         with self._lock:
             if self._alive():
                 raise RuntimeError("A re-index is already running.")
             self._stop.clear()
             self._cancelled = False
             self._state = "running"
+            self._scope = "keywords" if scope == "keywords" else "full"
             self._prune_after = prune_after
             self._cursor = max(0, _cursor)
             self._done = max(0, _done)
@@ -200,7 +206,9 @@ class ReindexJobManager:
                 while True:
                     if self._stop.is_set():
                         break
-                    r = reindex_all_batch(session, extractor=extractor, limit=_BATCH, after_id=after)
+                    r = reindex_all_batch(
+                        session, extractor=extractor, limit=_BATCH, after_id=after, scope=self._scope
+                    )
                     after = int(r["last_id"])
                     with self._lock:
                         self._tally["reindexed"] = self._tally.get("reindexed", 0) + int(r["reindexed"])
@@ -243,10 +251,10 @@ class ReindexJobManager:
             if self._state not in ("paused", "error", "cancelled"):
                 raise RuntimeError("Nothing paused to resume.")
             sf, ex = self._session_factory, self._extractor
-            cur, tot, done, pa = self._cursor, self._total, self._done, self._prune_after
+            cur, tot, done, pa, sc = self._cursor, self._total, self._done, self._prune_after, self._scope
             tally = dict(self._tally)
         out = self.start(
-            prune_after=pa, _session_factory=sf, _extractor=ex, _cursor=cur, _total=tot, _done=done
+            scope=sc, prune_after=pa, _session_factory=sf, _extractor=ex, _cursor=cur, _total=tot, _done=done
         )
         with self._lock:  # carry the prior tally forward (progress continues)
             self._tally = tally
@@ -282,6 +290,7 @@ class ReindexJobManager:
                 "percent": round(100 * done / total, 1) if total else 0.0,
                 "tally": dict(self._tally),
                 "eta_seconds": eta_s,
+                "scope": self._scope,
                 "prune_after": self._prune_after,
                 "error": self._error,
                 "running": self._alive(),

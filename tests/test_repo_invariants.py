@@ -279,6 +279,14 @@ def test_reindex_background_job_is_wired():
     assert "/api/insights/reindex-job" in app
     # the Settings buttons drive the background job (kept reindexAllCorpus/cleanupKeywords)
     assert "reindexAllCorpus(" in app and "cleanupKeywords(" in app
+    # Phase 1.2: keyword-only scope plumbs end-to-end (index_article -> reindex_all_batch
+    # -> the job -> the endpoint -> the cleanup button uses the keyword-only scope).
+    store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert 'scope: str = "full"' in store and 'scope != "keywords"' in store
+    assert "scope=scope" in store  # reindex_all_batch threads scope to index_article
+    assert 'scope: str = "full"' in job  # the manager accepts scope
+    assert "scope must be" in api  # the endpoint validates scope
+    assert '_startReindexJob(true, "keywords")' in app  # cleanup uses the keyword-only scope
 
 
 def test_articles_endpoint_serialises_stored_sentiment():

@@ -91,3 +91,51 @@ def test_backfill_only_indexes_missing(db):
     # Running again indexes nothing new (all already have mentions).
     r2 = backfill_corpus(db, extractor=BaselineExtractor(), limit=10)
     assert r2["indexed"] == 0
+
+
+def _kw_set(db, article_id):
+    """The set of (normalized_term, count) keyword mentions for one article."""
+    rows = (
+        db.query(KeywordMention.count, Keyword.normalized_term)
+        .join(Keyword, Keyword.id == KeywordMention.keyword_id)
+        .filter(KeywordMention.article_id == article_id)
+        .all()
+    )
+    return {(term, cnt) for cnt, term in rows}
+
+
+def test_keyword_only_scope_skips_when_where_who_and_sentiment(db):
+    """Phase 1.2: scope="keywords" runs the keyword pass ONLY — it leaves the
+    dates/places/entities + sentiment untouched (a fast keyword cleanup)."""
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    art = _article(db, "h1", "The WHO warned about climate policy and trade in Paris on 5 March 2024.")
+    ex = BaselineExtractor()
+    full = index_article(db, art, extractor=ex, scope="full")
+    assert full["mentions"] > 0
+    # Mark sentiment with a sentinel, then a KEYWORD-ONLY re-index.
+    art.sentiment_score, art.sentiment_label = 0.999, "sentinel"
+    db.commit()
+    kwonly = index_article(db, art, extractor=ex, scope="keywords")
+    # when/where/who passes were skipped (tally zeros) but keywords still extracted.
+    assert kwonly["dates"] == 0 and kwonly["places"] == 0 and kwonly["entities_stored"] == 0
+    assert kwonly["mentions"] > 0
+    a = db.get(Article, art.id)
+    assert a.sentiment_score == 0.999 and a.sentiment_label == "sentinel"  # untouched
+    # Contrast: a FULL re-index DOES recompute sentiment (away from the sentinel).
+    index_article(db, art, extractor=ex, scope="full")
+    assert db.get(Article, art.id).sentiment_label != "sentinel"
+
+
+def test_keyword_only_scope_produces_identical_keyword_rows_to_full(db):
+    """The keyword rows from a keyword-only pass match a full pass exactly."""
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    text = "The election results show major inflation across the global economy."
+    a1 = _article(db, "h1", text)
+    a2 = _article(db, "h2", text)
+    ex = BaselineExtractor()
+    index_article(db, a1, extractor=ex, scope="full")
+    index_article(db, a2, extractor=ex, scope="keywords")
+    assert _kw_set(db, a1.id) == _kw_set(db, a2.id)
+    assert _kw_set(db, a1.id)  # non-empty (the comparison isn't vacuous)

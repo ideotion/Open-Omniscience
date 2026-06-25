@@ -524,8 +524,15 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   pause+resume-from-cursor · persisted-cursor-survives-restart · prune_after-chains · idle/bad-resume] +
   test_repo_invariants::test_reindex_background_job_is_wired. VERIFIED here: 6/6 + 141 invariants +
   jobs/insights regression green, ruff F/B clean, mypy 127≤127, node --check, i18n 100%,
-  audit-chrome clean. Frontend BROWSER-UNVERIFIED per fork-3.) REMAINING in P1: **1.2** keyword-only
-  re-index scope · **1.3** batched commits · **1.4** FTS5 `'optimize'` + cache tuning. Then P2 (rollups
+  audit-chrome clean. Frontend BROWSER-UNVERIFIED per fork-3.) **P1.2 SHIPPED** (keyword-only re-index
+  scope — `index_article(scope="keywords")` runs the keyword pass ONLY, skipping the when/where/who
+  [dates/places/entities] + sentiment passes [≈⅔ less work for a keyword cleanup]; the language
+  deduction stays [it picks the stoplist]; threaded through `reindex_all_batch` → the job [persisted +
+  status-reported] → `POST /reindex-job?scope=` [400 on a bad scope]; the Settings "Clean up keywords"
+  button now uses keyword-only, "Re-index the whole corpus" stays full; default `scope="full"` =
+  byte-identical [47-test ingest/index hot-path regression green]; tests in test_analytics_store.py +
+  test_reindex_job.py + the invariant scope guard. VERIFIED here.) REMAINING in P1: **1.3** batched
+  commits · **1.4** FTS5 `'optimize'` + cache tuning. Then P2 (rollups
   + DuckDB-GCM verify) · P3 (eval harness) · P4 (quality) · P5 (serving) · P6 (entities) per the brief.
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte

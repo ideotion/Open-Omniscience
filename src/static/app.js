@@ -7396,9 +7396,12 @@
     // into the shared span; the work keeps going even if we stop polling, and it is
     // pausable/resumable from the task manager. _reindexAllLoop/_pruneCore stay as the
     // fallback cores (and prune is still a quick client call).
-    async function _startReindexJob(pruneAfter) {
+    async function _startReindexJob(pruneAfter, scope) {
+      // scope "keywords" (Phase 1.2) re-does the keyword pass only (~2/3 less work);
+      // "full" also recomputes when/where/who + sentiment.
+      const sc = scope === "keywords" ? "keywords" : "full";
       try {
-        await api(`/api/insights/reindex-job?prune_after=${pruneAfter ? "true" : "false"}`, { method: "POST" });
+        await api(`/api/insights/reindex-job?scope=${sc}&prune_after=${pruneAfter ? "true" : "false"}`, { method: "POST" });
       } catch (_e) { /* 409 = one already running; fall through and poll it */ }
     }
     async function _pollReindexJob(st, t) {
@@ -7426,7 +7429,7 @@
       if (btn) btn.disabled = true;
       const st = $("reindex-all-status");
       try {
-        await _startReindexJob(false);
+        await _startReindexJob(false, "full");
         await _pollReindexJob(st, t);
       } catch (e) { if (st) st.textContent = esc(e.message); }
       finally { if (btn) btn.disabled = false; }
@@ -7456,9 +7459,10 @@
       if (btn) btn.disabled = true;
       const st = $("reindex-all-status");
       try {
-        // ONE background job: re-index every article, then prune orphaned keywords on
-        // completion (prune_after) — survives a tab close, resumes from its cursor.
-        await _startReindexJob(true);
+        // ONE background job: re-index every article (KEYWORD-ONLY scope — this is a
+        // keyword cleanup, ~2/3 less work than a full pass), then prune orphaned
+        // keywords on completion — survives a tab close, resumes from its cursor.
+        await _startReindexJob(true, "keywords");
         await _pollReindexJob(st, t);
       } catch (e) { if (st) st.textContent = esc(e.message); }
       finally { if (btn) btn.disabled = false; }
