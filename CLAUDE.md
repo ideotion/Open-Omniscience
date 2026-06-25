@@ -4002,6 +4002,27 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **ooViz HONEST-CHART PRIMITIVES + statSeriesPaths (§5B Phase B2 foundation) 2026-06-25 (same single-branch
+  harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after #472 merged; NEW
+  draft PR onto 0.09; FULLY node-VERIFIED here — 11/11 node tests + node --check + ruff/mypy on the wrapper,
+  frontend LIVE-WIRING browser-unverified per fork-3).** Adopted the MIT research primitive set
+  `docs/research/dataviz/honest-charts.js` into the app as `src/static/ooviz.js` — a classic dual node/browser
+  module (IIFE attaching `root.ooViz=API` + `module.exports=API`, the osmpbf.js convention), zero-dependency,
+  deterministic (no Math.random — seeded mulberry32), no network/DOM for the math: clamp · isMissing (a true
+  gap, never zero) · linearScale · sqrtAreaScale (AREA-honest symbol sizing) · niceTicks · mulberry32 ·
+  pathWithGaps (BREAKS the line at a gap, never bridges) · binCounts1D · bin2D · fiveNumberSummary ·
+  setupCanvas · readCssVar. PLUS the Phase B2 consumer of the merged Phase B1 adapter: `statSeriesPaths(series,
+  sx, sy)` renders a `to_chart_series` result as an array of SVG subpaths — ONE per comparability SEGMENT (a
+  unit / base-year / SA-NSA break is NEVER joined — separate `d` strings, proven), each internally broken at
+  its value=null gaps; carries each segment's unit/base_year/adjustment + n so the renderer marks the break.
+  Honesty is in the SHAPE of the output (no interpolation across a gap OR a break). tests/ooviz_node_test.js
+  (11, node:assert, prints "OOVIZ OK") run in CI by tests/test_ooviz.py (subprocess + skipif-no-node, mirrors
+  test_osmpbf_parser.py) + a self-contained guard (dual-export present, network/dependency-free: no
+  fetch/XHR/import/require). NO new `*_AS_OF`/registry; NO UI strings (pure chart math → i18n untouched). NOT
+  WIRED into a live <script>/ooChart yet — the foundation ships node-tested-but-unwired (the parsers'
+  "foundation first" pattern); the browser-deferred follow-on draws these paths in ooChart + the Settings →
+  Statistics chart. REMAINING: ooChart wiring + the stats time-series chart UI (Phase B3) + choropleth (Phase
+  C); the Settings → Statistics "Revision anomalies" surface.
 - **REVISION-ANOMALY STORE-PULL + ENDPOINT 2026-06-25 (wires the merged detector to a reachable API; same
   single-branch harness, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09 after #471
   merged; NEW draft PR onto 0.09; backend ADAPTER+DETECTOR logic VERIFIED py3.11 standalone + ruff F/B/full +
