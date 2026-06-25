@@ -207,6 +207,12 @@ class NewsletterImportManager:
                             self._tally["unreadable"] = self._tally.get("unreadable", 0) + unreadable
                         self._cursor = i
                         self._save()
+                if not self._stop.is_set():
+                    # A complete import bulk-loaded articles → many small FTS segments;
+                    # merge them so search MATCH stays fast (keyword-engine P1.4).
+                    from src.database.fts import optimize_after_bulk
+
+                    optimize_after_bulk(session)
                 with self._lock:
                     if self._stop.is_set():
                         self._state = "cancelled" if self._cancelled else "paused"

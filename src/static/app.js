@@ -601,6 +601,13 @@
         // partial file). It routes through the ONE network-consent popup.
         if (_isDownloadKind(j.kind) && (j.state === "paused" || j.state === "failed"))
           acts.push(`<button class="tiny secondary" onclick="jobResume('${esc(j.id)}')">${esc(t("Resume"))}</button>`);
+        // The whole-corpus re-index (Phase 1.1) is a DB-writer job pausable from here:
+        // pause (running) stops between batches; resume continues from the persisted
+        // cursor — so closing the tab no longer restarts it from article 0.
+        if (j.kind === "reindex" && j.state === "running")
+          acts.push(`<button class="tiny secondary" onclick="jobCancel('${esc(j.id)}')">${esc(t("Pause"))}</button>`);
+        if (j.kind === "reindex" && (j.state === "paused" || j.state === "failed"))
+          acts.push(`<button class="tiny secondary" onclick="jobResume('${esc(j.id)}')">${esc(t("Resume"))}</button>`);
         const qpos = j.queue_position ? ` <span class="muted">#${j.queue_position} ${esc(t("in queue"))}</span>` : "";
         return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;flex-wrap:wrap">` +
           `<span class="pill ${pill}">${esc(t(j.state))}</span><b style="font-size:12.5px">${esc(j.label)}</b>${qpos}` +
@@ -7383,18 +7390,49 @@
       const r = await api("/api/insights/prune-keywords", { method: "POST" });
       return r;
     }
+    // Phase 1.1: the whole-corpus re-index now runs as a BACKGROUND JOB — it survives a
+    // tab close and RESUMES from a persisted cursor (the old client loop above restarted
+    // from article 0 and stopped when the tab closed). We start it, then poll its status
+    // into the shared span; the work keeps going even if we stop polling, and it is
+    // pausable/resumable from the task manager. _reindexAllLoop/_pruneCore stay as the
+    // fallback cores (and prune is still a quick client call).
+    async function _startReindexJob(pruneAfter, scope) {
+      // scope "keywords" (Phase 1.2) re-does the keyword pass only (~2/3 less work);
+      // "full" also recomputes when/where/who + sentiment.
+      const sc = scope === "keywords" ? "keywords" : "full";
+      try {
+        await api(`/api/insights/reindex-job?scope=${sc}&prune_after=${pruneAfter ? "true" : "false"}`, { method: "POST" });
+      } catch (_e) { /* 409 = one already running; fall through and poll it */ }
+    }
+    async function _pollReindexJob(st, t) {
+      for (;;) {
+        let s;
+        try { s = await api("/api/insights/reindex-job/status"); }
+        catch { break; }
+        if (st) {
+          const tal = s.tally || {};
+          const bits = [`${(tal.reindexed || 0).toLocaleString()} ${t("re-indexed")}`];
+          if (s.articles_total) bits.push(`${s.percent || 0}%`);
+          if (tal.pruned != null) bits.push(`${(tal.pruned || 0).toLocaleString()} ${t("unused keywords removed")}`);
+          if (s.state === "done") bits.push(t("done"));
+          else if (s.state === "paused") bits.push(t("paused"));
+          else if (s.state === "error") bits.push(esc(s.error || t("error")));
+          st.textContent = bits.join(" · ");
+        }
+        if (s.state !== "running" || !s.running) break;
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
     async function reindexAllCorpus(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (_reindexAllRunning) return;
       if (!confirm(t("Re-index every article with the current engine? This is heavy on a large corpus but runs in the background."))) return;
-      _reindexAllRunning = true;
       if (btn) btn.disabled = true;
       const st = $("reindex-all-status");
       try {
-        const total = await _reindexAllLoop(st, t);
-        if (st) st.textContent = `${total} ${t("re-indexed")} · ${t("done")}`;
+        await _startReindexJob(false, "full");
+        await _pollReindexJob(st, t);
       } catch (e) { if (st) st.textContent = esc(e.message); }
-      finally { _reindexAllRunning = false; if (btn) btn.disabled = false; }
+      finally { if (btn) btn.disabled = false; }
     }
 
     // Garbage-collect keywords that no view references (zero mentions) — the cleanup
@@ -7417,17 +7455,17 @@
     // the operator doesn't have to run two buttons and remember the sequence.
     async function cleanupKeywords(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (_reindexAllRunning) return;
       if (!confirm(t("Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept."))) return;
-      _reindexAllRunning = true;
       if (btn) btn.disabled = true;
       const st = $("reindex-all-status");
       try {
-        const total = await _reindexAllLoop(st, t);
-        const r = await _pruneCore(st, t);
-        if (st) st.textContent = `${total} ${t("re-indexed")} · ${(r.pruned || 0).toLocaleString()} ${t("unused keywords removed")}${r.kept_curated ? ` · ${r.kept_curated} ${t("curated kept")}` : ""} · ${t("done")}`;
+        // ONE background job: re-index every article (KEYWORD-ONLY scope — this is a
+        // keyword cleanup, ~2/3 less work than a full pass), then prune orphaned
+        // keywords on completion — survives a tab close, resumes from its cursor.
+        await _startReindexJob(true, "keywords");
+        await _pollReindexJob(st, t);
       } catch (e) { if (st) st.textContent = esc(e.message); }
-      finally { _reindexAllRunning = false; if (btn) btn.disabled = false; }
+      finally { if (btn) btn.disabled = false; }
     }
 
     // Keyword-growth (vocabulary) curve — cumulative distinct keywords vs cumulative

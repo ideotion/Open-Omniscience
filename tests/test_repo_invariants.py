@@ -255,6 +255,54 @@ def test_reindex_whole_corpus_action_is_discoverable():
     assert "function reindexAllCorpus(" in app and "/api/insights/reindex-all" in app
 
 
+def test_reindex_background_job_is_wired():
+    """Keyword-engine Phase 1.1: the whole-corpus re-index runs as a pausable BACKGROUND
+    JOB with a persisted cursor (mirrors NewsletterImportManager) — it survives a tab
+    close and RESUMES from where it stopped, instead of the old client loop that
+    restarted from article 0. Guard the full wiring: the manager, the endpoints, the
+    /api/jobs surfacing + DB-writer arbitration + cancel/resume routing, and the frontend
+    start/poll + the task-manager pause/resume controls."""
+    job = (_SRC / "analytics" / "reindex_job.py").read_text(encoding="utf-8")
+    assert "class ReindexJobManager" in job and "def get_reindex_manager(" in job
+    # persisted cursor + resume (the trap fix) + pausable
+    assert "_load_persisted" in job and "def resume(" in job and "def pause(" in job
+    api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert "/reindex-job" in api and "get_reindex_manager" in api
+    jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
+    assert "def _reindex_jobs(" in jobs and "jobs.extend(_reindex_jobs())" in jobs
+    # it joins the DB-writer arbitration set (serialised with collect/import)
+    assert '("collect", "import", "reindex")' in jobs
+    # cancel/resume routed to the owning manager
+    assert 'job_id == "reindex"' in jobs and "get_reindex_manager()" in jobs
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "_startReindexJob(" in app and "_pollReindexJob(" in app
+    assert "/api/insights/reindex-job" in app
+    # the Settings buttons drive the background job (kept reindexAllCorpus/cleanupKeywords)
+    assert "reindexAllCorpus(" in app and "cleanupKeywords(" in app
+    # Phase 1.2: keyword-only scope plumbs end-to-end (index_article -> reindex_all_batch
+    # -> the job -> the endpoint -> the cleanup button uses the keyword-only scope).
+    store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert 'scope: str = "full"' in store and 'scope != "keywords"' in store
+    assert "scope=scope" in store  # reindex_all_batch threads scope to index_article
+    assert 'scope: str = "full"' in job  # the manager accepts scope
+    assert "scope must be" in api  # the endpoint validates scope
+    assert '_startReindexJob(true, "keywords")' in app  # cleanup uses the keyword-only scope
+    # Phase 1.3: batched commits (COLLECTOR_WRITER_BATCHING.md) — the commit primitive +
+    # the batched re-index path with the rollback-then-redo-per-article no-loss fallback.
+    assert "commit: bool = True" in store  # index_article gains the commit primitive
+    assert "if commit:" in store  # the conditional final commit
+    assert "commit_batch: int = 1" in store  # reindex_all_batch batches (default 1 = byte-identical)
+    assert "_redo_committed" in store  # the no-loss fallback (mirror ingest_emails)
+    assert "OO_REINDEX_COMMIT_BATCH" in job  # the job reads the batch-size knob (default 1)
+    # Phase 1.4: a tuning pass (FTS5 'optimize' segment-merge + PRAGMA optimize planner
+    # stats) wired after the bulk re-index AND the bulk newsletter import.
+    fts = (_SRC / "database" / "fts.py").read_text(encoding="utf-8")
+    assert "def optimize_after_bulk(" in fts and "VALUES ('optimize')" in fts
+    assert "optimize_after_bulk" in job  # the re-index job runs it on a complete pass
+    importjob = (_SRC / "ingest" / "import_job.py").read_text(encoding="utf-8")
+    assert "optimize_after_bulk" in importjob  # the import job runs it on completion
+
+
 def test_articles_endpoint_serialises_stored_sentiment():
     """§6: the /api/articles list exposes the stored sentiment (populated at ingest /
     re-index, VADER English-only) so lists / cards can show tone without an extra framing

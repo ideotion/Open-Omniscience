@@ -230,6 +230,53 @@ def insights_reindex_all(
     return reindex_all_batch(db, extractor=get_extractor("baseline"), limit=limit, after_id=after_id)
 
 
+@router.post("/reindex-job")
+def insights_reindex_job(scope: str = Query("full"), prune_after: bool = Query(False)) -> dict:
+    """Start the whole-corpus re-index as a BACKGROUND JOB (Phase 1.1) — it survives a
+    tab close and RESUMES from a persisted cursor (no more "keep the tab open / restart
+    from 0"). Pausable from the task manager (kind="reindex", a DB-writer). ``scope``
+    (Phase 1.2): "full" recomputes keywords + when/where/who + sentiment; "keywords"
+    does the keyword pass only (≈⅔ less work for a keyword cleanup). When ``prune_after``
+    is set, the orphan-keyword GC chains on a complete pass (the one-click "clean up
+    keywords" flow). 400 on a bad scope; 409 if a re-index is already running."""
+    if scope not in ("full", "keywords"):
+        raise HTTPException(status_code=400, detail="scope must be 'full' or 'keywords'")
+    from src.analytics.reindex_job import get_reindex_manager
+
+    try:
+        return get_reindex_manager().start(scope=scope, prune_after=prune_after)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/reindex-job/status")
+def insights_reindex_job_status() -> dict:
+    """Live state of the (single) background re-index job — for the UI + /api/jobs."""
+    from src.analytics.reindex_job import get_reindex_manager
+
+    return get_reindex_manager().status()
+
+
+@router.post("/reindex-job/{action}")
+def insights_reindex_job_action(action: str) -> dict:
+    """Pause / resume / cancel the running background re-index."""
+    from src.analytics.reindex_job import get_reindex_manager
+
+    mgr = get_reindex_manager()
+    if action == "pause":
+        mgr.pause()
+        return mgr.status()
+    if action == "resume":
+        try:
+            return mgr.resume()
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if action == "cancel":
+        mgr.cancel()
+        return mgr.status()
+    raise HTTPException(status_code=400, detail=f"unknown action {action!r}")
+
+
 @router.get("/corpus-keywords")
 def insights_corpus_keywords(
     query: str | None = None,

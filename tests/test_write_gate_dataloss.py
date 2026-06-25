@@ -517,3 +517,108 @@ def test_read_proceeds_while_a_write_holds_the_gate():
     assert not tw.is_alive() and not tr.is_alive()
     assert read_elapsed and read_elapsed[0] < 5.0  # the read did not wait out the writer
     assert not write_gate.stats()["held"]  # gate freed after the writer committed
+
+
+# --------------------------------------------------------------------------- #
+# (4) Phase 1.3: a BATCHED re-index (holds the gate across a batch) under
+#     concurrent ingest loses nothing and never locks.
+# --------------------------------------------------------------------------- #
+
+
+def test_batched_reindex_under_concurrent_ingest_loses_nothing():
+    """A batched re-index (commit_batch>1) HOLDS the single-writer gate across a batch.
+    Run it concurrently with article inserts (each indexing too): ZERO 'database is
+    locked', ZERO dropped rows, the sentinel keyword's counters stay EXACT, no gate leak.
+    The longer gate hold must not break the FIFO serialisation (keystone #1)."""
+    from src.analytics.store import index_article, reindex_all_batch
+
+    init_db()
+    tag = "rb" + uuid.uuid4().hex[:6]
+    source_id = _make_source(tag)
+    ext = BaselineExtractor()
+    sentinel = "zzqxrebatch"  # pure letters: the code-token filter keeps it; mine-only
+    body = f"the WHO summit discussed inflation and elections across the economy {sentinel}"
+
+    def _mk_article(s, title_, hash_):
+        a = Article(
+            url=f"https://{tag}.example/{hash_}",
+            canonical_url=f"https://{tag}.example/{hash_}",
+            source_id=source_id,
+            title=title_,
+            content=f"Report on {body}.",
+            hash=hash_,
+            language="en",
+            published_at=datetime(2024, 9, 1, tzinfo=UTC),
+        )
+        s.add(a)
+        s.flush()
+        return a
+
+    seed_n = 24
+    with session_scope() as s:
+        for k in range(seed_n):
+            a = _mk_article(s, f"Seed {k}", f"{tag}-seed-{k}-{uuid.uuid4().hex}")
+            index_article(s, a, extractor=ext)  # so the re-index is a true re-index
+
+    n_insert_threads, inserted_per = 2, 12
+    total = seed_n + n_insert_threads * inserted_per
+    errors: list[BaseException] = []
+    locked_errors: list[BaseException] = []
+
+    def _record(exc: BaseException) -> None:
+        errors.append(exc)
+        if is_locked_error(exc):
+            locked_errors.append(exc)
+
+    def reindexer() -> None:
+        s = SessionLocal()
+        try:
+            after, guard = 0, 0
+            while guard < 1000:
+                guard += 1
+                r = reindex_all_batch(s, extractor=ext, limit=10, after_id=after, commit_batch=5)
+                after = r["last_id"]
+                if r["done"]:
+                    break
+        except BaseException as exc:  # noqa: BLE001 - capture for the assertion
+            _record(exc)
+        finally:
+            s.close()
+
+    def inserter(w: int) -> None:
+        s = SessionLocal()
+        try:
+            for k in range(inserted_per):
+                a = _mk_article(s, f"Ins {w}-{k}", f"{tag}-ins-{w}-{k}-{uuid.uuid4().hex}")
+                index_article(s, a, extractor=ext)
+        except BaseException as exc:  # noqa: BLE001 - capture for the assertion
+            _record(exc)
+        finally:
+            s.close()
+
+    threads = [threading.Thread(target=reindexer, name="reindexer")]
+    threads += [threading.Thread(target=inserter, args=(w,), name=f"ins-{w}") for w in range(n_insert_threads)]
+    started = time.monotonic()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(90)
+
+    alive = [t.name for t in threads if t.is_alive()]
+    assert not alive, f"writers did not finish (possible deadlock): {alive}"
+    assert locked_errors == [], f"batched re-index hit 'database is locked': {locked_errors!r}"
+    assert errors == [], f"a concurrent writer failed unexpectedly: {errors!r}"
+
+    with session_scope() as s:
+        ids = [r[0] for r in s.query(Article.id).filter(Article.url.like(f"https://{tag}.example/%"))]
+        assert len(ids) == total, f"articles lost: {len(ids)} != {total}"
+        # The sentinel keyword is created ONLY by this test -> its corpus-wide counters
+        # are provably exact; every one of my articles carries it.
+        kw = s.query(Keyword).filter_by(normalized_term=sentinel).one()
+        live = s.query(KeywordMention).filter_by(keyword_id=kw.id).count()
+        assert live == total, f"sentinel mention rows dropped: {live} != {total}"
+        assert kw.mention_count == total, f"sentinel mention_count drift: {kw.mention_count} != {total}"
+        assert kw.article_count == total, f"sentinel article_count drift: {kw.article_count} != {total}"
+
+    assert not write_gate.stats()["held"]  # no gate leak past the batched holds
+    assert time.monotonic() - started < 90

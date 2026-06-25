@@ -504,6 +504,72 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   mode, verification gate, subagent orchestration, the phased scope with per-item build-class tags
   [BUILDABLE / VERIFY-FIRST / SEAM / OPERATIONAL], honesty non-negotiables, definition of done; points
   at the strategy doc for the per-item spec).
+  **BUILD SESSION 2026-06-25 (autonomous, maintainer "full authority"; HARNESS = single working branch
+  `claude/modest-gauss-9ae4mc`, so stacked COMMITS under ONE draft PR to `0.09`, each step verified
+  end-to-end before the next — the brief's harness-fallback).** EMPIRICAL WIN vs the brief's "CI-only"
+  assumption: a Python **3.13.12** venv is available here and `pip install -e ".[analysis,dev]"`
+  succeeds INCLUDING `sqlcipher3` + `cryptography` + numpy/pandas/scipy — so the **real pytest suite +
+  the mypy ratchet run LOCALLY** (`.venv`; mypy baseline=127, confirmed at 127). PER-ITEM STATUS (mark
+  as I go): **P1.1 SHIPPED** (backend re-index JOB — `src/analytics/reindex_job.py:ReindexJobManager`
+  mirrors `NewsletterImportManager`: worker thread + stop-event PAUSE + on-disk persisted CURSOR
+  [`data_dir()/reindex_job.json` = last-article-id + total/done/tally/prune_after], so a re-index now
+  SURVIVES a tab close / app restart and RESUMES from where it stopped instead of the old client loop's
+  restart-from-0 trap; drives `reindex_all_batch`; DB-WRITER kind="reindex" joins the
+  collect/import/reindex arbitration set; idempotent re-index = the no-loss net. Endpoints
+  `POST /api/insights/reindex-job{,/{action}}` + `GET .../status`; surfaced in `/api/jobs`
+  [`_reindex_jobs`, pause/resume routed]; the Settings "Clean up keywords" + "Re-index the whole corpus"
+  buttons now START the background job + poll its status [`_startReindexJob`/`_pollReindexJob`], with
+  Pause/Resume in the task manager — the legacy `_reindexAllLoop`/`_pruneCore` cores stay DEFINED as a
+  fallback + for the invariant test. tests/test_reindex_job.py [6: completion · idempotent-no-loss ·
+  pause+resume-from-cursor · persisted-cursor-survives-restart · prune_after-chains · idle/bad-resume] +
+  test_repo_invariants::test_reindex_background_job_is_wired. VERIFIED here: 6/6 + 141 invariants +
+  jobs/insights regression green, ruff F/B clean, mypy 127≤127, node --check, i18n 100%,
+  audit-chrome clean. Frontend BROWSER-UNVERIFIED per fork-3.) **P1.2 SHIPPED** (keyword-only re-index
+  scope — `index_article(scope="keywords")` runs the keyword pass ONLY, skipping the when/where/who
+  [dates/places/entities] + sentiment passes [≈⅔ less work for a keyword cleanup]; the language
+  deduction stays [it picks the stoplist]; threaded through `reindex_all_batch` → the job [persisted +
+  status-reported] → `POST /reindex-job?scope=` [400 on a bad scope]; the Settings "Clean up keywords"
+  button now uses keyword-only, "Re-index the whole corpus" stays full; default `scope="full"` =
+  byte-identical [47-test ingest/index hot-path regression green]; tests in test_analytics_store.py +
+  test_reindex_job.py + the invariant scope guard. VERIFIED here.) **P1.3 SHIPPED** (batched commits,
+  COLLECTOR_WRITER_BATCHING.md — `index_article(commit=True)` primitive [False leaves the work PENDING
+  for a batched commit; default True byte-identical] + `reindex_all_batch(commit_batch=1)` batches every
+  N commits with the PROVEN `ingest_emails` rollback-then-redo-per-article fallback [`_redo_committed`]
+  so a lock/collision/extractor-error never drops a batch-mate [idempotent re-index reproduces it]; the
+  job reads `OO_REINDEX_COMMIT_BATCH` [default 1]. NO-LOSS tests: batched==per-article with counters ==
+  the live GROUP BY [zero drift], the failure-fallback loses nothing, AND a contention test
+  [test_write_gate_dataloss.py] — a batched re-index HOLDING the gate across a batch races concurrent
+  ingest with ZERO locks/loss + exact sentinel counters. **DECISION (autonomous, recorded): the
+  COLLECTOR-path batching [the doc's full store_fetched restructure] is DEFERRED — it is live-perf-gated
+  per its own doc [unmeasurable here] + the riskiest 50-worker hot-path change; the `commit=False`
+  primitive now exists so it is a smaller follow-up when the maintainer can measure live.** VERIFIED
+  here: 57-test ingest/index hot-path regression + 160 targeted green, ruff F/B, mypy 127≤127.)
+  **P1.4 SHIPPED** (FTS5/SQLCipher tuning pass — `src/database/fts.py:optimize_after_bulk(session)` runs
+  the FTS5 `'optimize'` segment-merge [`INSERT INTO article_fts(article_fts) VALUES('optimize')`, DISTINCT
+  from PRAGMA optimize — verified it did NOT run before; only `'rebuild'` at init] + `PRAGMA optimize`
+  [planner stats, analysis_limit-bounded] after a bulk load; gated + SQLite-only + best-effort. Wired
+  after a COMPLETE re-index pass [keyword-table churn → planner] AND after the newsletter folder import
+  [article bulk-load → FTS segment churn]. cache_size left at the memory-conservative `OO_SQLITE_CACHE_MB`
+  default 64 MiB for the reference AppVM [mmap is unavailable under the codec so cache_size is the lever —
+  documented in the fn]; no default change. tests/test_fts_optimize.py [merge keeps search exact;
+  best-effort without an FTS table] + the invariant guard. VERIFIED here: 167 targeted green, ruff F/B,
+  mypy 127≤127.) **PHASE 1 COMPLETE** (unblock-the-rebuild: 1.1 job · 1.2 keyword-only · 1.3 batched
+  commits · 1.4 tuning).
+  **P2.4 VERIFIED-DEFERRED (the VERIFY-FIRST DuckDB-GCM gate, tested on DuckDB 1.5.4 in the venv):
+  the hypothesis that ≥1.4 writes an authenticated AES-256-GCM store NATIVELY [without httpfs] is
+  REFUTED — 1.5.4 refuses an encrypted WRITE without `LOAD httpfs` (OpenSSL): error "DuckDB currently
+  has a read-only crypto module loaded … ensure httpfs is loaded … To write an encrypted database …
+  that is NOT securely encrypted, one can use SET force_mbedtls_unsafe='true'." The only no-httpfs
+  write path is the explicitly-UNSAFE mbedtls = the forbidden fabricated-security. SO: secure_crypto_
+  available stays gated on httpfs, the gate is NOT relaxed, the engine stays IN-MEMORY (never fabricate
+  the capability). The persisted-rollup PERF WIN remains blocked on bundling per-OS httpfs binaries
+  (OPERATIONAL, networked machine). 2nd finding: 1.5.x `enable_external_access=False` in
+  `_offline_config` ALSO blocks a file ATTACH outright — moot while httpfs gates. Recorded in
+  columnar.py's EMPIRICAL FINDING. No code change (the gate already returns False = correct).**
+  NEXT (sequencing is mine): the persisted P2.1–2.3 rollups' BIG win is now confirmed-blocked, so
+  the highest-ROI BUILDABLE-and-unblocked items are P3 (eval harness) · P4.2 (reconcile_keyword_language
+  — fixes the 16% head language mismatch) · P5.1 (BM25F + facets). In-memory rollups remain optional
+  groundwork. (P5 serving · P6 entities later.)
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +
