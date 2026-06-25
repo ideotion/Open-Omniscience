@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<!--
+  SPDX-License-Identifier: MIT
+  Copyright (c) 2026 Ideotion
+
+  chart-schematics.html
+  Deterministic reference schematics for the Honest, Accessible Chart-Type
+  Decision Framework. One schematic per recommended technique.
+
+  Properties (all verified, see check-schematics.mjs):
+    - No charting libraries, no D3, no network, no web fonts. Fully offline.
+    - Deterministic: fixed geometry, no Math.random anywhere.
+    - Every colour is a CSS theme token (no hardcoded hex in the markup), so the
+      same SVG survives every theme. Cycle theme + flip RTL with the buttons.
+    - Every chart is role="img" with <title>/<desc> AND a real data table.
+    - Each schematic embodies the honesty rule it teaches (gaps not bridged,
+      bars from zero, sqrt-area symbols, no-data hatched, observed/projected split).
+-->
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Honest Chart Schematics</title>
+<style>
+  /* ---- Theme tokens. 17 themes = 17 of these blocks. The SVGs never change. ---- */
+  :root{
+    --c-page:#f6f7f9; --c-surface:#ffffff; --c-ink:#1f2328; --c-grid:#dfe3e8;
+    --c-muted:#6b7280; --c-accent:#111827;
+    --c-series-1:#2563eb; --c-series-2:#d97706; --c-series-3:#16a34a;
+    --c-series-4:#dc2626; --c-series-5:#7c3aed; --c-series-6:#0891b2;
+  }
+  html[data-theme="dark"]{
+    --c-page:#0d1117; --c-surface:#161b22; --c-ink:#e6edf3; --c-grid:#30363d;
+    --c-muted:#9aa4b2; --c-accent:#f0f6fc;
+    --c-series-1:#60a5fa; --c-series-2:#fbbf24; --c-series-3:#4ade80;
+    --c-series-4:#f87171; --c-series-5:#c4b5fd; --c-series-6:#22d3ee;
+  }
+  html[data-theme="hc"]{
+    --c-page:#000000; --c-surface:#000000; --c-ink:#ffffff; --c-grid:#bdbdbd;
+    --c-muted:#e0e0e0; --c-accent:#ffffff;
+    --c-series-1:#00b3ff; --c-series-2:#ffb000; --c-series-3:#00e676;
+    --c-series-4:#ff5252; --c-series-5:#e0aaff; --c-series-6:#18ffff;
+  }
+  html[data-theme="solar"]{
+    --c-page:#fdf6e3; --c-surface:#fffbf0; --c-ink:#073642; --c-grid:#e6dcc3;
+    --c-muted:#657b83; --c-accent:#073642;
+    --c-series-1:#268bd2; --c-series-2:#cb4b16; --c-series-3:#859900;
+    --c-series-4:#dc322f; --c-series-5:#6c71c4; --c-series-6:#2aa198;
+  }
+
+  html{ background:var(--c-page); color:var(--c-ink); }
+  body{
+    margin:0; padding:24px;
+    font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--c-ink);
+  }
+  header{ max-width:1100px; margin:0 auto 20px; }
+  h1{ font-size:20px; margin:0 0 6px; }
+  p.lede{ color:var(--c-muted); margin:0 0 14px; max-width:70ch; }
+  .controls{ display:flex; gap:10px; flex-wrap:wrap; }
+  button{
+    font:inherit; cursor:pointer; padding:8px 12px; border-radius:8px;
+    border:1px solid var(--c-grid); background:var(--c-surface); color:var(--c-ink);
+  }
+  button:focus-visible{ outline:3px solid var(--c-series-1); outline-offset:2px; }
+
+  .grid{
+    max-width:1100px; margin:0 auto;
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:18px;
+  }
+  figure{
+    margin:0; padding:14px; border:1px solid var(--c-grid); border-radius:12px;
+    background:var(--c-surface);
+  }
+  figure h2{ font-size:14px; margin:0 0 8px; }
+  figure .rule{ font-size:12px; color:var(--c-muted); margin:0 0 10px; }
+  svg{ width:100%; height:auto; display:block; color:var(--c-ink); }
+  .ax{ stroke:var(--c-ink); stroke-width:1; }
+  .grid-line{ stroke:var(--c-grid); stroke-width:1; }
+  .lab{ fill:var(--c-muted); font-size:9px; }
+  .lab-ink{ fill:var(--c-ink); font-size:9px; }
+
+  figcaption{ margin-top:10px; }
+  table{ border-collapse:collapse; width:100%; font-size:12px; }
+  caption{ text-align:start; color:var(--c-muted); font-size:11px; margin-bottom:4px; }
+  th,td{ border:1px solid var(--c-grid); padding:3px 6px; text-align:start; }
+  th[scope="col"]{ background:color-mix(in srgb, var(--c-ink) 6%, transparent); }
+  details{ font-size:12px; color:var(--c-muted); margin-top:6px; }
+  ul.tree{ margin:6px 0; padding-inline-start:18px; }
+  ul.tree ul{ padding-inline-start:16px; }
+  .nodata{ color:var(--c-muted); font-style:normal; }
+  .legend{ font-size:9px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Honest chart schematics (no-library, accessible, deterministic)</h1>
+  <p class="lede">One reference per recommended technique. Each is plain SVG using
+  only theme tokens, is exposed as <code>role="img"</code> with a title, description,
+  and a data table, and demonstrates the honesty rule it teaches. Use the buttons
+  to confirm the schematics survive theme changes and right-to-left layout.</p>
+  <div class="controls">
+    <button id="themeBtn" aria-label="Cycle colour theme">Theme: light</button>
+    <button id="dirBtn" aria-pressed="false" aria-label="Toggle right-to-left layout">Direction: LTR</button>
+  </div>
+  <p class="lede" style="margin-top:10px">RTL note: the toggle mirrors page and
+  table direction (real and correct). A production chart must additionally mirror
+  the plotting x-axis at the data layer (run time right-to-left), per the framework
+  appendix; the static SVGs here are not auto-mirrored, to avoid overclaiming.</p>
+</header>
+
+<div class="grid">
+
+  <!-- 1. LINE CHART with a gap (rule H2: missing data is a gap, never bridged) -->
+  <figure>
+    <h2>1. Line chart, change over time</h2>
+    <p class="rule">Teaches H2: a missing day is a break in the line, never interpolated.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t1 d1">
+      <title id="t1">Daily value over six days with one missing day</title>
+      <desc id="d1">Values rise from 3 to 5, then one day is missing, then continue at 7, 8, 6. The line is broken across the gap, not drawn through it.</desc>
+      <line class="grid-line" x1="40" y1="20" x2="285" y2="20"/>
+      <line class="grid-line" x1="40" y1="85" x2="285" y2="85"/>
+      <line class="ax" x1="40" y1="150" x2="285" y2="150"/>
+      <line class="ax" x1="40" y1="20" x2="40" y2="150"/>
+      <text class="lab" x="36" y="153" text-anchor="end">0</text>
+      <text class="lab" x="36" y="88" text-anchor="end">5</text>
+      <text class="lab" x="36" y="23" text-anchor="end">10</text>
+      <!-- two subpaths: the gap at day 3 is honoured -->
+      <path d="M60 111 L100 85" fill="none" stroke="var(--c-series-1)" stroke-width="2"/>
+      <path d="M180 59 L220 46 L260 72" fill="none" stroke="var(--c-series-1)" stroke-width="2"/>
+      <circle cx="60" cy="111" r="3" fill="var(--c-series-1)"/>
+      <circle cx="100" cy="85" r="3" fill="var(--c-series-1)"/>
+      <circle cx="180" cy="59" r="3" fill="var(--c-series-1)"/>
+      <circle cx="220" cy="46" r="3" fill="var(--c-series-1)"/>
+      <circle cx="260" cy="72" r="3" fill="var(--c-series-1)"/>
+      <text class="lab" x="140" y="92" text-anchor="middle">no data</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Daily value (unitless)</caption>
+        <thead><tr><th scope="col">Day</th><th scope="col">Value</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">1</th><td>3</td></tr>
+          <tr><th scope="row">2</th><td>5</td></tr>
+          <tr><th scope="row">3</th><td class="nodata">no data</td></tr>
+          <tr><th scope="row">4</th><td>7</td></tr>
+          <tr><th scope="row">5</th><td>8</td></tr>
+          <tr><th scope="row">6</th><td>6</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 2. SMALL MULTIPLES / SPARKLINES (shared scale; positionally separable) -->
+  <figure>
+    <h2>2. Sparklines / small multiples</h2>
+    <p class="rule">Many series on a shared scale; panels are separated by position, not colour.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t2 d2">
+      <title id="t2">Three small line panels on a shared scale</title>
+      <desc id="d2">Series A trends up, B is flat, C trends down, each drawn on the same vertical scale in its own panel.</desc>
+      <text class="lab-ink" x="40" y="34" text-anchor="end">A</text>
+      <polyline points="55,40 95,34 135,30 175,24 215,20 255,16" fill="none" stroke="var(--c-series-1)" stroke-width="1.5"/>
+      <line class="grid-line" x1="55" y1="46" x2="285" y2="46"/>
+      <text class="lab-ink" x="40" y="92" text-anchor="end">B</text>
+      <polyline points="55,86 95,84 135,88 175,85 215,86 255,84" fill="none" stroke="var(--c-series-1)" stroke-width="1.5"/>
+      <line class="grid-line" x1="55" y1="104" x2="285" y2="104"/>
+      <text class="lab-ink" x="40" y="150" text-anchor="end">C</text>
+      <polyline points="55,120 95,126 135,130 175,138 215,142 255,150" fill="none" stroke="var(--c-series-1)" stroke-width="1.5"/>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Index by panel and step (shared scale)</caption>
+        <thead><tr><th scope="col">Step</th><th scope="col">A</th><th scope="col">B</th><th scope="col">C</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">1</th><td>2</td><td>5</td><td>9</td></tr>
+          <tr><th scope="row">3</th><td>5</td><td>5</td><td>6</td></tr>
+          <tr><th scope="row">6</th><td>9</td><td>5</td><td>1</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 3. BAR CHART from zero (rule H4) -->
+  <figure>
+    <h2>3. Bar chart, ranking / magnitude</h2>
+    <p class="rule">Teaches H4: bars are a length encoding, so the baseline is zero.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t3 d3">
+      <title id="t3">Five categories ranked by value, bars from zero</title>
+      <desc id="d3">Category D is highest at 9, C is lowest at 2. All bars start at a zero baseline.</desc>
+      <line class="grid-line" x1="40" y1="85" x2="285" y2="85"/>
+      <line class="grid-line" x1="40" y1="20" x2="285" y2="20"/>
+      <line class="ax" x1="40" y1="150" x2="285" y2="150"/>
+      <line class="ax" x1="40" y1="20" x2="40" y2="150"/>
+      <text class="lab" x="36" y="153" text-anchor="end">0</text>
+      <text class="lab" x="36" y="88" text-anchor="end">5</text>
+      <text class="lab" x="36" y="23" text-anchor="end">10</text>
+      <rect x="55"  y="98"  width="30" height="52"  fill="var(--c-series-1)"/>
+      <rect x="100" y="59"  width="30" height="91"  fill="var(--c-series-1)"/>
+      <rect x="145" y="124" width="30" height="26"  fill="var(--c-series-1)"/>
+      <rect x="190" y="33"  width="30" height="117" fill="var(--c-series-1)"/>
+      <rect x="235" y="85"  width="30" height="65"  fill="var(--c-series-1)"/>
+      <text class="lab" x="70"  y="162" text-anchor="middle">A</text>
+      <text class="lab" x="115" y="162" text-anchor="middle">B</text>
+      <text class="lab" x="160" y="162" text-anchor="middle">C</text>
+      <text class="lab" x="205" y="162" text-anchor="middle">D</text>
+      <text class="lab" x="250" y="162" text-anchor="middle">E</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Value by category</caption>
+        <thead><tr><th scope="col">Category</th><th scope="col">Value</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">A</th><td>4</td></tr>
+          <tr><th scope="row">B</th><td>7</td></tr>
+          <tr><th scope="row">C</th><td>2</td></tr>
+          <tr><th scope="row">D</th><td>9</td></tr>
+          <tr><th scope="row">E</th><td>5</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 4. DOT PLOT (position encoding; non-zero range allowed but labelled) -->
+  <figure>
+    <h2>4. Dot plot, ranking (many categories)</h2>
+    <p class="rule">Position encoding: a non-zero axis is allowed because it is labelled, not silent.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t4 d4">
+      <title id="t4">Five categories on a labelled value axis from 20 to 80</title>
+      <desc id="d4">Values range from 38 to 72 on an axis that starts at 20, with the non-zero start clearly labelled.</desc>
+      <line class="ax" x1="60" y1="150" x2="285" y2="150"/>
+      <text class="lab" x="60" y="162" text-anchor="middle">20</text>
+      <text class="lab" x="170" y="162" text-anchor="middle">50</text>
+      <text class="lab" x="280" y="162" text-anchor="middle">80</text>
+      <g stroke="var(--c-grid)">
+        <line x1="60" y1="40" x2="152" y2="40"/><line x1="60" y1="62" x2="251" y2="62"/>
+        <line x1="60" y1="84" x2="126" y2="84"/><line x1="60" y1="106" x2="210" y2="106"/>
+        <line x1="60" y1="128" x2="188" y2="128"/>
+      </g>
+      <circle cx="152" cy="40" r="4" fill="var(--c-series-1)"/>
+      <circle cx="251" cy="62" r="4" fill="var(--c-series-1)"/>
+      <circle cx="126" cy="84" r="4" fill="var(--c-series-1)"/>
+      <circle cx="210" cy="106" r="4" fill="var(--c-series-1)"/>
+      <circle cx="188" cy="128" r="4" fill="var(--c-series-1)"/>
+      <text class="lab-ink" x="56" y="43" text-anchor="end">P</text>
+      <text class="lab-ink" x="56" y="65" text-anchor="end">Q</text>
+      <text class="lab-ink" x="56" y="87" text-anchor="end">R</text>
+      <text class="lab-ink" x="56" y="109" text-anchor="end">S</text>
+      <text class="lab-ink" x="56" y="131" text-anchor="end">T</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Score by category (axis starts at 20)</caption>
+        <thead><tr><th scope="col">Category</th><th scope="col">Score</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">P</th><td>45</td></tr><tr><th scope="row">Q</th><td>72</td></tr>
+          <tr><th scope="row">R</th><td>38</td></tr><tr><th scope="row">S</th><td>61</td></tr>
+          <tr><th scope="row">T</th><td>55</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 5. SLOPEGRAPH (two-state) -->
+  <figure>
+    <h2>5. Slopegraph, two-state change</h2>
+    <p class="rule">Identical labelled scales at both ends; only two measured states, no midpoint implied.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t5 d5">
+      <title id="t5">Three items measured at state A and state B</title>
+      <desc id="d5">Item X rises from 30 to 60, Y falls from 50 to 40, Z falls from 70 to 55, between two measured states.</desc>
+      <line class="ax" x1="80" y1="20" x2="80" y2="150"/>
+      <line class="ax" x1="240" y1="20" x2="240" y2="150"/>
+      <text class="lab-ink" x="80" y="166" text-anchor="middle">A</text>
+      <text class="lab-ink" x="240" y="166" text-anchor="middle">B</text>
+      <text class="lab" x="74" y="153" text-anchor="end">0</text>
+      <text class="lab" x="74" y="23" text-anchor="end">100</text>
+      <line x1="80" y1="111" x2="240" y2="72" stroke="var(--c-series-1)" stroke-width="2"/>
+      <line x1="80" y1="85" x2="240" y2="98" stroke="var(--c-series-2)" stroke-width="2"/>
+      <line x1="80" y1="59" x2="240" y2="78" stroke="var(--c-series-3)" stroke-width="2"/>
+      <text class="lab-ink" x="76" y="114" text-anchor="end">X</text>
+      <text class="lab-ink" x="76" y="88" text-anchor="end">Y</text>
+      <text class="lab-ink" x="76" y="62" text-anchor="end">Z</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Value at two measured states</caption>
+        <thead><tr><th scope="col">Item</th><th scope="col">A</th><th scope="col">B</th><th scope="col">Change</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">X</th><td>30</td><td>60</td><td>+30</td></tr>
+          <tr><th scope="row">Y</th><td>50</td><td>40</td><td>-10</td></tr>
+          <tr><th scope="row">Z</th><td>70</td><td>55</td><td>-15</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 6. SCATTER + descriptive trend with CI (rule H3) -->
+  <figure>
+    <h2>6. Scatter, correlation</h2>
+    <p class="rule">Teaches H3: a fitted line is labelled a descriptive trend, never a cause; CI band shown.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t6 d6">
+      <title id="t6">Scatter of twelve paired points with a descriptive trend and confidence band</title>
+      <desc id="d6">The two variables move together (positive association). A fitted trend line with an uncertainty band is shown; this is association, not evidence of causation.</desc>
+      <line class="ax" x1="40" y1="150" x2="285" y2="150"/>
+      <line class="ax" x1="40" y1="20" x2="40" y2="150"/>
+      <polygon points="40,134 285,55 285,40 40,119" fill="var(--c-series-1)" fill-opacity="0.14"/>
+      <line x1="40" y1="126" x2="285" y2="47" stroke="var(--c-series-1)" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <g fill="var(--c-ink)">
+        <circle cx="63" cy="124" r="2.5"/><circle cx="86" cy="117" r="2.5"/>
+        <circle cx="86" cy="98" r="2.5"/><circle cx="109" cy="106" r="2.5"/>
+        <circle cx="132" cy="85" r="2.5"/><circle cx="155" cy="91" r="2.5"/>
+        <circle cx="155" cy="72" r="2.5"/><circle cx="178" cy="65" r="2.5"/>
+        <circle cx="201" cy="72" r="2.5"/><circle cx="224" cy="46" r="2.5"/>
+        <circle cx="224" cy="59" r="2.5"/><circle cx="247" cy="40" r="2.5"/>
+      </g>
+      <text class="lab" x="150" y="170" text-anchor="middle">association, not causation</text>
+    </svg>
+    <figcaption>
+      <details><summary>Data table (12 points)</summary>
+        <table>
+          <caption>Paired observations (x, y)</caption>
+          <thead><tr><th scope="col">x</th><th scope="col">y</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>2.0</td></tr><tr><td>2</td><td>2.5</td></tr>
+            <tr><td>2</td><td>4.0</td></tr><tr><td>3</td><td>3.5</td></tr>
+            <tr><td>4</td><td>5.0</td></tr><tr><td>5</td><td>4.5</td></tr>
+            <tr><td>5</td><td>6.0</td></tr><tr><td>6</td><td>6.5</td></tr>
+            <tr><td>7</td><td>6.0</td></tr><tr><td>8</td><td>8.0</td></tr>
+            <tr><td>8</td><td>7.0</td></tr><tr><td>9</td><td>8.5</td></tr>
+          </tbody>
+        </table>
+      </details>
+    </figcaption>
+  </figure>
+
+  <!-- 7. 2D HISTOGRAM / HEXBIN (density via luminance; empty != zero) -->
+  <figure>
+    <h2>7. 2D histogram (dense correlation)</h2>
+    <p class="rule">Binned density resolves overplotting; an unobserved cell is left blank, not coloured zero.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t7 d7">
+      <title id="t7">Six by four density grid of binned counts</title>
+      <desc id="d7">Counts concentrate along the lower-left to upper-right diagonal; darker cells hold more points. One cell has no observations and is left blank with only an outline.</desc>
+      <!-- row 3 (top) --><rect x="40"  y="20" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.10"/><rect x="80" y="20" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.15"/><rect x="120" y="20" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.30"/><rect x="160" y="20" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.55"/><rect x="200" y="20" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.80"/><rect x="240" y="20" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.95"/>
+      <!-- row 2 --><rect x="40"  y="52" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.18"/><rect x="80" y="52" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.35"/><rect x="120" y="52" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.60"/><rect x="160" y="52" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.80"/><rect x="200" y="52" width="40" height="32" fill="none" stroke="var(--c-grid)"/><rect x="240" y="52" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.40"/>
+      <!-- row 1 --><rect x="40"  y="84" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.45"/><rect x="80" y="84" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.70"/><rect x="120" y="84" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.50"/><rect x="160" y="84" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.30"/><rect x="200" y="84" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.15"/><rect x="240" y="84" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.10"/>
+      <!-- row 0 (bottom) --><rect x="40"  y="116" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.85"/><rect x="80" y="116" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.55"/><rect x="120" y="116" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.30"/><rect x="160" y="116" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.18"/><rect x="200" y="116" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.10"/><rect x="240" y="116" width="40" height="32" fill="var(--c-series-1)" fill-opacity="0.08"/>
+      <text class="lab" x="222" y="71" text-anchor="middle">no obs</text>
+      <text class="legend" x="40" y="162" fill="var(--c-muted)">lighter = fewer points, darker = more (count legend in production)</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Notable bins (column, row): count</caption>
+        <thead><tr><th scope="col">Cell</th><th scope="col">Count</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">(6, top)</th><td>19</td></tr>
+          <tr><th scope="row">(1, bottom)</th><td>17</td></tr>
+          <tr><th scope="row">(5, row 2)</th><td class="nodata">no observation</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 8. HISTOGRAM (counts from zero; bin width disclosed) -->
+  <figure>
+    <h2>8. Histogram, distribution</h2>
+    <p class="rule">Counts from a zero baseline; bin width disclosed because it shapes the story.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t8 d8">
+      <title id="t8">Histogram of one variable in seven equal bins</title>
+      <desc id="d8">A single-peaked distribution centred on the fourth bin (count 12), tapering to 1 at the right.</desc>
+      <line class="ax" x1="40" y1="150" x2="285" y2="150"/>
+      <line class="ax" x1="40" y1="20" x2="40" y2="150"/>
+      <rect x="40"  y="128" width="35" height="22"  fill="var(--c-series-1)"/>
+      <rect x="75"  y="96"  width="35" height="54"  fill="var(--c-series-1)"/>
+      <rect x="110" y="52"  width="35" height="98"  fill="var(--c-series-1)"/>
+      <rect x="145" y="20"  width="35" height="130" fill="var(--c-series-1)"/>
+      <rect x="180" y="63"  width="35" height="87"  fill="var(--c-series-1)"/>
+      <rect x="215" y="107" width="35" height="43"  fill="var(--c-series-1)"/>
+      <rect x="250" y="139" width="35" height="11"  fill="var(--c-series-1)"/>
+      <text class="lab" x="40" y="166">bin width = 1.0, n = 41</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Count by bin (width 1.0)</caption>
+        <thead><tr><th scope="col">Bin</th><th scope="col">Count</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">1</th><td>2</td></tr><tr><th scope="row">2</th><td>5</td></tr>
+          <tr><th scope="row">3</th><td>9</td></tr><tr><th scope="row">4</th><td>12</td></tr>
+          <tr><th scope="row">5</th><td>8</td></tr><tr><th scope="row">6</th><td>4</td></tr>
+          <tr><th scope="row">7</th><td>1</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 9. BOX PLOT + strip (n shown) -->
+  <figure>
+    <h2>9. Box plot with points</h2>
+    <p class="rule">n is shown and raw points overlaid, so the summary cannot hide a tiny sample.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t9 d9">
+      <title id="t9">Box plot of nine values with the points overlaid</title>
+      <desc id="d9">Median 45, interquartile range 30 to 65, whiskers 10 to 90, with all nine observations shown beside the box.</desc>
+      <line class="ax" x1="60" y1="20" x2="60" y2="150"/>
+      <text class="lab" x="56" y="140" text-anchor="end">10</text>
+      <text class="lab" x="56" y="94" text-anchor="end">45</text>
+      <text class="lab" x="56" y="36" text-anchor="end">90</text>
+      <line x1="150" y1="137" x2="150" y2="33" stroke="var(--c-ink)" stroke-width="1"/>
+      <line x1="138" y1="137" x2="162" y2="137" stroke="var(--c-ink)"/>
+      <line x1="138" y1="33" x2="162" y2="33" stroke="var(--c-ink)"/>
+      <rect x="120" y="65.5" width="60" height="45.5" fill="var(--c-series-1)" fill-opacity="0.25" stroke="var(--c-series-1)"/>
+      <line x1="120" y1="91.5" x2="180" y2="91.5" stroke="var(--c-series-1)" stroke-width="2"/>
+      <g fill="var(--c-ink)" fill-opacity="0.8">
+        <circle cx="205" cy="132" r="2.5"/><circle cx="210" cy="118" r="2.5"/>
+        <circle cx="201" cy="104" r="2.5"/><circle cx="208" cy="95" r="2.5"/>
+        <circle cx="203" cy="88" r="2.5"/><circle cx="211" cy="78" r="2.5"/>
+        <circle cx="204" cy="66" r="2.5"/><circle cx="209" cy="52" r="2.5"/>
+        <circle cx="206" cy="40" r="2.5"/>
+      </g>
+      <text class="lab" x="206" y="166" text-anchor="middle">n = 9</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Five-number summary (n = 9)</caption>
+        <thead><tr><th scope="col">Statistic</th><th scope="col">Value</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Min</th><td>10</td></tr><tr><th scope="row">Q1</th><td>30</td></tr>
+          <tr><th scope="row">Median</th><td>45</td></tr><tr><th scope="row">Q3</th><td>65</td></tr>
+          <tr><th scope="row">Max</th><td>90</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 10. 100% STACKED BAR (part-to-whole over time; colour + pattern redundancy) -->
+  <figure>
+    <h2>10. 100% stacked bar, part-to-whole</h2>
+    <p class="rule">Series differ by colour AND pattern (A2); only the bottom band and total read precisely.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t10 d10">
+      <title id="t10">Composition of three components across four periods</title>
+      <desc id="d10">Each bar sums to 100 percent. Component one shrinks from 50 to 35 percent while component two grows from 30 to 40 percent across the four periods.</desc>
+      <defs>
+        <pattern id="stkDiag" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="6" height="6" fill="var(--c-series-2)" fill-opacity="0.18"/>
+          <line x1="0" y1="0" x2="0" y2="6" stroke="var(--c-series-2)" stroke-width="2.4"/>
+        </pattern>
+        <pattern id="stkDot" width="6" height="6" patternUnits="userSpaceOnUse">
+          <rect width="6" height="6" fill="var(--c-series-3)" fill-opacity="0.16"/>
+          <circle cx="3" cy="3" r="1.5" fill="var(--c-series-3)"/>
+        </pattern>
+      </defs>
+      <!-- bar1 x55 .5/.3/.2 -->
+      <rect x="55" y="85" width="35" height="65" fill="var(--c-series-1)"/>
+      <rect x="55" y="46" width="35" height="39" fill="url(#stkDiag)"/>
+      <rect x="55" y="20" width="35" height="26" fill="url(#stkDot)"/>
+      <!-- bar2 x105 .4/.35/.25 -->
+      <rect x="105" y="98" width="35" height="52"  fill="var(--c-series-1)"/>
+      <rect x="105" y="52" width="35" height="46"  fill="url(#stkDiag)"/>
+      <rect x="105" y="20" width="35" height="32"  fill="url(#stkDot)"/>
+      <!-- bar3 x155 .45/.3/.25 -->
+      <rect x="155" y="91" width="35" height="59"  fill="var(--c-series-1)"/>
+      <rect x="155" y="52" width="35" height="39"  fill="url(#stkDiag)"/>
+      <rect x="155" y="20" width="35" height="32"  fill="url(#stkDot)"/>
+      <!-- bar4 x205 .35/.4/.25 -->
+      <rect x="205" y="104" width="35" height="46" fill="var(--c-series-1)"/>
+      <rect x="205" y="52"  width="35" height="52" fill="url(#stkDiag)"/>
+      <rect x="205" y="20"  width="35" height="32" fill="url(#stkDot)"/>
+      <text class="lab" x="72"  y="162" text-anchor="middle">P1</text>
+      <text class="lab" x="122" y="162" text-anchor="middle">P2</text>
+      <text class="lab" x="172" y="162" text-anchor="middle">P3</text>
+      <text class="lab" x="222" y="162" text-anchor="middle">P4</text>
+    </svg>
+    <figcaption>
+      <p class="legend">Series: solid = One, diagonal = Two, dots = Three.</p>
+      <table>
+        <caption>Component share (%) by period</caption>
+        <thead><tr><th scope="col">Period</th><th scope="col">One</th><th scope="col">Two</th><th scope="col">Three</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">P1</th><td>50</td><td>30</td><td>20</td></tr>
+          <tr><th scope="row">P2</th><td>40</td><td>35</td><td>25</td></tr>
+          <tr><th scope="row">P3</th><td>45</td><td>30</td><td>25</td></tr>
+          <tr><th scope="row">P4</th><td>35</td><td>40</td><td>25</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 11. SANKEY (flow; widths proportional, totals conserved) -->
+  <figure>
+    <h2>11. Sankey, flow</h2>
+    <p class="rule">Link width is proportional to flow; in equals out (totals conserved).</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t11 d11">
+      <title id="t11">Flow from two sources to two targets</title>
+      <desc id="d11">Source S1 (60) splits 40 to T1 and 20 to T2; source S2 (40) splits 10 to T1 and 30 to T2. Each link width is proportional to its flow.</desc>
+      <rect x="46" y="20" width="10" height="72" fill="var(--c-series-1)"/>
+      <rect x="46" y="100" width="10" height="48" fill="var(--c-series-2)"/>
+      <rect x="244" y="20" width="10" height="60" fill="var(--c-series-3)"/>
+      <rect x="244" y="88" width="10" height="60" fill="var(--c-series-4)"/>
+      <path d="M56 40 C150 40 150 38 244 38" fill="none" stroke="var(--c-series-1)" stroke-opacity="0.4" stroke-width="26"/>
+      <path d="M56 78 C150 78 150 110 244 110" fill="none" stroke="var(--c-series-1)" stroke-opacity="0.4" stroke-width="13"/>
+      <path d="M56 110 C150 110 150 66 244 66" fill="none" stroke="var(--c-series-2)" stroke-opacity="0.4" stroke-width="7"/>
+      <path d="M56 132 C150 132 150 132 244 132" fill="none" stroke="var(--c-series-2)" stroke-opacity="0.4" stroke-width="20"/>
+      <text class="lab-ink" x="44" y="59" text-anchor="end">S1</text>
+      <text class="lab-ink" x="44" y="127" text-anchor="end">S2</text>
+      <text class="lab-ink" x="258" y="53">T1</text>
+      <text class="lab-ink" x="258" y="121">T2</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Flow value by source and target</caption>
+        <thead><tr><th scope="col">Source</th><th scope="col">Target</th><th scope="col">Flow</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">S1</th><td>T1</td><td>40</td></tr>
+          <tr><th scope="row">S1</th><td>T2</td><td>20</td></tr>
+          <tr><th scope="row">S2</th><td>T1</td><td>10</td></tr>
+          <tr><th scope="row">S2</th><td>T2</td><td>30</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 12. ADJACENCY MATRIX (network; deterministic ordering) -->
+  <figure>
+    <h2>12. Adjacency matrix, network</h2>
+    <p class="rule">Cell position is exact and the row/column order is fixed and disclosed (H5).</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t12 d12">
+      <title id="t12">Five by five adjacency matrix of edge weights</title>
+      <desc id="d12">A symmetric matrix of tie strengths between nodes A to E; darker cells are stronger ties. The diagonal is blank.</desc>
+      <g font-size="9" fill="var(--c-ink)">
+        <text x="78" y="30" text-anchor="middle">A</text><text x="100" y="30" text-anchor="middle">B</text>
+        <text x="122" y="30" text-anchor="middle">C</text><text x="144" y="30" text-anchor="middle">D</text>
+        <text x="166" y="30" text-anchor="middle">E</text>
+        <text x="64" y="46" text-anchor="end">A</text><text x="64" y="68" text-anchor="end">B</text>
+        <text x="64" y="90" text-anchor="end">C</text><text x="64" y="112" text-anchor="end">D</text>
+        <text x="64" y="134" text-anchor="end">E</text>
+      </g>
+      <g stroke="var(--c-grid)">
+        <!-- rows of 5 cells, 22px, origin x=67 y=33 ; diagonal blank -->
+        <rect x="67"  y="33"  width="22" height="22" fill="none"/>
+        <rect x="89"  y="33"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.7"/>
+        <rect x="111" y="33"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.2"/>
+        <rect x="133" y="33"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.5"/>
+        <rect x="155" y="33"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.1"/>
+        <rect x="67"  y="55"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.7"/>
+        <rect x="89"  y="55"  width="22" height="22" fill="none"/>
+        <rect x="111" y="55"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.9"/>
+        <rect x="133" y="55"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.2"/>
+        <rect x="155" y="55"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.3"/>
+        <rect x="67"  y="77"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.2"/>
+        <rect x="89"  y="77"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.9"/>
+        <rect x="111" y="77"  width="22" height="22" fill="none"/>
+        <rect x="133" y="77"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.6"/>
+        <rect x="155" y="77"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.4"/>
+        <rect x="67"  y="99"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.5"/>
+        <rect x="89"  y="99"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.2"/>
+        <rect x="111" y="99"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.6"/>
+        <rect x="133" y="99"  width="22" height="22" fill="none"/>
+        <rect x="155" y="99"  width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.8"/>
+        <rect x="67"  y="121" width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.1"/>
+        <rect x="89"  y="121" width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.3"/>
+        <rect x="111" y="121" width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.4"/>
+        <rect x="133" y="121" width="22" height="22" fill="var(--c-series-1)" fill-opacity="0.8"/>
+        <rect x="155" y="121" width="22" height="22" fill="none"/>
+      </g>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Edge weight (selected, symmetric)</caption>
+        <thead><tr><th scope="col">Edge</th><th scope="col">Weight</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">B-C</th><td>9</td></tr><tr><th scope="row">A-B</th><td>7</td></tr>
+          <tr><th scope="row">D-E</th><td>8</td></tr><tr><th scope="row">A-C</th><td>2</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 13. NODE-LINK (deterministic layout) -->
+  <figure>
+    <h2>13. Node-link, small network</h2>
+    <p class="rule">Fixed layout coordinates: the same data always yields the same picture (H5).</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t13 d13">
+      <title id="t13">Five nodes on a fixed pentagon layout with five edges</title>
+      <desc id="d13">Nodes A to E placed at fixed positions; A connects to B, C and E; C connects to D; D connects to E.</desc>
+      <g stroke="var(--c-ink)" stroke-opacity="0.5">
+        <line x1="150" y1="35" x2="245" y2="100"/>
+        <line x1="150" y1="35" x2="55" y2="100"/>
+        <line x1="150" y1="35" x2="200" y2="150"/>
+        <line x1="245" y1="100" x2="200" y2="150"/>
+        <line x1="200" y1="150" x2="100" y2="150"/>
+      </g>
+      <g fill="var(--c-series-1)">
+        <circle cx="150" cy="35" r="9"/><circle cx="245" cy="100" r="9"/>
+        <circle cx="200" cy="150" r="9"/><circle cx="100" cy="150" r="9"/>
+        <circle cx="55" cy="100" r="9"/>
+      </g>
+      <g font-size="9" fill="var(--c-accent)" text-anchor="middle">
+        <text x="150" y="38">A</text><text x="245" y="103">B</text>
+        <text x="200" y="153">C</text><text x="100" y="153">D</text><text x="55" y="103">E</text>
+      </g>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Edge list</caption>
+        <thead><tr><th scope="col">From</th><th scope="col">To</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">A</th><td>B</td></tr><tr><th scope="row">A</th><td>E</td></tr>
+          <tr><th scope="row">A</th><td>C</td></tr><tr><th scope="row">B</th><td>C</td></tr>
+          <tr><th scope="row">C</th><td>D</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 14. ICICLE + indented tree (hierarchy; length over angle) -->
+  <figure>
+    <h2>14. Icicle, hierarchy</h2>
+    <p class="rule">Aligned rectangles encode size by length (better than a sunburst's angle/area).</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t14 d14">
+      <title id="t14">Three-level icicle of a nested hierarchy</title>
+      <desc id="d14">Root spans the full width; children A, B, C take 50, 30, 20 percent; A splits into A1 and A2.</desc>
+      <rect x="40" y="22" width="245" height="28" fill="var(--c-series-1)" fill-opacity="0.85"/>
+      <text x="162" y="40" text-anchor="middle" font-size="9" fill="var(--c-accent)">Root</text>
+      <rect x="40"  y="54" width="122.5" height="28" fill="var(--c-series-2)" fill-opacity="0.85"/>
+      <rect x="164.5" y="54" width="73.5" height="28" fill="var(--c-series-3)" fill-opacity="0.85"/>
+      <rect x="240" y="54" width="45" height="28" fill="var(--c-series-4)" fill-opacity="0.85"/>
+      <text x="101" y="72" text-anchor="middle" font-size="9" fill="var(--c-accent)">A</text>
+      <text x="201" y="72" text-anchor="middle" font-size="9" fill="var(--c-accent)">B</text>
+      <text x="262" y="72" text-anchor="middle" font-size="9" fill="var(--c-accent)">C</text>
+      <rect x="40"  y="86" width="73.5" height="28" fill="var(--c-series-2)" fill-opacity="0.5"/>
+      <rect x="115" y="86" width="47.5" height="28" fill="var(--c-series-2)" fill-opacity="0.3"/>
+      <text x="76" y="104" text-anchor="middle" font-size="9" fill="var(--c-accent)">A1</text>
+      <text x="138" y="104" text-anchor="middle" font-size="9" fill="var(--c-accent)">A2</text>
+    </svg>
+    <figcaption>
+      <ul class="tree" role="tree" aria-label="Hierarchy as an accessible indented tree">
+        <li>Root (100)
+          <ul>
+            <li>A (50)<ul><li>A1 (30)</li><li>A2 (20)</li></ul></li>
+            <li>B (30)</li>
+            <li>C (20)</li>
+          </ul>
+        </li>
+      </ul>
+    </figcaption>
+  </figure>
+
+  <!-- 15. CHOROPLETH + proportional symbols + no-data hatch (spatial) -->
+  <figure>
+    <h2>15. Choropleth + symbols, spatial</h2>
+    <p class="rule">Colour for RATES only; symbols sqrt-area for counts; missing region hatched, never coloured zero (H2).</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t15 d15">
+      <title id="t15">Four abstract regions shaded by rate with proportional count symbols</title>
+      <desc id="d15">Region R1 has the highest rate, R3 has no data and is hatched. Circle areas are proportional to counts: R4's count is four times R2's, so its circle radius is twice as large.</desc>
+      <defs>
+        <pattern id="noDataHatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <rect width="7" height="7" fill="var(--c-surface)"/>
+          <line x1="0" y1="0" x2="0" y2="7" stroke="var(--c-muted)" stroke-width="1.4"/>
+        </pattern>
+      </defs>
+      <rect x="40"  y="22" width="115" height="58" fill="var(--c-series-1)" fill-opacity="0.85" stroke="var(--c-grid)"/>
+      <rect x="155" y="22" width="115" height="58" fill="var(--c-series-1)" fill-opacity="0.35" stroke="var(--c-grid)"/>
+      <rect x="40"  y="80" width="115" height="58" fill="url(#noDataHatch)" stroke="var(--c-grid)"/>
+      <rect x="155" y="80" width="115" height="58" fill="var(--c-series-1)" fill-opacity="0.55" stroke="var(--c-grid)"/>
+      <text x="48" y="34" font-size="9" fill="var(--c-accent)">R1</text>
+      <text x="163" y="34" font-size="9" fill="var(--c-accent)">R2</text>
+      <text x="48" y="92" font-size="9" fill="var(--c-muted)">R3 (no data)</text>
+      <text x="163" y="92" font-size="9" fill="var(--c-accent)">R4</text>
+      <!-- proportional symbols: r = maxR*sqrt(v/vmax); vmax=40,maxR=16 -->
+      <circle cx="97"  cy="55" r="16" fill="var(--c-series-4)" fill-opacity="0.65" stroke="var(--c-series-4)"/>
+      <circle cx="212" cy="55" r="8"  fill="var(--c-series-4)" fill-opacity="0.65" stroke="var(--c-series-4)"/>
+      <circle cx="212" cy="112" r="16" fill="var(--c-series-4)" fill-opacity="0.65" stroke="var(--c-series-4)"/>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Rate and count by region (symbols sqrt-area scaled)</caption>
+        <thead><tr><th scope="col">Region</th><th scope="col">Rate</th><th scope="col">Count</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">R1</th><td>0.85</td><td>40</td></tr>
+          <tr><th scope="row">R2</th><td>0.35</td><td>10</td></tr>
+          <tr><th scope="row">R3</th><td class="nodata">no data</td><td class="nodata">no data</td></tr>
+          <tr><th scope="row">R4</th><td>0.55</td><td>40</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 16. BULLET GRAPH (magnitude vs target) -->
+  <figure>
+    <h2>16. Bullet graph, magnitude vs target</h2>
+    <p class="rule">Single quantitative axis from zero; qualitative bands from a fixed rule.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t16 d16">
+      <title id="t16">A measured value against qualitative bands and a target</title>
+      <desc id="d16">The measure reaches 70 on a 0 to 100 scale; the target marker is at 85, so the value is below target. Bands mark 0 to 50, 50 to 80, 80 to 100.</desc>
+      <rect x="60" y="60" width="110" height="36" fill="var(--c-series-1)" fill-opacity="0.15"/>
+      <rect x="170" y="60" width="66" height="36" fill="var(--c-series-1)" fill-opacity="0.30"/>
+      <rect x="236" y="60" width="44" height="36" fill="var(--c-series-1)" fill-opacity="0.5"/>
+      <rect x="60" y="70" width="154" height="16" fill="var(--c-series-1)"/>
+      <line x1="247" y1="56" x2="247" y2="100" stroke="var(--c-accent)" stroke-width="2.5"/>
+      <line class="ax" x1="60" y1="100" x2="280" y2="100"/>
+      <text class="lab" x="60" y="112">0</text>
+      <text class="lab" x="170" y="112" text-anchor="middle">50</text>
+      <text class="lab" x="280" y="112" text-anchor="end">100</text>
+      <text class="lab" x="247" y="50" text-anchor="middle">target 85</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Value against target and bands</caption>
+        <thead><tr><th scope="col">Measure</th><th scope="col">Target</th><th scope="col">Bands</th></tr></thead>
+        <tbody><tr><th scope="row">70</th><td>85</td><td>0-50, 50-80, 80-100</td></tr></tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 17. SPAN / DUMBBELL + error bars (uncertainty; interval type stated) -->
+  <figure>
+    <h2>17. Interval dot plot, uncertainty</h2>
+    <p class="rule">Interval type is stated (95% CI) and never cropped; the dot is the estimate.</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t17 d17">
+      <title id="t17">Three estimates with 95 percent confidence intervals</title>
+      <desc id="d17">Estimate one is 50 (CI 40 to 62), two is 70 (CI 60 to 78), three is 35 (CI 25 to 52), shown as spans with a central dot.</desc>
+      <line class="ax" x1="60" y1="150" x2="280" y2="150"/>
+      <text class="lab" x="60" y="162">0</text>
+      <text class="lab" x="170" y="162" text-anchor="middle">50</text>
+      <text class="lab" x="280" y="162" text-anchor="end">100</text>
+      <!-- scale 0..100 -> x 60..280 -->
+      <g stroke="var(--c-series-1)" stroke-width="2">
+        <line x1="148" y1="45" x2="196.4" y2="45"/>
+        <line x1="192" y1="85" x2="231.6" y2="85"/>
+        <line x1="115" y1="125" x2="174.4" y2="125"/>
+      </g>
+      <g fill="var(--c-series-1)">
+        <circle cx="170" cy="45" r="4"/><circle cx="214" cy="85" r="4"/><circle cx="137" cy="125" r="4"/>
+      </g>
+      <g class="lab-ink" text-anchor="end">
+        <text x="56" y="48">A</text><text x="56" y="88">B</text><text x="56" y="128">C</text>
+      </g>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Point estimate with 95% confidence interval</caption>
+        <thead><tr><th scope="col">Item</th><th scope="col">Estimate</th><th scope="col">Lower</th><th scope="col">Upper</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">A</th><td>50</td><td>40</td><td>62</td></tr>
+          <tr><th scope="row">B</th><td>70</td><td>60</td><td>78</td></tr>
+          <tr><th scope="row">C</th><td>35</td><td>25</td><td>52</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+  <!-- 18. FAN CHART (legitimate forecast; observed/projected boundary) -->
+  <figure>
+    <h2>18. Fan chart, forecast uncertainty</h2>
+    <p class="rule">Legitimate only as a forecast: solid observed, banded projection, explicit boundary (Part 6, F1-F5).</p>
+    <svg viewBox="0 0 300 175" role="img" aria-labelledby="t18 d18">
+      <title id="t18">Observed series followed by a widening forecast fan</title>
+      <desc id="d18">A solid line of observed values to the boundary at period six, then a projection whose 80 and 50 percent intervals widen into the future. The central path is dashed and is not presented as a single certain outcome.</desc>
+      <line class="ax" x1="40" y1="150" x2="285" y2="150"/>
+      <line class="ax" x1="40" y1="20" x2="40" y2="150"/>
+      <!-- 80% band --><polygon points="191,78 285,40 285,120 191,78" fill="var(--c-series-1)" fill-opacity="0.16"/>
+      <!-- 50% band --><polygon points="191,78 285,62 285,98 191,78" fill="var(--c-series-1)" fill-opacity="0.30"/>
+      <!-- observed solid -->
+      <path d="M60 120 L86 108 L112 112 L138 92 L165 88 L191 78" fill="none" stroke="var(--c-series-1)" stroke-width="2"/>
+      <!-- projected central, dashed -->
+      <path d="M191 78 L285 80" fill="none" stroke="var(--c-series-1)" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <!-- boundary -->
+      <line x1="191" y1="20" x2="191" y2="150" stroke="var(--c-muted)" stroke-dasharray="2 3"/>
+      <text class="lab" x="120" y="166" text-anchor="middle">observed</text>
+      <text class="lab" x="238" y="166" text-anchor="middle">projected</text>
+    </svg>
+    <figcaption>
+      <table>
+        <caption>Observed values and projected quantiles</caption>
+        <thead><tr><th scope="col">Period</th><th scope="col">Observed</th><th scope="col">p50</th><th scope="col">p10-p90</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">6 (boundary)</th><td>5.5</td><td>5.5</td><td>5.5-5.5</td></tr>
+          <tr><th scope="row">8 (proj.)</th><td class="nodata">-</td><td>5.4</td><td>4.4-6.8</td></tr>
+          <tr><th scope="row">10 (proj.)</th><td class="nodata">-</td><td>5.3</td><td>3.6-7.6</td></tr>
+        </tbody>
+      </table>
+    </figcaption>
+  </figure>
+
+</div>
+
+<script>
+  // No localStorage, no network, deterministic. Just toggles attributes.
+  (function () {
+    var themes = ["light", "dark", "hc", "solar"];
+    var labels = { light: "light", dark: "dark", hc: "high-contrast", solar: "alt palette" };
+    var i = 0;
+    var tb = document.getElementById("themeBtn");
+    tb.addEventListener("click", function () {
+      i = (i + 1) % themes.length;
+      var t = themes[i];
+      if (t === "light") document.documentElement.removeAttribute("data-theme");
+      else document.documentElement.setAttribute("data-theme", t);
+      tb.textContent = "Theme: " + labels[t];
+    });
+    var rtl = false;
+    var db = document.getElementById("dirBtn");
+    db.addEventListener("click", function () {
+      rtl = !rtl;
+      document.documentElement.dir = rtl ? "rtl" : "ltr";
+      db.setAttribute("aria-pressed", String(rtl));
+      db.textContent = "Direction: " + (rtl ? "RTL" : "LTR");
+    });
+  })();
+</script>
+</body>
+</html>

@@ -402,6 +402,37 @@ ruling, a contingency, or a deliberate-omission note.
   missing route can't fail them).
 
 ## Open queue (when maintainer says proceed)
+- **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
+  research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
+  "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed
+  under `docs/research/`):** the maintainer ran internet sessions; outputs folded in. (1) **TimesFM &
+  TS foundation models** — reliability assessed (TimesFM-2.5 top-tier-not-leading on GIFT-Eval; Toto-2.0/
+  Chronos-2 ahead; FMs beat seasonal-naive only ~⅓; leakage is the field's big problem). RULED-BY-DESIGN
+  reframe: **expectation/anomaly NEVER forecast, RETROSPECTIVE-ONLY (band never crosses the last
+  observation)** = perception not judgment (respects the no-price-prediction + no-torch-in-core
+  non-negotiables; any FM is an optional external Ollama-style process, never a core dep). Honest verdict:
+  **classical-first (STL/seasonal-naive), FM probably-never for our mostly-short series.** ON-MISSION
+  KERNEL (build independent of any FM): a **revision-anomaly detector** over `StatFigure` vintages
+  (flag a new vintage that moves a past official figure into the tail of its own revision history —
+  reliable-memory mission, no model). (2) **Official-statistics data** — a verified producer directory
+  (~152 producers, 32 with confirmed machine endpoints) + 2 dataset catalogues (concrete queryable series).
+  PARSER REALITY vs `src/stats/sdmx.py` (WB-JSON + SDMX-JSON 2.1 only): ~29 WB series ingestable today;
+  new parsers needed for **CSV** (trivial, unlocks OWID energy/CO₂ = best-verified global data),
+  **JSON-stat/PxWeb** (Eurostat+IRENA), bulk-ZIP (V-Dem/UCDP); OECD is SDMX-JSON 1.0 / IMF 3.0 (verify);
+  EIA/FRED/Comtrade key-gated (defer). Enriches `src/stats/agencies.py`. (3) **Diversified honest viz =
+  an `ooViz` family** — chart decision framework (perceptual ranking + honesty gate + REJECT list:
+  radar/streamgraph/3D-pie/dual-axis/regression-cause/bubble-area/wordcloud) + working zero-dep MIT
+  primitives (`honest-charts.js`: `pathWithGaps`=ooChart gaps, `sqrtAreaScale`=ooMap symbols; tests pass
+  as committed) + 18 schematics. Choropleth normalized-only (levels→proportional symbols); conflict→ooMap
+  points; V-Dem CIs→error bars. (4) **News/source diversity** (de-US-centring thread) — 105 verified rows
+  (`docs/research/sources/`), enabled:false, managed-languages-only, all 9 source types, no mono-stance
+  region; schema note: add a `global`/`transnational` region value; dedup `statssa.gov.za` across the two
+  paths. BUILD PLAN A→E (A1 WB indicator catalog → A-CSV/OWID → ooChart honesty + stats charts → choropleth
+  → diversified techniques → parsers + honesty-gate tests); revision-anomaly is the highest-value
+  independent slice. 7 open maintainer rulings in the doc (retrospective-only stance; classical-first;
+  sensitivity wording on flagging official figures; CSV+JSON-stat parsers; choropleth normalized-only;
+  global region value; key-gated sources). Reference files VERIFY-BEFORE-TRUST (scaffold rows are leads,
+  not facts; the project was burned by fabricated endpoints before).
 - **FIELD TEST 2026-06-24 (maintainer running a real 59,646-article / 909,463-keyword / 6.0 GB corpus
   scraped over a day; several findings + rulings — RECORDED, build status noted):**
   (A) **BACKUP BROKEN AT SCALE (real bug, data-safety):** "Backup failed … Data or associated data too long.
