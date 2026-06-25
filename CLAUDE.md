@@ -737,10 +737,13 @@ ruling, a contingency, or a deliberate-omission note.
   anchor-gated form per Q7; #4 = the FLOOD half + the foundational `KeywordMention.source_id` denormalisation
   it needed). REMAINING cards: the BURY half of #4 (a source UNDER-covering a topic big elsewhere — needs a
   real external trigger); event-timed-op [#3+#6+agenda] needs the elections CANDIDATE ROSTER (design-only/
-  deferred); outrage-intensity is SECONDARY (annotates another card, never a standalone Lead);
-  astroturf/copypasta partly covered by echo_chamber. So 4 of the 9 cards now ship as producers
-  (source-laundering #6, recycled-claim #1, headline-body #7, emergence #3, flood #4 = 5 actually); the rest
-  are foundation-gated.
+  deferred); outrage-intensity is SECONDARY (annotates another card, never a standalone Lead).
+  COPYPASTA SHIPPED 2026-06-25 (the astroturf/copypasta card — see the shipped-log entry): a SPAN-level
+  signal genuinely DISTINCT from echo_chamber (whole-article near-dup) — a verbatim phrase shared across
+  many DISTINCT sources in articles that are NOT whole near-dups (wire republish is EXCLUDED as
+  echo_chamber's job). So 6 of the 9 cards now ship as producers (source-laundering #6, recycled-claim #1,
+  headline-body #7, emergence #3, flood #4, copypasta); the rest (the BURY half of #4, event-timed-op,
+  outrage-intensity) are foundation/trigger-gated.
 - **AUTONOMOUS 'EVERYTHING' BATCH (ruled 2026-06-16) — the V0.1-alpha push, run
   UNSUPERVISED.** SCOPE = the V0.1 RC mandate IN FULL ('absolutely everything' from
   this ledger + FUTURE_DEVELOPMENTS): every RC-BLOCKING + SHOULD + POST row in
@@ -3968,6 +3971,32 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **COPYPASTA MANIPULATION CARD 2026-06-25 (Tier 4.13, the astroturf/copypasta card; branch
+  claude/vibrant-thompson-bez6dq, draft PR onto 0.09; pure helper + card LOGIC VERIFIED py3.11 standalone +
+  ruff F/B, card/endpoint tests in CI [sqlalchemy]).** The 6th of the nine manipulation cards, built because
+  the earlier "partly covered by echo_chamber" read was wrong on reflection: copypasta is a SPAN-level signal
+  echo_chamber (whole-article near-dup) MISSES — the SAME verbatim sentence embedded in articles that are
+  OTHERWISE DIFFERENT, across many sources = a coordinated talking point dropped into original-looking
+  coverage. NEW pure primitive `src/signals/near_dup.py:shared_word_ngrams(docs, k, min_docs)` — verbatim
+  k-word phrases shared across >= min_docs DISTINCT documents, keeping the phrase TEXT (unlike the hashing
+  `shingles`), merging consecutive shared k-grams into the full span and reporting the docs that contain it IN
+  FULL (k-gram doc-set intersection), substring-deduped word-aligned; pure (stdlib, optional numpy), runs on
+  every lane. `src/analytics/copypasta.py:find_copypasta` composes it: a phrase fires only when it spans
+  >= min_sources DISTINCT sources AND the sharing articles are NOT whole near-dups across that many sources
+  (Jaccard >= 0.7 = a republished WIRE STORY = echo_chamber's job, EXCLUDED — the innocent twin handled by
+  construction, not just prose). HONESTY: independence = distinct SOURCES never article count (a single source
+  repeating a line can't manufacture it — tested); metric = distinct-source count + phrase length, NO score;
+  the innocent twins (shared quote / press-release line / boilerplate) stated in the caveat; bounded recent
+  scan. Wired as a fail-safe-LAST producer (`copypasta` -> an `overtold` Home Lead over the exact article set,
+  carries `_trigger`) + `GET /api/insights/copypasta` (cached). Frontend: NONE needed — cards render
+  generically (no per-type frontend hardcoding, grep-verified), so it auto-surfaces as a Home Lead like the
+  other 5 cards. tests/test_copypasta.py (pure helper: finds-across-3 + min_docs/degenerate gates [run every
+  lane]; card: fires on planted-span-in-3-different-articles, EXCLUDES whole-article wire republish, below-
+  min_sources silent, single-source-can't-manufacture, no-score, endpoint) + the all-producers sweep
+  (test_briefing/test_producers_card_shapes iterate _DEFAULT_PRODUCERS) covers shape + trigger automatically.
+  The pure helper + the full fire/wire-exclude/source-gate selection logic were proven in py3.11 standalone
+  repros before commit; py_compile + ruff F/B clean. REMAINING manipulation cards: the BURY half of #4 (needs
+  an external trigger), event-timed-op (needs the elections roster), outrage-intensity (secondary annotation).
 - **AUTONOMOUS SESSION 2026-06-24 (the consolidated-to-do build brief `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md`;
   ONE branch claude/vibrant-thompson-bez6dq per the harness git-constraint, draft PR #460 onto 0.09; backend
   VERIFIED py3.11 standalone repro + ruff F,B, full pytest in CI). TIER 1.1 — STATEMENT-DEADLINE GUARD on the
