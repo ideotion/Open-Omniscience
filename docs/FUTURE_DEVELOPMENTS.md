@@ -178,7 +178,7 @@
 - [ ] Human click-through of all browser-unverified UI
 - [ ] Flip 0.0.9 → 0.1 when RC-blocking items are green
 - [ ] App self-update (manual git-pull: snapshot → verify → migrate → swap → rollback)
-- [ ] i18n: key the remaining English-fallback panel strings ×12
+- [~] i18n: key the remaining English-fallback panel strings ×12 — IN PROGRESS (2026-06-25): keyed the 14 new top-level Library/Governments/Graphics + backup labels (audit 140→126, gate 100%). Remaining ~126 are mostly data/examples/URLs that stay literal + the harder mid-`<a>`-link sentence fragments (de-tagging tail).
 
 ### Bigger / deferred (design-only)
 - [ ] Elections & civic vertical (needs a sourced candidate roster)

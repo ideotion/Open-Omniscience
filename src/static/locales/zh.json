@@ -1631,5 +1631,19 @@
   "Method": "方法",
   "Open corpus": "打开语料库",
   "Details & corpus": "详情与语料库",
-  "Open this Lead's corpus in a new window": "在新窗口中打开该线索的语料库"
+  "Open this Lead's corpus in a new window": "在新窗口中打开该线索的语料库",
+  "Graphics": "图形",
+  "Menu": "菜单",
+  "Browse…": "浏览…",
+  "Pick a folder": "选择文件夹",
+  "Use this folder": "使用此文件夹",
+  "Click a country": "点击一个国家",
+  "Keyword-growth curve": "关键词增长曲线",
+  "Back up (volumes + parity)": "备份（卷 + 校验）",
+  "Restore from a volume backup folder": "从卷备份文件夹恢复",
+  "Passphrase (encrypts the backup)": "口令（加密备份）",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "从世界银行获取每个国家的标准国别指标（联网，会先征得同意）。",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "来源目录覆盖范围（目录涵盖多少国家，依 ISO 3166 评估）：",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "一张世界地图，显示你在每个国家收集了多少篇文章（按每个来源在目录中的国家）。根据数据测量；实时刷新。",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "你已下载的一切，以及应用从中推算出的一切——真实的计数和磁盘占用，绝非估算。"
 }

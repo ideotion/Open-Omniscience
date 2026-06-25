@@ -1631,5 +1631,19 @@
   "Method": "Méthode",
   "Open corpus": "Ouvrir le corpus",
   "Details & corpus": "Détails et corpus",
-  "Open this Lead's corpus in a new window": "Ouvrir le corpus de cette piste dans une nouvelle fenêtre"
+  "Open this Lead's corpus in a new window": "Ouvrir le corpus de cette piste dans une nouvelle fenêtre",
+  "Graphics": "Graphismes",
+  "Menu": "Menu",
+  "Browse…": "Parcourir…",
+  "Pick a folder": "Choisir un dossier",
+  "Use this folder": "Utiliser ce dossier",
+  "Click a country": "Cliquez sur un pays",
+  "Keyword-growth curve": "Courbe de croissance des mots-clés",
+  "Back up (volumes + parity)": "Sauvegarder (volumes + parité)",
+  "Restore from a volume backup folder": "Restaurer depuis un dossier de sauvegarde par volumes",
+  "Passphrase (encrypts the backup)": "Phrase secrète (chiffre la sauvegarde)",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Récupérer les indicateurs nationaux standard pour chaque pays auprès de la Banque mondiale (en ligne, demande d'abord votre consentement).",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Portée du catalogue de sources (combien de pays le catalogue couvre, évaluée selon ISO 3166) :",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "Une carte du monde indiquant combien d'ARTICLES vous avez collectés par pays (selon le pays catalogué de chaque source). Mesuré à partir des données ; actualisé en direct.",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Tout ce que vous avez TÉLÉCHARGÉ et tout ce que l'application en a EXTRAPOLÉ — des décomptes réels et des tailles sur disque, jamais une estimation."
 }

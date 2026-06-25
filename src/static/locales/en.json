@@ -1631,5 +1631,19 @@
   "Method": "Method",
   "Open corpus": "Open corpus",
   "Details & corpus": "Details & corpus",
-  "Open this Lead's corpus in a new window": "Open this Lead's corpus in a new window"
+  "Open this Lead's corpus in a new window": "Open this Lead's corpus in a new window",
+  "Graphics": "Graphics",
+  "Menu": "Menu",
+  "Browse…": "Browse…",
+  "Pick a folder": "Pick a folder",
+  "Use this folder": "Use this folder",
+  "Click a country": "Click a country",
+  "Keyword-growth curve": "Keyword-growth curve",
+  "Back up (volumes + parity)": "Back up (volumes + parity)",
+  "Restore from a volume backup folder": "Restore from a volume backup folder",
+  "Passphrase (encrypts the backup)": "Passphrase (encrypts the backup)",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate."
 }

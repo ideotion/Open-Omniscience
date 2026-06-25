@@ -1631,5 +1631,19 @@
   "Method": "Metode",
   "Open corpus": "Buka korpus",
   "Details & corpus": "Detail & korpus",
-  "Open this Lead's corpus in a new window": "Buka korpus petunjuk ini di jendela baru"
+  "Open this Lead's corpus in a new window": "Buka korpus petunjuk ini di jendela baru",
+  "Graphics": "Grafis",
+  "Menu": "Menu",
+  "Browse…": "Telusuri…",
+  "Pick a folder": "Pilih folder",
+  "Use this folder": "Gunakan folder ini",
+  "Click a country": "Klik sebuah negara",
+  "Keyword-growth curve": "Kurva pertumbuhan kata kunci",
+  "Back up (volumes + parity)": "Cadangkan (volume + paritas)",
+  "Restore from a volume backup folder": "Pulihkan dari folder cadangan volume",
+  "Passphrase (encrypts the backup)": "Frasa sandi (mengenkripsi cadangan)",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Ambil indikator negara standar untuk setiap negara dari Bank Dunia (daring, meminta persetujuan terlebih dahulu).",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Jangkauan katalog sumber (berapa banyak negara yang dicakup katalog, dinilai terhadap ISO 3166):",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "Peta dunia tentang berapa banyak ARTIKEL yang telah Anda kumpulkan per negara (menurut negara katalog tiap sumber). Diukur dari data; menyegarkan secara langsung.",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Semua yang telah Anda UNDUH dan semua yang telah aplikasi EKSTRAPOLASIKAN darinya — jumlah nyata dan ukuran di disk, bukan perkiraan."
 }

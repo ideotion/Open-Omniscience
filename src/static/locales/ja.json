@@ -1631,5 +1631,19 @@
   "Method": "方法",
   "Open corpus": "コーパスを開く",
   "Details & corpus": "詳細とコーパス",
-  "Open this Lead's corpus in a new window": "この手がかりのコーパスを新しいウィンドウで開く"
+  "Open this Lead's corpus in a new window": "この手がかりのコーパスを新しいウィンドウで開く",
+  "Graphics": "グラフィック",
+  "Menu": "メニュー",
+  "Browse…": "参照…",
+  "Pick a folder": "フォルダーを選択",
+  "Use this folder": "このフォルダーを使用",
+  "Click a country": "国をクリック",
+  "Keyword-growth curve": "キーワード増加曲線",
+  "Back up (volumes + parity)": "バックアップ（ボリューム + パリティ）",
+  "Restore from a volume backup folder": "ボリュームバックアップのフォルダーから復元",
+  "Passphrase (encrypts the backup)": "パスフレーズ（バックアップを暗号化）",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "世界銀行から各国の標準的な国別指標を取得します（オンライン、最初に同意を求めます）。",
+  "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "ソースカタログの網羅範囲（カタログが対象とする国数、ISO 3166 に照らして評価）：",
+  "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "国ごとに収集した記事数を示す世界地図（各ソースの登録国別）。データから測定し、リアルタイムで更新されます。",
+  "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "あなたがダウンロードしたすべてと、アプリがそこから推定したすべて——実際の件数とディスク上のサイズであり、推計ではありません。"
 }
