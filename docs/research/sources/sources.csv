@@ -1,0 +1,106 @@
+name,domain,rss_url,country,language,region,source_type,ownership,lean,tags,enabled,verified_on,confidence
+Jamaica Gleaner,jamaica-gleaner.com,,jm,en,north-america,news,independent,,news;general;independent;caribbean,False,2026-06-25,high
+Nation (Barbados),nationnews.com,,bb,en,north-america,news,independent,,news;general;independent;caribbean,False,2026-06-25,high
+Trinidad Express,trinidadexpress.com,,tt,en,north-america,news,independent,,news;investigative;independent;caribbean,False,2026-06-25,high
+Trinidad & Tobago Guardian,guardian.co.tt,,tt,en,north-america,news,independent,,news;general;independent;caribbean,False,2026-06-25,high
+Diario Libre,diariolibre.com,,do,es,north-america,news,independent,,news;general;independent;caribbean;hispanophone,False,2026-06-25,high
+Listin Diario,listindiario.com,,do,es,north-america,news,independent,,news;general;independent;caribbean;hispanophone,False,2026-06-25,high
+Granma,granma.cu,,cu,es,north-america,news,state-media,,news;politics;state-media;communist-party-organ;caribbean,False,2026-06-25,high
+14ymedio,14ymedio.com,,cu,es,north-america,news,independent,,news;politics;independent;critical;caribbean,False,2026-06-25,high
+Diario de Cuba,diariodecuba.com,,cu,es,north-america,news,independent,,news;politics;independent;critical;diaspora;caribbean,False,2026-06-25,high
+Le Nouvelliste (Haiti),lenouvelliste.com,,ht,fr,north-america,news,independent,,news;general;independent;francophone;caribbean,False,2026-06-25,high
+AlterPresse (Haiti),alterpresse.org,,ht,fr,north-america,ngo-civil-society,independent,,news;human-rights;independent;alternative;francophone;caribbean,False,2026-06-25,high
+CARICOM (Caribbean Community),caricom.org,,,en,north-america,igo,igo,,government-primary;igo;regional-bloc;caribbean,False,2026-06-25,high
+Kaieteur News,kaieteurnewsonline.com,,gy,en,south-america,investigative,independent,,news;investigative;independent;anti-corruption;caribbean,False,2026-06-25,high
+"NCN (National Communications Network, Guyana)",ncnguyana.com,,gy,en,south-america,news,public-broadcaster,,news;general;public-broadcaster;state-owned;caribbean,False,2026-06-25,high
+Starnieuws,starnieuws.com,,sr,nl,south-america,news,independent,,news;general;independent;dutch-language;caribbean,False,2026-06-25,high
+de Ware Tijd,dwtonline.com,,sr,nl,south-america,news,independent,,news;general;independent;dutch-language;caribbean,False,2026-06-25,high
+Vanuatu Daily Post,dailypost.vu,,vu,en,oceania,news,independent,,news;general;independent;pacific,False,2026-06-25,high
+Samoa Observer,samoaobserver.ws,,ws,en,oceania,investigative,independent,,news;investigative;independent;press-freedom;pacific,False,2026-06-25,high
+The Fiji Times,fijitimes.com.fj,,fj,en,oceania,news,independent,,news;general;independent;pacific,False,2026-06-25,high
+FBC News (Fiji Broadcasting Corporation),fbcnews.com.fj,,fj,en,oceania,news,public-broadcaster,,news;general;public-broadcaster;state-owned;pacific,False,2026-06-25,high
+Matangi Tonga,matangitonga.to,,to,en,oceania,news,independent,,news;general;independent;pacific,False,2026-06-25,high
+The National (PNG),thenational.com.pg,,pg,en,oceania,news,independent,,news;general;independent;privately-owned;pacific,False,2026-06-25,high
+Post-Courier (PNG),postcourier.com.pg,,pg,en,oceania,news,independent,,news;general;independent;privately-owned;pacific,False,2026-06-25,medium
+Solomon Star,solomonstarnews.com,,sb,en,oceania,news,independent,,news;general;independent;pacific,False,2026-06-25,high
+SIBC (Solomon Islands Broadcasting Corporation),sibconline.com.sb,,sb,en,oceania,news,public-broadcaster,,news;general;public-broadcaster;state-owned;pacific,False,2026-06-25,medium
+Cook Islands News,cookislandsnews.com,,ck,en,oceania,news,independent,,news;general;independent;pacific,False,2026-06-25,high
+Marshall Islands Journal,marshallislandsjournal.com,,mh,en,oceania,news,independent,,news;general;independent;pacific,False,2026-06-25,medium
+Island Times (Palau),islandtimes.org,,pw,en,oceania,news,independent,,news;general;independent;pacific,False,2026-06-25,medium
+Tahiti Infos (French Polynesia),tahiti-infos.com,,pf,fr,oceania,news,independent,,news;general;independent;francophone;pacific,False,2026-06-25,high
+Les Nouvelles Caledoniennes (New Caledonia),lnc.nc,,nc,fr,oceania,news,independent,,news;general;independent;francophone;pacific,False,2026-06-25,high
+PINA (Pacific Islands News Association),pina.com.fj,,,en,oceania,ngo-civil-society,ngo-civil-society,,media-association;ngo-civil-society;regional;pacific,False,2026-06-25,high
+Premium Times (Nigeria),premiumtimesng.com,https://www.premiumtimesng.com/feed,ng,en,africa,investigative,independent,,news;investigative;independent;west-africa,False,2026-06-25,high
+Daily Trust (Nigeria),dailytrust.com,,ng,en,africa,news,independent,,news;general;independent;northern-nigeria;west-africa,False,2026-06-25,high
+News Agency of Nigeria (NAN),nannews.ng,,ng,en,africa,news,wire-agency,,wire-agency;state-owned;government;west-africa,False,2026-06-25,medium
+Daily Nation (Kenya),nation.africa,,ke,en,africa,news,independent,,news;general;independent;east-africa,False,2026-06-25,high
+The Standard (Kenya),standardmedia.co.ke,,ke,en,africa,news,independent,,news;general;independent;east-africa,False,2026-06-25,high
+KBC (Kenya Broadcasting Corporation),kbc.co.ke,,ke,en,africa,news,public-broadcaster,,news;general;public-broadcaster;state-owned;east-africa,False,2026-06-25,medium
+News24,news24.com,,za,en,africa,news,independent,,news;general;independent;southern-africa,False,2026-06-25,high
+Daily Maverick,dailymaverick.co.za,https://www.dailymaverick.co.za/dmrss,za,en,africa,investigative,independent,,news;investigative;independent;southern-africa,False,2026-06-25,high
+Mail & Guardian,mg.co.za,https://mg.co.za/feed,za,en,africa,investigative,independent,,news;investigative;independent;southern-africa,False,2026-06-25,high
+amaBhungane,amabhungane.org,,za,en,africa,investigative,independent,,investigative;nonprofit;independent;anti-corruption;southern-africa,False,2026-06-25,high
+SABC News,sabcnews.com,,za,en,africa,news,public-broadcaster,,news;general;public-broadcaster;state-owned;southern-africa,False,2026-06-25,medium
+Graphic Online (Daily Graphic),graphic.com.gh,,gh,en,africa,news,state-media,,news;general;state-media;state-owned-gcgl;west-africa,False,2026-06-25,high
+MyJoyOnline,myjoyonline.com,,gh,en,africa,news,independent,,news;general;independent;west-africa,False,2026-06-25,high
+Citinewsroom,citinewsroom.com,,gh,en,africa,news,independent,,news;general;independent;west-africa,False,2026-06-25,high
+Ghana News Agency (GNA),gna.org.gh,,gh,en,africa,news,wire-agency,,wire-agency;state-owned;government;west-africa,False,2026-06-25,medium
+Daily Monitor (Uganda),monitor.co.ug,,ug,en,africa,news,independent,,news;general;independent;east-africa,False,2026-06-25,high
+New Vision (Uganda),newvision.co.ug,,ug,en,africa,news,state-media,,news;general;state-media;state-owned;east-africa,False,2026-06-25,high
+The Citizen (Tanzania),thecitizen.co.tz,,tz,en,africa,news,independent,,news;general;independent;east-africa,False,2026-06-25,high
+NewsDay (Zimbabwe),newsday.co.zw,,zw,en,africa,news,independent,,news;general;independent;southern-africa,False,2026-06-25,high
+The Herald (Zimbabwe),heraldonline.co.zw,,zw,en,africa,news,state-media,,news;general;state-media;state-owned-zimpapers;southern-africa,False,2026-06-25,medium
+News Diggers! (Zambia),diggers.news,,zm,en,africa,news,independent,,news;general;independent;southern-africa,False,2026-06-25,high
+The Namibian,namibian.com.na,,na,en,africa,news,independent,,news;general;independent;southern-africa,False,2026-06-25,high
+Mmegi (Botswana),mmegi.bw,,bw,en,africa,news,independent,,news;general;independent;southern-africa,False,2026-06-25,medium
+The New Times (Rwanda),newtimes.co.rw,,rw,en,africa,news,independent,,news;general;independent;government-leaning;east-africa,False,2026-06-25,high
+The Nation (Malawi),mwnation.com,,mw,en,africa,news,independent,,news;general;independent;southern-africa,False,2026-06-25,high
+Addis Standard (Ethiopia),addisstandard.com,,et,en,africa,investigative,independent,,news;investigative;independent;horn-of-africa,False,2026-06-25,high
+FrontPage Africa (Liberia),frontpageafricaonline.com,,lr,en,africa,investigative,independent,,news;investigative;independent;west-africa,False,2026-06-25,high
+Daily Observer (Liberia),liberianobserver.com,,lr,en,africa,news,independent,,news;general;independent;west-africa,False,2026-06-25,high
+Le Soleil (Senegal),lesoleil.sn,,sn,fr,africa,news,state-media,,news;general;state-media;state-owned-sspp;francophone;west-africa,False,2026-06-25,high
+Radio Okapi (DRC),radiookapi.net,,cd,fr,africa,news,independent,,news;geopolitical;independent;un-monusco-hirondelle;francophone;central-africa,False,2026-06-25,high
+Cameroon Tribune,cameroon-tribune.cm,,cm,fr,africa,news,state-media,,news;general;state-media;state-owned-sopecam;bilingual;central-africa,False,2026-06-25,high
+Jornal de Angola,jornaldeangola.ao,,ao,pt,africa,news,state-media,,news;general;state-media;state-owned;lusophone;southern-africa,False,2026-06-25,high
+Novo Jornal (Angola),novojornal.co.ao,,ao,pt,africa,news,independent,,news;general;independent;lusophone;southern-africa,False,2026-06-25,high
+O Pais (Mozambique),opais.co.mz,,mz,pt,africa,news,independent,,news;general;independent;lusophone;southern-africa,False,2026-06-25,high
+Expresso das Ilhas (Cabo Verde),expressodasilhas.cv,,cv,pt,africa,news,independent,,news;general;independent;lusophone;west-africa,False,2026-06-25,high
+Al-Ahram / Ahram Online (Egypt),ahram.org.eg,,eg,ar,africa,news,state-media,,news;general;state-media;state-owned;english-edition;north-africa;mena,False,2026-06-25,high
+Mada Masr (Egypt),madamasr.com,,eg,ar,africa,investigative,independent,,news;investigative;independent;critical;english-edition;north-africa;mena,False,2026-06-25,high
+Hespress (Morocco),hespress.com,,ma,ar,africa,news,independent,,news;general;independent;multilingual;north-africa;mena,False,2026-06-25,high
+"MAP (Maghreb Arabe Presse, Morocco)",mapnews.ma,,ma,fr,africa,news,wire-agency,,wire-agency;state-owned;government;multilingual;north-africa;mena,False,2026-06-25,high
+Nawaat (Tunisia),nawaat.org,,tn,fr,africa,investigative,independent,,news;investigative;ngo-civil-society;independent;north-africa;mena,False,2026-06-25,high
+Business News (Tunisia),businessnews.com.tn,,tn,fr,africa,news,independent,,news;general;independent;north-africa;mena,False,2026-06-25,medium
+TSA (Tout sur l'Algerie),tsa-algerie.com,,dz,fr,africa,news,independent,,news;general;independent;francophone;north-africa;mena,False,2026-06-25,high
+APS (Algerie Presse Service),aps.dz,,dz,fr,africa,news,wire-agency,,wire-agency;state-owned;government;multilingual;north-africa;mena,False,2026-06-25,high
+Dubawa,dubawa.org,,,en,africa,fact-checker,independent,,fact-checker;nonprofit;independent;west-africa;regional,False,2026-06-25,high
+African Union (AU),au.int,,,en,africa,igo,igo,,government-primary;igo;continental-bloc;regional,False,2026-06-25,high
+ISS Africa (Institute for Security Studies),issafrica.org,,,en,africa,academic-research,independent,,research;think-tank;nonprofit;independent;security;pan-african;regional,False,2026-06-25,high
+Statistics South Africa (Stats SA),statssa.gov.za,,za,en,africa,data-portal,government,,data-portal;government;official-statistics;southern-africa,False,2026-06-25,high
+SAnews (South African Government News Agency),sanews.gov.za,,za,en,africa,government-primary,government,,government-primary;government;official;southern-africa,False,2026-06-25,high
+Tengrinews,tengrinews.kz,,kz,ru,asia,news,independent,,news;general;independent;russophone;central-asia,False,2026-06-25,high
+Vlast (Kazakhstan),vlast.kz,,kz,ru,asia,news,independent,,news;analysis;independent;russophone;central-asia,False,2026-06-25,medium
+AKIpress,akipress.com,,kg,ru,asia,news,wire-agency,,wire-agency;independent;russophone;central-asia,False,2026-06-25,high
+Kabar (Kyrgyz National News Agency),kabar.kg,,kg,ru,asia,news,wire-agency,,wire-agency;state-owned;government;russophone;central-asia,False,2026-06-25,high
+Gazeta.uz,gazeta.uz,,uz,ru,asia,news,independent,,news;general;independent;russophone;central-asia,False,2026-06-25,high
+The Times of Central Asia,timesca.com,,,en,asia,geopolitical,independent,,news;geopolitical;independent;regional;central-asia,False,2026-06-25,high
+L'Orient-Le Jour (Lebanon),lorientlejour.com,,lb,fr,asia,news,independent,,news;general;independent;francophone;english-edition;mena;levant,False,2026-06-25,high
+Al Jazeera English,aljazeera.com,,qa,en,asia,geopolitical,state-media,,news;geopolitical;state-media;qatar-funded;pan-arab;mena,False,2026-06-25,high
+Al Arabiya English,alarabiya.net,,sa,en,asia,news,state-media,,news;general;state-media;saudi-owned-mbc;pan-arab;mena,False,2026-06-25,high
+Arab News (Saudi Arabia),arabnews.com,,sa,en,asia,news,independent,,news;general;independent;state-aligned-editorial;srmg;mena,False,2026-06-25,high
+Haaretz,haaretz.com,,il,en,asia,news,independent,lean-left,news;general;independent;lean-left;english-edition;mena,False,2026-06-25,high
+The Times of Israel,timesofisrael.com,,il,en,asia,news,independent,center,news;general;independent;center;mena,False,2026-06-25,high
+The Jerusalem Post,jpost.com,,il,en,asia,news,independent,lean-right,news;general;independent;lean-right;mena,False,2026-06-25,high
+Dawn (Pakistan),dawn.com,,pk,en,asia,news,independent,,news;general;independent;newspaper-of-record;south-asia,False,2026-06-25,high
+The Hindu (India),thehindu.com,https://www.thehindu.com/feeder/default.rss,in,en,asia,news,independent,lean-center-left,news;general;independent;lean-center-left;south-asia,False,2026-06-25,high
+The Wire (India),thewire.in,,in,en,asia,investigative,independent,,news;investigative;independent;critical;south-asia,False,2026-06-25,high
+The Daily Star (Bangladesh),thedailystar.net,,bd,en,asia,news,independent,,news;general;independent;south-asia,False,2026-06-25,high
+Daily Mirror (Sri Lanka),dailymirror.lk,,lk,en,asia,news,independent,,news;general;independent;south-asia,False,2026-06-25,high
+Tempo,tempo.co,,id,id,asia,investigative,independent,,news;investigative;independent;bahasa-indonesia;southeast-asia,False,2026-06-25,high
+Kompas,kompas.com,,id,id,asia,news,independent,,news;general;independent;bahasa-indonesia;southeast-asia,False,2026-06-25,high
+The Jakarta Post,thejakartapost.com,,id,en,asia,news,independent,,news;general;independent;english-language;southeast-asia,False,2026-06-25,high
+ANTARA,antaranews.com,https://en.antaranews.com/rss/news.xml,id,id,asia,news,wire-agency,,wire-agency;state-owned;government;bahasa-indonesia;southeast-asia,False,2026-06-25,medium
+Malaysiakini,malaysiakini.com,,my,en,asia,news,independent,,news;general;independent;multilingual;southeast-asia,False,2026-06-25,high
+Rappler,rappler.com,,ph,en,asia,investigative,independent,,news;investigative;independent;southeast-asia,False,2026-06-25,high
+Bangkok Post,bangkokpost.com,,th,en,asia,news,independent,,news;general;independent;english-language;southeast-asia,False,2026-06-25,medium
+The Irrawaddy,irrawaddy.com,,mm,en,asia,news,independent,,news;general;independent;exile;southeast-asia,False,2026-06-25,medium

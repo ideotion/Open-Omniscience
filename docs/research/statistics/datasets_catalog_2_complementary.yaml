@@ -1,0 +1,463 @@
+# statistical_datasets_catalog_2_complementary.yaml
+# COMPLEMENTARY catalogue (Catalogue 2). New producers only - no overlap with
+# Catalogue 1 (which held World Bank, WHO, Eurostat-core, OECD-core, FAOSTAT,
+# ILOSTAT, IMF, ECB, Pacific Data Hub, DOSM).
+# Focus of this pass: (a) a DEEP energy section to fix Catalogue 1's thin energy
+# coverage, (b) the governance/justice gap, (c) the national statistical offices
+# flagged "to-verify" in Catalogue 1, plus trade, inequality, and global finance.
+# One row = one queryable indicator/dataset with a concrete machine id and an
+# example query/download that returns numeric observations.
+# Same hard rule as Catalogue 1: never invent a series_id, URL, or code; if a query
+# could not be confirmed this session it is omitted or listed under could_not_verify.
+
+meta:
+  generated_on: "2026-06-25"
+  catalogue: "2 of 2 (complementary)"
+  companion_file: "statistical_datasets_catalog.yaml"
+  no_overlap_rule: "Producers already in Catalogue 1 are intentionally excluded here. Energy from this pass is additive to Catalogue 1's single verified energy series (World Bank EG.ELC.ACCS.ZS)."
+  area_coding_note: "ISO 3166 alpha-3 used by OWID, IRENA, V-Dem, UCDP, UNDP. UN Comtrade uses UN M49 numeric reporter/partner codes. SDMX producers (ABS, ISTAT, BIS) key on their own REF_AREA schemes (ABS/ISTAT use national/subnational codes, not ISO; BIS uses 2-letter areas). StatCan uses internal vector/coordinate ids. FRED/EIA are largely single-country (US) plus EIA's global /international route."
+  comparability_note: "unit, adjustment, and base_year recorded per row. Energy units differ across producers (TWh vs GWh vs primary-energy EJ vs per-capita kWh) - do not mix without converting; each row states its unit."
+
+  verification_methodology:
+    confidence_high: "Personally fetched live observations this session OR exact real numeric values appeared verbatim in search results OR a live structure/data response confirmed the endpoint serves data. verified_on = 2026-06-25."
+    confidence_medium: "Official endpoint/base URL confirmed live this session and the indicator/dataflow/series code confirmed real on the producer's own materials, but this specific series was not individually fetched. example_query_url uses the producer's verified pattern with a confirmed-real code; verified_on = null; see per-row verification_note."
+    confidence_low: "Could not be grounded this session; moved to could_not_verify."
+    what_was_live_fetched_this_session:
+      - "OWID energy-data CSV (GitHub) - header + Germany 2023 row: electricity_generation=506.720 TWh, solar_electricity=63.870, wind_electricity=140.540, renewables_share_elec=54.685; iso_code=ISO3."
+      - "OWID energy codebook + OWID CO2 codebook (GitHub) - column/unit/source definitions confirmed."
+    tooling_constraints_encountered:
+      - "bash network allowlist reaches github.com / raw.githubusercontent.com / pypi / npm / Ubuntu mirrors ONLY. This is why OWID (GitHub-hosted) could be fetched live but api.eia.gov, fred, BIS, ABS, ISTAT, StatCan, comtrade, hdr.undp.org could not be curled and were verified via web_fetch/search against official docs."
+      - "web_fetch only retrieves URLs seen in prior results, strips query params, and rejects URLs containing ~ [ ] (affects EIA data[]/facets[][] URLs and IMF-style keys)."
+
+# =====================================================================
+# DATASETS (grouped by domain, then producer)
+# =====================================================================
+datasets:
+
+  energy:
+    our-world-in-data:
+      - producer: our-world-in-data
+        dataset_name: "OWID Energy dataset (electricity by source, consumption, production, demand, capacity, carbon intensity)"
+        series_id: "owid-energy-data"
+        domain: energy
+        example_query_url: "https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-data.csv"
+        format: csv
+        frequency: annual
+        geo_coverage: "global (~220 countries/regions); iso_code = ISO 3166-1 alpha-3"
+        time_coverage: "1900s/1965-2024 depending on column"
+        unit: "per-column: electricity in TWh (e.g. electricity_generation, solar_electricity, wind_electricity, coal_electricity), shares in % (renewables_share_elec, fossil_share_elec), per-capita in kWh, primary energy in TWh/EJ, carbon_intensity_elec in gCO2/kWh"
+        adjustment: "raw"
+        base_year: null
+        methodology_ref: "https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-codebook.csv"
+        license: "CC-BY-4.0 (OWID); upstream Energy Institute + EIA + Ember"
+        auth: none
+        verified_on: "2026-06-25"
+        confidence: high
+        verification_note: "Live-fetched this session. ~250 columns. Single bulk file. Also accessible per-indicator as CSV via the OWID grapher API, e.g. https://ourworldindata.org/grapher/electricity-generation.csv?v=1&csvType=full&useColumnShortNames=false (documented pattern; .metadata.json sibling available). The bulk file is the most complete and the verified route."
+    eia:
+      - producer: eia
+        dataset_name: "EIA International energy (country-level production, consumption, capacity by fuel)"
+        series_id: "international"
+        domain: energy
+        example_query_url: "https://api.eia.gov/v2/international?api_key=YOUR_EIA_KEY"
+        format: other-json
+        frequency: "annual / monthly"
+        geo_coverage: "global (country-level); EIA country codes"
+        time_coverage: "varies by series (long history)"
+        unit: "varies by facet (e.g. quad Btu, billion kWh, MW); returned in the unit facet"
+        adjustment: "raw"
+        base_year: null
+        methodology_ref: "https://www.eia.gov/opendata/documentation.php"
+        license: "EIA Copyrights and Reuse Policy (free)"
+        auth: "api_key (free registration at https://www.eia.gov/opendata/register.php)"
+        verified_on: null
+        confidence: medium
+        verification_note: "API v2 base https://api.eia.gov/v2/ and the /international route ('Country level production, consumption...') confirmed in EIA docs. Data lives under /v2/international/data with data[]/facets[][] parameters; browse /v2/international first to discover facet codes (productId, activityId, countryRegionId). Mechanism proven by EIA's own worked example returning real values (e.g. electricity/retail-sales/data -> Colorado residential 2009 = 10 cents/kWh). Not live-fetched: host off-allowlist + bracket URLs rejected by the fetch tool. NOTE: v2.1.6+ returns numeric values as JSON strings."
+    ember:
+      - producer: ember
+        dataset_name: "Ember Yearly Electricity Data (generation, capacity, emissions, demand by source)"
+        series_id: "yearly-electricity-data"
+        domain: energy
+        example_query_url: "https://ember-energy.org/data/yearly-electricity-data/"
+        format: csv
+        frequency: "yearly (a monthly dataset also exists for ~88 geographies)"
+        geo_coverage: "global (215 countries/geographies)"
+        time_coverage: "2000-latest (Europe from 1990); pre-2000 from Energy Institute"
+        unit: "generation/demand in TWh, capacity in GW, emissions in MtCO2, CO2 intensity in gCO2/kWh, shares in %"
+        adjustment: "raw"
+        base_year: null
+        methodology_ref: "https://ember-energy.org/data/electricity-data-explorer/"
+        license: "CC-BY-4.0"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "Producer page + 215-geography coverage + CC-BY-4.0 confirmed. Ember's own download is a 'boxed link' on the dataset page (not a clean REST path), so the cleanest machine route is the OWID mirror (owid/energy-data CSV above, which is built from Ember + Energy Institute + EIA). Use Ember directly for monthly granularity and capacity detail."
+    irena:
+      - producer: irena
+        dataset_name: "IRENASTAT renewable power capacity and generation (by technology)"
+        series_id: "IRENASTAT (Power Capacity and Generation)"
+        domain: energy
+        example_query_url: "https://pxweb.irena.org/pxweb/en/IRENASTAT/IRENASTAT__Power%20Capacity%20and%20Generation/RE-SHARE_2025_H2_PX.px/"
+        format: other-json
+        frequency: annual
+        geo_coverage: "global (all countries/areas); IRENA region/country/area codes"
+        time_coverage: "2000-latest"
+        unit: "capacity in MW, generation in GWh (18 renewable sources incl. hydro, solar PV, CSP, wind, geothermal, bioenergy)"
+        adjustment: "raw"
+        base_year: null
+        methodology_ref: "https://www.irena.org/Data"
+        license: "IRENA copyright (free reuse with attribution)"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "IRENASTAT PxWeb instance and the RE-SHARE table confirmed in search. PxWeb serves a table's metadata on GET and data on POST (JSON/JSON-stat or CSV). Needs a PxWeb client / JSON-stat parser. Browse https://pxweb.irena.org/pxweb/en/IRENASTAT/ for table ids (.px). Capacity table released March; generation/balances July."
+
+  environment_and_climate:
+    our-world-in-data:
+      - producer: our-world-in-data
+        dataset_name: "OWID CO2 and Greenhouse Gas Emissions dataset"
+        series_id: "owid-co2-data"
+        domain: environment_and_climate
+        example_query_url: "https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-data.csv"
+        format: csv
+        frequency: annual
+        geo_coverage: "global (~220 countries/regions); iso_code = ISO 3166-1 alpha-3"
+        time_coverage: "1750-latest depending on column"
+        unit: "per-column: co2 (MtCO2), co2_per_capita (t), co2_per_gdp, cumulative_co2, consumption_co2, total_ghg (MtCO2e), methane, nitrous_oxide, share_global_co2 (%)"
+        adjustment: "raw; production- and consumption-based variants both present"
+        base_year: null
+        methodology_ref: "https://raw.githubusercontent.com/owid/co2-data/master/owid-co2-codebook.csv"
+        license: "CC-BY-4.0 (OWID); upstream Global Carbon Project + others"
+        auth: none
+        verified_on: "2026-06-25"
+        confidence: high
+        verification_note: "Codebook live-fetched this session (same OWID GitHub infrastructure as the energy file). Complements Catalogue 1's World Bank EN.GHG.* per-capita series with absolute totals, cumulative, consumption-based, and per-GDP variants in one file."
+
+  governance_democracy:
+    v-dem:
+      - producer: v-dem
+        dataset_name: "V-Dem democracy indices and indicators (electoral/liberal/participatory/deliberative/egalitarian)"
+        series_id: "v2x_polyarchy (+ index family; full dataset Country-Year Full+Others)"
+        domain: governance_democracy
+        example_query_url: "https://www.v-dem.net/data/the-v-dem-dataset/"
+        format: csv
+        frequency: annual
+        geo_coverage: "global (202 countries); V-Dem country ids + COW + ISO; country-year"
+        time_coverage: "1789-2024"
+        unit: "index, typically 0-1 (e.g. v2x_polyarchy electoral democracy index); some indicators on ordinal/interval scales"
+        adjustment: "expert-coded, measurement-model estimates with confidence intervals"
+        base_year: null
+        methodology_ref: "V-Dem Codebook v15/v16 (in each download ZIP); DOI 10.23696/vdemds25 (v15)"
+        license: "Free for research/non-commercial use with citation"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "Fills Catalogue 1's governance gap. Bulk download (ZIP with CSV + codebook), not a queryable API; ingest the CSV once. Latest is v15 (2025)/v16. Canonical high-level indices: v2x_polyarchy (electoral), v2x_libdem (liberal), v2x_partipdem (participatory), v2x_delibdem (deliberative), v2x_egaldem (egalitarian); v2x_corr is the political corruption index. R package vdeminstitute/vdemdata loads it programmatically. Do not invent disaggregated variable names beyond the documented v2x_ family; consult the codebook."
+    ucdp:
+      - producer: ucdp
+        dataset_name: "UCDP organized-violence / armed-conflict datasets (GED events; conflict-year deaths)"
+        series_id: "UCDP GED (Georeferenced Event Dataset) + UCDP/PRIO Armed Conflict"
+        domain: governance_democracy
+        example_query_url: "https://ucdp.uu.se/downloads/"
+        format: csv
+        frequency: "annual (GED events also dated to the day; UCDP Candidate is monthly)"
+        geo_coverage: "global, georeferenced (lat/lon); country + Gleditsch-Ward / ISO country ids"
+        time_coverage: "1946-2025 (conflict-year); 1989-2025 (GED events)"
+        unit: "event counts and best/low/high fatality estimates (deaths)"
+        adjustment: "raw event coding"
+        base_year: null
+        methodology_ref: "https://ucdp.uu.se/downloads/ (codebooks per dataset)"
+        license: "Free with citation (CC-BY-style; cite Davies/Pettersson/Oberg JPR)"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "Download center confirmed (GED Global v26.1; conflict-year 1946-2025). A JSON REST API also exists at the ucdpapi host (ucdpapi.pcr.uu.se) with version-pinned resources (e.g. gedevents); confirm the current version string in UCDP's API docs before wiring - not asserted here to avoid a stale version. Complements V-Dem with conflict/violence intensity."
+
+  finance:
+    fred:
+      - producer: fred
+        dataset_name: "FRED economic time series (St. Louis Fed) - 800k+ series"
+        series_id: "CPIAUCSL (example; any FRED series id)"
+        domain: finance
+        example_query_url: "https://api.stlouisfed.org/fred/series/observations?series_id=CPIAUCSL&api_key=YOUR_FRED_KEY&file_type=json"
+        format: other-json
+        frequency: "per series (daily/weekly/monthly/quarterly/annual)"
+        geo_coverage: "primarily United States (deep macro/financial history); also mirrors many international series"
+        time_coverage: "per series (e.g. GNPCA from 1929; CPIAUCSL from 1947)"
+        unit: "per series (index, %, billions of USD, etc.); given in the series 'units' field"
+        adjustment: "per series (SA / NSA; stated in seasonal_adjustment field)"
+        base_year: "per series (e.g. index 1982=100)"
+        methodology_ref: "https://fred.stlouisfed.org/docs/api/fred/"
+        license: "Mostly public domain (citation requested); some series carry upstream copyright"
+        auth: "api_key (free, 32-char; register at fredaccount.stlouisfed.org)"
+        verified_on: null
+        confidence: medium
+        verification_note: "Base https://api.stlouisfed.org/fred/ and series/observations endpoint confirmed in official docs; returns {date,value} arrays. Real values documented (e.g. release_observations WCMITCMFODNS 1962 = 25.165). Canonical series: CPIAUCSL (CPI), UNRATE (unemployment), GNPCA (real GNP), WTISPLC (WTI oil), GDPC1. US-centric: a complement for deep US/financial series and a one-stop API, NOT for global choropleths. Not live-fetched (host off-allowlist)."
+    bis:
+      - producer: bis
+        dataset_name: "BIS statistics (effective exchange rates; also credit-to-GDP, debt service ratios, property prices, policy rates)"
+        series_id: "WS_EER_M (effective exchange rates, monthly)"
+        domain: finance
+        example_query_url: "https://stats.bis.org/api/v1/data/WS_EER_M/M.N.B.CH/all?startPeriod=2000&endPeriod=2000&detail=full"
+        format: sdmx-json-2.1
+        frequency: "monthly / quarterly (per dataflow)"
+        geo_coverage: "global central-bank/financial coverage; REF_AREA is 2-letter (e.g. CH)"
+        time_coverage: "varies by dataflow (long history)"
+        unit: "per dataflow (index for EER, % of GDP for credit gap, % for DSR/policy rates)"
+        adjustment: "per dataflow (nominal/real EER selectable via key)"
+        base_year: "EER indices rebased periodically (stated in series attributes)"
+        methodology_ref: "https://stats.bis.org/api-doc/v1/"
+        license: "BIS terms (free reuse with attribution)"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "Base https://stats.bis.org/api/v1/ and the WS_EER_M example URL confirmed in search; JSON/XML/CSV. Other dataflows discoverable via /api/v1/structure/dataflow: WS_CREDIT_GAP (credit-to-GDP gap), WS_DSR (debt service ratios), WS_SPP (property prices), WS_CBPOL (policy rates), WS_LONG_CPI (long CPI), WS_TC (total credit). Genuinely global finance data (complements FRED's US focus). Not live-fetched (host off-allowlist)."
+
+  official_statistics_nso:
+    statistics-canada:
+      - producer: statistics-canada
+        dataset_name: "Statistics Canada output database (Web Data Service)"
+        series_id: "table/PID 14100287 (LFS) - example; vector v65201210 = GDP"
+        domain: official_statistics_nso
+        example_query_url: "https://www150.statcan.gc.ca/n1/en/tbl/csv/14100287-eng.zip"
+        format: csv
+        frequency: "per table (monthly/quarterly/annual)"
+        geo_coverage: "Canada + provinces/territories; StatCan coordinate scheme (not ISO)"
+        time_coverage: "per table"
+        unit: "per table (persons, %, CAD, index); in table metadata"
+        adjustment: "per table (SA/NSA variants as separate coordinates)"
+        base_year: "per table"
+        methodology_ref: "https://www.statcan.gc.ca/en/developers/wds/user-guide"
+        license: "Statistics Canada Open Licence (free reuse with attribution)"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "WDS base https://www150.statcan.gc.ca/t1/wds/rest/ confirmed with real values in docs (vectorId 42076 value=18381; GDP vector v65201210). The clean GET route is the full-table CSV ZIP shown (https://www150.statcan.gc.ca/n1/en/tbl/csv/{PID}-eng.zip). Discrete data points via POST getDataFromVectorsAndLatestNPeriods or getDataFromCubePidCoordAndLatestNPeriods (JSON). SDMX full-table also available. Rate limit 25 req/s per IP. Not live-fetched (host off-allowlist + POST)."
+    abs:
+      - producer: abs
+        dataset_name: "ABS Data API (Australian Bureau of Statistics, SDMX)"
+        series_id: "ABS,CPI (dataflow); ABS,RES_DWELL verified example"
+        domain: official_statistics_nso
+        example_query_url: "https://data.api.abs.gov.au/rest/data/ABS,RES_DWELL/1.1+1GSYD+1RNSW.Q?detail=Full&startPeriod=2020-Q1&endPeriod=2020-Q2&format=jsondata"
+        format: sdmx-json-2.1
+        frequency: "per dataflow (monthly/quarterly/annual)"
+        geo_coverage: "Australia + ASGS regions (e.g. 1GSYD, 1RNSW); not ISO"
+        time_coverage: "per dataflow"
+        unit: "per dataflow (NUM, index, %); UNIT_MEASURE in the response"
+        adjustment: "per dataflow"
+        base_year: "per dataflow"
+        methodology_ref: "https://www.abs.gov.au/about/data-services/application-programming-interfaces-apis/data-api-user-guide"
+        license: "CC-BY-4.0 (ABS)"
+        auth: "none for the Data API (a User-Agent header is required to avoid 403; the separate ABS Indicator API does need a key)"
+        verified_on: null
+        confidence: medium
+        verification_note: "Base https://data.api.abs.gov.au/rest/ , SDMX 2.1, format=jsondata. RES_DWELL example returns real values (NSW Q1 2020 = 10210, Q2 = 9555). Dataflow syntax {agency},{id},{version} e.g. ABS,CPI; list all via GET /rest/dataflow. Not live-fetched (host off-allowlist + UA requirement)."
+    istat:
+      - producer: istat
+        dataset_name: "ISTAT SDMX web service (Italy)"
+        series_id: "IT1,115_333 (example dataflow); 41_983 = road accidents"
+        domain: official_statistics_nso
+        example_query_url: "https://esploradati.istat.it/SDMXWS/rest/data/IT1,115_333,1.2?startPeriod=2018&endPeriod=2018&format=jsondata"
+        format: sdmx-json-2.1
+        frequency: "per dataflow (annual/quarterly/monthly)"
+        geo_coverage: "Italy + subnational (region/municipality codes; not ISO); agency IT1"
+        time_coverage: "per dataflow"
+        unit: "per dataflow; in DSD"
+        adjustment: "per dataflow"
+        base_year: "per dataflow"
+        methodology_ref: "https://developers.italia.it/en/api/istat-sdmx-rest.html"
+        license: "ISTAT terms (CC-BY-style)"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "Endpoint https://esploradati.istat.it/SDMXWS/rest/ confirmed; format=jsondata + CSV via Accept header. Real values documented (dataflow 41_983 road-accident injuries 2024 = 5). List dataflows via /rest/dataflow/IT1. STRICT rate limit: 5 queries/minute per IP, exceeding triggers a 1-2 day block - throttle hard. Not live-fetched."
+    singstat:
+      - producer: singstat
+        dataset_name: "SingStat Table Builder Data API (Singapore)"
+        series_id: "tabledata/{resourceId}"
+        domain: official_statistics_nso
+        example_query_url: "https://tablebuilder.singstat.gov.sg/view-api/for-developers"
+        format: other-json
+        frequency: "per table"
+        geo_coverage: "Singapore (national)"
+        time_coverage: "per table"
+        unit: "per table"
+        adjustment: "per table"
+        base_year: "per table"
+        methodology_ref: "https://tablebuilder.singstat.gov.sg/view-api/for-developers"
+        license: "Singapore Open Data Licence (free reuse with attribution)"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "Open Data API (no key) confirmed: 2,200+ tables / 90,000+ series across 70 agencies, returns CSV or JSON. Data endpoint is /api/table/tabledata/{resourceId}; obtain the resourceId from Table Builder (each table page lists it). Exact tabledata path not fetched this session - confirm on the developer page before wiring."
+
+  development_and_inequality:
+    undp-hdr:
+      - producer: undp-hdr
+        dataset_name: "UNDP Human Development Index and composite indices (HDI, IHDI, GII, GDI, PHDI, MPI)"
+        series_id: "human-development-index (+ IHDI/GII/GDI/PHDI/MPI)"
+        domain: development_and_inequality
+        example_query_url: "https://ourworldindata.org/grapher/human-development-index.csv?v=1&csvType=full&useColumnShortNames=false"
+        format: csv
+        frequency: annual
+        geo_coverage: "global (193 countries/territories); ISO3 (via OWID) / country names (HDR)"
+        time_coverage: "1990-2024 (HDR 2025 release)"
+        unit: "index 0-1 (HDI); companion indices similar scales"
+        adjustment: "composite (geometric mean of health/education/income indices); IHDI is inequality-adjusted"
+        base_year: null
+        methodology_ref: "https://hdr.undp.org/data-center/documentation-and-downloads"
+        license: "Free reuse with attribution (UNDP HDRO)"
+        auth: none
+        verified_on: null
+        confidence: medium
+        verification_note: "HDR 2025 (193 countries, 1990-2024) confirmed. example_query_url is the OWID grapher CSV mirror (documented programmatic pattern, clean machine route, .metadata.json sibling). Primary source datasets (CSV/Excel) at hdr.undp.org/data-center/documentation-and-downloads. Companion OWID slugs include inequality-adjusted-human-development-index. Complements Catalogue 1's World Bank poverty series with composite human-development measures."
+
+  trade:
+    un-comtrade:
+      - producer: un-comtrade
+        dataset_name: "UN Comtrade international merchandise trade (bilateral, by commodity)"
+        series_id: "C/A/HS (commodities, annual, Harmonized System) - typeCode/freqCode/clCode"
+        domain: trade
+        example_query_url: "https://comtradedeveloper.un.org/"
+        format: other-json
+        frequency: "annual and monthly"
+        geo_coverage: "global (~200 reporters); reporterCode/partnerCode = UN M49 numeric (e.g. 251/250 France, 36 Australia)"
+        time_coverage: "1962-latest (annual)"
+        unit: "trade value in current US$ (also net weight kg, quantity)"
+        adjustment: "raw"
+        base_year: null
+        methodology_ref: "https://github.com/uncomtrade/comtradeapicall"
+        license: "UN Comtrade data terms"
+        auth: "subscription key (free 'comtrade - v1' product) for full data; a free preview endpoint returns up to 500 records without a key"
+        verified_on: null
+        confidence: medium
+        verification_note: "New API host comtradeapi.un.org; portal at comtradedeveloper.un.org. Verified via the official comtradeapicall (Python) and comtradr (R) packages: previewFinalData (no key, <=500 rows) and getFinalData (key) with params typeCode=C, freqCode=A/M, clCode=HS, period, reporterCode, cmdCode (HS), flowCode (M/X), partnerCode. Build the exact REST path from the portal/package docs (not asserted verbatim here). Fills the trade domain left unverified in Catalogue 1."
+
+# =====================================================================
+# DOMAIN x COVERAGE MATRIX
+# Count of GLOBAL-coverage datasets (producer reaches ~190+ countries) added by
+# THIS catalogue. National statistical offices are single-country and are listed
+# separately, not counted as global.
+# =====================================================================
+domain_coverage_matrix:
+  counting_rule: "global = producer covers ~190+ countries/areas; counts include high and medium rows above"
+  global_datasets_per_domain:
+    energy: 4              # OWID energy, EIA international, Ember, IRENA  (fixes Catalogue 1's energy gap)
+    environment_and_climate: 1   # OWID CO2 (absolute/cumulative/consumption-based; complements WB per-capita)
+    governance_democracy: 2      # V-Dem (democracy indices), UCDP (conflict/violence)  (fills Catalogue 1 gap)
+    finance: 1             # BIS (global). FRED counted under single-country (US-centric)
+    development_and_inequality: 1  # UNDP HDI + composite indices
+    trade: 1               # UN Comtrade
+  single_country_or_us_centric_producers_not_counted_above:
+    statistics-canada: "Canada + provinces (WDS JSON / full-table CSV)"
+    abs: "Australia + ASGS regions (SDMX-JSON)"
+    istat: "Italy + subnational (SDMX-JSON)"
+    singstat: "Singapore (CSV/JSON)"
+    fred: "United States (deep macro/financial history; SDMX-mirror of some intl series)"
+    eia: "EIA also has US-only routes (electricity, petroleum, natural-gas, SEDS); its /international route IS global and is counted under energy"
+  gap_status_after_this_catalogue:
+    governance_justice: "RESOLVED for democracy + conflict (V-Dem, UCDP). Corruption (TI CPI) and rule-of-law (WJP) still unverified - see could_not_verify; note V-Dem's v2x_corr already provides a corruption index."
+    energy: "RESOLVED. From 1 verified global series (Catalogue 1) to 4 global energy datasets covering generation-by-source, capacity, consumption, production, demand, emissions, renewable share, and by-technology."
+
+# =====================================================================
+# FORMAT SUMMARY (ingestable today vs needs a parser) - this catalogue only
+# =====================================================================
+format_summary:
+  ingestable_today:
+    csv:
+      count: 7
+      members:
+        - "OWID energy-data (high)"
+        - "OWID CO2 data (high)"
+        - "Ember yearly electricity (medium)"
+        - "V-Dem bulk dataset (medium)"
+        - "UCDP downloads (medium)"
+        - "Statistics Canada full-table CSV (medium)"
+        - "UNDP HDI via OWID grapher CSV (medium)"
+      note: "Plain CSV - simplest possible ingest. OWID files are the two highest-value (live-verified, global, no auth, single file each)."
+    sdmx-json-2.1:
+      count: 3
+      members:
+        - "ABS Data API (jsondata, no key)"
+        - "ISTAT SDMX (jsondata, no key; 5 req/min limit)"
+        - "BIS Stats API (json, no key)"
+      note: "Reuse the same SDMX-JSON 2.1 parser built for Catalogue 1 (OECD/ILOSTAT/Pacific)."
+    ingestable_today_total: 10
+  needs_a_parser_or_key:
+    bespoke-json:
+      count: 4
+      members:
+        - "EIA API v2 (needs free api_key; data[]/facets[][] query params)"
+        - "FRED (needs free api_key; {date,value} arrays)"
+        - "Statistics Canada WDS JSON (POST vector/coordinate methods)"
+        - "UN Comtrade (free key for full; free <=500-row preview)"
+      note: "All JSON but each has its own envelope; three require a free API key (EIA, FRED, Comtrade) - the rest of this catalogue is keyless."
+    pxweb:
+      count: 1
+      members:
+        - "IRENA IRENASTAT (PxWeb; POST query -> JSON-stat/CSV)"
+      note: "PxWeb is a distinct format; a JSON-stat parser (also useful for Eurostat in Catalogue 1) covers the JSON-stat output."
+    needs_a_parser_or_key_total: 5
+  bulk_download_note: "V-Dem and UCDP are one-time bulk downloads (CSV in a ZIP), not live queryable APIs - ingest the file, refresh on each release."
+
+# =====================================================================
+# READY-TO-INGEST SHORTLIST (wire these first)
+# =====================================================================
+ready_to_ingest_shortlist:
+  tier_1_no_auth_broad_coverage:
+    note: "Keyless, broad coverage, CSV or SDMX-JSON. OWID two first (live-verified, global, single file)."
+    items:
+      - { producer: our-world-in-data, series_id: "owid-energy-data", domain: energy, format: csv, confidence: high }
+      - { producer: our-world-in-data, series_id: "owid-co2-data", domain: environment_and_climate, format: csv, confidence: high }
+      - { producer: ember, series_id: "yearly-electricity-data", domain: energy, format: csv, confidence: medium }
+      - { producer: irena, series_id: "IRENASTAT", domain: energy, format: "other-json (pxweb)", confidence: medium }
+      - { producer: v-dem, series_id: "v2x_polyarchy", domain: governance_democracy, format: csv, confidence: medium }
+      - { producer: ucdp, series_id: "UCDP GED", domain: governance_democracy, format: csv, confidence: medium }
+      - { producer: bis, series_id: "WS_EER_M", domain: finance, format: sdmx-json-2.1, confidence: medium }
+      - { producer: abs, series_id: "ABS,CPI", domain: official_statistics_nso, format: sdmx-json-2.1, confidence: medium }
+      - { producer: istat, series_id: "IT1,115_333", domain: official_statistics_nso, format: sdmx-json-2.1, confidence: medium }
+      - { producer: statistics-canada, series_id: "14100287 / v65201210", domain: official_statistics_nso, format: csv, confidence: medium }
+      - { producer: singstat, series_id: "tabledata/{resourceId}", domain: official_statistics_nso, format: other-json, confidence: medium }
+      - { producer: undp-hdr, series_id: "human-development-index", domain: development_and_inequality, format: csv, confidence: medium }
+  tier_2_free_key_required:
+    note: "High value but require a free API key; register once."
+    items:
+      - { producer: eia, series_id: "international", domain: energy, format: other-json, auth: "free api_key", confidence: medium }
+      - { producer: fred, series_id: "CPIAUCSL", domain: finance, format: other-json, auth: "free api_key", confidence: medium }
+      - { producer: un-comtrade, series_id: "C/A/HS", domain: trade, format: other-json, auth: "free key (full) / keyless preview", confidence: medium }
+
+# =====================================================================
+# COULD-NOT-VERIFY (with reasons; nothing here is asserted as a working query)
+# =====================================================================
+could_not_verify:
+  national_statistical_offices_not_endpoint_verified_this_session:
+    - producer: insee
+      item: "INSEE BDM (macro time series) / Melodi (newer) APIs - France"
+      reason: "INSEE operates a documented API but historically gates BDM behind an OAuth2 consumer key/secret and has been migrating to the Melodi platform. Endpoint and auth state not confirmed this session; verify current base URL + whether a key is still required before wiring. (User is France-based, so worth a dedicated follow-up.)"
+    - producer: inegi
+      item: "INEGI Indicadores API - Mexico"
+      reason: "INEGI provides a JSON indicators API but requires a free token. Exact endpoint/token flow not verified this session."
+  trade_sources_not_verified_this_session:
+    - producer: wto
+      item: "WTO Timeseries API (api.wto.org)"
+      reason: "Requires a free subscription key; exact endpoint not confirmed this session. UN Comtrade (above) already covers the trade domain."
+    - producer: unctad
+      item: "UNCTADstat (bulk + data API)"
+      reason: "Bulk downloads and an API exist but were not endpoint-verified this session."
+  inequality_and_governance_alternatives_not_verified_this_session:
+    - producer: wid-world
+      item: "World Inequality Database (top income/wealth shares)"
+      reason: "Bulk downloads and the wid R/Python package exist, but the data endpoint was not verified this session. Would add top-1%/top-10% income and wealth shares (distinct from Catalogue 1's WB Gini)."
+    - producer: transparency-international
+      item: "Corruption Perceptions Index (CPI)"
+      reason: "Annual CSV/Excel download (~180 countries, 0-100) is well known but not verified this session. Note V-Dem's v2x_corr already provides a corruption index in this catalogue."
+    - producer: freedom-house
+      item: "Freedom in the World scores"
+      reason: "Downloadable Excel; not verified this session. V-Dem already fills the democracy-scoring need."
+    - producer: world-justice-project
+      item: "WJP Rule of Law Index"
+      reason: "Downloadable; not verified this session."
+  poverty_source_not_verified_this_session:
+    - producer: world-bank-pip
+      item: "World Bank Poverty and Inequality Platform (PIP) API"
+      reason: "World Bank is a Catalogue 1 producer, but PIP (its dedicated poverty API at pip.worldbank.org/api) was not verified in either pass; would add finer poverty/distribution series than the WDI poverty codes."

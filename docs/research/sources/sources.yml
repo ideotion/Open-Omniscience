@@ -1,0 +1,1216 @@
+# sources.yml — gap-fill source catalog (under-represented regions, plural stances)
+# Built 2026-06-25. Every domain below was matched to a live/current outlet via web
+# search corroboration this session unless confidence=medium (see catalog_report.md
+# for the per-row basis and caveats). RSS omitted unless a working feed URL was seen
+# (only Antara qualified this pass) — never guessed. All rows enabled:false for review.
+#
+# Field conventions:
+#   country  : ISO-3166 alpha-2 lowercase, or null for genuinely transnational
+#   language : ISO-639-1, restricted to the managed set {en,fr,es,pt,ar,ru,id,nl,...}
+#   region   : continental bucket (Caribbean islands -> north-america; Guyana/Suriname
+#              -> south-america; North-African MENA -> africa; Levant/Gulf/Israel -> asia)
+#   ownership is carried in tags; lean only where a widely-cited assessment exists.
+#   For 3 institutional rows (CARICOM, PINA, Dubawa) the 4-bucket ownership taxonomy
+#   does not fit; ownership tag reflects org type (igo / ngo-civil-society / nonprofit).
+
+# =====================================================================
+# REGION: north-america  (Caribbean island states & territories)
+# =====================================================================
+
+# --- Jamaica (jm) ---
+- name: Jamaica Gleaner
+  domain: jamaica-gleaner.com
+  country: jm
+  language: en
+  region: north-america
+  source_type: news
+  tags: [news, general, independent, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Barbados (bb) ---
+- name: Nation (Barbados)
+  domain: nationnews.com
+  country: bb
+  language: en
+  region: north-america
+  source_type: news
+  tags: [news, general, independent, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Trinidad & Tobago (tt) ---
+- name: Trinidad Express
+  domain: trinidadexpress.com
+  country: tt
+  language: en
+  region: north-america
+  source_type: news
+  tags: [news, investigative, independent, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Trinidad & Tobago Guardian
+  domain: guardian.co.tt
+  country: tt
+  language: en
+  region: north-america
+  source_type: news
+  tags: [news, general, independent, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Dominican Republic (do) ---
+- name: Diario Libre
+  domain: diariolibre.com
+  country: do
+  language: es
+  region: north-america
+  source_type: news
+  tags: [news, general, independent, caribbean, hispanophone]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Listin Diario
+  domain: listindiario.com
+  country: do
+  language: es
+  region: north-america
+  source_type: news
+  tags: [news, general, independent, caribbean, hispanophone]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Cuba (cu) — plural baseline: state organ vs independent/critical ---
+- name: Granma
+  domain: granma.cu
+  country: cu
+  language: es
+  region: north-america
+  source_type: news
+  tags: [news, politics, state-media, communist-party-organ, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: 14ymedio
+  domain: 14ymedio.com
+  country: cu
+  language: es
+  region: north-america
+  source_type: news
+  tags: [news, politics, independent, critical, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Diario de Cuba
+  domain: diariodecuba.com
+  country: cu
+  language: es
+  region: north-america
+  source_type: news
+  tags: [news, politics, independent, critical, diaspora, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Haiti (ht) ---
+- name: Le Nouvelliste (Haiti)
+  domain: lenouvelliste.com
+  country: ht
+  language: fr
+  region: north-america
+  source_type: news
+  tags: [news, general, independent, francophone, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: AlterPresse (Haiti)
+  domain: alterpresse.org
+  country: ht
+  language: fr
+  region: north-america
+  source_type: ngo-civil-society
+  tags: [news, human-rights, independent, alternative, francophone, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Caribbean regional (transnational) ---
+- name: CARICOM (Caribbean Community)
+  domain: caricom.org
+  country: null
+  language: en
+  region: north-america
+  source_type: igo
+  tags: [government-primary, igo, regional-bloc, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# =====================================================================
+# REGION: south-america  (mainland Caribbean states)
+# =====================================================================
+
+# --- Guyana (gy) ---
+- name: Kaieteur News
+  domain: kaieteurnewsonline.com
+  country: gy
+  language: en
+  region: south-america
+  source_type: investigative
+  tags: [news, investigative, independent, anti-corruption, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+- name: NCN (National Communications Network, Guyana)
+  domain: ncnguyana.com
+  country: gy
+  language: en
+  region: south-america
+  source_type: news
+  tags: [news, general, public-broadcaster, state-owned, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Suriname (sr) ---
+- name: Starnieuws
+  domain: starnieuws.com
+  country: sr
+  language: nl
+  region: south-america
+  source_type: news
+  tags: [news, general, independent, dutch-language, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: de Ware Tijd
+  domain: dwtonline.com
+  country: sr
+  language: nl
+  region: south-america
+  source_type: news
+  tags: [news, general, independent, dutch-language, caribbean]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# =====================================================================
+# REGION: oceania  (Pacific island states & territories)
+# =====================================================================
+
+# --- Vanuatu (vu) ---
+- name: Vanuatu Daily Post
+  domain: dailypost.vu
+  country: vu
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Samoa (ws) ---
+- name: Samoa Observer
+  domain: samoaobserver.ws
+  country: ws
+  language: en
+  region: oceania
+  source_type: investigative
+  tags: [news, investigative, independent, press-freedom, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Fiji (fj) — plural baseline: independent vs state-owned broadcaster ---
+- name: The Fiji Times
+  domain: fijitimes.com.fj
+  country: fj
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: FBC News (Fiji Broadcasting Corporation)
+  domain: fbcnews.com.fj
+  country: fj
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, public-broadcaster, state-owned, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Tonga (to) ---
+- name: Matangi Tonga
+  domain: matangitonga.to
+  country: to
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Papua New Guinea (pg) ---
+- name: The National (PNG)
+  domain: thenational.com.pg
+  country: pg
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, privately-owned, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Post-Courier (PNG)
+  domain: postcourier.com.pg
+  country: pg
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, privately-owned, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Solomon Islands (sb) — plural baseline: independent vs public broadcaster ---
+- name: Solomon Star
+  domain: solomonstarnews.com
+  country: sb
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: SIBC (Solomon Islands Broadcasting Corporation)
+  domain: sibconline.com.sb
+  country: sb
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, public-broadcaster, state-owned, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Cook Islands (ck) ---
+- name: Cook Islands News
+  domain: cookislandsnews.com
+  country: ck
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Marshall Islands (mh) ---
+- name: Marshall Islands Journal
+  domain: marshallislandsjournal.com
+  country: mh
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Palau (pw) ---
+- name: Island Times (Palau)
+  domain: islandtimes.org
+  country: pw
+  language: en
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- French Pacific (fr) ---
+- name: Tahiti Infos (French Polynesia)
+  domain: tahiti-infos.com
+  country: pf
+  language: fr
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, francophone, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Les Nouvelles Caledoniennes (New Caledonia)
+  domain: lnc.nc
+  country: nc
+  language: fr
+  region: oceania
+  source_type: news
+  tags: [news, general, independent, francophone, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Pacific regional (transnational) ---
+- name: PINA (Pacific Islands News Association)
+  domain: pina.com.fj
+  country: null
+  language: en
+  region: oceania
+  source_type: ngo-civil-society
+  tags: [media-association, ngo-civil-society, regional, pacific]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# =====================================================================
+# REGION: africa  (sub-Saharan + North-African MENA + pan-African)
+# =====================================================================
+
+# --- Nigeria (ng) — plural: independent/investigative + state wire ---
+- name: Premium Times (Nigeria)
+  domain: premiumtimesng.com
+  rss_url: https://www.premiumtimesng.com/feed
+  country: ng
+  language: en
+  region: africa
+  source_type: investigative
+  tags: [news, investigative, independent, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Daily Trust (Nigeria)
+  domain: dailytrust.com
+  country: ng
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, northern-nigeria, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: News Agency of Nigeria (NAN)
+  domain: nannews.ng
+  country: ng
+  language: en
+  region: africa
+  source_type: news
+  tags: [wire-agency, state-owned, government, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Kenya (ke) — plural: independent x2 + public broadcaster ---
+- name: Daily Nation (Kenya)
+  domain: nation.africa
+  country: ke
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, east-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: The Standard (Kenya)
+  domain: standardmedia.co.ke
+  country: ke
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, east-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: KBC (Kenya Broadcasting Corporation)
+  domain: kbc.co.ke
+  country: ke
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, public-broadcaster, state-owned, east-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- South Africa (za) — strong plural & type mix ---
+- name: News24
+  domain: news24.com
+  country: za
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Daily Maverick
+  domain: dailymaverick.co.za
+  rss_url: https://www.dailymaverick.co.za/dmrss
+  country: za
+  language: en
+  region: africa
+  source_type: investigative
+  tags: [news, investigative, independent, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Mail & Guardian
+  domain: mg.co.za
+  rss_url: https://mg.co.za/feed
+  country: za
+  language: en
+  region: africa
+  source_type: investigative
+  tags: [news, investigative, independent, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: amaBhungane
+  domain: amabhungane.org
+  country: za
+  language: en
+  region: africa
+  source_type: investigative
+  tags: [investigative, nonprofit, independent, anti-corruption, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: SABC News
+  domain: sabcnews.com
+  country: za
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, public-broadcaster, state-owned, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Ghana (gh) — plural: state-owned daily + independents + state wire ---
+- name: Graphic Online (Daily Graphic)
+  domain: graphic.com.gh
+  country: gh
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, state-media, state-owned-gcgl, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: MyJoyOnline
+  domain: myjoyonline.com
+  country: gh
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Citinewsroom
+  domain: citinewsroom.com
+  country: gh
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Ghana News Agency (GNA)
+  domain: gna.org.gh
+  country: gh
+  language: en
+  region: africa
+  source_type: news
+  tags: [wire-agency, state-owned, government, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Uganda (ug) — plural: independent vs state-owned ---
+- name: Daily Monitor (Uganda)
+  domain: monitor.co.ug
+  country: ug
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, east-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: New Vision (Uganda)
+  domain: newvision.co.ug
+  country: ug
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, state-media, state-owned, east-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Tanzania (tz) ---
+- name: The Citizen (Tanzania)
+  domain: thecitizen.co.tz
+  country: tz
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, east-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Zimbabwe (zw) — plural: independent vs state-owned ---
+- name: NewsDay (Zimbabwe)
+  domain: newsday.co.zw
+  country: zw
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: The Herald (Zimbabwe)
+  domain: heraldonline.co.zw
+  country: zw
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, state-media, state-owned-zimpapers, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Zambia (zm) ---
+- name: News Diggers! (Zambia)
+  domain: diggers.news
+  country: zm
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Namibia (na) ---
+- name: The Namibian
+  domain: namibian.com.na
+  country: na
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Botswana (bw) ---
+- name: Mmegi (Botswana)
+  domain: mmegi.bw
+  country: bw
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Rwanda (rw) ---
+- name: The New Times (Rwanda)
+  domain: newtimes.co.rw
+  country: rw
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, government-leaning, east-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Malawi (mw) ---
+- name: The Nation (Malawi)
+  domain: mwnation.com
+  country: mw
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Ethiopia (et) ---
+- name: Addis Standard (Ethiopia)
+  domain: addisstandard.com
+  country: et
+  language: en
+  region: africa
+  source_type: investigative
+  tags: [news, investigative, independent, horn-of-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Liberia (lr) ---
+- name: FrontPage Africa (Liberia)
+  domain: frontpageafricaonline.com
+  country: lr
+  language: en
+  region: africa
+  source_type: investigative
+  tags: [news, investigative, independent, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Daily Observer (Liberia)
+  domain: liberianobserver.com
+  country: lr
+  language: en
+  region: africa
+  source_type: news
+  tags: [news, general, independent, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Senegal (sn) — francophone, state-owned daily ---
+- name: Le Soleil (Senegal)
+  domain: lesoleil.sn
+  country: sn
+  language: fr
+  region: africa
+  source_type: news
+  tags: [news, general, state-media, state-owned-sspp, francophone, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- DR Congo (cd) — francophone, independent/UN-backed ---
+- name: Radio Okapi (DRC)
+  domain: radiookapi.net
+  country: cd
+  language: fr
+  region: africa
+  source_type: news
+  tags: [news, geopolitical, independent, un-monusco-hirondelle, francophone, central-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Cameroon (cm) — francophone/bilingual, state-owned ---
+- name: Cameroon Tribune
+  domain: cameroon-tribune.cm
+  country: cm
+  language: fr
+  region: africa
+  source_type: news
+  tags: [news, general, state-media, state-owned-sopecam, bilingual, central-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Angola (ao) — lusophone, state daily vs independent ---
+- name: Jornal de Angola
+  domain: jornaldeangola.ao
+  country: ao
+  language: pt
+  region: africa
+  source_type: news
+  tags: [news, general, state-media, state-owned, lusophone, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Novo Jornal (Angola)
+  domain: novojornal.co.ao
+  country: ao
+  language: pt
+  region: africa
+  source_type: news
+  tags: [news, general, independent, lusophone, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Mozambique (mz) — lusophone, independent ---
+- name: O Pais (Mozambique)
+  domain: opais.co.mz
+  country: mz
+  language: pt
+  region: africa
+  source_type: news
+  tags: [news, general, independent, lusophone, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Cabo Verde (cv) — lusophone, independent ---
+- name: Expresso das Ilhas (Cabo Verde)
+  domain: expressodasilhas.cv
+  country: cv
+  language: pt
+  region: africa
+  source_type: news
+  tags: [news, general, independent, lusophone, west-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Egypt (eg) — MENA/North Africa, state flagship vs independent ---
+- name: Al-Ahram / Ahram Online (Egypt)
+  domain: ahram.org.eg
+  country: eg
+  language: ar
+  region: africa
+  source_type: news
+  tags: [news, general, state-media, state-owned, english-edition, north-africa, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Mada Masr (Egypt)
+  domain: madamasr.com
+  country: eg
+  language: ar
+  region: africa
+  source_type: investigative
+  tags: [news, investigative, independent, critical, english-edition, north-africa, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Morocco (ma) — MENA/North Africa, independent + state wire ---
+- name: Hespress (Morocco)
+  domain: hespress.com
+  country: ma
+  language: ar
+  region: africa
+  source_type: news
+  tags: [news, general, independent, multilingual, north-africa, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: MAP (Maghreb Arabe Presse, Morocco)
+  domain: mapnews.ma
+  country: ma
+  language: fr
+  region: africa
+  source_type: news
+  tags: [wire-agency, state-owned, government, multilingual, north-africa, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Tunisia (tn) — MENA/North Africa, independent ---
+- name: Nawaat (Tunisia)
+  domain: nawaat.org
+  country: tn
+  language: fr
+  region: africa
+  source_type: investigative
+  tags: [news, investigative, ngo-civil-society, independent, north-africa, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Business News (Tunisia)
+  domain: businessnews.com.tn
+  country: tn
+  language: fr
+  region: africa
+  source_type: news
+  tags: [news, general, independent, north-africa, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Algeria (dz) — MENA/North Africa, independent vs state wire ---
+- name: TSA (Tout sur l'Algerie)
+  domain: tsa-algerie.com
+  country: dz
+  language: fr
+  region: africa
+  source_type: news
+  tags: [news, general, independent, francophone, north-africa, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: APS (Algerie Presse Service)
+  domain: aps.dz
+  country: dz
+  language: fr
+  region: africa
+  source_type: news
+  tags: [wire-agency, state-owned, government, multilingual, north-africa, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Pan-African (transnational) fact-checker ---
+- name: Dubawa
+  domain: dubawa.org
+  country: null
+  language: en
+  region: africa
+  source_type: fact-checker
+  tags: [fact-checker, nonprofit, independent, west-africa, regional]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- African institutional / primary sources (fill non-news source types) ---
+- name: African Union (AU)
+  domain: au.int
+  country: null
+  language: en
+  region: africa
+  source_type: igo
+  tags: [government-primary, igo, continental-bloc, regional]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: ISS Africa (Institute for Security Studies)
+  domain: issafrica.org
+  country: null
+  language: en
+  region: africa
+  source_type: academic-research
+  tags: [research, think-tank, nonprofit, independent, security, pan-african, regional]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Statistics South Africa (Stats SA)
+  domain: statssa.gov.za
+  country: za
+  language: en
+  region: africa
+  source_type: data-portal
+  tags: [data-portal, government, official-statistics, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: SAnews (South African Government News Agency)
+  domain: sanews.gov.za
+  country: za
+  language: en
+  region: africa
+  source_type: government-primary
+  tags: [government-primary, government, official, southern-africa]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# =====================================================================
+# REGION: asia  (Central Asia + Levant/Gulf/Israel MENA + South/SE Asia)
+# =====================================================================
+
+# --- Kazakhstan (kz) — russophone, independent ---
+- name: Tengrinews
+  domain: tengrinews.kz
+  country: kz
+  language: ru
+  region: asia
+  source_type: news
+  tags: [news, general, independent, russophone, central-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Vlast (Kazakhstan)
+  domain: vlast.kz
+  country: kz
+  language: ru
+  region: asia
+  source_type: news
+  tags: [news, analysis, independent, russophone, central-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Kyrgyzstan (kg) — plural: independent agency vs state agency ---
+- name: AKIpress
+  domain: akipress.com
+  country: kg
+  language: ru
+  region: asia
+  source_type: news
+  tags: [wire-agency, independent, russophone, central-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Kabar (Kyrgyz National News Agency)
+  domain: kabar.kg
+  country: kg
+  language: ru
+  region: asia
+  source_type: news
+  tags: [wire-agency, state-owned, government, russophone, central-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Uzbekistan (uz) — russophone, independent-leaning ---
+- name: Gazeta.uz
+  domain: gazeta.uz
+  country: uz
+  language: ru
+  region: asia
+  source_type: news
+  tags: [news, general, independent, russophone, central-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Central Asia regional (transnational) ---
+- name: The Times of Central Asia
+  domain: timesca.com
+  country: null
+  language: en
+  region: asia
+  source_type: geopolitical
+  tags: [news, geopolitical, independent, regional, central-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Lebanon (lb) — MENA/Levant, independent ---
+- name: L'Orient-Le Jour (Lebanon)
+  domain: lorientlejour.com
+  country: lb
+  language: fr
+  region: asia
+  source_type: news
+  tags: [news, general, independent, francophone, english-edition, mena, levant]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Qatar (qa) — pan-Arab state-funded ---
+- name: Al Jazeera English
+  domain: aljazeera.com
+  country: qa
+  language: en
+  region: asia
+  source_type: geopolitical
+  tags: [news, geopolitical, state-media, qatar-funded, pan-arab, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Saudi Arabia (sa) — pan-Arab, state-aligned ---
+- name: Al Arabiya English
+  domain: alarabiya.net
+  country: sa
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, state-media, saudi-owned-mbc, pan-arab, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Arab News (Saudi Arabia)
+  domain: arabnews.com
+  country: sa
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, state-aligned-editorial, srmg, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Israel (il) — managed-en outlets with documented lean spread ---
+- name: Haaretz
+  domain: haaretz.com
+  country: il
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, lean-left, english-edition, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: The Times of Israel
+  domain: timesofisrael.com
+  country: il
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, center, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: The Jerusalem Post
+  domain: jpost.com
+  country: il
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, lean-right, mena]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Pakistan (pk) — South Asia, independent ---
+- name: Dawn (Pakistan)
+  domain: dawn.com
+  country: pk
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, newspaper-of-record, south-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- India (in) — plural: mainstream center-left + independent/investigative ---
+- name: The Hindu (India)
+  domain: thehindu.com
+  rss_url: https://www.thehindu.com/feeder/default.rss
+  country: in
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, lean-center-left, south-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: The Wire (India)
+  domain: thewire.in
+  country: in
+  language: en
+  region: asia
+  source_type: investigative
+  tags: [news, investigative, independent, critical, south-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Bangladesh (bd) — South Asia, independent ---
+- name: The Daily Star (Bangladesh)
+  domain: thedailystar.net
+  country: bd
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, south-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Sri Lanka (lk) — South Asia, independent ---
+- name: Daily Mirror (Sri Lanka)
+  domain: dailymirror.lk
+  country: lk
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, south-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Indonesia (id) — strong plural + managed 'id' language ---
+- name: Tempo
+  domain: tempo.co
+  country: id
+  language: id
+  region: asia
+  source_type: investigative
+  tags: [news, investigative, independent, bahasa-indonesia, southeast-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: Kompas
+  domain: kompas.com
+  country: id
+  language: id
+  region: asia
+  source_type: news
+  tags: [news, general, independent, bahasa-indonesia, southeast-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: The Jakarta Post
+  domain: thejakartapost.com
+  country: id
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, english-language, southeast-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+- name: ANTARA
+  domain: antaranews.com
+  rss_url: https://en.antaranews.com/rss/news.xml
+  country: id
+  language: id
+  region: asia
+  source_type: news
+  tags: [wire-agency, state-owned, government, bahasa-indonesia, southeast-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Malaysia (my) — independent ---
+- name: Malaysiakini
+  domain: malaysiakini.com
+  country: my
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, multilingual, southeast-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Philippines (ph) — independent/investigative ---
+- name: Rappler
+  domain: rappler.com
+  country: ph
+  language: en
+  region: asia
+  source_type: investigative
+  tags: [news, investigative, independent, southeast-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: high
+
+# --- Thailand (th) — independent English daily ---
+- name: Bangkok Post
+  domain: bangkokpost.com
+  country: th
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, english-language, southeast-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium
+
+# --- Myanmar (mm) — independent (exile) ---
+- name: The Irrawaddy
+  domain: irrawaddy.com
+  country: mm
+  language: en
+  region: asia
+  source_type: news
+  tags: [news, general, independent, exile, southeast-asia]
+  enabled: false
+  verified_on: 2026-06-25
+  confidence: medium

@@ -2184,3 +2184,175 @@ eval harness as TWO tasks: task 1 who/where/when (validatable); task 2 entity-pe
 (neutral-heavy labeled set, scored only on entities task 1 got right, Macro-F1 + per-language
 confusion matrix). All in the `ai_keyword`-style main-DB AI tables (per the storage update above),
 tertiary tier, labelled "AI-derived · unreliable".
+
+---
+
+## Statistical-data ingestion + diversified honest visualization (maintainer-directed research 2026-06-25; designed-only)
+
+**Origin.** A maintainer-directed research push (2026-06-25) ran several internet-connected
+sessions and folded their outputs in here. It started from "how reliable is TimesFM, and what
+equivalents exist," widened to "extend our sources to pure government statistical data — we need
+strong, *diversified* data-visualization," and to "broaden source diversity." The verbatim
+session outputs are committed under [`docs/research/`](research/README.md) (statistics catalogues,
+the chart framework + working primitives, the news-diversity catalogue) and are LEADS TO CONFIRM,
+not facts to wire blindly (verify-before-trust; this project has been burned by fabricated
+endpoints before). This section is the design record; it EXTENDS "Worldwide official-statistics
+ingestion" (above) and "De-US-centring — the remainder," and reuses the markets chart toolkit,
+`StatFigure`/`src.stats` (shipped since the 2026-06-12 design), `ooChart`/`ooMap`/`ooSubtabs`, and
+the no-torch-in-core / local-first non-negotiables.
+
+### 1. Time-series foundation models (TimesFM & peers) — reliability + the ethical reframe
+
+**Reliability verdict** (full report: `docs/research/statistics/timesfm_reliability_report.md`).
+TimesFM-2.5 (Google, decoder-only patched, 200M, 16k ctx, Apache-2.0) is a strong-but-no-longer-
+leading zero-shot forecaster on the contamination-resistant **GIFT-Eval** board (≈32nd avg MASE
+rank as of mid-2026), behind **Toto-2.0** (Datadog) and **Chronos-2** (Amazon), both Apache-2.0.
+Train/test **leakage** is the field's biggest reliability problem (Monash/ETT numbers are
+discounted; TimesFM's GIFT-Eval result is comparatively clean because it trains on
+GIFT-Eval-Pretrain). Class-wide: foundation models beat a decent **seasonal-naive baseline by
+only ~⅓ on average**, are weak on short histories and long horizons, and interval calibration
+degrades with horizon.
+
+**Two hard walls** decide how (if at all) this fits: (a) the project's **no price-prediction /
+no forecast-momentum** non-negotiable, and the LLM doctrine "perception, never judgment"; (b)
+**no torch/onnx/transformers in core** — every model in the report needs PyTorch, so any FM is an
+optional **external Ollama-style process over loopback**, never a core dependency.
+
+**The reframe (RECOMMENDED): expectation / anomaly, never forecast; retrospective-only.** Don't
+ask "what's next." Ask "given this history, what would a generic model have *expected* for the
+period we already observed, and how far off was reality?" The user-facing object is the **residual
+/ quantile position of an already-observed point**, with a hard rule: **the band stops at the last
+observation** (no curve into the future, ever). That turns prediction (judgment) into anomaly
+characterization (perception), matching the existing "surprise vs the corpus's own baseline" spine.
+
+**Classical-first; FM probably not worth it for this domain.** Most official series are
+annual/short → seasonal-naive / STL / ETS win and are lighter, reproducible, torch-free. So the
+honest first build uses **no foundation model**; an FM is at most an optional far-future Tier B for
+the few long seasonal series, and the UI would *show* whether it beat the classical baseline.
+
+**The on-mission kernel (build this independently of any FM): the revision-anomaly detector.**
+`StatFigure` already stores **vintages** (`vintages_for`). Characterize the distribution of a
+series' historical revision magnitudes and flag a new vintage that moves a past figure into the
+tail — i.e. surfacing **suspicious silent revisions of official numbers**. That is the
+reliable-memory mission directly, needs **no model**, and is the strongest idea in the whole push.
+Sensitivity note (elections-grade): flagging an official figure as "unusual" near-implies the
+producer faked it — neutral wording + innocent-explanations-first (methodology / base-year / SA
+change → auto-filtered via the existing comparability metadata; genuine shock; data error) is
+mandatory.
+
+### 2. Official-statistics data — the verified producer directory + dataset catalogues
+
+Extends the 2026-06-12 design (much of which **shipped**: `src/stats/{sdmx,fetch,store,
+subscriptions,agencies}.py`, the vintaged `StatFigure`, the Settings → Statistics UI). The new
+material is the *actual data*:
+
+- **Producer directory** (`docs/research/statistics/producer_directory.md` + `producers.*` +
+  `coverage_matrix.json` + `machine_endpoint_summary.json`): ~152 producers (122 national NSOs +
+  30 IGOs), 115 countries, **32 with a confirmed machine endpoint** (29 SDMX + 3 REST-JSON);
+  the rest are scaffold leads. Balanced per-continent (de-US-centring holds). This is the
+  enrichment target for `src/stats/agencies.py` (currently ~30 representative entries) — safe to
+  expand as a **metadata directory** even at scaffold confidence; only live-fetch the verified set.
+- **Dataset catalogues** (`datasets_catalog_1.yaml`, `datasets_catalog_2_complementary.yaml`):
+  concrete queryable series with example queries, units, SA/NSA, base years, formats. Catalogue 2
+  fixes Catalogue 1's **energy** (OWID/Ember/IRENA/EIA) and **governance** (V-Dem, UCDP) gaps,
+  plus trade (UN Comtrade), inequality (UNDP HDI), finance (BIS), conflict (UCDP).
+
+**Parser-gap reality (decides usability against our code).** `src/stats/sdmx.py` parses **World
+Bank JSON + SDMX-JSON 2.1 only** — *not* SDMX-XML. So:
+- **Ingestable today:** ~29 World Bank series (one parser we already have) + Pacific Data Hub /
+  ECB-via-`format=jsondata` (SDMX-JSON). The biggest near-free win.
+- **Needs JSON content-negotiation:** OECD (SDMX-JSON **1.0**, not 2.1 — verify), IMF (new portal
+  is SDMX **3.0**), ABS/ISTAT/BIS (SDMX-JSON 2.1, but ABS needs a UA, ISTAT is 5 req/min).
+- **New parsers (each a discrete PR):** **CSV** (trivial, huge payoff — unlocks the *best-verified*
+  global data: OWID energy/CO₂, Ember, UNDP-via-OWID; OWID files are wide → need a wide-column→long
+  mapping); **JSON-stat/PxWeb** (unlocks all Eurostat + IRENA); **bulk ZIP-CSV** (V-Dem, UCDP,
+  refresh-per-release); WHO OData / FAOSTAT bespoke JSON.
+- **Deferred (key-gated):** EIA / FRED / UN-Comtrade — user-supplied free key + transport-honesty
+  disclosure + airplane gate; US-centric, so low de-US value (Comtrade has a keyless ≤500-row
+  preview). Skip the key surface this cycle.
+
+### 3. Diversified, honest data-visualization — the `ooViz` family
+
+Maintainer ask: "so many viz tools exist; we should have very strong, *diversified* visual
+proposals." The principle (full framework: `docs/research/dataviz/chart_decision_framework.md`,
+grounded in Cleveland–McGill / Munzner / FT Visual Vocabulary / Chartability): **diversify by data
+*shape*, then run each candidate through an honesty filter that REJECTS the dazzle-that-lies.** The
+reject list is a feature, not a gap: **radar, streamgraph, 3D pie, dual-axis abuse,
+regression-implies-cause, bubble-area-as-magnitude, word-cloud-as-primary** — each with an honest
+replacement. Hard gate: position > length > angle > area > colour; zero baseline for length marks;
+gaps shown never interpolated (H2); no causation implied from co-occurrence (H3); no
+magnitude-distorting geometry (H4); deterministic (H5); `role="img"` + a real data table; survives
+17 themes + RTL; **no charting libraries / no WebGL** (vanilla SVG/Canvas).
+
+**Working substrate is in hand** (`docs/research/dataviz/`, all tests green as committed):
+`honest-charts.js` zero-dep primitives — `pathWithGaps` **is** the planned ooChart gap-handling,
+`sqrtAreaScale` **is** the ooMap proportional-symbol sizing, `bin2D`/`fiveNumberSummary`/
+`mulberry32` cover hexbin/box/seeded-determinism — plus 18 reference schematics
+(`chart-schematics.html`). These are *reference primitives*: adopt into a shared `ooViz` module
+and/or cross-check our existing `ooChart`/`ooMap`, don't blindly duplicate.
+
+**Techniques to add, by intent (each honesty-clean, tied to real data):** stacked-area (fixed
+baseline) · dot-plot/bump (ranking) · treemap/icicle (keyword families — 2D alt to the 3D
+explorer) · histogram/box/strip (distribution) · scatter **points-only** (indicator × indicator,
+or indicator × corpus coverage) · Sankey/chord/arc (citation flows → source-laundering) ·
+heatmaps incl. a **data-availability matrix** (country × year present/gap — an honesty showcase) ·
+**dumbbell/slope** (two vintages = the revision viz; before/after) · population pyramid
+(census) · parallel-coordinates (replaces radar) · error-bars/interval-bands for measured CIs.
+
+**Honest viz↔data reconciliations:** choropleth **only for normalized values** (per-capita/rates/%
+— a choropleth of raw GDP/counts maps population); **level magnitudes → proportional-symbol map**
+(reuses ooMap's point layer); **conflict (UCDP) is georeferenced events → the ooMap points/signals
+layer**, not a choropleth; **V-Dem indices carry real CIs → the error-bar/dumbbell uncertainty
+viz**; ISO3 producers map to choropleth via `countries.py`, subnational NSO codes do **not** (a
+different national-detail surface); energy units are mixed (TWh/GWh/EJ/kWh) → the comparability
+guard segments them.
+
+### 4. News / plural-stance source diversity (de-US-centring thread)
+
+`docs/research/sources/` (105 verified rows, `enabled: false`, **all in managed languages** so the
+2026-06-18 language gate won't auto-disable them) fills the named `catalog_targets.yml` gaps —
+Caribbean, Pacific, sub-Saharan Africa, Central Asia, MENA, S/SE Asia — with **plural stance**
+(no mono-stance region remains) and **all nine source types** (incl. igo/data-portal/
+government-primary/academic-research). Honesty held: 2 defunct outlets excluded, the Herald-zw
+domain caveat carried, lean labelled on only 4/105 (omitted-not-guessed). Two integration notes:
+(a) **schema gap** — truly global/transnational sources (ReliefWeb, African Union, CARICOM) don't
+fit the *continental* `region` field; consider adding a `global`/`transnational` region value
+rather than the current fudge; (b) **dedup** — `statssa.gov.za` appears both here (data-portal)
+and in the statistics producer directory (national agency) → seed as ONE source. A
+**blocked-by-language** worklist (sw/hi/bn/fa/th/vi/am/…) names which stoplist to grow next to
+unlock each region (the parallel "grow managed languages" track).
+
+### 5. Sequenced build plan (one small additive PR per slice, draft onto 0.09)
+
+- **Phase A — stat-data backbone.** A1: curated `configs/stat_indicators.yml` (the ~29 WB series,
+  dated + freshness test; pure data, no network — proves catalog→fetch→store→chart on existing
+  code). A-CSV: the CSV wide→long adapter + OWID energy/CO₂ (one small parser, biggest payoff).
+  A3: verify `parse_sdmx_json` against the 8 SDMX rows; wire Pacific + ECB.
+- **Phase B — viz adapter + ooChart honesty.** B1: `StatFigure[] → chart series` (period parsing,
+  None→gap, comparability segmentation). B2: ooChart gap subpaths + comparability-break markers
+  (reuse `pathWithGaps`). B3: the time-series UI in Settings → Statistics (ooChart + ooTimeScope +
+  visible caveat + role=img/data-table).
+- **Phase C — choropleth.** C1: ooMap comparability precheck + a distinct "not comparable" hatch.
+  C2: "Map this indicator" (normalized → choropleth; levels/counts/conflict → proportional symbols
+  via `sqrtAreaScale`).
+- **Phase D — diversified techniques.** D1 small multiples · D2 dot plot · D3 dumbbell/slope
+  (vintages + V-Dem CIs) · D4 association scatter (no regression line) · later: population pyramid,
+  distribution, the data-availability matrix.
+- **Phase E — parsers + governance.** JSON-stat (Eurostat + IRENA) → bulk-ZIP (V-Dem/UCDP); bake
+  the honesty gate into `ooViz` + extend `test_ui_invariants` (zero-baseline, gaps-not-bridged,
+  sr-table, reject radar/streamgraph/3D). Deferred: key-gated sources; the revision-anomaly
+  detector (the on-mission slice).
+
+Recommended order: A1 → A-CSV → B → C → D → E. The revision-anomaly detector is the highest-value
+*independent* slice and owes nothing to TimesFM.
+
+### Open decisions for the maintainer (genuine rulings, not defaults)
+1. **Forecasting at all?** Confirm the expectation/anomaly, **retrospective-only** stance (band
+   never crosses the last observation) — or rule it out entirely as too close to prediction.
+2. **Classical-first, FM-maybe-never** for statistics — agree? (recommended: yes.)
+3. **Sensitivity wording** on flagging official figures/revisions as "unusual" (neutral,
+   innocent-explanations-first) — acceptable on *government* numbers?
+4. **CSV + JSON-stat parsers in scope** (they unlock the best-verified global data) — yes?
+5. **Choropleth normalized-only** rule (levels → proportional symbols) — agree? (recommended: yes.)
+6. **`global`/`transnational` region value** in the source schema — add it, or keep the fudge?
+7. **Key-gated stat sources** (EIA/FRED/Comtrade): build the key surface, or skip this cycle?
