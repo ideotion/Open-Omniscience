@@ -54,10 +54,16 @@ surface not covered here or in `CLAUDE.md`.
    - AI prompt UI re-translates on language switch + single-article summarize/translate emit in
      the UI language.
    - The **copypasta** manipulation card (#6 of 9) + the **gov-newsletter keyword filter**.
-   - The data-architecture **seam already exists**: the honesty envelope, denormalised keyword
-     counters, `src/analytics/readmodel.py`, `src/analytics/columnar.py`
-     (`connect()` / `keyword_agg` / `oo_meta` / `encryption_gate` / `secure_crypto_available()`),
-     and the `ix_mention_date_keyword` covering index. **5A-bis EXTENDS these — never recreate.**
+   - The data-architecture **seam already exists**: the honesty envelope (`src/analytics/envelope.py`),
+     denormalised keyword counters, `src/analytics/readmodel.py` (ALL seven delegators —
+     `top_terms`·`trending`·`trending_windows`·`associations`·`layered_graph`·`article_graph`·
+     `source_country_counts` — already forward to v1), `src/analytics/columnar.py` (`connect` ·
+     `secure_crypto_available` · `encryption_gate` · `store_format_marker`+`marker_compatible` ·
+     `build_keyword_read_model`+`top_terms_raw` over the in-memory `keyword_agg` table + the
+     `oo_meta` marker), and the `ix_mention_date_keyword` covering index. There is **NO
+     `keyword_daily` / `source_coverage` table yet** (that IS the 5A-bis work). **5A-bis EXTENDS
+     these — extend, never recreate;** the seam exposes `top_terms`/`trending`, NOT the design-doc
+     names `most_mentioned`/`rising_terms` (map them).
    - The 5C **design docs already exist** (LLM-perception eval · Tor · voice · Open Commons
      Mirror) and the **5B httpfs build recipe** — extend/update them, don't re-author.
 6. **Maintain a task list** (TaskCreate/TaskUpdate) of the step queue as a within-window
@@ -68,9 +74,11 @@ surface not covered here or in `CLAUDE.md`.
 - One **step** = one self-contained, additive change = one **draft PR** (or one well-scoped
   commit if your harness locks you to a single branch — see §2). Keep steps small and
   single-purpose; prefer many small PRs over one big one.
-- **Never fabricate** data, results, scores, checksums, endpoints, or test outcomes — honesty by
-  construction is the FIRST non-negotiable. If something needs data/binaries/a live corpus you
-  don't have, build the honest part, flag the gap with a one-line ledger note, and move on.
+- **Never fabricate** data, results, scores, checksums, endpoints, DOIs, or test outcomes — honesty
+  by construction is the FIRST non-negotiable. If something needs data/binaries/a live corpus you
+  don't have, build the honest part, ship a clearly-flagged **EMPTY SEAM** (a blank pin/checksum
+  table, an inert disabled control, a stub returning "unavailable" with the reason), write a
+  one-line ledger note, and move on.
 - **Verify-before-trust the research files.** `docs/research/` rows (producer endpoints, source
   catalogues, dataset URLs) are LEADS, not facts — this project has been burned by fabricated
   endpoints before. Only live-fetch the explicitly verified subset; treat the rest as a metadata
@@ -113,14 +121,27 @@ runs **in CI, not locally**. Your local gate:
 - **Python**: `python -m py_compile` every changed file. For new pure logic, write a tiny
   standalone repro (in-memory SQLite / stubbed inputs) and PROVE the behaviour before you trust
   it.
-- **Know the blocking CI `test`-lane order**: `ruff check --select=F,B --extend-ignore=B008` →
-  **mypy (must stay ≤ the 127 baseline — add ZERO new errors)** → `pytest`. **mypy IS
-  pip-installable in the 3.11 sandbox** (`pip install mypy`) and type-checks changed files via
-  their real-import closure even without project deps — **RUN IT on every Python change**
-  (`python3 -m mypy <changed.py>`); the ratchet is a BLOCKING gate and `py_compile` + ruff F/B
-  alone do NOT catch type drift (the 2026-06-25 copypasta lesson). Gotcha: `py_compile` passes on
-  an unused import or a name used only in an `except`/annotation, but **ruff's F-lane fails on
-  it** — re-check every import you add, especially exceptions caught in `except`.
+- **Know the blocking CI `test`-lane order** (from `.github/workflows/ci.yml`):
+  `ruff check --select=F,B --extend-ignore=B008` (BLOCKING) → ruff style (advisory) →
+  **`i18n_report.py --min 100`** (BLOCKING) → **migration-drift** (`alembic upgrade head && alembic
+  check`, BLOCKING) → **`pytest`** → **mypy ratchet (`MYPY_BASELINE=127` — add ZERO new errors)** →
+  bandit (medium+) → pip-audit. **pytest runs BEFORE the mypy ratchet**, and i18n + migration-drift
+  are themselves blocking — a green-pytest PR still fails if a locale drops below 100% or a model
+  drifts from the Alembic baseline. **mypy IS pip-installable in the 3.11 sandbox** (`pip install
+  mypy`) and type-checks changed files via their real-import closure even without project deps —
+  **RUN IT on every Python change** (`python3 -m mypy <changed.py>`); the ratchet is a BLOCKING gate
+  and `py_compile` + ruff F/B alone do NOT catch type drift (the 2026-06-25 copypasta lesson).
+  Gotcha: `py_compile` passes on an unused import or a name used only in an `except`/annotation, but
+  **ruff's F-lane fails on it** — re-check every import you add, especially exceptions caught in
+  `except`.
+- **The non-`test` lanes ALSO gate the merge — design for them:** `core-only` installs WITHOUT the
+  `[analysis]` extra, so any new optional dep (numpy / VADER / pyroaring / a segmenter / a JSON-stat
+  lib) MUST import lazily and **degrade loudly** ("unavailable" + the reason, never a crash — mirror
+  `parity_available()` / `secure_crypto_available()`; analysis-only tests `importorskip`); `crypto` +
+  `sqlcipher-smoke` (the latter BLOCKING, 3-OS) exercise the encryption paths — anything added to the
+  columnar/encrypted store must pass the empirical encryption gate (sentinel absent from raw bytes ·
+  won't open without key · opens with key), NEVER a plaintext derived file; `portability`
+  (observation-only) runs on Windows/macOS — no OS-specific paths, use `src/paths.py`.
 - **Always add/extend a real `pytest` test** (CI runs it) **and** a guard in
   `tests/test_repo_invariants.py` where the project pattern calls for it. Never assert positive
   facts against the shared mutable `src.api.main.app` singleton's `.routes` — anchor route
@@ -132,7 +153,9 @@ runs **in CI, not locally**. Your local gate:
   each locale JSON (no full re-dump → zero reformat).
 - **Any externally-sourced/dated/vendored artifact** (a bundled segmenter, an httpfs binary, a
   dated data file/catalog, a version pin) needs a `configs/external_artifacts.yml` entry **in the
-  same commit** + a `*_AS_OF` constant — the protocol-guard test fails otherwise.
+  same commit** + a `*_AS_OF` constant — the protocol-guard test fails otherwise. On a DuckDB bump
+  follow `docs/maintenance/EXTERNAL_DEPENDENCIES.md`: the `duckdb-crypto-extension` floor MUST equal
+  the pyproject `[columnar]` floor (test-enforced).
 - **Frontend is browser-unverified by design** (no headless browser). Per the **fork-3
   convention** you STILL build UI — conservatively, with `node --check` + an invariant test +
   defensive empty/error states — and **flag "browser-unverified, needs click-through."** The
@@ -147,30 +170,44 @@ runs **in CI, not locally**. Your local gate:
 > / sub-agent use.** Treat your main thread as the place for DECISIONS, EDITS, and VERIFICATION;
 > delegate the reading and the fan-out. Keep conclusions, not file dumps.
 
-**Spawn `Agent` constantly.** Default patterns:
+**Spawn `Agent` constantly — a named standing fleet.** Dispatch the role that fits, by name:
 
-- **Scope every step with an `Explore` agent FIRST** (read-only, breadth "medium" for a focused
-  feature, "very thorough" for a cross-cutting one). Ask it to return a TIGHT map: the exact
-  files/endpoints/tests the feature touches, the conventions to match, and — critically —
-  **what's already built** so you build only the gap. Don't read ten files into your own context.
-- **Fan out in parallel.** For independent steps or independent questions, spawn MULTIPLE agents
-  **in a single message** so they run concurrently (e.g. one Explore per Tier-5 slice; one per
-  research-file family). Collect their summaries, then decide.
-- **Plan big multi-file features with a `Plan` or general-purpose agent** — the unified
-  import/export, the `keyword_daily` rollup + incremental MERGE, the `ooViz` family, the
-  statistical-data parsers. Have it draft a file-by-file change map + a test plan BEFORE you
-  touch code.
-- **Adversarially verify EVERY non-trivial diff before you finalize it**: run **`/code-review`**
-  or spawn a review agent prompted to REFUTE the change (find correctness bugs, integration gaps,
-  missed conventions, a non-negotiable it weakens). **Hand-verify its findings** — subagents can
-  be wrong and have produced false positives here; you own the result.
-- **Use a worktree-isolated agent** (`isolation: "worktree"`) only when an agent must mutate
-  files in parallel with your main edits and would otherwise conflict — it is expensive, so
-  reserve it.
+- **Scout** (Explore) — before EVERY step, map what the feature touches + what already exists
+  (read-only; breadth "medium" focused / "very thorough" cross-cutting). One Scout per step.
+- **Planner** — for any multi-file feature (unified import/export, the `keyword_daily` rollup +
+  incremental MERGE, the `ooViz` family, the stat-data parsers), draft a file-by-file change map +
+  a test plan FIRST, so your edits are surgical.
+- **Builder** — hand a single, fully-specified, self-contained slice with its acceptance test;
+  integrate and verify what it returns — **never merge a Builder's diff unread; you own correctness.**
+- **Auditor/Red-team** — before finalizing a step, run **`/code-review`** or spawn a reviewer to
+  REFUTE the diff (correctness bugs, integration gaps, missed conventions, a fabricated number /
+  hidden caveat / recency bias / silent score / de-US slant). **Hand-verify every finding** —
+  subagents can be confidently wrong (the 06-audit false-positive lesson); you own the result.
+- **Verifier** — for correctness-critical math (the `keyword_daily` rollup parity, the
+  volume/parity paths, the revision-anomaly statistics) spawn a SECOND agent to **independently
+  re-derive the expected result and diff it** against the implementation.
+- **Use a worktree-isolated agent** (`isolation: "worktree"`) only when an agent must mutate files
+  in parallel with your main edits — expensive, so reserve it.
+
+**The contract every sub-agent gets.** Each delegated task returns ONLY a tight structured summary,
+never a file dump. An Explore/Scout return MUST be: (1) the exact files + line ranges that matter,
+(2) the endpoints/functions/tests involved, (3) the conventions to match, (4) **what is already
+built** (so you build only the gap), (5) the precise residual gap as a checklist. If an agent hands
+back prose or pasted source, send it back for the summary — a bloated return defeats the purpose.
+
+**Parallelism — fan out in ONE message.** The workstreams below touch different modules and have NO
+shared hot files at the design level, so at session start spawn one Scout each, in a single message,
+then sequence the PRs by value/risk: **S** stat-data+ooViz (`src/stats/*`) ⟂ **D** derived-layer
+rollups (`columnar.py`/`readmodel.py`) ⟂ **C** manipulation cards (`concentration.py`) ⟂ **U**
+unified import/export ⟂ **K** zh/ja segmentation (tokenizer) ⟂ **I** i18n (locales). Intra-lane: in
+S the **revision-anomaly detector is fully independent — do it first**; in D, D2→D3→D4 are ordered
+and D5 (Roaring) is optional/off-critical-path.
 
 **Multi-agent `Workflow` orchestration (only if opted in — "ultracode" / the user asked for a
-workflow).** When available, reach for a workflow on the hardest, most fan-out-shaped slices.
-High-value shapes for THIS repo:
+workflow).** Reach for the HEAVIEST workflow on the two highest-fabrication-risk slices — **D3
+incremental-refresh correctness** (the `index_article` delete-then-reinsert double-count trap) and
+the **`ooViz` honesty gate** (reject-list enforcement) — where a subtle bug fabricates a NUMBER.
+High-value workflow shapes for THIS repo:
 
 - **Parser sweep (pipeline):** the statistical-data parsers (CSV wide→long, JSON-stat/PxWeb,
   SDMX-JSON verification, bulk-ZIP) — one stage per format: read a fixture → write the pure
@@ -227,8 +264,10 @@ rebuildable derived layer behind the seam. The canonical store is NEVER time-par
    `day = keyword_mentions.observed_on`. Full build by **streaming canonical mention rows through
    the app's SQLCipher connection INTO DuckDB and grouping THERE** (DuckDB can't read a SQLCipher
    file; never a SQLite GROUP BY over the billions-row mention table — that IS the freeze). Wire
-   `readmodel.py` `most_mentioned`/`rising_terms` to serve from it when the persisted store is
-   present, secure, and its epoch matches the live corpus; else fall back to the live query (basis
+   the existing `readmodel.py` delegators (`top_terms`/`trending`/`trending_windows` — those are the
+   REAL seam fn names, NOT the design-doc's `most_mentioned`/`rising_terms`) to serve from it when
+   the persisted store is present, secure, and its epoch matches the live corpus; else fall back to
+   the live query (basis
    flag `columnar@epoch N` vs `live`, slower-never-wrong). **Build + prove parity IN-MEMORY now** —
    parity is provable in-memory even though the perf win needs the persisted store (D1).
 3. **D3 (CORRECTNESS-CRITICAL) — incremental refresh** on the `keyword_mentions.id` watermark + a
@@ -259,20 +298,39 @@ rebuildable derived layer behind the seam. The canonical store is NEVER time-par
    ATTACH-per-period partitions, time-partitioning the canonical store** — keep DuckDB + FTS5 +
    ONE canonical SQLite file (the research red-teamed these).
 
+   **VERIFY checklist (lift into tests; inlined so it survives a context reset):** (1) `keyword_daily`
+   SUM(mentions) == SUM(count) over `keyword_mentions` for a sampled keyword set (EXACT); (2) windowed
+   most-mentioned == live ranking (EXACT on mentions); (3) windowed COUNT(DISTINCT article_id):
+   columnar upper-bound vs live differ only on multi-day pairs, reported never hidden; (4) incremental
+   refresh after a new batch == a full rebuild; (5) a late-arriving historical-dated batch lands on
+   the correct day after incremental; (6) a simulated re-index (epoch bump) forces a FULL rebuild, not
+   incremental; (7) `analytics.duckdb` unreadable as plaintext (D1-gated); (8) network blocked → zero
+   outbound on store-open + httpfs-load (D1-gated); (9) bundled httpfs matches its pinned SHA-256
+   before LOAD (D1-gated); (10) no ATTACH cipher other than authenticated GCM (D1-gated); (11)
+   cold/missing store → the seam falls back to the live query, identical results; (12) Roaring
+   co-occurrence(X,Y) == the live two-keyword intersection for a sampled pair (D5-gated).
+
 ### 5B. Statistical-data ingestion + the `ooViz` honest-visualization family (the big fresh push)
 
 > Full design: `docs/FUTURE_DEVELOPMENTS.md` → "Statistical-data ingestion + diversified honest
 > visualization"; verbatim research under `docs/research/`. EXTENDS the shipped
-> `src/stats/{sdmx,fetch,store,subscriptions,agencies}.py` + the vintaged `StatFigure` + the
-> Settings → Statistics UI + `ooChart`/`ooMap`/`ooSubtabs`. **One small additive PR per slice.**
-> Adopt these conservative defaults for the research's "open decisions" and RECORD them in the
-> ledger (the autonomy ruling; the research itself recommends each): **expectation/anomaly
-> RETROSPECTIVE-ONLY** (a band NEVER crosses the last observation — perception, never a
-> forecast); **classical-first, no foundation model** (no torch/onnx in core — any FM is a future
-> optional Ollama-style external process); **choropleth for normalized values only** (levels →
-> proportional symbols); **CSV + JSON-stat parsers in scope**; **add a `global`/`transnational`
-> region value** to the source schema. Build the revision-anomaly wording neutral +
-> innocent-explanations-first BY CONSTRUCTION (the one genuinely ethics-sensitive piece).
+> `src/stats/{sdmx,fetch,store,subscriptions,agencies,indicators,ingest}.py` (all 8 already exist —
+> `indicators.py` already curates ~12 WB series wired to `fetch_worldbank`) + the vintaged
+> `StatFigure` + the Settings → Statistics UI + `ooChart`/`ooMap`/`ooDonut`/`ooSubtabs`. **One small
+> additive PR per slice.** `sdmx.py` parses **World Bank JSON + SDMX-JSON 2.1 only (NOT SDMX-XML)** —
+> that decides what is ingestable today.
+>
+> **Resolve the research's 7 open decisions** (`FUTURE_DEVELOPMENTS.md` → "Open decisions for the
+> maintainer") by the recommended/most-honest option and RECORD each in the ledger (the autonomy
+> ruling): **(1)** expectation/anomaly **RETROSPECTIVE-ONLY**, band NEVER crosses the last
+> observation — YES; **(2)** classical-first, **no foundation model** (no torch/onnx in core; any FM
+> is a future optional Ollama-style external process) — YES; **(3)** flagging official figures uses
+> **neutral, innocent-explanations-first** wording (methodology/base-year/SA-change auto-filtered via
+> the comparability metadata) — hard design constraint, acceptable on government numbers; **(4)**
+> **CSV + JSON-stat parsers in scope** — YES; **(5)** **choropleth normalized-only**, levels →
+> proportional symbols — YES; **(6)** add a **`global`/`transnational` region value** to the source
+> schema — YES; **(7)** key-gated sources (EIA/FRED/Comtrade) — **SKIP this cycle** (US-centric, low
+> de-US value).
 
 6. **THE ON-MISSION KERNEL — the revision-anomaly detector** (highest-value, owes nothing to any
    model). `StatFigure` already stores **vintages** (`vintages_for`). Characterize a series'
@@ -282,12 +340,15 @@ rebuildable derived layer behind the seam. The canonical store is NEVER time-par
    existing comparability metadata; genuine shock; data error) — flagging an official figure as
    "unusual" must NEVER near-imply the producer faked it. Counts + measured distance only, NO
    score; the existing "surprise vs the corpus's own baseline" spine.
-7. **Phase A — stat-data backbone.** A1: curated `configs/stat_indicators.yml` (the ~29 verified
-   World Bank series, dated + freshness test + registry entry; pure data, proves
-   catalog→fetch→store→chart on existing code). A-CSV: a CSV wide→long adapter + OWID energy/CO₂
-   (one small parser, biggest payoff — the best-verified global data). A3: verify
-   `parse_sdmx_json` against the 8 verified SDMX rows; wire Pacific Data Hub + ECB
-   (`format=jsondata`).
+7. **Phase A — stat-data backbone.** A1: **EXTEND `src/stats/indicators.py`** (it already curates
+   ~12 WB series wired to `fetch_worldbank` via `/api/governments`) to the ~29 verified series —
+   decide reuse-vs-a-new-`configs/stat_indicators.yml`, but do NOT author a parallel catalog (both
+   this brief's earlier draft and the competitor's missed this overlap — flag it). `indicators.py` is
+   intentionally NOT registry-coupled (`CATALOG_REVISED`, not `*_AS_OF`); only add a `*_AS_OF`+registry
+   entry when you introduce a genuinely external dated data file. A-CSV: a CSV wide→long adapter + OWID
+   energy/CO₂ (one small parser, biggest payoff — the best-verified global data; its snapshot IS a
+   dated artifact → registry entry). A3: verify `parse_sdmx_json` against the 8 verified SDMX rows with
+   offline fixtures; wire Pacific Data Hub + ECB (`format=jsondata`).
 8. **Phase B — viz adapter + ooChart honesty.** B1: `StatFigure[] → chart series` (period
    parsing, None→gap, comparability segmentation). B2: ooChart gap subpaths +
    comparability-break markers (reuse `pathWithGaps` from `docs/research/dataviz/honest-charts.js`
@@ -417,10 +478,16 @@ airplane mode is a socket-level guarantee. **No fabricated data, scores, securit
 checksums.** No composite trust/quality scores (every signal carries method + caveat + n).
 Caveats VISIBLE by default (never hidden behind a calm-UI toggle); degrade loudly. Cross-time
 recall is sacred (no recency bias). The rule-based keyword index is the TRUSTED layer; AI output
-is a separate, clearly-labelled, UNRELIABLE layer that never feeds it. Derived stores are
-disposable; the canonical encrypted SQLite store is always authoritative. Informed consent by
-LAYERING, ×12 locales. When in doubt, read the relevant non-negotiable in `CLAUDE.md` and follow
-it exactly.
+is a separate, clearly-labelled, UNRELIABLE PERCEPTION layer that **never feeds the trusted index
+and never forecasts / grades / ranks / decides-worth** (`CLAUDE.md` §0.5). **No fabricated data,
+scores, security, endpoints, checksums, or DOIs.** **Forecasting of statistics is
+RETROSPECTIVE-ONLY — the expectation/anomaly band NEVER crosses the last observation** (a §7
+non-negotiable, not merely a §5B default). **At-rest encryption is no-recovery by design** (the
+corpus is reconstitutable from the web). Derived stores are disposable; the canonical encrypted
+SQLite store is always authoritative. When something is blocked, ship a **clearly-flagged EMPTY
+SEAM** (a blank pin/checksum table, an inert disabled control, a stub returning "unavailable" with
+the reason) — never a fabrication. Informed consent by LAYERING, ×12 locales. When in doubt, read
+the relevant non-negotiable in `CLAUDE.md` and follow it exactly.
 
 ## 8. When something can't be finished autonomously
 
