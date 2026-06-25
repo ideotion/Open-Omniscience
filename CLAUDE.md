@@ -4002,6 +4002,27 @@ ruling, a contingency, or a deliberate-omission note.
   ordering+onboarding → convergence flagship.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **BULK STATS PARSERS — wide CSV + ZIP container (V-Dem/UCDP) 2026-06-25 (§5B Phase E "bulk-ZIP-CSV"; same
+  single-branch harness fallback, branch `claude/ecstatic-edison-mseu1p` re-cut from the freshly-merged 0.09
+  after #469 merged; NEW draft PR onto 0.09; backend VERIFIED py3.11 standalone [14 tests] + ruff F/B/full +
+  mypy 0-new).** The single-cell parsers (sdmx.py) handle one observation per row; V-Dem (hundreds of indicator
+  columns) + OWID-energy are WIDE, and V-Dem/UCDP ship as ZIPs — neither was ingestable. `src/stats/bulk.py`
+  (pure, stdlib `csv`/`zipfile`, reuses the sdmx coercions/column-resolver within the package): (1) `parse_csv_wide`
+  — projects a wide CSV (one row per area+period, MANY indicator columns) to one `StatFigure` per (row, indicator)
+  in a SINGLE pass (calling the single-column parser once per indicator would re-read the file N times for V-Dem's
+  hundreds of columns), `series_id`=the column name, a blank/NA indicator cell → `value=None` (published gap, kept),
+  per-indicator `units`/`base_years`/`adjustments` are OPTIONAL caller-config maps (verbatim or None, never
+  inferred), a missing required column/indicator raises loudly, a ragged row skips only its missing cell (never
+  invents one); (2) `zip_csv_members` (list the `.csv` members) + `read_zip_member` (decode ONE member — `None`
+  auto-picks the single `.csv` and raises on zero/many so the caller never gets a silent guess; an unknown member
+  raises; a `max_bytes` ceiling [default 1 GiB] makes a ZIP-bomb member degrade LOUDLY, only that much ever
+  decompressed into memory). Inherits all sdmx honesty (gap→None, caller-stamped vintage, comparability
+  only-when-stated, NO score — regex-guarded). tests/test_stats_bulk.py (14) imports only the pure modules → runs
+  in the bare sandbox AND CI; end-to-end ZIP→read→wide-figures proven. NO new `*_AS_OF`/registry entry
+  (format-only); no UI strings (i18n untouched). The parser-core trio is now COMPLETE (WB/SDMX + CSV/JSON-stat +
+  wide/ZIP). NOT YET WIRED to fetch/store/endpoints (the "parser core first, live fetch next" slice). REMAINING:
+  the ooViz/ooChart Phase-B2 renderer (consumes the Phase-B1 `to_chart_series` adapter); the OWID/Eurostat/V-Dem
+  fetch clients + ingest wiring.
 - **OFFLINE STATS PARSERS — CSV (OWID) + JSON-stat (Eurostat/IRENA/PxWeb) 2026-06-25 (§5B Phase A-CSV +
   Phase E parser unlock; SESSION NOTE: single-branch harness fallback — develop on
   `claude/ecstatic-edison-mseu1p`, ONE branch, draft PR onto 0.09; the §5B research "open decisions"
