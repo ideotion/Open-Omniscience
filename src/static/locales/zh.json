@@ -1666,5 +1666,12 @@
   "For every Home card (Lead): does clicking it open its EXACT corpus (hard-linked) or a fuzzy text search that loses it (search-fallback)? Flags the mismatches.": "对每张主页卡片（线索）：点击它会打开其精确的语料库（硬链接），还是会丢失它的模糊文本搜索（搜索回退）？标记不匹配项。",
   "Every diagnostics log in one archive — one click instead of nine. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).": "所有诊断日志合为一个归档——一次点击而非九次。包含有限的关键词日志摘要（完整的关键词导出有自己的“All keywords”按钮）。",
   "Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.": "语料库中的每个关键词（不仅是每种语言的前 5000 个），合为一个较大的归档——~20 MB 的上限仍然适用；若达到，清单会标明 has_more，你再获取 &page=2。",
-  "Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).": "绘制累计不同关键词数量相对于累计添加词数的曲线。曲线趋于平缓 = 词汇正在饱和（健康）；接近直线（Heaps β ≈ 1）= 几乎每个词都仍在生成新关键词（标记/代码/未分词的垃圾）。"
+  "Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).": "绘制累计不同关键词数量相对于累计添加词数的曲线。曲线趋于平缓 = 词汇正在饱和（健康）；接近直线（Heaps β ≈ 1）= 几乎每个词都仍在生成新关键词（标记/代码/未分词的垃圾）。",
+  "Area (for the chart)": "地区（用于图表）",
+  "Chart over time": "按时间绘制图表",
+  "Check revision anomalies": "检查修订异常",
+  "Flag a stored figure whose newest vintage moved a past value unusually far for that series' own revision history — retrospective, no score.": "标记某个已存储数据：其最新版本对过去数值的修改幅度，相对该序列自身的修订历史异常之大——回顾性，无评分。",
+  "History must not be silently rewritten. This flags an official figure whose most recent vintage revised a past value by an amount unusually large for that series' own revision history — retrospective only (never a forecast), naming the shape (an outlier-sized revision), never the intent. Leave the series id above blank to scan all stored figures.": "历史不应被悄然改写。此功能标记这样一个官方数据：其最新版本对过去数值的修订幅度，相对该序列自身的修订历史异常之大——仅为回顾性（绝非预测），只描述其形态（一次异常幅度的修订），而非意图。将上方的序列 id 留空可扫描所有已存储的数据。",
+  "Plot the series over time. A new line segment starts at every unit / base-year / seasonal-adjustment change (never joined); a gap is a break, never interpolated.": "按时间绘制该序列。每当单位／基准年／季节调整发生变化时，都会另起一段折线（绝不连接）；缺口是断点，绝不插值。",
+  "Revision anomalies": "修订异常"
 }

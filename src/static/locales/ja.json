@@ -1666,5 +1666,12 @@
   "For every Home card (Lead): does clicking it open its EXACT corpus (hard-linked) or a fuzzy text search that loses it (search-fallback)? Flags the mismatches.": "各ホームカード（手がかり）について：クリックすると正確なコーパス（ハードリンク）が開くのか、それを見失うあいまいなテキスト検索（検索フォールバック）になるのか？不一致を検出します。",
   "Every diagnostics log in one archive — one click instead of nine. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).": "すべての診断ログを1つのアーカイブに——9回ではなく1回のクリックで。制限付きのキーワードログ要約を含みます（キーワードの完全ダンプには独自の「All keywords」ボタンがあります）。",
   "Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.": "コーパス内のすべてのキーワード（言語ごとの上位5000件だけではありません）を、1つの大きなアーカイブに——~20 MB の上限は引き続き適用されます。達した場合、マニフェストに has_more と表示され、&page=2 を取得します。",
-  "Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).": "累積の異なるキーワード数を、累積の追加語数に対してプロットします。曲線が寝てくる = 語彙が飽和している（健全）。ほぼ直線（Heaps β ≈ 1）= ほぼすべての語に対して新しいキーワードがまだ生成されている（マークアップ/コード/未分割のノイズ）。"
+  "Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).": "累積の異なるキーワード数を、累積の追加語数に対してプロットします。曲線が寝てくる = 語彙が飽和している（健全）。ほぼ直線（Heaps β ≈ 1）= ほぼすべての語に対して新しいキーワードがまだ生成されている（マークアップ/コード/未分割のノイズ）。",
+  "Area (for the chart)": "地域（グラフ用）",
+  "Chart over time": "時系列で表示",
+  "Check revision anomalies": "改訂の異常を確認",
+  "Flag a stored figure whose newest vintage moved a past value unusually far for that series' own revision history — retrospective, no score.": "保存された数値のうち、最新版が過去の値をその系列自身の改訂履歴に照らして異常に大きく動かしたものを示します（回顧的、スコアなし）。",
+  "History must not be silently rewritten. This flags an official figure whose most recent vintage revised a past value by an amount unusually large for that series' own revision history — retrospective only (never a forecast), naming the shape (an outlier-sized revision), never the intent. Leave the series id above blank to scan all stored figures.": "歴史をひそかに書き換えてはなりません。これは、最新版が過去の値をその系列自身の改訂履歴に照らして異常に大きく改訂した公式数値を示します——回顧的のみ（決して予測ではありません）、その「形」（外れ値級の改訂）を述べるのであって意図は述べません。上の系列 id を空欄のままにすると、保存済みのすべての数値を走査します。",
+  "Plot the series over time. A new line segment starts at every unit / base-year / seasonal-adjustment change (never joined); a gap is a break, never interpolated.": "系列を時系列で描画します。単位／基準年／季節調整が変わるたびに新しい線分が始まり（決して連結しません）、欠損は断絶で、決して補間しません。",
+  "Revision anomalies": "改訂の異常"
 }
