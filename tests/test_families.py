@@ -10,12 +10,19 @@ terms never get falsely merged, and the raw members stay listed.
 
 from datetime import date
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from src.analytics import families as fam_mod
 from src.analytics import queries as q
-from src.analytics.families import build_families, canonical_key, strip_honorifics
+from src.analytics.families import _lemma, build_families, canonical_key, strip_honorifics
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+
+# P4.3 lemmatization needs the optional simplemma ([analysis] extra). The unit + grouping
+# tests below skip on a core install and run in CI / the analysis venv.
+_HAS_SIMPLEMMA = fam_mod._simplemma is not None
+_needs_simplemma = pytest.mark.skipif(not _HAS_SIMPLEMMA, reason="simplemma ([analysis]) not installed")
 
 
 def test_canonical_key_and_honorifics():
@@ -129,6 +136,104 @@ def test_plural_merge_respects_override_and_env(monkeypatch):
     # the env kill-switch disables the whole pass
     monkeypatch.setenv("OO_FAMILY_PLURALS", "0")
     assert all(f.variant_count == 1 for f in build_families(items))
+
+
+# --------------------------------------------------------------------------- #
+# P4.3: OPT-IN display-time lemmatization (study/studied -> study, Wahlen -> Wahl)
+# --------------------------------------------------------------------------- #
+
+
+@_needs_simplemma
+def test_lemma_unit_lemmatizes_supported_langs_and_respects_guards():
+    # supported languages, single-token terms
+    assert _lemma("studied", "en") == "study"
+    assert _lemma("running", "en") == "run"
+    assert _lemma("Wahlen", "de") == "wahl"  # casefolded
+    assert _lemma("élections", "fr") == "élection"
+    # guards: denylisted meaning-changers, unknown/unsupported language, multi-token -> unchanged
+    assert _lemma("media", "en") == "media"  # NOT "medium" (denylist)
+    assert _lemma("data", "en") == "data"    # NOT "datum"
+    assert _lemma("election", "zh") == "election"  # unsupported language -> no-op
+    assert _lemma("climate change", "en") == "climate change"  # multi-token -> no-op
+    assert _lemma("", "en") == ""
+
+
+@_needs_simplemma
+def test_lemma_collapses_verb_and_irregular_variants_when_enabled(monkeypatch):
+    monkeypatch.setenv("OO_FAMILY_LEMMA", "1")
+    items = [
+        {"normalized": "study", "term": "study", "kind": "term", "language": "en", "mentions": 40},
+        {"normalized": "studies", "term": "studies", "kind": "term", "language": "en", "mentions": 20},
+        {"normalized": "studied", "term": "studied", "kind": "term", "language": "en", "mentions": 7},
+        {"normalized": "children", "term": "children", "kind": "term", "language": "en", "mentions": 9},
+        {"normalized": "child", "term": "child", "kind": "term", "language": "en", "mentions": 5},
+        {"normalized": "climate", "term": "climate", "kind": "term", "language": "en", "mentions": 30},
+    ]
+    fams = build_families(items)
+    # all three study-forms collapse (the plural rule alone would miss "studied")
+    assert _members(fams, "study") == {"study", "studies", "studied"}
+    assert _members(fams, "child") == {"child", "children"}  # irregular plural
+    assert _members(fams, "climate") == {"climate"}  # unique lemma -> stands alone
+    # the conflated family carries visible provenance; an unmerged one does not
+    study_fam = next(f for f in fams if "study" in {m["normalized"] for m in f.members})
+    climate_fam = next(f for f in fams if "climate" in {m["normalized"] for m in f.members})
+    assert study_fam.conflated_by == ["lemma"]
+    assert climate_fam.conflated_by == []
+    assert "conflated_by" in study_fam.to_dict()
+
+
+def test_lemma_is_off_by_default(monkeypatch):
+    # No OO_FAMILY_LEMMA => the lemma step is skipped entirely. "studied" is NOT a regular
+    # plural, so the plural rule never merges it => study and studied stay separate. This is
+    # the byte-identical-when-off guarantee (independent of whether simplemma is installed).
+    monkeypatch.delenv("OO_FAMILY_LEMMA", raising=False)
+    items = [
+        {"normalized": "study", "term": "study", "kind": "term", "language": "en", "mentions": 40},
+        {"normalized": "studied", "term": "studied", "kind": "term", "language": "en", "mentions": 7},
+    ]
+    fams = build_families(items)
+    assert _members(fams, "study") == {"study"}
+    assert _members(fams, "studied") == {"studied"}
+    assert all(f.conflated_by == [] for f in fams)
+
+
+@_needs_simplemma
+def test_lemma_never_merges_entities_or_denylisted_and_is_reversible(monkeypatch):
+    monkeypatch.setenv("OO_FAMILY_LEMMA", "1")
+    items = [
+        # entity NAMES that would lemma-collapse must NOT merge (a name plural is a referent)
+        {"normalized": "leaders", "term": "Leaders", "kind": "org", "language": "en", "mentions": 8},
+        {"normalized": "leader", "term": "Leader", "kind": "org", "language": "en", "mentions": 6},
+        # denylisted: media must not become medium
+        {"normalized": "media", "term": "media", "kind": "term", "language": "en", "mentions": 20},
+        {"normalized": "medium", "term": "medium", "kind": "term", "language": "en", "mentions": 4},
+        # plain terms in a supported language DO merge (and are reversible, below)
+        {"normalized": "studied", "term": "studied", "kind": "term", "language": "en", "mentions": 7},
+        {"normalized": "study", "term": "study", "kind": "term", "language": "en", "mentions": 9},
+    ]
+    fams = build_families(items)
+    assert _members(fams, "leaders") == {"leaders"}  # entity names never lemma-merge
+    assert _members(fams, "media") == {"media"}      # denylist holds
+    assert _members(fams, "medium") == {"medium"}
+    assert _members(fams, "study") == {"study", "studied"}  # terms do merge
+    # reversible: a split override on "studied" keeps it standalone even with lemma on
+    fams2 = build_families(items, {"studied": {"family_key": "studied", "label": None, "kind": "term"}})
+    assert _members(fams2, "studied") == {"studied"}
+    assert _members(fams2, "study") == {"study"}
+
+
+def test_lemma_degrades_gracefully_without_simplemma(monkeypatch):
+    # Even with the feature enabled, a missing simplemma is a no-op (never a crash) — the
+    # core-install path. Force the absent-dependency branch regardless of what's installed.
+    monkeypatch.setenv("OO_FAMILY_LEMMA", "1")
+    monkeypatch.setattr(fam_mod, "_simplemma", None)
+    items = [
+        {"normalized": "study", "term": "study", "kind": "term", "language": "en", "mentions": 40},
+        {"normalized": "studied", "term": "studied", "kind": "term", "language": "en", "mentions": 7},
+    ]
+    fams = build_families(items)
+    assert _members(fams, "study") == {"study"} and _members(fams, "studied") == {"studied"}
+    assert _lemma("studied", "en") == "studied"  # no-op without the lemmatizer
 
 
 def test_overrides_force_merge_and_split():

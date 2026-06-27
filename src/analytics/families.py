@@ -34,6 +34,11 @@ import os
 import re
 from dataclasses import dataclass, field
 
+try:  # optional ([analysis] extra); display-time lemmatization degrades to a no-op when absent
+    import simplemma as _simplemma
+except Exception:  # noqa: BLE001 - a core install runs without it
+    _simplemma = None  # type: ignore[assignment]
+
 _POSS_APOS_S = re.compile(r"['’]s$")  # trailing 's  -> drop two chars
 _POSS_S_APOS = re.compile(r"['’]$")  # trailing '   -> drop the apostrophe only
 
@@ -165,6 +170,47 @@ def _plural_bases(norm: str) -> list[str]:
     return out
 
 
+# simplemma languages we lemmatize — the UI/corpus languages it handles well. Unsegmented
+# scripts (zh/ja) and languages simplemma covers poorly are deliberately excluded -> no-op
+# (a wrong lemma is worse than none, same discipline as the de-US-centring country work).
+_LEMMA_LANGS: frozenset[str] = frozenset(
+    {"en", "fr", "de", "es", "it", "pt", "nl", "ru", "id"}
+)
+
+# Norms whose lemma CHANGES the meaning for a news corpus, so they must NOT be lemmatized:
+# media->medium, data->datum, us->we, plus a few stopword-ish flatteners. Evidence-grown +
+# log-tunable, exactly like _PLURAL_DENYLIST — start small, grow from the keyword logs.
+_MISLEMMA_DENYLIST: frozenset[str] = frozenset(
+    {"media", "data", "us", "good", "better", "was", "be", "left", "right"}
+)
+
+
+def _lemma_enabled() -> bool:
+    """Display-time lemmatization is OPT-IN (default OFF). It changes keyword grouping
+    app-wide, so its retrieval-quality impact must be MEASURED (the P3 eval harness + a
+    human-judged gold set) before it is trusted on-by-default — the measure-before-trust
+    discipline. Enable with ``OO_FAMILY_LEMMA=1`` (needs the optional ``simplemma``)."""
+    return _simplemma is not None and os.getenv("OO_FAMILY_LEMMA", "0") == "1"
+
+
+def _lemma(norm: str, lang: str | None) -> str:
+    """The lemma of a SINGLE-token term in a supported language, else ``norm`` unchanged.
+
+    Reversible by construction (display only — the stored keyword index is never touched)
+    and conservative: a multi-token form, an unsupported/unknown language, a denylisted
+    norm, a missing ``simplemma``, or any lemmatizer error all fall back to ``norm``. The
+    caller only UNIONs terms that share a lemma, so a no-op simply leaves a term standalone."""
+    if not norm or " " in norm:
+        return norm
+    lg = (lang or "").lower()
+    if _simplemma is None or lg not in _LEMMA_LANGS or norm in _MISLEMMA_DENYLIST:
+        return norm
+    try:
+        return (_simplemma.lemmatize(norm, lg) or norm).casefold()
+    except Exception:  # noqa: BLE001 - never let a lemmatizer hiccup break grouping
+        return norm
+
+
 @dataclass
 class Family:
     canonical: str  # display label (the most complete member)
@@ -174,6 +220,7 @@ class Family:
     articles: int = 0
     manual: bool = False  # True if a user override shaped this family
     members: list[dict] = field(default_factory=list)
+    conflated_by: list[str] = field(default_factory=list)  # e.g. ["lemma"] — visible provenance
 
     @property
     def variant_count(self) -> int:
@@ -188,6 +235,7 @@ class Family:
             "articles": self.articles,
             "variants": self.variant_count,
             "manual": self.manual,
+            "conflated_by": self.conflated_by,
             "members": [
                 {
                     "term": m.get("term"),
@@ -222,6 +270,8 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
                 "match": strip_honorifics(norm).split(),
                 "mentions": int(it.get("mentions", it.get("count", 0)) or 0),
                 "articles": int(it.get("articles", 0) or 0),
+                "lang": (it.get("language") or "").lower(),
+                "lemma_merged": False,
                 "ov": overrides.get(norm),
             }
         )
@@ -272,6 +322,28 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
                 if j is not None and j != i:
                     union(j, i)  # plural i -> singular j (the base)
                     break
+
+    # 1.6) Lemma collapse for single-token TERMS (auto only; OPT-IN, default OFF — see
+    # _lemma_enabled). Groups morphological variants a plural heuristic MISSES — verb forms
+    # and irregulars (study/studied, run/running, child/children, mouse/mice) — via
+    # simplemma, per (kind, language) so an en term never merges a fr one. Same guards as the
+    # plural rule (terms only, never entity NAMES; a meaning-changing norm is denylisted;
+    # reversible via a split override) PLUS a visible ``conflated_by=["lemma"]`` on the family.
+    # Default off + this skip => byte-identical to the pre-lemma grouping.
+    if _lemma_enabled():
+        lemma_first: dict[tuple, int] = {}
+        for i in auto:
+            r = recs[i]
+            if r["kind"] != "term" or " " in r["norm"]:
+                continue
+            lkey = (r["kind"], r["lang"], _lemma(r["norm"], r["lang"]))
+            j = lemma_first.get(lkey)
+            if j is None:
+                lemma_first[lkey] = i
+            elif j != i:
+                union(j, i)  # variant i -> the lemma's representative j
+                recs[i]["lemma_merged"] = True
+                recs[j]["lemma_merged"] = True
 
     # 2) Containment among entities of the same kind (plain terms excluded) — auto only.
     # Guards added from the 2026-06-11 field log (the maintainer's first keyword
@@ -346,6 +418,7 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
             canon = max(members, key=_label_rank)
             canonical = canon["it"].get("term") or " ".join(canon["match"])
             normalized, kind, manual = canon["ckey"], canon["kind"], False
+        conflated_by = ["lemma"] if any(r.get("lemma_merged") for r in members) else []
         families.append(
             Family(
                 canonical=canonical,
@@ -355,6 +428,7 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
                 mentions=sum(r["mentions"] for r in members),
                 articles=max((r["articles"] for r in members), default=0),
                 members=[r["it"] for r in members],
+                conflated_by=conflated_by,
             )
         )
     families.sort(key=lambda f: -f.mentions)

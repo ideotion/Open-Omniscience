@@ -633,9 +633,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   tests/test_corpus_facets.py [5] + 2 invariant guards (test_corpus_facets_drill_is_wired backend + the facet
   wiring in test_ui_invariants). VERIFIED here: 5 facet + 17 insights/queries + 19 search + 144 invariants
   green, ruff F/B, mypy 127≤127, node --check, i18n 100%. Frontend BROWSER-UNVERIFIED per fork-3. P5.1 (BM25F
-  + facets) is now COMPLETE.) NEXT: P4.3 (simplemma lemmatization at the display layer, gated on the gold set
-  + P4.2) · P5.2 (static-embedding recall layer, gated on P3) · the in-memory P2 rollups (optional groundwork;
-  persisted blocked on httpfs bundling).
+  + facets) is now COMPLETE.) **P4.3 SHIPPED (mechanism; OPT-IN, default OFF)** (new PR; simplemma
+  lemmatization at the DISPLAY layer — `src/analytics/families.py` gains a lemma-collapse grouping step
+  (1.6) that conflates morphological keyword variants a plural heuristic MISSES — verb forms + irregulars
+  (study/studied → study, run/running → run, child/children → child, Wahlen → Wahl) — via `simplemma`
+  (pure-Python, NO torch/network; added to the `[analysis]` extra). `_lemma(norm, lang)` is CONSERVATIVE:
+  single-token TERMS only (never entity NAMES), per (kind, LANGUAGE) so an en term never merges a fr one,
+  a `_MISLEMMA_DENYLIST` blocks meaning-changers (media→medium, data→datum, us→we — evidence-grown like
+  `_PLURAL_DENYLIST`), unsupported langs (zh/ja + the ones simplemma covers poorly) + a missing simplemma +
+  any lemmatizer error all FALL BACK to `norm` (graceful degrade — a core install is a no-op). KEY HONESTY
+  CALLS: (a) DISPLAY layer ONLY — `families.py`, NEVER `_normalize`/the stored trusted index (rewriting the
+  canonical index is forbidden); an invariant asserts `extract.py`/`store.py` never import simplemma; (b)
+  REVERSIBLE — a user split override keeps a form out; (c) VISIBLE `conflated_by=["lemma"]` provenance on
+  the family (exposed in `to_dict`); (d) **DEFAULT OFF (`OO_FAMILY_LEMMA`, default "0") — the measure-before-
+  trust discipline: it changes grouping app-wide, so its retrieval-quality impact MUST be measured (the P3
+  eval harness + a human-judged gold set) before it is trusted on-by-default. Default-off + the skip ⇒
+  BYTE-IDENTICAL to the pre-lemma grouping (the plural rule still handles regular -s/-es/-ies on its own).**
+  tests/test_families.py (+5, skip-guarded on simplemma: lemma unit + guards, verb/irregular collapse +
+  conflated_by, off-by-default no-merge [runs everywhere], entity/denylist/reversible, graceful-degrade
+  without simplemma) + test_repo_invariants::test_lemmatization_is_opt_in_display_layer_and_reversible.
+  VERIFIED here: 160 families/invariants + 19 build_families-consumers green, ruff F/B, mypy 127≤127,
+  pyproject valid, external-freshness guard green. REMAINING: (1) the maintainer ENABLES + MEASURES it via
+  P3 on a gold set before it goes default-on (operational); (2) the frontend display of `conflated_by`
+  (a small "conflated by lemma" indicator on family chips — deferred + browser-unverified; nothing renders
+  while the feature is off).) NEXT: P5.2 (static-embedding recall layer, gated on the P3 gold-set pilot) ·
+  the in-memory P2 rollups (optional groundwork; persisted blocked on httpfs bundling) · P6 (entity→QID,
+  operational/networked).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +
