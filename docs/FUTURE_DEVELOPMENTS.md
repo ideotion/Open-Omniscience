@@ -2518,3 +2518,155 @@ domain), never a guess.
    the facet fast; denormalize only if the rollups need it).
 3. Fold S1–S3 into the keyword-engine **P4 facet** track, or run it as its own small series?
    (recommended: **fold in** — same facet machinery, one surface.)
+
+---
+
+## Home "Latest in your corpus" section — a recency LENS + a transparent substance FILTER (maintainer concept 2026-06-26/27; designed-only, shaped over discussion)
+
+> **The idea (maintainer):** a "latest news" section on the Home tab that **avoids very short
+> click-bait** by selecting on **article length** + **the number of in-article sources**, with the
+> **criteria clearly marked** and **user-adjustable by tag + content type**. Anticipated by the UI-rethink
+> ruling ("'most recent' articles by TAG" as a Home-dashboard section, `CLAUDE.md`). Reuses the
+> **content-provenance class** (above) + the keyword-engine **P4 facet** machinery + the shipped
+> **near-dup** signal. **Build this as ONE section folding in everything below.**
+
+### Two hard framings that keep it legal under the ethos
+1. **A recency LENS, never a reweighting of the corpus.** "Cross-time recall is sacred — no feature may
+   bias toward recent data / make old data second-class." Home is the *redundant launchpad* (invariant
+   #8), so a "latest" strip is navigational while **search + analytics stay time-neutral.** Label it
+   **"Recently collected" / "Latest in your corpus"** — a fact, not "Breaking news." It **complements**
+   the analytic Briefing (measured Leads) with **raw chronology**.
+2. **The substance gate is a TRANSPARENT FILTER, never a quality/click-bait SCORE.** No click-bait
+   detector (banned, like the quarantined credibility analyzer; "name the shape, never the verdict").
+   Two **gates** the user sets and sees (≥ min words AND ≥ min cited-sources): **order stays recency**
+   (`created_at`), length/sources only decide *in or out*, **each shown article displays its real
+   values** ("1,240 words · 7 cited sources"), the active filter is stated, and the app **never labels
+   anything "click-bait"** — an excluded item simply doesn't meet the *user's* thresholds.
+
+### Which date = "latest"
+Order by **`created_at`** (when WE collected it — un-spoofable, a fact about our corpus), **not**
+`published_at` (source-claimed, often missing/back-dated/spoofable; it imports the source's recency
+framing). Show `published_at` as **secondary, source-asserted** (the two-class metadata convention). The
+existing `/api/articles?sort_by=date` orders by `published_at`, so a true "recently collected" view needs
+a small backend add (a `created_at` ordering / a dedicated `recent` endpoint).
+
+### The two substance criteria (both REAL, stored, indexed facts — code-verified)
+- **Length** = `Article.word_count` — stored, **indexed** (`idx_article_word_count`), populated for web
+  (`ingest/pipeline.py:157`) + newsletters (`ingest/email.py:333`).
+- **In-article sources** = the count of the article's **outbound `ArticleLink` (external) rows** — the
+  reader's "Sources this article cites" (established cheap count pattern, `api/link_analysis.py`). Honest
+  limits: an *approximation* of "sources", **gameable** (link-stuffing), **content-type-dependent** →
+  a tunable filter, never a truth signal. **NEVER** `external_sources.credibility_score` (a banned
+  fabricated score in the schema).
+- **⚠️ CJK/Thai length catch (from the 2026-06-27 diagnostics):** `word_count` is `len(text.split())`,
+  which is **meaningless for unsegmented languages** (zh = 5,137 kw + th = 3,168 kw are "unsegmented" in
+  the engine report; a long Chinese article scores as a handful of "words"). A naïve global "min words"
+  gate would **wrongly drop zh/th articles as too short.** Fix: make the length signal **script-aware**
+  (use a character count for unsegmented languages, or per-language/per-type thresholds, or don't
+  word-gate unsegmented langs). Bake this in.
+
+### User-adjustable + faceted (where content-provenance becomes load-bearing)
+- Thresholds (**min words**, **min cited-sources**) are user controls with **per-content-type defaults**
+  (honest, not cosmetic: a global "≥3 sources" would unfairly exclude newsletters, which cite few
+  outbound links by nature — e.g. web-article ≥300w/≥2 sources, newsletter ≥400w/≥0 sources), each
+  overridable. Faceted by **source tags** + **content-provenance type**.
+- **Scope of "news":** likely the article-like provenance classes (web + newsletter); "latest" means
+  something different for wiki edits / stat figures / law docs (they could be their own mini-streams).
+
+### NEW refinements from the discussion (build these in)
+- **Near-duplicate collapse (the biggest practical win):** a raw reverse-chron feed is mostly **wire
+  reprints** — the 2026-06-27 cards show real coordination (echo_chamber/source_laundering across
+  Swedish + Serbian + Montenegrin outlets). Collapse near-identical copies into **one fresh story**
+  ("+N near-identical copies across M outlets — show all"), reusing the shipped
+  `src/signals/near_dup.py` (MinHash+LSH) — the reprint count is itself a signal. Less firehose, more
+  on-mission.
+- **Global vs "latest in what you follow":** the corpus is strongly **non-Anglophone** (by keyword
+  volume sv › en › el › sr › zh › hu …, EN only #2), so a flat latest isn't English-dominated but IS
+  **high-volume-source-dominated.** A **tag/topic-scoped** ("latest in what you follow") or
+  per-type/per-language-balanced latest is more useful + less of a firehose than a flat stream — and
+  softens the de-US bias without the heavier "diversify by country" machinery. **Recommended: faceted /
+  followed, not a flat global stream** (offer global as one facet).
+
+### Honesty guardrails (binding when built)
+- Word/source counts are **structural signals, not quality or truth** — *a long article isn't
+  necessarily good; a well-sourced one isn't necessarily true; a short one isn't necessarily
+  click-bait.* State it. **De-US / aggregator bias** disclosed (or diversified per type/country).
+  **Surface, don't silently hide:** prefer showing filtered-out items **dimmed/collapsed with their
+  values** over invisible hiding. **OPEN QUESTION (maintainer):** dim-with-values vs fully hide
+  (recommended: **dim/collapse + a toggle to fully hide**; default visible-but-de-emphasized). Honest
+  young-corpus/empty state; offline-safe (a local query; zero-network Home preserved); labels ×12 i18n.
+
+### What exists / the gap, and an HONEST calibration blocker
+`word_count` (stored+indexed+populated); the per-article external-link count (`link_analysis.py`,
+cheap when **bounded to the recent candidate set**); the Home panel pattern (`loadHome` → a
+`loadHomeLatest`, re-run by `refreshHomeLive`); the recency query is **cheap** (the 2026-06-27 perf shows
+`/api/articles` at 17 ms, FTS at 12 ms — safe to add even though the existing Home analytics are slow).
+**Calibration blocker (honest):** NO current diagnostic export carries the per-article `word_count`
+**distribution** or in-article-link counts (the debug bundle's corpus block is just
+`{articles, sources, keywords}`); the only anchor is **~190 content-words/article average** (post-
+stoplist). So picking real default thresholds needs a **small new article-length diagnostic** first.
+**Slices:** **S0** an article-length diagnostic (word_count + outbound-link distributions, per content
+type) to set honest defaults → **S1** the recency endpoint (`created_at` + `min_words`/`min_sources` +
+tag/content_type facets + the script-aware length rule + near-dup collapse, returning each row's
+word_count + source count) → **S2** the Home panel (visible criteria + per-item values + controls +
+caveats) → **S3** per-type defaults + the followed/faceted scope + the dim/hide toggle. **Fold into the
+content-provenance + keyword-engine P4 facet track.**
+
+---
+
+## Field diagnostics 2026-06-27 — measured findings & actionable items (a ~2,259-article live scrape)
+
+> Captured from the maintainer's diagnostic exports (self-test, growth, engine-report, scaling-benchmark,
+> performance-report, home-cards, date-diagnostics, debug-bundle) on a live corpus of **2,259 articles /
+> 99,662 keywords / 179,395 mentions / 3,177 sources**, DB **103 MB**, **2-core / 4.4 GB Qubes VM**,
+> SQLCipher-encrypted, columnar engine **in-memory (D1 unavailable)**. **Headline: the keyword ENGINE is
+> healthy** (self-test 42/42; extraction noise 0.5%; Heaps β=0.756 = healthy saturation). The findings
+> below are **contention, scale, and one card bug** — recorded here for later implementation. Counts +
+> milliseconds only, never a score.
+
+### F1 — BUG (shippable): 6 Home cards LOSE their corpus on click ("no hard-linking")
+The card-click diagnostic shows **6 of 25 cards "mismatched":** clicking runs a text search on a
+**synthetic seed** that matches **0 articles** though the card is about N — "the exact corpus is LOST."
+The four producers that **don't carry `article_ids`:** **`lonely_signal`** (seed = a truncated title →
+0), **`ownership_change`** (seed `"ownership-change"` → 0, card n=4), **`recipe_promise`** (seed
+`"2294:2026-06-27"` → 0, ×3), **`story_lineage`** (seed `"lineage:1575"` → 0, card n=3). **Fix
+(established pattern):** have each producer carry its exact `article_ids` so the click uses
+`openAnalysisForIds` (already done for echo_chamber / source_laundering / space_time_convergence /
+headline_body_mismatch, which are all hard-linked). **Acceptance:** the home-cards diagnostic reports **0
+mismatched.** Backend + producer change; testable. *(A genuine bug, not a design idea — prioritise.)*
+
+### F2 — PERF: live validation of the keyword-engine strategy (record the baseline; build in the strategy)
+Two measured problems, both already addressed by `docs/design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md` —
+the numbers here **validate + unblock** that work, they don't need a new plan:
+- **Writer-gate SATURATED during the scrape (validates + UNBLOCKS the deferred COLLECTOR-path
+  batching).** `collect_perf`: `adjust_reason:"writer-saturated"`, **34 fetch workers queued** behind the
+  one encrypted writer, **max_wait 210 s** for a single write, total_wait 6,716 s, contended 2,127, and
+  the scrape **throttled to 161 kbps vs a 500 target** — *write-bound, not network-bound* (the next
+  sample hit 1,481 kbps). The `CLAUDE.md` ledger deferred the full COLLECTOR-path write-batching
+  "pending a live measurement" — **this IS that measurement.** → build strategy **P1.3** (batched commits
+  via the `index_article(commit=False)` primitive + the `COLLECTOR_WRITER_BATCHING` store_fetched
+  restructure).
+- **Analytics "freeze" at only 2,259 articles** (NOT a big-corpus problem). Measured: `insights_trending`
+  **26–29 s**, `keyword_export` **34 s**, `insights_map` 6–16 s, `supergroups` **12 s**,
+  `trending_windows` (the **Home poll**) **5–13 s**, `associations` 4–7 s, `layered_graph` 6 s, `map_data`
+  4–8 s — while `columnar: available:false` (these hit raw SQLite GROUP-BY over 179 k mentions on 2
+  cores, encrypted). Fast paths for contrast: `top_terms_grouped` 69 ms, FTS 12 ms, `/api/articles` 17
+  ms, who/where ~100 ms. → build strategy **P2** (maintained `keyword_daily`/`source_coverage` rollups) +
+  **P2.4** (verify DuckDB-1.4 GCM → unblock the persisted store, which is `available:false` today).
+
+### F3 — keyword quality: stoplist leaks in "rising" cards
+Rising-card terms include **`annons`** (Swedish *advertisement* = ad boilerplate), **`koji`** / **`ali`**
+(Serbian function words "which"/"but"). → strategy **P4.2** (`reconcile_keyword_language`) + the
+evidence-grown stoplist pass; also a nice tie-in to the "Latest" substance filter (boilerplate is exactly
+what length/source gating catches).
+
+### F4 — date-extraction recall gap (When/Where/Who)
+Date diagnostics: **36.6 % coverage**, but **401 articles carry date-like text yet got no extraction**
+(of 1,500 scanned), including **45 unextracted `cjk_date`** runs. → improve the `dateextract` recall
+(and the CJK case ties to the segmentation gap, strategy P4.4). Lower priority than F1/F2.
+
+### F5 — UI polling storm (compounds the contention)
+This session accumulated ~**2,192** `GET /api/scheduler/activity` + **1,525** `/api/system/vitals` +
+**699** `/api/scheduler/status` requests — thousands of polls contending with the single encrypted
+connection (a long-standing finding). → consolidate into one status poll / SSE push + adaptive backoff
+when idle (the airplane/scheduler responses already push state to lean on).
