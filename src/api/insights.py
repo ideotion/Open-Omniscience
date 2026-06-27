@@ -348,9 +348,11 @@ def insights_corpus_www(
     cap: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Who (people/orgs) + Where (places) DEDUCED across the analysis corpus (an
-    explicit article-id set or the search) — the analysis window's When/Where/Who.
-    Deduced from text, never confirmed; no score. Bounded to ``cap`` (disclosed)."""
+    """Who (people/orgs) + Where (places) + When (mentioned years) DEDUCED across the
+    analysis corpus (an explicit article-id set or the search) — the analysis window's
+    When/Where/Who facet surface. Each facet value is clickable (the drill endpoint
+    below narrows the corpus). Deduced from text, never confirmed; no score. Bounded to
+    ``cap`` (disclosed)."""
     key = _ckey("corpus-www", ids=article_ids, q=query, src=source, sd=start_date,
                 ed=end_date, lang=language, tags=tags, limit=limit, cap=cap)
 
@@ -362,6 +364,7 @@ def insights_corpus_www(
         return {
             "who": q.corpus_who(db, article_ids=ids, limit=limit),
             "where": q.corpus_where(db, article_ids=ids, limit=limit),
+            "when": q.corpus_when(db, article_ids=ids, limit=limit),
             "n_articles": len(ids),
             "total_matched": total,
             "capped": total > len(ids),
@@ -369,6 +372,43 @@ def insights_corpus_www(
         }
 
     return _cached(key, _compute)
+
+
+@router.get("/corpus-facet-articles")
+def insights_corpus_facet_articles(
+    facet: str = Query(..., description="entity | place | when"),
+    value: str = Query(..., description="the facet value to drill into"),
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    cap: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The facet DRILL — the article ids WITHIN the current analysis corpus that carry a
+    given facet value (an ``entity`` name, a ``place`` name, or a ``when`` year). This is
+    what makes a facet co-equal with the text query: a facet value narrows the corpus, and
+    the caller spawns a refined analysis window over the returned ids. Deduced from text,
+    never confirmed; these articles MENTION the value (counts only, no score)."""
+    if facet not in ("entity", "place", "when"):
+        raise HTTPException(status_code=400, detail="facet must be entity|place|when")
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags, cap=cap,
+    )
+    matched = q.corpus_facet_article_ids(db, article_ids=ids, facet=facet, value=value)
+    return {
+        "facet": facet,
+        "value": value,
+        "article_ids": matched,
+        "total": len(matched),
+        "corpus_n": len(ids),
+        "corpus_total": total,
+        "caveat": "Deduced from text, never confirmed — these articles mention the value.",
+    }
 
 
 @router.get("/corpus-sentiment")

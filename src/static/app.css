@@ -660,6 +660,11 @@
     .an-ov-h { font-weight:700; }
     .an-ov-s { font-size:12px; }
     .an-ov-go { font-size:11px; align-self:flex-end; margin-top:auto; }
+    /* When/Where/Who clickable facet chips (P5.1b): each value drills into a narrowed corpus. */
+    .an-facet { font-size:12px; padding:3px 10px; border:1px solid var(--border); border-radius:999px;
+      background:var(--panel2); color:var(--fg); cursor:pointer; font:inherit; line-height:1.4; }
+    .an-facet:hover { border-color:var(--accent); }
+    .an-facet:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
     /* Offline-map regions as a LIST, not a dropdown (#15): every region visible at once. */
     .osm-region-list { max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
     .osm-region-row { display:flex; align-items:center; justify-content:space-between; gap:10px;

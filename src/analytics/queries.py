@@ -20,6 +20,7 @@ from sqlalchemy import func
 from src.database.models import (
     Article,
     ArticleEntity,
+    ArticleMentionedDate,
     ArticleMentionedPlace,
     Keyword,
     KeywordFamilyOverride,
@@ -609,6 +610,83 @@ def corpus_where(session, *, article_ids: list[int], limit: int = 40) -> dict:
     ]
     return {"count": len(places), "places": places,
             "caveat": "Deduced from text, never confirmed."}
+
+
+def corpus_when(session, *, article_ids: list[int], limit: int = 40) -> dict:
+    """WHEN the corpus is ABOUT — a TEMPORAL facet bucketed by YEAR over the
+    mentioned-date tags across a GIVEN article set (the dates the text talks about,
+    NOT the publication date). Counts only, deduced from text, never confirmed;
+    user-rejected date tags are excluded. Cheap: grouped on the article_id-indexed
+    ``article_mentioned_date`` table, never an article join."""
+    if not article_ids:
+        return {"count": 0, "years": []}
+    yr = func.strftime("%Y", ArticleMentionedDate.mentioned_on)
+    arts = func.count(func.distinct(ArticleMentionedDate.article_id))
+    men = func.count(ArticleMentionedDate.id)
+    rows = (
+        session.query(yr.label("y"), arts.label("a"), men.label("m"))
+        .filter(
+            ArticleMentionedDate.article_id.in_(article_ids),
+            ArticleMentionedDate.status != "rejected",
+        )
+        .group_by(yr)
+        .order_by(arts.desc(), yr.desc())
+        .limit(limit)
+        .all()
+    )
+    years = [
+        {"year": y, "articles": int(a or 0), "mentions": int(m or 0)}
+        for y, a, m in rows
+        if y
+    ]
+    return {"count": len(years), "years": years,
+            "caveat": "Deduced from text, never confirmed."}
+
+
+def corpus_facet_article_ids(
+    session, *, article_ids: list[int], facet: str, value: str
+) -> list[int]:
+    """Article ids WITHIN the given corpus that carry a facet value — the DRILL that
+    makes a facet co-equal with the text query (``entity`` name / ``place`` name /
+    ``when`` year). The returned set is the corpus narrowed to that facet, in the
+    corpus's own order (which may be FTS relevance). Cheap: an equality filter over an
+    article_id-indexed mention table, never an article join. Returns ``[]`` for an empty
+    corpus, a blank value, or an unknown facet."""
+    if not article_ids or not value:
+        return []
+    if facet == "entity":
+        rows = (
+            session.query(ArticleEntity.article_id)
+            .filter(ArticleEntity.article_id.in_(article_ids), ArticleEntity.name == value)
+            .distinct()
+            .all()
+        )
+    elif facet == "place":
+        rows = (
+            session.query(ArticleMentionedPlace.article_id)
+            .filter(
+                ArticleMentionedPlace.article_id.in_(article_ids),
+                ArticleMentionedPlace.name == value,
+            )
+            .distinct()
+            .all()
+        )
+    elif facet == "when":
+        yr = func.strftime("%Y", ArticleMentionedDate.mentioned_on)
+        rows = (
+            session.query(ArticleMentionedDate.article_id)
+            .filter(
+                ArticleMentionedDate.article_id.in_(article_ids),
+                ArticleMentionedDate.status != "rejected",
+                yr == str(value),
+            )
+            .distinct()
+            .all()
+        )
+    else:
+        return []
+    found = {r[0] for r in rows}
+    return [aid for aid in article_ids if aid in found]
 
 
 _SENTIMENT_CAVEAT = (
