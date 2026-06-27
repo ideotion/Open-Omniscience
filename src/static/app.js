@@ -10573,6 +10573,7 @@
     let _anCommodity = null;   // {symbol,name,unit} when seeded by a commodity click (Price subtab)
     let _anLastParams = null;  // last analysis params — for the lazily-rendered Trend subtab
     let _anSubtabs = null;     // ooSubtabs handle for the analysis window (to fall back off Price)
+    let _anFacets = {who: [], where: [], when: []};  // When/Where/Who clickable facet drill (P5.1b)
     function anParams() {
       const p = new URLSearchParams();
       if (_anIds && _anIds.length) { p.set("article_ids", _anIds.join(",")); return p; }
@@ -11100,6 +11101,27 @@
       if (!c || !c.article_ids || !c.article_ids.length) return;
       openAnalysisForIds(c.article_ids, t("Near-identical cluster") + " · " + c.size);
     }
+    // Facet DRILL (P5.1b): narrow the current corpus to the articles that MENTION a
+    // who/where/when value, then spawn a refined analysis window over them — the drill
+    // that makes a facet co-equal with the text query. Re-uses anParams() so it intersects
+    // whatever corpus is active (an exact id set OR the search + Advanced filters).
+    async function branchByFacet(group, idx) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const it = _anFacets && _anFacets[group] && _anFacets[group][idx];
+      if (!it) return;
+      const p = anParams();
+      p.set("facet", it.facet);
+      p.set("value", it.value);
+      try {
+        const d = await api("/api/insights/corpus-facet-articles?" + p.toString());
+        const ids = d.article_ids || [];
+        if (!ids.length) {
+          if (typeof toast === "function") toast(t("No articles mention this in the current corpus."));
+          return;
+        }
+        openAnalysisForIds(ids, it.label + " · " + ids.length);
+      } catch (e) { if (typeof toast === "function") toast(e.message); }
+    }
     // Branch every article that cites one shared outbound origin into a fresh corpus
     // (the "sources' sources" trail). Fetches the citing-article ids on click.
     async function branchFromOrigin(i) {
@@ -11363,19 +11385,40 @@
         }
       } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       _anLoadArticles(p, 0);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
-      // When/Where/Who deduced across the matched articles (counts, never confirmed).
+      // When/Where/Who deduced across the matched articles, as CLICKABLE FACETS:
+      // clicking a value narrows the corpus to the articles that mention it (the drill
+      // that makes a facet co-equal with the text query). Counts only, never confirmed.
       try {
         const d = await api("/api/insights/corpus-www?" + p.toString());
-        const li = (arr, fmt) => (arr && arr.length) ? arr.map(fmt).join("") : `<li class="muted">—</li>`;
-        const who = li(d.who && d.who.entities, (e) =>
-          `<li>${esc(e.name)} <span class="muted">· ${esc(e.class || "")} · ${e.articles}</span></li>`);
-        const where = li(d.where && d.where.places, (pl) =>
-          `<li>${esc(pl.name)}${pl.country ? ` <span class="muted">(${esc(String(pl.country).toUpperCase())})</span>` : ""}`
-          + ` <span class="muted">· ${pl.articles}</span></li>`);
-        $("an-www").innerHTML = `<div class="hint muted">${esc(d.caveat || "")}</div>`
+        _anFacets = {
+          who: ((d.who && d.who.entities) || []).map((e) => ({
+            facet: "entity", value: e.name, label: e.name,
+            sub: e.class || "", n: e.articles})),
+          where: ((d.where && d.where.places) || []).map((pl) => ({
+            facet: "place", value: pl.name, label: pl.name,
+            sub: pl.country ? String(pl.country).toUpperCase() : "", n: pl.articles})),
+          when: ((d.when && d.when.years) || []).map((yr) => ({
+            facet: "when", value: String(yr.year), label: String(yr.year),
+            sub: "", n: yr.articles})),
+        };
+        const chips = (group) => {
+          const items = _anFacets[group];
+          if (!items.length) return `<span class="muted">—</span>`;
+          return items.map((it, i) =>
+            `<button type="button" class="chip an-facet" onclick="branchByFacet('${group}',${i})" `
+            + `title="${esc(t("Narrow the corpus to articles that mention this") + " — " + it.value)}">`
+            + `${esc(it.label)}${it.sub ? ` <span class="muted">(${esc(it.sub)})</span>` : ""}`
+            + ` <span class="muted">· ${it.n}</span></button>`).join(" ");
+        };
+        const col = (title, group) =>
+          `<div style="min-width:200px;flex:1"><div class="vsect">${esc(title)}</div>`
+          + `<div class="an-facet-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0">`
+          + `${chips(group)}</div></div>`;
+        $("an-www").innerHTML =
+          `<div class="hint muted">${esc(d.caveat || "")} `
+          + `${esc(t("Click a value to narrow the corpus to articles that mention it."))}</div>`
           + `<div style="display:flex;gap:28px;flex-wrap:wrap;margin-top:8px">`
-          + `<div style="min-width:200px"><div class="vsect">${esc(t("Who"))}</div><ul style="margin:4px 0">${who}</ul></div>`
-          + `<div style="min-width:200px"><div class="vsect">${esc(t("Where"))}</div><ul style="margin:4px 0">${where}</ul></div></div>`;
+          + col(t("Who"), "who") + col(t("Where"), "where") + col(t("When"), "when") + `</div>`;
       } catch (e) { $("an-www").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Links: outbound URLs SHARED by 2+ of the matched articles (shared-origin
       // structure; convergence is corroboration only when paths are independent).

@@ -348,6 +348,23 @@ def test_bm25f_per_column_ranking_is_wired():
     assert ":wt" in fts and ":wb" in fts
 
 
+def test_corpus_facets_drill_is_wired():
+    """Keyword-engine P5.1b: the analysis window's When/Where/Who becomes an interactive
+    FACET surface — a temporal (When) facet alongside who/where, and every value drills
+    into a corpus narrowed to the articles mentioning it (a facet co-equal with the text
+    query). Counts only, deduced from text, never confirmed. Cheap: the drill filters an
+    article_id-indexed mention table, never a keyword_mentions->articles join."""
+    qsrc = (_SRC / "analytics" / "queries.py").read_text(encoding="utf-8")
+    assert "def corpus_when(" in qsrc and "def corpus_facet_article_ids(" in qsrc
+    # the temporal facet buckets by year; the drill handles entity/place/when
+    assert 'ArticleMentionedDate.status != "rejected"' in qsrc  # user-rejected tags excluded
+    api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert "/corpus-facet-articles" in api
+    assert '"when": q.corpus_when(' in api  # the When facet is additive on corpus-www
+    # the drill rejects an unknown facet rather than silently returning empty
+    assert 'facet must be entity|place|when' in api
+
+
 def test_articles_endpoint_serialises_stored_sentiment():
     """§6: the /api/articles list exposes the stored sentiment (populated at ingest /
     re-index, VADER English-only) so lists / cards can show tone without an extra framing
@@ -1785,6 +1802,14 @@ def test_ui_invariants():
     # (shared-origin structure). Each is an article-SET aggregation, counts only.
     assert '/api/insights/corpus-www' in html and 'id="an-www"' in html, (
         "the analysis window must carry the When/Where/Who subtab (Group F)"
+    )
+    # P5.1b: the When/Where/Who values are CLICKABLE FACETS — each drills into a corpus
+    # narrowed to the articles that mention it (a facet co-equal with the text query).
+    assert "function branchByFacet(" in html and "/api/insights/corpus-facet-articles" in html, (
+        "the When/Where/Who facets must drill via the corpus-facet-articles endpoint (P5.1b)"
+    )
+    assert "_anFacets" in html and 'col(t("When")' in html, (
+        "the facet surface must add the temporal (When) facet column (P5.1b)"
     )
     assert '/api/links/corpus' in html and 'id="an-links"' in html, (
         "the analysis window must carry the shared-Links subtab (Group F)"

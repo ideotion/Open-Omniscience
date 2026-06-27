@@ -614,9 +614,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   MEASURE-before-trust loop is now closed for ranking. tests/test_bm25f.py [3: a title-only vs body-only
   match → title ranks first; env reversal → body ranks first; default `wt>wb` + bad-env fallback] + the
   invariant guard. VERIFIED here: 21 search-suite + 18 ir-eval/watches + 144 invariants green, ruff F/B,
-  mypy 127≤127, py_compile.) NEXT: P5.1b (entity/temporal/geographic facets co-equal with the text query
-  + the facet UI — the second half of strategy P5.1, a distinct/larger build on the analysis window's
-  existing source/lang/date/tag filters) · P4.3 (lemmatization, gated on the gold set + P4.2).
+  mypy 127≤127, py_compile.) **P5.1b SHIPPED** (new PR; INTERACTIVE FACETS — the When/Where/Who subtab of
+  the analysis window becomes a FACET SURFACE co-equal with the text query. TWO genuine increments over
+  the descriptive who/where it already showed: (1) a TEMPORAL (When) facet — `queries.corpus_when(article_ids)`
+  buckets the mentioned-DATE tags (the dates the text is ABOUT, not pub date) by YEAR over the corpus,
+  counts only, user-REJECTED tags excluded, deduced-never-confirmed; (2) a DRILL that makes a facet a query
+  CONSTRAINT — `queries.corpus_facet_article_ids(article_ids, facet, value)` returns the corpus narrowed to
+  the articles mentioning an entity/place/year (in corpus order), so clicking a facet value spawns a refined
+  analysis window over EXACTLY those ids. Both PERF-SAFE per the codec column-order trap: an equality filter
+  over the article_id-indexed mention tables, NEVER a keyword_mentions->articles join. `/api/insights/corpus-www`
+  gains a `when` key (ADDITIVE — who/where unchanged, the existing contract test still passes) + a new
+  `/api/insights/corpus-facet-articles` drill endpoint (reuses `_resolve_corpus` so it intersects whatever
+  corpus is active — an exact id set OR the search + Advanced filters; 400 on an unknown facet, never a silent
+  empty). The existing When/Where/Who subtab is upgraded IN PLACE (no parallel-window debt). Frontend: the
+  `#an-www` loader renders who/where/when as clickable `.an-facet` chips (count shown) → `branchByFacet` →
+  drill → `openAnalysisForIds`; `_anFacets` state; honest empty states + visible caveat; new strings
+  English-fallback via `t()` (i18n gate stays 100%). Counts only, NO score; deduced from text, never confirmed.
+  tests/test_corpus_facets.py [5] + 2 invariant guards (test_corpus_facets_drill_is_wired backend + the facet
+  wiring in test_ui_invariants). VERIFIED here: 5 facet + 17 insights/queries + 19 search + 144 invariants
+  green, ruff F/B, mypy 127≤127, node --check, i18n 100%. Frontend BROWSER-UNVERIFIED per fork-3. P5.1 (BM25F
+  + facets) is now COMPLETE.) NEXT: P4.3 (simplemma lemmatization at the display layer, gated on the gold set
+  + P4.2) · P5.2 (static-embedding recall layer, gated on P3) · the in-memory P2 rollups (optional groundwork;
+  persisted blocked on httpfs bundling).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +
