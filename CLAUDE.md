@@ -667,7 +667,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   thread-safe in the live process — that study/studied→study + the denylist blocks media↛medium; omitted on
   a core install, never a failure), so a conflation regression reddens BOTH the in-app self-test export the
   maintainer sends AND CI. tests in test_keyword_engine_report.py + test_keyword_selftest.py. VERIFIED here:
-  41 keyword + 30 diagnostic tests green, ruff F/B, mypy 127≤127. NEXT: P5.2 (static-embedding recall layer, gated on the P3 gold-set pilot) ·
+  41 keyword + 30 diagnostic tests green, ruff F/B, mypy 127≤127.) **P3 OPERATIONAL PATH SHIPPED (follow-up;
+  new PR; the gold-set INPUT the harness lacked)** — P3 had the metrics + `GoldQuery` format + `evaluate_
+  against_corpus`, but NO documented FILE input + no one-call A/B, so the maintainer had no path to feed
+  graded queries in. Added: (a) `ir_eval.load_gold_set(path)` — parses a JSON gold set
+  (`{"queries":[{id,query,language,axis,relevances:{docid:0|1|2}}]}`) into `[GoldQuery]`, stringifies doc-id
+  keys (so they compare regardless of how search returns ids), and FAILS LOUDLY (`GoldSetError`) on a
+  missing file / bad JSON / out-of-range grade / duplicate id / empty set — never a silent skip; (b)
+  `ir_eval.bm25f_weight_ab(session, gold, weights_a, weights_b)` — the one-call A/B of two BM25F (title,body)
+  weight sets over the LIVE corpus + a gold set, returning each side's report + `conflation_delta`
+  (recall/precision/ndcg SEPARATELY); (c) `search_ids(..., weights=(wt,wb))` — a per-call THREAD-SAFE
+  weights override (None=env default, byte-identical), so the A/B never mutates the process-wide env; (d)
+  a bundled `configs/ir_eval/gold_set.example.json` TEMPLATE (documented format + grading guidance) the
+  maintainer copies. CORRECTION recorded: an earlier offer to A/B *lemmatization* via P3 was INCOHERENT —
+  lemmatization is a display-layer families change, NOT a retrieval change, so it is invisible to the FTS
+  retrieval harness; BM25F (P5.1a) IS a retrieval change and is the coherent A/B. tests/test_ir_eval_goldset.py
+  (loader parses the template + 6 malformed-input failures; the A/B measures a real title-vs-body ranking
+  move on a fixture corpus, recall unchanged + ndcg moved) + the test_ir_eval_harness_is_wired invariant.
+  VERIFIED here: 14 goldset/ir-eval/bm25f + 146 invariants + 23 search green, ruff F/B, mypy 127≤127, JSON
+  valid. REMAINING (operational, maintainer): produce a real graded gold set over the live corpus + run the
+  A/B to pick the BM25F default on evidence; an optional in-app endpoint to run it from a server-side
+  gold-set path (deferred — the library + template ship now). NEXT: P5.2 (static-embedding recall layer, gated on the P3 gold-set pilot) ·
   the in-memory P2 rollups (optional groundwork; persisted blocked on httpfs bundling) · P6 (entity→QID,
   operational/networked).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a

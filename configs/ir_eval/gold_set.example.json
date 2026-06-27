@@ -1,0 +1,55 @@
+{
+  "_about": [
+    "Template gold set for the IR retrieval-eval harness (src/analytics/ir_eval.py).",
+    "Copy this to your own file, replace the example queries, and load it with",
+    "ir_eval.load_gold_set(path). It is corpus-specific + human-judged, so it is NOT",
+    "bundled with real data -- only you can grade YOUR articles.",
+    "",
+    "How to grade: for each query, list the article ids you have judged and a GRADED",
+    "relevance 0/1/2 -- 0 = irrelevant, 1 = relevant, 2 = highly relevant. The doc id is",
+    "the Article.id (a number); JSON object keys are strings, which is fine (the loader",
+    "stringifies ids on both sides). 'language' and 'axis' are optional (default en/topic)",
+    "and let the report break results down per language + per retrieval phenomenon",
+    "(known-item / topic / cross-lingual / near-dup) instead of one pooled average.",
+    "",
+    "Then: evaluate_against_corpus(session, gold) scores the live search; or",
+    "bm25f_weight_ab(session, gold, weights_a=(1,1), weights_b=(4,1)) A/Bs the BM25F",
+    "title/body weights over YOUR judgements so the P5.1 default is chosen on evidence,",
+    "not guessed. The keys below (the _about block and any unknown keys) are ignored.",
+    "Pool the judged docs and keep a single assessor consistent (Voorhees)."
+  ],
+  "queries": [
+    {
+      "id": "q_inflation",
+      "query": "inflation",
+      "language": "en",
+      "axis": "topic",
+      "relevances": {
+        "101": 2,
+        "102": 1,
+        "103": 0
+      }
+    },
+    {
+      "id": "q_central_bank_known_item",
+      "query": "central bank rate decision",
+      "language": "en",
+      "axis": "known-item",
+      "relevances": {
+        "210": 2,
+        "211": 1
+      }
+    },
+    {
+      "id": "q_election_fr",
+      "query": "élection",
+      "language": "fr",
+      "axis": "cross-lingual",
+      "relevances": {
+        "320": 2,
+        "321": 1,
+        "322": 0
+      }
+    }
+  ]
+}

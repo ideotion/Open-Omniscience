@@ -328,7 +328,11 @@ def _bm25_weights() -> tuple[float, float]:
 
 
 def search_ids(
-    session: Session, query: str | None, limit: int = _MAX_CANDIDATES
+    session: Session,
+    query: str | None,
+    limit: int = _MAX_CANDIDATES,
+    *,
+    weights: tuple[float, float] | None = None,
 ) -> list[int] | None:
     """Return article ids matching ``query``, ranked best-first (BM25F).
 
@@ -336,11 +340,15 @@ def search_ids(
     keyword-engine P5.1: a title keyword is a stronger relevance signal than a body
     mention. ``None`` means "no text constraint" (empty/positive-less query) -- distinct
     from ``[]`` which means "searched, matched nothing".
+
+    ``weights`` (title, body) OVERRIDES the env-configured default for one call — a
+    thread-safe seam to A/B a weight set over a gold set (``ir_eval.bm25f_weight_ab``)
+    without mutating the process-wide env. ``None`` uses the configured default.
     """
     match = build_match(query)
     if match is None:
         return None
-    wt, wb = _bm25_weights()
+    wt, wb = weights if weights is not None else _bm25_weights()
     rows = session.execute(
         text(
             "SELECT rowid FROM article_fts WHERE article_fts MATCH :q "
