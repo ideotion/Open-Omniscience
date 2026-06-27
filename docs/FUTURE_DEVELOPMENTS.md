@@ -188,6 +188,7 @@
 - [ ] Tor integration + per-source transport
 - [ ] Voice-only mode
 - [ ] Open Commons Mirror (separate sister project, when mature)
+- [ ] Content-provenance class — descriptive ingestion-channel/format metadata (newsletter · web-article · wiki · official-statistic · law · market · discovery), asserted-at-ingest, exposed as a facet + reading-diet-by-type (full design + backward-compat analysis in the section below)
 
 ### AUTONOMOUS BRIEF 2026-06-24 — UNRESOLVED & PARTIAL (audited against the code 2026-06-25)
 
@@ -2414,3 +2415,106 @@ Recommended order: A1 → A-CSV → B → C → D → E. The revision-anomaly de
 5. **Choropleth normalized-only** rule (levels → proportional symbols) — agree? (recommended: yes.)
 6. **`global`/`transnational` region value** in the source schema — add it, or keep the fudge?
 7. **Key-gated stat sources** (EIA/FRED/Comtrade): build the key surface, or skip this cycle?
+
+---
+
+## Content-provenance class — descriptive ingestion-channel metadata (maintainer concept 2026-06-26; designed-only)
+
+> **The idea (maintainer):** ingest a metadata dimension for *content provenance* — classify each
+> item by WHAT KIND of content/channel it is: newsletter, online article, online statistics, etc.
+> **Verdict: worth doing, and unusually well-aligned** — provenance is already a core value prop here,
+> and this is the cleanest possible metadata to add because **it is an asserted FACT known by
+> construction** (the ingest path KNOWS the channel/format), so it needs **no classifier, no heuristic,
+> no fabrication**. It is also corroborated by the keyword-engine / IR research
+> (`docs/research/keywords/`): Aleph and Datashare both make content **type/format a PRIMARY facet**, and
+> the strategy's P4 ("faceted retrieval", `docs/design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md`) already
+> calls for it — so this folds naturally into that facet track.
+
+### The one honesty rule that makes it safe
+A provenance class is **descriptive, never a quality/credibility judgment.** "newsletter" is a *channel*,
+not "less trustworthy"; "official-statistic" is a *format*, not "more true." So: a controlled vocabulary,
+**no score, no ranking, and explicitly NO "reliability by type."** It states *how the content arrived*,
+nothing more — which keeps it inside the no-composite-score + no-fabricated-metadata non-negotiables by
+construction.
+
+### Two tiers (kept separate, like the existing asserted-vs-deduced metadata convention)
+- **Tier 1 — provenance class (ASSERTED, certain) — the thing to build.** A controlled vocab set at
+  ingest by the path that creates the row: `web-article` (RSS/crawl) · `newsletter` (.eml/mailbox) ·
+  `wiki` (per-edition) · `discovery` (DDG) · `official-statistic` (`StatFigure`) · `law` · `market`
+  (`CommodityPrice`) · `weather`. Known by construction = zero inference.
+- **Tier 2 — content GENRE (DEDUCED, later, optional, labelled-unreliable).** "opinion vs reporting vs
+  press-release vs explainer" *from the text* — LLM-perception territory; a SEPARATE, labelled layer if
+  ever built. **Never conflate Tier 2 with Tier 1.**
+
+### Current state + the gap (code-verified 2026-06-26)
+The dimension **half-exists and is underused**:
+- `Source.source_type` is a real, **indexed** `String(50)` (`models.py:425`, `idx_source_type`) **already
+  used** — stats sources are set to `"statistics"` and queried by it (`api/stats.py:404`). Catalog
+  sources get a type from their spec.
+- But it is **inconsistent**: the newsletter source is created with **no** `source_type`, so it defaults
+  to `"news"` (`api/ingestion.py:181`) — i.e. **newsletters are currently mislabeled as news**; manual
+  source-adds also default to `"news"`. So `source_type` is not yet a reliable provenance dimension.
+- Content also lives across **two shapes**: Article-backed types (web, newsletter, wiki, discovery)
+  distinguished only by source, plus **separate richly-typed tables** (`StatFigure`, `CommodityPrice`,
+  law docs, `WikiRevision`).
+
+So the gap is **consistency + a unified, queryable facet across all of it** — not a greenfield build.
+
+### Build shape (additive, cheap-first)
+- **S1 — enrich `source_type` into the controlled vocab + populate it correctly per ingestion path +
+  deterministically backfill** existing rows from their source domain (reserved newsletter domains,
+  `*.wikipedia.org`, etc.). No migration (the column exists). Fixes the newsletter-as-"news" mislabel as
+  a bonus. `idx_source_type` already makes the facet fast.
+- **S2 — expose it as a facet** in search/analysis (fold into the keyword-engine P4 facet work).
+- **S3 — "reading diet BY TYPE"** — extend the existing `analytics/concentration.py` Gini/top-share
+  self-audit ("your corpus is 60% web, 22% newsletters, 11% official stats, 7% wiki"). High journalist
+  value, on-mission, de-US-centring-adjacent.
+- *(later)* a **denormalized per-article `provenance_class`** column only if perf needs it without a
+  join (a scaling/denormalization call, gated like the keyword rollups). Keep the separate typed tables
+  **rich** — the goal is a consistent facet ACROSS them, not flattening (the Desk lesson).
+
+### ⚠️ Backward-compatibility of database import/export (maintainer asked 2026-06-26 — code-verified)
+**Bottom line: NO, it does not break import/export backward compatibility.**
+
+- **S1 (enrich the existing `source_type` values): ZERO compat impact.** `source_type` is an existing,
+  indexed `String(50)` with **no enum/CHECK constraint**, **already carried by the additive-restore merge
+  engine** (`backup/merge.py:320–324` lists `source_type` in the `INSERT INTO sources (…)` and selects
+  `i.source_type`) and already present in the whole-file `oo-backup-2` snapshot. S1 only changes
+  **values** (`"news"` → `"newsletter"`), never the schema — so **no migration, no merge-map change, no
+  export-envelope change.**
+  - *Old backup → new app:* restores fine; an old backup's newsletter sources arrive typed `"news"`, and
+    re-running the S1 backfill enriches them (forward-only, the established pattern — like keyword
+    counters / baseline tags / sentiment). Graceful, never a break.
+  - *New backup → old app:* restores fine; an older app stores `"newsletter"` as a plain string (no
+    constraint) and its `source_type` logic (the stats filter) is unaffected.
+  - *Merge conflict:* sources match by **domain**; "local wins entirely, differing incoming fields are
+    REPORTED, never applied" (`merge.py:304`) — so a differing `source_type` for an existing domain is a
+    **reported conflict**, never a silent overwrite or corruption.
+- **The optional later per-article `provenance_class` column: also compatible — via the project's proven
+  additive-column discipline** (exactly how `detected_language` / `sentiment_score` were added): a
+  **nullable** column + an Alembic migration + a boot self-heal (`ensure_*_columns`) + a deterministic
+  backfill. It must be added to `_merge_articles`' explicit column map (one line, as `source_type`
+  already is for sources). **The ONE verify-before-build for THAT slice:** the merge SELECTs incoming
+  rows by **explicit column name** (`SELECT i.<col>`), so restoring an OLDER backup whose `articles`
+  table lacks the new column would error UNLESS the staged copy is migrated to head first — which the
+  shipped **cross-version restore floor + staged upgrade** (RC-gate T4) already does. **Verify that the
+  staged-upgrade runs the migration on the incoming backup BEFORE the merge selects the new column**
+  (almost certainly yes given T4; confirm before shipping the per-article column).
+- **Export (CSV/JSON, the versioned envelope WP2/RM-15): additive — a new key/column** that unknown-field-
+  tolerant consumers ignore; bump the envelope schema version if it's promoted to a documented field. No
+  break.
+
+### Honesty guardrails (binding when built)
+Descriptive controlled vocabulary, **no score / ranking / reliability-by-type**; **asserted-by-
+construction** (the ingest path sets it), a deduced fallback ONLY where a source's channel is genuinely
+unknown and then **labelled deduced**; the separate typed tables (stats/markets/law) stay rich (unify the
+FACET, don't flatten the data); type labels ×12 i18n; the backfill is **deterministic** (from the source
+domain), never a guess.
+
+### Open questions for the maintainer
+1. The exact Tier-1 vocabulary (the list above — add/rename any?).
+2. Build the **per-article denormalized column** as part of this, or defer it until a join proves too
+   slow (recommended: **defer** — S1's enriched `source_type` + the `idx_source_type` index already make
+   the facet fast; denormalize only if the rollups need it).
+3. Fold S1–S3 into the keyword-engine **P4 facet** track, or run it as its own small series?
+   (recommended: **fold in** — same facet machinery, one surface.)
