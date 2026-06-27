@@ -209,6 +209,49 @@ def _mention_distribution(session: Session) -> dict:
     }
 
 
+def _lemma_preview(rows: list[tuple]) -> dict:
+    """What OPT-IN lemmatization (P4.3) WOULD merge among the top keywords — the
+    precision-review instrument for the measure-before-trust discipline. Single-token
+    TERMS (never entity NAMES) that share a lemma per (language) are the candidate
+    conflations the maintainer eyeballs BEFORE enabling ``OO_FAMILY_LEMMA`` (default off);
+    a wrong merge becomes a ``_MISLEMMA_DENYLIST`` entry. Read-only, bounded, no score;
+    reports "unavailable" honestly when the optional ``simplemma`` is absent.
+
+    ``rows`` are ``(normalized_term, language, is_entity)`` from the top-N keyword scan."""
+    from src.analytics.families import _lemma, _lemma_enabled, _simplemma
+
+    if _simplemma is None:
+        return {
+            "available": False,
+            "method": "simplemma (optional [analysis] extra) is not installed; lemmatization is a no-op here.",
+        }
+    groups: dict[tuple, list[str]] = {}
+    for norm, lang, is_entity in rows:
+        n = norm or ""
+        if is_entity or not n or " " in n:  # terms only, single-token (mirrors families step 1.6)
+            continue
+        groups.setdefault(((lang or "?"), _lemma(n, lang)), []).append(n)
+    candidates = [
+        {"lemma": lem, "language": lg, "members": sorted(set(ms)), "n": len(set(ms))}
+        for (lg, lem), ms in groups.items()
+        if len(set(ms)) >= 2
+    ]
+    candidates.sort(key=lambda c: (-c["n"], c["lemma"]))
+    return {
+        "available": True,
+        "enabled": _lemma_enabled(),  # whether OO_FAMILY_LEMMA is currently on
+        "scanned_top_n": len(rows),
+        "candidate_groups": len(candidates),
+        "keywords_that_would_merge": sum(c["n"] for c in candidates),
+        "examples": candidates[:15],
+        "method": (
+            "Among the most-mentioned single-token TERMS, the groups that share a lemma "
+            "(study/studied -> study). REVIEW for precision before enabling OO_FAMILY_LEMMA "
+            "(default off); a wrong merge means a _MISLEMMA_DENYLIST entry. No score."
+        ),
+    }
+
+
 def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles: int = 25) -> dict:
     """Compute the efficacy + performance report (bounded, read-only, no score)."""
     from src.analytics.equivalence import is_ring_term, load_rings
@@ -232,6 +275,8 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
         session.query(
             Keyword.id,
             Keyword.normalized_term,
+            Keyword.language,
+            Keyword.is_entity,
             func.coalesce(func.sum(KeywordMention.count), 0).label("m"),
         )
         .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
@@ -288,6 +333,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             "rings_total": rings_total,
             "method": "share of the most-mentioned keywords that belong to a cross-language ring; grows as rings are added",
         },
+        "lemma_preview": _lemma_preview([(r[1], r[2], r[3]) for r in top_rows]),
         "tag_coverage": {
             "top_n": len(top_ids),
             "tagged": int(tagged_top),

@@ -656,7 +656,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   pyproject valid, external-freshness guard green. REMAINING: (1) the maintainer ENABLES + MEASURES it via
   P3 on a gold set before it goes default-on (operational); (2) the frontend display of `conflated_by`
   (a small "conflated by lemma" indicator on family chips — deferred + browser-unverified; nothing renders
-  while the feature is off).) NEXT: P5.2 (static-embedding recall layer, gated on the P3 gold-set pilot) ·
+  while the feature is off).) **P4.3 MEASURABILITY SHIPPED (follow-up; new PR)** — the
+  measure-before-trust INSTRUMENTS so the maintainer can review + regression-guard lemmatization WITHOUT
+  enabling it blindly: (a) `engine_report.py` gains a `lemma_preview` block = the candidate conflations
+  among the top-N TERMS (groups of single-token terms that share a lemma per language, e.g. study/studied),
+  with the would-merge member sets + counts, so the maintainer eyeballs PRECISION before flipping
+  `OO_FAMILY_LEMMA` (a wrong merge → a `_MISLEMMA_DENYLIST` entry); reports `available:false` honestly when
+  simplemma is absent, mirrors the families guards (terms only, never entity NAMES), no score. (b)
+  `selftest.py` gains a `lemmatization_mechanism` golden case (checks `_lemma` DIRECTLY — no env toggle, so
+  thread-safe in the live process — that study/studied→study + the denylist blocks media↛medium; omitted on
+  a core install, never a failure), so a conflation regression reddens BOTH the in-app self-test export the
+  maintainer sends AND CI. tests in test_keyword_engine_report.py + test_keyword_selftest.py. VERIFIED here:
+  41 keyword + 30 diagnostic tests green, ruff F/B, mypy 127≤127. NEXT: P5.2 (static-embedding recall layer, gated on the P3 gold-set pilot) ·
   the in-memory P2 rollups (optional groundwork; persisted blocked on httpfs bundling) · P6 (entity→QID,
   operational/networked).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
