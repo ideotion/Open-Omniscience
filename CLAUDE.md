@@ -753,6 +753,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   SELECTs the new column (the shipped cross-version restore floor / RC-gate T4 already does this —
   confirm). Export (CSV/JSON envelope) = additive, unknown-field-tolerant, no break. OPEN Qs: exact
   vocab; defer the per-article column (recommended yes); fold S1-S3 into P4 (recommended yes).
+- **HOME "LATEST IN YOUR CORPUS" SECTION — recency LENS + transparent substance FILTER (maintainer
+  concept 2026-06-26/27; DESIGN-ONLY, full record in `docs/FUTURE_DEVELOPMENTS.md` → "Home 'Latest in
+  your corpus' section"):** a Home "latest news" section that avoids very short click-bait by selecting
+  on article LENGTH + the number of IN-ARTICLE SOURCES, criteria CLEARLY MARKED + user-adjustable by tag
+  + content-type. (An earlier draft was recorded then closed unmerged — re-recorded here WITH the
+  discussion refinements; PR #496 was closed per the "mark only when we agree" cadence.) TWO hard
+  framings: (1) a recency LENS on the redundant Home launchpad (#8), NEVER a corpus reweighting
+  (cross-time recall sacred); order by `created_at` (un-spoofable), not `published_at`. (2) the substance
+  gate is a TRANSPARENT FILTER, NEVER a quality/click-bait SCORE — two GATES the user sets+sees (≥min
+  words AND ≥min cited-sources), order stays recency, each shown article shows its REAL values, never
+  labelled "click-bait". Criteria = REAL indexed facts: `Article.word_count` (`idx_article_word_count`) +
+  outbound `ArticleLink` count (NEVER `external_sources.credibility_score`). DISCUSSION REFINEMENTS baked
+  into the doc: (a) **CJK/Thai length catch** — `word_count=len(text.split())` is meaningless for
+  unsegmented zh/th (per the 2026-06-27 engine report) → the length gate must be SCRIPT-AWARE; (b)
+  **near-dup collapse** of wire-reprints into one fresh story (reuse `src/signals/near_dup.py`) — the
+  biggest practical win; (c) **followed/faceted vs flat** — the corpus is strongly non-Anglophone (sv›en›
+  el›sr…), so a tag/topic-scoped or per-type-balanced latest beats a flat firehose; (d) per-content-type
+  defaults; (e) dim-with-values vs hide (OPEN Q, rec: dim+toggle). HONEST CALIBRATION BLOCKER: no export
+  carries the per-article word_count DISTRIBUTION → an S0 article-length diagnostic is needed to set real
+  thresholds (only anchor today: ~190 content-words/article avg). The recency query itself is CHEAP
+  (`/api/articles` 17ms). Slices S0 diagnostic → S1 endpoint → S2 panel → S3 defaults/scope/toggle; FOLD
+  into the content-provenance + keyword-engine P4 facet track.
+- **FIELD DIAGNOSTICS 2026-06-27 — measured findings (full record in `docs/FUTURE_DEVELOPMENTS.md` →
+  "Field diagnostics 2026-06-27"):** from the maintainer's exports on a live 2,259-article / 99,662-kw /
+  179,395-mention corpus (2-core 4.4GB Qubes, encrypted, columnar in-memory). ENGINE HEALTHY (selftest
+  42/42, noise 0.5%, Heaps β=0.756). ACTIONABLE: **F1 (BUG, shippable, prioritise)** — 6/25 Home cards
+  LOSE their corpus on click; the producers `lonely_signal`/`ownership_change`/`recipe_promise`/
+  `story_lineage` emit cards with NO `article_ids` so the click runs a synthetic-seed text search that
+  loads 0 (e.g. seed "lineage:1575"/"2294:2026-06-27"); FIX = carry `article_ids` → `openAnalysisForIds`
+  (the pattern echo_chamber/source_laundering/space_time_convergence/headline_body_mismatch already use);
+  acceptance = the home-cards diagnostic reports 0 mismatched. **F2 (PERF — VALIDATES the keyword-engine
+  strategy, build there):** (i) the single WRITER GATE is SATURATED during scraping (34 waiters, max_wait
+  210s, scrape throttled 161kbps vs 500 = write-bound not network-bound) — this IS the live measurement
+  the ledger said the deferred COLLECTOR-path write-batching was waiting for → build strategy P1.3; (ii)
+  analytics FREEZE at just 2,259 articles (insights_trending 26-29s, keyword_export 34s, supergroups 12s,
+  Home trending_windows 5-13s, associations 4-7s; columnar available:false) → build strategy P2 rollups +
+  P2.4 DuckDB-GCM verify. **F3** rising-card stoplist leaks (annons/koji/ali) → strategy P4.2 + stoplists.
+  **F4** date-extraction recall gap (36.6% coverage, 401 date-like-but-unextracted incl. 45 cjk). **F5**
+  polling storm (~4,400 status polls) → consolidate to one poll/SSE + backoff.
 - **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
   research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed
