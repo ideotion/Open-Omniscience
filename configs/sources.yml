@@ -1146,6 +1146,7 @@ sources:
   tags:
   - news
   priority: 2
+  language: tr
 - name: Australian Associated Press (AAP)
   domain: aap.com.au
   country: au
@@ -1208,6 +1209,7 @@ sources:
   tags:
   - news
   priority: 2
+  country: ae
 - name: Qatar News Agency (QNA)
   domain: qna.org.qa
   country: qa
@@ -1301,6 +1303,7 @@ sources:
   tags:
   - news
   priority: 2
+  language: pt
 - name: The Globe and Mail (Canada)
   domain: theglobeandmail.com
   rss_url: https://www.theglobeandmail.com/rss/
@@ -1347,6 +1350,7 @@ sources:
   tags:
   - news
   priority: 1
+  language: fr
 - name: Le Monde Diplomatique (France)
   domain: mondediplo.com
   country: fr
@@ -1380,6 +1384,7 @@ sources:
   tags:
   - news
   priority: 1
+  language: de
 - name: La Repubblica (Italy)
   domain: repubblica.it
   country: it
@@ -1392,6 +1397,7 @@ sources:
   tags:
   - news
   priority: 1
+  language: it
 - name: Le Soir (Belgium)
   domain: lesoir.be
   country: be
@@ -1414,6 +1420,7 @@ sources:
   tags:
   - news
   priority: 2
+  language: nl
 - name: Dagens Nyheter (Sweden)
   domain: dn.se
   country: se
@@ -1425,6 +1432,7 @@ sources:
   tags:
   - news
   priority: 2
+  language: sv
 - name: El Mundo (Spain)
   domain: elmundo.es
   country: es
@@ -1436,6 +1444,7 @@ sources:
   tags:
   - news
   priority: 1
+  language: es
 - name: Der Tagesspiegel (Germany)
   domain: tagesspiegel.de
   country: de
@@ -1447,6 +1456,7 @@ sources:
   tags:
   - news
   priority: 2
+  language: de
 - name: O Globo (Brazil)
   domain: oglobo.globo.com
   country: br
@@ -1537,6 +1547,7 @@ sources:
   tags:
   - news
   priority: 2
+  language: pt
 - name: La Nación (Argentina)
   domain: lanacion.com.ar
   country: ar
@@ -1621,6 +1632,7 @@ sources:
   - science
   - consciousness
   priority: 3
+  country: gb
 - name: Philosophy of Science (Journal)
   domain: journals.uchicago.edu
   rss_url: https://www.journals.uchicago.edu/rss/journal/philosophy-science
@@ -1899,6 +1911,7 @@ sources:
   tags:
   - geopolitical
   priority: 2
+  country: za
 - name: G7/G20 News
   domain: g7uk.com
   rss_url: https://www.g7uk.com/feed
@@ -1993,6 +2006,7 @@ sources:
   - legal
   - human-rights
   priority: 3
+  country: cr
 - name: UK Supreme Court News
   domain: supremecourt.uk
   rss_url: https://www.supremecourt.uk/feed
@@ -2047,6 +2061,7 @@ sources:
   tags:
   - regional
   priority: 3
+  country: br
 - name: Andina (Peru)
   domain: andina.pe
   country: pe
@@ -2088,6 +2103,7 @@ sources:
   tags:
   - general
   priority: 2
+  country: ru
 - name: Sputnik News
   domain: sputniknews.com
   rss_url: https://sputniknews.com/export/rss2/archive/index.xml
@@ -2120,6 +2136,7 @@ sources:
   tags:
   - general
   priority: 3
+  country: ru
 - name: RBC (RosBusinessConsulting)
   domain: rbc.ru
   rss_url: https://www.rbc.ru/eng/rss
@@ -2130,6 +2147,7 @@ sources:
   tags:
   - financial
   priority: 2
+  country: ru
 - name: The Asahi Shimbun (Japan)
   domain: asahi.com
   country: jp
@@ -2208,6 +2226,7 @@ sources:
   tags:
   - general
   priority: 2
+  country: au
 - name: Australian Financial Review
   domain: afr.com
   country: au
@@ -2229,6 +2248,7 @@ sources:
   tags:
   - general
   priority: 1
+  country: cn
 - name: Global Times
   domain: globaltimes.cn
   rss_url: https://www.globaltimes.cn/rss/global.xml
@@ -2239,6 +2259,7 @@ sources:
   tags:
   - geopolitical
   priority: 2
+  country: cn
 - name: China Daily
   domain: chinadaily.com.cn
   country: cn
@@ -3011,6 +3032,7 @@ sources:
   tags:
   - investigative
   priority: 2
+  country: es
 - name: Convoca (Peru)
   domain: convoca.pe
   country: pe
@@ -3086,6 +3108,7 @@ sources:
   tags:
   - investigative
   priority: 2
+  country: hu
 - name: KRIK (Serbia)
   domain: krik.rs
   country: rs
@@ -3775,6 +3798,7 @@ sources:
   tags:
   - analysis
   priority: 3
+  country: us
 - name: The Militant
   domain: themilitant.com
   rss_url: https://themilitant.com/feed/
@@ -3977,6 +4001,7 @@ sources:
   tags:
   - science
   priority: 2
+  country: ca
 - name: Fermilab News
   domain: news.fnal.gov
   rss_url: https://news.fnal.gov/feed/
@@ -4647,6 +4672,7 @@ sources:
   tags:
   - science
   priority: 2
+  country: gb
 - name: Psychology Today
   domain: psychologytoday.com
   rss_url: https://www.psychologytoday.com/rss
@@ -4697,6 +4723,7 @@ sources:
   tags:
   - science
   priority: 2
+  country: gb
 - name: Max Planck Institute for Human Cognitive and Brain Sciences
   domain: cbs.mpg.de
   rss_url: https://www.cbs.mpg.de/en/feed
@@ -4707,6 +4734,7 @@ sources:
   tags:
   - science
   priority: 1
+  country: de
 - name: Max Planck School of Cognition
   domain: cognition.maxplanckschools.org
   rss_url: https://cognition.maxplanckschools.org/en/feed
@@ -5502,6 +5530,7 @@ sources:
   tags:
   - policy
   priority: 2
+  country: ae
 - name: Al-Shabaka
   domain: al-shabaka.org
   rss_url: https://al-shabaka.org/feed
@@ -5532,6 +5561,7 @@ sources:
   tags:
   - policy
   priority: 2
+  country: za
 - name: Lowy Institute (Australia)
   domain: lowyinstitute.org
   country: au
@@ -5564,6 +5594,7 @@ sources:
   tags:
   - policy
   priority: 2
+  country: kr
 - name: FAO News
   domain: fao.org
   rss_url: https://www.fao.org/news/rss
@@ -6104,6 +6135,7 @@ sources:
   tags:
   - climate
   priority: 1
+  country: ch
 - name: NASA Climate Change
   domain: climate.nasa.gov
   rss_url: https://climate.nasa.gov/feed/
@@ -6454,6 +6486,7 @@ sources:
   tags:
   - climate
   priority: 2
+  country: de
 - name: National Oceanography Centre (NOC)
   domain: noc.ac.uk
   rss_url: https://noc.ac.uk/feed
@@ -6464,6 +6497,7 @@ sources:
   tags:
   - climate
   priority: 2
+  country: gb
 - name: National Snow and Ice Data Center (NSIDC)
   domain: nsidc.org
   rss_url: https://nsidc.org/feed
@@ -7404,6 +7438,7 @@ sources:
   tags:
   - quantum
   priority: 1
+  country: ca
 - name: QuTech (Delft)
   domain: qutech.nl
   rss_url: https://qutech.nl/feed
@@ -7414,6 +7449,7 @@ sources:
   tags:
   - quantum
   priority: 1
+  country: nl
 - name: Quantum Science Center
   domain: qscience.org
   rss_url: https://www.qscience.org/news/feed
@@ -10522,6 +10558,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: br
 - name: Valor Econômico - Economy
   domain: valor.globo.com
   rss_url: https://valor.globo.com/economia/rss
@@ -10562,6 +10599,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: br
 - name: Kommersant
   domain: kommersant.ru
   rss_url: https://www.kommersant.ru/RSS/main.xml
@@ -10573,6 +10611,7 @@ sources:
   tags:
   - brics
   priority: 1
+  country: ru
 - name: Rossiyskaya Gazeta
   domain: rg.ru
   rss_url: https://rg.ru/rss/news.xml
@@ -10583,6 +10622,7 @@ sources:
   tags:
   - brics
   priority: 1
+  country: ru
 - name: Meduza
   domain: meduza.io
   rss_url: https://meduza.io/rss/all
@@ -10637,6 +10677,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: ru
 - name: Vedomosti
   domain: vedomosti.ru
   rss_url: https://www.vedomosti.ru/rss/news.xml
@@ -10647,6 +10688,7 @@ sources:
   tags:
   - brics
   priority: 1
+  country: ru
 - name: Finam
   domain: finam.ru
   rss_url: https://www.finam.ru/rss
@@ -10657,6 +10699,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: ru
 - name: CNews (Russian IT News)
   domain: cnews.ru
   country: ru
@@ -10689,6 +10732,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: ru
 - name: Championat
   domain: championat.com
   rss_url: https://www.championat.com/rss
@@ -10765,6 +10809,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: in
 - name: Scroll.in
   domain: scroll.in
   rss_url: https://scroll.in/feed
@@ -10775,6 +10820,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: in
 - name: Firstpost
   domain: firstpost.com
   rss_url: https://www.firstpost.com/feed
@@ -10795,6 +10841,7 @@ sources:
   tags:
   - brics
   priority: 1
+  country: in
 - name: Prime Minister's Office (PMO) India
   domain: pmindia.gov.in
   country: in
@@ -10917,6 +10964,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: in
 - name: India Science Wire
   domain: indiasciencewire.com
   country: in
@@ -10970,6 +11018,7 @@ sources:
   tags:
   - brics
   priority: 1
+  country: za
 - name: The South African
   domain: thesouthafrican.com
   rss_url: https://www.thesouthafrican.com/feed/
@@ -11022,6 +11071,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: ru
 - name: Robotic Industries Association (RIA)
   domain: robotics.org
   rss_url: https://www.robotics.org/feed
@@ -11072,6 +11122,7 @@ sources:
   tags:
   - robotics
   priority: 2
+  country: de
 - name: Boston Dynamics
   domain: bostondynamics.com
   rss_url: https://www.bostondynamics.com/feed
@@ -11452,6 +11503,7 @@ sources:
   tags:
   - permaculture
   priority: 2
+  country: in
 - name: European Permaculture Network (EuPN)
   domain: eupn.org
   rss_url: https://eupn.org/feed
@@ -12076,6 +12128,7 @@ sources:
   tags:
   - healthcare
   priority: 2
+  country: gb
 - name: Euractiv - Health
   domain: euractiv.com
   rss_url: https://www.euractiv.com/section/health-consumers/feed
@@ -12817,6 +12870,7 @@ sources:
   tags:
   - iq
   priority: 2
+  country: us
 - name: AEON - Intelligence
   domain: aeon.co
   rss_url: https://aeon.co/tag/intelligence/feed
@@ -13177,6 +13231,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: au
 - name: Business History Review
   domain: hbs.edu
   rss_url: https://www.hbs.edu/bhr/feed
@@ -13338,6 +13393,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: fr
 - name: Smithsonian Institution
   domain: si.edu
   rss_url: https://www.si.edu/feed
@@ -13451,6 +13507,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: fr
 - name: American Historical Association
   domain: historians.org
   rss_url: https://www.historians.org/feed
@@ -13843,6 +13900,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: za
 - name: African Archaeological Review
   domain: link.springer.com
   rss_url: https://link.springer.com/journal/10437/rss
@@ -14059,6 +14117,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: fr
 - name: Conspiracy Watch
   domain: conspiracywatch.info
   rss_url: https://www.conspiracywatch.info/feed
@@ -14109,6 +14168,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: gb
 - name: ARCEP (Autorité de Régulation de la Communication Audiovisuelle et Numérique)
   domain: arcep.fr
   rss_url: https://www.arcep.fr/feed
@@ -14119,6 +14179,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: fr
 - name: CLEMI (Centre pour l'Éducation aux Médias et à l'Information)
   domain: clemi.fr
   rss_url: https://www.clemi.fr/feed
@@ -14129,6 +14190,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: fr
 - name: Reporters Sans Frontières (RSF) - Désinformation
   domain: rsf.org
   rss_url: https://rsf.org/fr/desinformation/feed
@@ -14149,6 +14211,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: be
 - name: RTBF - Vrai ou Faux
   domain: rtbf.be
   rss_url: https://www.rtbf.be/vrai-ou-faux/feed
@@ -14159,6 +14222,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: be
 - name: Fakt
   domain: fakt.be
   rss_url: https://www.fakt.be/feed
@@ -14169,6 +14233,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: be
 - name: Médor
   domain: medor.coop
   rss_url: https://www.medor.coop/feed
@@ -14189,6 +14254,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: ch
 - name: Le Temps - Vérifications
   domain: letemps.ch
   rss_url: https://www.letemps.ch/verifications/feed
@@ -14199,6 +14265,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: ch
 - name: International Fact-Checking Network (IFCN) - Poynter
   domain: ifcncodeofprinciples.poynter.org
   rss_url: https://ifcncodeofprinciples.poynter.org/feed
@@ -14389,6 +14456,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: es
 - name: Newtral
   domain: newtral.es
   rss_url: https://www.newtral.es/feed
@@ -14399,6 +14467,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: es
 - name: Verifica RTVE
   domain: rtve.es
   rss_url: https://www.rtve.es/verifica/feed
@@ -14409,6 +14478,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: es
 - name: 20 Minutos - Verificación
   domain: 20minutos.es
   rss_url: https://www.20minutos.es/verificacion/feed
@@ -14419,6 +14489,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: La Vanguardia - Verificación
   domain: lavanguardia.com
   rss_url: https://www.lavanguardia.com/verificacion/feed
@@ -14449,6 +14520,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: ar
 - name: La Nación - Verificación
   domain: lanacion.com.ar
   country: ar
@@ -14500,6 +14572,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: mx
 - name: ColombiaCheck
   domain: colombiacheck.com
   rss_url: https://colombiacheck.com/feed
@@ -14550,6 +14623,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: pe
 - name: Fast Check CL
   domain: fastcheck.cl
   rss_url: https://fastcheck.cl/feed
@@ -14560,6 +14634,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: cl
 - name: El Mostrador - Verificación
   domain: elmostrador.cl
   rss_url: https://www.elmostrador.cl/feed/
@@ -14570,6 +14645,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: cl
 - name: La Tercera - Verificación
   domain: latercera.com
   rss_url: https://www.latercera.com/arc/outboundfeeds/rss/
@@ -14680,6 +14756,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: at
 - name: Faktencheck der Tagesschau
   domain: faktencheck.tagesschau.de
   rss_url: https://faktencheck.tagesschau.de/feed
@@ -14690,6 +14767,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: de
 - name: ARD-Faktencheck
   domain: ard-faktencheck.de
   rss_url: https://www.ard-faktencheck.de/feed
@@ -14700,6 +14778,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: de
 - name: ZDFcheck
   domain: zdf.de
   rss_url: https://www.zdf.de/nachrichten/heute/zdfcheck-100.html/feed
@@ -14710,6 +14789,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: de
 - name: Faktencheck von BR
   domain: br.de
   rss_url: https://www.br.de/nachrichten/rss/nachrichten.xml
@@ -14720,6 +14800,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: de
 - name: NDR Faktencheck
   domain: ndr.de
   rss_url: https://www.ndr.de/home/index-rss.xml
@@ -14730,6 +14811,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: de
 - name: Volksverpetzer
   domain: volksverpetzer.de
   rss_url: https://www.volksverpetzer.de/feed
@@ -14740,6 +14822,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: de
 - name: Pagella Politica
   domain: pagellapolitica.it
   rss_url: https://pagellapolitica.it/feed
@@ -14750,6 +14833,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: it
 - name: Il Post - Fact Checking
   domain: ilpost.it
   rss_url: https://www.ilpost.it/feed/
@@ -14761,6 +14845,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: it
 - name: Fanpage.it - Bufale
   domain: fanpage.it
   rss_url: https://www.fanpage.it/feed/
@@ -14772,6 +14857,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: it
 - name: Butac
   domain: butac.it
   rss_url: https://www.butac.it/feed/
@@ -14782,6 +14868,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: it
 - name: Open - Fact Checking
   domain: open.online
   rss_url: https://www.open.online/feed/
@@ -14834,6 +14921,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: ru
 - name: Proekt - Fact Checking
   domain: proekt.media
   rss_url: https://www.proekt.media/feed/
@@ -14864,6 +14952,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: ru
 - name: TASS - Fact Checking
   domain: tass.ru
   rss_url: https://tass.ru/rss/v2.xml
@@ -14874,6 +14963,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: ru
 - name: Fatabyyano
   domain: fatabyyano.net
   rss_url: https://fatabyyano.net/en/feed
@@ -14904,6 +14994,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: eg
 - name: Al-Jazeera Fact Check (Arabic)
   domain: aljazeera.net
   rss_url: https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9
@@ -14924,6 +15015,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: in
 - name: Alt News
   domain: altnews.in
   rss_url: https://www.altnews.in/feed
@@ -14934,6 +15026,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: in
 - name: Fact Crescendo
   domain: factcrescendo.com
   rss_url: https://english.factcrescendo.com/feed/
@@ -14964,6 +15057,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: in
 - name: Factly
   domain: factly.in
   rss_url: https://factly.in/feed/
@@ -14974,6 +15068,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: in
 - name: Estadao Verifica
   domain: estadao.com.br
   country: br
@@ -14995,6 +15090,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: pt
 - name: Observador - Fact Check
   domain: observador.pt
   rss_url: https://observador.pt/feed/
@@ -15005,6 +15101,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: pt
 - name: NU.nl - Factcheck
   domain: nu.nl
   rss_url: https://www.nu.nl/factcheck/feed
@@ -15015,6 +15112,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: nl
 - name: Dutch News - Fact Check
   domain: dutchnews.nl
   country: nl
@@ -15036,6 +15134,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: nl
 - name: Faktisk
   domain: faktisk.no
   rss_url: https://faktisk.no/feed
@@ -15046,6 +15145,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: 'no'
 - name: Viralgranskaren
   domain: viralgranskaren.se
   rss_url: https://www.viralgranskaren.se/feed
@@ -15056,6 +15156,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: se
 - name: SVT Nyheter - Fact Check
   domain: svt.se
   rss_url: https://www.svt.se/nyheter/rss.xml
@@ -15066,6 +15167,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: se
 - name: Faktabaari
   domain: faktabaari.fi
   rss_url: https://www.faktabaari.fi/feed
@@ -15076,6 +15178,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: fi
 - name: Newstapa - Fact Check
   domain: newstapa.org
   rss_url: https://newstapa.org/feed
@@ -15106,6 +15209,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: tr
 - name: Mafindo (Masyarakat Anti Fitnah Indonesia)
   domain: mafindo.or.id
   country: id
@@ -15127,6 +15231,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: id
 - name: Demagog
   domain: demagog.org.pl
   rss_url: https://demagog.org.pl/feed
@@ -15137,6 +15242,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: pl
 - name: Telex - Fact Check
   domain: telex.hu
   rss_url: https://telex.hu/rss
@@ -15147,6 +15253,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: hu
 - name: Daily Maverick (South Africa)
   domain: dailymaverick.co.za
   rss_url: https://www.dailymaverick.co.za/dmrss/
@@ -17439,8 +17546,8 @@ sources:
   verified: false
   tags:
   - news
-  - be
   priority: 2
+  language: be
 - name: Belsat TV (Belarus)
   domain: belsat.eu
   rss_url: https://belsat.eu/en/feed/
@@ -18272,8 +18379,8 @@ sources:
   verified: false
   tags:
   - news
-  - lb
   priority: 2
+  language: lb
 - name: Delano (Luxembourg)
   domain: delano.lu
   rss_url: https://delano.lu/feed
@@ -21338,7 +21445,6 @@ sources:
   verified: false
   tags:
   - news
-  - cook-islands
   priority: 3
 - name: Coda Story
   domain: codastory.com
@@ -21405,6 +21511,7 @@ sources:
   tags:
   - investigative
   priority: 2
+  country: rs
 - name: EU DisinfoLab
   domain: disinfo.eu
   rss_url: https://www.disinfo.eu/feed/
@@ -21560,6 +21667,7 @@ sources:
   - osint
   - privacy
   priority: 1
+  country: ca
 - name: EFF Deeplinks
   domain: eff.org
   rss_url: https://www.eff.org/rss/updates.xml
@@ -22116,6 +22224,7 @@ sources:
   tags:
   - legal
   priority: 2
+  country: de
 - name: EJIL:Talk!
   domain: ejiltalk.org
   rss_url: https://www.ejiltalk.org/feed/
@@ -22310,8 +22419,8 @@ sources:
   verified: false
   tags:
   - news
-  - faroe-islands
   priority: 3
+  country: fo
 - name: Monaco Tribune
   domain: monaco-tribune.com
   rss_url: https://www.monaco-tribune.com/en/feed/
@@ -22874,8 +22983,8 @@ sources:
   verified: false
   tags:
   - news
-  - french-polynesia
   priority: 3
+  country: pf
 - name: Les Nouvelles Caledoniennes
   domain: lnc.nc
   rss_url: https://www.lnc.nc/rss
@@ -22886,8 +22995,8 @@ sources:
   verified: false
   tags:
   - news
-  - new-caledonia
   priority: 3
+  country: nc
 - name: Pacific Daily News (Guam)
   domain: guampdn.com
   country: gu
@@ -22899,7 +23008,6 @@ sources:
   verified: false
   tags:
   - news
-  - guam
   priority: 3
 - name: Marshall Islands Journal
   domain: marshallislandsjournal.com
@@ -22912,7 +23020,6 @@ sources:
   verified: false
   tags:
   - news
-  - marshall-islands
   priority: 3
 - name: Kaniva Tonga
   domain: kanivatonga.nz
@@ -22982,6 +23089,7 @@ sources:
   - open-source
   - technology
   priority: 2
+  country: gb
 - name: Hackaday
   domain: hackaday.com
   rss_url: https://hackaday.com/feed/
@@ -23773,8 +23881,8 @@ sources:
   verified: false
   tags:
   - news
-  - eu
   priority: 3
+  language: eu
 - name: il manifesto (Italy)
   domain: ilmanifesto.it
   rss_url: https://ilmanifesto.it/feed
@@ -24311,8 +24419,8 @@ sources:
   tags:
   - news
   - state-media
-  - pcm
   priority: 2
+  language: pcm
 - name: BBC Somali
   domain: bbc.com
   rss_url: https://feeds.bbci.co.uk/somali/rss.xml
@@ -24324,8 +24432,8 @@ sources:
   tags:
   - news
   - state-media
-  - so
   priority: 2
+  language: so
 - name: BBC Amharic
   domain: bbc.com
   rss_url: https://feeds.bbci.co.uk/amharic/rss.xml
@@ -24363,8 +24471,8 @@ sources:
   tags:
   - news
   - state-media
-  - ig
   priority: 2
+  language: ig
 - name: BBC Yoruba
   domain: bbc.com
   rss_url: https://feeds.bbci.co.uk/yoruba/rss.xml
@@ -24389,8 +24497,8 @@ sources:
   tags:
   - news
   - state-media
-  - rw
   priority: 2
+  language: rw
 - name: BBC Japanese
   domain: bbc.com
   rss_url: https://feeds.bbci.co.uk/japanese/rss.xml
@@ -25423,8 +25531,8 @@ sources:
   verified: false
   tags:
   - news
-  - yue
   priority: 2
+  language: yue
 - name: Sputnik International
   domain: sputnikglobe.com
   rss_url: https://sputnikglobe.com/export/rss2/archive/index.xml
@@ -27016,8 +27124,8 @@ sources:
   verified: false
   tags:
   - news
-  - saint-lucia
   priority: 3
+  country: lc
 - name: Antigua Observer
   domain: antiguaobserver.com
   rss_url: https://antiguaobserver.com/feed/
@@ -27028,8 +27136,8 @@ sources:
   verified: false
   tags:
   - news
-  - antigua-and-barbuda
   priority: 3
+  country: ag
 - name: Starnieuws (Suriname)
   domain: starnieuws.com
   rss_url: https://www.starnieuws.com/rss/rss.xml
@@ -29063,6 +29171,7 @@ sources:
   - open-source
   - technology
   priority: 3
+  country: ca
 - name: Dan Luu
   domain: danluu.com
   rss_url: https://danluu.com/atom.xml
@@ -29519,8 +29628,8 @@ sources:
   verified: false
   tags:
   - news
-  - saint-vincent-and-the-grenadines
   priority: 3
+  country: vc
 - name: The Royal Gazette (Bermuda)
   domain: royalgazette.com
   country: bm
@@ -29532,7 +29641,6 @@ sources:
   verified: false
   tags:
   - news
-  - bermuda
   priority: 3
 - name: La Razon (Spain)
   domain: larazon.es
@@ -29693,6 +29801,7 @@ sources:
   - open-source
   - technology
   priority: 2
+  country: rs
 - name: Wikimedia Diff
   domain: diff.wikimedia.org
   rss_url: https://diff.wikimedia.org/feed/
@@ -31574,9 +31683,9 @@ sources:
   rate_limit_ms: 2000
   enabled: true
   verified: false
-  tags:
-  - us
+  tags: []
   priority: 2
+  country: us
 - name: E&E News
   domain: eenews.net
   rss_url: ''
@@ -31584,9 +31693,9 @@ sources:
   rate_limit_ms: 2000
   enabled: true
   verified: false
-  tags:
-  - us
+  tags: []
   priority: 2
+  country: us
 - name: Lok Sabha
   domain: loksabha.nic.in
   rss_url: ''
@@ -31597,6 +31706,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: in
 - name: BRICS Business Forum
   domain: brics-business-forum.ru
   rss_url: ''
@@ -31607,6 +31717,7 @@ sources:
   tags:
   - brics
   priority: 2
+  country: ru
 - name: BRICS Investment Portal
   domain: brics-investment.com
   rss_url: ''
@@ -31657,6 +31768,7 @@ sources:
   tags:
   - robotics
   priority: 2
+  country: ch
 - name: University of California Berkeley - Robotics
   domain: www2.eecs.berkeley.edu
   rss_url: ''
@@ -31817,6 +31929,7 @@ sources:
   tags:
   - robotics
   priority: 2
+  country: ch
 - name: VEX Robotics
   domain: vexrobotics.com
   rss_url: ''
@@ -33009,6 +33122,7 @@ sources:
   tags:
   - iq
   priority: 2
+  country: ca
 - name: IQ and Culture
   domain: iqandculture.com
   rss_url: ''
@@ -33319,6 +33433,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: gb
 - name: Ministère de la Culture - History
   domain: culture.gouv.fr
   rss_url: ''
@@ -33329,6 +33444,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: fr
 - name: Deutsches Historisches Museum
   domain: dhm.de
   rss_url: ''
@@ -33339,6 +33455,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: de
 - name: Bundesarchiv (Federal Archive of Germany)
   domain: bundesarchiv.de
   country: de
@@ -33360,6 +33477,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: it
 - name: Istituto Luigi Sturzo - History
   domain: sturzo.it
   rss_url: ''
@@ -33370,6 +33488,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: it
 - name: Ministerio de Cultura y Deporte - History
   domain: culturaydeporte.gob.es
   rss_url: ''
@@ -33380,6 +33499,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: es
 - name: Organization of American Historians
   domain: oah.org
   rss_url: ''
@@ -33530,6 +33650,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: gb
 - name: The Freer|Sackler - Smithsonian
   domain: asia.si.edu
   rss_url: ''
@@ -33620,6 +33741,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: de
 - name: Sanskrit Literature
   domain: sanskritworld.in
   rss_url: ''
@@ -33630,6 +33752,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: in
 - name: HathiTrust - Asian History
   domain: catalog.hathitrust.org
   rss_url: ''
@@ -33660,6 +33783,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: jp
 - name: National Museum of China
   domain: en.chnmuseum.cn
   country: cn
@@ -33805,6 +33929,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: eg
 - name: Maghreb Historical Review
   domain: cairn.info
   rss_url: ''
@@ -34285,6 +34410,7 @@ sources:
   tags:
   - history
   priority: 2
+  country: sn
 - name: The Africa History Network
   domain: africahistorynetwork.com
   rss_url: ''
@@ -34596,6 +34722,7 @@ sources:
   tags:
   - ancient-history
   priority: 2
+  country: gr
 - name: The Capitoline Museums - Ancient Rome
   domain: en.museicapitolini.org
   rss_url: ''
@@ -34836,6 +34963,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: fr
 - name: Sciences Po - Médialab
   domain: medialab.sciencespo.fr
   rss_url: ''
@@ -34846,6 +34974,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: fr
 - name: INA (Institut National de l'Audiovisuel) - Vérification
   domain: ina.fr
   rss_url: ''
@@ -34856,6 +34985,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: fr
 - name: InVID Verification Plugin
   domain: invid-project.eu
   rss_url: ''
@@ -34926,6 +35056,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: fr
 - name: Ministère de l'Intérieur - Vérification des informations
   domain: interieur.gouv.fr
   rss_url: ''
@@ -34936,6 +35067,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: fr
 - name: Canopé - Éducation aux médias
   domain: reseau-canope.fr
   rss_url: ''
@@ -34946,6 +35078,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: fr
 - name: Lesite.tv - Désinformation
   domain: lesite.tv
   rss_url: ''
@@ -34987,6 +35120,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: be
 - name: Observatoire de l'Information et de la Désinformation (OID)
   domain: oid.be
   rss_url: ''
@@ -34997,6 +35131,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: be
 - name: 24 Heures - Vérifications
   domain: 24heures.ch
   rss_url: ''
@@ -35007,6 +35142,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: ch
 - name: Global Disinformation Index (GDI)
   domain: disinformationindex.org
   rss_url: ''
@@ -35067,6 +35203,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Fundación del Español Urgente (Fundéu RAE) - Desinformación
   domain: fundeu.es
   rss_url: ''
@@ -35077,6 +35214,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Asociación de la Prensa de Madrid - Verificación
   domain: apmadrid.es
   rss_url: ''
@@ -35087,6 +35225,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Federación de Asociaciones de la Prensa de España (FAPE)
   domain: fape.es
   rss_url: ''
@@ -35097,6 +35236,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Centro Nacional de Inteligencia (CNI) - Desinformación
   domain: cni.es
   rss_url: ''
@@ -35107,6 +35247,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Guardia Civil - Delitos de Odio y Desinformación
   domain: guardiacivil.es
   rss_url: ''
@@ -35117,6 +35258,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Fundación SM - Educación y Desinformación
   domain: fundacion-sm.org
   rss_url: ''
@@ -35157,6 +35299,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: mx
 - name: Quinto Poder - Verificación
   domain: quintopoder.mx
   rss_url: ''
@@ -35167,6 +35310,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: mx
 - name: Código Espagueti - Verificación
   domain: codigoespagueti.com
   rss_url: ''
@@ -35267,6 +35411,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Expansión - Verificación
   domain: expansion.mx
   rss_url: ''
@@ -35277,6 +35422,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: mx
 - name: Marca - Verificación
   domain: marca.com
   rss_url: ''
@@ -35337,6 +35483,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Twitter - Verificación en Español
   domain: help.twitter.com
   rss_url: ''
@@ -35367,6 +35514,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: de
 - name: Stiftung Warentest - Fake News
   domain: test.de
   rss_url: ''
@@ -35377,6 +35525,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: de
 - name: Hatespeech gegen Hatespeech
   domain: hatespeech-gegen-hatespeech.de
   rss_url: ''
@@ -35387,6 +35536,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: de
 - name: Jugendschutz.net
   domain: jugendschutz.net
   rss_url: ''
@@ -35407,6 +35557,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: de
 - name: Jiji Press Fact Check
   domain: jiji.com
   rss_url: ''
@@ -35427,6 +35578,7 @@ sources:
   tags:
   - fake-news
   priority: 1
+  country: jp
 - name: Yomiuri Shimbun Fact Check
   domain: yomiuri.co.jp
   rss_url: ''
@@ -35437,6 +35589,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: jp
 - name: University of Tokyo - Disinformation Research
   domain: u-tokyo.ac.jp
   rss_url: ''
@@ -35447,6 +35600,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: jp
 - name: Tencent Fact Check (腾讯辟谣)
   domain: view.inews.qq.com
   rss_url: ''
@@ -35507,6 +35661,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: nl
 - name: SNUFactCheck (Seoul National University)
   domain: snufactcheck.org
   rss_url: ''
@@ -35559,6 +35714,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: pl
 - name: Ministerio de Asuntos Exteriores, Unión Europea y Cooperación - Desinformación
   domain: exteriores.gob.es
   rss_url: ''
@@ -35569,6 +35725,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Centro de Investigación en Comunicación y Sociedad (CICOS) - Desinformación
   domain: cicos.uam.es
   rss_url: ''
@@ -35579,6 +35736,7 @@ sources:
   tags:
   - fake-news
   priority: 2
+  country: es
 - name: Union Nationale des Associations de Défense des Familles et de l'Individu (UNADFI) - Désinformation
   domain: unadfi.org
   rss_url: ''

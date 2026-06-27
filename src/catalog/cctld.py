@@ -8,9 +8,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 HONEST + CONSERVATIVE by design:
 - A ccTLD only counts when it reliably maps to one country. ccTLDs that are widely
-  *repurposed as generic* (``.io .co .me .ai .tv .cc .gg .ly .fm .sh .to .ws .st``)
-  are treated as **unknown** rather than mis-attributed (a ``.io`` site is almost
-  never British Indian Ocean Territory).
+  *repurposed as generic* (``.io .co .me .ai .tv .cc .gg .ly .fm .sh .to .ws .st
+  .is .ec .la``) are treated as **unknown** rather than mis-attributed (a ``.io``
+  site is almost never British Indian Ocean Territory; ``who.is`` is not Icelandic).
 - Generic gTLDs (``.com .org .net .info .news`` …) yield ``None`` — we don't guess.
 - Language is inferred only for ccTLDs with a single dominant language; multilingual
   countries (``.ch .be .ca .in .za .sg`` …) yield ``None``.
@@ -45,6 +45,9 @@ GENERIC_CCTLDS: frozenset[str] = frozenset(
         "ag",
         "im",
         "je",
+        "is",  # repurposed: who.is and other "...is" hacks, not Iceland
+        "ec",  # repurposed: "etc"/e-commerce hacks, not Ecuador
+        "la",  # repurposed: "LA"/"...la" hacks (dp.la), not Laos
     ]
 )
 
