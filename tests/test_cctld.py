@@ -15,6 +15,9 @@ def test_infer_country_generic_and_unknown_are_none():
     assert infer_country("example.com") is None  # gTLD
     assert infer_country("startup.io") is None  # repurposed-generic ccTLD
     assert infer_country("blog.co") is None  # repurposed-generic ccTLD
+    assert infer_country("who.is") is None  # repurposed: "...is" hack, not Iceland
+    assert infer_country("quantum-internet.ec") is None  # repurposed, not Ecuador
+    assert infer_country("dp.la") is None  # repurposed: "LA", not Laos
     assert infer_country("") is None
     assert infer_country(None) is None
 
