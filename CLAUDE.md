@@ -657,6 +657,33 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (deletion PRs risk conflicts in `app.js`/locales). ACCEPTANCE for the eventual pass: `node --check` +
   the absorbed capabilities still work (the Desk lesson — the temporal map's features survive in ooMap)
   + the relevant tests green; resolve locale conflicts ADDITIVELY.
+- **CONTENT-PROVENANCE CLASS — descriptive ingestion-channel metadata (maintainer concept 2026-06-26;
+  DESIGN-ONLY, full record in `docs/FUTURE_DEVELOPMENTS.md` → "Content-provenance class"):** classify
+  each item by WHAT KIND of content/channel it is (newsletter · web-article · wiki · official-statistic ·
+  law · market · discovery). It is the cleanest metadata to add because it is an ASSERTED FACT known by
+  construction (the ingest path knows the channel) → no classifier, no fabrication; and it is
+  DESCRIPTIVE, never a quality/credibility score ("newsletter" = a channel, not "less reliable") — so it
+  fits the no-score / no-fabricated-metadata non-negotiables. Corroborated by the keyword-engine IR
+  research (Aleph/Datashare make content TYPE a primary facet; strategy P4 faceted retrieval). STATE +
+  GAP (code-verified): `Source.source_type` (indexed `String(50)`, no constraint) ALREADY exists + is
+  used (stats="statistics", `api/stats.py:404`) but is INCONSISTENT — the newsletter source is created
+  with no `source_type` so it defaults to "news" (`api/ingestion.py:181`) = newsletters mislabeled as
+  news. SLICES: S1 enrich `source_type` into a controlled vocab + populate per ingestion path +
+  deterministic backfill from the source domain (no migration; fixes the mislabel; `idx_source_type`
+  makes the facet fast) → S2 expose as a facet (fold into the keyword-engine P4 facet track) → S3
+  reading-diet-BY-TYPE (extend `analytics/concentration.py`) → (later, gated) a denormalized per-article
+  `provenance_class` column only if a join proves slow. Tier-2 (a DEDUCED content GENRE from text) is a
+  SEPARATE, labelled, later layer — never conflated with the asserted Tier-1 channel class.
+  **BACKWARD-COMPAT (maintainer asked, code-verified): NO break.** S1 is schema-neutral — `source_type`
+  is already carried by the additive-restore merge (`backup/merge.py:320-324`) + the file backup; only
+  values change; old↔new both safe; a differing type on an existing domain is a REPORTED conflict
+  (local wins), never corruption. The optional later per-article column follows the proven
+  additive-nullable-column + migration + boot-self-heal + deterministic-backfill pattern (like
+  detected_language/sentiment) + one line in `_merge_articles`' explicit column map; the ONE
+  verify-before-build = the staged-upgrade migrates an OLDER incoming backup to head BEFORE the merge
+  SELECTs the new column (the shipped cross-version restore floor / RC-gate T4 already does this —
+  confirm). Export (CSV/JSON envelope) = additive, unknown-field-tolerant, no break. OPEN Qs: exact
+  vocab; defer the per-article column (recommended yes); fold S1-S3 into P4 (recommended yes).
 - **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
   research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed
