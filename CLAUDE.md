@@ -686,8 +686,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   move on a fixture corpus, recall unchanged + ndcg moved) + the test_ir_eval_harness_is_wired invariant.
   VERIFIED here: 14 goldset/ir-eval/bm25f + 146 invariants + 23 search green, ruff F/B, mypy 127≤127, JSON
   valid. REMAINING (operational, maintainer): produce a real graded gold set over the live corpus + run the
-  A/B to pick the BM25F default on evidence; an optional in-app endpoint to run it from a server-side
-  gold-set path (deferred — the library + template ship now). NEXT: P5.2 (static-embedding recall layer, gated on the P3 gold-set pilot) ·
+  A/B to pick the BM25F default on evidence.) **P3 IN-APP ENDPOINT SHIPPED (follow-up; new PR; closes the
+  loop end-to-end)** — the deferred in-app surface: `GET /api/diagnostics/ir-eval?gold_path=&weights_a=&
+  weights_b=&k=` loads a SERVER-SIDE gold-set file (`load_gold_set`) and either scores the live search at
+  the current BM25F default (`evaluate_against_corpus`) or A/Bs two (title,body) weight sets
+  (`bm25f_weight_ab` → `conflation_delta`, recall/precision/ndcg SEPARATELY, no blended score). 400 on a
+  missing/malformed gold set OR half-specified weights (both-or-neither), via GoldSetError/ValueError →
+  HTTPException — never a silent skip. Mirrors the existing diagnostics endpoints (keyword-engine /
+  selftest / ir-eval-selftest): GET + `download=1` dated attachment. Server-side path input is the
+  established local-single-user pattern (folder-backup / dump-reader). So the measure-before-trust loop is
+  now COMPLETE in-app: format (template) → loader → endpoint → report; only the maintainer's GRADED gold-set
+  DATA is still outstanding (corpus-specific, can't be bundled). tests/test_ir_eval_goldset.py (+1: the
+  endpoint single-eval + the BM25F A/B [title-heavy beats body-heavy = negative ndcg_delta] + 400 on
+  missing-file + 400 on half-specified weights) + the ir-eval invariant extended. VERIFIED here: 150
+  goldset/invariants + 5 diagnostics green, ruff F/B, mypy 127≤127. NOT a task-manager job (a bounded
+  read-only eval; the long-fetch job pattern is for network/IO jobs). REMAINING: a Diagnostics-panel
+  BUTTON+path-input (deferred, browser-unverified — the maintainer can curl it now, like other diagnostics;
+  nothing to run until a gold set exists). NEXT: P5.2 (static-embedding recall layer, gated on the P3 gold-set pilot) ·
   the in-memory P2 rollups (optional groundwork; persisted blocked on httpfs bundling) · P6 (entity→QID,
   operational/networked).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a

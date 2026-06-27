@@ -341,6 +341,10 @@ def test_ir_eval_harness_is_wired():
     assert (_SRC.parent / "configs" / "ir_eval" / "gold_set.example.json").exists(), (
         "a bundled gold-set TEMPLATE must ship so the maintainer has the format"
     )
+    # the IN-APP path: a diagnostics endpoint runs the gold-set eval / BM25F A/B
+    assert '/ir-eval"' in api and "load_gold_set" in api and "bm25f_weight_ab" in api, (
+        "an /api/diagnostics/ir-eval endpoint must run the gold-set eval in-app (P3 operational)"
+    )
 
 
 def test_bm25f_per_column_ranking_is_wired():
