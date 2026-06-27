@@ -1502,6 +1502,13 @@
         <button class="secondary" onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Debug bundle (.json)</button>
       </div>
       <div class="row" style="margin-top:6px">
+        <input id="ir-eval-path" type="text" style="min-width:280px" placeholder="gold-set file path (see configs/ir_eval/gold_set.example.json)">
+        <input id="ir-eval-wa" type="text" style="width:120px" placeholder="weights A e.g. 4,1">
+        <input id="ir-eval-wb" type="text" style="width:120px" placeholder="weights B e.g. 1,1">
+        <button class="secondary" onclick="runIrEval()" title="Run the IR retrieval-eval over a human-judged gold set (queries with documents graded 0/1/2; template at configs/ir_eval/gold_set.example.json). Leave the weight boxes empty to score the current BM25F ranking; fill BOTH to A/B two (title,body) weight sets via the conflation delta. Measure-before-trust; metrics only, no score.">Run IR eval over a gold set</button>
+      </div>
+      <div class="hint">The IR retrieval-eval scores the live search against a human-judged gold set — queries with documents graded 0/1/2 (copy the template at configs/ir_eval/gold_set.example.json and fill in your own article ids). With both weight boxes filled it A/Bs two BM25F (title,body) weight sets and reports the recall / precision / nDCG change separately, so the ranking default is chosen on evidence rather than guessed. Per-language, n always stated, never a composite score.</div>
+      <div class="row" style="margin-top:6px">
         <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
         <button class="secondary" onclick="reindexAllCorpus(this)">Re-index the whole corpus</button>
         <button class="secondary" onclick="pruneKeywords(this)">Prune unused keywords</button>
