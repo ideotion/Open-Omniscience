@@ -150,7 +150,19 @@ then read:
   head, thin on the tail.
 - The module is pure/testable (build query + parse JSON); only the HTTP call needs
   network (run on a connected machine / the maintainer's box, like the catalog
-  builder). *Status: designed here; recommended build after Strategy 1.*
+  builder). *Status: **BUILT** (2026-06-27). `src/catalog/wikidata_enrich.py` (pure,
+  fixture-tested) + `scripts/enrich_sources_wikidata.py` (the networked fetch).*
+  - v1 scope = **`source_type`** (only 2% covered today) via P31 instance-of, plus
+    a `wire-agency` ownership tag. **Anti-fabrication gate**: a name search is
+    accepted only when the candidate's official website (P856) resolves to the same
+    registrable domain as the source — a wrong hit yields nothing, never a wrong
+    type. The P31→type map is deliberately limited to QIDs verified in the repo's
+    own `catalog_query.yml` (+ the stable scientific-journal class); extend it on the
+    networked run after confirming each class QID, since the gate guards the entity,
+    not the mapping. Output rows feed `merge_enrichment_results.py` unchanged.
+  - Deferred (honestly): lean (Wikidata has none), fine topics (subject/genre QIDs
+    map noisily without label resolution → Strategies 1/4), country/language (ccTLD
+    + catalog already cover them).
 
 ### Strategy 3 — Deterministic cleanup + heuristics (LOCAL, zero-network) ★ quick win
 - Migrate the leaked code/territory tags (§1) into `country`/`language` and drop
@@ -277,9 +289,9 @@ and they are candidates for *removal* from the catalog, a separate cleanup.
 ---
 
 ## 6. Recommended sequencing
-1. Deterministic cleanup (Strategy 3) — quick, removes the leaked-code noise. *(build)*
-2. Corpus topic fingerprints (Strategy 1) — local, self-improving, on-mission. *(build)*
-3. Wikidata reconciliation (Strategy 2) — deterministic head coverage. *(build, networked)*
+1. Deterministic cleanup (Strategy 3) — **SHIPPED** (PR #498): leaked-tag migration + ccTLD backfill.
+2. Wikidata reconciliation (Strategy 2) — **BUILT**: `source_type` coverage; run the fetch on a networked box.
+3. Corpus topic fingerprints (Strategy 1) — local, self-improving, on-mission. *(recommended next build)*
 4. LLM parallel sessions (Strategy 4) — the residual + lean/ownership. *(tooling delivered — run now)*
 5. External datasets (Strategy 5) — optional, licence-gated. *(deferred)*
 
