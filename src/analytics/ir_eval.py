@@ -34,10 +34,12 @@ a fixture so a regression in the harness reddens immediately.
 
 from __future__ import annotations
 
+import json
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 
 _METRICS = ("ndcg", "mrr", "recall", "precision", "ap")
 
@@ -236,6 +238,97 @@ def evaluate_against_corpus(session, gold: list[GoldQuery], *, k: int = 10, sear
 
     results = {g.id: list(search_fn(g.query) or []) for g in gold}
     return evaluate(results, gold, k=k)
+
+
+# --------------------------------------------------------------------------- #
+# Gold-set file loader + a one-call BM25F weight A/B — the OPERATIONAL path that
+# lets the maintainer feed their graded queries in (the harness was a mechanism
+# with no documented input format before this).
+# --------------------------------------------------------------------------- #
+class GoldSetError(ValueError):
+    """A gold-set file is malformed (so the harness fails loudly, never silently)."""
+
+
+def load_gold_set(path) -> list[GoldQuery]:
+    """Load a human-judged gold set from a JSON file into ``[GoldQuery]``.
+
+    Format (see ``configs/ir_eval/gold_set.example.json``)::
+
+        {"queries": [
+            {"id": "q1", "query": "inflation", "language": "en", "axis": "topic",
+             "relevances": {"123": 2, "456": 1, "789": 0}}
+        ]}
+
+    ``relevances`` maps a document id (the article id, as a string or int key) to a GRADED
+    relevance 0/1/2 (0 irrelevant · 1 relevant · 2 highly relevant). ``language``/``axis``
+    default to ``en``/``topic``. Doc-id keys are normalised to ``str`` so they compare
+    equal regardless of how the search returns ids. Raises ``GoldSetError`` (never a silent
+    skip) on a missing file or a structurally invalid entry — a wrong gold set must be loud."""
+    p = Path(path)
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise GoldSetError(f"gold set not found: {p}") from exc
+    except json.JSONDecodeError as exc:
+        raise GoldSetError(f"gold set is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("queries"), list):
+        raise GoldSetError("gold set must be an object with a 'queries' list")
+    out: list[GoldQuery] = []
+    seen: set[str] = set()
+    for i, q in enumerate(data["queries"]):
+        if not isinstance(q, dict):
+            raise GoldSetError(f"query #{i} is not an object")
+        qid = str(q.get("id") or "").strip()
+        text_ = str(q.get("query") or "").strip()
+        if not qid or not text_:
+            raise GoldSetError(f"query #{i} needs a non-empty 'id' and 'query'")
+        if qid in seen:
+            raise GoldSetError(f"duplicate query id {qid!r}")
+        seen.add(qid)
+        rel_in = q.get("relevances") or {}
+        if not isinstance(rel_in, dict):
+            raise GoldSetError(f"query {qid!r}: 'relevances' must be an object")
+        rel: dict[str, int] = {}
+        for doc, grade in rel_in.items():
+            if not isinstance(grade, int) or grade not in (0, 1, 2):
+                raise GoldSetError(f"query {qid!r}: grade for {doc!r} must be 0, 1 or 2")
+            rel[str(doc)] = grade
+        out.append(GoldQuery(qid, text_, str(q.get("language") or "en"),
+                             str(q.get("axis") or "topic"), rel))
+    if not out:
+        raise GoldSetError("gold set has no queries")
+    return out
+
+
+def bm25f_weight_ab(
+    session, gold: list[GoldQuery], *, weights_a: tuple[float, float],
+    weights_b: tuple[float, float], k: int = 10,
+) -> dict:
+    """A/B two BM25F weight settings (title, body) over a gold set on the LIVE corpus —
+    the operational loop for tuning the P5.1 weights against a maintainer's own judgements.
+    Returns each side's full report PLUS the :func:`conflation_delta` (recall/precision/ndcg
+    reported SEPARATELY, with the docs each setting newly surfaced). Doc ids are stringified
+    so they compare against the gold set's string keys. No composite score."""
+    from src.database.fts import search_ids
+
+    def _run(weights: tuple[float, float]) -> dict:
+        return {
+            g.id: [str(d) for d in (search_ids(session, g.query, limit=max(k, 50), weights=weights) or [])]
+            for g in gold
+        }
+    results_a = _run(weights_a)
+    results_b = _run(weights_b)
+    return {
+        "weights_a": list(weights_a),
+        "weights_b": list(weights_b),
+        "a": evaluate(results_a, gold, k=k),
+        "b": evaluate(results_b, gold, k=k),
+        "delta": conflation_delta(results_a, results_b, gold, k=k),
+        "method": (
+            "Live FTS search over the gold set with two BM25F (title, body) weight sets; "
+            "A->B reported as separate recall/precision/ndcg deltas, never a blended score."
+        ),
+    }
 
 
 # --------------------------------------------------------------------------- #

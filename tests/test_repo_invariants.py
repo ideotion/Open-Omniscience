@@ -332,6 +332,15 @@ def test_ir_eval_harness_is_wired():
     assert "by_language" in ev and "recall_delta" in ev and "precision_delta" in ev
     api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     assert "/ir-eval-selftest" in api and "run_ir_eval_selftest" in api
+    # the OPERATIONAL input path: a documented gold-set FILE loader + a one-call BM25F A/B,
+    # so the maintainer can feed graded queries in (the harness was a mechanism without one).
+    assert "def load_gold_set(" in ev and "def bm25f_weight_ab(" in ev
+    assert "class GoldSetError" in ev  # a malformed gold set fails loudly, never silently
+    fts = (_SRC / "database" / "fts.py").read_text(encoding="utf-8")
+    assert "weights:" in fts, "search_ids needs a thread-safe per-call weights override for the A/B"
+    assert (_SRC.parent / "configs" / "ir_eval" / "gold_set.example.json").exists(), (
+        "a bundled gold-set TEMPLATE must ship so the maintainer has the format"
+    )
 
 
 def test_bm25f_per_column_ranking_is_wired():
