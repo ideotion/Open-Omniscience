@@ -33,6 +33,20 @@ def test_who_vs_who_is_guarded_and_passes():
     assert who["status"] == "pass", who["detail"]
 
 
+def test_lemmatization_mechanism_case_present_and_passes_when_available():
+    # P4.3: the lemma mechanism (study<-studied) + denylist (media!->medium) is a golden
+    # case when the optional simplemma is installed (CI [analysis] + the maintainer's export);
+    # a core install simply omits it (the feature no-ops there), never a failure.
+    from src.analytics.families import _simplemma
+
+    cases = {c["id"]: c for c in run_keyword_selftest()["cases"]}
+    if _simplemma is None:
+        assert "lemmatization_mechanism" not in cases
+    else:
+        lm = cases.get("lemmatization_mechanism")
+        assert lm is not None and lm["status"] == "pass", lm and lm["detail"]
+
+
 def test_runner_detects_a_deliberate_failure():
     # "markets" is a term, not an entity — a bogus entity expectation must FAIL,
     # proving the harness really checks (a green run is not vacuous).

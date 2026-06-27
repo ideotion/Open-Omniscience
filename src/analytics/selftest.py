@@ -429,6 +429,32 @@ def _check_structural() -> list[dict]:
             [] if tags == want else [f"expected {want}, got {tags}"],
         )
     )
+
+    # 4) OPT-IN lemmatization mechanism (P4.3): the lemmatizer conflates a morphological
+    # variant (studied -> study) a plural heuristic misses, and the mislemma denylist
+    # blocks a meaning-changer (media !-> medium). Checked DIRECTLY on _lemma() — no env
+    # toggle, thread-safe in the live process — and only when the optional simplemma is
+    # present (a core install simply omits this case; the feature is a no-op there).
+    from src.analytics.families import _lemma, _simplemma
+
+    if _simplemma is not None:
+        lemma_fails: list[str] = []
+        for word, lg, want_lemma in (("studied", "en", "study"), ("running", "en", "run"),
+                                     ("Wahlen", "de", "wahl")):
+            got = _lemma(word, lg)
+            if got != want_lemma:
+                lemma_fails.append(f"{word!r} ({lg}) -> {got!r}, expected {want_lemma!r}")
+        for word in ("media", "data"):  # denylisted meaning-changers must stay unchanged
+            if _lemma(word, "en") != word:
+                lemma_fails.append(f"{word!r} is denylisted; must not lemmatize, got {_lemma(word, 'en')!r}")
+        out.append(
+            _result(
+                "lemmatization_mechanism",
+                "simplemma conflates study<-studied/running and the denylist blocks media!->medium",
+                lemma_fails,
+                "multi",
+            )
+        )
     return out
 
 

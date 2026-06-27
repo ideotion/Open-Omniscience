@@ -114,6 +114,40 @@ def test_extraction_noise_flags_code_tokens():
     assert "a-10c" in ex and "gd_combo_table" in ex and "elections" not in ex
 
 
+def test_lemma_preview_surfaces_candidate_conflations():
+    """P4.3 measurability: the report previews what OPT-IN lemmatization WOULD merge among
+    the top terms (study/studied -> study), so the maintainer reviews precision before
+    enabling OO_FAMILY_LEMMA. Denylisted meaning-changers (media/medium) must NOT appear,
+    and there is no score. Degrades honestly (available:false) without simplemma."""
+    from src.analytics.families import _simplemma
+
+    s = _sess()
+    s.add(Source(name="Src", domain="s.test"))
+    s.flush()
+    a = Article(
+        url="https://s.test/2", canonical_url="https://s.test/2", source_id=1,
+        title="t", content="A study. They studied. Media and medium.", hash="h2",
+    )
+    s.add(a)
+    s.flush()
+    kws = [_kw(s, "study", "study"), _kw(s, "studied", "studied"), _kw(s, "widget", "widget"),
+           _kw(s, "media", "media"), _kw(s, "medium", "medium")]
+    for k in kws:
+        s.add(KeywordMention(keyword_id=k.id, article_id=a.id, count=3, observed_on=date.today()))
+    s.commit()
+
+    lp = keyword_engine_report(s, top_n=50, sample_articles=1)["lemma_preview"]
+    assert "score" not in lp  # counts only, never a score
+    if _simplemma is None:
+        assert lp["available"] is False
+        return
+    assert lp["available"] is True and "enabled" in lp
+    member_sets = {tuple(g["members"]) for g in lp["examples"]}  # members are sorted
+    assert ("studied", "study") in member_sets  # the verb form a plural rule would miss
+    # the denylist holds: media/medium never appear as a would-merge candidate
+    assert all("media" not in g["members"] and "medium" not in g["members"] for g in lp["examples"])
+
+
 def test_language_status_is_honest():
     assert _lang_status("zh") == "unsegmented" and _lang_status("ja") == "unsegmented"
     assert _lang_status("en") == "functional" and _lang_status("ru") == "functional"
