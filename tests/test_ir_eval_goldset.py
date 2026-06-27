@@ -16,6 +16,7 @@ import json
 from datetime import UTC, datetime
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -108,3 +109,47 @@ def test_bm25f_weight_ab_measures_a_ranking_change():
         # recall is unchanged (both docs are found by both weightings) -- reported separately
         assert out["delta"]["recall_delta"] == 0
         assert "score" not in out  # no composite score
+
+
+def test_ir_eval_endpoint_runs_over_a_gold_set_file(tmp_path):
+    """The in-app path: GET /api/diagnostics/ir-eval loads a server-side gold-set file +
+    scores the live search (and A/Bs BM25F weights), so the maintainer runs the whole
+    measure-before-trust loop in-app. 400 on a missing/malformed gold set or half-specified
+    weights -- never a silent skip."""
+    from src.api.main import app
+    from src.database.session import get_db
+
+    Session = _corpus()
+    with Session() as s:
+        title_id = _add(s, "t1", "Inflation report", "general coverage of markets and trade")
+        body_id = _add(s, "b1", "Markets report", "a long body that mentions inflation once here")
+        s.commit()
+    gold_file = tmp_path / "gold.json"
+    gold_file.write_text(json.dumps({"queries": [
+        {"id": "q", "query": "inflation", "relevances": {str(title_id): 2, str(body_id): 1}}
+    ]}), encoding="utf-8")
+
+    def _override():
+        d = Session()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _override
+    try:
+        with TestClient(app) as client:
+            # single-config eval at the current default
+            r = client.get("/api/diagnostics/ir-eval", params={"gold_path": str(gold_file)})
+            assert r.status_code == 200 and r.json()["result"]["schema"] == "oo-ir-eval-1"
+            # BM25F A/B: title-heavy beats body-heavy -> a negative A->B ndcg delta
+            ab = client.get("/api/diagnostics/ir-eval", params={
+                "gold_path": str(gold_file), "weights_a": "10,1", "weights_b": "1,10"}).json()
+            assert ab["result"]["delta"]["ndcg_delta"] < 0
+            # malformed inputs are loud 400s, never silent
+            assert client.get("/api/diagnostics/ir-eval",
+                              params={"gold_path": str(tmp_path / "nope.json")}).status_code == 400
+            assert client.get("/api/diagnostics/ir-eval", params={
+                "gold_path": str(gold_file), "weights_a": "10,1"}).status_code == 400  # half-specified
+    finally:
+        app.dependency_overrides.pop(get_db, None)

@@ -859,6 +859,60 @@ def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/ir-eval")
+def ir_eval(
+    gold_path: str = Query(..., description="server-side path to a JSON gold set"),
+    weights_a: str | None = Query(None, description="BM25F (title,body) weights A, e.g. '1,1'"),
+    weights_b: str | None = Query(None, description="BM25F (title,body) weights B, e.g. '4,1'"),
+    k: int = Query(10, ge=1, le=100),
+    download: bool = Query(False),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Run the IR retrieval-eval over a human-judged GOLD SET file (the measure-before-trust
+    loop, keyword-engine P3) — the in-app path that consumes what the library + template
+    (``configs/ir_eval/gold_set.example.json``) make.
+
+    Without weights it scores the LIVE search at the current BM25F default. With BOTH
+    ``weights_a`` and ``weights_b`` it A/Bs two (title,body) weight sets via
+    ``conflation_delta`` (recall/precision/ndcg reported SEPARATELY, no blended score), so
+    the P5.1 default can be chosen on evidence. The gold set is corpus-specific + graded
+    0/1/2; ``400`` on a missing/malformed gold set or bad weights (never a silent skip).
+    ``download=1`` returns a dated attachment to send back."""
+    from src.analytics.ir_eval import (
+        GoldSetError,
+        bm25f_weight_ab,
+        evaluate_against_corpus,
+        load_gold_set,
+    )
+
+    def _weights(spec: str) -> tuple[float, float]:
+        parts = [p.strip() for p in spec.split(",")]
+        if len(parts) != 2:
+            raise ValueError("weights must be 'title,body' (two numbers)")
+        return (float(parts[0]), float(parts[1]))
+
+    try:
+        gold = load_gold_set(gold_path)
+        if weights_a and weights_b:
+            out = bm25f_weight_ab(db, gold, weights_a=_weights(weights_a),
+                                  weights_b=_weights(weights_b), k=k)
+        elif weights_a or weights_b:
+            raise ValueError("provide BOTH weights_a and weights_b to A/B, or neither")
+        else:
+            out = evaluate_against_corpus(db, gold, k=k)
+    except GoldSetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"bad weights: {exc}") from exc
+
+    payload = {"kind": "ir-eval", "n_queries": len(gold), "k": k, "result": out}
+    headers = {}
+    if download:
+        fname = f"oo-ir-eval-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(payload, headers=headers)
+
+
 @router.get("/home-cards")
 def home_card_diagnostics(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """Home-card (Lead) CLICK diagnostics (field report 2026-06-22): for every card the
