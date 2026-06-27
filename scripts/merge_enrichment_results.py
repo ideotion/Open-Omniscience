@@ -121,10 +121,10 @@ def merge(
         src["tags"] = existing
         # source_type: set only if missing/default
         new_type = str(r.get("source_type") or "").strip().lower()
-        if new_type and (not src.get("source_type") or src.get("source_type") == "news"):
-            if src.get("source_type") != new_type:
-                src["source_type"] = new_type
-                stats["type_set"] += 1
+        cur_type = src.get("source_type")
+        if new_type and new_type != cur_type and (not cur_type or cur_type == "news"):
+            src["source_type"] = new_type
+            stats["type_set"] += 1
         # country / language: fill only when absent
         cc = str(r.get("country") or "").strip().lower()
         if cc and len(cc) == 2 and not src.get("country"):
