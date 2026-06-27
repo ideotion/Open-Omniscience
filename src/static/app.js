@@ -7522,6 +7522,25 @@
       } finally { if (btn) btn.disabled = false; }
     }
 
+    // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
+    // /api/diagnostics/ir-eval report for a gold-set FILE — score the live search at the
+    // current BM25F default, or (both weight boxes filled) A/B two (title,body) weight
+    // sets via the conflation delta. Measure-before-trust; metrics only, no score. The
+    // endpoint 400s on a missing/malformed gold set or half-specified weights.
+    function runIrEval() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const path = (($("ir-eval-path") && $("ir-eval-path").value) || "").trim();
+      if (!path) {
+        if (typeof toast === "function") toast(t("Enter the gold-set file path first."));
+        return;
+      }
+      const wa = (($("ir-eval-wa") && $("ir-eval-wa").value) || "").trim();
+      const wb = (($("ir-eval-wb") && $("ir-eval-wb").value) || "").trim();
+      const p = new URLSearchParams({gold_path: path});
+      if (wa && wb) { p.set("weights_a", wa); p.set("weights_b", wb); }
+      window.open("/api/diagnostics/ir-eval?" + p.toString(), "_blank");
+    }
+
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
     // openCorpus is RETIRED here (THEME-3, 2026-06-19): the legacy #corpus-win keyword

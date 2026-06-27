@@ -345,6 +345,13 @@ def test_ir_eval_harness_is_wired():
     assert '/ir-eval"' in api and "load_gold_set" in api and "bm25f_weight_ab" in api, (
         "an /api/diagnostics/ir-eval endpoint must run the gold-set eval in-app (P3 operational)"
     )
+    # the Diagnostics-panel control that drives it (path + optional A/B weights -> a click)
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id="ir-eval-path"' in html and "runIrEval(" in html, (
+        "the Diagnostics panel must wire the IR-eval gold-set control"
+    )
+    assert "function runIrEval(" in appjs and "/api/diagnostics/ir-eval?" in appjs
 
 
 def test_bm25f_per_column_ranking_is_wired():

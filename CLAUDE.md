@@ -700,11 +700,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   endpoint single-eval + the BM25F A/B [title-heavy beats body-heavy = negative ndcg_delta] + 400 on
   missing-file + 400 on half-specified weights) + the ir-eval invariant extended. VERIFIED here: 150
   goldset/invariants + 5 diagnostics green, ruff F/B, mypy 127≤127. NOT a task-manager job (a bounded
-  read-only eval; the long-fetch job pattern is for network/IO jobs). REMAINING: a Diagnostics-panel
-  BUTTON+path-input (deferred, browser-unverified — the maintainer can curl it now, like other diagnostics;
-  nothing to run until a gold set exists). NEXT: P5.2 (static-embedding recall layer, gated on the P3 gold-set pilot) ·
-  the in-memory P2 rollups (optional groundwork; persisted blocked on httpfs bundling) · P6 (entity→QID,
-  operational/networked).
+  read-only eval; the long-fetch job pattern is for network/IO jobs).) **P3 DIAGNOSTICS-PANEL BUTTON
+  SHIPPED (follow-up; new PR; frontend, BROWSER-UNVERIFIED per fork-3)** — the deferred in-app control: the
+  Settings → Diagnostics-log panel gains a gold-set-path input + two optional BM25F weight boxes + a "Run
+  IR eval over a gold set" button → `runIrEval()` opens `/api/diagnostics/ir-eval?gold_path=&weights_a=&
+  weights_b=` (the #500 endpoint) — empty weights = score the current default, BOTH filled = the A/B. So
+  the maintainer runs the whole measure-before-trust loop with a CLICK, not curl. English-fallback via the
+  un-keyed-diagnostics-strings convention (NO new locale keys → zero locale hot-file conflict with the
+  parallel session); a hint points at the bundled template. test_repo_invariants (the ir-eval invariant
+  extended: the panel wires `#ir-eval-path` + `runIrEval` + the endpoint URL). VERIFIED here: node --check,
+  146 invariants, i18n 100%, ruff F/B. NOTE: my standing recommendation (the StatFigure revision-anomaly
+  detector) was found ALREADY BUILT by the parallel session (`src/stats/revision.py` + `store.revision_
+  anomalies` + `/api/stats/revision-anomalies` + the frontend "Check revision anomalies" button + 11 green
+  tests) — so it's done, not re-built. KEYWORD-ENGINE PROGRAM COMPLETE for all autonomously-buildable work.
+  NEXT (ALL need maintainer input/operational steps — do NOT start autonomously): P5.2 (static-embedding
+  recall layer, gated on the P3 gold-set pilot) · the in-memory P2 rollups (optional groundwork; persisted
+  blocked on httpfs bundling) · P6 (entity→QID, operational/networked) · enabling lemmatization/picking the
+  BM25F default (needs a graded gold set) · Thai/zh segmenter (needs a bundled-artifact decision).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +
