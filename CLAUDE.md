@@ -707,6 +707,30 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   SELECTs the new column (the shipped cross-version restore floor / RC-gate T4 already does this —
   confirm). Export (CSV/JSON envelope) = additive, unknown-field-tolerant, no break. OPEN Qs: exact
   vocab; defer the per-article column (recommended yes); fold S1-S3 into P4 (recommended yes).
+- **HOME "LATEST IN YOUR CORPUS" SECTION — recency LENS + transparent substance FILTER (maintainer
+  concept 2026-06-26; DESIGN-ONLY, full record in `docs/FUTURE_DEVELOPMENTS.md` → "Home 'Latest in your
+  corpus' section"):** a Home "latest news" section that avoids very short click-bait by selecting on
+  article LENGTH + the number of IN-ARTICLE SOURCES, criteria CLEARLY MARKED + user-adjustable by tag +
+  content-type. TWO hard framings keep it legal: (1) a recency LENS on the redundant Home launchpad
+  (invariant #8), NEVER a reweighting of the corpus — search/analytics stay time-neutral (cross-time
+  recall is sacred); labelled "Recently collected", complements the analytic Briefing with raw
+  chronology; order by `created_at` (our collection fact, un-spoofable), NOT `published_at`
+  (source-claimed/spoofable, shown secondary). (2) the substance gate is a TRANSPARENT FILTER, NEVER a
+  quality/click-bait SCORE — we do NOT build a click-bait detector (banned, like the quarantined
+  credibility analyzer; "name the shape, never the verdict"): two GATES the user sets+sees (≥min words
+  AND ≥min cited-sources), order stays recency, each shown article displays its REAL values, the app
+  never labels anything "click-bait". Both criteria are REAL stored+indexed facts (code-verified):
+  `Article.word_count` (`idx_article_word_count`, set for web `pipeline.py:157` + newsletter
+  `email.py:333`) + the outbound `ArticleLink` (external) count (the reader's "Sources this article
+  cites"; `link_analysis.py` pattern; an approximation, gameable, content-type-dependent → a tunable
+  filter not a truth signal; NEVER `external_sources.credibility_score` = the banned score). PER-
+  CONTENT-TYPE DEFAULTS (honest: a global "≥3 sources" would unfairly exclude newsletters, which cite
+  few) — overridable; faceted by tag + the content-provenance type. Guardrails: structural-not-quality
+  caveat visible; de-US/aggregator-bias disclosed (and/or diversify per type/country); SURFACE-don't-
+  silently-hide (OPEN Q: fully hide vs dim-with-values — recommended dim + a toggle). Build = one
+  recency endpoint (`created_at` + `min_words`/`min_sources` + tag/content_type facets, returning each
+  row's word_count + source count) + a Home panel (`loadHome`→`loadHomeLatest`, `refreshHomeLive`) + the
+  framing; zero-network. FOLD into the content-provenance + keyword-engine P4 facet track.
 - **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
   research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed

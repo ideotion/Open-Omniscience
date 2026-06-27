@@ -2518,3 +2518,84 @@ domain), never a guess.
    the facet fast; denormalize only if the rollups need it).
 3. Fold S1–S3 into the keyword-engine **P4 facet** track, or run it as its own small series?
    (recommended: **fold in** — same facet machinery, one surface.)
+
+---
+
+## Home "Latest in your corpus" section — a recency LENS + a transparent substance FILTER (maintainer concept 2026-06-26; designed-only)
+
+> **The idea (maintainer):** a "latest news" section on the Home tab — but one that **avoids very short
+> click-bait** by selecting on **article length** and **the number of in-article sources**, with the
+> **criteria clearly marked** and **user-adjustable by tag + content type**. Already half-anticipated by
+> the UI-rethink ruling ("'most recent' articles by TAG" as a Home-dashboard section, `CLAUDE.md`). This
+> reuses the **content-provenance class** (above) and the keyword-engine **P4 facet** machinery.
+
+### Two hard framings that make it legal under the ethos
+1. **It is a recency LENS, never a reweighting of the corpus.** "Cross-time recall is sacred — no feature
+   may bias toward recent data / make old data second-class." Home is the *redundant launchpad*
+   (invariant #8: "gives no unique information, everything deep-links to its real tab"), so a "latest"
+   strip is a navigational convenience while **search + analytics stay time-neutral**. Label it
+   **"Recently collected" / "Latest in your corpus"** — a fact, not "Breaking news" / "Top stories."
+   It **complements** the Briefing (analytic Leads = measured signals worth investigating) with **raw
+   chronology** (what literally just arrived); the two are different lenses, not competitors.
+2. **The substance gate is a TRANSPARENT FILTER, never a quality/click-bait SCORE.** The project bans
+   composite quality/trust scores AND "detect click-bait/intent" verdicts (the quarantined credibility
+   analyzer is the cautionary tale; the manipulation-card doctrine is "name the shape, never the
+   verdict"). So we do **not** build a click-bait detector. We apply two **objective structural facts**
+   as **gates** the user sets and sees — never summed into a score, never a sort:
+   - the **order stays recency** (`created_at`); length/sources only decide *in or out*;
+   - **each shown article displays its real values** ("1,240 words · 7 cited sources") and the active
+     filter is stated ("showing ≥300 words, ≥2 sources, newest first");
+   - it is the **user's editorial filter, transparently applied** — the app never labels anything
+     "click-bait" or "low quality"; an excluded item simply doesn't meet the *user's* chosen thresholds.
+
+### Which date = "latest"
+Order by **`created_at`** (when WE collected it — a fact about our corpus, un-spoofable), **not**
+`published_at` (source-claimed, often missing/back-dated/spoofable, and it imports the source's recency
+framing). Show `published_at` as **secondary, source-asserted** (the two-class metadata convention). The
+existing `/api/articles?sort_by=date` orders by `published_at`, so a true "recently collected" view needs
+a `created_at` ordering (a small backend add).
+
+### The two criteria (both REAL, stored, indexed facts — code-verified)
+- **Length** = `Article.word_count` — stored, **indexed** (`idx_article_word_count`, `models.py:611`),
+  and populated for BOTH web articles (`ingest/pipeline.py:157`) and newsletters (`ingest/email.py:333`).
+- **In-article sources** = the count of the article's **outbound `ArticleLink` (external) rows** — the
+  reader's existing "Sources this article cites"; counting them per article is an established cheap
+  pattern (`api/link_analysis.py`). **Honest limits:** this is an *approximation* of "sources" (outbound
+  external links), it is **gameable** (link-stuffing), and it is **content-type-dependent** (newsletters
+  cite few; investigative web pieces cite many) — so it is a *tunable filter, never a truth signal*.
+  **NEVER use `external_sources.credibility_score`** (a legacy fabricated score in the schema, banned by
+  the no-score non-negotiable) — counts only.
+
+### User-adjustable + faceted (where content-provenance becomes load-bearing)
+- Thresholds (**min words**, **min cited-sources**) are user controls.
+- Filter by **source tags** + **content-provenance type** (the class above).
+- **PER-CONTENT-TYPE DEFAULTS (honest, not cosmetic):** a single global "≥3 sources" would unfairly
+  exclude newsletters (which cite few outbound links by nature). So defaults differ by type (e.g.
+  web-article ≥300w/≥2 sources; newsletter ≥400w/≥0 sources; wiki/stat/law handled in their own sense),
+  each **overridable**.
+- **Scope of "news":** likely the article-like provenance classes (web + newsletter), since "latest"
+  means something different for wiki edits / stat figures / law docs.
+
+### Honesty guardrails (binding when built)
+- Word/source counts are **structural signals, not quality or truth** — *a long article isn't
+  necessarily good; a well-sourced one isn't necessarily true; a short one isn't necessarily click-bait.*
+  State it.
+- **De-US / aggregator bias:** a flat reverse-chron feed skews toward high-volume (often Anglophone)
+  sources — disclose it ("newest by collection time — skews toward high-volume sources"), and/or
+  **diversify** (newest per content-type / country, reusing the provenance facet).
+- **Surface, don't silently hide:** prefer showing filtered-out items **dimmed/collapsed with their
+  values** (or a "loosen / show filtered" affordance) over hiding them invisibly — so the filtering is
+  visible, not a silent gate. **OPEN QUESTION (maintainer):** fully hide vs dim-with-values (recommended:
+  **dim/collapse with the values + a toggle to fully hide**; default visible-but-de-emphasized).
+- Honest young-corpus/empty state ("no recent articles meet your criteria — loosen the thresholds").
+  Offline-safe (a local query; zero-network Home preserved). Type/criteria labels ×12 i18n.
+
+### What exists / the gap (small)
+`word_count` (stored + indexed + populated everywhere); the per-article external-link count
+(`link_analysis.py` pattern, cheap when **bounded to the recent candidate set**); the Home panel pattern
+(`loadHome` → a `loadHomeLatest`, re-run by `refreshHomeLive` after each collect pass). The build is one
+recency endpoint (`created_at` order + `min_words` + `min_sources` + `tag`/`content_type` facets,
+returning each row's `word_count` + cited-source count) + a Home panel + the framing. **Slices:** S1
+backend → S2 the Home panel (visible criteria + per-item values + controls + caveats) → S3 per-type
+defaults + the dim/hide toggle. **Fold into the content-provenance + keyword-engine P4 facet track**
+(same facet machinery, one surface).
