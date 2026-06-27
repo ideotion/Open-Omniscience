@@ -128,8 +128,14 @@ deduced, gated by a min-article floor, never auto-applied to curated tags).
   two-class convention already used app-wide.
 - Limitation: only covers sources you've actually scraped; cold for new/disabled
   sources. That residue is exactly what Strategies 2–4 cover.
-- *Status: designed here; recommended next build (a `scripts/derive_source_topics.py`
-  reading the corpus, emitting proposals in the merge-script's result format).*
+- *Status: **BUILT** (2026-06-27). `src/analytics/source_topics.py` (pure,
+  unit-tested aggregator) + `scripts/derive_source_topics.py` (the live-corpus
+  runner). It aggregates the controlled TOPIC tags (`keyword_tags` axis="topic")
+  of the keywords each source publishes, weighted by distinct articles, and emits
+  deduced rows (`note: deduced:corpus`, confidence never "high") in the merge
+  format. Perf-safe: keys off the denormalised `keyword_mentions.source_id`, no
+  keyword_mentions->articles decrypt join (the ledger trap). Coverage scales with
+  how many keywords carry baseline topic tags — grows as that vocabulary fills.*
 
 ### Strategy 2 — Wikidata reconciliation (NETWORK, deterministic, no LLM) ★ high
 `src/catalog/wikidata.py` + `scripts/build_world_news_catalog.py` already query
@@ -290,8 +296,8 @@ and they are candidates for *removal* from the catalog, a separate cleanup.
 
 ## 6. Recommended sequencing
 1. Deterministic cleanup (Strategy 3) — **SHIPPED** (PR #498): leaked-tag migration + ccTLD backfill.
-2. Wikidata reconciliation (Strategy 2) — **BUILT**: `source_type` coverage; run the fetch on a networked box.
-3. Corpus topic fingerprints (Strategy 1) — local, self-improving, on-mission. *(recommended next build)*
+2. Wikidata reconciliation (Strategy 2) — **SHIPPED** (PR #499): `source_type` coverage; run the fetch on a networked box.
+3. Corpus topic fingerprints (Strategy 1) — **BUILT**: deduced topic tags from the corpus; run on the live DB.
 4. LLM parallel sessions (Strategy 4) — the residual + lean/ownership. *(tooling delivered — run now)*
 5. External datasets (Strategy 5) — optional, licence-gated. *(deferred)*
 
