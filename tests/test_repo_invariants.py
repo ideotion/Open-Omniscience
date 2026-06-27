@@ -348,6 +348,28 @@ def test_bm25f_per_column_ranking_is_wired():
     assert ":wt" in fts and ":wb" in fts
 
 
+def test_lemmatization_is_opt_in_display_layer_and_reversible():
+    """Keyword-engine P4.3: simplemma lemmatization conflates morphological keyword variants
+    (study/studied) at the DISPLAY layer (families.py), NOT the stored index — opt-in
+    (OO_FAMILY_LEMMA, default OFF, gated on the gold set + P3 for quality), graceful-degrade
+    when simplemma is absent, with a visible conflated_by provenance. It must NEVER touch
+    the trusted normalize/store path (that would rewrite the canonical index)."""
+    fam = (_SRC / "analytics" / "families.py").read_text(encoding="utf-8")
+    assert "def _lemma(" in fam and "def _lemma_enabled(" in fam
+    assert 'os.getenv("OO_FAMILY_LEMMA"' in fam and '"0")' in fam  # default OFF
+    assert "_MISLEMMA_DENYLIST" in fam and "conflated_by" in fam  # denylist + visible provenance
+    assert "import simplemma" in fam  # optional dep, try/except guarded
+    # lemmatization is display-only: the trusted extractor/normalize path must NOT import it
+    extract = (_SRC / "analytics" / "extract.py").read_text(encoding="utf-8")
+    store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "simplemma" not in extract and "simplemma" not in store, (
+        "lemmatization must stay at the families DISPLAY layer, never the stored index"
+    )
+    # the optional dependency is declared in the [analysis] extra (CI exercises it)
+    pyproject = (_SRC.parent / "pyproject.toml").read_text(encoding="utf-8")
+    assert "simplemma" in pyproject
+
+
 def test_corpus_facets_drill_is_wired():
     """Keyword-engine P5.1b: the analysis window's When/Where/Who becomes an interactive
     FACET surface — a temporal (When) facet alongside who/where, and every value drills

@@ -103,6 +103,11 @@ analysis = [
     # so a foreign article gets the right stoplist instead of leaking function words
     # (field §2.6). Gated like VADER: a core install simply leaves the language NULL.
     "py3langid>=0.3",
+    # Offline lemmatization (pure-Python, bundled dictionaries, NO torch/network) for the
+    # OPT-IN display-time keyword conflation in families.py (P4.3: study/studied -> study,
+    # Wahlen -> Wahl). Gated like the rest: a core install leaves families.py's lemma step a
+    # no-op (OO_FAMILY_LEMMA defaults off; the mechanism degrades gracefully when absent).
+    "simplemma>=1.1",
 ]
 
 # Optional real Named-Entity Recognition for the Insights tab (people / orgs /
