@@ -600,8 +600,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   tests/test_ir_eval.py [8: metrics vs hand-computed, per-language breakdown + no-composite, conflation
   both-sides, regression gate, injected search_fn] + the invariant guard. VERIFIED here: 155 targeted
   green, ruff F/B, mypy 127≤127. The one OPERATIONAL piece: a human-judged GOLD SET [graded 0/1/2 over
-  the maintainer's own corpus] — corpus-specific, can't be bundled; the harness CONSUMES it.) NEXT:
-  P5.1 (BM25F + facets, now measurable) · P4.3 (lemmatization, gated on the gold set + P4.2).
+  the maintainer's own corpus] — corpus-specific, can't be bundled; the harness CONSUMES it.) **P5.1a
+  SHIPPED** (new PR; BM25F per-column ranking — `src/database/fts.py` `search_ids` now ranks
+  `ORDER BY bm25(article_fts, :wt, :wb)` instead of the flat `rank`, weighting the TITLE column above
+  the BODY (a title keyword is a stronger relevance signal than a body mention — verified empirically:
+  `bm25(ft,10,1)` ranks a title match first, `bm25(ft,1,10)` flips it). `_bm25_weights()` reads
+  `OO_BM25_TITLE_WEIGHT` (default 4.0) / `OO_BM25_BODY_WEIGHT` (default 1.0), clamps ≥0, and FALLS BACK
+  to the default on a bad value (never crashes); the weights are BOUND PARAMETERS (`:wt`/`:wb`), never
+  f-string-formatted into SQL (no bandit B608 surface). REVERSIBLE by construction — equal weights ==
+  the old flat rank. ONE change covers every consumer: `search_ids` is the single FTS ranking entry
+  point (omnibar, `_query_articles`, framing, reporting, watches, AND the P3 `evaluate_against_corpus`),
+  so the P3 harness can A/B a weight set via `conflation_delta` the moment a gold set exists — the
+  MEASURE-before-trust loop is now closed for ranking. tests/test_bm25f.py [3: a title-only vs body-only
+  match → title ranks first; env reversal → body ranks first; default `wt>wb` + bad-env fallback] + the
+  invariant guard. VERIFIED here: 21 search-suite + 18 ir-eval/watches + 144 invariants green, ruff F/B,
+  mypy 127≤127, py_compile.) NEXT: P5.1b (entity/temporal/geographic facets co-equal with the text query
+  + the facet UI — the second half of strategy P5.1, a distinct/larger build on the analysis window's
+  existing source/lang/date/tag filters) · P4.3 (lemmatization, gated on the gold set + P4.2).
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +

@@ -309,19 +309,43 @@ def optimize_after_bulk(session: Session) -> dict:
 _MAX_CANDIDATES = 20000
 
 
+def _bm25_weights() -> tuple[float, float]:
+    """BM25F per-column weights (title, body) — keyword-engine P5.1. FTS5's bm25() weights
+    each indexed column; a higher weight ranks that column's matches higher (verified:
+    bm25(ft,10,1) ranks a title match above a body match, bm25(ft,1,10) flips it). A title
+    keyword is a strong relevance signal in news, so title is weighted above body by
+    default; both are env-tunable and the change is reversible (set them equal = the old
+    flat ``rank``). The weights are bound parameters, never string-formatted into SQL."""
+    import os
+
+    def _w(name: str, default: float) -> float:
+        try:
+            return max(0.0, float(os.getenv(name, str(default))))
+        except (TypeError, ValueError):
+            return default
+
+    return _w("OO_BM25_TITLE_WEIGHT", 4.0), _w("OO_BM25_BODY_WEIGHT", 1.0)
+
+
 def search_ids(
     session: Session, query: str | None, limit: int = _MAX_CANDIDATES
 ) -> list[int] | None:
-    """Return article ids matching ``query``, ranked best-first (bm25).
+    """Return article ids matching ``query``, ranked best-first (BM25F).
 
-    ``None`` means "no text constraint" (empty/positive-less query) -- distinct
+    Ranking is FTS5 bm25 with per-column weights (title vs body, :func:`_bm25_weights`) —
+    keyword-engine P5.1: a title keyword is a stronger relevance signal than a body
+    mention. ``None`` means "no text constraint" (empty/positive-less query) -- distinct
     from ``[]`` which means "searched, matched nothing".
     """
     match = build_match(query)
     if match is None:
         return None
+    wt, wb = _bm25_weights()
     rows = session.execute(
-        text("SELECT rowid FROM article_fts WHERE article_fts MATCH :q ORDER BY rank LIMIT :lim"),
-        {"q": match, "lim": limit},
+        text(
+            "SELECT rowid FROM article_fts WHERE article_fts MATCH :q "
+            "ORDER BY bm25(article_fts, :wt, :wb) LIMIT :lim"
+        ),
+        {"q": match, "wt": wt, "wb": wb, "lim": limit},
     ).fetchall()
     return [r[0] for r in rows]
