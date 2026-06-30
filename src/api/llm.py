@@ -380,6 +380,77 @@ def llm_pull_cancel(req: ModelRequest) -> dict:
     return get_pull_manager().cancel(req.model)
 
 
+# --------------------------------------------------------------------------- #
+#  Ollama BINARY installer (maintainer Q7=B, 2026-06-16): download + verify +
+#  run the OFFICIAL installer, with consent + a VISIBLE elevation step. The
+#  checksum is GitHub's OWN attestation (never fabricated); see src/llm/installer.
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/install/status")
+def llm_install_status() -> dict:
+    """Is Ollama already installed, can the app install it here, and is elevation
+    available without a password? Drives the AI tab's install panel."""
+    from src.llm.installer import install_status
+
+    return install_status()
+
+
+@router.post("/install/prepare")
+def llm_install_prepare() -> dict:
+    """Download the OFFICIAL Ollama installer and VERIFY it against GitHub's
+    attested SHA-256 before anything runs (never an unverified script). A network
+    action over CLEARNET via the guarded factory — refused under airplane mode,
+    gated by the ONE consent (#14). Returns the verified version + sha + the exact
+    command to run it (and the app can run it when elevation is non-interactive)."""
+    from src.llm.installer import (
+        InstallerUnavailable,
+        InstallerVerificationError,
+        prepare_installer,
+    )
+
+    try:
+        prepared = prepare_installer()
+    except InstallerUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except InstallerVerificationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return prepared.to_dict()
+
+
+class InstallRunRequest(BaseModel):
+    path: str
+
+
+@router.post("/install/run")
+def llm_install_run(req: InstallRunRequest):
+    """Run a previously prepared+verified installer, streaming its output as
+    NDJSON (honest real progress, never a fabricated bar — invariant #20). Runs
+    ONLY when elevation is available without a password (root / passwordless
+    sudo); otherwise it streams an error telling the user the manual command —
+    so the TTY-less backend can never hang on a password prompt. The script's own
+    download of the binary egresses over CLEARNET (disclosed, Q9)."""
+    import json as _json
+
+    from src.llm.installer import InstallerError, run_installer
+
+    def _stream():
+        try:
+            for line in run_installer(req.path):
+                if line.startswith("__exit__ "):
+                    code = line.split(" ", 1)[1].strip()
+                    yield _json.dumps(
+                        {"event": "done", "exit_code": int(code or "1")},
+                        separators=(",", ":"),
+                    ) + "\n"
+                else:
+                    yield _json.dumps({"event": "line", "text": line[:500]}, separators=(",", ":")) + "\n"
+        except InstallerError as exc:
+            yield _json.dumps({"event": "error", "error": str(exc)[:500]}, separators=(",", ":")) + "\n"
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
 @router.post("/remove")
 def llm_remove(req: ModelRequest, client: OllamaClient = Depends(get_llm_client)) -> dict:
     """Remove an installed model via the LOCAL Ollama process."""

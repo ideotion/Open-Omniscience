@@ -968,6 +968,32 @@ def test_model_download_queue():
     assert "/api/llm/pull/queue" in app and "function _llmPullRefresh(" in app
 
 
+def test_ollama_binary_installer():
+    """Maintainer Q7=B (2026-06-16) + field test 2026-06-20 ("can't find the AI
+    installer"): the app can DOWNLOAD + VERIFY + RUN the official Ollama installer
+    from Settings → AI. The checksum is GitHub's OWN attestation (never fabricated);
+    a mismatch refuses; elevation is explicit (run only when non-interactive, else
+    the verified command for a terminal)."""
+    inst = (_SRC / "llm" / "installer.py").read_text(encoding="utf-8")
+    llm = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # the verified core: resolve+verify against GitHub's attested digest, refuse mismatch
+    assert "def resolve_and_verify(" in inst and "def prepare_installer(" in inst
+    assert "class InstallerVerificationError" in inst and "hashlib.sha256" in inst
+    # never run something outside the verified staging area; elevation explicit
+    assert "def _validate_staged(" in inst and "def can_run_unattended(" in inst
+    assert "def run_installer(" in inst and "def manual_command(" in inst
+    # kill-switch gated (no socket under airplane)
+    assert "kill_switch_active" in inst
+    # endpoints
+    assert '"/install/status"' in llm and '"/install/prepare"' in llm and '"/install/run"' in llm
+    # UI: an install panel (only when Ollama is absent) wired to the endpoints
+    assert 'id="llm-install-box"' in html
+    assert "function loadOllamaInstall(" in app and "function prepareOllamaInstall(" in app
+    assert "/api/llm/install/prepare" in app and "/api/llm/install/status" in app
+
+
 def test_newsletter_folder_import_job():
     """Brief §2.B: a SERVER-SIDE .eml FOLDER import runs as a pausable, task-manager-
     visible DB-writer job (the 20 GB+ case the upload can't handle). Reuses the batched
