@@ -120,7 +120,7 @@ def test_prepare_refuses_unsupported_platform(monkeypatch):
 
 def test_run_refuses_a_script_outside_the_staging_area(tmp_path):
     rogue = tmp_path / "rogue.sh"
-    rogue.write_text("#!/bin/sh\necho pwned\n")
+    rogue.write_text("#!/bin/sh\necho pwned\n", encoding="utf-8")
     with pytest.raises(installer.InstallerError):
         list(installer.run_installer(str(rogue)))
 
@@ -129,7 +129,7 @@ def test_run_refuses_a_wrongly_named_file_in_the_staging_area():
     d = installer.runtime_dir()
     d.mkdir(parents=True, exist_ok=True)
     bad = d / "not-an-installer.sh"
-    bad.write_text("#!/bin/sh\necho nope\n")
+    bad.write_text("#!/bin/sh\necho nope\n", encoding="utf-8")
     with pytest.raises(installer.InstallerError):
         list(installer.run_installer(str(bad)))
 
