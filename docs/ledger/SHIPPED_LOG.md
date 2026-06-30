@@ -3,6 +3,34 @@
 > The full, verbatim shipped-work entries that used to live under `CLAUDE.md` → '## Shipped batch log'. Moved here to keep CLAUDE.md readable (maintainer-asked). The terse, sortable tracking index is [`shipped.csv`](shipped.csv); the load-bearing LESSONS are curated into CLAUDE.md's Session-rituals 'Lessons' subsection. Full detail of any item is also in git history + its PR + the named design docs. APPEND new shipped work as a `shipped.csv` row (+ a verbatim entry here if it carries a reusable lesson), NOT as a CLAUDE.md bullet.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **OLLAMA BINARY INSTALLER — Settings → AI (2026-06-30, branch claude/ai-ollama-installer-zun7pb; backend
+  VERIFIED py3.13, frontend BROWSER-UNVERIFIED per fork-3):** the genuinely-unbuilt half of model management
+  (maintainer field test 2026-06-20 "can't find the AI installer"; maintainer Q7=B 2026-06-16). The blocker
+  was always "we can't fabricate per-OS installer checksums." RESOLVED WITHOUT FABRICATION — **GitHub's
+  releases API attests a `digest: sha256:…` per asset**, so the app verifies against the publisher's OWN
+  attestation. `src/llm/installer.py`: `resolve_and_verify(get_json, get_bytes)` fetches the ollama/ollama
+  LATEST release through the guarded factory, finds the official `install.sh` asset + its attested digest,
+  downloads the script, SHA-256s the bytes, and refuses on mismatch OR when no sha256 is attested
+  (`InstallerVerificationError` — never run unverified code); `prepare_installer` is kill-switch gated (no
+  socket under airplane) + platform-gated (Linux scripted; macOS/Windows → honest ollama.com/download
+  pointer, Debian is the V0.1 target); `stage_installer` writes the verified bytes to
+  `data_dir()/runtime/ollama-install-<sha16>.sh` (0700) and `run_installer` REFUSES anything outside that
+  staging dir, running it ONLY when elevation is non-interactive (root or passwordless `sudo -n`, so the
+  TTY-less web backend can never hang on a password prompt) else raising with the verified `sudo sh <path>`
+  command for the user's terminal. The script's own later binary download egresses over CLEARNET via curl
+  (Q9, disclosed at consent). Endpoints (src/api/llm.py): `GET /api/llm/install/status` (present? scripted?
+  unattended-elevation? staged?), `POST /install/prepare` (409 airplane / 502 verification), `POST
+  /install/run` (NDJSON stream of the script's output + exit code). Frontend (index.html + app.js): a
+  `#llm-install-box` panel in Settings → AI shown ONLY when Ollama is absent → `loadOllamaInstall` →
+  `prepareOllamaInstall` (gated by ensureOnline #14, clearnet disclosure; shows verified version + sha) →
+  `runOllamaInstall` (streams the log) or the verified command → `recheckOllama`. tests/test_ollama_installer.py
+  (12: verify accepts a matching digest, refuses mismatch / missing attestation / absent asset; prepare
+  stages + airplane-refuses + unsupported-OS-refuses; run refuses outside staging / wrong name / no-elevation;
+  root-run reports exit 0) + test_repo_invariants::test_ollama_binary_installer. VERIFIED here: 12 + 199
+  invariants/llm green, ruff F/B clean (new module), i18n 100% (English-fallback via t(), no new locale keys),
+  routes compose, TestClient status 200. EMPIRICAL FACT (curated into the Lessons subsection): GitHub release
+  assets carry an attested `digest` field — verify against it, never hardcode/fabricate a checksum. REMAINING:
+  human click-through (fork-3); key the panel strings ×12; an optional task-manager job over a long install.
 - **AUTONOMOUS BATCH 2026-06-25 (maintainer: "continue autonomously with all remaining tasks, I'll merge all
   PRs afterwards" — the harness constrains me to ONE branch `claude/ecstatic-edison-mseu1p`, so the remaining
   §5B/§5C arc lands as a STACKED SERIES OF COMMITS in one draft PR onto 0.09; each commit self-contained +

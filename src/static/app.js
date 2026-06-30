@@ -1141,7 +1141,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
-      if (cat === "models") { loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); }  // LLM-management subtab (Q6) — also re-check the pill + show any in-progress pull
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
@@ -3124,6 +3124,102 @@
     // the appearance engine above (applyUi / applyThemeAttr).
     let DEFAULT_LIMIT = 50;
     const _media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+
+    // --- Ollama BINARY installer (Settings → AI) ------------------------------ //
+    // The missing half of model management (maintainer 2026-06-20: "can't find the
+    // AI installer"). Shown only when Ollama is NOT already installed. Prepare =
+    // download + VERIFY the OFFICIAL installer against GitHub's attested checksum
+    // (a clearnet network action via the guarded factory → the ONE consent, #14);
+    // then run it here when elevation needs no password, else show the verified
+    // command to paste into a terminal. Elevation is always explicit, never hidden.
+    let _ollamaInstalling = false;
+    async function loadOllamaInstall() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("llm-install-box"); if (!box) return;
+      if (_ollamaInstalling) return;  // don't clobber an in-progress run's output
+      let s;
+      try { s = await api("/api/llm/install/status"); }
+      catch (e) { box.style.display = "none"; return; }
+      if (s.ollama_present) { box.style.display = "none"; box.innerHTML = ""; return; }
+      const p = s.platform || {};
+      box.style.display = "";
+      if (!p.scripted) {
+        // macOS/Windows: honest pointer to the graphical installer, no fake auto-install.
+        const url = p.download_url || "https://ollama.com/download";
+        box.innerHTML = `<div class="panel" style="border-color:var(--accent)">` +
+          `<strong>${esc(t("Install Ollama"))}</strong>` +
+          `<p class="muted" style="margin:6px 0">${esc(p.reason || t("Download and run the official installer for your system, then return here."))}</p>` +
+          `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(t("Open ollama.com/download ↗"))}</a></div>`;
+        return;
+      }
+      box.innerHTML = `<div class="panel" style="border-color:var(--accent)">` +
+        `<strong>${esc(t("Install Ollama"))}</strong>` +
+        `<p class="muted" style="margin:6px 0">${esc(t("Ollama is not installed yet. The app can download the official installer, verify its checksum against the publisher's attestation, and run it. Installing needs administrator rights and downloads over the clear internet (not this app's Tor proxy)."))}</p>` +
+        `<button id="llm-install-prepare-btn" onclick="prepareOllamaInstall()">${esc(t("Download & verify the official installer"))}</button>` +
+        `<div id="llm-install-detail" class="hint" style="margin-top:8px"></div>` +
+        `<pre id="llm-install-log" style="display:none;max-height:220px;overflow:auto;background:var(--bg2);padding:8px;border-radius:6px;margin-top:8px;font:12px ui-monospace,monospace;white-space:pre-wrap"></pre></div>`;
+    }
+    async function prepareOllamaInstall() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const detail = $("llm-install-detail"); const btn = $("llm-install-prepare-btn");
+      if (!await ensureOnline(t("Download and verify the official Ollama installer (downloads over the clear internet)"))) return;
+      if (btn) { btn.disabled = true; }
+      if (detail) detail.textContent = t("Downloading and verifying…");
+      let d;
+      try { d = await api("/api/llm/install/prepare", {method: "POST"}); }
+      catch (e) { if (detail) detail.textContent = t("Could not prepare the installer:") + " " + e.message; if (btn) btn.disabled = false; return; }
+      if (btn) btn.style.display = "none";
+      // Show the verified version + checksum + how to run it. The checksum is the
+      // publisher's own attestation we verified the bytes against — show it so the
+      // user can cross-check; never present an unverified script.
+      let st = {};
+      try { st = await api("/api/llm/install/status"); } catch (_e) {}
+      const runNow = st.can_run_unattended
+        ? `<button onclick="runOllamaInstall(${esc(JSON.stringify(d.path))})" style="margin-top:8px">${esc(t("Install now"))}</button>`
+        : "";
+      const manual = `<p class="muted" style="margin:8px 0 2px">${esc(st.can_run_unattended ? t("Or run it yourself in a terminal:") : t("Administrator rights are needed and the app cannot ask for your password. Run this in a terminal:"))}</p>` +
+        `<pre style="background:var(--bg2);padding:8px;border-radius:6px;font:12px ui-monospace,monospace;white-space:pre-wrap">${esc(d.manual_command)}</pre>`;
+      if (detail) detail.innerHTML =
+        `<div>${esc(t("Verified Ollama"))} <code>${esc(d.version)}</code> · SHA-256 <code>${esc((d.sha256||"").slice(0,16))}…</code></div>` +
+        runNow + manual +
+        `<p class="muted" style="margin-top:6px">${esc(t("After installing, click Recheck below."))} <button class="tiny secondary" onclick="recheckOllama()">${esc(t("Recheck"))}</button></p>`;
+    }
+    async function runOllamaInstall(path) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const log = $("llm-install-log"); if (!log) return;
+      _ollamaInstalling = true;
+      log.style.display = ""; log.textContent = "";
+      try {
+        const resp = await fetch("/api/llm/install/run", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({path}),
+        });
+        const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
+        let exitCode = null;
+        for (;;) {
+          const {value, done} = await reader.read(); if (done) break;
+          buf += dec.decode(value, {stream: true});
+          let nl;
+          while ((nl = buf.indexOf("\n")) >= 0) {
+            const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+            if (!line.trim()) continue;
+            let o; try { o = JSON.parse(line); } catch (_e) { continue; }
+            if (o.event === "line") { log.textContent += o.text + "\n"; log.scrollTop = log.scrollHeight; }
+            else if (o.event === "error") { log.textContent += "\n" + t("Error:") + " " + o.error + "\n"; }
+            else if (o.event === "done") { exitCode = o.exit_code; }
+          }
+        }
+        log.textContent += "\n" + (exitCode === 0 ? t("Installation finished.") : t("Installer exited with code") + " " + exitCode) + "\n";
+      } catch (e) {
+        log.textContent += "\n" + t("Error:") + " " + e.message + "\n";
+      } finally {
+        _ollamaInstalling = false;
+        recheckOllama();
+      }
+    }
+    function recheckOllama() {
+      loadLlmHealth(); loadOllamaInstall(); loadLlmModels();
+    }
 
     async function loadLlmModels() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

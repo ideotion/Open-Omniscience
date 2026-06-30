@@ -413,6 +413,12 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   missing route can't fail them).
 - **Lessons harvested from the shipped log (the reusable ones; full context in
   `docs/ledger/SHIPPED_LOG.md` + git history):**
+  - **GitHub release assets carry an ATTESTED `digest: sha256:…` field:** to verify a
+    downloaded installer/binary WITHOUT fabricating a checksum (a §0.5 non-negotiable),
+    fetch the `releases/latest` JSON, read the asset's own `digest`, and verify the
+    downloaded bytes against it; refuse on mismatch OR when no digest is attested. This
+    resolved the long-standing "we can't fabricate per-OS Ollama checksums" blocker
+    (the in-app Ollama binary installer, `src/llm/installer.py`, 2026-06-30).
   - **SQLCipher codec column-order PERF TRAP:** a SQL join from `keyword_mentions`
     to `articles` for ONE small column drags whole ~35 KB article rows through the
     SQLCipher codec (column order puts `content` before `language`) — measured ~26 s
@@ -940,9 +946,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (D) **OLLAMA "installer missing" — ANSWERED, NOT LOST:** the Settings subtab was RENAMED "Models" → "AI"
   (`index.html:920`, Settings → AI) — that's why it feels missing; the catalog (size/RAM hints) + pull queue +
   remove + active-model picker SHIPPED there. The BINARY installer (download+verify+RUN the official per-OS
-  Ollama installer) was NEVER built — grep finds zero install endpoints — blocked from day one on per-OS
-  installer CHECKSUMS (can't fabricate; needs a networked machine). Design/interaction is recorded (ledger +
-  FUTURE_DEVELOPMENTS); the binary-install half is the genuinely-unbuilt piece. (E) **909k KEYWORDS = mostly
+  Ollama installer) was NEVER built — blocked from day one on per-OS installer CHECKSUMS (can't fabricate).
+  **RESOLVED + SHIPPED 2026-06-30 (branch claude/ai-ollama-installer-zun7pb; see the shipped.csv row):**
+  the checksum blocker is gone — GitHub's releases API attests a `digest: sha256:…` per asset, so
+  `src/llm/installer.py` fetches the official `install.sh` + its attested digest through the guarded
+  factory, verifies the bytes against it (refusing on mismatch/missing attestation), stages it, and runs
+  it when elevation is non-interactive (root / passwordless `sudo -n`) else shows the verified `sudo sh
+  <path>` command. Endpoints `/api/llm/install/{status,prepare,run}`; a Settings → AI panel
+  (`#llm-install-box`) shown only when Ollama is absent. Linux only (Debian target); macOS/Windows get an
+  honest ollama.com/download pointer. Frontend BROWSER-UNVERIFIED per fork-3. So this is no longer the
+  genuinely-unbuilt piece. (E) **909k KEYWORDS = mostly
   the pre-cleanup count** — the §2.5/§2.6 + stopwords-iso reduction is forward-only at index time, so it hasn't
   bitten; "Clean up keywords (re-index, then prune)" drains it (heavy at 6 GB). The keyword-growth curve
   (below, SHIPPED) measures how much is junk.
