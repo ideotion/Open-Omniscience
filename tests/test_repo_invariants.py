@@ -412,14 +412,20 @@ def test_articles_endpoint_serialises_stored_sentiment():
     re-index, VADER English-only) so lists / cards can show tone without an extra framing
     call -- null for non-English / not-yet-re-indexed articles, never a fabricated neutral.
     Both serialisation paths (the ids-seeded path + the query path) must carry it, plus the
-    §2.6 secondary/deduced language; the analysis Articles list renders a tone chip."""
+    §2.6 secondary/deduced language; the analysis Articles list renders a tone chip.
+    Both serialisation paths (ids-seeded + query) build results through the SHARED
+    ``_article_row`` helper, which exposes these fields once -- so they can never drift
+    apart (the prior duplicated dicts were unified)."""
     main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
-    assert main.count('"sentiment_score": a.sentiment_score') >= 2, (
-        "both /api/articles serialisation paths must expose sentiment_score"
+    assert "def _article_row(" in main, "the shared /api/articles result builder must exist"
+    assert main.count("_article_row(a") >= 2, (
+        "both /api/articles serialisation paths (ids + query) must build via _article_row"
     )
-    assert main.count('"sentiment_label": a.sentiment_label') >= 2
-    assert main.count('"detected_language": a.detected_language') >= 2, (
-        "both paths must expose the secondary/deduced language (§2.6)"
+    # the shared builder exposes the stored sentiment + the secondary/deduced language
+    assert '"sentiment_score": a.sentiment_score' in main
+    assert '"sentiment_label": a.sentiment_label' in main
+    assert '"detected_language": a.detected_language' in main, (
+        "the shared row must expose the secondary/deduced language (§2.6)"
     )
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     assert "function _anToneChip(" in app and "_anToneChip(a)" in app, (
@@ -1046,6 +1052,30 @@ def test_advanced_search_sort_by_metadata():
     # UI: the sort + order selects + they feed the query
     assert 'id="an-adv-sort"' in html and 'id="an-adv-dir"' in html
     assert 'p.set("sort_by"' in app and 'p.set("sort_dir"' in app
+
+
+def test_articles_provenance_toggle_and_keyword_count():
+    """The unified analysis Articles subtab gains a content-provenance toggle (all/
+    wikipedia/web/newsletter/statistics — a DESCRIPTIVE ingestion-channel filter, never a
+    quality score) plus a small per-article keyword count (mentions of the searched
+    keyword), optionally sorting by it. Cheap by construction: a source-level filter + a
+    keyword_mentions-only count (never the keyword_mentions->articles decrypt join)."""
+    main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    prov = (_SRC / "catalog" / "provenance.py").read_text(encoding="utf-8")
+    # provenance is a descriptive class derived from the source, explicitly NOT a score
+    assert "def provenance_of(" in prov and "never a score" in prov
+    assert "PROVENANCE_CLASSES" in prov
+    # backend: /api/articles accepts a provenance filter + a keyword_count sort; each result
+    # carries provenance + keyword_count; the count is mentions-only (no decrypt join).
+    assert "_provenance_filter(" in main and "_KEYWORD_COUNT_SORT" in main
+    assert "_keyword_counts(" in main and "KeywordMention.count" in main
+    assert '"keyword_count": keyword_count' in main  # per-result count
+    assert '"keyword_for_count"' in main  # the resolved keyword whose counts are shown
+    # frontend: the provenance toggle + the count badge + the count-sort wiring
+    assert "_anSetProvenance(" in app and "function _anArtControls(" in app
+    assert 'q.set("provenance"' in app and 'q.set("sort_by", "keyword_count")' in app
+    assert "_anKwForCount" in app
 
 
 def test_large_data_folder_backup():

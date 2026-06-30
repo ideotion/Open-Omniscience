@@ -11437,6 +11437,43 @@
       }
       return out;
     }
+    // Articles-subtab lenses (LOCAL to this list — they never touch the params the
+    // other subtabs use): a content-provenance toggle (all/wikipedia/web/newsletter/
+    // statistics — a descriptive ingestion-channel filter, NEVER a quality score) and a
+    // keyword-count sort. The ×N badge + the count sort appear only when the corpus
+    // resolves to a single searched keyword (the keyword-click case).
+    let _anProvenance = "";    // "" = all resources
+    let _anKwSort = false;     // order the list by the searched keyword's per-article count
+    let _anKwForCount = "";    // the keyword whose counts are shown (from the API), or ""
+    function _anSetProvenance(v) {
+      _anProvenance = v || "";
+      // Wikipedia view orders by keyword count when a count is available (the ruling).
+      if (_anProvenance === "wikipedia" && _anKwForCount) _anKwSort = true;
+      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+    }
+    function _anToggleKwSort() {
+      _anKwSort = !_anKwSort;
+      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+    }
+    function _anArtControls(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // "Wikipedia" is a proper noun (kept untranslated); the rest go through t().
+      const buckets = [["", t("All")], ["wikipedia", "Wikipedia"], ["web", t("Web articles")],
+        ["newsletter", t("Newsletters")], ["statistics", t("Statistics")]];
+      let h = '<div class="an-prov" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin:2px 0 6px">'
+        + `<span class="muted" style="font-size:.85em">${esc(t("Show"))}:</span>`;
+      for (const [v, lbl] of buckets) {
+        const on = (_anProvenance || "") === v;
+        h += `<button class="tiny${on ? "" : " ghost"}" aria-pressed="${on}" onclick="_anSetProvenance('${v}')">${esc(lbl)}</button>`;
+      }
+      if (d && d.keyword_for_count) {
+        const on = _anKwSort;
+        h += `<button class="tiny${on ? "" : " ghost"}" style="margin-inline-start:8px" aria-pressed="${on}" `
+          + `onclick="_anToggleKwSort()" title="${esc(t("Order articles by how often the searched keyword appears in each."))}">`
+          + `↕ “${esc(d.keyword_for_count)}” ${esc(t("count"))}</button>`;
+      }
+      return h + "</div>";
+    }
     async function _anLoadArticles(p, page) {
       const arts = $("an-articles"); if (!arts) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -11446,19 +11483,30 @@
         const q = new URLSearchParams(p);
         q.set("limit", String(_AN_ART_PAGE));
         q.set("offset", String(_anArtPage * _AN_ART_PAGE));
+        if (_anProvenance) q.set("provenance", _anProvenance);
+        if (_anKwSort) { q.set("sort_by", "keyword_count"); q.set("sort_dir", "desc"); }
         const d = await api("/api/articles?" + q.toString());
+        _anKwForCount = d.keyword_for_count || "";
+        if (!_anKwForCount) _anKwSort = false;   // no keyword resolved -> no count sort
+        const kwc = _anKwForCount;
         const total = d.total || 0, pages = Math.max(1, Math.ceil(total / _AN_ART_PAGE));
         if (_anArtPage > pages - 1) return _anLoadArticles(p, pages - 1);   // clamp after a narrower filter
-        const rows = (d.results || []).map((a) =>
-          `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
-          + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></td>`
+        const rows = (d.results || []).map((a) => {
+          // Small, discrete per-article keyword count beside the title (counts only).
+          const badge = (kwc && a.keyword_count != null)
+            ? ` <span class="muted" style="font-size:.82em" title="${esc(t("Mentions of") + " “" + kwc + "” " + t("in this article"))}">×${a.keyword_count}</span>`
+            : "";
+          return `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
+          + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}</td>`
           + `<td>${esc(a.source || "")}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
           + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
           + `<td style="white-space:nowrap">`
           + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
-          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`).join("");
+          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`;
+        }).join("");
         const pager = _anArtPager(total, pages);
-        arts.innerHTML = `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
+        arts.innerHTML = _anArtControls(d)
+          + `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
           + pager
           + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
           + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`
@@ -11471,6 +11519,7 @@
       const kw = $("an-keywords"), arts = $("an-articles");
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
       _anLastParams = p; _anTrend.key = null; _anRelated.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
       if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
       if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
