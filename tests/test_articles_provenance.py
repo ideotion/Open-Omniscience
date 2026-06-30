@@ -61,10 +61,14 @@ def db():
     ]
     arts = {}
     for i, (title, sk, _c) in enumerate(rows):
+        # Only the articles that mention the keyword contain "oil" in their text, so the
+        # FTS query "oil" matches exactly those (the no-mention "bbc weather" must not be
+        # an FTS hit -- otherwise it rides along with keyword_count 0).
+        body = f"{title} -- corpus content about {'oil markets' if _c is not None else 'the weather'}"
         a = Article(
             url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}",
             source_id=srcs[sk].id, title=title,
-            content=f"{title} -- shared oil corpus content", hash=f"h{i}".ljust(64, "0"),
+            content=body, hash=f"h{i}".ljust(64, "0"),
             language="en",
         )
         s.add(a)
