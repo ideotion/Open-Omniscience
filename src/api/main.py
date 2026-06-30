@@ -57,6 +57,11 @@ from sqlalchemy.orm import Session
 
 # Router wiring (every include_router call) lives in _wiring.py (audit PR H).
 from src.api._wiring import wire
+from src.catalog.provenance import (
+    NEWSLETTER_DOMAINS,
+    PROVENANCE_CLASSES,
+    provenance_of,
+)
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, Source
 from src.database.session import dispose_engine, get_db, init_db, session_scope
@@ -465,6 +470,36 @@ def _validate_date(value: str | None, field_name: str) -> None:
             ) from None
 
 
+def _provenance_filter(session, provenance: str):
+    """A SQLAlchemy condition on Article for one content-provenance class, or None.
+
+    Provenance is derived from the SOURCE (domain + type), so this is a source-level
+    filter -- it never reads the encrypted article rows (no codec-column-order decrypt
+    trap). ``wikipedia``/``newsletter``/``statistics`` select the sources in that class;
+    ``web`` is the catch-all (every source that is none of the above, plus source-less
+    articles, matching ``provenance_of(None) == "web"``).
+    """
+    from sqlalchemy import false, func, or_
+
+    from src.catalog.provenance import NEWSLETTER, STATISTICS, WEB, WIKIPEDIA
+
+    wiki = or_(Source.domain == "wikipedia.org", Source.domain.ilike("%.wikipedia.org"))
+    news = func.lower(Source.domain).in_(sorted(NEWSLETTER_DOMAINS))
+    stats = func.lower(Source.source_type) == STATISTICS
+
+    if provenance == WEB:
+        special = [sid for (sid,) in session.query(Source.id).filter(or_(wiki, news, stats))]
+        if not special:
+            return None  # every source is web -> no narrowing
+        return or_(Article.source_id.is_(None), Article.source_id.notin_(special))
+
+    cond = {WIKIPEDIA: wiki, NEWSLETTER: news, STATISTICS: stats}.get(provenance)
+    if cond is None:
+        return None
+    ids = [sid for (sid,) in session.query(Source.id).filter(cond)]
+    return Article.source_id.in_(ids) if ids else false()
+
+
 def _structured_filters(
     session,
     *,
@@ -473,6 +508,7 @@ def _structured_filters(
     end_date: str | None,
     language: str | None,
     tags: str | None,
+    provenance: str | None = None,
 ) -> list:
     """Build the non-text SQLAlchemy filter conditions.
 
@@ -482,6 +518,11 @@ def _structured_filters(
     from sqlalchemy import false, or_
 
     filters: list = []
+
+    if provenance:
+        cond = _provenance_filter(session, provenance)
+        if cond is not None:
+            filters.append(cond)
 
     if source:
         source_obj = session.query(Source).filter_by(name=source).first()
@@ -515,6 +556,93 @@ def _structured_filters(
 # articles by a chosen METADATA field instead of always recency/relevance. These are
 # honest orderings of real metadata, never a relevance/quality score.
 _SORT_FIELDS = {"date", "source", "title", "language"}
+# "keyword_count" is a separate sort (it needs the resolved-keyword count map, below),
+# only meaningful when the query resolves to a stored keyword.
+_KEYWORD_COUNT_SORT = "keyword_count"
+
+
+def _resolve_count_keyword(session, query: str | None) -> tuple[int | None, str | None]:
+    """Resolve ``query`` to a single keyword for per-article counts, or (None, None).
+
+    EXACT normalised match only -- so "keyword count" always means exactly the term you
+    searched (the keyword-click case). A boolean/phrase query that is not itself a stored
+    keyword resolves to nothing, and counts are simply not shown -- never a loose or
+    differently-defined number masquerading under the same label.
+    """
+    if not query:
+        return None, None
+    from src.analytics.queries import _normalize
+    from src.database.models import Keyword
+
+    norm = _normalize(query)
+    if not norm:
+        return None, None
+    kw = session.query(Keyword).filter_by(normalized_term=norm).first()
+    if kw is None:
+        return None, None
+    return kw.id, kw.term
+
+
+def _keyword_counts(session, keyword_id: int | None, article_ids) -> dict:
+    """``{article_id: mention count}`` for a resolved keyword over the given articles.
+
+    A keyword_mentions-only lookup over the unique ``(keyword_id, article_id)`` index --
+    never the keyword_mentions->articles decrypt join (the codec column-order perf trap).
+    Chunked under the SQLite 999-variable cap.
+    """
+    if not keyword_id:
+        return {}
+    ids = [a for a in article_ids if a is not None]
+    if not ids:
+        return {}
+    from src.database.models import KeywordMention
+
+    out: dict = {}
+    for i in range(0, len(ids), 900):
+        chunk = ids[i : i + 900]
+        for aid, cnt in (
+            session.query(KeywordMention.article_id, KeywordMention.count).filter(
+                KeywordMention.keyword_id == keyword_id,
+                KeywordMention.article_id.in_(chunk),
+            )
+        ):
+            out[aid] = cnt
+    return out
+
+
+def _article_row(a, *, keyword_count: int | None = None) -> dict:
+    """The canonical /api/articles result dict (shared by the FTS, browse + ids paths).
+
+    ``provenance`` is the descriptive content-provenance class (a channel, never a
+    score); ``keyword_count`` is the searched keyword's mentions in this article, or
+    null when the corpus has no single resolved keyword.
+    """
+    src = a.source
+    return {
+        "id": a.id,
+        "title": a.title,
+        "url": a.url,
+        "canonical_url": a.canonical_url,
+        "source": src.name if src else "Unknown",
+        # Descriptive ingestion channel (wikipedia/newsletter/statistics/web) derived
+        # from the source -- a filterable label, never a quality/credibility verdict.
+        "provenance": provenance_of(src.domain if src else None, src.source_type if src else None),
+        "published_at": a.published_at.isoformat() if a.published_at else None,
+        "language": a.language,
+        # SECONDARY/DEDUCED language (§2.6): set only when `language` is absent; the UI
+        # shows it as "deduced", never as the authoritative language.
+        "detected_language": a.detected_language,
+        # Stored sentiment (VADER at ingest/re-index, English-only) -- null for
+        # non-English / not-yet-re-indexed articles, never a fabricated neutral.
+        "sentiment_score": a.sentiment_score,
+        "sentiment_label": a.sentiment_label,
+        # Per-article frequency of the searched keyword (null when none resolved).
+        "keyword_count": keyword_count,
+        "content": (a.content[:500] + "...")
+        if a.content and len(a.content) > 500
+        else (a.content or ""),
+        "hash": a.hash,
+    }
 
 
 def _python_sort_key(sort_by: str):
@@ -542,14 +670,17 @@ def _query_articles(
     offset: int,
     sort_by: str | None = None,
     sort_dir: str | None = None,
+    provenance: str | None = None,
+    keyword_id: int | None = None,
 ) -> tuple[list, int]:
     """Return ``(articles, total)`` applying full-text search + structured filters.
 
     Text search uses SQLite FTS5 (real Boolean AND/OR/NOT, phrases, parenthesised
     precedence) and orders results by relevance; otherwise results are ordered by
-    recency. ``sort_by`` (date|source|title|language) overrides that order with a
-    metadata ordering (``sort_dir`` asc|desc, default desc). ``limit=None`` returns
-    every match (used by export).
+    recency. ``sort_by`` (date|source|title|language|keyword_count) overrides that order
+    with a metadata ordering (``sort_dir`` asc|desc, default desc). ``provenance`` narrows
+    to one content-provenance class. ``keyword_id`` enables the ``keyword_count`` sort
+    (the resolved keyword's per-article mentions). ``limit=None`` returns every match.
     """
     from sqlalchemy import and_
 
@@ -560,6 +691,7 @@ def _query_articles(
         end_date=end_date,
         language=language,
         tags=tags,
+        provenance=provenance,
     )
     descending = (sort_dir or "desc").lower() != "asc"
 
@@ -578,7 +710,12 @@ def _query_articles(
         if filters:
             q = q.filter(and_(*filters))
         rows = q.all()
-        if sort_by in _SORT_FIELDS:
+        if sort_by == _KEYWORD_COUNT_SORT and keyword_id:
+            # Order by the searched keyword's per-article frequency. A mentions-only
+            # lookup over the whole matched set -> sort -> paginate (no decrypt trap).
+            cmap = _keyword_counts(session, keyword_id, [a.id for a in rows])
+            rows.sort(key=lambda a: cmap.get(a.id, 0), reverse=descending)
+        elif sort_by in _SORT_FIELDS:
             rows.sort(key=_python_sort_key(sort_by), reverse=descending)
         else:  # default: relevance order
             rank = {aid: i for i, aid in enumerate(fts_ids)}
@@ -625,6 +762,7 @@ async def search_articles(
     ids: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
+    provenance: str | None = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -640,26 +778,47 @@ async def search_articles(
     - end_date: Filter by end date (YYYY-MM-DD).
     - language: Filter by language code (e.g., "en", "fr").
     - tags: Filter by source tags (comma-separated).
-    - sort_by: Order by a metadata field (date|source|title|language). Default:
-      relevance for a text query, else recency. Honest metadata order, never a score.
+    - provenance: Narrow to one content-provenance class (wikipedia|web|newsletter|
+      statistics) -- a descriptive ingestion-channel filter, never a quality score.
+    - sort_by: Order by a metadata field (date|source|title|language) or by
+      keyword_count (the searched keyword's per-article mentions, when the query is a
+      stored keyword). Default: relevance for a text query, else recency. Never a score.
     - sort_dir: asc|desc (default desc).
     - limit: Maximum number of results to return (default: 100).
     - offset: Offset for pagination (default: 0).
+
+    Each result carries ``provenance`` (its content-provenance class) and
+    ``keyword_count`` (mentions of the searched keyword, or null); the response carries
+    ``keyword_for_count`` -- the resolved keyword whose counts are shown, or null.
     """
     logger.info(f"Search request: query={query}, source={source}, limit={limit}, offset={offset}")
+
+    # Treat "all"/"" as no provenance filter; otherwise it must be a known class.
+    provenance = (provenance or "").strip().lower() or None
+    if provenance == "all":
+        provenance = None
 
     if limit < 1 or limit > 1000:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset must be non-negative")
-    if sort_by is not None and sort_by not in _SORT_FIELDS:
+    if sort_by is not None and sort_by not in _SORT_FIELDS and sort_by != _KEYWORD_COUNT_SORT:
         raise HTTPException(
-            status_code=400, detail=f"sort_by must be one of {sorted(_SORT_FIELDS)}"
+            status_code=400,
+            detail=f"sort_by must be one of {sorted(_SORT_FIELDS | {_KEYWORD_COUNT_SORT})}",
         )
     if sort_dir is not None and sort_dir.lower() not in ("asc", "desc"):
         raise HTTPException(status_code=400, detail="sort_dir must be asc or desc")
+    if provenance is not None and provenance not in PROVENANCE_CLASSES:
+        raise HTTPException(
+            status_code=400, detail=f"provenance must be one of {sorted(PROVENANCE_CLASSES)}"
+        )
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
+
+    # Resolve the searched term to a single keyword for per-article counts (exact match
+    # only -> "keyword count" always means exactly that keyword, or is simply absent).
+    kw_id, kw_term = _resolve_count_keyword(db, query)
 
     # Explicit id set (e.g. a card-seeded analysis corpus): fetch exactly those
     # articles, preserving the requested order. Bypasses FTS; bounded to 1000.
@@ -670,30 +829,24 @@ async def search_articles(
             for a in (db.query(Article).filter(Article.id.in_(id_list)).all() if id_list else [])
         }
         ordered = [by_id[i] for i in id_list if i in by_id]
-        results = [
-            {
-                "id": a.id,
-                "title": a.title,
-                "url": a.url,
-                "canonical_url": a.canonical_url,
-                "source": a.source.name if a.source else "Unknown",
-                "published_at": a.published_at.isoformat() if a.published_at else None,
-                "language": a.language,
-                # SECONDARY/DEDUCED language (§2.6): set only when `language` is absent;
-                # the UI shows it as "deduced", never as the authoritative language.
-                "detected_language": a.detected_language,
-                # Stored sentiment (VADER at ingest/re-index, English-only) -- null for
-                # non-English / not-yet-re-indexed articles, never a fabricated neutral.
-                "sentiment_score": a.sentiment_score,
-                "sentiment_label": a.sentiment_label,
-                "content": (a.content[:500] + "...")
-                if a.content and len(a.content) > 500
-                else (a.content or ""),
-                "hash": a.hash,
-            }
-            for a in ordered
-        ]
-        return {"total": len(ordered), "limit": limit, "offset": 0, "results": results}
+        # A provenance filter still applies to a fixed id set (bounded <=1000): derive
+        # each article's class from its source -- no extra query, the rows are loaded.
+        if provenance:
+            ordered = [
+                a
+                for a in ordered
+                if provenance_of(a.source.domain if a.source else None,
+                                 a.source.source_type if a.source else None) == provenance
+            ]
+        cmap = _keyword_counts(db, kw_id, [a.id for a in ordered])
+        results = [_article_row(a, keyword_count=cmap.get(a.id)) for a in ordered]
+        return {
+            "total": len(ordered),
+            "limit": limit,
+            "offset": 0,
+            "results": results,
+            "keyword_for_count": kw_term,
+        }
 
     articles, total = _query_articles(
         db,
@@ -707,33 +860,22 @@ async def search_articles(
         offset=offset,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        provenance=provenance,
+        keyword_id=kw_id,
     )
 
-    results = [
-        {
-            "id": a.id,
-            "title": a.title,
-            "url": a.url,
-            "canonical_url": a.canonical_url,
-            "source": a.source.name if a.source else "Unknown",
-            "published_at": a.published_at.isoformat() if a.published_at else None,
-            "language": a.language,
-            # SECONDARY/DEDUCED language (§2.6): set only when `language` is absent;
-            # the UI shows it as "deduced", never as the authoritative language.
-            "detected_language": a.detected_language,
-            # Stored sentiment (VADER at ingest/re-index, English-only) -- null for
-            # non-English / not-yet-re-indexed articles, never a fabricated neutral.
-            "sentiment_score": a.sentiment_score,
-            "sentiment_label": a.sentiment_label,
-            "content": (a.content[:500] + "...")
-            if a.content and len(a.content) > 500
-            else (a.content or ""),
-            "hash": a.hash,
-        }
-        for a in articles
-    ]
+    # Per-article keyword count for the displayed page only (a cheap mentions-only
+    # lookup over <=`limit` ids); null per row when no keyword resolved.
+    cmap = _keyword_counts(db, kw_id, [a.id for a in articles])
+    results = [_article_row(a, keyword_count=cmap.get(a.id)) for a in articles]
 
-    return {"total": total, "limit": limit, "offset": offset, "results": results}
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "results": results,
+        "keyword_for_count": kw_term,
+    }
 
 
 @app.get("/api/articles/export")
