@@ -16,6 +16,12 @@ function words leaked as keywords. Two waves:
   hand-grown `_EXTRA_STOPWORD_TEXT` batches, but those were PARTIAL. The FULL
   stopwords-iso lists are vendored here: ar, bg, da, de, el, es, hr, hu, id, it,
   nl, no, pl, pt, ru, sl, sv (and nb, aliased to the Bokmål-based "no" list).
+- 2026-07-01 (follow-up) — bs (Bosnian) aliased to the Croatian "hr" list (BCS /
+  Serbo-Croatian Latin function words are shared). A hand-curated temporal-deictic
+  adverb layer (yesterday/tomorrow: gestern/вчера/mañana/…) lives in
+  src/services/stopwords.py CURATED_SCOPED_STOPWORDS — NOT here, because it is not
+  from stopwords-iso and build_stopwords.py would overwrite these files. It is merged
+  into the same language-scoped channel.
 
 They are a SUBSET of stopwords-iso (only the languages we needed), applied
 LANGUAGE-SCOPED at extraction — i.e. the Vietnamese list filters only Vietnamese

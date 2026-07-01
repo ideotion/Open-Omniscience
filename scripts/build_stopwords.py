@@ -46,14 +46,20 @@ LANGS = [
     # 2026-07-01 wave: managed languages that had only PARTIAL hand-grown batches
     "ar", "bg", "da", "de", "el", "es", "hr", "hu", "id", "it",
     "nl", "no", "pl", "pt", "ru", "sl", "sv",
-    # nb (Norwegian Bokmål) is managed but absent from stopwords-iso; the "no" list
-    # is Bokmål-based, so alias it (recorded below).
-    "nb",
+    # Managed languages ABSENT from stopwords-iso, sourced via a linguistically-sound
+    # alias (documented below), not a fabricated list:
+    #   nb  Norwegian Bokmål  -> the "no" list is Bokmål-based.
+    #   bs  Bosnian           -> Croatian ("hr"): BCS/Serbo-Croatian Latin function words
+    #                            are shared and mutually intelligible.
+    # (sr is also BCS but written largely in CYRILLIC, so the Latin "hr" list does not
+    # transliterate cleanly — it keeps its hand-grown batch until a Serbian source lands.
+    # az is Turkic but distinct enough from tr that aliasing would be wrong.)
+    "nb", "bs",
 ]
 
 # Languages whose list is sourced from a stopwords-iso code that differs from the
 # file name (documented alias, not a fabricated list).
-ALIASES = {"nb": "no"}
+ALIASES = {"nb": "no", "bs": "hr"}
 
 OUT = pathlib.Path(__file__).resolve().parents[1] / "configs" / "stopwords_iso"
 
