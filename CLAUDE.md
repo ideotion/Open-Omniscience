@@ -460,8 +460,61 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     with `JSONResponse`. **Install:** pip unpacks big wheels in `TMPDIR` (=/tmp =
     tmpfs on Qubes) → `Errno 28` even with disk free; point `TMPDIR` at the install
     volume + classify disk-full vs network failures honestly.
+  - **STOPLIST ARCHITECTURE — the safe mental model for adding stopwords (2026-07-01,
+    #525/#528/#530):** two channels with OPPOSITE collision behaviour. (a) `global_stopwords()`
+    (`src/analytics/extract.py`) = `_EXTRA_STOPWORDS` ∪ English `default_stopwords` ∪
+    `get_stopwords(en)` ∪ `get_stopwords(fr)` = LANGUAGE-AGNOSTIC → collision-PRONE: a word
+    here hides the same spelling in EVERY corpus language, so it needs cross-language review
+    (NEVER globalise a word that is content elsewhere — e.g. English "content" = French
+    "happy"; use the plural "comments" not fr "comment"=how). Latin additions want
+    length≥4/accented-only. (b) the SCOPED channel (`StopwordsManager.scoped_stopwords` =
+    the vendored `configs/stopwords_iso/*.txt` + the in-code `CURATED_SCOPED_STOPWORDS`
+    [temporal] + `PUBLISHING_BOILERPLATE_SCOPED` in `src/services/stopwords.py`) is
+    LANGUAGE-SCOPED → collision-FREE by construction, so a FULL per-language list drops in
+    freely. GOTCHA: en/fr take the `language_stopwords` branch in `get_stopwords`, so the
+    scoped channel does NOT reach en/fr — an English addition MUST go in `language_stopwords`
+    (= globalised, collision-checked). So: distinct-script or non-en/fr → scoped (free);
+    en/fr, or anything you deliberately want global → `language_stopwords`. `build_stopwords.py`
+    regenerates the `.txt` (offline; `stopwordsiso` bundles the data) — hand edits there are
+    overwritten, so curated words live in the in-code dicts. sr/bs share BCS (bs aliased to hr).
+  - **OPEN-CLASS keyword garbage has NO safe blanket rule (2026-07-01, #530):** function-word
+    garbage is solved by stopword lists, but adjectives/common nouns are DUAL-USE (health/policy/
+    state are topics AND noise) and there is no POS tagger — a category sweep deletes real topics.
+    The honest levers are corpus-statistical DF-ubiquity DETECTION (`analyze_keyword_log.py
+    --generic-terms` — propose, human judges, never auto-apply) + a TIGHT English-precedented
+    platform/closed-class batch (podcast/newsletter/cookies + indefinite pronouns). Inflected
+    generic VERBS (zeigen/voir/finden) are lemmatization territory (P4.3, gated on the eval
+    harness), not a surface stoplist. **MEASURE-FIRST:** filter an exported keyword log through
+    the CURRENT stoplist before analysing — a log exported before a stoplist change OVERSTATES
+    garbage (nearly re-targeted German function words already fixed by #525); the user's real
+    exported logs sit in the session scratchpad (`fixed_log.zip`) and are the way to measure a
+    batch's true impact (e.g. #530 = 43 rows / 20,747 mentions).
 
 ## Open queue (when maintainer says proceed)
+- **KEYWORD STOPLIST — open-class review loop + residual gaps (2026-07-01; user DEFERRED the
+  next round to a fresh session):** function-word garbage is SOLVED — #525 vendored full
+  stopwords-iso lists for 18 managed languages, #528 added temporal-deictic adverbs (gestern/
+  вчера/mañana) + the Bosnian→hr alias, #530 shipped the open-class DETECTOR
+  (`analyze_keyword_log.py --generic-terms`) + a closed-class (English indefinite pronouns) +
+  platform-furniture (podcast/newsletter/cookies · de inhalte · es publicidad) batch. REMAINING:
+  (1) **THE OPEN-CLASS REVIEW LOOP** — the maintainer exports a fresh keyword log, runs
+  `--generic-terms` (df-ubiquity candidates), hand-picks garbage from the DUAL-USE tail (topics
+  like health/policy/system/salud STAY content), and a session applies the reviewed per-language
+  batch into `CURATED_SCOPED_STOPWORDS`/`PUBLISHING_BOILERPLATE_SCOPED` (scoped, collision-free)
+  or `language_stopwords["en"]` (global, en-safe) per the stoplist-architecture lesson. This is
+  the honest way to go deeper — propose→human-review→apply, never a category sweep. (2) **sr + az
+  are managed but under-covered** — sr (Serbian, largely CYRILLIC — no clean transliteration from
+  the Latin hr list) + az (Azerbaijani, Turkic ≠ tr) run on the English default + a thin global
+  sliver and LEAK grammar (probed: sr јуче/данас/новом, az dünən/yeni); they need a proper base
+  stoplist SOURCE (both ABSENT from stopwords-iso), not a fabricated list. (3) **fr publishing
+  furniture** (publicité/contenu) still leaks — fr takes the `language_stopwords` branch so the
+  scoped channel is ignored; a fr batch would globalise (collision-check needed); low-df, deferred.
+  (4) OPTIONAL: surface the `--generic-terms` detector IN-APP via a `generic_terms` block in
+  `src/analytics/engine_report.py` so it rides the exported diagnostics log automatically (like
+  `ring_candidates`/`lemma_preview`), closing the loop without the offline script. (5) inflected
+  generic VERBS (zeigen/finden/voir) = the P4.3 lemmatization + a lemma denylist, gated on the P3
+  IR eval harness + a graded gold set (the still-outstanding operational input). All three PRs
+  merged to 0.09; existing corpus junk clears on the next "Clean up keywords" re-index.
 - **KEYWORD-ENGINE OPTIMIZATION — RESEARCH FOLDED IN + IMPLEMENTATION STRATEGY (2026-06-26; maintainer
   ran parallel internet sessions on keyword conflation + IR/search performance; outputs analyzed
   CODE-GROUNDED + folded in; STRATEGY/DOCS-ONLY this session — the BUILD is a NEXT session):** the 3
