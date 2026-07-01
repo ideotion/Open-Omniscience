@@ -1867,6 +1867,24 @@ def test_ui_invariants():
     assert "/api/scheduler/activity" in html, (
         "the Schedule panel must reuse the existing /api/scheduler/activity data (no new backend; CLAUDE.md #20)"
     )
+    # 20e. Coverage (per-tag scraping REACH): a Coverage subtab surfaces which
+    #      tags have been reached, how many sources remain, at what %, built ONLY
+    #      from the collector's own fetch timestamps (reach + freshness, never a
+    #      completion claim or a score). Same subtab grammar (data-tab, DOM-text
+    #      label, no inline onclick in the nav — asserted above); its own
+    #      read-only endpoint; loaded lazily when the subtab opens.
+    assert '<button data-tab="coverage">Coverage</button>' in html, (
+        "the task-manager window needs a Coverage subtab button (data-tab, DOM-text label)"
+    )
+    assert 'id="tm-coverage"' in html and 'id="cov-tm-body"' in html, (
+        "the task-manager Coverage panel (#tm-coverage / #cov-tm-body) must exist"
+    )
+    assert "function loadTagCoverage(" in html and "function _renderCoverage(" in html, (
+        "the Coverage panel needs its loader + renderer (loadTagCoverage/_renderCoverage)"
+    )
+    assert "/api/scheduler/coverage" in html, (
+        "the Coverage panel must read the read-only /api/scheduler/coverage endpoint"
+    )
     # 21. Insights auto-indexes in the background (UI_SHELL_REDESIGN §6): the
     #     manual "Index corpus" button + palette action are gone; indexing follows
     #     ingest and a silent top-up clears any legacy backlog when Insights opens.
