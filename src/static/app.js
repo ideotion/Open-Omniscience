@@ -1193,7 +1193,6 @@
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
-      if (cat === "data") { modelsBackupStatus(); }  // the large-data folder-backup panel was collapsed into the unified Export/Import dialogs (Slice 3)
       if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
     }
     function buildDrawer() {
@@ -4244,51 +4243,6 @@
       } else { prog.textContent = ""; }
     }
 
-    async function modelsBackupStatus() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const el = $("models-bk-status"); if (!el) return;
-      try {
-        const d = await api("/api/backup/models");
-        if (d.models && d.models.length) {
-          el.textContent = `${d.models.length} ${t("model(s)")} · ${_fmtBytes(d.total_bytes)} · ${d.store}`;
-        } else {
-          // Degrade LOUDLY: a protected store (the Linux ollama-user service dir) or an
-          // empty one returns an actionable hint (set OLLAMA_MODELS) — show it, never a
-          // bare "none" that hides WHY the models can't be found.
-          el.textContent = d.hint || t("No local Ollama model store found.");
-        }
-      } catch (e) { el.textContent = e.message; }
-    }
-    async function modelsBackupExport(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (btn) btn.disabled = true;
-      try {
-        const r = await fetch("/api/backup/models/export", {method: "POST",
-          headers: {"Content-Type": "application/json"}, body: "{}"});
-        if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.detail || r.statusText); }
-        const blob = await r.blob();
-        const cd = r.headers.get("Content-Disposition") || ""; const m = cd.match(/filename="?([^";]+)"?/);
-        const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-        a.download = m ? m[1] : "open-omniscience-models.oomodels";
-        document.body.appendChild(a); a.click(); a.remove();
-        toast(t("Models backup downloaded.") + " " + _fmtBytes(blob.size));
-      } catch (e) { toast(t("Models backup failed:") + " " + e.message, "err"); }
-      finally { if (btn) btn.disabled = false; }
-    }
-    async function modelsBackupImport(input) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const f = input.files && input.files[0]; if (!f) return;
-      const fd = new FormData(); fd.append("file", f);
-      toast(t("Restoring models…"));
-      try {
-        const r = await fetch("/api/backup/models/import", {method: "POST", body: fd});
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.detail || r.statusText);
-        toast(t("Models restored:") + ` +${d.blobs_added} · ${d.blobs_skipped} ${t("already present")}`);
-        modelsBackupStatus();
-      } catch (e) { toast(t("Models restore failed:") + " " + e.message, "err"); }
-      finally { input.value = ""; }
-    }
     function _v2PlanTable(plan) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const rows = Object.entries(plan || {})

@@ -1380,15 +1380,8 @@
         <button id="ux-run" onclick="_uxRun(this)">Back up</button>
       </div>
     </dialog>
-    <section class="panel">
-      <div class="phead"><h2>Local LLM models (separate backup)</h2></div>
-      <p class="muted" style="margin-top:0">Ollama models live outside your corpus, so they are NOT in the full backup. Back them up separately to avoid re-downloading (multi-GB; slow over Tor). Restore is additive and bit-identical — existing blobs are skipped, never overwritten.</p>
-      <div id="models-bk-status" class="hint">Checking the local model store…</div>
-      <div class="row" style="margin-top:6px">
-        <button class="secondary" onclick="modelsBackupExport(this)">Download models backup</button>
-        <label class="switch" style="margin-top:0"><input type="file" id="models-bk-file" accept=".oomodels" onchange="modelsBackupImport(this)" style="display:none"><button class="secondary" onclick="document.getElementById('models-bk-file').click()">Restore models…</button></label>
-      </div>
-    </section>
+    <!-- "Local LLM models (separate backup)" panel removed: models are now a category in the
+         unified Export/Import dialogs above (and the capped .oomodels flow was retired). -->
     <!-- Large-data folder backup + encrypted volume backup panels removed (Slice 3):
          both are now driven by the unified Export/Import dialogs above. The backend
          engines + endpoints are unchanged; only these redundant panels were collapsed. -->
@@ -1415,7 +1408,7 @@
         <legend class="muted" style="padding:0 6px">What to restore</legend>
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always merged)</span></label>
         <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-restore-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to restore everything except them</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use Import… at the top (or the “Local LLM models” panel)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use Import… at the top</span></label>
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— restore these via Import… at the top</span></label>
         <div class="hint" style="margin-top:4px">The preview reflects your choice — what you preview is exactly what gets merged.</div>
       </fieldset>
