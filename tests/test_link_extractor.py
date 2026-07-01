@@ -29,6 +29,23 @@ def test_extracts_all_anchors():
     assert "https://example.com/about" in urls
 
 
+def test_malformed_ipv6_url_does_not_abort_extraction():
+    """Field diagnostics 2026-07-01: a scraped anchor with an invalid IPv6 literal
+    (``http://[::1`` -> urlparse raises 'Invalid IPv6 URL') aborted the WHOLE article's
+    link extraction ('link indexing on ingest failed'). One bad URL must be skipped, the
+    other links preserved, and extraction must never raise."""
+    html = (
+        '<html><body>'
+        '<a href="https://good.example/one">Good one</a>'
+        '<a href="http://[::1">Broken IPv6</a>'
+        '<a href="https://good.example/two">Good two</a>'
+        '</body></html>'
+    )
+    links = _le().extract_links(html, base_url="https://good.example")  # must not raise
+    urls = {l["url"] for l in links}
+    assert "https://good.example/one" in urls and "https://good.example/two" in urls
+
+
 def test_resolves_relative_against_base():
     links = _le().extract_links(_HTML, base_url="https://example.com")
     urls = {l["url"] for l in links}
