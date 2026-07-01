@@ -116,6 +116,32 @@ def test_every_producer_emits_schema_valid_cards(corpus):
     assert fired >= 3, "the corpus fixture should fire several producers (sanity floor)"
 
 
+def test_f1_producers_carry_article_ids():
+    """Field diagnostics 2026-07-01 (F1): these producers emitted cards with NO
+    ``article_ids``, so clicking one ran a synthetic-seed text search (e.g.
+    ``heatwave|fr|France|2026-06-05``, ``ownership-change``) that loaded ~0 — the card
+    LOST its corpus. Each recoverable one now carries its exact article set so the click
+    opens ``openAnalysisForIds`` over precisely those articles. Guarded at the SOURCE: the
+    small fixture can't reliably fire weather/ownership/lineage, and this is exactly the
+    line that regressed (a Card without ``article_ids``)."""
+    import inspect
+
+    for fn in (P.lonely_signal, P.weather_corroboration, P.ownership_change, P.story_lineage):
+        assert "article_ids=" in inspect.getsource(fn), (
+            f"{fn.__name__} must pass article_ids to its Card so the click opens the exact "
+            "corpus (F1 home-card hard-linking; field diagnostics 2026-07-01)"
+        )
+
+
+def test_lonely_signal_card_carries_its_article_when_it_fires(corpus):
+    """Runtime check where the fixture allows it: if lonely_signal fires, its card carries
+    the representative article id (a non-empty, hard-linked corpus), not an empty set."""
+    for card in P.lonely_signal(corpus) or []:
+        assert card.article_ids and all(isinstance(i, int) for i in card.article_ids), (
+            "a lonely_signal card must hard-link its single article (F1)"
+        )
+
+
 def test_producer_failures_are_isolated_not_fatal():
     """registry.run_all must isolate a misbehaving producer (one bad producer can
     never blank the whole feed) — a registered raiser is logged, not propagated."""
