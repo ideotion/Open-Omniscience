@@ -97,3 +97,39 @@ Progress: the volume + folder jobs already report `{phase, volumes_written}` / `
 6a Import dialog (routing + the newsletter fuse + the absorption test) → 6b Export dialog (the
 OOENC2-mandate guard + the selective tickboxes) → retire the scattered controls (made
 unreachable, not deleted, until the click-through confirms the dialogs cover everything).
+
+---
+
+## ADDENDUM — maintainer refinements 2026-07-01 (SUPERSEDES parts of 6a/6b above)
+
+The maintainer confirmed a simpler, folder-centric shape this session. Where this conflicts
+with the sections above, THIS wins:
+
+- **Remove the 2 GiB single-file path ENTIRELY** (both backup and restore). "Some backup
+  options simply don't work [at scale] — remove them entirely; keep what works all the time,
+  whatever the database." So 6b's "plaintext / quick export escape hatch" is DROPPED; the only
+  encrypted-corpus backup is the OOENC2 volumes + parity path. The single-file *restore* stays
+  reachable ONLY as a one-time legacy-migration case discovered by the Import scan (below), then
+  the endpoints are removed in the final slice.
+- **Import is FOLDER-DISCOVERY-driven, not a kind-picker.** Point the Import at a folder → it
+  SCANS + classifies the contents (progress bar if slow) → asks "what do you want to import?"
+  over what was ACTUALLY FOUND (our corpus volumes, model blobs, maps, wiki dumps, loose `.eml`,
+  source CSV, legacy single-file backup). No dedicated LLM tool — models are one detected kind.
+- **Export is INVENTORY-driven, one checklist.** ONE question "what do you want to back up?" over
+  what EXISTS + sizes: **Corpus** (one atomic encrypted item, with a breakdown shown — articles ·
+  sources · **dates** · keywords · size — so nothing feels forgotten) + **LLM models · offline
+  maps · Wikipedia dumps** (separately selectable blobs). Not the 4 kinds of 6b.
+- **New backend:** `GET /api/backup/inventory` (`src/backup/inventory.py`) reports the above.
+- **Folder pick:** reuse the existing `ooFolderPicker(inputId, requireWritable)` + `/api/fs/list`.
+
+### Slice status (this build)
+- **Slice 1 — Export/Backup: BUILT (this PR).** `/api/backup/inventory` + a unified
+  "Export / Backup" dialog (`#ux-export`) that drives `/backup/v2/volumes/start` (corpus) then
+  `/backup/folder/start` (blobs) into one destination folder, inventory-checklist + progress.
+  Additive — old panels stay. `tests/test_backup_inventory.py`. Frontend browser-unverified.
+- **Slice 2 — Import discovery:** a folder-scan/classify endpoint + the folder-discovery Import
+  dialog (reuses the restore/ingest endpoints in the table above).
+- **Slice 3 — Simplify + remove:** delete the single-file 2 GiB path + collapse the scattered
+  panels into the two dialogs, absorption-test-gated.
+
+Full standalone write-up: `docs/design/UNIFIED_IMPORT_EXPORT.md` addendum + this session's ledger.
