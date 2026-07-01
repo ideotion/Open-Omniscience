@@ -20,7 +20,7 @@ def test_classifies_a_mixed_export_folder(tmp_path):
     _touch(tmp_path / "models" / "blobs" / "sha256-abc")
     _touch(tmp_path / "a.eml")                            # loose newsletters
     _touch(tmp_path / "sub" / "b.eml")
-    (tmp_path / "sources.csv").write_text("name,domain,country\nBBC,bbc.com,gb\n")
+    (tmp_path / "sources.csv").write_text("name,domain,country\nBBC,bbc.com,gb\n", encoding="utf-8")
     _touch(tmp_path / "open-omniscience-20260701.oobackup")  # legacy
 
     out = scan_import_folder(tmp_path)
@@ -39,7 +39,7 @@ def test_empty_folder_finds_nothing(tmp_path):
 
 
 def test_csv_without_domain_header_is_not_a_source_list(tmp_path):
-    (tmp_path / "notes.csv").write_text("date,amount\n2026-01-01,5\n")
+    (tmp_path / "notes.csv").write_text("date,amount\n2026-01-01,5\n", encoding="utf-8")
     assert "source_csv" not in scan_import_folder(tmp_path)["found"]
 
 
@@ -50,7 +50,7 @@ def test_models_export_is_not_mistaken_for_legacy_backup(tmp_path):
 
 def test_non_directory_raises(tmp_path):
     f = tmp_path / "x.txt"
-    f.write_text("hi")
+    f.write_text("hi", encoding="utf-8")
     with pytest.raises(ValueError, match="not a folder"):
         scan_import_folder(f)
 
