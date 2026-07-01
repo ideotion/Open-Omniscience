@@ -326,6 +326,9 @@ def framing_split(session) -> list[Card]:
         return [
             Card(
                 type="framing_split",
+                # F1 follow-up (2026-07-01): hard-link the exact articles the framing
+                # comparison analysed so the click opens them, not a broad term search.
+                article_ids=sorted({a.id for a, _ in rows}),
                 trigger=_trigger(
                     "Two of your sources cover the same topic but in opposite emotional "
                     "registers — one reads positive, another negative. That divergence is "
@@ -935,6 +938,9 @@ def emotion_profile_card(session) -> list[Card]:
     return [
         Card(
             type="emotion_profile",
+            # F1 follow-up (2026-07-01): hard-link the mention articles the emotion
+            # profile was computed over, so the click opens that exact corpus.
+            article_ids=sorted({m["article_id"] for m in ctx.get("mentions", []) if m.get("article_id")}),
             trigger=_trigger(
                 "The words used around this topic lean toward one emotional category "
                 "more than the others. That is a pattern in the wording to read, never "
