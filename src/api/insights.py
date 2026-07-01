@@ -774,6 +774,15 @@ def warm_cache(db: Session) -> dict:
     except Exception:  # noqa: BLE001 - never fatal to a pass
         _LOG.warning("columnar read-model refresh failed during warm_cache", exc_info=True)
 
+    # Opt-in (OO_COLUMNAR_SERVE=1) in-memory rollup serve: (re)build it in the background so
+    # the windowed views pick up new articles. No-op unless opted in; never blocks.
+    try:
+        from src.analytics import rollup_serve
+
+        rollup_serve.refresh(db)
+    except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
+        _LOG.warning("rollup serve refresh failed during warm_cache", exc_info=True)
+
     warmed: list[str] = []
     # Warm the EXACT keys the surfaces request, or the warm value is never a hit and
     # the user pays the cold heavy query themselves (P0-4, field test 2026-06-22: the

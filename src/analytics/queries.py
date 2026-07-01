@@ -274,6 +274,7 @@ def top_terms(
     family (``Trump`` / ``Trump's`` / ``Donald Trump`` -> one row) for display, with
     summed mentions and the member forms listed — see src/analytics/families.py.
     """
+    _rollup_rows: list[dict] | None = None
     if not days and not country:
         # CORPUS-WIDE top-N (the hot Home grouped view): read the denormalised
         # per-keyword counters maintained at index time instead of joining +
@@ -293,43 +294,64 @@ def top_terms(
         rows = q.order_by(Keyword.mention_count.desc()).limit(limit * 4).all()
     else:
         # Windowed / per-country: the corpus-wide counters cannot serve a scoped
-        # SUM, so this path keeps the mention aggregation (filtered, then grouped).
-        q = session.query(
-            Keyword,
-            func.sum(KeywordMention.count).label("m"),
-            func.count(func.distinct(KeywordMention.article_id)).label("arts"),
-        ).join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-        if days:
-            q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
-        if country:
-            q = q.filter(KeywordMention.country == country.lower())
-        q = _apply_kind(q, kind)
-        rows = (
-            q.group_by(Keyword.id)
-            .order_by(func.sum(KeywordMention.count).desc())
-            .limit(limit * 4)
-            .all()
-        )
+        # SUM, so this path aggregates the mention table (filtered, then grouped) — UNLESS
+        # the opt-in in-memory rollup can serve the TIME window (it can't do per-country),
+        # in which case we sum the tiny rollup instead of scanning mentions. The rollup
+        # returns rows in the SAME shape/order this query would, so the honesty layers
+        # below (hidden-word filter, families, rings, translations) are byte-identical.
+        rows: list = []
+        if days and not country:
+            from src.analytics import rollup_serve
+
+            _rollup_rows = rollup_serve.windowed_rows(session, days=days, kind=kind, limit=limit * 4)
+        if _rollup_rows is None:  # not opted in / not built / per-country -> live query
+            q = session.query(
+                Keyword,
+                func.sum(KeywordMention.count).label("m"),
+                func.count(func.distinct(KeywordMention.article_id)).label("arts"),
+            ).join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            if days:
+                q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
+            if country:
+                q = q.filter(KeywordMention.country == country.lower())
+            q = _apply_kind(q, kind)
+            rows = (
+                q.group_by(Keyword.id)
+                .order_by(func.sum(KeywordMention.count).desc())
+                .limit(limit * 4)
+                .all()
+            )
     is_hidden = _hidden_predicate()
     cap = limit * 4 if group else limit
     terms = []
     stored_lang: dict[str, str | None] = {}
-    for k, m, a in rows:
-        if is_hidden(k.normalized_term):
-            continue
-        stored_lang[k.normalized_term] = k.language
-        terms.append(
-            {
-                "term": k.term,
-                "normalized": k.normalized_term,
-                "kind": kind_of(k),
-                "language": k.language,
-                "mentions": int(m),
-                "articles": int(a),
-            }
-        )
-        if len(terms) >= cap:
-            break
+    if _rollup_rows is not None:
+        # Rollup rows are already {term, normalized, kind, language, mentions, articles};
+        # apply the SAME hidden-word filter + cap the live path applies.
+        for r in _rollup_rows:
+            if is_hidden(r["normalized"]):
+                continue
+            stored_lang[r["normalized"]] = r["language"]
+            terms.append(dict(r))
+            if len(terms) >= cap:
+                break
+    else:
+        for k, m, a in rows:
+            if is_hidden(k.normalized_term):
+                continue
+            stored_lang[k.normalized_term] = k.language
+            terms.append(
+                {
+                    "term": k.term,
+                    "normalized": k.normalized_term,
+                    "kind": kind_of(k),
+                    "language": k.language,
+                    "mentions": int(m),
+                    "articles": int(a),
+                }
+            )
+            if len(terms) >= cap:
+                break
     ringed = False
     if group:
         from src.analytics import equivalence
@@ -353,6 +375,10 @@ def top_terms(
         "grouped": group,
         "terms": terms,
     }
+    if _rollup_rows is not None:  # disclose the served source + as-of (honesty by construction)
+        from src.analytics import rollup_serve
+
+        out["basis"] = rollup_serve.basis(days)
     if ringed:
         out["rings_merged"] = True
         out["caveat"] = _RING_CAVEAT
