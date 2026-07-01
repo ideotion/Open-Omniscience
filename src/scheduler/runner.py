@@ -891,6 +891,22 @@ class BackgroundScheduler:
                     result["ai_auto"] = _auto
             except Exception:  # noqa: BLE001 - never let AI extraction break a scrape
                 _LOG.warning("auto-on-ingest extraction failed", exc_info=True)
+            # Auto source-metadata enrichment (local, zero-network): deduce each
+            # source's topic tags from the keywords it actually publishes and union
+            # them into Source.tags. Freshness-gated (~daily) so it is usually a
+            # no-op; best-effort; opt-out via auto_enrich_sources. This is the
+            # "automatic on install" half -- the networked Wikidata source_type pass
+            # stays a consented Diagnostics action (it egresses to Wikidata).
+            try:
+                if getattr(settings, "auto_enrich_sources", True):
+                    from src.analytics.source_topics import run_auto_source_enrichment
+
+                    _enr = run_auto_source_enrichment(session)
+                    if _enr.get("ran") and _enr.get("sources_updated"):
+                        result["source_enrich"] = _enr
+                        _LOG.info("source auto-enrichment: %s", _enr)
+            except Exception:  # noqa: BLE001 - never fail the scrape on enrichment
+                _LOG.warning("source auto-enrichment failed", exc_info=True)
             # Precompute + cache the Home briefing so it loads instantly. Best-effort:
             # a briefing failure must never fail the scrape that just succeeded.
             _phase_set("briefing")

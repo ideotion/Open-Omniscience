@@ -839,6 +839,22 @@ def keyword_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.post("/enrich-sources")
+def enrich_sources(db: Session = Depends(get_db)) -> JSONResponse:
+    """Enrich source metadata from the LOCAL corpus (deduced topic tags).
+
+    Zero-network: deduces each source's topics from the keywords it actually
+    publishes (keyword_tags axis="topic") and unions them into ``Source.tags`` --
+    additive, never overwrites a curated tag, idempotent. This is the same pass the
+    scheduler runs automatically (freshness-gated); the button forces it now. The
+    networked Wikidata ``source_type`` pass is a SEPARATE, consented action (it
+    egresses to Wikidata over clearnet)."""
+    from src.analytics.source_topics import apply_source_topics
+
+    result = apply_source_topics(db)
+    return JSONResponse({"mode": "corpus", **result})
+
+
 @router.get("/ir-eval-selftest")
 def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     """Run the IR retrieval-eval harness self-test (keyword-engine Phase 3).

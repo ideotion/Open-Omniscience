@@ -7595,6 +7595,22 @@
         + `</svg>`
         + `<div class="hint muted" style="margin-top:4px">${esc(t("Dashed line = perfectly linear growth. The more the curve bows below it, the more the vocabulary is saturating (fewer junk keywords)."))}</div>`;
     }
+    // Diagnostics: force the local corpus source-topic enrichment now (it also runs
+    // automatically in the background). Zero-network; additive to Source.tags.
+    async function enrichSources(btn) {
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Enriching…";
+      try {
+        const d = await api("/api/diagnostics/enrich-sources", { method: "POST" });
+        btn.textContent = `Enriched ${d.sources_updated || 0} sources (+${d.tags_added || 0} tags)`;
+      } catch (e) {
+        btn.textContent = "Enrich failed — see console";
+        console.error("enrichSources", e);
+      }
+      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 4000);
+    }
+
     async function viewKeywordGrowth(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn) btn.disabled = true;
