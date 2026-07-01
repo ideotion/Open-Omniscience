@@ -975,6 +975,7 @@ class BackgroundScheduler:
 
     def activity(self, session) -> dict:
         """The collection-activity panel's payload: status + plan + transfer rates."""
+        from src.ingest.fetch_verdict import fetch_failed_reasons
         from src.monitoring.activity import activity_monitor
         from src.monitoring.collect_perf import get_latest
 
@@ -983,6 +984,10 @@ class BackgroundScheduler:
         return {
             **self.status(),
             "plan": plan_preview(session, self._settings_provider(), last_result=last),
+            # Break the last pass's fetch_failed count down by reason (Tor-403 vs
+            # DNS vs connect vs …) so the number is never a mystery. Reads the flat
+            # "ff:<reason>" tally keys; empty when the last pass had no failures.
+            "fetch_failed_reasons": fetch_failed_reasons(last),
             "per_host_rates": activity_monitor.per_host_rates(),
             # The app's OWN measured download rate (KiB/s, wall-clock) + the latest
             # bandwidth-governor sample, so the Collect UI can show target vs actual.

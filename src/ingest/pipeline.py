@@ -72,6 +72,7 @@ from src.ingest import (
     RobotsUnavailable,
 )
 from src.ingest.extract import extract_article
+from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
 from src.utils.url_utils import canonicalize_url, generate_content_hash
 
 
@@ -380,6 +381,13 @@ def ingest_source(
     for link in links:
         outcome = ingest_url(session, source, link, fetcher=fetcher)
         tally[outcome.result.value] += 1
+        # Break the raw fetch_failed count down by WHY (Tor-403 vs DNS vs connect
+        # vs …) so a report isn't a mystery number. Flat int keys ("ff:<reason>")
+        # so the scheduler's scalar tally-aggregation sums them for free; the
+        # per-reason counts always sum to fetch_failed (unknown -> "other").
+        if outcome.result is IngestResult.FETCH_FAILED:
+            rk = fetch_reason_key(classify_fetch_failure(outcome.detail))
+            tally[rk] = tally.get(rk, 0) + 1
 
     # De-churn backoff: a 200 that stored ZERO new articles means this feed
     # served only content we already have. Delay its next re-check (capped,
