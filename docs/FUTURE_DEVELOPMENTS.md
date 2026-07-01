@@ -682,6 +682,87 @@ corpus views).
 
 ---
 
+## Clickable in-article keywords → the keyword analysis window, with a stats hover (maintainer concept 2026-07-01; DESIGN-ONLY)
+
+**Concept (maintainer):** inside an article the user should SEE its keywords and be
+able to CLICK them; a click opens the unified analysis window on the **Keyword** tab,
+seeded with that keyword (a new window / browser tab). A "hover-like" affordance
+comes later and shows keyword STATS — exact contents undecided ("I'm not sure what it
+should show yet, ideally keyword stats"). **Build the basics first** (clickable →
+analysis), design the hover after.
+
+**Grounded in the existing architecture (verified 2026-07-01 — no new plumbing needed
+for the basics):**
+- The offline **reader** (`/api/articles/{id}/view`, a standalone server page +
+  `reader.js`/`reader.css`, English-only per fork-1) already fetches the article's
+  indexed keywords for its **Keywords tab**
+  (`GET /api/insights/corpus-keywords?article_ids=<id>`) but renders them as a
+  NON-clickable list and does NOT mark them inline in the article body.
+- The SPA already has the exact deep-link plumbing: `openAnalysisInNewTab(q)` opens
+  `/?analyze=<q>` in a new browser tab, and on boot `_hydrateCardCorpus()` reads
+  `?analyze=` / `?corpus=` and hydrates the unified analysis window (`#an`) via
+  `openAnalysisFor()` — the ONE universal opener (already used by the SPA's own keyword
+  links, commodity ⊞, agenda rows, Home cards).
+- The `#an` window has a **Keywords** subtab (`ooSubtabs`, `an-subtabs`).
+- The backend already treats the keyword-click as first-class: `_resolve_count_keyword`
+  does an EXACT normalised match, so "this keyword" means exactly the term clicked.
+
+### Slice 1 — the basics (buildable now, small)
+1. **Reader — clickable keywords**, two places, same target: (a) make the existing
+   Keywords-tab list entries clickable; and (b) MARK the article's indexed keyword terms
+   inline in the Read pane, each occurrence clickable.
+   - **Grounding, not fabrication:** mark ONLY terms in the article's TRUSTED indexed
+     keyword set (the `corpus-keywords?article_ids=` result the reader already fetches) —
+     never a naive dictionary/text scan. Honest (deduced keywords, already labelled
+     deduced in the reader) and bounded (the article's own small keyword set, one text pass).
+   - A click → `window.open("/?analyze=" + encodeURIComponent(term) + "&tab=keywords",
+     "_blank", "noopener")` — a new browser tab (matching the SPA's existing new-tab
+     pattern). Seed the NORMALISED/canonical term (what the Keyword tab resolves on), not
+     the raw surface form.
+2. **SPA — land on the Keyword tab:** extend `_hydrateCardCorpus()` to honour a
+   `&tab=keywords` param (or a dedicated `?kw=<term>`): after `openAnalysisFor(term)`,
+   select the `#an` window's **Keywords** subtab via the `ooSubtabs` select API, so it
+   opens "directly into the keyword tab" as asked. `?analyze=` alone already opens the
+   window; this just picks the subtab.
+3. **Guards:** a `test_repo_invariants` source-guard (reader emits keyword links to
+   `/?analyze=…&tab=keywords`; the SPA deep-link honours `tab=keywords`); reader is
+   browser-unverified per fork-3.
+
+### Slice 2 — the stats hover (design; maintainer "not sure what it should show yet")
+On hover (+ keyboard focus / touch long-press, mirroring the SPA's **#oo-tip** universal
+convention, invariant #17 — the reader is standalone, so it needs a small local bubble or
+a lightweight adoption of the same idea), show a bubble of REAL keyword stats, lazily
+fetched per keyword. Candidates — ALL from existing endpoints, **counts only, no score,
+method + caveat visible** (the non-negotiables):
+- mention count (n) + distinct-article spread (this article vs the corpus) —
+  `corpus-keywords` / `top`;
+- recent trend (the disclosed window-vs-baseline RATE, never a momentum score) —
+  `trending` / `trending-windows`;
+- language breakdown + the ring TRANSLATION when the term is in a Wikidata-QID ring
+  (original → translation, per the language-aware-keywords ruling) — `equivalence`;
+- top co-occurring keywords (PMI as "association strength, not causation") —
+  `associations`.
+OPEN (maintainer to decide): exactly which of these the hover shows, and how much before
+it clutters.
+
+### Open questions / notes
+- **Parity:** should keywords be clickable + hover-able in the SPA's analysis **Articles**
+  list and **search results** too (not just the reader)? The SPA already has
+  `openAnalysisFor` + #oo-tip, so parity there is cheap — decide when built.
+- **New tab vs in-app window:** the reader is standalone, so a new tab is natural; a
+  keyword clicked from WITHIN the SPA is smoother as an in-SPA `openAnalysisFor` spawn —
+  pick per surface.
+- **Marking mechanics:** all occurrences vs first only; multi-word / overlapping spans;
+  case-insensitive surface match while seeding the canonical term.
+- **Perf:** inline marking is a bounded pass over the article body against its own keyword
+  set; the hover fetch is on-demand per keyword and must read via the article_id-indexed
+  mention tables, NEVER a `keyword_mentions`→`articles` decrypt join (the codec
+  column-order trap).
+- **i18n:** any new chrome strings ship ×12; the SPA hover reuses the translated-title
+  #oo-tip mechanism.
+
+---
+
 ## Evidence-tiered cards — remaining slices
 
 Slice 1 shipped (Card.trigger plain+math, Wilson/Katz CIs, 7 producers
