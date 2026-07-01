@@ -11,12 +11,13 @@ result -- never a simulated "healthy".
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database.models import Source
 from src.database.session import get_db
+from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
 from src.scheduler.runner import get_scheduler
 from src.scheduler.settings import (
     VALID_MODES,
@@ -80,6 +81,18 @@ def scheduler_activity(db: Session = Depends(get_db)) -> dict:
     payload = get_scheduler().activity(db)
     payload["valid_modes"] = list(VALID_MODES)
     return payload
+
+
+@router.get("/coverage")
+def scheduler_coverage(
+    fresh_window_hours: int = Query(DEFAULT_FRESH_WINDOW_HOURS, ge=1, le=8760),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Per-tag scraping coverage — which tags have been reached, how many
+    sources remain, at what percentage — built only from the collector's own
+    fetch timestamps (reach + freshness, never a completion claim or a score).
+    """
+    return tag_coverage(db, fresh_window_hours=fresh_window_hours)
 
 
 @router.post("/start")

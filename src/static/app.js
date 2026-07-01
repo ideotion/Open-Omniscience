@@ -493,6 +493,7 @@
     // never a guessed instantaneous value). Hosts are shown as DOMAINS, never
     // full URLs (maintainer-ruled 2026-06-10).
     let _vitalsTimer = null, _vitalsOpen = false, _vitalsPrev = null, _actData = null;
+    let _covData = null, _covLoading = false;
     // a11y (OO-D13-001): remember who opened a non-native dialog so focus returns.
     let _vitalsPrevFocus = null, _palPrevFocus = null;
     function _shortUrl(u) {
@@ -859,6 +860,72 @@
         nextHtml + lastHtml + modeHtml +
         `<div class="vnote">${esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method."))}</div>`;
     }
+    // Per-tag scraping COVERAGE (the "how far has collection reached" view).
+    // Lazy: fetched only when the Coverage subtab is opened (its own read-only
+    // endpoint, NOT part of the 2 s vitals poll), cached in _covData, refreshable.
+    async function loadTagCoverage(force) {
+      const el = $("cov-tm-body");
+      if (!el) return;
+      if (_covData && !force) { _renderCoverage(); return; }
+      if (_covLoading) return;
+      _covLoading = true;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      el.innerHTML = `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Loading coverage…"))}</div>`;
+      try { _covData = await api("/api/scheduler/coverage"); }
+      catch { _covData = null; }
+      finally { _covLoading = false; }
+      _renderCoverage();
+    }
+    function _covBar(reach, fresh, total) {
+      // A single honest bar: reach fills it (fresh is the brighter leading part);
+      // the unfilled remainder is what has not been reached yet. Counts only.
+      const rp = total ? Math.round(100 * reach / total) : 0;
+      const fp = total ? Math.round(100 * fresh / total) : 0;
+      return `<div class="cap-bar" role="progressbar" aria-valuenow="${rp}" aria-valuemin="0" aria-valuemax="100">` +
+        `<div class="cap-fill" style="width:${rp}%;opacity:.55"></div>` +
+        `<div class="cap-fill" style="width:${fp}%"></div>` +
+        `<span class="cap-txt">${reach}/${total} · ${rp}%</span></div>`;
+    }
+    function _renderCoverage() {
+      const el = $("cov-tm-body");
+      if (!el) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const d = _covData;
+      if (!d) {
+        el.innerHTML = `<div class="muted" style="font-size:12px;padding:2px 0 6px">` +
+          `${esc(t("Coverage is unavailable right now."))} ` +
+          `<button class="lnk" onclick="loadTagCoverage(true)">${esc(t("Retry"))}</button></div>`;
+        return;
+      }
+      const tot = d.totals || {};
+      const tags = d.tags || [];
+      const reachedTags = tags.filter(x => x.reached > 0).length;
+      const sect = (x) => `<div class="vsect">${x}</div>`;
+      const head =
+        sect(t("Collection coverage")) +
+        `<div class="vr"><span>${esc(t("Tags with any coverage"))}</span><b>${reachedTags}/${tags.length}</b></div>` +
+        `<div class="vr"><span>${esc(t("RSS sources reached"))}</span><b>${tot.reached || 0}/${tot.total || 0} · ${Math.round(100 * (tot.reach_pct || 0))}%</b></div>` +
+        `<div class="vr"><span>${esc(t("Fresh in the last N hours"))}</span><b title="${esc(t("Freshness window (hours)"))}: ${esc(String(d.fresh_window_hours))}">${tot.fresh || 0} · ${Math.round(100 * (tot.fresh_pct || 0))}%</b></div>` +
+        (tot.backed_off ? `<div class="vr"><span>${esc(t("Backed off (de-churn, not failures)"))}</span><b>${tot.backed_off}</b></div>` : "") +
+        (d.crawl_sources ? `<div class="vr"><span>${esc(t("Crawl sources (reach not tracked)"))}</span><b>${d.crawl_sources}</b></div>` : "");
+      // Per-tag rows, least-reached first (the backend already sorts them so —
+      // the honest worklist of what still needs a pass).
+      const rows = tags.map(x => {
+        const badges = [];
+        if (x.never_reached) badges.push(`<span class="muted">${x.never_reached} ${esc(t("not yet reached"))}</span>`);
+        if (x.backed_off) badges.push(`<span class="muted">${x.backed_off} ${esc(t("backed off"))}</span>`);
+        if (x.crawl) badges.push(`<span class="muted">${x.crawl} ${esc(t("crawl"))}</span>`);
+        return `<div class="cov-row" style="padding:4px 0">` +
+          `<div style="display:flex;justify-content:space-between;gap:8px">` +
+          `<b style="font-size:12px">${esc(x.tag)}</b>` +
+          `<span class="muted" style="font-size:11px">${badges.join(" · ")}</span></div>` +
+          _covBar(x.reached, x.fresh, x.total) + `</div>`;
+      }).join("");
+      el.innerHTML = head + sect(t("By tag")) + (rows || `<div class="muted">${esc(t("No tagged sources yet."))}</div>`) +
+        `<div class="vnote">${esc(d.method || "")} ${esc(d.caveat || "")} ` +
+        `<button class="lnk" onclick="loadTagCoverage(true)">${esc(t("Refresh"))}</button></div>`;
+    }
+
     // The arbitration ASK (ruled): a new heavy task while one runs is offered
     // a choice, never silently piled up. Dumps queue automatically (real
     // queue); collect/import ask proceed-or-wait.
@@ -882,6 +949,7 @@
       // Repaint the Schedule panel from the data the poll ALREADY cached, so
       // switching to it is instant (no new fetch); the 2 s poll keeps it fresh.
       if (key === "schedule") _renderSchedule();
+      if (key === "coverage") loadTagCoverage();
     }
     // a11y focus management for the two non-native dialogs (palette, task manager)
     // -- the native <dialog>.showModal() modals trap focus implicitly (OO-D13-001).
