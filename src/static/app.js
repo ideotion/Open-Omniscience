@@ -1193,7 +1193,7 @@
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
-      if (cat === "data") { modelsBackupStatus(); _fbStartPoll(); }  // models backup + the large-data folder backup (§2.A)
+      if (cat === "data") { modelsBackupStatus(); }  // the large-data folder-backup panel was collapsed into the unified Export/Import dialogs (Slice 3)
       if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
     }
     function buildDrawer() {

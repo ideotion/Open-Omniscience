@@ -1389,97 +1389,14 @@
         <label class="switch" style="margin-top:0"><input type="file" id="models-bk-file" accept=".oomodels" onchange="modelsBackupImport(this)" style="display:none"><button class="secondary" onclick="document.getElementById('models-bk-file').click()">Restore models…</button></label>
       </div>
     </section>
-    <section class="panel" id="folder-backup-panel">
-      <div class="phead"><h2>Large data backup (folder / external drive)</h2></div>
-      <p class="muted" style="margin-top:0">Wikipedia dumps, offline maps and LLM models are large, public, re-downloadable files — too big for the encrypted full backup. Copy them server-side into a folder you choose on this machine (e.g. an external drive's mount path). They are copied as-is (not encrypted — that is what makes 100&nbsp;GB feasible); your private corpus stays in the encrypted full backup. A second run re-copies nothing unchanged, restore is additive (a file you already have is never overwritten), and in-progress downloads are skipped.</p>
-      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
-        <div style="flex:2"><label for="fb-dest">Destination folder (on this machine)</label>
-          <input id="fb-dest" placeholder="/mnt/external-drive/oo-large-backup" size="32"></div>
-        <button class="secondary" type="button" onclick="ooFolderPicker('fb-dest', true)">Browse…</button>
-      </div>
-      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
-        <legend class="muted" style="padding:0 6px">What to include</legend>
-        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="fb-wiki" checked> Wikipedia dumps</label>
-        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="fb-osm" checked> Offline maps (OSM)</label>
-        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="fb-models" checked> Local LLM models</label>
-      </fieldset>
-      <div class="row" style="gap:8px">
-        <button class="secondary" onclick="folderBackupPlan(this)">Check space</button>
-        <button onclick="folderBackupStart(this)">Back up to folder</button>
-      </div>
-      <div id="fb-plan" class="hint" style="margin-top:6px"></div>
-      <div id="fb-progress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
-      <div class="row" id="fb-controls" style="gap:8px;margin-top:6px;display:none">
-        <button class="secondary" id="fb-pause" onclick="folderBackupAction('pause', this)">Pause</button>
-        <button class="secondary" id="fb-resume" onclick="folderBackupAction('resume', this)" style="display:none">Resume</button>
-        <button class="secondary" id="fb-cancel" onclick="folderBackupAction('cancel', this)">Cancel</button>
-      </div>
-      <hr>
-      <h3 style="margin-bottom:6px">Restore large data from a folder</h3>
-      <p class="muted" style="margin-top:0">Copy Wikipedia dumps, maps and models BACK from a folder backup into this machine, additively — a file you already have is kept, never overwritten.</p>
-      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap">
-        <div style="flex:2"><label for="fb-src">Folder to restore from</label>
-          <input id="fb-src" placeholder="/mnt/external-drive/oo-large-backup" size="32"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="folderRestoreStart(this)">Restore from folder</button></div>
-      </div>
-    </section>
-    <section class="panel" id="vbackup-panel">
-      <div class="phead"><h2>Large encrypted backup (volumes + parity)</h2></div>
-      <p class="muted" style="margin-top:0">For a corpus too big for the single-file backup (the encrypted full backup is one-shot AES-GCM, capped near 2&nbsp;GB). Writes your ENCRYPTED corpus as a set of &lt;600&nbsp;MB volumes + a manifest into a server-side folder you choose, with Reed-Solomon parity so a corrupt or lost volume — including a corpus volume — can be rebuilt. No 2&nbsp;GB cap; runs as a cancellable background job. Parity needs the analysis features; without them you get volumes only (stated when it finishes).</p>
-      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
-        <div style="flex:2"><label for="vb-dest">Destination folder (on this machine)</label>
-          <input id="vb-dest" placeholder="/mnt/external-drive/oo-corpus-backup" size="32"></div>
-        <button class="secondary" type="button" onclick="ooFolderPicker('vb-dest', true)">Browse…</button>
-      </div>
-      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
-        <div style="flex:2"><label for="vb-pass">Passphrase (encrypts the backup)</label>
-          <input id="vb-pass" type="password" size="32"></div>
-        <button onclick="volBackupStart(this)">Back up (volumes + parity)</button>
-        <button class="secondary" id="vb-cancel" onclick="volBackupCancel(this)" style="display:none">Cancel</button>
-      </div>
-      <div id="vb-progress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
-      <hr>
-      <h3 style="margin-bottom:6px">Restore from a volume backup folder</h3>
-      <p class="muted" style="margin-top:0">Verify + repair (from parity) + reassemble the volume set, then merge ADDITIVELY into your corpus — nothing is replaced or deleted.</p>
-      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap">
-        <div style="flex:2"><label for="vb-src">Folder to restore from</label>
-          <input id="vb-src" placeholder="/mnt/external-drive/oo-corpus-backup" size="32"></div>
-        <button class="secondary" type="button" onclick="ooFolderPicker('vb-src', false)">Browse…</button>
-        <div style="flex:1"><label for="vb-rpass">Passphrase</label>
-          <input id="vb-rpass" type="password" size="24"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="volRestoreStart(this)">Restore from folder</button></div>
-      </div>
-      <div id="vb-rprogress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
-    </section>
+    <!-- Large-data folder backup + encrypted volume backup panels removed (Slice 3):
+         both are now driven by the unified Export/Import dialogs above. The backend
+         engines + endpoints are unchanged; only these redundant panels were collapsed. -->
     <section class="panel" id="backup-panel">
-      <h2>Backup &amp; restore</h2>
+      <h2>Restore a legacy backup file</h2>
       <div id="backup-status" class="hint">Checking backend…</div>
 
-      <h3 style="margin-bottom:6px">Full backup — one signed archive</h3>
-      <p class="muted" style="margin-top:0">One file carries everything: articles, keywords, Wikipedia and law
-        snapshots, market series, events, settings, annotations and the custody log — with a signed manifest, so
-        tampering is detectable. Encrypted with a passphrase by default; there is no recovery for a lost passphrase.</p>
-      <p class="hint" style="margin-top:0">An encrypted backup is almost exactly the same file size as a plaintext one — AES-256-GCM adds only a fixed ~64 bytes of overhead, so the size matching is expected, not a sign it isn't encrypted. You can confirm any backup is genuine ciphertext in the Restore preview below (it reports “encrypted (AES-256-GCM)”).</p>
-      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
-        <legend class="muted" style="padding:0 6px">What to back up</legend>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always included)</span></label>
-        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-incl-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to back up without them (e.g. to re-import fixed ones)</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use the separate “Local LLM models” backup above</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— large files: use the “Large data backup (folder / external drive)” panel above</span></label>
-      </fieldset>
-      <div class="row">
-        <div style="flex:2"><label for="v2-pass">Passphrase</label>
-          <input id="v2-pass" type="password" autocomplete="new-password" placeholder="a strong, memorable passphrase"></div>
-        <div style="flex:0 0 auto;align-self:end">
-          <button onclick="v2Backup(false)">Download full backup (.ooenc)</button></div>
-      </div>
-      <details style="margin-top:6px">
-        <summary class="muted">Unencrypted archive (deliberate choice)…</summary>
-        <div class="hint">An unencrypted archive protects nothing at rest and deliberately excludes your signing keys.</div>
-        <button class="secondary" onclick="v2Backup(true)">Download unencrypted backup (.oobak)</button>
-      </details>
-      <div id="v2-backup-result" class="hint"></div>
-
+      <p class="muted" style="margin-top:0">To CREATE a backup, use <b>Export / Back up…</b> at the top of this page — it works at any database size. This panel only RESTORES an older single-file backup (additive merge).</p>
       <hr>
       <h3 style="margin-bottom:6px">Restore — merge with a preview</h3>
       <p class="muted" style="margin-top:0">Restoring merges the archive into your corpus — nothing is replaced
@@ -1498,8 +1415,8 @@
         <legend class="muted" style="padding:0 6px">What to restore</legend>
         <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always merged)</span></label>
         <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-restore-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to restore everything except them</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use the separate “Local LLM models” restore above</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— restore these from the “Large data backup” panel above</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use Import… at the top (or the “Local LLM models” panel)</span></label>
+        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— restore these via Import… at the top</span></label>
         <div class="hint" style="margin-top:4px">The preview reflects your choice — what you preview is exactly what gets merged.</div>
       </fieldset>
       <div id="v2-preview" style="display:none">
