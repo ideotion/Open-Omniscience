@@ -1078,6 +1078,31 @@ def test_articles_provenance_toggle_and_keyword_count():
     assert "_anKwForCount" in app
 
 
+def test_cited_secondary_sources_auto_integration():
+    """In-article SECONDARY sources (cited domains) auto-integrate as new DISABLED
+    'cited' sources: independence measured by DISTINCT SOURCES (never article count),
+    commerce/social filtered, alias-deduped, never auto-scraped, no fabricated score.
+    'cited' is a descriptive provenance class that slots into the Articles toggle."""
+    lib = (_SRC / "discovery" / "cited_sources.py").read_text(encoding="utf-8")
+    prov = (_SRC / "catalog" / "provenance.py").read_text(encoding="utf-8")
+    sm = (_SRC / "api" / "source_management.py").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    # the cited provenance CLASS is in the closed set (a channel, never a score)
+    assert 'CITED = "cited"' in prov and "CITED" in prov.split("PROVENANCE_CLASSES")[1]
+    # engine: distinct-SOURCE independence + disabled + no fabricated score
+    assert "def promote_cited_sources(" in lib and "def cited_domain_stats(" in lib
+    assert "distinct" in lib.lower() and "enabled=False" in lib
+    assert "reliability_score=None" in lib  # NEVER a fabricated score
+    assert "is_commerce_domain" in lib and "is_social" in lib and "is_equivalent_domain" in lib
+    # endpoint: the promote route (dry_run preview + real)
+    assert '"/promote-cited"' in sm and "promote_cited_sources(" in sm
+    # frontend: the promote action + the 'cited' bucket in the Articles toggle
+    assert "function promoteCitedSources(" in app and "/api/sources/promote-cited" in app
+    assert '["cited", t("Cited sources")]' in app
+    assert "promoteCitedSources()" in html
+
+
 def test_large_data_folder_backup():
     """Brief §2.A: a SERVER-SIDE 'copy to a folder/drive' backup streams the big public
     re-downloadable blobs (Wikipedia dumps + OSM maps + Ollama models) into a user-chosen

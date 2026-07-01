@@ -822,6 +822,11 @@
         <div style="flex:0 0 auto;align-self:end"><button onclick="loadCitedSources()">Refresh</button></div>
       </div>
       <div id="cs-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="cs-promote-box" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+        <button class="secondary" onclick="promoteCitedSources()" title="Register a domain cited by ≥2 DISTINCT sources as a new DISABLED source (metadata only — never fetched until you enable it). Independence is counted by distinct sources, not article count; commerce/social storefronts are excluded and existing outlets are alias-deduped.">Register cited domains as sources ↗</button>
+        <span id="cs-promote-result" class="muted" style="margin-left:8px"></span>
+        <p class="hint" style="margin:6px 0 0">Turns frequently-cited external domains into new <b>disabled</b> sources, tagged with the <b>“cited”</b> provenance class — the sources' sources. Metadata only: enabling one to actually scrape it stays your consented choice, and “cited” is a descriptive channel, never a quality score.</p>
+      </div>
     </section>
 
     <section class="panel ins-view" id="ins-families" style="display:none">

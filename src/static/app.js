@@ -7272,6 +7272,33 @@
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
     }
 
+    // Auto-integrate in-article SECONDARY sources: register domains cited by >= N
+    // DISTINCT sources as new DISABLED "cited" sources (metadata only — never scraped
+    // until the user enables them). Previews via dry_run, then confirms before creating.
+    async function promoteCitedSources() {
+      const out = $("cs-promote-result");
+      try {
+        if (out) out.textContent = "Scanning citations…";
+        const preview = await api("/api/sources/promote-cited?dry_run=true", {method: "POST"});
+        const cands = preview.candidates || [];
+        const gate = preview.min_source_citers;
+        if (!cands.length) {
+          if (out) out.textContent = `No new domain is cited by ≥${gate} distinct sources yet.`;
+          return;
+        }
+        const sample = cands.slice(0, 8).map(c => `${c.domain} (${c.source_citers} sources)`).join("\n");
+        const more = cands.length > 8 ? `\n…and ${cands.length - 8} more` : "";
+        if (!confirm(`Register ${cands.length} frequently-cited domain(s) as new DISABLED “cited” sources?\n\n${sample}${more}\n\nMetadata only — they are never fetched until you enable them.`)) {
+          if (out) out.textContent = "Cancelled.";
+          return;
+        }
+        const res = await api("/api/sources/promote-cited", {method: "POST"});
+        const n = (res.created || []).length;
+        if (out) out.textContent = `Added ${n} disabled “cited” source(s) — find them in Settings → Sources.`;
+        toast(`Registered ${n} cited source(s) — disabled; review them in Sources.`);
+      } catch (e) { if (out) out.textContent = "Could not register: " + e.message; }
+    }
+
     async function expandCitedSource(head) {
       const tgt = head.parentElement.querySelector(".cs-arts");
       const key = head.dataset.key;
@@ -11529,7 +11556,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       // "Wikipedia" is a proper noun (kept untranslated); the rest go through t().
       const buckets = [["", t("All")], ["wikipedia", "Wikipedia"], ["web", t("Web articles")],
-        ["newsletter", t("Newsletters")], ["statistics", t("Statistics")]];
+        ["newsletter", t("Newsletters")], ["statistics", t("Statistics")], ["cited", t("Cited sources")]];
       let h = '<div class="an-prov" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin:2px 0 6px">'
         + `<span class="muted" style="font-size:.85em">${esc(t("Show"))}:</span>`;
       for (const [v, lbl] of buckets) {

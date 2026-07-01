@@ -2521,6 +2521,50 @@ domain), never a guess.
 
 ---
 
+## Secondary-source auto-integration — the `cited` provenance class (maintainer 2026-07-01: "when a source has inside secondary sources, they'd be automatically integrated as new sources … manage how to tag each"; SLICE 1 SHIPPED)
+
+An article's outbound links **are** its secondary sources ("the sources' sources"). This turns the
+ones the corpus cites enough into new sources, tagged with a distinct **`cited`** content-provenance
+class (an extension of the section above). **Maintainer chose "go" on the proposed defaults 2026-07-01**
+(the AskUserQuestion tooling failed; defaults stated + unobjected + confirmed):
+
+- **Independence = DISTINCT CITING SOURCES, never article count** — a single chatty source citing a
+  domain in 20 articles is ONE independent citer (the same anti-false-triangulation principle as the
+  source-laundering card). This is the key improvement over the pre-existing `citation_channel`
+  (`src/discovery/channels.py`), which counts distinct **articles** and emits review **candidates**
+  (`SourceCandidate`); that channel stays as-is (the Desk lesson — nothing removed).
+- **Tagging = a descriptive `cited` provenance class + a citing TRAIL, never fabricated topical tags**
+  (`source_type="cited"` + `tags="cited"`; the trail — who cited it — is derivable from `article_links`
+  on demand, so no new table). `cited` is a **channel**, not a quality/credibility judgement (a widely-
+  cited primary source and a laundering hub look identical here; the user judges). `reliability_score`
+  is left **NULL** (never a fabricated score). It becomes a filterable bucket in the Articles toggle.
+- **Never auto-scraped:** a promoted source is created **`enabled=False`**. Registration is metadata-only
+  (zero network); enabling it to fetch stays the user's consented choice.
+- **Filters + dedup:** commerce/social storefronts excluded (`is_commerce_domain` / `is_social`);
+  dedup against existing sources is **alias-aware** (`is_equivalent_domain`, so bbc.co.uk is not
+  re-created when bbc.com exists).
+
+**SLICE 1 SHIPPED (2026-07-01):** `src/catalog/provenance.py` gains the `CITED` class;
+`src/discovery/cited_sources.py` (`cited_domain_stats` + `promote_cited_sources`, distinct-source
+gate `OO_CITED_MIN_SOURCES` default 2, `dry_run` preview, idempotent); `POST /api/sources/promote-cited`;
+a "Register cited domains as sources" action in the Insights → Sources ("Most-cited sources") panel +
+the `cited` bucket in the Articles toggle. **PERF (proven):** the citing-source map is a **covering
+index-only scan** of `articles(source_id)` (`idx_article_source_id` = `(source_id, rowid=id)`), so it
+never drags the encrypted article rows through the codec (the column-order decrypt trap); the link scan
+touches only `article_links`. Tests: `tests/test_cited_sources.py` (5, every lane) + `test_provenance_class`
+(the `cited` class) + `test_repo_invariants::test_cited_secondary_sources_auto_integration`.
+
+**REMAINING slices (for later):** (S2) a **background task-manager job** for a very large corpus (the
+synchronous endpoint is fine for a user-triggered pass, but the 2026-06-27 field diagnostics show
+analytics freezing at ~2k articles — a full pass on a big corpus should be a visible/cancellable job);
+(S3) **denormalize `citing_source_id` onto `article_links`** (like `KeywordMention.source_id`) to make
+the stats a pure covering scan with no `articles` read at all; (S4) surface the **citing trail** (who
+cites a promoted domain) in the Sources view + a per-source "cited by N of your sources" line; (S5)
+optionally wire the dormant `external_sources` resolution table; (S6) a **per-content-type** citer-gate
+default (newsletters cite few links — the same calibration point as the "Latest" section above).
+
+---
+
 ## Home "Latest in your corpus" section — a recency LENS + a transparent substance FILTER (maintainer concept 2026-06-26/27; designed-only, shaped over discussion)
 
 > **The idea (maintainer):** a "latest news" section on the Home tab that **avoids very short
