@@ -17,6 +17,14 @@ sv/da/nb/no/pl/sr/sl, and the 2026-06-18 keyword-log added Greek/Bulgarian gramm
 stoplists). fi/tr/uk/hi/bn and the rest are deliberately NOT claimed: they tokenise
 but leak (uk's sample even mixed ru-spelled tokens, so its language signal is not
 yet trustworthy).
+
+2026-07-01 (live 727k-keyword corpus): the languages above that were backed only
+by PARTIAL hand-grown batches (de/es/it/pt/nl/ru/ar/el/bg/da/hr/hu/id/no/nb/pl/sl/
+sv still leaked grammar — gestern, вчера, serían) now carry the FULL stopwords-iso
+list vendored in configs/stopwords_iso/. Those lists are LANGUAGE-SCOPED (kept out
+of global_stopwords()), so adding a complete Latin-script list is collision-free.
+The managed SET is unchanged — only the stoplist QUALITY improved. sr/bs/az remain
+managed via hand-grown batches (absent from stopwords-iso).
 """
 
 from __future__ import annotations
