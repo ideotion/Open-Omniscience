@@ -52,6 +52,10 @@ class SchedulerConfigUpdate(BaseModel):
     export_dir: str | None = None
     # Offline discovery budget per run (WP5/RM-19); 0 disables.
     discovery_per_run: int | None = None
+    # Optional per-language cadence lever (default OFF): a {lang: weight} target
+    # the operator opts into; {} or omitted keeps the pure random rotation.
+    language_equilibrium: dict | None = None
+    equilibrium_floor: float | None = None
 
 
 def _status_payload() -> dict:
@@ -93,6 +97,45 @@ def scheduler_coverage(
     fetch timestamps (reach + freshness, never a completion claim or a score).
     """
     return tag_coverage(db, fresh_window_hours=fresh_window_hours)
+
+
+@router.get("/equilibrium")
+def scheduler_equilibrium(db: Session = Depends(get_db)) -> dict:
+    """The optional per-language cadence lever (DEFAULT OFF): current corpus
+    language shares vs the operator's target, and the resulting pace (re-check
+    multiplier per language). Read-only — the target is set via PUT /config.
+    """
+    from src.scheduler.equilibrium import (
+        PRESETS,
+        corpus_language_shares,
+        language_pace,
+        normalize_target,
+    )
+
+    s = load_settings()
+    shares = corpus_language_shares(db)
+    target = normalize_target(s.language_equilibrium)
+    pace = language_pace(shares, s.language_equilibrium, floor=s.equilibrium_floor)
+    rnd = lambda m: {k: round(v, 4) for k, v in m.items()}  # noqa: E731
+    return {
+        "enabled": bool(target),
+        "floor": s.equilibrium_floor,
+        "corpus_shares": rnd(dict(sorted(shares.items(), key=lambda x: -x[1]))),
+        "target": rnd(target),
+        "pace": rnd(pace),
+        "presets": PRESETS,
+        "method": (
+            "Pace = min(1, target_share / corpus_share) per language, floored; "
+            "an over-represented language is re-checked less often. Corpus shares "
+            "are stored-article counts by language. Counts only, no score."
+        ),
+        "caveat": (
+            "Off by default. A cadence nudge, never an exclusion — a hard "
+            "freshness floor keeps every source re-checked within the cap. The "
+            "presets are one dated measure of a contested quantity, not the app’s "
+            "opinion; the target is whatever the operator sets."
+        ),
+    }
 
 
 @router.post("/start")

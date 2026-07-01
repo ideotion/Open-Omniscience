@@ -83,6 +83,15 @@ class SchedulerSettings:
     # discovery entirely. Network channels do not exist here by design.
     discovery_per_run: int = 10
 
+    # Optional per-language cadence lever (default OFF). ``language_equilibrium``
+    # is a {lang: weight} TARGET the operator opts into; when set, over-
+    # represented languages are re-checked LESS often (never excluded — a hard
+    # freshness floor guarantees re-check). Empty {} = OFF = the pure random
+    # per-tag rotation, byte-identical. ``equilibrium_floor`` is the minimum pace
+    # multiplier (never fully stop a language).
+    language_equilibrium: dict = field(default_factory=dict)
+    equilibrium_floor: float = 0.2
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -106,6 +115,33 @@ def _coerce_int(value, fallback: int, lo: int, hi: int) -> int:
         return max(lo, min(hi, int(value)))
     except (TypeError, ValueError):
         return fallback
+
+
+def _coerce_float(value, fallback: float, lo: float, hi: float) -> float:
+    try:
+        return max(lo, min(hi, float(value)))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _coerce_target(value) -> dict:
+    """A {lang: weight} language-equilibrium target → cleaned {lang: float>0}.
+
+    Only positive weights on non-empty lowercased language keys survive; anything
+    malformed is dropped. An empty result means the lever is OFF.
+    """
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, float] = {}
+    for k, v in value.items():
+        try:
+            w = float(v)
+        except (TypeError, ValueError):
+            continue
+        key = str(k).strip().lower()
+        if key and w > 0:
+            out[key] = w
+    return out
 
 
 def _coerce_list(value) -> list[str]:
@@ -167,6 +203,8 @@ def load_settings() -> SchedulerSettings:
         select_source_types=_coerce_list(raw.get("select_source_types")),
         export_dir=str(raw.get("export_dir") or "").strip(),
         discovery_per_run=_coerce_int(raw.get("discovery_per_run"), d.discovery_per_run, 0, 100),
+        language_equilibrium=_coerce_target(raw.get("language_equilibrium")),
+        equilibrium_floor=_coerce_float(raw.get("equilibrium_floor"), d.equilibrium_floor, 0.0, 1.0),
     )
 
 
@@ -217,6 +255,24 @@ def save_settings(updates: dict) -> SchedulerSettings:
     for key in ("select_languages", "select_tags", "select_source_types"):
         if key in updates:
             setattr(current, key, _coerce_list(updates[key]))
+
+    if "language_equilibrium" in updates:
+        # A dict target (or None/empty to turn the lever OFF). Malformed entries
+        # are dropped by _coerce_target; an all-invalid target becomes {} = OFF.
+        val = updates["language_equilibrium"]
+        if val is not None and not isinstance(val, dict):
+            raise SchedulerSettingsError(
+                "language_equilibrium must be an object of {language: weight}"
+            )
+        current.language_equilibrium = _coerce_target(val)
+    if "equilibrium_floor" in updates and updates["equilibrium_floor"] is not None:
+        try:
+            f = float(updates["equilibrium_floor"])
+        except (TypeError, ValueError) as exc:
+            raise SchedulerSettingsError("equilibrium_floor must be a number") from exc
+        if not (0.0 <= f <= 1.0):
+            raise SchedulerSettingsError("equilibrium_floor must be between 0 and 1")
+        current.equilibrium_floor = f
 
     path = _settings_path()
     tmp = path.with_suffix(".json.tmp")
