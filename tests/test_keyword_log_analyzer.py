@@ -230,3 +230,43 @@ def test_mistagged_entities_is_acronym_aware():
     ]
     flagged = {h["term"] for h in A.mistagged_entities(kws, top=10)}
     assert "world" in flagged and "WHO" not in flagged
+
+
+def test_generic_term_candidates_surfaces_high_df_open_class_for_review():
+    """The open-class detector: high-df single-word TERMS surviving the stoplist, ranked
+    by article-spread — the generic adjectives/nouns a function-word list can't catch.
+    Entities, acronyms, proper-noun-suspects, ring members and already-stoplisted words
+    are excluded; every survivor is a REVIEW candidate (dual-use is the human's call)."""
+    kws = [
+        {"term": "system", "normalized": "system", "kind": "term", "language": "en",
+         "articles": 500, "mentions": 900},
+        {"term": "global", "normalized": "global", "kind": "term", "language": "en",
+         "articles": 250, "mentions": 400},
+        {"term": "the", "normalized": "the", "kind": "term", "language": "en",
+         "articles": 900, "mentions": 5000},  # already-stoplisted -> excluded
+        {"term": "NATO", "normalized": "nato", "kind": "entity", "language": "en",
+         "articles": 300, "mentions": 500},  # entity -> excluded
+        {"term": "Trump", "normalized": "trump", "kind": "term", "language": "en",
+         "articles": 400, "mentions": 600},  # proper-noun suspect (initial cap) -> excluded
+        {"term": "inflation", "normalized": "inflation", "kind": "term", "language": "en",
+         "articles": 120, "mentions": 200},  # ring member -> excluded
+    ]
+    out = A.generic_term_candidates(kws, existing={"the"}, members={"inflation"}, top=10)
+    en = [i["normalized"] for i in out["en"]]
+    assert "system" in en and "global" in en
+    assert not ({"the", "nato", "trump", "inflation"} & set(en))  # all four excluded
+    # ranked by df, self-normalising df_ratio present (~1.0 for the most ubiquitous)
+    assert en[0] == "system" and out["en"][0]["df_ratio"] == 1.0
+
+
+def test_parse_stoplist_reads_vendored_txt_lists(tmp_path):
+    """The detector's 'already filtered' baseline must include the vendored per-language
+    *.txt lists (line-based), not only quoted tokens in the .py source."""
+    d = tmp_path / "stopwords_iso"
+    d.mkdir()
+    (d / "de.txt").write_text("und\nder\ngestern\n", encoding="utf-8")
+    py = tmp_path / "src.py"
+    py.write_text('X = {"foo", "bar baz"}\n', encoding="utf-8")
+    existing = A.parse_stoplist([d, py])
+    assert {"und", "der", "gestern"} <= existing  # line-based .txt in the dir
+    assert {"foo", "bar", "baz"} <= existing  # quoted tokens in the .py

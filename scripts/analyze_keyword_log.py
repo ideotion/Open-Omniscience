@@ -163,25 +163,42 @@ def load_log(path: Path) -> dict[str, Any]:
 
 
 def parse_stoplist(paths: list[Path]) -> set[str]:
-    """Best-effort union of stopword tokens parsed from the app source.
+    """Best-effort union of stopword tokens from the app source AND the vendored lists.
 
     Over-inclusive on purpose (we read every quoted string-literal token): a wider
     'existing' set only makes the net-new proposals MORE conservative — we never
-    re-propose a word that is already filtered.
+    re-propose a word that is already filtered. A DIRECTORY is walked for one-word-
+    per-line ``*.txt`` lists (configs/stopwords_iso/), and a ``*.txt`` path is read
+    line-based — so the vendored per-language stoplists (not quoted in the source)
+    are counted too. Everything else is parsed for quoted string-literal tokens.
     """
     existing: set[str] = set()
     token_re = re.compile(r'"([^"]*)"' r"|'([^']*)'")
-    for p in paths:
-        try:
-            txt = p.read_text(encoding="utf-8")
-        except OSError:
-            print(f"warning: stoplist source {p} not found — skipping", file=sys.stderr)
-            continue
+
+    def _add_lines(txt: str) -> None:
+        for line in txt.splitlines():
+            t = line.strip().casefold()
+            if t:
+                existing.add(t)
+
+    def _add_tokens(txt: str) -> None:
         for a, b in token_re.findall(txt):
             for tok in (a or b).split():
                 t = tok.strip().casefold()
                 if t:
                     existing.add(t)
+
+    for p in paths:
+        try:
+            if p.is_dir():
+                for f in sorted(p.glob("*.txt")):
+                    _add_lines(f.read_text(encoding="utf-8"))
+                continue
+            txt = p.read_text(encoding="utf-8")
+        except OSError:
+            print(f"warning: stoplist source {p} not found — skipping", file=sys.stderr)
+            continue
+        (_add_lines if p.suffix == ".txt" else _add_tokens)(txt)
     return existing
 
 
@@ -404,6 +421,51 @@ def boilerplate_suspects(keywords: list[dict], log: dict) -> dict[str, Any]:
         "per_source_concentration_suspects": psc.get("suspects", []),
         "per_source_concentration_total": psc.get("suspects_total"),
     }
+
+
+def generic_term_candidates(
+    keywords: list[dict], existing: set[str], members: set[str], top: int
+) -> dict[str, list[dict]]:
+    """OPEN-CLASS garbage surfacing: high-document-frequency single-word TERMS that
+    survive the current stoplist — the ubiquitous adjectives / common nouns / generic
+    verbs (global, system, foto, nieuws, voir) that no function-word list catches.
+
+    The honest, POS-free signal is DOCUMENT FREQUENCY: a word in a large share of a
+    language's articles is either generic boilerplate OR a genuinely dominant topic.
+    We CANNOT tell those apart without context (no POS tagger; "health"/"policy" are
+    real topics, "system"/"global" are not), so every row is a REVIEW candidate — the
+    human makes the dual-use call. Entities/acronyms/proper-noun-suspects, ring members
+    and already-stoplisted words are excluded; a word already carrying a baseline TAG is
+    flagged (a known topic, so almost certainly NOT garbage). Never a verdict, never
+    auto-applied — the innocent explanation (a dominant topic looks identical) rides with
+    the output. df_ratio = the term's article spread vs the most-ubiquitous term in its
+    language (self-normalising per language; ~1.0 = as common as the commonest word)."""
+    by_lang: dict[str, list[dict]] = defaultdict(list)
+    for k in keywords:
+        if k.get("kind") != "term":
+            continue  # entities/persons/orgs are handled elsewhere; open-class = terms
+        if k.get("hidden"):
+            continue
+        term = k.get("term", "")
+        if " " in term:
+            continue  # single words only (n-gram boilerplate is the boilerplate section)
+        norm = k.get("normalized", term.casefold())
+        if norm in existing or norm in members or norm in _WEEKDAYS:
+            continue
+        if _is_proper_noun_suspect(term) or _is_acronym(term):
+            continue  # a name/acronym is not open-class garbage
+        arts = int(k.get("articles", 0))
+        by_lang[_lang(k)].append(
+            {"term": term, "normalized": norm, "articles": arts, "mentions": int(k.get("mentions", 0))}
+        )
+    out: dict[str, list[dict]] = {}
+    for lg, items in by_lang.items():
+        lang_max = max((i["articles"] for i in items), default=1) or 1
+        for i in items:
+            i["df_ratio"] = round(i["articles"] / lang_max, 3)
+        items.sort(key=lambda x: -x["articles"])
+        out[lg] = items[: max(top, 0)] if top else items
+    return out
 
 
 def _is_acronym(term: str) -> bool:
@@ -769,6 +831,23 @@ def print_diff(diff: dict, top: int) -> None:
     print()
 
 
+def print_generic_terms(cand: dict[str, list[dict]], top: int) -> None:
+    print("=" * 78)
+    print("OPEN-CLASS GARBAGE — high-df single-word terms that survive the stoplist")
+    print("  Ubiquity flags generic boilerplate AND dominant topics alike — YOU judge:")
+    print("  a topic (health, election, war) belongs; a generic word (system, global,")
+    print("  foto, nieuws) does not. REVIEW candidates only — never auto-applied.")
+    print("=" * 78)
+    for lg in _LANG_ORDER:
+        items = cand.get(lg)
+        if not items:
+            continue
+        shown = items[: max(top, 0)] if top else items
+        print(f"\n[{lg}] top {len(shown)} by article-spread (df · df_ratio):")
+        for i in shown:
+            print(f"   {i['normalized']:<20} df={i['articles']:<5} ratio={i['df_ratio']}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("log", type=Path, help="keyword-diagnostics export (oo-export-1) JSON")
@@ -777,8 +856,12 @@ def main(argv: list[str] | None = None) -> int:
         "--stoplist",
         type=Path,
         nargs="*",
-        default=[Path("src/analytics/extract.py"), Path("src/services/stopwords.py")],
-        help="source files whose quoted tokens form the 'already filtered' baseline",
+        default=[
+            Path("src/analytics/extract.py"),
+            Path("src/services/stopwords.py"),
+            Path("configs/stopwords_iso"),  # vendored per-language lists (line-based)
+        ],
+        help="source files (quoted tokens) + dirs/.txt (line-based) forming the baseline",
     )
     ap.add_argument(
         "--rings",
@@ -807,9 +890,25 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--gap-min-articles", type=int, default=3, help="min articles for a --tag-gaps candidate"
     )
+    ap.add_argument(
+        "--generic-terms",
+        action="store_true",
+        help="surface high-df OPEN-CLASS terms (adjectives/nouns) surviving the stoplist for review",
+    )
     args = ap.parse_args(argv)
 
     doc = load_log(args.log)
+
+    if args.generic_terms:  # open-class garbage: high-df terms surviving the stoplist
+        kws = (doc.get("data", doc)).get("keywords", [])
+        existing = parse_stoplist(args.stoplist)
+        members = parse_ring_members(args.rings)
+        cand = generic_term_candidates(kws, existing, members, args.top)
+        print_generic_terms(cand, args.top)
+        if args.json:
+            args.json.write_text(json.dumps(cand, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"\n[wrote generic-term candidates -> {args.json}]")
+        return 0
 
     if args.baseline is not None:  # diff mode: measure change vs an older log
         diff = diff_logs(load_log(args.baseline), doc, args.top)

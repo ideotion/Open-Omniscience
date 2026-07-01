@@ -338,9 +338,11 @@ _CASES: tuple[Challenge, ...] = (
         "underscore_identifiers_dropped",
         "underscore code/template ids (gd_combo_table) drop; real words + the brand "
         "'govdelivery' (ruling #4) stay content",
+        # ('newsletter' is now platform FURNITURE — 2026-07-01 open-class batch — so the
+        # surviving content control is 'layout', not 'newsletter'.)
         "The govdelivery newsletter used a gd_combo_table layout while covering the elections.",
-        term=("elections", "newsletter", "govdelivery"),
-        absent=("gd_combo_table",),
+        term=("elections", "layout", "govdelivery"),
+        absent=("gd_combo_table", "newsletter"),
     ),
 )
 
