@@ -126,7 +126,18 @@ def test_f1_producers_carry_article_ids():
     line that regressed (a Card without ``article_ids``)."""
     import inspect
 
-    for fn in (P.lonely_signal, P.weather_corroboration, P.ownership_change, P.story_lineage):
+    # The first four landed in PR #513; framing_split + emotion_profile were the two the
+    # "do we forget anything?" re-audit (2026-07-01) caught still holding an exact analysed
+    # article set — framing_split its ``rows``, emotion_profile the mention articles the
+    # profile was computed over — yet shipping without ``article_ids``.
+    for fn in (
+        P.lonely_signal,
+        P.weather_corroboration,
+        P.ownership_change,
+        P.story_lineage,
+        P.framing_split,
+        P.emotion_profile_card,
+    ):
         assert "article_ids=" in inspect.getsource(fn), (
             f"{fn.__name__} must pass article_ids to its Card so the click opens the exact "
             "corpus (F1 home-card hard-linking; field diagnostics 2026-07-01)"

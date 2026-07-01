@@ -801,7 +801,12 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `story_lineage` emit cards with NO `article_ids` so the click runs a synthetic-seed text search that
   loads 0 (e.g. seed "lineage:1575"/"2294:2026-06-27"); FIX = carry `article_ids` → `openAnalysisForIds`
   (the pattern echo_chamber/source_laundering/space_time_convergence/headline_body_mismatch already use);
-  acceptance = the home-cards diagnostic reports 0 mismatched. **F2 (PERF — VALIDATES the keyword-engine
+  acceptance = the home-cards diagnostic reports 0 mismatched. **[F1 SHIPPED 2026-07-01]** #513 hard-linked
+  weather_corroboration/lonely_signal/ownership_change/story_lineage; the "do we forget anything?" re-audit
+  follow-up added framing_split + emotion_profile (both held an exact analysed set — framing_split its `rows`,
+  emotion_profile the mention articles). `recipe_promise` is NOT a real producer (loose name); residual
+  mismatches (rising/diet_self_audit/recipe_source_candidates) are legitimately setless — a keyword-term seed
+  that re-runs the same search, or a whole-corpus aggregate. **F2 (PERF — VALIDATES the keyword-engine
   strategy, build there):** (i) the single WRITER GATE is SATURATED during scraping (34 waiters, max_wait
   210s, scrape throttled 161kbps vs 500 = write-bound not network-bound) — this IS the live measurement
   the ledger said the deferred COLLECTOR-path write-batching was waiting for → build strategy P1.3; (ii)
@@ -809,7 +814,10 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   Home trending_windows 5-13s, associations 4-7s; columnar available:false) → build strategy P2 rollups +
   P2.4 DuckDB-GCM verify. **F3** rising-card stoplist leaks (annons/koji/ali) → strategy P4.2 + stoplists.
   **F4** date-extraction recall gap (36.6% coverage, 401 date-like-but-unextracted incl. 45 cjk). **F5**
-  polling storm (~4,400 status polls) → consolidate to one poll/SSE + backoff.
+  polling storm (~4,400 status polls) → consolidate to one poll/SSE + backoff. **[F5 SHIPPED 2026-07-01 (#518)]**
+  the real storm source was the VITALS poller hitting /api/system/vitals + /api/scheduler/activity every 2s for
+  the WHOLE scrape even panel-closed; it now backs off to 6s chip-only (the network poll was already a SEPARATE
+  adaptive `_adaptivePoll`). Full SSE consolidation not needed.
 - **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
   research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed
