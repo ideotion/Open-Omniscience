@@ -164,18 +164,31 @@ class LinkExtractor:
 
                 current_position = element_start
 
-                # Extract link information based on element type
-                link_info = self._extract_link_from_element(
-                    element, base_url, article_id, current_position
-                )
+                # Extract link information based on element type. A single malformed URL
+                # (e.g. an invalid IPv6 literal like http://[::1 that raises "Invalid IPv6
+                # URL" in urlparse) must not abort the WHOLE article's link extraction and
+                # trigger the regex fallback — skip just that element (field 2026-07-01).
+                try:
+                    link_info = self._extract_link_from_element(
+                        element, base_url, article_id, current_position
+                    )
+                except Exception as e:  # noqa: BLE001 - one bad link never breaks the rest
+                    logger.debug("skipping a link element (%s)", e)
+                    continue
 
                 if link_info:
                     extracted_links.append(link_info)
 
         except Exception as e:
             logger.error(f"Error extracting links from HTML: {e}")
-            # Fallback to regex-based extraction
-            extracted_links = self._extract_links_with_regex(html_content, base_url, article_id)
+            # Fallback to regex-based extraction. The fallback must be MORE resilient than
+            # the primary, never less: a malformed URL here must degrade to "no links",
+            # never crash the caller's link indexing (field 2026-07-01).
+            try:
+                extracted_links = self._extract_links_with_regex(html_content, base_url, article_id)
+            except Exception as e2:  # noqa: BLE001 - link extraction is best-effort, never fatal
+                logger.debug("regex link fallback failed (%s)", e2)
+                extracted_links = []
 
         return extracted_links
 
