@@ -648,6 +648,152 @@ def keyword_daily_parity(con, session, *, start_day=None, end_day=None) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# D3 — incremental refresh + the corpus-epoch guard (the correctness-critical part;
+# docs/design/SCALING_DERIVED_LAYER_1000X.md). Keeps the rollup fresh WITHOUT a full
+# rebuild every pass, while a re-index can never make it double-count.
+#
+# THE TRAP (grounded in this repo): ``index_article`` does delete-then-reinsert of an
+# article's mentions (store.py). So an id-watermark MERGE-ADD (tail = ``id > last_mention_id``)
+# is correct ONLY for APPEND — a brand-new article's mentions carry strictly higher ids the
+# tail captures once. EVERY path that re-runs ``index_article`` over an EXISTING article
+# (reindex_all_batch / reindex_articles / reindex_imported_articles [restore] / clean-up-
+# keywords) AND ``prune_orphan_keywords`` (deletes rows) leaves the OLD contribution in the
+# rollup AND re-inserts higher-id rows into the tail = a fabricated (doubled) number. So those
+# mutators bump a CORPUS EPOCH; a changed epoch forces a FULL rebuild, never an incremental
+# merge. Normal new-article ingest does NOT bump the epoch (else we full-rebuild every pass).
+#
+# The epoch itself lives on the CANONICAL side and is passed in here — this module owns only
+# the refresh DECISION + the merge. Wiring the canonical epoch counter into the mutators, and
+# wiring the serve into the hot read path behind the ``built_epoch == corpus_epoch`` guard,
+# are the next slice; this one builds + proves the incremental algorithm in-memory (the design
+# mandate), dormant at runtime.
+
+
+def _table_present(con, name: str) -> bool:
+    try:
+        row = con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [name]
+        ).fetchone()
+        return row is not None
+    except Exception:  # noqa: BLE001 - catalog unavailable -> treat as absent
+        return False
+
+
+def _upsert_keyword_meta(con, session, keyword_ids: list[int]) -> int:
+    """Add ``keyword_meta`` rows for keyword ids not already projected (new keywords that
+    first appear in an incremental tail). Existing rows are LEFT unchanged — an incremental
+    merge is APPEND-only (the epoch guard forces a full rebuild when a keyword's metadata
+    could have changed via re-index), so a present row is already current."""
+    from src.analytics.queries import kind_of
+    from src.database.models import Keyword
+
+    added = 0
+    for i in range(0, len(keyword_ids), 900):  # bounded IN() (SQLite variable limit)
+        chunk = keyword_ids[i : i + 900]
+        kws = session.query(Keyword).filter(Keyword.id.in_(chunk)).all()
+        rows = [
+            (int(kw.id), kw.normalized_term, kw.term, kind_of(kw),
+             bool(kw.is_entity), kw.entity_type, kw.language)
+            for kw in kws
+        ]
+        if not rows:
+            continue
+        con.execute("CREATE OR REPLACE TEMP TABLE _new_meta ("
+                    "keyword_id BIGINT, normalized_term VARCHAR, term VARCHAR, kind VARCHAR, "
+                    "is_entity BOOLEAN, entity_type VARCHAR, language VARCHAR)")
+        con.executemany("INSERT INTO _new_meta VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+        con.execute(
+            "INSERT INTO keyword_meta SELECT n.* FROM _new_meta n "
+            "WHERE NOT EXISTS (SELECT 1 FROM keyword_meta m WHERE m.keyword_id = n.keyword_id)"
+        )
+        con.execute("DROP TABLE _new_meta")
+        added += len(rows)
+    return added
+
+
+def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 50_000) -> dict:
+    """Bring ``keyword_daily`` up to date. FULL rebuild when the corpus epoch changed since
+    the last build (a re-index / prune / restore happened) or there is no usable prior build;
+    otherwise an INCREMENTAL merge of the new mention tail.
+
+    ``corpus_epoch`` is supplied by the caller from the canonical side (the value bumped by
+    the re-index/prune/restore mutators). Returns ``{mode: 'full'|'incremental', ...}``.
+
+    Incremental correctness: the tail (``id > last_mention_id``) contains only APPENDED
+    mentions (the epoch guard rules out a re-index), so each carries a NEW ``(keyword,
+    article)`` pair and a fresh higher id — merge-ADD into the per-day rollup is exact
+    (mentions summed; per-day distinct articles summed, disjoint from existing days by the
+    unique-pair invariant). Undated tail rows are skipped but the watermark still advances
+    past them (never re-scanned).
+    """
+    ensure_store_meta(con)
+    built_epoch = _get_meta(con, "keyword_daily.built_epoch")
+    needs_full = (
+        built_epoch is None
+        or not _table_present(con, "keyword_daily")
+        or not _table_present(con, "keyword_meta")
+        or int(built_epoch) != int(corpus_epoch)
+    )
+    if needs_full:
+        tally = build_keyword_daily(con, session, batch_size=batch_size)
+        _set_meta(con, "keyword_daily.built_epoch", int(corpus_epoch))
+        return {"mode": "full", "corpus_epoch": int(corpus_epoch), **tally}
+
+    # -- INCREMENTAL: merge only the tail (id > watermark) ------------------------------- #
+    from sqlalchemy import text as _sql
+
+    last_id = int(_get_meta(con, "keyword_daily.last_mention_id") or 0)
+    new_max = int(session.execute(_sql("SELECT MAX(id) FROM keyword_mentions")).scalar() or last_id)
+    if new_max <= last_id:
+        return {"mode": "incremental", "merged_days": 0, "new_keywords": 0,
+                "last_mention_id": last_id, "corpus_epoch": int(corpus_epoch)}
+
+    con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
+                "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
+    result = session.execute(_sql(
+        "SELECT keyword_id, observed_on, count, article_id FROM keyword_mentions "
+        "WHERE id > :lo AND observed_on IS NOT NULL"
+    ), {"lo": last_id})
+    while True:
+        chunk = result.fetchmany(batch_size)
+        if not chunk:
+            break
+        con.executemany(
+            "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)",
+            [(int(r[0]), str(r[1])[:10], int(r[2]), int(r[3])) for r in chunk],
+        )
+
+    con.execute(
+        "CREATE OR REPLACE TABLE keyword_daily_tail AS "
+        "SELECT keyword_id, CAST(day AS DATE) AS day, SUM(cnt) AS mentions, "
+        "COUNT(DISTINCT article_id) AS articles_on_day "
+        "FROM keyword_daily_stage GROUP BY keyword_id, CAST(day AS DATE)"
+    )
+    # Portable MERGE: add to matched (keyword, day) rows, insert the rest.
+    con.execute(
+        "UPDATE keyword_daily d SET mentions = d.mentions + t.mentions, "
+        "articles_on_day = d.articles_on_day + t.articles_on_day "
+        "FROM keyword_daily_tail t WHERE d.keyword_id = t.keyword_id AND d.day = t.day"
+    )
+    con.execute(
+        "INSERT INTO keyword_daily "
+        "SELECT keyword_id, day, mentions, articles_on_day FROM keyword_daily_tail t "
+        "WHERE NOT EXISTS (SELECT 1 FROM keyword_daily d "
+        "WHERE d.keyword_id = t.keyword_id AND d.day = t.day)"
+    )
+    merged_days = con.execute("SELECT COUNT(*) FROM keyword_daily_tail").fetchone()[0]
+    tail_kids = [int(r[0]) for r in
+                 con.execute("SELECT DISTINCT keyword_id FROM keyword_daily_stage").fetchall()]
+    new_keywords = _upsert_keyword_meta(con, session, tail_kids)
+    con.execute("DROP TABLE keyword_daily_stage")
+    con.execute("DROP TABLE keyword_daily_tail")
+    _set_meta(con, "keyword_daily.last_mention_id", new_max)
+    return {"mode": "incremental", "merged_days": int(merged_days),
+            "new_keywords": int(new_keywords), "last_mention_id": new_max,
+            "corpus_epoch": int(corpus_epoch)}
+
+
 def refresh_persisted_read_model(session, passphrase: str | None = None) -> dict:
     """Maintain the read-model in the background — ONLY when the store is PERSISTED.
 
