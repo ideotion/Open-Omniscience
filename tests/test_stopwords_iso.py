@@ -24,6 +24,8 @@ _LANGS = [
     # 2026-07-01 wave: full scoped lists for managed languages that had only partial batches
     "ar", "bg", "da", "de", "el", "es", "hr", "hu", "id", "it",
     "nl", "no", "nb", "pl", "pt", "ru", "sl", "sv",
+    # 2026-07-01 follow-up: bs aliased to the Croatian (hr) BCS list.
+    "bs",
 ]
 
 
@@ -101,6 +103,42 @@ def test_full_latin_lists_are_collision_free_at_extraction():
     # ...and the German words are NOT globalised by the scoped channel.
     g = global_stopwords()
     assert "wurden" not in g and "serían" not in g and "saranno" not in g
+
+
+def test_bosnian_is_aliased_to_the_croatian_bcs_list():
+    """bs is absent from stopwords-iso; BCS/Serbo-Croatian Latin function words are shared,
+    so bs is sourced from the Croatian (hr) list — a documented alias, not a fabrication."""
+    base = pathlib.Path(__file__).resolve().parents[1] / "configs" / "stopwords_iso"
+    hr = {w for w in (base / "hr.txt").read_text(encoding="utf-8").split() if w}
+    bs = {w for w in (base / "bs.txt").read_text(encoding="utf-8").split() if w}
+    assert hr and bs == hr, "bs.txt should mirror the Croatian (hr) BCS list"
+    # bs previously ran on the ENGLISH default; it now carries the real BCS grammar.
+    assert stopwords_manager.get_stopwords("bs") >= hr
+
+
+def test_curated_temporal_adverbs_are_scoped_and_collision_free():
+    """The 2026-07-01 curated layer: yesterday/tomorrow leaked as top keywords in every
+    managed language even after the iso lists (they carried 'today' but not the rest).
+    They are filtered per-language, kept OUT of the global union, and never touch a
+    same-spelled content word in another language."""
+    ex = BaselineExtractor()
+    # filtered for their language (a real news sentence loses the temporal adverb)
+    cases = {
+        "de": ("Gestern und morgen tagt der Ausschuss.", {"gestern", "morgen"}),
+        "ru": ("Вчера и завтра пройдёт саммит.", {"вчера", "завтра"}),
+        "es": ("Ayer y mañana se reúne el comité.", {"ayer", "mañana"}),
+        "nl": ("Gisteren en morgen vergadert de raad.", {"gisteren", "morgen"}),
+        "bs": ("Juče i sutra zasjeda odbor.", {"juče", "sutra"}),
+    }
+    for lang, (txt, temporal) in cases.items():
+        kept = {k.normalized for k in ex.extract(txt, language=lang)}
+        assert not (temporal & kept), f"{lang}: temporal adverb leaked: {temporal & kept}"
+    # collision-free: none of them are globalised (else they'd hide these tokens everywhere)
+    g = global_stopwords()
+    assert not ({"gestern", "morgen", "вчера", "mañana", "gisteren", "juče"} & g)
+    # and applied only to the right language (de gestern, but not es)
+    assert "gestern" in stopwords_manager.get_stopwords("de")
+    assert "gestern" not in stopwords_manager.get_stopwords("es")
 
 
 def test_as_of_is_set():

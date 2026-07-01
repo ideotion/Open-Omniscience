@@ -312,6 +312,11 @@ class StopwordsManager:
         # only for THAT language (extraction is language-scoped), so the collision
         # cannot happen. (2026-06-23 keyword-engine report; STOPWORDS_ISO_AS_OF.)
         self.scoped_stopwords: dict[str, set[str]] = _load_scoped_stopwords()
+        # Merge the hand-curated temporal-deictic adverbs into the SAME language-scoped
+        # channel (not the global union). A curated language without a vendored file
+        # (bs before its alias lands) still gets its own scoped set here.
+        for lang, curated in CURATED_SCOPED_STOPWORDS.items():
+            self.scoped_stopwords.setdefault(lang, set()).update(curated)
 
     def get_stopwords(self, language="en"):
         lang = language.lower()
@@ -332,6 +337,50 @@ class StopwordsManager:
 # Dated provenance for the vendored stopwords-iso snapshot (registered in
 # configs/external_artifacts.yml; the freshness/protocol guard enforces it).
 STOPWORDS_ISO_AS_OF = "2026-06"
+
+
+# Curated temporal-deictic adverbs (yesterday/today/tomorrow + now/recently/currently
+# and their extended forms) — the news-noise category English already stoplists in
+# NEWS_STOPWORDS (today/yesterday/tomorrow/now/soon/later). They leaked as top keywords
+# in every space-segmented managed language even after the full stopwords-iso lists
+# landed (2026-07-01 corpus: gestern, вчера, mañana, domani, amanhã, gisteren — the iso
+# lists carried "today" but not "yesterday"/"tomorrow"). These are hand-curated (NOT in
+# stopwords-iso, so kept out of the auto-generated *.txt that build_stopwords.py
+# overwrites) and merged into the LANGUAGE-SCOPED channel — never the language-agnostic
+# global union — so, like the vendored lists, a word deictic in one language can never
+# hide a same-spelled content word in another. Deliberately CONSERVATIVE: only closed
+# deictic time adverbs. A dual-use word that also names a common noun is included ONLY
+# where the deictic sense dominates a news corpus and the noun sense is negligible:
+# de/nl "morgen" & es "mañana" (= tomorrow / morning). Truly ambiguous ones are OMITTED
+# (it "ora" = now/hour, pt "logo" = soon/logo). en/fr already cover this class
+# (NEWS_STOPWORDS / the French evidence batch), so they are not repeated here.
+CURATED_SCOPED_STOPWORDS: dict[str, frozenset[str]] = {
+    "de": frozenset(
+        "gestern heute morgen vorgestern übermorgen damals derzeit momentan "
+        "demnächst kürzlich neulich".split()
+    ),
+    "nl": frozenset(
+        "gisteren vandaag morgen eergisteren overmorgen straks onlangs "
+        "tegenwoordig zojuist".split()
+    ),
+    "ru": frozenset(
+        "вчера сегодня завтра позавчера послезавтра сейчас теперь недавно "
+        "нынче ныне скоро".split()
+    ),
+    "es": frozenset(
+        "ayer hoy mañana anteayer anoche ahora actualmente recientemente pronto".split()
+    ),
+    "it": frozenset(
+        "ieri oggi domani dopodomani stamattina adesso attualmente "
+        "recentemente presto".split()
+    ),
+    "pt": frozenset(
+        "ontem hoje amanhã anteontem agora atualmente recentemente cedo".split()
+    ),
+    # Croatian / Bosnian (BCS Latin, mutually intelligible; bs is aliased to the hr list).
+    "hr": frozenset("jučer danas sutra prekjučer prekosutra sada nedavno uskoro".split()),
+    "bs": frozenset("juče danas sutra prekjuče prekosutra sada nedavno uskoro".split()),
+}
 
 
 def _load_scoped_stopwords() -> dict[str, set[str]]:
