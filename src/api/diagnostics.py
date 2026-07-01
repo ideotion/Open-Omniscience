@@ -1330,6 +1330,24 @@ def performance_report(
         ),
     }
 
+    # Last collection pass: break its fetch_failed count down by reason, so the
+    # number is diagnosable (Tor-403 reality vs a real transport/DB problem) and
+    # not a raw mystery. From the scheduler's own last result; empty if no pass ran.
+    from src.ingest.fetch_verdict import fetch_failed_reasons as _ff_reasons
+    from src.scheduler.runner import get_scheduler as _get_scheduler
+
+    _last = _get_scheduler().status().get("last_result") or {}
+    _last_tally = _last.get("tally") if isinstance(_last.get("tally"), dict) else {}
+    collection = {
+        "last_pass_fetch_failed": int(_last_tally.get("fetch_failed") or 0),
+        "fetch_failed_reasons": _ff_reasons(_last),
+        "method": (
+            "The last scrape pass's fetch failures bucketed by cause (per-reason "
+            "counts sum to fetch_failed). http_403 is typically the Tor-block "
+            "reality on premium news, NOT asserted as Tor. Counts only, no score."
+        ),
+    }
+
     # -- passive latencies: the app's own histograms, real use since boot --- #
     endpoint_latency: list[dict] = []
     try:
@@ -1431,6 +1449,7 @@ def performance_report(
         "environment": env,
         "store": store,
         "corpus": counts,
+        "collection": collection,
         "endpoint_latency_since_boot": {
             "method": (
                 "The app's own request-latency histograms (Prometheus middleware), "
