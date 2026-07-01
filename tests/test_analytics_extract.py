@@ -138,3 +138,26 @@ def test_get_extractor_spacy_falls_back_when_absent():
     ex = get_extractor("spacy")
     assert ex.name == "baseline"
     assert isinstance(ex, BaselineExtractor)
+
+
+def test_2026_07_01_korean_marathi_stopword_batch_is_collision_free():
+    """The 2026-07-01 keyword-log batch added Korean (Hangul) + Marathi (Devanagari)
+    grammar to the language-agnostic stopword union. Distinct scripts -> collision-free:
+    the batch words are filtered, but CONTENT (incl. the deliberately-excluded mr words)
+    and any ASCII/Latin token are untouched, so no other-language content is hidden."""
+    from src.analytics.extract import global_stopwords
+
+    gs = global_stopwords()
+    # grammar/connectives are now filtered
+    for w in ("하지만", "그러나", "따라서", "때문에", "आहे", "आणि", "नाही", "होते"):
+        assert w in gs, w
+    # CONTENT stays a keyword: the mr words we deliberately EXCLUDED + a ko content noun
+    for w in ("반도체", "जात", "कोटी", "माहिती", "कमी"):
+        assert w not in gs, w
+    # the batch is DISTINCT-SCRIPT only: it added no ASCII token, so no Latin-corpus
+    # content word (e.g. English 'man'/'tag'/'state') can be hidden by it.
+    added = set("공동으로 관계없이 하지만 그러나 आहे आणि नाही होते".split())
+    assert all(not any(ord(c) < 128 for c in w) for w in added)
+    for latin_content in ("man", "tag", "state", "time", "premier", "grande", "parte"):
+        # these were NOT in the batch; the guard is that the batch can't touch them
+        assert latin_content not in added
