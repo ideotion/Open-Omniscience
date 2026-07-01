@@ -72,12 +72,14 @@ def test_end_to_end_encrypted_backup_is_ciphertext_and_plaintext_is_not():
     from src.api.main import app
 
     with TestClient(app):  # triggers init_db so the corpus DB exists to snapshot
-        from src.api.backup_v2 import _staging_dir
-        from src.backup.artifact import read_artifact, write_backup_v2
+        import tempfile
         from pathlib import Path
 
-        enc = Path(_staging_dir()) / "enc.oobak.ooenc"
-        plain = Path(_staging_dir()) / "plain.oobak"
+        from src.backup.artifact import read_artifact, write_backup_v2
+
+        d = Path(tempfile.mkdtemp())
+        enc = d / "enc.oobak.ooenc"
+        plain = d / "plain.oobak"
         try:
             write_backup_v2(enc, passphrase="proof-pw-123")
             write_backup_v2(plain, passphrase=None)
@@ -109,11 +111,22 @@ def test_restore_preview_reports_encrypted_verdict():
     from src.api.main import app
 
     with TestClient(app) as c:
-        r = c.post("/api/backup/v2", json={"passphrase": "verdict-pw"})
-        assert r.status_code == 200
+        import os
+        import tempfile
+        from pathlib import Path
+
+        from src.backup.artifact import write_backup_v2
+
+        fd, tmp = tempfile.mkstemp(suffix=".ooenc")
+        os.close(fd)
+        dest = Path(tmp)
+        dest.unlink(missing_ok=True)
+        write_backup_v2(dest, passphrase="verdict-pw")
+        blob = dest.read_bytes()
+        dest.unlink(missing_ok=True)
         prev = c.post(
             "/api/backup/v2/restore/preview",
-            files={"file": ("b.ooenc", r.content, "application/octet-stream")},
+            files={"file": ("b.ooenc", blob, "application/octet-stream")},
             data={"passphrase": "verdict-pw"},
         )
         assert prev.status_code == 200, prev.text

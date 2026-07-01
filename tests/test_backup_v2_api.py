@@ -1,12 +1,15 @@
 """
-oo-backup-2 endpoints: artifact download + merge-restore preview/commit.
+oo-backup-2 endpoints: merge-restore preview/commit.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-The deep merge semantics live in tests/test_db_reliability_torture.py (the
-acceptance suite, subprocess-isolated). These tests cover the HTTP contract:
-explicit-plaintext rule, manifest shape, preview token flow, self-merge safety.
+The size-capped single-file CREATE endpoint (POST /api/backup/v2) was retired
+(2026-07-01) — backups are made by the unified volume/folder export. These tests
+now build a single-file artifact via write_backup_v2 (the internal builder, still
+used by the torture suite) and cover the RESTORE HTTP contract: manifest shape,
+preview token flow, self-merge safety. The deep merge semantics live in
+tests/test_db_reliability_torture.py (the acceptance suite, subprocess-isolated).
 """
 
 from __future__ import annotations
@@ -27,16 +30,29 @@ def client():
         yield c
 
 
-def test_backup_v2_requires_explicit_choice(client):
-    r = client.post("/api/backup/v2", json={})
-    assert r.status_code == 400
-    assert "passphrase" in r.json()["detail"]
+def _build_backup(passphrase=None) -> bytes:
+    """Build a single-file oo-backup-2 artifact via the internal builder + return its
+    bytes (replaces the retired POST /api/backup/v2 create endpoint in tests). Must run
+    while the app/DB is up (the ``client`` fixture)."""
+    import os
+    import tempfile
+    from pathlib import Path
+
+    from src.backup.artifact import write_backup_v2
+
+    fd, tmp = tempfile.mkstemp(suffix=".oobak")
+    os.close(fd)
+    dest = Path(tmp)
+    dest.unlink(missing_ok=True)
+    write_backup_v2(dest, passphrase=passphrase)
+    try:
+        return dest.read_bytes()
+    finally:
+        dest.unlink(missing_ok=True)
 
 
-def test_backup_v2_plaintext_manifest_shape(client):
-    r = client.post("/api/backup/v2", json={"plaintext": True})
-    assert r.status_code == 200
-    blob = r.content
+def test_plaintext_artifact_manifest_shape(client):
+    blob = _build_backup()  # plaintext (no passphrase)
     assert blob[:4] == b"PK\x03\x04"
     with zipfile.ZipFile(io.BytesIO(blob)) as zf:
         env = json.loads(zf.read("manifest.json"))
@@ -48,10 +64,8 @@ def test_backup_v2_plaintext_manifest_shape(client):
         assert env["algorithm"] == "ed25519" and env["signature"]
 
 
-def test_backup_v2_encrypted_roundtrip_and_self_merge(client):
-    r = client.post("/api/backup/v2", json={"passphrase": "api-pw-123"})
-    assert r.status_code == 200
-    blob = r.content
+def test_encrypted_roundtrip_and_self_merge(client):
+    blob = _build_backup("api-pw-123")
     assert blob[:6] == b"OOENC1"
 
     before = client.get("/api/backup/v2/batches").json()
@@ -83,11 +97,10 @@ def test_backup_v2_encrypted_roundtrip_and_self_merge(client):
 
 
 def test_restore_preview_wrong_passphrase_is_loud(client):
-    r = client.post("/api/backup/v2", json={"passphrase": "right-pw"})
-    assert r.status_code == 200
+    blob = _build_backup("right-pw")
     bad = client.post(
         "/api/backup/v2/restore/preview",
-        files={"file": ("b.ooenc", r.content)},
+        files={"file": ("b.ooenc", blob)},
         data={"passphrase": "wrong-pw"},
     )
     assert bad.status_code == 400
@@ -100,22 +113,3 @@ def test_restore_rejects_garbage(client):
         files={"file": ("x.bin", b"this is not a backup at all")},
     )
     assert bad.status_code == 400
-
-
-def test_backup_v2_unexpected_error_returns_json_detail(client, monkeypatch):
-    """An UNEXPECTED builder failure (not BackupError/ArtifactError -- e.g. a full
-    temp volume raising sqlite3.OperationalError during the snapshot) must surface
-    as a JSON {detail} 500, never a plain-text 'Internal Server Error'. The browser
-    does res.json() on the error body, so a plain-text 500 shows the user only the
-    useless 'JSON.parse: unexpected character at line 1 column 1'."""
-    import src.backup.artifact as artifact
-
-    def boom(*_a, **_k):
-        raise RuntimeError("simulated full temp volume")
-
-    # The endpoint imports write_backup_v2 from the module at call time.
-    monkeypatch.setattr(artifact, "write_backup_v2", boom)
-    r = client.post("/api/backup/v2", json={"plaintext": True})
-    assert r.status_code == 500
-    assert r.headers["content-type"].startswith("application/json")
-    assert "simulated full temp volume" in r.json()["detail"]

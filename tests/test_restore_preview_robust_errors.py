@@ -43,10 +43,28 @@ def _rewrite_manifest(blob: bytes, **manifest_patch) -> bytes:
     return out.getvalue()
 
 
+def _build_backup(passphrase=None) -> bytes:
+    """Build a single-file artifact via the internal builder (the retired create
+    endpoint's replacement). Runs while the app/DB is up (the ``client`` fixture)."""
+    import os
+    import tempfile
+    from pathlib import Path
+
+    from src.backup.artifact import write_backup_v2
+
+    fd, tmp = tempfile.mkstemp(suffix=".oobak")
+    os.close(fd)
+    dest = Path(tmp)
+    dest.unlink(missing_ok=True)
+    write_backup_v2(dest, passphrase=passphrase)
+    try:
+        return dest.read_bytes()
+    finally:
+        dest.unlink(missing_ok=True)
+
+
 def test_old_schema_backup_preview_returns_json_naming_the_version_gap(client):
-    r = client.post("/api/backup/v2", json={"plaintext": True})
-    assert r.status_code == 200
-    old = _rewrite_manifest(r.content, backup_schema="oo-backup-1")
+    old = _rewrite_manifest(_build_backup(), backup_schema="oo-backup-1")
 
     prev = client.post(
         "/api/backup/v2/restore/preview",
@@ -63,8 +81,7 @@ def test_run_restore_failure_in_preview_returns_json_500_not_plaintext(client, m
     plain-text 500. It must now be a JSON {detail}."""
     import src.api.backup_v2 as bv2
 
-    r = client.post("/api/backup/v2", json={"plaintext": True})
-    assert r.status_code == 200
+    blob = _build_backup()
 
     def boom(*a, **k):
         raise RuntimeError("staged migration failed on an ancient corpus")
@@ -72,7 +89,7 @@ def test_run_restore_failure_in_preview_returns_json_500_not_plaintext(client, m
     monkeypatch.setattr(bv2, "run_restore", boom)
     prev = client.post(
         "/api/backup/v2/restore/preview",
-        files={"file": ("b.oobak", r.content, "application/octet-stream")},
+        files={"file": ("b.oobak", blob, "application/octet-stream")},
     )
     assert prev.status_code == 500
     assert prev.headers["content-type"].startswith("application/json")
@@ -83,8 +100,9 @@ def test_run_restore_failure_in_preview_returns_json_500_not_plaintext(client, m
 def test_global_handler_turns_unhandled_errors_into_json():
     """Any otherwise-unhandled exception under the API returns JSON, not plain text —
     so the SPA never trips on JSON.parse again."""
-    from src.api.main import app, unhandled_exception_handler
     from starlette.requests import Request
+
+    from src.api.main import app, unhandled_exception_handler
 
     assert Exception in app.exception_handlers, "global JSON exception handler is not registered"
 

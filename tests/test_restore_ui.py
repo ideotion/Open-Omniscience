@@ -42,15 +42,19 @@ _HTML = "\n".join(
 )
 
 
-def test_v2_flow_is_the_primary_backup_path():
-    panel = _HTML.split('id="backup-panel"', 1)[1].split("</section>", 1)[0]
-    v2_pos = panel.find('id="v2-pass"')
-    legacy_pos = panel.find('onclick="downloadBackup()"')
-    assert v2_pos != -1 and legacy_pos != -1
-    assert v2_pos < legacy_pos, "the signed-archive flow must come before the legacy tools"
-    # Additive-only restore (maintainer ruling 2026-06-13): the destructive
-    # replace-restore is REMOVED entirely (not merely demoted). The legacy block
-    # keeps only the raw .db snapshot DOWNLOAD; the merge is the ONLY restore.
+def test_single_file_create_is_removed_backups_go_through_unified_export():
+    # The size-capped single-file CREATE was retired (2026-07-01): no create endpoint,
+    # no v2Backup, no "download full backup" button. Backups are made by the unified
+    # Export dialog; only the legacy single-file RESTORE remains (migration).
+    assert '"/api/backup/v2"' not in _HTML       # the create endpoint URL is gone
+    assert "function v2Backup" not in _HTML
+    assert "Download full backup" not in _HTML
+    assert "openUnifiedExport(" in _HTML         # the replacement create path
+
+
+def test_additive_only_restore_no_destructive_paths():
+    # Additive-only restore (maintainer 2026-06-13): the destructive replace-restore
+    # is REMOVED entirely; the merge is the ONLY restore.
     assert 'onclick="restoreBackup()"' not in _HTML, (
         "the destructive replace-restore must be GONE — restore is additive-only"
     )
@@ -75,7 +79,6 @@ def test_js_matches_the_api_form_contract():
     assert 'fd.append("token", _v2Token)' in _HTML
     assert '"/api/backup/v2/restore/preview"' in _HTML
     assert '"/api/backup/v2/restore/commit"' in _HTML
-    assert '"/api/backup/v2"' in _HTML
 
 
 def test_merge_semantics_stated_to_the_operator():
