@@ -4492,3 +4492,31 @@ def test_volume_backup_job_wired_slice_1c():
         backend_routes | frontend_routes
     )
 
+
+def test_favicon_route_and_brand_icon_wired():
+    """Field diagnostics 2026-07-01: the browser's default ``/favicon.ico`` request 404'd
+    on every page — index.html declared no icon (static is mounted only at ``/static``),
+    and taskmanager.html pointed at a non-existent ``.ico``. Fix: the REAL brand SVG (the
+    eye — UI invariant #5) is served from ``/static``, a root ``/favicon.ico`` route
+    redirects to it (``/favicon`` is already allowed while locked, so it resolves on the
+    unlock screen too), and the HTML pages declare it. Guarded at the SOURCE: the app
+    import needs the crypto extra, so a TestClient GET is CI-only; this file-level check
+    runs in every lane."""
+    favicon = _SRC / "static" / "favicon.svg"
+    assert favicon.exists(), "src/static/favicon.svg (the brand icon) must exist"
+    brand = (_ROOT / "assets" / "icon.svg").read_text(encoding="utf-8")
+    assert favicon.read_text(encoding="utf-8") == brand, (
+        "favicon.svg must BE the canonical brand icon assets/icon.svg (invariant #5), "
+        "never a fabricated placeholder"
+    )
+    main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
+    assert '@app.get("/favicon.ico"' in main, "main.py must register a root /favicon.ico route"
+    assert "/static/favicon.svg" in main, "the /favicon.ico route must resolve to the brand SVG"
+    assert '"/favicon"' in (_SRC / "api" / "unlock.py").read_text(encoding="utf-8"), (
+        "/favicon must stay allowed while the store is locked (the redirect resolves there too)"
+    )
+    for page in ("index.html", "taskmanager.html"):
+        html = (_SRC / "static" / page).read_text(encoding="utf-8")
+        assert "/static/favicon.svg" in html, f"{page} must declare the brand favicon"
+        assert "favicon.ico" not in html, f"{page} must not reference the non-existent favicon.ico"
+

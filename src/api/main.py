@@ -345,6 +345,16 @@ async def health_check():
     }
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> RedirectResponse:
+    """Serve the brand mark (the eye — UI invariant #5) for the browser's default
+    root ``/favicon.ico`` request, so pages that declare no ``<link rel=icon>``
+    (and bare fetches) get the icon instead of a 404. ``/favicon`` is already
+    allowed while the store is locked, and so is ``/static/`` — the redirect
+    target — so this works on the unlock screen too."""
+    return RedirectResponse(url="/static/favicon.svg", status_code=308)
+
+
 # Serve static files (HTML5 frontend). Register the JS/CSS MIME types explicitly so
 # the externalised /static/app.js + app.css are served as text/javascript & text/css
 # on EVERY platform: StaticFiles falls back to the OS registry otherwise, and Windows
