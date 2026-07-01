@@ -3977,7 +3977,7 @@
           if (p.volumes_written != null) extra += ` · ${p.volumes_written} volumes`;
           if (p.files_done != null) extra += ` · ${p.files_done}/${p.files_total || "?"} files`;
           prog.textContent = `${label}: ${state}${extra}`;
-          if (state === "done") return resolve(s);
+          if (state === "done" || state === "paused") return resolve(s);  // paused = stopped, not a hang
           if (state === "error" || state === "cancelled") return reject(new Error(s.error || state));
           setTimeout(tick, 1200);
         };
@@ -4009,6 +4009,94 @@
       } catch (e) {
         prog.textContent = "Backup failed — see console";
         console.error("ux run", e);
+      }
+      btn.disabled = false;
+    }
+
+    // ---- Unified Import dialog (folder discovery) -------------------------- //
+    // Point at a folder -> /api/backup/import-scan classifies it -> a checklist of what
+    // was FOUND -> restore/import the selected kinds via the existing endpoints. Additive.
+    let _uxImFound = null, _uxImSrc = "";
+
+    function openUnifiedImport() {
+      document.getElementById("ux-imp-checklist").innerHTML = "";
+      document.getElementById("ux-imp-status").textContent = "";
+      document.getElementById("ux-imp-progress").textContent = "";
+      document.getElementById("ux-imp-pass-row").style.display = "none";
+      document.getElementById("ux-imp-run").disabled = true;
+      _uxImFound = null; _uxImSrc = "";
+      document.getElementById("ux-import").showModal();
+    }
+
+    async function _uxImScan(btn) {
+      const src = (document.getElementById("ux-imp-src").value || "").trim();
+      if (!src) { toast("Enter a folder to scan.", "err"); return; }
+      const st = document.getElementById("ux-imp-status");
+      const box = document.getElementById("ux-imp-checklist");
+      st.textContent = "Scanning…"; box.innerHTML = ""; btn.disabled = true;
+      try {
+        const r = await api("/api/backup/import-scan?path=" + encodeURIComponent(src));
+        const f = r.found || {};
+        const rows = [];
+        if (f.corpus) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> Restore corpus backup <span class="muted">(encrypted volumes — additive)</span></label>`);
+        if (f.blobs) {
+          const b = f.blobs, parts = [];
+          if (b.wiki) parts.push(`wiki ${b.wiki.count}`);
+          if (b.maps) parts.push(`maps ${b.maps.count}`);
+          if (b.models) parts.push(`models ${b.models.count}`);
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-blobs" checked> Restore large data <span class="muted">(${parts.join(" · ")})</span></label>`);
+        }
+        if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> Import newsletters <span class="muted">(${f.newsletters.count}${f.newsletters.capped ? "+" : ""} .eml)</span></label>`);
+        const notes = [];
+        if (f.source_csv) notes.push(`Source CSV found (${f.source_csv.join(", ")}) — import it from the Sources panel for now.`);
+        if (f.legacy_backup) notes.push(`Legacy single-file backup found (${f.legacy_backup.join(", ")}) — restore via the old panel (being retired).`);
+        box.innerHTML = rows.join("") || `<span class="muted">Nothing importable found in this folder.</span>`;
+        if (notes.length) box.innerHTML += `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>`;
+        document.getElementById("ux-imp-pass-row").style.display = f.corpus ? "block" : "none";
+        document.getElementById("ux-imp-run").disabled = rows.length === 0;
+        st.textContent = rows.length ? "What do you want to import?" : "";
+        _uxImFound = f; _uxImSrc = src;
+      } catch (e) {
+        st.textContent = "Scan failed — see console";
+        console.error("ux import scan", e);
+      }
+      btn.disabled = false;
+    }
+
+    async function _uxImRun(btn) {
+      const src = _uxImSrc, f = _uxImFound || {};
+      const prog = document.getElementById("ux-imp-progress");
+      const cb = (id) => { const el = document.getElementById(id); return el && el.checked; };
+      const doCorpus = f.corpus && cb("ux-i-corpus");
+      const doBlobs = f.blobs && cb("ux-i-blobs");
+      const doEml = f.newsletters && cb("ux-i-eml");
+      btn.disabled = true;
+      try {
+        if (doCorpus) {
+          const pass = document.getElementById("ux-imp-pass").value || "";
+          if (!pass) { toast("Enter the passphrase to restore the corpus.", "err"); btn.disabled = false; return; }
+          prog.textContent = "Restoring corpus (additive)…";
+          await api("/api/backup/v2/volumes/restore", { method: "POST", body: JSON.stringify({ src, passphrase: pass }) });
+          await _uxPoll("/api/backup/v2/volumes/status", prog, "corpus");
+        }
+        if (doBlobs) {
+          const cats = [];
+          if (f.blobs.wiki) cats.push("wiki_dumps");
+          if (f.blobs.maps) cats.push("osm_regions");
+          if (f.blobs.models) cats.push("models");
+          prog.textContent = "Restoring large data…";
+          await api("/api/backup/folder/restore", { method: "POST", body: JSON.stringify({ src, categories: cats }) });
+          await _uxPoll("/api/backup/folder/status", prog, "large data");
+        }
+        if (doEml) {
+          prog.textContent = "Importing newsletters…";
+          await api("/api/newsletters/import-folder", { method: "POST", body: JSON.stringify({ folder: src }) });
+          await _uxPoll("/api/newsletters/import-folder/status", prog, "newsletters");
+        }
+        prog.textContent = "Import complete.";
+      } catch (e) {
+        prog.textContent = "Import failed — see console";
+        console.error("ux import run", e);
       }
       btn.disabled = false;
     }
