@@ -83,6 +83,22 @@ router = APIRouter(prefix="/api/backup", tags=["backup-v2"])
 
 _MAX_RESTORE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB, same honest cap as legacy restore
 
+
+@router.get("/inventory")
+def backup_inventory_endpoint() -> dict:
+    """What is available to back up + sizes — drives the unified Export checklist.
+
+    The Corpus is one atomic encrypted item (articles, sources, dates, agenda, law,
+    markets, annotations, settings…) with a breakdown; models/maps/wiki dumps are the
+    separately-selectable file blobs. Read-only; the actual backup reuses the
+    always-works streaming engines (volumes+parity for the corpus, folder stream for
+    the blobs)."""
+    from src.backup.inventory import backup_inventory
+    from src.database.session import session_scope
+
+    with session_scope() as session:
+        return backup_inventory(session)
+
 # Staged previews awaiting a commit decision: token -> StagedArtifact. Process-
 # local by design (preview + commit happen within one operator session); orphans
 # on disk are reclaimed by cleanup_stale_staging at boot.

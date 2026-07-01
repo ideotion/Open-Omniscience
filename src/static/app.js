@@ -3932,6 +3932,87 @@
       if ($("fb-models") && $("fb-models").checked) c.push("models");
       return c;
     }
+    // ---- Unified Export/Backup dialog -------------------------------------- //
+    // ONE entry: pick a folder, choose what to include (inventory-driven), and it
+    // drives the ALWAYS-WORKS streaming engines — the encrypted corpus (volumes +
+    // parity) then the large public blobs (folder stream) — into that one folder.
+    // No new backend: reuses /backup/v2/volumes + /backup/folder. English-only.
+    async function openUnifiedExport() {
+      const dlg = document.getElementById("ux-export");
+      document.getElementById("ux-progress").textContent = "";
+      document.getElementById("ux-run").disabled = false;
+      dlg.showModal();
+      await _uxLoadInventory();
+    }
+
+    async function _uxLoadInventory() {
+      const st = document.getElementById("ux-inv-status");
+      const box = document.getElementById("ux-checklist");
+      st.textContent = "Loading what's available…";
+      try {
+        const inv = await api("/api/backup/inventory");
+        const c = inv.corpus || {}, b = c.breakdown || {};
+        const opt = (id, label, d) =>
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "" : "disabled"}> ${label} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+        box.innerHTML =
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked disabled> Corpus <span class="muted">(${b.articles || 0} articles · ${b.sources || 0} sources · ${b.dates || 0} dates · ${b.keywords || 0} keywords · ${humanBytes(c.bytes || 0)})</span></label>` +
+          opt("models", "LLM models", inv.models || {}) +
+          opt("maps", "Offline maps", inv.maps || {}) +
+          opt("wiki", "Wikipedia dumps", inv.wiki || {});
+        st.textContent = "What do you want to back up?";
+      } catch (e) {
+        st.textContent = "Could not load the inventory — see console";
+        console.error("ux inventory", e);
+      }
+    }
+
+    function _uxPoll(url, prog, label) {
+      return new Promise((resolve, reject) => {
+        const tick = async () => {
+          let s;
+          try { s = await api(url); } catch (e) { return reject(e); }
+          const state = s.state || "";
+          const p = s.progress || {};
+          let extra = "";
+          if (p.volumes_written != null) extra += ` · ${p.volumes_written} volumes`;
+          if (p.files_done != null) extra += ` · ${p.files_done}/${p.files_total || "?"} files`;
+          prog.textContent = `${label}: ${state}${extra}`;
+          if (state === "done") return resolve(s);
+          if (state === "error" || state === "cancelled") return reject(new Error(s.error || state));
+          setTimeout(tick, 1200);
+        };
+        tick();
+      });
+    }
+
+    async function _uxRun(btn) {
+      const dest = (document.getElementById("ux-dest").value || "").trim();
+      if (!dest) { toast("Enter a destination folder first.", "err"); return; }
+      const pass = document.getElementById("ux-pass").value || "";
+      if (!pass) { toast("Enter a passphrase for the encrypted corpus.", "err"); return; }
+      const prog = document.getElementById("ux-progress");
+      const blobs = [];
+      if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) blobs.push("models");
+      if (document.getElementById("ux-c-maps") && document.getElementById("ux-c-maps").checked) blobs.push("osm_regions");
+      if (document.getElementById("ux-c-wiki") && document.getElementById("ux-c-wiki").checked) blobs.push("wiki_dumps");
+      btn.disabled = true;
+      try {
+        prog.textContent = "Backing up corpus (encrypted volumes + parity)…";
+        await api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) });
+        await _uxPoll("/api/backup/v2/volumes/status", prog, "corpus");
+        if (blobs.length) {
+          prog.textContent = "Backing up maps / models / dumps…";
+          await api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: blobs }) });
+          await _uxPoll("/api/backup/folder/status", prog, "large data");
+        }
+        prog.textContent = "Backup complete → " + dest;
+      } catch (e) {
+        prog.textContent = "Backup failed — see console";
+        console.error("ux run", e);
+      }
+      btn.disabled = false;
+    }
+
     async function folderBackupPlan(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dest = ($("fb-dest").value || "").trim();
