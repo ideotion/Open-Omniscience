@@ -141,5 +141,25 @@ def test_curated_temporal_adverbs_are_scoped_and_collision_free():
     assert "gestern" not in stopwords_manager.get_stopwords("es")
 
 
+def test_open_class_closed_gaps_and_platform_furniture_are_filtered():
+    """The open-class detector surfaced two low-dual-use wins: CLOSED-CLASS English
+    indefinite pronouns (a gap in the base list) and platform/publishing FURNITURE (the
+    same class English already stoplists: photo/video/story). Both are filtered; the
+    collision-risky fr 'content' (= happy) is NOT globalised."""
+    en = stopwords_manager.get_stopwords("en")
+    assert {"something", "everyone", "nothing", "none", "anyone", "anybody"} <= en
+    assert {"podcast", "newsletter", "cookies", "gallery", "comments"} <= en
+    # per-language publishing furniture rides the language-scoped channel
+    assert "inhalte" in stopwords_manager.get_stopwords("de")
+    assert "publicidad" in stopwords_manager.get_stopwords("es")
+    assert "реклама" in stopwords_manager.get_stopwords("ru")
+    assert "column" in stopwords_manager.get_stopwords("nl")
+    # COLLISION avoided: fr 'content' (happy) is a real word — it must NOT be globalised,
+    # and the scoped publishing words must never reach the global union either.
+    g = global_stopwords()
+    assert "content" not in g
+    assert not ({"contenido", "inhalte", "publicidad"} & g)
+
+
 def test_as_of_is_set():
     assert STOPWORDS_ISO_AS_OF and len(STOPWORDS_ISO_AS_OF) >= 4

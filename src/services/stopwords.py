@@ -246,8 +246,30 @@ class StopwordsManager:
         "late",
     }
 
+    # Indefinite / quantifier pronouns + pro-adverbs — CLOSED-CLASS function words the
+    # base English list missed, surfaced by the open-class detector
+    # (analyze_keyword_log.py --generic-terms) as high-df non-topics on the 2026-07-01
+    # corpus (something df=413, everyone/nothing/…). Safe to add: none is a content word
+    # in another language.
+    INDEFINITE_STOPWORDS = {
+        "something", "anything", "everything", "nothing",
+        "someone", "somebody", "everyone", "everybody",
+        "anyone", "anybody", "nobody", "none",
+        "whatever", "whoever", "somewhere", "anywhere", "everywhere",
+    }
+
+    # Platform / publishing FURNITURE — the same low-dual-use class English already
+    # stoplists in NEWS_STOPWORDS (photo/video/story/article/news). Verified high-df in
+    # the 2026-07-01 corpus (podcast 761, newsletter 529, cookies 412, gallery 206). The
+    # collision-risky "content" (fr = "happy") is DELIBERATELY excluded from this global
+    # English set — it rides the language-scoped channel instead; "comments" (plural, not
+    # fr "comment" = how) is used.
+    PLATFORM_STOPWORDS = {
+        "podcast", "newsletter", "gallery", "cookies", "comments", "advertisement",
+    }
+
     LANGUAGE_STOPWORDS = {
-        "en": DEFAULT_ENGLISH_STOPWORDS | NEWS_STOPWORDS,
+        "en": DEFAULT_ENGLISH_STOPWORDS | NEWS_STOPWORDS | INDEFINITE_STOPWORDS | PLATFORM_STOPWORDS,
         "fr": {
             "le",
             "la",
@@ -312,11 +334,12 @@ class StopwordsManager:
         # only for THAT language (extraction is language-scoped), so the collision
         # cannot happen. (2026-06-23 keyword-engine report; STOPWORDS_ISO_AS_OF.)
         self.scoped_stopwords: dict[str, set[str]] = _load_scoped_stopwords()
-        # Merge the hand-curated temporal-deictic adverbs into the SAME language-scoped
-        # channel (not the global union). A curated language without a vendored file
-        # (bs before its alias lands) still gets its own scoped set here.
-        for lang, curated in CURATED_SCOPED_STOPWORDS.items():
-            self.scoped_stopwords.setdefault(lang, set()).update(curated)
+        # Merge the hand-curated supplements (temporal-deictic adverbs + publishing
+        # boilerplate) into the SAME language-scoped channel (not the global union). A
+        # curated language without a vendored file still gets its own scoped set here.
+        for src in (CURATED_SCOPED_STOPWORDS, PUBLISHING_BOILERPLATE_SCOPED):
+            for lang, curated in src.items():
+                self.scoped_stopwords.setdefault(lang, set()).update(curated)
 
     def get_stopwords(self, language="en"):
         lang = language.lower()
@@ -380,6 +403,23 @@ CURATED_SCOPED_STOPWORDS: dict[str, frozenset[str]] = {
     # Croatian / Bosnian (BCS Latin, mutually intelligible; bs is aliased to the hr list).
     "hr": frozenset("jučer danas sutra prekjučer prekosutra sada nedavno uskoro".split()),
     "bs": frozenset("juče danas sutra prekjuče prekosutra sada nedavno uskoro".split()),
+}
+
+
+# Platform / publishing FURNITURE per language (advertising · content · comment-widget),
+# the same low-dual-use class the English PLATFORM_STOPWORDS covers. Verified high-df in
+# the 2026-07-01 corpus (de inhalte 159 · es publicidad 151 · nl column 154 · pt conteúdo
+# 63). LANGUAGE-SCOPED like the temporal set — never the global union, so fr "content"
+# (= happy) can never be hidden by de/es "contenido"/"inhalte". Applied only to languages
+# that use the scoped channel (not en/fr, which take the language_stopwords branch — the
+# English furniture lives in PLATFORM_STOPWORDS above).
+PUBLISHING_BOILERPLATE_SCOPED: dict[str, frozenset[str]] = {
+    "de": frozenset("inhalte werbung anzeige newsletter kommentare".split()),
+    "es": frozenset("publicidad contenido boletín comentarios".split()),
+    "it": frozenset("pubblicità contenuti newsletter commenti".split()),
+    "pt": frozenset("publicidade conteúdo boletim comentários".split()),
+    "nl": frozenset("column nieuwsbrief reclame inhoud reacties".split()),
+    "ru": frozenset("реклама рассылка комментарии".split()),
 }
 
 
