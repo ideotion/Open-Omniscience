@@ -572,6 +572,19 @@ _EXTRA_STOPWORD_TEXT = (
     # Estonian (et) — Latin, len>=4 / accented ('aga'=name homograph EXCLUDED):
     "sest kõik väga samuti kuid nende olla kõige ainult palju vähem rohkem teine "
     "teised või üks kaks kolm "
+    # --- 2026-07-01 keyword-log (36k-article corpus): the two highest-volume no_stoplist
+    # languages leaked their grammar. Korean (Hangul) + Marathi (Devanagari) are DISTINCT
+    # scripts, so the language-agnostic union is collision-free with the Latin/Arabic/
+    # Cyrillic/CJK corpus languages (mr shares Devanagari only with the managed hi — a
+    # shared function word is a stopword in both, which is fine). Sourced from stopwords-iso
+    # INTERSECTED with the ACTUAL leaked keywords (so each word is BOTH a curated function
+    # word AND observed leaking); CONTENT excluded (mr जात=caste, कोटी=crore,
+    # माहिती=information/RTI, कमी=shortage). Native review welcome. ko/mr STAY no_stoplist
+    # (agglutination means much still leaks) — a partial, collision-free win, not a promotion.
+    # Korean (ko) — Hangul; connectives/adverbs (하지만=but, 그러나=however, 따라서=therefore):
+    "공동으로 관계없이 관하여 구체적으로 그래도 그러나 그런데 그리고 기준으로 대하여 동시에 뒤이어 따라서 때문에 로부터 반대로 반드시 시작하여 심지어 아울러 앞에서 어떻게 얼마나 여전히 오히려 우르르 위하여 위해서 으로서 이러한 이용하여 잇따라 제외하고 중에서 쪽으로 차라리 통하여 하더라도 하면서 하여야 하지만 힘입어 "
+    # Marathi (mr) — Devanagari; copulas/conjunctions/pronouns/auxiliaries (आहे=is, आणि=and, नाही=not):
+    "अनेक अशी असलेल्या असा असून असे आणि आता आपल्या आला आली आले आहे आहेत एका करून काय काही केला केली केले गेल्या झाला झाली झाले झालेल्या तरी तसेच त्या त्याची त्यामुळे दिली दोन नाही मात्र म्हणजे म्हणाले म्हणून येणार येत येथे सर्व सुरू होणार होत होता होती होते "
 )
 _EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
 # News text often uses a curly apostrophe (’) — match those spellings of any
