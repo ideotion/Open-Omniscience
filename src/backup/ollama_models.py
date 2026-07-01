@@ -27,12 +27,9 @@ from __future__ import annotations
 import json
 import os
 import sys
-import zipfile
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
-ARCHIVE_SCHEMA = "oo-ollama-models-1"
 _MANIFESTS = "manifests"
 _BLOBS = "blobs"
 
@@ -214,94 +211,3 @@ def list_models(store: Path) -> list[ModelEntry]:
                     total += bp.stat().st_size
         out.append(ModelEntry(ref=ref, manifest_rel=mf.relative_to(mroot).as_posix(), blobs=blobs, bytes=total))
     return out
-
-
-def build_models_archive(dest: Path, store: Path, refs: list[str] | None = None) -> dict:
-    """Write an OPT-IN companion archive of selected models (or all) to ``dest``.
-
-    Carries each model's manifest + the blobs it references, DEDUPED across models by
-    blob filename (= by sha256), plus a manifest.json inventory. Returns a summary;
-    raises FileNotFoundError if the store has no models."""
-    models = list_models(store)
-    if refs is not None:
-        wanted = set(refs)
-        models = [m for m in models if m.ref in wanted]
-    if not models:
-        raise FileNotFoundError("no Ollama models found to back up")
-
-    blob_set: dict[str, int] = {}
-    for m in models:
-        for fn in m.blobs:
-            bp = store / _BLOBS / fn
-            if bp.is_file():
-                blob_set[fn] = bp.stat().st_size
-
-    manifest = {
-        "schema": ARCHIVE_SCHEMA,
-        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "models": [m.to_dict() for m in models],
-        "blobs": [{"name": fn, "bytes": sz} for fn, sz in sorted(blob_set.items())],
-        "total_bytes": sum(blob_set.values()),
-    }
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_STORED) as z:  # blobs are already compressed
-        z.writestr("manifest.json", json.dumps(manifest, indent=2))
-        for m in models:
-            src = store / _MANIFESTS / Path(m.manifest_rel)
-            if src.is_file():
-                z.write(src, f"{_MANIFESTS}/{m.manifest_rel}")
-        for fn in blob_set:
-            z.write(store / _BLOBS / fn, f"{_BLOBS}/{fn}")
-    return {
-        "path": str(dest), "models": len(models), "blobs": len(blob_set),
-        "total_bytes": manifest["total_bytes"], "archive_bytes": dest.stat().st_size,
-    }
-
-
-def _safe_member(name: str) -> str | None:
-    """Validate an archive member path (zip-slip defense): only ``manifests/`` or
-    ``blobs/`` members, no absolute paths, no ``..`` traversal. Returns the cleaned
-    POSIX relpath, or None to reject."""
-    if not name or name.startswith("/") or "\\" in name:
-        return None
-    parts = [p for p in name.split("/") if p not in ("", ".")]
-    if any(p == ".." for p in parts):
-        return None
-    if not parts or parts[0] not in (_MANIFESTS, _BLOBS):
-        return None
-    return "/".join(parts)
-
-
-def restore_models_archive(archive: Path, store: Path) -> dict:
-    """Restore an oo-ollama-models archive into ``store`` (created if absent).
-
-    Blobs are content-addressed: an existing blob (same sha256 filename) is skipped —
-    NEVER overwritten (it is already identical), so a restore is additive + bit-safe.
-    Manifests are written (a re-import simply re-points to the same blobs). Returns
-    counts. Rejects malformed/traversing members (zip-slip safe)."""
-    blobs_added = blobs_skipped = manifests = rejected = 0
-    with zipfile.ZipFile(archive, "r") as z:
-        for info in z.infolist():
-            if info.is_dir():
-                continue
-            rel = _safe_member(info.filename)
-            if rel is None:
-                if info.filename != "manifest.json":
-                    rejected += 1
-                continue
-            target = store / rel
-            kind = rel.split("/", 1)[0]
-            if kind == _BLOBS and target.exists():
-                blobs_skipped += 1
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with z.open(info) as srcf, open(target, "wb") as out:
-                out.write(srcf.read())
-            if kind == _BLOBS:
-                blobs_added += 1
-            else:
-                manifests += 1
-    return {
-        "store": str(store), "models": manifests,
-        "blobs_added": blobs_added, "blobs_skipped": blobs_skipped, "rejected": rejected,
-    }

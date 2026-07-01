@@ -52,3 +52,12 @@ def test_capped_single_file_create_ui_is_removed():
 def test_legacy_single_file_restore_is_kept_for_migration():
     # restoring an EXISTING single-file backup stays reachable (data-safety)
     assert "v2Preview()" in _HTML
+
+
+def test_llm_models_are_integrated_not_a_separate_panel():
+    # the separate .oomodels panel + its handlers are gone
+    assert "<h2>Local LLM models (separate backup)</h2>" not in _HTML
+    assert "modelsBackupExport" not in _APP and "modelsBackupImport" not in _APP
+    # models are now a category in the unified dialogs (export checklist + import scan)
+    assert "ux-c-models" in _APP  # export checklist item
+    assert 'cats.push("models")' in _APP  # import restores the models category
