@@ -839,6 +839,41 @@ def keyword_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.post("/enrich-sources")
+def enrich_sources(db: Session = Depends(get_db)) -> JSONResponse:
+    """Enrich source metadata from the LOCAL corpus (deduced topic tags).
+
+    Zero-network: deduces each source's topics from the keywords it actually
+    publishes (keyword_tags axis="topic") and unions them into ``Source.tags`` --
+    additive, never overwrites a curated tag, idempotent. This is the same pass the
+    scheduler runs automatically (freshness-gated); the button forces it now. The
+    networked Wikidata ``source_type`` pass is a SEPARATE, consented action (it
+    egresses to Wikidata over clearnet)."""
+    from src.analytics.source_topics import apply_source_topics
+
+    result = apply_source_topics(db)
+    return JSONResponse({"mode": "corpus", **result})
+
+
+@router.post("/enrich-source-types")
+def enrich_source_types(
+    limit: int = Query(200, ge=1, le=2000), db: Session = Depends(get_db)
+) -> JSONResponse:
+    """Fill ``Source.source_type`` from Wikidata — the NETWORKED enrichment pass.
+
+    Egresses to Wikidata over clearnet (through the guarded factory: kill switch +
+    proxy), so the frontend gates it with the one network consent. Refuses up front
+    with a clean 409 while airplane mode is engaged (never a traceback). Bounded per
+    call (``limit``) since each source costs two lookups; click again to continue."""
+    from src.catalog.wikidata_apply import apply_source_types
+
+    try:
+        result = apply_source_types(db, limit=limit)
+    except RuntimeError as exc:  # the kill-switch up-front refusal
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse({"mode": "wikidata", **result})
+
+
 @router.get("/ir-eval-selftest")
 def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     """Run the IR retrieval-eval harness self-test (keyword-engine Phase 3).

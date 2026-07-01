@@ -97,3 +97,77 @@ def derive_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> l
     )
     rows = session.execute(stmt).all()  # Row objects unpack as (domain, tag, count)
     return aggregate_source_topics(rows, min_articles=min_articles, top_n=top_n)
+
+
+def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> dict:
+    """Write deduced topics into the live ``Source.tags`` (additive, idempotent).
+
+    Unions the derived topics into each source's tag list -- never removes or
+    overwrites existing (curated) tags, so a second run adds nothing. Takes the
+    single-writer gate. Returns ``{"sources_updated", "tags_added"}``.
+    """
+    from src.database.models import Source
+    from src.database.writer import write_lock
+
+    proposed = {r["domain"]: r["topics"] for r in derive_source_topics(
+        session, min_articles=min_articles, top_n=top_n
+    )}
+    if not proposed:
+        return {"sources_updated": 0, "tags_added": 0}
+
+    updated = added = 0
+    with write_lock():
+        # one query, then match in Python -- avoids the SQLite 999-variable IN cap
+        for src in session.query(Source).all():
+            topics = proposed.get(src.domain)
+            if not topics:
+                continue
+            existing = [t.strip() for t in (src.tags or "").split(",") if t.strip()]
+            have = set(existing)
+            fresh = [t for t in topics if t not in have]
+            if fresh:
+                src.tags = ",".join(existing + fresh)
+                updated += 1
+                added += len(fresh)
+        session.commit()
+    return {"sources_updated": updated, "tags_added": added}
+
+
+def _state_path():
+    from src.paths import data_dir
+
+    return data_dir() / "source_enrich.json"
+
+
+def enrichment_due(*, min_interval_hours: int = 24) -> bool:
+    """True if the auto source-topic pass has not run within the interval."""
+    import json
+    from datetime import UTC, datetime
+
+    try:
+        last = json.loads(_state_path().read_text(encoding="utf-8")).get("last_run")
+        elapsed = (datetime.now(UTC) - datetime.fromisoformat(last)).total_seconds()
+        return elapsed >= min_interval_hours * 3600
+    except Exception:  # noqa: BLE001 - missing/bad marker => due
+        return True
+
+
+def run_auto_source_enrichment(session, *, min_interval_hours: int = 24) -> dict:
+    """Freshness-gated wrapper for the scheduler's post-pass housekeeping.
+
+    Local + zero-network (reads the corpus, writes tags). Best-effort by the
+    caller; returns ``{"ran": bool, ...}``.
+    """
+    import contextlib
+    import json
+    from datetime import UTC, datetime
+
+    if not enrichment_due(min_interval_hours=min_interval_hours):
+        return {"ran": False}
+    result = apply_source_topics(session)
+    # a marker-write failure must not break the pass
+    with contextlib.suppress(Exception):
+        _state_path().write_text(
+            json.dumps({"last_run": datetime.now(UTC).isoformat()}), encoding="utf-8"
+        )
+    return {"ran": True, **result}
