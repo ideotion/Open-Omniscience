@@ -833,6 +833,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the real storm source was the VITALS poller hitting /api/system/vitals + /api/scheduler/activity every 2s for
   the WHOLE scrape even panel-closed; it now backs off to 6s chip-only (the network poll was already a SEPARATE
   adaptive `_adaptivePoll`). Full SSE consolidation not needed.
+- **FIELD DIAGNOSTICS 2026-07-01 — live overnight test, 6 non-keyword exports analyzed (perf report ·
+  benchmark · date · network preflight · debug bundle · home-cards; the keyword exports went to the parallel
+  session). SHIPPED this session, ALL MERGED (per-fix detail in `docs/ledger/shipped.csv`):** F1 home-cards
+  hard-linking #513 + the framing_split/emotion_profile re-audit follow-up #521 (the home-cards mismatch);
+  IPv6 malformed-URL link-extraction crash #515 (debug-bundle "link indexing on ingest failed"); favicon
+  /favicon.ico 404 #517; polling-storm adaptive-vitals-cadence #518 (= the 2026-06-27 F5). **RESIDUAL /
+  NOT-YET-DONE (recorded so it is NOT lost at session close):** (a) **fetch_failed ≈ 13,678** (perf report) is
+  a RAW count, NOT broken down by verdict (the perf report's "verdict" is throughput-bottleneck, not
+  failure-reason). Almost certainly the known Tor-403 reality (premium news blocks Tor, already surfaced via
+  transport-aware verdicts) but UNCONFIRMED — breaking it down needs the raw `oonetworkpreflight` JSON (aged
+  out of context) OR a per-verdict fetch-failure tally added to the diagnostic (an enhancement, not built). IF
+  it is actually `database is locked`, that is a real data-loss bug (cf. 2026-06-13), not Tor — so verify
+  before dismissing. (b) **date-extraction recall 51.6%** (date diagnostics) — still open, = the 2026-06-27 F4
+  (a bigger enhancement; the 2026-06-16 anchor/language wiring already helped). (c) **analytics freezes**
+  (trending_windows / keyword_export / associations …) — the KEYWORD session's territory (strategy P2
+  rollups); NOT touched here. (d) **airplane POST /api/system/network ≈ 5019ms** (perf) — the backend call
+  itself is slow; PR #509 (prior session) made the airplane BUTTON give an instant popup + optimistic repaint
+  so the UI never blocks on it, but the backend latency itself is un-diagnosed (likely socket-guard /
+  interface enumeration on the state flip) — residual. (e) favicon #517 + polling-storm #518 are FRONTEND,
+  BROWSER-UNVERIFIED per fork-3 — need a click-through.
 - **STATISTICAL-DATA INGESTION + DIVERSIFIED HONEST VIZ + TS-FOUNDATION-MODELS (maintainer-directed
   research 2026-06-25; DESIGN-ONLY, not built — full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Statistical-data ingestion + diversified honest visualization"; verbatim session artifacts committed
