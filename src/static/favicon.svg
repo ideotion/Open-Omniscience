@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Open Omniscience — the eye (vector of assets/logo.txt) -->
+  <rect width="64" height="64" rx="14" fill="#11151a"/>
+  <path d="M6 32 C17 14, 47 14, 58 32 C47 50, 17 50, 6 32 Z"
+        stroke="#e6e9ed" stroke-width="3.5" stroke-linejoin="round"/>
+  <path d="M23 25.5 H41 M23 32 H41 M23 38.5 H41 M27.5 21 V43 M32 21 V43 M36.5 21 V43"
+        stroke="#e6e9ed" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M14 23 L10.5 20 M50 23 L53.5 20 M14 41 L10.5 44 M50 41 L53.5 44"
+        stroke="#e6e9ed" stroke-width="2.8" stroke-linecap="round" opacity=".55"/>
+</svg>
