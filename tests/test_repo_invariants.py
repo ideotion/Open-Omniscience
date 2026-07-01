@@ -4520,3 +4520,32 @@ def test_favicon_route_and_brand_icon_wired():
         assert "/static/favicon.svg" in html, f"{page} must declare the brand favicon"
         assert "favicon.ico" not in html, f"{page} must not reference the non-existent favicon.ico"
 
+
+def test_vitals_poll_backs_off_when_panel_closed():
+    """Field diagnostics 2026-07-01 (F5 — the idle polling storm): the vitals poller ran a
+    FIXED 2 s ``setInterval`` whenever a background scrape was live, polling
+    ``/api/system/vitals`` + ``/api/scheduler/activity`` every 2 s for the whole multi-hour
+    scrape even with the panel CLOSED (~28.9k ``/api/scheduler/activity`` calls contending
+    with the encrypted DB). It now uses an ADAPTIVE cadence — responsive while the panel is
+    open, calmer when only the 'Collecting N/M' chip is live. The airplane/network state
+    keeps its OWN ``_adaptivePoll``, so this must not touch it."""
+    import re
+
+    src = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    m = re.search(r"function _vitalsCadence\(\)\s*\{\s*return _vitalsOpen \? (\d+) : (\d+)", src)
+    assert m, "_vitalsCadence() must exist and branch on _vitalsOpen (panel-open vs chip-only)"
+    open_ms, closed_ms = int(m.group(1)), int(m.group(2))
+    assert closed_ms > open_ms, (
+        f"chip-only cadence ({closed_ms}ms) must be SLOWER than panel-open ({open_ms}ms) — "
+        "that IS the storm fix"
+    )
+    assert "setTimeout(tick, _vitalsCadence())" in src, (
+        "the vitals poll must self-schedule at the adaptive cadence"
+    )
+    assert "setInterval(() => { if (!document.hidden) _pollVitals(); }, 2000)" not in src, (
+        "the fixed-2s setInterval vitals hammer must be gone"
+    )
+    assert "_adaptivePoll(_pollNetwork)" in src, (
+        "the network/airplane poll must remain its own separate _adaptivePoll (untouched)"
+    )
+

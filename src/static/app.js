@@ -514,13 +514,24 @@
       return Math.max(0, (a - b) / dt);
     }
     function _vitalsShouldRun() { return _vitalsOpen || !!_bg; }
+    // Cadence (field diagnostics 2026-07-01, F5 -- the idle polling storm): the panel
+    // OPEN means the user is watching live vitals -> a responsive 2 s. Chip-only (a
+    // background scrape with the panel CLOSED) only updates the "Collecting N/M" chip,
+    // which nobody watches sub-second -> a calm 6 s. An overnight scrape had polled
+    // /api/system/vitals + /api/scheduler/activity every 2 s (~28.9k scheduler/activity
+    // calls contending with the encrypted DB); this cuts the closed-panel case ~3x. The
+    // airplane/network state stays fresh on its OWN _adaptivePoll, so this never dulls
+    // it, and opening the panel snaps back to 2 s with an immediate refresh.
+    function _vitalsCadence() { return _vitalsOpen ? 2000 : 6000; }
     function _ensureVitalsPoll() {
-      if (_vitalsShouldRun() && !_vitalsTimer) {
-        _pollVitals();
-        _vitalsTimer = setInterval(() => { if (!document.hidden) _pollVitals(); }, 2000);
-      } else if (!_vitalsShouldRun() && _vitalsTimer) {
-        clearInterval(_vitalsTimer); _vitalsTimer = null; _vitalsPrev = null;
-      }
+      if (_vitalsTimer) { clearTimeout(_vitalsTimer); _vitalsTimer = null; }
+      if (!_vitalsShouldRun()) { _vitalsPrev = null; return; }
+      const tick = () => {
+        if (!document.hidden) _pollVitals();
+        _vitalsTimer = _vitalsShouldRun() ? setTimeout(tick, _vitalsCadence()) : null;
+      };
+      _pollVitals();                                  // immediate refresh on (re)start / panel open
+      _vitalsTimer = setTimeout(tick, _vitalsCadence());
     }
     async function _pollVitals() {
       let v; try { v = await api("/api/system/vitals"); } catch { return; }
