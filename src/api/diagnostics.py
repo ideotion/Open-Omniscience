@@ -1492,6 +1492,34 @@ def benchmark_report(
     )
 
 
+@router.get("/rollup-benchmark")
+def rollup_benchmark(
+    repeats: int = Query(3, ge=1, le=10, description="Timing runs per window"),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """The WINDOWED-aggregation rollup benchmark (scaling 5A-bis): builds the
+    ``keyword_daily`` rollup in-memory over THIS corpus and times the windowed keyword
+    aggregation both ways — the live mention scan (the Insights/trends freeze) vs summing
+    the rollup — reporting the speedup + a parity check, so the operator can SEE how much
+    the rollup helps on their own data before it is wired to the hot path or the persisted
+    store is bundled. READ-ONLY, in-memory (never a plaintext file), airplane-safe;
+    generated on click only and never transmitted. See src/monitoring/rollup_benchmark.py.
+    """
+    from src.monitoring.rollup_benchmark import run_rollup_benchmark
+
+    payload = run_rollup_benchmark(db, repeats=repeats)
+    body = envelope(
+        kind="rollup-benchmark",
+        query={"repeats": repeats},
+        count=len(payload.get("windows", [])),
+        payload=payload,
+    )
+    fname = f"oo-rollup-benchmark-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+    return JSONResponse(
+        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
 @router.get("/network")
 def network_preflight_log() -> JSONResponse:
     """The network-targets diagnostics log (maintainer↔developer channel):
