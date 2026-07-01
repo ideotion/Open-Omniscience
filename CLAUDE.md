@@ -771,6 +771,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   SELECTs the new column (the shipped cross-version restore floor / RC-gate T4 already does this —
   confirm). Export (CSV/JSON envelope) = additive, unknown-field-tolerant, no break. OPEN Qs: exact
   vocab; defer the per-article column (recommended yes); fold S1-S3 into P4 (recommended yes).
+- **CLICKABLE IN-ARTICLE KEYWORDS → the keyword analysis window, with a stats hover (maintainer concept
+  2026-07-01; DESIGN-ONLY, full record in `docs/FUTURE_DEVELOPMENTS.md` → "Clickable in-article keywords"):**
+  in an article the user SEES its keywords and CLICKS one → opens the unified analysis window (`#an`) on the
+  KEYWORD subtab, seeded with that keyword, in a new browser tab; a "hover-like" affordance LATER shows keyword
+  STATS (contents undecided — "ideally keyword stats"). BUILD THE BASICS FIRST. Grounded (verified 2026-07-01):
+  the plumbing already exists — `openAnalysisInNewTab(q)`→`/?analyze=<q>`, `_hydrateCardCorpus()` boots the
+  analysis via `openAnalysisFor()`, the `#an` Keywords subtab, and the reader already fetches the article's
+  indexed keywords for its Keywords tab. SLICE 1 (small, buildable): the reader marks the article's TRUSTED
+  indexed keyword terms inline + makes the Keywords-tab list clickable → `window.open("/?analyze=<term>&tab=
+  keywords")`; extend `_hydrateCardCorpus` to select the Keywords subtab on `tab=keywords`. Mark ONLY real
+  indexed keywords (no naive text scan — honesty). SLICE 2 (design, maintainer undecided): a #oo-tip-style
+  hover of REAL stats (mention n + article spread · trend RATE · language/ring translation · top
+  co-occurrences) — counts only, NO score, method+caveat visible. OPEN: which stats; parity in the SPA
+  Articles/search lists; perf reads via the article_id-indexed mention tables (never the keyword→articles
+  codec-join trap).
 - **HOME "LATEST IN YOUR CORPUS" SECTION — recency LENS + transparent substance FILTER (maintainer
   concept 2026-06-26/27; DESIGN-ONLY, full record in `docs/FUTURE_DEVELOPMENTS.md` → "Home 'Latest in
   your corpus' section"):** a Home "latest news" section that avoids very short click-bait by selecting
