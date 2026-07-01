@@ -1151,6 +1151,26 @@ def test_airplane_flash_feedback_is_consistent_everywhere():
     assert "flashNet(false)" in tm
 
 
+def test_airplane_toggle_gives_instant_feedback():
+    """Maintainer 2026-06-27: clicking the airplane button lagged a few seconds — the POST
+    that trips the kill switch + installs the socket guard blocks. Going OFFLINE must now
+    react INSTANTLY: an optimistic button repaint + the flash + a brief 'Entering airplane
+    mode' pop-up fire BEFORE the background POST, and a failed POST reverts honestly (we are
+    NOT actually offline)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    assert "function _airplanePopup(" in app and "Entering airplane mode" in app
+    assert ".net-popup" in css and "net-popup-ok" in css  # the pop-up (auto-dismiss + OK/backdrop close)
+    body = app.split("async function toggleNetwork(", 1)[1].split("function _flashNet(", 1)[0]
+    paint = body.find("_paintNetwork(false)")
+    popup = body.find("_airplanePopup(")
+    post = body.find('api("/api/system/network"')  # the only network POST in the body is the offline one
+    assert 0 <= paint < post and 0 <= popup < post, (
+        "the offline transition must paint the button + pop up BEFORE (not await) the network POST"
+    )
+    assert "_paintNetwork(true)" in body, "a refused POST must revert the button (still honest about state)"
+
+
 def test_no_hardcoded_secrets_in_live_src():
     offenders = []
     for p in _live_py_files():
