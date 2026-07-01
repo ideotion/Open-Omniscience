@@ -333,6 +333,22 @@
     #net-flash.go-off { background:radial-gradient(ellipse at top, color-mix(in srgb, var(--muted) 26%, transparent), transparent 60%); }
     #net-flash.go-off, #net-flash.go-on { animation: netflash 0.9s ease-out; }
     @keyframes netflash { 0% { opacity:0; } 25% { opacity:1; } 100% { opacity:0; } }
+    /* Brief "Entering airplane mode" pop-up: INSTANT feedback while the backend kill
+       switch + socket guard engage (which lags a moment). Auto-dismisses; click the
+       backdrop or OK to close now. */
+    #net-popup.net-popup { position:fixed; inset:0; z-index:9998; display:flex;
+      align-items:center; justify-content:center; background:rgba(0,0,0,0.28);
+      animation:netpopfade 0.14s ease-out; }
+    .net-popup-card { background:var(--panel); color:var(--fg); border:1px solid var(--border);
+      border-radius:14px; padding:18px 26px; min-width:200px; text-align:center;
+      box-shadow:0 10px 44px rgba(0,0,0,0.4); display:flex; flex-direction:column;
+      align-items:center; gap:10px; }
+    .net-popup-glyph { font-size:30px; line-height:1; }
+    .net-popup-msg { font-weight:600; font-size:15px; }
+    .net-popup-ok { border:1px solid var(--border); background:var(--panel2); color:var(--fg);
+      border-radius:8px; padding:5px 20px; cursor:pointer; font:inherit; }
+    .net-popup-ok:hover { border-color:var(--accent); }
+    @keyframes netpopfade { from { opacity:0; } to { opacity:1; } }
     /* Enlarged mind-map / cloud (maintainer: enlargeable, weight-true) */
     .mm-big { position:fixed; inset:4vh 4vw; z-index:140; background:var(--panel);
       border:1px solid var(--border); border-radius:12px; padding:12px; overflow:auto;

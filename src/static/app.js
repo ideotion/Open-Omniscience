@@ -244,24 +244,59 @@
       const btn = $("net-toggle");
       const goingOnline = btn.classList.contains("off");
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try {
-        if (goingOnline) {
-          // EVERY transition to online is consented (maintainer-ruled).
-          if (!await ensureOnline(t("Allow network requests again"))) return;
-        } else {
+      if (!goingOnline) {
+        // GOING OFFLINE: react INSTANTLY. The POST that trips the kill switch + installs
+        // the airplane socket guard can take a moment (esp. with an in-flight fetch), and
+        // waiting on it before any feedback made the button feel laggy/broken. So paint the
+        // button offline, fire the direction-aware flash + a brief "Entering airplane mode"
+        // pop-up NOW, then POST in the background — reverting only if the backend refuses
+        // (it shouldn't; airplane is a local flag). Honest: on failure we are NOT offline.
+        _paintNetwork(false);
+        _flashNet(false);
+        _airplanePopup(t("Entering airplane mode"));
+        toast(t("Offline — every new network request is refused. One in-flight request may finish."), "err");
+        try {
           const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:false})});
-          _paintNetwork(r.online);
+          _paintNetwork(r.online);  // reconcile with the backend truth
+        } catch (e) {
+          _paintNetwork(true);      // the backend refused -> we are NOT offline; revert honestly
+          toast(e.message, "err");
         }
-        const online = !$("net-toggle").classList.contains("off");
-        let f = document.getElementById("net-flash");
-        if (!f) { f = document.createElement("div"); f.id = "net-flash"; document.body.appendChild(f); }
-        // Direction-aware flash (§3): go-on = live accent, go-off = calm/grounded.
-        f.classList.remove("go-on", "go-off"); void f.offsetWidth;
-        f.classList.add(online ? "go-on" : "go-off");
-        toast(online ? t("Back online — network requests allowed again.")
-                     : t("Offline — every new network request is refused. One in-flight request may finish."),
-              online ? "ok" : "err");
+        return;
+      }
+      // GOING ONLINE: EVERY transition is consented (maintainer-ruled). ensureOnline runs
+      // the ONE consent popup + POSTs + repaints, so its dialog IS the immediate feedback.
+      try {
+        if (!await ensureOnline(t("Allow network requests again"))) return;
+        _flashNet(true);
+        toast(t("Back online — network requests allowed again."), "ok");
       } catch (e) { toast(e.message, "err"); }
+    }
+    // Direction-aware transition flash (§3): go-on = live accent, go-off = calm/grounded.
+    function _flashNet(online) {
+      let f = document.getElementById("net-flash");
+      if (!f) { f = document.createElement("div"); f.id = "net-flash"; document.body.appendChild(f); }
+      f.classList.remove("go-on", "go-off"); void f.offsetWidth;
+      f.classList.add(online ? "go-on" : "go-off");
+    }
+    // A brief centered pop-up acknowledging airplane mode INSTANTLY (the backend
+    // kill-switch + socket-guard install lags a moment). Auto-dismisses (~1.6 s), or
+    // click the backdrop / OK to close now. Purely cosmetic, non-blocking feedback.
+    function _airplanePopup(msg) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const old = document.getElementById("net-popup"); if (old) old.remove();
+      const wrap = document.createElement("div");
+      wrap.id = "net-popup"; wrap.className = "net-popup";
+      wrap.innerHTML = `<div class="net-popup-card" role="status" aria-live="polite">`
+        + `<div class="net-popup-glyph" aria-hidden="true">✈</div>`
+        + `<div class="net-popup-msg">${esc(msg)}</div>`
+        + `<button type="button" class="net-popup-ok">${esc(t("OK"))}</button></div>`;
+      let tm = 0;
+      const close = () => { clearTimeout(tm); wrap.remove(); };
+      wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });  // click outside = close
+      wrap.querySelector(".net-popup-ok").addEventListener("click", close);
+      document.body.appendChild(wrap);
+      tm = setTimeout(close, 1600);
     }
     function _paintNetwork(online) {
       // Remember the state so the activity chip can show "Collecting paused" when a
