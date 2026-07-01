@@ -29603,7 +29603,6 @@ sources:
   verified: false
   tags:
   - news
-  - dominica
   priority: 3
 - name: NOW Grenada
   domain: nowgrenada.com
@@ -29616,7 +29615,6 @@ sources:
   verified: false
   tags:
   - news
-  - grenada
   priority: 3
 - name: iWitness News (St. Vincent)
   domain: iwnsvg.com
