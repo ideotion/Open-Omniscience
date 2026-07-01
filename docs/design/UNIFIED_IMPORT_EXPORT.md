@@ -129,7 +129,15 @@ with the sections above, THIS wins:
   Additive — old panels stay. `tests/test_backup_inventory.py`. Frontend browser-unverified.
 - **Slice 2 — Import discovery:** a folder-scan/classify endpoint + the folder-discovery Import
   dialog (reuses the restore/ingest endpoints in the table above).
-- **Slice 3 — Simplify + remove:** delete the single-file 2 GiB path + collapse the scattered
-  panels into the two dialogs, absorption-test-gated.
+- **Slice 3 — Simplify + remove: BUILT (this PR).** Collapsed the two fully-redundant panels
+  (large-data folder + encrypted volumes) into the unified dialogs and removed the capped
+  single-file CREATE controls (the option that fails at scale). Kept — deliberately — the
+  legacy single-file RESTORE (the only migration path for an existing single-file backup) and
+  the backend endpoints (heavily tested; UI-unreachable now, per "made unreachable, not
+  deleted"). `tests/test_unified_backup_ui.py` is the absorption guard (the dialogs still route
+  to inventory + volumes/folder backup + import-scan + volumes/folder restore + newsletter
+  folder import; the redundant panels + capped create UI are gone; the legacy restore stays).
+  REMAINING (browser-verified follow-up): physically delete the orphaned volume/folder JS
+  handlers + the capped-create backend endpoint once a click-through confirms nothing regressed.
 
 Full standalone write-up: `docs/design/UNIFIED_IMPORT_EXPORT.md` addendum + this session's ledger.
