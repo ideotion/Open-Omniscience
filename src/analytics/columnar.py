@@ -549,7 +549,7 @@ def windowed_term_counts(
     kw = " WHERE " + " AND ".join(where) if where else ""
     try:
         rows = con.execute(
-            "SELECT keyword_id, SUM(mentions), SUM(articles_on_day) "
+            "SELECT keyword_id, SUM(mentions), SUM(articles_on_day) "  # nosec B608 - only the constant WHERE fragments (d.day >= ?/<= ?) are concatenated; every value is a bound ? param
             "FROM keyword_daily d" + kw + " GROUP BY keyword_id", params
         ).fetchall()
     except Exception:  # noqa: BLE001 - missing/cold rollup -> fall back to live
@@ -579,7 +579,7 @@ def windowed_top_terms_raw(
     params.append(int(limit))
     try:
         rows = con.execute(
-            "SELECT m.term, m.normalized_term, m.kind, m.language, "
+            "SELECT m.term, m.normalized_term, m.kind, m.language, "  # nosec B608 - only constant clause fragments (where_sql/kind_sql) are concatenated; every value is a bound ? param
             "SUM(d.mentions) AS mentions, SUM(d.articles_on_day) AS articles "
             "FROM keyword_daily d JOIN keyword_meta m ON m.keyword_id = d.keyword_id"
             + where_sql + kind_sql
@@ -614,7 +614,7 @@ def keyword_daily_parity(con, session, *, start_day=None, end_day=None) -> dict:
         clauses.append("observed_on <= :e")
         p["e"] = end_day
     live_rows = session.execute(_sql(
-        "SELECT keyword_id, SUM(count), COUNT(DISTINCT article_id) FROM keyword_mentions "
+        "SELECT keyword_id, SUM(count), COUNT(DISTINCT article_id) FROM keyword_mentions "  # nosec B608 - clauses are constant SQL fragments; every value is a bound :param
         "WHERE " + " AND ".join(clauses) + " GROUP BY keyword_id"
     ), p).fetchall()
     live = {int(r[0]): (int(r[1]), int(r[2])) for r in live_rows}
