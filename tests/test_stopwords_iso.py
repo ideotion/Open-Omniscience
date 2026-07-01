@@ -15,10 +15,16 @@ from __future__ import annotations
 
 import pathlib
 
-from src.analytics.extract import global_stopwords
+from src.analytics.extract import BaselineExtractor, global_stopwords
 from src.services.stopwords import STOPWORDS_ISO_AS_OF, stopwords_manager
 
-_LANGS = ["tr", "ro", "uk", "fi", "ur", "cs", "ca", "sk", "et", "hi", "vi", "bn", "fa", "sw"]
+_LANGS = [
+    # 2026-06-23 original no_stoplist wave
+    "tr", "ro", "uk", "fi", "ur", "cs", "ca", "sk", "et", "hi", "vi", "bn", "fa", "sw",
+    # 2026-07-01 wave: full scoped lists for managed languages that had only partial batches
+    "ar", "bg", "da", "de", "el", "es", "hr", "hu", "id", "it",
+    "nl", "no", "nb", "pl", "pt", "ru", "sl", "sv",
+]
 
 
 def test_vendored_files_exist_and_load():
@@ -57,6 +63,44 @@ def test_scoped_lists_are_applied_per_language_not_globally():
         from src.analytics.extract import _stopset
 
         assert only_scoped <= _stopset(lang), f"{lang}: scoped words not applied at extraction"
+
+
+def test_2026_07_01_full_scoped_lists_filter_grammar_per_language():
+    """The 2026-07-01 wave: managed languages that leaked grammar (they had only
+    partial hand-grown batches) now carry the FULL stopwords-iso list. A real
+    auxiliary/function word is filtered for its language."""
+    cases = {
+        "de": ("wurden", "und", "der"),  # aux "were" + and + the
+        "ru": ("будут", "сегодня", "это"),  # aux "will" + today + this
+        "es": ("serían", "el", "que"),  # aux "would-be" + the + that
+        "it": ("saranno", "il", "che"),  # aux "will-be" + the + that
+        "nl": ("worden", "het", "een"),  # aux "become" + the + a
+        "pt": ("seria", "que", "para"),  # aux "would-be" + that + for
+    }
+    for lang, words in cases.items():
+        sw = stopwords_manager.get_stopwords(lang)
+        for w in words:
+            assert w in sw, f"{lang}: {w!r} should be filtered"
+
+
+def test_full_latin_lists_are_collision_free_at_extraction():
+    """The load-bearing guarantee for the 2026-07-01 wave: adding the FULL German
+    list (620 words incl. "die"/"man"/"was") must NOT hide those tokens when they are
+    CONTENT in an English article, because the list is language-scoped, not global."""
+    ex = BaselineExtractor()
+    # "die"/"was" are English function words (dropped for en anyway); "man"/"state"/
+    # "union" are English CONTENT and must survive despite being in the German list.
+    de_words = stopwords_manager.get_stopwords("de")
+    assert {"die", "man", "was"} <= de_words  # they ARE in the German scoped list
+    en = ex.extract(
+        "The man reformed the state as the union met to weigh the die that was cast.",
+        language="en",
+    )
+    kept = {k.normalized for k in en}
+    assert {"man", "state", "union"} <= kept, kept  # English content untouched
+    # ...and the German words are NOT globalised by the scoped channel.
+    g = global_stopwords()
+    assert "wurden" not in g and "serían" not in g and "saranno" not in g
 
 
 def test_as_of_is_set():
