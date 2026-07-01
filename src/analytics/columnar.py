@@ -384,6 +384,270 @@ def top_terms_raw(con, *, kind: str | None = None, limit: int = 20) -> list[dict
     ]
 
 
+# --------------------------------------------------------------------------- #
+# D2 — the ``keyword_daily`` windowed-aggregation rollup (scaling workstream 5A-bis;
+# docs/design/SCALING_DERIVED_LAYER_1000X.md).
+#
+# The measured freeze (field remark 8): windowed most-mentioned / trending sums
+# ``keyword_mentions.count`` over an ``observed_on`` day range — ~2.4M rows on the live
+# 61K-article corpus, each in-range row paying a SQLCipher page decrypt. The structural
+# fix is to NOT scan the mention table on the read path: read a maintained per-day rollup
+# and sum the tiny rollup instead.
+#
+# HONESTY (the load-bearing part, docstring'd on every function):
+#   * ``mentions`` (= SUM(count)) summed over a window is EXACT — it equals the live
+#     SUM(count) by construction.
+#   * ``articles_on_day`` summed over a window is an UPPER BOUND on the window's distinct
+#     article count: a (keyword, article) pair observed on more than one day is counted
+#     once PER DAY here, whereas the live COUNT(DISTINCT article_id) dedups it across the
+#     window. In the common single-day-per-article case the two are EQUAL; the rollup can
+#     only ever OVER-count, never under-count. Callers disclose this as the ``columnar
+#     (upper bound)`` basis, with a cheap per-keyword live-exact escape.
+#     NOTE (measured): TODAY the unique ``(keyword_id, article_id)`` index means each pair
+#     has exactly one mention row on exactly one day, so the bound is in fact EXACT (gap 0,
+#     proven by the parity tests). We still DISCLOSE it as an upper bound because the rollup
+#     STRUCTURE (pre-aggregate per day) cannot guarantee exactness on its own — it relies on
+#     that external invariant; a future per-occurrence-with-date mention schema would make
+#     the gap real. Honesty by construction: disclose what the structure can prove, not the
+#     value it happens to yield under today's constraints.
+#
+# This module builds the rollup + the serve primitives + a parity probe, and PROVES parity
+# in-memory (tests). The hot read path is NOT wired to it here: serving safely needs the
+# corpus-epoch guard + the epoch-bump-on-mutate discipline (D3) so a re-index can never make
+# an incremental rollup double-count. Until then this is a correctness scaffold — built and
+# proven, dormant at runtime. The canonical SQLCipher store stays the source of truth; a cold
+# / missing rollup means the seam falls back to the live query (identical results).
+
+_KEYWORD_DAILY_DDL = (
+    "CREATE OR REPLACE TABLE keyword_daily ("
+    "keyword_id BIGINT, day DATE, mentions BIGINT, articles_on_day BIGINT)"
+)
+# Metadata projection so the windowed serve resolves term/kind/language in DuckDB (a JOIN
+# on the rollup) instead of a second round-trip to the canonical store. ``is_entity`` +
+# ``entity_type`` are carried verbatim so the ``kind`` filter reproduces ``_apply_kind``.
+_KEYWORD_META_DDL = (
+    "CREATE OR REPLACE TABLE keyword_meta ("
+    "keyword_id BIGINT, normalized_term VARCHAR, term VARCHAR, kind VARCHAR, "
+    "is_entity BOOLEAN, entity_type VARCHAR, language VARCHAR)"
+)
+
+
+def _set_meta(con, key: str, value) -> None:
+    con.execute("CREATE TABLE IF NOT EXISTS oo_meta (k VARCHAR PRIMARY KEY, v VARCHAR)")
+    con.execute("DELETE FROM oo_meta WHERE k = ?", [key])
+    con.execute("INSERT INTO oo_meta VALUES (?, ?)", [key, str(value)])
+
+
+def _get_meta(con, key: str) -> str | None:
+    try:
+        row = con.execute("SELECT v FROM oo_meta WHERE k = ?", [key]).fetchone()
+        return row[0] if row else None
+    except Exception:  # noqa: BLE001 - no oo_meta yet
+        return None
+
+
+def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
+    """(Re)build ``keyword_daily`` + ``keyword_meta`` — the FULL streamed build (D2).
+
+    Streams canonical mention rows out of the app's SQLite/SQLCipher connection in
+    ``batch_size`` chunks (column-projected — never ``SELECT *``, never the decrypt-heavy
+    article join), inserts each batch into a DuckDB staging table, then GROUPs THERE
+    (columnar, fast) into the per-day rollup. This is a resumable-shaped BATCH job scheduled
+    WITH the re-index — NEVER on the query path.
+
+    Rows with a NULL ``observed_on`` are excluded: the windowed query filters by an
+    ``observed_on`` range, so an undated mention can never fall inside a window. Records
+    ``last_mention_id`` (MAX mention id) in ``oo_meta`` so D3 can refresh incrementally.
+    Returns a small tally. The canonical store is unchanged; this is a disposable table.
+    """
+    from sqlalchemy import text as _sql
+
+    from src.analytics.queries import kind_of
+    from src.database.models import Keyword
+
+    ensure_store_meta(con)  # idempotent: guarantees oo_meta exists
+
+    # -- stream mentions -> DuckDB staging (dates kept as text; cast in the GROUP BY) ---- #
+    con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
+                "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
+    result = session.execute(_sql(
+        "SELECT keyword_id, observed_on, count, article_id FROM keyword_mentions "
+        "WHERE observed_on IS NOT NULL"
+    ))
+    streamed = 0
+    while True:
+        chunk = result.fetchmany(batch_size)
+        if not chunk:
+            break
+        con.executemany(
+            "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)",
+            [(int(r[0]), str(r[1])[:10], int(r[2]), int(r[3])) for r in chunk],
+        )
+        streamed += len(chunk)
+
+    con.execute(_KEYWORD_DAILY_DDL)
+    con.execute(
+        "INSERT INTO keyword_daily "
+        "SELECT keyword_id, CAST(day AS DATE) AS day, SUM(cnt) AS mentions, "
+        "COUNT(DISTINCT article_id) AS articles_on_day "
+        "FROM keyword_daily_stage GROUP BY keyword_id, CAST(day AS DATE)"
+    )
+    con.execute("DROP TABLE keyword_daily_stage")
+    daily_rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+
+    # -- keyword metadata projection (for the windowed serve's JOIN) --------------------- #
+    con.execute(_KEYWORD_META_DDL)
+    meta = [
+        (int(kw.id), kw.normalized_term, kw.term, kind_of(kw),
+         bool(kw.is_entity), kw.entity_type, kw.language)
+        for kw in session.query(Keyword).filter(Keyword.mention_count > 0)
+    ]
+    if meta:
+        con.executemany("INSERT INTO keyword_meta VALUES (?, ?, ?, ?, ?, ?, ?)", meta)
+
+    max_id = session.execute(_sql("SELECT MAX(id) FROM keyword_mentions")).scalar()
+    _set_meta(con, "keyword_daily.last_mention_id", int(max_id or 0))
+    return {
+        "streamed_mentions": streamed,
+        "keyword_daily_rows": int(daily_rows),
+        "keyword_meta_rows": len(meta),
+        "last_mention_id": int(max_id or 0),
+    }
+
+
+def _kind_where(kind: str | None, params: list) -> str:
+    """Reproduce ``queries._apply_kind`` against the projected ``keyword_meta``."""
+    if not kind:
+        return ""
+    if kind == "term":
+        return " AND m.is_entity = FALSE"
+    if kind == "entity":
+        return " AND m.is_entity = TRUE"
+    params.append(kind)
+    return " AND m.entity_type = ?"
+
+
+def windowed_term_counts(
+    con, *, start_day=None, end_day=None, kind: str | None = None
+) -> dict[int, tuple[int, int]]:
+    """Per-keyword windowed ``(mentions, articles_upper_bound)`` from the rollup.
+
+    ``mentions`` is EXACT (== live SUM(count) over the window). ``articles_upper_bound`` is
+    ``SUM(articles_on_day)`` — an UPPER BOUND on the window's distinct-article count (see the
+    module honesty note). ``start_day`` inclusive / ``end_day`` inclusive; either may be None
+    for an open bound (None/None = all history). Returns ``{}`` if the rollup is absent (the
+    caller falls back to the live query). Counts only, no score.
+    """
+    where = []
+    params: list = []
+    if start_day is not None:
+        where.append("d.day >= ?")
+        params.append(start_day)
+    if end_day is not None:
+        where.append("d.day <= ?")
+        params.append(end_day)
+    kw = " WHERE " + " AND ".join(where) if where else ""
+    try:
+        rows = con.execute(
+            "SELECT keyword_id, SUM(mentions), SUM(articles_on_day) "
+            "FROM keyword_daily d" + kw + " GROUP BY keyword_id", params
+        ).fetchall()
+    except Exception:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+        return {}
+    return {int(r[0]): (int(r[1]), int(r[2])) for r in rows}
+
+
+def windowed_top_terms_raw(
+    con, *, start_day=None, end_day=None, kind: str | None = None, limit: int = 20
+) -> list[dict]:
+    """The ranked windowed most-mentioned rows from the rollup — the shape the live
+    ``top_terms`` produces BEFORE the Python hidden-word / family / ring layers, so the seam
+    (D3) can apply those unchanged and stay byte-identical.
+
+    Ordered by ``mentions`` DESC (the live order). ``mentions`` EXACT; ``articles`` the
+    upper bound. Returns ``[]`` if the rollup / metadata are absent. Counts only, no score.
+    """
+    params: list = []
+    where = ["d.day >= ?"] if start_day is not None else []
+    if start_day is not None:
+        params.append(start_day)
+    if end_day is not None:
+        where.append("d.day <= ?")
+        params.append(end_day)
+    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    kind_sql = _kind_where(kind, params)
+    params.append(int(limit))
+    try:
+        rows = con.execute(
+            "SELECT m.term, m.normalized_term, m.kind, m.language, "
+            "SUM(d.mentions) AS mentions, SUM(d.articles_on_day) AS articles "
+            "FROM keyword_daily d JOIN keyword_meta m ON m.keyword_id = d.keyword_id"
+            + where_sql + kind_sql
+            + " GROUP BY m.term, m.normalized_term, m.kind, m.language "
+            "ORDER BY mentions DESC LIMIT ?",
+            params,
+        ).fetchall()
+    except Exception:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+        return []
+    return [
+        {"term": r[0], "normalized": r[1], "kind": r[2], "language": r[3],
+         "mentions": int(r[4]), "articles": int(r[5])}
+        for r in rows
+    ]
+
+
+def keyword_daily_parity(con, session, *, start_day=None, end_day=None) -> dict:
+    """Honest parity probe: compare the rollup's windowed counts to the LIVE query, so we
+    can PROVE (on a real corpus) that ``mentions`` is exact and the distinct-article count is
+    an upper bound whose gap is reported — never hidden. Used by tests + a future diagnostics
+    surface. Read-only; counts only.
+    """
+    from sqlalchemy import text as _sql
+
+    roll = windowed_term_counts(con, start_day=start_day, end_day=end_day)
+    clauses = ["observed_on IS NOT NULL"]
+    p: dict = {}
+    if start_day is not None:
+        clauses.append("observed_on >= :s")
+        p["s"] = start_day
+    if end_day is not None:
+        clauses.append("observed_on <= :e")
+        p["e"] = end_day
+    live_rows = session.execute(_sql(
+        "SELECT keyword_id, SUM(count), COUNT(DISTINCT article_id) FROM keyword_mentions "
+        "WHERE " + " AND ".join(clauses) + " GROUP BY keyword_id"
+    ), p).fetchall()
+    live = {int(r[0]): (int(r[1]), int(r[2])) for r in live_rows}
+
+    mention_mismatches = 0
+    distinct_gap_keywords = 0
+    distinct_gap_total = 0
+    upper_bound_holds = True
+    for kid, (lm, la) in live.items():
+        rm, ra = roll.get(kid, (0, 0))
+        if rm != lm:
+            mention_mismatches += 1
+        if ra < la:
+            upper_bound_holds = False  # a rollup distinct count must NEVER be below live
+        if ra > la:
+            distinct_gap_keywords += 1
+            distinct_gap_total += ra - la
+    return {
+        "keywords_compared": len(live),
+        "mentions_exact": mention_mismatches == 0,
+        "mention_mismatches": mention_mismatches,
+        "distinct_upper_bound_holds": upper_bound_holds,
+        "distinct_gap_keywords": distinct_gap_keywords,
+        "distinct_gap_total": distinct_gap_total,
+        "method": (
+            "keyword_daily windowed counts vs the live keyword_mentions aggregation. "
+            "mentions (SUM(count)) is exact; articles (SUM(articles_on_day)) is an upper "
+            "bound on COUNT(DISTINCT article_id) — the gap is the count of (keyword,article) "
+            "pairs observed on more than one day, reported here, never hidden."
+        ),
+    }
+
+
 def refresh_persisted_read_model(session, passphrase: str | None = None) -> dict:
     """Maintain the read-model in the background — ONLY when the store is PERSISTED.
 
