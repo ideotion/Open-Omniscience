@@ -1508,6 +1508,8 @@
         <button class="secondary" onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Debug bundle (.json)</button>
         <button onclick="enrichSources(this)" title="Deduce each source's topic tags from the keywords it publishes in your corpus and add them to the source's tags — local, no network, additive (never overwrites curated tags). This also runs automatically in the background; the button forces it now. The networked Wikidata source-type pass is a separate consented action.">Enrich source tags from corpus</button>
         <button onclick="enrichSourceTypes(this)" title="Fill each source's TYPE (newspaper / broadcaster / news agency / scientific journal / …) from Wikidata, verified against the source's own domain. This one goes ONLINE through the guarded transport — it asks for network consent first and is refused in airplane mode. Bounded per click; click again to continue.">Enrich source types (Wikidata) ↗</button>
+        <input id="discover-cc" type="text" style="width:150px" placeholder="countries e.g. ke,ng,br">
+        <button onclick="discoverSources(this)" title="DISCOVER new sources (news orgs / institutions with an official website) from Wikidata for the countries you list, and add them DISABLED for review — nothing is scraped until you enable it in Settings → Sources. Goes ONLINE through the guarded transport (consent-gated, airplane-refused). Tip: pick under-represented countries to keep coverage balanced.">Discover new sources (Wikidata) ↗</button>
       </div>
       <div class="row" style="margin-top:6px">
         <input id="ir-eval-path" type="text" style="min-width:280px" placeholder="gold-set file path (see configs/ir_eval/gold_set.example.json)">
