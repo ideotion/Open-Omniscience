@@ -72,6 +72,8 @@ TERRITORY_TAGS: dict[str, str] = {
     "saint-vincent-and-the-grenadines": "vc",
     "guam": "gu",
     "bermuda": "bm",
+    "dominica": "dm",
+    "grenada": "gd",
     "us": "us",
 }
 

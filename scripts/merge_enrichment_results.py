@@ -36,16 +36,14 @@ import yaml
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SOURCES = _ROOT / "configs" / "sources.yml"
+sys.path.insert(0, str(_ROOT))
+
+from src.catalog.taxonomy import LEAN_TAGS as _LEAN  # noqa: E402
+from src.catalog.taxonomy import OWNERSHIP_TAGS as _OWNERSHIP  # noqa: E402
 
 _CONF_RANK = {"low": 0, "medium": 1, "high": 2}
-# Controlled tag namespaces we accept from results (defence against typo'd junk).
-_OWNERSHIP = {
-    "independent", "state-owned", "public-broadcaster", "state-media",
-    "corporate", "party-affiliated", "nonprofit", "cooperative", "wire-agency",
-}
-_LEAN = {
-    "lean-left", "lean-center-left", "center", "lean-center-right", "lean-right",
-}
+# Controlled tag namespaces we accept from results (defence against typo'd junk) —
+# single source of truth in src/catalog/taxonomy.py.
 
 
 def _load_results(paths: list[Path]) -> list[dict]:
