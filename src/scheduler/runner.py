@@ -488,6 +488,43 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     if backed_off:
         agg["backed_off"] = agg.get("backed_off", 0) + backed_off
 
+    # Optional per-language cadence lever (default OFF; maintainer opt-in). When a
+    # target is set, RE-CHECKS of over-represented languages are probabilistically
+    # deferred to a later pass — NEVER excluded (a hard freshness floor keeps any
+    # cap-stale or never-fetched source). Empty target = the block is skipped =
+    # byte-identical to the pure rotation. Additive + fail-open like the backoff.
+    if settings.mode == "rss" and settings.language_equilibrium:
+        try:
+            from src.database.models import FeedFetchState
+            from src.scheduler.equilibrium import (
+                corpus_language_shares,
+                equilibrium_filter,
+                language_pace,
+            )
+
+            pace = language_pace(
+                corpus_language_shares(session),
+                settings.language_equilibrium,
+                floor=settings.equilibrium_floor,
+            )
+            if pace:
+                feed_ids = [s.id for s in sources if getattr(s, "rss_url", None)]
+                states = (
+                    {
+                        st.source_id: st
+                        for st in session.query(FeedFetchState).filter(
+                            FeedFetchState.source_id.in_(feed_ids)
+                        )
+                    }
+                    if feed_ids
+                    else {}
+                )
+                sources, deferred = equilibrium_filter(sources, pace=pace, fetch_state=states)
+                if deferred:
+                    agg["equilibrium_deferred"] = agg.get("equilibrium_deferred", 0) + deferred
+        except Exception:  # noqa: BLE001 - the lever must never break a pass
+            _LOG.debug("language-equilibrium pre-filter failed; pass proceeds", exc_info=True)
+
     countries = len({(s.country or "").strip().lower() for s in sources if s.country})
 
     _progress_set(

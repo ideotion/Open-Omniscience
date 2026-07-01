@@ -493,7 +493,7 @@
     // never a guessed instantaneous value). Hosts are shown as DOMAINS, never
     // full URLs (maintainer-ruled 2026-06-10).
     let _vitalsTimer = null, _vitalsOpen = false, _vitalsPrev = null, _actData = null;
-    let _covData = null, _covLoading = false;
+    let _covData = null, _covLoading = false, _covEq = null;
     // a11y (OO-D13-001): remember who opened a non-native dialog so focus returns.
     let _vitalsPrevFocus = null, _palPrevFocus = null;
     function _shortUrl(u) {
@@ -873,8 +873,36 @@
       el.innerHTML = `<div class="muted" style="font-size:12px;padding:2px 0 6px">${esc(t("Loading coverage…"))}</div>`;
       try { _covData = await api("/api/scheduler/coverage"); }
       catch { _covData = null; }
-      finally { _covLoading = false; }
+      // The per-language equilibrium lever is OPTIONAL (default off) — best-effort,
+      // its absence never blocks the coverage view.
+      try { _covEq = await api("/api/scheduler/equilibrium"); }
+      catch { _covEq = null; }
+      _covLoading = false;
       _renderCoverage();
+    }
+    function _renderEquilibrium(t) {
+      const e = _covEq;
+      if (!e) return "";
+      const sect = (x) => `<div class="vsect">${x}</div>`;
+      if (!e.enabled) {
+        return sect(t("Language equilibrium")) +
+          `<div class="vr"><span>${esc(t("Cadence lever"))}</span><b><span class="pill">${esc(t("off"))}</span></b></div>` +
+          `<div class="vnote">${esc(t("Optional: re-check over-represented languages less often to steer the corpus mix toward a target you set in Settings. Off = the pure random rotation. Never excludes a source."))}</div>`;
+      }
+      const langs = Object.keys(e.target || {}).sort((a, b) => (e.target[b] - e.target[a]));
+      const rows = langs.map(l => {
+        const cur = Math.round(100 * ((e.corpus_shares || {})[l] || 0));
+        const tgt = Math.round(100 * (e.target[l] || 0));
+        const pace = (e.pace || {})[l];
+        const paceTxt = (pace != null && pace < 1)
+          ? `<span class="muted" title="${esc(t("Re-check cadence multiplier (1 = full speed)"))}">· ${esc(t("pace"))} ${pace.toFixed(2)}</span>` : "";
+        return `<div class="vr"><span>${esc(l.toUpperCase())}</span>` +
+          `<b>${cur}% <span class="muted">→ ${tgt}%</span> ${paceTxt}</b></div>`;
+      }).join("");
+      return sect(t("Language equilibrium")) +
+        `<div class="vr"><span>${esc(t("Cadence lever"))}</span><b><span class="pill ok">${esc(t("on"))}</span></b></div>` +
+        rows +
+        `<div class="vnote">${esc(t("Corpus share → target; over-represented languages are re-checked less often (pace < 1). A cadence nudge, never an exclusion — set in Settings."))}</div>`;
     }
     function _covBar(reach, fresh, total) {
       // A single honest bar: reach fills it (fresh is the brighter leading part);
@@ -921,7 +949,7 @@
           `<span class="muted" style="font-size:11px">${badges.join(" · ")}</span></div>` +
           _covBar(x.reached, x.fresh, x.total) + `</div>`;
       }).join("");
-      el.innerHTML = head + sect(t("By tag")) + (rows || `<div class="muted">${esc(t("No tagged sources yet."))}</div>`) +
+      el.innerHTML = head + _renderEquilibrium(t) + sect(t("By tag")) + (rows || `<div class="muted">${esc(t("No tagged sources yet."))}</div>`) +
         `<div class="vnote">${esc(d.method || "")} ${esc(d.caveat || "")} ` +
         `<button class="lnk" onclick="loadTagCoverage(true)">${esc(t("Refresh"))}</button></div>`;
     }
