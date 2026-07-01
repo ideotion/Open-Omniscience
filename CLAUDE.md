@@ -456,6 +456,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     so a real failure can persist into the next PR on `0.09` — don't assume a merged
     base is green; a webhook CI-failure on a *merged* SHA may be a stale/out-of-order
     delivery (check the HeadSHA against your branch tip).
+  - **DERIVED-ROLLUP SCALING lessons (5A-bis, 2026-07-01, D2/D3/serve):** (a) THE
+    DELETE-THEN-REINSERT EPOCH TRAP — `index_article` deletes-then-reinserts an article's
+    mentions, so an id-watermark INCREMENTAL rollup (tail = `id > watermark`) DOUBLE-COUNTS
+    across ANY re-index/prune (the old contribution stays in the rollup AND the re-inserted
+    higher-id rows re-add); guard every derived-append rollup with a CORPUS EPOCH bumped by
+    exactly the non-append mutators (re-index/prune/restore), a changed epoch forcing a FULL
+    rebuild — never an incremental merge. (b) IN-MEMORY COLUMNAR **DOES** WIN FOR *WINDOWED*
+    QUERIES in a long-running process (build-once-serve-many): the earlier "in-memory gives
+    no gain over the counters" finding was specific to the corpus-wide `keyword_agg` (the
+    Slice-2 counters already win there), NOT the windowed `keyword_daily` rollup the counters
+    CAN'T serve — so the persisted store (D1/httpfs) is a DURABILITY win (survive restart / no
+    per-process rebuild), not the only path to the windowed speedup. (c) the rollup's summed
+    `articles_on_day` is an UPPER BOUND on distinct articles BY STRUCTURE but EXACT today under
+    the unique `(keyword_id, article_id)` index (gap 0, parity-tested) — disclose the bound the
+    structure guarantees, not the value it happens to yield. (d) new dynamic SQL in
+    `columnar.py` trips the BLOCKING bandit B608 gate even with constant fragments + bound
+    params — add `# nosec B608 - <reason>` per the merge.py/diagnostics.py convention (ruff
+    selects no `S`, so no `# noqa: S608` needed; verify with `pip install bandit==1.9.4` then
+    `bandit -r src -ll -q` → exit 0). (e) comparing rollup-served vs live top-N is FLAKY at the
+    LIMIT cutoff when mentions TIE (DuckDB vs SQLite order ties differently) — test parity
+    ORDER-INSENSITIVELY or with a limit large enough to include every term (no cutoff).
   - **FastAPI streamed JSON** must use compact separators `(",",":")` for byte-parity
     with `JSONResponse`. **Install:** pip unpacks big wheels in `TMPDIR` (=/tmp =
     tmpfs on Qubes) → `Errno 28` even with disk free; point `TMPDIR` at the install
@@ -515,6 +536,37 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   generic VERBS (zeigen/finden/voir) = the P4.3 lemmatization + a lemma denylist, gated on the P3
   IR eval harness + a graded gold set (the still-outstanding operational input). All three PRs
   merged to 0.09; existing corpus junk clears on the next "Clean up keywords" re-index.
+- **DERIVED-LAYER SCALING (5A-bis / "1000×") — CORE SHIPPED THIS SESSION 2026-07-01 (the freeze fix for
+  the WINDOWED Insights/trends aggregations; ALL merged to 0.09; per-slice detail in
+  `docs/ledger/shipped.csv`; design + test plan in `docs/design/SCALING_DERIVED_LAYER_1000X.md`):**
+  the measured freeze — windowed `top_terms`/`trending`/`trending_windows` scan the multi-GB
+  `keyword_mentions` table (~17 s on the live 61K-article corpus, each in-range row a SQLCipher page
+  decrypt). SHIPPED: **D2** (PR #535: `columnar.py` `build_keyword_daily` streamed rollup builder +
+  `keyword_meta` + `windowed_term_counts`/`windowed_top_terms_raw` serve primitives + `keyword_daily_parity`;
+  in-memory parity proven). **D3** (PR #536: `refresh_keyword_daily` — incremental merge of the new mention
+  tail via a portable DuckDB MERGE, with the CORPUS-EPOCH GUARD that forces a FULL rebuild on any
+  re-index/prune, defeating the delete-then-reinsert double-count trap; corpus_epoch PASSED IN). **ROLLUP
+  BENCHMARK** (PR #538: `src/monitoring/rollup_benchmark.py` + `GET /api/diagnostics/rollup-benchmark` +
+  Settings→Diagnostics button — builds the rollup in-memory over the REAL corpus and times live-vs-rollup
+  windowed aggregation + parity, so the win is MEASURABLE on the operator's data; READ-ONLY). **OPT-IN
+  IN-MEMORY SERVE** (PR #538: `src/analytics/rollup_serve.py`, `OO_COLUMNAR_SERVE=1`, OFF BY DEFAULT — a
+  process-lifetime in-memory rollup built once in a background thread serves `queries.top_terms` windowed
+  + `queries.trending` [→ covers `trending_windows`/Home FOR FREE] instead of scanning mentions;
+  time-window-only [never per-country/corpus-wide], fallback-to-live on ANY miss, full-rebuild cadence via
+  warm_cache, `basis` disclosure attached; numbers identical to live today). KEY INSIGHT (see the
+  DERIVED-ROLLUP Lessons entry): in-memory columnar WINS for windowed queries build-once-serve-many, so the
+  windowed speedup does NOT require the persisted store. **REMAINING (next session):** (1) **D1 persisted
+  store** — STILL BLOCKED on bundling per-OS `httpfs` crypto binaries (operational/networked; the
+  GCM-native hope was REFUTED, P2.4); a DURABILITY win (survive restart / no per-process rebuild), NOT
+  needed for the in-memory serve. (2) **the CANONICAL corpus-epoch mechanism** (a `derived_meta` table +
+  `bump_corpus_epoch` wired into `reindex_all_batch`/`reindex_articles`/`reindex_imported_articles`/
+  `prune_orphan_keywords`) — DESIGNED (D3's `refresh_keyword_daily` takes `corpus_epoch` as a param + the
+  guard is tested) but NOT BUILT; the opt-in serve sidesteps it with a full rebuild, so it is only needed
+  when a persisted INCREMENTAL serve (D1) lands. (3) **D4** `source_coverage` rollup (per-country map). (4)
+  render the `basis` disclosure VISIBLY in the UI (payload-only today; numbers match live so no visible-
+  caveat non-negotiable is breached, but the as-of staleness should surface). (5) **OPERATIONAL (maintainer):
+  run the rollup benchmark on the LIVE 60K/932K corpus** to quantify the real win + decide whether the D1
+  httpfs packaging is worth it — the measure-before-build gate for D1.
 - **KEYWORD-ENGINE OPTIMIZATION — RESEARCH FOLDED IN + IMPLEMENTATION STRATEGY (2026-06-26; maintainer
   ran parallel internet sessions on keyword conflation + IR/search performance; outputs analyzed
   CODE-GROUNDED + folded in; STRATEGY/DOCS-ONLY this session — the BUILD is a NEXT session):** the 3
