@@ -99,6 +99,21 @@ def backup_inventory_endpoint() -> dict:
     with session_scope() as session:
         return backup_inventory(session)
 
+
+@router.get("/import-scan")
+def import_scan_endpoint(path: str) -> dict:
+    """Classify a folder's importable contents — drives the unified Import checklist.
+
+    Read-only discovery: reports the kinds present (our encrypted corpus volume set,
+    large-data blobs, loose .eml newsletters, a source CSV, a legacy single-file
+    backup). 400 if the path is not a folder."""
+    from src.backup.import_scan import scan_import_folder
+
+    try:
+        return scan_import_folder(path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 # Staged previews awaiting a commit decision: token -> StagedArtifact. Process-
 # local by design (preview + commit happen within one operator session); orphans
 # on disk are reclaimed by cleanup_stale_staging at boot.
