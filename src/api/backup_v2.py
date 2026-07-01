@@ -1,5 +1,8 @@
 """
-oo-backup-2 endpoints: full-state backup + merge-only restore (preview/commit).
+oo-backup-2 endpoints: merge-only restore (preview/commit). The size-capped
+single-file CREATE was retired (2026-07-01) — backups are made by the unified
+volume/folder export. Restore stays for legacy single-file backups (to be removed
+in a future release once the single-file format is fully retired).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -15,17 +18,12 @@ from __future__ import annotations
 import logging
 import secrets
 import sqlite3
-import tempfile
-from datetime import UTC, datetime
-from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, run_restore
-from src.paths import data_dir
 
 _LOG = logging.getLogger("api.backup_v2")
 
@@ -63,20 +61,6 @@ def _restore_error(action: str, exc: Exception) -> HTTPException:
     else:
         detail = f"could not {action} this backup: {msg}"
     return HTTPException(status_code=500, detail=detail)
-
-
-def _staging_dir() -> str:
-    """Where to stage a backup/export build + its temp file.
-
-    NEVER the system temp dir: on Linux (notably Fedora/Qubes) ``/tmp`` is tmpfs
-    (RAM-backed), so building a DB-sized snapshot + zip there exhausts RAM and fails
-    with ``[Errno 28] No space left on device`` even when the real disk has dozens
-    of GB free (field report 2026-06-18). The data dir lives on real disk beside the
-    corpus, with the room a backup needs; ``write_backup_v2`` builds in ``dest.parent``,
-    so pointing the temp file here puts the WHOLE build on disk."""
-    d = data_dir()
-    d.mkdir(parents=True, exist_ok=True)
-    return str(d)
 
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])
@@ -118,70 +102,6 @@ def import_scan_endpoint(path: str) -> dict:
 # local by design (preview + commit happen within one operator session); orphans
 # on disk are reclaimed by cleanup_stale_staging at boot.
 _PENDING: dict[str, StagedArtifact] = {}
-
-
-class BackupBody(BaseModel):
-    passphrase: str | None = None
-    plaintext: bool = False
-    # What to back up (maintainer 2026-06-21). The corpus is always included; this
-    # toggles whether imported-newsletter (.eml/mailbox) articles ride along — so a
-    # user fixing faulty imports can back up WITHOUT them, then re-import clean ones.
-    include_newsletters: bool = True
-
-
-@router.post("/v2")
-def backup_v2(body: BackupBody) -> FileResponse:
-    """Build and download a full oo-backup-2 artifact.
-
-    Encrypted (passphrase) is the intended default; ``plaintext=true`` must be
-    passed EXPLICITLY and the artifact then excludes the signing keys (D2)."""
-    from starlette.background import BackgroundTask
-
-    from src.backup.artifact import write_backup_v2
-    from src.backup.sqlite_backup import BackupError, is_sqlite
-
-    if not is_sqlite():
-        raise HTTPException(status_code=400, detail="backup v2 supports the SQLite backend only")
-    if not body.plaintext and not body.passphrase:
-        raise HTTPException(
-            status_code=400,
-            detail="a passphrase is required (or set plaintext=true explicitly -- "
-            "a plaintext backup excludes your signing keys and protects nothing at rest)",
-        )
-    ts = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    suffix = ".oobak" if body.plaintext else ".oobak.ooenc"
-    fd, tmp = tempfile.mkstemp(prefix="oo-bak-", suffix=suffix, dir=_staging_dir())
-    import os
-
-    # Close the open descriptor BEFORE unlinking/reopening: Windows cannot
-    # delete a file that still has an open handle (WinError 32).
-    os.close(fd)
-    Path(tmp).unlink(missing_ok=True)
-    dest = Path(tmp)
-    try:
-        write_backup_v2(
-            dest,
-            passphrase=None if body.plaintext else body.passphrase,
-            include_newsletters=body.include_newsletters,
-        )
-    except (BackupError, ArtifactError) as exc:
-        dest.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except Exception as exc:
-        # Any OTHER failure (e.g. a full temp volume raising sqlite3.OperationalError
-        # while the ~DB-sized snapshot is written) must STILL return a JSON {detail},
-        # never a bare plain-text 500: the browser calls res.json() on the error body
-        # and would otherwise report only "JSON.parse: unexpected character", masking
-        # the real cause. Log the traceback so it is recoverable from the server log.
-        dest.unlink(missing_ok=True)
-        _LOG.exception("backup v2 build failed")
-        raise HTTPException(status_code=500, detail=f"backup failed: {exc}") from exc
-    return FileResponse(
-        dest,
-        media_type="application/octet-stream",
-        filename=f"open-omniscience-{ts}{suffix}",
-        background=BackgroundTask(lambda: dest.unlink(missing_ok=True)),
-    )
 
 
 def _stage_upload(data: bytes, passphrase: str | None) -> StagedArtifact:

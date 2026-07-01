@@ -3894,30 +3894,6 @@
 
     // ---- Backup v2: one signed archive; restore = MERGE with a preview ---- //
     let _v2Token = null;
-    async function v2Backup(plaintext) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const out = $("v2-backup-result");
-      const pass = $("v2-pass").value;
-      if (!plaintext && !pass) { out.textContent = t("Choose a passphrase first (or use the deliberate unencrypted option)."); return; }
-      out.textContent = t("Building the archive…");
-      try {
-        const nlEl = $("v2-incl-newsletters");
-        const inclNl = nlEl ? !!nlEl.checked : true;   // "what to back up": newsletters toggle
-        const body = plaintext ? {plaintext: true} : {passphrase: pass};
-        body.include_newsletters = inclNl;
-        const r = await fetch("/api/backup/v2", {method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify(body)});
-        if (!r.ok) { const d = await r.json().catch(() => ({}));
-          throw new Error(d.detail || r.statusText); }
-        const blob = await r.blob();
-        const cd = r.headers.get("Content-Disposition") || "";
-        const m = cd.match(/filename="?([^";]+)"?/);
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob); a.download = m ? m[1] : "open-omniscience-backup";
-        document.body.appendChild(a); a.click(); a.remove();
-        out.textContent = t("Backup downloaded.") + " " + _fmtBytes(blob.size);
-      } catch (e) { out.textContent = t("Backup failed:") + " " + e.message; }
-    }
     // Local LLM models — an OPT-IN companion backup (models live outside the corpus,
     // so they are a SEPARATE artifact; restore is additive + bit-identical). PR 6.
     // -- Large data backup: stream wiki dumps + maps + models to a folder/drive --- //

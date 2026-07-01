@@ -1,5 +1,22 @@
 # Future developments
 
+## Remove the legacy single-file backup RESTORE (2026-07-01, maintainer-flagged)
+
+The size-capped single-file backup **create** was retired 2026-07-01 (the `POST
+/api/backup/v2` endpoint + the `v2Backup` UI are gone; backups are made by the unified
+volume/folder export). The **restore** of an existing single-file backup was KEPT as the
+migration path (additive merge). The maintainer asked to **remove that restore too in a
+future release**, once the single-file format is fully retired. When doing so:
+- remove `read_artifact` + `write_backup_v2` from `src/backup/artifact.py` (the latter is
+  only kept now as the internal artifact-builder the restore/torture tests use — it goes
+  WITH the restore), the `/api/backup/v2/restore/{preview,commit}` endpoints +
+  `_stage_upload` + `_MAX_RESTORE_BYTES`, and the `#backup-panel` "Restore a legacy backup
+  file" UI (`v2Preview`/`v2Apply`/`v2Discard`);
+- the additive-merge engine (`src/backup/merge.py`) STAYS — the volume/folder restores use
+  it. Keep the torture acceptance suite building its artifacts another way (or retire the
+  single-file cases). The unified Import (folder discovery) already detects a legacy
+  single-file backup and can point at this restore until it's removed.
+
 > Forward-looking ideas that are **not** committed work yet — a place to elaborate a
 > direction before it earns a `ROADMAP.md` slot. Nothing here is promised. Each idea is
 > held to the same bar as shipped work: **honest by construction** (real, provenanced
