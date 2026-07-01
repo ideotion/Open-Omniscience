@@ -174,15 +174,34 @@ def ingest_email_endpoint(
 _NEWSLETTER_DOMAIN = "newsletters.import.local"
 _NEWSLETTER_NAME = "Imported newsletters (.eml)"
 
+# Content-provenance S1: the ingest channel is an ASSERTED FACT (this path IS the
+# newsletter channel), so stamp it — never the Source.source_type default "news",
+# which mislabelled every imported newsletter as news. A newsletter is a CHANNEL,
+# not a credibility judgement. Both the .eml and the mailbox paths are this channel.
+_IMPORT_SOURCE_TYPE = "newsletter"
 
-def _get_newsletter_source(db: Session) -> Source:
-    src = db.query(Source).filter_by(domain=_NEWSLETTER_DOMAIN).first()
+
+def _ensure_import_source(db: Session, *, domain: str, name: str) -> Source:
+    """Get-or-create a local import source, stamping the newsletter provenance and
+    self-healing any pre-existing row that still carries the mislabelled default
+    (deterministic, idempotent, no migration)."""
+    src = db.query(Source).filter_by(domain=domain).first()
     if src is None:
-        src = Source(name=_NEWSLETTER_NAME, domain=_NEWSLETTER_DOMAIN, enabled=False)
+        src = Source(
+            name=name, domain=domain, enabled=False, source_type=_IMPORT_SOURCE_TYPE
+        )
         db.add(src)
         db.commit()
         db.refresh(src)
+    elif src.source_type != _IMPORT_SOURCE_TYPE:
+        src.source_type = _IMPORT_SOURCE_TYPE  # backfill a source created before S1
+        db.commit()
+        db.refresh(src)
     return src
+
+
+def _get_newsletter_source(db: Session) -> Source:
+    return _ensure_import_source(db, domain=_NEWSLETTER_DOMAIN, name=_NEWSLETTER_NAME)
 
 
 # Starlette's MultiPartParser defaults to max_files=1000, so a selection of ~1300
@@ -334,13 +353,9 @@ _MAILBOX_NAME = "Imported mailbox (IMAP/POP3)"
 
 
 def _get_mailbox_source(db: Session) -> Source:
-    src = db.query(Source).filter_by(domain=_MAILBOX_DOMAIN).first()
-    if src is None:
-        src = Source(name=_MAILBOX_NAME, domain=_MAILBOX_DOMAIN, enabled=False)
-        db.add(src)
-        db.commit()
-        db.refresh(src)
-    return src
+    # A pulled mailbox is the same newsletter CHANNEL (content-provenance S1);
+    # stamp + self-heal so it is never mislabelled "news".
+    return _ensure_import_source(db, domain=_MAILBOX_DOMAIN, name=_MAILBOX_NAME)
 
 
 class MailboxFetchRequest(BaseModel):

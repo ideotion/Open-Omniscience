@@ -30,6 +30,10 @@ CANONICAL_SOURCE_TYPES: frozenset[str] = frozenset(
         "data-portal", "religious",
         # other channels
         "blog", "financial-data",
+        # ingest-channel provenance (asserted by construction — the ingest path
+        # knows the channel; content-provenance S1). A newsletter is a CHANNEL,
+        # never a credibility judgement; this fixes newsletters mislabeled "news".
+        "newsletter",
         # legacy values already present in the live catalog / assigned by code
         # (kept valid so the guard does not fail on shipped data; prefer the
         # canonical names above for new entries):
