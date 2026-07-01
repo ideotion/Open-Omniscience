@@ -884,19 +884,19 @@ def test_offline_map_merged_list_state_and_planet_skips_downloaded():
 
 
 def test_backup_can_exclude_newsletters():
-    """Maintainer field test 2026-06-21: the Full-backup UI offers 'what to back up'
-    tickboxes; unticking 'Imported newsletters' backs up WITHOUT the .eml/mailbox
-    articles (so faulty imports can be replaced by re-importing). Wired end to end."""
+    """Maintainer field test 2026-06-21: the "replace faulty newsletters" workflow.
+
+    UNIFIED 2026-07-01: the create-side "what to back up" tickbox was simplified away —
+    the unified Export always captures the FULL corpus (encrypted volumes). The workflow
+    is NOT lost: newsletters can be dropped at RESTORE (test_restore_can_exclude_newsletters)
+    AND removed live (test_remove_imported_newsletters_live_action). The BACKEND exclusion
+    capability is retained (used by the restore-side filter), so this test now pins the
+    backend + the surviving restore-side UI toggle."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
     art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
-    # UI: the tickbox exists + a "what to back up" fieldset
-    assert 'id="v2-incl-newsletters"' in html and "What to back up" in html
-    # frontend sends include_newsletters from the checkbox
-    assert "include_newsletters" in app and 'v2-incl-newsletters' in app
-    # backend: the body field + threaded into write_backup_v2 + the filter
-    assert "include_newsletters" in bk
+    # The restore-side selective toggle survives (backup is now full-corpus by design).
+    assert 'id="v2-restore-newsletters"' in html and "What to restore" in html
+    # backend: the exclusion helper + write_backup_v2's honest default is retained.
     assert "def _drop_newsletter_articles(" in art and "def write_backup_v2(" in art
     assert "include_newsletters: bool = True" in art, "default keeps newsletters (no silent change)"
     # the filter targets the real newsletter source domains
@@ -1123,10 +1123,13 @@ def test_large_data_folder_backup():
         assert ep in bk, ep
     # /api/jobs surfaces it as a pausable file job
     assert "def _folder_backup_jobs(" in jobs and '"folder-backup"' in jobs
-    # UI: the panel + the server-side path + the actions
-    assert 'id="folder-backup-panel"' in html and 'id="fb-dest"' in html
-    assert 'onclick="folderBackupStart(' in html and 'onclick="folderRestoreStart(' in html
-    assert "function folderBackupStart(" in app and "/api/backup/folder/start" in app
+    # UI: reached through the unified Export/Import dialog (the standalone
+    # "folder-backup-panel" was retired 2026-07-01 when Import/Export was unified).
+    # The dialog streams the chosen blob categories to /folder/start and restores
+    # from a server-side folder via /folder/restore.
+    assert "async function openUnifiedExport(" in app and 'id="ux-export"' in html
+    assert "function openUnifiedImport(" in app and 'id="ux-import"' in html
+    assert '"/api/backup/folder/start"' in app and '"/api/backup/folder/restore"' in app
 
 
 def test_gui_shutdown_button_and_endpoint():
@@ -4326,8 +4329,12 @@ def test_server_side_folder_picker_wired():
     destination + the .eml folder-import path inputs (folders only, never file names)."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    # Browse buttons on both server-side path inputs + the picker dialog.
-    assert "ooFolderPicker('fb-dest'" in html, "no Browse on the folder-backup destination"
+    # Browse buttons on the server-side path inputs + the picker dialog. The
+    # standalone folder-backup destination was folded into the unified Export/Import
+    # dialog (2026-07-01): ux-dest = the export destination, ux-imp-src = the import
+    # source folder; nl-folder = the .eml folder-import path.
+    assert "ooFolderPicker('ux-dest'" in html, "no Browse on the unified Export destination"
+    assert "ooFolderPicker('ux-imp-src'" in html, "no Browse on the unified Import source"
     assert "ooFolderPicker('nl-folder'" in html, "no Browse on the .eml folder import"
     assert 'id="folder-picker"' in html
     # The picker reads the traversal-safe backend and uses addEventListener (no inline onclick).
