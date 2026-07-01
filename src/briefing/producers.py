@@ -785,6 +785,7 @@ def lonely_signal(session) -> list[Card]:
         cards.append(
             Card(
                 type="lonely_signal",
+                article_ids=[int(story["representative"])],  # F1: carry the exact article so the click opens it
                 trigger=_trigger(
                     "Only one of your sources carried this story, and nobody else "
                     "repeated it. That can mean an exclusive worth a look — or just a "
@@ -1095,6 +1096,7 @@ def ownership_change(session) -> list[Card]:
     return [
         Card(
             type="ownership_change",
+            article_ids=[a.id for a, _ in matches],  # F1: carry the deal-report articles so the click opens them
             trigger=_trigger(
                 "Some recent articles use the language of corporate deals — acquired, "
                 "merged, divested. This flags the wording for you to verify against the "
@@ -1307,6 +1309,7 @@ def story_lineage(session) -> list[Card]:
         return [
             Card(
                 type="story_lineage",
+                article_ids=[int(m) for m in cluster.members],  # F1: carry the echoed cluster so the click opens it
                 trigger=_trigger(
                     "Many of your outlets ran near-identical text on one story. Ordering the "
                     "copies by publication time points back toward the earliest one — a "
@@ -1475,6 +1478,7 @@ def weather_corroboration(session) -> list[Card]:
         cards.append(
             Card(
                 type="weather_corroboration",
+                article_ids=[int(x) for x in op["article_ids"]],  # F1: carry the cluster so the click opens it
                 title=f"{op['rule_label']} near {op['place']}: independent weather check available",
                 summary=(
                     f"{op['n_articles']} articles mention {', '.join(op['terms_matched'])} "
