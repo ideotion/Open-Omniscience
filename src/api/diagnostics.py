@@ -874,6 +874,33 @@ def enrich_source_types(
     return JSONResponse({"mode": "wikidata", **result})
 
 
+@router.post("/discover-sources")
+def discover_sources_endpoint(
+    countries: str = Query(..., description="comma-separated ISO-2 country codes, e.g. ke,ng,br"),
+    per_spec_limit: int = Query(200, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """DISCOVER new sources from Wikidata for the given countries (enabled:false).
+
+    Adds NEW sources (news orgs / institutions with an official website) as DISABLED
+    rows for review -- never enables or scrapes anything on its own. Networked: 409
+    under airplane mode, egresses through the guarded factory. Bounded to a handful of
+    countries per call (each queries several media types); pick UNDER-REPRESENTED
+    countries to keep the catalogue's coverage balanced."""
+    codes = [c.strip().lower() for c in countries.split(",") if c.strip()]
+    if not codes or not all(len(c) == 2 and c.isalpha() for c in codes):
+        raise HTTPException(status_code=400, detail="countries must be ISO-2 codes, e.g. ke,ng,br")
+    if len(codes) > 12:
+        raise HTTPException(status_code=400, detail="at most 12 countries per call (be polite)")
+    from src.catalog.discover import discover_sources
+
+    try:
+        result = discover_sources(db, codes, per_spec_limit=per_spec_limit)
+    except RuntimeError as exc:  # the kill-switch up-front refusal
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return JSONResponse({"mode": "discovery", **result})
+
+
 @router.get("/ir-eval-selftest")
 def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     """Run the IR retrieval-eval harness self-test (keyword-engine Phase 3).

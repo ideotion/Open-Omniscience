@@ -7692,6 +7692,27 @@
       setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 5000);
     }
 
+    // Diagnostics: DISCOVER new sources from Wikidata for chosen countries and add
+    // them DISABLED for review (never scraped until enabled). Networked -> consent-gated.
+    async function discoverSources(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cc = (document.getElementById("discover-cc").value || "").trim();
+      if (!cc) { toast(t("Enter country codes first, e.g. ke,ng,br"), "err"); return; }
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Discover sources from Wikidata (egresses to Wikidata over your transport)"))) return;
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Discovering…";
+      try {
+        const d = await api("/api/diagnostics/discover-sources?countries=" + encodeURIComponent(cc), { method: "POST" });
+        btn.textContent = `Added ${d.added || 0} disabled sources — review in Settings → Sources`;
+      } catch (e) {
+        btn.textContent = "Discovery failed — see console";
+        console.error("discoverSources", e);
+      }
+      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
+    }
+
     async function viewKeywordGrowth(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn) btn.disabled = true;
