@@ -5,6 +5,7 @@ wiring (filter + per-article keyword count) is covered by tests/test_articles_pr
 """
 
 from src.catalog.provenance import (
+    CITED,
     NEWSLETTER,
     NEWSLETTER_DOMAINS,
     PROVENANCE_CLASSES,
@@ -44,6 +45,15 @@ def test_statistics_by_source_type():
     assert provenance_of("data.worldbank.org") == WEB
 
 
+def test_cited_by_source_type():
+    # A citation-discovered secondary source has a normal web domain; the class comes
+    # from its source_type, set by the promoter.
+    assert provenance_of("reuters.com", "cited") == CITED
+    assert provenance_of("apnews.com", "Cited") == CITED  # case-insensitive
+    # Without the cited type it is just a web source.
+    assert provenance_of("reuters.com") == WEB
+
+
 def test_web_is_the_total_default():
     assert provenance_of("bbc.com") == WEB
     assert provenance_of("bbc.com", "news") == WEB
@@ -58,6 +68,6 @@ def test_case_and_trailing_dot_normalised():
 
 def test_classes_are_a_closed_descriptive_set():
     # Every output is a member of the advertised set (a channel label, never a score).
-    assert set(PROVENANCE_CLASSES) == {WEB, WIKIPEDIA, NEWSLETTER, STATISTICS}
+    assert set(PROVENANCE_CLASSES) == {WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED}
     for dom in ("en.wikipedia.org", "newsletters.import.local", "x.com", None):
         assert provenance_of(dom) in PROVENANCE_CLASSES

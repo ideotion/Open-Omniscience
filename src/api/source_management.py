@@ -202,6 +202,30 @@ async def disable_unmanaged_language_sources(db: Session = Depends(get_db)):
     }
 
 
+@router.post("/promote-cited", response_model=dict)
+@limiter.limit("30/hour")
+async def promote_cited_sources_endpoint(
+    request: Request,
+    min_source_citers: int | None = Query(None, ge=1, le=100),
+    cap: int = Query(200, ge=1, le=2000),
+    dry_run: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    """Auto-integrate in-article SECONDARY sources: register a domain cited by enough
+    DISTINCT sources as a new DISABLED ``cited`` source (metadata only -- never fetched
+    until you enable it). Independence is measured by distinct SOURCES, not article
+    count; commerce/social storefronts are excluded and existing outlets are alias-
+    deduped. ``cited`` is a DESCRIPTIVE provenance class, never a quality score.
+    ``dry_run=true`` previews the candidates without creating anything.
+    """
+    from src.discovery.cited_sources import promote_cited_sources
+
+    result = promote_cited_sources(db, min_source_citers=min_source_citers, cap=cap, dry_run=dry_run)
+    if not dry_run:
+        db.commit()
+    return result
+
+
 @router.get("/preflight/log", response_model=dict)
 @limiter.limit("100/hour")
 async def source_preflight_log(request: Request, limit: int = Query(200, ge=1, le=1000)):

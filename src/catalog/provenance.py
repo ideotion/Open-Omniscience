@@ -26,9 +26,14 @@ from __future__ import annotations
 WIKIPEDIA = "wikipedia"
 NEWSLETTER = "newsletter"
 STATISTICS = "statistics"
+# A SECONDARY source discovered because articles CITE it (an in-article link),
+# auto-registered disabled by the citation channel. A descriptive channel label
+# ("discovered via citation"), never a quality judgement -- a widely-cited primary
+# source and a laundering hub look identical here; the user judges.
+CITED = "cited"
 WEB = "web"
 
-PROVENANCE_CLASSES: tuple[str, ...] = (WEB, WIKIPEDIA, NEWSLETTER, STATISTICS)
+PROVENANCE_CLASSES: tuple[str, ...] = (WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED)
 
 # Newsletter import buckets (the .eml file import + the live IMAP/POP3 pull). Kept
 # in sync with src/api/ingestion.py (_NEWSLETTER_DOMAIN / _MAILBOX_DOMAIN) and
@@ -43,14 +48,18 @@ def provenance_of(domain: str | None, source_type: str | None = None) -> str:
 
     Deterministic and total: every source resolves to exactly one class, defaulting
     to ``WEB``. Wikipedia and newsletters are recognised by DOMAIN (reliable today,
-    independent of the inconsistent ``source_type`` column); official statistics by
-    the ``source_type="statistics"`` the stats ingester sets explicitly.
+    independent of the inconsistent ``source_type`` column); official statistics and
+    citation-discovered sources by the ``source_type`` the ingester/promoter sets
+    explicitly (``"statistics"`` / ``"cited"``).
     """
     d = (domain or "").strip().lower().rstrip(".")
     if d == "wikipedia.org" or d.endswith(".wikipedia.org"):
         return WIKIPEDIA
     if d in NEWSLETTER_DOMAINS:
         return NEWSLETTER
-    if (source_type or "").strip().lower() == STATISTICS:
+    st = (source_type or "").strip().lower()
+    if st == STATISTICS:
         return STATISTICS
+    if st == CITED:
+        return CITED
     return WEB
