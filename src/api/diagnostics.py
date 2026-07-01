@@ -199,13 +199,33 @@ _DIGEST_SAMPLE = 100
 # drops the lowest-mention keywords PER LANGUAGE (equal-fair — a global mentions
 # cut would re-anglicise the export) and records the omission. Env-tunable.
 def _keyword_zip_max_bytes() -> int:
+    # Default 9 MB so a shared archive stays UNDER the common 10 MB attachment limit
+    # (raised 2026-07-01: the maintainer could not send a log). With the families cap
+    # below, a 727k-keyword corpus is ~8 MB with EVERY keyword — no trimming needed;
+    # a larger corpus trims its lowest-mention tail (per language, recorded) to fit.
     try:
-        mb = float(os.environ.get("OO_KEYWORD_LOG_MAX_MB", "20"))
+        mb = float(os.environ.get("OO_KEYWORD_LOG_MAX_MB", "9"))
     except ValueError:
-        mb = 20.0
+        mb = 9.0
     # Floor at 256 B (not 1 MB) only to forbid a zero/negative cap; realistic
     # callers set MB-scale values. The small floor keeps the trim path testable.
     return max(256, int(mb * 1024 * 1024))
+
+
+def _keyword_zip_families_cap() -> int:
+    """Top-N families to embed in summary.json (0 = keep all — the old behaviour).
+
+    The full per-keyword family dump is ~150 MB on a large corpus (708k families in the
+    2026-07-01 log), REDUNDANT with keywords/<lang>.json, and UNUSED by
+    analyze_keyword_log.py (it reassembles keywords from the shards). It was also why the
+    byte cap never held: the trim loop shrinks the shards, never summary.json. So only the
+    top families (by mentions) are kept for a human glance; the tail is derivable from the
+    shards. Override with OO_KEYWORD_LOG_FAMILIES.
+    """
+    try:
+        return max(0, int(os.environ.get("OO_KEYWORD_LOG_FAMILIES", "1000")))
+    except ValueError:
+        return 1000
 
 
 def _safe_lang_filename(lang: str) -> str:
@@ -253,10 +273,26 @@ def _keyword_zip(
     import io
     import zipfile
 
+    # Cap the families dump (sorted by mentions desc): the full 700k-family tail is
+    # redundant with the shards + unused by the analyzer + the reason the byte cap never
+    # held. Keep the top-N for a human glance; record the omission honestly.
+    _fam_cap = _keyword_zip_families_cap()
+    _families_shown = families[:_fam_cap] if _fam_cap and len(families) > _fam_cap else families
     summary_payload = {
         "corpus": corpus,
         "method": method,
-        "families": families,
+        "families": _families_shown,
+        "families_provenance": {
+            "shown": len(_families_shown),
+            "total": len(families),
+            "omitted": len(families) - len(_families_shown),
+            "sorted_by": "mentions (desc)",
+            "note": (
+                "Only the top families are embedded here (the full per-keyword family dump "
+                "is large, redundant with keywords/<lang>.json, and unused by "
+                "analyze_keyword_log.py). Set OO_KEYWORD_LOG_FAMILIES=0 to embed all."
+            ),
+        },
         "overrides": [
             {"normalized_term": term, **data} for term, data in sorted(overrides.items())
         ],
@@ -304,9 +340,10 @@ def _keyword_zip(
             **(page_info or {}),
             "note": (
                 "Per-language split of the keyword diagnostics log, zipped to keep the "
-                "shared file small (the single-file log had grown to ~20 MB). Read "
-                "summary.json for the corpus-wide aggregates (families, super-groups, "
-                "per-source concentration) and keywords/<lang>.json for each language's "
+                "shared file under 10 MB (fits a typical attachment limit). Read "
+                "summary.json for the corpus-wide aggregates (top families, super-groups, "
+                "per-source concentration; families_provenance records the family cap) "
+                "and keywords/<lang>.json for each language's "
                 "keywords (same per-keyword fields as the single-file log). "
                 "scripts/analyze_keyword_log.py reads this .zip directly. "
                 "keywords_omitted_to_fit > 0 means the lowest-mention keywords per "
@@ -394,9 +431,9 @@ def keyword_log(
         alias="format",
         description=(
             "'json' (default — the full single-file stream, byte-for-byte unchanged) "
-            "or 'zip' — a per-language split archive kept under ~20 MB (summary.json "
-            "+ keywords/<lang>.json + manifest.json). The recommended share format: "
-            "every keyword, no ~20 MB single blob."
+            "or 'zip' — a per-language split archive kept UNDER 10 MB (summary.json "
+            "+ keywords/<lang>.json + manifest.json), so it fits a typical attachment "
+            "limit. The recommended share format: every keyword, no huge single blob."
         ),
     ),
     per_lang: int = Query(
@@ -406,7 +443,7 @@ def keyword_log(
         description=(
             "ZIP only: how many keywords PER dominant language to export (default "
             f"{_MAX_KEYWORDS_PER_LANG}). Raise it to export far more — even the whole "
-            "corpus — in one sizeable archive (the ~20 MB byte cap still applies and, "
+            "corpus — in one archive (the <10 MB byte cap still applies and, "
             "if hit, trims the lowest-mention keywords per language and records it). "
             "Combine with `page` to walk through everything in digestible chunks."
         ),

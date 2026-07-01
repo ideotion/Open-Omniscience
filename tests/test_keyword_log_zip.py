@@ -93,7 +93,7 @@ def test_keyword_zip_splits_per_language_and_is_bounded(tmp_path):
             r = client.get("/api/diagnostics/keywords?format=zip")
             assert r.status_code == 200, r.text
             assert r.headers["content-type"] == "application/zip"
-            assert len(r.content) <= 20 * 1024 * 1024  # the cap
+            assert len(r.content) <= 10 * 1024 * 1024  # under a typical 10 MB attach limit
             members = _open_zip(r.content)
             assert "manifest.json" in members and "summary.json" in members
             shards = [n for n in members if n.startswith("keywords/") and n.endswith(".json")]
@@ -121,6 +121,28 @@ def test_keyword_zip_splits_per_language_and_is_bounded(tmp_path):
 
             # honesty: no composite scores anywhere in the archive
             assert all(b'"score"' not in members[n] and b"_score" not in members[n] for n in members)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_keyword_zip_caps_families_in_summary(tmp_path, monkeypatch):
+    # The full per-keyword family dump was ~150 MB on a large corpus (redundant with the
+    # shards, unused by the analyzer) and defeated the byte cap. summary.json now embeds
+    # only the top-N families, recording the omission honestly.
+    monkeypatch.setenv("OO_KEYWORD_LOG_FAMILIES", "1")
+    app, client = _client(tmp_path)
+    try:
+        with client:
+            r = client.get("/api/diagnostics/keywords?format=zip")
+            assert r.status_code == 200
+            summary = json.loads(_open_zip(r.content)["summary.json"])["data"]
+            prov = summary["families_provenance"]
+            assert len(summary["families"]) <= 1  # capped to the top family
+            assert prov["shown"] == len(summary["families"]) <= prov["total"]
+            # if the corpus has more families than the cap, the omission is RECORDED (never silent)
+            if prov["total"] > prov["shown"]:
+                assert prov["omitted"] == prov["total"] - prov["shown"] > 0
+            assert "keywords" not in summary  # the keywords still live in the shards
     finally:
         app.dependency_overrides.clear()
 
