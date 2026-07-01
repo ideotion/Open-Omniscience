@@ -7611,6 +7611,25 @@
       setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 4000);
     }
 
+    // Diagnostics: the NETWORKED source_type pass (Wikidata). Gated by the one
+    // network consent (invariant #14); the backend also refuses under airplane mode.
+    async function enrichSourceTypes(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Fill source types from Wikidata (egresses to Wikidata over your transport)"))) return;
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Enriching from Wikidata…";
+      try {
+        const d = await api("/api/diagnostics/enrich-source-types", { method: "POST" });
+        btn.textContent = `Typed ${d.sources_typed || 0} of ${d.scanned || 0} scanned`;
+      } catch (e) {
+        btn.textContent = "Enrich failed — see console";
+        console.error("enrichSourceTypes", e);
+      }
+      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 5000);
+    }
+
     async function viewKeywordGrowth(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn) btn.disabled = true;

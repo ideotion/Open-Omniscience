@@ -1502,6 +1502,7 @@
         <button class="secondary" onclick="window.open('/api/diagnostics/benchmark','_blank')">Scaling benchmark (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/debug-bundle','_blank')">Debug bundle (.json)</button>
         <button onclick="enrichSources(this)" title="Deduce each source's topic tags from the keywords it publishes in your corpus and add them to the source's tags — local, no network, additive (never overwrites curated tags). This also runs automatically in the background; the button forces it now. The networked Wikidata source-type pass is a separate consented action.">Enrich source tags from corpus</button>
+        <button onclick="enrichSourceTypes(this)" title="Fill each source's TYPE (newspaper / broadcaster / news agency / scientific journal / …) from Wikidata, verified against the source's own domain. This one goes ONLINE through the guarded transport — it asks for network consent first and is refused in airplane mode. Bounded per click; click again to continue.">Enrich source types (Wikidata) ↗</button>
       </div>
       <div class="row" style="margin-top:6px">
         <input id="ir-eval-path" type="text" style="min-width:280px" placeholder="gold-set file path (see configs/ir_eval/gold_set.example.json)">
