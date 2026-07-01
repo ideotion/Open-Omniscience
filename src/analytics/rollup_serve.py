@@ -157,6 +157,36 @@ def windowed_rows(
         return None
 
 
+def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
+    """Per-keyword windowed mention SUM for the INCLUSIVE day range ``[lo, hi]`` from the
+    rollup, or ``None`` to fall back to the live query. Used by ``trending`` (its recent /
+    prior windows) — which is why wiring it also accelerates ``trending_windows`` (the Home
+    poll), since that calls ``trending`` per window. Same safety as :func:`windowed_rows`:
+    opted-in only, background (re)build, serves the current build meanwhile, any error ->
+    ``None``."""
+    if not serve_enabled():
+        return None
+    from src.analytics import columnar
+
+    with _LOCK:
+        have = _STATE["con"] is not None
+        stale = time.time() - _STATE["built_at"] > _STALE_S
+    if not have or stale:
+        _trigger_build_async()
+    if not have:
+        return None
+    try:
+        with _LOCK:
+            con = _STATE["con"]
+            if con is None:
+                return None
+            counts = columnar.windowed_term_counts(con, start_day=lo, end_day=hi)
+        return {kid: mv[0] for kid, mv in counts.items()}  # mentions only (exact)
+    except Exception:  # noqa: BLE001 - any serve failure -> live fallback
+        _LOG.warning("rollup serve: windowed counts failed; falling back to live", exc_info=True)
+        return None
+
+
 def basis(_days: int) -> dict:
     """The honesty disclosure the caller attaches when a response was served from the
     rollup: the source + as-of + the upper-bound note. Not a score."""

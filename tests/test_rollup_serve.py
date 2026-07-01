@@ -113,6 +113,28 @@ def test_opted_in_and_built_serves_the_same_values_with_a_basis(session, monkeyp
     assert _canon(served) == _canon(live)
 
 
+def test_trending_served_matches_live_and_discloses_basis(session, monkeypatch):
+    # trending() sums recent/prior windows from the mention table (the freeze). Wiring it
+    # also accelerates trending_windows (Home), which calls trending per window. A wide
+    # window covers the whole fixture; mentions are exact so the scored output matches.
+    kw = dict(window_days=_WIDE, baseline_days=_WIDE, min_recent=1, limit=100)
+    live = q.trending(session, **kw)  # default off
+
+    con = columnar.connect(passphrase=None)
+    columnar.build_keyword_daily(con, session)
+    rollup_serve._STATE["con"] = con
+    rollup_serve._STATE["built_at"] = time.time()
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+
+    served = q.trending(session, **kw)
+    assert served.get("basis", {}).get("source") == "columnar-rollup"
+
+    def canon(res):
+        return sorted((t["normalized"], t["recent"], t["prior"]) for t in res["terms"])
+
+    assert canon(served) == canon(live)
+
+
 def test_per_country_never_uses_the_rollup(session, monkeypatch):
     # The rollup has no country dimension; a per-country query must stay on the live path.
     con = columnar.connect(passphrase=None)

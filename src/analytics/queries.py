@@ -1111,8 +1111,22 @@ def trending(
             q = q.filter(KeywordMention.country == country.lower())
         return dict(q.group_by(KeywordMention.keyword_id).all())
 
-    recent = _counts(w_start, today + timedelta(days=1))
-    prior = _counts(b_start, w_start)
+    # Opt-in rollup serve: sum the in-memory keyword_daily rollup for the two windows
+    # instead of scanning keyword_mentions (the freeze). Time-window only — never per-country
+    # (the rollup has no country dim). Ranges match _counts's half-open [lo, hi): the rollup
+    # is INCLUSIVE [lo, hi-1day]. Mentions are exact, so the scored output is byte-identical.
+    # Any miss (not opted in / not built / error) -> None -> the live _counts below.
+    _served = False
+    if not country:
+        from src.analytics import rollup_serve
+
+        _r = rollup_serve.windowed_counts(session, lo=w_start, hi=today)
+        _p = rollup_serve.windowed_counts(session, lo=b_start, hi=w_start - timedelta(days=1))
+        if _r is not None and _p is not None:
+            recent, prior, _served = _r, _p, True
+    if not _served:
+        recent = _counts(w_start, today + timedelta(days=1))
+        prior = _counts(b_start, w_start)
 
     scored = []
     for kid, rc in recent.items():
@@ -1203,6 +1217,10 @@ def trending(
         "keywords_with_recent_mentions": len(recent),
         "method": "recent volume vs prior-period rate (ratio, not a significance test)",
     }
+    if _served:  # disclose the served source + as-of (honesty by construction)
+        from src.analytics import rollup_serve
+
+        res["basis"] = rollup_serve.basis(window_days)
     if ringed:
         res["rings_merged"] = True
         res["caveat"] = _RING_CAVEAT
