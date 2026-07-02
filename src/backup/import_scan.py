@@ -28,6 +28,15 @@ from pathlib import Path
 # the cryptography stack). A CI test (test_import_scan) asserts it stays in sync.
 _VOL_MANIFEST = "volumes.json"
 
+# Large-data folder-backup manifest, mirrored from folder_backup.MANIFEST_NAME. When a
+# large-data (wiki/maps/models) backup completes, the engine writes this JSON at the
+# backup ROOT listing exactly which categories it carries and their per-file sizes. We
+# anchor detection on it so a completed folder backup is ALWAYS recognised — the plain
+# dir-name walk can miss a category if the on-disk layout is unusual, but the manifest
+# is authoritative (field report 2026-07-02: wiki/maps/models "not recognised" on
+# import). A CI test asserts this filename stays in sync with the backup engine.
+_FOLDER_MANIFEST = "oo-folder-backup.json"
+
 # blob category dir on disk -> (import kind key the dialog shows, the folder-restore
 # category name). A blob backup made by the folder engine writes <root>/<catdir>/...
 _BLOB_DIRS = {"wiki_dumps": "wiki", "osm_regions": "maps", "models": "models"}
@@ -92,6 +101,7 @@ def scan_import_folder(
 
     corpus_dirs: list[Path] = []
     blob_roots: dict[str, dict] = {}  # parent-dir-str -> {catkey: totals}
+    folder_manifests: list[Path] = []  # dirs holding an oo-folder-backup.json
     source_csv: list[str] = []
     legacy: list[dict] = []
     eml = 0
@@ -124,6 +134,8 @@ def scan_import_folder(
             low = fn.lower()
             if fn == _VOL_MANIFEST:
                 corpus_dirs.append(curp)
+            elif fn == _FOLDER_MANIFEST:
+                folder_manifests.append(curp)
             elif low.endswith(".eml"):
                 if eml < max_eml_scan:
                     eml += 1
@@ -140,6 +152,25 @@ def scan_import_folder(
                     except OSError:
                         sz = 0
                     legacy.append({"path": str(fp), "name": fn, "bytes": sz})
+
+    # Manifest-anchored blobs: a completed large-data backup declares its categories
+    # authoritatively. Merge them in so a folder backup is recognised even if the plain
+    # dir-name walk missed a category (the field bug: wiki/maps/models "not recognised").
+    # On-disk totals win when the category dir is present; else fall back to the
+    # manifest's own counts so the user still sees what the backup carries.
+    for mdir in folder_manifests:
+        cats = _read_folder_manifest(mdir / _FOLDER_MANIFEST)
+        if not cats:
+            continue
+        root_totals = blob_roots.setdefault(str(mdir), {})
+        for catdir, (count, nbytes) in cats.items():
+            catkey = _BLOB_DIRS.get(catdir)
+            if not catkey or catkey in root_totals:
+                continue  # unknown category, or the dir-walk already measured it on disk
+            if count:
+                root_totals[catkey] = {"count": count, "bytes": nbytes}
+        if not root_totals:  # a manifest with zero non-empty categories: drop the empty root
+            blob_roots.pop(str(mdir), None)
 
     found: dict = {}
 
@@ -176,6 +207,30 @@ def scan_import_folder(
         found["legacy_backup"] = sorted(legacy, key=lambda x: x["name"])
 
     return {"path": str(root), "found": found}
+
+
+def _read_folder_manifest(p: Path) -> dict[str, tuple[int, int]]:
+    """Parse a folder-backup manifest into ``{catdir: (file_count, total_bytes)}``.
+
+    The manifest's ``categories`` maps each category dir (wiki_dumps/osm_regions/models)
+    to a list of ``{rel, size}`` items. Returns only categories that carry files. Any
+    parse error yields ``{}`` (best-effort — never let a stray file break the scan)."""
+    import json
+
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    cats = data.get("categories")
+    if not isinstance(cats, dict):
+        return {}
+    out: dict[str, tuple[int, int]] = {}
+    for catdir, items in cats.items():
+        if not isinstance(items, list) or not items:
+            continue
+        nbytes = sum(int(it.get("size", 0)) for it in items if isinstance(it, dict))
+        out[catdir] = (len(items), nbytes)
+    return out
 
 
 def _volume_count(d: Path) -> int:
