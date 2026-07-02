@@ -106,3 +106,39 @@ def test_restore_runs_to_done(tmp_path):
     mgr.start_restore(str(src), "pw", _restore_fn=fake_restore)
     st = _wait(mgr)
     assert st["state"] == "done" and st["summary"]["report"]["ok"] is True
+
+
+def test_sequential_restores_do_not_collide(tmp_path):
+    # Field report 2026-07-02: importing several archives one after another hit "A
+    # volume backup/restore is already running". Each restore is awaited to "done"
+    # before the next; back-to-back starts must all succeed.
+    src = tmp_path / "src"
+    src.mkdir()
+    calls: list[str] = []
+
+    def fake_restore(s, pw):
+        calls.append(str(s))
+        return {"report": {"ok": True}}
+
+    mgr = VolumeBackupManager()
+    for _ in range(3):
+        mgr.start_restore(str(src), "pw", _restore_fn=fake_restore)
+        assert _wait(mgr)["state"] == "done"
+    assert len(calls) == 3
+
+
+def test_reap_allows_next_after_a_lingering_finished_thread(tmp_path):
+    # The race directly: a finished job whose thread object still lingers (state is
+    # terminal) must NOT block the next start — _reap_or_reject reaps it. A genuinely
+    # running job (alive + state "running") still rejects.
+    import threading
+
+    mgr = VolumeBackupManager()
+    dead = threading.Thread(target=lambda: None)
+    dead.start()
+    dead.join()
+    mgr._thread, mgr._state = dead, "done"  # simulate the teardown window
+    src = tmp_path / "s"
+    src.mkdir()
+    mgr.start_restore(str(src), "pw", _restore_fn=lambda s, pw: {"report": {"ok": True}})
+    assert _wait(mgr)["state"] == "done"

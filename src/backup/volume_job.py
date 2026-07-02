@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 _LOG = logging.getLogger(__name__)
 
@@ -38,6 +39,23 @@ class VolumeBackupManager:
     def _alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    def _reap_or_reject(self) -> None:
+        """Reject only a GENUINELY-running job; otherwise reap a finished worker so the
+        next one can start. Call under ``self._lock``.
+
+        Fixes the back-to-back race (field report 2026-07-02: "A volume backup/restore
+        is already running" when importing several archives one after another): the
+        worker sets its terminal state ("done") and returns, but ``_alive()`` stays True
+        for the brief thread-teardown window — so a start fired the instant the poller
+        saw "done" wrongly 409'd. Gate on the logical state instead, and join the
+        lingering thread so exactly one worker ever runs. Sequential imports now hand
+        off cleanly (parallel volume restores stay disallowed by design — one writer)."""
+        if self._state == "running" and self._alive():
+            raise RuntimeError("A volume backup/restore is already running.")
+        if self._thread is not None:
+            self._thread.join(timeout=5)  # instant once the work is done; a safety cap
+            self._thread = None
+
     def _on_prog(self, p: dict) -> None:
         with self._lock:
             self._progress = p
@@ -53,8 +71,7 @@ class VolumeBackupManager:
         _backup_fn: Callable[..., dict] | None = None,
     ) -> dict:
         with self._lock:
-            if self._alive():
-                raise RuntimeError("A volume backup/restore is already running.")
+            self._reap_or_reject()
             if not passphrase:
                 raise ValueError("the volume backup is always encrypted: a passphrase is required")
             destp = Path(dest)
@@ -117,8 +134,7 @@ class VolumeBackupManager:
         _restore_fn: Callable[..., dict] | None = None,
     ) -> dict:
         with self._lock:
-            if self._alive():
-                raise RuntimeError("A volume backup/restore is already running.")
+            self._reap_or_reject()
             srcp = Path(src)
             if not srcp.is_dir():
                 raise ValueError(f"{srcp} is not a folder to restore from.")
