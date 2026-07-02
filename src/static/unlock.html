@@ -304,11 +304,14 @@
       } catch (e) { $("view-unlock").classList.remove("hidden"); }
     }
 
-    // After a successful unlock/create the server prepares the corpus in the
-    // background (schema, search stats, catalog, counts) and reports progress at
-    // /api/system/startup-status. Show the preparing view + the live phase, and
-    // enter the Console (replace, so /unlock never sits in history) only when the
-    // server says "ready" — nothing queries a half-prepared corpus.
+    // After a successful unlock/create the server opens the corpus (init_db, run
+    // synchronously in the unlock request) and then finishes best-effort upkeep
+    // (search stats, catalog seed-dedup, counts, cache warm) in a BACKGROUND thread,
+    // reporting progress at /api/system/startup-status. We enter the Console as soon
+    // as the server says the corpus is `queryable` — NOT after the whole upkeep — so
+    // unlock feels instant on a large encrypted corpus (field report: "unlocking takes
+    // ages" while CPU/SSD sat idle waiting on that serial best-effort work). The app is
+    // fully usable meanwhile; the upkeep finishes behind the scenes.
     async function waitReadyThenEnter() {
       ["view-unlock", "view-create", "view-open"].forEach((v) => $(v).classList.add("hidden"));
       $("view-preparing").classList.remove("hidden");
@@ -319,13 +322,15 @@
         "loading the source catalog": t("loading the source catalog"),
         "counting your corpus": t("counting your corpus"),
       };
-      for (let i = 0; i < 3600; i++) {  // generous cap (~hours) — a huge corpus is allowed to take its time
+      for (let i = 0; i < 3600; i++) {  // generous cap — schema self-heal on a first upgrade boot may take a moment
         let s;
         try { s = await (await fetch("/api/system/startup-status")).json(); }
         catch (e) { s = null; }
         if (s && s.phase) phaseEl.textContent = PHRASES[s.phase] || s.phase;
-        if (s && s.state === "ready") { location.replace("/"); return; }
-        await new Promise((r) => setTimeout(r, 600));
+        // Enter as soon as the corpus is queryable (or fully ready) — the upkeep
+        // keeps running in the background; nothing the app does needs it finished.
+        if (s && (s.queryable || s.state === "ready")) { location.replace("/"); return; }
+        await new Promise((r) => setTimeout(r, 300));
       }
       location.replace("/");  // fail-open: enter anyway rather than trap the user
     }

@@ -4199,6 +4199,38 @@ def test_startup_warms_the_insights_cache():
     )
 
 
+def test_unlock_enters_when_queryable_not_after_full_upkeep():
+    """Field report 2026-07-02 ("unlocking takes ages", CPU ~12% / SSD idle): the
+    unlock page waited for startup-status == "ready", but "ready" is only set AFTER
+    the whole serial best-effort upkeep (ANALYZE, catalog seed-dedup, COUNTs, cache
+    warm) finishes on a large encrypted corpus. The corpus is fully usable the instant
+    init_db returns, so unlock must mark the corpus `queryable` right after init_db and
+    the page must enter the Console on `queryable` — the upkeep finishes in the
+    background. Guard all three legs so the slow gate can't come back."""
+    ss = (_ROOT / "src" / "api" / "startup_status.py").read_text(encoding="utf-8")
+    assert "def mark_queryable" in ss and '"queryable"' in ss, (
+        "startup_status must expose a `queryable` signal set once the DB is usable"
+    )
+    unlock = (_ROOT / "src" / "api" / "unlock.py").read_text(encoding="utf-8")
+    finish = unlock.split("def _finish_unlock", 1)[1].split("\ndef unlock", 1)[0]
+    # mark_queryable must be called AFTER init_db (the DB is usable) and BEFORE the
+    # background upkeep thread starts — i.e. it gates entry on init_db, not upkeep.
+    assert "init_db()" in finish and "mark_queryable()" in finish, (
+        "unlock must run init_db synchronously then mark the corpus queryable"
+    )
+    assert (
+        finish.index("init_db()")
+        < finish.index("mark_queryable()")
+        < finish.index("def _upkeep")
+    ), "mark_queryable must be called after init_db and before the background upkeep thread"
+    html = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+    enter = html.split("async function waitReadyThenEnter", 1)[1].split("async function", 1)[0]
+    assert "s.queryable" in enter, (
+        "the unlock page must enter the Console as soon as the corpus is queryable, "
+        "not only when the whole upkeep reports ready"
+    )
+
+
 def test_llm_catalog_tags_are_pullable_and_embeddings_labelled():
     """Every suggested model must be PULLABLE — its tag has to satisfy the same
     strict regex the /api/llm/pull endpoint enforces (src/api/llm.py:_MODEL_RE), so
