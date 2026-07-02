@@ -982,11 +982,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   carries its REAL word_count + cited_sources + the LOCAL reader url (invariant #6) + the provenance label;
   BOUNDED to the most-recent `candidate_cap` (default 500, ≤2000) with the window + matched count DISCLOSED
   (never a silent cap); counts only, NO score (key-walk test guards it). Pure `passes_substance_gates` +
-  the core hand-verified over an in-memory corpus. **REMAINING — S1b: near-dup COLLAPSE** of wire reprints
-  into one fresh story (reuse `src/signals/near_dup.py`; the "biggest practical win", DEFERRED because it
-  needs article content — verify separately) → **S2 Home panel** (visible criteria + per-item values +
-  controls + caveats; browser) → **S3 per-type defaults** (from the maintainer's S0 export) + followed/faceted
-  scope + dim/hide toggle. FOLD into the content-provenance + keyword-engine P4 facet track.
+  the core hand-verified over an in-memory corpus. **S1b SHIPPED 2026-07-02: near-dup COLLAPSE** —
+  `recent_collected(collapse=True)` (opt-in query param; default OFF ⇒ S1a byte-identical) folds
+  near-identical wire reprints into ONE fresh story via the shipped `src/signals/near_dup.py` (MinHash+LSH,
+  high-precision/under-merges — a missed reprint honestly shows as its own story). Iterating newest-first,
+  the FRESHEST cluster member represents it; each rep carries `duplicates` (other copies) · `outlets`
+  (DISTINCT sources = the independence measure) · `single_source` (one outlet reprinting itself → FLAGGED,
+  never corroboration) · `duplicate_ids` (the folded copies, for "show all" = reversible); the near-dup
+  non-collusion caveat + fold counts ride in a `collapse` block. This is the ONLY path that reads article
+  CONTENT — bounded to the freshest `collapse_cap` (default 300), disclosed. Counts only, NO score.
+  tests/test_recency.py (+4: off-by-default byte-identical, folds-to-freshest, single-source flagged,
+  caveat+no-score). **REMAINING — S2 Home panel** (visible criteria + per-item values + controls + caveats;
+  browser) → **S3 per-type defaults** (from the maintainer's S0 export) + followed/faceted scope + dim/hide
+  toggle. FOLD into the content-provenance + keyword-engine P4 facet track.
 - **FIELD DIAGNOSTICS 2026-06-27 — measured findings (full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Field diagnostics 2026-06-27"):** from the maintainer's exports on a live 2,259-article / 99,662-kw /
   179,395-mention corpus (2-core 4.4GB Qubes, encrypted, columnar in-memory). ENGINE HEALTHY (selftest

@@ -103,12 +103,20 @@ def recent_collected(
     tags: str | None = None,
     language: str | None = None,
     candidate_cap: int = 500,
+    collapse: bool = False,
+    collapse_cap: int = 300,
 ) -> dict:
     """The Home "recently collected" stream: newest-by-``created_at`` articles that
     pass the substance gates, within the disclosed candidate window. Counts only,
-    NO score."""
+    NO score.
+
+    ``collapse=True`` folds near-identical wire reprints into ONE fresh story (the
+    freshest member represents the cluster; the copies fold under it). This is the
+    only path that reads article CONTENT (bounded to the freshest ``collapse_cap``)
+    — off by default, so the cheap S1a behaviour is byte-identical."""
     limit = max(1, min(int(limit), _MAX_LIMIT))
     candidate_cap = max(limit, min(int(candidate_cap), _MAX_CANDIDATE_CAP))
+    collapse_cap = max(1, min(int(collapse_cap), _MAX_CANDIDATE_CAP))
     min_words = max(0, int(min_words))
     min_sources = max(0, int(min_sources))
 
@@ -144,17 +152,15 @@ def recent_collected(
         ):
             counts[aid] = int(c)
 
-    rows: list[dict] = []
-    matched = 0
+    # All matched rows in created_at-desc order (bounded by the window). Cheap dicts;
+    # the expensive CONTENT read is gated behind collapse, below.
+    matched_rows: list[dict] = []
     for aid, title, wc, lang, created, published, sname, sdomain, stype in candidates:
         cited = counts.get(aid, 0)
         if not passes_substance_gates(wc, lang, cited, min_words, min_sources):
             continue
-        matched += 1
-        if len(rows) >= limit:
-            continue  # keep counting matches in the window, but only return `limit`
         base = (lang or "").split("-", 1)[0].strip().lower()
-        rows.append({
+        matched_rows.append({
             "id": aid,
             "title": title,
             "url": f"/api/articles/{aid}/view",   # the LOCAL reader (invariant #6)
@@ -167,8 +173,15 @@ def recent_collected(
             "cited_sources": cited,
             "unsegmented": base in UNSEGMENTED,
         })
+    matched = len(matched_rows)
 
-    return {
+    collapse_block = None
+    if collapse and matched_rows:
+        matched_rows, collapse_block = _collapse_near_dups(session, matched_rows, collapse_cap)
+
+    rows = matched_rows[:limit]
+
+    out = {
         "articles": rows,
         "returned": len(rows),
         "matched": matched,               # matches within the scanned window
@@ -194,3 +207,71 @@ def recent_collected(
             "excluded item simply didn't meet your thresholds."
         ),
     }
+    if collapse_block is not None:
+        out["collapse"] = collapse_block
+    return out
+
+
+def _collapse_near_dups(
+    session: Session, matched_rows: list[dict], cap: int
+) -> tuple[list[dict], dict]:
+    """Fold near-identical wire reprints into ONE fresh story. Iterating
+    newest-first, the FRESHEST member of a near-dup cluster represents it and the
+    copies fold under it (``duplicate_ids`` for "show all"); the reprint count and
+    the number of distinct outlets are themselves the signal. Independence is
+    measured by DISTINCT SOURCES — a single source reprinting itself is FLAGGED
+    (``single_source``), never counted as corroboration. High-precision (MinHash+LSH,
+    biased to UNDER-merge), so a missed reprint just shows as its own story. This is
+    the only path that reads CONTENT — bounded to the freshest ``cap`` rows."""
+    from src.signals.near_dup import near_duplicate_clusters
+
+    scan = matched_rows[:cap]
+    scan_ids = [r["id"] for r in scan]
+    docs = {
+        str(aid): text
+        for aid, text in session.query(Article.id, Article.content).filter(Article.id.in_(scan_ids))
+        if text
+    }
+    result = near_duplicate_clusters(docs, threshold=0.7)
+
+    cluster_of: dict[int, frozenset[int]] = {}
+    for c in result.clusters:
+        members = frozenset(int(m) for m in c.members)
+        if len(members) < 2:
+            continue
+        for m in members:
+            cluster_of[m] = members
+
+    src_of = {r["id"]: r.get("source") for r in matched_rows}
+    seen: set[frozenset[int]] = set()
+    out_rows: list[dict] = []
+    collapsed = 0
+    clusters_kept = 0
+    for r in matched_rows:  # newest first
+        cluster = cluster_of.get(r["id"])
+        if not cluster:
+            out_rows.append({**r, "duplicates": 0})   # a standalone story
+            continue
+        if cluster in seen:
+            collapsed += 1                              # a fresher copy already represents it
+            continue
+        seen.add(cluster)
+        clusters_kept += 1
+        others = sorted(m for m in cluster if m != r["id"])
+        outlets = len({src_of.get(m) for m in cluster})
+        out_rows.append({
+            **r,
+            "duplicates": len(others),                 # other near-identical copies
+            "outlets": outlets,                         # distinct sources across the cluster
+            "single_source": outlets <= 1,              # one outlet reprinting itself -> flagged
+            "duplicate_ids": others,                    # the folded copies, for "show all"
+        })
+    block = {
+        "applied": True,
+        "collapse_scanned": len(scan),
+        "clusters": clusters_kept,
+        "copies_folded": collapsed,
+        "method": result.method,
+        "caveat": result.caveat,
+    }
+    return out_rows, block

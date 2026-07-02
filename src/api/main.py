@@ -992,6 +992,7 @@ async def recent_articles(
     content_type: str | None = None,
     tags: str | None = None,
     language: str | None = None,
+    collapse: bool = False,
     db: Session = Depends(get_db),
 ):
     """Home "Latest in your corpus" — newest-by-``created_at`` articles that pass the
@@ -1003,7 +1004,12 @@ async def recent_articles(
     gates are transparent filters the caller sets — NEVER a quality/click-bait score;
     each row shows its real word_count + cited-source count, and the scanned window is
     disclosed. The length gate is script-aware (skipped for unsegmented zh/ja/th). No
-    default filtering (gates default 0), so nothing is hidden unless the caller asks."""
+    default filtering (gates default 0), so nothing is hidden unless the caller asks.
+
+    ``collapse=true`` folds near-identical wire reprints into one fresh story (the
+    reprint count + distinct-outlet count are the signal; a single outlet reprinting
+    itself is flagged, never counted as corroboration). It is the only path that reads
+    article content — off by default."""
     from src.analytics.recency import recent_collected
     from src.catalog.provenance import PROVENANCE_CLASSES
 
@@ -1014,7 +1020,7 @@ async def recent_articles(
         )
     data = recent_collected(
         db, limit=limit, min_words=min_words, min_sources=min_sources,
-        content_type=content_type, tags=tags, language=language,
+        content_type=content_type, tags=tags, language=language, collapse=collapse,
     )
     return data
 
