@@ -971,10 +971,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   unsegmented languages (zh/ja/th, from `analytics.managed.UNSEGMENTED`) FLAGGED per-language so a word-gate
   is never blindly applied to them (the CJK/Thai catch). One article-row scan (a diagnostic run occasionally,
   cost documented); the cited-source counts come from `article_links` (no article decrypt). The maintainer
-  runs this on the live corpus to pick honest per-content-type thresholds. REMAINING: S1 recency endpoint
-  (`created_at` order + min_words/min_sources + tag/content_type facets + script-aware length rule + near-dup
-  collapse) → S2 Home panel → S3 per-type defaults/followed-scope/dim-toggle. FOLD into the content-provenance
-  + keyword-engine P4 facet track. (Only anchor before S0: ~190 content-words/article avg.)
+  runs this on the live corpus to pick honest per-content-type thresholds. **S1a SHIPPED 2026-07-02: the
+  recency ENDPOINT — `src/analytics/recency.py:recent_collected` + `GET /api/articles/recent` +
+  tests/test_recency.py.** `created_at`-DESC order (un-spoofable "when WE collected it"; `published_at` rides
+  along as secondary source-asserted); the TWO transparent gates as query PARAMS (`min_words` AND
+  `min_sources` = outbound external ArticleLink count, internal ignored) — defaults 0 so NOTHING is filtered
+  unless the caller asks (the calibrated per-type DEFAULTS are S3, not baked here); SCRIPT-AWARE length rule
+  (skipped for unsegmented zh/ja/th + where word_count is unknown — never hide on an unmeasurable length);
+  facets `content_type` (a content-provenance class, 400 on a bad value) · `tags` · `language`; each row
+  carries its REAL word_count + cited_sources + the LOCAL reader url (invariant #6) + the provenance label;
+  BOUNDED to the most-recent `candidate_cap` (default 500, ≤2000) with the window + matched count DISCLOSED
+  (never a silent cap); counts only, NO score (key-walk test guards it). Pure `passes_substance_gates` +
+  the core hand-verified over an in-memory corpus. **REMAINING — S1b: near-dup COLLAPSE** of wire reprints
+  into one fresh story (reuse `src/signals/near_dup.py`; the "biggest practical win", DEFERRED because it
+  needs article content — verify separately) → **S2 Home panel** (visible criteria + per-item values +
+  controls + caveats; browser) → **S3 per-type defaults** (from the maintainer's S0 export) + followed/faceted
+  scope + dim/hide toggle. FOLD into the content-provenance + keyword-engine P4 facet track.
 - **FIELD DIAGNOSTICS 2026-06-27 — measured findings (full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Field diagnostics 2026-06-27"):** from the maintainer's exports on a live 2,259-article / 99,662-kw /
   179,395-mention corpus (2-core 4.4GB Qubes, encrypted, columnar in-memory). ENGINE HEALTHY (selftest

@@ -982,6 +982,43 @@ async def search_articles(
     }
 
 
+@app.get("/api/articles/recent", response_model=dict)
+@limiter.limit("120/hour")
+async def recent_articles(
+    request: Request,
+    limit: int = 30,
+    min_words: int = 0,
+    min_sources: int = 0,
+    content_type: str | None = None,
+    tags: str | None = None,
+    language: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Home "Latest in your corpus" — newest-by-``created_at`` articles that pass the
+    two transparent substance gates (≥ ``min_words`` AND ≥ ``min_sources`` cited
+    outbound links), optionally faceted by ``content_type`` (a content-provenance
+    class), ``tags``, and ``language``.
+
+    A recency LENS, never a reweighting (search/analytics stay time-neutral). The
+    gates are transparent filters the caller sets — NEVER a quality/click-bait score;
+    each row shows its real word_count + cited-source count, and the scanned window is
+    disclosed. The length gate is script-aware (skipped for unsegmented zh/ja/th). No
+    default filtering (gates default 0), so nothing is hidden unless the caller asks."""
+    from src.analytics.recency import recent_collected
+    from src.catalog.provenance import PROVENANCE_CLASSES
+
+    if content_type is not None and content_type not in PROVENANCE_CLASSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"content_type must be one of {sorted(PROVENANCE_CLASSES)}",
+        )
+    data = recent_collected(
+        db, limit=limit, min_words=min_words, min_sources=min_sources,
+        content_type=content_type, tags=tags, language=language,
+    )
+    return data
+
+
 @app.get("/api/articles/export")
 @limiter.limit("50/hour")
 async def export_articles(
