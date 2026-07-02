@@ -96,7 +96,9 @@ analysis = [
     "scikit-learn>=1.5",
     "statsmodels>=0.14",
     "networkx>=3.3",
-    "nltk>=3.8.1",
+    # nltk REMOVED 2026-07-02: it was never imported anywhere (vaderSentiment
+    # bundles its own lexicon) and PYSEC-2026-597 landed against it with no fixed
+    # release -- dropping the unused dependency beats ignoring the advisory.
     "vaderSentiment>=3.3.2",
     # Offline language detection (pure-Python, bundled model, NO network) for the
     # "secondary/deduced" language of articles the source/extractor left untagged --
