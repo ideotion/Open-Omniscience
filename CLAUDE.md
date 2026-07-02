@@ -566,8 +566,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the parent dir but volumes.json lives in a subfolder → load_manifest threw, swallowed into "see
   console"; now uses the exact subfolder path + surfaces the real error); (5) unknown-language
   `reconcile_article_language` (offline text detect → keyword-majority fallback, deduced channel
-  only, wired into the reindex cleanup pass). DEFERRED: .eml sender-IP geolocation (flagged, distinct
-  backend concern).
+  only, wired into the reindex cleanup pass). **.eml SENDER-IP GEOLOCATION SHIPPED 2026-07-02
+  (the deferred item):** `sender_origin_ip()` (src/ingest/email.py) reads the SENDING mail-server
+  IP from the .eml Received chain (scans oldest→newest hop, first GLOBALLY-ROUTABLE IP wins;
+  private/reserved/doc ranges skipped via `is_global`; IPv6-aware; no network — the IP is already
+  in the bytes), stored on the SAME `Article.server_ip`/`ip_observed_at`/`server_ip_reason` columns
+  web articles use, so newsletters surface on the ooMap "Server IPs" layer + geolocate through the
+  offline DB-IP lookup FOR FREE (`server_locations` already reads all sources). RECIPIENT-SAFE by
+  construction (sender infrastructure, not the recipient — anonymize-at-ingest is unchanged) +
+  DEDUCED/honest (reason says "may be a relay"; a stripped chain stores NULL + a stated reason, never
+  a guess). tests/test_email_ingest.py (+3: public-hop-skips-private, IPv6/only-private/stripped,
+  ingest-stores-it). LESSON: `ipaddress.is_global` correctly rejects the RFC-5737/3849 DOCUMENTATION
+  ranges (203.0.113.x, 2001:db8::) — use real public IPs (8.8.8.8) in geolocation tests.
 - **KEYWORD STOPLIST — open-class review loop + residual gaps (2026-07-01; user DEFERRED the
   next round to a fresh session):** function-word garbage is SOLVED — #525 vendored full
   stopwords-iso lists for 18 managed languages, #528 added temporal-deictic adverbs (gestern/
