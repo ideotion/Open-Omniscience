@@ -85,15 +85,9 @@ Users of Open Omniscience claim:
 ## 🌍 Core Principles of Open Omniscience
 
 1. **Respect for Source Terms:** Always comply with the `robots.txt` directives and terms of service of scraped websites.
-2. **Rate Limiting:** The single fetch path (`EthicalFetcher`) enforces a per-host
-   minimum request interval and takes a per-host lock so only one request to a given
-   host is ever in flight at a time.
-   - Default: **1 request per second per host** — the `min_interval_s` in
-     `EthicalFetcher`, set from the `OO_FETCH_MIN_INTERVAL` environment variable.
-   - When a host's `robots.txt` publishes a **`Crawl-delay`**, it is honoured: the
-     effective interval is `max(min_interval, Crawl-delay)`.
-   - (Per-source `rate_limit_ms` in `sources.yml` is a data field, **not** wired into
-     the fetcher's interval; the two levers above are what actually throttle.)
+2. **Rate Limiting:** Implement and respect configurable delays between requests to avoid overloading servers.
+   - Default: **1 request per second per domain** (adjustable in `sources.yml`).
+   - Sensitive domains (e.g., government, small news sites): **3 seconds or more**. 
 3. **Transparency:** Fetch activity is recorded locally for the operator's own
    review — per-source/feed verdicts in `data/source_preflight.jsonl` and
    `data/feed_preflight.jsonl`, field-test outcomes in `data/field_test.jsonl`, and
@@ -106,9 +100,7 @@ Users of Open Omniscience claim:
    - Spam or harassment.
    - Illegal activities (e.g., hacking, copyright infringement).
    - Commercial exploitation without permission.
-6. **User-Agent identification:** Use a clear, identifiable User-Agent string. The bot
-   sends `OpenOmniscienceBot/{version} (+https://github.com/ideotion/Open-Omniscience; ethical research crawler)`
-   (protected/Tor-routed fetches send a generic browser UA instead, so they blend in).
+6. **User-Agent Rotation:** Use a clear, identifiable User-Agent string (e.g., `OpenOmniscience/1.0 (+https://github.com/ideotion/Open-Omniscience)`).
 7. **IP Throttling:** Avoid rapid-fire requests from a single IP. Respect server fair use.
 
 ---
@@ -120,7 +112,7 @@ Before scraping a new source, verify the following:
 - [ ] The `robots.txt` file allows scraping (check [https://{domain}/robots.txt](https://{domain}/robots.txt)).
 - [ ] The source does **not** require authentication or violate paywalls.
 - [ ] Rate limits are configured to avoid **>1 request per second** by default (adjust for sensitive domains).
-- [ ] The User-Agent string identifies Open Omniscience (`OpenOmniscienceBot/{version}`).
+- [ ] The User-Agent string identifies Open Omniscience (e.g., `OpenOmniscience/1.0`).
 - [x] Fetch verdicts are recorded locally (`data/*_preflight.jsonl`), surfaced
   on-click via the Settings debug bundle — never auto-transmitted.
 
@@ -128,11 +120,7 @@ Before scraping a new source, verify the following:
 
 ## 🚫 Do Not Scrape List
 
-This list is **operator guidance**, not a mechanically enforced denylist: the app does
-not ship a hard-coded block of these domains. The code-level guard is **robots.txt
-fail-closed** in the single `EthicalFetcher` path — a source whose `robots.txt` cannot
-be fetched or does not clearly allow the URL is refused, not scraped. Operators should
-still exercise judgement and avoid the categories below when adding sources:
+The following domains are **explicitly prohibited** from scraping due to legal, ethical, or technical restrictions:
 
 ### Paywalled Content
 
@@ -186,13 +174,7 @@ This is the maintainer protocol: click through the app, then hand over the bundl
   - Search histories
   - Personal data
 - **Local-Only:** All data remains on the user's machine. No cloud dependency by default.
-- **Encryption at rest (on by default):** New corpora are created **encrypted** with
-  SQLCipher, protected by a passphrase the user chooses at first launch. Running a
-  **plaintext** database is an explicit opt-out that requires typed confirmation of the
-  stated risk. There is **no recovery** for a forgotten passphrase (the corpus is
-  reconstitutable by re-scraping, so no recovery key / second decryption surface is
-  added). The threat model is a seized or copied machine that is **off** — not a
-  compromised, already-running session (see `SECURITY.md`).
+- **Optional Encryption:** Users may enable SQLite encryption (SQLCipher) for sensitive datasets.
 - **GDPR Compliance:** If scraping EU-based sources:
   - Anonymize personal data (e.g., names, emails) in stored content.
   - Respect the right to erasure (delete data upon request).
@@ -220,16 +202,16 @@ This is the maintainer protocol: click through the app, then hand over the bundl
 To prevent misuse and ensure ethical scraping, Open Omniscience implements the following safeguards:
 
 1. **Rate Limiting:**
-   - Default: 1 request per second per host (`min_interval_s`, from `OO_FETCH_MIN_INTERVAL`).
-   - A host's robots `Crawl-delay` is honoured when larger; one request per host at a time.
+   - Default: 1 request per second per domain.
+   - Configurable per source in `sources.yml`.
 
 2. **Robots.txt Compliance:**
    - Automatically checks `robots.txt` before scraping.
    - Respects `Disallow` directives.
 
-3. **User-Agent identification:**
-   - Sends `OpenOmniscienceBot/{version} (+https://github.com/ideotion/Open-Omniscience; ethical research crawler)`.
-   - Protected (Tor-routed) fetches send a generic browser UA so they are not singled out.
+3. **User-Agent Identification:**
+   - Uses `OpenOmniscience/1.0` by default.
+   - Can be customized in `configs/settings.yaml`.
 
 4. **Error Handling:**
    - Retries failed requests with exponential backoff.
@@ -286,7 +268,7 @@ This document will be **regularly reviewed and updated** to reflect:
 | Version | Date       | Changes                                                                 |
 |---------|------------|-------------------------------------------------------------------------|
 | 1.0     | 2026-05-07 | Initial version. Added Do Not Scrape List, audit logging, and GDPR notes. |
-| 1.1     | 2026-05-07 | Added User-Agent identification, IP throttling, and technical safeguards. |
+| 1.1     | 2026-05-07 | Added User-Agent rotation, IP throttling, and technical safeguards.     |
 
 ---
 
@@ -570,20 +552,6 @@ HTTP — no model weights or inference libraries are bundled or shipped.
 | Resource | License | Source |
 |----------|---------|--------|
 | Project Icon | MIT (original) | Included in project |
-| Bundled fonts — Inter, Outfit, Manrope, JetBrains Mono, Source Serif 4, Cantarell | SIL Open Font License 1.1 | `src/static/fonts/` (each with its `OFL-*.txt`) |
-
-### 📦 Bundled data & assets
-
-These non-code assets are vendored into the repository under their own licenses.
-Registered in `configs/external_artifacts.yml` (freshness/attribution tracked there).
-
-| Asset | License | Attribution / notes |
-|-------|---------|---------------------|
-| Fonts (Inter · Outfit · Manrope · JetBrains Mono · Source Serif 4 · Cantarell) | SIL OFL 1.1 | `src/static/fonts/*.woff2`, license text in `src/static/fonts/OFL-*.txt` |
-| Alpine.js v3.14.1 (GUI gallery) | MIT | Vendored locally, sha256-pinned, no CDN — `src/static/guis/vendor/alpine.min.js` |
-| DB-IP IP-to-Country Lite (offline geolocation) | CC BY 4.0 | **Attribution required:** "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0" — `src/geo/data/dbip_country_lite.csv.gz` |
-| stopwords-iso (multilingual stopword lists) | MIT | `configs/stopwords_iso/*.txt` |
-| Natural Earth (coastline + country polygons) | Public domain | `src/static/world_outline.json`, `src/static/world_countries.json` |
 
 ---
 

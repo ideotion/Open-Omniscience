@@ -1,227 +1,15 @@
 # Changelog
 
-> The repository’s **default branch is the active cycle branch** (currently `0.09`); each cycle branch `0.0N` produced release `0.0.N` — the consolidated `0.09` cycle produces **`0.1.0`, the first alpha** (see the README's version note).
+> The repository’s **default branch is the active cycle branch** (currently `0.09`); each cycle branch `0.0N` produces release `0.0.N`.
 
-## 0.1.0 — deeper sense-making (the 0.09 cycle, released 2026-07-02)
+## 0.09 — deeper sense-making (in progress)
 
-The `0.09` cycle delivered its slate (the `0.08` cycle below shipped in full):
+The `0.09` cycle is open (the `0.08` cycle below shipped in full, including the
+June 2026 live-test hardening batches). On its slate, from the parked queue:
 space-time convergence detection + the watch-rule attention engine, SQLCipher
-at-rest encryption with the additive-only + volumes+parity backup redesign, the
-corpora/analysis-window system, the omnibar global-search rework, agenda views +
-catalog depth, the ooMap world map, local AI (Settings → AI), newsletter import,
-official statistics with vintages, and a large slice of the i18n long tail — and
-ships as **0.1.0**, the first alpha. Known accepted limits are recorded in
-[`docs/product/RELEASE_0.1_PLAN.md`](product/RELEASE_0.1_PLAN.md) §4; the row-by-row
-release gate is [`docs/product/RELEASE_0.1_RC_GATE.md`](product/RELEASE_0.1_RC_GATE.md).
-See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) for what comes next.
-
-- **The world map, rebuilt: a choropleth you can read — with the temporal map
-  folded in.** The old dot-only "temporal map" is retired into one universal map
-  component (`ooMap`, the map sibling of `ooChart`/`ooSubtabs`) that now fills the
-  content area. Countries are **coloured by a measured dimension** on a theme-aware
-  scale — **sources**, **articles**, **keyword mentions**, or **mean tone** —
-  switchable from a picker *inside* the map, with zoom/pan/legend controls overlaid
-  Google-Maps-style. Granularity toggles between **country** and **continent**
-  aggregation (a weighted mean for tone, never a mean-of-means), and a **Places**
-  overlay plots the corpus's *mentioned* places as a distinct deduced layer. The
-  space-time **Signals** layer and its **time slider** live inside the same map now,
-  so nothing from the temporal map is lost. Honesty is built in: a country with no
-  data shows a **"no data" hatch** (never a guessed colour), sentiment rides a
-  **diverging** scale with the VADER-English-only caveat and an `n=` count, unlocated
-  data is bucketed and stated, and country/continent names localise ×12 (via the
-  browser's own CLDR for the ~200 territories). Counts only — no composite scores.
-
-- **One Export, one Import.** All the scattered backup and import surfaces collapsed
-  into two buttons in Settings → Data & backup: **Export / Back up…** opens one dialog
-  that inventories what you have (corpus · LLM models · offline maps · Wikipedia dumps,
-  with real counts and sizes), takes a destination folder and a passphrase, and streams
-  the encrypted volumes + parity plus the large public blobs; **Import…** scans a folder,
-  shows what it found (a volume backup, large data, newsletters, models) and restores it
-  **additively** — nothing you already have is ever overwritten. The old standalone
-  panels and the ~2 GiB-capped single-file backup *create* were retired (the legacy
-  single-file *restore* stays for migrating old archives). The dialogs' consent wording
-  (no-recovery passphrase, additive restore) ships in all 12 languages.
-
-- **Big backups that survive corruption: volumes + parity.** A journalist's corpus
-  can outgrow a single file — and the encrypted-backup path relied on **one
-  AES-GCM call**, which hard-caps at ~2 GiB, so at a multi-GB corpus a backup
-  simply **failed** ("data too long"). The large encrypted backup is now a **set of
-  independently-authenticated <600 MB volumes** plus a signed manifest, written with
-  a **streaming** cipher (no whole-archive-in-RAM, no size cap) so a truncated,
-  reordered or extended stream fails authentication instead of yielding a half-good
-  archive. On top of the volumes, **Reed-Solomon erasure parity** lets **any few
-  lost or corrupt volumes be rebuilt exactly** — including a corpus volume, so a
-  monolithic encrypted database genuinely survives partial corruption. Every rebuilt
-  volume is re-checked against its manifest hash before it's trusted; parity needs
-  numpy (the analysis extra) and degrades *loudly* to volumes-only when it's absent,
-  never a silent partial restore. Reachable from Settings → Data & backup as a
-  cancellable, resumable job.
-
-- **Back up your maps, models and Wikipedia dumps to a folder or drive.** Public,
-  re-downloadable blobs (offline-map regions, Ollama models, Wikipedia dumps) are
-  far too large to ride the encrypted single-file backup — so a new **large-data
-  backup** streams them file-by-file into a destination folder you pick (e.g. an
-  external drive), with a manifest, **checksum dedup** (an unchanged blob is never
-  re-copied), atomic writes, and a free-space preflight. Restore copies them back
-  **additively** (skip-if-present, never overwriting a differing local file), and
-  only *finished* downloads are ever included. It runs as a pausable, resumable
-  task-manager job. These blobs are copied **as-is** (not whole-file re-encrypted —
-  that's what makes 100 GB feasible); your private corpus stays in the encrypted
-  backup.
-
-- **Choose exactly what to back up and what to restore.** The full-backup and
-  restore panels gained a **"What to back up / restore"** fieldset — keep or exclude
-  **imported newsletters**, point to the separate models/large-data backups — so you
-  can, for example, back up a curated corpus *without* a batch of faulty `.eml`
-  imports and re-import clean ones later (restore is additive, so leaving the bad
-  ones out is the way to replace them). Local LLM models also get their own separate
-  `.oomodels` backup with checksum dedup, so a restore never re-pulls multi-GB
-  models. And a **"Remove imported newsletters"** maintenance action deletes exactly
-  the newsletter/mailbox articles (and every dependent row, including the search
-  index) from the *live* corpus, leaving the source rows so a clean re-import
-  re-attaches.
-
-- **Import a whole folder of newsletters — as a pausable job.** The `.eml` importer
-  now scales to a folder of tens of GB: instead of a browser upload capped at ~1,000
-  files, a **server-side folder-import job** walks the tree in bounded chunks,
-  commits in **batches** (not one fsync per message — much faster on a big folder),
-  shows honest progress + a rule-of-three ETA, appears in the task manager, and can
-  be **paused and resumed** — with an on-disk cursor so a resume survives an app
-  restart instead of rescanning from zero. Every message still goes through the same
-  anonymise-at-ingest path (recipient never stored, tracking links de-toxed and never
-  followed), and content-cleanup now strips leaked CSS/JS/comments and decodes HTML
-  entities from the stored body.
-
-- **Settings → AI: install Ollama, queue model downloads, tune the prompts.** The
-  read-only "Models" panel became a full **AI** subtab. When Ollama is absent it can
-  now **download, verify and run the official installer** — the long-standing "we
-  can't fabricate a per-OS checksum" blocker is gone because GitHub's releases API
-  **attests a SHA-256 digest per asset**, so the app verifies the script against that
-  attestation and *refuses to run* on a mismatch or when no digest is attested;
-  elevation is explicit (it runs only with passwordless privilege, else it shows you
-  the exact verified `sudo sh …` command). Model pulls are now a **queue** — one at a
-  time, the rest wait, each cancellable — with a downloads section showing real byte
-  progress. You can **edit the built-in prompts** (summary, translate, synthesis, and
-  the AI-keyword extractor) and define your own **custom extractors** (a managed list
-  of prompts, runnable on demand or on ingest), whose results are stored separately
-  and always labelled **"AI-derived — unreliable,"** never fed into the trusted
-  keyword index. Pulls and installs egress over clearnet via the Ollama process
-  (disclosed at consent) and are refused under airplane mode.
-
-- **Read, summarise, translate — and synthesise many articles.** The offline reader
-  gained **Summary** and **Translation** tabs (the latest result plus every earlier
-  one, with a generate-now control and a target-language picker), and **bulk
-  Summarize-all / Translate-all** runs over a whole matched set as a client-side
-  **queue** (one at a time, per-job cancel) that skips articles already in the target
-  language. Every result carries its full provenance — the exact prompt text and
-  model — and none of it is ever keyword-indexed. **Synthesis** moved out of a
-  cramped card into a proper window with a **transparent selection step** (you see
-  and pick which articles are included), per-claim citations, single-source flags,
-  and export to Markdown / a standalone page; it and the summaries write in the UI
-  language.
-
-- **Re-indexing your corpus is a background job you can pause.** The whole-corpus
-  re-index (Settings → *Clean up keywords* / *Re-index the whole corpus*) moved off
-  the browser (where closing the tab restarted it from article 0) into a **backend
-  job** with an on-disk cursor, so it survives a tab close or app restart and
-  **resumes from where it stopped**, and it appears in the task manager with
-  pause/resume. *Clean up keywords* now runs a **keyword-only** pass (skipping the
-  date/place/entity and sentiment work — about ⅔ less work) and reconciles each
-  keyword's language to its **signature-majority**, fixing the first-write-wins
-  language tags; commits batch for speed with a per-article fallback so a transient
-  lock never drops an article, and an FTS `optimize` runs after a bulk pass.
-
-- **Cleaner keywords across 18 languages.** The keyword engine leaked function words
-  in space-segmented languages; it now ships **full stopword lists (stopwords-iso)
-  for 18 managed languages**, adds temporal-deictic adverbs (yesterday / gestern /
-  вчера / mañana …) and platform furniture (podcast/newsletter/cookies), and a new
-  **open-class detector** (`analyze_keyword_log.py --generic-terms`) surfaces
-  corpus-ubiquitous words as *candidates for review* — proposed to a human, never
-  auto-swept, because adjectives and common nouns are dual-use (health/policy are
-  topics *and* noise). The two channels are honest about collisions: a language-scoped
-  list can't hide a word in another language, while a globalised one is
-  collision-checked. Junk clears on the next re-index.
-
-- **Keywords now show their translation.** A reader once saw top keywords in Arabic
-  they couldn't read; the engine's answer is to **translate, never blind** — every
-  keyword is shown regardless of language **with its translation** (`original →
-  translation`), which also surfaces trans-language concepts. Translations come from
-  **verified Wikidata-QID rings** (hundreds of concept rings, generated on a networked
-  machine and *hand-vetted* — mis-resolved journals/bands/place-names dropped) with a
-  clearly-flagged local-LLM fallback for keywords in no ring. Rings bind into keyword
-  families and super-groups, and a durable **concept super-group** scaffold gives
-  each umbrella concept cross-language reach by construction.
-
-- **Better search ranking — and a way to measure it honestly.** Full-text search now
-  ranks with **BM25F**, weighting a **title** match above a body match (reversible —
-  equal weights reproduce the old ranking). To keep quality changes evidence-based
-  rather than guessed, a native **IR-evaluation harness** (nDCG / MRR / Recall / MAP,
-  reported per-language and per-axis, never one blended score) can score the live
-  search against a **graded gold set** you supply, and A/B two weight sets — runnable
-  from the Diagnostics panel or a documented gold-set file. Conflation changes report
-  their recall gain and precision change *separately*, with the example sets, never
-  merged.
-
-- **Drill your corpus by who, where and when.** The analysis window's When/Where/Who
-  subtab became a **facet surface**: people, organisations, places and a new **by-year
-  temporal facet** render as clickable chips (counts only), and clicking a value
-  **drills** — spawning a refined analysis window over exactly the articles that
-  mention that entity, place or year. It reads the article-indexed mention tables
-  (never the slow keyword→articles join), stays deduced-never-confirmed, and adds no
-  score.
-
-- **Lead cards now flip — and "cards" are "Leads."** A briefing card is a sourced,
-  caveated *prompt to investigate*, so the user-facing name is now **Lead** (earlier
-  entries in this changelog call them "cards"). Each Lead is a **two-sided flip
-  card**: the front is the lead at a glance, and one click reveals the back — the
-  **caveat** (right beside the "Open corpus" action, so you read the warning as you go
-  to explore), the method, the "why am I seeing this," and the evidence. The caveat
-  stays informed-consent-by-layering: it's in the DOM by default, revealed by a flip,
-  never hidden behind a toggle.
-
-- **Eight experimental interfaces (Settings → GUIs).** An opt-in sandbox gallery
-  offers **eight alternative skins** of the same app — Aurora, Atlas, Command, Field,
-  Focus, Terminal, Canvas, Editorial — switchable live. Each is a scoped skin over the
-  one render logic (so no functionality is lost), inherits the active theme, and
-  **preserves every ethical guarantee by construction**: caveats visible, the one
-  network-consent popup, no scores, no outbound resources (the only JS dependency,
-  Alpine, is vendored locally and checksum-pinned — never a CDN). The long per-interface
-  rationale is in `docs/product/GUI_ALTERNATIVES.md`.
-
-- **A more balanced source catalog, with honest channel labels.** **224
-  live-verified non-English sources** were added toward a real language/region
-  equilibrium (no mono-stance region, managed languages only, all enabled off for
-  review), and in-app **Wikidata source discovery** proposes further candidates
-  (`enabled:false`, for you to review). Separately, each source now carries a
-  **content-provenance channel** — *newsletter*, *news*, *web-article*, *wiki*,
-  *statistics*, … — an **asserted fact** the ingest path knows, **never a credibility
-  judgement**. That fixed a real mislabel: imported newsletters had defaulted to
-  "news" across every facet and reading-diet view; they now correctly read
-  "newsletter."
-
-- **Optional in-memory rollups for a snappier Insights on a big corpus.** The
-  windowed keyword aggregations that froze Insights on a large corpus can now be
-  served from a **process-lifetime in-memory rollup** — **off by default**
-  (`OO_COLUMNAR_SERVE=1`), built once in the background, safe by construction (any
-  problem falls back to the identical live query), and never a plaintext file (the
-  encrypted store stays the source of truth). It's honest about what it serves (a
-  `basis` disclosure with the source and as-of). The *persisted* encrypted rollup
-  remains blocked on bundling per-OS crypto binaries — verified, not fabricated:
-  DuckDB ≥1.4 was tested and still refuses a securely-encrypted write without the
-  OpenSSL extension.
-
-- **Field-hardening from the live tests.** A cluster of reliability and honesty
-  fixes: airplane mode is now a **socket-level guarantee** — a process-wide guard
-  wraps the socket layer so, while the kill switch is engaged, *any* non-loopback
-  connection is refused **before** the real socket call, so no missed call site or
-  third-party library can egress (loopback and Unix sockets always pass; transparent
-  while online). A malformed IPv6 URL in a scraped page no longer aborts an article's
-  whole link-extraction (one bad `href` is skipped, the good links kept). The idle
-  **polling storm** was tamed (vitals back off to a 6 s chip-only cadence when the
-  panel is closed). The **`/favicon.ico` 404** on every page is gone (the brand eye is
-  served and declared). And several Home **Leads that lost their corpus on click** now
-  carry their exact article set, so clicking opens precisely the articles the Lead was
-  built from.
+at-rest encryption with the backup redesign, the corpora system (hand- and
+tag-selected), the global-search rework, agenda calendar views + catalog depth,
+and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
 
 - **Official statistics, with honest provenance and revisions.** Settings → *Statistics*
   now fetches published figures from documented machine endpoints (the World Bank API and
@@ -483,11 +271,7 @@ See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) for what comes next.
   language, and a date range — and re-runs every subtab at once (prefilled from your
   search; the groundwork for folding the Search tab in). The Mindmap subtab follows
   in a later slice. ×12 locales; guarded by
-  `test_ui_invariants` #22. *(Later in 0.09: this window stopped being a single
-  singleton — a search, keyword or Lead now **spawns its own named, closeable,
-  persisted analysis tab** (a multi-document workspace), and both the sidebar
-  **Analysis** tab and the separate **Search** tab were retired once the omnibar and
-  the spawned windows had absorbed their tools.)*
+  `test_ui_invariants` #22.
 
 - **Every outbound "source ↗" link opens the local preview first — everywhere.**
   Previously only Home-card evidence routed through the local link preview; search
@@ -536,10 +320,7 @@ See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) for what comes next.
   just organised under tabs in a real window instead of one long bubble. Title is
   now "Task manager". Next slices split Tasks → Active/Queue and add History +
   Sources/Schedule with per-job bandwidth/ETA controls. Guarded by
-  `test_ui_invariants` #20. (×12: "Task manager", "Tasks".) *(Later in 0.09: those
-  next slices shipped — Tasks split into **Active / Queue / Schedule**, downloads
-  gained per-job **resume** and reorder across dumps and offline-map regions, and the
-  standalone `/tasks` page was rebuilt into a Windows-Task-Manager-style window.)*
+  `test_ui_invariants` #20. (×12: "Task manager", "Tasks".)
 
 - **Home card families are now a lens, not a wall.** The briefing's card groups
   render a **vertical subtab bar** (the same universal `ooSubtabs` component, now
@@ -1073,10 +854,7 @@ See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) for what comes next.
   token, safety snapshot stated, import history visible. The legacy
   replace-style tools are demoted into a collapsed "older tools" block —
   available, never silently lost. ~36 chrome strings ×12 locales; UI contract
-  pinned by tests. *(Later in 0.09: this single encrypted file hit the AES-GCM
-  ~2 GiB ceiling on large corpora, so the **volumes + parity** large backup was
-  added for those (see the entry at the top); and the demoted replace-restore
-  "older tools" were **removed entirely** — restore is now additive-only.)*
+  pinned by tests.
 
 - **Network switch → airplane mode + online consent (field report #2 item 1).**
   The sidebar toggle is now ONE constant airplane glyph whose **fill is the

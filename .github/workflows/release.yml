@@ -27,29 +27,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Never publish a red tree (RC 2026-07-02): a tag used to build + publish with NO
-  # tests run at all -- combined with the default branch's superseded-cancelled run
-  # cadence, a tag on a broken tree would have shipped attested-broken artifacts.
-  # Same pinned actions + install recipe as ci.yml's blocking test job.
-  test:
-    name: Full suite gate (py3.13)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Set up Python 3.13
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.13"
-      - name: Install (core + analysis + dev)
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[analysis,dev]"
-      - name: Test (pytest)
-        run: python -m pytest -q
-
   release:
     name: Build + publish release
-    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write  # create the GitHub Release + upload assets

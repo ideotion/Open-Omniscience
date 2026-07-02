@@ -254,13 +254,10 @@
         _paintNetwork(false);
         _flashNet(false);
         _airplanePopup(t("Entering airplane mode"));
-        // Tentative until the POST that actually trips the kill switch resolves — don't
-        // claim requests are refused BEFORE that is true (honesty by construction).
-        toast(t("Going offline — cutting new network requests…"), "err");
+        toast(t("Offline — every new network request is refused. One in-flight request may finish."), "err");
         try {
           const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:false})});
           _paintNetwork(r.online);  // reconcile with the backend truth
-          if (!r.online) toast(t("Offline — every new network request is refused. One in-flight request may finish."), "err");
         } catch (e) {
           _paintNetwork(true);      // the backend refused -> we are NOT offline; revert honestly
           toast(e.message, "err");
@@ -3920,12 +3917,23 @@
         if (lab) lab.textContent = n > 0 ? `${n.toLocaleString()} ${t("imported newsletters in your corpus")}` : "";
       } catch (e) { panel.style.display = "none"; }
     }
-    function downloadBackupFirst(btn) {
-      // Route to the unified Export dialog (streams to a folder as volumes + parity —
-      // NO size limit). The old in-browser single-file encrypted download hit AES-GCM's
-      // ~2 GiB cap at real corpus size (the exact failure a 6 GB corpus hit live), so a
-      // "back up first" nudge before a destructive action must use the always-works path.
-      openUnifiedExport();
+    async function downloadBackupFirst(btn) {
+      // Same encrypted-backup path the uninstall flow uses (a real, restorable backup).
+      const pass = prompt("Choose a passphrase to encrypt the backup (you'll need it to restore):");
+      if (!pass) { toast("Backup cancelled.", "err"); return; }
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/safety/backup/encrypted",
+          {method: "POST", headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({passphrase: pass})});
+        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.detail || res.statusText); }
+        const blob = await res.blob(), url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "open-omniscience-backup.ooenc";
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        toast("Backup downloaded — save it, then you can remove the newsletters.", "ok");
+      } catch (e) { toast("Backup failed: " + e.message, "err"); }
+      finally { btn.disabled = false; }
     }
     async function removeImportedNewsletters(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -4009,23 +4017,22 @@
     }
 
     async function _uxLoadInventory() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const st = document.getElementById("ux-inv-status");
       const box = document.getElementById("ux-checklist");
-      st.textContent = t("Loading what's available…");
+      st.textContent = "Loading what's available…";
       try {
         const inv = await api("/api/backup/inventory");
         const c = inv.corpus || {}, b = c.breakdown || {};
         const opt = (id, label, d) =>
-          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "" : "disabled"}> ${label} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
         box.innerHTML =
-          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked disabled> ${esc(t("Corpus"))} <span class="muted">(${b.articles || 0} ${esc(t("articles"))} · ${b.sources || 0} ${esc(t("sources"))} · ${b.dates || 0} ${esc(t("dates"))} · ${b.keywords || 0} ${esc(t("keywords"))} · ${humanBytes(c.bytes || 0)})</span></label>` +
-          opt("models", t("LLM models"), inv.models || {}) +
-          opt("maps", t("Offline maps"), inv.maps || {}) +
-          opt("wiki", t("Wikipedia dumps"), inv.wiki || {});
-        st.textContent = t("What do you want to back up?");
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked disabled> Corpus <span class="muted">(${b.articles || 0} articles · ${b.sources || 0} sources · ${b.dates || 0} dates · ${b.keywords || 0} keywords · ${humanBytes(c.bytes || 0)})</span></label>` +
+          opt("models", "LLM models", inv.models || {}) +
+          opt("maps", "Offline maps", inv.maps || {}) +
+          opt("wiki", "Wikipedia dumps", inv.wiki || {});
+        st.textContent = "What do you want to back up?";
       } catch (e) {
-        st.textContent = t("Could not load the inventory — see console");
+        st.textContent = "Could not load the inventory — see console";
         console.error("ux inventory", e);
       }
     }
@@ -4050,11 +4057,10 @@
     }
 
     async function _uxRun(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dest = (document.getElementById("ux-dest").value || "").trim();
-      if (!dest) { toast(t("Enter a destination folder first."), "err"); return; }
+      if (!dest) { toast("Enter a destination folder first.", "err"); return; }
       const pass = document.getElementById("ux-pass").value || "";
-      if (!pass) { toast(t("Enter a passphrase for the encrypted corpus."), "err"); return; }
+      if (!pass) { toast("Enter a passphrase for the encrypted corpus.", "err"); return; }
       const prog = document.getElementById("ux-progress");
       const blobs = [];
       if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) blobs.push("models");
@@ -4062,17 +4068,17 @@
       if (document.getElementById("ux-c-wiki") && document.getElementById("ux-c-wiki").checked) blobs.push("wiki_dumps");
       btn.disabled = true;
       try {
-        prog.textContent = t("Backing up corpus (encrypted volumes + parity)…");
+        prog.textContent = "Backing up corpus (encrypted volumes + parity)…";
         await api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) });
-        await _uxPoll("/api/backup/v2/volumes/status", prog, t("corpus"));
+        await _uxPoll("/api/backup/v2/volumes/status", prog, "corpus");
         if (blobs.length) {
-          prog.textContent = t("Backing up maps / models / dumps…");
+          prog.textContent = "Backing up maps / models / dumps…";
           await api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: blobs }) });
-          await _uxPoll("/api/backup/folder/status", prog, t("large data"));
+          await _uxPoll("/api/backup/folder/status", prog, "large data");
         }
-        prog.textContent = t("Backup complete →") + " " + dest;
+        prog.textContent = "Backup complete → " + dest;
       } catch (e) {
-        prog.textContent = t("Backup failed — see console");
+        prog.textContent = "Backup failed — see console";
         console.error("ux run", e);
       }
       btn.disabled = false;
@@ -4094,43 +4100,41 @@
     }
 
     async function _uxImScan(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const src = (document.getElementById("ux-imp-src").value || "").trim();
-      if (!src) { toast(t("Enter a folder to scan."), "err"); return; }
+      if (!src) { toast("Enter a folder to scan.", "err"); return; }
       const st = document.getElementById("ux-imp-status");
       const box = document.getElementById("ux-imp-checklist");
-      st.textContent = t("Scanning…"); box.innerHTML = ""; btn.disabled = true;
+      st.textContent = "Scanning…"; box.innerHTML = ""; btn.disabled = true;
       try {
         const r = await api("/api/backup/import-scan?path=" + encodeURIComponent(src));
         const f = r.found || {};
         const rows = [];
-        if (f.corpus) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">(${esc(t("encrypted volumes — additive, nothing you already have is overwritten"))})</span></label>`);
+        if (f.corpus) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> Restore corpus backup <span class="muted">(encrypted volumes — additive)</span></label>`);
         if (f.blobs) {
           const b = f.blobs, parts = [];
           if (b.wiki) parts.push(`wiki ${b.wiki.count}`);
           if (b.maps) parts.push(`maps ${b.maps.count}`);
           if (b.models) parts.push(`models ${b.models.count}`);
-          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-blobs" checked> ${esc(t("Restore large data"))} <span class="muted">(${parts.join(" · ")})</span></label>`);
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-blobs" checked> Restore large data <span class="muted">(${parts.join(" · ")})</span></label>`);
         }
-        if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">(${f.newsletters.count}${f.newsletters.capped ? "+" : ""} .eml)</span></label>`);
+        if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> Import newsletters <span class="muted">(${f.newsletters.count}${f.newsletters.capped ? "+" : ""} .eml)</span></label>`);
         const notes = [];
-        if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + ` (${esc(f.source_csv.join(", "))})`);
-        if (f.legacy_backup) notes.push(esc(t("Legacy single-file backup found — restore via the old panel (being retired).")) + ` (${esc(f.legacy_backup.join(", "))})`);
-        box.innerHTML = rows.join("") || `<span class="muted">${esc(t("Nothing importable found in this folder."))}</span>`;
+        if (f.source_csv) notes.push(`Source CSV found (${f.source_csv.join(", ")}) — import it from the Sources panel for now.`);
+        if (f.legacy_backup) notes.push(`Legacy single-file backup found (${f.legacy_backup.join(", ")}) — restore via the old panel (being retired).`);
+        box.innerHTML = rows.join("") || `<span class="muted">Nothing importable found in this folder.</span>`;
         if (notes.length) box.innerHTML += `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>`;
         document.getElementById("ux-imp-pass-row").style.display = f.corpus ? "block" : "none";
         document.getElementById("ux-imp-run").disabled = rows.length === 0;
-        st.textContent = rows.length ? t("What do you want to import?") : "";
+        st.textContent = rows.length ? "What do you want to import?" : "";
         _uxImFound = f; _uxImSrc = src;
       } catch (e) {
-        st.textContent = t("Scan failed — see console");
+        st.textContent = "Scan failed — see console";
         console.error("ux import scan", e);
       }
       btn.disabled = false;
     }
 
     async function _uxImRun(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const src = _uxImSrc, f = _uxImFound || {};
       const prog = document.getElementById("ux-imp-progress");
       const cb = (id) => { const el = document.getElementById(id); return el && el.checked; };
@@ -4141,28 +4145,28 @@
       try {
         if (doCorpus) {
           const pass = document.getElementById("ux-imp-pass").value || "";
-          if (!pass) { toast(t("Enter the passphrase to restore the corpus."), "err"); btn.disabled = false; return; }
-          prog.textContent = t("Restoring corpus (additive)…");
+          if (!pass) { toast("Enter the passphrase to restore the corpus.", "err"); btn.disabled = false; return; }
+          prog.textContent = "Restoring corpus (additive)…";
           await api("/api/backup/v2/volumes/restore", { method: "POST", body: JSON.stringify({ src, passphrase: pass }) });
-          await _uxPoll("/api/backup/v2/volumes/status", prog, t("corpus"));
+          await _uxPoll("/api/backup/v2/volumes/status", prog, "corpus");
         }
         if (doBlobs) {
           const cats = [];
           if (f.blobs.wiki) cats.push("wiki_dumps");
           if (f.blobs.maps) cats.push("osm_regions");
           if (f.blobs.models) cats.push("models");
-          prog.textContent = t("Restoring large data…");
+          prog.textContent = "Restoring large data…";
           await api("/api/backup/folder/restore", { method: "POST", body: JSON.stringify({ src, categories: cats }) });
-          await _uxPoll("/api/backup/folder/status", prog, t("large data"));
+          await _uxPoll("/api/backup/folder/status", prog, "large data");
         }
         if (doEml) {
-          prog.textContent = t("Importing newsletters…");
+          prog.textContent = "Importing newsletters…";
           await api("/api/newsletters/import-folder", { method: "POST", body: JSON.stringify({ folder: src }) });
-          await _uxPoll("/api/newsletters/import-folder/status", prog, t("newsletters"));
+          await _uxPoll("/api/newsletters/import-folder/status", prog, "newsletters");
         }
-        prog.textContent = t("Import complete.");
+        prog.textContent = "Import complete.";
       } catch (e) {
-        prog.textContent = t("Import failed — see console");
+        prog.textContent = "Import failed — see console";
         console.error("ux import run", e);
       }
       btn.disabled = false;
@@ -9273,7 +9277,6 @@
         ${opts.placesOn ? `<span class="muted">○ ${esc(t("mentioned places (deduced)"))}</span>` : ""}
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
-        ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
         ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(TMAP_KINDS[k]?.l || k)}</span>`).join("") : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
         ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}${osm.areaCount ? " · " + osm.areaCount + " " + esc(t("country boundaries")) : ""}</span>` : ""}

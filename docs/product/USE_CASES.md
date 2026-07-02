@@ -1,12 +1,5 @@
 # Use-case scenarios — Open Omniscience v0.0.7
 
-> **UI names have moved (updated 2026-07-02).** This document predates the UI rework and
-> still uses older tab names (e.g. *Search*, *Collect*, *Sources*, *Wikipedia*, *Temporal
-> map*). The current sidebar is flat and the acquisition surfaces moved into **Settings**;
-> search is the top **omnibar** and analyses **spawn their own tabs**. For the authoritative,
-> current UI map see **`docs/USER_MANUAL.md`**. The workflows below remain valid; only the
-> labels differ.
-
 **No terminal required.** After a one-time install, everything below happens in the browser
 app at `http://127.0.0.1:8000` — clicking tabs, buttons and panels. The *only* command line
 in this whole document is the one-time installer; the installer then creates a desktop
@@ -23,12 +16,10 @@ today *because of* the v0.0.7 audit), or **[needs RM-xx]** (requires a roadmap i
 [ROADMAP.md](ROADMAP.md)). No scenario relies on the quarantined, fabricated "detection"
 features — where a persona wants those, the honest substitute or honest gap is stated.
 
-> **UI map** (the current flat left sidebar): Home · Insights · World map · Governments ·
-> Agenda · Indices · Commodities · Library. Search is the always-on **omnibar** at the top;
-> collection, sources and Wikipedia live under **Settings**; opening a term or corpus
-> **spawns its own Analysis tab**. A command palette (Ctrl/⌘-K) jumps anywhere. (Older names
-> used below — *Search*, *Collect*, *Sources*, *Wikipedia*, *Temporal map* — map onto these;
-> see `docs/USER_MANUAL.md`.)
+> **UI map** (the left sidebar, grouped by intention): **Investigate** — Home · Search ·
+> Insights · Temporal map · Wikipedia. **Collect** — Collect (ingest) · Sources · Markets ·
+> Agenda · Law. **Trust** — Library · Evidence & custody. **System** — Settings · Help.
+> A command palette (Ctrl/⌘-K) jumps anywhere.
 
 ---
 
@@ -51,7 +42,7 @@ d.o.o.", with quotable translations and defensible provenance.
    Boolean/phrase/parentheses search just works **[works today]**.
 4. Open any non-English article → **Translate** button (runs locally; the translation is
    saved alongside the article with its model + version) *(API: the LLM endpoints)*
-   **[works today, needs Ollama installed — from Settings → AI (in-app installer + model pull), or ollama.com]**.
+   **[works today, needs Ollama installed — offered by the installer]**.
 5. **Temporal map** tab → the dates *mentioned in* the articles appear as pins on the time
    slider; confirm the real ones with a click **[works today]**.
 6. On each key article → **Add to briefing**; open the **Briefing** drawer, write notes, and

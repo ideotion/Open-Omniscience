@@ -177,10 +177,7 @@ def init_db() -> None:
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
         ensure_keyword_counter_columns,
-        ensure_keyword_extractor_column,
         ensure_keyword_mention_source_column,
-        ensure_supergroup_ring_column,
-        ensure_wiki_text_columns,
     )
 
     # Denormalised keyword counters (+ their index, + one-time backfill) BEFORE the
@@ -209,15 +206,6 @@ def init_db() -> None:
     # article_analyses.prompt_text (exact prompt provenance) for stores created
     # before that column existed — same self-heal reason as the feed columns.
     ensure_article_analysis_columns(engine)
-
-    # 0.09-cycle columns that shipped WITHOUT a boot self-heal (upgrade audit,
-    # release 0.1): keywords.extractor (migration c3d4e5f6a7b8), the wiki
-    # living-source columns (b6c7d8e9f0a1 + c9d8e7f6a5b4) and the super-ring
-    # member marker (f4a5b6c7d8e9). Without these, a 0.0.8/early-0.09 store
-    # opened by 0.1 code raises "no such column" on the first ORM query.
-    ensure_keyword_extractor_column(engine)
-    ensure_wiki_text_columns(engine)
-    ensure_supergroup_ring_column(engine)
 
 
 def get_session() -> SASession:
