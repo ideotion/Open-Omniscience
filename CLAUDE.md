@@ -962,11 +962,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   **near-dup collapse** of wire-reprints into one fresh story (reuse `src/signals/near_dup.py`) — the
   biggest practical win; (c) **followed/faceted vs flat** — the corpus is strongly non-Anglophone (sv›en›
   el›sr…), so a tag/topic-scoped or per-type-balanced latest beats a flat firehose; (d) per-content-type
-  defaults; (e) dim-with-values vs hide (OPEN Q, rec: dim+toggle). HONEST CALIBRATION BLOCKER: no export
-  carries the per-article word_count DISTRIBUTION → an S0 article-length diagnostic is needed to set real
-  thresholds (only anchor today: ~190 content-words/article avg). The recency query itself is CHEAP
-  (`/api/articles` 17ms). Slices S0 diagnostic → S1 endpoint → S2 panel → S3 defaults/scope/toggle; FOLD
-  into the content-provenance + keyword-engine P4 facet track.
+  defaults; (e) dim-with-values vs hide (OPEN Q, rec: dim+toggle). **S0 SHIPPED 2026-07-02 (the
+  calibration blocker is cleared): `src/analytics/article_length.py:article_length_report` +
+  `GET /api/diagnostics/article-length` (+download) + a Settings→Diagnostics button + tests/test_article_length.py.**
+  Read-only, counts-only, NO score: the DISTRIBUTION (n/min/max/mean/median/p10-95 + fixed-bucket histogram)
+  of `word_count` AND cited-source count (outbound `link_type='external'` ArticleLink rows, zeros included,
+  internal ignored), broken down PER content-type (`Source.source_type`) and PER language — with the
+  unsegmented languages (zh/ja/th, from `analytics.managed.UNSEGMENTED`) FLAGGED per-language so a word-gate
+  is never blindly applied to them (the CJK/Thai catch). One article-row scan (a diagnostic run occasionally,
+  cost documented); the cited-source counts come from `article_links` (no article decrypt). The maintainer
+  runs this on the live corpus to pick honest per-content-type thresholds. REMAINING: S1 recency endpoint
+  (`created_at` order + min_words/min_sources + tag/content_type facets + script-aware length rule + near-dup
+  collapse) → S2 Home panel → S3 per-type defaults/followed-scope/dim-toggle. FOLD into the content-provenance
+  + keyword-engine P4 facet track. (Only anchor before S0: ~190 content-words/article avg.)
 - **FIELD DIAGNOSTICS 2026-06-27 — measured findings (full record in `docs/FUTURE_DEVELOPMENTS.md` →
   "Field diagnostics 2026-06-27"):** from the maintainer's exports on a live 2,259-article / 99,662-kw /
   179,395-mention corpus (2-core 4.4GB Qubes, encrypted, columnar in-memory). ENGINE HEALTHY (selftest
