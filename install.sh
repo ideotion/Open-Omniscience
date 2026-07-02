@@ -112,6 +112,7 @@ component_mb() {
         core)        echo 55 ;;   # the always-installed spine
         analysis)    echo 90 ;;   # numpy/pandas/scipy/scikit-learn/statsmodels/nltk…
         compression) echo 7  ;;   # zstandard + lz4
+        columnar)    echo 25 ;;   # duckdb (the in-memory rollup serve for large-corpus analytics)
         llm)         echo 1  ;;   # python extra only; Ollama + model are separate (see below)
         nlp)         echo 60 ;;   # spaCy wheels (a language model is fetched separately)
         *)           echo 0  ;;
@@ -170,10 +171,13 @@ print_download_estimate() {
 CHOSEN_EXTRAS=""
 choose_components() {
     # Seamless install (maintainer 2026-06-20): NO component menu, NO prompts. Install
-    # the sensible default set -- Core (always) + Analysis + Compression. Power users
-    # and CI can still override with OO_COMPONENTS="...". Ollama / local-LLM provisioning
-    # is never offered here; it lives entirely in the app's Settings -> AI tab.
-    CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression}"
+    # the sensible default set -- Core (always) + Analysis + Compression + Columnar.
+    # Columnar (duckdb) is included by default (field ask 2026-07-02) so the in-memory
+    # rollup serve engages AUTOMATICALLY on a large corpus -- without duckdb the windowed
+    # analytics can only scan the multi-GB mentions table and freeze. Power users and CI
+    # can still override with OO_COMPONENTS="...". Ollama / local-LLM provisioning is
+    # never offered here; it lives entirely in the app's Settings -> AI tab.
+    CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression,columnar}"
 }
 
 # ask_yn "question" default(y/n) -> returns 0 for yes
@@ -696,9 +700,9 @@ main() {
     case "${1:-}" in
         ""|--menu|--interactive) run_interactive ;;
         --template)              install_template ;;
-        --appvm)                 OO_UNATTENDED=1 OO_COMPONENTS="analysis,compression" OO_MAKE_LAUNCHER="${OO_MAKE_LAUNCHER:-1}" \
-                                 UNATTENDED=1 do_install "analysis,compression" ;;
-        --unattended)            UNATTENDED=1; do_install "${OO_COMPONENTS-analysis,compression}" ;;
+        --appvm)                 OO_UNATTENDED=1 OO_COMPONENTS="analysis,compression,columnar" OO_MAKE_LAUNCHER="${OO_MAKE_LAUNCHER:-1}" \
+                                 UNATTENDED=1 do_install "analysis,compression,columnar" ;;
+        --unattended)            UNATTENDED=1; do_install "${OO_COMPONENTS-analysis,compression,columnar}" ;;
         --check|--doctor)        do_check ;;
         --uninstall)             do_uninstall ;;
         -h|--help)               usage ;;
