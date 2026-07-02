@@ -2931,6 +2931,7 @@
 
     // ---- Countries subtab ---- //
     async function loadGovCountries() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (_govCountriesInit) return;
       _govCountriesInit = true;
       const sel = $("gov-country"); if (!sel) return;
@@ -2956,6 +2957,7 @@
       loadGovCountry(codes[0]);
     }
     async function loadGovCountry(iso) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("gov-country-data"); if (!host || !iso) return;
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       let d; try { d = await api("/api/governments/country/" + encodeURIComponent(iso)); }
@@ -2983,6 +2985,7 @@
 
     // ---- Map subtab ---- //
     async function loadGovMap() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sel = $("gov-map-ind"); if (!sel) return;
       if (!_govMapInit) {
         _govMapInit = true;
@@ -3005,6 +3008,7 @@
       renderGovMap();
     }
     async function renderGovMap() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("gov-map-host"); if (!host) return;
       const sel = $("gov-map-ind"), ysel = $("gov-map-year");
       const indicator = sel && sel.value, year = ysel && ysel.value;
@@ -3041,6 +3045,7 @@
     }
 
     async function govLoadStandard(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (typeof ensureOnline === "function" && !(await ensureOnline())) return;  // the ONE consent
       const old = btn && btn.textContent;
       if (btn) { btn.disabled = true; btn.textContent = t("Loading…"); }
@@ -4258,6 +4263,12 @@
       }
       const summaries = [];  // {title, plan?} | {title, lines?}
       btn.disabled = true;
+      // The import runs as background jobs (visible + pausable in the task manager);
+      // offer to leave the modal and keep working while it finishes.
+      const bgBtn = document.getElementById("ux-imp-bg");
+      if (bgBtn) bgBtn.style.display = "";
+      const dlg = document.getElementById("ux-import");
+      const backgrounded = () => dlg && !dlg.open;  // user closed the modal to keep working
       try {
         // Each volume set lives in its OWN folder (the scan returns the exact dir the
         // manifest is in) — restore each with THAT path, never the scanned parent.
@@ -4293,14 +4304,36 @@
         if (bar) bar.style.display = "none";
         prog.innerHTML = `<b>${esc(t("Import complete."))}</b>`;
         _renderImportSummary(summaryEl, summaries);
+        // If the user left the modal to keep working, tell them it finished (the
+        // summary stays in the dialog — reopening Import shows it).
+        if (backgrounded()) toast(t("Import complete."));
       } catch (e) {
         if (bar) bar.style.display = "none";
         // HONEST failure: show the real backend detail, not "see console".
         prog.innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message || e)}</span>`;
         if (summaries.length) _renderImportSummary(summaryEl, summaries);  // show what DID import
+        if (backgrounded()) toast(t("Import failed:") + " " + (e.message || e), "err");
         console.error("ux import run", e);
+      } finally {
+        if (bgBtn) bgBtn.style.display = "none";
       }
       btn.disabled = false;
+    }
+
+    // Leave the (modal) Import dialog while the import keeps running as background
+    // jobs — the user asked to keep working meanwhile. The async _uxImRun above is not
+    // aborted by closing the dialog, so the sequence continues and finishes; the task
+    // manager shows every job (and pauses/resumes the pausable ones — folder + .eml;
+    // a volume-corpus merge is atomic, so it runs to completion). A toast reports the
+    // outcome. (Reloading the page would stop the client-side sequencing — only the
+    // job currently on the server finishes — so this is "keep working", not "survive a
+    // reload"; server-side resumable sequencing is a later step.)
+    function _uxImBackground() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dlg = document.getElementById("ux-import");
+      if (dlg && dlg.open) dlg.close();
+      toast(t("Import continues in the background — watch it in the task manager."));
+      if (typeof openTaskManager === "function") openTaskManager();
     }
 
     // Render "what was imported" as a prominent, honest success view (maintainer
@@ -8797,6 +8830,7 @@
     // engine). `row` is the keyword row; `t` here is the outer i18n function.
     function kwTransHtml(row) {
       if (!row || !row.translation) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return ` <span class="kw-trans" title="${esc(t("Verified translation (cross-language concept)."))}">→ ${esc(row.translation)}</span>`;
     }
     // The TENTATIVE LLM translation (Phase 4 fallback): shown ONLY when no verified
@@ -8804,6 +8838,7 @@
     // presented as fact.
     function kwTentativeHtml(row) {
       if (!row || row.translation || !row.tentative) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return ` <span class="kw-trans kw-tentative" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">≈ ${esc(row.tentative)}</span>`;
     }
     // Analysis-window Keywords subtab render + the Phase-4 tentative-fill action.
@@ -8812,6 +8847,7 @@
       return !tm.translation && !tm.tentative && (tm.language || "").toLowerCase() !== uiLangCode();
     }
     function anRenderKwChips() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const d = _anKwData, kw = _anKwHost;
       if (!kw) return;
       if (!d || !d.terms || !d.terms.length) {
@@ -8836,6 +8872,7 @@
         + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`;
     }
     async function anFillTentative() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const d = _anKwData; if (!d || !d.terms) return;
       const items = d.terms.filter(_anKwNeedsTentative).map(tm => ({term: tm.term, language: tm.language}));
       if (!items.length) return;
@@ -8915,6 +8952,7 @@
     // early-corpus caveat travel from the API. Additive to the single-window view.
     let _trendWindowsData = null;  // last /trending-windows payload (the enlarge dialog reads its series)
     async function loadTrendWindows() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("trd-windows"); if (!box) return;
       const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
       try {

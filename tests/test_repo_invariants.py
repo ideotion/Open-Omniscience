@@ -4199,6 +4199,48 @@ def test_startup_warms_the_insights_cache():
     )
 
 
+def test_no_app_function_calls_i18n_t_without_binding_it():
+    """Recurring bug class (Library tag-click; the analysis keyword subtab; Governments
+    + Trends): a function calls the i18n helper t("…") but never binds a local
+    `const t = …`, so it throws "t is not defined" at runtime. There is no module-level
+    `t` — every function must alias it. Scan app.js for the pattern and fail on any
+    function that calls t("…") without binding t (as a const/let/var or a parameter),
+    excluding the legitimate `terms.map(t => …)` loop-variable use."""
+    import re
+
+    src = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    lines = src.split("\n")
+    func_re = re.compile(r"^\s*(async\s+)?function\s+(\w+)\s*\(([^)]*)\)")
+    offenders: list[str] = []
+    i = 0
+    while i < len(lines):
+        m = func_re.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        name, params = m.group(2), m.group(3)
+        depth, body, j, started = 0, [], i, False
+        while j < len(lines):
+            depth += lines[j].count("{") - lines[j].count("}")
+            body.append(lines[j])
+            if "{" in lines[j]:
+                started = True
+            if started and depth <= 0:
+                break
+            j += 1
+        text = "\n".join(body)
+        calls_t = re.search(r"[^\w.]t\((?![\s]*\))[\"'`]", text)  # an i18n call t("…")
+        binds_t = re.search(r"\b(const|let|var)\s+t\s*=", text) or re.search(r"\bt\b", params)
+        loopvar = re.search(r"\(\s*t\s*=>", text) or re.search(r"\bfor\b.*\bt\b", text)
+        if calls_t and not binds_t and not loopvar:
+            offenders.append(f"{name} (line {i + 1})")
+        i = j + 1
+    assert not offenders, (
+        "these app.js functions call i18n t(\"…\") without binding a local t "
+        "(will throw 't is not defined'): " + ", ".join(offenders)
+    )
+
+
 def test_keyword_filter_shows_the_builtin_stoplist():
     """Field ask 2026-07-02: the Settings keyword filtering should let users SHOW the
     current filter-out list. The manual excluded list was already editable, but the
