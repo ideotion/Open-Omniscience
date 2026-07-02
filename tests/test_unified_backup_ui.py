@@ -46,6 +46,10 @@ def test_dialogs_have_a_real_progress_bar_and_import_summary():
     # no total is known (the volume engine streams) — never a fabricated number
     assert "_uxPaintBar" in _APP and "_uxProgressView" in _APP
     assert "removeAttribute(\"value\")" in _APP  # indeterminate = no fake %
+    # the import can be sent to the background (jobs keep running, task manager shows
+    # them) so the user isn't trapped in the modal — field ask 2026-07-02
+    assert 'id="ux-imp-bg"' in _HTML and "_uxImBackground" in _APP
+    assert "openTaskManager" in _APP
     # a rule-of-three time-remaining ESTIMATE on the long byte-based copies (folder
     # restore) — the maintainer's ask: humans prefer an approximate ETA to none. It is
     # marked approximate ("~ … left") and computed from wall-clock elapsed × remaining.

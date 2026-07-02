@@ -4258,6 +4258,12 @@
       }
       const summaries = [];  // {title, plan?} | {title, lines?}
       btn.disabled = true;
+      // The import runs as background jobs (visible + pausable in the task manager);
+      // offer to leave the modal and keep working while it finishes.
+      const bgBtn = document.getElementById("ux-imp-bg");
+      if (bgBtn) bgBtn.style.display = "";
+      const dlg = document.getElementById("ux-import");
+      const backgrounded = () => dlg && !dlg.open;  // user closed the modal to keep working
       try {
         // Each volume set lives in its OWN folder (the scan returns the exact dir the
         // manifest is in) — restore each with THAT path, never the scanned parent.
@@ -4293,14 +4299,36 @@
         if (bar) bar.style.display = "none";
         prog.innerHTML = `<b>${esc(t("Import complete."))}</b>`;
         _renderImportSummary(summaryEl, summaries);
+        // If the user left the modal to keep working, tell them it finished (the
+        // summary stays in the dialog — reopening Import shows it).
+        if (backgrounded()) toast(t("Import complete."));
       } catch (e) {
         if (bar) bar.style.display = "none";
         // HONEST failure: show the real backend detail, not "see console".
         prog.innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message || e)}</span>`;
         if (summaries.length) _renderImportSummary(summaryEl, summaries);  // show what DID import
+        if (backgrounded()) toast(t("Import failed:") + " " + (e.message || e), "err");
         console.error("ux import run", e);
+      } finally {
+        if (bgBtn) bgBtn.style.display = "none";
       }
       btn.disabled = false;
+    }
+
+    // Leave the (modal) Import dialog while the import keeps running as background
+    // jobs — the user asked to keep working meanwhile. The async _uxImRun above is not
+    // aborted by closing the dialog, so the sequence continues and finishes; the task
+    // manager shows every job (and pauses/resumes the pausable ones — folder + .eml;
+    // a volume-corpus merge is atomic, so it runs to completion). A toast reports the
+    // outcome. (Reloading the page would stop the client-side sequencing — only the
+    // job currently on the server finishes — so this is "keep working", not "survive a
+    // reload"; server-side resumable sequencing is a later step.)
+    function _uxImBackground() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const dlg = document.getElementById("ux-import");
+      if (dlg && dlg.open) dlg.close();
+      toast(t("Import continues in the background — watch it in the task manager."));
+      if (typeof openTaskManager === "function") openTaskManager();
     }
 
     // Render "what was imported" as a prominent, honest success view (maintainer
