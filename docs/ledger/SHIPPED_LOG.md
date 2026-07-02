@@ -2865,3 +2865,22 @@
   Settings button uses `per_lang=1000000` (one ~15 MB archive of all 461k). tests/
   test_keyword_log_zip.py::test_keyword_zip_paging_exports_more_and_walks_the_full_set
   (page 1≠page 2 disjoint, has_more, full export = whole corpus).
+
+- **DATE-EXTRACTOR F4 SLICES A+B 2026-07-02 (PRs #542/#544/#545; entries in shipped.csv):**
+  two reusable facts. (1) **VERIFY-BEFORE-PUSH under fast-merge:** the maintainer merged
+  #542 while adversarial verification was still RUNNING — six real defects (duben-village,
+  cross-month ranges, gengō year-0, sentence-boundary range traps…) landed on 0.09 and needed
+  a follow-up (#544). The working rule since: parallel skeptic agents (distinct lenses:
+  fabrication/collision, regression/lockstep, robustness) must COMPLETE and their reproducers
+  must be pinned as tests BEFORE `git push` — applied to slice B (#545), where two skeptic
+  rounds each refuted the first cut pre-push (kolovoz="roadway" in Croatian traffic prose,
+  지난해 3-syllable deictic, 号 classifier nouns 11号线/11号楼, citation-shape Agosti/Machi/
+  Marso, 년형 model-year, digit-glued numerals). (2) **CJK REGEX BOUNDARY FACT:** ideographs
+  are `\w` in Python `re`, so `\b` NEVER fires between an ideograph and an ASCII digit —
+  "报道于2024-06-11发布" was invisible to both the extractor and the diagnostics probe (the
+  field coverage numbers structurally undercounted). The fix is explicit digit-safe
+  lookarounds (`(?<!\d)(?<![A-Za-z_])` … `(?!\d)(?![A-Za-z_])`) that block the SAME ASCII
+  neighbours `\b` blocked while letting ideograph-glued forms match; keep the digit rule for
+  ALL scripts so a date is never carved out of a longer mixed-numeral. COROLLARY (lockstep
+  rule): every extractor vocabulary/pattern gain MUST land in `datediag.py` the same commit,
+  or the probe reports phantom gaps / undercounts (MONTH_VOCAB_LANGS had 5 stale omissions).

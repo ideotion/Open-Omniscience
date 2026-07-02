@@ -511,6 +511,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     garbage (nearly re-targeted German function words already fixed by #525); the user's real
     exported logs sit in the session scratchpad (`fixed_log.zip`) and are the way to measure a
     batch's true impact (e.g. #530 = 43 rows / 20,747 mentions).
+  - **VERIFY-BEFORE-PUSH under fast-merge (2026-07-02, #542→#544):** the maintainer merged a
+    date-extractor PR while adversarial verification was still RUNNING — six real defects landed
+    on 0.09 and needed a follow-up. Rule: parallel skeptic agents (distinct lenses) must COMPLETE
+    and their reproducers must be pinned as tests BEFORE `git push` — "draft PR" is not a review
+    gate here. Applied to #545, where two pre-push skeptic rounds each refuted the first cut.
+  - **CJK REGEX BOUNDARY FACT (2026-07-02, #545):** ideographs are `\w` in Python `re`, so `\b`
+    NEVER fires between an ideograph and an ASCII digit — glued dates ("报道于2024-06-11发布")
+    were invisible to the extractor AND the diagnostics probe (field coverage undercounted).
+    Fix = explicit digit-safe lookarounds (`(?<!\d)(?<![A-Za-z_])`) that block the same ASCII
+    neighbours `\b` blocked; keep the digit rule for ALL scripts (never carve a date out of a
+    longer numeral). COROLLARY lockstep rule: every extractor vocabulary/pattern gain lands in
+    `datediag.py` the SAME commit, or the probe reports phantom gaps.
 
 ## Open queue (when maintainer says proceed)
 - **V0.1 RELEASE EXECUTION (maintainer ruled 2026-07-02, verbatim "proceed with everything
