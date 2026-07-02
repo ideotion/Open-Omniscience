@@ -65,6 +65,44 @@ def test_volume_manifest_name_stays_in_sync():
     assert _VOL_MANIFEST == MANIFEST_NAME
 
 
+def test_folder_manifest_name_stays_in_sync():
+    # same drift guard for the large-data folder-backup manifest name
+    from src.backup.folder_backup import MANIFEST_NAME as FOLDER_MANIFEST
+    from src.backup.import_scan import _FOLDER_MANIFEST
+
+    assert _FOLDER_MANIFEST == FOLDER_MANIFEST
+
+
+def test_folder_backup_manifest_anchors_blob_detection(tmp_path):
+    # Field report 2026-07-02: wiki/maps/models "not recognised" on import. A completed
+    # large-data backup writes oo-folder-backup.json listing its categories; anchoring on
+    # it recovers a category the plain dir-name walk missed (here: models has no on-disk
+    # dir, but the manifest declares it — so the user still sees + can act on it).
+    import json
+
+    _touch(tmp_path / "wiki_dumps" / "enwiki.bz2", b"x" * 500)
+    (tmp_path / "oo-folder-backup.json").write_text(
+        json.dumps(
+            {
+                "schema": "oo-folder-backup-1",
+                "categories": {
+                    "wiki_dumps": [{"rel": "enwiki.bz2", "size": 500}],
+                    "osm_regions": [],
+                    "models": [{"rel": "blobs/sha256-a", "size": 900}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    f = scan_import_folder(tmp_path)["found"]
+    # wiki measured on disk; models recovered from the manifest; empty osm ignored
+    assert f["blobs"]["wiki"]["count"] == 1
+    assert f["blobs"]["models"]["count"] == 1 and f["blobs"]["models"]["bytes"] == 900
+    assert "maps" not in f["blobs"]
+    br = {r["root"]: r for r in f["blob_roots"]}[str(tmp_path)]
+    assert set(br["categories"]) == {"wiki_dumps", "models"}
+
+
 # --------------------------------------------------------------------------- #
 #  Recursive discovery — the field report: a folder of MIXED backups where each
 #  backup type sits in its OWN subfolder. Every kind must still be found.

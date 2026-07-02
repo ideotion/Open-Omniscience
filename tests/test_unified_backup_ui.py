@@ -46,6 +46,11 @@ def test_dialogs_have_a_real_progress_bar_and_import_summary():
     # no total is known (the volume engine streams) — never a fabricated number
     assert "_uxPaintBar" in _APP and "_uxProgressView" in _APP
     assert "removeAttribute(\"value\")" in _APP  # indeterminate = no fake %
+    # a rule-of-three time-remaining ESTIMATE on the long byte-based copies (folder
+    # restore) — the maintainer's ask: humans prefer an approximate ETA to none. It is
+    # marked approximate ("~ … left") and computed from wall-clock elapsed × remaining.
+    assert "_uxRuleOfThree" in _APP
+    assert "elapsed * (1 - frac) / frac" in _APP
     # the import summary reuses the merge-plan table (new / already-present / conflicts)
     assert "_renderImportSummary" in _APP and "_v2PlanTable" in _APP
     # and leads with a prominent aggregate "backup successful" view: imported +

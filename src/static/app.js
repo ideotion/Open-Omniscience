@@ -4030,11 +4030,23 @@
       }
     }
 
-    function _uxEta(secs, t) {
+    function _uxEta(secs, t, approx) {
       if (secs == null) return "";
       const m = Math.round(secs / 60);
       const txt = m >= 1 ? `${m} ${t("min")}` : `${Math.max(1, Math.round(secs))} ${t("s")}`;
-      return ` · ${txt} ${t("left")}`;
+      // "~" (and the word "estimate") signals a rule-of-three guess, not a promise —
+      // the maintainer's ask: humans prefer an approximate number to none at all.
+      return ` · ${approx ? "~" : ""}${txt} ${t("left")}`;
+    }
+    // A rule-of-three time-remaining estimate from wall-clock elapsed and the fraction
+    // done: remaining ≈ elapsed × (1 − frac) / frac. Deliberately simple + honest — it
+    // assumes a steady rate and says so ("~ … left"). Held back until enough has run
+    // (a few seconds AND ≥3% done) so the first wild guess never shows.
+    function _uxRuleOfThree(startMs, frac) {
+      if (frac == null || frac <= 0.03 || frac >= 1) return null;
+      const elapsed = (Date.now() - startMs) / 1000;
+      if (elapsed < 3) return null;
+      return elapsed * (1 - frac) / frac;
     }
     // Honest progress view for a manager status. Managers that report a TOTAL
     // (folder bytes, newsletter files) give a real %; the volume engine streams and
@@ -4053,14 +4065,17 @@
       if (kind === "newsletters") {
         const total = s.files_total || 0, done = s.files_done || 0;
         const pct = total ? (s.percent != null ? s.percent : Math.round(100 * done / total)) : null;
-        return { pct, indeterminate: !total, text: `${done}/${total || "?"} ${esc(t("files"))}${esc(_uxEta(s.eta_seconds, t))}` };
+        return { pct, indeterminate: !total, text: `${done}/${total || "?"} ${esc(t("files"))}${esc(_uxEta(s.eta_seconds, t, true))}` };
       }
       if (kind === "folder") {
         const bt = p.bytes_total || 0, bc = p.bytes_copied || 0;
         const pct = bt ? Math.round(100 * bc / bt) : null;
         const verb = s.mode === "restore" ? esc(t("restored")) : esc(t("copied"));
         const n = s.mode === "restore" ? (p.restored || 0) : (p.copied || 0);
-        return { pct, indeterminate: !bt, text: `${n} ${verb}, ${p.skipped || 0} ${esc(t("skipped"))}` };
+        // frac drives the client-side rule-of-three ETA in _uxPoll (bytes are the honest
+        // size measure for wiki/maps/models — the big, slow copies the user waits on).
+        return { pct, indeterminate: !bt, frac: bt ? bc / bt : null,
+          text: `${n} ${verb}, ${p.skipped || 0} ${esc(t("skipped"))}` };
       }
       // volumes: no total -> indeterminate, phase-driven
       let extra = "";
@@ -4079,6 +4094,7 @@
     function _uxPoll(url, kind, ui) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const prefix = ui.prefix ? `${esc(ui.prefix)}: ` : "";
+      const startMs = Date.now();
       return new Promise((resolve, reject) => {
         const tick = async () => {
           let s;
@@ -4086,7 +4102,11 @@
           const state = s.state || "";
           const view = _uxProgressView(kind, s, t);
           _uxPaintBar(ui.bar, view);
-          if (ui.label) ui.label.innerHTML = prefix + view.text;
+          // A client-side rule-of-three ETA for byte/fraction-based jobs (folder copy);
+          // the newsletter job carries its own backend eta_seconds already in view.text.
+          const etaSec = _uxRuleOfThree(startMs, view.frac);
+          const etaTxt = etaSec != null ? _uxEta(etaSec, t, true) : "";
+          if (ui.label) ui.label.innerHTML = prefix + view.text + esc(etaTxt);
           if (state === "done" || state === "paused") return resolve(s);  // paused = stopped, not a hang
           if (state === "error" || state === "cancelled") {
             // Surface the REAL backend error (the volume manifest/checksum message),

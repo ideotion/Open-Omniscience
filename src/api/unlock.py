@@ -211,12 +211,17 @@ def _finish_unlock() -> None:
     import threading
 
     from src.api.main import _run_startup_upkeep, init_db
-    from src.api.startup_status import set_startup
+    from src.api.startup_status import mark_queryable, set_startup
     from src.database.session import dispose_engine
 
     dispose_engine()  # drop any pre-unlock failed pool state
-    set_startup("running", "opening the database")
+    set_startup("running", "opening the database", queryable=False)
     init_db()  # schema self-heal — fast on an existing store; makes the DB queryable
+    # The corpus is now fully usable — everything the background thread does below
+    # (ANALYZE, catalog seed-dedup, COUNTs, cache warm) is best-effort optimization.
+    # Tell the unlock page it may enter the Console NOW rather than wait out the whole
+    # serial upkeep on a large encrypted corpus (field report: "unlocking takes ages").
+    mark_queryable()
 
     # Engage airplane mode synchronously so there is never a window where the corpus
     # is unlocked but the socket-level guard is not yet installed.
