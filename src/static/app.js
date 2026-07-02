@@ -4030,19 +4030,69 @@
       }
     }
 
-    function _uxPoll(url, prog, label) {
+    function _uxEta(secs, t) {
+      if (secs == null) return "";
+      const m = Math.round(secs / 60);
+      const txt = m >= 1 ? `${m} ${t("min")}` : `${Math.max(1, Math.round(secs))} ${t("s")}`;
+      return ` · ${txt} ${t("left")}`;
+    }
+    // Honest progress view for a manager status. Managers that report a TOTAL
+    // (folder bytes, newsletter files) give a real %; the volume engine streams and
+    // knows no total ahead of time, so we show an INDETERMINATE bar + the phase + how
+    // many volumes are done — never a fabricated/animated-fake percentage.
+    function _uxVolPhase(phase, mode, t) {
+      const back = { starting: t("Preparing…"), building: t("Building encrypted volumes…"),
+        volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"), done: t("Done.") };
+      const rest = { verifying: t("Verifying volumes…"), reassembling: t("Reassembling the archive…"),
+        merging: t("Merging (additive)…"), done: t("Done.") };
+      const m = (mode === "restore" ? rest : back);
+      return m[phase] || phase || (mode === "restore" ? t("Restoring…") : t("Backing up…"));
+    }
+    function _uxProgressView(kind, s, t) {
+      const p = s.progress || {};
+      if (kind === "newsletters") {
+        const total = s.files_total || 0, done = s.files_done || 0;
+        const pct = total ? (s.percent != null ? s.percent : Math.round(100 * done / total)) : null;
+        return { pct, indeterminate: !total, text: `${done}/${total || "?"} ${esc(t("files"))}${esc(_uxEta(s.eta_seconds, t))}` };
+      }
+      if (kind === "folder") {
+        const bt = p.bytes_total || 0, bc = p.bytes_copied || 0;
+        const pct = bt ? Math.round(100 * bc / bt) : null;
+        const verb = s.mode === "restore" ? esc(t("restored")) : esc(t("copied"));
+        const n = s.mode === "restore" ? (p.restored || 0) : (p.copied || 0);
+        return { pct, indeterminate: !bt, text: `${n} ${verb}, ${p.skipped || 0} ${esc(t("skipped"))}` };
+      }
+      // volumes: no total -> indeterminate, phase-driven
+      let extra = "";
+      if (p.volumes_written) extra += ` · ${p.volumes_written} ${esc(t("volumes"))}`;
+      if (p.bytes_written) extra += ` · ${esc(humanBytes(p.bytes_written))}`;
+      return { pct: null, indeterminate: true, text: `${esc(_uxVolPhase(p.phase, s.mode, t))}${extra}` };
+    }
+    function _uxPaintBar(bar, view) {
+      if (!bar) return;
+      bar.style.display = "";
+      if (view.indeterminate || view.pct == null) bar.removeAttribute("value");
+      else { bar.max = 100; bar.value = view.pct; }
+    }
+    // Poll a job's status endpoint, painting an honest <progress> bar + phase label.
+    // Resolves with the final status object (so the caller can read its summary/tally).
+    function _uxPoll(url, kind, ui) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prefix = ui.prefix ? `${esc(ui.prefix)}: ` : "";
       return new Promise((resolve, reject) => {
         const tick = async () => {
           let s;
           try { s = await api(url); } catch (e) { return reject(e); }
           const state = s.state || "";
-          const p = s.progress || {};
-          let extra = "";
-          if (p.volumes_written != null) extra += ` · ${p.volumes_written} volumes`;
-          if (p.files_done != null) extra += ` · ${p.files_done}/${p.files_total || "?"} files`;
-          prog.textContent = `${label}: ${state}${extra}`;
+          const view = _uxProgressView(kind, s, t);
+          _uxPaintBar(ui.bar, view);
+          if (ui.label) ui.label.innerHTML = prefix + view.text;
           if (state === "done" || state === "paused") return resolve(s);  // paused = stopped, not a hang
-          if (state === "error" || state === "cancelled") return reject(new Error(s.error || state));
+          if (state === "error" || state === "cancelled") {
+            // Surface the REAL backend error (the volume manifest/checksum message),
+            // never a bare "cancelled" — field report: "Import failed — see console".
+            return reject(new Error(s.error || view.text || state));
+          }
           setTimeout(tick, 1200);
         };
         tick();
@@ -4056,23 +4106,24 @@
       const pass = document.getElementById("ux-pass").value || "";
       if (!pass) { toast(t("Enter a passphrase for the encrypted corpus."), "err"); return; }
       const prog = document.getElementById("ux-progress");
+      const bar = document.getElementById("ux-bar");
       const blobs = [];
       if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) blobs.push("models");
       if (document.getElementById("ux-c-maps") && document.getElementById("ux-c-maps").checked) blobs.push("osm_regions");
       if (document.getElementById("ux-c-wiki") && document.getElementById("ux-c-wiki").checked) blobs.push("wiki_dumps");
       btn.disabled = true;
       try {
-        prog.textContent = t("Backing up corpus (encrypted volumes + parity)…");
         await api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) });
-        await _uxPoll("/api/backup/v2/volumes/status", prog, t("corpus"));
+        await _uxPoll("/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") });
         if (blobs.length) {
-          prog.textContent = t("Backing up maps / models / dumps…");
           await api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: blobs }) });
-          await _uxPoll("/api/backup/folder/status", prog, t("large data"));
+          await _uxPoll("/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
         }
-        prog.textContent = t("Backup complete →") + " " + dest;
+        if (bar) bar.style.display = "none";
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)}`;
       } catch (e) {
-        prog.textContent = t("Backup failed — see console");
+        if (bar) bar.style.display = "none";
+        prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;
         console.error("ux run", e);
       }
       btn.disabled = false;
@@ -4087,6 +4138,8 @@
       document.getElementById("ux-imp-checklist").innerHTML = "";
       document.getElementById("ux-imp-status").textContent = "";
       document.getElementById("ux-imp-progress").textContent = "";
+      document.getElementById("ux-imp-summary").innerHTML = "";
+      const bar = document.getElementById("ux-imp-bar"); if (bar) bar.style.display = "none";
       document.getElementById("ux-imp-pass-row").style.display = "none";
       document.getElementById("ux-imp-run").disabled = true;
       _uxImFound = null; _uxImSrc = "";
@@ -4099,12 +4152,22 @@
       if (!src) { toast(t("Enter a folder to scan."), "err"); return; }
       const st = document.getElementById("ux-imp-status");
       const box = document.getElementById("ux-imp-checklist");
+      document.getElementById("ux-imp-summary").innerHTML = "";
       st.textContent = t("Scanning…"); box.innerHTML = ""; btn.disabled = true;
       try {
         const r = await api("/api/backup/import-scan?path=" + encodeURIComponent(src));
         const f = r.found || {};
         const rows = [];
-        if (f.corpus) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">(${esc(t("encrypted volumes — additive, nothing you already have is overwritten"))})</span></label>`);
+        const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
+        if (corpus.length) {
+          const nv = corpus.reduce((a, c) => a + (c.volumes || 0), 0);
+          const where = corpus.length > 1 ? ` · ${corpus.length} ${esc(t("sets"))}` : "";
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-corpus" checked> ${esc(t("Restore corpus backup"))} <span class="muted">(${esc(t("encrypted volumes — additive, nothing you already have is overwritten"))}${nv ? ` · ${nv} ${esc(t("volumes"))}` : ""}${where})</span></label>`);
+        }
+        if (f.legacy_backup && f.legacy_backup.length) {
+          const n = f.legacy_backup.length;
+          rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-legacy" checked> ${esc(t("Restore legacy backup file"))}${n > 1 ? "s" : ""} <span class="muted">(${n} · ${esc(f.legacy_backup.map(x => x.name).join(", "))})</span></label>`);
+        }
         if (f.blobs) {
           const b = f.blobs, parts = [];
           if (b.wiki) parts.push(`wiki ${b.wiki.count}`);
@@ -4115,15 +4178,16 @@
         if (f.newsletters) rows.push(`<label class="switch" style="margin:0"><input type="checkbox" id="ux-i-eml" checked> ${esc(t("Import newsletters"))} <span class="muted">(${f.newsletters.count}${f.newsletters.capped ? "+" : ""} .eml)</span></label>`);
         const notes = [];
         if (f.source_csv) notes.push(esc(t("Source CSV found — import it from the Sources panel for now.")) + ` (${esc(f.source_csv.join(", "))})`);
-        if (f.legacy_backup) notes.push(esc(t("Legacy single-file backup found — restore via the old panel (being retired).")) + ` (${esc(f.legacy_backup.join(", "))})`);
         box.innerHTML = rows.join("") || `<span class="muted">${esc(t("Nothing importable found in this folder."))}</span>`;
         if (notes.length) box.innerHTML += `<p class="muted" style="margin:4px 0 0">${notes.join("<br>")}</p>`;
-        document.getElementById("ux-imp-pass-row").style.display = f.corpus ? "block" : "none";
+        // A passphrase is needed for the encrypted corpus AND for legacy archives.
+        const needsPass = corpus.length > 0 || (f.legacy_backup && f.legacy_backup.length > 0);
+        document.getElementById("ux-imp-pass-row").style.display = needsPass ? "block" : "none";
         document.getElementById("ux-imp-run").disabled = rows.length === 0;
         st.textContent = rows.length ? t("What do you want to import?") : "";
         _uxImFound = f; _uxImSrc = src;
       } catch (e) {
-        st.textContent = t("Scan failed — see console");
+        st.textContent = t("Scan failed:") + " " + (e.message || e);
         console.error("ux import scan", e);
       }
       btn.disabled = false;
@@ -4133,39 +4197,83 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const src = _uxImSrc, f = _uxImFound || {};
       const prog = document.getElementById("ux-imp-progress");
+      const bar = document.getElementById("ux-imp-bar");
+      const summaryEl = document.getElementById("ux-imp-summary");
+      summaryEl.innerHTML = "";
       const cb = (id) => { const el = document.getElementById(id); return el && el.checked; };
-      const doCorpus = f.corpus && cb("ux-i-corpus");
-      const doBlobs = f.blobs && cb("ux-i-blobs");
+      const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
+      const legacy = f.legacy_backup || [];
+      const blobRoots = f.blob_roots || (f.blobs ? [{ root: src, categories: Object.keys(f.blobs).map(k => ({ wiki: "wiki_dumps", maps: "osm_regions", models: "models" }[k])) }] : []);
+      const doCorpus = corpus.length && cb("ux-i-corpus");
+      const doLegacy = legacy.length && cb("ux-i-legacy");
+      const doBlobs = blobRoots.length && cb("ux-i-blobs");
       const doEml = f.newsletters && cb("ux-i-eml");
+      const pass = document.getElementById("ux-imp-pass").value || "";
+      // The volume corpus is ALWAYS encrypted → a passphrase is required. A legacy
+      // single-file archive may be plaintext, so its passphrase is optional here;
+      // an encrypted one with an empty/wrong passphrase fails loudly at the backend.
+      if (doCorpus && !pass) {
+        toast(t("Enter the passphrase to restore the corpus."), "err"); return;
+      }
+      const summaries = [];  // {title, plan?} | {title, lines?}
       btn.disabled = true;
       try {
-        if (doCorpus) {
-          const pass = document.getElementById("ux-imp-pass").value || "";
-          if (!pass) { toast(t("Enter the passphrase to restore the corpus."), "err"); btn.disabled = false; return; }
-          prog.textContent = t("Restoring corpus (additive)…");
-          await api("/api/backup/v2/volumes/restore", { method: "POST", body: JSON.stringify({ src, passphrase: pass }) });
-          await _uxPoll("/api/backup/v2/volumes/status", prog, t("corpus"));
+        // Each volume set lives in its OWN folder (the scan returns the exact dir the
+        // manifest is in) — restore each with THAT path, never the scanned parent.
+        for (const c of (doCorpus ? corpus : [])) {
+          await api("/api/backup/v2/volumes/restore", { method: "POST", body: JSON.stringify({ src: c.path, passphrase: pass }) });
+          const s = await _uxPoll("/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") });
+          const rep = (s.summary && s.summary.report) || {};
+          summaries.push({ title: t("Corpus backup"), plan: rep.plan || {} });
         }
-        if (doBlobs) {
-          const cats = [];
-          if (f.blobs.wiki) cats.push("wiki_dumps");
-          if (f.blobs.maps) cats.push("osm_regions");
-          if (f.blobs.models) cats.push("models");
-          prog.textContent = t("Restoring large data…");
-          await api("/api/backup/folder/restore", { method: "POST", body: JSON.stringify({ src, categories: cats }) });
-          await _uxPoll("/api/backup/folder/status", prog, t("large data"));
+        // Legacy single-file backups: merge each additively (server-side path).
+        for (const lg of (doLegacy ? legacy : [])) {
+          if (bar) { bar.style.display = ""; bar.removeAttribute("value"); }
+          prog.innerHTML = `${esc(t("Legacy"))}: ${esc(lg.name)} — ${esc(t("Merging (additive)…"))}`;
+          const rep = await api("/api/backup/legacy/restore", { method: "POST", body: JSON.stringify({ path: lg.path, passphrase: pass }) });
+          summaries.push({ title: lg.name, plan: rep.plan || {} });
+        }
+        // Large-data blobs: one folder/restore call per root dir the scan grouped.
+        for (const br of (doBlobs ? blobRoots : [])) {
+          await api("/api/backup/folder/restore", { method: "POST", body: JSON.stringify({ src: br.root, categories: br.categories }) });
+          const s = await _uxPoll("/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
+          const p = s.progress || {};
+          summaries.push({ title: t("Large data"), lines: [
+            `${p.restored || 0} ${t("restored")}`, `${p.skipped || 0} ${t("skipped")}`] });
         }
         if (doEml) {
-          prog.textContent = t("Importing newsletters…");
           await api("/api/newsletters/import-folder", { method: "POST", body: JSON.stringify({ folder: src }) });
-          await _uxPoll("/api/newsletters/import-folder/status", prog, t("newsletters"));
+          const s = await _uxPoll("/api/newsletters/import-folder/status", "newsletters", { bar, label: prog, prefix: t("Newsletters") });
+          const tl = s.tally || {};
+          summaries.push({ title: t("Newsletters"), lines: [
+            `${tl.stored || 0} ${t("stored")}`, `${tl.duplicate || 0} ${t("already present")}`,
+            `${tl.empty || 0} ${t("empty")}`, `${tl.errors || 0} ${t("errors")}`] });
         }
-        prog.textContent = t("Import complete.");
+        if (bar) bar.style.display = "none";
+        prog.innerHTML = `<b>${esc(t("Import complete."))}</b>`;
+        _renderImportSummary(summaryEl, summaries);
       } catch (e) {
-        prog.textContent = t("Import failed — see console");
+        if (bar) bar.style.display = "none";
+        // HONEST failure: show the real backend detail, not "see console".
+        prog.innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message || e)}</span>`;
+        if (summaries.length) _renderImportSummary(summaryEl, summaries);  // show what DID import
         console.error("ux import run", e);
       }
       btn.disabled = false;
+    }
+
+    // Render "what was imported" — the same merge-summary shape the legacy restore
+    // panel shows (per-table new/already-present/conflicts), plus blob/newsletter tallies.
+    function _renderImportSummary(host, summaries) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!summaries || !summaries.length) { host.innerHTML = ""; return; }
+      const blocks = summaries.map((sm) => {
+        const body = sm.plan
+          ? _v2PlanTable(sm.plan)
+          : `<div class="hint">${(sm.lines || []).map(esc).join(" · ")}</div>`;
+        return `<details open style="margin-top:6px"><summary class="muted">${esc(sm.title)}</summary>${body}</details>`;
+      });
+      host.innerHTML = `<div style="margin-top:4px"><b>${esc(t("Imported"))}</b></div>` + blocks.join("");
     }
 
     async function folderBackupPlan(btn) {
@@ -5099,6 +5207,7 @@
     function updateMselSummary(id) {
       const det = $(id); if (!det) return;
       const sum = det.querySelector("summary"); if (!sum) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       const v = mselValues(id);
       sum.textContent = v.length === 0 ? t("Any") : (v.length === 1 ? v[0] : v.length + " " + t("selected"));
     }
