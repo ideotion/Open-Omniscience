@@ -4042,8 +4042,11 @@
       try {
         const inv = await api("/api/backup/inventory");
         const c = inv.corpus || {}, b = c.breakdown || {};
+        // "Everything" is the default: a present category (count > 0) is CHECKED so a
+        // backup includes the whole corpus + wiki + maps + models unless the user
+        // unticks one (field ask 2026-07-02). Absent categories are disabled.
         const opt = (id, label, d) =>
-          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "checked" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
         box.innerHTML =
           `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked disabled> ${esc(t("Corpus"))} <span class="muted">(${b.articles || 0} ${esc(t("articles"))} · ${b.sources || 0} ${esc(t("sources"))} · ${b.dates || 0} ${esc(t("dates"))} · ${b.keywords || 0} ${esc(t("keywords"))} · ${humanBytes(c.bytes || 0)})</span></label>` +
           opt("models", t("LLM models"), inv.models || {}) +
@@ -4103,7 +4106,15 @@
         return { pct, indeterminate: !bt, frac: bt ? bc / bt : null,
           text: `${n} ${verb}, ${p.skipped || 0} ${esc(t("skipped"))}` };
       }
-      // volumes: no total -> indeterminate, phase-driven
+      // volumes: mostly phase-driven + indeterminate, EXCEPT the merge, which reports
+      // step N of M — show a real bar there + drive the rule-of-three ETA (field ask).
+      if (p.merge_steps) {
+        const frac = Math.min(1, (p.merge_step || 0) / p.merge_steps);
+        const label = p.merge_label
+          ? `${esc(_uxVolPhase("merging", s.mode, t))} <span class="muted">(${p.merge_step}/${p.merge_steps} · ${esc(p.merge_label)})</span>`
+          : esc(_uxVolPhase("merging", s.mode, t));
+        return { pct: Math.round(frac * 100), indeterminate: false, frac, text: label };
+      }
       let extra = "";
       if (p.volumes_written) extra += ` · ${p.volumes_written} ${esc(t("volumes"))}`;
       if (p.bytes_written) extra += ` · ${esc(humanBytes(p.bytes_written))}`;

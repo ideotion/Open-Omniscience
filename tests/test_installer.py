@@ -43,6 +43,20 @@ def test_shell_scripts_are_executable(script):
     assert (REPO / script).stat().st_mode & 0o111, f"{script} is not executable"
 
 
+def test_bootstrap_update_follows_the_remote_default_branch():
+    """Field report 2026-07-02: a checkout stuck on an old cycle branch (0.09) kept
+    re-pulling itself, so the user never got the latest release line. The updater must
+    resolve the REMOTE's default branch (ls-remote --symref HEAD) and switch onto it,
+    not follow whatever branch the local checkout is on — while still refusing to
+    clobber local edits and honouring an explicit OO_BRANCH pin."""
+    src = (REPO / "scripts" / "bootstrap.sh").read_text(encoding="utf-8")
+    assert "ls-remote --symref" in src, "the updater must ask the remote for its default branch"
+    assert 'checkout -B "$ref" FETCH_HEAD' in src, "it must switch onto the new default line"
+    # an explicit pin still wins; local edits are still protected on a line switch
+    assert 'if [ -n "$BRANCH" ]; then' in src
+    assert "to protect your local changes" in src
+
+
 def test_help_prints_usage():
     r = subprocess.run(["bash", str(REPO / "install.sh"), "--help"], capture_output=True, text=True)
     assert r.returncode == 0

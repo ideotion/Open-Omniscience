@@ -164,10 +164,16 @@ def _build_map(con: sqlite3.Connection, name: str, select_old_new: str) -> None:
 #  The corpus merge (single transaction on the working copy)
 # --------------------------------------------------------------------------- #
 def merge_corpus(
-    staged_corpus: Path, working_copy: Path, batch_meta: dict
+    staged_corpus: Path, working_copy: Path, batch_meta: dict, progress_cb=None
 ) -> tuple[dict, int]:
     """Merge the staged corpus into the working copy. Returns (per-domain counts,
-    batch_id). The working copy is disposable; the live DB is never touched."""
+    batch_id). The working copy is disposable; the live DB is never touched.
+
+    ``progress_cb(step_done, step_total, step_name)`` is called after each table-merge
+    step so a caller can show a determinate progress bar + ETA for the "merging" phase
+    (field ask 2026-07-02). It is REPORT-ONLY — wrapped so a reporting error can never
+    affect the merge — and its granularity is per table-step (steps are uneven, so the
+    derived ETA is an estimate, stated as such in the UI)."""
     from src.database.connect import attach
     from src.database.connect import connect as db_connect
 
@@ -194,20 +200,32 @@ def merge_corpus(
         )
         batch_id = int(cur.lastrowid or 0)
 
-        _merge_keyword_categories(con, batch_id, results)
-        _merge_sources(con, batch_id, results)
-        _merge_articles(con, batch_id, results)
-        _merge_keywords(con, batch_id, results)
-        _merge_article_keyword_links(con, batch_id, results)
-        _merge_keyword_mentions(con, batch_id, results)
-        _merge_curation(con, batch_id, results)
-        _merge_external_link_graph(con, batch_id, results)
-        _merge_article_derivations(con, batch_id, results)
-        _merge_wiki(con, batch_id, results)
-        _merge_law(con, batch_id, results)
-        _merge_markets(con, batch_id, results)
-        _merge_rule_tables(con, batch_id, results)
-        _merge_source_candidates(con, batch_id, results)
+        # Ordered, FK-safe merge steps. Named so a caller can report which step is
+        # running; the order is UNCHANGED from the previous explicit sequence.
+        steps = (
+            ("keyword categories", _merge_keyword_categories),
+            ("sources", _merge_sources),
+            ("articles", _merge_articles),
+            ("keywords", _merge_keywords),
+            ("article-keyword links", _merge_article_keyword_links),
+            ("keyword mentions", _merge_keyword_mentions),
+            ("curation", _merge_curation),
+            ("link graph", _merge_external_link_graph),
+            ("article derivations", _merge_article_derivations),
+            ("wiki", _merge_wiki),
+            ("law", _merge_law),
+            ("markets", _merge_markets),
+            ("rule tables", _merge_rule_tables),
+            ("source candidates", _merge_source_candidates),
+        )
+        total = len(steps)
+        for i, (name, fn) in enumerate(steps, 1):
+            fn(con, batch_id, results)
+            if progress_cb is not None:
+                try:
+                    progress_cb(i, total, name)
+                except Exception:  # noqa: BLE001 - progress reporting must never break a merge
+                    pass
 
         counts = {k: v.as_dict() for k, v in results.items()}
         unmerged = _unmerged_tables(con)
@@ -1270,6 +1288,7 @@ def run_restore(
     commit: bool,
     allow_unverified: bool = False,
     reindex_imported: bool = True,
+    progress_cb=None,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -1303,7 +1322,7 @@ def run_restore(
         "alembic_rev": original_rev,
         "manifest": staged.manifest,
     }
-    counts, batch_id = merge_corpus(staged.corpus_path, working, meta)
+    counts, batch_id = merge_corpus(staged.corpus_path, working, meta, progress_cb=progress_cb)
     verification = verify_copy(working, staged.corpus_path, batch_id)
 
     report: dict = {
