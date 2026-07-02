@@ -158,6 +158,91 @@ def test_nisan_and_ab_stay_withheld():
     assert _dates("آب 2023 کا ذکر تھا۔", "ur") == []
 
 
+# ---- second adversarial round (verifier-found defects in the first cut) ---- #
+
+def test_bare_cardinal_of_is_a_counter_reference_not_a_day():
+    # "Page 3 of May 2024" invented day 3 in the first cut; the "of" connector
+    # now REQUIRES the ordinal ("the 3rd of June"), so counters stay counters.
+    assert _dates("Page 3 of May 2024 covers the storm.", "en") == [("2024-05-01", "month")]
+    assert _dates("Chapter 11 of September 2001 archives.", "en") == [("2001-09-01", "month")]
+    assert _dates("See page 3 of May for details.", "en") == []  # no anchored invention
+    # ...while the ordinal forms keep working, with and without a year:
+    assert _dates("The vote is set for the 3rd of June 2026.", "en") == [("2026-06-03", "day")]
+    assert _dates("It happens on the 3rd of June.", "en") == [("2026-06-03", "day")]
+
+
+def test_tamuz_is_gated_to_arabic():
+    # تموز is a real Persian word ("midsummer heat") — ungated it fabricated
+    # month rows from fa prose, incl. Solar-Hijri years. ar-gated only.
+    assert _dates("آفتاب تموز 2023 بر شهر می‌تابید.", "fa") == []
+    assert _dates("در گرمای تموز ۱۴۰۳ کشاورزان...", "fa") == []
+    assert ("2024-07-01", "month") in _dates("صدر التقرير في تموز 2024.", "ar")
+
+
+def test_override_months_never_take_the_month_first_order():
+    # "Marta 30 godina kasnije" (name + number) fabricated March 30; homograph
+    # months are all day-first genitives, so the month-first order is excluded.
+    assert _dates("Marta 30 godina kasnije.", "sr", anchor=date(2026, 3, 15)) == []
+    assert _dates("Sastanak je bio 30. marta 2024.", "sr") == [("2024-03-30", "day")]
+
+
+def test_cjk_deictic_years_resolve_exactly():
+    # 今年 (this year) was suppressed by the first cut's blunt 年-guard — the
+    # commonest ja/zh date form; deictics now resolve EXACTLY (and 昨年 gets the
+    # true previous year, which the pre-slice code got wrong via nearest-year).
+    assert _dates("今年6月11日に発表された。", "ja") == [("2026-06-11", "day")]
+    assert _dates("昨年6月11日に発表された。", "ja") == [("2025-06-11", "day")]
+    assert _dates("去年6月11日，政府宣布。", "zh") == [("2025-06-11", "day")]
+    assert _dates("来年6月11日に開催される。", "ja") == [("2027-06-11", "day")]
+    # punctuation between an era year and the 月日 tail still suppresses:
+    assert _dates("令和6年、6月11日に開かれた。", "ja") == []
+    assert _dates("昭和0年8月15日の話。", "ja") == []  # gengō year 0 does not exist
+
+
+def test_range_sibling_spellings_never_anchor_the_first_endpoint():
+    far = date(2027, 7, 1)
+    # Each of these fabricated an anchored 2027-06-11 before; now every row (if
+    # any) carries the explicit in-text year — a partial miss beats an invention.
+    for text in (
+        "held June 11-June 13, 2026.",
+        "held June 11 to 13, 2026.",
+        "on June 11 and 12, 2026.",
+        "overnight June 11/12, 2026.",
+        "filed June 11/2026 by desk.",
+    ):
+        got = _dates(text, "en", anchor=far)
+        assert all(dt.startswith("2026") for dt, _ in got), f"{text!r} -> {got!r}"
+
+
+def test_cross_month_range_never_invents_an_endpoint():
+    # "May 11-13 June 2026" means May 11 -> June 13; the first cut invented
+    # June 11. Now the cross-month shape is skipped/suppressed — only explicit
+    # dates survive.
+    got = _dates("runs May 11-13 June 2026.", "en", anchor=date(2027, 7, 1))
+    assert ("2026-06-11", "day") not in got
+    assert all(dt.startswith("2026") for dt, _ in got)
+    got2 = _dates("from 11 May – 13 June 2026.", "en", anchor=date(2027, 2, 1))
+    assert all(dt.startswith("2026") for dt, _ in got2)
+
+
+def test_asymmetric_dot_range_is_a_sentence_boundary():
+    # "aged 5-7. June 2026" — the dot belongs to the sentence, not a German
+    # ordinal pair; the range must not fire (the German pair keeps working).
+    got = _dates("for children aged 5-7. June 2026 brings the new season.", "en")
+    assert ("2026-06-05", "day") not in got
+    assert _dates("vom 5.-7. Juni 2026 in Berlin.", "de") == [
+        ("2026-06-05", "day"),
+        ("2026-06-07", "day"),
+    ]
+
+
+def test_sl_bs_listopad_rulings():
+    # sl: archaic listopad = November (restores the pre-slice recall);
+    # bs: Croat usage = October (the pre-slice November was wrong).
+    assert _dates("Dogodek je bil 5. listopada 2024.", "sl") == [("2024-11-05", "day")]
+    assert _dates("Sastanak je 5. listopada 2024.", "bs") == [("2024-10-05", "day")]
+
+
 # ---- regression: the fixes never widen what the anchored path may claim ---- #
 
 def test_anchored_no_year_forms_still_work():

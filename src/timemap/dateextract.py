@@ -140,13 +140,15 @@ _MONTHS.update({
     "اكتوبر": 10, "نوفمبر": 11, "ديسمبر": 12,
     # Arabic — Levantine single-word month names (Iraq/Syria/Lebanon/Jordan/
     # Palestine standard; pan-Arab media slash-join them with the set above:
-    # "سبتمبر/أيلول"). Script-unique + single-meaning, so safe ungated. نيسان
-    # (April) and آب (August) are DELIBERATELY WITHHELD — measured fabrication
+    # "سبتمبر/أيلول"). These six were probed against fa/ur prose and verified
+    # single-meaning (the Persian-yeh spellings ایلول/ایار are different
+    # codepoints and never match), so they are safe ungated. THREE are NOT here:
+    # نيسان (April) and آب (August) are WITHHELD outright — measured fabrication
     # vectors ("سيارة نيسان 2023" is a Nissan model year; آب is fa/ur prose,
-    # "water"); they may only ever enter via the language-gated override map
-    # under an explicit maintainer ruling.
+    # "water") — and تموز (July) is a REAL Persian word ("midsummer heat",
+    # گرمای تموز), so it lives in the language-gated override map below.
     "أيلول": 9, "ايلول": 9, "شباط": 2, "آذار": 3, "اذار": 3, "أيار": 5,
-    "ايار": 5, "حزيران": 6, "تموز": 7,
+    "ايار": 5, "حزيران": 6,
     # Hindi (Devanagari) — Gregorian month names; Devanagari digits parse via \d.
     "जनवरी": 1, "फरवरी": 2, "फ़रवरी": 2, "मार्च": 3, "अप्रैल": 4, "मई": 5,
     "जून": 6, "जुलाई": 7, "अगस्त": 8, "सितंबर": 9, "सितम्बर": 9, "अक्टूबर": 10,
@@ -217,11 +219,17 @@ _MONTHS.update({
 # meaning, no hint means skipped, never guessed. (Production always passes
 # ``article.language``, so pl/cs recall is preserved.)
 _MONTH_LANG_OVERRIDES: dict[str, dict[str, int]] = {
-    "listopad": {"pl": 11, "cs": 11, "hr": 10},
-    "listopada": {"pl": 11, "hr": 10},
-    "listopadu": {"cs": 11, "hr": 10},
+    # Slavic "leaf-fall" month: November in Polish/Czech/(archaic) Slovenian,
+    # October in Croatian/Bosnian.
+    "listopad": {"pl": 11, "cs": 11, "sl": 11, "hr": 10, "bs": 10},
+    "listopada": {"pl": 11, "sl": 11, "hr": 10, "bs": 10},
+    "listopadu": {"cs": 11, "hr": 10, "bs": 10},
     "marta": {"sr": 3, "bs": 3},  # Latin-script Serbian genitive; a given name elsewhere
     "mac": {"ms": 3},  # Malay March; English "Mac" tech prose otherwise
+    # تموز = July in Levantine Arabic, but a REAL Persian word ("midsummer
+    # heat" — گرمای تموز): ungated it fabricated month rows from fa prose,
+    # including Solar-Hijri years (1403 passes the CE window). ar-gated only.
+    "تموز": {"ar": 7},
 }
 _MONTH_ALT = "|".join(  # longest first so 'sept' beats 'sep'
     sorted(set(_MONTHS) | set(_MONTH_LANG_OVERRIDES), key=len, reverse=True)
@@ -243,7 +251,17 @@ _NUM_YMD_RE = re.compile(r"\b(\d{4})[./](\d{1,2})[./](\d{1,2})\b")
 # year-less and resolve it near the PUBLICATION year (el/ar September-11 pieces
 # were stored as 2026-09-11).
 _Y_CONN = r"(?:de\s+|of\s+|του\s+|من\s+عام\s+|عام\s+|سنة\s+)"  # month -> year
-_D_CONN = r"(?:(?:de|of|ng)\s+)"  # day -> month
+# Day -> month. The English "of" REQUIRES the ordinal day suffix ("the 3rd of
+# June 2026"): a BARE cardinal + "of" + month is a counter reference in English
+# ("Page 3 of May 2024", "Chapter 11 of September 2001") — accepting it invented
+# day components (adversarial-verifier finding). "de" (the standard es/pt
+# bare-cardinal date form, long shipped) and "ng" (the tl parallel) stay as-is.
+# Two branches -> two possible day groups; callers take whichever matched.
+_DAY_PART = (
+    r"(?:(\d{1,2})(?:st|nd|rd|th)\s+of\s+"  # en ordinal-of day
+    r"|(\d{1,2})(?:st|nd|rd|th|er|\.)?\s+(?:(?:de|ng)\s+)?)"  # all other day forms
+)
+_D_CONN_RANGE = r"(?:(?:de|ng)\s+)"  # ranges: bare cardinals by nature — never "of"
 
 # Anchored expressions (resolved against the article's PUBLICATION date; each
 # carries graded provenance — FUTURE_DEVELOPMENTS design, now implemented).
@@ -252,13 +270,31 @@ _D_CONN = r"(?:(?:de|of|ng)\s+)"  # day -> month
 # explicit year follows in ANY accepted shape, the no-year path must never fire —
 # suppress rather than anchor-guess, even for forms we do not extract.
 _DM_NOYEAR_RE = re.compile(
-    rf"\b(\d{{1,2}})(?:st|nd|rd|th|er|\.)?\s+{_D_CONN}?({_MONTH_ALT})\.?\b"
-    rf"(?!\.?(?:\s*/\s*(?:{_MONTH_ALT})\.?)?\s+{_Y_CONN}?\d{{4}})",
+    rf"\b{_DAY_PART}({_MONTH_ALT})\.?\b"
+    rf"(?!(?:\.?(?:\s*/\s*(?:{_MONTH_ALT})\.?)?\s+{_Y_CONN}?\d{{4}}"
+    # cross-month range continuation ("11 May – 13 June 2026"): the explicit
+    # year governs the whole expression — suppress the first endpoint.
+    rf"|\s*[-–—]\s*\d{{1,2}}(?:st|nd|rd|th|er|\.)?\s+(?:{_MONTH_ALT})\.?\s+{_Y_CONN}?\d{{4}}))",
     re.I,
 )
+# Every explicit-year continuation after "Month DD" that must SUPPRESS the
+# anchored path (verifier-measured: the bare-dash mirror alone left the common
+# range spellings fabricating — "June 11-June 13, 2026", "June 11 to 13, 2026",
+# "June 11 and 12, 2026", "overnight June 11/12, 2026", "June 11/2026"):
+#   1. a separator straight into a 4-digit year ("11/2026");
+#   2. a dash/slash/worded second endpoint — optionally month-repeated, in
+#      either digit-month or month-digit order — then the year;
+#   3. the plain year (the original mirror, connectors included).
+_MD_YEAR_AHEAD = (
+    rf"(?:\s*[-–—/]\s*\d{{4}}\b"
+    rf"|\s*(?:[-–—/]\s*|,?\s+(?:to|and|or)\s+)(?:(?:{_MONTH_ALT})\.?\s+)?"
+    rf"\d{{1,2}}(?:st|nd|rd|th)?\s*,?\s*{_Y_CONN}?\d{{4}}\b"
+    rf"|\s*(?:[-–—/]\s*|,?\s+(?:to|and|or)\s+)\d{{1,2}}(?:st|nd|rd|th|er|\.)?\s+"
+    rf"(?:{_MONTH_ALT})\.?\s+{_Y_CONN}?\d{{4}}\b"
+    rf"|\.?\s*,?\s*{_Y_CONN}?\d{{4}}\b)"
+)
 _MD_NOYEAR_RE = re.compile(
-    rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b"
-    rf"(?!\s*(?:[-–—]\s*\d{{1,2}})?(?:st|nd|rd|th)?\s*,?\s*{_Y_CONN}?\d{{4}})",
+    rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?!{_MD_YEAR_AHEAD})",
     re.I,
 )
 _REL_WORDS = {
@@ -288,7 +324,7 @@ _ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 # and Levantine names). The two names must resolve to the SAME month or the whole
 # match is skipped (never a guess); the no-year lookahead mirrors the slash form.
 _DMY_RE = re.compile(
-    rf"\b(\d{{1,2}})(?:st|nd|rd|th|er|\.)?\s+{_D_CONN}?({_MONTH_ALT})\.?"
+    rf"\b{_DAY_PART}({_MONTH_ALT})\.?"
     rf"(?:\s*/\s*({_MONTH_ALT})\.?)?\s+{_Y_CONN}?(\d{{4}})\b",
     re.I,
 )
@@ -304,13 +340,13 @@ _RANGE_MDY_RE = re.compile(
     rf"(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b",
     re.I,
 )
-_RANGE_DMY_RE = re.compile(
-    rf"\b(\d{{1,2}})(?:st|nd|rd|th|er|\.)?\s*[-–—]\s*(\d{{1,2}})(?:st|nd|rd|th|er|\.)?\s+"
-    rf"{_D_CONN}?({_MONTH_ALT})\.?\s+{_Y_CONN}?(\d{{4}})\b",
+_RANGE_DMY_RE = re.compile(  # day suffixes CAPTURED: the loop requires symmetry
+    rf"\b(\d{{1,2}})((?:st|nd|rd|th|er|\.)?)\s*[-–—]\s*(\d{{1,2}})((?:st|nd|rd|th|er|\.)?)\s+"
+    rf"{_D_CONN_RANGE}?({_MONTH_ALT})\.?\s+{_Y_CONN}?(\d{{4}})\b",
     re.I,
 )
 _RANGE_ENUM_RE = re.compile(  # "between 11 and 13 June 2026" (en connector for now)
-    rf"\b(\d{{1,2}})\s+and\s+(\d{{1,2}})\s+{_D_CONN}?({_MONTH_ALT})\.?\s+{_Y_CONN}?(\d{{4}})\b",
+    rf"\b(\d{{1,2}})\s+and\s+(\d{{1,2}})\s+{_D_CONN_RANGE}?({_MONTH_ALT})\.?\s+{_Y_CONN}?(\d{{4}})\b",
     re.I,
 )
 # Year-first with a NAMED month ("2024. május 5." Hungarian / "2024 m. gegužės"
@@ -354,6 +390,16 @@ _ERA_ALT = "|".join(_ERA_BASES)
 _ERA_YMD_RE = re.compile(
     rf"({_ERA_ALT})\s*({_CJK_D}{{1,3}}|元)\s*年\s*({_CJK_D}{{1,2}})\s*月(?:\s*({_CJK_D}{{1,2}})\s*日)?"
 )
+# Deictic year words before 月日 (今年6月11日 — among the commonest ja/zh date
+# forms): these resolve EXACTLY against the anchor's year (offset 0/±1), unlike
+# an unparsed era name or a bare 2-digit year, which must SUPPRESS. Note the old
+# code anchored 昨年6月11日 to the nearest instance — often the WRONG year; the
+# exact offset fixes that too.
+_CJK_YEAR_DEICTICS = {
+    "今年": 0, "本年": 0, "毎年": 0, "每年": 0,  # this year / annually
+    "昨年": -1, "去年": -1,  # last year
+    "来年": 1, "來年": 1, "明年": 1,  # next year
+}
 
 
 def _cjk_int(s: str) -> int:
@@ -477,7 +523,10 @@ def extract_dates(
             add(d, "day", m)
     for m in _ERA_YMD_RE.finditer(text):  # 令和6年6月11日 / 民國113年6月11日 — exact conversion
         n = m.group(2)
-        year = _ERA_BASES[m.group(1)] + (1 if n == "元" else _cjk_int(n))
+        n_int = 1 if n == "元" else _cjk_int(n)
+        if n_int < 1:  # gengō/ROC year 0 does not exist (元年 = year 1)
+            continue
+        year = _ERA_BASES[m.group(1)] + n_int
         if m.group(4):  # day present
             d = _valid(year, _cjk_int(m.group(3)), _cjk_int(m.group(4)), today)
             if d and claim(*m.span()):
@@ -490,6 +539,8 @@ def extract_dates(
     # the text (nothing inferred), and the claimed span stops the anchored no-year
     # path from resolving an endpoint near the publication year.
     for m in _RANGE_MDY_RE.finditer(text):
+        if m.group(1).lower() in _MONTH_LANG_OVERRIDES:  # month-first order (see _MDY_RE)
+            continue
         mon = _month_of(m.group(1), language)
         d1n, d2n = int(m.group(2)), int(m.group(3))
         if mon and d1n < d2n:
@@ -499,11 +550,21 @@ def extract_dates(
                 add(d1, "day", m)
                 add(d2, "day", m)
     for m in _RANGE_DMY_RE.finditer(text):
-        mon = _month_of(m.group(3), language)
-        d1n, d2n = int(m.group(1)), int(m.group(2))
+        mon = _month_of(m.group(5), language)
+        d1n, d2n = int(m.group(1)), int(m.group(3))
+        # "aged 5-7. June 2026": a dot on the SECOND day only is a sentence
+        # boundary, not the German "5.–7. Juni" ordinal pair — skip (verifier).
+        if m.group(4) == "." and not m.group(2):
+            continue
+        # "May 11-13 June 2026": a month name right before the range means the
+        # first endpoint belongs to THAT month — cross-month and ambiguous:
+        # skip; the no-year lookaheads suppress the pieces, nothing is invented.
+        prev_words = text[: m.start()].split()
+        if prev_words and _month_of(prev_words[-1].strip(".,;:"), language):
+            continue
         if mon and d1n < d2n:
-            d1 = _valid(int(m.group(4)), mon, d1n, today)
-            d2 = _valid(int(m.group(4)), mon, d2n, today)
+            d1 = _valid(int(m.group(6)), mon, d1n, today)
+            d2 = _valid(int(m.group(6)), mon, d2n, today)
             if d1 and d2 and claim(*m.span()):
                 add(d1, "day", m)
                 add(d2, "day", m)
@@ -517,17 +578,23 @@ def extract_dates(
                 add(d1, "day", m)
                 add(d2, "day", m)
     for m in _DMY_RE.finditer(text):
-        mon = _month_of(m.group(2), language)
+        mon = _month_of(m.group(3), language)
         if mon is None:
             continue
-        if m.group(3):  # dual-named "سبتمبر/أيلول": both must agree, else skip — never a guess
-            alt = _month_of(m.group(3), language)
+        if m.group(4):  # dual-named "سبتمبر/أيلول": both must agree, else skip — never a guess
+            alt = _month_of(m.group(4), language)
             if alt != mon:
                 continue
-        d = _valid(int(m.group(4)), mon, int(m.group(1)), today)
+        day = m.group(1) or m.group(2)  # ordinal-of branch | standard branch
+        d = _valid(int(m.group(5)), mon, int(day), today)
         if d and claim(*m.span()):
             add(d, "day", m)
     for m in _MDY_RE.finditer(text):
+        # Homograph-month tokens never take the MONTH-FIRST order: they are all
+        # genitive forms of day-first languages ("30. marta"), so "Marta 30,
+        # 2024" is a name + number, not a date (verifier-measured fabrication).
+        if m.group(1).lower() in _MONTH_LANG_OVERRIDES:
+            continue
         mon = _month_of(m.group(1), language)
         d = _valid(int(m.group(3)), mon, int(m.group(2)), today) if mon else None
         if d and claim(*m.span()):
@@ -608,24 +675,38 @@ def extract_dates(
                     best = cand
             return best if best and abs((best - anchor).days) <= 183 else None
 
-        for rx, gi_d, gi_m in ((_DM_NOYEAR_RE, 1, 2), (_MD_NOYEAR_RE, 2, 1)):
+        # _DM_NOYEAR has TWO possible day groups (the ordinal-of branch vs the
+        # standard branch of _DAY_PART); _MD_NOYEAR has one.
+        for rx, gis_d, gi_m in ((_DM_NOYEAR_RE, (1, 2), 3), (_MD_NOYEAR_RE, (2,), 1)):
             for m in rx.finditer(text):
+                # Homograph months never take the month-first order ("Marta 30
+                # godina" is a name + number — verifier-measured fabrication).
+                if rx is _MD_NOYEAR_RE and m.group(gi_m).lower() in _MONTH_LANG_OVERRIDES:
+                    continue
                 mon = _month_of(m.group(gi_m), language)
                 if not mon:
                     continue
-                d = nearest_year(mon, int(m.group(gi_d)))
+                day = next((m.group(i) for i in gis_d if m.group(i)), None)
+                if day is None:
+                    continue
+                d = nearest_year(mon, int(day))
                 if d and claim(*m.span()):
                     add(d, "day", m)
         for m in _CJK_MD_RE.finditer(text):  # 5月11日 with no year -> nearest to the anchor
-            # Era/short-year guard: if the character just before the match (past
-            # whitespace) is 年/년, an explicit year we could NOT parse precedes
-            # (an unknown era name, or a bare 2-digit year like 24年) — suppress
-            # rather than anchor-resolve to the publication year (measured: era
-            # dates were stored ~80 years wrong before the _ERA_YMD_RE support).
-            before = text[: m.start()].rstrip()
+            # Year-prefix guard (punctuation-tolerant: 令和6年、6月11日). A 年/년
+            # just before the match means a year expression precedes. DEICTIC
+            # years (今年/昨年/来年…) resolve EXACTLY against the anchor's year;
+            # anything else (an era name we could not parse, a bare 2-digit
+            # year like 24年) is an explicit year we failed to read — suppress,
+            # never anchor-guess (measured ~80-year fabrications).
+            before = text[: m.start()].rstrip().rstrip("、。，．,.;；：:")
             if before[-1:] in ("年", "년"):
-                continue
-            d = nearest_year(_cjk_int(m.group(1)), _cjk_int(m.group(2)))
+                off = _CJK_YEAR_DEICTICS.get(before[-2:])
+                if off is None:
+                    continue
+                d = _valid(anchor.year + off, _cjk_int(m.group(1)), _cjk_int(m.group(2)), today)
+            else:
+                d = nearest_year(_cjk_int(m.group(1)), _cjk_int(m.group(2)))
             if d and claim(*m.span()):
                 add(d, "day", m)
         for m in _VI_DM_NOYEAR_RE.finditer(text):  # ngày 5 tháng 5 (no year) -> nearest
