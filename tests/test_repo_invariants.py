@@ -702,7 +702,7 @@ def test_seamless_install_and_language_first_first_launch():
         "the installer must never download/run Ollama or pull a model"
     )
     # No interactive component/launcher prompts -- seamless install.
-    assert 'CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression}"' in installer
+    assert 'CHOSEN_EXTRAS="${OO_COMPONENTS:-analysis,compression,columnar}"' in installer
     assert 'whiptail --title "Open Omniscience -- choose components"' not in installer, (
         "the component-selection menu must be gone (seamless install asks nothing)"
     )

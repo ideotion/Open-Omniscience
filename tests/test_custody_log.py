@@ -53,6 +53,42 @@ def test_entries_for_item(log):
     assert len(log.entries_for("article:2")) == 1
 
 
+def test_concurrent_appends_do_not_collide_or_fork_the_chain(tmp_path):
+    # Field report 2026-07-02: 34 `UNIQUE constraint failed: custody_entries.seq` under
+    # 50-way parallel ingest with auto-log-on-ingest default-on. Each worker opens its OWN
+    # CustodyLog on the same file (the ingest pattern `with CustodyLog() as log:`); the
+    # process-wide append lock must serialise the read-chain-insert so seqs are contiguous
+    # and the hash chain is intact — never a collision or a fork.
+    import threading
+
+    signer = HybridSigner(ed25519_path=tmp_path / "ed.pem", mldsa_path=tmp_path / "ml.key")
+    signer.sign(b"warmup")  # force one-time key generation before the threads race on it
+    db = str(tmp_path / "custody.db")
+    n = 40
+    errors: list[str] = []
+
+    def worker(i: int) -> None:
+        try:
+            with CustodyLog(db_path=db, signer=signer) as lg:
+                lg.record(f"article:{i}", "a" * 64, CustodyAction.INGEST, actor="pipeline")
+        except Exception as exc:  # noqa: BLE001 - the whole point is to catch the race
+            errors.append(repr(exc))
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, errors  # no UNIQUE-constraint collisions
+    with CustodyLog(db_path=db, signer=signer) as lg:
+        entries = lg.all_entries()
+        assert len(entries) == n, f"lost entries: {len(entries)} of {n}"
+        assert sorted(e.seq for e in entries) == list(range(1, n + 1)), "seqs not contiguous"
+        ok, issues = lg.verify()
+        assert ok, issues  # the chain is intact, not forked
+
+
 def test_chain_links_are_sequential(log):
     _seed(log)
     entries = log.all_entries()

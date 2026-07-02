@@ -27,6 +27,7 @@ crypto already in the tree.
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass
 from enum import Enum
 
@@ -42,6 +43,17 @@ from src.custody.timestamp import (
 
 GENESIS_PREV = "0" * 64
 LOG_VERSION = "oo-custody-1"
+
+# PROCESS-WIDE append lock (field report 2026-07-02: 34 `UNIQUE constraint failed:
+# custody_entries.seq` under 50-way parallel ingest with auto-log-on-ingest default-on).
+# Each caller opens its OWN CustodyLog()/connection, so a per-instance lock cannot
+# serialise them — and record() is a READ-CHAIN-INSERT (read the last entry for its hash,
+# chain a new hash to it, insert the next seq): two concurrent appends both read the same
+# tail, compute the same seq + prev_hash, and collide on the unique seq / FORK the hash
+# chain. This module-level lock serialises every custody append in the process so the
+# chain stays single-threaded and gap-free. Custody is a headline integrity guarantee; a
+# dropped/forked entry is not acceptable.
+_APPEND_LOCK = threading.RLock()
 
 
 class CustodyAction(str, Enum):
@@ -196,50 +208,53 @@ class CustodyLog:
         digest. Pass an OpenTimestamps proof to anchor the entry independently.
         """
         action_val = action.value if isinstance(action, CustodyAction) else str(action)
-        prev = self._last()
-        prev_hash = prev.entry_hash if prev else GENESIS_PREV
-        seq = (prev.seq + 1) if prev else 1
         meta = metadata or {}
+        # Serialise the whole READ-CHAIN-INSERT so concurrent ingest workers can never
+        # read the same tail, compute the same seq, and collide / fork the chain.
+        with _APPEND_LOCK:
+            prev = self._last()
+            prev_hash = prev.entry_hash if prev else GENESIS_PREV
+            seq = (prev.seq + 1) if prev else 1
 
-        # Build the signable core, hash it, timestamp that digest, then re-hash so
-        # the timestamp is itself covered by entry_hash + signature.
-        partial = {
-            "version": LOG_VERSION,
-            "seq": seq,
-            "item_id": item_id,
-            "item_hash": item_hash,
-            "action": action_val,
-            "actor": actor,
-            "metadata": meta,
-            "prev_entry_hash": prev_hash,
-        }
-        digest = sha256(canonical_bytes(partial))
-        ts = (timestamp or self._default_timestamp(digest)).to_dict()
-        core = {**partial, "timestamp": ts}
-        entry_hash = _entry_digest(core)
-        sig = self.signer.sign(canonical_bytes(core))
+            # Build the signable core, hash it, timestamp that digest, then re-hash so
+            # the timestamp is itself covered by entry_hash + signature.
+            partial = {
+                "version": LOG_VERSION,
+                "seq": seq,
+                "item_id": item_id,
+                "item_hash": item_hash,
+                "action": action_val,
+                "actor": actor,
+                "metadata": meta,
+                "prev_entry_hash": prev_hash,
+            }
+            digest = sha256(canonical_bytes(partial))
+            ts = (timestamp or self._default_timestamp(digest)).to_dict()
+            core = {**partial, "timestamp": ts}
+            entry_hash = _entry_digest(core)
+            sig = self.signer.sign(canonical_bytes(core))
 
-        self.conn.execute(
-            """
-            INSERT INTO custody_entries
-                (seq, item_id, item_hash, action, actor, metadata_json,
-                 prev_entry_hash, entry_hash, signature_json, timestamp_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                seq,
-                item_id,
-                item_hash,
-                action_val,
-                actor,
-                json.dumps(meta, sort_keys=True),
-                prev_hash,
-                entry_hash,
-                json.dumps(sig),
-                json.dumps(ts),
-            ),
-        )
-        self.conn.commit()
+            self.conn.execute(
+                """
+                INSERT INTO custody_entries
+                    (seq, item_id, item_hash, action, actor, metadata_json,
+                     prev_entry_hash, entry_hash, signature_json, timestamp_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    seq,
+                    item_id,
+                    item_hash,
+                    action_val,
+                    actor,
+                    json.dumps(meta, sort_keys=True),
+                    prev_hash,
+                    entry_hash,
+                    json.dumps(sig),
+                    json.dumps(ts),
+                ),
+            )
+            self.conn.commit()
         return CustodyEntry(
             seq=seq,
             item_id=item_id,
