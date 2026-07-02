@@ -195,6 +195,7 @@ class ReindexJobManager:
         try:
             from src.analytics.store import (
                 prune_orphan_keywords,
+                reconcile_article_language,
                 reconcile_keyword_language,
                 reindex_all_batch,
             )
@@ -251,6 +252,25 @@ class ReindexJobManager:
                     rl = reconcile_keyword_language(session)
                     with self._lock:
                         self._tally["relanguaged"] = int(rl.get("relanguaged", 0))
+                        self._save()
+                if completed:
+                    # Unknown-language articles: deduce a language (text detector first,
+                    # then the article's own keyword-language majority) into the DEDUCED
+                    # channel only — never overwriting an asserted language. Bounded +
+                    # resumable, so drain it in batches until done.
+                    total_lang = {"set_by_text": 0, "set_by_keywords": 0}
+                    after = 0
+                    while not self._stop.is_set():
+                        al = reconcile_article_language(session, limit=500, after_id=after)
+                        total_lang["set_by_text"] += int(al.get("set_by_text", 0))
+                        total_lang["set_by_keywords"] += int(al.get("set_by_keywords", 0))
+                        after = int(al.get("last_id", 0))
+                        if al.get("done") or not al.get("scanned"):
+                            break
+                    with self._lock:
+                        self._tally["article_language_deduced"] = (
+                            total_lang["set_by_text"] + total_lang["set_by_keywords"]
+                        )
                         self._save()
                 if completed:
                     # Phase 1.4: refresh the planner stats after the big keyword-table

@@ -4172,7 +4172,10 @@ def test_startup_seeds_the_source_catalog_at_unlock():
     2026-06-18 caught exactly this: an encrypted install came up with ~1 source
     and nothing to scrape. Guard that run_deferred_startup seeds sources."""
     main_src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
-    deferred = main_src.split("def run_deferred_startup", 1)[1].split("\ndef ", 1)[0]
+    # run_deferred_startup now delegates the post-init upkeep to _run_startup_upkeep
+    # (so the web-unlock path can background it); the seed lives there. Read both.
+    deferred = main_src.split("def run_deferred_startup", 1)[1].split("\ndef test_", 1)[0]
+    assert "_run_startup_upkeep" in deferred, "run_deferred_startup must call the upkeep"
     assert "seed_default_sources" in deferred, (
         "run_deferred_startup must seed the source catalog (encrypted stores seed at "
         "unlock, not in main()) — otherwise an encrypted install has nothing to collect"
@@ -4186,7 +4189,9 @@ def test_startup_warms_the_insights_cache():
     airplane mode -> no pass). run_deferred_startup must kick warm_cache in a background
     (non-blocking) thread, gated by OO_NO_SCHEDULER so tests/headless skip it."""
     main_src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
-    deferred = main_src.split("def run_deferred_startup", 1)[1].split("\ndef ", 1)[0]
+    # The cache warm lives in _run_startup_upkeep (called by run_deferred_startup); the
+    # slice below spans both functions up to the next test-visible boundary.
+    deferred = main_src.split("def run_deferred_startup", 1)[1].split("\n@asynccontextmanager", 1)[0]
     assert "warm_cache" in deferred, "run_deferred_startup must warm the insights cache at boot"
     # It must be backgrounded (a daemon Thread), never run inline (would block startup).
     assert "Thread(" in deferred and "daemon=True" in deferred, (

@@ -33,8 +33,32 @@ def test_import_dialog_covers_restore_and_ingest_capabilities():
         "/api/backup/v2/volumes/restore",
         "/api/backup/folder/restore",
         "/api/newsletters/import-folder",
+        "/api/backup/legacy/restore",  # legacy single-file backups now import in the unified dialog
     ):
         assert ep in _APP, ep
+
+
+def test_dialogs_have_a_real_progress_bar_and_import_summary():
+    # honest <progress> bars (never a fake %) + a post-import summary
+    assert 'id="ux-bar"' in _HTML and 'id="ux-imp-bar"' in _HTML
+    assert 'id="ux-imp-summary"' in _HTML
+    # the poller paints the bar from the manager's real status, indeterminate when
+    # no total is known (the volume engine streams) — never a fabricated number
+    assert "_uxPaintBar" in _APP and "_uxProgressView" in _APP
+    assert "removeAttribute(\"value\")" in _APP  # indeterminate = no fake %
+    # the import summary reuses the merge-plan table (new / already-present / conflicts)
+    assert "_renderImportSummary" in _APP and "_v2PlanTable" in _APP
+
+
+def test_import_restores_each_volume_set_from_its_own_scanned_path():
+    # root-cause fix: a nested volume set restores from c.path, not the scanned parent
+    assert "c.path" in _APP
+    assert "blob_roots" in _APP  # blobs grouped by their parent root for folder/restore
+
+
+def test_import_failure_surfaces_the_real_error_not_see_console():
+    # the swallowed "Import failed — see console" is replaced by the backend detail
+    assert "Import failed:" in _APP
 
 
 def test_redundant_panels_were_collapsed():
@@ -60,4 +84,5 @@ def test_llm_models_are_integrated_not_a_separate_panel():
     assert "modelsBackupExport" not in _APP and "modelsBackupImport" not in _APP
     # models are now a category in the unified dialogs (export checklist + import scan)
     assert "ux-c-models" in _APP  # export checklist item
-    assert 'cats.push("models")' in _APP  # import restores the models category
+    assert "b.models" in _APP  # import scan shows the models blobs
+    assert 'models: "models"' in _APP  # import restores the models category (blob_roots mapping)

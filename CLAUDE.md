@@ -347,8 +347,9 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
 - **Naming:** app-opened browser tabs are suffixed "· FOOS" (Free Open
   OmniScience), explained in Help + USER_MANUAL; a proper rename is expected
   later — keep the suffix mechanism centralized enough to swap in one pass.
-- **TEMPORARY field-test mode (REMOVE when the live-test cycle ends):**
-  `src/monitoring/field_test.py` (default ON, `OO_FIELD_TEST=0` opts out)
+- **Field-test mode is OPT-IN since 0.1 (flipped 2026-07-02 for the public tag;
+  was default-ON during the 0.0.8/0.09 live-test cycles):**
+  `src/monitoring/field_test.py` (`OO_FIELD_TEST=1` enables)
   auto-exercises fetch surfaces inside the operator's collect passes; verbatim
   outcomes in `data/field_test.jsonl`; local-only, shared only by click.
 - **Units/precision principle (ruled 2026-06-10, APP-WIDE):** one shared smart
@@ -538,6 +539,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (d) custody auto-log default flipped ON per the Item-N ruling (the UI text already claimed it);
   (e) field-test mode is now OPT-IN (OO_FIELD_TEST=1) for the public tag; (f) version flips
   0.0.9→0.1.0, tag v0.1.0 (release.yml verifies tag==pyproject and now gates on tests).
+  **STALE-BASE REVERT INCIDENT 2026-07-02 (must not recur):** PR #547 landed the whole 0.1
+  release batch on 0.09 (8ac2615: version flip, packaging fix, self-heal battery, host-header
+  guard, honesty defaults, docs sweep). Then PR #548 — a parallel `article-language-equilibrium`
+  branch CUT FROM A BASE BEFORE #547 — merged and SILENTLY REVERTED almost all of it (version→0.0.9,
+  packaging + MANIFEST.in gone, self-heal/host-guard/main.py reverted, my 4 test files deleted,
+  USER_MANUAL −817). Recovered on branch claude/version-upgrade-plan-umv9xd (PR #550) by keeping my
+  full tree (`git merge origin/0.09 -s ours`) + cherry-picking ONLY origin's genuinely-new date
+  work (dateextract.py/datediag.py/test_dateextract_relative_c.py) + unioning shipped.csv. LESSON:
+  before cutting/merging a branch, ALWAYS `git fetch origin 0.09` and rebase onto the FRESH tip; a
+  branch cut from a stale base re-applies old file states as "changes" and reverts newer work with
+  NO conflict. Verify `git show origin/0.09:pyproject.toml` still reads 0.1.0 before trusting the base.
+  **PRE-0.1 FIELD BATCH SHIPPED (PR #550, maintainer field report 2026-07-02):** (1)+(4) unlock no
+  longer freezes — `/unlock` runs init_db + airplane synchronously then backgrounds the expensive
+  upkeep (ANALYZE/seed/COUNT/warm); `GET /api/system/startup-status` + a "Preparing your corpus…"
+  progress view on unlock.html (browser-verified: button returns ~0.8s, honest phase text, no fake
+  %); (2) Library source-tag click fixed (a `t is not defined` ReferenceError in updateMselSummary);
+  (3) unified import — recursive subfolder scan, real progress bars, honest phases, legacy backups
+  folded in (multi), import SUMMARY, and the VOLUMES+PARITY RESTORE FAILURE root-caused (scan handed
+  the parent dir but volumes.json lives in a subfolder → load_manifest threw, swallowed into "see
+  console"; now uses the exact subfolder path + surfaces the real error); (5) unknown-language
+  `reconcile_article_language` (offline text detect → keyword-majority fallback, deduced channel
+  only, wired into the reindex cleanup pass). DEFERRED: .eml sender-IP geolocation (flagged, distinct
+  backend concern).
 - **KEYWORD STOPLIST — open-class review loop + residual gaps (2026-07-01; user DEFERRED the
   next round to a fresh session):** function-word garbage is SOLVED — #525 vendored full
   stopwords-iso lists for 18 managed languages, #528 added temporal-deictic adverbs (gestern/
@@ -1109,14 +1133,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   dialog (pop-up) to gather that action's options. Today these are scattered (newsletter .eml upload +
   folder-import job + mailbox pull · oo-backup-2 encrypted/plaintext · selective tickboxes · folder/large-data
   backup · models .oomodels · restore-merge · selective restore). Consolidate to one Import + one Export, each
-  with an options dialog. NOT YET BUILT.
+  with an options dialog. **SHIPPED (#519-#529 + slice 3, verified 2026-07-02):** the #ux-export/#ux-import
+  dialogs ('Export / Back up…' + 'Import…') drive the volumes+parity + folder engines; the standalone panels
+  + the 2 GiB single-file CREATE were retired; guard-tested (tests/test_unified_backup_ui.py) + i18n-keyed ×12.
   (C) **FOLDER NEWSLETTER IMPORT FAILS (real bug):** importing a ~5 GB multi-folder `.eml` tree dies with
   `UNIQUE constraint failed: articles.hash`; per-batch works but is quantity-limited. The §2.B batched-commit
   path (`ingest_emails` commit_batch + `_commit_one` fallback) has a dedup HOLE at the folder-import-job scale
   — a duplicate hash reaches an INSERT instead of being caught (likely two .eml with the same content-hash in
   the SAME uncommitted batch ACROSS subfolders, or the IntegrityError fallback not wired on the folder-job
   path). FIX: catch the collision + dedup within the batch (the `batch_keys` set must span the whole folder
-  walk, and the `_commit_one` IntegrityError redo must be on the folder-job path). NOT YET BUILT.
+  walk, and the `_commit_one` IntegrityError redo must be on the folder-job path). **FIXED (verified
+  2026-07-02):** src/ingest/email.py dedups the batch on the ACTUAL unique column (`pending_hashes`) +
+  `_flush` falls back per-message on IntegrityError; regression-tested (test_email_ingest.py::
+  test_same_body_different_message_id_dedups_on_hash).
   (D) **OLLAMA "installer missing" — ANSWERED, NOT LOST:** the Settings subtab was RENAMED "Models" → "AI"
   (`index.html:920`, Settings → AI) — that's why it feels missing; the catalog (size/RAM hints) + pull queue +
   remove + active-model picker SHIPPED there. The BINARY installer (download+verify+RUN the official per-OS

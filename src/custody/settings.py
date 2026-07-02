@@ -22,8 +22,11 @@ than showing a misleading green light. :func:`availability` exposes the reality;
 the API combines the two.
 
 Backward compatibility: when no settings file exists yet, ``auto_log_on_ingest``
-defaults to the legacy ``Config.custody_on_ingest`` (env ``OO_CUSTODY_ON_INGEST``)
-so the existing opt-in still works until the operator saves a preference.
+defaults to the legacy ``Config.custody_on_ingest`` (env ``OO_CUSTODY_ON_INGEST``),
+which is itself ON by default (maintainer ruling 2026-06-15 Item-N; the Settings UI
+states "on by default"). Auto-log is a LOCAL-ONLY write -- the default anchoring
+mode is ``local`` (offline, no network egress); OpenTimestamps anchoring stays a
+separate opt-in. Opt out with ``OO_CUSTODY_ON_INGEST=0`` or the Settings toggle.
 """
 
 from __future__ import annotations
@@ -48,7 +51,7 @@ class CustodySettings:
 
     pqc_enabled: bool = False
     anchoring_mode: str = "local"
-    auto_log_on_ingest: bool = False
+    auto_log_on_ingest: bool = True
     default_actor: str | None = None
 
     def to_dict(self) -> dict:
@@ -76,7 +79,7 @@ def _legacy_auto_log_default() -> bool:
 
         return bool(get_config().custody_on_ingest)
     except Exception:  # noqa: BLE001 - config is optional context; never block custody
-        return False
+        return True  # matches the on-by-default dataclass default (Item-N ruling)
 
 
 def load_settings() -> CustodySettings:

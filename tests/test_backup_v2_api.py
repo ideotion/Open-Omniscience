@@ -113,3 +113,35 @@ def test_restore_rejects_garbage(client):
         files={"file": ("x.bin", b"this is not a backup at all")},
     )
     assert bad.status_code == 400
+
+
+def test_legacy_restore_from_server_side_path_is_additive(client, tmp_path):
+    # The unified Import dialog restores a legacy single-file backup it discovered on
+    # disk via a SERVER-SIDE path (a folder may hold several). Additive self-merge:
+    # committed, a per-table plan is returned (the import-summary source), nothing new.
+    from pathlib import Path
+
+    from src.backup.artifact import write_backup_v2
+
+    dest = Path(tmp_path) / "open-omniscience-20260702.oobak"
+    write_backup_v2(dest, passphrase="legacy-pw")
+
+    r = client.post(
+        "/api/backup/legacy/restore",
+        json={"path": str(dest), "passphrase": "legacy-pw"},
+    )
+    assert r.status_code == 200, r.text
+    rep = r.json()
+    assert rep["committed"] is True and rep["verification"]["ok"] is True
+    assert "plan" in rep  # per-table new/duplicate counts the summary renders
+    news = {k: v["new"] for k, v in rep["plan"].items() if isinstance(v, dict) and v.get("new")}
+    assert news == {}  # self-merge adds nothing
+
+
+def test_legacy_restore_missing_file_is_honest_400(client):
+    r = client.post(
+        "/api/backup/legacy/restore",
+        json={"path": "/nonexistent/nope.oobak", "passphrase": ""},
+    )
+    assert r.status_code == 400
+    assert "not a file" in r.json()["detail"]

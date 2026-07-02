@@ -85,8 +85,29 @@ def run_deferred_startup() -> None:
     """Everything that needs an OPEN database: schema/FTS, error log, janitor,
     seeds, metrics, scheduler. Runs at every unlocked lifespan (each step is
     idempotent — init_db has always self-healed a damaged schema on boot) and
-    again the moment the operator unlocks/creates an encrypted store."""
+    again the moment the operator unlocks/creates an encrypted store.
+
+    Split into a fast, query-enabling ``init_db`` and the slower ``_run_startup_upkeep``
+    so the web-unlock path can return the moment the DB is queryable and run the
+    upkeep in the background (see src/api/unlock._finish_unlock). Called WHOLE and
+    synchronously from the lifespan (plaintext / already-unlocked boot), where
+    blocking is fine — there is no button to freeze."""
+    from src.api.startup_status import set_startup
+
+    set_startup("running", "opening the database")
     init_db()
+    _run_startup_upkeep()
+    set_startup("ready", "")
+
+
+def _run_startup_upkeep() -> None:
+    """The post-``init_db`` startup work (planner stats, error log, janitor, seeds,
+    metrics, cache warm, airplane). Split out so the unlock path can run it in a
+    background thread while the DB is already queryable. Every step is best-effort
+    and idempotent; phases are published for the unlock progress view."""
+    from src.api.startup_status import mark_phase
+
+    mark_phase("refreshing search statistics")
     # Query-planner statistics (performance batch 2026-06-12): bounded ANALYZE
     # on first boot at a schema, PRAGMA optimize after — best-effort, never
     # blocks startup, and repeat boots are near-free.
@@ -131,6 +152,9 @@ def run_deferred_startup() -> None:
     # ~3,200-source catalog once and is near-free on later boots. Data collection is
     # the heart of the project — it must have sources. Gated by OO_AUTOSEED.
     if os.getenv("OO_AUTOSEED", "1") != "0":
+        from src.api.startup_status import mark_phase as _mp
+
+        _mp("loading the source catalog")
         try:
             from src.ingest.seed_sources import seed_default_sources
             from src.law.catalog import register_documents, seed_legal_sources
@@ -144,6 +168,9 @@ def run_deferred_startup() -> None:
         except Exception:  # noqa: BLE001 - seeding must never block startup
             logger.warning("could not seed the source catalog at startup", exc_info=True)
     try:
+        from src.api.startup_status import mark_phase as _mp
+
+        _mp("counting your corpus")
         with session_scope() as session:
             ARTICLES_COUNT.set(session.query(Article).count())
             SOURCES_COUNT.set(session.query(Source).count())
@@ -276,6 +303,73 @@ app.add_middleware(
     expose_headers=["Content-Length", "Content-Type"],
     max_age=600,  # 10 minutes: a no-auth loopback API gains little from a 24h preflight cache
 )
+
+# --- DNS-rebinding / Host-header guard (release 0.1 blocker) ----------------- #
+# A hostile website can point its OWN domain's DNS at 127.0.0.1 (DNS rebinding) so
+# the victim's browser sends same-origin requests to this loopback API — bypassing
+# CORS entirely, since the browser believes it is talking to attacker.example. The
+# reliable defence is the Host header: a rebound request carries the ATTACKER's
+# hostname, never localhost. Reject any request whose Host (port stripped) is not a
+# loopback name; OO_ALLOWED_HOSTS (comma-separated hostnames) is the explicit escape
+# hatch for LAN self-hosters who serve the app under another name.
+_ALLOWED_HOST_NAMES = {
+    "127.0.0.1",
+    "localhost",
+    "::1",
+    "[::1]",
+    # Starlette's TestClient stamps Host: testserver on every request. It calls the
+    # ASGI app in-process — no network socket is ever opened — so allowing it cannot
+    # widen real-world exposure, and the test suite keeps working unmodified.
+    "testserver",
+}
+
+
+def _host_without_port(host_header: str) -> str:
+    """The Host header's hostname, lowercased, with any :port stripped.
+
+    Bracketed IPv6 (``[::1]:8000``) keeps its brackets; a value with several
+    colons and no brackets is a raw IPv6 literal, returned whole (stripping the
+    last segment would mangle it).
+    """
+    value = host_header.strip().lower()
+    if value.startswith("["):
+        end = value.find("]")
+        return value[: end + 1] if end != -1 else value
+    if value.count(":") == 1:
+        return value.rsplit(":", 1)[0]
+    return value
+
+
+def _allowed_hosts() -> set[str]:
+    """The loopback defaults plus any OO_ALLOWED_HOSTS entries (hostnames, no port).
+
+    Read per-request (a set-union of a few strings — negligible) so tests and
+    operators can change the env without re-importing the app.
+    """
+    allowed = set(_ALLOWED_HOST_NAMES)
+    for entry in os.getenv("OO_ALLOWED_HOSTS", "").split(","):
+        entry = entry.strip().lower()
+        if entry:
+            allowed.add(entry)
+    return allowed
+
+
+@app.middleware("http")
+async def _host_header_guard(request: Request, call_next):
+    if _host_without_port(request.headers.get("host", "")) not in _allowed_hosts():
+        # 421 Misdirected Request: the request was directed at a server name this
+        # loopback API does not serve — the DNS-rebinding signature.
+        return JSONResponse(
+            status_code=421,
+            content={
+                "detail": (
+                    "Refused: the Host header does not name this loopback API "
+                    "(DNS-rebinding guard; set OO_ALLOWED_HOSTS to serve other names)."
+                )
+            },
+        )
+    return await call_next(request)
+
 
 # --- CSRF (S-003) + security headers (S-006) -------------------------------- #
 # No auth + a loopback API means a web page the user merely visits could POST to

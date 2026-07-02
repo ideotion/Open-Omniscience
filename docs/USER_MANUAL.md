@@ -64,17 +64,15 @@ local-first app.
 curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scripts/bootstrap.sh | bash
 ```
 
-This clones the repo and runs `./install.sh`, a small menu where you choose:
-
-- **Core** — scrape, store, search, export (always installed).
-- **Analysis tools** — statistics, keyword/entity analytics, market correlation
-  (the `[analysis]` extra; pulls in scipy/scikit-learn, optionally spaCy for real
-  named-entity recognition).
-- **Local LLM tools** — Ollama plus a model, for on-device summarise/translate.
-
-Re-run `install.sh` any time to add extras. It also creates an **Open Omniscience**
-launcher in your apps menu and on the Desktop — double-click it to start the app
-and open your browser at `http://127.0.0.1:8000`.
+This clones the repo and runs `./install.sh`, which is **seamless — it asks nothing**.
+It installs the default set — **Core** (scrape, store, search, export) plus the
+**Analysis** extra (statistics, keyword/entity analytics, market correlation via
+scipy/scikit-learn; optional spaCy for real named-entity recognition) plus compression —
+then creates an **Open Omniscience** launcher in your apps menu and on the Desktop and
+**auto-launches** the app in your browser at `http://127.0.0.1:8000`. (Set
+`OO_COMPONENTS` to override the component set.) On-device summarise/translate needs a
+local model — install **Ollama** from **Settings → AI** (in-app verified installer) or
+from ollama.com. Re-run `install.sh` any time.
 
 > Always inspect a script before piping it to a shell. The
 > [`bootstrap.sh`](../scripts/bootstrap.sh) is tiny; you can also clone the repo
@@ -97,40 +95,54 @@ across news, markets, the political-spectrum set and official law/IP portals)** 
 have something to ingest immediately, initialises the SQLite database and FTS
 index, and (if enabled) starts the background scheduler.
 
-### The passphrase screen (new corpora are encrypted)
+### The first-launch page (language → terms → passphrase)
 
-New databases are **SQLCipher-encrypted on disk by default**, so the very first
-thing you may see is an **unlock screen** at `/unlock`: pick **THE passphrase** for a
-brand-new corpus (or type the one you set). This is one stable secret with **no
-recovery** — full rationale and the honest threat model are under
-[Settings → Safety](#39-settings). Headless/scripted runs supply it with
+On a **fresh install** the very first thing you see is the self-contained, offline
+setup page at `/unlock`, in three steps **before the app opens**:
+
+1. **Choose your language** — pick from the 12 interface languages; the whole page
+   switches live and your choice carries into the app.
+2. **Read and accept the legal documents** (shown in your language; French is
+   authoritative). **Accept and continue** to proceed, or **Decline** — declining
+   **uninstalls the app** (a typed-confirmation sub-panel makes sure an accidental
+   click never wipes anything).
+3. **Create your corpus passphrase.** New databases are **SQLCipher-encrypted on disk
+   by default**, so you pick **THE passphrase** here (entered twice to confirm). It is
+   one stable secret, like a user ID, with **no recovery and no decryption
+   alternative** — a lost passphrase costs re-collection time, because the corpus is
+   rebuilt from the web. Full rationale and the honest threat model are under
+   [Settings → Safety](#39-settings).
+
+On **later launches** the store is already created, so you go straight to a single
+**unlock** prompt for the same passphrase. Headless/scripted runs supply it with
 `OO_DB_PASSPHRASE`; plaintext operation stays an explicit choice (`OO_DB_PLAINTEXT=1`).
-The unlock page is self-contained and offline.
 
-### The first-launch guide & the Home screen
+### The guided setup & the Home screen
 
-On a fresh install a one-time **guided setup** (a stepped dialog) walks you through
-your first choices: it opens on a **Language** step (pick from the 12 interface
-languages — the whole UI switches live) and ends on a **Finish** step that states the
-app **boots offline** and offers a *"Go online & start collecting"* button. Going
-online always passes the network-consent popup (below) — the guide only invites you;
-it never connects on its own. *(An encryption-choice step and a sources-by-theme step
-are marked "Coming soon" in this build.)* You can re-run the guide any time from
-**Settings**.
+Once you're in, a one-time in-app **guided setup** (a stepped dialog) can walk you
+through your first choices: it opens on a **Language** step and ends on a **Finish**
+step that states the app **boots offline** and offers a *"Go online & start
+collecting"* button. Going online always passes the network-consent popup (below) —
+the guide only invites you; it never connects on its own. You can re-run it any time
+from **Settings → General → "Re-run the first-launch guide."**
 
 After that, the app opens on **Home**, which leads with your **Briefing** — a feed of
-honest "cards" (see [3.0 Home](#30-home)) — above a compact **at-a-glance** strip of
-live counts. When the corpus is empty a **welcome card** offers a single button to
-seed the curated catalog and run a first pass, after which **Search** has real
-articles in it.
+honest **Leads** (see [3.0 Home](#30-home)) — above a compact **at-a-glance** strip of
+live counts. You don't need to seed anything by hand: the curated catalog **auto-seeds
+on boot**, and going online **starts collecting automatically**, after which **Search**
+has real articles in it.
 
-**The shell.** Navigation lives in a **left sidebar**, grouped by what you're trying
-to do — *Investigate · Collect · Trust · System* (it collapses to an icon rail on
-narrow windows but never disappears). A **minimal top bar** above the content carries:
+**The shell.** Navigation lives in a **left sidebar** — a **flat list** of the data
+tools: **Home · Insights · World map · Governments · Agenda · Indices · Commodities**
+*(advanced)* **· Library** (it collapses to an icon rail on narrow windows but never
+disappears). A **Settings** button sits at the **bottom of the sidebar** (with the
+collapse toggle), and a **minimal top bar** above the content carries:
 
 - **The search / command bar (⌘K / Ctrl-K).** Type to jump to any tool, run a common
   action, open any document — or federated-search your data (see [3.1 Search](#31-search)).
-- **Live status** — a backend health dot and an **LLM** pill.
+  This is the only search entry point; there is no "Search" tab.
+- **Live status** — a backend health dot and an **LLM** pill (click it to open
+  Settings → AI).
 - **Task manager** — a button that opens the [task-manager window](#30a-activity--the-task-manager).
 - **Airplane mode** — the one network on/off switch (a plane glyph whose *fill* is the
   state; filled = offline). On first launch, while offline, a small coachmark points at
@@ -139,12 +151,15 @@ narrow windows but never disappears). A **minimal top bar** above the content ca
   native name is the identifier). One click re-translates the whole UI.
 - **Help (?)** — opens the in-app documentation reader (this manual and the other
   guides), searchable and fully offline; the raw API page is at `/docs`.
-- **Settings (gear)** — preferences and the acquisition surfaces; see
-  [3.9 Settings](#39-settings). *(Settings is reached from the top bar, not the sidebar.)*
+- **Shut down (power)** — stops the server cleanly; your data is untouched, and the UI
+  is replaced by a "you can close this tab" overlay. (This is *not* uninstall or a
+  wipe.)
 
-**Appearance** (**Settings → Appearance**) offers **17 colour themes + System**,
-accent, density, text size, a bundled-typeface picker, sidebar collapse, and which
-tools appear. Everything is stored locally; nothing is transmitted.
+**Settings** opens from the **Settings button at the bottom of the sidebar** (the
+command palette also jumps straight there); see [3.9 Settings](#39-settings).
+**Appearance** (**Settings → Graphics**) offers **17 colour themes + System**, accent,
+density, text size, a bundled-typeface picker, and sidebar collapse. Everything is
+stored locally; nothing is transmitted.
 
 ### Recent additions (0.0.8 live-test cycle, June 2026)
 
@@ -160,16 +175,28 @@ tools appear. Everything is stored locally; nothing is transmitted.
   pass, importing market feeds, adding a watched Wikipedia page or downloading
   a dump all pass through the same consent when offline, and the toggle
   repaints immediately on every transition — it never waits for the next poll.
+
+  **Airplane mode is a socket-level guarantee, not just a per-call convention.** As
+  informed consent about the app's *own* protection: while airplane mode is engaged the
+  app installs a **process-wide guard** over the low-level socket calls
+  (`getaddrinfo` / `create_connection` / `connect`), so **any** attempt to reach a
+  non-loopback address — from any code path, a third-party library, or a DNS prefetch —
+  raises before the real socket is used. Loopback (127/8, ::1, `localhost`) and Unix
+  sockets always pass through, so the app's own server, a local Ollama and the file
+  database keep working. It is transparent while you're online (zero cost during
+  collection). Set `OO_AIRPLANE_SOCKET_GUARD=0` to disable it (for an exotic deployment
+  that proxies loopback elsewhere).
 - **Layered mind-map & word cloud (Insights):** a true radial mind-map (centre →
   arms → outward leaves) across three zoom layers (keywords ↔ families ↔
   super-groups), with a word-cloud second view, a date-spectrum control, a
   text-size slider and ⛶ Enlarge. Font size always encodes shared-article volume.
 - **Pre-created super-groups:** a bundled starter set (drafted from real field
   logs) seeds at startup; your own edits and deletions always win.
-- **World map controls:** precise focus-date entry, a from/to time-span that
-  remaps the slider (play then sweeps only that period), play speed 0.5–4×,
-  fine ±month windows, wheel zoom, in-map controls and ⛶ Enlarge. Pins are
-  clickable across their whole disc.
+- **World map is now a choropleth (ooMap):** the tab shades countries by a measured
+  dimension (sources · articles · keyword mentions · tone), with in-map controls for the
+  measure, country↔continent granularity, a Places overlay, a Signals layer with a
+  moment-in-focus slider, a Server-IPs layer, wheel zoom, drag-pan and ⛶ Enlarge. See
+  [3.6a](#36a-world-map).
 - **Event dates, places, people and organizations extracted from text:** the
   date extractor reads six languages, numeric formats and anchored expressions
   ("yesterday", bare weekdays, "June 11"); the location extractor finds
@@ -192,11 +219,11 @@ tools appear. Everything is stored locally; nothing is transmitted.
   `src/static/fonts/README.md`): nothing to download, no font request ever
   leaves your machine. Some themes pair with a font (Arctic→Inter,
   Cyber→Outfit, Sepia/Paper→Source Serif); the new **Typeface** picker in
-  Settings → Appearance overrides any of them, and the article reader uses the
+  Settings → Graphics overrides any of them, and the article reader uses the
   bundled serif. Form widgets (sliders, checkboxes, native dropdowns) now
   follow the theme too.
 
-**A note on “FOOS”.** Browser tabs the app opens (card investigations, the
+**A note on “FOOS”.** Browser tabs the app opens (Lead investigations, the
 local article reader) are suffixed **“· FOOS” — Free Open OmniScience**: short
 enough for narrow tab strips while keeping the app identifiable. It is the
 alpha working name; a proper rename may come later.
@@ -234,48 +261,55 @@ Destructive actions always ask first.
 
 ## 3. The tools, one by one
 
-The sidebar groups the tools by intent:
+The sidebar is a **flat list** of the data tools (top to bottom):
 
-- **Investigate** — Home · Analysis · Insights · World map · World law ·
-  Agenda · Indices · Commodities *(advanced)* — search is the top-bar omnibar
-- **Collect** — Library
-- **Trust** — Evidence & custody
-  *(Source integrity's desk moved into Settings → Safety; Help & docs is the top-bar `?`.)*
+- **Home · Insights · World map · Governments · Agenda · Indices · Commodities**
+  *(advanced)* **· Library** — plus the **Settings** button at the bottom of the
+  sidebar. Search is the top-bar omnibar; there is no "Search", "Analysis" or "Collect"
+  tab. Analysis **spawns** from a query — press Enter in the omnibar, or click a keyword
+  or a Home Lead, and a named analysis window opens (see
+  [3.1a](#31a-analysis-the-corpora-window)).
 
-**Content-first (0.0.9).** The sidebar shows the *data*; the acquisition surfaces
-moved into **Settings**: **Collect** (the scheduler + manual ingest), **Sources** (the
-catalog) and **Wikipedia** (change-tracking + offline dumps) are now Settings sections,
-documented in their own subsections below. **Settings** itself opens from the **top-bar
-gear**, not the sidebar.
+**Content-first.** The sidebar shows the *data*; the acquisition and maintenance
+surfaces live in **Settings**: **Collect** (the scheduler + manual ingest), **Sources**
+(the catalog), **Wikipedia** (change-tracking + offline dumps), **Evidence & custody**
+and the **source-integrity desk** are all reached from Settings (documented in their own
+subsections below). Settings opens from the **button at the bottom of the sidebar**; the
+command palette also jumps straight there.
 
 A few names changed to be plainer (the controls are the same): **Ingest → Collect**,
-**Database → Library**, **Chain of custody → Evidence & custody**, **Markets →
-Commodities** (with **Indices** split out). You can hide tools you don't use
-(Settings → Appearance → "Tools shown"), and jump to any tool with the command palette
-(Ctrl/⌘-K).
+**Database → Library**, **World law → Governments** (now with **Countries · Map · Law**
+subtabs), **Markets → Commodities** (with **Indices** split out). Jump to any tool with
+the command palette (Ctrl/⌘-K).
 
 ### 3.0 Home
 
 **What it's for:** your **briefing** — a triage feed plus orientation.
 
 - **Briefing (the feed):** the app gathers and measures in the background, then
-  surfaces candidate stories as **cards** grouped into editorial buckets (*rising,
-  overtold, undertold, investigate, check-the-framing, watch, context, data
-  integrity*). Each card is **one measured signal + evidence links + a caveat** — never
-  a verdict, and there is **no "trust score"** (forbidden in code). Toggle **Show
-  method & caveat** to see exactly how every figure was computed and what it does not
-  mean. **+ Add to draft** pins a card; **Dismiss** hides it (reversible). The feed is
-  cached (instant) and refreshes after each scrape — or hit **Refresh**. Full details:
-  [USER_MANUAL.md](USER_MANUAL.md).
-- **Newsletter draft:** pinned cards + your notes, exported as **Markdown** in which
+  surfaces candidate stories as **Leads** (the on-screen name for the briefing cards)
+  grouped into editorial buckets (*rising, overtold, undertold, investigate,
+  check-the-framing, watch, context, data integrity*). Each Lead is **one measured
+  signal + evidence links + a caveat** — never a verdict, and there is **no "trust
+  score"** (forbidden in code).
+- **Flip cards — the warning lives on the back.** A Lead is a **two-sided flip card**:
+  the **front** is the lead at a glance; **click it (or press Enter)** and it flips to a
+  **back** that carries the **caveat, the method, why it fired, the evidence, and an
+  "Open corpus ↗"** button (which opens that Lead's exact article set in a new analysis
+  window). The caveat is in the DOM by default, right beside the action — it is never
+  hidden behind a calm toggle. **+ Add to draft** pins a Lead; **Dismiss** hides it
+  (reversible). The feed is cached (instant) and **self-updates** — it recomputes in the
+  background after each scrape pass and re-polls on its own; there is no Refresh button.
+- **Newsletter draft:** pinned Leads + your notes, exported as **Markdown** in which
   every claim already carries its source links, method and caveat — reproducible
   journalism. For a signed copy of the underlying articles, use Evidence & custody.
 - **Content-first layout:** a compact **at-a-glance** strip is pinned at the top (live
-  counts + whether automatic collection is running), and the cards below can be filtered
-  by **family** via vertical subtabs (an **"All cards"** default lens, plus one tab per
-  bucket with its own hue). When the corpus is empty a **welcome card** offers the
-  one-click first-run seeding. *(The old hero greeting and the "Quick actions" row were
-  removed — Home opens straight on the Briefing.)*
+  counts + whether automatic collection is running), and the Leads below can be filtered
+  by **family** via vertical subtabs (an **"All Leads"** default lens, plus one tab per
+  bucket with its own hue). The curated catalog auto-seeds and collection starts when you
+  go online, so an empty Home simply shows an honest empty state — no welcome card. *(The
+  old hero greeting and the "Quick actions" row were removed — Home opens straight on the
+  Briefing.)*
 
 ### 3.0a Activity & the Task manager
 
@@ -285,7 +319,7 @@ background, from any tab.
 - An **activity chip** in the top bar lights up while work runs (a collect pass, a
   Wikipedia dump, a market import); a persistent **task-manager** button sits beside it
   (it stays reachable even when the app is idle).
-- Open the **Task manager** — a proper window (not a popover) with four subtabs:
+- Open the **Task manager** — a proper window (not a popover) with five subtabs:
   - **Active** — every running job: the collect pass, each downloading Wikipedia dump,
     the in-flight fetch (shown as a DOMAIN only), the idle loop, and any paused/failed
     download. Each job shows its real progress and the controls that apply — **Stop** a
@@ -299,6 +333,8 @@ background, from any tab.
     current-pass progress (domain only), cadence, last run, and the backend's own
     next-run time shown as honest relative time (the method is in the hover bubble —
     never a fabricated countdown).
+  - **Coverage** — per-tag scraping reach and freshness (how much of each topic/tag your
+    collection is actually touching, and how fresh it is), so you can see gaps.
   - **System** — live process vitals (CPU, RAM, download rate). *(Vitals moved here out
     of the top bar.)*
 - The window reads **live from the systems that own the work**, so it can never
@@ -324,7 +360,18 @@ background, from any tab.
   Ollama is available).
 - **Exports:** **Export CSV**, **Export JSON**, and **Export signed evidence** — a
   tamper-evident, signed bundle of exactly the articles matching your query (see
-  [Evidence & custody](#38-evidence--custody)).
+  [Evidence & custody](#38-evidence--custody)); plus a **Methods appendix** (a
+  reproducible record of the query + method).
+- **Local-model runs over the whole match:** **Summarize all** / **Translate all** queue
+  a background run of your local model across every matched article (stored with model +
+  date, and — being AI output — never fed into the trusted keyword index); **Run
+  extractor** runs one of your custom AI extractors over the set; **Synthesize results**
+  opens a window where you pick up to 20 members and get one cited local-model pass over
+  them (see the deep-dive). Runs are queued and cancellable; the same controls sit in the
+  analysis window.
+
+> **This page is reached from the omnibar, not the sidebar.** Choosing *"Run the full
+> Boolean search"* in the command palette lands you here with the query prefilled.
 
 **The omnibar (Ctrl/⌘-K), from anywhere:** the command palette is also a
 federated search over your data. From two typed characters it shows the first
@@ -339,28 +386,53 @@ away.
 ### 3.1a Analysis — the corpora window
 
 **What it's for:** turning a *set* of articles, or a single keyword, into an analysis
-object you can read from several angles. A keyword is a corpus; a single article is a
-corpus of one. The same window opens from several places — clicking a keyword (e.g. in
-Insights or the omnibar opens its **⊞ Corpus** window) and the **Analysis** sidebar tab.
+object you can read from every angle. A keyword is a corpus; a single article is a corpus
+of one. There is **no "Analysis" sidebar tab** — an analysis window is **spawned by a
+query**:
 
-The window is a tabbed dialog with a title and the **article count** it was computed
-over, and these subtabs (this build):
+- press **Enter** in the omnibar (or choose *"Run the full Boolean search"*),
+- click a **keyword** anywhere (Insights, a Lead's back, a reader),
+- click a **Home Lead** (its "Open corpus ↗" opens the *exact* article set), or
+- click a commodity chart title / **Analyse ↗**.
 
-- **Trend** — the mention/volume trend over time, drawn with the shared interactive
-  chart toolkit (zoom by wheel, drag to pan, hover for an exact readout; full-resolution
-  within the window, with sparse stretches shown honestly as points + an early-corpus
-  caveat rather than a faked curve).
-- **Articles** — the member articles, each opening in the offline reader.
+Several searches coexist as **named tabs** in a strip at the top of the window (a
+multi-document workspace); each is titled by its query and shows the **article count** it
+was computed over. The subtabs are:
+
+- **Overview** — a one-glance summary of the set.
+- **Keywords** — the ranked keyword table (real co-occurrence / n / PMI, no score).
+- **Trend** — the mention/volume trend over time, drawn with the shared interactive chart
+  toolkit (wheel-zoom, drag-pan, hover for an exact readout; full-resolution within the
+  window, with sparse stretches shown honestly as bars + an early-corpus caveat rather
+  than a faked curve).
+- **Mindmap** — a deterministic radial keyword map (centre → arms, always outward).
+- **Articles** — the member articles (paginated), each opening in the **offline reader**,
+  whose own tab bar is **Read · Summary · Translation · Keywords · Mindmap · Sentiment ·
+  Related · Source · Links** (Summary/Translation use the local model; near-identical
+  copies are badged "N copies = one voice").
+- **When/Where/Who** — the dates, places and people/orgs the set mentions, as clickable
+  **facets**; clicking a value **drills** into just the articles mentioning it (a refined
+  analysis window). Deduced from text, never confirmed.
 - **Links** — which member articles **share outbound links**. This surfaces
   *shared-origin structure* on purpose: three articles citing one origin are one source
   wearing three hats, so convergence counts as corroboration only when the paths are
-  independent (links carry an independence note). The goal is the *sources' sources*.
+  independent. The goal is the *sources' sources*.
+- **Related** — near-identical copies across sources ("N copies = one voice") and shared
+  origins, each with a **"Branch into a new corpus →"** that spawns a fresh analysis
+  window over exactly those articles.
+- **Sentiment** — per-source tone (VADER; the English-only caveat is shown).
+- **Sources** — the descriptive provenance + competitive view of the outlets in the set
+  (volume / tone / timing / emphasis — descriptive, never a winner or a score).
+- **Price** — *(only when the window was seeded from a commodity)* the price curve
+  overlaid on your corpus coverage on a shared time axis (co-occurrence, never causation),
+  each series on its own real-unit scale.
+- **Advanced** — scope the set by **source · language · date range**, and **sort** by
+  date / source / title / language (an honest metadata ordering, never a relevance
+  score); a "Filtered" chip and summary show what's active.
 
-> **Honest status.** This is the first slice of the planned flagship "corpora system."
-> The richer subtabs the project intends — mindmap, source/competitive analysis,
-> sentiment, When×Where×Who, and an Advanced-search tab on the Enter→window path — and a
-> shared time-scope (begin/end/timescale) control are **not yet built here**; see
-> [`docs/ROADMAP.md`](ROADMAP.md). What ships today is exactly the three subtabs above.
+The action row carries **Methods appendix**, **Export signed evidence**, **Synthesize
+results** (the member-selection window), and queued **Summarize all / Translate all / Run
+extractor** local-model runs — the same set as the Search page.
 
 ### 3.2 Collect *(in Settings → Collect)*
 
@@ -375,7 +447,12 @@ timer. Controls:
 - **Start / Stop / Scrape now** — run continuously, halt, or run a single pass
   immediately. The status pill shows `running` / `running — scrape in progress` /
   `stopped` and the next run time; the line below shows the last run's tally.
-- **Interval (minutes)**, **Max sources / run**.
+- **Interval (minutes)** and a **Collection speed** slider (a download-rate target). The
+  app measures its own real download rate and raises or lowers the number of concurrent
+  hosts to track your target, backing off automatically when CPU, memory or the single
+  encrypted writer becomes the limit; per-host politeness is never traded for speed.
+  *(There is no "max sources per run" cap — over time every source is covered, so none is
+  starved.)*
 - **Mode:** *RSS feeds*, *Recursive crawl*, *Markets (price rules)*, or *Wikipedia
   (watched pages)*. Choosing **crawl** reveals **Crawl depth** and **Max pages /
   source** (the crawler stays inside each source's own domain, honours robots.txt
@@ -417,11 +494,15 @@ robots, etc. Fetching is always ethical (robots fail-closed, rate-limited).
 #### Languages we can't yet analyse — disabled by default (kept)
 
 The keyword/analytics engine can only **manage** languages for which a *stoplist*
-exists and whose script is **space-segmented**. Today that means: **en, fr, de, es,
-it, pt, nl, ru, ar, hu, id, sv, da, nb, no, pl, sr, sl**. Languages with **no
-stoplist** (e.g. tr, el, uk, th, ur, bg, ca, fi, cs, hi, …) still *tokenise*, but
-their function words ("the/of/and" equivalents) leak in as false keywords; and
-**zh/ja have no word segmentation**, so extraction is broken outright.
+exists and whose script is **space-segmented**. The authoritative list lives in one
+module — [`src/analytics/managed.py`](../src/analytics/managed.py) (`MANAGED_LANGUAGES`)
+— which both the source-gating and the in-app engine report read, so the manual can't
+drift from the code. As of that module the managed set is: **en, fr, de, es, it, pt, nl,
+ru, ar, hu, id, sv, da, nb, no, pl, sr, sl, el, bg, hi, bn, fa, ur, uk, ro, cs, sk, ca,
+sw, az, et, tr, fi, bs, hr**. A language **not** in that set still *tokenises*, but its
+function words ("the/of/and" equivalents) leak in as false keywords. **zh, ja and th are
+unsegmented** — they have no inter-word spaces, so keyword extraction is broken outright
+regardless of any stoplist.
 
 Scraping material in those languages therefore produces **junk keywords** that:
 
@@ -481,8 +562,10 @@ relating them to news volume.
   scales); the full series is always drawn at full resolution within it, never
   thinned. Click a card for a full chart plus
   a **price↔news correlation** (real Pearson/Spearman coefficient, p-value and
-  sample size — never a guessed number). **Load / refresh market data** imports the
-  curated official feeds.
+  sample size — never a guessed number). The curated official feeds **update
+  automatically in the background** while you're online (there is no Load/refresh
+  button); the board also has **category subtabs**, a **Cards/Families** view toggle, a
+  **Compare** overlay (with an Absolute/Indexed/Log scale toggle) and a shared time axis.
 - **Configure data sources** (collapsible — most users won't need it):
   - **Official price feeds** (FRED, which carries the **World Bank "Pink Sheet"**
     and **EIA** series): one-click **Import**, plus **Chart**.
@@ -504,7 +587,9 @@ VIX, Nikkei 225 …) — kept **separate from Commodities**, because an index is
 index, not a commodity.
 
 - A board of index series with the same detailed, full-resolution charts as
-  Markets. **Import / refresh** pulls the curated official feeds (FRED and friends).
+  Commodities (category subtabs, tag filter, Compare overlay, Families view, a shared
+  time axis). The curated official feeds (FRED, Stooq) **update automatically in the
+  background** while you're online — there is no Import/refresh button.
 - Each feed carries an **honest per-feed verdict** when it can't be fetched —
   *refused* ≠ *robots-disallowed* ≠ *dead series* ≠ *unreachable* ≠ *offline* — so
   a blocked feed degrades loudly instead of showing a fake number. Over Tor some
@@ -523,18 +608,31 @@ opt-in via the spaCy `[nlp]` extra.)*
   removed in favour of auto-indexing. People, organisations and places are kept as
   single units; indexing is resumable and the bar updates live. *(Disable the automatic
   indexing with `OO_NO_INDEX=1`.)*
-- Three sub-tabs:
+- Eight sub-tabs:
   - **Explore** — type a keyword or entity (e.g. *inflation*, *Emmanuel Macron*,
     *Rio Tinto*) to get: a **trend** line over time; an **associations mind-map**
     (PMI-ranked co-occurring terms — edge width = co-occurrence, distance =
     strength; click a node to recenter); a **framing** table (how each outlet's
     tone differs, via VADER, with the terms it emphasises); and **in-context**
     snippets with source/place/date links.
-  - **Trends** — **Rising** (keywords growing fastest, recent vs. baseline window)
-    and **Top** (most-mentioned), filterable by kind (terms/entities/people/orgs/
-    places) and country. Click any term to Explore it; click ✕ to exclude it.
-  - **Map** — a zoomable, pannable world map with city pins sized by mention count
-    (real lat/lon from a Wikidata gazetteer), plus per-country and per-city tables.
+  - **Trends** — **Rising** (keywords growing fastest, recent vs. baseline window) and
+    **Top** (most-mentioned), plus three preset windows (24h · week · month) side by
+    side, filterable by kind (terms/entities/people/orgs/places) and country. Click any
+    term to Explore it; click ✕ to exclude it.
+  - **Sources** — trending sources across your corpus.
+  - **Families** — keyword families (morphological variants collapsed).
+  - **Groups** — super-groups (durable umbrella concepts) and cross-language **rings**
+    (a concept and its translations/synonyms), editable.
+  - **Map** — the ooMap choropleth over your corpus (the same component as the World-map
+    tab).
+  - **Convergence** — read-only space-time co-occurrence: articles converging on the same
+    **place** within a time window on the mentioned event date. Independence is measured
+    by **distinct sources** (a chatty single source can't manufacture one); every cluster
+    carries the "co-occurrence, never causation — a prompt to read, not proof" caveat.
+  - **Watches** — your saved "if-this-then-watch" conditions: a local FTS query + a
+    threshold + a window. When the corpus gains enough new matching articles a **watch
+    Lead** appears on Home. Local-only, no notifications, no network, no telemetry;
+    create / enable / edit / delete, with a match history.
 
 Every figure is a real aggregate with its sample size and a caveat. See
 [`docs/USER_MANUAL.md`](USER_MANUAL.md). To tune which keywords appear, use the
@@ -542,61 +640,60 @@ Every figure is a real aggregate with its sample size and a caveat. See
 
 ### 3.6a World map
 
-**What it's for:** seeing *where* and *when* together. A journalist's two oldest
-questions are location and time; the World map puts every locatable, datable
-signal on one zoomable world map under a **time slider** that sweeps from antiquity
-to the near future — so you can watch what clustered, where, and when.
+**What it's for:** seeing *where* your corpus lives — a **choropleth** ("World
+coverage") that shades each country by a measured dimension of your data, with optional
+place-, signal- and server-location layers. It is built on one reusable map component
+(**ooMap**), and every control lives **inside the map** (the Google-Maps convention):
+zoom ＋/－, wheel-zoom, drag-pan, ⛶ enlarge, and the layer/measure pickers.
 
-- **What it plots:** a curated set of well-documented historical & scheduled
-  **anchors** (e.g. Vesuvius 79 CE → upcoming eclipses and Olympics) ships by
-  default. Toggle **my corpus** to add your own articles (placed at the source's
-  location on its publication date) and **live hazards** to relay open earthquake/
-  disaster feeds (USGS/GDACS). Each kind has a colour in the legend; click a legend
-  chip to show/hide it.
-- **Moving through time:** drag the slider (or click the density strip beneath it)
-  to set the moment in focus; **▶ play** sweeps it forward. Events fade with
-  distance in time; **future / unconfirmed** ones are drawn as dashed rings. The
-  **window** control (± a year up to all of time) decides how much past/future is
-  visible at once.
-- **Reading the map:** drag to pan, zoom in to reveal labels (semantic zoom). Click
-  any pin for its date, place, source, official link, and a **"Find coverage in your
-  corpus"** button that runs a search for that place — closing the loop from a point
-  in space-time back to what you've gathered.
-- **Coastlines (optional):** the map shows an accurate lat/lon graticule out of the
-  box; run `python scripts/build_world_outline.py` once (needs network) to add real
-  Natural Earth coastlines. Until then, no coastlines are *invented*.
+- **The choropleth measure (in-map picker):** switch what colours the countries between
+  **Sources · Articles · Keyword mentions · Mean tone**. Counts use a sequential scale;
+  **Mean tone** uses a **diverging** scale (positive ↔ negative around zero) and carries
+  the **VADER English-only** caveat plus the scored-article `n` — a country with no
+  English-scored article shows "no data", never a fabricated neutral.
+- **Honest no-data ≠ zero:** a country with no located data renders a **hatch pattern**
+  labelled "no data", visually distinct from a real zero. Small territories the coarse
+  outline can't draw appear as **points**; sources with no country are **counted but
+  never placed** ("N not mapped").
+- **Granularity (in-map toggle):** view by **Country** or aggregate to **Continent**
+  (a sum for counts, an `n`-weighted mean for tone — never a mean-of-means; an unknown
+  continent is honestly "no data").
+- **Places overlay:** turn on **Places** to plot the locations your articles *talk
+  about* (from the When/Where/Who extracted at ingest, at a gazetteer coordinate) as
+  hollow markers sized by article spread — with the **"Deduced from text, never
+  confirmed."** caveat.
+- **Signals layer + moment in focus:** turn on **Signals** to plot datable space-time
+  events (curated anchors, corpus articles, extracted dates) as kind-coloured points; a
+  **moment-in-focus slider** sweeps time (confirmed = filled, future/unconfirmed = a
+  dashed ring, fading with distance in time). Click a marker for a detail panel — date,
+  place, source, official link, **"Find coverage in your corpus"**, and a **"Near in
+  space & time"** list that is explicit that co-occurrence is *"not a connection or a
+  cause. You judge."*
+- **Server IPs layer:** optionally show the offline-geolocated **server locations** of
+  sources — with the honest caveat that this is a CDN edge / anycast host, **not** proof
+  of the publisher's true origin (and unavailable over Tor, where the socket is the
+  proxy, not the server).
+- **Coastlines & borders are bundled:** the country/coastline geometry ships with the app
+  (Natural Earth, coarsened) — nothing to build, no borders invented.
 
-**Dates a story is *about*:** toggle **dates in text** to extract explicit dates
-mentioned in your articles (e.g. a 2024 piece on the *1945* bombing) and plot them at
-the source location — drawn as dashed "extracted" pins. These also become **per-article
-date tags**: open an article's offline reader to see them listed, **confirm or reject**
-each candidate, or **extract** on demand; the corpus can then be filtered by a mentioned
-date (`GET /api/article-dates/by-date`). High-precision only — bare years and relative
-phrases ("last week") are deliberately not extracted.
-
-**Places your corpus *mentions*:** toggle **📍 places** to plot the locations your
-articles *talk about* (not where they were published) — drawn from the When/Where/Who
-extracted at ingest and placed at a gazetteer coordinate. Each marker's **area scales
-with how many articles mention that place** (raw article spread — never a score);
-click one for its name, article spread, total mentions and the **"Deduced from text,
-never confirmed."** caveat (the same caveat rides in the layer's legend). Places with
-no known coordinate aren't drawn — their count is stated honestly ("N places not
-mapped"), never dropped onto (0, 0). The layer is **off by default** (the curated
-anchors stay primary; you opt in).
-
-**Honesty by construction:** a pin needs **both** a coordinate and a date — anything
-missing one is simply absent, never dropped onto (0, 0), and the caveat says so.
-Country-level pins are flagged **approximate** (a stand-in point, not the exact
-spot); corpus pins mark **coverage origin on the publication date**, not the event
-site; scholarly date doubt (e.g. Pompeii's exact day) rides along in the pin's note.
+Dates a story is *about* also become **per-article date tags**: open an article's offline
+reader to see them listed, **confirm or reject** each candidate, or **extract** on demand;
+the corpus can then be filtered by a mentioned date (`GET /api/article-dates/by-date`).
+The extractor is high-precision: bare years and vague spans are not extracted, but
+**anchored relative words** ("yesterday") and **bare weekdays** are.
 
 ### 3.6b Agenda
 
 **What it's for:** a calendar of dated events — what's coming, sourced and honest.
 
 - A **month grid** (Monday-start; month/day names in your UI language) is the
-  default view, with a **List** view alongside. Days with events are marked; click
-  a day for the details.
+  default view, with **Week · Trimester · Semester · Year · Decade · List** views
+  alongside (one shared nav bar). Days with events are marked; click a day for the
+  details, and click an event title to open it in the corpus.
+- **Deduced events (from your articles):** future dates *mentioned* across several
+  articles surface as a distinct, filterable **deduced** layer — each entry shows a
+  "deduced · never confirmed" pill and the article/source counts, and its title opens
+  the exact article set. Counts only, never a verdict.
 - **Astronomy, computed locally:** full/new moons and the equinoxes/solstices are
   computed on this machine (Meeus' algorithms, verified against published almanac
   values); each entry states its **method and accuracy** in the hover bubble.
@@ -662,27 +759,34 @@ The dump **language list is limited to the app's languages** (the 12 interface
 languages plus the corpus languages the analyzers support); the watched-pages
 edition picker above keeps the full list.
 
-### 3.7a World law
+### 3.7a Governments
 
-**What it's for:** tracking the **law** — statutes, gazettes, IP records — from official
-sources worldwide, and watching how it changes over time. Like Wikipedia tracking, the
-*changes are the data*. A **research mirror**, never the authoritative source and **not
-legal advice** — every record links back to its official gazette. Full guide:
-[`docs/USER_MANUAL.md`](USER_MANUAL.md).
+**What it's for:** the **Governments** sidebar tab (the code anchor stays `law`, the
+label is "Governments") gathers per-country official data and tracks how the **law**
+changes. It has three subtabs:
 
-- A **worldwide catalog of real official sources** (national legislation databases,
-  gazettes, IP offices — `legislation.gov.uk`, EUR-Lex, Légifrance, govinfo, WIPO Lex,
-  USPTO, EPO, …) is **seeded by default**; they ingest and search like any other source.
-- **Track changes now** fetches the curated tracked documents through the ethical
-  fetcher, storing a baseline then honest **diffs** with a large-change flag.
-- **Flagged legal changes** lists changes (jurisdiction · title · Δ bytes · reasons) with
-  the diff and a link to the official source. The briefing also surfaces a
-  **model-legislation** card when near-identical text appears across jurisdictions.
+- **Countries** — per-country **official statistics** from the World Bank (GDP,
+  population, life expectancy, labour, public finance + common indices). **Load standard
+  country data** fetches them (online, consent-gated). Each value is a producer's
+  published figure, **never a credibility score**; a **missing value is a published gap,
+  not zero**; producers are shown, **never averaged**.
+- **Map** — an **ooMap choropleth** of a selectable indicator with a year/history
+  selector; click a country to open its detail in the Countries subtab.
+- **Law** — tracking the **law** (statutes, gazettes, IP records) from official sources
+  worldwide, watching how it changes over time (the *changes are the data*). A **research
+  mirror**, never the authoritative source and **not legal advice** — every record links
+  back to its official gazette. A worldwide catalog of real official sources
+  (`legislation.gov.uk`, EUR-Lex, Légifrance, govinfo, WIPO Lex, USPTO, EPO, …) is seeded
+  by default. **Track changes now** fetches the tracked documents through the ethical
+  fetcher, storing a baseline then honest **diffs** with a large-change flag; **Flagged
+  legal changes** lists them (jurisdiction · title · Δ bytes · reasons) with the diff and
+  a link to the official source. The briefing also surfaces a **model-legislation** Lead
+  when near-identical text appears across jurisdictions.
 
 ### 3.8 Evidence & custody
 
-*(The sidebar calls this **Evidence & custody**; the panel heading still reads
-**Chain of custody** — same feature.)*
+*(Reached from **Settings → Safety** — "Chain of custody" is the panel heading; it left
+the sidebar in the content-first rework.)*
 
 **What it's for:** proving — to a sceptical third party, offline — that your corpus
 held *this* item, with *this* content, at *this* time, and that the record hasn't
@@ -725,6 +829,11 @@ this tab dummy-proof and largely automatic is captured in
 
 ### 3.8a Source integrity
 
+*(The source-integrity desk moved into **Settings → Safety → "Open the source-integrity
+desk"**; coordination is also surfaced automatically now — as Home Leads, in the analysis
+window's **Related** view, and as inline "N copies = one voice" badges on article lists
+and the reader.)*
+
 **What it's for:** seeing the *structure* behind your sources — and deciding, yourself,
 whose signal counts. There is deliberately **no trust score**; a single number would
 bake in bias and silence small, foreign, new or dissident sources. Full guide:
@@ -735,7 +844,7 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
   (shared text, timing, host). By default they are only **annotated** — never silently
   collapsed. **Apply collapse** to count a network as **one voice** (in any count that
   measures consensus); it stays flagged, **Expand (revert)** restores the raw equal view
-  exactly. Nothing is ever collapsed without your action. Echo-chamber cards on Home
+  exactly. Nothing is ever collapsed without your action. Echo-chamber Leads on Home
   carry the same action.
 - **Source profile:** a panel of measured dimensions — coordination, novelty
   (originates vs echoes), output capacity, transparency facts, track record — each with
@@ -749,18 +858,20 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
 ### 3.9 Settings
 
 **What it's for:** preferences, the acquisition surfaces, and maintenance — organized
-into sections via a sub-nav: **Appearance · General · Collect · Sources · Wikipedia ·
-Agenda · Models · Statistics · Offline map · Newsletters · Keywords · GUIs · Data &
-backup · Safety**. Open Settings from the **top-bar gear** (it is no longer a sidebar
-item); the command palette still jumps straight here. Everything is stored locally; no
-telemetry. **Collect**, **Sources** and **Wikipedia** are documented above
+into sections via a sub-nav: **Graphics · General · AI · Keywords · Collect · Sources ·
+Newsletters · Wikipedia · Statistics · Offline map · Agenda · Data & backup · Safety**.
+Open Settings from the **button at the bottom of the sidebar**; the command palette also
+jumps straight here. Everything is stored locally; no telemetry. **Collect**, **Sources**
+and **Wikipedia** are documented above
 ([3.2](#32-collect-in-settings--collect), [3.3](#33-sources-in-settings--sources),
 [3.7](#37-wikipedia-in-settings--wikipedia)); **Agenda** calendars are managed here too.
 
-- **Appearance:** themes, accent colour, density, **text size**, **typeface**, sidebar
-  expanded/collapsed, and **which tools show** in the sidebar. (This is the former
-  floating "Customize" drawer, now a first-class Settings section — the standalone
-  Customize buttons were removed to free up the chrome.)
+- **Graphics (Appearance):** themes, accent colour, density, **text size**, **typeface**,
+  and sidebar expanded/collapsed. This section also holds the **Alternative interfaces**
+  gallery (marked *Experimental*): eight opt-in skins — **Aurora, Atlas, Command, Field,
+  Focus, Terminal, Canvas, Editorial** — over the same data and the same honesty
+  guarantees; picking one reloads to apply it. (The former floating "Customize" drawer is
+  now this first-class section.)
 - **Preferences (General):** **Theme** (System/Dark/Light), **language**, and **Default
   search results**.
 - **Keyword filtering:** "dumb" function words (the, you, not, …) are removed by a
@@ -778,38 +889,73 @@ telemetry. **Collect**, **Sources** and **Wikipedia** are documented above
   resumable (pause/resume + a progress table). These offline dumps are heavy and
   optional, and are only for offline reading/search — live change-tracking (the
   Wikipedia tab) doesn't need them.
-- **Models (local LLM):** detect a running Ollama, see installed models and a curated
-  dated catalog, **pull** a model (live byte progress; the bytes go over clearnet via
-  the Ollama process, **not** Tor — stated at the consent prompt), **remove** one, and
-  set the **active model** the summarise/translate/synthesise features use. (The
-  optional binary-installer is a later addition.)
+- **AI (local LLM):** detect a running Ollama, see installed models and a curated dated
+  catalog, **pull** a model (a **queued** download job — one at a time, cancellable, with
+  live byte progress; the bytes go over clearnet via the Ollama process, **not** Tor —
+  stated at the consent prompt), **remove** one, and set the **active model** the
+  summarise/translate/synthesise features use. A **"Behaviour & prompts"** editor exposes
+  the four editable system prompts (summary / translate / synthesis / keyword extraction)
+  and the model keep-alive; a **Custom extractors** list lets you define managed prompts
+  that write AI-derived metadata (labelled *unreliable*, never the trusted keyword index).
+  When Ollama isn't present, an **in-app installer** appears (Linux/Debian): it downloads
+  the official install script, verifies it against GitHub's attested sha256 digest, shows
+  a visible elevation step, and runs it — refusing on any digest mismatch. macOS/Windows
+  get an honest pointer to ollama.com/download.
 - **Statistics (official figures):** a descriptive directory of government + international
-  statistical producers (each a *stanced* source, flagged controversial — never a
-  credibility score); **register** them as disabled sources; and **fetch official figures**
-  from documented machine endpoints (World Bank API / Eurostat SDMX), stored with their
-  full provenance and a first-class **vintage** (a re-fetch is a new row, never an
-  overwrite). Producers are shown **side by side, never averaged**, and a **Triangulate**
-  view flags cells that mix incomparable units / seasonal adjustment / base years. The
-  fetch egresses over your configured transport and is refused under airplane mode.
+  statistical producers. Every producer carries the **same descriptive stanced-source
+  caveat** — an official figure states its producing agency and its stance — **never a
+  per-source "controversial" label, verdict or score**. You can **register** them as
+  disabled sources, and **fetch official figures** from documented machine endpoints
+  (World Bank API / Eurostat SDMX), stored with their full provenance and a first-class
+  **vintage** (a re-fetch is a new row, never an overwrite). Producers are shown **side by
+  side, never averaged**, and a **Triangulate** view flags cells that mix incomparable
+  units / seasonal adjustment / base years. **Check revision anomalies** flags, purely
+  retrospectively, a stored figure whose newest vintage moved a past value unusually far
+  for that series' own revision history (no score). The fetch egresses over your configured
+  transport and is refused under airplane mode.
 - **Offline map:** pick an OpenStreetMap region (with a dated `~GB` estimate) and download
   it as a resumable, pausable task-manager job (gated by the one network-consent popup).
-- **Newsletters:** import a folder of `.eml` files as articles — anonymised at ingest
-  (recipient identity and tracking links are stripped; nothing is fetched), with a visible
-  count of what was removed.
-- **Backup & restore (Data & backup):** **Download backup (.db)** takes a consistent
-  live snapshot via SQLite's online-backup API; a **signed `oo-backup-2` archive**
-  carries the corpus plus custody and settings members under one manifest (per-member
-  sha256 + a Merkle root over article hashes, with any exclusions listed). **Restore is
-  additive-only** — it **complements** your corpus and **never replaces** it. You first
-  see a **preview**: how many records are new, how many are duplicates (skipped
-  bit-for-bit), and how many *conflict* — conflicts **keep your local value and report
-  both**, never averaged. **Apply** then runs the *same merge code* that produced the
-  preview (so the preview cannot lie), on a verified staged copy with an atomic swap and
-  a `pre-restore-*.db` snapshot kept beside the database.
-  > **The destructive "replace your corpus" restore was removed entirely** (it is
-  > unreachable — the old `/api/database/restore` and encrypted-replace endpoints are
-  > gone). No flow can overwrite your data; the merge is the only restore. Restoring an
-  > **encrypted** backup never silently decrypts your corpus.
+- **Newsletters:** import newsletters as articles — **anonymised at ingest** (the
+  recipient is never stored, recipient echoes are redacted, tracker tokens are stripped
+  and server-side tracker wrappers are flagged; **nothing is ever fetched**, so importing
+  can never reveal that you opened or clicked). Three paths:
+  - **Choose .eml files** — a small multi-file upload.
+  - **Import a whole folder** — point at a folder on this machine; every `.eml` under it
+    imports as a **pausable, resumable background job** (visible in the task manager) that
+    scales to 20 GB+ archives, skipping already-imported messages.
+  - **Pull from a mailbox (IMAP/POP3)** — pull live from a mailbox, with a visible
+    disclosure at the point of use (TLS to the provider, your IP is visible, **not** over
+    Tor, credentials are not stored).
+  - **Remove imported newsletters** — delete every imported-newsletter article (.eml +
+    mailbox) from the live corpus, for replacing a faulty set with a clean re-import
+    (restore is additive, so leaving newsletters out of a backup never removes them — this
+    does).
+- **Data & backup — the unified Export / Import:** one place to back up everything, at
+  **any database size**. **Export / Back up…** opens a dialog: pick a **destination folder
+  or drive**, tick what to include (corpus, imported newsletters, local LLM models,
+  offline maps, Wikipedia dumps), and give a **passphrase** — the encrypted corpus streams
+  into that folder as **independently-authenticated volumes plus Reed-Solomon parity** (so
+  a lost/corrupt volume, even a corpus volume, can be rebuilt), and the large public blobs
+  (models / maps / dumps) are copied **as-is**. There is **no size cap** and the archive is
+  never held whole in RAM. The passphrase has **no recovery** — a lost passphrase means the
+  corpus backup can't be opened.
+  **Import…** points at a folder, finds what's importable inside it (a backup to restore,
+  large data, or newsletters), and restores it. **Restore is additive-only** — it
+  **complements** your corpus and **never replaces** it: nothing you already have is
+  overwritten, duplicates are detected bit-for-bit, and a conflicting value **keeps your
+  local one and reports both**, never averaged.
+  > **Legacy / migration paths (kept for older backups).** A separate panel restores an
+  > **older single-file `oo-backup-2`** archive with the same additive-merge **preview**
+  > (new / duplicate / conflict) before **Apply** (on a verified staged copy, atomic swap,
+  > a `pre-restore-*.db` snapshot kept beside the database). A raw **Download backup (.db)**
+  > snapshot (SQLite online-backup API) is tucked under *"Older backup tool…"* for manual
+  > use. **The destructive "replace your corpus" restore was removed entirely** — no flow
+  > can overwrite your data, and restoring an **encrypted** backup never silently decrypts
+  > your corpus.
+- **Maintenance (Diagnostics panel):** **Clean up keywords (re-index, then prune)** and
+  **Re-index the whole corpus** run a **pausable background job with a persisted cursor**
+  (it survives a tab close or restart and resumes where it stopped). Run the cleanup after
+  a keyword-engine upgrade to apply the newer stoplists/families to existing articles.
 - **Temporary field-test instrumentation (0.0.8 live-test cycle).** During this
   cycle the app automatically exercises each network surface once *inside your
   own collect passes* (calendar-feed verification in polite batches, the market
@@ -817,16 +963,30 @@ telemetry. **Collect**, **Sources** and **Wikipedia** are documented above
   outcome verbatim in `data/field_test.jsonl`, included in the debug bundle.
   **Purpose:** recurring self-improvement of the default install's source,
   feed and calendar lists from real verdicts — the maintainer reinstalls,
-  clicks through, and shares the bundle with development. **It is temporary**
-  and will be removed when the cycle ends. Nothing is ever transmitted by the
-  app: logs stay on this machine until *you* download and share them. Opt out
-  any time with `OO_FIELD_TEST=0`. Boot remains fully offline either way.
-- **Diagnostics log:** **Download keyword log (.json)** exports how the app sees
-  your corpus's vocabulary — every gathered keyword with its real counts, the
-  computed keyword families, your merge/split corrections and super-groups —
-  so you can share it (only if and with whom you choose) to get keyword-grouping
-  improvements fitted to your *actual* data. Generated only when you click;
-  counts and structures only, never scores.
+  clicks through, and shares the bundle with development. **It is off by
+  default since 0.1** — enable it for a live-test cycle with `OO_FIELD_TEST=1`.
+  Nothing is ever transmitted by the app: logs stay on this machine until *you*
+  download and share them. Boot remains fully offline either way.
+- **Diagnostics log:** a shareable synthesis of how the app sees your corpus — generated
+  only when you click, counts and structures only (never scores), and only you decide who
+  gets the file. The panel offers a whole suite of exports:
+
+  | Export | What it is |
+  |---|---|
+  | **All diagnostics (.zip)** | every log below in one archive |
+  | **Keyword log (.zip)** | the top keywords per language with real counts, families, your corrections and super-groups |
+  | **All keywords (.zip)** | every keyword in the corpus (not just the top per language) |
+  | **Keyword self-test (.json)** | a golden-case check that keyword pre-selection still behaves (e.g. *WHO* ≠ *who*) |
+  | **Keyword-engine report (.json)** | composition, entity precision, translation/tag coverage, per-language status |
+  | **Keyword-growth curve / (.json)** | cumulative distinct keywords vs words added (is the vocabulary saturating?) |
+  | **Home-card diagnostics (.json)** | does each Home Lead open its exact corpus or a fuzzy fallback? |
+  | **Date-extraction log (.json)** | date-tagging coverage |
+  | **Network log (.json)** | fetch outcomes with transport-aware verdicts |
+  | **Performance report / Scaling benchmark / Rollup benchmark (.json)** | timings and scaling checks |
+  | **Debug bundle (.json)** | a consolidated support bundle |
+
+  The same panel also runs local **source enrichment** (deduce topic tags from your
+  corpus) and consented **Wikidata** passes (source types, new-source discovery).
 - **Safety & at-risk use:** tools for journalists working under pressure, each
   labelled with its **honest limit**:
   - **At-rest encryption (default for new corpora).** New databases are
@@ -886,49 +1046,52 @@ telemetry. **Collect**, **Sources** and **Wikipedia** are documented above
 **What it's for:** reading the documentation **inside the app**, offline. A
 left-hand list selects a document (this **User Manual** is the default; the others
 go deeper on specific subjects), rendered on the right with **find-on-page**. Open
-it from the sidebar (**Help & docs**), the **?** in the top bar, or the command
-palette ("Open the User Manual"). The raw, interactive API reference stays at
-`/docs`.
+it from the **?** in the top bar or the command palette ("Open the User Manual"). The
+raw, interactive API reference stays at `/docs`.
 
 ---
 
 ## 4. Common workflows (how-to)
 
 **Gather news on a topic and search it**
-1. **Sources** → confirm relevant sources are enabled (filter by country/tag).
-2. **Ingest** → either click **Fetch feed** per source, or set the **scheduler** to
-   RSS mode with your **Tags/keywords** and **Start**.
-3. **Search** → Boolean query → **Export CSV/JSON** if needed.
+1. **Settings → Sources** → confirm relevant sources are enabled (filter by country/tag).
+2. **Settings → Collect** → either click **Fetch feed** per source, or set the
+   **scheduler** to RSS mode with your **Tags/keywords** and **Start** (or just go online
+   — collection runs automatically).
+3. Search from the **omnibar** → Boolean query → **Export CSV/JSON** if needed.
 
 **Continuously monitor a beat in the background**
-1. **Ingest** → scheduler **Mode: RSS feeds**, set **Languages**/**Tags**, **Preview
-   targets**, set an **Interval**, tick **Start automatically on launch**, **Save**.
-2. Optionally enable **Chain of custody → Auto-log on ingest** so each capture is
+1. **Settings → Collect** → scheduler **Mode: RSS feeds**, set **Languages**/**Tags**,
+   **Preview targets**, set an **Interval**, tick **Start automatically on launch**,
+   **Save**.
+2. Optionally enable **Evidence & custody → Auto-log on ingest** so each capture is
    signed as it lands.
 
 **Produce court-/editor-defensible proof of an article**
-1. **Search** for the article(s).
-2. **Export signed evidence** (or **Chain of custody → Export bundle** for an item).
+1. Search for the article(s) from the omnibar.
+2. **Export signed evidence** (or **Evidence & custody → Export bundle** for an item).
 3. Hand the recipient the bundle and `scripts/verify_evidence.py` /
    `verify_custody.py`; they verify offline, without trusting you or this tool.
 4. For independent *time* proof, enable **OpenTimestamps** and anchor the bundle's
    Merkle root (mind the privacy warning).
 
 **Watch a contested Wikipedia article for tampering**
-1. **Wikipedia** → add the page (edition + title), tick **use ORES**, **Track now**.
+1. **Settings → Wikipedia** → add the page (edition + title), tick **use ORES**,
+   **Track now**.
 2. Review **Flagged changes**; open **Diff** on anything suspicious.
 
 **Track a commodity price against news**
-1. **Markets** → **Load / refresh market data** (curated feeds), or add a
-   **price-extraction rule** and **Test** it.
+1. **Commodities** — the curated feeds already update automatically in the background;
+   for a page-specific price, add a **price-extraction rule** and **Test** it.
 2. Click the series card → read the chart and the **correlation** with a news query.
 
 **Move (or merge) your corpus to another machine**
-1. **Settings → Data & backup → Download backup**.
-2. On the other machine, **Settings → Data & backup → Restore** that file: review the
-   **preview** (new / duplicate / conflict), then **Apply**. The restore is additive —
-   it complements that machine's corpus and never replaces it, so you can also use it to
-   *merge* two corpora.
+1. **Settings → Data & backup → Export / Back up…** — pick a destination folder/drive and
+   a passphrase; the corpus streams out as encrypted volumes + parity (any size).
+2. On the other machine, **Settings → Data & backup → Import…** — point at that folder and
+   restore. The restore is additive — it complements that machine's corpus and never
+   replaces it, so you can also use it to *merge* two corpora. (An older single-file
+   `oo-backup-2` is restored via the legacy panel, with a preview.)
 
 ---
 
@@ -1005,10 +1168,14 @@ catalog at `/api/catalog/sources`, `/export.csv`, `/template.csv`, `POST /import
 `PUT /api/scheduler/config`; `POST /api/scheduler/start|stop|run-now`.
 
 **Database & backup** — `GET /api/database/stats|coverage|countries`;
-`GET /api/database/backup`. Restore is the **additive merge** under
-`/api/backup/v2`: `POST /api/backup/v2`, `POST /api/backup/v2/restore/preview`,
-`POST /api/backup/v2/restore/commit`, `GET /api/backup/v2/batches`. *(The destructive
-`POST /api/database/restore` and `/api/safety/restore/encrypted` were removed.)*
+`GET /api/database/backup` (raw `.db` snapshot). Backups are **created** by the streaming
+engines: encrypted volumes+parity at `POST /api/backup/v2/volumes/start` (+ `/restore`,
+`/cancel`, `GET /volumes/status`) and the large-data folder copy at
+`POST /api/backup/folder/start` (+ `/plan`, `/restore`, `/{action}`, `GET /folder/status`).
+Restore of an older single-file archive is the **additive merge**:
+`POST /api/backup/v2/restore/preview`, `POST /api/backup/v2/restore/commit`,
+`GET /api/backup/v2/batches`. *(The destructive `POST /api/database/restore` and
+`/api/safety/restore/encrypted` were removed.)*
 
 **System & network** — `GET /api/system/vitals|network|interfaces`;
 `POST /api/system/network` (airplane toggle); `GET /api/system/doctor|lock-state`;
@@ -1046,8 +1213,9 @@ almanac) and `GET /api/events/climate` (bundled El Niño dataset). **Weather con
 
 **Wikipedia** — `GET /api/wiki/status|pages|changes`; `POST /api/wiki/pages`,
 `/track-now`, `/pages/{id}/track`; `GET /api/wiki/revisions/{id}`;
-`GET /api/wiki/languages` (now returns both a flat list **and** continent-grouped
-`groups`); dumps under `/api/wiki/dumps…`.
+`GET /api/wiki/languages` (a **flat, UI-locales-first** list, each option led by the
+native name; `region` is kept only as descriptive metadata — no continent `groups`;
+`?scope=dumps` adds inline `~GB` size estimates); dumps under `/api/wiki/dumps…`.
 
 **Chain of custody** — `POST /api/custody/log`; `GET /api/custody/{item}` (+
 `/verify`); `POST /api/custody/verify`; `GET /api/custody/export`;
@@ -1081,16 +1249,17 @@ default sources imported over Tor in one pass):
 - **A host's Tor block is the host's choice.** We surface it; we never evade
   robots, blocks or CAPTCHAs. Prefer Tor-tolerant official endpoints where
   they exist.
-- **Model downloads don't work over Tor** — the offline LLM kit (release
-  artifact) is the principled path; inference itself is loopback and
-  unaffected.
+- **Model downloads don't work over Tor.** Ollama pulls its models over the clear
+  internet through its own process (install/pull from **Settings → AI**); a working
+  clearnet path is a stated prerequisite for downloading a model. Once pulled, inference
+  is loopback and unaffected. *(A packaged offline LLM kit is planned, not yet shipped.)*
 - **Anonymity remains yours to manage**: Protected mode cannot guarantee
   anonymity — you run and trust the proxy; the app's part is a generic
   User-Agent and routing every fetch through it.
 
 ---
 
-## 5.5 Known limits & honest disclosures
+## 5.6 Known limits & honest disclosures
 
 Honesty by construction means stating what the tool *cannot* tell you, not only
 what it can. These are the standing limits of the methods (audit-07 "disclosure
@@ -1112,11 +1281,12 @@ sweep"). None is a bug; each shapes how to read a result.
   honesty only (no forensic/deepfake claims); there is no audio or video
   analysis. A claim that lives only in a video or image is outside what the tool
   can see.
-- **CJK word segmentation is not implemented.** Keyword extraction relies on
-  whitespace tokenisation, so Chinese and Japanese keyword analysis is
-  effectively non-functional even though the interface ships in those languages.
-  Stoplists exist for 16 languages; the *analytical depth* per language varies,
-  and this is the largest current gap.
+- **CJK/Thai word segmentation is not implemented.** Keyword extraction relies on
+  whitespace tokenisation, so Chinese, Japanese and Thai keyword analysis is effectively
+  non-functional even though the interface ships in those languages. The **managed** set
+  (space-segmented, with a stoplist) is defined in
+  [`src/analytics/managed.py`](../src/analytics/managed.py); the *analytical depth* per
+  language varies, and unsegmented scripts are the largest current gap.
 - **Permissive-host survivorship bias.** Because robots.txt is fail-closed, the
   corpus over-represents sites that *allow* crawling and structurally
   under-represents paywalled or crawl-restrictive journalism. This cannot be
@@ -1142,13 +1312,14 @@ sweep"). None is a bug; each shapes how to read a result.
 - **The page won't load.** Confirm the process is running and bound to
   `127.0.0.1:8000` (or your `OO_HOST`/`OO_PORT`). The header health pill turns
   `offline` if the API isn't reachable.
-- **Search is empty.** You haven't ingested yet — use the welcome banner's one-click
-  first run, or **Ingest → Fetch feed**.
+- **Search is empty.** You haven't collected yet — **go online** with the airplane
+  button (one consent popup) and collection starts automatically; the manual path is
+  **Settings → Collect → Fetch feed**.
 - **An ingest stored nothing.** That's often correct and ethical: the page may be
   blocked by `robots.txt` (fail-closed), rate-limited, a duplicate, or have no
   extractable body. The result tally tells you which.
 - **Insights/Markets controls are missing or erroring.** The `[analysis]` extra
-  isn't installed — re-run `install.sh` and enable Analysis tools.
+  isn't installed — re-run `install.sh` (the analysis extra installs by default).
 - **LLM pill says offline.** Ollama isn't running/reachable; start it or set
   `OLLAMA_BASE_URL`. Summarise/translate return a clear `503` when unavailable.
 - **Custody shows "requested, library not installed".** Install the `pqc` and/or
@@ -1219,8 +1390,11 @@ Reference depth for each tool, consolidated from the former per-feature guides. 
 
 The **Home** tab is no longer just at-a-glance stats. It is a **triage feed**: the
 app gathers and measures in the background, then surfaces *candidate stories* as
-**cards**. The app does the gathering; **you judge**. Each card is **one measurable
-signal + the evidence links + a caveat**, sorted into an editorial bucket.
+**cards — shown on-screen as "Leads"** (this chapter says "card" for the internal
+mechanism; the UI label is "Lead"). The app does the gathering; **you judge**. Each card
+is **one measurable signal + the evidence links + a caveat**, sorted into an editorial
+bucket, and is presented as a **two-sided flip card** (front = the lead; back = caveat +
+method + evidence + "Open corpus").
 
 A card **surfaces a signal; it never renders a verdict.** There is no "biased", no
 "propaganda", no "true/fake", and — by design and *enforced in code* — **no composite
@@ -1246,11 +1420,14 @@ The briefing groups cards into **buckets** (display order):
 The triad behind them is the engine: **convergence → overtold**, **divergence →
 investigate/debunk**, **absence → undertold**.
 
-Every card shows its **title**, a one-line **summary**, the **measured signal**
-(e.g. `growth_ratio = 4.2`, `n=6`), and **evidence links** back into your corpus.
-Toggle **"Show method & caveat"** to reveal, on every card, exactly how the figure
-was computed and what it does *not* mean. That toggle is the point: **transparency is
-the interface.**
+Every Lead (the on-screen name for a briefing card) shows its **title**, a one-line
+**summary**, and the **measured signal** (e.g. `growth_ratio = 4.2`, `n=6`) on its
+**front**. **Click it (or press Enter) to flip it over:** the **back** carries the
+**caveat**, the **method** (exactly how the figure was computed and what it does *not*
+mean), why it fired, the **evidence links** back into your corpus, and an **"Open corpus
+↗"** button. The caveat is in the DOM by default, on the equal back face right beside the
+action — never behind a calm toggle. That is the point: **transparency is the
+interface.**
 
 > **Equal view.** In this version every source is counted once and **no source is
 > de-amplified**. The source-integrity / anti-amplification layer (collapsing
@@ -1340,7 +1517,9 @@ fetch time are always shown.
 
 The briefing **never computes per request**. The background scheduler refreshes it
 after each scrape and writes a cache (`briefing_cache.json` under your data dir);
-Home reads the cache and loads instantly. **Refresh** recomputes on demand. Dismissals
+Home reads the cache and loads instantly. It is **self-updating** — it recomputes in
+the background after each pass and Home re-polls on its own (a progress banner shows
+while a refresh runs); there is no manual Refresh button. Dismissals
 (`briefing_dismissed.json`) and the draft (`briefing_draft.json`) are small local JSON
 files — single-user, local-first, never transmitted.
 
@@ -1454,10 +1633,10 @@ Anti-amplification is **never** a silent transform the app performs and you mere
   members; reverting reproduces the raw equal counts **exactly**. *No collapse is ever
   applied without your explicit action* — enforced by a test.
 
-This is the **Source integrity** tab: *Scan for coordination* lists proposed actors
-with their evidence (shared text, lockstep timing, shared host); *Apply collapse* /
-*Expand (revert)* are yours to choose. The echo-chamber cards on Home carry the same
-*Collapse to one actor* action.
+This is the **source-integrity desk** (Settings → Safety → "Open the source-integrity
+desk"): *Scan for coordination* lists proposed actors with their evidence (shared text,
+lockstep timing, shared host); *Apply collapse* / *Expand (revert)* are yours to choose.
+The echo-chamber Leads on Home carry the same *Collapse to one actor* action.
 
 ### The source profile — measured dimensions, **no composite score**
 
@@ -1551,7 +1730,7 @@ This is **web-of-trust, not proof of correctness**: trusting an author means "I 
 see their assertions," not "their assertions are true." Dissent between trusted authors
 is surfaced for you to judge, never resolved for you.
 
-### Using it (the Source integrity tab)
+### Using it (the source-integrity desk — Settings → Safety)
 
 1. **Author** annotations (target + kind + value) under *Shared annotations*.
 2. **Export signed bundle** → a JSON file you can publish or share.
@@ -1620,8 +1799,11 @@ ingest an article ──► extract (baseline / opt-in spaCy) ──► KeywordM
   keyword) — occurrence count + first char offset (the context sentence is sliced
   from the stored article on read, so the DB stays lean) + denormalised
   `observed_on` / `country` / `city` from the source. Indexing runs best-effort at
-  ingest (fast baseline, fail-open) and can be **back-filled** over the existing
-  corpus from the Insights tab ("Index corpus").
+  ingest (fast baseline, fail-open). Indexing is **automatic** — any backlog is cleared
+  by a silent background top-up when you open Insights (the "remaining" count ticks to 0
+  on its own); there is no "Index corpus" button. A full re-index of the existing corpus
+  is available from **Settings → Diagnostics** ("Re-index the whole corpus" / "Clean up
+  keywords") as a pausable background job.
 
 ### Functions (Insights tab + `/api/insights`)
 
@@ -1724,7 +1906,7 @@ diff + provenance (revid, editor, timestamp), which plugs into the existing
   the MediaWiki API parser + live client (`mediawiki.py`, `client.py`); the
   edit-flagging logic (`flagging.py`); ORES client (`ores.py`); the tracking
   orchestrator (`track.py`, baseline + delta storage); the scheduler `wiki` mode;
-  the **API** (`/api/wiki/*`) and the **Wikipedia tab** (watchlist, track now,
+  the **API** (`/api/wiki/*`) and **Settings → Wikipedia** (watchlist, track now,
   flagged-changes feed, diff viewer); the **offline baseline downloader**
   (`dumps.py` — per-language, resumable, size probe) now driven by a **language
   picker** (`languages.py`, `GET /api/wiki/languages`) relocated to **Settings →
@@ -1771,8 +1953,9 @@ For each tracked document, the first successful fetch is the immutable **baselin
 ("the law as it stood on date X"). Every later fetch whose *normalised visible text*
 differs records a revision carrying the byte delta, a capped unified **diff** against the
 baseline, and an honest **large-change flag** (reusing the wiki flagging thresholds).
-Run it from the **World law** tab ("Track changes now") or on the background scheduler
-(`law` mode). All fetching is through the **ethical, robots-fail-closed** path.
+Run it from the **Governments tab → Law subtab** ("Track changes now") or on the
+background scheduler (`law` mode). All fetching is through the **ethical,
+robots-fail-closed** path.
 
 ### Briefing cards from the law corpus
 
@@ -1814,7 +1997,7 @@ keyword analytics work over it like any other source.
 ## Markets: financial, stock-exchange, and commodity/rare-earth intelligence
 
 Open Omniscience ships a **curated, worldwide catalog of market sources** so it is
-ready to ingest financial-market coverage out of the box, and a Markets tab that
+ready to ingest financial-market coverage out of the box, and a **Commodities** tab that
 turns *configured* pages into a real, chartable price series correlated with news.
 
 This document explains what's pre-packaged, what isn't, and why — because the
@@ -1823,7 +2006,7 @@ honest boundary here matters more than a long feature list.
 ### What is pre-packaged (ready to run as-is)
 
 `configs/markets_sources.yml` is seeded automatically alongside the news catalog
-(`configs/sources.yml`) on first launch and via **Sources & Database → Seed
+(`configs/sources.yml`) on first launch and via **Settings → Sources → Seed
 starter sources**. It contains ~110 curated entries identified by stable primary
 domain:
 
@@ -1842,19 +2025,23 @@ domain:
 These are ordinary **sources**: they feed the unified corpus through the same
 ethical fetcher (robots.txt fail-closed, rate-limited). Each carries a
 `source_type` (`stock_exchange` / `commodity` / `financial`), region, country and
-tags, so you can filter them in **Sources & Database** and attach price rules in
-**Markets**.
+tags, so you can filter them in **Settings → Sources** and attach price rules in
+**Commodities**.
 
 > RSS feeds are intentionally left blank for these entries (a wrong feed URL is
 > just noise). Ingest them with the recursive crawler, or add a verified RSS feed
-> per source from the Sources tab.
+> per source from **Settings → Sources**.
 
 ### Getting real price numbers
 
 A price series is only produced where you tell the app **exactly where the number
 is** — there is no magic page-reading, by design. Two honest paths:
 
-#### 1. Per-page extraction rules (Markets tab)
+#### 1. Per-page extraction rules (Commodities tab → "Configure data sources")
+
+*(The feeds and extraction rules live in a collapsed "Configure data sources" section on
+the Commodities tab; the curated feeds themselves refresh automatically in the
+background.)*
 
 Add a rule (source, symbol, page URL, **CSS selector**, optional attribute /
 value-regex, currency, unit), then press **Test**. Test fetches the page once and
@@ -1875,7 +2062,7 @@ sites, some data tables) work well; heavily client-rendered quote widgets do not
 For trustworthy numeric history, import a machine-readable CSV series from an
 official source. This is the reliable path and the app ships a starter catalog
 (`configs/commodity_feeds.yml`) you can import in one click from
-**Markets → Official price feeds**, or via the API:
+**Commodities → Configure data sources → Official price feeds**, or via the API:
 
 ```
 GET  /api/markets/feeds                # list curated feeds + how many points each has
@@ -2108,23 +2295,28 @@ its URL: bookmark it, reopen it, share it between your own machines.
 
 Switch individual recipes off under **Settings → General → Investigation recipes on Home**.
 
-## Methods appendix (Search)
+## Methods appendix
 
-**Search → Methods appendix** downloads a Markdown document recording *how* your current
-selection was produced: the app version, the verbatim Boolean query, result counts, corpus
-context, and one provenance row per article (title · source · published · URL · content
-SHA-256). It records selection only and asserts no conclusion — the analytical claims stay
-yours, checkable against the rows. Built for fact-check verdicts and peer review; pair it
-with a signed evidence bundle (Evidence & custody) when you need document + proof together.
+The **Methods appendix** button (on the search page and in the analysis window's action
+row) downloads a Markdown document recording *how* your current selection was produced:
+the app version, the verbatim Boolean query, result counts, corpus context, and one
+provenance row per article (title · source · published · URL · content SHA-256). It
+records selection only and asserts no conclusion — the analytical claims stay yours,
+checkable against the rows. Built for fact-check verdicts and peer review; pair it with a
+signed evidence bundle (Evidence & custody) when you need document + proof together.
 
-## Synthesize results (Search)
+## Synthesize results
 
-**Search → Synthesize results** runs ONE local-model pass across your top results (at most
-20; the response says when it truncated) and returns shared facts, points of disagreement
-and open questions, citing member articles by number. The synthesis is stored with model +
-prompt-version provenance per member article, and the caveat travels with it: this is
-reading assistance over the listed members only — never a verdict. Requires Ollama, like
-the other LLM features; without it you get an honest "not reachable" message.
+**Synthesize results** (on the search page and in the analysis window) opens a window in
+two steps: it fetches a candidate pool, shows you the matched articles with their metadata,
+and lets you **pick up to 20 members** (the first ≤20 are pre-checked); it then runs ONE
+local-model pass across exactly those and returns shared facts, points of disagreement and
+open questions, citing member articles by number. The result carries the full synthesized
+corpus with each article's metadata and reader links, and **export** options (Copy, .md, or
+open as a standalone page). The synthesis is stored with model + prompt-version provenance
+per member article, and the caveat travels with it: this is reading assistance over the
+listed members only — never a verdict. Requires Ollama, like the other LLM features;
+without it you get an honest "not reachable" message.
 
 ## Versioned exports and the citation graph
 
@@ -2148,7 +2340,7 @@ watch. Blank = off (the default); nothing new = no file.
 The app now suggests sources on its own — **offline only**: domains your stored articles
 repeatedly cite, and packaged-catalog outlets for countries your corpus covers thinly.
 Suggestions are staged, never acted on: each carries its evidence in the **Discovery
-candidates** panel (Sources tab), runs are capped by the scheduler's discovery budget and
+candidates** panel (Settings → Sources), runs are capped by the scheduler's discovery budget and
 recorded in the run log, and a Home card tells you when candidates await review.
 **Promote** creates a *disabled* source you still have to enable; **Dismiss** is remembered
 and never re-suggested. The DuckDuckGo-powered topic search remains separate, **off by
@@ -2156,8 +2348,11 @@ default**, and gated behind Settings → Safety (see below).
 
 ## External topic discovery is opt-in (Settings → Safety)
 
-*Discover by topic* is the one feature that contacts an external service: it sends your
-topic query to DuckDuckGo. It is now **disabled by default** and refuses with an honest
+*Discover by topic* is the one feature that **sends a free-text search query to a search
+engine**: it sends your topic query to DuckDuckGo. (Other online actions — collection,
+market/stats fetches, Ollama pulls, OpenTimestamps — are each consented and named too;
+this is the one that transmits a query you typed.) It is **disabled by default** and
+refuses with an honest
 message until you enable **Settings → Safety → External topic discovery** ("Your query
 leaves this machine"). Discovering RSS feeds for sources you added yourself stays on the
 local ethical-fetch path and is not affected.

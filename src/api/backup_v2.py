@@ -210,6 +210,47 @@ async def restore_commit(
         cleanup_staging(staged)
 
 
+class LegacyRestoreBody(BaseModel):
+    path: str  # server-side path to a legacy single-file backup (oo-backup-2 / .db)
+    passphrase: str = ""
+    allow_unverified: bool = False
+    include_newsletters: bool = True
+
+
+@router.post("/legacy/restore")
+def legacy_restore(body: LegacyRestoreBody) -> dict:
+    """Restore ONE legacy single-file backup found on disk (a SERVER-SIDE path),
+    additively — the unified Import dialog's path for legacy archives it discovered in
+    a scanned folder (a folder may hold several; the caller merges each in turn). Reuses
+    the exact staging + additive merge as the upload path (``restore_commit``), so a
+    legacy archive nested in a subfolder is now a first-class importable item, not just a
+    note pointing at the old panel. The 2 GiB legacy-format cap still applies (these
+    single files were always ≤2 GiB — the volume set is the large path)."""
+    from pathlib import Path
+
+    p = Path(body.path)
+    if not p.is_file():
+        raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
+    try:
+        data = p.read_bytes()
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"could not read {p}: {exc}") from exc
+    staged = _stage_upload(data, body.passphrase or None)
+    _apply_restore_selection(staged, include_newsletters=body.include_newsletters)
+    try:
+        report = run_restore(staged, commit=True, allow_unverified=body.allow_unverified)
+        return report
+    except MergeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # JSON, never a plain-text 500 (P0-3).
+        _LOG.exception("legacy restore failed")
+        raise _restore_error("restore", exc) from exc
+    finally:
+        cleanup_staging(staged)
+
+
 @router.delete("/v2/restore/preview/{token}")
 def restore_discard(token: str) -> dict:
     """Discard a staged preview without merging."""

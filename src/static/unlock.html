@@ -35,6 +35,15 @@
   .note p { margin:4px 0; }
   .err { color:var(--err); font-size:13px; min-height:18px; margin-top:10px; text-align:center; }
   .tm { font-size:12px; }
+  /* Indeterminate progress: honest motion (we do not fabricate a %), the real
+     phase text below carries the actual step. */
+  .prep-bar { height:6px; border-radius:4px; margin:20px 0 12px; overflow:hidden;
+              background:color-mix(in srgb, var(--accent) 18%, transparent); }
+  .prep-fill { height:100%; width:36%; border-radius:4px; background:var(--accent);
+               animation:prep-slide 1.15s ease-in-out infinite; }
+  @keyframes prep-slide { 0%{margin-left:-38%} 100%{margin-left:100%} }
+  .prep-phase { font-size:13px; text-align:center; opacity:.8; min-height:18px; }
+  @media (prefers-reduced-motion: reduce) { .prep-fill { animation:none; width:100%; opacity:.5; } }
   .lang-list { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:16px; }
   .lang-btn { display:flex; align-items:center; gap:8px; width:100%; margin:0; padding:10px 12px;
     background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:8px;
@@ -139,6 +148,14 @@
     <h1>Already unlocked</h1>
     <p>The corpus is open. You can return to the Console.</p>
     <button onclick="location.replace('/')">Open the Console</button>
+  </div>
+
+  <div id="view-preparing" class="hidden">
+    <h1>Preparing your corpus…</h1>
+    <p>Your corpus is unlocked. Getting it ready — this can take a moment on a large
+       database, and only happens once per start.</p>
+    <div class="prep-bar" aria-hidden="true"><div class="prep-fill"></div></div>
+    <p class="prep-phase" id="prep-phase" role="status" aria-live="polite">opening the database</p>
   </div>
 </div>
 
@@ -287,15 +304,41 @@
       } catch (e) { $("view-unlock").classList.remove("hidden"); }
     }
 
+    // After a successful unlock/create the server prepares the corpus in the
+    // background (schema, search stats, catalog, counts) and reports progress at
+    // /api/system/startup-status. Show the preparing view + the live phase, and
+    // enter the Console (replace, so /unlock never sits in history) only when the
+    // server says "ready" — nothing queries a half-prepared corpus.
+    async function waitReadyThenEnter() {
+      ["view-unlock", "view-create", "view-open"].forEach((v) => $(v).classList.add("hidden"));
+      $("view-preparing").classList.remove("hidden");
+      const phaseEl = $("prep-phase");
+      const PHRASES = {
+        "opening the database": t("opening the database"),
+        "refreshing search statistics": t("refreshing search statistics"),
+        "loading the source catalog": t("loading the source catalog"),
+        "counting your corpus": t("counting your corpus"),
+      };
+      for (let i = 0; i < 3600; i++) {  // generous cap (~hours) — a huge corpus is allowed to take its time
+        let s;
+        try { s = await (await fetch("/api/system/startup-status")).json(); }
+        catch (e) { s = null; }
+        if (s && s.phase) phaseEl.textContent = PHRASES[s.phase] || s.phase;
+        if (s && s.state === "ready") { location.replace("/"); return; }
+        await new Promise((r) => setTimeout(r, 600));
+      }
+      location.replace("/");  // fail-open: enter anyway rather than trap the user
+    }
+
     async function go(btn, fn) {
       btn.disabled = true;
-      // replace (not href) so /unlock never sits in history — Back from the app
-      // must not return to the unlock screen after a successful unlock.
-      try { await fn(); location.replace("/"); }
+      try { await fn(); await waitReadyThenEnter(); }
       catch (e) {
         const box = btn.id === "btn-unlock" ? $("msg") : $("msg2");
         box.textContent = e.message || t("Wrong passphrase — try again.");
         btn.disabled = false;
+        // A failed prepare-wait shouldn't leave the user stuck on the preparing view.
+        $("view-preparing").classList.add("hidden");
       }
     }
 

@@ -5,19 +5,21 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.0.9 (pre-alpha — the `0.0.x` series; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md))
+**Version:** 0.1.0 (alpha — the first release past the `0.0.x` pre-alpha series; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md))
 **License:** [GNU GPLv3](LICENSE)
 
 ---
 
-> **On the version number.** This is deliberately versioned **`0.0.9`**, not `0.9`. The
-> software is young and still being proven; we **under-state** maturity on purpose
-> (honesty over hype). The `0.0.x` series is pre-alpha; only after it consolidates do we
-> move to a `0.1` **alpha**, then **beta**, then a `1.0` release. Development cycles are
-> named after the version they produce: branch `0.06 → 0.07 → 0.08 → 0.09` ⇒ `0.0.6 →
-> 0.0.7 → 0.0.8 → 0.0.9`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+> **On the version number.** The `0.0.x` series deliberately **under-stated** maturity
+> (honesty over hype) while the software was being proven. With the `0.09` cycle
+> consolidated — at-rest encryption, the additive-only + volumes+parity backup story,
+> the analysis-window/corpora system, the release gate reconciled row by row — the
+> project moves to **`0.1.0`, an alpha**: usable and honest about every limit, not
+> finished. Beta and `1.0` still have to be earned. Development cycles are named after
+> the version they produce (branch `0.06 → … → 0.09` ⇒ `0.0.6 → … → 0.0.9`; the `0.09`
+> cycle culminates in `0.1.0`). See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
-## Status — v0.0.9: the deeper sense-making cycle
+## Status — v0.1.0: the deeper sense-making cycle, shipped
 
 > **`0.0.9` is the active cycle** (branch `0.09`). The `0.0.8` cycle shipped in full —
 > the whole product-roadmap push (trust hardening, the investigation-recipe cards and
@@ -27,11 +29,16 @@
 > appendix and provenance-preserving exports, corpus LLM synthesis, offline source
 > discovery), then the live-test hardening batches (temporal map + agenda, themes and
 > bundled fonts, entity/location/date extractors, network-mode switch, field-test
-> instrumentation). `0.0.9` picks up the parked sense-making layer: space-time
-> convergence detection, the watch-rule attention engine, de-US-centring the source
-> catalog, SQLCipher at-rest encryption + the backup redesign, the corpora system, and
-> the global-search rework (see [`docs/FUTURE_DEVELOPMENTS.md`](docs/FUTURE_DEVELOPMENTS.md)).
-> Feature notes tagged `0.06`/`0.07`/`0.0.8` describe what shipped in those cycles and remain accurate.
+> instrumentation). `0.0.9` **built out** the parked sense-making layer: space-time
+> convergence detection and the **watch-rule attention engine** shipped, the source
+> catalog was de-US-centred, **SQLCipher at-rest encryption** and the **unified
+> volumes+parity backup** landed, the **corpora / analysis-window** system and the
+> **omnibar global-search** rework replaced the old Search tab, and the map became the
+> **ooMap choropleth**. Local **AI** (Settings → AI), **newsletter import**, **official
+> statistics**, **offline OSM maps** and the **task-manager window** all shipped this
+> cycle (see [`docs/FUTURE_DEVELOPMENTS.md`](docs/FUTURE_DEVELOPMENTS.md) for what
+> remains). Feature notes tagged `0.06`/`0.07`/`0.0.8` describe what shipped in those
+> cycles and remain accurate.
 
 This release rebuilds the project around a small, **genuinely working and tested**
 spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
@@ -51,30 +58,41 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   from a **Chain of custody** UI panel, with the effective state always shown
   honestly (see [docs/USER_MANUAL.md](docs/USER_MANUAL.md)).
 - ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
-- ✅ **Web UI** — a sidebar grouped by intention (*Investigate · Collect · Trust*)
-  covering Home, **Analysis**, Insights, World map, World law, Agenda, Indices,
-  Commodities, Library and Evidence &amp; custody. (Source integrity's tools moved
-  into **Settings → Safety**, content-first.) A **minimal top
-  bar** carries the always-on **search** omnibar (also the Ctrl/⌘-K command palette),
-  live status, a **task-manager** button, the **airplane-mode** network toggle, a
-  **language switcher** and an in-app **Help/docs** reader (the top-bar `?`);
-  **Settings** opens from the top-bar gear. (Search is the top-bar omnibar — there is
-  no separate Search sidebar tab; the full Boolean search opens from it.)
-  *Content-first reorg:* the acquisition surfaces — **Collect**, **Sources** and
-  **Wikipedia** — now live as **Settings** sections (the sidebar shows the *data*).
+- ✅ **Web UI** — a **flat sidebar** of data tabs: Home · Insights · World map ·
+  Governments · Agenda · Indices · Commodities · Library. There is no **Analysis**
+  sidebar tab: an analysis **spawns as its own window** from the omnibar (or the
+  command palette), one per query. A **minimal top bar** carries the always-on
+  **search** omnibar (also the Ctrl/⌘-K command palette), live status, a
+  **task-manager** button, the **airplane-mode** network toggle, a **language
+  switcher**, an in-app **Help/docs** reader (the top-bar `?`) and a **power /
+  shutdown** button (stops the server; your data is untouched). **Settings** opens
+  from the **gear at the bottom of the sidebar**. (Search is the top-bar omnibar —
+  there is no separate Search sidebar tab; the full Boolean search opens from it.)
+  *Content-first reorg:* the acquisition + management surfaces — **Collect**,
+  **Sources**, **Wikipedia**, **Newsletters**, **Statistics**, **Offline map** and
+  **AI** — live as **Settings** sections (the sidebar shows the *data*); Source
+  integrity's and Evidence & custody's tools moved into **Settings → Safety**.
   Appearance customization in **Settings → Appearance** (themes, accent, density, text
-  size, layout, which tools show), a **Library** panel (real row counts + on-disk size),
-  inline **source management** (enable/disable, priority, delete), and a
-  **World coverage** view (countries covered vs not, sources + topic keywords per
-  country). *(See [`docs/DESIGN.md`](docs/DESIGN.md) for the interface's design history.)*
-- ✅ **Settings → Data &amp; backup**: a SQLite **backup** (consistent online-backup
-  download, plus a signed `oo-backup-2` archive) and an **additive-only restore** —
-  restoring a backup **complements** your corpus and **never replaces** it (a
-  preview-then-merge flow: nothing deleted, bit-for-bit dedup, conflicts keep your
-  local value and report both). The old destructive "replace your corpus" restore was
-  **removed**, so no flow can overwrite your data.
-- ✅ **Background scheduler**: start/stop + "scrape now", on an interval, in
-  `rss`, `crawl`, or `markets` mode — all through the same ethical fetch path.
+  size, layout; the experimental **Alternative interfaces** gallery), a **Library**
+  panel (real row counts + on-disk size), inline **source management** (enable/disable,
+  priority, delete), and the **World map** tab's **World coverage** choropleth (sources
+  / articles / keywords / tone per country). *(See [`docs/DESIGN.md`](docs/DESIGN.md)
+  for the interface's design history.)*
+- ✅ **Settings → Data &amp; backup**: one unified **Export / Back up** and **Import**
+  flow that handles a corpus of **any size**. Pick a destination folder or drive and it
+  **streams** everything into it — the encrypted corpus as independently-authenticated
+  **volumes + Reed-Solomon parity** (a corrupt or lost volume can be rebuilt), and the
+  large public re-downloadable blobs (models / maps / Wikipedia dumps) copied as-is (no
+  2 GiB cap, never the whole archive in RAM). **Restore is additive-only**: it
+  **complements** your corpus and **never replaces** it (preview-then-merge: nothing
+  deleted, bit-for-bit dedup, conflicts keep your local value and report both). The old
+  single-file `oo-backup-2` download and the destructive "replace your corpus" restore
+  are **legacy** (the replace path was removed, so no flow can overwrite your data).
+- ✅ **Background scheduler**: after you go online (one consent), collection runs
+  **continuously** in the background — stratified by language and source tag, one
+  source at a time per host, politeness untouched — through `rss`, `crawl`, `markets`,
+  `wiki` and `law` passes, all on the same ethical fetch path. Start/stop + "scrape
+  now" stay available; airplane mode is the one thing that stops it.
 - ✅ **Bounded recursive crawler**: same-domain article *discovery* (not
   mirroring) with robots fail-closed, rate limiting, and hard depth/page caps.
 - ✅ **Markets** (financial / stock / rare-earth): per-source **price-extraction
@@ -106,16 +124,22 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   **interactive map** (zoomable SVG with city pins by real lat/lon + per-country/
   city tables) — every figure a real aggregate with method + caveat. See
   [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
-- ✅ **World map** (the **World map** tab): every locatable, datable signal on one
-  zoomable world map under a **time slider** from antiquity to the near future — curated
-  historical/scheduled anchors, your **geocoded corpus** (publication date), **dates
-  mentioned in article text** (extracted, human-confirmable per-article **date tags**), and
-  opt-in live **hazards**. Pins need *both* a coordinate and a date (no coordinate → no pin);
-  country-level pins are flagged approximate; "near in space & time" is co-occurrence, never
-  cause. Offline coastlines via `scripts/build_world_outline.py` (graticule fallback).
+- ✅ **World map** (the **World map** tab): a **World coverage choropleth** of your
+  corpus (`ooMap`, no map deps). An **in-map measure picker** colours each country by a
+  real dimension — **sources · articles · keyword mentions · mean tone** (tone on a
+  diverging scale with the VADER English-only caveat + `n`); no data ≠ zero (a
+  distinct **no-data hatch**, never a guessed colour). **In-map controls** switch
+  **granularity** (country ↔ continent aggregate) and toggle overlay **layers**: a
+  **places** layer (mentioned places, "deduced, never confirmed") and a **signals**
+  layer of locatable/datable events under a **time slider** from antiquity to the
+  near-future (curated anchors + your geocoded corpus + extracted date tags; "near in
+  space & time" is co-occurrence, never cause). Country borders from
+  `scripts/build_country_polygons.py`; offline coastlines via
+  `scripts/build_world_outline.py` (graticule fallback).
 - ✅ **Home briefing** (the **Home** tab, `0.06` Phase A): a **triage feed of honest
-  "cards"** — the app gathers and measures in the background, then surfaces candidate
-  stories as cards grouped into editorial buckets (*rising · overtold · undertold ·
+  Leads** (investigative starting points, rendered as "cards") — the app gathers and
+  measures in the background, then surfaces candidate stories grouped into editorial
+  buckets (*rising · overtold · undertold ·
   investigate · check-the-framing · watch · context · data-integrity*). Each card is
   **one measured signal + evidence links + a caveat**, never a verdict — and there is
   **no composite trust score** (forbidden *in code*, not just docs). Cards compose the
@@ -126,7 +150,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   carries its source links, method and caveat — reproducible journalism. The feed is
   precomputed/cached (instant Home) and refreshed after each scrape. See
   [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
-- ✅ **Wikipedia change-tracking** (the **Wikipedia** tab): each language edition is
+- ✅ **Wikipedia change-tracking** (**Settings → Wikipedia**): each language edition is
   a tracked source whose *edits* are the data — one baseline snapshot then
   diffs/deltas (not re-copies), with honest large-edit/revisionism flagging (size
   delta, revert/blank tags, anon/burst, optional **ORES** scores), a flagged-edit
@@ -146,7 +170,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   opt-in **web of trust** and transparent (dissent-shown, never averaged) aggregation.
   See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) and [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 
-- ✅ **World law — change-tracking** (the **World law** tab, `0.06` §5): a worldwide
+- ✅ **World law — change-tracking** (the **Governments** tab, Law section, `0.06` §5): a worldwide
   catalog of **real official primary sources** (national legislation databases, gazettes,
   IP offices — `legislation.gov.uk`, EUR-Lex, Légifrance, govinfo/congress, WIPO Lex,
   USPTO, EPO, …) **seeded by default** and ingestible through the same ethical pipeline.
@@ -156,18 +180,57 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   research mirror, never legal advice — every record links to its official gazette. See
   [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
 
+- ✅ **Governments — official statistics** (the **Governments** tab, Countries subtab;
+  fetched from **Settings → Statistics**): a directory of government + international
+  statistical producers, ingested through documented machine endpoints (World Bank,
+  Eurostat/SDMX). Every figure carries **producer + agency + publication date +
+  methodology reference**, and re-fetches are stored as **vintages** (a revision is a
+  new row, never an overwrite). Producers are shown **side by side, never averaged**;
+  comparability guards flag incomparable units / SA-NSA / base years; a published gap
+  is stored as a gap, never a fabricated zero. Optional scheduled vintage auto-refresh.
+- ✅ **Local AI** (**Settings → AI**): an in-app, **checksum-verified** Ollama
+  **installer** (Linux; verifies the official installer's attested `sha256` before it
+  runs, with a visible elevation step) and a **model download queue** (one pull at a
+  time, real byte progress, cancel), an **active-model** picker, a **Behaviour &
+  prompts** editor (the built-in summary/translate/synthesis prompts are editable) and
+  **custom extractors** (user-defined prompts that write labelled *"AI-derived —
+  unreliable"* metadata, **never** the trusted keyword index). Summarize / translate /
+  synthesize run **locally** over Ollama, cited and refusing when the source is absent —
+  a header pill shows live LLM status. Model pulls egress over **clearnet via the Ollama
+  process** (disclosed at consent, not the Tor path).
+- ✅ **Newsletter import** (**Settings → Newsletters**): fold newsletters into the same
+  searchable corpus — a small **.eml upload**, a **whole-folder import job** (a pausable,
+  resumable, task-manager-visible background job that scales to a 20 GB+ tree), and an
+  opt-in **mailbox pull** (IMAP/POP3, consented, airplane-gated). **Anonymize-at-ingest**
+  by construction: no recipient identity, no raw `.eml`, tracking links detoxed, **zero
+  sockets** on a file import.
+- ✅ **Offline maps** (**Settings → Offline map**): a per-region **OSM download manager**
+  (its own task-manager job, resumable, reorderable queue, with a dated inline size
+  table) so map data can be held locally, managed like the Wikipedia dumps.
+- ✅ **Watches** (the **Insights → Watches** subtab): saved local "if-this-then-watch"
+  conditions that surface a **Lead** when your corpus gains enough new matching articles.
+  Local-only, **no notifications / network / telemetry** and no escalation beyond the
+  Lead card; a Watches panel shows history + per-watch enable / edit / delete.
+- ✅ **Task-manager window** (the top-bar **Tasks & system** button opens it in a new
+  tab): live views of the collection pass, the wiki-dump / OSM / model-pull download
+  queues (reorder / pause / resume / cancel, honest byte progress — no fabricated ETA
+  or rate), the schedule, and a **System** tab with hardware vitals. The **Stop** control
+  trips the network kill switch (stated up front).
+- ✅ **Alternative interfaces** (**Settings → Appearance**, *experimental*): an opt-in
+  gallery of eight alternative UI skins over the one render engine — the ethical
+  guarantees (caveats visible, the one network-consent popup, no scores) are preserved
+  by construction (same DOM), and no functionality is lost.
+
 **In progress / next:**
 - 🚧 Structured per-edit legal diffs (Akoma Ntoso / ELI) and patent/docket parsing into a
   price-feed-style series, on top of the seeded IP/legal primary sources.
-- 🚧 The **task-manager window** (a top-bar button opens it today with a live jobs view
-  and the reorderable wiki-dump download queue) is growing toward the full spec —
-  per-country scrape priority, download arbitration (queue/prioritize/cancel) and richer
-  pass-time estimates (RC gate 🔶).
+- 🚧 The **task-manager window** ships today (see above); the remaining spec is
+  per-country scrape priority, richer download arbitration and pass-time estimates.
 - 🚧 The **Wikipedia per-article tracked-changes timeline tab** (the living-source view
   that lets you scroll and analyse a page's edits over time) — the existing flagged-edit
   feed and diff viewer ship today.
-- 🚧 Local LLM analysis via Ollama; email + monitoring; cross-linking Wikipedia
-  diffs into the Insights keyword analytics.
+- 🚧 Volume/anomaly **monitoring** dashboards, and cross-linking Wikipedia diffs into the
+  Insights keyword analytics.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phasing.
 
@@ -204,29 +267,34 @@ This is a **local-first, single-user** app for a **Qubes OS Debian AppVM** on
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scripts/bootstrap.sh | bash
 ```
-It clones the repo and runs `./install.sh`, a small menu where you pick **Core**
-(scrape/store/search/export), optional **Analysis tools**, and optional **Local LLM
-tools** (Ollama + a model) — re-run it any time to add more. It then creates an
-**Open Omniscience** launcher in your apps menu and on the Desktop; double-click it
-to start the app and open the browser. *(Inspect the tiny
-[bootstrap](scripts/bootstrap.sh) before piping any script to a shell, or clone and
-run `./install.sh` yourself.)*
+It clones the repo and runs `./install.sh`, which is **promptless**: **one command
+installs Core (scrape/store/search/export) + Analysis + Compression**, creates an
+**Open Omniscience** launcher (apps menu + Desktop) and **auto-launches** the app into
+your browser. (Override the set with `OO_COMPONENTS="…"`; Local-LLM/Ollama setup is
+**not** offered here — it lives in the app's **Settings → AI** tab.) On **first
+launch** the app walks you through **language → legal terms** (declining uninstalls) **→
+a create-passphrase step** (encrypted at rest by default, **no recovery**), then boots
+**offline (airplane mode)** — going online passes **one consent popup**. *(Inspect the
+tiny [bootstrap](scripts/bootstrap.sh) before piping any script to a shell, or clone
+and run `./install.sh` yourself.)*
 
 ```bash
 # Local dev (any Linux with Python 3.13):
 python3.13 -m venv .venv && . .venv/bin/activate
 pip install -e ".[analysis,dev]"
 pytest -q
-open-omniscience          # serves http://127.0.0.1:8000 (auto-seeds ~3,200 sources)
+open-omniscience          # serves http://127.0.0.1:8000 (auto-seeds ~3,400 sources)
 ```
 
 On Qubes: `sudo ./install.sh --template` (in the TemplateVM, then reboot the AppVM)
 → `./install.sh`.
 
-The loop: pick/add a source → **ingest** an RSS feed or URL (ethical: robots.txt
-fail-closed, rate-limited) → **search** with Boolean operators (`AND`/`OR`/`NOT`,
-phrases, parentheses) → **export** CSV/JSON → optionally **summarize** locally via
-Ollama and export a **signed, verifiable evidence bundle**.
+The loop: **go online** (one consent) → **collection runs itself** in the background
+(ethical: robots.txt fail-closed, rate-limited) → **search** from the omnibar with
+Boolean operators (`AND`/`OR`/`NOT`, phrases, parentheses) → **analyse / export**
+(CSV/JSON) from the spawned analysis window → optionally **summarize** locally via
+Ollama and export a **signed, verifiable evidence bundle**. (You can still add a source
+and ingest a single feed/URL manually.)
 
 ## 📚 Documentation
 
@@ -250,10 +318,14 @@ The docs are consolidated into a small set of complete guides
 
 ## 🔒 Security model
 
-Single local user, loopback-only (`127.0.0.1`), no accounts/RBAC. No telemetry; no
-data leaves the machine (LLM is local via Ollama). Outbound only during scraping,
-and only through the ethical, robots-respecting fetcher. App boot makes **zero**
-network calls, and a top-bar **airplane-mode** kill switch trips all outbound traffic.
+Single local user, loopback-only (`127.0.0.1`), no accounts/RBAC. No telemetry; your
+corpus never leaves the machine, and LLM inference is local (loopback Ollama). **All
+scraping** goes through the ethical, robots-respecting fetcher. The only outbound
+traffic beyond that is a small set of **consented, disclosed exceptions**: **Ollama
+model pulls** (they egress over **clearnet via the Ollama process**, not the app's Tor
+path — stated at consent), and the **opt-in DuckDuckGo** topic-discovery/ingest channel.
+App boot makes **zero** network calls, and a top-bar **airplane-mode** kill switch is a
+socket-level guarantee that trips all non-loopback traffic instantly.
 
 **At-rest encryption is on by default for new corpora** (SQLCipher 4): the app asks
 for one stable passphrase at every start. The honest limit is stated wherever it
