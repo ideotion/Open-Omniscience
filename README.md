@@ -16,12 +16,14 @@
 > the analysis-window/corpora system, the release gate reconciled row by row — the
 > project moves to **`0.1.0`, an alpha**: usable and honest about every limit, not
 > finished. Beta and `1.0` still have to be earned. Development cycles are named after
-> the version they produce (branch `0.06 → … → 0.09` ⇒ `0.0.6 → … → 0.0.9`; the `0.09`
-> cycle culminates in `0.1.0`). See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+> the version they produce (branch `0.06 → … → 0.09 → 0.1` ⇒ `0.0.6 → … → 0.0.9 → 0.1.0`;
+> the `0.09` cycle culminated in `0.1.0` and the cycle branch was renamed `0.09 → 0.1`).
+> See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ## Status — v0.1.0: the deeper sense-making cycle, shipped
 
-> **`0.0.9` is the active cycle** (branch `0.09`). The `0.0.8` cycle shipped in full —
+> **`0.1.0` is the current release** (default branch `0.1`, renamed from `0.09` at the
+> flip). The `0.0.8` cycle shipped in full —
 > the whole product-roadmap push (trust hardening, the investigation-recipe cards and
 > `/investigate` dashboards, the typed ORM, all 29 audit findings closed — the `0.07`
 > audit fixed 20 and deferred 9 with rationale; the 9 were closed in `0.0.8`
