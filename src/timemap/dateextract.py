@@ -386,6 +386,13 @@ _MD_NOYEAR_RE = re.compile(
     rf"\b({_MONTH_ALT})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?!{_MD_YEAR_AHEAD})",
     re.I,
 )
+# Relative day words. UNGATED tokens are single-meaning in every language that
+# writes them; collision-prone tokens are LANGUAGE-GATED via _REL_LANG_GATES —
+# with the article-language hint they resolve, without it (or with the wrong
+# language) they are SKIPPED, never guessed (the _MONTH_LANG_OVERRIDES policy
+# applied to relative words). DELIBERATE OMISSIONS (miss over invent): hi "कल"
+# and bare bn "কাল" are BIDIRECTIONAL (yesterday AND tomorrow — only context
+# disambiguates); ro ASCII "maine" (Maine, USA) — only diacritic "mâine".
 _REL_WORDS = {
     "yesterday": -1, "today": 0, "tomorrow": 1,
     "hier": -1, "aujourd'hui": 0, "aujourd’hui": 0, "demain": 1,
@@ -393,8 +400,59 @@ _REL_WORDS = {
     "ayer": -1, "hoy": 0, "mañana": 1,
     "ontem": -1, "hoje": 0, "amanhã": 1,
     "ieri": -1, "oggi": 0, "domani": 1,
+    # ru (script-unique)
+    "вчера": -1, "сегодня": 0, "завтра": 1,
+    # ar — both hamza/tanwin spellings; اليوم is also the plain noun "the day"
+    "أمس": -1, "امس": -1, "غدا": 1, "غداً": 1, "غدًا": 1, "اليوم": 0,
+    # hi + bn (directional forms only; the bare deictics are omitted above)
+    "आज": 0, "আজ": 0, "গতকাল": -1, "আগামীকাল": 1,
+    # el + accentless variants (ALL-CAPS Greek drops the tonos — slice-B quirk)
+    "χθες": -1, "χτες": -1, "σήμερα": 0, "σημερα": 0, "αύριο": 1, "αυριο": 1,
+    # pl (jutro gated — sr/hr/bs "jutro" = morning)
+    "wczoraj": -1, "dziś": 0, "dzisiaj": 0, "jutro": 1,
+    # ro ("azi" gated: the ASCII trigram is also an en drug abbreviation)
+    "azi": 0, "astăzi": 0, "mâine": 1,
+    # nl ("morgen" itself rides the de/nl gate)
+    "gisteren": -1, "vandaag": 0,
+    # sv/da/nb — the "i X" phrases are the standard forms; the one-word sv
+    # spellings are common online. da/nb bare "morgen" = MORNING (measured
+    # false positive: "mandag morgen") → excluded by the de/nl gate; the da/nb
+    # tomorrow is the PHRASE "i morgen".
+    "igår": -1, "idag": 0, "imorgon": 1,
+    "i går": -1, "i dag": 0, "i morgon": 1, "i morgen": 1,
+    # sr Cyrillic + Latin (Latin "sutra" gated — the en loan noun)
+    "јуче": -1, "данас": 0, "сутра": 1, "juče": -1, "danas": 0, "sutra": 1,
+    # tr (the _REL_WORDS.get round-trip guard covers DOTLESS-I headline forms)
+    "dün": -1, "bugün": 0, "yarın": 1,
+    # id/ms
+    "kemarin": -1, "besok": 1, "hari ini": 0,
+}
+# token -> base languages allowed to resolve it. A gated token with no language
+# hint, or a language outside its set, is skipped — never guessed.
+_REL_LANG_GATES = {
+    "morgen": {"de", "nl"},        # da/nb "morgen" = morning (measured live FP)
+    "jutro": {"pl"},               # sr/hr/bs "jutro" = morning
+    "sutra": {"sr", "hr", "bs"},   # en "sutra" = the Buddhist text
+    "сутра": {"sr"},               # ru "Алмазная сутра" (the same text) + the
+                                   # colloquial "сутра" (= "с утра", since
+                                   # morning) — verifier-measured in ru prose
+    "اليوم": {"ar"},               # also the ordinary noun "the day"
+    # BOTH spellings of yesterday gated: hamza-less امس is Urdu "humidity"
+    # ("گرمی اور امس" is stock ur weather prose — verifier-measured), and the
+    # hamza form travels in the same script.
+    "أمس": {"ar"}, "امس": {"ar"},
+    "azi": {"ro"},                 # ASCII trigram (AZI = azithromycin in en)
+    "dün": {"tr"}, "bugün": {"tr"}, "yarın": {"tr"},
+    "kemarin": {"id", "ms"}, "besok": {"id", "ms"}, "hari ini": {"id", "ms"},
 }
 _REL_RE = re.compile(r"\b(" + "|".join(sorted(_REL_WORDS, key=len, reverse=True)) + r")\b", re.I)
+# Weekdays (anchored-only; bare token = the most recent such day, the news
+# convention). Collision-prone tokens are language-gated (_WD_LANG_GATES) or
+# accepted ONLY inside an unambiguous collocation (_WD_COLLOCATIONS below).
+# DELIBERATE OMISSIONS: ro "luni" (= "months"); ALL el weekday names (ordinal
+# homographs — need case-sensitive treatment, a separate ruling); ru/sr bare
+# среда/среду (= "environment") and sr bare недеља/nedelja (= "week") — those
+# resolve only via their prepositional collocations.
 _WEEKDAYS = {
     "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4,
     "saturday": 5, "sunday": 6,
@@ -402,9 +460,186 @@ _WEEKDAYS = {
     "samedi": 5, "dimanche": 6,
     "montag": 0, "dienstag": 1, "mittwoch": 2, "donnerstag": 3, "freitag": 4,
     "samstag": 5, "sonntag": 6,
+    # nl
+    "maandag": 0, "dinsdag": 1, "woensdag": 2, "donderdag": 3, "vrijdag": 4,
+    "zaterdag": 5, "zondag": 6,
+    # sv + da/nb (the shared tokens all name the SAME day)
+    "måndag": 0, "tisdag": 1, "onsdag": 2, "torsdag": 3, "fredag": 4,
+    "lördag": 5, "söndag": 6,
+    "mandag": 0, "tirsdag": 1, "lørdag": 5, "søndag": 6,
+    # pl — nominative + the accusative news idiom ("w niedzielę")
+    "poniedziałek": 0, "wtorek": 1, "środa": 2, "środę": 2, "czwartek": 3,
+    "piątek": 4, "sobota": 5, "sobotę": 5, "niedziela": 6, "niedzielę": 6,
+    # ru (nominative + the accusative feminine news forms)
+    "понедельник": 0, "вторник": 1, "четверг": 3, "пятница": 4, "пятницу": 4,
+    "суббота": 5, "субботу": 5, "воскресенье": 6,
+    # ro
+    "marți": 1, "miercuri": 2, "joi": 3, "vineri": 4, "sâmbătă": 5, "duminică": 6,
+    # ar definite forms (the news standard; the optional يوم prefix is a
+    # separate word, no pattern change) — both hamza spellings
+    "الاثنين": 0, "الإثنين": 0, "الثلاثاء": 1, "الأربعاء": 2, "الاربعاء": 2,
+    "الخميس": 3, "الجمعة": 4, "السبت": 5, "الأحد": 6, "الاحد": 6,
+    # hi + bn (-वार / -বার forms, script-unique)
+    "सोमवार": 0, "मंगलवार": 1, "बुधवार": 2, "गुरुवार": 3, "शुक्रवार": 4,
+    "शनिवार": 5, "रविवार": 6,
+    "সোমবার": 0, "মঙ্গলবার": 1, "বুধবার": 2, "বৃহস্পতিবার": 3, "শুক্রবার": 4,
+    "শনিবার": 5, "রবিবার": 6,
+    # tr (cuma/pazar = ar-loan "Friday"-homographs / "market" → collocations)
+    "pazartesi": 0, "salı": 1, "çarşamba": 2, "perşembe": 3, "cumartesi": 5,
+    # sr Cyrillic + Latin, gated {sr(,hr,bs)}: id "petak" = a plot/compartment,
+    # and the Latin forms are BCS-shared
+    "понедељак": 0, "уторак": 1, "четвртак": 3, "петак": 4, "субота": 5,
+    "ponedeljak": 0, "ponedjeljak": 0, "utorak": 1, "četvrtak": 3, "petak": 4,
+    "subota": 5,
+    # id (senin gated — tr "senin" = "your"; minggu = "week" → collocation)
+    "senin": 0, "selasa": 1, "rabu": 2, "kamis": 3, "jumat": 4, "sabtu": 5,
+}
+_WD_LANG_GATES = {
+    "senin": {"id"},
+    "понедељак": {"sr"}, "уторак": {"sr"}, "четвртак": {"sr"}, "петак": {"sr"},
+    "субота": {"sr"},
+    "ponedeljak": {"sr", "bs"}, "ponedjeljak": {"hr", "bs"},
+    "utorak": {"sr", "hr", "bs"}, "četvrtak": {"sr", "hr", "bs"},
+    "petak": {"sr", "hr", "bs"}, "subota": {"sr", "hr", "bs"},
+}
+# Weekday tokens that are also PLACE names, blocked by their measured name
+# context (evidence-grown, like the stoplist denylists — never a category
+# sweep): Środa Wielkopolska/Śląska (pl towns), Murska Sobota (sl city),
+# Çarşamba/Perşembe (tr districts). All three verifier-measured fabrications.
+_WD_NAME_AFTER = {  # token -> the FOLLOWING text must not start with this
+    "środa": re.compile(r"\s+(?:wielkopolsk|śląsk)", re.I),
+    "çarşamba": re.compile(r"\s+(?:ilçe|belediye)", re.I),
+    "perşembe": re.compile(r"\s+(?:ilçe|belediye)", re.I),
+}
+_WD_NAME_BEFORE = {  # token -> the PRECEDING text must not end with this
+    "sobota": re.compile(r"murska\s+\Z", re.I),
 }
 _WD_RE = re.compile(
     r"\b(next\s+|last\s+)?(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I
+)
+# sv + da definite-past weekday forms ("i fredags" = LAST Friday, up to a week
+# earlier than the bare-token most-recent reading): resolved with the "last"
+# arithmetic. The bare-token regex can never claim these — the trailing -s is
+# a word character, so \bfredag\b does not match inside "fredags" (measured).
+_WD_LAST_PHRASES = {
+    "i måndags": 0, "i tisdags": 1, "i onsdags": 2, "i torsdags": 3,
+    "i fredags": 4, "i lördags": 5, "i söndags": 6,
+    "i mandags": 0, "i tirsdags": 1, "i lørdags": 5, "i søndags": 6,  # da/nb
+}
+_WD_LAST_RE = re.compile(
+    r"\b(" + "|".join(sorted(_WD_LAST_PHRASES, key=len, reverse=True)) + r")\b", re.I
+)
+# sv/da "på + weekday" is grammatically the UPCOMING one ("på fredag" said on a
+# Wednesday = this coming Friday; the past form is "i fredags" above) — the
+# bare-token most-recent fallback would systematically invert the direction
+# (verifier-measured). Resolved as next-or-today; runs before the bare loop so
+# its claim wins.
+_WD_COMING_PHRASES = {
+    "på måndag": 0, "på tisdag": 1, "på onsdag": 2, "på torsdag": 3,
+    "på fredag": 4, "på lördag": 5, "på söndag": 6,
+    "på mandag": 0, "på tirsdag": 1, "på lørdag": 5, "på søndag": 6,  # da/nb
+}
+_WD_COMING_RE = re.compile(
+    r"\b(" + "|".join(sorted(_WD_COMING_PHRASES, key=len, reverse=True)) + r")\b", re.I
+)
+# Collocation-only weekday tokens: the bare word is a homograph in its own or a
+# sibling language (sr среда = milieu, sr недеља/nedelja = week, tr pazar =
+# market, id minggu = week), so ONLY the unambiguous prepositional / "günü" /
+# "hari" collocation resolves; the bare token is never in _WEEKDAYS.
+# DELIBERATE OMISSION (verifier-measured): ru "в среду" is NOT accepted — the
+# accusative is also "into the environment" ("внедрение в среду разработки",
+# "выброс в среду обитания" are everyday tech/ecology prose), so even the
+# collocation cannot disambiguate; ru Wednesday is an honest miss. The id
+# collocation excludes "hari minggu ini/lalu/depan" ("every day THIS WEEK").
+_WD_COLLOCATIONS = {
+    "у среду": 2, "у недељу": 6, "u nedelju": 6,
+    "cuma günü": 4, "pazar günü": 6, "hari minggu": 6,
+}
+_WD_COLLOC_RE = re.compile(
+    r"\b(?:(у среду|у недељу|u nedelju|cuma günü|pazar günü)"
+    r"|(hari minggu)(?!\s+(?:ini|lalu|depan)\b))\b",
+    re.I,
+)
+# CJK relative words + weekdays — boundary-FREE (ideographs are \w in Python
+# re, so \b never fires inside a CJK run; the slice-B measured fact) and
+# language-GATED to zh/ja (production always passes the article language).
+# Lookaheads exclude the measured proper-noun compounds: 明日香 (Asuka),
+# 今日头条/今日頭條 (Toutiao), 明天系 (Tomorrow Holding).
+_CJK_REL_WORDS = {"昨天": -1, "今天": 0, "明天": 1, "昨日": -1, "今日": 0, "明日": 1}
+_CJK_REL_RE = re.compile(
+    r"(昨天|今天|明天(?!系)|昨日"
+    r"|今日(?!头条|頭條|俄罗斯|俄羅斯|美国|美國)"  # Toutiao · RT · USA Today
+    r"|明日(?!香|黄花|黃花))"  # Asuka; 明日黄花 = the "outdated" idiom
+)
+_CJK_WD_NUMS = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+_JA_WD_KANJI = {"月": 0, "火": 1, "水": 2, "木": 3, "金": 4, "土": 5, "日": 6}
+# zh 星期X · ja X曜日/X曜 · zh [上下本]周X. Segmentation guards (all
+# verifier-measured trap classes — each blocked continuation is a common word
+# that re-segments the string: 天气/天氣 weather · 日本 Japan · 日经/日經 Nikkei ·
+# 日元/日圆/日圓 yen · 五金 hardware · 六成 "60%" — while 成交 keeps the genuine
+# 成交量 "trading volume" reading): miss over invent on the ambiguous ones.
+# The short 周X form REQUIRES the 上/下/本 modifier — the modifier carries the
+# direction (上周二 = LAST Tuesday; bare 周二 would mis-resolve most-recent) —
+# and 周日 is deliberately NOT accepted even with a modifier ("上周日本首相…" =
+# 上周+日本, not 上周日+本; Sunday stays reachable via 星期日/星期天/日曜日).
+# A weekday DIGIT followed by a counter/classifier/quantity word re-segments
+# ("本周一些地区" = 本周 + 一些 "some", "上周三名工人" = 上周 + 三名 "three
+# (workers)", "下周一系列活动" = 下周 + 一系列 "a series of") — all
+# verifier-measured; each blocked continuation is an honest miss on a genuine
+# ambiguity, per the 周日 doctrine.
+# 人(?!民), 大(?!会), 分(?!析) are one-sided refinements (round 2): 人民银行/
+# 人民日报, 周三大会, 周三分析师 are constant weekday-side news patterns with no
+# counting reading, while 三人/三大运营商/三分之一 stay blocked.
+_CJK_WD_CONT = (
+    r"(?!些|系列|名|起|万|萬|千|百|亿|億|个|個|项|項|次|人(?!民)|家|户|戶|位|天|年|月"
+    r"|种|種|批|条|條|场|場|轮|輪|度|分(?!析)|半|大(?!会))"
+)
+_CJK_WD_DAY = rf"(?:(?:[一二三四]|五(?!金(?!融))|六(?!成(?!交))){_CJK_WD_CONT})"
+_CJK_WD_RE = re.compile(
+    rf"(?:星期({_CJK_WD_DAY}|天(?!气|氣)|日(?!本|经|經|元|圆|圓))"
+    r"|([月火水木金土日])曜日?"
+    rf"|([上下本])[周週]({_CJK_WD_DAY}))"
+)
+_KO_REL_WORDS = {"어제": -1, "오늘": 0, "내일": 1}
+# Hangul boundaries: \b never fires inside a Hangul run, so the lookbehind
+# blocks compound substrings (안내일정 contains 내일) and the lookahead admits
+# only a common particle / non-Hangul / end — 내일신문 (the newspaper) and
+# 오늘날 ("nowadays") never match, while 어제는/오늘도/내일부터 do.
+_KO_REL_RE = re.compile(r"(?<![가-힣])(어제|오늘|내일)(?=[은는도만의엔부까]|[^가-힣]|$)")
+_KO_WD_RE = re.compile(r"(?<![가-힣])([월화수목금토일])요일")
+_KO_WD_SYLL = {"월": 0, "화": 1, "수": 2, "목": 3, "금": 4, "토": 5, "일": 6}
+# English anchored offsets (en-gated + anchor-only): "N days ago" and the
+# last/next/this month family at the existing MONTH precision (day normalised
+# to 1, like every _MY_RE match). The FULL "days ago" phrase is required (bare
+# "ago" is Italian for "needle"); "(the) last month" is excluded — "the last
+# month of the war" is a duration, and "in the last month" a rolling window,
+# not the previous calendar month; "a week ago" is deliberately NOT interpreted
+# (a −7d convention would be a ruling, not a fact in the text).
+_EN_NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+                 "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+_EN_AGO_RE = re.compile(
+    r"\b(\d{1,2}|" + "|".join(_EN_NUM_WORDS) + r")\s+days\s+ago\b", re.I
+)
+# "two years and three days ago": the phrase is the TAIL of a compound
+# duration — searched with endpos = the match start, so \Z anchors right
+# before the number token. The comma branch requires a NUMBER/duration word
+# on its left ("two years, three days ago") — a bare comma is ordinary prose
+# ("However, five days ago…" — round-2 measured false suppression).
+_EN_AGO_COMPOUND = re.compile(
+    r"(?:\band|(?:\d|\byears?|\bmonths?|\bweeks?)\s*,)\s*\Z", re.I
+)
+_EN_MONTH_OFF_RE = re.compile(
+    r"\b(?:(last|next)\s+month|(?:(?:earlier|later)\s+)?this\s+month)\b", re.I
+)
+# A determiner/possessive before "last/next month" flips the meaning to the
+# final/following month OF A PERIOD or a rolling window ("the last month of
+# the war", "his last month in office", "the company's last month", "over the
+# next month") — never the previous/next calendar month. In-loop guard, not a
+# lookbehind: fixed-width lookbehinds cannot cover possessives or a double
+# space (both verifier-measured bypasses).
+_EN_MONTH_DETERMINED = re.compile(
+    r"(?:\bthe|\bhis|\bher|\bits|\btheir|\bour|\bmy|\byour|\bevery|\bfinal|\bone|'s|s’)\s*\Z",
+    re.I,  # \bone: "gave it one last month" = one FINAL month (round 2)
 )
 
 _ISO_RE = re.compile(  # digit-safe boundaries: see _NUM_DMY_RE (glued CJK prose)
@@ -615,7 +850,16 @@ def extract_dates(
         consumed.append((start, end))
         return True
 
+    # Day-precision dates PER CLAIMED SPAN (span start -> dates). `found` dedups
+    # by (date, precision) keeping only the first occurrence's pos, so a
+    # REPEATED dateline's second span would look date-less to the appositive
+    # guard and its weekday would anchor-resolve (verifier-measured) — this
+    # record survives the dedup.
+    day_spans: dict[int, list[date]] = {}
+
     def add(d: date, precision: str, m: re.Match) -> None:
+        if precision == "day":
+            day_spans.setdefault(m.start(), []).append(d)
         key = (d.isoformat(), precision)
         if key not in found:
             found[key] = {
@@ -845,26 +1089,143 @@ def extract_dates(
             d = nearest_year(int(m.group(2)), int(m.group(1)))
             if d and claim(*m.span()):
                 add(d, "day", m)
-        for m in _REL_RE.finditer(text):
-            off = _REL_WORDS.get(m.group(1).lower())
-            if off is None:  # casefold round-trip miss (dotless-ı class): skip, never abort
-                continue
-            if claim(*m.span()):
-                add(anchor + timedelta(days=off), "day", m)
-        for m in _WD_RE.finditer(text):
-            wd = _WEEKDAYS.get(m.group(2).lower())
-            if wd is None:  # casefold round-trip miss (dotless-ı class): skip, never abort
-                continue
-            mod = (m.group(1) or "").strip().lower()
+        base = (language or "")[:2].lower()
+
+        def _appositive_of_claimed(s: int, e: int, wd: int) -> bool:
+            """A weekday ADJACENT to an already-claimed date that FALLS ON that
+            weekday names it — an appositive ("2024年6月11日（星期二）", "wtorek,
+            11 czerwca 2024", "Tuesday, June 12, 2026"), not an independent
+            reference; resolving it against the anchor would invent a SECOND,
+            different date. The AGREEMENT test is what keeps independent
+            neighbours alive (verifier-measured regressions without it): a
+            weekday list ("runs Friday, Saturday and Sunday") never agrees —
+            consecutive days differ — and "…of 2026-06-08, Friday's session"
+            (a Monday) stays an independent Friday. Only soft separators
+            bridge (space/comma/parens — never a sentence-ending period)."""
+            seps = " \t,、，()（）[]"
+            left_end = len(text[:s].rstrip(seps))
+            right_start = e + (len(text[e:]) - len(text[e:].lstrip(seps)))
+            return any(
+                (ce == left_end or cs == right_start)
+                and any(dt.weekday() == wd for dt in day_spans.get(cs, ()))
+                for cs, ce in consumed
+            )
+
+        def _wd_resolve(wd: int, mod: str) -> date:
             delta = (wd - anchor.weekday()) % 7
             if mod == "next":
-                d = anchor + timedelta(days=delta or 7)
-            elif mod == "last":
-                d = anchor - timedelta(days=((anchor.weekday() - wd) % 7) or 7)
-            else:  # bare weekday in news prose: the most recent such day
-                d = anchor - timedelta(days=(anchor.weekday() - wd) % 7)
+                return anchor + timedelta(days=delta or 7)
+            if mod == "last":
+                return anchor - timedelta(days=((anchor.weekday() - wd) % 7) or 7)
+            return anchor - timedelta(days=(anchor.weekday() - wd) % 7)  # most recent
+
+        for m in _REL_RE.finditer(text):
+            tok = m.group(1).lower()
+            off = _REL_WORDS.get(tok)
+            if off is None:  # casefold round-trip miss (dotless-ı class): skip, never abort
+                continue
+            gate = _REL_LANG_GATES.get(tok)
+            if gate is not None and base not in gate:
+                continue  # collision-prone token without its language: skip, never guess
             if claim(*m.span()):
-                add(d, "day", m)
+                add(anchor + timedelta(days=off), "day", m)
+        for m in _WD_LAST_RE.finditer(text):  # sv/da "i fredags" = LAST Friday
+            wd = _WD_LAST_PHRASES.get(m.group(1).lower())
+            if wd is not None and claim(*m.span()):
+                add(_wd_resolve(wd, "last"), "day", m)
+        for m in _WD_COMING_RE.finditer(text):  # sv/da "på fredag" = the COMING one
+            wd = _WD_COMING_PHRASES.get(m.group(1).lower())
+            if wd is None or _appositive_of_claimed(*m.span(), wd):
+                continue
+            if claim(*m.span()):
+                add(anchor + timedelta(days=(wd - anchor.weekday()) % 7), "day", m)
+        for m in _WD_COLLOC_RE.finditer(text):  # "у среду" / "cuma günü" / "hari Minggu"
+            tok = (m.group(1) or m.group(2)).lower()
+            wd = _WD_COLLOCATIONS.get(tok)
+            if wd is None or _appositive_of_claimed(*m.span(), wd):
+                continue
+            if claim(*m.span()):
+                add(_wd_resolve(wd, ""), "day", m)
+        for m in _WD_RE.finditer(text):
+            tok = m.group(2).lower()
+            wd = _WEEKDAYS.get(tok)
+            if wd is None:  # casefold round-trip miss (dotless-ı class): skip, never abort
+                continue
+            gate = _WD_LANG_GATES.get(tok)
+            if gate is not None and base not in gate:
+                continue  # collision-prone token without its language: skip, never guess
+            # Place-name traps ("Środa Wielkopolska", "Murska Sobota",
+            # "Çarşamba ilçesi") — measured, evidence-grown context denylist.
+            after_rx = _WD_NAME_AFTER.get(tok)
+            if after_rx is not None and after_rx.match(text, m.end()):
+                continue
+            before_rx = _WD_NAME_BEFORE.get(tok)
+            if before_rx is not None and before_rx.search(text, 0, m.start()):
+                continue
+            if _appositive_of_claimed(*m.span(), wd):
+                continue  # names the adjacent explicit date, not a new reference
+            mod = (m.group(1) or "").strip().lower()
+            if claim(*m.span()):
+                add(_wd_resolve(wd, mod), "day", m)
+        if base in ("zh", "ja"):
+            for m in _CJK_REL_RE.finditer(text):
+                off = _CJK_REL_WORDS.get(m.group(1))
+                if off is not None and claim(*m.span()):
+                    add(anchor + timedelta(days=off), "day", m)
+            for m in _CJK_WD_RE.finditer(text):
+                if m.group(3):  # [上下本]周X — CALENDAR-week semantics: 上周二 is
+                    # Tuesday of the previous Monday-start week (NOT the English
+                    # "most recent past Tuesday" — up to a week apart).
+                    wd = _CJK_WD_NUMS.get(m.group(4))
+                    if wd is None or _appositive_of_claimed(*m.span(), wd):
+                        continue
+                    week_off = {"上": -7, "下": 7, "本": 0}[m.group(3)]
+                    d = anchor + timedelta(days=wd - anchor.weekday() + week_off)
+                    if claim(*m.span()):
+                        add(d, "day", m)
+                    continue
+                if m.group(1):  # 星期X
+                    wd = _CJK_WD_NUMS.get(m.group(1))
+                else:  # X曜日 / X曜
+                    wd = _JA_WD_KANJI.get(m.group(2))
+                if wd is None or _appositive_of_claimed(*m.span(), wd):
+                    continue
+                if claim(*m.span()):
+                    add(_wd_resolve(wd, ""), "day", m)
+        if base == "ko":
+            for m in _KO_REL_RE.finditer(text):
+                off = _KO_REL_WORDS.get(m.group(1))
+                if off is not None and claim(*m.span()):
+                    add(anchor + timedelta(days=off), "day", m)
+            for m in _KO_WD_RE.finditer(text):
+                wd = _KO_WD_SYLL[m.group(1)]
+                if _appositive_of_claimed(*m.span(), wd):
+                    continue
+                if claim(*m.span()):
+                    add(_wd_resolve(wd, ""), "day", m)
+        if base == "en":
+            for m in _EN_AGO_RE.finditer(text):
+                # "two years and three days ago" is a COMPOUND duration — the
+                # tail alone would be off by the years (verifier-measured):
+                # a preceding and/comma/larger-unit word suppresses.
+                if _EN_AGO_COMPOUND.search(text, 0, m.start()):
+                    continue
+                tok = m.group(1).lower()
+                n = int(tok) if tok.isdigit() else _EN_NUM_WORDS[tok]
+                if claim(*m.span()):
+                    add(anchor - timedelta(days=n), "day", m)
+            for m in _EN_MONTH_OFF_RE.finditer(text):
+                # "the/his/its/the company's last month (of …)" is the FINAL
+                # month of a period or a rolling window, not the previous
+                # calendar month (verifier-measured: possessives slipped the
+                # old lookbehind, as did a double space).
+                if m.group(1) and _EN_MONTH_DETERMINED.search(text, 0, m.start()):
+                    continue
+                off = {"last": -1, "next": 1}.get((m.group(1) or "").lower(), 0)
+                mo0 = anchor.month - 1 + off
+                d = _valid(anchor.year + mo0 // 12, mo0 % 12 + 1, 1, today)
+                if d and claim(*m.span()):
+                    add(d, "month", m)
 
     out = sorted(found.values(), key=lambda c: c["pos"])
     for c in out:

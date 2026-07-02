@@ -362,6 +362,7 @@ _FR_PARAGRAPH = (
 def test_reconcile_article_language_text_detect_sets_deduced(db):
     """The offline text detector deduces the language of a long unknown article and
     stores it in detected_language WITHOUT ever writing the asserted language."""
+    pytest.importorskip("py3langid")  # the [analysis] lib; a core install -> graceful None
     from src.analytics.store import reconcile_article_language
 
     art = _unknown_article(db, "u1", _FR_PARAGRAPH)
@@ -431,6 +432,7 @@ def test_reconcile_article_language_tie_or_too_few_left_unknown(db):
 
 def test_reconcile_article_language_is_idempotent(db):
     """A second pass re-scans nothing (a resolved article is excluded by the filter)."""
+    pytest.importorskip("py3langid")  # the [analysis] lib; a core install -> graceful None
     from src.analytics.store import reconcile_article_language
 
     _unknown_article(db, "u6", _FR_PARAGRAPH)
