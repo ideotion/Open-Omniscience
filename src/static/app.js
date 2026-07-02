@@ -12,6 +12,74 @@
       return cleaned;                                            // relative / same-origin
     };
 
+    // ===================================================================== //
+    //  Frontend error capture (recursive-augmentation log #1) — turns the    //
+    //  "browser-unverified" debt into an OBSERVABLE feed: window.onerror,     //
+    //  unhandledrejection, and failed/5xx fetches are reported (throttled) to //
+    //  the local rolling log so a `t is not defined` or a dead click shows in //
+    //  the debug bundle instead of the maintainer finding it one tab at a     //
+    //  time. Loopback-only, no PII by contract (error text + which function / //
+    //  endpoint only — never anything the user typed). Best-effort; a broken  //
+    //  reporter must NEVER break the app or loop on its own failure.          //
+    // ===================================================================== //
+    const _OO_ERR_EP = "/api/diagnostics/frontend-error";
+    const _ooErrSeen = new Map();   // signature -> last-sent ms (client-side throttle)
+    const _ooRawFetch = window.fetch ? window.fetch.bind(window) : null;
+    function _ooReportError(kind, message, source, endpoint, lineno) {
+      try {
+        if (!_ooRawFetch) return;
+        const msg = String(message == null ? "" : message).slice(0, 500);
+        const sig = kind + "|" + msg.slice(0, 120) + "|" + (source || "");
+        const now = Date.now();
+        const last = _ooErrSeen.get(sig);
+        if (last != null && (now - last) < 5000) return;   // throttle identical
+        if (_ooErrSeen.size > 200) _ooErrSeen.clear();
+        _ooErrSeen.set(sig, now);
+        let lang = null;
+        try { lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || null; } catch (e) {}
+        const body = {kind: String(kind).slice(0, 40), message: msg};
+        if (source) body.source = String(source).slice(0, 300);
+        if (endpoint) body.endpoint = String(endpoint).slice(0, 300);
+        if (lineno != null) body.lineno = lineno | 0;
+        if (lang) body.ui_lang = String(lang).slice(0, 16);
+        // Use the RAW fetch so the wrapper below can't recurse on this very POST.
+        _ooRawFetch(_OO_ERR_EP, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body), keepalive: true,
+        }).catch(() => {});
+      } catch (e) { /* a broken reporter must never break the app */ }
+    }
+    window.addEventListener("error", (e) => {
+      // Element/resource load errors have no `.error`; script errors do.
+      const m = (e && e.error && e.error.stack) ? String(e.error.stack).split("\n").slice(0, 3).join(" | ")
+               : (e && e.message) || "error";
+      const src = e && e.filename ? (e.filename + (e.lineno ? ":" + e.lineno : "")) : null;
+      _ooReportError("error", m, src, null, e && e.lineno);
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const r = e && e.reason;
+      const m = r && r.stack ? String(r.stack).split("\n").slice(0, 3).join(" | ")
+              : String(r && r.message ? r.message : r);
+      _ooReportError("unhandledrejection", m, null, null, null);
+    });
+    // Wrap the global fetch to catch NETWORK failures + 5xx (a 4xx is often the
+    // correct answer and the backend already logs it, so we don't double-report it).
+    // The report POST itself uses the raw fetch above, so it can't recurse here.
+    if (_ooRawFetch) {
+      window.fetch = function (input, init) {
+        const url = (typeof input === "string") ? input : (input && input.url) || "";
+        const p = _ooRawFetch(input, init);
+        if (url && url.indexOf(_OO_ERR_EP) === -1) {
+          p.then((res) => {
+            if (res && res.status >= 500) _ooReportError("fetch-5xx", res.status + " " + res.statusText, null, url, null);
+          }, (err) => {
+            _ooReportError("fetch-failed", (err && err.message) || "network error", null, url, null);
+          });
+        }
+        return p;
+      };
+    }
+
     function toast(msg, kind="ok", onClick=null) {
       const n = document.createElement("div");
       n.className = "note " + kind; n.textContent = msg;

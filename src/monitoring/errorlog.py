@@ -54,7 +54,17 @@ _http_last: dict[tuple[str, str, int], float] = {}
 # makes the boundary explicit: "newest error before the latest boot ⇒ no errors
 # THIS session" is then distinguishable from "logging is broken (no records)".
 _BOOT_LEVEL = "BOOT"
-# Levels that count as a real problem (BOOT/INFO markers do not).
+# A FRONTEND (browser) error the UI captured via window.onerror /
+# unhandledrejection / a failed fetch (recursive-augmentation log #1). Kept on its
+# OWN level so it rides the debug bundle + the this-session boundary WITHOUT muddying
+# the backend problem counts — a JS error is a real fault, but a client-side one.
+_FRONTEND_LEVEL = "FRONTEND"
+# Throttle identical frontend errors (same kind+message+source) so a tight render
+# loop throwing every frame cannot flood the capped log.
+_FRONTEND_THROTTLE_S = 5.0
+_FRONTEND_KEYS_CAP = 512
+_frontend_last: dict[tuple[str, str, str], float] = {}
+# Levels that count as a real (BACKEND) problem (BOOT/INFO/HTTP/FRONTEND markers do not).
 _PROBLEM_LEVELS = {"WARNING", "ERROR", "CRITICAL"}
 
 
@@ -147,6 +157,55 @@ def note_http_error(method: str, path: str, status: int, *, detail: str | None =
         return
 
 
+def note_frontend_error(
+    kind: str,
+    message: str,
+    *,
+    source: str | None = None,
+    endpoint: str | None = None,
+    lineno: int | None = None,
+    ui_lang: str | None = None,
+) -> None:
+    """Record a BROWSER error captured by the frontend (window.onerror /
+    unhandledrejection / a failed fetch), so the "browser-unverified" debt becomes
+    OBSERVABLE — a ``t is not defined`` or a dead click shows in the debug bundle
+    instead of the maintainer finding it one tab at a time (recursive-augmentation
+    log #1).
+
+    Local-only, no PII by design (error text + which function/endpoint only — the
+    frontend is instructed to send nothing user-typed). Best-effort; never raises;
+    identical (kind, message, source) is throttled so a render loop can't flood the log.
+    """
+    try:
+        k = (str(kind)[:40], str(message)[:200], str(source or "")[:200])
+        now = time.monotonic()
+        with _LOCK:
+            last = _frontend_last.get(k)
+            if last is not None and (now - last) < _FRONTEND_THROTTLE_S:
+                return
+            if len(_frontend_last) > _FRONTEND_KEYS_CAP:
+                _frontend_last.clear()
+            _frontend_last[k] = now
+        entry = {
+            "at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "level": _FRONTEND_LEVEL,
+            "logger": "frontend",
+            "kind": str(kind)[:40],
+            "message": str(message)[:500],
+        }
+        if source:
+            entry["source"] = str(source)[:300]
+        if endpoint:
+            entry["endpoint"] = str(endpoint)[:300]
+        if lineno is not None:
+            entry["lineno"] = int(lineno)
+        if ui_lang:
+            entry["ui_lang"] = str(ui_lang)[:16]
+        _append(entry)
+    except Exception:  # noqa: BLE001 - diagnostics must never break the app
+        return
+
+
 def install() -> None:
     """Attach the handler to the root logger (idempotent AND self-healing:
     if something cleared the root handlers — test frameworks do — re-attach).
@@ -219,8 +278,14 @@ def summary() -> dict:
         # session" rather than fabricating a boundary.
         return bool(last_boot) and bool(r.get("at")) and r["at"] >= last_boot
 
+    def _is_frontend(r: dict) -> bool:
+        return r.get("level") == _FRONTEND_LEVEL
+
     http_status = Counter(
         str(r.get("status")) for r in records if _is_http(r) and r.get("status") is not None
+    )
+    frontend_kinds = Counter(
+        str(r.get("kind")) for r in records if _is_frontend(r) and r.get("kind")
     )
 
     return {
@@ -237,4 +302,9 @@ def summary() -> dict:
         "http_errors_total": sum(1 for r in records if _is_http(r)),
         "http_errors_this_session": sum(1 for r in records if _is_http(r) and _this_session(r)),
         "http_status_breakdown": dict(http_status),
+        "frontend_errors_total": sum(1 for r in records if _is_frontend(r)),
+        "frontend_errors_this_session": sum(
+            1 for r in records if _is_frontend(r) and _this_session(r)
+        ),
+        "frontend_kind_breakdown": dict(frontend_kinds),
     }

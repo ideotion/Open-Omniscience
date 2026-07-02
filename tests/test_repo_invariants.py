@@ -3194,6 +3194,41 @@ def test_markets_specific_subtab_shows_items_individually():
     )
 
 
+def test_recursive_augmentation_logs_are_wired():
+    """The 5 recursive-augmentation diagnostic logs (maintainer 2026-07-02) are wired:
+    frontend error capture in the UI + the backend endpoints in the diagnostics router
+    + all five ride the debug bundle and the all-diagnostics archive."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # log #1: the frontend captures window.onerror / unhandledrejection / failed fetch
+    assert 'addEventListener("error"' in app and 'addEventListener("unhandledrejection"' in app, (
+        "the UI must capture JS errors + unhandled rejections"
+    )
+    assert "/api/diagnostics/frontend-error" in app, "captured errors POST to the local log"
+    # it must use the RAW fetch for its own report so it cannot recurse on its own failure
+    assert "_ooRawFetch" in app, "the reporter must use the pre-wrap fetch to avoid recursion"
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    for route in (
+        '"/frontend-error"',
+        '"/request-latency"',
+        '"/slow-queries"',
+        '"/schema-drift"',
+        '"/integrity"',
+    ):
+        assert route in diag, f"the diagnostics router must expose {route}"
+    # the new logs ride the one-click bundles
+    for member in ("request-latency.json", "slow-queries.json", "schema-drift.json",
+                   "corpus-integrity.json", "frontend-errors.json"):
+        assert member in diag, f"{member} must be in the all-diagnostics archive"
+    assert "request_latency" in diag and "corpus_integrity" in diag, (
+        "the debug bundle must carry the latency + integrity logs"
+    )
+
+    main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
+    assert "start_watchdog" in main, "the event-loop-block watchdog must start at lifespan"
+    assert "install as _install_slowquery" in main, "the slow-query listener must install at boot"
+
+
 def test_commodity_card_opens_analysis():
     """Each commodity card's TITLE opens the universal analysis window seeded
     with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK

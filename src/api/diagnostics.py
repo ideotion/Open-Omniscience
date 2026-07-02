@@ -24,6 +24,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -1629,6 +1630,93 @@ def external_freshness() -> dict:
     return R.summary()
 
 
+# -- Recursive-augmentation logs (maintainer 2026-07-02): the app surfaces the
+# diagnostics that let a developer find bugs WITHOUT the operator spotting each by eye.
+# All read-only, local, no score. -------------------------------------------------- #
+
+
+class _FrontendError(BaseModel):
+    """A browser error the UI captured (recursive-augmentation log #1). Small,
+    no-PII by contract — error text + which function/endpoint only."""
+
+    kind: str = Field(default="error", max_length=40)
+    message: str = Field(default="", max_length=500)
+    source: str | None = Field(default=None, max_length=300)
+    endpoint: str | None = Field(default=None, max_length=300)
+    lineno: int | None = None
+    ui_lang: str | None = Field(default=None, max_length=16)
+
+
+@router.post("/frontend-error")
+def report_frontend_error(err: _FrontendError) -> dict:
+    """Receive a browser-side error (window.onerror / unhandledrejection / a failed
+    fetch) into the rolling log so the "browser-unverified" debt is OBSERVABLE — a
+    ``t is not defined`` or a dead click shows in the debug bundle instead of the
+    operator finding it one tab at a time. Loopback-only, best-effort, throttled."""
+    from src.monitoring.errorlog import note_frontend_error
+
+    note_frontend_error(
+        err.kind,
+        err.message,
+        source=err.source,
+        endpoint=err.endpoint,
+        lineno=err.lineno,
+        ui_lang=err.ui_lang,
+    )
+    return {"ok": True}
+
+
+@router.get("/frontend-errors")
+def frontend_errors(limit: int = Query(200, ge=1, le=2000)) -> dict:
+    """The captured browser errors (log #1) + the rolling-log summary counts."""
+    from src.monitoring.errorlog import recent_errors
+    from src.monitoring.errorlog import summary as _summary
+
+    records = [r for r in recent_errors(limit=2000) if r.get("level") == "FRONTEND"]
+    return {"errors": records[-limit:], "summary": _summary()}
+
+
+@router.get("/request-latency")
+def request_latency() -> dict:
+    """Per-route latency percentiles + the event-loop-block watchdog events (log #2).
+    The freeze family (unlock / restore / task-manager) points at itself here."""
+    from src.monitoring.latency import summary as _summary
+
+    return _summary()
+
+
+@router.get("/slow-queries")
+def slow_queries(explain: int = Query(1, ge=0, le=1), db: Session = Depends(get_db)) -> dict:
+    """The slow-query ring buffer + aggregate, and (explain=1) an EXPLAIN QUERY PLAN
+    over the heavy analytics on the live store (log #3). Shows scan-vs-index."""
+    from src.monitoring.slowquery import summary as _summary
+
+    return _summary(db if explain else None)
+
+
+@router.get("/schema-drift")
+def schema_drift_report(db: Session = Depends(get_db)) -> dict:
+    """Live DB schema vs the models + migration head (log #4). A missing index at
+    scale is a silent perf bug; this catches it in one glance."""
+    from src.monitoring.schema_drift import schema_drift as _drift
+
+    return _drift(db)
+
+
+@router.get("/integrity")
+def corpus_integrity_report(
+    sample: int = Query(500, ge=10, le=20000),
+    full: int = Query(0, ge=0, le=1),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Corpus-integrity / counter-drift sweep (log #5): orphan/dangling rows, maintained
+    counters vs the live aggregate, FTS staleness, FK violations. Bounded + deadline-
+    guarded; reports drift, never fixes it."""
+    from src.monitoring.integrity import corpus_integrity as _integrity
+
+    return _integrity(db, sample=sample, full=bool(full))
+
+
 @router.get("/debug-bundle")
 def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     """ONE downloadable bundle with everything a developer needs to diagnose a
@@ -1650,10 +1738,20 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     from src.monitoring.errorlog import recent_errors
     from src.monitoring.errorlog import summary as error_log_summary
     from src.monitoring.field_test import recent_results as _field_test_results
+    from src.monitoring.integrity import corpus_integrity as _corpus_integrity
+    from src.monitoring.latency import summary as _latency_summary
     from src.monitoring.preflight import recent_results as source_results
+    from src.monitoring.schema_drift import schema_drift as _schema_drift
+    from src.monitoring.slowquery import summary as _slowquery_summary
     from src.paths import data_dir as _data_dir
     from src.scheduler.runlog import recent_runs
     from src.scheduler.runner import get_scheduler
+
+    def _safe(fn):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - one failing log must not abort the bundle
+            return {"error": str(exc)[:300]}
 
     # -- runtime ----------------------------------------------------------- #
     def _has(mod: str) -> bool:
@@ -1763,6 +1861,15 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
         # clean current run reads zero — the direct answer to "is the data-loss
         # happening now?" (P0-5; field test 2026-06-22).
         "error_log": error_log_summary(),
+        # Recursive-augmentation logs #2-#5 (maintainer 2026-07-02): so the bundle the
+        # operator sends carries the diagnostics that catch bugs automatically — the
+        # loop-block/latency log, the slow-query log, live schema drift, and the
+        # corpus-integrity/counter-drift sweep. Each is best-effort (a failing log
+        # records its own error, never aborts the bundle).
+        "request_latency": _safe(lambda: _latency_summary()),
+        "slow_queries": _safe(lambda: _slowquery_summary(db)),
+        "schema_drift": _safe(lambda: _schema_drift(db)),
+        "corpus_integrity": _safe(lambda: _corpus_integrity(db)),
         "method": (
             "Verbatim runtime facts, tracking states, network verdicts, per-click "
             "import outcomes and the rolling WARNING+ error log. Nothing inferred; "
@@ -1830,6 +1937,12 @@ def all_diagnostics(db: Session = Depends(get_db)) -> Response:
         ("benchmark.json", lambda: benchmark_report(repeats=2, db=db)),
         ("columnar.json", lambda: columnar_status()),
         ("freshness.json", lambda: external_freshness()),
+        # Recursive-augmentation logs #1-#5 (maintainer 2026-07-02).
+        ("request-latency.json", lambda: request_latency()),
+        ("slow-queries.json", lambda: slow_queries(explain=1, db=db)),
+        ("schema-drift.json", lambda: schema_drift_report(db=db)),
+        ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
+        ("frontend-errors.json", lambda: frontend_errors(limit=500)),
     ]
     results: list[dict] = []
     buf = io.BytesIO()
