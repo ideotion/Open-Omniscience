@@ -539,6 +539,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     neighbours `\b` blocked; keep the digit rule for ALL scripts (never carve a date out of a
     longer numeral). COROLLARY lockstep rule: every extractor vocabulary/pattern gain lands in
     `datediag.py` the SAME commit, or the probe reports phantom gaps.
+  - **SQLite EXPLAIN QUERY PLAN scan classification (2026-07-02, PR #567, recursive-log #3):**
+    SQLite marks BOTH a bare table scan AND an index-only scan with the word `SCAN` — a
+    `SCAN <table> USING [COVERING] INDEX …` is HEALTHY (index-only), and the only scaling
+    smell is a bare `SCAN <table>` with no `USING`. A slow-query/EXPLAIN diagnostic that
+    flags every `SCAN` cries wolf on covering-index scans; classify on the presence of
+    `USING`. (`src/monitoring/slowquery.py`.)
+  - **A diagnostic log must degrade, never 500 (2026-07-02, PR #567):** the recursive-
+    augmentation logs run raw SQL over the live store; a genuinely missing/corrupt table
+    (or a non-SQLite backend) must return a structured `{error/skipped}` field, not a
+    traceback — wrap each risky query and mark it degraded (StatementTimeout re-raised so
+    the deadline still bites). The debug-bundle `_safe()` wrapper does the same at the
+    aggregator level so one failing log never aborts the bundle.
 
 ## Open queue (when maintainer says proceed)
 - **V0.1 RELEASE EXECUTION (maintainer ruled 2026-07-02, verbatim "proceed with everything
