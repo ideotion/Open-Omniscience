@@ -5,19 +5,21 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.0.9 (pre-alpha — the `0.0.x` series; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md))
+**Version:** 0.1.0 (alpha — the first release past the `0.0.x` pre-alpha series; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md))
 **License:** [GNU GPLv3](LICENSE)
 
 ---
 
-> **On the version number.** This is deliberately versioned **`0.0.9`**, not `0.9`. The
-> software is young and still being proven; we **under-state** maturity on purpose
-> (honesty over hype). The `0.0.x` series is pre-alpha; only after it consolidates do we
-> move to a `0.1` **alpha**, then **beta**, then a `1.0` release. Development cycles are
-> named after the version they produce: branch `0.06 → 0.07 → 0.08 → 0.09` ⇒ `0.0.6 →
-> 0.0.7 → 0.0.8 → 0.0.9`. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+> **On the version number.** The `0.0.x` series deliberately **under-stated** maturity
+> (honesty over hype) while the software was being proven. With the `0.09` cycle
+> consolidated — at-rest encryption, the additive-only + volumes+parity backup story,
+> the analysis-window/corpora system, the release gate reconciled row by row — the
+> project moves to **`0.1.0`, an alpha**: usable and honest about every limit, not
+> finished. Beta and `1.0` still have to be earned. Development cycles are named after
+> the version they produce (branch `0.06 → … → 0.09` ⇒ `0.0.6 → … → 0.0.9`; the `0.09`
+> cycle culminates in `0.1.0`). See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
-## Status — v0.0.9: the deeper sense-making cycle
+## Status — v0.1.0: the deeper sense-making cycle, shipped
 
 > **`0.0.9` is the active cycle** (branch `0.09`). The `0.0.8` cycle shipped in full —
 > the whole product-roadmap push (trust hardening, the investigation-recipe cards and

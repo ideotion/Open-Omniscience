@@ -1,15 +1,19 @@
 # Changelog
 
-> The repository’s **default branch is the active cycle branch** (currently `0.09`); each cycle branch `0.0N` produces release `0.0.N`.
+> The repository’s **default branch is the active cycle branch** (currently `0.09`); each cycle branch `0.0N` produced release `0.0.N` — the consolidated `0.09` cycle produces **`0.1.0`, the first alpha** (see the README's version note).
 
-## 0.09 — deeper sense-making (in progress)
+## 0.1.0 — deeper sense-making (the 0.09 cycle, released 2026-07-02)
 
-The `0.09` cycle is open (the `0.08` cycle below shipped in full, including the
-June 2026 live-test hardening batches). On its slate, from the parked queue:
+The `0.09` cycle delivered its slate (the `0.08` cycle below shipped in full):
 space-time convergence detection + the watch-rule attention engine, SQLCipher
-at-rest encryption with the backup redesign, the corpora system (hand- and
-tag-selected), the global-search rework, agenda calendar views + catalog depth,
-and the i18n long tail. See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md).
+at-rest encryption with the additive-only + volumes+parity backup redesign, the
+corpora/analysis-window system, the omnibar global-search rework, agenda views +
+catalog depth, the ooMap world map, local AI (Settings → AI), newsletter import,
+official statistics with vintages, and a large slice of the i18n long tail — and
+ships as **0.1.0**, the first alpha. Known accepted limits are recorded in
+[`docs/product/RELEASE_0.1_PLAN.md`](product/RELEASE_0.1_PLAN.md) §4; the row-by-row
+release gate is [`docs/product/RELEASE_0.1_RC_GATE.md`](product/RELEASE_0.1_RC_GATE.md).
+See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) for what comes next.
 
 - **The world map, rebuilt: a choropleth you can read — with the temporal map
   folded in.** The old dot-only "temporal map" is retired into one universal map
