@@ -11012,6 +11012,7 @@
     let _anCommodity = null;   // {symbol,name,unit} when seeded by a commodity click (Price subtab)
     let _anLastParams = null;  // last analysis params — for the lazily-rendered Trend subtab
     let _anSubtabs = null;     // ooSubtabs handle for the analysis window (to fall back off Price)
+    let _anBootTab = null;     // ?tab= deep-link target, applied once _anSubtabs exists
     let _anFacets = {who: [], where: [], when: []};  // When/Where/Who clickable facet drill (P5.1b)
     function anParams() {
       const p = new URLSearchParams();
@@ -12962,6 +12963,11 @@
         } else if (analyze) {
           openAnalysisFor(analyze);
         }
+        // Deep-link a specific analysis subtab (?tab=keywords from an in-article
+        // keyword click). _anSubtabs is wired just AFTER this IIFE, so stash the
+        // request; it is applied once the subtab component exists (below).
+        const tab = sp.get("tab");
+        if (tab && document.getElementById("an-" + tab)) _anBootTab = tab;
       } catch (e) { /* a malformed deep link must never break boot */ }
     })();
 
@@ -12976,6 +12982,11 @@
     $("corpus-win").addEventListener("close", _mmKitHome);
     ooSubtabs($("tm-subtabs"), tmSelectTab);  // the task-manager window (Tasks / System)
     _anSubtabs = ooSubtabs($("an-subtabs"), anSelectTab);  // the analysis window subtabs
+    // A ?tab= deep link (in-article keyword click → the Keywords subtab): apply
+    // it now that the subtab component exists (it was stashed during hydration).
+    if (_anBootTab && document.getElementById("an-" + _anBootTab)) {
+      _anSubtabs.select(_anBootTab); _anBootTab = null;
+    }
     _anRestoreTabs();   // THEME-3: restore the spawned analysis-tab strip (data loads lazily)
 
     // Click the EMPTY space of the sidebar (not a nav item / button / link) to

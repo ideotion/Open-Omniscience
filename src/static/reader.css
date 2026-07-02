@@ -49,8 +49,23 @@
   border-top: 1px solid var(--line);
 }
 .r-kwlist li:first-child { border-top: 0; }
-.r-kw { font-weight: 600; }
+.r-kw { font-weight: 600; color: var(--accent); text-decoration: none; }
+.r-kw:hover, .r-kw:focus-visible { text-decoration: underline; }
 .r-kn { color: var(--mut); white-space: nowrap; }
+/* In-article keyword marks: a dotted accent underline (a nod to the SPA's
+   hover-info convention) — legible, never a wall of solid links. */
+.r-kw-mark {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.r-kw-mark:hover, .r-kw-mark:focus-visible {
+  color: var(--accent);
+  text-decoration-style: solid;
+}
 
 .r-chip {
   display: inline-block;
