@@ -539,6 +539,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (d) custody auto-log default flipped ON per the Item-N ruling (the UI text already claimed it);
   (e) field-test mode is now OPT-IN (OO_FIELD_TEST=1) for the public tag; (f) version flips
   0.0.9→0.1.0, tag v0.1.0 (release.yml verifies tag==pyproject and now gates on tests).
+  **STALE-BASE REVERT INCIDENT 2026-07-02 (must not recur):** PR #547 landed the whole 0.1
+  release batch on 0.09 (8ac2615: version flip, packaging fix, self-heal battery, host-header
+  guard, honesty defaults, docs sweep). Then PR #548 — a parallel `article-language-equilibrium`
+  branch CUT FROM A BASE BEFORE #547 — merged and SILENTLY REVERTED almost all of it (version→0.0.9,
+  packaging + MANIFEST.in gone, self-heal/host-guard/main.py reverted, my 4 test files deleted,
+  USER_MANUAL −817). Recovered on branch claude/version-upgrade-plan-umv9xd (PR #550) by keeping my
+  full tree (`git merge origin/0.09 -s ours`) + cherry-picking ONLY origin's genuinely-new date
+  work (dateextract.py/datediag.py/test_dateextract_relative_c.py) + unioning shipped.csv. LESSON:
+  before cutting/merging a branch, ALWAYS `git fetch origin 0.09` and rebase onto the FRESH tip; a
+  branch cut from a stale base re-applies old file states as "changes" and reverts newer work with
+  NO conflict. Verify `git show origin/0.09:pyproject.toml` still reads 0.1.0 before trusting the base.
+  **PRE-0.1 FIELD BATCH SHIPPED (PR #550, maintainer field report 2026-07-02):** (1)+(4) unlock no
+  longer freezes — `/unlock` runs init_db + airplane synchronously then backgrounds the expensive
+  upkeep (ANALYZE/seed/COUNT/warm); `GET /api/system/startup-status` + a "Preparing your corpus…"
+  progress view on unlock.html (browser-verified: button returns ~0.8s, honest phase text, no fake
+  %); (2) Library source-tag click fixed (a `t is not defined` ReferenceError in updateMselSummary);
+  (3) unified import — recursive subfolder scan, real progress bars, honest phases, legacy backups
+  folded in (multi), import SUMMARY, and the VOLUMES+PARITY RESTORE FAILURE root-caused (scan handed
+  the parent dir but volumes.json lives in a subfolder → load_manifest threw, swallowed into "see
+  console"; now uses the exact subfolder path + surfaces the real error); (5) unknown-language
+  `reconcile_article_language` (offline text detect → keyword-majority fallback, deduced channel
+  only, wired into the reindex cleanup pass). DEFERRED: .eml sender-IP geolocation (flagged, distinct
+  backend concern).
 - **KEYWORD STOPLIST — open-class review loop + residual gaps (2026-07-01; user DEFERRED the
   next round to a fresh session):** function-word garbage is SOLVED — #525 vendored full
   stopwords-iso lists for 18 managed languages, #528 added temporal-deictic adverbs (gestern/
