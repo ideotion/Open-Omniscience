@@ -78,11 +78,23 @@ def _canon(res):
     return sorted((t["normalized"], t["mentions"], t["articles"]) for t in res["terms"])
 
 
-def test_off_by_default_uses_the_live_path_unchanged(session, monkeypatch):
-    monkeypatch.delenv("OO_COLUMNAR_SERVE", raising=False)
+def test_forced_off_uses_the_live_path_unchanged(session, monkeypatch):
+    # OO_COLUMNAR_SERVE=0 is the explicit deployment override to disable the serve.
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "0")
+    assert rollup_serve.serve_mode() == "forced-off"
+    assert rollup_serve.serve_enabled() is False
     out = q.top_terms(session, days=_WIDE, group=False, limit=20)
-    assert "basis" not in out, "no rollup involvement when not opted in"
+    assert "basis" not in out, "no rollup involvement when forced off"
     assert out["terms"], "the live windowed path still returns results"
+
+
+def test_auto_mode_is_on_by_default_when_duckdb_available(session, monkeypatch):
+    # Field ask 2026-07-02: automatic, not a manual env var. With duckdb present (this
+    # module is skipped otherwise) and no env override, the serve enables itself.
+    monkeypatch.delenv("OO_COLUMNAR_SERVE", raising=False)
+    assert rollup_serve.serve_mode() == "auto"
+    assert rollup_serve.serve_enabled() is True
+    assert rollup_serve.status()["mode"] == "auto"
 
 
 def test_opted_in_but_not_built_falls_back_to_live(session, monkeypatch):

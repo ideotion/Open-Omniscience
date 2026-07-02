@@ -9,8 +9,10 @@ process-lifetime in-memory DuckDB ``keyword_daily`` rollup, builds it ONCE in th
 background, and serves the windowed most-mentioned rows from it instead of scanning the
 multi-GB mentions table each time (the Insights/trends freeze).
 
-OFF BY DEFAULT — enabled only by ``OO_COLUMNAR_SERVE=1`` (an explicit, conscious opt-in,
-never a silent default). SAFE BY CONSTRUCTION:
+AUTOMATIC by default (field ask 2026-07-02) — it turns itself ON whenever the columnar
+extra (duckdb) is installed, no flag to flip; ``OO_COLUMNAR_SERVE`` is only a deployment
+override (``0`` forces off, ``1`` forces on) and the diagnostics ``columnar`` report shows
+the mode + build state so the self-optimisation is observable. SAFE BY CONSTRUCTION:
   * every serve is wrapped — ANY problem returns ``None`` and the caller falls back to the
     live query (identical results, just slower), so it can never break a view;
   * the build runs in a BACKGROUND thread (never blocks a request); until the first build
@@ -51,9 +53,26 @@ _STATE: dict = {"con": None, "built_at": 0.0, "rows": 0}
 _STALE_S = int(os.getenv("OO_COLUMNAR_SERVE_TTL_S", "900"))  # 15 min default
 
 
+def serve_mode() -> str:
+    """How the serve is decided: 'forced-on'/'forced-off' via OO_COLUMNAR_SERVE, else
+    'auto' (the default — on whenever the columnar extra is installed)."""
+    env = os.getenv("OO_COLUMNAR_SERVE")
+    if env == "1":
+        return "forced-on"
+    if env == "0":
+        return "forced-off"
+    return "auto"
+
+
 def serve_enabled() -> bool:
-    """True only when the operator has opted in AND duckdb is available."""
-    if os.getenv("OO_COLUMNAR_SERVE") != "1":
+    """AUTOMATIC by default (field ask 2026-07-02: it should not be a manual env var).
+
+    The windowed keyword speedup turns itself ON whenever the columnar extra (duckdb) is
+    available — no flag to flip. It stays SAFE by construction: every serve falls back to
+    the identical live query on any miss, and the rollup builds in the background. The
+    OO_COLUMNAR_SERVE env var is an explicit override for deployments ('0' forces off,
+    '1' forces on); the diagnostics 'columnar' report shows the mode + build state."""
+    if serve_mode() == "forced-off":
         return False
     from src.analytics import columnar
 
@@ -67,7 +86,8 @@ def status() -> dict:
         built_at = _STATE["built_at"]
         rows = _STATE["rows"]
     return {
-        "enabled": os.getenv("OO_COLUMNAR_SERVE") == "1",
+        "enabled": serve_enabled(),
+        "mode": serve_mode(),  # auto | forced-on | forced-off
         "built": con is not None,
         "built_at": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None

@@ -1597,12 +1597,15 @@ def columnar_status() -> dict:
     ``memory`` fallback / ``unavailable``) and the offline IP-geo DB vintage. Lets the
     maintainer SEE whether persisted-encrypted analytics are active before deciding
     whether to bundle the per-OS crypto extension that enables them. No score."""
-    from src.analytics import columnar
+    from src.analytics import columnar, rollup_serve
     from src.database.connect import get_passphrase
     from src.geo import ip_geo
 
     return {
         "columnar": columnar.status(get_passphrase()),
+        # The in-memory windowed rollup serve — AUTOMATIC when duckdb is available; this
+        # shows the mode (auto/forced) + whether it's built, so the self-tuning is visible.
+        "rollup_serve": rollup_serve.status(),
         "ip_geo": ip_geo.freshness() | {"attribution": ip_geo.ATTRIBUTION},
         "method": (
             "Derived stores are disposable accelerators; the encrypted SQLCipher store is "
