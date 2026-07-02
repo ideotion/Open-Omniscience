@@ -26,6 +26,97 @@
   }
   function num(n) { return (n == null ? 0 : n).toLocaleString(); }
 
+  // Clicking any keyword opens its analysis in a NEW SPA tab, landing on the
+  // Keywords subtab seeded with the term (the SPA boot hydrates ?analyze=&tab=).
+  // The KEYWORD is the identifier; keywords are corpora (ledger 2026-07-01).
+  function analysisUrl(term) {
+    return "/?analyze=" + encodeURIComponent(term) + "&tab=keywords";
+  }
+  function kwLink(term, inner, cls) {
+    // A real anchor (middle-/ctrl-click + "open in new tab" work natively); it
+    // simply navigates to the SPA — no handler, degrades gracefully.
+    return '<a class="' + cls + '" href="' + esc(analysisUrl(term))
+      + '" target="_blank" rel="noopener" title="Analyse “' + esc(term)
+      + '” across your corpus ↗">' + inner + "</a>";
+  }
+
+  // --- In-article keyword marking (pure core; unit-verified) -----------------
+  // We mark ONLY the article's TRUSTED indexed keyword terms — never a naive
+  // scan of arbitrary words (honesty: an inline mark is a link to a REAL entry
+  // in the corpus keyword index, not an invented keyword).
+  function isCJK(s) { return /[぀-ヿ㐀-鿿豈-﫿가-힣]/.test(s); }
+  function buildMatcher(terms) {
+    var seen = {}, canon = {}, parts = [];
+    (terms || []).map(String)
+      .filter(function (t) { return t && t.trim().length >= 2; })
+      .sort(function (a, b) { return b.length - a.length; })  // longest first: phrases win
+      .forEach(function (t) {
+        var low = t.toLowerCase();
+        if (seen[low]) return;
+        seen[low] = 1; canon[low] = t;
+        var e = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        // Word-boundaried for scripts that HAVE boundaries; a bare substring for
+        // CJK/Hangul (no spaces) — so "election" never marks inside "reelection"
+        // while "中国" still marks inside a run of ideographs.
+        parts.push(isCJK(t) ? e : "(?<![\\p{L}\\p{N}_])" + e + "(?![\\p{L}\\p{N}_])");
+      });
+    if (!parts.length) return null;
+    try {
+      return { re: new RegExp("(?:" + parts.join("|") + ")", "giu"), canon: canon };
+    } catch (_e) {
+      return null;  // an engine without lookbehind/\p{}: skip marking, never break the read pane
+    }
+  }
+  // Split one text-node string into {text} and {surface,term} segments (the term
+  // is the canonical indexed keyword the surface form maps to).
+  function segmentText(text, m) {
+    if (!m || !text) return [{ text: text }];
+    var out = [], last = 0, match;
+    m.re.lastIndex = 0;
+    while ((match = m.re.exec(text)) !== null) {
+      if (match.index > last) out.push({ text: text.slice(last, match.index) });
+      var surf = match[0];
+      out.push({ surface: surf, term: m.canon[surf.toLowerCase()] || surf });
+      last = match.index + surf.length;
+      if (match.index === m.re.lastIndex) m.re.lastIndex++;  // zero-width guard
+    }
+    if (last < text.length) out.push({ text: text.slice(last) });
+    return out;
+  }
+  // Wrap indexed-keyword occurrences inside the Read pane's <article> body with
+  // linking anchors. Guarded end-to-end: any failure leaves the body untouched.
+  function markArticleBody(terms) {
+    try {
+      var body = document.querySelector("#rp-read article");
+      if (!body || body.getAttribute("data-kw-marked")) return;
+      var m = buildMatcher(terms);
+      if (!m) return;
+      var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null);
+      var texts = [], node;
+      while ((node = walker.nextNode())) {
+        if (node.parentNode && node.parentNode.closest && node.parentNode.closest("a")) continue;
+        if (node.nodeValue && node.nodeValue.trim()) texts.push(node);
+      }
+      texts.forEach(function (tn) {
+        var segs = segmentText(tn.nodeValue, m);
+        if (segs.length === 1 && segs[0].text != null) return;  // nothing matched here
+        var frag = document.createDocumentFragment();
+        segs.forEach(function (s) {
+          if (s.text != null) { frag.appendChild(document.createTextNode(s.text)); return; }
+          var a = document.createElement("a");
+          a.className = "r-kw-mark";
+          a.href = analysisUrl(s.term);
+          a.target = "_blank"; a.rel = "noopener";
+          a.title = "Analyse “" + s.term + "” across your corpus ↗";
+          a.textContent = s.surface;
+          frag.appendChild(a);
+        });
+        tn.parentNode.replaceChild(frag, tn);
+      });
+      body.setAttribute("data-kw-marked", "1");
+    } catch (_e) { /* the read pane must never break over a nicety */ }
+  }
+
   function show(key) {
     tabs.forEach(function (b) {
       var on = b.getAttribute("data-rtab") === key;
@@ -58,6 +149,14 @@
     // Summary / Translation read the stored LLM results (their own shape: latest +
     // folded history + a generate-now control) rather than an insights endpoint.
     if (key === "summary" || key === "translation") { loadAnalyses(key, pane); return; }
+    // Keywords may already be in flight / cached from the eager in-article
+    // marking pass (one fetch serves both — no double request).
+    if (key === "keywords" && _kwPromise) {
+      pane.innerHTML = '<p class="r-muted">Loading…</p>';
+      _kwPromise.then(function (d) { renderKeywords(pane, d); })
+        .catch(function (e) { pane.innerHTML = '<p class="r-muted">Could not load this view (' + esc(e.message) + ").</p>"; });
+      return;
+    }
     var base = ENDPOINTS[key];
     if (!base) return;
     pane.innerHTML = '<p class="r-muted">Loading…</p>';
@@ -70,6 +169,22 @@
       });
   }
 
+  // One eager, loopback-only fetch of the article's indexed keywords, used to
+  // (a) mark them inline in the Read body and (b) prime the Keywords tab so
+  // opening it never refetches. Loopback ⇒ airplane-safe; fully guarded ⇒ a
+  // failure leaves the reader exactly as before.
+  var _kwPromise = null;
+  function primeKeywords() {
+    if (!aid) return;
+    _kwPromise = fetch("/api/insights/corpus-keywords?limit=60&article_ids=" + encodeURIComponent(aid),
+      { headers: { Accept: "application/json" } })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+    _kwPromise.then(function (d) {
+      var terms = (d && d.terms || []).map(function (t) { return t.term; });
+      if (terms.length) markArticleBody(terms);
+    }).catch(function () { /* marking is a nicety — never surface an error here */ });
+  }
+
   function renderKeywords(pane, d) {
     var terms = (d && d.terms) || [];
     if (!terms.length) {
@@ -78,11 +193,13 @@
     }
     var rows = terms.map(function (t) {
       var m = t.mentions || 0;
-      return '<li><span class="r-kw">' + esc(t.term) + '</span>'
+      // Each keyword is CLICKABLE — it opens its full analysis in a new tab.
+      return "<li>" + kwLink(t.term, esc(t.term), "r-kw")
         + '<span class="r-kn">' + num(m) + " mention" + (m === 1 ? "" : "s") + "</span></li>";
     }).join("");
     pane.innerHTML =
       '<h2 class="r-h2">Keywords in this article</h2>'
+      + '<p class="r-muted">Click any keyword to analyse it across your corpus ↗</p>'
       + '<ol class="r-kwlist">' + rows + "</ol>"
       + '<p class="r-method">' + esc(d.method || "") + "</p>"
       + '<p class="r-caveat">' + esc(d.caveat || "") + "</p>";
@@ -283,4 +400,8 @@
       else if (e.key === "End") { e.preventDefault(); focusTab(tabs.length - 1); }
     });
   });
+
+  // Mark the article's real indexed keywords inline in the Read body + prime the
+  // Keywords tab (one loopback fetch serves both).
+  primeKeywords();
 })();
