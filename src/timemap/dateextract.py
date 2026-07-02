@@ -15,7 +15,8 @@ one). We match only unambiguous forms:
   * ``September 11, 2001`` (day)
   * ``September 2001`` / ``Sept 2001`` / ``January of 2024`` (month)
   * explicit day ranges — ``June 11-13, 2026`` / ``11–13 June 2026`` (both endpoints)
-  * era-name years by exact conversion — ``令和6年6月11日`` (Reiwa), ``民國113年`` (ROC)
+  * era-name years by exact conversion — ``令和6年6月11日`` (Reiwa), ``民國113年6月11日``
+    (ROC); a bare era year with no month stays unextracted, like any bare year
 
 We deliberately do **not** extract bare years (``in 1945`` — too easily a quantity,
 a page number, a model year) or relative expressions (``last Tuesday`` — needs a
