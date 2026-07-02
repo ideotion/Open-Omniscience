@@ -37,11 +37,17 @@ from src.timemap.dateextract import _MONTHS, _REL_WORDS, _WEEKDAYS, extract_date
 MONTH_VOCAB_LANGS: frozenset[str] = frozenset(
     {"en", "fr", "de", "es", "it", "pt", "nl",
      "ro", "hu", "tr", "da", "sv", "nb", "fi", "pl", "sk", "sr", "bg",
-     # RTL / Indic UI locales (Gregorian month names; zh/ja use 年月日 markers,
-     # handled by the extractor's CJK path rather than a month-name table).
+     # RTL / Indic UI locales (Gregorian month names; zh/ja/ko use the 年月日 /
+     # 년월일 markers, handled by the extractor's CJK/Korean patterns rather
+     # than a month-name table — as are Vietnamese and Thai).
      "ar", "hi", "bn",
      # Remaining UI locales: Russian (Cyrillic, nom/gen/prep) + Indonesian.
-     "ru", "id"}
+     "ru", "id",
+     # Vocabulary that had landed but was never reflected here (the flag lied
+     # "no vocab" for these): Greek, Ukrainian, Estonian, Urdu, Slovenian.
+     "el", "uk", "et", "ur", "sl",
+     # Slice-B additions (2026-07-02): Croatian, Czech, Malay, Filipino, Swahili.
+     "hr", "cs", "ms", "tl", "sw"}
 )
 
 # Probe kinds the extractor is *expected* to resolve (so a miss is actionable);
@@ -51,11 +57,22 @@ _ACTIONABLE_KINDS: frozenset[str] = frozenset(
     {"month_name", "cjk_date", "numeric", "weekday", "relative"}
 )
 
-_YEAR_RE = re.compile(r"\b(1[0-9]{3}|20[0-9]{2})\b")
-_NUMERIC_RE = re.compile(r"\b\d{1,4}[./-]\d{1,2}[./-]\d{1,4}\b")
-# East-Asian dates (年=year 月=month 日=day): extremely common in zh/ja text and
-# entirely outside the extractor's Latin-month table — a high-value gap to surface.
-_CJK_RE = re.compile(r"\d{1,4}\s*年\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?|\d{1,2}\s*月\s*\d{1,2}\s*日")
+# Digit-safe boundaries instead of \b (mirrors the extractor, slice B):
+# ideographs are \w in Python re, so \b never fired on glued CJK prose
+# ("报道于2024-06-11发布") — the probe was blind to the same dates the extractor
+# missed, so the field coverage numbers UNDERCOUNTED the CJK gap. Digits of ANY
+# script still block (a date is never carved out of a longer numeral).
+_YEAR_RE = re.compile(r"(?<!\d)(?<![A-Za-z_])(1[0-9]{3}|20[0-9]{2})(?!\d)(?![A-Za-z_])")
+_NUMERIC_RE = re.compile(r"(?<!\d)(?<![A-Za-z_])\d{1,4}[./-]\d{1,2}[./-]\d{1,4}(?!\d)(?![A-Za-z_])")
+# East-Asian dates: 年月日 (zh/ja, with the 号/號 colloquial day markers),
+# era-name years (令和6年…, 民國113年…), and Korean 년월일.
+_CJK_RE = re.compile(
+    r"(?:令和|平成|昭和|大正|明治|民國|民国)\s*(?:\d{1,3}|元)\s*年\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*[日号號])?"
+    r"|\d{1,4}\s*年\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*[日号號])?"
+    r"|\d{1,2}\s*月\s*\d{1,2}\s*[日号號]"
+    r"|\d{1,4}\s*년\s*\d{1,2}\s*월(?:\s*\d{1,2}\s*일)?"
+    r"|\d{1,2}\s*월\s*\d{1,2}\s*일"
+)
 _MONTH_RE = re.compile(r"\b(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")\b", re.I)
 _WD_RE = re.compile(r"\b(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I)
 _REL_RE = re.compile(
@@ -117,6 +134,11 @@ def analyze_article(
     language), the permissive probe hits, and counts including ``actionable_gap``
     = how many probe hits of an *expected* kind exceed the extracted dates (the
     sort key that floats the worst misses to the top of a sample). No score.
+
+    Known asymmetry, stated: the probe counts every OCCURRENCE while the
+    extractor dedups by (date, precision), so an article repeating one date N
+    times shows an inflated gap of N-1 with zero real misses — read the gap as
+    a triage signal, never an exact miss count.
     """
     text = content or ""
     extracted = extract_dates(text, anchor=anchor, language=language, today=today, limit=extract_limit)

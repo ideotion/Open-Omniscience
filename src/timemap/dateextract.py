@@ -204,6 +204,61 @@ _MONTHS.update({
     # double-vowel/double-l forms are et-specific so they don't collide.
     "jaanuar": 1, "veebruar": 2, "märts": 3, "aprill": 4, "juuni": 6, "juuli": 7,
     "oktoober": 10, "detsember": 12,
+    # Greek — ACCUSATIVE forms ("τον Σεπτέμβριο του 2001", the idiomatic
+    # month-year construction) + ACCENTLESS variants: Greek ALL-CAPS drops the
+    # tonos, so "ΣΕΠΤΕΜΒΡΙΟΣ".lower() ("σεπτεμβριος") misses the accented keys —
+    # the same casefold class as the Turkish dotless-ı. Final-ς spelling matches
+    # what str.lower() emits (verified).
+    "ιανουάριο": 1, "φεβρουάριο": 2, "μάρτιο": 3, "απρίλιο": 4, "μάιο": 5,
+    "ιούνιο": 6, "ιούλιο": 7, "αύγουστο": 8, "σεπτέμβριο": 9, "οκτώβριο": 10,
+    "νοέμβριο": 11, "δεκέμβριο": 12,
+    "ιανουαριος": 1, "ιανουαριου": 1, "ιανουαριο": 1,
+    "φεβρουαριος": 2, "φεβρουαριου": 2, "φεβρουαριο": 2,
+    "μαρτιος": 3, "μαρτιου": 3, "μαρτιο": 3,
+    "απριλιος": 4, "απριλιου": 4, "απριλιο": 4,
+    "μαιος": 5, "μαιου": 5, "μαιο": 5,
+    "ιουνιος": 6, "ιουνιου": 6, "ιουνιο": 6,
+    "ιουλιος": 7, "ιουλιου": 7, "ιουλιο": 7,
+    "αυγουστος": 8, "αυγουστου": 8, "αυγουστο": 8,
+    "σεπτεμβριος": 9, "σεπτεμβριου": 9, "σεπτεμβριο": 9,
+    "οκτωβριος": 10, "οκτωβριου": 10, "οκτωβριο": 10,
+    "νοεμβριος": 11, "νοεμβριου": 11, "νοεμβριο": 11,
+    "δεκεμβριος": 12, "δεκεμβριου": 12, "δεκεμβριο": 12,
+    # Croatian — genitive (the date form: "5. rujna 2024.") + nominative. The
+    # listopad AND kolovoz families are in the override map (homographs:
+    # pl/cs November vs hr October; hr "roadway"); "studeni" (Nov) doubles as
+    # the adjective "cold", covered by the adjacency rule like مارس.
+    "siječnja": 1, "veljače": 2, "ožujka": 3, "travnja": 4, "svibnja": 5,
+    "lipnja": 6, "srpnja": 7, "rujna": 9, "studenoga": 11,
+    "studenog": 11, "prosinca": 12,
+    "siječanj": 1, "veljača": 2, "ožujak": 3, "travanj": 4, "svibanj": 5,
+    "lipanj": 6, "srpanj": 7, "rujan": 9, "studeni": 11,
+    "prosinac": 12,
+    # Czech — genitive ("5. září 2024") + nominative. "listopadu" is in the
+    # override map; "dubna" (April genitive) too — Dubna is a Russian town that
+    # appears with years in physics prose ("the Dubna 2024 workshop").
+    "ledna": 1, "února": 2, "března": 3, "května": 5, "června": 6,
+    "července": 7, "srpna": 8, "září": 9, "října": 10, "prosince": 12,
+    "leden": 1, "únor": 2, "březen": 3, "květen": 5, "červen": 6,
+    "červenec": 7, "srpen": 8, "říjen": 10, "prosinec": 12,
+    # Serbian (Latin) — unaccented genitives, the common written form. "marta"
+    # (given name), "juna"/"jula" (given name / Norwegian "the Christmas") are
+    # in the override map; septembra/novembra/decembra/maja/aprila already
+    # resolve via the Slovak/Polish/Slovenian entries above.
+    "januara": 1, "februara": 2, "avgusta": 8, "oktobra": 10,
+    # Malay ("5 Ogos 2024"); "mac" (March) is in the override map (English Mac);
+    # januari/februari/april/mei/jun/julai/september/oktober/november already
+    # resolve via the Indonesian/Nordic/shared entries.
+    "ogos": 8, "julai": 7, "disember": 12,
+    # Filipino/Tagalog ("ika-5 ng Hunyo 2024"); Enero/Abril/Mayo/Agosto shared
+    # with Spanish already resolve.
+    "pebrero": 2, "hunyo": 6, "hulyo": 7, "setyembre": 9,
+    "oktubre": 10, "nobyembre": 11, "disyembre": 12,
+    # Swahili ("5 Machi 2024"); Januari/Februari/Mei/Juni/Julai shared entries
+    # already resolve. "Agosti"/"Machi" (surname/name in Latin citations) are
+    # sw-gated via the override map.
+    "aprili": 4, "septemba": 9, "oktoba": 10,
+    "novemba": 11, "desemba": 12,
     # Urdu (Arabic script) — Gregorian month names spelled with Urdu letters (ک U+06A9,
     # ی U+06CC), so they are DISTINCT strings from the Arabic-script set above (مارچ≠مارس,
     # اکتوبر[Urdu ک]≠اكتوبر[Arabic ك]). Eastern-Arabic digits parse via \d. A month only
@@ -226,6 +281,25 @@ _MONTH_LANG_OVERRIDES: dict[str, dict[str, int]] = {
     "listopadu": {"cs": 11, "hr": 10, "bs": 10},
     "marta": {"sr": 3, "bs": 3},  # Latin-script Serbian genitive; a given name elsewhere
     "mac": {"ms": 3},  # Malay March; English "Mac" tech prose otherwise
+    "dubna": {"cs": 4},  # Czech April genitive; Dubna, Russia in physics prose
+    "duben": {"cs": 4},  # Czech April nominative; Duben is a German village/surname
+    # hr August genitive/nominative — but kolovoz = "roadway" in Croatian ITSELF
+    # ("sletio s kolovoza 20 metara" is standard traffic-accident prose, measured
+    # fabricating Aug 20): gating kills the month-first shape outright and the
+    # no-hint case; the residual "s kolovoza 2024." month reading under an hr
+    # hint is a real, bounded ambiguity accepted as month-precision only.
+    "kolovoza": {"hr": 8},
+    "kolovoz": {"hr": 8},
+    # sw/tl months that are surnames/names in Latin prose ("(Agosti 2024)" is an
+    # author-year citation — an extremely common scraped shape; "Marso 11" a name):
+    "agosti": {"sw": 8},
+    "machi": {"sw": 3},
+    "marso": {"tl": 3},
+    # sr/bs Latin genitives that are words/names elsewhere: "juna" is a given
+    # name (the "Marta 30" shape), "jula" is Norwegian "the Christmas" ("i jula
+    # 2024" is real nb prose — ungated it would fabricate July from Christmas).
+    "juna": {"sr": 6, "bs": 6},
+    "jula": {"sr": 7, "bs": 7},
     # تموز = July in Levantine Arabic, but a REAL Persian word ("midsummer
     # heat" — گرمای تموز): ungated it fabricated month rows from fa prose,
     # including Solar-Hijri years (1403 passes the CE window). ar-gated only.
@@ -239,8 +313,18 @@ _MONTH_ALT = "|".join(  # longest first so 'sept' beats 'sep'
 # fields are ≤12 the order is ambiguous: the ARTICLE LANGUAGE decides (en→MDY,
 # everything else→DMY); with no hint, an ambiguous numeric date is SKIPPED —
 # never guessed (provenance honesty).
-_NUM_DMY_RE = re.compile(r"\b(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b")
-_NUM_YMD_RE = re.compile(r"\b(\d{4})[./](\d{1,2})[./](\d{1,2})\b")
+# Custom boundaries instead of \b: ideographs/Hangul are \w in Python re, so
+# \b never fires between 于 and 2024 — a glued "报道于2024-06-11发布" was
+# invisible (measured). The rule, verified adversarially: ANY digit (any script,
+# \d — the same digit rule \b enforced, so ٥٠2024 stays ONE numeral and no date
+# is ever carved out of a longer number) and ASCII letters/_ still BLOCK; any
+# LETTER — ideograph, Hangul, or a glued Cyrillic "…2024г."/accented Latin — is
+# now a boundary (measured recall gain; the extracted string is always a full
+# explicit date).
+_NUM_BOUND_L = r"(?<!\d)(?<![A-Za-z_])"
+_NUM_BOUND_R = r"(?!\d)(?![A-Za-z_])"
+_NUM_DMY_RE = re.compile(rf"{_NUM_BOUND_L}(\d{{1,2}})[./-](\d{{1,2}})[./-](\d{{4}}){_NUM_BOUND_R}")
+_NUM_YMD_RE = re.compile(rf"{_NUM_BOUND_L}(\d{{4}})[./](\d{{1,2}})[./](\d{{1,2}}){_NUM_BOUND_R}")
 
 # Connectors seen in real news dates between the date fields ("the 3rd of June
 # 2026", "mayo de 2024", el "11 Σεπτεμβρίου του 2001", ar "11 سبتمبر من عام 2001",
@@ -257,9 +341,14 @@ _Y_CONN = r"(?:de\s+|of\s+|του\s+|من\s+عام\s+|عام\s+|سنة\s+)"  # m
 # day components (adversarial-verifier finding). "de" (the standard es/pt
 # bare-cardinal date form, long shipped) and "ng" (the tl parallel) stay as-is.
 # Two branches -> two possible day groups; callers take whichever matched.
+# The standard-branch day suffix accepts the Cyrillic ordinal attachments
+# ("11-го сентября" genitive / "11-е" nominative — day precision was silently
+# LOST to the month match before) and the Bengali date clitics ("১১ই সেপ্টেম্বর",
+# "২৫শে ডিসেম্বর", "১লা জানুয়ারি"). Each is glued to the digit and only ever
+# consumed between a day number and a known month name — it cannot free-stand.
 _DAY_PART = (
     r"(?:(\d{1,2})(?:st|nd|rd|th)\s+of\s+"  # en ordinal-of day
-    r"|(\d{1,2})(?:st|nd|rd|th|er|\.)?\s+(?:(?:de|ng)\s+)?)"  # all other day forms
+    r"|(\d{1,2})(?:st|nd|rd|th|er|-го|-е|ই|শে|লা|রা|ঠা|\.)?\s+(?:(?:de|ng)\s+)?)"  # all other forms
 )
 _D_CONN_RANGE = r"(?:(?:de|ng)\s+)"  # ranges: bare cardinals by nature — never "of"
 
@@ -318,7 +407,9 @@ _WD_RE = re.compile(
     r"\b(next\s+|last\s+)?(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I
 )
 
-_ISO_RE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_ISO_RE = re.compile(  # digit-safe boundaries: see _NUM_DMY_RE (glued CJK prose)
+    rf"{_NUM_BOUND_L}(\d{{4}})-(\d{{2}})-(\d{{2}}){_NUM_BOUND_R}"
+)
 # Full day-month-year, with the optional connectors above and an optional
 # DUAL-NAMED month ("سبتمبر/أيلول" — pan-Arab media slash-join the international
 # and Levantine names). The two names must resolve to the SAME month or the whole
@@ -366,9 +457,20 @@ _MY_OF_HOMOGRAPHS = frozenset({"march", "may", "august"})
 # normalised to ASCII before parsing.
 _CJK_D = r"[0-9０-９]"
 _FW_DIGITS = {ord("０") + i: ord("0") + i for i in range(10)}
-_CJK_YMD_RE = re.compile(rf"({_CJK_D}{{4}})\s*年\s*({_CJK_D}{{1,2}})\s*月\s*({_CJK_D}{{1,2}})\s*日")
+# 日 standard · 号/號 colloquial day markers — but 号 is ALSO the universal
+# "No. N" marker (11号线 = Metro LINE 11, 6号楼 = Building 6, 2号台风 = Typhoon
+# No. 2, 11号文件 = Document No. 11): a classifier ideograph right after 号
+# means an ordinal, not a day (adversarially measured), so it suppresses.
+_CJK_DAY_MARK = r"(?:日|[号號](?![线線楼樓房店院栋棟楼文台颱馆館厅廳桥橋]))"
+_CJK_YMD_RE = re.compile(rf"({_CJK_D}{{4}})\s*年\s*({_CJK_D}{{1,2}})\s*月\s*({_CJK_D}{{1,2}})\s*{_CJK_DAY_MARK}")
 _CJK_YM_RE = re.compile(rf"({_CJK_D}{{4}})\s*年\s*({_CJK_D}{{1,2}})\s*月")
-_CJK_MD_RE = re.compile(rf"({_CJK_D}{{1,2}})\s*月\s*({_CJK_D}{{1,2}})\s*日")  # no year -> anchored
+_CJK_MD_RE = re.compile(rf"({_CJK_D}{{1,2}})\s*月\s*({_CJK_D}{{1,2}})\s*{_CJK_DAY_MARK}")  # no year -> anchored
+# Korean dates use Hangul markers (년/월/일), NOT the 年月日 ideographs — Korean
+# had ZERO coverage (measured; the field probe was equally blind). Same shape,
+# same digits helper, same anchored rule for the year-less form.
+_KO_YMD_RE = re.compile(rf"({_CJK_D}{{4}})\s*년\s*({_CJK_D}{{1,2}})\s*월\s*({_CJK_D}{{1,2}})\s*일")
+_KO_YM_RE = re.compile(rf"({_CJK_D}{{4}})\s*년\s*({_CJK_D}{{1,2}})\s*월")
+_KO_MD_RE = re.compile(rf"({_CJK_D}{{1,2}})\s*월\s*({_CJK_D}{{1,2}})\s*일")  # no year -> anchored
 
 # Era-name years — Japanese gengō (令和6年 = 2024) and Taiwanese ROC (民國113年 =
 # 2024). Each era name is a multi-ideograph token appearing in no other language's
@@ -388,7 +490,7 @@ _ERA_BASES = {
 }
 _ERA_ALT = "|".join(_ERA_BASES)
 _ERA_YMD_RE = re.compile(
-    rf"({_ERA_ALT})\s*({_CJK_D}{{1,3}}|元)\s*年\s*({_CJK_D}{{1,2}})\s*月(?:\s*({_CJK_D}{{1,2}})\s*日)?"
+    rf"({_ERA_ALT})\s*({_CJK_D}{{1,3}}|元)\s*年\s*({_CJK_D}{{1,2}})\s*月(?:\s*({_CJK_D}{{1,2}})\s*{_CJK_DAY_MARK})?"
 )
 # Deictic year words before 月日 (今年6月11日 — among the commonest ja/zh date
 # forms): these resolve EXACTLY against the anchor's year (offset 0/±1), unlike
@@ -399,7 +501,13 @@ _CJK_YEAR_DEICTICS = {
     "今年": 0, "本年": 0, "毎年": 0, "每年": 0,  # this year / annually
     "昨年": -1, "去年": -1,  # last year
     "来年": 1, "來年": 1, "明年": 1,  # next year
+    # Korean — the 년-suffixed ones trip the year guard; 올해 (this year) and
+    # the THREE-syllable 지난해 (last year, as common as 작년 in news prose —
+    # a 2-char-only peek missed it and pinned the WRONG year, adversarially
+    # measured) are caught by the length-aware peek in the guard:
+    "작년": -1, "금년": 0, "매년": 0, "올해": 0, "내년": 1, "지난해": -1,
 }
+_CJK_TRAIL_PUNCT = "、。，．,.;；：:"  # 令和6年、6月11日 — the guard peeks past these
 
 
 def _cjk_int(s: str) -> int:
@@ -608,6 +716,10 @@ def extract_dates(
         d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), _cjk_int(m.group(3)), today)
         if d and claim(*m.span()):
             add(d, "day", m)
+    for m in _KO_YMD_RE.finditer(text):  # 2024년 6월 11일 (Korean day)
+        d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), _cjk_int(m.group(3)), today)
+        if d and claim(*m.span()):
+            add(d, "day", m)
     for m in _VI_DMY_RE.finditer(text):  # ngày 5 tháng 5 năm 2024 (Vietnamese day)
         d = _valid(int(m.group(3)), int(m.group(2)), int(m.group(1)), today)
         if d and claim(*m.span()):
@@ -652,6 +764,10 @@ def extract_dates(
         d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), 1, today)
         if d and claim(*m.span()):
             add(d, "month", m)
+    for m in _KO_YM_RE.finditer(text):  # 2024년 6월 (Korean month precision)
+        d = _valid(_cjk_int(m.group(1)), _cjk_int(m.group(2)), 1, today)
+        if d and claim(*m.span()):
+            add(d, "month", m)
     for m in _VI_MY_RE.finditer(text):  # tháng 5 năm 2024 / tháng 5/2024 (month precision)
         d = _valid(int(m.group(2)), int(m.group(1)), 1, today)
         if d and claim(*m.span()):
@@ -692,21 +808,37 @@ def extract_dates(
                 d = nearest_year(mon, int(day))
                 if d and claim(*m.span()):
                     add(d, "day", m)
-        for m in _CJK_MD_RE.finditer(text):  # 5月11日 with no year -> nearest to the anchor
-            # Year-prefix guard (punctuation-tolerant: 令和6年、6月11日). A 年/년
-            # just before the match means a year expression precedes. DEICTIC
-            # years (今年/昨年/来年…) resolve EXACTLY against the anchor's year;
-            # anything else (an era name we could not parse, a bare 2-digit
-            # year like 24年) is an explicit year we failed to read — suppress,
-            # never anchor-guess (measured ~80-year fabrications).
-            before = text[: m.start()].rstrip().rstrip("、。，．,.;；：:")
-            if before[-1:] in ("年", "년"):
+        def _cjk_anchor_day(m: re.Match) -> date | None:
+            """The year-prefix guard + resolution shared by the CJK and Korean
+            year-less month-day loops (deictic-FIRST so 올해/今年 — which do not
+            all end in 年/년 — pin the exact year). A 年/년 just before the match
+            means a year expression precedes: DEICTIC years (今年/昨年/작년/…)
+            resolve EXACTLY against the anchor's year; anything else (an era
+            name we could not parse, a bare 2-digit year like 24年) is an
+            explicit year we failed to read — suppress, never anchor-guess
+            (measured ~80-year fabrications). Punctuation-tolerant
+            (令和6年、6月11日 still suppresses)."""
+            before = text[: m.start()].rstrip().rstrip(_CJK_TRAIL_PUNCT)
+            # Length-aware deictic peek (지난해 is three syllables).
+            off = _CJK_YEAR_DEICTICS.get(before[-3:])
+            if off is None:
                 off = _CJK_YEAR_DEICTICS.get(before[-2:])
-                if off is None:
-                    continue
-                d = _valid(anchor.year + off, _cjk_int(m.group(1)), _cjk_int(m.group(2)), today)
-            else:
-                d = nearest_year(_cjk_int(m.group(1)), _cjk_int(m.group(2)))
+            if off is not None:
+                return _valid(anchor.year + off, _cjk_int(m.group(1)), _cjk_int(m.group(2)), today)
+            if before[-1:] in ("年", "년"):
+                return None  # an explicit year we could not parse: suppress
+            # Model-year suffixes ("2024년형" ko / "2024年式" ja) hide the year
+            # token one character deeper — same rule: suppress, never guess.
+            if before[-1:] in ("형", "式") and before[-2:-1] in ("年", "년"):
+                return None
+            return nearest_year(_cjk_int(m.group(1)), _cjk_int(m.group(2)))
+
+        for m in _CJK_MD_RE.finditer(text):  # 5月11日 with no year -> nearest to the anchor
+            d = _cjk_anchor_day(m)
+            if d and claim(*m.span()):
+                add(d, "day", m)
+        for m in _KO_MD_RE.finditer(text):  # 6월 11일 with no year -> nearest to the anchor
+            d = _cjk_anchor_day(m)
             if d and claim(*m.span()):
                 add(d, "day", m)
         for m in _VI_DM_NOYEAR_RE.finditer(text):  # ngày 5 tháng 5 (no year) -> nearest
