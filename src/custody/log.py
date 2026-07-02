@@ -162,8 +162,24 @@ class CustodyLog:
             if is_encrypted_file(_dd() / "open_omniscience.db") is False:
                 create_enc = False
         self.conn = _db_connect(self.db_path, create_encrypted=create_enc)
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self._init_db()
+        # Under concurrent ingest (the field's 50-way parallel case) many CustodyLog
+        # instances open the SAME file at once. Two hardening steps make that reliable:
+        # (1) an explicit busy_timeout so a writer WAITS for the lock instead of raising
+        # "database is locked" immediately (belt-and-suspenders on the DBAPI timeout);
+        # (2) NO per-open WAL journal-mode transition. Every write already serialises on
+        # the process-wide append lock (_APPEND_LOCK), so WAL buys no concurrency here —
+        # while 40 connections opening WAL + auto-checkpointing on every commit created a
+        # lock storm (each commit could block on another connection's read mark and wait
+        # out the busy_timeout, turning a ~3s job into ~150s). The default rollback
+        # journal + the append lock + busy_timeout is both correct and fast: writes are
+        # serialised, reads (export/verify) wait briefly rather than error. The DDL init
+        # runs under the append lock so concurrent opens don't race CREATE-TABLE.
+        try:
+            self.conn.execute("PRAGMA busy_timeout=30000")
+        except Exception:  # noqa: BLE001 - the DBAPI timeout still applies
+            pass
+        with _APPEND_LOCK:
+            self._init_db()
 
     def _init_db(self) -> None:
         self.conn.execute(
