@@ -4106,7 +4106,15 @@
         return { pct, indeterminate: !bt, frac: bt ? bc / bt : null,
           text: `${n} ${verb}, ${p.skipped || 0} ${esc(t("skipped"))}` };
       }
-      // volumes: no total -> indeterminate, phase-driven
+      // volumes: mostly phase-driven + indeterminate, EXCEPT the merge, which reports
+      // step N of M — show a real bar there + drive the rule-of-three ETA (field ask).
+      if (p.merge_steps) {
+        const frac = Math.min(1, (p.merge_step || 0) / p.merge_steps);
+        const label = p.merge_label
+          ? `${esc(_uxVolPhase("merging", s.mode, t))} <span class="muted">(${p.merge_step}/${p.merge_steps} · ${esc(p.merge_label)})</span>`
+          : esc(_uxVolPhase("merging", s.mode, t));
+        return { pct: Math.round(frac * 100), indeterminate: false, frac, text: label };
+      }
       let extra = "";
       if (p.volumes_written) extra += ` · ${p.volumes_written} ${esc(t("volumes"))}`;
       if (p.bytes_written) extra += ` · ${esc(humanBytes(p.bytes_written))}`;

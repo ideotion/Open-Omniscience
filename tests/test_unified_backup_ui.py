@@ -58,6 +58,9 @@ def test_dialogs_have_a_real_progress_bar_and_import_summary():
     # marked approximate ("~ … left") and computed from wall-clock elapsed × remaining.
     assert "_uxRuleOfThree" in _APP
     assert "elapsed * (1 - frac) / frac" in _APP
+    # the corpus MERGE phase reports step N/M so it gets a determinate bar + the same
+    # rule-of-three ETA (field ask 2026-07-02) instead of an indeterminate spinner
+    assert "p.merge_steps" in _APP
     # the import summary reuses the merge-plan table (new / already-present / conflicts)
     assert "_renderImportSummary" in _APP and "_v2PlanTable" in _APP
     # and leads with a prominent aggregate "backup successful" view: imported +

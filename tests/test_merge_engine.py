@@ -116,6 +116,40 @@ def test_fk_remap_source_id_by_domain(tmp_path):
     )
 
 
+def test_merge_reports_step_progress_without_changing_the_result(tmp_path):
+    """The progress callback (field ask 2026-07-02: a bar + ETA on the merge phase)
+    fires once per table-step with monotonically increasing (done -> total) and never
+    alters the merge outcome — and a callback that RAISES can never break the merge."""
+    working = tmp_path / "working.db"
+    staged = tmp_path / "staged.db"
+    art = {"url": "https://s.example/a", "source_domain": "s.example",
+           "hash": "hNEW", "content": "incoming"}
+    _build_corpus(working, [{"domain": "s.example"}], [])
+    _build_corpus(staged, [{"domain": "s.example"}], [art])
+
+    calls: list[tuple[int, int, str]] = []
+    counts, _ = merge_corpus(staged, working, _BATCH_META, progress_cb=lambda d, t, n: calls.append((d, t, n)))
+
+    assert counts["articles"]["new"] == 1  # the merge still worked
+    assert calls, "the progress callback must fire"
+    total = calls[0][1]
+    assert [d for d, _, _ in calls] == list(range(1, total + 1))  # 1..total, in order
+    assert all(t == total for _, t, _ in calls)
+    assert all(isinstance(n, str) and n for _, _, n in calls)  # each step named
+
+    # A raising callback must not break the merge (report-only, wrapped).
+    working2 = tmp_path / "working2.db"
+    staged2 = tmp_path / "staged2.db"
+    _build_corpus(working2, [{"domain": "s.example"}], [])
+    _build_corpus(staged2, [{"domain": "s.example"}], [dict(art)])
+
+    def _boom(*_a):
+        raise RuntimeError("progress sink exploded")
+
+    counts2, _ = merge_corpus(staged2, working2, _BATCH_META, progress_cb=_boom)
+    assert counts2["articles"]["new"] == 1  # merge unaffected by the failing callback
+
+
 def test_bit_level_dedup_identical_article(tmp_path):
     """Same hash AND identical content bytes = duplicate (skipped, not re-inserted)."""
     working = tmp_path / "working.db"

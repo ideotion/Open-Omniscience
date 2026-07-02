@@ -166,7 +166,22 @@ class VolumeBackupManager:
             staged = read_volume_backup(srcp, passphrase)  # verify + parity-recover + reassemble
             try:
                 self._on_prog({"phase": "merging"})
-                report = run_restore(staged, commit=True, allow_unverified=allow_unverified)
+
+                def _merge_prog(done: int, total: int, name: str) -> None:
+                    # Report the merge step so the UI shows a determinate bar + a
+                    # rule-of-three ETA over the "Merging (additive)…" phase.
+                    self._on_prog(
+                        {
+                            "phase": "merging",
+                            "merge_step": done,
+                            "merge_steps": total,
+                            "merge_label": name,
+                        }
+                    )
+
+                report = run_restore(
+                    staged, commit=True, allow_unverified=allow_unverified, progress_cb=_merge_prog
+                )
                 with self._lock:
                     self._state, self._summary = "done", {"report": report}
                     self._progress = {"phase": "done"}
