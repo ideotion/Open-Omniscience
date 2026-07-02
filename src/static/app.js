@@ -8984,11 +8984,13 @@
       const box = $("trd-windows"); if (!box) return;
       const LABELS = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
       try {
-        // series_top=5: the top rising terms of each window carry a daily series
-        // (from /trending-windows, reusing trend()'s day buckets) so each renders a
-        // small honest sparkline (dashChartSvg: line when dense, Item-Y bars when
-        // sparse — never an interpolated curve). The rest stay a plain list.
-        const d = await api("/api/insights/trending-windows?limit=8&series_top=5" + tgtLangParam());
+        // EVERY shown trending term carries a daily series (series_top == limit) so
+        // each renders a small honest time-series sparkline (dashChartSvg: line when
+        // dense, Item-Y bars when sparse — never an interpolated curve) instead of a
+        // raw table row — the field ask: see the top trending keywords AS small graphs
+        // over time (e.g. the past-week column). Kept to 6/window: glanceable + bounds
+        // the per-term day-bucket queries at scale.
+        const d = await api("/api/insights/trending-windows?limit=6&series_top=6" + tgtLangParam());
         _trendWindowsData = d;  // stash so enlargeTrend(wi,ti) needs no extra fetch
         box.innerHTML = (d.windows || []).map((w, wi) => {
           const head = `<h2 style="font-size:13px">${esc(LABELS[w.label] || w.label)} <span class="muted">· n=${w.count}</span></h2>`;

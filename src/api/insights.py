@@ -52,7 +52,7 @@ _CACHE_TTL_S = int(_os.getenv("OO_INSIGHTS_CACHE_TTL", "120"))
 # warmer MUST mirror these or it warms keys nothing reads (P0-4). Kept in sync with
 # src/static/app.js (loadHomeTrends / loadTrendWindows) by a test_repo_invariants guard.
 WARM_TRENDING_HOME = (4, 4)
-WARM_TRENDING_INSIGHTS = (8, 5)
+WARM_TRENDING_INSIGHTS = (6, 6)
 _read_cache = SimpleCache(max_size=128, default_ttl=max(1, _CACHE_TTL_S))
 
 

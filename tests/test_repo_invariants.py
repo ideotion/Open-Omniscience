@@ -1904,8 +1904,9 @@ def test_ui_invariants():
     # 21b+. Each window's top terms render a daily sparkline from the series_top
     #       backend (additive), via the shared honest renderer (dashChartSvg: line
     #       when dense, Item-Y bars when sparse — never an interpolated curve).
-    assert "series_top=5" in html and "dashChartSvg(" in html, (
-        "loadTrendWindows() must request series_top and render per-term sparklines"
+    assert "series_top=6" in html and "dashChartSvg(" in html, (
+        "loadTrendWindows() must request series_top and render per-term sparklines "
+        "(series_top==limit so EVERY shown trending keyword is a small time-series graph)"
     )
     # 21b++. Each Trends sparkline can be ENLARGED into the interactive ooChart
     #        (invariant #16: full-resolution zoom/pan/readout; Item-Y bars when
@@ -4336,7 +4337,7 @@ def test_keyword_views_show_verified_translations():
     # termListHtml renders the translation beside the keyword.
     assert "${kwTransHtml(t)}" in html, "termListHtml must render the verified translation"
     # The three keyword fetches request the verified translation for the UI language.
-    assert "/api/insights/trending-windows?limit=8&series_top=5\" + tgtLangParam()" in html
+    assert "/api/insights/trending-windows?limit=6&series_top=6\" + tgtLangParam()" in html
     assert "/api/insights/trending-windows?limit=4&series_top=4\" + tgtLangParam()" in html
     assert "tgtLangParam()}${extra||\"\"}" in html, "the Trends top/rising fetch must pass target_lang"
     # It is a TRANSLATION (additive), not a filter that hides languages.
