@@ -512,6 +512,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     batch's true impact (e.g. #530 = 43 rows / 20,747 mentions).
 
 ## Open queue (when maintainer says proceed)
+- **V0.1 RELEASE EXECUTION (maintainer ruled 2026-07-02, verbatim "proceed with everything
+  autonomously… Go with your plan. Push everything to go 0.1", plus the same-day coherence+ethics
+  mandate): the release is being EXECUTED under full autonomy.** The sequenced plan + the
+  arbitration log (what was closed with evidence vs consciously accepted for 0.1-alpha) live in
+  `docs/product/RELEASE_0.1_PLAN.md`; the gate (`docs/product/RELEASE_0.1_RC_GATE.md`) was
+  reconciled 2026-07-02 with per-row evidence. LOAD-BEARING FINDINGS any parallel session must
+  know: (a) the default branch had NO completed CI run 06-29→07-02 (all superseded-cancelled;
+  "merged ≠ green" became structural — ci.yml gains workflow_dispatch; dispatch + WATCH a run to
+  completion at any SHA you must trust); (b) the mypy ratchet was RED at HEAD (132>127, fixed) —
+  re-run it locally before merging (the in-repo .venv py3.13 runs the FULL suite: 2496 passed at
+  c217c5f); (c) the wheel/sdist carried ZERO data files (packaging fixed + fresh-venv boot-proven);
+  (d) custody auto-log default flipped ON per the Item-N ruling (the UI text already claimed it);
+  (e) field-test mode is now OPT-IN (OO_FIELD_TEST=1) for the public tag; (f) version flips
+  0.0.9→0.1.0, tag v0.1.0 (release.yml verifies tag==pyproject and now gates on tests).
 - **KEYWORD STOPLIST — open-class review loop + residual gaps (2026-07-01; user DEFERRED the
   next round to a fresh session):** function-word garbage is SOLVED — #525 vendored full
   stopwords-iso lists for 18 managed languages, #528 added temporal-deictic adverbs (gestern/

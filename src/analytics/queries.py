@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy import func
 
@@ -299,7 +300,7 @@ def top_terms(
         # in which case we sum the tiny rollup instead of scanning mentions. The rollup
         # returns rows in the SAME shape/order this query would, so the honesty layers
         # below (hidden-word filter, families, rings, translations) are byte-identical.
-        rows: list = []
+        rows = []
         if days and not country:
             from src.analytics import rollup_serve
 
@@ -367,7 +368,7 @@ def top_terms(
         terms = merged
     terms = terms[:limit]
     _annotate_translations(terms, target_lang, stored_lang)
-    out = {
+    out: dict[str, Any] = {
         "count": len(terms),
         "days": days,
         "country": country,
@@ -375,7 +376,7 @@ def top_terms(
         "grouped": group,
         "terms": terms,
     }
-    if _rollup_rows is not None:  # disclose the served source + as-of (honesty by construction)
+    if _rollup_rows is not None and days:  # disclose the served source + as-of (honesty by construction)
         from src.analytics import rollup_serve
 
         out["basis"] = rollup_serve.basis(days)
@@ -1203,7 +1204,7 @@ def trending(
     out.sort(key=lambda t: (-t["growth"], -t["recent"]))
     out = out[:limit]
     _annotate_translations(out, target_lang, stored_lang)
-    res = {
+    res: dict[str, Any] = {
         "count": len(out),
         "window_days": window_days,
         "baseline_days": baseline_days,

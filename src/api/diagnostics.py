@@ -1337,7 +1337,8 @@ def performance_report(
     from src.scheduler.runner import get_scheduler as _get_scheduler
 
     _last = _get_scheduler().status().get("last_result") or {}
-    _last_tally = _last.get("tally") if isinstance(_last.get("tally"), dict) else {}
+    _tally_raw = _last.get("tally")
+    _last_tally: dict = _tally_raw if isinstance(_tally_raw, dict) else {}
     collection = {
         "last_pass_fetch_failed": int(_last_tally.get("fetch_failed") or 0),
         "fetch_failed_reasons": _ff_reasons(_last),
