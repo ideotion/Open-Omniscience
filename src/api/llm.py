@@ -516,7 +516,7 @@ def summarize_article(
         "model": result.model,
         "prompt_version": prompt_version,
         "result": result.text,
-        "created_at": analysis.created_at.isoformat(),
+        "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
     }
 
 
@@ -575,7 +575,7 @@ def translate_article(
         "model": result.model,
         "prompt_version": analysis.prompt_version,
         "result": result.text,
-        "created_at": analysis.created_at.isoformat(),
+        "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
     }
 
 

@@ -704,7 +704,8 @@ class BackgroundScheduler:
         if not self.is_running():
             return False
         self._stop.set()
-        self._thread.join(timeout=timeout)
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
         with self._state_lock:
             self._next_run = None
         return True

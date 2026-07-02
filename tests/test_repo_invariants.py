@@ -4199,6 +4199,24 @@ def test_startup_warms_the_insights_cache():
     )
 
 
+def test_keyword_filter_shows_the_builtin_stoplist():
+    """Field ask 2026-07-02: the Settings keyword filtering should let users SHOW the
+    current filter-out list. The manual excluded list was already editable, but the
+    bulk of the filtering is the built-in multilingual stoplist, which was invisible
+    (only a toggle). Guard the read-only searchable view of it: the endpoint that
+    returns the built-in stoplist, the Settings panel that shows it, and the loader."""
+    ins = (_ROOT / "src" / "api" / "insights.py").read_text(encoding="utf-8")
+    assert '"/filter/builtin"' in ins and "global_stopwords" in ins, (
+        "an endpoint must expose the built-in stoplist (read-only) for display"
+    )
+    html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="kf-builtin-view"' in html and 'id="kf-builtin-q"' in html, (
+        "the keyword-filtering panel must show a searchable built-in-stoplist view"
+    )
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    assert "loadBuiltinStoplist" in app and "/api/insights/filter/builtin" in app
+
+
 def test_unlock_enters_when_queryable_not_after_full_upkeep():
     """Field report 2026-07-02 ("unlocking takes ages", CPU ~12% / SSD idle): the
     unlock page waited for startup-status == "ready", but "ready" is only set AFTER
