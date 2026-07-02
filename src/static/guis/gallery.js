@@ -30,7 +30,7 @@
     },
     command: {
       tag: "Keyboard-first; everything a keystroke away.",
-      why: "Puts the search palette at the centre of gravity, so power users reach any feature instantly instead of hunting across tabs."
+      why: "Puts the search palette at the centre of gravity, so power users reach any feature instantly instead of hunting across thirteen tabs."
     },
     field: {
       tag: "A mobile-first card stream with a bottom bar.",

@@ -25,7 +25,22 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from src.timemap.dateextract import _MONTHS, _REL_WORDS, _WEEKDAYS, extract_dates
+from src.timemap.dateextract import (
+    _CJK_REL_RE,
+    _CJK_WD_RE,
+    _EN_AGO_RE,
+    _KO_REL_RE,
+    _KO_WD_RE,
+    _MONTHS,
+    _REL_LANG_GATES,
+    _REL_WORDS,
+    _WD_COLLOC_RE,
+    _WD_COMING_RE,
+    _WD_LANG_GATES,
+    _WD_LAST_RE,
+    _WEEKDAYS,
+    extract_dates,
+)
 
 # Languages whose month names the extractor's table covers. A date written in any
 # OTHER language (ru/ar/zh/ja/hi/bn/id/…) can only be caught via ISO or numeric
@@ -74,7 +89,9 @@ _CJK_RE = re.compile(
     r"|\d{1,2}\s*월\s*\d{1,2}\s*일"
 )
 _MONTH_RE = re.compile(r"\b(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")\b", re.I)
-_WD_RE = re.compile(r"\b(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I)
+_WD_RE = re.compile(
+    r"\b(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I
+)
 _REL_RE = re.compile(
     r"\b(" + "|".join(re.escape(w) for w in sorted(_REL_WORDS, key=len, reverse=True)) + r")\b",
     re.I,
@@ -82,14 +99,49 @@ _REL_RE = re.compile(
 
 # Specificity order: a more-specific kind claims a span before a looser one can
 # (so the "2026" inside "11/06/2026" is not also reported as a bare year).
-_PROBES: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("cjk_date", _CJK_RE),
-    ("numeric", _NUMERIC_RE),
-    ("month_name", _MONTH_RE),
-    ("weekday", _WD_RE),
-    ("relative", _REL_RE),
-    ("bare_year", _YEAR_RE),
+# The CJK/Korean relative + weekday probes reuse the extractor's own regexes
+# (boundary-free, slice-C) so the probe sees exactly what the extractor sees;
+# each carries the extractor's OWN language gate (third field; None = ungated)
+# so a gated family outside its language never counts as a phantom gap.
+_PROBES: tuple[tuple[str, re.Pattern[str], frozenset[str] | None], ...] = (
+    ("cjk_date", _CJK_RE, None),
+    ("numeric", _NUMERIC_RE, None),
+    ("month_name", _MONTH_RE, None),
+    ("weekday", _WD_RE, None),
+    # The phrase forms reuse the extractor's OWN compiled patterns (exact
+    # lockstep, including the "hari minggu ini" exclusion), so an extractor
+    # gain never shows as extracted-without-probed.
+    ("weekday", _WD_LAST_RE, None),
+    ("weekday", _WD_COMING_RE, None),
+    ("weekday", _WD_COLLOC_RE, None),
+    ("weekday", _CJK_WD_RE, frozenset({"zh", "ja"})),
+    ("weekday", _KO_WD_RE, frozenset({"ko"})),
+    ("relative", _REL_RE, None),
+    ("relative", _CJK_REL_RE, frozenset({"zh", "ja"})),
+    ("relative", _KO_REL_RE, frozenset({"ko"})),
+    ("relative", _EN_AGO_RE, frozenset({"en"})),
+    ("bare_year", _YEAR_RE, None),
 )
+
+# LOCKSTEP with the extractor's per-token language gates (slice C): a gated
+# token outside its language is one the extractor DELIBERATELY skips (da
+# "mandag morgen" = Monday MORNING, tr "senin" = "your"), so counting it as
+# date-like would report a phantom, permanent per-language gap. With no
+# language hint the extractor also skips — so does the probe.
+_GATED_TOKENS: dict[str, set[str]] = {**_REL_LANG_GATES, **_WD_LANG_GATES}
+
+# Soft separators + at most ONE day/year number token — what may sit between a
+# weekday probe hit and the date it is an appositive of (see recall_probe).
+_APPOS_BRIDGE = re.compile(
+    r"[ \t,、，()（）\[\]]*(?:\d{1,4}(?:st|nd|rd|th|er|\.|-го|-е)?[ \t,、，()（）\[\]]*)?"
+)
+
+
+def _gate_allows(matched: str, language: str | None) -> bool:
+    gate = _GATED_TOKENS.get(matched.lower())
+    if gate is None:
+        return True
+    return (language or "")[:2].lower() in gate
 
 
 def _snippet(text: str, start: int, end: int, pad: int = 36) -> str:
@@ -97,20 +149,45 @@ def _snippet(text: str, start: int, end: int, pad: int = 36) -> str:
     return re.sub(r"\s+", " ", s)
 
 
-def recall_probe(text: str, *, limit: int = 40) -> list[dict]:
+def recall_probe(text: str, *, limit: int = 40, language: str | None = None) -> list[dict]:
     """Permissive scan for date-LIKE strings — HIGH recall, LOW precision.
 
     Returns up to ``limit`` ``{kind, match, snippet}`` hits ordered by position.
     Deliberately over-matches so that comparing it against the high-precision
     extractor reveals what the extractor misses; a hit is a candidate, never a
-    confirmed date.
+    confirmed date. ``language`` mirrors the extractor's per-token language
+    gates: a gated weekday/relative homograph outside its language (da
+    "morgen" = morning) is not date-like there and is not counted.
     """
     if not text:
         return []
+    base = (language or "")[:2].lower()
     kept: list[tuple[int, int, str, str]] = []  # (start, end, kind, match)
-    for kind, rx in _PROBES:
+    _date_kinds = {"cjk_date", "numeric", "month_name"}
+
+    def _adjacent_to_a_date(s: int, e: int) -> bool:
+        # Mirrors the extractor's appositive suppression ("Tuesday, June 16,
+        # 2026" — the weekday NAMES the explicit date): a date-adjacent weekday
+        # hit would otherwise report a phantom gap on every standard dateline.
+        # The month probe matches only the month TOKEN, so the bridge admits
+        # one number token between them ("mardi 16 juin", "wtorek, 11 czerwca
+        # 2024" — the extractor's claimed span covers the day/year digits).
+        return any(
+            k in _date_kinds
+            and ((ke <= s and _APPOS_BRIDGE.fullmatch(text, ke, s))
+                 or (e <= ks and _APPOS_BRIDGE.fullmatch(text, e, ks)))
+            for ks, ke, k, _ in kept
+        )
+
+    for kind, rx, langs in _PROBES:
+        if langs is not None and base not in langs:
+            continue  # a language-gated family the extractor would skip here
         for m in rx.finditer(text):
             s, e = m.start(), m.end()
+            if kind in ("weekday", "relative") and not _gate_allows(m.group(0), language):
+                continue
+            if kind == "weekday" and _adjacent_to_a_date(s, e):
+                continue
             if any(s < ke and ks < e for ks, ke, _, _ in kept):  # overlaps a more specific hit
                 continue
             kept.append((s, e, kind, m.group(0)))
@@ -142,7 +219,7 @@ def analyze_article(
     """
     text = content or ""
     extracted = extract_dates(text, anchor=anchor, language=language, today=today, limit=extract_limit)
-    probe = recall_probe(text, limit=probe_limit)
+    probe = recall_probe(text, limit=probe_limit, language=language)
     by_kind: dict[str, int] = {}
     for h in probe:
         by_kind[h["kind"]] = by_kind.get(h["kind"], 0) + 1

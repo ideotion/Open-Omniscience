@@ -891,12 +891,11 @@ class BackgroundScheduler:
                         _LOG.info("law auto-track: %s", law_res)
             except Exception:  # noqa: BLE001 - never fail the scrape on law auto-track
                 _LOG.warning("law auto-track failed", exc_info=True)
-            # Field-test instrumentation (live-test cycles): exercise every fetch
-            # surface once and log verbatim outcomes for the maintainer's debug
-            # bundle. OPT-IN since 0.1 (OO_FIELD_TEST=1 enables — a public tag
-            # must not auto-instrument by default); see src/monitoring/
-            # field_test.py. Runs HERE (the operator's own collect pass), never
-            # at boot.
+            # TEMPORARY (0.0.8 live-test cycle): exercise every fetch surface
+            # once and log verbatim outcomes for the maintainer's debug bundle.
+            # Self-improvement instrumentation only; OO_FIELD_TEST=0 disables;
+            # see src/monitoring/field_test.py. Runs HERE (the operator's own
+            # collect pass), never at boot.
             try:
                 from src.monitoring import field_test
 

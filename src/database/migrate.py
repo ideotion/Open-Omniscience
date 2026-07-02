@@ -24,10 +24,7 @@ _ALEMBIC_INI = _REPO_ROOT / "alembic.ini"
 def _alembic_config():
     from alembic.config import Config
 
-    # A wheel install carries the migrations/ scripts but not the repo-root
-    # alembic.ini (only logging prefs live there); Config() without a file is
-    # fully functional once script_location is set explicitly below.
-    cfg = Config(str(_ALEMBIC_INI)) if _ALEMBIC_INI.is_file() else Config()
+    cfg = Config(str(_ALEMBIC_INI))
     cfg.set_main_option("script_location", str(_REPO_ROOT / "migrations"))
     return cfg
 
