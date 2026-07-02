@@ -1,6 +1,6 @@
 # Changelog
 
-> The repository’s **default branch is the active cycle branch** (currently `0.09`); each cycle branch `0.0N` produced release `0.0.N` — the consolidated `0.09` cycle produces **`0.1.0`, the first alpha** (see the README's version note).
+> The repository’s **default branch is the active cycle branch** (currently `0.1`, renamed from `0.09` at the alpha flip); each cycle branch `0.0N` produced release `0.0.N`, and the consolidated `0.09` cycle produced **`0.1.0`, the first alpha** — the cycle branch was renamed `0.09 → 0.1` to match (see the README's version note).
 
 ## 0.1.0 — deeper sense-making (the 0.09 cycle, released 2026-07-02)
 

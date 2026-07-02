@@ -69,9 +69,12 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   present. Every consent/caveat string ships ×12 locales. Applies to every
   surface built or reworked from now on (T9+); the network consent popup
   (invariant #14) and the restore preview (T6) are the reference patterns.
-- **The 0.09 cycle is OPEN** (default branch `0.09` since 2026-06-11) ⇒ release
-  0.0.9. Version single-sourced from pyproject. Historical `0.0.8`/`0.08` tags
-  in docs/entries are records, not the current version.
+- **The current cycle branch is `0.1`** (the default branch, RENAMED from `0.09` at the
+  2026-07-02 alpha flip) ⇒ release `0.1.0`, the first alpha. Cut/rebase branches from
+  `origin/0.1` and open PRs onto `0.1` now (NOT `0.09` — the old name; `git fetch origin 0.1`).
+  Version single-sourced from pyproject (`0.1.0`). Historical `0.0.8`/`0.08`/`0.09` tags +
+  "draft PR onto 0.09" shipped-log entries are RECORDS of when that was the branch, not the
+  current version/branch.
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit). Model catalog
   stays date-stamped (`CATALOG_AS_OF` + freshness test); clearnet is a stated
   install prerequisite for model downloads.
@@ -392,13 +395,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `freshness_issue.py` (ONE rolling `freshness`-labelled issue, opened/updated/closed
   idempotently). Add `upstream_check:{github,type}` to a registry entry to watch it.
 - Maintainer merges PRs fast: after `git push`, if the output says
-  "[new branch]", the previous PR was merged — open a NEW PR onto `0.09`.
-  COROLLARY (near-miss 2026-06-15): local `origin/0.09` goes STALE within
-  minutes given the fast merges — ALWAYS `git fetch origin 0.09` immediately
-  before `git checkout -B <branch> origin/0.09`, or a doc/ledger branch can be
+  "[new branch]", the previous PR was merged — open a NEW PR onto `0.1` (the
+  current cycle branch; was `0.09` before the 2026-07-02 rename).
+  COROLLARY (near-miss 2026-06-15): local `origin/0.1` goes STALE within
+  minutes given the fast merges — ALWAYS `git fetch origin 0.1` immediately
+  before `git checkout -B <branch> origin/0.1`, or a doc/ledger branch can be
   cut from a pre-merge base and a 3-way merge could drop a just-merged ledger
   edit on the same lines. (Caught when a finding-F ledger update branched from a
-  stale 0.09 and the entry was missing; re-cut from a freshly-fetched 0.09.)
+  stale base and the entry was missing; re-cut from a freshly-fetched tip. This
+  is the SAME hazard as the 2026-07-02 stale-base revert incident below — always
+  rebase onto the FRESH default tip before merging.)
 - Never use backticks inside `git commit -m` heredocs (shell substitution).
 - Update `docs/product/RELEASE_0.1_RC_GATE.md` rows you close, every session.
 - Lessons that cost a bug: duplicate top-level JS function names silently

@@ -63,8 +63,9 @@ Impact 1–3, Confidence 0.5–1.0, Effort in person-weeks (S=1, M=3, L=6, XL=12
 ## 3. Horizons
 
 > **STATUS (2026-06-11):** the 0.0.8 horizon below **shipped in full** (parts 1+2 +
-> the live-test hardening batches); the active cycle is now `0.09`, working the
-> "deeper sense-making" horizon. The 0.0.8 section is kept as the record.
+> the live-test hardening batches); the "deeper sense-making" horizon shipped as
+> **`0.1.0`, the first alpha** (default branch renamed `0.09 → 0.1` at the flip).
+> The 0.0.8 section is kept as the record.
 
 ### Shipped — the 0.0.8 release: "trustworthy MVP, hardened" *(was "Now")*
 *(Executable work-package plan: [RELEASE_0.0.8_PLAN.md](RELEASE_0.0.8_PLAN.md).)*

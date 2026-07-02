@@ -57,8 +57,9 @@ verification of every critical finding:
 - `release.yml` then builds sdist+wheel, emits `SHA256SUMS`, and publishes the
   GitHub release. It gains a **test gate** on this branch (it previously published
   without running any tests).
-- The `0.09` branch remains the cycle branch of record; opening the next cycle
-  branch (and its name) is left to the maintainer — nothing in the tag requires it.
+- The cycle branch was **renamed `0.09 → 0.1`** at the flip (2026-07-02, maintainer);
+  `0.1` is now the default branch of record. Opening the *next* cycle branch (and its
+  name) is left to the maintainer — nothing in the tag requires it.
 
 ## 3. Workstreams (all executed on this branch, each verified before commit)
 

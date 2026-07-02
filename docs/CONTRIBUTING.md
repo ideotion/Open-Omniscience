@@ -111,6 +111,7 @@ leading zeros elided for brevity:
 | `0.07` | `0.0.7` |
 | `0.08` | `0.0.8` |
 | `0.09` | `0.0.9` |
+| `0.1`  | `0.1.0` |  (the `0.09` cycle branch was renamed `0.09 → 0.1` at the alpha flip)
 
 So "the `0.06` intelligence layer" means "the work that ships in `0.0.6`". When you read a
 cycle shorthand like `0.05` in the docs, read it as `0.0.5`.
