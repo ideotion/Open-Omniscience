@@ -1715,5 +1715,11 @@
   "Import…": "Importieren…",
   "Back up": "Sichern",
   "Import selected": "Ausgewähltes importieren",
-  "Scan": "Scannen"
+  "Scan": "Scannen",
+  "Preparing your corpus…": "Ihr Korpus wird vorbereitet…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "Ihr Korpus ist entsperrt. Es wird vorbereitet — bei einer großen Datenbank kann das einen Moment dauern und geschieht nur einmal pro Start.",
+  "opening the database": "Datenbank wird geöffnet",
+  "refreshing search statistics": "Suchstatistiken werden aktualisiert",
+  "loading the source catalog": "Quellenkatalog wird geladen",
+  "counting your corpus": "Ihr Korpus wird gezählt"
 }

@@ -225,6 +225,24 @@ def insights_reconcile_keyword_language(db: Session = Depends(get_db)) -> dict:
     return reconcile_keyword_language(db)
 
 
+@router.post("/reconcile-article-language")
+def insights_reconcile_article_language(
+    limit: int = Query(300, ge=1, le=2000),
+    after_id: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Backfill the DEDUCED language of UNKNOWN articles (maintainer ask 2026-07-02) — an
+    article with NEITHER an asserted ``language`` nor a ``detected_language``. Two tiers,
+    most-reliable first: the offline TEXT detector, then (fallback) the DOMINANT language
+    among the article's own indexed KEYWORDS (gated on a real majority). The result is
+    stored ONLY in ``detected_language`` (the deduced channel) — the asserted ``language``
+    is never overwritten. Bounded + resumable (call repeatedly with ``after_id=last_id``
+    until ``done``). Counts only, no score."""
+    from src.analytics.store import reconcile_article_language
+
+    return reconcile_article_language(db, limit=limit, after_id=after_id)
+
+
 @router.post("/reindex-all")
 def insights_reindex_all(
     limit: int = Query(300, ge=1, le=2000),

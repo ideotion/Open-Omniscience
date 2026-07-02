@@ -1715,5 +1715,11 @@
   "Import…": "Import…",
   "Back up": "Back up",
   "Import selected": "Import selected",
-  "Scan": "Scan"
+  "Scan": "Scan",
+  "Preparing your corpus…": "Preparing your corpus…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.",
+  "opening the database": "opening the database",
+  "refreshing search statistics": "refreshing search statistics",
+  "loading the source catalog": "loading the source catalog",
+  "counting your corpus": "counting your corpus"
 }

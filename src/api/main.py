@@ -85,8 +85,29 @@ def run_deferred_startup() -> None:
     """Everything that needs an OPEN database: schema/FTS, error log, janitor,
     seeds, metrics, scheduler. Runs at every unlocked lifespan (each step is
     idempotent — init_db has always self-healed a damaged schema on boot) and
-    again the moment the operator unlocks/creates an encrypted store."""
+    again the moment the operator unlocks/creates an encrypted store.
+
+    Split into a fast, query-enabling ``init_db`` and the slower ``_run_startup_upkeep``
+    so the web-unlock path can return the moment the DB is queryable and run the
+    upkeep in the background (see src/api/unlock._finish_unlock). Called WHOLE and
+    synchronously from the lifespan (plaintext / already-unlocked boot), where
+    blocking is fine — there is no button to freeze."""
+    from src.api.startup_status import set_startup
+
+    set_startup("running", "opening the database")
     init_db()
+    _run_startup_upkeep()
+    set_startup("ready", "")
+
+
+def _run_startup_upkeep() -> None:
+    """The post-``init_db`` startup work (planner stats, error log, janitor, seeds,
+    metrics, cache warm, airplane). Split out so the unlock path can run it in a
+    background thread while the DB is already queryable. Every step is best-effort
+    and idempotent; phases are published for the unlock progress view."""
+    from src.api.startup_status import mark_phase
+
+    mark_phase("refreshing search statistics")
     # Query-planner statistics (performance batch 2026-06-12): bounded ANALYZE
     # on first boot at a schema, PRAGMA optimize after — best-effort, never
     # blocks startup, and repeat boots are near-free.
@@ -131,6 +152,9 @@ def run_deferred_startup() -> None:
     # ~3,200-source catalog once and is near-free on later boots. Data collection is
     # the heart of the project — it must have sources. Gated by OO_AUTOSEED.
     if os.getenv("OO_AUTOSEED", "1") != "0":
+        from src.api.startup_status import mark_phase as _mp
+
+        _mp("loading the source catalog")
         try:
             from src.ingest.seed_sources import seed_default_sources
             from src.law.catalog import register_documents, seed_legal_sources
@@ -144,6 +168,9 @@ def run_deferred_startup() -> None:
         except Exception:  # noqa: BLE001 - seeding must never block startup
             logger.warning("could not seed the source catalog at startup", exc_info=True)
     try:
+        from src.api.startup_status import mark_phase as _mp
+
+        _mp("counting your corpus")
         with session_scope() as session:
             ARTICLES_COUNT.set(session.query(Article).count())
             SOURCES_COUNT.set(session.query(Source).count())

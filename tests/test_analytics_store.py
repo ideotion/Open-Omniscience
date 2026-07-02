@@ -327,3 +327,115 @@ def test_reconcile_keyword_language_untagged_bucket_is_noop(db):
     assert out["relanguaged"] == 0
     db.expire_all()
     assert db.get(Keyword, k.id).language == "en"
+
+
+# --- 2026-07-02: reconcile_article_language (deduce UNKNOWN articles' language) ---- #
+
+
+def _unknown_article(db, hash_, text):
+    """An article with NEITHER an asserted language NOR a detected one."""
+    a = Article(
+        url=f"https://x.test/{hash_}",
+        canonical_url=f"https://x.test/{hash_}",
+        source_id=1,
+        title="t",
+        content=text,
+        hash=hash_,
+        language=None,
+        detected_language=None,
+        published_at=datetime(2024, 3, 1, tzinfo=UTC),
+        created_at=datetime.now(UTC),
+    )
+    db.add(a)
+    db.flush()
+    return a
+
+
+_FR_PARAGRAPH = (
+    "Le gouvernement a annoncé aujourd'hui une nouvelle réforme économique visant à "
+    "réduire l'inflation et à soutenir les entreprises locales du pays. Les syndicats "
+    "ont exprimé leurs inquiétudes tandis que les experts saluent une décision "
+    "courageuse pour l'avenir de la nation et de tous ses citoyens réunis."
+)
+
+
+def test_reconcile_article_language_text_detect_sets_deduced(db):
+    """The offline text detector deduces the language of a long unknown article and
+    stores it in detected_language WITHOUT ever writing the asserted language."""
+    from src.analytics.store import reconcile_article_language
+
+    art = _unknown_article(db, "u1", _FR_PARAGRAPH)
+    db.commit()
+    out = reconcile_article_language(db)
+    assert out["scanned"] == 1 and out["set_by_text"] == 1
+    assert out["set_by_keywords"] == 0 and out["still_unknown"] == 0
+    assert out["done"] is True
+    db.expire_all()
+    a = db.get(Article, art.id)
+    assert a.detected_language == "fr"  # deduced channel set
+    assert not a.language  # asserted language NEVER written
+
+
+def test_reconcile_article_language_keyword_majority_fallback(db):
+    """When the text detector fails (too-short content), the dominant language among the
+    article's own indexed keywords deduces it — evidence, stored in detected_language."""
+    from src.analytics.store import reconcile_article_language
+
+    art = _unknown_article(db, "u2", "short")  # < min_chars -> text detect returns None
+    # 3 fr keywords + 1 en keyword -> clear fr majority (>= 3, > half).
+    for term in ("gouvernement", "reforme", "inflation"):
+        _mention_row(db, _kw_row(db, term, "fr"), art)
+    _mention_row(db, _kw_row(db, "policy", "en"), art)
+    db.commit()
+    out = reconcile_article_language(db)
+    assert out["scanned"] == 1 and out["set_by_keywords"] == 1
+    assert out["set_by_text"] == 0 and out["still_unknown"] == 0
+    db.expire_all()
+    a = db.get(Article, art.id)
+    assert a.detected_language == "fr" and not a.language
+
+
+def test_reconcile_article_language_never_overwrites_asserted(db):
+    """An article that already carries an asserted language is not a candidate — its
+    language is untouched and no deduced language is written."""
+    from src.analytics.store import reconcile_article_language
+
+    a = _lang_article(db, "u3", "en")  # asserted en
+    a.content = _FR_PARAGRAPH  # French text, but the asserted en must win
+    db.commit()
+    out = reconcile_article_language(db)
+    assert out["scanned"] == 0 and out["done"] is True
+    db.expire_all()
+    a2 = db.get(Article, a.id)
+    assert a2.language == "en" and not a2.detected_language
+
+
+def test_reconcile_article_language_tie_or_too_few_left_unknown(db):
+    """A keyword-language tie and a too-few-keywords case both stay honestly unknown."""
+    from src.analytics.store import reconcile_article_language
+
+    tie = _unknown_article(db, "u4", "short")  # 1 fr + 1 en -> no majority
+    _mention_row(db, _kw_row(db, "gouvernement", "fr"), tie)
+    _mention_row(db, _kw_row(db, "policy", "en"), tie)
+    few = _unknown_article(db, "u5", "short")  # 2 fr only -> below min_keywords=3
+    for term in ("reforme", "inflation"):
+        _mention_row(db, _kw_row(db, term, "fr"), few)
+    db.commit()
+    out = reconcile_article_language(db)
+    assert out["scanned"] == 2 and out["still_unknown"] == 2
+    assert out["set_by_text"] == 0 and out["set_by_keywords"] == 0
+    db.expire_all()
+    assert not db.get(Article, tie.id).detected_language
+    assert not db.get(Article, few.id).detected_language
+
+
+def test_reconcile_article_language_is_idempotent(db):
+    """A second pass re-scans nothing (a resolved article is excluded by the filter)."""
+    from src.analytics.store import reconcile_article_language
+
+    _unknown_article(db, "u6", _FR_PARAGRAPH)
+    db.commit()
+    first = reconcile_article_language(db)
+    assert first["set_by_text"] == 1
+    second = reconcile_article_language(db)
+    assert second["scanned"] == 0 and second["done"] is True

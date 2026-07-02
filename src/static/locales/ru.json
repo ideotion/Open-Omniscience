@@ -1715,5 +1715,11 @@
   "Import…": "Импорт…",
   "Back up": "Сохранить копию",
   "Import selected": "Импортировать выбранное",
-  "Scan": "Сканировать"
+  "Scan": "Сканировать",
+  "Preparing your corpus…": "Подготовка корпуса…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "Ваш корпус разблокирован. Идёт подготовка — на большой базе это может занять момент и происходит один раз при запуске.",
+  "opening the database": "открытие базы данных",
+  "refreshing search statistics": "обновление статистики поиска",
+  "loading the source catalog": "загрузка каталога источников",
+  "counting your corpus": "подсчёт вашего корпуса"
 }

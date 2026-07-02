@@ -1715,5 +1715,11 @@
   "Import…": "आयात…",
   "Back up": "बैकअप",
   "Import selected": "चयनित आयात करें",
-  "Scan": "स्कैन"
+  "Scan": "स्कैन",
+  "Preparing your corpus…": "आपका कॉर्पस तैयार किया जा रहा है…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "आपका कॉर्पस अनलॉक हो गया है। इसे तैयार किया जा रहा है — बड़े डेटाबेस पर इसमें कुछ समय लग सकता है, और यह हर शुरुआत पर केवल एक बार होता है।",
+  "opening the database": "डेटाबेस खोला जा रहा है",
+  "refreshing search statistics": "खोज आँकड़े ताज़ा किए जा रहे हैं",
+  "loading the source catalog": "स्रोत सूची लोड की जा रही है",
+  "counting your corpus": "आपका कॉर्पस गिना जा रहा है"
 }

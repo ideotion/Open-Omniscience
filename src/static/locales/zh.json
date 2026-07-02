@@ -1715,5 +1715,11 @@
   "Import…": "导入…",
   "Back up": "备份",
   "Import selected": "导入所选",
-  "Scan": "扫描"
+  "Scan": "扫描",
+  "Preparing your corpus…": "正在准备您的语料库…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "您的语料库已解锁。正在准备中——在大型数据库上可能需要片刻，且每次启动只发生一次。",
+  "opening the database": "正在打开数据库",
+  "refreshing search statistics": "正在刷新搜索统计",
+  "loading the source catalog": "正在加载来源目录",
+  "counting your corpus": "正在统计您的语料库"
 }

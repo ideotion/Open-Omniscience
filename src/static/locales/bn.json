@@ -1715,5 +1715,11 @@
   "Import…": "আমদানি…",
   "Back up": "ব্যাকআপ",
   "Import selected": "নির্বাচিত আমদানি করুন",
-  "Scan": "স্ক্যান"
+  "Scan": "স্ক্যান",
+  "Preparing your corpus…": "আপনার কর্পাস প্রস্তুত করা হচ্ছে…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "আপনার কর্পাস আনলক হয়েছে। এটি প্রস্তুত করা হচ্ছে — বড় ডেটাবেসে এতে কিছুটা সময় লাগতে পারে, এবং প্রতিটি সূচনায় কেবল একবার ঘটে।",
+  "opening the database": "ডেটাবেস খোলা হচ্ছে",
+  "refreshing search statistics": "অনুসন্ধান পরিসংখ্যান রিফ্রেশ করা হচ্ছে",
+  "loading the source catalog": "উৎস তালিকা লোড করা হচ্ছে",
+  "counting your corpus": "আপনার কর্পাস গণনা করা হচ্ছে"
 }

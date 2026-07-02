@@ -1715,5 +1715,11 @@
   "Import…": "Impor…",
   "Back up": "Cadangkan",
   "Import selected": "Impor yang dipilih",
-  "Scan": "Pindai"
+  "Scan": "Pindai",
+  "Preparing your corpus…": "Menyiapkan korpus Anda…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "Korpus Anda telah dibuka. Sedang disiapkan — ini bisa memakan waktu sebentar pada basis data besar, dan hanya terjadi sekali setiap kali mulai.",
+  "opening the database": "membuka basis data",
+  "refreshing search statistics": "menyegarkan statistik pencarian",
+  "loading the source catalog": "memuat katalog sumber",
+  "counting your corpus": "menghitung korpus Anda"
 }

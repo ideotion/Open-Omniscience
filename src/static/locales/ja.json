@@ -1715,5 +1715,11 @@
   "Import…": "インポート…",
   "Back up": "バックアップ",
   "Import selected": "選択項目をインポート",
-  "Scan": "スキャン"
+  "Scan": "スキャン",
+  "Preparing your corpus…": "コーパスを準備しています…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "コーパスのロックが解除されました。準備中です——大きなデータベースでは少し時間がかかることがあり、起動ごとに一度だけ行われます。",
+  "opening the database": "データベースを開いています",
+  "refreshing search statistics": "検索統計を更新しています",
+  "loading the source catalog": "ソースカタログを読み込んでいます",
+  "counting your corpus": "コーパスを集計しています"
 }

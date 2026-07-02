@@ -185,13 +185,62 @@ def lock_state() -> dict:
     }
 
 
+@router.get("/startup-status")
+def startup_status() -> dict:
+    """Post-unlock progress for the unlock page's progress view. ``ready`` means the
+    corpus is prepared and the Console is safe to enter; ``running`` carries the
+    current human phase (an honest label, never a fabricated percentage)."""
+    from src.api.startup_status import get_startup
+
+    return get_startup()
+
+
 def _finish_unlock() -> None:
-    """Open the engine on the now-available key and run the deferred startup."""
-    from src.api.main import run_deferred_startup
+    """Open the engine on the now-available key, make the DB queryable, and run the
+    slow startup upkeep IN THE BACKGROUND.
+
+    On a large encrypted corpus the upkeep (bounded ANALYZE + catalog seeding + full
+    COUNTs that decrypt every page + a cache warm) took long enough to freeze the
+    Unlock button — and, on a single worker, any other tab opened meanwhile. So: open
+    + ``init_db`` synchronously (fast on an existing store; guarantees the schema is
+    queryable before we return), engage airplane mode synchronously (the zero-network
+    guarantee must not lag), then run the upkeep off-thread. The unlock page polls
+    ``/api/system/startup-status`` and only enters the Console when it reads ``ready``,
+    so nothing queries a half-prepared corpus."""
+    import os
+    import threading
+
+    from src.api.main import _run_startup_upkeep, init_db
+    from src.api.startup_status import set_startup
     from src.database.session import dispose_engine
 
     dispose_engine()  # drop any pre-unlock failed pool state
-    run_deferred_startup()
+    set_startup("running", "opening the database")
+    init_db()  # schema self-heal — fast on an existing store; makes the DB queryable
+
+    # Engage airplane mode synchronously so there is never a window where the corpus
+    # is unlocked but the socket-level guard is not yet installed.
+    if os.getenv("OO_NO_SCHEDULER", "0") != "1":
+        try:
+            from src.ingest import activate_kill_switch
+            from src.ingest.airplane import install_airplane_socket_guard
+
+            install_airplane_socket_guard()
+            activate_kill_switch()
+        except Exception:  # noqa: BLE001 - never block the unlock on this
+            _LOG.warning("could not engage airplane mode at unlock", exc_info=True)
+
+    def _upkeep() -> None:
+        try:
+            _run_startup_upkeep()
+            set_startup("ready", "")
+        except Exception as exc:  # noqa: BLE001 - report, never crash the thread
+            _LOG.warning("post-unlock startup upkeep failed", exc_info=True)
+            # The DB is queryable (init_db ran synchronously) even if upkeep hiccuped,
+            # so the corpus is usable — report ready rather than trap the user.
+            set_startup("ready", "", error=str(exc))
+
+    threading.Thread(target=_upkeep, name="oo-startup-upkeep", daemon=True).start()
 
 
 @router.post("/unlock")

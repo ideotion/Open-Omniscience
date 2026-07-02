@@ -787,6 +787,154 @@ def reconcile_keyword_language(
     }
 
 
+def _keyword_majority_language(
+    langs: dict[str, int] | None, *, min_keywords: int
+) -> str | None:
+    """Pick an article's DEDUCED language from the languages of its indexed keywords.
+
+    ``langs`` maps ``language -> number of the article's language-tagged keywords in it``.
+    Returns a language only on a CLEAR majority — ``> half`` of the tagged keywords agree
+    AND the winning language is backed by ``>= min_keywords`` keywords — so it is
+    evidence, never a guess; a tie or too-few keywords returns ``None`` (honest unknown)."""
+    if not langs:
+        return None
+    total = sum(langs.values())
+    sig_lang, sig_n = max(langs.items(), key=lambda kv: kv[1])
+    if sig_n < min_keywords or sig_n * 2 <= total:
+        return None
+    return sig_lang
+
+
+def reconcile_article_language(
+    session: Session,
+    *,
+    limit: int = 300,
+    after_id: int = 0,
+    min_keywords: int = 3,
+) -> dict:
+    """Backfill the DEDUCED language of UNKNOWN articles (maintainer ask 2026-07-02).
+
+    An "unknown" article has NEITHER an asserted ``language`` (source/extractor) NOR a
+    ``detected_language`` (the offline detector). ``index_article`` deduces a language at
+    ingest, but it is forward-only and confidence-gated, so (a) articles ingested before
+    that existed and (b) articles the text detector could not resolve (too short / low
+    confidence) stay unknown. This pass assigns a language to those, storing it ONLY in
+    ``detected_language`` (the DEDUCED channel) — the asserted ``language`` is NEVER
+    written, preserving the two-class asserted-vs-deduced model.
+
+    TWO-TIER deduction, most-reliable first:
+      1. TEXT — :func:`~src.analytics.langdetect.detect_language` over the article content
+         (the confidence-gated offline detector). This is the same signal ingest uses.
+      2. KEYWORDS (the maintainer's suggested fallback, only when text fails) — the
+         DOMINANT language among the article's own indexed keywords' languages, gated on a
+         real majority (``> half`` agree AND ``>= min_keywords`` keywords) so it is a
+         measured signal, not a guess. A keyword's language is itself a deduced signal
+         (reconciled by :func:`reconcile_keyword_language`), so this stays in the deduced
+         channel by construction. Truly undeterminable articles are LEFT unknown (honest).
+
+    PERF (the SQLCipher codec column-order trap, ledger): NEVER a
+    ``keyword_mentions -> articles`` join to read a keyword's language (that drags whole
+    ~35 KB article rows through the codec). Instead a small covering ``Keyword.id ->
+    language`` map + a covering ``(article_id, keyword_id)`` mention scan restricted to the
+    candidate batch, joined in Python. The per-article CONTENT read for the text detector
+    is unavoidable, so the pass is BOUNDED + RESUMABLE (``after_id`` cursor, ``done`` flag),
+    exactly like :func:`reindex_all_batch` — call repeatedly with ``after_id=last_id``.
+
+    Idempotent: the candidate filter excludes any article that already has a language of
+    either class, so a re-run never re-touches a resolved article. Counts only, no score.
+    """
+    from sqlalchemy import or_
+
+    from src.analytics.langdetect import SUPPORTED, detect_language
+
+    _empty_lang = or_(Article.language.is_(None), Article.language == "")
+    _empty_det = or_(Article.detected_language.is_(None), Article.detected_language == "")
+
+    # 1) candidate UNKNOWN article ids (id > cursor), oldest first, bounded. Selects only
+    # the id — no content decrypt in this scan.
+    ids = [
+        int(r[0])
+        for r in (
+            session.query(Article.id)
+            .filter(Article.id > after_id, _empty_lang, _empty_det)
+            .order_by(Article.id)
+            .limit(max(1, limit))
+            .all()
+        )
+    ]
+    if not ids:
+        return {
+            "scanned": 0,
+            "set_by_text": 0,
+            "set_by_keywords": 0,
+            "still_unknown": 0,
+            "last_id": after_id,
+            "done": True,
+        }
+
+    # 2) per-article keyword-language distribution for THIS batch only (the tier-2 signal).
+    # Covering Keyword.id -> language map (small keywords-table scan, no content) + a
+    # covering (article_id, keyword_id) mention scan chunked under the SQLite variable cap
+    # — NEVER the codec-trap join through the articles table.
+    kw_lang: dict[int, str] = {
+        int(kid): lang
+        for kid, lang in session.query(Keyword.id, Keyword.language).filter(
+            Keyword.language.isnot(None), Keyword.language != ""
+        )
+    }
+    dist: dict[int, dict[str, int]] = {}
+    for i in range(0, len(ids), 500):
+        chunk = ids[i : i + 500]
+        for aid, kid in session.query(
+            KeywordMention.article_id, KeywordMention.keyword_id
+        ).filter(KeywordMention.article_id.in_(chunk)):
+            lang = kw_lang.get(int(kid))
+            if lang is None or lang not in SUPPORTED:
+                continue
+            d = dist.setdefault(int(aid), {})
+            d[lang] = d.get(lang, 0) + 1
+
+    # 3) deduce per article: text first, keyword-majority fallback, else leave unknown.
+    set_by_text = set_by_keywords = still_unknown = 0
+    updates: list[dict] = []
+    last_id = after_id
+    for aid in ids:
+        last_id = aid
+        art = session.get(Article, aid)
+        if art is None:  # deleted mid-run
+            continue
+        content = art.get_content() if hasattr(art, "get_content") else (art.content or "")
+        deduced = detect_language(content)  # tier 1 (reliable text detector)
+        if not deduced:  # tier 2 (keyword majority — the maintainer's fallback)
+            deduced = _keyword_majority_language(dist.get(aid), min_keywords=min_keywords)
+            if deduced:
+                set_by_keywords += 1
+        else:
+            set_by_text += 1
+        if deduced:
+            updates.append({"id": aid, "detected_language": deduced})
+        else:
+            still_unknown += 1
+
+    if updates:
+        session.bulk_update_mappings(Article, updates)
+        session.commit()
+
+    remaining = (
+        session.query(Article.id)
+        .filter(Article.id > last_id, _empty_lang, _empty_det)
+        .count()
+    )
+    return {
+        "scanned": len(ids),
+        "set_by_text": set_by_text,
+        "set_by_keywords": set_by_keywords,
+        "still_unknown": still_unknown,
+        "last_id": last_id,
+        "done": remaining == 0,
+    }
+
+
 def counter_envelope(session: Session, *, window_hours: int | None = None, now=None):
     """The honesty envelope (Slice 1) over the maintained keyword counters (Slice 2).
 

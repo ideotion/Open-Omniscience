@@ -1715,5 +1715,11 @@
   "Import…": "استيراد…",
   "Back up": "نسخ احتياطي",
   "Import selected": "استيراد المحدد",
-  "Scan": "مسح"
+  "Scan": "مسح",
+  "Preparing your corpus…": "جارٍ تحضير مجموعتك…",
+  "Your corpus is unlocked. Getting it ready — this can take a moment on a large database, and only happens once per start.": "تم فتح مجموعتك. يجري تجهيزها — قد يستغرق ذلك لحظة على قاعدة بيانات كبيرة، ويحدث مرة واحدة فقط عند كل بدء تشغيل.",
+  "opening the database": "جارٍ فتح قاعدة البيانات",
+  "refreshing search statistics": "جارٍ تحديث إحصاءات البحث",
+  "loading the source catalog": "جارٍ تحميل فهرس المصادر",
+  "counting your corpus": "جارٍ إحصاء مجموعتك"
 }
