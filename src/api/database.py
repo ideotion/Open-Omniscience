@@ -152,6 +152,72 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
     return _cached("stats", _compute, db)
 
 
+# Library computed figures get their OWN longer, time-based cache (not the 30 s
+# write-probed one) so the single full keyword_mentions COUNT never rides the 4 s
+# stats poll on a large encrypted corpus. Recomputed at most once a minute.
+_FIGURES_TTL_S = 60
+_figures_cache: dict = {"at": None, "payload": None}
+
+
+def _compute_figures(db: Session, now: datetime) -> dict:
+    """Averages + ingestion rate for the Library tab. All index-backed (word_count and
+    created_at are indexed); counts only, no score. The keyword_mentions COUNT is the
+    one O(n) query — amortised to once/minute by the caller's cache."""
+    from datetime import timedelta
+
+    from sqlalchemy import func, select
+
+    from src.database.models import Article, KeywordMention
+
+    n = int(db.execute(select(func.count()).select_from(Article)).scalar() or 0)
+    out: dict = {"articles": n}
+    if not n:
+        return out
+    avg_wc = db.execute(select(func.avg(Article.word_count))).scalar()  # idx_article_word_count
+    out["avg_word_count"] = round(float(avg_wc), 1) if avg_wc is not None else None
+    n_mentions = int(db.execute(select(func.count()).select_from(KeywordMention)).scalar() or 0)
+    out["keyword_mentions"] = n_mentions
+    out["avg_keywords_per_article"] = round(n_mentions / n, 1)
+    first = db.execute(select(func.min(Article.created_at))).scalar()  # idx_article_created_at
+    if first is not None:
+        if first.tzinfo is None:
+            first = first.replace(tzinfo=UTC)
+        span_days = max((now - first).total_seconds() / 86400.0, 1.0 / 24)
+        out["span_days"] = round(span_days, 2)
+        out["articles_per_day"] = round(n / span_days, 1)  # lifetime average additions/day
+    cutoff = now - timedelta(hours=24)  # producers.py's aware-UTC cutoff pattern
+    recent = int(
+        db.execute(
+            select(func.count()).select_from(Article).where(Article.created_at >= cutoff)
+        ).scalar()
+        or 0
+    )
+    out["articles_last_24h"] = recent
+    out["articles_per_hour_recent"] = round(recent / 24.0, 2)  # current rate over the last day
+    return out
+
+
+@router.get("/figures")
+def library_figures(db: Session = Depends(get_db)) -> dict:
+    """Computed Library figures: average article word count, average keyword mentions
+    per article, and the ingestion RATE (lifetime average articles/day + the current
+    articles/hour over the last 24 h). Time-cached ~60 s so the full mentions count
+    stays off the frequent stats poll."""
+    now = datetime.now(UTC)
+    c = _figures_cache
+    if (
+        c["payload"] is not None
+        and c["at"] is not None
+        and (now - c["at"]).total_seconds() < _FIGURES_TTL_S
+    ):
+        return c["payload"]
+    payload = _compute_figures(db, now)
+    payload["computed_at"] = now.isoformat(timespec="seconds")
+    payload["cache_ttl_s"] = _FIGURES_TTL_S
+    _figures_cache.update(at=now, payload=payload)
+    return payload
+
+
 @router.get("/coverage")
 def country_coverage(db: Session = Depends(get_db)) -> dict:
     """Summary of how many countries the catalog reaches, plus the gaps.

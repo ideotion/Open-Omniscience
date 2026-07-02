@@ -4934,10 +4934,15 @@
       const host = $("library-overview");
       if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
-      let d;
-      try { d = await api("/api/library/overview"); }
-      catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
-      const stamp = JSON.stringify([d.downloaded, d.derived]);
+      let d, fig;
+      try {
+        // Figures endpoint is 60 s-cached server-side, so polling it here is cheap.
+        [d, fig] = await Promise.all([
+          api("/api/library/overview"),
+          api("/api/database/figures").catch(() => ({})),
+        ]);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const stamp = JSON.stringify([d.downloaded, d.derived, fig]);
       if (stamp === _libOvStamp) return;   // live poll: unchanged, no repaint
       _libOvStamp = stamp;
       const num = v => (v == null ? "—" : fmtNum(v));
@@ -4966,8 +4971,20 @@
       const derTiles = aaTiles
         + tile(num((der.ai_keywords || {}).total), t("AI-extracted keywords"))
         + tile(num(der.watches_enabled), t("Active watches"));
+      // Computed corpus figures (field ask 2026-07-02): averages + ingestion rate.
+      // Real counts, no score; each label states its method. "—" when not yet known.
+      const figTiles = (fig && fig.articles) ? [
+        tile(num(fig.avg_word_count), t("Avg words / article")),
+        tile(num(fig.avg_keywords_per_article), t("Avg keywords / article")),
+        tile(num(fig.articles_per_day), t("Articles / day (avg since first)")),
+        tile(num(fig.articles_per_hour_recent), t("Articles / hour (last 24h)")),
+      ].join("") : "";
       host.innerHTML =
-        `<div class="hint" style="margin-bottom:6px">${esc(t("Downloaded — the raw, re-downloadable layer:"))}</div>`
+        (figTiles
+          ? `<div class="hint" style="margin-bottom:6px">${esc(t("Corpus figures — measured averages and the current ingestion rate:"))}</div>`
+            + `<div class="stat-grid">${figTiles}</div>`
+            + `<div class="hint" style="margin:12px 0 6px">${esc(t("Downloaded — the raw, re-downloadable layer:"))}</div>`
+          : `<div class="hint" style="margin-bottom:6px">${esc(t("Downloaded — the raw, re-downloadable layer:"))}</div>`)
         + `<div class="stat-grid">${dlTiles}</div>`
         + `<div class="hint" style="margin:12px 0 6px">${esc(t("Extrapolated — AI-derived from your corpus (unreliable, never the trusted index):"))}</div>`
         + `<div class="stat-grid">${derTiles}</div>`;
