@@ -89,7 +89,7 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
             try:
                 rows = session.execute(
                     text(
-                        "SELECT k.id, k.term, k.mention_count, k.article_count, "
+                        "SELECT k.id, k.term, k.mention_count, k.article_count, "  # nosec B608 - `scope` is a constant "ORDER BY mention_count DESC LIMIT <int>" built from int(sample); no user input
                         "COALESCE(SUM(m.count),0) AS live_mentions, "
                         "COUNT(m.article_id) AS live_articles "
                         "FROM keywords k LEFT JOIN keyword_mentions m ON m.keyword_id = k.id "
