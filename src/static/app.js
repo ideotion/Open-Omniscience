@@ -4238,14 +4238,14 @@
           await api("/api/backup/folder/restore", { method: "POST", body: JSON.stringify({ src: br.root, categories: br.categories }) });
           const s = await _uxPoll("/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
           const p = s.progress || {};
-          summaries.push({ title: t("Large data"), lines: [
+          summaries.push({ title: t("Large data"), tally: { restored: p.restored || 0, skipped: p.skipped || 0 }, lines: [
             `${p.restored || 0} ${t("restored")}`, `${p.skipped || 0} ${t("skipped")}`] });
         }
         if (doEml) {
           await api("/api/newsletters/import-folder", { method: "POST", body: JSON.stringify({ folder: src }) });
           const s = await _uxPoll("/api/newsletters/import-folder/status", "newsletters", { bar, label: prog, prefix: t("Newsletters") });
           const tl = s.tally || {};
-          summaries.push({ title: t("Newsletters"), lines: [
+          summaries.push({ title: t("Newsletters"), tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 }, lines: [
             `${tl.stored || 0} ${t("stored")}`, `${tl.duplicate || 0} ${t("already present")}`,
             `${tl.empty || 0} ${t("empty")}`, `${tl.errors || 0} ${t("errors")}`] });
         }
@@ -4262,18 +4262,63 @@
       btn.disabled = false;
     }
 
-    // Render "what was imported" — the same merge-summary shape the legacy restore
-    // panel shows (per-table new/already-present/conflicts), plus blob/newsletter tallies.
+    // Render "what was imported" as a prominent, honest success view (maintainer
+    // field ask 2026-07-02: "a clear view of what was successfully imported… a
+    // 'backup successful' graph with what has been imported and deduplicated").
+    // Leads with one aggregate headline across every restored source — records
+    // newly IMPORTED, records DEDUPLICATED (already present, additively skipped),
+    // and CONFLICTS (your version kept) — plus a proportion bar; the per-source
+    // detail tables stay below, collapsed. Every count is a real backend number
+    // (no fabricated totals) and the additive-restore honesty (nothing replaced/
+    // deleted) is stated.
     function _renderImportSummary(host, summaries) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!summaries || !summaries.length) { host.innerHTML = ""; return; }
-      const blocks = summaries.map((sm) => {
-        const body = sm.plan
-          ? _v2PlanTable(sm.plan)
-          : `<div class="hint">${(sm.lines || []).map(esc).join(" · ")}</div>`;
-        return `<details open style="margin-top:6px"><summary class="muted">${esc(sm.title)}</summary>${body}</details>`;
-      });
-      host.innerHTML = `<div style="margin-top:4px"><b>${esc(t("Imported"))}</b></div>` + blocks.join("");
+      let imported = 0, deduped = 0, conflicts = 0;
+      const extra = [];  // empty/errored newsletters, surfaced honestly
+      const detail = [];
+      for (const sm of summaries) {
+        if (sm.plan) {
+          for (const c of Object.values(sm.plan)) {
+            imported += c.new || 0; deduped += c.duplicate || 0; conflicts += c.conflict || 0;
+          }
+          detail.push({ title: sm.title, body: _v2PlanTable(sm.plan) });
+        } else {
+          const tl = sm.tally || {};
+          imported += (tl.stored || 0) + (tl.restored || 0);
+          deduped  += (tl.duplicate || 0) + (tl.skipped || 0);
+          if (tl.empty)  extra.push(`${tl.empty} ${t("empty")}`);
+          if (tl.errors) extra.push(`${tl.errors} ${t("errors")}`);
+          detail.push({ title: sm.title, body: `<div class="hint">${(sm.lines || []).map(esc).join(" · ")}</div>` });
+        }
+      }
+      const num = (n) => Number(n || 0).toLocaleString();
+      const total = imported + deduped + conflicts;
+      const seg = (v, col) => v > 0 ? `<span style="flex:${v};background:${col}"></span>` : "";
+      const bar = total > 0
+        ? `<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin:8px 0 4px">`
+          + seg(imported, "var(--accent, #4a90d9)") + seg(deduped, "var(--muted-bg, #888)")
+          + seg(conflicts, "var(--err, #d9534f)") + `</div>`
+        : "";
+      const stat = (n, label, col) =>
+        `<div style="text-align:center;min-width:88px"><div style="font-size:22px;font-weight:700;color:${col}">${esc(num(n))}</div>`
+        + `<div class="muted" style="font-size:12px">${esc(label)}</div></div>`;
+      const nums = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px">`
+        + stat(imported, t("imported"), "var(--accent, #4a90d9)")
+        + stat(deduped, t("deduplicated"), "")
+        + (conflicts ? stat(conflicts, t("conflicts (your version kept)"), "var(--err, #d9534f)") : "")
+        + `</div>`;
+      const extraLine = extra.length
+        ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(extra.join(" · "))}</div>` : "";
+      const detailBlocks = detail.map((d) =>
+        `<details style="margin-top:6px"><summary class="muted">${esc(d.title)}</summary>${d.body}</details>`).join("");
+      host.innerHTML =
+        `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid var(--ok, #4caf50)">`
+        + `<div style="font-weight:700;font-size:15px">✓ ${esc(t("Import successful"))}</div>`
+        + nums + bar + extraLine
+        + `<div class="muted" style="font-size:12px;margin-top:6px">${esc(t("Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped."))}</div>`
+        + `<div style="margin-top:8px"><div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("Details by source"))}</div>${detailBlocks}</div>`
+        + `</div>`;
     }
 
     async function folderBackupPlan(btn) {
