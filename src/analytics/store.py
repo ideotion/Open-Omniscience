@@ -1011,3 +1011,88 @@ def maybe_reconcile_counters(session: Session) -> dict:
         session.rollback()
         _LOG.warning("background keyword-counter reconcile failed", exc_info=True)
         return {"skipped": "error"}
+
+
+def _cleanup_marker_path():
+    from src.paths import data_dir
+
+    return data_dir() / "keyword_cleanup.json"
+
+
+def keyword_cleanup_state() -> dict:
+    """The last automatic keyword-cleanup run (for the diagnostics logs). Never raises."""
+    import json
+
+    try:
+        p = _cleanup_marker_path()
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - a diagnostic read must never crash
+        pass
+    return {"last_run": None}
+
+
+def _cleanup_hours() -> float:
+    """Minimum hours between automatic keyword-cleanup passes (OO_KEYWORD_CLEANUP_HOURS)."""
+    import os
+
+    try:
+        return float(os.environ.get("OO_KEYWORD_CLEANUP_HOURS", "12"))
+    except ValueError:
+        return 12.0
+
+
+def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:
+    """AUTOMATIC keyword cleanup (maintainer 2026-07-02: "I should not have to click
+    Clean up keywords — make it automatic").
+
+    Runs the CHEAP maintenance the button's heavy re-index doesn't require: prune the
+    orphan keywords a re-index/prune leaves behind (the 69k-orphan field finding) and
+    reconcile the first-write-wins keyword language. A FULL re-index (recompute every
+    article's keywords/dates/sentiment) stays a MANUAL / post-upgrade action — it is far
+    too heavy to run unprompted on a large corpus.
+
+    Freshness-gated to at most once per OO_KEYWORD_CLEANUP_HOURS (default 12h) via a
+    small data-dir marker, so it is a no-op on most scrape passes. Off the request path
+    (called from warm_cache after a pass), best-effort, never raises. The marker records
+    the last run + tally so the corpus-integrity diagnostic can show it ("automatic and
+    part of the logs")."""
+    import json
+    from datetime import datetime, timedelta
+
+    now = now or datetime.now()
+    state = keyword_cleanup_state()
+    last = state.get("last_run")
+    if last:
+        try:
+            if datetime.fromisoformat(last) > now - timedelta(hours=_cleanup_hours()):
+                return {"skipped": "fresh", "last_run": last}
+        except (ValueError, TypeError):
+            pass  # unparseable marker → treat as due
+
+    tally: dict = {"at": now.isoformat(timespec="seconds")}
+    try:
+        tally["prune"] = prune_orphan_keywords(session)
+    except Exception:  # noqa: BLE001 - a background safety net must never break the pass
+        session.rollback()
+        _LOG.warning("automatic orphan-keyword prune failed", exc_info=True)
+        tally["prune"] = {"skipped": "error"}
+    try:
+        tally["language"] = reconcile_keyword_language(session)
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        _LOG.warning("automatic keyword-language reconcile failed", exc_info=True)
+        tally["language"] = {"skipped": "error"}
+
+    # Record the marker (freshness + the diagnostics log). Best-effort.
+    try:
+        p = _cleanup_marker_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(
+            json.dumps({"last_run": tally["at"], "last_tally": tally}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:  # noqa: BLE001 - the marker is an optimisation, not correctness
+        pass
+    _LOG.info("automatic keyword cleanup: %s", tally)
+    return tally

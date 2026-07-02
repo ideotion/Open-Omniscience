@@ -3172,6 +3172,63 @@ def test_markets_twin_board_parity():
     )
 
 
+def test_markets_specific_subtab_shows_items_individually():
+    """A SPECIFIC category/continent subtab (not the general "All" lens) shows each
+    commodity/index in its OWN graph, one per item (maintainer-ruled: "commodities
+    and indices should be shown individually in the not-general subtabs"). "All"
+    keeps the combined per-category/continent family overview. The group builders
+    explode to one series per group when a specific tab is active, and selecting a
+    commodity category re-renders (the group set changes, not just a CSS hide)."""
+    html = _ui_source()
+    # commodities: commodityFamilies explodes when a specific category is selected
+    assert 'if (_mktCat !== "__all") {' in html, (
+        "commodities must show each item individually in a specific category subtab"
+    )
+    # indices: idxFamilies explodes when a specific continent is selected
+    assert 'if (_idxCat !== "__all") {' in html, (
+        "indices must show each item individually in a specific continent subtab"
+    )
+    # selecting a commodity category in families view re-renders (group set changes)
+    assert 'if (_mktView === "families") { if (changed) renderDashboard(); return; }' in html, (
+        "selecting a commodity category must re-render the exploded groups, not CSS-hide"
+    )
+
+
+def test_recursive_augmentation_logs_are_wired():
+    """The 5 recursive-augmentation diagnostic logs (maintainer 2026-07-02) are wired:
+    frontend error capture in the UI + the backend endpoints in the diagnostics router
+    + all five ride the debug bundle and the all-diagnostics archive."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # log #1: the frontend captures window.onerror / unhandledrejection / failed fetch
+    assert 'addEventListener("error"' in app and 'addEventListener("unhandledrejection"' in app, (
+        "the UI must capture JS errors + unhandled rejections"
+    )
+    assert "/api/diagnostics/frontend-error" in app, "captured errors POST to the local log"
+    # it must use the RAW fetch for its own report so it cannot recurse on its own failure
+    assert "_ooRawFetch" in app, "the reporter must use the pre-wrap fetch to avoid recursion"
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    for route in (
+        '"/frontend-error"',
+        '"/request-latency"',
+        '"/slow-queries"',
+        '"/schema-drift"',
+        '"/integrity"',
+    ):
+        assert route in diag, f"the diagnostics router must expose {route}"
+    # the new logs ride the one-click bundles
+    for member in ("request-latency.json", "slow-queries.json", "schema-drift.json",
+                   "corpus-integrity.json", "frontend-errors.json"):
+        assert member in diag, f"{member} must be in the all-diagnostics archive"
+    assert "request_latency" in diag and "corpus_integrity" in diag, (
+        "the debug bundle must carry the latency + integrity logs"
+    )
+
+    main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
+    assert "start_watchdog" in main, "the event-loop-block watchdog must start at lifespan"
+    assert "install as _install_slowquery" in main, "the slow-query listener must install at boot"
+
+
 def test_commodity_card_opens_analysis():
     """Each commodity card's TITLE opens the universal analysis window seeded
     with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK

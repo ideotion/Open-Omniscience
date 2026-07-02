@@ -125,6 +125,15 @@ def _run_startup_upkeep() -> None:
         _install_errorlog()
     except Exception:  # noqa: BLE001 - logging must never block startup
         logger.warning("could not install the error-log handler", exc_info=True)
+    # Slow-query listener (recursive-augmentation log #3) — records statements slower
+    # than OO_SLOW_QUERY_MS into a bounded ring buffer; SQL shape only, best-effort.
+    try:
+        from src.database.session import engine as _sq_engine
+        from src.monitoring.slowquery import install as _install_slowquery
+
+        _install_slowquery(_sq_engine)
+    except Exception:  # noqa: BLE001 - instrumentation must never block startup
+        logger.warning("could not install the slow-query listener", exc_info=True)
     # Reclaim staging dirs orphaned by a crashed restore (DB-reliability batch).
     try:
         from src.backup.artifact import cleanup_stale_staging
@@ -239,6 +248,16 @@ async def lifespan(app: FastAPI):
         run_deferred_startup()
     else:
         logger.info(f"started LOCKED ({state}): serving the unlock flow only")
+    # Event-loop-block watchdog (recursive-augmentation log #2) — runs on the live loop
+    # for the whole app lifetime; records loop lag (heavy sync work on the loop) with the
+    # in-flight requests. Best-effort; started regardless of lock state (freezes can
+    # happen during the unlock flow too — that was the reported symptom).
+    try:
+        from src.monitoring.latency import start_watchdog
+
+        start_watchdog()
+    except Exception:  # noqa: BLE001 - the watchdog must never block startup
+        logger.warning("could not start the event-loop watchdog", exc_info=True)
     yield
 
     # Stop the scheduler thread cleanly if it is running (no-op otherwise).
@@ -497,10 +516,26 @@ async def monitor_requests(request: Request, call_next):
     ACTIVE_REQUESTS.inc()
     start_time = time.time()
 
+    # Recursive-augmentation log #2: track this request as in-flight so the event-loop
+    # watchdog can name what was running when the loop stalled. Route TEMPLATE keying
+    # (available after routing, below) — here we just stamp the start. Best-effort.
+    req_id = id(request)
+    try:
+        from src.monitoring import latency as _lat
+
+        _lat.note_start(req_id, f"{method} {endpoint}")
+    except Exception:  # noqa: BLE001 - instrumentation must never affect the request
+        _lat = None  # type: ignore[assignment]
+
     try:
         response = await call_next(request)
     except Exception as e:
         ACTIVE_REQUESTS.dec()
+        if _lat is not None:
+            try:
+                _lat.record(req_id, f"{method} {endpoint}", 500, (time.time() - start_time) * 1000.0)
+            except Exception:  # noqa: BLE001
+                pass
         raise e
 
     process_time = time.time() - start_time
@@ -509,6 +544,17 @@ async def monitor_requests(request: Request, call_next):
     REQUEST_COUNT.labels(method=method, endpoint=endpoint, http_status=status_code).inc()
     REQUEST_LATENCY.labels(method=method, endpoint=endpoint).observe(process_time)
     ACTIVE_REQUESTS.dec()
+
+    # Per-route latency percentiles (log #2). Key by the ROUTE TEMPLATE when routing
+    # resolved one (so /api/articles/123/view aggregates under /api/articles/{id}/view),
+    # else the raw path. Best-effort; never affects the response.
+    if _lat is not None:
+        try:
+            route_obj = request.scope.get("route")
+            tmpl = getattr(route_obj, "path", None) or endpoint
+            _lat.record(req_id, f"{method} {tmpl}", status_code, process_time * 1000.0)
+        except Exception:  # noqa: BLE001
+            pass
 
     # Diagnostics: record every error RESPONSE (4xx/5xx) into the downloadable debug
     # bundle's rolling log. This middleware is the one place that sees the final status

@@ -12,6 +12,74 @@
       return cleaned;                                            // relative / same-origin
     };
 
+    // ===================================================================== //
+    //  Frontend error capture (recursive-augmentation log #1) — turns the    //
+    //  "browser-unverified" debt into an OBSERVABLE feed: window.onerror,     //
+    //  unhandledrejection, and failed/5xx fetches are reported (throttled) to //
+    //  the local rolling log so a `t is not defined` or a dead click shows in //
+    //  the debug bundle instead of the maintainer finding it one tab at a     //
+    //  time. Loopback-only, no PII by contract (error text + which function / //
+    //  endpoint only — never anything the user typed). Best-effort; a broken  //
+    //  reporter must NEVER break the app or loop on its own failure.          //
+    // ===================================================================== //
+    const _OO_ERR_EP = "/api/diagnostics/frontend-error";
+    const _ooErrSeen = new Map();   // signature -> last-sent ms (client-side throttle)
+    const _ooRawFetch = window.fetch ? window.fetch.bind(window) : null;
+    function _ooReportError(kind, message, source, endpoint, lineno) {
+      try {
+        if (!_ooRawFetch) return;
+        const msg = String(message == null ? "" : message).slice(0, 500);
+        const sig = kind + "|" + msg.slice(0, 120) + "|" + (source || "");
+        const now = Date.now();
+        const last = _ooErrSeen.get(sig);
+        if (last != null && (now - last) < 5000) return;   // throttle identical
+        if (_ooErrSeen.size > 200) _ooErrSeen.clear();
+        _ooErrSeen.set(sig, now);
+        let lang = null;
+        try { lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || null; } catch (e) {}
+        const body = {kind: String(kind).slice(0, 40), message: msg};
+        if (source) body.source = String(source).slice(0, 300);
+        if (endpoint) body.endpoint = String(endpoint).slice(0, 300);
+        if (lineno != null) body.lineno = lineno | 0;
+        if (lang) body.ui_lang = String(lang).slice(0, 16);
+        // Use the RAW fetch so the wrapper below can't recurse on this very POST.
+        _ooRawFetch(_OO_ERR_EP, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body), keepalive: true,
+        }).catch(() => {});
+      } catch (e) { /* a broken reporter must never break the app */ }
+    }
+    window.addEventListener("error", (e) => {
+      // Element/resource load errors have no `.error`; script errors do.
+      const m = (e && e.error && e.error.stack) ? String(e.error.stack).split("\n").slice(0, 3).join(" | ")
+               : (e && e.message) || "error";
+      const src = e && e.filename ? (e.filename + (e.lineno ? ":" + e.lineno : "")) : null;
+      _ooReportError("error", m, src, null, e && e.lineno);
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const r = e && e.reason;
+      const m = r && r.stack ? String(r.stack).split("\n").slice(0, 3).join(" | ")
+              : String(r && r.message ? r.message : r);
+      _ooReportError("unhandledrejection", m, null, null, null);
+    });
+    // Wrap the global fetch to catch NETWORK failures + 5xx (a 4xx is often the
+    // correct answer and the backend already logs it, so we don't double-report it).
+    // The report POST itself uses the raw fetch above, so it can't recurse here.
+    if (_ooRawFetch) {
+      window.fetch = function (input, init) {
+        const url = (typeof input === "string") ? input : (input && input.url) || "";
+        const p = _ooRawFetch(input, init);
+        if (url && url.indexOf(_OO_ERR_EP) === -1) {
+          p.then((res) => {
+            if (res && res.status >= 500) _ooReportError("fetch-5xx", res.status + " " + res.statusText, null, url, null);
+          }, (err) => {
+            _ooReportError("fetch-failed", (err && err.message) || "network error", null, url, null);
+          });
+        }
+        return p;
+      };
+    }
+
     function toast(msg, kind="ok", onClick=null) {
       const n = document.createElement("div");
       n.className = "note " + kind; n.textContent = msg;
@@ -6010,23 +6078,28 @@
     // tag chips), each member windowed to the active range.
     function idxFamilies() {
       const tags = [..._idxTags];
-      const byCont = {};
-      for (const c of (_idxCards || [])) {
-        if (_idxCat !== "__all" && (c.continent || "Other") !== _idxCat) continue;
-        if (tags.length && !tags.every(x => (c.tags || []).includes(x))) continue;
-        const cont = c.continent || "Other";
-        (byCont[cont] || (byCont[cont] = [])).push(c);
+      const cards = (_idxCards || []).filter(c => {
+        if (_idxCat !== "__all" && (c.continent || "Other") !== _idxCat) return false;
+        if (tags.length && !tags.every(x => (c.tags || []).includes(x))) return false;
+        return true;
+      });
+      const _ser = (c) => {
+        const pts = windowPricesRange(MKT_PRICES[c.symbol] || [], _idxScope.from, _idxScope.to);
+        return {label: c.name || c.symbol, unit: c.currency || "", symbol: c.symbol,
+                points: pts.map(p => ({t: p.observed_on, v: p.price}))};
+      };
+      // A SPECIFIC continent subtab (not the general "All" lens) shows each index
+      // INDIVIDUALLY — one graph per index — instead of merging the continent into
+      // one combined family graph (maintainer-ruled). "All" keeps the combined
+      // per-continent overview (dense helicopter view).
+      if (_idxCat !== "__all") {
+        return cards.map(c => ({key: c.symbol, label: c.name || c.symbol, series: [_ser(c)]}));
       }
+      const byCont = {};
+      for (const c of cards) (byCont[c.continent || "Other"] || (byCont[c.continent || "Other"] = [])).push(c);
       const order = [...IDX_CONTINENTS, "Other"];
       const present = Object.keys(byCont).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-      return present.map(cont => ({
-        key: cont, label: cont,
-        series: byCont[cont].map(c => {
-          const pts = windowPricesRange(MKT_PRICES[c.symbol] || [], _idxScope.from, _idxScope.to);
-          return {label: c.name || c.symbol, unit: c.currency || "", symbol: c.symbol,
-                  points: pts.map(p => ({t: p.observed_on, v: p.price}))};
-        }),
-      }));
+      return present.map(cont => ({key: cont, label: cont, series: byCont[cont].map(_ser)}));
     }
     function renderIdxFamilies() {
       const el = $("idx-board"); if (!el) return;
@@ -6502,7 +6575,14 @@
       // section is visible. "__all" (the default lens) shows everything. The
       // family blocks carry the same .mkt-cat/data-cat, so this filters BOTH
       // the cards view and the families view.
+      const changed = key !== _mktCat;
       _mktCat = key;  // remember it so a board re-render (auto-refresh / view toggle) keeps it
+      // FAMILIES view: a specific category shows each commodity individually (one
+      // graph per commodity), so the group set itself changes — RE-RENDER (the
+      // exploded groups are built in commodityFamilies), never a CSS hide. Guard
+      // on `changed` so the ooSubtabs init fire (which passes the current _mktCat)
+      // never re-enters renderDashboard → _renderCommodityCatTabs → ooSubtabs.
+      if (_mktView === "families") { if (changed) renderDashboard(); return; }
       document.querySelectorAll("#mkt-dashboard .mkt-cat").forEach(el => {
         el.style.display = (key === "__all" || el.dataset.cat === key) ? "" : "none";
       });
@@ -6511,24 +6591,33 @@
     // Build one family per present category: its member series windowed to the
     // shared range, ready for renderFamilyGraphs (Slice 5).
     function commodityFamilies(present, seriesFor, from, to) {
+      const _ser = (s) => {
+        const pts = windowPricesRange(MKT_PRICES[s.symbol] || [], from, to);
+        const last = pts.length ? pts[pts.length - 1] : null;
+        const unit = last ? `${last.currency}/${last.unit}` : "";
+        return {
+          label: s.name || s.symbol,
+          unit,
+          points: pts.map(p => ({t: p.observed_on, v: p.price})),
+          // Carry the identity so the family member chips can open the corpus
+          // analysis window (the curated family seed) AND the price detail.
+          symbol: s.symbol,
+          query: COMMODITY_QUERY[s.symbol] || s.name || s.symbol,
+          commodity: {symbol: s.symbol, name: s.name, unit},
+        };
+      };
+      // A SPECIFIC category subtab (not the general "All" lens) shows each
+      // commodity INDIVIDUALLY — one graph per commodity — instead of merging the
+      // category into one combined family graph (maintainer-ruled). "All" keeps
+      // the combined per-category overview (dense helicopter view).
+      if (_mktCat !== "__all") {
+        const sel = present.find(([k]) => (k === "__other" ? "__other" : k) === _mktCat);
+        if (sel) return seriesFor(sel[0]).map(s => ({key: s.symbol, label: s.name || s.symbol, series: [_ser(s)]}));
+      }
       return present.map(([k, label]) => ({
         key: k === "__other" ? "__other" : k,
         label,
-        series: seriesFor(k).map(s => {
-          const pts = windowPricesRange(MKT_PRICES[s.symbol] || [], from, to);
-          const last = pts.length ? pts[pts.length - 1] : null;
-          const unit = last ? `${last.currency}/${last.unit}` : "";
-          return {
-            label: s.name || s.symbol,
-            unit,
-            points: pts.map(p => ({t: p.observed_on, v: p.price})),
-            // Carry the identity so the family member chips can open the corpus
-            // analysis window (the curated family seed) AND the price detail.
-            symbol: s.symbol,
-            query: COMMODITY_QUERY[s.symbol] || s.name || s.symbol,
-            commodity: {symbol: s.symbol, name: s.name, unit},
-          };
-        }),
+        series: seriesFor(k).map(_ser),
       }));
     }
     function renderDashboard() {
