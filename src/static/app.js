@@ -3745,6 +3745,27 @@
         $("kf-builtin").checked = !!f.use_builtin_stopwords;
         $("kf-excluded").value = (f.excluded || []).join("\n");
       } catch (e) { /* leave defaults */ }
+      loadBuiltinStoplist();  // populate the read-only built-in-stoplist count + view
+    }
+
+    // Show the built-in multilingual stoplist that does the bulk of the filtering
+    // (read-only — it is curated + language-scoped; the toggle above turns it on/off).
+    // Bounded + searchable so we never dump ~2,500 words at once.
+    async function loadBuiltinStoplist() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const qEl = $("kf-builtin-q"), listEl = $("kf-builtin-list"), cEl = $("kf-builtin-count");
+      if (!listEl) return;
+      const q = (qEl && qEl.value || "").trim();
+      try {
+        const r = await api("/api/insights/filter/builtin?limit=500&q=" + encodeURIComponent(q));
+        if (cEl) cEl.textContent = (r.total || 0).toLocaleString();
+        const chips = (r.terms || []).map(w => `<span class="fam-chip" style="cursor:default">${esc(w)}</span>`).join("");
+        const capNote = r.capped ? `<div class="muted" style="width:100%">${r.matched.toLocaleString()} ${esc(t("matches"))} — ${esc(t("showing the first"))} ${(r.terms || []).length}. ${esc(t("Refine your search."))}</div>` : "";
+        const empty = !r.terms || !r.terms.length;
+        listEl.innerHTML = empty
+          ? `<span class="muted">${esc(q ? t("No built-in stopword matches that.") : t("No built-in stoplist."))}</span>`
+          : capNote + chips;
+      } catch (e) { listEl.innerHTML = `<span class="muted">${esc(t("Could not load the stoplist."))}</span>`; }
     }
 
     async function saveKeywordFilter() {

@@ -1055,10 +1055,16 @@
         <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
           <input type="checkbox" id="kf-builtin" style="width:auto"> Use built-in multilingual stoplist</label></div>
       </div>
-      <label for="kf-excluded">Excluded keywords</label>
+      <label for="kf-excluded">Excluded keywords (yours)</label>
       <textarea id="kf-excluded" rows="5" placeholder="one term per line (or comma-separated)"></textarea>
       <button onclick="saveKeywordFilter()">Save keyword filter</button>
       <div id="kf-result" class="hint"></div>
+      <details id="kf-builtin-view" style="margin-top:10px">
+        <summary style="cursor:pointer">See the built-in stoplist (<span id="kf-builtin-count">…</span> words filtered automatically)</summary>
+        <p class="muted" style="margin:6px 0">These are the automatic multilingual filter words (function words like the·you·not across your corpus languages). They are curated and language-scoped, so this view is read-only — the toggle above turns the whole list on or off. Search it to see whether a term is filtered.</p>
+        <input id="kf-builtin-q" type="search" placeholder="search the stoplist…" oninput="loadBuiltinStoplist()" style="max-width:280px">
+        <div id="kf-builtin-list" class="hint" style="max-height:180px;overflow:auto;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"></div>
+      </details>
     </section>
     </div>
 

@@ -171,6 +171,28 @@ def update_filter(update: KeywordFilterUpdate) -> dict:
     return save_settings(update.model_dump(exclude_unset=True)).to_dict()
 
 
+@router.get("/filter/builtin")
+def get_builtin_stopwords(q: str = "", limit: int = 500) -> dict:
+    """The built-in multilingual stoplist actually filtering keywords — read-only.
+
+    The manual excluded list (GET /filter) is small and editable, but the bulk of the
+    filtering is this automatic ~2,500-word multilingual stoplist, which the user could
+    not see before (only a toggle). Surface it so "show the current filter-out list" is
+    honest: return the total count plus a bounded, optionally-searched slice (these words
+    are curated + language-scoped, so editing them is a code change — this view is
+    read-only; the toggle in /filter turns the whole list on or off)."""
+    from src.analytics.extract import global_stopwords
+
+    terms = sorted(global_stopwords())
+    total = len(terms)
+    needle = " ".join(q.split()).casefold()
+    if needle:
+        terms = [w for w in terms if needle in w]
+    matched = len(terms)
+    lim = max(1, min(2000, int(limit) if str(limit).lstrip("-").isdigit() else 500))
+    return {"total": total, "matched": matched, "terms": terms[:lim], "capped": matched > lim}
+
+
 @router.post("/exclude")
 def exclude_term(body: TermBody) -> dict:
     """Hide a keyword from all listings (reversible; stored mentions are kept)."""
