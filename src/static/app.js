@@ -6010,23 +6010,28 @@
     // tag chips), each member windowed to the active range.
     function idxFamilies() {
       const tags = [..._idxTags];
-      const byCont = {};
-      for (const c of (_idxCards || [])) {
-        if (_idxCat !== "__all" && (c.continent || "Other") !== _idxCat) continue;
-        if (tags.length && !tags.every(x => (c.tags || []).includes(x))) continue;
-        const cont = c.continent || "Other";
-        (byCont[cont] || (byCont[cont] = [])).push(c);
+      const cards = (_idxCards || []).filter(c => {
+        if (_idxCat !== "__all" && (c.continent || "Other") !== _idxCat) return false;
+        if (tags.length && !tags.every(x => (c.tags || []).includes(x))) return false;
+        return true;
+      });
+      const _ser = (c) => {
+        const pts = windowPricesRange(MKT_PRICES[c.symbol] || [], _idxScope.from, _idxScope.to);
+        return {label: c.name || c.symbol, unit: c.currency || "", symbol: c.symbol,
+                points: pts.map(p => ({t: p.observed_on, v: p.price}))};
+      };
+      // A SPECIFIC continent subtab (not the general "All" lens) shows each index
+      // INDIVIDUALLY — one graph per index — instead of merging the continent into
+      // one combined family graph (maintainer-ruled). "All" keeps the combined
+      // per-continent overview (dense helicopter view).
+      if (_idxCat !== "__all") {
+        return cards.map(c => ({key: c.symbol, label: c.name || c.symbol, series: [_ser(c)]}));
       }
+      const byCont = {};
+      for (const c of cards) (byCont[c.continent || "Other"] || (byCont[c.continent || "Other"] = [])).push(c);
       const order = [...IDX_CONTINENTS, "Other"];
       const present = Object.keys(byCont).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-      return present.map(cont => ({
-        key: cont, label: cont,
-        series: byCont[cont].map(c => {
-          const pts = windowPricesRange(MKT_PRICES[c.symbol] || [], _idxScope.from, _idxScope.to);
-          return {label: c.name || c.symbol, unit: c.currency || "", symbol: c.symbol,
-                  points: pts.map(p => ({t: p.observed_on, v: p.price}))};
-        }),
-      }));
+      return present.map(cont => ({key: cont, label: cont, series: byCont[cont].map(_ser)}));
     }
     function renderIdxFamilies() {
       const el = $("idx-board"); if (!el) return;
@@ -6502,7 +6507,14 @@
       // section is visible. "__all" (the default lens) shows everything. The
       // family blocks carry the same .mkt-cat/data-cat, so this filters BOTH
       // the cards view and the families view.
+      const changed = key !== _mktCat;
       _mktCat = key;  // remember it so a board re-render (auto-refresh / view toggle) keeps it
+      // FAMILIES view: a specific category shows each commodity individually (one
+      // graph per commodity), so the group set itself changes — RE-RENDER (the
+      // exploded groups are built in commodityFamilies), never a CSS hide. Guard
+      // on `changed` so the ooSubtabs init fire (which passes the current _mktCat)
+      // never re-enters renderDashboard → _renderCommodityCatTabs → ooSubtabs.
+      if (_mktView === "families") { if (changed) renderDashboard(); return; }
       document.querySelectorAll("#mkt-dashboard .mkt-cat").forEach(el => {
         el.style.display = (key === "__all" || el.dataset.cat === key) ? "" : "none";
       });
@@ -6511,24 +6523,33 @@
     // Build one family per present category: its member series windowed to the
     // shared range, ready for renderFamilyGraphs (Slice 5).
     function commodityFamilies(present, seriesFor, from, to) {
+      const _ser = (s) => {
+        const pts = windowPricesRange(MKT_PRICES[s.symbol] || [], from, to);
+        const last = pts.length ? pts[pts.length - 1] : null;
+        const unit = last ? `${last.currency}/${last.unit}` : "";
+        return {
+          label: s.name || s.symbol,
+          unit,
+          points: pts.map(p => ({t: p.observed_on, v: p.price})),
+          // Carry the identity so the family member chips can open the corpus
+          // analysis window (the curated family seed) AND the price detail.
+          symbol: s.symbol,
+          query: COMMODITY_QUERY[s.symbol] || s.name || s.symbol,
+          commodity: {symbol: s.symbol, name: s.name, unit},
+        };
+      };
+      // A SPECIFIC category subtab (not the general "All" lens) shows each
+      // commodity INDIVIDUALLY — one graph per commodity — instead of merging the
+      // category into one combined family graph (maintainer-ruled). "All" keeps
+      // the combined per-category overview (dense helicopter view).
+      if (_mktCat !== "__all") {
+        const sel = present.find(([k]) => (k === "__other" ? "__other" : k) === _mktCat);
+        if (sel) return seriesFor(sel[0]).map(s => ({key: s.symbol, label: s.name || s.symbol, series: [_ser(s)]}));
+      }
       return present.map(([k, label]) => ({
         key: k === "__other" ? "__other" : k,
         label,
-        series: seriesFor(k).map(s => {
-          const pts = windowPricesRange(MKT_PRICES[s.symbol] || [], from, to);
-          const last = pts.length ? pts[pts.length - 1] : null;
-          const unit = last ? `${last.currency}/${last.unit}` : "";
-          return {
-            label: s.name || s.symbol,
-            unit,
-            points: pts.map(p => ({t: p.observed_on, v: p.price})),
-            // Carry the identity so the family member chips can open the corpus
-            // analysis window (the curated family seed) AND the price detail.
-            symbol: s.symbol,
-            query: COMMODITY_QUERY[s.symbol] || s.name || s.symbol,
-            commodity: {symbol: s.symbol, name: s.name, unit},
-          };
-        }),
+        series: seriesFor(k).map(_ser),
       }));
     }
     function renderDashboard() {

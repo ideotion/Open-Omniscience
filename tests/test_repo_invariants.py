@@ -3172,6 +3172,28 @@ def test_markets_twin_board_parity():
     )
 
 
+def test_markets_specific_subtab_shows_items_individually():
+    """A SPECIFIC category/continent subtab (not the general "All" lens) shows each
+    commodity/index in its OWN graph, one per item (maintainer-ruled: "commodities
+    and indices should be shown individually in the not-general subtabs"). "All"
+    keeps the combined per-category/continent family overview. The group builders
+    explode to one series per group when a specific tab is active, and selecting a
+    commodity category re-renders (the group set changes, not just a CSS hide)."""
+    html = _ui_source()
+    # commodities: commodityFamilies explodes when a specific category is selected
+    assert 'if (_mktCat !== "__all") {' in html, (
+        "commodities must show each item individually in a specific category subtab"
+    )
+    # indices: idxFamilies explodes when a specific continent is selected
+    assert 'if (_idxCat !== "__all") {' in html, (
+        "indices must show each item individually in a specific continent subtab"
+    )
+    # selecting a commodity category in families view re-renders (group set changes)
+    assert 'if (_mktView === "families") { if (changed) renderDashboard(); return; }' in html, (
+        "selecting a commodity category must re-render the exploded groups, not CSS-hide"
+    )
+
+
 def test_commodity_card_opens_analysis():
     """Each commodity card's TITLE opens the universal analysis window seeded
     with that commodity's keyword query (maintainer-ruled COMMODITIES TAB REWORK
