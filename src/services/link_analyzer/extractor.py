@@ -313,8 +313,18 @@ class LinkExtractor:
                         except (ValueError, TypeError) as e:
                             logger.debug(f"Failed to resolve relative URL: {e}")
 
-                    normalized_url = self.normalize_url(url)
-                    parsed_url = urlparse(url)
+                    # A malformed URL (e.g. an invalid IPv6 literal like ``http://[::1``)
+                    # raises ValueError "Invalid IPv6 URL" inside urlparse; SKIP that ONE
+                    # link, never abort the whole article's link extraction (field report
+                    # 2026-07-02: 5 crashes here recurring to 07-01 — the earlier guard
+                    # covered the other extraction path but not this regex fallback).
+                    try:
+                        normalized_url = self.normalize_url(url)
+                        parsed_url = urlparse(url)
+                        base_netloc = urlparse(base_url).netloc if base_url else ""
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"Skipping malformed link URL {url!r}: {e}")
+                        continue
 
                     link_info = {
                         "url": url,
@@ -325,7 +335,7 @@ class LinkExtractor:
                             url,
                             parsed_url,
                             tag.split("_")[0],
-                            urlparse(base_url).netloc if base_url else "",
+                            base_netloc,
                         ),
                         "html_tag": tag.split("_")[0],
                         "html_attributes": {},
