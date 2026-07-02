@@ -21,6 +21,7 @@ import sqlite3
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, run_restore
@@ -133,20 +134,18 @@ def _apply_restore_selection(staged: StagedArtifact, *, include_newsletters: boo
         _LOG.warning("restore: newsletter filter on the staged corpus failed", exc_info=True)
 
 
-@router.post("/v2/restore/preview")
-async def restore_preview(
-    file: UploadFile = File(...),
-    passphrase: str = Form(""),
-    allow_unverified: bool = Form(False),
-    include_newsletters: bool = Form(True),
+def _preview_sync(
+    data: bytes, passphrase: str | None, *, allow_unverified: bool, include_newsletters: bool
 ) -> dict:
-    """Stage an artifact and return the dry-run merge plan + verification verdicts.
+    """The blocking body of restore_preview (decrypt + stage + dry-run merge).
 
-    Nothing in the live corpus changes. The returned token authorises ONE commit
-    of exactly this staged artifact. ``include_newsletters=false`` drops imported
-    newsletters from the staged corpus so the preview AND the eventual commit
-    (which reuses this filtered staged copy) restore everything else."""
-    staged = _stage_upload(await file.read(), passphrase or None)
+    Runs OFF the event loop (run_in_threadpool). Preview copies the live corpus to
+    a disposable working DB and runs the FULL merge against it so the plan can never
+    lie — on a large corpus that is nearly as costly as a commit, so it MUST NOT run
+    on the single async worker's event loop (it would freeze every other request —
+    the task manager, polls, the UI — for the whole restore; field report 2026-07-02
+    'stuck on Previewing… for an hour')."""
+    staged = _stage_upload(data, passphrase)
     _apply_restore_selection(staged, include_newsletters=include_newsletters)
     try:
         report = run_restore(staged, commit=False, allow_unverified=allow_unverified)
@@ -170,6 +169,48 @@ async def restore_preview(
     return report
 
 
+@router.post("/v2/restore/preview")
+async def restore_preview(
+    file: UploadFile = File(...),
+    passphrase: str = Form(""),
+    allow_unverified: bool = Form(False),
+    include_newsletters: bool = Form(True),
+) -> dict:
+    """Stage an artifact and return the dry-run merge plan + verification verdicts.
+
+    Nothing in the live corpus changes. The returned token authorises ONE commit
+    of exactly this staged artifact. ``include_newsletters=false`` drops imported
+    newsletters from the staged corpus so the preview AND the eventual commit
+    (which reuses this filtered staged copy) restore everything else.
+
+    The heavy stage+merge runs in the threadpool so a long preview never freezes the
+    single-worker server (see _preview_sync)."""
+    data = await file.read()
+    return await run_in_threadpool(
+        _preview_sync,
+        data,
+        passphrase or None,
+        allow_unverified=allow_unverified,
+        include_newsletters=include_newsletters,
+    )
+
+
+def _commit_sync(staged: StagedArtifact, *, allow_unverified: bool) -> dict:
+    """The blocking body of restore_commit (full merge + atomic swap). Runs OFF the
+    event loop for the same reason preview does (see _preview_sync)."""
+    try:
+        return run_restore(staged, commit=True, allow_unverified=allow_unverified)
+    except MergeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # JSON, never a plain-text 500 (P0-3) — see preview above.
+        _LOG.exception("restore commit failed")
+        raise _restore_error("restore", exc) from exc
+    finally:
+        cleanup_staging(staged)
+
+
 @router.post("/v2/restore/commit")
 async def restore_commit(
     token: str = Form(""),
@@ -182,7 +223,10 @@ async def restore_commit(
     when called with a file. The merge re-plans against the CURRENT corpus at
     commit time; the preview is advisory, the commit's own verification decides.
     A token's staged copy already reflects the preview's selection; a direct-file
-    commit applies ``include_newsletters`` here."""
+    commit applies ``include_newsletters`` here.
+
+    The heavy stage+merge runs in the threadpool so the swap never freezes the
+    single-worker server."""
     if token:
         staged = _PENDING.pop(token, None)
         if staged is None or not staged.staging_dir.exists():
@@ -192,22 +236,14 @@ async def restore_commit(
             )
         # token path: the staged corpus was already filtered at preview time.
     elif file is not None:
-        staged = _stage_upload(await file.read(), passphrase or None)
-        _apply_restore_selection(staged, include_newsletters=include_newsletters)
+        data = await file.read()
+        staged = await run_in_threadpool(_stage_upload, data, passphrase or None)
+        await run_in_threadpool(
+            _apply_restore_selection, staged, include_newsletters=include_newsletters
+        )
     else:
         raise HTTPException(status_code=400, detail="provide a preview token or a file")
-    try:
-        report = run_restore(staged, commit=True, allow_unverified=allow_unverified)
-        return report
-    except MergeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except HTTPException:
-        raise
-    except Exception as exc:  # JSON, never a plain-text 500 (P0-3) — see preview above.
-        _LOG.exception("restore commit failed")
-        raise _restore_error("restore", exc) from exc
-    finally:
-        cleanup_staging(staged)
+    return await run_in_threadpool(_commit_sync, staged, allow_unverified=allow_unverified)
 
 
 class LegacyRestoreBody(BaseModel):

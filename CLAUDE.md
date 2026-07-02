@@ -488,6 +488,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     with `JSONResponse`. **Install:** pip unpacks big wheels in `TMPDIR` (=/tmp =
     tmpfs on Qubes) → `Errno 28` even with disk free; point `TMPDIR` at the install
     volume + classify disk-full vs network failures honestly.
+  - **A FastAPI `async def` handler runs ON the event loop; only a plain `def`
+    handler gets the threadpool (2026-07-02, field report "stuck on Previewing… for
+    an hour").** So heavy SYNCHRONOUS work inside an `async def` (decrypt a GB, copy
+    the live corpus, run the merge) freezes the ENTIRE single-worker server for its
+    whole duration — every other request (task manager, polls, the UI) stalls, and the
+    app looks hung. The restore preview/commit were exactly this (`restore_preview` did
+    a full corpus-copy + dry-run merge on the loop). FIX = `run_in_threadpool(...)` the
+    blocking body (extract a `_*_sync` helper), or make the handler `def`. This is the
+    SAME single-worker-freeze family as the unlock-blocking + task-manager-never-loads
+    bugs: never do multi-second synchronous work on the event loop.
   - **STOPLIST ARCHITECTURE — the safe mental model for adding stopwords (2026-07-01,
     #525/#528/#530):** two channels with OPPOSITE collision behaviour. (a) `global_stopwords()`
     (`src/analytics/extract.py`) = `_EXTRA_STOPWORDS` ∪ English `default_stopwords` ∪

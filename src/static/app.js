@@ -4516,7 +4516,9 @@
       const f = $("v2-restore-file").files[0];
       const out = $("v2-commit-result");
       if (!f) { out.textContent = t("Choose a backup file first."); return; }
-      out.textContent = t("Previewing — nothing is changed yet…");
+      // Preview copies the whole corpus and dry-run-merges it (so the plan can't
+      // lie) — minutes on a large corpus. Say so, and reassure the app stays usable.
+      out.textContent = t("Previewing — nothing is changed yet. This copies and dry-run-merges your corpus, so it can take several minutes on a large corpus; the app stays usable in another tab.");
       const fd = new FormData();
       fd.append("file", f); fd.append("passphrase", $("v2-restore-pass").value || "");
       // "What to restore": the staged corpus is filtered at preview time, so the
