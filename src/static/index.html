@@ -1458,6 +1458,7 @@
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-engine?download=1','_blank')">Keyword-engine report (.json)</button>
         <button onclick="viewKeywordGrowth(this)" title="Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).">Keyword-growth curve</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-growth?download=1','_blank')">Keyword-growth (.json)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/article-length?download=1','_blank')" title="Distribution of article word_count + cited-source count, per content type and language — the evidence to set honest thresholds for a Home 'recently collected' filter. Counts only, never a score.">Article-length (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/home-cards?download=1','_blank')" title="For every Home card (Lead): does clicking it open its EXACT corpus (hard-linked) or a fuzzy text search that loses it (search-fallback)? Flags the mismatches.">Home-card diagnostics (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/dates','_blank')">Date-extraction log (.json)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/network','_blank')">Network log (.json)</button>

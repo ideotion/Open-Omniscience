@@ -1049,6 +1049,26 @@ def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db))
     return JSONResponse(report, headers=headers)
 
 
+@router.get("/article-length")
+def article_length(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
+    """Article-length + cited-source DISTRIBUTIONS, per content type and language
+    (Home "Latest in your corpus" slice S0).
+
+    The evidence needed to pick honest thresholds for the Home substance filter
+    (min words AND min cited-sources) — no export carried this before. Counts only,
+    NO score; word counts for unsegmented languages (zh/ja/th) are flagged so a
+    word-gate is never applied to them blindly. With ``download=1`` it returns as a
+    dated attachment to send back for calibration."""
+    from src.analytics.article_length import article_length_report
+
+    report = article_length_report(db)
+    headers = {}
+    if download:
+        fname = f"oo-article-length-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
 @router.get("/keyword-growth")
 def keyword_growth(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """The vocabulary-growth curve: cumulative distinct keywords vs cumulative words
