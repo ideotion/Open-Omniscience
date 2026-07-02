@@ -4042,8 +4042,11 @@
       try {
         const inv = await api("/api/backup/inventory");
         const c = inv.corpus || {}, b = c.breakdown || {};
+        // "Everything" is the default: a present category (count > 0) is CHECKED so a
+        // backup includes the whole corpus + wiki + maps + models unless the user
+        // unticks one (field ask 2026-07-02). Absent categories are disabled.
         const opt = (id, label, d) =>
-          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "checked" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
         box.innerHTML =
           `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked disabled> ${esc(t("Corpus"))} <span class="muted">(${b.articles || 0} ${esc(t("articles"))} · ${b.sources || 0} ${esc(t("sources"))} · ${b.dates || 0} ${esc(t("dates"))} · ${b.keywords || 0} ${esc(t("keywords"))} · ${humanBytes(c.bytes || 0)})</span></label>` +
           opt("models", t("LLM models"), inv.models || {}) +

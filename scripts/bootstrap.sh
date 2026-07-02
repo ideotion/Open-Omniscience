@@ -43,15 +43,36 @@ fi
 
 if [ -d "$INSTALL_DIR/.git" ]; then
     printf '%sExisting checkout found -- updating...%s\n' "$grn" "$rst"
-    # Default to whatever branch the checkout is already on.
-    ref="${BRANCH:-$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD)}"
+    # ALWAYS track the repository's CURRENT default branch (the latest release line),
+    # NOT whatever branch this checkout happens to be on. Otherwise an old cycle
+    # branch (e.g. 0.09) keeps pulling ITSELF forever after the default moves on to
+    # the next line (0.1) — the user would silently stay on stale code. OO_BRANCH
+    # still pins an explicit branch/tag when set.
+    if [ -n "$BRANCH" ]; then
+        ref="$BRANCH"
+    else
+        # Ask the remote which branch HEAD points at (its default) — no local state.
+        ref="$(git ls-remote --symref "$REPO_URL" HEAD 2>/dev/null \
+            | awk '/^ref:/ { sub(/refs\/heads\//, "", $2); print $2; exit }')"
+        [ -n "$ref" ] || ref="$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD)"
+    fi
     git -C "$INSTALL_DIR" fetch --depth 1 origin "$ref"
-    git -C "$INSTALL_DIR" checkout "$ref" 2>/dev/null || true
-    # Try a fast-forward to the freshly-fetched tip. If that fails, the branches
-    # have DIVERGED -- usually because the published branch was force-updated
-    # (history rewritten) and/or the install copy carries a stray commit. ff-only
-    # then aborts with a raw git hint, dead-ending the user. Handle it honestly:
-    if git -C "$INSTALL_DIR" merge --ff-only FETCH_HEAD 2>/dev/null; then
+    cur="$(git -C "$INSTALL_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+    if [ "$cur" != "$ref" ]; then
+        # The default branch MOVED (e.g. 0.09 -> 0.1): switch this checkout onto it.
+        # Never clobber local edits — refuse and tell the user how to proceed.
+        if [ -n "$(git -C "$INSTALL_DIR" status --porcelain)" ]; then
+            printf '%sThe latest release line is now "%s" but you have local changes on "%s".%s\n' "$ylw" "$ref" "$cur" "$rst"
+            echo "  Save or discard them, then re-run this installer:"
+            echo "    cd \"$INSTALL_DIR\""
+            echo "    git stash                       # keep them, OR"
+            echo "    git checkout -B \"$ref\" origin/\"$ref\"   # discard + switch to the latest line"
+            die "Update aborted to protect your local changes."
+        fi
+        printf '%sSwitching to the latest release line: %s -> %s%s\n' "$ylw" "$cur" "$ref" "$rst"
+        git -C "$INSTALL_DIR" checkout -B "$ref" FETCH_HEAD
+    # Same branch: fast-forward, or snap a clean checkout to a force-updated tip.
+    elif git -C "$INSTALL_DIR" merge --ff-only FETCH_HEAD 2>/dev/null; then
         :  # up to date / fast-forwarded
     elif [ -n "$(git -C "$INSTALL_DIR" status --porcelain)" ]; then
         # The user has uncommitted local changes -- never discard them silently.

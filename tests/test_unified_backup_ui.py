@@ -25,6 +25,9 @@ def test_export_dialog_covers_the_streaming_backup_capabilities():
     # inventory + the two always-works engines the removed panels used
     for ep in ("/api/backup/inventory", "/api/backup/v2/volumes/start", "/api/backup/folder/start"):
         assert ep in _APP, ep
+    # "Everything" is the default selection: a present category is CHECKED (field ask
+    # 2026-07-02) so a backup covers corpus + wiki + maps + models unless unticked.
+    assert '(d.count || 0) > 0 ? "checked" : "disabled"' in _APP
 
 
 def test_import_dialog_covers_restore_and_ingest_capabilities():
