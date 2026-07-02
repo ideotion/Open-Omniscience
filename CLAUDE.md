@@ -347,8 +347,9 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
 - **Naming:** app-opened browser tabs are suffixed "· FOOS" (Free Open
   OmniScience), explained in Help + USER_MANUAL; a proper rename is expected
   later — keep the suffix mechanism centralized enough to swap in one pass.
-- **TEMPORARY field-test mode (REMOVE when the live-test cycle ends):**
-  `src/monitoring/field_test.py` (default ON, `OO_FIELD_TEST=0` opts out)
+- **Field-test mode is OPT-IN since 0.1 (flipped 2026-07-02 for the public tag;
+  was default-ON during the 0.0.8/0.09 live-test cycles):**
+  `src/monitoring/field_test.py` (`OO_FIELD_TEST=1` enables)
   auto-exercises fetch surfaces inside the operator's collect passes; verbatim
   outcomes in `data/field_test.jsonl`; local-only, shared only by click.
 - **Units/precision principle (ruled 2026-06-10, APP-WIDE):** one shared smart
@@ -1109,14 +1110,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   dialog (pop-up) to gather that action's options. Today these are scattered (newsletter .eml upload +
   folder-import job + mailbox pull · oo-backup-2 encrypted/plaintext · selective tickboxes · folder/large-data
   backup · models .oomodels · restore-merge · selective restore). Consolidate to one Import + one Export, each
-  with an options dialog. NOT YET BUILT.
+  with an options dialog. **SHIPPED (#519-#529 + slice 3, verified 2026-07-02):** the #ux-export/#ux-import
+  dialogs ('Export / Back up…' + 'Import…') drive the volumes+parity + folder engines; the standalone panels
+  + the 2 GiB single-file CREATE were retired; guard-tested (tests/test_unified_backup_ui.py) + i18n-keyed ×12.
   (C) **FOLDER NEWSLETTER IMPORT FAILS (real bug):** importing a ~5 GB multi-folder `.eml` tree dies with
   `UNIQUE constraint failed: articles.hash`; per-batch works but is quantity-limited. The §2.B batched-commit
   path (`ingest_emails` commit_batch + `_commit_one` fallback) has a dedup HOLE at the folder-import-job scale
   — a duplicate hash reaches an INSERT instead of being caught (likely two .eml with the same content-hash in
   the SAME uncommitted batch ACROSS subfolders, or the IntegrityError fallback not wired on the folder-job
   path). FIX: catch the collision + dedup within the batch (the `batch_keys` set must span the whole folder
-  walk, and the `_commit_one` IntegrityError redo must be on the folder-job path). NOT YET BUILT.
+  walk, and the `_commit_one` IntegrityError redo must be on the folder-job path). **FIXED (verified
+  2026-07-02):** src/ingest/email.py dedups the batch on the ACTUAL unique column (`pending_hashes`) +
+  `_flush` falls back per-message on IntegrityError; regression-tested (test_email_ingest.py::
+  test_same_body_different_message_id_dedups_on_hash).
   (D) **OLLAMA "installer missing" — ANSWERED, NOT LOST:** the Settings subtab was RENAMED "Models" → "AI"
   (`index.html:920`, Settings → AI) — that's why it feels missing; the catalog (size/RAM hints) + pull queue +
   remove + active-model picker SHIPPED there. The BINARY installer (download+verify+RUN the official per-OS

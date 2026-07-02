@@ -37,11 +37,14 @@ def _isolated_data(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-def test_defaults_are_local_and_off():
+def test_defaults_are_local_pqc_off_and_autolog_on():
+    # auto_log_on_ingest is ON by default (maintainer ruling 2026-06-15 Item-N);
+    # it is a local-only write (anchoring_mode="local", no network). OTS/PQC stay
+    # opt-in.
     s = cset.load_settings()
     assert s.anchoring_mode == "local"
     assert s.pqc_enabled is False
-    assert s.auto_log_on_ingest is False
+    assert s.auto_log_on_ingest is True
 
 
 def test_save_partial_update_persists():

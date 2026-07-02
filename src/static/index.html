@@ -487,7 +487,7 @@
           sources worldwide and track how it changes over time (the data <i>is</i> the diff). A
           <b>research mirror</b>, never the authoritative source and <b>not legal advice</b>: every
           record links back to its official gazette. Fetched only through the ethical, robots-respecting
-          path. See <a href="#" onclick="showTab('help');openDoc('law');return false">the Law guide</a>.</p>
+          path. See <a href="#" onclick="showTab('help');openDoc('user-manual');return false">the User Manual (law chapter)</a>.</p>
         <div class="row">
           <button onclick="lawTrack(this)" style="margin-top:0">Track changes now</button>
           <button class="secondary" onclick="lawSeed()" style="margin-top:0">Re-seed catalog</button>
@@ -624,7 +624,7 @@
       <h2>World stock indices</h2>
       <!-- Whole-sentence nodes (no mid-sentence inline splits) so the exact-match
            i18n engine can translate each one cleanly in every word order. -->
-      <p class="muted" style="margin-top:0"><span>Major stock-exchange indices from official, free sources (FRED, Stooq) — end-of-day values, each labelled with its as-of date and source.</span>
+      <p class="muted" style="margin-top:0"><span>Major stock-exchange indices from official, free sources (FRED, incl. the FRED·OECD share-price indices) — end-of-day values, each labelled with its as-of date and source.</span>
         <b>Not real-time.</b>
         <span>Every number comes straight from the downloaded file — nothing scraped or guessed.</span></p>
       <div class="row">
@@ -873,7 +873,7 @@
           <option value="person">people</option><option value="org">orgs</option><option value="location">places</option></select></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="loadMap()">Refresh</button></div>
       </div>
-      <div class="hint" style="margin-top:6px">Region is the source's country/city (the reliable source-based signal). A graphical zoomable map with city pins is the next step (needs a coordinate gazetteer).</div>
+      <div class="hint" style="margin-top:6px">Region is the source's country/city (the reliable source-based signal).</div>
       <h2 style="margin:12px 0 6px;font-size:13px">Map (cities)</h2>
       <div class="row" style="margin-bottom:6px">
         <button class="tiny secondary" onclick="zoomMap(0.7)">＋ zoom</button>
@@ -1028,8 +1028,7 @@
       </div>
 
       <h3 style="margin-bottom:6px">First-launch guide</h3>
-      <p class="muted" style="margin-top:0">The one-time guided setup that walks you through language, safety and
-        your first collection. You can re-open it anytime, or have it show again the next time the app loads.</p>
+      <p class="muted" style="margin-top:0">The one-time guided welcome that introduces the app and helps you go online for your first collection (your language and passphrase are chosen on the unlock screen). You can re-open it anytime, or have it show again the next time the app loads.</p>
       <div class="row">
         <button class="secondary" type="button" onclick="openGuide()">Open the guide</button>
         <label style="display:flex;align-items:center;gap:6px;align-self:center;cursor:pointer"
@@ -1115,7 +1114,7 @@
     </section>
     <section class="panel">
       <h2>Custom extractors</h2>
-      <p class="muted" style="margin-top:0">Your own AI extractors — each a prompt that pulls one kind of rich metadata from an article (an extension of the built-in who / where / when). Output items are stored as AI-derived metadata of the type you name, shown beside the article and labelled "AI-derived · unreliable", never mixed into the trusted keyword index. Define and manage them here; running them — over a selection from an analysis window, or automatically on new articles for the ones you enable — is being added.</p>
+      <p class="muted" style="margin-top:0">Your own AI extractors — each a prompt that pulls one kind of rich metadata from an article (an extension of the built-in who / where / when). Output items are stored as AI-derived metadata of the type you name, shown beside the article and labelled "AI-derived · unreliable", never mixed into the trusted keyword index. Define and manage them here; run them over a selection from the search toolbar or an analysis window (the "Run extractor" action), or automatically on new articles via each extractor's run-on-ingest toggle.</p>
       <div id="ai-prompts-list" class="hint">Loading…</div>
       <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
         <div id="ai-prompt-form-title" style="font-weight:600;margin-bottom:6px">Add a custom extractor</div>
@@ -1378,6 +1377,7 @@
           <button class="secondary" type="button" onclick="ooFolderPicker('ux-dest', true)">Browse…</button></div></div>
       <div style="margin-top:6px"><label for="ux-pass">Passphrase — encrypts the corpus (no recovery for a lost passphrase)</label>
         <input id="ux-pass" type="password" style="width:100%"></div>
+      <div class="hint" style="margin-top:6px">The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.</div>
       <div id="ux-progress" class="hint" style="margin-top:8px"></div>
       <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
         <button class="secondary" onclick="document.getElementById('ux-export').close()">Close</button>
@@ -1813,6 +1813,7 @@
       <p class="muted" style="margin-top:0">An encrypted snapshot of the whole corpus
         (AES-256-GCM + scrypt). A lost or wrong passphrase means the file cannot be opened —
         there is no recovery. Keep the passphrase safe.</p>
+      <p class="hint" style="color:var(--warn)">This single-file download is capped at about 2 GiB. For a larger corpus use the Export / Back up… flow (Settings → Data &amp; backup), which streams to a folder with no size limit.</p>
       <div class="row">
         <div style="flex:2"><label for="enc-pass">Passphrase</label>
           <input id="enc-pass" type="password" autocomplete="new-password"
@@ -1862,8 +1863,8 @@
 
       <hr>
       <h3 style="margin-bottom:6px">External topic discovery</h3>
-      <p class="muted" style="margin-top:0">The <em>one</em> feature that contacts an external
-        service: <strong>Sources → Discover by topic</strong> sends your topic query to
+      <p class="muted" style="margin-top:0">The <em>one</em> feature that sends a free-text search
+        query to an external service: <strong>Settings → External topic discovery</strong> sends your topic query to
         <strong>DuckDuckGo</strong> to find candidate outlets. <strong>Your query leaves this
         machine.</strong> Off by default; everything else works without it. (Discovering RSS feeds
         for sources you added yourself stays local-path and is not affected.)</p>
