@@ -39,7 +39,7 @@ os.environ.setdefault("OO_DB_PLAINTEXT", "1")
 
 # --- Optional-extra test isolation (findings TEST-06 + OO-D15-005) ----------- #
 # The analysis/nlp extras (numpy/scipy/pandas/scikit-learn/statsmodels/networkx/
-# nltk/vaderSentiment/spaCy) are optional. The app boots fine without them (the
+# vaderSentiment/spaCy) are optional. The app boots fine without them (the
 # analysis/commodity/keyword routers are simply not mounted -- see the optional
 # try/except in src/api/_wiring.py:wire()), so a core-only install
 # (`pip install -e '.[dev]'`) MUST yield a green suite. Two failure modes:
@@ -61,7 +61,6 @@ _EXTRA_MODULES = (
     "statsmodels",
     "networkx",
     "spacy",
-    "nltk",
     "vaderSentiment",
 )
 _MISSING_EXTRAS = {_m for _m in _EXTRA_MODULES if importlib.util.find_spec(_m) is None}
