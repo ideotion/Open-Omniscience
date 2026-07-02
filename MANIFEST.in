@@ -1,0 +1,12 @@
+# sdist completeness (RC 2026-07-02): the source archive must carry every runtime
+# data tree the app reads, mirroring [tool.setuptools.package-data] in pyproject.
+graft src/static
+graft configs
+graft migrations
+include alembic.ini
+include docs/*.md
+graft docs/i18n
+graft docs/legal
+include install.sh
+graft scripts
+global-exclude __pycache__ *.py[cod]

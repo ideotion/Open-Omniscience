@@ -20,27 +20,39 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scri
 > git + Python 3.13, clone this repo into `~/open-omniscience`, and hand off to
 > the in-repo `./install.sh`. You can equally clone yourself and run `./install.sh`.
 
-`install.sh` then shows a small menu (a boxed TUI if `whiptail` is present,
-otherwise plain prompts) where you choose:
+`install.sh` is **promptless** — there is **no component menu**. One command installs
+the sensible default set:
 
-| Component | What you get |
-|-----------|--------------|
+| Installed by default | What you get |
+|----------------------|--------------|
 | **Core** *(always)* | scrape · store with provenance · Boolean search · export |
-| **Analysis tools** | keywords · framing comparison · sentiment |
-| **Local LLM tools** | summarize & translate via **Ollama** (optionally installs Ollama + a small model for you) |
+| **Analysis** | keywords · framing comparison · sentiment |
+| **Compression** | faster on-disk storage of the corpus |
 
-You can re-run `./install.sh` any time to **add the LLM tools later** — it's
-idempotent and only installs what's missing.
+Local-LLM / Ollama setup is **not** part of the installer — it lives entirely in the
+app's **Settings → AI** tab (see §D). Override the installed set with the
+`OO_COMPONENTS="…"` env var (e.g. `OO_COMPONENTS="analysis,nlp"`); re-running
+`./install.sh` is idempotent and only installs what's missing.
 
-**Then just double-click to launch.** The installer offers to create an
-**Open Omniscience** launcher. To start the app afterwards:
+**It then auto-launches.** The installer creates an **Open Omniscience** launcher (apps
+menu + Desktop) and opens the app in your browser. To start it again later:
 
 - open your applications menu and search **Open Omniscience**, **or**
 - double-click the **Open Omniscience** icon on your **Desktop**.
 
 A small terminal window appears, the app starts, and your browser opens to
-**http://127.0.0.1:8000**. **Close that window to stop the app.** (On macOS the
-launcher is `Open Omniscience.command` on your Desktop.)
+**http://127.0.0.1:8000**. **Close that window (or use the top-bar power / shutdown
+button) to stop the app.** (On macOS the launcher is `Open Omniscience.command` on your
+Desktop.)
+
+**First launch.** On a fresh install the app walks you through a short one-time setup
+*before* the main UI: **choose your language → read and accept the legal terms**
+(declining **uninstalls** the app, via typed confirmation) **→ create your corpus
+passphrase**. The corpus is **encrypted at rest by default** (SQLCipher 4) and there is
+**no recovery** for a lost passphrase (a lost passphrase costs re-collection time — the
+corpus is rebuilt from the web). The app then boots **offline (airplane mode)**;
+switching online passes **one consent popup** that names the action and shows your local
+interface IPs before any request goes out.
 
 Prefer the terminal? `cd ~/open-omniscience && ./scripts/launch.sh` does the same.
 
@@ -68,8 +80,8 @@ Shut the TemplateVM down, then **reboot the AppVM** so the packages are visible.
 
 **2. In the AppVM (as your user, no sudo):**
 ```bash
-./install.sh                      # interactive menu: pick components, optional launcher
-# or non-interactively (Core + Analysis, creates the launcher):
+./install.sh                      # promptless: Core + Analysis + Compression, then auto-launches
+# Qubes AppVM (unattended, creates the launcher, no prompts): Core + Analysis + Compression
 ./install.sh --appvm
 ```
 
@@ -113,15 +125,22 @@ alembic upgrade head
 
 > **Sources are preconfigured.** On first launch (or during `install.sh --appvm`)
 > the curated catalogs (`configs/sources.yml` ~3,200 public-interest outlets, plus
-> the markets, political-spectrum and law/IP catalogs — ~3,180 unique domains in
-> all) are seeded automatically — so you can start ingesting immediately.
-> Re-seeding is idempotent. Disable auto-seed with `OO_AUTOSEED=0`; re-seed
-> manually with `python scripts/seed_sources.py` or `POST /api/sources/seed-defaults`.
-> Feed URLs/robots policies change over time; the ethical fetcher refuses anything
-> it can't confirm, so prune/extend the list to suit your investigation.
+> the markets, political-spectrum and law/IP catalogs — **~3,395 unique domains in
+> all**) are seeded automatically — so you can start ingesting immediately.
+> (These counts **drift** as the catalogs grow; the live figure is whatever
+> `configs/*.yml` currently holds.) Re-seeding is idempotent. Disable auto-seed with
+> `OO_AUTOSEED=0`; re-seed manually with `python scripts/seed_sources.py` or
+> `POST /api/sources/seed-defaults`. Feed URLs/robots policies change over time; the
+> ethical fetcher refuses anything it can't confirm, so prune/extend the list to suit
+> your investigation.
 
-**In the UI:** pick (or add) a source → *Ingest* a feed or a single URL → *Search*
-with Boolean operators → *Export* CSV/JSON.
+**In the UI:** **go online** once (the airplane-mode toggle → one consent popup) and
+**collection runs itself** in the background — stratified across languages and source
+tags, robots-respecting and rate-limited. Then **search from the omnibar** (top bar or
+Ctrl/⌘-K) — pressing Enter spawns an **analysis window** where you filter, read,
+run Boolean queries and **export** (CSV/JSON, methods appendix, signed evidence). You
+can still add a source and *Ingest* a single feed or URL manually from **Settings →
+Collect / Sources**.
 
 **Via the API:**
 ```bash
@@ -151,10 +170,13 @@ Interactive API docs: **http://127.0.0.1:8000/docs**.
 
 All are local-first and degrade loudly (never fabricate). Full schemas at `/docs`.
 
-**Local LLM (Ollama) — Phase 2.** Easiest: choose **Local LLM tools** in
-`./install.sh` (it can install Ollama and pull a small model for you). Manually:
-install Ollama, then `ollama pull llama3.2:3b`. The UI header shows LLM status;
-each search result has **Summarize** and **Translate** buttons. API:
+**Local LLM (Ollama) — Phase 2.** Set it up from **Settings → AI**: an in-app,
+**checksum-verified** Ollama installer (Linux) plus a **model download queue** (real
+byte progress, cancel), an active-model picker and an editable-prompts panel. Or install
+Ollama yourself from **ollama.com** and `ollama pull llama3.2:3b`. Model pulls egress
+over **clearnet via the Ollama process** (not the app's Tor path) — disclosed at
+consent. The top-bar LLM pill shows live status (click it to open Settings → AI); each
+search result has **Summarize** and **Translate** buttons. API:
 ```bash
 curl http://127.0.0.1:8000/api/llm/health          # {available, installed_models}
 curl -X POST http://127.0.0.1:8000/api/llm/articles/1/summarize -d '{}'  # persisted with provenance
@@ -182,7 +204,7 @@ honestly as *metadata checks* — **not** deepfake/manipulation detection (that 
 fabricated and was quarantined off the working tree; see
 [docs/QUARANTINE_ARCHIVE.md](QUARANTINE_ARCHIVE.md)).
 
-**Signed evidence bundles — Phase 5.** The search panel's **Export signed
+**Signed evidence bundles — Phase 5.** The analysis window's **Export signed
 evidence** button (or `POST /api/reports/evidence`) produces a Merkle-rooted,
 Ed25519-signed bundle. Anyone can verify it offline, without this app:
 ```bash

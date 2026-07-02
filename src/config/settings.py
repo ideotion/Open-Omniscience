@@ -116,10 +116,12 @@ class Config:
     theme: str = "system"
 
     # Chain of custody: when true, every successful ingest appends a signed,
-    # hash-chained custody entry (src/custody). Off by default -- it is an
-    # explicit, opt-in evidentiary feature, not silent always-on behaviour, and it
-    # has a (small) per-article signing cost. Toggle with OO_CUSTODY_ON_INGEST=1.
-    custody_on_ingest: bool = False
+    # hash-chained custody entry (src/custody). On by default (maintainer ruling
+    # 2026-06-15 Item-N; the Settings UI text states "on by default") -- it is a
+    # LOCAL-ONLY write (default anchoring_mode="local", no network) with a small
+    # per-article Ed25519 signing cost; opt out with OO_CUSTODY_ON_INGEST=0 or the
+    # Settings toggle.
+    custody_on_ingest: bool = True
 
     # Path to the repository root
     repo_root: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent.resolve())

@@ -18,9 +18,50 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   refuses with an honest message until you knowingly enable it in **Settings → Safety →
   External topic discovery**, which states plainly that the query leaves your machine
   (`OO_DISCOVERY_EXTERNAL=1` for headless use). It is strictly user-triggered — never
-  part of ingestion, the scheduler, or any default path — and nothing else in the app
-  calls out to third-party services. (The browser-rendered `/docs` Swagger page also
+  part of ingestion, the scheduler, or any default path. (The browser-rendered `/docs` Swagger page also
   references a CDN for its own assets; the app itself never fetches it.)
+- **Every other outbound call is user-consented and off the default/boot path.** For
+  completeness, the full set of endpoints the app can reach beyond article ingestion,
+  each by explicit user action:
+  - **DuckDuckGo** — the opt-in *Discover by topic* channel above.
+  - **Open-Meteo** (`src/weather/openmeteo.py`, `archive-api.open-meteo.com`) —
+    weather-context reanalysis, fetched only when you click "fetch" on a corroboration
+    Lead. CC BY 4.0, disclosed at the point of use.
+  - **Official-statistics endpoints** (`src/stats/fetch.py`: World Bank
+    `api.worldbank.org`, Eurostat) — official figures, fetched on click; a tracked
+    figure can auto-refresh on the scheduler's markets pass only if you subscribed it.
+  - **GitHub releases API** (`src/llm/installer.py`, `api.github.com/repos/ollama/…`) —
+    to fetch the official Ollama installer and its attested `sha256` digest when you run
+    the in-app installer.
+  - **Ollama's own model pulls** — when you pull a model, Ollama downloads it over
+    **clearnet via its own process** (not our fetcher, not Tor); this is disclosed at the
+    consent step.
+
+  All of the above are gated behind the airplane kill switch: while offline is engaged
+  the request is refused before any socket is opened (see *Data at rest & airplane mode*).
+
+## Data at rest & airplane mode
+
+- **Encrypted by default (SQLCipher 4).** A new corpus is created encrypted, opened with
+  a passphrase the user chooses at first launch and re-enters at every start. Running a
+  **plaintext** store is an explicit opt-out that requires typed confirmation of the risk.
+- **No recovery.** There is no recovery and no decryption alternative for the passphrase.
+  A lost passphrase costs re-collection time — the corpus is rebuilt from the web, not
+  from us — so no recovery key (a second decryption surface) is added.
+- **Threat model.** At-rest encryption protects a **seized or copied file** (a machine
+  that is off, or a stolen disk image). It **cannot** protect a **compromised, running
+  session** — once the store is unlocked the key is in memory. There is deliberately no
+  wrong-passphrase rate-limiting: an attacker who can brute-force already has the file and
+  works offline, so backoff would only punish the honest fat-finger user; the honest lever
+  is passphrase length, which the create flow guides.
+- **Airplane mode is a socket-level kill switch, not just a per-call convention.** When
+  offline is engaged, `src/ingest/airplane.py` installs a process-wide guard over
+  `socket.getaddrinfo` / `create_connection` / `socket.connect(_ex)`: any **non-loopback**
+  target raises `AirplaneModeError` **before** a real socket is opened, so no missed call
+  site, third-party library, or DNS prefetch can egress. Loopback (127/8, ::1, `localhost`)
+  and AF_UNIX always pass through (the app's own server, a loopback Ollama, the file DB).
+  It is transparent while online. `OO_AIRPLANE_SOCKET_GUARD=0` disables the backstop; the
+  per-call refusals remain as the friendly layer above it. App boot makes zero network calls.
 
 ## Data integrity / chain of custody
 
@@ -72,8 +113,9 @@ imply a protection we cannot deliver.
 - **Protected fetch mode** (`src/safety/settings.py`, `fetcher.py`): routes every fetch
   through a proxy you run and sends a generic User-Agent that does not name the tool. **Honest
   limit:** this cannot guarantee anonymity — you must run and trust the proxy (e.g. Tor)
-  yourself. Refuses to enable without a proxy URL. SOCKS proxies need the optional `[safety]`
-  extra.
+  yourself. Refuses to enable without a proxy URL. HTTP/HTTPS proxies work out of the box;
+  **SOCKS** proxies (e.g. `socks5://127.0.0.1:9050` for Tor) additionally need **PySocks**
+  (`pip install pysocks`) — there is no packaged extra for it.
 
 These are local and loopback-only; the destructive/state-changing routes are protected by the
 same cross-origin refusal middleware as the rest of the API.

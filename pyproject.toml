@@ -186,9 +186,29 @@ Issues = "https://github.com/ideotion/Open-Omniscience/issues"
 # src-layout preserved to keep git history/blame intact. The legacy six-pillar
 # trees were archived out of the working tree (docs/QUARANTINE_ARCHIVE.md + the
 # quarantine-archive branch); their honest intent was salvaged into src/.
+#
+# Packaging carries the app's RUNTIME DATA, not just code (RC finding 2026-07-02:
+# the built wheel/sdist held ZERO data files, so the published artifacts could not
+# serve the UI or seed sources). `src/static` resolves module-relative; `configs/`,
+# `migrations/` and the in-app `docs/` resolve as SIBLINGS of the `src` package
+# (repo root == site-packages on a wheel install), so they ship as top-level
+# namespace packages and the existing path resolution works unchanged. NOTE:
+# `src`/`configs`/`docs` are generic top-level names — acceptable for the
+# GitHub-release artifact (the primary install path is git + install.sh); a
+# PyPI-grade package rename is tracked post-0.1.
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["src*", "configs", "migrations*", "docs"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"src" = ["static/**/*"]
+"configs" = ["**/*.yml", "**/*.yaml", "**/*.txt", "**/*.json", "**/*.csv", "**/*.mmdb", "**/*.bin", "**/*.gz", "**/*.example"]
+"migrations" = ["script.py.mako"]
+"docs" = ["*.md", "i18n/**/*.md", "legal/*.md"]
 
 # --------------------------------------------------------------------------- #
 # Tooling

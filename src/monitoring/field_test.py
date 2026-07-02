@@ -17,11 +17,12 @@ source/feed lists. It will be disabled/removed when the cycle ends. It does
 NOT transmit anything: all logs stay on this machine until the operator
 explicitly downloads and shares the bundle.
 
-If you are not field-testing: set ``OO_FIELD_TEST=0`` (nothing runs, no log).
-Boot is unaffected either way — steps run only inside the first collect
-passes, which are already going to the network at the operator's request, and
-every fetch goes through the ethical fetcher (robots fail-closed, kill-switch
-aware).
+DEFAULT OFF for the public 0.1 tag: set ``OO_FIELD_TEST=1`` to opt in (the
+maintainer still uses it for the reinstall/debug-bundle loop). When off, nothing
+runs and no log is written. Boot is unaffected either way — steps run only inside
+the first collect passes, which are already going to the network at the operator's
+request, and every fetch goes through the ethical fetcher (robots fail-closed,
+kill-switch aware).
 """
 
 from __future__ import annotations
@@ -39,8 +40,8 @@ _CAL_BATCH = 50  # calendar feeds verified per collect pass (polite, resumable)
 
 
 def enabled() -> bool:
-    """Default ON during the 0.0.8 live-test cycle (temporary); OO_FIELD_TEST=0 opts out."""
-    return os.getenv("OO_FIELD_TEST", "1") != "0"
+    """Default OFF for the public 0.1 tag; set OO_FIELD_TEST=1 to opt in (temporary)."""
+    return os.getenv("OO_FIELD_TEST", "0") == "1"
 
 
 def _log_path() -> Path:
