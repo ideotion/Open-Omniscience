@@ -155,6 +155,16 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
     except StatementTimeout:
         timed_out = True
 
+    # The automatic keyword-cleanup run (prune orphans + reconcile language) is
+    # freshness-gated and off the request path; surface its last run + tally here so the
+    # cleanup is visible in the diagnostics ("automatic AND part of the logs").
+    try:
+        from src.analytics.store import keyword_cleanup_state
+
+        report["auto_cleanup"] = keyword_cleanup_state()
+    except Exception:  # noqa: BLE001
+        report["auto_cleanup"] = {"last_run": None}
+
     report["timed_out"] = timed_out
     report["drift"] = bool(
         (report.get("orphan_keywords") or 0)

@@ -191,3 +191,21 @@ def test_frontend_error_is_throttled(tmp_path, monkeypatch):
         el.note_frontend_error("error", "same boom", source="x.js")
     recs = [r for r in el.recent_errors(50) if r.get("level") == "FRONTEND"]
     assert len(recs) == 1
+
+
+# -- automatic keyword cleanup (maintainer 2026-07-02) --------------------------- #
+
+
+def test_automatic_keyword_cleanup_prunes_orphans_then_gates_fresh(session, tmp_path, monkeypatch):
+    """The cheap cleanup runs unprompted (prune orphans + reconcile language), records a
+    marker, and is a no-op within the freshness window — no manual "Clean up keywords"."""
+    import src.analytics.store as store
+
+    monkeypatch.setattr(store, "_cleanup_marker_path", lambda: tmp_path / "keyword_cleanup.json")
+    _seed(session, orphan=True)  # one keyword with mentions, one orphan
+    r1 = store.maybe_cleanup_keywords(session)
+    assert r1["prune"]["orphans"] == 1 and r1["prune"]["pruned"] == 1
+    # the marker persists and gates the next call within the window
+    assert store.keyword_cleanup_state()["last_run"] is not None
+    r2 = store.maybe_cleanup_keywords(session)
+    assert r2.get("skipped") == "fresh"

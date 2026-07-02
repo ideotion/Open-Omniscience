@@ -801,6 +801,18 @@ def warm_cache(db: Session) -> dict:
     except Exception:  # noqa: BLE001 - never fatal to a pass
         _LOG.warning("background counter reconcile failed during warm_cache", exc_info=True)
 
+    # AUTOMATIC keyword cleanup (maintainer 2026-07-02: "Clean up keywords should be
+    # automatic"): the cheap maintenance — prune orphan keywords + reconcile keyword
+    # language — freshness-gated to ~once per 12h, so it is a no-op most passes. A full
+    # re-index stays a manual/post-upgrade action (too heavy to run unprompted). The run
+    # is recorded in a marker the corpus-integrity diagnostic surfaces.
+    try:
+        from src.analytics.store import maybe_cleanup_keywords
+
+        maybe_cleanup_keywords(db)
+    except Exception:  # noqa: BLE001 - never fatal to a pass
+        _LOG.warning("background keyword cleanup failed during warm_cache", exc_info=True)
+
     # Maintain the derived COLUMNAR read-model — ONLY when the store is PERSISTED
     # (Slice 4 D). A no-op when columnar is unavailable / in-memory (an in-memory store
     # is rebuilt per process, so persisting it in the background would be wasted work).
