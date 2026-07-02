@@ -48,6 +48,11 @@ def test_dialogs_have_a_real_progress_bar_and_import_summary():
     assert "removeAttribute(\"value\")" in _APP  # indeterminate = no fake %
     # the import summary reuses the merge-plan table (new / already-present / conflicts)
     assert "_renderImportSummary" in _APP and "_v2PlanTable" in _APP
+    # and leads with a prominent aggregate "backup successful" view: imported +
+    # deduplicated totals (real backend counts) + the additive-restore honesty note
+    assert "Import successful" in _APP
+    assert '"imported"' in _APP and '"deduplicated"' in _APP
+    assert "Additive restore: nothing in your corpus was replaced or deleted." in _APP
 
 
 def test_import_restores_each_volume_set_from_its_own_scanned_path():
