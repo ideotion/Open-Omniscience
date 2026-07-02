@@ -18,6 +18,7 @@ touches mailboxes the operator explicitly configures; nothing leaves the machine
 from __future__ import annotations
 
 import email
+import ipaddress
 import logging
 import re
 from dataclasses import dataclass, field
@@ -58,6 +59,12 @@ class ParsedEmail:
     # counts of what anonymisation did, surfaced to the user as honest feedback.
     sanitize: SanitizeStats = field(default_factory=SanitizeStats)
     redactions: int = 0
+    # The SENDING mail-server IP read from the Received chain (recipient-safe: it is
+    # the sender's infrastructure, not the recipient). None when the chain carries no
+    # public IP; ``sender_ip_reason`` states why. Deduced/approximate — a relay or
+    # forwarder may sit between it and the true origin (stated in the reason).
+    sender_ip: str | None = None
+    sender_ip_reason: str | None = None
 
 
 def _decode_part(part: Message) -> str:
@@ -166,6 +173,49 @@ def _redact(text: str, addrs: set[str]) -> tuple[str, int]:
     return out, count
 
 
+# Bracketed IP literals as they appear in Received headers:
+#   from mail.example.com (mail.example.com [203.0.113.5]) by ...
+#   from [203.0.113.5] by ...            /  from x (x [IPv6:2001:db8::1]) by ...
+_RECEIVED_IP_RE = re.compile(r"\[(?:IPv6:)?([0-9A-Fa-f:.]+)\]")
+
+
+def sender_origin_ip(msg: Message) -> tuple[str | None, str | None]:
+    """Deduce the SENDING mail-server IP from the message's Received chain.
+
+    Received headers are prepended at each hop, so ``get_all("Received")`` runs
+    newest→oldest; the OLDEST (last) header is written by the first server that took
+    the message from the sender, so we scan oldest→newest and return the first
+    PUBLIC (globally-routable) IP we find — closest to the true origin. Private /
+    loopback / link-local / reserved addresses (internal relays) are skipped, and a
+    garbage token never becomes an IP (``ipaddress`` validates each).
+
+    Returns ``(ip, None)`` on a hit, else ``(None, reason)``. This is recipient-safe
+    (the sender's own infrastructure, like the ``server_ip`` we already capture for
+    web articles) and DEDUCED — a relay/forwarder may sit between it and the real
+    origin, and a stripped/rewritten chain yields no IP rather than a guess. No
+    network: the IP is read from bytes already in the ``.eml``.
+    """
+    received = msg.get_all("Received")
+    if not received:
+        return None, "no Received headers in the message"
+    saw_any_ip = False
+    for hdr in reversed(received):  # oldest hop first
+        for token in _RECEIVED_IP_RE.findall(hdr or ""):
+            try:
+                addr = ipaddress.ip_address(token)
+            except ValueError:
+                continue
+            saw_any_ip = True
+            if addr.is_global:
+                return addr.compressed, None
+    reason = (
+        "Received chain has only private/reserved hops (internal relay)"
+        if saw_any_ip
+        else "no IP literal in the Received chain (stripped or rewritten)"
+    )
+    return None, reason
+
+
 def parse_email(raw: bytes) -> ParsedEmail:
     """Parse an RFC822 message into the (anonymised) fields we store.
 
@@ -192,6 +242,7 @@ def parse_email(raw: bytes) -> ParsedEmail:
     recipients = _recipient_addresses(msg)
     subject, r1 = _redact(subject, recipients)
     body_text, r2 = _redact(body_text, recipients)
+    sender_ip, sender_ip_reason = sender_origin_ip(msg)
 
     return ParsedEmail(
         message_id=message_id,
@@ -201,6 +252,8 @@ def parse_email(raw: bytes) -> ParsedEmail:
         body_text=body_text,
         sanitize=stats,
         redactions=r1 + r2,
+        sender_ip=sender_ip,
+        sender_ip_reason=sender_ip_reason,
     )
 
 
@@ -321,6 +374,10 @@ def fetch_mailbox(protocol: str, host: str, user: str, password: str, **kwargs) 
 
 def _email_article(source: Source, parsed: ParsedEmail, content_hash: str, canonical: str) -> Article:
     now = datetime.now(UTC)
+    # Sending mail-server IP (recipient-safe, deduced) → the same server_ip columns
+    # web articles use, so newsletters surface on the ooMap "Server IPs" layer and
+    # geolocate through the offline DB-IP lookup. Reason is stored either way so a
+    # missing IP is honest (never a guess); observed-at is stamped only on a hit.
     return Article(
         url=canonical,
         canonical_url=canonical,
@@ -331,6 +388,13 @@ def _email_article(source: Source, parsed: ParsedEmail, content_hash: str, canon
         author=parsed.from_addr,
         hash=content_hash,
         word_count=len(parsed.body_text.split()),
+        server_ip=parsed.sender_ip,
+        ip_observed_at=now if parsed.sender_ip else None,
+        server_ip_reason=(
+            "sender mail-server IP from the .eml Received chain (deduced; may be a relay)"
+            if parsed.sender_ip
+            else (parsed.sender_ip_reason or "no sender IP in the .eml")
+        ),
         created_at=now,
         updated_at=now,
     )

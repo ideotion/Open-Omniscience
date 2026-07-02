@@ -17,7 +17,20 @@ from src.ingest.email import (
     ingest_emails,
     ingest_eml_directory,
     parse_email,
+    sender_origin_ip,
 )
+
+
+def _msg_with_received(received_lines: bytes) -> bytes:
+    return (
+        b"From: News <n@news.example>\r\n"
+        b"To: me@example.com\r\n"
+        b"Subject: With a Received chain\r\n"
+        b"Message-ID: <rc@news.example>\r\n"
+        b"Date: Mon, 05 Jan 2026 18:00:00 +0000\r\n"
+        + received_lines
+        + b"Content-Type: text/plain; charset=utf-8\r\n\r\nBody here.\r\n"
+    )
 
 PLAIN = b"""From: Reporter <r@news.example>
 To: me@example.com
@@ -75,6 +88,62 @@ def test_parse_plain_email():
     assert "budget tonight" in p.body_text
     assert p.message_id == "<abc123@news.example>"
     assert p.date is not None
+
+
+def test_sender_origin_ip_takes_first_public_hop_skipping_private():
+    import email as _email
+
+    # Chain is newest→oldest as written; the oldest hop (last line) carries the true
+    # sender's public IP, an internal relay (private) sits above it and must be skipped.
+    raw = _msg_with_received(
+        b"Received: from relay.recipient.com (relay.recipient.com [10.0.0.2])\r\n"
+        b"    by mx.recipient.com; Mon, 05 Jan 2026 18:00:02 +0000\r\n"
+        b"Received: from mail.sender.example (mail.sender.example [8.8.8.8])\r\n"
+        b"    by relay.recipient.com; Mon, 05 Jan 2026 18:00:01 +0000\r\n"
+    )
+    ip, reason = sender_origin_ip(_email.message_from_bytes(raw))
+    assert ip == "8.8.8.8" and reason is None
+    # and it flows through parse_email onto the ParsedEmail
+    p = parse_email(raw)
+    assert p.sender_ip == "8.8.8.8"
+
+
+def test_sender_origin_ip_ipv6_and_only_private_and_stripped():
+    import email as _email
+
+    ipv6 = _msg_with_received(
+        b"Received: from s (s [IPv6:2606:4700:4700::1111]) by mx; Mon, 05 Jan 2026 18:00:00 +0000\r\n"
+    )
+    ip, reason = sender_origin_ip(_email.message_from_bytes(ipv6))
+    assert ip == "2606:4700:4700::1111" and reason is None
+
+    only_private = _msg_with_received(
+        b"Received: from a (a [192.168.1.9]) by mx; Mon, 05 Jan 2026 18:00:00 +0000\r\n"
+    )
+    ip2, reason2 = sender_origin_ip(_email.message_from_bytes(only_private))
+    assert ip2 is None and "private" in reason2
+
+    stripped = parse_email(PLAIN)  # no Received headers at all
+    assert stripped.sender_ip is None and "Received" in (stripped.sender_ip_reason or "")
+
+
+def test_ingest_stores_sender_ip_on_the_article():
+    s = _db()
+    src = s.query(Source).first()
+    raw = _msg_with_received(
+        b"Received: from mail.sender.example (mail.sender.example [8.8.8.8])\r\n"
+        b"    by mx.recipient.com; Mon, 05 Jan 2026 18:00:01 +0000\r\n"
+    )
+    ingest_emails(s, src, [raw])
+    art = s.query(Article).filter_by(title="With a Received chain").one()
+    assert art.server_ip == "8.8.8.8"
+    assert art.ip_observed_at is not None
+    assert "Received chain" in art.server_ip_reason  # deduced, honest
+    # a message with no public hop stores no IP but an honest reason
+    ingest_emails(s, src, [PLAIN])
+    plain = s.query(Article).filter_by(title="Budget vote tonight").one()
+    assert plain.server_ip is None and plain.ip_observed_at is None and plain.server_ip_reason
+    s.close()
 
 
 def test_parse_respects_declared_charset():
