@@ -62,7 +62,10 @@ MONTH_VOCAB_LANGS: frozenset[str] = frozenset(
      # "no vocab" for these): Greek, Ukrainian, Estonian, Urdu, Slovenian.
      "el", "uk", "et", "ur", "sl",
      # Slice-B additions (2026-07-02): Croatian, Czech, Malay, Filipino, Swahili.
-     "hr", "cs", "ms", "tl", "sw"}
+     "hr", "cs", "ms", "tl", "sw",
+     # Backend batch A (2026-07-03): Catalan, Persian (Gregorian names only — Solar Hijri
+     # deliberately omitted; May withheld as a fabrication vector), Malayalam, Telugu.
+     "ca", "fa", "ml", "te"}
 )
 
 # Probe kinds the extractor is *expected* to resolve (so a miss is actionable);
