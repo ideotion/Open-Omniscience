@@ -47,7 +47,7 @@ _LOG = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 # Ensures at most ONE background build runs at a time.
 _BUILD_LOCK = threading.Lock()
-_STATE: dict = {"con": None, "built_at": 0.0, "rows": 0}
+_STATE: dict = {"con": None, "built_at": 0.0, "rows": 0, "bind": None}
 
 # Rebuild if the served rollup is older than this (a full rebuild; bounded staleness).
 _STALE_S = int(os.getenv("OO_COLUMNAR_SERVE_TTL_S", "900"))  # 15 min default
@@ -110,11 +110,13 @@ def _build_and_swap() -> None:
         with session_scope() as s:
             columnar.build_keyword_daily(con, s)
             rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+            built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
         with _LOCK:
             old = _STATE["con"]
             _STATE["con"] = con
             _STATE["built_at"] = time.time()
             _STATE["rows"] = int(rows)
+            _STATE["bind"] = built_bind
             if old is not None:
                 try:
                     old.close()  # safe: serves hold _LOCK, so none is mid-query here
@@ -141,6 +143,21 @@ def refresh(_session: Session | None = None) -> None:
         _trigger_build_async()
 
 
+def _same_bind(session: Session | None, built_bind) -> bool:
+    """True only when ``session`` queries the SAME database the current rollup was built
+    over. The rollup is built over the process store (``session_scope``); serving it to a
+    session bound to a DIFFERENT engine (a test fixture, or any ad-hoc connection) would
+    return another corpus's numbers, so those callers fall back to the live query. This is
+    the correctness net behind the auto-on serve — a process-lifetime singleton must never
+    answer for a database it was not built from."""
+    if session is None or built_bind is None:
+        return False
+    try:
+        return session.get_bind() is built_bind
+    except Exception:  # noqa: BLE001 - any doubt -> live fallback
+        return False
+
+
 def windowed_rows(
     _session: Session, *, days: int, kind: str | None = None, limit: int = 80
 ) -> list[dict] | None:
@@ -162,10 +179,13 @@ def windowed_rows(
     with _LOCK:
         have = _STATE["con"] is not None
         stale = time.time() - _STATE["built_at"] > _STALE_S
+        built_bind = _STATE["bind"]
     if not have or stale:
         _trigger_build_async()  # background; returns immediately
     if not have:
         return None  # nothing built yet -> live fallback (a build is now underway)
+    if not _same_bind(_session, built_bind):
+        return None  # rollup reflects a DIFFERENT database than this caller -> live fallback
     try:
         with _LOCK:
             con = _STATE["con"]
@@ -191,10 +211,13 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
     with _LOCK:
         have = _STATE["con"] is not None
         stale = time.time() - _STATE["built_at"] > _STALE_S
+        built_bind = _STATE["bind"]
     if not have or stale:
         _trigger_build_async()
     if not have:
         return None
+    if not _same_bind(_session, built_bind):
+        return None  # rollup reflects a DIFFERENT database than this caller -> live fallback
     try:
         with _LOCK:
             con = _STATE["con"]
