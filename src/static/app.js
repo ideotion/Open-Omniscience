@@ -1908,22 +1908,37 @@
     // tab the SPA hydrates from the URL (boot handler below), so the analysis lives
     // outside the current view. Exact set when the card carries article_ids, else the
     // seed query (the diagnostic flags any card whose query loses its corpus).
-    function openCardCorpus(ids, label) {
+    function openCardCorpus(ids, label, tab) {
       const p = new URLSearchParams();
       p.set("corpus", (ids || []).join(","));
       if (label) p.set("label", label);
+      if (tab) p.set("tab", tab);   // item #5: land the new window on the type's best subtab
       window.open("/?" + p.toString(), "_blank", "noopener");
     }
     // Open a query's analysis window in a NEW BROWSER TAB (field remark 9: search +
     // Enter should open a new tab). A fresh SPA boot hydrates ?analyze= via
     // _hydrateCardCorpus() → openAnalysisFor(), so the new tab lands on the same
     // analysis. Shared by the home-card flip and the omnibar/palette Enter.
-    function openAnalysisInNewTab(q) {
+    function openAnalysisInNewTab(q, tab) {
       const p = new URLSearchParams();
       p.set("analyze", q || "");
+      if (tab) p.set("tab", tab);   // optional deep-link subtab (item #5); omnibar Enter omits it
       window.open("/?" + p.toString(), "_blank", "noopener");
     }
-    function openCardCorpusQuery(q) { openAnalysisInNewTab(q); }
+    function openCardCorpusQuery(q, tab) { openAnalysisInNewTab(q, tab); }
+    // Route a Lead to the most useful analysis subtab for its type (item #5): a rising
+    // keyword -> its Trend; a coordination/near-dup/framing Lead -> Related; a reading-diet
+    // or coverage Lead -> Sources; a space-time convergence -> When/Where/Who. Anything
+    // else lands on Overview. The deep-link only applies a tab whose an-<tab> panel exists.
+    const _CARD_SUBTAB = {
+      rising: "trend", manufactured_emergence: "trend", price_narrative: "trend",
+      echo_chamber: "related", source_laundering: "related", flooded_topic: "related",
+      copypasta: "related", recycled_claim: "related", headline_body_mismatch: "related",
+      framing_split: "related",
+      diet_self_audit: "sources", coverage_advisor: "sources", reading_diet: "sources",
+      space_time_convergence: "www", weather_corroboration: "www",
+    };
+    function cardSubtab(c) { return (c && _CARD_SUBTAB[c.type]) || "overview"; }
     function cardHtml(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sig = c.signal || {};
@@ -1990,9 +2005,10 @@
       // IN A NEW WINDOW (exact set when the card carries article_ids, else the seed query).
       const _aq = cardAnalyzeQuery(c);
       const _aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
+      const _tab = cardSubtab(c);   // item #5: the most useful analysis subtab for this Lead's type
       const _openCorpus = _aIds
-        ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))})`
-        : `openCardCorpusQuery(${esc(JSON.stringify(_aq))})`;
+        ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))})`
+        : `openCardCorpusQuery(${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))})`;
       const openBtn = _aq
         ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
         : "";
