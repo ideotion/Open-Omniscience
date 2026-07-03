@@ -1754,5 +1754,10 @@
   "By language": "По языкам",
   "mentions per language": "упоминаний по языкам",
   "Not mapped (source country unknown)": "Не на карте (страна источника неизвестна)",
-  "Mentions": "Упоминания"
+  "Mentions": "Упоминания",
+  "Most recent": "Самые новые",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Сначала самые новые — по дате публикации статьи (заданной издателем) среди источников с этой меткой. Каждый заголовок открывает офлайн-копию.",
+  "Filter by source tag": "Фильтр по метке источника",
+  "No articles for this tag yet.": "Пока нет статей с этой меткой.",
+  "offline stored copy": "офлайн-копия"
 }

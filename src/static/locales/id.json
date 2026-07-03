@@ -1754,5 +1754,10 @@
   "By language": "Menurut bahasa",
   "mentions per language": "penyebutan per bahasa",
   "Not mapped (source country unknown)": "Tak dipetakan (negara sumber tak diketahui)",
-  "Mentions": "Penyebutan"
+  "Mentions": "Penyebutan",
+  "Most recent": "Terbaru",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Terbaru dulu berdasarkan tanggal terbit artikel (ditetapkan penerbit) di antara sumber dengan tag ini. Setiap judul membuka salinan tersimpan luring.",
+  "Filter by source tag": "Saring menurut tag sumber",
+  "No articles for this tag yet.": "Belum ada artikel untuk tag ini.",
+  "offline stored copy": "salinan tersimpan luring"
 }

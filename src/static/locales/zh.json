@@ -1754,5 +1754,10 @@
   "By language": "按语言",
   "mentions per language": "各语言的提及次数",
   "Not mapped (source country unknown)": "未上图（来源国家未知）",
-  "Mentions": "提及"
+  "Mentions": "提及",
+  "Most recent": "最新",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "按文章发布日期（由发布者设定）从新到旧排列，仅限带此标签的来源。每个标题都会打开离线保存的副本。",
+  "Filter by source tag": "按来源标签筛选",
+  "No articles for this tag yet.": "该标签暂无文章。",
+  "offline stored copy": "离线保存的副本"
 }

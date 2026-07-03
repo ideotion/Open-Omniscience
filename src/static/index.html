@@ -186,6 +186,18 @@
         <div id="home-trends"><div class="muted">Loading…</div></div>
       </section>
 
+      <!-- Home dashboard: "Most recent by tag" — a recency lens onto the corpus
+           (item #36 / Home helicopter view). Recency by the article's PUBLISHED date
+           (publisher-set), filtered by a source tag; every row opens the offline stored
+           copy (invariant #6). Populated by loadHomeRecent(); hidden until it has a tag +
+           articles so Home is never blank-and-silent (the Briefing still renders). -->
+      <section class="panel" id="home-recent-panel" hidden>
+        <div class="phead"><h2>Most recent</h2><span class="sp"></span>
+          <select id="home-recent-tag" onchange="loadHomeRecentList(this.value)" aria-label="Filter by source tag"></select></div>
+        <p class="hint" style="margin:0">Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.</p>
+        <div id="home-recent" style="margin-top:6px"><div class="muted">Loading…</div></div>
+      </section>
+
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
           <span id="brief-generated" class="hint" style="margin:0"></span></div>

@@ -1754,5 +1754,10 @@
   "By language": "حسب اللغة",
   "mentions per language": "إشارات لكل لغة",
   "Not mapped (source country unknown)": "غير مُدرَج على الخريطة (بلد المصدر غير معروف)",
-  "Mentions": "الإشارات"
+  "Mentions": "الإشارات",
+  "Most recent": "الأحدث",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "الأحدث أولًا حسب تاريخ نشر المقال (الذي يحدده الناشر) بين المصادر التي تحمل هذا الوسم. كل عنوان يفتح النسخة المحفوظة دون اتصال.",
+  "Filter by source tag": "تصفية حسب وسم المصدر",
+  "No articles for this tag yet.": "لا توجد بعد مقالات لهذا الوسم.",
+  "offline stored copy": "نسخة محفوظة دون اتصال"
 }

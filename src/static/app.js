@@ -1675,7 +1675,46 @@
       catch (e) { renderHomeStatus(false); }
       loadBriefing();
       loadHomeTrends();
+      loadHomeRecent();
       refreshDraftCount();
+    }
+    // Home "Most recent by tag" (item #36 / Home helicopter view): a recency LENS onto the
+    // corpus, never a reweighting — newest-first by the article's PUBLISHED date among sources
+    // carrying a chosen source tag. REDUNDANT by design (every title deep-links to the offline
+    // stored reader, invariant #6). Reuses /api/sources/facets (the tag list) + /api/articles
+    // (tags + sort_by=date). Hidden until it has a tag + articles so Home is never blank-and-
+    // silent (the Briefing still renders below).
+    async function loadHomeRecent() {
+      const panel = $("home-recent-panel"), sel = $("home-recent-tag");
+      if (!panel || !sel) return;
+      try {
+        const f = await api("/api/sources/facets");
+        const tags = (f.tags || []).filter(x => x && x.key).slice(0, 20);
+        if (!tags.length) { panel.hidden = true; return; }
+        const cur = sel.value;
+        sel.innerHTML = tags.map(x => `<option value="${esc(x.key)}">${esc(x.key)} (${x.n})</option>`).join("");
+        sel.value = (cur && tags.some(x => x.key === cur)) ? cur : tags[0].key;
+        await loadHomeRecentList(sel.value);
+      } catch (e) { panel.hidden = true; }
+    }
+    async function loadHomeRecentList(tag) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("home-recent-panel"), box = $("home-recent");
+      if (!panel || !box) return;
+      if (!tag) { panel.hidden = true; return; }
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const q = "/api/articles?tags=" + encodeURIComponent(tag) + "&sort_by=date&sort_dir=desc&limit=8";
+        const d = await api(q);
+        const rows = d.results || [];
+        if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
+        box.innerHTML = rows.map(a => {
+          const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
+          return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
+            + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
+        }).join("");
+        panel.hidden = false;
+      } catch (e) { box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
     }
     // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
     // REDUNDANT by design: the past-week RISING keywords (the disclosed window-vs-

@@ -1754,5 +1754,10 @@
   "By language": "By language",
   "mentions per language": "mentions per language",
   "Not mapped (source country unknown)": "Not mapped (source country unknown)",
-  "Mentions": "Mentions"
+  "Mentions": "Mentions",
+  "Most recent": "Most recent",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.",
+  "Filter by source tag": "Filter by source tag",
+  "No articles for this tag yet.": "No articles for this tag yet.",
+  "offline stored copy": "offline stored copy"
 }

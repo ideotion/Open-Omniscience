@@ -1754,5 +1754,10 @@
   "By language": "भाषा के अनुसार",
   "mentions per language": "प्रति भाषा उल्लेख",
   "Not mapped (source country unknown)": "मानचित्रित नहीं (स्रोत का देश अज्ञात)",
-  "Mentions": "उल्लेख"
+  "Mentions": "उल्लेख",
+  "Most recent": "सबसे नए",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "इस टैग वाले स्रोतों में से लेख की प्रकाशन तिथि (प्रकाशक द्वारा निर्धारित) के अनुसार सबसे नए पहले। प्रत्येक शीर्षक ऑफ़लाइन सहेजी गई प्रति खोलता है।",
+  "Filter by source tag": "स्रोत टैग से फ़िल्टर करें",
+  "No articles for this tag yet.": "इस टैग के लिए अभी कोई लेख नहीं है।",
+  "offline stored copy": "ऑफ़लाइन सहेजी गई प्रति"
 }

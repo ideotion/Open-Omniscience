@@ -1754,5 +1754,10 @@
   "By language": "Nach Sprache",
   "mentions per language": "Erwähnungen je Sprache",
   "Not mapped (source country unknown)": "Nicht kartiert (Land der Quelle unbekannt)",
-  "Mentions": "Erwähnungen"
+  "Mentions": "Erwähnungen",
+  "Most recent": "Neueste",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Neueste zuerst, nach dem Veröffentlichungsdatum des Artikels (vom Herausgeber gesetzt), unter den so getaggten Quellen. Jeder Titel öffnet die offline gespeicherte Kopie.",
+  "Filter by source tag": "Nach Quellen-Tag filtern",
+  "No articles for this tag yet.": "Noch keine Artikel für dieses Tag.",
+  "offline stored copy": "offline gespeicherte Kopie"
 }

@@ -1754,5 +1754,10 @@
   "By language": "言語別",
   "mentions per language": "言語ごとの言及数",
   "Not mapped (source country unknown)": "地図化せず（情報源の国が不明）",
-  "Mentions": "言及"
+  "Mentions": "言及",
+  "Most recent": "最新",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "このタグが付いた情報源の中で、記事の公開日（発行元が設定）が新しい順に表示します。各タイトルはオフライン保存されたコピーを開きます。",
+  "Filter by source tag": "情報源タグで絞り込む",
+  "No articles for this tag yet.": "このタグの記事はまだありません。",
+  "offline stored copy": "オフライン保存のコピー"
 }

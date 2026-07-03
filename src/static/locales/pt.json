@@ -1754,5 +1754,10 @@
   "By language": "Por idioma",
   "mentions per language": "menções por idioma",
   "Not mapped (source country unknown)": "Não mapeado (país da fonte desconhecido)",
-  "Mentions": "Menções"
+  "Mentions": "Menções",
+  "Most recent": "Mais recentes",
+  "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Mais recentes primeiro, pela data de publicação do artigo (definida pelo editor), entre as fontes com esta etiqueta. Cada título abre a cópia armazenada offline.",
+  "Filter by source tag": "Filtrar por etiqueta de fonte",
+  "No articles for this tag yet.": "Ainda não há artigos para esta etiqueta.",
+  "offline stored copy": "cópia armazenada offline"
 }

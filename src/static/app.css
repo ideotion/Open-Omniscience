@@ -160,6 +160,9 @@
     .basis-chip { display:inline-block; font-size:11px; font-weight:500; padding:1px 8px; border-radius:999px;
       background:var(--panel2); border:1px solid var(--border); color:var(--muted); vertical-align:middle; }
     .basis-chip.est { color:var(--caveat); border-color:var(--caveat); }
+    /* Home "Most recent by tag" rows (item #6): one compact line each. */
+    .home-recent-row { padding:4px 0; border-bottom:1px solid var(--border-soft); font-size:13.5px; }
+    .home-recent-row:last-child { border-bottom:0; }
     .topbar .spacer { flex:1; }
     .status-cluster { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
 
