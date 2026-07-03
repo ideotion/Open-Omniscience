@@ -79,7 +79,16 @@ def _source_tag(s) -> str:
     return first or "·untagged"
 
 
-def stratified_interleave(sources: list, *, rng: random.Random | None = None) -> list:
+def _source_country(s) -> str:
+    return (getattr(s, "country", None) or "").strip().lower()
+
+
+def stratified_interleave(
+    sources: list,
+    *,
+    rng: random.Random | None = None,
+    country_priority: dict | None = None,
+) -> list:
     """Order sources with TRUE per-pass randomness, fairly STRATIFIED by LANGUAGE
     then by SOURCE TAG (maintainer-ruled 2026-06-17 — supersedes the per-country
     round-robin for the default collection pass).
@@ -93,6 +102,13 @@ def stratified_interleave(sources: list, *, rng: random.Random | None = None) ->
     language / no tag share an "·unknown" / "·untagged" bucket so they are never
     dropped. Per-host politeness is unaffected (it lives in the fetcher's host lock);
     this only decides ORDER. ``rng`` is injectable so tests are deterministic.
+
+    ``country_priority`` (a ``{iso2: weight>0}`` dict, default OFF/None = byte-identical to
+    the pure stratified order) applies the maintainer's bandwidth PRIORITY LADDER: it decides
+    what runs FIRST under constrained bandwidth, NEVER what runs at all (ordering != exclusion).
+    A STABLE sort by descending country weight lifts higher-priority countries earlier while
+    preserving the fair language/tag interleave among equal-weight sources — every source
+    still runs, an unlisted country just sorts at weight 0 (its existing fair position kept).
     """
     if not sources:
         return []
@@ -126,6 +142,12 @@ def stratified_interleave(sources: list, *, rng: random.Random | None = None) ->
     while lang_queues:
         out.extend(q.pop(0) for q in lang_queues)
         lang_queues = [q for q in lang_queues if q]
+
+    # Bandwidth priority ladder (opt-in): a STABLE sort by descending country weight lifts
+    # prioritised countries to the front WITHOUT dropping anyone (unlisted = weight 0, its
+    # fair position preserved by the stable sort). Empty/None = byte-identical (no sort).
+    if country_priority:
+        out.sort(key=lambda s: -float(country_priority.get(_source_country(s), 0.0)))
     return out
 
 
@@ -472,7 +494,11 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     # source-rich language or topic dominates a pass, and the order differs every
     # pass (maintainer-ruled 2026-06-17, supersedes the per-country round-robin).
     # Per-host politeness is untouched (the fetcher's host lock); this only orders.
-    sources = stratified_interleave(sources)
+    # An opt-in per-country priority ladder (default OFF) lifts chosen countries FIRST
+    # under constrained bandwidth without excluding anyone (ordering != exclusion).
+    sources = stratified_interleave(
+        sources, country_priority=getattr(settings, "country_priority", None) or None
+    )
 
     # Per-feed de-churn backoff (field log finding F): skip RSS feeds that are
     # within a CAPPED, self-resetting backoff window (a recent 200 served only

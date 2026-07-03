@@ -56,6 +56,9 @@ class SchedulerConfigUpdate(BaseModel):
     # the operator opts into; {} or omitted keeps the pure random rotation.
     language_equilibrium: dict | None = None
     equilibrium_floor: float | None = None
+    # Opt-in per-country PRIORITY LADDER (default OFF): a {country: weight} map so chosen
+    # countries scrape FIRST under constrained bandwidth. Orders only, never excludes.
+    country_priority: dict | None = None
 
 
 def _status_payload() -> dict:
@@ -197,7 +200,11 @@ def scheduler_targets(db: Session = Depends(get_db)) -> dict:
         "applies": s.mode in ("rss", "crawl"),
         "matched": matched,
         "total_enabled": total_enabled,
-        "will_process_this_run": min(matched, s.max_sources_per_run),
+        # 0 (the default) = UNBOUNDED: every matched source runs. The old
+        # min(matched, cap) reported 0 for every default install (cap=0) — a latent bug.
+        "will_process_this_run": (
+            matched if s.max_sources_per_run <= 0 else min(matched, s.max_sources_per_run)
+        ),
         "max_sources_per_run": s.max_sources_per_run,
         "selection": {
             "languages": s.select_languages,

@@ -91,6 +91,11 @@ class SchedulerSettings:
     # multiplier (never fully stop a language).
     language_equilibrium: dict = field(default_factory=dict)
     equilibrium_floor: float = 0.2
+    # Opt-in per-country PRIORITY LADDER (default OFF): a {iso2: weight>0} map the operator
+    # sets so chosen countries scrape FIRST under constrained bandwidth. It only ORDERS,
+    # never excludes (ordering != exclusion — the continuous round-robin still covers every
+    # source). Empty {} = OFF = the pure stratified order, byte-identical.
+    country_priority: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -205,6 +210,9 @@ def load_settings() -> SchedulerSettings:
         discovery_per_run=_coerce_int(raw.get("discovery_per_run"), d.discovery_per_run, 0, 100),
         language_equilibrium=_coerce_target(raw.get("language_equilibrium")),
         equilibrium_floor=_coerce_float(raw.get("equilibrium_floor"), d.equilibrium_floor, 0.0, 1.0),
+        # Reuses _coerce_target: a {iso2: weight} map cleaned to {lowercased-key: float>0},
+        # exactly the shape the priority ladder needs (empty = OFF).
+        country_priority=_coerce_target(raw.get("country_priority")),
     )
 
 
@@ -273,6 +281,16 @@ def save_settings(updates: dict) -> SchedulerSettings:
         if not (0.0 <= f <= 1.0):
             raise SchedulerSettingsError("equilibrium_floor must be between 0 and 1")
         current.equilibrium_floor = f
+
+    if "country_priority" in updates:
+        # A {iso2: weight} map (or None/empty to turn the ladder OFF). Malformed entries
+        # are dropped by _coerce_target; an all-invalid map becomes {} = OFF.
+        val = updates["country_priority"]
+        if val is not None and not isinstance(val, dict):
+            raise SchedulerSettingsError(
+                "country_priority must be an object of {country: weight}"
+            )
+        current.country_priority = _coerce_target(val)
 
     path = _settings_path()
     tmp = path.with_suffix(".json.tmp")
