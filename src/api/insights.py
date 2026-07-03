@@ -782,6 +782,44 @@ def insights_server_locations(db: Session = Depends(get_db)) -> dict:
     return _cached(_ckey("server-locations"), lambda: q.server_locations(db))
 
 
+@router.get("/lunar-correlation")
+def insights_lunar_correlation(
+    term: str | None = Query(
+        None, description="A single keyword to test (uncorrected); omit to screen the top-N."
+    ),
+    limit: int = Query(40, ge=1, le=200, description="Terms to screen when no term is given"),
+    fdr_q: float = Query(0.05, gt=0.0, le=1.0, description="FDR level for the screen"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Test whether a keyword's daily coverage lines up with the moon — HONESTLY.
+
+    With ``term`` set, returns a single circular-shift correlation (r, p-value, n) with the
+    explicit note that one test is not a screen. Without ``term``, screens the top-N
+    most-mentioned keywords against the moon's illuminated fraction and corrects the whole
+    family with Benjamini-Hochberg FDR — so a survivor is one that beat multiple-testing,
+    never a bare significant p. Correlation is NOT causation (stated on every result); the
+    common, honest outcome is that nothing survives. Counts + statistics only, no score.
+    """
+    from src.analytics import lunar
+
+    if term:
+        corr = lunar.correlate_keyword(db, term)
+        return {
+            "term": term,
+            "result": corr.to_dict() if corr else None,
+            "single_test": True,
+            "variable": "illuminated_fraction",
+            "method": lunar.LUNAR_METHOD,
+            "caveat": lunar.CORRELATION_CAVEAT,
+            "note": (
+                "A single test, NOT corrected for multiple comparisons — screen many series "
+                "(omit 'term') for an honest, FDR-corrected result."
+                if corr else "Too few active days to test this keyword honestly."
+            ),
+        }
+    return lunar.lunar_screen(db, limit=limit, fdr_q=fdr_q)
+
+
 def warm_cache(db: Session) -> dict:
     """Pre-compute the common whole-corpus views into the read cache so the Home /
     Insights surfaces never hit a cold heavy query (perf, field report 2026-06-18).
