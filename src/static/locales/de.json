@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "Suche absenden / Auswahl ausführen",
   "Fixed": "Fest",
   "Press a key…": "Taste drücken…",
-  "Shortcuts reset to defaults.": "Tastenkürzel auf Standard zurückgesetzt."
+  "Shortcuts reset to defaults.": "Tastenkürzel auf Standard zurückgesetzt.",
+  "exact": "genau",
+  "estimated": "geschätzt",
+  "cached": "zwischengespeichert"
 }

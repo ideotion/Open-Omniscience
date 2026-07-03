@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "تنفيذ البحث / تشغيل التحديد",
   "Fixed": "ثابت",
   "Press a key…": "اضغط مفتاحًا…",
-  "Shortcuts reset to defaults.": "أُعيد ضبط الاختصارات إلى الإعدادات الافتراضية."
+  "Shortcuts reset to defaults.": "أُعيد ضبط الاختصارات إلى الإعدادات الافتراضية.",
+  "exact": "دقيق",
+  "estimated": "تقديري",
+  "cached": "مخزَّن مؤقتًا"
 }

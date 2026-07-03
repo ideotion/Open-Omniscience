@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "खोज सबमिट करें / चयन चलाएँ",
   "Fixed": "स्थिर",
   "Press a key…": "कोई कुंजी दबाएँ…",
-  "Shortcuts reset to defaults.": "शॉर्टकट डिफ़ॉल्ट पर रीसेट किए गए।"
+  "Shortcuts reset to defaults.": "शॉर्टकट डिफ़ॉल्ट पर रीसेट किए गए।",
+  "exact": "सटीक",
+  "estimated": "अनुमानित",
+  "cached": "कैश्ड"
 }

@@ -7766,6 +7766,7 @@
           `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
           : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
+        const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
     }
 
@@ -9152,6 +9153,33 @@
       } catch (e) { toast("Exclude failed: " + e.message, "err"); }
     }
 
+    // Honesty-envelope disclosure (informed-consent-by-layering): the maintained-counter
+    // aggregates carry {value, basis:exact|estimated, as_of, method, n}; the rollup-served
+    // paths add a cache disclosure {source, as_of, note}. Render a small VISIBLE chip so the
+    // reader knows whether a number is an exact live count or an estimate, and as of when;
+    // the method / n / rollup note ride the #oo-tip hover (the translated title). It is a
+    // DISCLOSURE, never a score (no numeric grade), so the no-score rule holds.
+    function _basisWhen(iso) { return iso ? String(iso).slice(0, 10) : ""; }
+    function basisChip(counts, disc) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!counts && !disc) return "";
+      let label = "", est = false;
+      const titleParts = [];
+      if (counts && counts.basis) {
+        est = counts.basis === "estimated";
+        const w = _basisWhen(counts.as_of);
+        label = t(est ? "estimated" : "exact") + (w ? " · " + t("as of") + " " + w : "");
+        if (counts.method) titleParts.push(counts.method);
+        if (counts.n != null) titleParts.push("n = " + counts.n);
+      }
+      if (disc) {
+        if (!label) { const w = _basisWhen(disc.as_of); label = t("cached") + (w ? " · " + t("as of") + " " + w : ""); }
+        if (disc.note) titleParts.push(disc.note);
+      }
+      if (!label) return "";
+      const title = titleParts.join(" · ");
+      return `<span class="basis-chip${est ? " est" : ""}"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span>`;
+    }
     async function loadTrends() {
       const wd = $("trd-window").value, bd = $("trd-base").value, kind = $("trd-kind").value, cc = $("trd-country").value.trim();
       const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${tgtLangParam()}${extra||""}`;
@@ -9166,6 +9194,7 @@
         $("trd-top").innerHTML = termBarsHtml(top.terms, t => t.mentions,
           t => `${t.mentions} mentions · ${t.articles} articles`);
         $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
+        const bc = $("trd-basis"); if (bc) bc.innerHTML = basisChip(top.counts, top.basis || rising.basis);
       } catch (e) { toast("Trends failed: " + e.message, "err"); }
       loadTrendWindows();
     }

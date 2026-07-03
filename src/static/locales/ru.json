@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "Выполнить поиск / запустить выбранное",
   "Fixed": "Фиксировано",
   "Press a key…": "Нажмите клавишу…",
-  "Shortcuts reset to defaults.": "Сочетания клавиш сброшены по умолчанию."
+  "Shortcuts reset to defaults.": "Сочетания клавиш сброшены по умолчанию.",
+  "exact": "точно",
+  "estimated": "оценка",
+  "cached": "из кэша"
 }

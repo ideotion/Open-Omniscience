@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "Kirim pencarian / jalankan pilihan",
   "Fixed": "Tetap",
   "Press a key…": "Tekan tombol…",
-  "Shortcuts reset to defaults.": "Pintasan disetel ulang ke bawaan."
+  "Shortcuts reset to defaults.": "Pintasan disetel ulang ke bawaan.",
+  "exact": "tepat",
+  "estimated": "perkiraan",
+  "cached": "tersimpan"
 }

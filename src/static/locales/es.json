@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "Enviar búsqueda / ejecutar la selección",
   "Fixed": "Fijo",
   "Press a key…": "Pulsa una tecla…",
-  "Shortcuts reset to defaults.": "Atajos restablecidos a los valores predeterminados."
+  "Shortcuts reset to defaults.": "Atajos restablecidos a los valores predeterminados.",
+  "exact": "exacto",
+  "estimated": "estimado",
+  "cached": "en caché"
 }

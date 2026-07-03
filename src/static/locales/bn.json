@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "অনুসন্ধান জমা দিন / নির্বাচন চালান",
   "Fixed": "নির্দিষ্ট",
   "Press a key…": "একটি কী চাপুন…",
-  "Shortcuts reset to defaults.": "শর্টকাট ডিফল্টে রিসেট করা হয়েছে।"
+  "Shortcuts reset to defaults.": "শর্টকাট ডিফল্টে রিসেট করা হয়েছে।",
+  "exact": "নির্ভুল",
+  "estimated": "আনুমানিক",
+  "cached": "ক্যাশে"
 }

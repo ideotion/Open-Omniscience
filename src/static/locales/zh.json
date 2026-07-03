@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "提交搜索 / 运行所选项",
   "Fixed": "固定",
   "Press a key…": "按下一个键…",
-  "Shortcuts reset to defaults.": "快捷键已恢复默认。"
+  "Shortcuts reset to defaults.": "快捷键已恢复默认。",
+  "exact": "精确",
+  "estimated": "估算",
+  "cached": "缓存"
 }

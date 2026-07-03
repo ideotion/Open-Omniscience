@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "検索を実行 / 選択を実行",
   "Fixed": "固定",
   "Press a key…": "キーを押してください…",
-  "Shortcuts reset to defaults.": "ショートカットを既定に戻しました。"
+  "Shortcuts reset to defaults.": "ショートカットを既定に戻しました。",
+  "exact": "正確",
+  "estimated": "推定",
+  "cached": "キャッシュ"
 }

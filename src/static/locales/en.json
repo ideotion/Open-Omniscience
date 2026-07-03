@@ -1741,5 +1741,8 @@
   "Submit search / run the selection": "Submit search / run the selection",
   "Fixed": "Fixed",
   "Press a key…": "Press a key…",
-  "Shortcuts reset to defaults.": "Shortcuts reset to defaults."
+  "Shortcuts reset to defaults.": "Shortcuts reset to defaults.",
+  "exact": "exact",
+  "estimated": "estimated",
+  "cached": "cached"
 }
