@@ -42,9 +42,12 @@ def test_head_links_manifest_and_theme():
 
 
 def test_service_worker_is_registered_best_effort():
-    assert 'navigator.serviceWorker.register("/static/sw.js")' in _HTML
-    assert '"serviceWorker" in navigator' in _HTML
-    assert ".catch(function () {})" in _HTML  # never breaks boot
+    # registration lives in an external file (index.html carries no inline <script>)
+    assert '<script src="/static/sw-register.js">' in _HTML
+    reg = (_STATIC / "sw-register.js").read_text(encoding="utf-8")
+    assert 'navigator.serviceWorker.register("/static/sw.js")' in reg
+    assert '"serviceWorker" in navigator' in reg
+    assert ".catch(function () {})" in reg  # never breaks boot
 
 
 def test_service_worker_caches_only_the_static_shell_never_api():

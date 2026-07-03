@@ -7918,7 +7918,7 @@
         const pick = $("sg-ringmap-pick");
         if (pick) {
           const cur = pick.value;
-          pick.innerHTML = `<option value="">—</option>` + (rings.rings || []).map(r =>
+          pick.innerHTML = `<option value=""></option>` + (rings.rings || []).map(r =>
             `<option value="${esc(r.id)}">${esc(r.id)} (${esc((r.languages || []).join("/"))})</option>`).join("");
           if (cur && (rings.rings || []).some(r => r.id === cur)) pick.value = cur;
         }
