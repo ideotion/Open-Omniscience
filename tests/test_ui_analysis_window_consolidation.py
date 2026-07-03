@@ -21,7 +21,8 @@ from tests.test_repo_invariants import _ui_source
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _JS = (_STATIC / "app.js").read_text(encoding="utf-8")
-_HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
+# The combined UI source (index.html + app.js + app.css) for HTML-origin markers.
+_HTML = _ui_source()
 
 
 def test_routing_is_already_converged_on_the_an_window():
