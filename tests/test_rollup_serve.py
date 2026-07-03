@@ -70,7 +70,7 @@ def _reset_serve_state():
             con.close()
         except Exception:  # noqa: BLE001
             pass
-    rollup_serve._STATE.update({"con": None, "built_at": 0.0, "rows": 0})
+    rollup_serve._STATE.update({"con": None, "built_at": 0.0, "rows": 0, "bind": None})
 
 
 def _canon(res):
@@ -115,6 +115,7 @@ def test_opted_in_and_built_serves_the_same_values_with_a_basis(session, monkeyp
     con = columnar.connect(passphrase=None)
     columnar.build_keyword_daily(con, session)
     rollup_serve._STATE["con"] = con
+    rollup_serve._STATE["bind"] = session.get_bind()
     rollup_serve._STATE["built_at"] = time.time()
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
 
@@ -135,6 +136,7 @@ def test_trending_served_matches_live_and_discloses_basis(session, monkeypatch):
     con = columnar.connect(passphrase=None)
     columnar.build_keyword_daily(con, session)
     rollup_serve._STATE["con"] = con
+    rollup_serve._STATE["bind"] = session.get_bind()
     rollup_serve._STATE["built_at"] = time.time()
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
 
@@ -152,6 +154,7 @@ def test_per_country_never_uses_the_rollup(session, monkeypatch):
     con = columnar.connect(passphrase=None)
     columnar.build_keyword_daily(con, session)
     rollup_serve._STATE["con"] = con
+    rollup_serve._STATE["bind"] = session.get_bind()
     rollup_serve._STATE["built_at"] = time.time()
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
 
@@ -164,6 +167,7 @@ def test_corpus_wide_is_never_touched(session, monkeypatch):
     con = columnar.connect(passphrase=None)
     columnar.build_keyword_daily(con, session)
     rollup_serve._STATE["con"] = con
+    rollup_serve._STATE["bind"] = session.get_bind()
     rollup_serve._STATE["built_at"] = time.time()
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
 
