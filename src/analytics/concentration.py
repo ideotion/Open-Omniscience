@@ -22,8 +22,10 @@ HONESTY (enforced in code):
   * a minimum prior sample is required (small-n degrades to silence, never a guess);
   * the caveat names the innocent twin; the scan is bounded; no score.
 
-The "bury" half (a source UNDER-covering a topic that is big elsewhere) needs a real
-external trigger and is left to a follow-on -- this is the FLOOD half.
+The "bury" half (a source UNDER-covering a topic that is big ELSEWHERE IN THE CORPUS) lives
+below in :func:`find_buried_topics`: the corpus itself is the "elsewhere" (a real internal
+trigger), and screening every (source, topic) pair is made honest with a Benjamini-Hochberg
+FDR correction (:mod:`src.stats.fdr`) so the many comparisons cannot manufacture a finding.
 """
 
 from __future__ import annotations
@@ -178,3 +180,215 @@ def find_flooded_topics(
         ),
         "caveat": FLOOD_CAVEAT,
     }
+
+
+BURY_CAVEAT = (
+    "One source covered a topic FAR BELOW the corpus norm — a topic that many other "
+    "sources covered heavily. The overwhelming innocent explanation is SPECIALIZATION: a "
+    "source has a different beat, region, or language, so covering a widely-covered topic "
+    "little (or not at all) is normal and expected. This names a SHAPE — 'this source, "
+    "this broadly-covered topic, far below where the rest of the corpus sits' — never a "
+    "claim the source deliberately buried or suppressed it. Read it and judge. And note: "
+    "the absence of a flag here is NOT evidence that nothing was under-covered — this "
+    "surfaces only the sharpest gaps that survive multiple-testing correction."
+)
+
+
+def _phi(z: float) -> float:
+    """Standard-normal CDF via ``math.erf`` (no scipy at runtime). ``Phi(z)`` = the
+    lower-tail probability = the one-sided p-value that a share is this LOW or lower."""
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+
+def find_buried_topics(
+    session,
+    *,
+    window_days: int = 30,
+    min_source_articles: int = 20,
+    min_corpus_articles: int = 25,
+    min_corpus_sources: int = 5,
+    min_corpus_share: float = 0.05,
+    z_min: float = 3.0,
+    fdr_q: float = 0.05,
+    max_sources: int = 80,
+    max_topics: int = 60,
+    max_items: int = 12,
+) -> dict:
+    """Sources UNDER-covering a topic that is big across the rest of the corpus (the BURY
+    half of manipulation-card #4).
+
+    For every (candidate source, big topic) pair, a two-proportion z-test compares the
+    SOURCE's share of the topic against the REST-OF-CORPUS share (one-sided: is the source
+    BELOW?). The whole family of pairs is corrected with Benjamini-Hochberg FDR at ``fdr_q``
+    so screening thousands of pairs cannot manufacture a "finding"; a pair is surfaced only
+    if it BOTH survives FDR AND clears the effect gate ``z <= -z_min``.
+
+    Efficient by construction (like the flood half): reads only the denormalised
+    ``keyword_mentions.source_id`` + ``observed_on`` — never the article-content decrypt.
+    HONESTY: distinct SOURCES (not article count) measures a topic's breadth; the innocent
+    twin (specialization) is stated in the caveat; the signal carries its COMPONENTS
+    (z, the two shares, counts, the BH-adjusted q-value), never a blend; no score.
+    """
+    from src.analytics.queries import _hidden_predicate
+    from src.database.models import Keyword, KeywordMention, Source
+    from src.stats.fdr import benjamini_hochberg
+
+    today = date.today()
+    cutoff = today - timedelta(days=window_days)
+    hi = today + timedelta(days=1)
+
+    def _empty(note: str) -> dict:
+        return {"items": [], "count": 0, "window_days": window_days, "z_min": z_min,
+                "fdr_q": fdr_q, "tests": 0, "note": note, "method": _METHOD, "caveat": BURY_CAVEAT}
+
+    win = [
+        KeywordMention.observed_on >= cutoff,
+        KeywordMention.observed_on < hi,
+        KeywordMention.source_id.isnot(None),
+    ]
+
+    # Corpus size N in the window (distinct sourced articles).
+    n_corpus = int(
+        session.query(func.count(distinct(KeywordMention.article_id))).filter(*win).scalar() or 0
+    )
+    if n_corpus < max(min_corpus_articles * 2, 2 * min_source_articles):
+        return _empty("corpus too small in window")
+
+    # Candidate sources: enough articles in the window (index scan on source_id).
+    src_tot = dict(
+        session.query(KeywordMention.source_id, func.count(distinct(KeywordMention.article_id)))
+        .filter(*win)
+        .group_by(KeywordMention.source_id)
+        .all()
+    )
+    candidates = sorted(
+        ((int(s), int(n or 0)) for s, n in src_tot.items() if int(n or 0) >= min_source_articles),
+        key=lambda t: -t[1],
+    )[:max_sources]
+    if not candidates:
+        return _empty("no source has enough articles in the window")
+    cand_ids = [s for s, _ in candidates]
+
+    # Big topics: broad across the corpus (distinct articles AND distinct sources), a real
+    # share of the window, and not stoplisted.
+    is_hidden = _hidden_predicate()
+    topic_rows = (
+        session.query(
+            KeywordMention.keyword_id,
+            func.count(distinct(KeywordMention.article_id)),
+            func.count(distinct(KeywordMention.source_id)),
+        )
+        .filter(*win)
+        .group_by(KeywordMention.keyword_id)
+        .all()
+    )
+    big: list[tuple[int, int, int]] = []
+    for kid, a_t, s_t in topic_rows:
+        a_t = int(a_t or 0)
+        s_t = int(s_t or 0)
+        if a_t >= min_corpus_articles and s_t >= min_corpus_sources and (a_t / n_corpus) >= min_corpus_share:
+            big.append((int(kid), a_t, s_t))
+    big.sort(key=lambda t: -t[1])
+    big = big[:max_topics]
+    if not big:
+        return _empty("no topic is broad enough in the window")
+    topic_meta = {k: (a, s) for k, a, s in big}
+    big_ids = [k for k, _, _ in big]
+
+    # Per (source, topic) distinct articles (only non-zero pairs are returned; missing = 0).
+    pair: dict[tuple[int, int], int] = {}
+    for i in range(0, len(cand_ids), 400):  # bounded IN() under the SQLite variable limit
+        chunk = cand_ids[i : i + 400]
+        for sid, kid, a_s in (
+            session.query(
+                KeywordMention.source_id,
+                KeywordMention.keyword_id,
+                func.count(distinct(KeywordMention.article_id)),
+            )
+            .filter(*win)
+            .filter(KeywordMention.source_id.in_(chunk))
+            .filter(KeywordMention.keyword_id.in_(big_ids))
+            .group_by(KeywordMention.source_id, KeywordMention.keyword_id)
+        ):
+            pair[(int(sid), int(kid))] = int(a_s or 0)
+
+    # Build the test family: every (candidate source, big topic) pair, one-sided lower test.
+    tests: list[dict] = []
+    pvals: list[float] = []
+    for sid, n_s in candidates:
+        rest_n = n_corpus - n_s
+        if rest_n <= 0:
+            continue
+        for kid in big_ids:
+            a_t, _s_t = topic_meta[kid]
+            a_s = pair.get((sid, kid), 0)
+            rest_a = a_t - a_s
+            p_s = a_s / n_s
+            p_rest = rest_a / rest_n
+            pooled = a_t / n_corpus
+            if pooled <= 0 or pooled >= 1:
+                continue
+            se = math.sqrt(pooled * (1.0 - pooled) * (1.0 / n_s + 1.0 / rest_n))
+            if se <= 0:
+                continue
+            z = (p_s - p_rest) / se
+            tests.append({"sid": sid, "kid": kid, "z": z, "a_s": a_s, "n_s": n_s,
+                          "p_s": p_s, "p_rest": p_rest, "a_t": a_t})
+            pvals.append(_phi(z))  # lower-tail p: how surprising a share THIS low is
+
+    if not tests:
+        return _empty("no comparable pairs")
+
+    fdr = benjamini_hochberg(pvals, q=fdr_q)
+    survivors = set(fdr.rejected)
+    hits = [
+        t for idx, t in enumerate(tests)
+        if idx in survivors and t["z"] <= -z_min  # survive FDR AND clear the effect gate
+    ]
+    hits.sort(key=lambda t: t["z"])  # most-below first
+    hits = hits[:max_items]
+
+    items: list[dict] = []
+    for t in hits:
+        kw = session.get(Keyword, t["kid"])
+        if kw is None or is_hidden(kw.normalized_term):
+            continue
+        src = session.get(Source, t["sid"])
+        adj_q = fdr.adjusted[tests.index(t)] if t in tests else None
+        items.append(
+            {
+                "term": kw.normalized_term,
+                "keyword_id": t["kid"],
+                "source": (src.name or src.domain) if src else f"source-{t['sid']}",
+                "source_id": t["sid"],
+                "gap_zscore": round(t["z"], 2),
+                "source_share": round(t["p_s"], 4),
+                "corpus_share": round(t["p_rest"], 4),
+                "source_articles_on_topic": t["a_s"],
+                "source_total": t["n_s"],
+                "corpus_articles_on_topic": t["a_t"],
+                "fdr_qvalue": round(adj_q, 5) if adj_q is not None else None,
+            }
+        )
+
+    return {
+        "items": items,
+        "count": len(items),
+        "window_days": window_days,
+        "z_min": z_min,
+        "fdr_q": fdr_q,
+        "tests": len(tests),
+        "survivors": len(survivors),
+        "method": _METHOD,
+        "caveat": BURY_CAVEAT,
+    }
+
+
+_METHOD = (
+    "For every (source with enough articles, topic broad across the corpus) pair in the "
+    "window: a two-proportion z-test of the source's share of the topic vs the "
+    "rest-of-corpus share (one-sided, is the source BELOW?). The whole family of pairs is "
+    "corrected with Benjamini-Hochberg FDR; a pair is surfaced only if it survives at the "
+    "FDR level AND its gap clears z <= -z_min. Distinct SOURCES measure a topic's breadth. "
+    "Reads the denormalised source_id only (no content decrypt). Counts only, no score."
+)
