@@ -1338,6 +1338,112 @@
     function openDrawer()  { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("graphics"); }
     function closeDrawer() { /* drawer removed — appearance is a Settings section */ }
 
+    // -- Keyboard shortcuts (local-only, rebindable; UI-shell §4) ----------- //
+    // The global shortcuts are stored on THIS DEVICE (localStorage), never transmitted.
+    // The command palette (Ctrl/⌘-K) is bound by default; the rest are opt-in (default
+    // unset) so a fresh install never hijacks a keystroke. One dispatcher reads the
+    // bindings, so a rebind takes effect immediately without reloading.
+    const KEYS_KEY = "oo.keys";
+    const KB_DEFAULTS = { palette: "Mod+K", home: "", settings: "", airplane: "", help: "" };
+    function getKeys() { try { return {...KB_DEFAULTS, ...JSON.parse(localStorage.getItem(KEYS_KEY) || "{}")}; }
+      catch { return {...KB_DEFAULTS}; } }
+    function saveKeys(k) { localStorage.setItem(KEYS_KEY, JSON.stringify(k)); }
+    // Normalize a keydown into a canonical combo string ("Mod+K", "Alt+Shift+H"). Ctrl and
+    // Cmd both fold to "Mod" (cross-platform). Returns "" while only a modifier is held.
+    function _kbCombo(e) {
+      const k = e.key;
+      if (!k || ["Control", "Shift", "Alt", "Meta", "OS", "Dead"].includes(k)) return "";
+      const parts = [];
+      if (e.ctrlKey || e.metaKey) parts.push("Mod");
+      if (e.altKey) parts.push("Alt");
+      if (e.shiftKey) parts.push("Shift");
+      parts.push(k.length === 1 ? k.toUpperCase() : k);
+      return parts.join("+");
+    }
+    function _kbShow(c) { return c ? c.replace("Mod", "Ctrl/⌘") : ""; }
+    function _kbInField(el) {
+      const tag = el && el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el && el.isContentEditable);
+    }
+    function _kbActions() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return [
+        { id: "palette",  label: t("Open the command palette"), always: true, run: () => openPalette() },
+        { id: "home",     label: t("Go to Home"),               run: () => showTab("home") },
+        { id: "settings", label: t("Open Settings"),            run: () => showTab("settings") },
+        { id: "airplane", label: t("Toggle airplane mode"),     run: () => { if (typeof toggleNetwork === "function") toggleNetwork(); } },
+        { id: "help",     label: t("Open Help"),                run: () => showTab("help") },
+      ];
+    }
+    // The single global keydown dispatcher: Escape closes overlays; a bound combo runs its
+    // action. A plain-key binding never fires while typing in a field; the palette (Mod-combo)
+    // always may. Ctrl/⌘-K keeps its default behaviour unless the user rebinds it.
+    function _kbDispatch(e) {
+      if (e.key === "Escape") { closePalette(); closeDrawer(); document.body.classList.remove("nav-open"); return; }
+      if (_kbRecording) return;   // a rebind capture is in progress
+      const combo = _kbCombo(e); if (!combo) return;
+      const binds = getKeys(), field = _kbInField(e.target);
+      for (const a of _kbActions()) {
+        if (binds[a.id] !== combo) continue;
+        if (field && !a.always) continue;
+        e.preventDefault(); a.run(); return;
+      }
+    }
+    // Settings → Shortcuts: list the shortcuts + rebind the global ones (the recorder
+    // captures the next keystroke). Reference rows document the fixed contextual keys.
+    let _kbRecording = null;
+    function loadShortcuts() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("kb-panel"); if (!host) return;
+      const binds = getKeys();
+      const rows = _kbActions().map(a => {
+        const cur = binds[a.id];
+        const chip = cur
+          ? `<span class="kb-chip">${esc(_kbShow(cur))}</span>`
+          : `<span class="muted">${esc(t("Not set"))}</span>`;
+        return `<tr><td>${esc(a.label)}</td><td>${chip}</td>
+          <td style="white-space:nowrap">
+            <button class="secondary tiny" data-kb-change="${esc(a.id)}">${esc(t("Change"))}</button>
+            <button class="secondary tiny" data-kb-clear="${esc(a.id)}"${cur ? "" : " disabled"}>${esc(t("Clear"))}</button>
+          </td></tr>`;
+      }).join("");
+      const ref = [
+        [t("Close overlays and dialogs"), "Esc"],
+        [t("Move within lists and subtabs"), "← → ↑ ↓"],
+        [t("Submit search / run the selection"), "Enter"],
+      ].map(([lbl, k]) => `<tr><td>${esc(lbl)}</td><td><span class="kb-chip">${esc(k)}</span></td><td class="muted">${esc(t("Fixed"))}</td></tr>`).join("");
+      host.innerHTML =
+        `<table><thead><tr><th>${esc(t("Action"))}</th><th>${esc(t("Shortcut"))}</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+         <div style="margin:8px 0"><button class="secondary tiny" onclick="kbReset()">${esc(t("Reset to defaults"))}</button></div>
+         <h3 style="margin-top:14px;font-size:14px">${esc(t("Fixed shortcuts"))}</h3>
+         <p class="hint muted">${esc(t("These contextual keys are always available and are not rebindable."))}</p>
+         <table><tbody>${ref}</tbody></table>`;
+      host.querySelectorAll("[data-kb-change]").forEach(b =>
+        b.addEventListener("click", () => kbRecord(b.getAttribute("data-kb-change"), b)));
+      host.querySelectorAll("[data-kb-clear]").forEach(b =>
+        b.addEventListener("click", () => kbClear(b.getAttribute("data-kb-clear"))));
+    }
+    function kbRecord(id, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_kbRecording) return;
+      _kbRecording = id; btn.textContent = t("Press a key…"); btn.classList.add("kb-rec");
+      function done() { document.removeEventListener("keydown", onKey, true); _kbRecording = null; }
+      function onKey(e) {
+        e.preventDefault(); e.stopPropagation();
+        if (e.key === "Escape") { done(); loadShortcuts(); return; }   // cancel the capture
+        const combo = _kbCombo(e); if (!combo) return;                 // wait for a real key
+        const binds = getKeys();
+        Object.keys(binds).forEach(k => { if (k !== id && binds[k] === combo) binds[k] = ""; });  // no dup
+        binds[id] = combo; saveKeys(binds); done(); loadShortcuts();
+      }
+      document.addEventListener("keydown", onKey, true);   // capture: beats the global dispatcher
+    }
+    function kbClear(id) { const b = getKeys(); b[id] = ""; saveKeys(b); loadShortcuts(); }
+    function kbReset() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      saveKeys({...KB_DEFAULTS}); loadShortcuts(); toast(t("Shortcuts reset to defaults."));
+    }
+
     // Settings sections (Appearance · General · Wikipedia · Data · Safety).
     function showSetCat(cat) {
       // Button/ARIA state is owned by the ooSubtabs component; this callback
@@ -1356,6 +1462,7 @@
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
+      if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
@@ -13181,11 +13288,9 @@
       try { if ($("set-models") && $("set-models").offsetParent !== null && typeof loadLlmPrompts === "function") loadLlmPrompts(); } catch (_e) {}
     });
 
-    // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.
-    document.addEventListener("keydown", e => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
-      else if (e.key === "Escape") { closePalette(); closeDrawer(); document.body.classList.remove("nav-open"); }
-    });
+    // Global shortcuts: dispatched from the user's (rebindable) bindings — Ctrl/⌘-K opens
+    // the palette by default; Escape closes overlays. See _kbDispatch / Settings → Shortcuts.
+    document.addEventListener("keydown", _kbDispatch);
 
     // Initial load: always-on essentials; per-tab data loads lazily on first view.
     // Settings is loaded eagerly so the default result limit + theme seed apply
