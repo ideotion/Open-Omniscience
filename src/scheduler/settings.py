@@ -111,21 +111,37 @@ def _settings_path():
     return data_dir() / "scheduler_settings.json"
 
 
+def _use_kv() -> bool:
+    """Use the encrypted ``app_state`` store at the DEFAULT location; honour a redirected
+    ``_settings_path`` (test isolation) as JSON instead. See app_settings._use_kv."""
+    from src.paths import data_dir
+
+    return _settings_path() == data_dir() / "scheduler_settings.json"
+
+
+def _read_json_file() -> dict | None:
+    path = _settings_path()
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text("utf-8"))
+    except Exception:  # noqa: BLE001 - a bad file must not break startup
+        _LOG.warning("scheduler_settings.json unreadable; using defaults", exc_info=True)
+        return None
+
+
 def _read_raw() -> dict | None:
     """Scheduler prefs source of truth: the encrypted ``app_state`` row (D1), falling
     back to (and one-time migrating) the legacy ``scheduler_settings.json`` file."""
+    if not _use_kv():
+        return _read_json_file()
     from src.config.kv_store import kv_get_json, kv_set_json
 
     raw = kv_get_json(_KV_KEY)
     if raw is not None:
         return raw
-    path = _settings_path()
-    if not path.exists():
-        return None
-    try:
-        raw = json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not break startup
-        _LOG.warning("scheduler_settings.json unreadable; using defaults", exc_info=True)
+    raw = _read_json_file()
+    if raw is None:
         return None
     try:
         kv_set_json(_KV_KEY, raw)
@@ -314,7 +330,14 @@ def save_settings(updates: dict) -> SchedulerSettings:
             )
         current.country_priority = _coerce_target(val)
 
+    payload = {"version": SETTINGS_VERSION, **current.to_dict()}
+    if not _use_kv():
+        path = _settings_path()
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), "utf-8")
+        tmp.replace(path)
+        return current
     from src.config.kv_store import kv_set_json
 
-    kv_set_json(_KV_KEY, {"version": SETTINGS_VERSION, **current.to_dict()})
+    kv_set_json(_KV_KEY, payload)
     return current
