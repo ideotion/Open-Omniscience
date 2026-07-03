@@ -1759,5 +1759,7 @@
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Mais recentes primeiro, pela data de publicação do artigo (definida pelo editor), entre as fontes com esta etiqueta. Cada título abre a cópia armazenada offline.",
   "Filter by source tag": "Filtrar por etiqueta de fonte",
   "No articles for this tag yet.": "Ainda não há artigos para esta etiqueta.",
-  "offline stored copy": "cópia armazenada offline"
+  "offline stored copy": "cópia armazenada offline",
+  "+ {n} more (not shown)": "+ {n} mais (não exibidos)",
+  "Per-country articles vs mentions": "Artigos vs. menções por país"
 }

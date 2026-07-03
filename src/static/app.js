@@ -7806,6 +7806,43 @@
     }
 
     // -- Super-groups: groups of families ----------------------------------- //
+    // Item #8 (an ooViz technique on a real surface): an honest DUMBBELL of a ring's
+    // per-country distinct-ARTICLE spread vs total MENTIONS — the gap is amplification
+    // (how many mentions per article), NEVER a fabricated curve. Counts only; built with the
+    // ooViz.linearScale + niceTicks primitives (like renderStatMap templates choroplethData).
+    // Every country in the payload is drawn, capped at _DUMBBELL_MAX with the drop DISCLOSED
+    // (no silent truncation — the honesty rule).
+    const _DUMBBELL_MAX = 15;
+    function ringDumbbellSvg(rows, names) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (typeof ooViz === "undefined" || !ooViz.linearScale || !ooViz.niceTicks) return "";
+      const data = (rows || []).filter(r => r.country && ((r.mentions || 0) || (r.articles || 0)))
+        .sort((a, b) => (b.mentions || 0) - (a.mentions || 0));
+      if (!data.length) return "";
+      const shown = data.slice(0, _DUMBBELL_MAX), dropped = data.length - shown.length;
+      const maxV = Math.max(1, ...shown.map(r => Math.max(r.mentions || 0, r.articles || 0)));
+      const padL = 96, padR = 44, padT = 8, rowH = 22, W = 340;
+      const H = padT * 2 + shown.length * rowH + 22;
+      const x = ooViz.linearScale(0, maxV, padL, W - padR);
+      const grid = ooViz.niceTicks(0, maxV, 4).map(v => {
+        const gx = x(v).toFixed(1);
+        return `<line x1="${gx}" y1="${padT}" x2="${gx}" y2="${(padT + shown.length * rowH).toFixed(1)}" stroke="var(--border-soft)" stroke-width="1"/>`
+          + `<text x="${gx}" y="${(padT + shown.length * rowH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--muted)">${esc(String(v))}</text>`;
+      }).join("");
+      const bars = shown.map((r, i) => {
+        const cy = (padT + i * rowH + rowH / 2).toFixed(1);
+        const xa = x(r.articles || 0), xm = x(r.mentions || 0);
+        const lo = Math.min(xa, xm).toFixed(1), hi = Math.max(xa, xm).toFixed(1);
+        const nm = esc((names && names[r.country]) || String(r.country).toUpperCase());
+        return `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${nm}</text>`
+          + `<line x1="${lo}" y1="${cy}" x2="${hi}" y2="${cy}" stroke="var(--muted)" stroke-width="2" opacity="0.5"/>`
+          + `<circle cx="${xa.toFixed(1)}" cy="${cy}" r="4" fill="var(--accent)"><title>${nm}: ${r.articles} ${esc(t("articles"))}</title></circle>`
+          + `<circle cx="${xm.toFixed(1)}" cy="${cy}" r="4" fill="var(--muted)"><title>${nm}: ${r.mentions} ${esc(t("mentions"))}</title></circle>`;
+      }).join("");
+      const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--accent)">●</span> ${esc(t("articles"))} · <span style="color:var(--muted)">●</span> ${esc(t("mentions"))}`
+        + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", dropped))}</span>` : "") + `</div>`;
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(t("Per-country articles vs mentions"))}" style="max-width:${W}px;height:auto">${grid}${bars}</svg>${legend}`;
+    }
     // Cross-language ring -> per-language mention breakdown, indexed from /top?group=true
     // (best-effort: only rings that fall in the fetched top-N carry a language breakdown).
     let _ringLangIndex = {};
@@ -7856,7 +7893,9 @@
           .map(c => `<tr><td>${esc(names[c.country] || c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
         const tbl = rows
           ? `<table style="margin-top:8px"><thead><tr><th>${esc(t("Country"))}</th><th style="text-align:right">${esc(t("Articles"))}</th><th style="text-align:right">${esc(t("Mentions"))}</th></tr></thead><tbody>${rows}</tbody></table>` : "";
-        if (detail) detail.innerHTML = langs + langBd + unlocNote + tbl;
+        // Item #8: an honest per-country dumbbell (articles vs mentions) above the table.
+        const dumb = ringDumbbellSvg((d.countries || []).filter(c => c.country), names);
+        if (detail) detail.innerHTML = langs + langBd + unlocNote + dumb + tbl;
       } catch (e) { host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
     }
     async function loadSuperGroups() {

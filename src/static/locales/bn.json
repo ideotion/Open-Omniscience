@@ -1759,5 +1759,7 @@
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "এই ট্যাগযুক্ত উৎসগুলির মধ্যে নিবন্ধের প্রকাশের তারিখ (প্রকাশক নির্ধারিত) অনুযায়ী নতুনতমগুলি প্রথমে। প্রতিটি শিরোনাম অফলাইন সংরক্ষিত কপি খোলে।",
   "Filter by source tag": "উৎস ট্যাগ দিয়ে ফিল্টার করুন",
   "No articles for this tag yet.": "এই ট্যাগের জন্য এখনও কোনো নিবন্ধ নেই।",
-  "offline stored copy": "অফলাইন সংরক্ষিত কপি"
+  "offline stored copy": "অফলাইন সংরক্ষিত কপি",
+  "+ {n} more (not shown)": "+ আরও {n}টি (দেখানো হয়নি)",
+  "Per-country articles vs mentions": "দেশ অনুযায়ী নিবন্ধ বনাম উল্লেখ"
 }

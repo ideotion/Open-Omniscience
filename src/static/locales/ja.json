@@ -1759,5 +1759,7 @@
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "このタグが付いた情報源の中で、記事の公開日（発行元が設定）が新しい順に表示します。各タイトルはオフライン保存されたコピーを開きます。",
   "Filter by source tag": "情報源タグで絞り込む",
   "No articles for this tag yet.": "このタグの記事はまだありません。",
-  "offline stored copy": "オフライン保存のコピー"
+  "offline stored copy": "オフライン保存のコピー",
+  "+ {n} more (not shown)": "他 {n} 件（非表示）",
+  "Per-country articles vs mentions": "国別の記事数と言及数"
 }

@@ -1759,5 +1759,7 @@
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.",
   "Filter by source tag": "Filter by source tag",
   "No articles for this tag yet.": "No articles for this tag yet.",
-  "offline stored copy": "offline stored copy"
+  "offline stored copy": "offline stored copy",
+  "+ {n} more (not shown)": "+ {n} more (not shown)",
+  "Per-country articles vs mentions": "Per-country articles vs mentions"
 }

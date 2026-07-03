@@ -1759,5 +1759,7 @@
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "Les plus récents d'abord, selon la date de publication de l'article (définie par l'éditeur), parmi les sources portant cette étiquette. Chaque titre ouvre la copie hors ligne enregistrée.",
   "Filter by source tag": "Filtrer par étiquette de source",
   "No articles for this tag yet.": "Aucun article pour cette étiquette pour l'instant.",
-  "offline stored copy": "copie hors ligne enregistrée"
+  "offline stored copy": "copie hors ligne enregistrée",
+  "+ {n} more (not shown)": "+ {n} de plus (non affichés)",
+  "Per-country articles vs mentions": "Articles vs mentions par pays"
 }

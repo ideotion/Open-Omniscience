@@ -1759,5 +1759,7 @@
   "Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.": "الأحدث أولًا حسب تاريخ نشر المقال (الذي يحدده الناشر) بين المصادر التي تحمل هذا الوسم. كل عنوان يفتح النسخة المحفوظة دون اتصال.",
   "Filter by source tag": "تصفية حسب وسم المصدر",
   "No articles for this tag yet.": "لا توجد بعد مقالات لهذا الوسم.",
-  "offline stored copy": "نسخة محفوظة دون اتصال"
+  "offline stored copy": "نسخة محفوظة دون اتصال",
+  "+ {n} more (not shown)": "+ {n} أخرى (غير معروضة)",
+  "Per-country articles vs mentions": "المقالات مقابل الإشارات حسب البلد"
 }
