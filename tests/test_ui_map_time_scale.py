@@ -29,9 +29,9 @@ def test_time_scale_state_defaults_to_log():
 
 def test_both_linear_and_log_mappings_present():
     # LINEAR = even sweep (age = span * (1 - fraction)); LOG = the existing
-    # antiquity-compressing power mapping — both branches must exist.
-    assert 'spanY * (1 - fr)' in _JS, "linear (even) mapping missing"
-    assert "Math.pow(_LOGB, 1 - fr)" in _JS, "log mapping must be preserved"
+    # antiquity-compressing power mapping (kept as-is, invariant-pinned) — both exist.
+    assert 'spanY * (1 - frac)' in _JS, "linear (even) mapping missing"
+    assert "Math.pow(_LOGB, 1 - frac)" in _JS, "log mapping must be preserved"
     assert '_ooMapTimeScale === "linear"' in _JS
 
 
@@ -39,8 +39,8 @@ def test_no_hidden_warp_focus_label_and_labelled_ticks():
     # the actual year is named at the cursor (focusLabel) AND at 0/¼/½/¾/1 (ticks),
     # so the compression is explicit — the ruling's "honest labelled ticks".
     assert "focusTicks" in _JS
-    assert "[0, 0.25, 0.5, 0.75, 1].map(fr =>" in _JS
-    assert "yearAt(fr)" in _JS
+    assert "[0, 0.25, 0.5, 0.75, 1].map(frac =>" in _JS
+    assert "yearAt(frac)" in _JS
     # ticks rendered in the slider overlay
     assert "opts.focusTicks.map(tk =>" in _JS
 

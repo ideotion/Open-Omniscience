@@ -10377,18 +10377,18 @@
         // NEITHER is a hidden warp: the focus YEAR label below AND the tick strip name
         // the actual year at each slider position, so the compression is explicit.
         const _LOGB = 10;
-        const ageAt = (fr) => spanY <= 0 ? 0
+        const ageAt = (frac) => spanY <= 0 ? 0
           : (_ooMapTimeScale === "linear"
-              ? spanY * (1 - fr)
-              : spanY * (Math.pow(_LOGB, 1 - fr) - 1) / (_LOGB - 1));
-        const yearAt = (fr) => tmax - ageAt(fr);
+              ? spanY * (1 - frac)
+              : spanY * (Math.pow(_LOGB, 1 - frac) - 1) / (_LOGB - 1));
+        const yearAt = (frac) => tmax - ageAt(frac);
         focusT = yearAt(focusSlider / 1000);   // 0 = oldest, 1 = most recent
         focusLabel = (typeof fmtYear === "function") ? fmtYear(focusT) : String(Math.round(focusT));
         // Honest labelled ticks: the year at 0/.25/.5/.75/1 — non-uniform in log
         // (compressed at the old end), uniform in linear — so the warp is VISIBLE.
-        focusTicks = [0, 0.25, 0.5, 0.75, 1].map(fr => ({
-          pos: fr,
-          label: (typeof fmtYear === "function") ? fmtYear(yearAt(fr)) : String(Math.round(yearAt(fr))),
+        focusTicks = [0, 0.25, 0.5, 0.75, 1].map(frac => ({
+          pos: frac,
+          label: (typeof fmtYear === "function") ? fmtYear(yearAt(frac)) : String(Math.round(yearAt(frac))),
         }));
       }
       await ooMap(host, {
@@ -12081,6 +12081,7 @@
       if (key === "overview") renderAnOverview(_anLastParams);  // headline tile per lens
       if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
       if (key === "related") renderAnRelated(_anLastParams);   // lazy: coordination/related computed on show
+      if (key === "competitive") renderAnCompetitive(_anLastParams);   // lazy: source-competitive on show
     }
     // The OVERVIEW screen (THEME-3): an honest headline tile per lens (counts only, no
     // synthesis), each deep-linking to its subtab. Bounded summary fetches; degrades
@@ -12347,6 +12348,7 @@
     // absence-is-not-absence caveat is visible. Each cluster branches via
     // openAnalysisForIds (the exact-set spawn) = a fresh corpus = associated research.
     const _anRelated = { key: null };
+    const _anCompetitive = { key: null };   // batch F item 4: Source-competitive ported into #an
     let _anRelatedClusters = [];
     let _anRelatedLinks = [];
     async function renderAnRelated(p) {
@@ -12724,9 +12726,10 @@
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
-      _anLastParams = p; _anTrend.key = null; _anRelated.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
+      _anLastParams = p; _anTrend.key = null; _anRelated.key = null; _anCompetitive.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
       if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
       if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
+      if ($("an-competitive") && $("an-competitive").style.display !== "none") setTimeout(() => renderAnCompetitive(p), 0);
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
@@ -12845,6 +12848,89 @@
               + `<tbody>${rows}</tbody></table>`
             : `<div class="muted" style="margin-top:8px">${esc(t("No sources in this set."))}</div>`);
       } catch (e) { $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+
+    // Source-competitive subtab — ported from the retired #corpus-win modal into the
+    // #an flagship (batch F item 4, the ONE capability the modal had that #an lacked;
+    // absorption so the two-window consolidation loses nothing). How each source
+    // APPROACHES this corpus, side by side: VOLUME (exact article count) + TONE (VADER
+    // mean/label) + TIMING (first→last span) from /api/insights/corpus-sources (scoped
+    // to the #an corpus, article_ids OR query, via _resolve_corpus) + distinctive
+    // EMPHASIS terms from /api/framing (query-only, so shown when a query defines the
+    // corpus and honestly absent for an article-set corpus — never wrong data). Rows
+    // are ordered by volume ONLY — a DESCRIPTIVE comparison of divergence, never a
+    // ranking, a winner or a composite score. Tone carries the VADER English-only
+    // disclosure. n=1 ⇒ "nothing to compare". Lazy (rendered on show), cached per
+    // corpus. Reuses EXISTING endpoints — no new backend.
+    async function renderAnCompetitive(p) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("an-competitive"); if (!host) return;
+      p = p || _anLastParams;
+      if (!p) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search first."))}</div>`; return; }
+      const key = p.toString();
+      if (_anCompetitive.key === key) return;   // already rendered for this corpus
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      const query = p.get("query");   // framing is query-only; absent for an article-set corpus
+      let cs, fr;
+      try {
+        [cs, fr] = await Promise.all([
+          api("/api/insights/corpus-sources?" + p.toString() + "&limit=200"),
+          query ? api("/api/framing?query=" + encodeURIComponent(query)).catch(() => null) : Promise.resolve(null),
+        ]);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const rows = (cs && cs.sources) || [];
+      if (!rows.length) { host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`; _anCompetitive.key = key; return; }
+      if (rows.length === 1) { host.innerHTML = `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`; _anCompetitive.key = key; return; }
+      const byName = {}; ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
+      const fmt = (n) => (n || 0).toLocaleString();
+      const firsts = rows.map(r => r.first).filter(Boolean).sort();
+      const lasts = rows.map(r => r.last).filter(Boolean).sort();
+      const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
+      const day = (s) => (s || "").slice(0, 10);
+      const tonePill = (label, val) => {
+        if (val == null) return `<span class="muted">—</span>`;
+        const cls = label === "positive" ? "ok" : label === "negative" ? "err" : "";
+        const lab = label === "positive" ? t("Positive") : label === "negative" ? t("Negative")
+          : label === "neutral" ? t("Neutral") : (label || "");
+        return `<span class="pill ${cls}">${esc(lab)} ${val.toFixed(2)}</span>`;
+      };
+      const chips = (arr) => (arr || []).slice(0, 6).filter(Boolean)
+        .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
+      const notRanking = t("Descriptive comparison — how these sources DIFFER, never a ranking or a credibility judgement. Rows are ordered by volume only (most-covering first); there is no winner and no composite score.");
+      const emphasisNA = query ? (fr ? t("No distinctive terms.") : t("Needs the [analysis] extra."))
+        : t("Distinctive terms need a keyword/search corpus (not an article set).");
+      const body = rows.map(r => {
+        const f = byName[r.name] || {};
+        const emphasis = (f.top_terms && f.top_terms.length) ? chips(f.top_terms)
+          : `<span class="muted" style="font-size:12px">${esc(emphasisNA)}</span>`;
+        const toneVal = (f.avg_tone != null) ? f.avg_tone : r.mean_tone;   // real value, never invented
+        const toneLbl = f.tone_label || null;
+        const span = (r.first && r.last) ? `${esc(day(r.first))} → ${esc(day(r.last))}` : `<span class="muted">—</span>`;
+        return `<tr style="border-bottom:1px solid var(--line)">
+          <td style="padding:5px 8px"><b style="font-size:13px">${esc(r.name || r.domain || "—")}</b>${r.domain ? `<div class="muted" style="font-size:11px">${esc(r.domain)}</div>` : ""}</td>
+          <td style="text-align:right;padding:5px 8px">${fmt(r.articles)}</td>
+          <td style="padding:5px 8px">${tonePill(toneLbl, toneVal)}</td>
+          <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${span}</td>
+          <td style="padding:5px 8px">${emphasis}</td>
+        </tr>`;
+      }).join("");
+      host.innerHTML =
+        `<div class="hint" title="${esc(t("How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed."))}">${esc(notRanking)}</div>` +
+        `<table style="width:100%;border-collapse:collapse;font-size:13px">
+           <thead><tr style="border-bottom:1px solid var(--line)">
+             <th style="text-align:start;padding:5px 8px">${esc(t("Source"))}</th>
+             <th style="text-align:right;padding:5px 8px" title="${esc(t("How many articles in this corpus come from this source — an exact count, never a score."))}">${esc(t("Volume"))}</th>
+             <th style="text-align:start;padding:5px 8px" title="${esc(t("Mean VADER tone for this source's coverage, with the label. VADER is an ENGLISH-lexicon method — tone for non-English coverage is unreliable or absent. A real value, never a verdict."))}">${esc(t("Tone"))} <span class="muted" style="font-weight:normal">${esc(t("(VADER tone)"))}</span></th>
+             <th style="text-align:start;padding:5px 8px" title="${esc(t("The first → last publication date for this source's coverage in the corpus — real dates, never a score."))}">${esc(t("Timing"))}</th>
+             <th style="text-align:start;padding:5px 8px" title="${esc(t("This outlet's most distinctive terms when covering the concept (from framing). Descriptive emphasis, not a judgement."))}">${esc(t("Emphasis"))}</th>
+           </tr></thead>
+           <tbody>${body}</tbody>
+         </table>` +
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}` +
+          `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
+          `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
+          `${esc(cs.caveat || "")} ${esc((fr && fr.caveat) || "")}</div>`;
+      _anCompetitive.key = key;   // cache AFTER a successful render (retry on error)
     }
 
     async function doSearch() {
