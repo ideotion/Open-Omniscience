@@ -29,6 +29,7 @@ def wire(app) -> None:
     installed; a core-only install still boots with the spine.
     """
     # --- spine routers (always present) -------------------------------------- #
+    from src.api.agenda_state import router as agenda_state_router
     from src.api.ai import router as ai_router
     from src.api.annotations import router as annotations_router
     from src.api.article_dates import router as article_dates_router
@@ -112,6 +113,7 @@ def wire(app) -> None:
         article_dates_router,
         ai_router,
         signals_router,
+        agenda_state_router,
     )
     for router in spine:
         app.include_router(router)
