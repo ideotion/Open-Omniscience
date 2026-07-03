@@ -135,6 +135,13 @@ def kv_set_json(key: str, obj: dict) -> None:
 
     Raises on a genuine write failure (a locked encrypted store, a disk error) so a
     save the operator initiated is never silently lost.
+
+    CALLER CONSTRAINT: do not call this (nor ``save_settings``) from inside an OPEN ORM
+    write transaction on the SAME thread. The write gate is reentrant per-thread, so it
+    would let this open a SECOND raw connection whose INSERT then contends with the still-
+    open ORM writer on the one SQLite file (busy_timeout stall → OperationalError). Every
+    current caller loads/saves settings OUTSIDE a write txn (after commit, or on the
+    network/fetcher path); keep it that way.
     """
     path = _db_path()
     if path is None:

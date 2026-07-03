@@ -114,7 +114,12 @@ def build_index(
         conn = _open(path)
         try:
             if replace:
+                # Clear the OLD rows AND the meta row up front. If this rebuild is then
+                # cancelled or errors, the edition honestly reports as NOT indexed (the
+                # coverage row is only re-written on a complete run below) — never a stale
+                # "N pages, indexed at T" claim over a now-partial index.
                 conn.execute("DELETE FROM dump_pages WHERE wiki = ?", (wiki,))
+                conn.execute("DELETE FROM dump_index_meta WHERE wiki = ?", (wiki,))
                 conn.commit()
             pending = 0
             for page in iter_pages(wiki, base_dir=base_dir, namespaces=(0,), limit=limit):
@@ -330,10 +335,13 @@ class DumpIndexManager:
 
 
 _manager: DumpIndexManager | None = None
+_manager_lock = threading.Lock()
 
 
 def get_manager() -> DumpIndexManager:
     global _manager
     if _manager is None:
-        _manager = DumpIndexManager()
+        with _manager_lock:
+            if _manager is None:  # double-checked: only one manager owns the build state
+                _manager = DumpIndexManager()
     return _manager

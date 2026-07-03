@@ -163,6 +163,22 @@ def test_cancel_does_not_mark_edition_complete(tmp_path):
     assert di.index_status(index_file=idx)["editions"] == []
 
 
+def test_cancelled_rebuild_never_reports_stale_coverage(tmp_path):
+    """A rebuild (replace=True) that is cancelled must NOT keep advertising the OLD
+    complete coverage over a now-partial index (review finding #1)."""
+    from src.wiki import dump_index as di
+
+    _build_multistream(tmp_path)
+    idx = tmp_path / "dump_index.sqlite"
+    di.build_index("zz", base_dir=tmp_path, index_file=idx)
+    assert di.index_status(index_file=idx)["editions"][0]["pages"] == 3  # complete
+
+    # Now rebuild and cancel immediately: the coverage row is cleared up front, so the
+    # edition honestly reports as NOT indexed rather than a stale "3 pages" claim.
+    di.build_index("zz", base_dir=tmp_path, index_file=idx, should_stop=lambda: True)
+    assert di.index_status(index_file=idx)["editions"] == []
+
+
 # --------------------------------------------------------------------------- #
 # Endpoints + no-regression to article FTS
 # --------------------------------------------------------------------------- #
