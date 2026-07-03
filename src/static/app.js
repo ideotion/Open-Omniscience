@@ -1338,6 +1338,112 @@
     function openDrawer()  { showTab("settings"); (_setSubtabs || {select: showSetCat}).select("graphics"); }
     function closeDrawer() { /* drawer removed — appearance is a Settings section */ }
 
+    // -- Keyboard shortcuts (local-only, rebindable; UI-shell §4) ----------- //
+    // The global shortcuts are stored on THIS DEVICE (localStorage), never transmitted.
+    // The command palette (Ctrl/⌘-K) is bound by default; the rest are opt-in (default
+    // unset) so a fresh install never hijacks a keystroke. One dispatcher reads the
+    // bindings, so a rebind takes effect immediately without reloading.
+    const KEYS_KEY = "oo.keys";
+    const KB_DEFAULTS = { palette: "Mod+K", home: "", settings: "", airplane: "", help: "" };
+    function getKeys() { try { return {...KB_DEFAULTS, ...JSON.parse(localStorage.getItem(KEYS_KEY) || "{}")}; }
+      catch { return {...KB_DEFAULTS}; } }
+    function saveKeys(k) { localStorage.setItem(KEYS_KEY, JSON.stringify(k)); }
+    // Normalize a keydown into a canonical combo string ("Mod+K", "Alt+Shift+H"). Ctrl and
+    // Cmd both fold to "Mod" (cross-platform). Returns "" while only a modifier is held.
+    function _kbCombo(e) {
+      const k = e.key;
+      if (!k || ["Control", "Shift", "Alt", "Meta", "OS", "Dead"].includes(k)) return "";
+      const parts = [];
+      if (e.ctrlKey || e.metaKey) parts.push("Mod");
+      if (e.altKey) parts.push("Alt");
+      if (e.shiftKey) parts.push("Shift");
+      parts.push(k.length === 1 ? k.toUpperCase() : k);
+      return parts.join("+");
+    }
+    function _kbShow(c) { return c ? c.replace("Mod", "Ctrl/⌘") : ""; }
+    function _kbInField(el) {
+      const tag = el && el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (el && el.isContentEditable);
+    }
+    function _kbActions() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return [
+        { id: "palette",  label: t("Open the command palette"), always: true, run: () => openPalette() },
+        { id: "home",     label: t("Go to Home"),               run: () => showTab("home") },
+        { id: "settings", label: t("Open Settings"),            run: () => showTab("settings") },
+        { id: "airplane", label: t("Toggle airplane mode"),     run: () => { if (typeof toggleNetwork === "function") toggleNetwork(); } },
+        { id: "help",     label: t("Open Help"),                run: () => showTab("help") },
+      ];
+    }
+    // The single global keydown dispatcher: Escape closes overlays; a bound combo runs its
+    // action. A plain-key binding never fires while typing in a field; the palette (Mod-combo)
+    // always may. Ctrl/⌘-K keeps its default behaviour unless the user rebinds it.
+    function _kbDispatch(e) {
+      if (e.key === "Escape") { closePalette(); closeDrawer(); document.body.classList.remove("nav-open"); return; }
+      if (_kbRecording) return;   // a rebind capture is in progress
+      const combo = _kbCombo(e); if (!combo) return;
+      const binds = getKeys(), field = _kbInField(e.target);
+      for (const a of _kbActions()) {
+        if (binds[a.id] !== combo) continue;
+        if (field && !a.always) continue;
+        e.preventDefault(); a.run(); return;
+      }
+    }
+    // Settings → Shortcuts: list the shortcuts + rebind the global ones (the recorder
+    // captures the next keystroke). Reference rows document the fixed contextual keys.
+    let _kbRecording = null;
+    function loadShortcuts() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("kb-panel"); if (!host) return;
+      const binds = getKeys();
+      const rows = _kbActions().map(a => {
+        const cur = binds[a.id];
+        const chip = cur
+          ? `<span class="kb-chip">${esc(_kbShow(cur))}</span>`
+          : `<span class="muted">${esc(t("Not set"))}</span>`;
+        return `<tr><td>${esc(a.label)}</td><td>${chip}</td>
+          <td style="white-space:nowrap">
+            <button class="secondary tiny" data-kb-change="${esc(a.id)}">${esc(t("Change"))}</button>
+            <button class="secondary tiny" data-kb-clear="${esc(a.id)}"${cur ? "" : " disabled"}>${esc(t("Clear"))}</button>
+          </td></tr>`;
+      }).join("");
+      const ref = [
+        [t("Close overlays and dialogs"), "Esc"],
+        [t("Move within lists and subtabs"), "← → ↑ ↓"],
+        [t("Submit search / run the selection"), "Enter"],
+      ].map(([lbl, k]) => `<tr><td>${esc(lbl)}</td><td><span class="kb-chip">${esc(k)}</span></td><td class="muted">${esc(t("Fixed"))}</td></tr>`).join("");
+      host.innerHTML =
+        `<table><thead><tr><th>${esc(t("Action"))}</th><th>${esc(t("Shortcut"))}</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+         <div style="margin:8px 0"><button class="secondary tiny" onclick="kbReset()">${esc(t("Reset to defaults"))}</button></div>
+         <h3 style="margin-top:14px;font-size:14px">${esc(t("Fixed shortcuts"))}</h3>
+         <p class="hint muted">${esc(t("These contextual keys are always available and are not rebindable."))}</p>
+         <table><tbody>${ref}</tbody></table>`;
+      host.querySelectorAll("[data-kb-change]").forEach(b =>
+        b.addEventListener("click", () => kbRecord(b.getAttribute("data-kb-change"), b)));
+      host.querySelectorAll("[data-kb-clear]").forEach(b =>
+        b.addEventListener("click", () => kbClear(b.getAttribute("data-kb-clear"))));
+    }
+    function kbRecord(id, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_kbRecording) return;
+      _kbRecording = id; btn.textContent = t("Press a key…"); btn.classList.add("kb-rec");
+      function done() { document.removeEventListener("keydown", onKey, true); _kbRecording = null; }
+      function onKey(e) {
+        e.preventDefault(); e.stopPropagation();
+        if (e.key === "Escape") { done(); loadShortcuts(); return; }   // cancel the capture
+        const combo = _kbCombo(e); if (!combo) return;                 // wait for a real key
+        const binds = getKeys();
+        Object.keys(binds).forEach(k => { if (k !== id && binds[k] === combo) binds[k] = ""; });  // no dup
+        binds[id] = combo; saveKeys(binds); done(); loadShortcuts();
+      }
+      document.addEventListener("keydown", onKey, true);   // capture: beats the global dispatcher
+    }
+    function kbClear(id) { const b = getKeys(); b[id] = ""; saveKeys(b); loadShortcuts(); }
+    function kbReset() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      saveKeys({...KB_DEFAULTS}); loadShortcuts(); toast(t("Shortcuts reset to defaults."));
+    }
+
     // Settings sections (Appearance · General · Wikipedia · Data · Safety).
     function showSetCat(cat) {
       // Button/ARIA state is owned by the ooSubtabs component; this callback
@@ -1356,6 +1462,7 @@
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
+      if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
@@ -1568,7 +1675,46 @@
       catch (e) { renderHomeStatus(false); }
       loadBriefing();
       loadHomeTrends();
+      loadHomeRecent();
       refreshDraftCount();
+    }
+    // Home "Most recent by tag" (item #36 / Home helicopter view): a recency LENS onto the
+    // corpus, never a reweighting — newest-first by the article's PUBLISHED date among sources
+    // carrying a chosen source tag. REDUNDANT by design (every title deep-links to the offline
+    // stored reader, invariant #6). Reuses /api/sources/facets (the tag list) + /api/articles
+    // (tags + sort_by=date). Hidden until it has a tag + articles so Home is never blank-and-
+    // silent (the Briefing still renders below).
+    async function loadHomeRecent() {
+      const panel = $("home-recent-panel"), sel = $("home-recent-tag");
+      if (!panel || !sel) return;
+      try {
+        const f = await api("/api/sources/facets");
+        const tags = (f.tags || []).filter(x => x && x.key).slice(0, 20);
+        if (!tags.length) { panel.hidden = true; return; }
+        const cur = sel.value;
+        sel.innerHTML = tags.map(x => `<option value="${esc(x.key)}">${esc(x.key)} (${x.n})</option>`).join("");
+        sel.value = (cur && tags.some(x => x.key === cur)) ? cur : tags[0].key;
+        await loadHomeRecentList(sel.value);
+      } catch (e) { panel.hidden = true; }
+    }
+    async function loadHomeRecentList(tag) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("home-recent-panel"), box = $("home-recent");
+      if (!panel || !box) return;
+      if (!tag) { panel.hidden = true; return; }
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const q = "/api/articles?tags=" + encodeURIComponent(tag) + "&sort_by=date&sort_dir=desc&limit=8";
+        const d = await api(q);
+        const rows = d.results || [];
+        if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
+        box.innerHTML = rows.map(a => {
+          const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
+          return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
+            + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
+        }).join("");
+        panel.hidden = false;
+      } catch (e) { box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
     }
     // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
     // REDUNDANT by design: the past-week RISING keywords (the disclosed window-vs-
@@ -1801,22 +1947,37 @@
     // tab the SPA hydrates from the URL (boot handler below), so the analysis lives
     // outside the current view. Exact set when the card carries article_ids, else the
     // seed query (the diagnostic flags any card whose query loses its corpus).
-    function openCardCorpus(ids, label) {
+    function openCardCorpus(ids, label, tab) {
       const p = new URLSearchParams();
       p.set("corpus", (ids || []).join(","));
       if (label) p.set("label", label);
+      if (tab) p.set("tab", tab);   // item #5: land the new window on the type's best subtab
       window.open("/?" + p.toString(), "_blank", "noopener");
     }
     // Open a query's analysis window in a NEW BROWSER TAB (field remark 9: search +
     // Enter should open a new tab). A fresh SPA boot hydrates ?analyze= via
     // _hydrateCardCorpus() → openAnalysisFor(), so the new tab lands on the same
     // analysis. Shared by the home-card flip and the omnibar/palette Enter.
-    function openAnalysisInNewTab(q) {
+    function openAnalysisInNewTab(q, tab) {
       const p = new URLSearchParams();
       p.set("analyze", q || "");
+      if (tab) p.set("tab", tab);   // optional deep-link subtab (item #5); omnibar Enter omits it
       window.open("/?" + p.toString(), "_blank", "noopener");
     }
-    function openCardCorpusQuery(q) { openAnalysisInNewTab(q); }
+    function openCardCorpusQuery(q, tab) { openAnalysisInNewTab(q, tab); }
+    // Route a Lead to the most useful analysis subtab for its type (item #5): a rising
+    // keyword -> its Trend; a coordination/near-dup/framing Lead -> Related; a reading-diet
+    // or coverage Lead -> Sources; a space-time convergence -> When/Where/Who. Anything
+    // else lands on Overview. The deep-link only applies a tab whose an-<tab> panel exists.
+    const _CARD_SUBTAB = {
+      rising: "trend", manufactured_emergence: "trend", price_narrative: "trend",
+      echo_chamber: "related", source_laundering: "related", flooded_topic: "related",
+      copypasta: "related", recycled_claim: "related", headline_body_mismatch: "related",
+      framing_split: "related",
+      diet_self_audit: "sources", coverage_advisor: "sources", reading_diet: "sources",
+      space_time_convergence: "www", weather_corroboration: "www",
+    };
+    function cardSubtab(c) { return (c && _CARD_SUBTAB[c.type]) || "overview"; }
     function cardHtml(c) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const sig = c.signal || {};
@@ -1883,9 +2044,10 @@
       // IN A NEW WINDOW (exact set when the card carries article_ids, else the seed query).
       const _aq = cardAnalyzeQuery(c);
       const _aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
+      const _tab = cardSubtab(c);   // item #5: the most useful analysis subtab for this Lead's type
       const _openCorpus = _aIds
-        ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))})`
-        : `openCardCorpusQuery(${esc(JSON.stringify(_aq))})`;
+        ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))})`
+        : `openCardCorpusQuery(${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))})`;
       const openBtn = _aq
         ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
         : "";
@@ -7644,6 +7806,98 @@
     }
 
     // -- Super-groups: groups of families ----------------------------------- //
+    // Item #8 (an ooViz technique on a real surface): an honest DUMBBELL of a ring's
+    // per-country distinct-ARTICLE spread vs total MENTIONS — the gap is amplification
+    // (how many mentions per article), NEVER a fabricated curve. Counts only; built with the
+    // ooViz.linearScale + niceTicks primitives (like renderStatMap templates choroplethData).
+    // Every country in the payload is drawn, capped at _DUMBBELL_MAX with the drop DISCLOSED
+    // (no silent truncation — the honesty rule).
+    const _DUMBBELL_MAX = 15;
+    function ringDumbbellSvg(rows, names) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (typeof ooViz === "undefined" || !ooViz.linearScale || !ooViz.niceTicks) return "";
+      const data = (rows || []).filter(r => r.country && ((r.mentions || 0) || (r.articles || 0)))
+        .sort((a, b) => (b.mentions || 0) - (a.mentions || 0));
+      if (!data.length) return "";
+      const shown = data.slice(0, _DUMBBELL_MAX), dropped = data.length - shown.length;
+      const maxV = Math.max(1, ...shown.map(r => Math.max(r.mentions || 0, r.articles || 0)));
+      const padL = 96, padR = 44, padT = 8, rowH = 22, W = 340;
+      const H = padT * 2 + shown.length * rowH + 22;
+      const x = ooViz.linearScale(0, maxV, padL, W - padR);
+      const grid = ooViz.niceTicks(0, maxV, 4).map(v => {
+        const gx = x(v).toFixed(1);
+        return `<line x1="${gx}" y1="${padT}" x2="${gx}" y2="${(padT + shown.length * rowH).toFixed(1)}" stroke="var(--border-soft)" stroke-width="1"/>`
+          + `<text x="${gx}" y="${(padT + shown.length * rowH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--muted)">${esc(String(v))}</text>`;
+      }).join("");
+      const bars = shown.map((r, i) => {
+        const cy = (padT + i * rowH + rowH / 2).toFixed(1);
+        const xa = x(r.articles || 0), xm = x(r.mentions || 0);
+        const lo = Math.min(xa, xm).toFixed(1), hi = Math.max(xa, xm).toFixed(1);
+        const nm = esc((names && names[r.country]) || String(r.country).toUpperCase());
+        return `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${nm}</text>`
+          + `<line x1="${lo}" y1="${cy}" x2="${hi}" y2="${cy}" stroke="var(--muted)" stroke-width="2" opacity="0.5"/>`
+          + `<circle cx="${xa.toFixed(1)}" cy="${cy}" r="4" fill="var(--accent)"><title>${nm}: ${r.articles} ${esc(t("articles"))}</title></circle>`
+          + `<circle cx="${xm.toFixed(1)}" cy="${cy}" r="4" fill="var(--muted)"><title>${nm}: ${r.mentions} ${esc(t("mentions"))}</title></circle>`;
+      }).join("");
+      const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--accent)">●</span> ${esc(t("articles"))} · <span style="color:var(--muted)">●</span> ${esc(t("mentions"))}`
+        + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", dropped))}</span>` : "") + `</div>`;
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(t("Per-country articles vs mentions"))}" style="max-width:${W}px;height:auto">${grid}${bars}</svg>${legend}`;
+    }
+    // Cross-language ring -> per-language mention breakdown, indexed from /top?group=true
+    // (best-effort: only rings that fall in the fetched top-N carry a language breakdown).
+    let _ringLangIndex = {};
+    // Item #4: render a cross-language ring's coverage on the ooMap component — where the
+    // concept is covered (by the producing source's country) + its per-language split.
+    // Counts only, no score; unknown country is shown honestly, never mapped or guessed.
+    async function showRingMap(ringId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("sg-ringmap"), detail = $("sg-ringmap-detail");
+      if (!host) return;
+      if (!ringId) { host.innerHTML = ""; if (detail) detail.innerHTML = ""; return; }
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (detail) detail.innerHTML = "";
+      try {
+        const d = await api("/api/insights/ring-countries?ring_id=" + encodeURIComponent(ringId));
+        if (!d.found) { host.innerHTML = `<div class="muted">${esc(t("No cross-country coverage for this concept yet."))}</div>`; return; }
+        const values = {}, names = {}; let unloc = null;
+        (d.countries || []).forEach(c => {
+          if (!c.country) { unloc = c; return; }            // unlocated bucket — never mapped
+          values[c.country] = c.articles;                  // distinct-article spread per country
+          names[c.country] = (typeof ooRegionName === "function") ? ooRegionName(c.country, String(c.country).toUpperCase()) : String(c.country).toUpperCase();
+        });
+        const label = d.label || ringId;
+        if (!Object.keys(values).length) {
+          host.innerHTML = `<div class="muted">${esc(t("No located sources for this concept yet."))}</div>`;
+        } else {
+          host.innerHTML = "";
+          await ooMap(host, {
+            values, names, unit: t("articles"),
+            valueLabel: (iso, v) => `${v} ${t("articles")}`,
+            aria: `${label} — ${Object.keys(values).length} ${t("countries")}`,
+            method: d.method || "", caveat: d.caveat || "",
+          });
+        }
+        // Detail: the per-language mention split (from /top?group=true) + unlocated + a table.
+        const lb = _ringLangIndex[ringId];
+        const langBd = (lb && Object.keys(lb).length)
+          ? `<div class="hint" style="margin-top:4px"><b>${esc(t("By language"))}:</b> `
+            + Object.entries(lb).sort((a, b) => b[1] - a[1]).map(([lg, n]) =>
+                `${esc(lg === "?" ? t("unknown") : lg)} <span class="muted">${n}</span>`).join(" · ")
+            + ` <span class="muted">— ${esc(t("mentions per language"))}</span></div>`
+          : "";
+        const langs = (d.languages || []).length
+          ? `<div class="hint"><b>${esc(t("Languages"))}:</b> ${esc((d.languages || []).join(" · "))}</div>` : "";
+        const unlocNote = unloc
+          ? `<div class="card-caveat">${esc(t("Not mapped (source country unknown)"))}: ${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}</div>` : "";
+        const rows = (d.countries || []).filter(c => c.country)
+          .map(c => `<tr><td>${esc(names[c.country] || c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
+        const tbl = rows
+          ? `<table style="margin-top:8px"><thead><tr><th>${esc(t("Country"))}</th><th style="text-align:right">${esc(t("Articles"))}</th><th style="text-align:right">${esc(t("Mentions"))}</th></tr></thead><tbody>${rows}</tbody></table>` : "";
+        // Item #8: an honest per-country dumbbell (articles vs mentions) above the table.
+        const dumb = ringDumbbellSvg((d.countries || []).filter(c => c.country), names);
+        if (detail) detail.innerHTML = langs + langBd + unlocNote + dumb + tbl;
+      } catch (e) { host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
+    }
     async function loadSuperGroups() {
       const box = $("sg-list");
       box.innerHTML = '<div class="muted">Loading…</div>';
@@ -7657,8 +7911,20 @@
           `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
         $("sg-ring-options").innerHTML = (rings.rings || []).map(r =>
           `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
+        // Item #4: index the per-language mention breakdown carried by grouped ring rows,
+        // and fill the ring-map picker (kept selection across a refresh).
+        _ringLangIndex = {};
+        (top.terms || []).forEach(f => { if (f.ring_id && f.language_breakdown) _ringLangIndex[f.ring_id] = f.language_breakdown; });
+        const pick = $("sg-ringmap-pick");
+        if (pick) {
+          const cur = pick.value;
+          pick.innerHTML = `<option value=""></option>` + (rings.rings || []).map(r =>
+            `<option value="${esc(r.id)}">${esc(r.id)} (${esc((r.languages || []).join("/"))})</option>`).join("");
+          if (cur && (rings.rings || []).some(r => r.id === cur)) pick.value = cur;
+        }
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
           : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
+        const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
     }
 
@@ -9045,6 +9311,33 @@
       } catch (e) { toast("Exclude failed: " + e.message, "err"); }
     }
 
+    // Honesty-envelope disclosure (informed-consent-by-layering): the maintained-counter
+    // aggregates carry {value, basis:exact|estimated, as_of, method, n}; the rollup-served
+    // paths add a cache disclosure {source, as_of, note}. Render a small VISIBLE chip so the
+    // reader knows whether a number is an exact live count or an estimate, and as of when;
+    // the method / n / rollup note ride the #oo-tip hover (the translated title). It is a
+    // DISCLOSURE, never a score (no numeric grade), so the no-score rule holds.
+    function _basisWhen(iso) { return iso ? String(iso).slice(0, 10) : ""; }
+    function basisChip(counts, disc) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!counts && !disc) return "";
+      let label = "", est = false;
+      const titleParts = [];
+      if (counts && counts.basis) {
+        est = counts.basis === "estimated";
+        const w = _basisWhen(counts.as_of);
+        label = t(est ? "estimated" : "exact") + (w ? " · " + t("as of") + " " + w : "");
+        if (counts.method) titleParts.push(counts.method);
+        if (counts.n != null) titleParts.push("n = " + counts.n);
+      }
+      if (disc) {
+        if (!label) { const w = _basisWhen(disc.as_of); label = t("cached") + (w ? " · " + t("as of") + " " + w : ""); }
+        if (disc.note) titleParts.push(disc.note);
+      }
+      if (!label) return "";
+      const title = titleParts.join(" · ");
+      return `<span class="basis-chip${est ? " est" : ""}"${title ? ` title="${esc(title)}"` : ""}>${esc(label)}</span>`;
+    }
     async function loadTrends() {
       const wd = $("trd-window").value, bd = $("trd-base").value, kind = $("trd-kind").value, cc = $("trd-country").value.trim();
       const qp = (extra) => `kind=${encodeURIComponent(kind)}${cc?"&country="+encodeURIComponent(cc):""}${tgtLangParam()}${extra||""}`;
@@ -9059,6 +9352,7 @@
         $("trd-top").innerHTML = termBarsHtml(top.terms, t => t.mentions,
           t => `${t.mentions} mentions · ${t.articles} articles`);
         $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
+        const bc = $("trd-basis"); if (bc) bc.innerHTML = basisChip(top.counts, top.basis || rising.basis);
       } catch (e) { toast("Trends failed: " + e.message, "err"); }
       loadTrendWindows();
     }
@@ -13181,11 +13475,9 @@
       try { if ($("set-models") && $("set-models").offsetParent !== null && typeof loadLlmPrompts === "function") loadLlmPrompts(); } catch (_e) {}
     });
 
-    // Global shortcuts: Ctrl/⌘-K opens the command palette; Escape closes overlays.
-    document.addEventListener("keydown", e => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
-      else if (e.key === "Escape") { closePalette(); closeDrawer(); document.body.classList.remove("nav-open"); }
-    });
+    // Global shortcuts: dispatched from the user's (rebindable) bindings — Ctrl/⌘-K opens
+    // the palette by default; Escape closes overlays. See _kbDispatch / Settings → Shortcuts.
+    document.addEventListener("keydown", _kbDispatch);
 
     // Initial load: always-on essentials; per-tab data loads lazily on first view.
     // Settings is loaded eagerly so the default result limit + theme seed apply

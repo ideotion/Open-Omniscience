@@ -14,6 +14,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Open Omniscience</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <!-- PWA: installable app metadata + theme colour + touch icon (item #69, offline-first). -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#11151a">
+  <link rel="apple-touch-icon" href="/static/icon.png">
   <link rel="stylesheet" href="/static/app.css">
   <!-- Alternative-interfaces gallery (Settings -> GUIs, maintainer-ruled 2026-06-17):
        apply the chosen skin BEFORE first paint so there is no flash of the default.
@@ -184,6 +188,18 @@
         <div class="phead"><h2>Trending now</h2><span class="sp"></span>
           <a href="#insights" class="hint" style="margin:0" onclick="showTab('insights');_insSubtabs&&_insSubtabs.select('trends');return false">More in Insights →</a></div>
         <div id="home-trends"><div class="muted">Loading…</div></div>
+      </section>
+
+      <!-- Home dashboard: "Most recent by tag" — a recency lens onto the corpus
+           (item #36 / Home helicopter view). Recency by the article's PUBLISHED date
+           (publisher-set), filtered by a source tag; every row opens the offline stored
+           copy (invariant #6). Populated by loadHomeRecent(); hidden until it has a tag +
+           articles so Home is never blank-and-silent (the Briefing still renders). -->
+      <section class="panel" id="home-recent-panel" hidden>
+        <div class="phead"><h2>Most recent</h2><span class="sp"></span>
+          <select id="home-recent-tag" onchange="loadHomeRecentList(this.value)" aria-label="Filter by source tag"></select></div>
+        <p class="hint" style="margin:0">Newest first by the article's published date (set by the publisher) among sources tagged this way. Every title opens the offline stored copy.</p>
+        <div id="home-recent" style="margin-top:6px"><div class="muted">Loading…</div></div>
       </section>
 
       <section class="panel">
@@ -811,7 +827,7 @@
       </div>
       <div class="row" style="gap:20px;margin-top:8px">
         <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Rising</h2><div id="trd-rising"></div></div>
-        <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Top</h2><div id="trd-top"></div></div>
+        <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Top <span id="trd-basis"></span></h2><div id="trd-top"></div></div>
       </div>
       <div id="trd-method" class="hint" style="margin-top:8px"></div>
     </section>
@@ -851,7 +867,7 @@
     </section>
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
-      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families and rings</span></h2>
+      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families and rings</span> <span id="sg-basis"></span></h2>
       <p class="hint" style="margin-top:0">Gather several families — or cross-language rings (one concept across languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. A ring member makes the super-group span languages (the super-ring model). Pure curation — nothing in the keyword store changes.</p>
       <div class="row" style="align-items:center">
         <div style="flex:2"><label for="sg-name">New super-group</label>
@@ -863,6 +879,14 @@
       <datalist id="sg-family-options"></datalist>
       <datalist id="sg-ring-options"></datalist>
       <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <h2 style="font-size:13px;margin:0">Cross-country map of a concept</h2>
+        <p class="hint" style="margin-top:2px">Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).</p>
+        <div class="row"><div style="flex:2"><label for="sg-ringmap-pick">Concept (ring)</label>
+          <select id="sg-ringmap-pick" onchange="showRingMap(this.value)"><option value=""></option></select></div></div>
+        <div id="sg-ringmap" style="margin-top:8px"></div>
+        <div id="sg-ringmap-detail" style="margin-top:8px"></div>
+      </div>
     </section>
 
     <section class="panel ins-view" id="ins-map" style="display:none">
@@ -935,6 +959,7 @@
       <nav class="tabs" id="set-subtabs" style="position:static;padding:0;border:0;margin-top:2px">
         <button class="active" data-tab="graphics">Graphics</button>
         <button data-tab="general">General</button>
+        <button data-tab="shortcuts">Shortcuts</button>
         <button data-tab="models">AI</button>
         <button data-tab="keywords">Keywords</button>
         <button data-tab="collect">Collect</button>
@@ -1780,6 +1805,15 @@
     </section>
     </div>
 
+    <!-- ======================= KEYBOARD SHORTCUTS ==================== -->
+    <div class="set-view" id="set-shortcuts" style="display:none">
+      <section class="panel">
+        <h2>Keyboard shortcuts</h2>
+        <p class="hint muted">Rebind the app's global shortcuts. Changes are saved on this device only and never transmitted. The command palette is bound by default; the others are opt-in.</p>
+        <div id="kb-panel"></div>
+      </section>
+    </div>
+
     <!-- =========================== LIBRARY =========================== -->
 
     <div class="set-view" id="set-safety" style="display:none">
@@ -2149,5 +2183,8 @@
   <script src="/static/app.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
   <script src="/static/guis/gallery.js"></script>
+  <!-- PWA: register the offline shell service worker (item #69). External file (no inline
+       script) — best-effort + guarded; it only caches the static shell, never API responses. -->
+  <script src="/static/sw-register.js"></script>
 </body>
 </html>
