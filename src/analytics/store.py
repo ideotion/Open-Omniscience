@@ -386,6 +386,14 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
     AI artifacts (``article_analyses`` summaries/translations + the AI-derived keyword
     rows) are NOT touched by ``index_article``, so they stay verbatim. Idempotent; one
     bad article never aborts the batch (the restore is already committed + additive)."""
+    # Re-index is delete-then-reinsert, so the disposable columnar rollup must FULL-rebuild
+    # rather than incrementally merge (the D3 double-count guard). This is ALSO the
+    # restore-merge path: reindex_imported_articles re-indexes the merged articles against
+    # the live DB after the atomic swap, so bumping here covers restore too. Best-effort.
+    if article_ids:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+
+        bump_corpus_epoch(session, reason="reindex_articles")
     reindexed = 0
     failed = 0
     for aid in article_ids:
@@ -443,6 +451,15 @@ def reindex_all_batch(
     failed = 0
     last_id = after_id
     commit_batch = max(1, commit_batch)
+
+    # Bump the corpus epoch ONCE per non-empty batch: re-index is delete-then-reinsert,
+    # so the disposable columnar rollup must FULL-rebuild rather than incrementally merge
+    # this batch (the D3 double-count guard). Done here (before the loop, no pending
+    # writes) so a partially-failing batch still forces the rebuild. Best-effort.
+    if ids:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+
+        bump_corpus_epoch(session, reason="reindex_all_batch")
 
     def _reindex_one(aid: int, *, commit: bool) -> bool:
         """Index one article: True if re-indexed, False if it was missing (deleted
@@ -569,6 +586,14 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500) -> dict:
                 kept_curated += 1
             else:
                 prunable.append(kid)
+
+    # Pruning DELETES mention-less keyword rows, so the disposable columnar rollup must
+    # FULL-rebuild rather than incrementally merge (the D3 double-count guard). Bump once,
+    # before the delete loop, only when there is something to prune. Best-effort.
+    if prunable:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+
+        bump_corpus_epoch(session, reason="prune_orphan_keywords")
 
     pruned = 0
     with write_lock():
