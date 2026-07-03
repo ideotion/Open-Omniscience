@@ -117,6 +117,84 @@ def _extract_page(block_xml: bytes, pageid: int) -> dict | None:
     return None
 
 
+def _iter_block_pages(block_xml: bytes, ns_filter: set[str] | None):
+    """Yield EVERY ``<page>`` (namespace-filtered) from a decompressed block."""
+    root = _safe_fromstring(b"<root>" + block_xml + b"</root>")
+    for page in root.iter("page"):
+        ns = page.findtext("ns")
+        if ns_filter is not None and (ns or "0") not in ns_filter:
+            continue
+        pid = page.findtext("id")
+        rev = page.find("revision")
+        yield {
+            "title": page.findtext("title") or "",
+            "pageid": int(pid) if pid and pid.isdigit() else None,
+            "ns": ns,
+            "wikitext": (rev.findtext("text") if rev is not None else None) or "",
+        }
+
+
+def iter_pages(
+    wiki: str,
+    *,
+    base_dir: Path | None = None,
+    namespaces: tuple[int, ...] | None = (0,),
+    limit: int | None = None,
+):
+    """Stream every page (raw wikitext) out of a downloaded multistream dump.
+
+    ONE linear pass: the index groups pages into ≤100-page bz2 blocks (one per byte
+    ``offset``), so we visit each DISTINCT offset once, ``seek()`` + decompress its
+    block once, and yield all pages it holds — turning a per-title read (which rescans
+    the whole index) into a single O(N) sweep suitable for building a search index.
+
+    ``namespaces`` filters by the page ``<ns>`` (default ``(0,)`` = articles only;
+    ``None`` = every namespace). ``limit`` caps the number of pages yielded. A block
+    that fails to read/parse is skipped with a warning, never aborting the sweep.
+    Yields ``{title, pageid, ns, wikitext}``; yields nothing if the dump is absent.
+    """
+    wiki = validate_wiki_code(wiki)
+    paths = dump_paths(wiki, base_dir)
+    if not (paths["data"].exists() and paths["index"].exists()):
+        return
+    ns_filter = None if namespaces is None else {str(int(n)) for n in namespaces}
+
+    # Collect the DISTINCT block offsets in first-seen order. The index is one line
+    # per page (``offset:pageid:title``); many pages share an offset (a block). A
+    # set of offsets is small even for the largest edition (~pages/100 entries).
+    offsets: list[int] = []
+    seen: set[int] = set()
+    with bz2.open(paths["index"], "rt", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split(":", 2)
+            if len(parts) != 3:
+                continue
+            try:
+                off = int(parts[0])
+            except ValueError:
+                continue
+            if off not in seen:
+                seen.add(off)
+                offsets.append(off)
+
+    yielded = 0
+    for off in offsets:
+        try:
+            block = _read_stream_block(paths["data"], off)
+        except OSError:
+            _LOG.warning("dump block read failed for %s at offset %s", wiki, off, exc_info=True)
+            continue
+        try:
+            for page in _iter_block_pages(block, ns_filter):
+                yield page
+                yielded += 1
+                if limit is not None and yielded >= limit:
+                    return
+        except (ValueError, ET.ParseError, DefusedXmlException):
+            _LOG.warning("dump block parse failed for %s at offset %s", wiki, off, exc_info=True)
+            continue
+
+
 def find_page(wiki: str, title: str, *, base_dir: Path | None = None) -> dict:
     """Look ``title`` up in the downloaded multistream dump for ``wiki``.
 

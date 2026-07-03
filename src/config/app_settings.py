@@ -77,21 +77,79 @@ class AppSettings:
         return asdict(self)
 
 
+# The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
+_KV_KEY = "settings.app"
+
+
 def _settings_path():
     from src.paths import data_dir
 
     return data_dir() / "app_settings.json"
 
 
-def load_settings() -> AppSettings:
-    """Load preferences, falling back to defaults on a missing/corrupt file."""
+def _use_kv() -> bool:
+    """Use the encrypted ``app_state`` store at the DEFAULT data-dir location; if the
+    settings path has been redirected (a test that monkeypatches ``_settings_path`` to
+    isolate to its own file), honour that file as JSON instead — so both production
+    durability and the existing per-file test isolation keep working."""
+    from src.paths import data_dir
+
+    return _settings_path() == data_dir() / "app_settings.json"
+
+
+def _read_json_file() -> dict | None:
     path = _settings_path()
     if not path.exists():
-        return AppSettings()
+        return None
     try:
-        raw = json.loads(path.read_text("utf-8"))
+        return json.loads(path.read_text("utf-8"))
     except Exception:  # noqa: BLE001 - a bad file must not take down the API
         _LOG.warning("app_settings.json is unreadable; using defaults", exc_info=True)
+        return None
+
+
+def _read_raw() -> dict | None:
+    """Preferences source of truth: the encrypted ``app_state`` row (D1), falling back
+    to (and one-time migrating) the legacy ``app_settings.json`` file.
+
+    Returns the stored dict (with its ``version`` tag) or ``None`` when nothing is
+    stored yet. Any failure degrades to the file / ``None`` — a settings read must
+    never take down the API.
+    """
+    if not _use_kv():
+        return _read_json_file()
+    from src.config.kv_store import kv_get_json, kv_set_json
+
+    raw = kv_get_json(_KV_KEY)
+    if raw is not None:
+        return raw
+    # No DB row yet: migrate the legacy JSON file if present (best-effort, one-time).
+    raw = _read_json_file()
+    if raw is None:
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)  # adopt into the durable store
+    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("app_settings migration into app_state deferred", exc_info=True)
+    return raw
+
+
+def _write_raw(payload: dict) -> None:
+    if not _use_kv():
+        path = _settings_path()
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), "utf-8")
+        tmp.replace(path)  # atomic on the same filesystem
+        return
+    from src.config.kv_store import kv_set_json
+
+    kv_set_json(_KV_KEY, payload)  # transactional, encrypted, backed up (D1)
+
+
+def load_settings() -> AppSettings:
+    """Load preferences, falling back to defaults on a missing/corrupt store."""
+    raw = _read_raw()
+    if raw is None:
         return AppSettings()
 
     defaults = AppSettings()
@@ -187,9 +245,5 @@ def save_settings(updates: dict) -> AppSettings:
                 raise AppSettingsError(f"{_field} is too long (max {_MAX_PROMPT_CHARS} characters)")
             setattr(current, _field, val.strip())
 
-    path = _settings_path()
-    tmp = path.with_suffix(".json.tmp")
-    payload = {"version": SETTINGS_VERSION, **current.to_dict()}
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), "utf-8")
-    tmp.replace(path)  # atomic on the same filesystem
+    _write_raw({"version": SETTINGS_VERSION, **current.to_dict()})
     return current

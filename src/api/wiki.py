@@ -396,6 +396,75 @@ def dumps_corpus_ingest(payload: IngestDumpPages, db: Session = Depends(get_db))
     return ingest_dump_pages(db, wiki, titles)
 
 
+@router.get("/dumps/fts-search")
+def dumps_fts_search(q: str, wiki: str | None = None, limit: int = 20) -> dict:
+    """Full-text search over the BODIES of indexed downloaded dumps — local, no network.
+
+    Unlike ``/dumps/search`` (titles only), this searches page content that a prior
+    ``/dumps/index`` build indexed, with the same Boolean syntax + BM25F ranking as
+    article search. Each hit opens via the local dump reader (``/dumps/page``). An
+    edition must be indexed first (``/dumps/index``); an unindexed edition returns no
+    items honestly (``reason: no-index``)."""
+    from src.wiki.dump_index import search as dump_search
+
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="q is required.")
+    return dump_search(
+        q.strip(), wiki=_validated_wiki(wiki) if wiki else None, limit=max(1, min(limit, 100))
+    )
+
+
+@router.get("/dumps/index")
+def dumps_index_status() -> dict:
+    """Which downloaded editions have a full-text index, page counts, and build state."""
+    from src.wiki.dump_index import get_manager
+
+    return get_manager().status()
+
+
+class BuildDumpIndex(BaseModel):
+    wiki: str
+
+
+@router.post("/dumps/index")
+def dumps_index_build(payload: BuildDumpIndex) -> dict:
+    """Build (or rebuild) the full-text index for ONE downloaded edition — local, no
+    network. Runs on a background worker so the request never blocks on the sweep;
+    poll ``GET /dumps/index`` for progress. 409 if a build is already running, 404 if
+    the edition's multistream dump is not downloaded."""
+    from src.wiki.dump_index import get_manager
+    from src.wiki.dumpread import readable_wikis
+
+    wiki = _validated_wiki(payload.wiki)
+    if wiki not in readable_wikis():
+        raise HTTPException(
+            status_code=404,
+            detail=f"no downloaded multistream dump for {wiki!r} to index.",
+        )
+    try:
+        return get_manager().start(wiki)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/dumps/index/cancel")
+def dumps_index_cancel() -> dict:
+    """Cancel an in-progress dump-index build (its partial rows stay searchable but the
+    edition is not marked complete)."""
+    from src.wiki.dump_index import get_manager
+
+    return get_manager().cancel()
+
+
+@router.delete("/dumps/index")
+def dumps_index_clear(wiki: str | None = None) -> dict:
+    """Drop the full-text index for one edition (or all editions when ``wiki`` is
+    omitted) — it is rebuildable from the local dump at any time."""
+    from src.wiki.dump_index import clear_index
+
+    return clear_index(_validated_wiki(wiki) if wiki else None)
+
+
 @router.get("/revisions/{rev_id}")
 def revision_detail(rev_id: int, db: Session = Depends(get_db)) -> dict:
     r = db.query(WikiRevision).filter_by(id=rev_id).first()
