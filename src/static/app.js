@@ -1724,6 +1724,7 @@
     // trending yet (Home is never blank-and-silent — the Briefing still renders);
     // "More in Insights →" deep-links to the canonical Trends view. Reuses
     // /api/insights/trending-windows + dashChartSvg; no new backend, no new poll.
+    let _homeTrendTerms = [], _homeTrendCaveat = "";   // stash for enlargeHomeTrend(i)
     async function loadHomeTrends() {
       const panel = $("home-trends-panel"), box = $("home-trends");
       if (!box) return;
@@ -1734,19 +1735,36 @@
         const terms = (wk && wk.terms) || [];
         if (!terms.length) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
         if (panel) panel.hidden = false;
-        const cards = terms.map(x => {
+        _homeTrendTerms = terms;              // stash so enlargeHomeTrend(i) needs no refetch
+        _homeTrendCaveat = d.caveat || "";
+        const cards = terms.map((x, i) => {
           const spark = Array.isArray(x.series)
             ? dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), "")
+            : "";
+          // Click-to-enlarge into the interactive ooChart (invariant #16), matching
+          // the Insights Trends UX — the daily series is already in the payload.
+          const enlarge = Array.isArray(x.series)
+            ? `<button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeHomeTrend(${i})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>`
             : "";
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
               <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}</a>${kwTransHtml(x)}
-              <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span>
+              <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
           + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
       } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
+    }
+    // Enlarge a Home "Trending now" sparkline into the interactive ooChart (invariant
+    // #16). The daily series is already in the stashed payload — no extra fetch.
+    // Global (reached from the inline onclick, matching the card's local convention).
+    function enlargeHomeTrend(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const x = _homeTrendTerms[i];
+      if (!x || !Array.isArray(x.series)) return;   // defensive: nothing to enlarge
+      chartEnlarge(x.term, [{label: x.term, unit: t("mentions"),
+        points: x.series.map(p => ({t: p.date, v: p.count}))}], _homeTrendCaveat || "");
     }
     // Live Home (the at-a-glance strip + briefing self-update; no Refresh button).
     // Only runs while Home is the active, visible tab (the LIVE registry). Cheap:
