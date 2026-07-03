@@ -820,6 +820,44 @@ def insights_lunar_correlation(
     return lunar.lunar_screen(db, limit=limit, fdr_q=fdr_q)
 
 
+class PollFieldsBody(BaseModel):
+    """A poll's DISCLOSED methodological fields (any subset). Presence, not value, is what
+    the transparency checklist reads — a supplied field is 'disclosed', omitted is not.
+    Extra keys are allowed so a caller can pass any additional disclosure it captured."""
+
+    model_config = {"extra": "allow"}
+
+    pollster: str | None = None
+    sponsor: str | None = None
+    fielding_dates: str | None = None
+    sample_size: int | str | None = None
+    population: str | None = None
+    question_wording: str | None = None
+    sampling_method: str | None = None
+    margin_of_error: str | None = None
+    mode: str | None = None
+    weighting: str | None = None
+    response_rate: str | None = None
+
+
+@router.post("/poll-transparency")
+def insights_poll_transparency(body: PollFieldsBody) -> dict:
+    """A poll TRANSPARENCY checklist (Tier 2) — never a score.
+
+    Given a poll's DISCLOSED methodological fields, returns a per-item checklist of what was
+    STATED vs not (who ran it, who paid, when, n, who was sampled, the exact question, …),
+    with the verbatim question echoed when present. It records PRESENCE only, never the
+    value's quality: a disclosed n=100 counts exactly like a disclosed n=10000, so
+    transparency is never penalized; non-disclosure of a core item outranks any disclosed
+    imperfection. It never grades a poll, never ranks, and never calls one 'useless' — it
+    surfaces the disclosure floor and lets you conclude. No composite score.
+    """
+    from src.analytics.poll_transparency import assess_poll_transparency
+
+    fields = body.model_dump(exclude_none=True)
+    return assess_poll_transparency(fields).to_dict()
+
+
 def warm_cache(db: Session) -> dict:
     """Pre-compute the common whole-corpus views into the read cache so the Home /
     Insights surfaces never hit a cold heavy query (perf, field report 2026-06-18).
