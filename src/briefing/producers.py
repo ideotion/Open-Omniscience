@@ -2213,6 +2213,309 @@ def buried_topic(session) -> list[Card]:
     return cards
 
 
+# --------------------------------------------------------------------------- #
+#  Severity-tiered LOCAL alert layer (info / watch / urgent) — Cards batch E.
+#  A transparent rule over real, locally-cached signals: hazard records (the
+#  provider's OWN severity), fired local watches, recent space-time convergences.
+#  NO network, NO notifications, NO fabricated urgency (src/analytics/alerts.py).
+# --------------------------------------------------------------------------- #
+_TIER_LABELS = {"urgent": "Urgent", "watch": "Watch", "info": "Info"}
+_TIER_PLAIN = {
+    "urgent": (
+        "A hazard provider itself declared a RED alert here. That is the provider's own "
+        "top severity — this layer never invents urgency. Read it and judge."
+    ),
+    "watch": (
+        "Signals worth keeping an eye on: a hazard provider's ORANGE alert, or a watch you "
+        "saved that crossed the threshold YOU set. Not urgent — a prompt to look."
+    ),
+    "info": (
+        "Informational signals: a hazard provider's GREEN alert, a relayed observation, or "
+        "a recent space-time convergence in your corpus (a co-occurrence prompt, not proof)."
+    ),
+}
+
+
+def severity_alerts(session) -> list[Card]:
+    """Info/watch/urgent Home banner from LOCAL alert signals — one card per active tier.
+
+    Aggregates hazard records (from the local snapshot — never the network), fired local
+    watches, and recent space-time convergences into transparent severity tiers. 'Urgent'
+    is ONLY ever a provider-declared red hazard alert; nothing is a fabricated urgency, and
+    no figure is a score. Degrades to [] when there is nothing to show."""
+    try:
+        from src.analytics.alerts import ALERT_CAVEAT, ALERT_METHOD, compute_alerts
+
+        alerts = compute_alerts(session)
+    except Exception:  # noqa: BLE001 - an alert-scan problem must never blank the feed
+        _LOG.warning("severity-alert scan failed", exc_info=True)
+        return []
+
+    tiers = alerts.get("tiers", {})
+    cards: list[Card] = []
+    for tier in ("urgent", "watch", "info"):  # most severe first
+        data = tiers.get(tier) or {}
+        count = int(data.get("count", 0))
+        if not count:
+            continue
+        hazards = data.get("hazards", [])
+        watches = data.get("watches", [])
+        convergences = data.get("convergences", [])
+        n_haz, n_watch, n_conv = len(hazards), len(watches), len(convergences)
+        parts = []
+        if n_haz:
+            parts.append(f"{n_haz} hazard alert(s)")
+        if n_watch:
+            parts.append(f"{n_watch} fired watch(es)")
+        if n_conv:
+            parts.append(f"{n_conv} space-time convergence(s)")
+        evidence: list[dict] = []
+        for h in hazards[:4]:
+            evidence.append(
+                {
+                    "title": h.get("title") or h.get("type") or "hazard alert",
+                    "url": h.get("url"),
+                    "source": (str(h.get("source") or "").upper() or None),
+                    "published_at": h.get("time"),
+                }
+            )
+        for w in watches[:4]:
+            evidence.append({"title": f"Watch: {w.get('name')}", "url": "/#home", "source": None})
+        for c in convergences[:4]:
+            place = c.get("place") or "a place"
+            evidence.append(
+                {"title": f"Convergence: {place} ({c.get('window_start')})", "url": None, "source": None}
+            )
+        stale_note = (
+            " Hazard records are a cached relay and may be stale." if alerts.get("hazards_stale") else ""
+        )
+        cards.append(
+            Card(
+                type="severity_alert",
+                title=f"{_TIER_LABELS[tier]}: {count} alert signal(s)",
+                summary=(f"{_TIER_LABELS[tier]}: {', '.join(parts)} in view." + stale_note),
+                bucket="watch",
+                signal={
+                    "metric": "signals_in_tier",
+                    "value": count,
+                    "tier": tier,
+                    "hazards": n_haz,
+                    "watches": n_watch,
+                    "convergences": n_conv,
+                    "hazards_stale": bool(alerts.get("hazards_stale")),
+                    "hazards_as_of": alerts.get("hazards_as_of"),
+                },
+                method=ALERT_METHOD,
+                caveat=ALERT_CAVEAT,
+                evidence=evidence,
+                # The corpus article ids behind the tier's watch/convergence evidence
+                # (hazard records are external feed items, not corpus articles).
+                article_ids=list(data.get("article_ids", [])),
+                n=count,
+                key=f"alert:{tier}",
+                trigger=_trigger(
+                    _TIER_PLAIN[tier],
+                    [
+                        ("Signals in this tier", str(count)),
+                        ("From hazard provider alerts", str(n_haz)),
+                        ("From watches you saved", str(n_watch)),
+                        ("From space-time convergences", str(n_conv)),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
+_MAX_DISPUTED = 4
+
+
+def disputed_chronology(session) -> list[Card]:
+    """Surface a near-identical STORY dated differently across DISTINCT sources
+    (Cards batch E). Names a SHAPE — sources disagree on WHEN — never a verdict; the
+    innocent twins (date-extraction ambiguity, a timeline piece, an update date) ride the
+    caveat, and independence is measured by distinct sources. Dates are deduced, never
+    confirmed. No score."""
+    try:
+        from src.analytics.disputed_chronology import (
+            DISPUTED_CAVEAT,
+            find_disputed_chronology,
+        )
+
+        found = find_disputed_chronology(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("disputed-chronology scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_DISPUTED]:
+        dates = it["disputed_dates"]
+        cards.append(
+            Card(
+                type="disputed_chronology",
+                title=f"Same story, {it['distinct_dates']} conflicting event dates",
+                summary=(
+                    f"{it['distinct_sources']} sources tell a near-identical story but date "
+                    f"the event differently ({', '.join(dates)}) — the conflicting dates span "
+                    f"{it['span_days']} days. Date-extraction quirks or a timeline piece can "
+                    "explain it; read both and judge."
+                ),
+                bucket="debunk",
+                signal={
+                    "metric": "disputed_dates",
+                    "value": it["distinct_dates"],
+                    "span_days": it["span_days"],
+                    "distinct_sources": it["distinct_sources"],
+                    "dates": dates,
+                    "sources": it["sources"],
+                    "dates_by_source": it["dates_by_source"],
+                },
+                method=found.get("method", ""),
+                caveat=DISPUTED_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["n_articles"],
+                key=f"disputed:{'|'.join(dates)}:{it['article_ids'][0] if it['article_ids'] else ''}",
+                trigger=_trigger(
+                    "Several of your sources tell what is clearly the same story but put the "
+                    "event on different dates. That is worth a look — though a date-extraction "
+                    "quirk, a timeline article, or an update date can all explain it. Read "
+                    "both and judge.",
+                    [
+                        ("Conflicting event dates", ", ".join(dates)),
+                        ("Distinct sources disagreeing", str(it["distinct_sources"])),
+                        ("Span of the conflicting dates", f"{it['span_days']} days"),
+                        ("Story text similarity (Jaccard)", f"{it['avg_similarity']:.2f}"),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
+_MAX_PROPAGATION = 4
+
+
+def story_propagation(session) -> list[Card]:
+    """Surface the TEMPORAL cascade of a topic across DISTINCT sources (Cards batch E).
+    Names a SHAPE — who carried it first, then the sequence over time — never an origin or
+    a cause (a shared wire or independent coverage look identical). Efficient: reads the
+    denormalised keyword_mentions only. No score."""
+    try:
+        from src.analytics.story_propagation import (
+            STORY_PROPAGATION_CAVEAT,
+            find_story_propagation,
+        )
+
+        found = find_story_propagation(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("story-propagation scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_PROPAGATION]:
+        cascade = it["cascade"]
+        cards.append(
+            Card(
+                type="story_propagation",
+                title=f"“{it['term']}” spread across {it['distinct_sources']} sources",
+                summary=(
+                    f"Coverage of “{it['term']}” propagated across {it['distinct_sources']} "
+                    f"sources over {it['span_days']} days, first carried by "
+                    f"{it['first_source']} on {it['first_seen']}. A shared wire or "
+                    "independent coverage can look the same — a shape to read, never a cause."
+                ),
+                bucket="context",
+                signal={
+                    "metric": "distinct_sources",
+                    "value": it["distinct_sources"],
+                    "span_days": it["span_days"],
+                    "first_source": it["first_source"],
+                    "first_seen": it["first_seen"],
+                    "cascade": cascade,
+                },
+                method=found.get("method", ""),
+                caveat=STORY_PROPAGATION_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["n_articles"],
+                key=f"propagation:{it['keyword_id']}:{it['first_seen']}",
+                trigger=_trigger(
+                    "A topic showed up in one source first, then rippled out to others over "
+                    "the following days. That spread is a shape to read — a shared newswire or "
+                    "independent coverage both look like this, and it is never proof of a cause.",
+                    [
+                        ("Distinct sources reached", str(it["distinct_sources"])),
+                        ("Days from first to last source", str(it["span_days"])),
+                        ("First carried by", f"{it['first_source']} ({it['first_seen']})"),
+                        ("Sources in the cascade", str(len(cascade))),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
+_MAX_RIPPLE = 4
+
+
+def supply_chain_ripple(session) -> list[Card]:
+    """Surface a commodity/keyword coverage CO-MOVEMENT (Cards batch E). Names a SHAPE —
+    two topics whose daily coverage rises and falls together — CO-OCCURRENCE, NEVER
+    causation. The pair family is FDR-corrected so many comparisons cannot manufacture it;
+    the signal carries its components (r, p, adjusted q, n), never a score."""
+    try:
+        from src.analytics.supply_chain_ripple import (
+            SUPPLY_CHAIN_CAVEAT,
+            find_supply_chain_ripples,
+        )
+
+        found = find_supply_chain_ripples(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("supply-chain-ripple scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_RIPPLE]:
+        cards.append(
+            Card(
+                type="supply_chain_ripple",
+                title=f"{it['commodity']} coverage co-moves with “{it['keyword']}”",
+                summary=(
+                    f"Daily coverage of {it['commodity']} and “{it['keyword']}” rise and fall "
+                    f"together (r={it['correlation']:+.2f}, p={it['p_value']:.3g}, over "
+                    f"{it['n_days']} days) — a co-movement to investigate, never proof one "
+                    "drives the other."
+                ),
+                bucket="context",
+                signal={
+                    "metric": "coverage_correlation",
+                    "value": it["correlation"],
+                    "p_value": it["p_value"],
+                    "fdr_qvalue": it["fdr_qvalue"],
+                    "n_days": it["n_days"],
+                    "commodity": it["commodity"],
+                    "keyword": it["keyword"],
+                },
+                method=found.get("method", ""),
+                caveat=SUPPLY_CHAIN_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["n_articles"],
+                key=f"ripple:{it['commodity_keyword_id']}:{it['keyword_id']}",
+                trigger=_trigger(
+                    "When this commodity is in the news more, another topic tends to be too, "
+                    "and when one quiets down so does the other. That co-movement is worth a "
+                    "look — but coverage moving together is never proof one causes the other.",
+                    [
+                        ("Correlation of daily coverage (r)", f"{it['correlation']:+.2f}"),
+                        ("How likely by chance (p, before FDR)", f"{it['p_value']:.3g}"),
+                        ("FDR-adjusted q-value", str(it["fdr_qvalue"])),
+                        ("Days of coverage compared", str(it["n_days"])),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -2242,6 +2545,12 @@ _DEFAULT_PRODUCERS = (
     ("flooded_topic", flooded_topic),
     ("buried_topic", buried_topic),
     ("copypasta", copypasta),
+    # Cards batch E (registered last — fail-safe order): a new producer must never
+    # cost the operator the established feed if it misbehaves.
+    ("severity_alerts", severity_alerts),
+    ("disputed_chronology", disputed_chronology),
+    ("story_propagation", story_propagation),
+    ("supply_chain_ripple", supply_chain_ripple),
 )
 
 
