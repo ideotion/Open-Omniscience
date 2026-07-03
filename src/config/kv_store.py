@@ -118,7 +118,10 @@ def kv_get_json(key: str) -> dict | None:
     try:
         conn = _open(path)
         try:
-            row = conn.execute(f"SELECT value FROM {TABLE} WHERE key = ?", (key,)).fetchone()
+            row = conn.execute(
+                f"SELECT value FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+                (key,),
+            ).fetchone()
             raw = row[0] if row else None
         finally:
             conn.close()
@@ -155,7 +158,7 @@ def kv_set_json(key: str, obj: dict) -> None:
         try:
             _ensure_table(conn)
             conn.execute(
-                f"INSERT INTO {TABLE} (key, value, updated_at) VALUES (?, ?, ?) "
+                f"INSERT INTO {TABLE} (key, value, updated_at) VALUES (?, ?, ?) "  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; values are bound params
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
                 "updated_at = excluded.updated_at",
                 (key, value, now),
@@ -179,7 +182,10 @@ def kv_delete(key: str) -> None:
             conn = _open(path)
             try:
                 _ensure_table(conn)
-                conn.execute(f"DELETE FROM {TABLE} WHERE key = ?", (key,))
+                conn.execute(
+                    f"DELETE FROM {TABLE} WHERE key = ?",  # noqa: S608  # nosec B608 - {TABLE} is a fixed constant ("app_state"), never input; the key is a bound param
+                    (key,),
+                )
                 conn.commit()
             finally:
                 conn.close()
