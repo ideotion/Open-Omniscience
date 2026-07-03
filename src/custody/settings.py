@@ -58,10 +58,38 @@ class CustodySettings:
         return asdict(self)
 
 
+# The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
+_KV_KEY = "settings.custody"
+
+
 def _settings_path():
     from src.paths import data_dir
 
     return data_dir() / "custody_settings.json"
+
+
+def _read_raw() -> dict | None:
+    """Custody prefs source of truth: the encrypted ``app_state`` row (D1), falling
+    back to (and one-time migrating) the legacy ``custody_settings.json`` file.
+    ``None`` means nothing is stored yet (→ honest defaults, auto-log seeded legacy)."""
+    from src.config.kv_store import kv_get_json, kv_set_json
+
+    raw = kv_get_json(_KV_KEY)
+    if raw is not None:
+        return raw
+    path = _settings_path()
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text("utf-8"))
+    except Exception:  # noqa: BLE001 - never let a bad file take down custody
+        _LOG.warning("custody_settings.json is unreadable; using defaults", exc_info=True)
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("custody_settings migration into app_state deferred", exc_info=True)
+    return raw
 
 
 def _coerce_bool(value, fallback: bool) -> bool:
@@ -89,13 +117,8 @@ def load_settings() -> CustodySettings:
     legacy config flag). A corrupt file is logged and treated as defaults rather
     than crashing the API.
     """
-    path = _settings_path()
-    if not path.exists():
-        return CustodySettings(auto_log_on_ingest=_legacy_auto_log_default())
-    try:
-        raw = json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - never let a bad file take down custody
-        _LOG.warning("custody_settings.json is unreadable; using defaults", exc_info=True)
+    raw = _read_raw()
+    if raw is None:
         return CustodySettings(auto_log_on_ingest=_legacy_auto_log_default())
 
     defaults = CustodySettings()
@@ -138,11 +161,10 @@ def save_settings(updates: dict) -> CustodySettings:
         actor = updates["default_actor"]
         current.default_actor = str(actor).strip() if actor and str(actor).strip() else None
 
-    path = _settings_path()
-    tmp = path.with_suffix(".json.tmp")
+    from src.config.kv_store import kv_set_json
+
     payload = {"version": SETTINGS_VERSION, **current.to_dict()}
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), "utf-8")
-    tmp.replace(path)  # atomic on the same filesystem
+    kv_set_json(_KV_KEY, payload)  # transactional, encrypted, backed up (D1)
     return current
 
 

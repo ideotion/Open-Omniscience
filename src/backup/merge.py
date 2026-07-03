@@ -258,8 +258,10 @@ _MERGE_HANDLED = {
     "law_documents", "law_revisions", "commodity_prices", "market_extraction_rules",
     "link_classification_rules", "source_credibility_rules", "source_candidates",
 }
-# Deliberately not merged: the other corpus's OWN import history + schema/FTS internals.
-_MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version"}
+# Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
+# plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
+# entirely, incoming values are never adopted by a merge).
+_MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state"}
 
 
 def _unmerged_tables(con: sqlite3.Connection) -> dict[str, int]:

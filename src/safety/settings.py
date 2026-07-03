@@ -53,28 +53,51 @@ class SafetySettings:
         return self.fetch_mode == "protected"
 
 
+# The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
+_KV_KEY = "settings.safety"
+
+
 def _path():
     from src.paths import data_dir
 
     return data_dir() / "safety_settings.json"
 
 
-def load_settings() -> SafetySettings:
-    """Load safety settings; env vars override the persisted file (for headless use)."""
-    s = SafetySettings()
+def _read_raw() -> dict | None:
+    """Safety prefs source of truth: the encrypted ``app_state`` row (D1), falling back
+    to (and one-time migrating) the legacy ``safety_settings.json`` file."""
+    from src.config.kv_store import kv_get_json, kv_set_json
+
+    raw = kv_get_json(_KV_KEY)
+    if raw is not None:
+        return raw
     path = _path()
-    if path.exists():
-        try:
-            raw = json.loads(path.read_text("utf-8"))
-            mode = raw.get("fetch_mode", s.fetch_mode)
-            if mode in VALID_MODES:
-                s.fetch_mode = mode
-            if isinstance(raw.get("http_proxy"), str):
-                s.http_proxy = raw["http_proxy"].strip()
-            if isinstance(raw.get("discovery_external_enabled"), bool):
-                s.discovery_external_enabled = raw["discovery_external_enabled"]
-        except Exception:  # noqa: BLE001 - a bad file must not break startup
-            _LOG.warning("safety_settings.json unreadable; using defaults", exc_info=True)
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text("utf-8"))
+    except Exception:  # noqa: BLE001 - a bad file must not break startup
+        _LOG.warning("safety_settings.json unreadable; using defaults", exc_info=True)
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("safety_settings migration into app_state deferred", exc_info=True)
+    return raw
+
+
+def load_settings() -> SafetySettings:
+    """Load safety settings; env vars override the persisted value (for headless use)."""
+    s = SafetySettings()
+    raw = _read_raw()
+    if raw is not None:
+        mode = raw.get("fetch_mode", s.fetch_mode)
+        if mode in VALID_MODES:
+            s.fetch_mode = mode
+        if isinstance(raw.get("http_proxy"), str):
+            s.http_proxy = raw["http_proxy"].strip()
+        if isinstance(raw.get("discovery_external_enabled"), bool):
+            s.discovery_external_enabled = raw["discovery_external_enabled"]
     env_mode = os.getenv("OO_FETCH_MODE")
     if env_mode in VALID_MODES:
         s.fetch_mode = env_mode
@@ -103,11 +126,7 @@ def save_settings(updates: dict) -> SafetySettings:
         raise SafetySettingsError(
             "protected mode requires an http_proxy (e.g. socks5://127.0.0.1:9050)"
         )
-    path = _path()
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(
-        json.dumps({"version": SETTINGS_VERSION, **current.to_dict()}, indent=2, sort_keys=True),
-        "utf-8",
-    )
-    tmp.replace(path)
+    from src.config.kv_store import kv_set_json
+
+    kv_set_json(_KV_KEY, {"version": SETTINGS_VERSION, **current.to_dict()})
     return current

@@ -2161,6 +2161,34 @@ class DerivedMeta(Base):
         return f"<DerivedMeta({self.key}={self.value})>"
 
 
+class AppState(Base):
+    """The durable ``key -> value`` home for small config/UI state (DB-reliability D1).
+
+    Replaces the loose JSON side-files (``app_settings.json``, ``scheduler_settings.json``,
+    ``custody_settings.json``, ``safety_settings.json``) and the browser-only agenda
+    subscription prefs: a JSON file is not transactional, is not in the encrypted store,
+    and is absent from every backup. Each row holds ONE JSON blob per namespace key (e.g.
+    ``settings.app``, ``settings.scheduler``, ``agenda.prefs``); the generic read/write
+    primitive is :mod:`src.config.kv_store`, and each caller owns its own parse/validate.
+
+    Deliberately NOT merged on restore (design D1 / T10: settings are per-machine — local
+    wins entirely; incoming values are shown read-only for manual adoption), so it sits in
+    ``_MERGE_IGNORED`` in :mod:`src.backup.merge`. It is a config store, never an analytic
+    and never a score.
+    """
+
+    __tablename__ = "app_state"
+
+    key: Mapped[str] = mapped_column(String(191), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    def __repr__(self) -> str:
+        return f"<AppState({self.key})>"
+
+
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation

@@ -101,10 +101,37 @@ class SchedulerSettings:
         return asdict(self)
 
 
+# The ``app_state`` kv key this preference blob lives under (DB-reliability D1).
+_KV_KEY = "settings.scheduler"
+
+
 def _settings_path():
     from src.paths import data_dir
 
     return data_dir() / "scheduler_settings.json"
+
+
+def _read_raw() -> dict | None:
+    """Scheduler prefs source of truth: the encrypted ``app_state`` row (D1), falling
+    back to (and one-time migrating) the legacy ``scheduler_settings.json`` file."""
+    from src.config.kv_store import kv_get_json, kv_set_json
+
+    raw = kv_get_json(_KV_KEY)
+    if raw is not None:
+        return raw
+    path = _settings_path()
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text("utf-8"))
+    except Exception:  # noqa: BLE001 - a bad file must not break startup
+        _LOG.warning("scheduler_settings.json unreadable; using defaults", exc_info=True)
+        return None
+    try:
+        kv_set_json(_KV_KEY, raw)
+    except Exception:  # noqa: BLE001 - migration is best-effort; retried next load
+        _LOG.debug("scheduler_settings migration into app_state deferred", exc_info=True)
+    return raw
 
 
 def _coerce_bool(value, fallback: bool) -> bool:
@@ -166,14 +193,9 @@ def _coerce_list(value) -> list[str]:
 
 def load_settings() -> SchedulerSettings:
     """Load scheduler settings, falling back to safe defaults."""
-    path = _settings_path()
     d = SchedulerSettings()
-    if not path.exists():
-        return d
-    try:
-        raw = json.loads(path.read_text("utf-8"))
-    except Exception:  # noqa: BLE001 - a bad file must not break startup
-        _LOG.warning("scheduler_settings.json unreadable; using defaults", exc_info=True)
+    raw = _read_raw()
+    if raw is None:
         return d
     mode = raw.get("mode", d.mode)
     if mode not in VALID_MODES:
@@ -292,9 +314,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
             )
         current.country_priority = _coerce_target(val)
 
-    path = _settings_path()
-    tmp = path.with_suffix(".json.tmp")
-    payload = {"version": SETTINGS_VERSION, **current.to_dict()}
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), "utf-8")
-    tmp.replace(path)
+    from src.config.kv_store import kv_set_json
+
+    kv_set_json(_KV_KEY, {"version": SETTINGS_VERSION, **current.to_dict()})
     return current
