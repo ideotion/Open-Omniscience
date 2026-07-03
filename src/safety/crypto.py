@@ -25,6 +25,13 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 _MAGIC = b"OOENC1\x00\x00"
 _N, _R, _P = 2**15, 8, 1  # conservative, matches custody key wrapping
 
+# A single AES-GCM call caps its input at 2**31-1 bytes (~2 GiB); `cryptography` raises a
+# CRYPTIC `OverflowError: "Data too long. Max 2**31-1 bytes"` above it. We PRE-CHECK and
+# raise an honest, actionable EncryptionError instead (field test 2026-06-24: a 6 GB corpus
+# hit this). The STREAMING path (OOENC2: encrypt_file / write_volume_backup) has NO cap and
+# never holds the whole archive in RAM -- that is the answer for a large corpus.
+_GCM_MAX_BYTES = 2**31 - 1  # 2_147_483_647
+
 
 class EncryptionError(RuntimeError):
     """Raised when decryption fails (wrong passphrase, truncated/tampered data)."""
@@ -35,9 +42,20 @@ def _derive(passphrase: bytes, salt: bytes, n: int, r: int, p: int) -> bytes:
 
 
 def encrypt_bytes(data: bytes, passphrase: str) -> bytes:
-    """Encrypt ``data`` under ``passphrase`` into a self-describing container."""
+    """Encrypt ``data`` under ``passphrase`` into a self-describing container.
+
+    Single-shot AES-GCM: the whole ``data`` is held in RAM and capped at ~2 GiB. Above the
+    cap it raises a clear :class:`EncryptionError` pointing at the streaming/volume path,
+    NOT a cryptic ``OverflowError``.
+    """
     if not passphrase:
         raise EncryptionError("a non-empty passphrase is required")
+    if len(data) > _GCM_MAX_BYTES:
+        raise EncryptionError(
+            f"data is {len(data)} bytes — above the ~2 GiB single-shot AES-GCM limit "
+            f"({_GCM_MAX_BYTES} bytes). Use the streaming/volume backup (encrypt_file / "
+            "write_volume_backup), which has no cap and never holds the whole archive in RAM."
+        )
     import os
 
     salt, nonce = os.urandom(16), os.urandom(12)
@@ -55,6 +73,13 @@ def decrypt_bytes(blob: bytes, passphrase: str) -> bytes:
         salt, nonce, ct = blob[20:36], blob[36:48], blob[48:]
     except struct.error as exc:
         raise EncryptionError("truncated or malformed encrypted file") from exc
+    if len(ct) > _GCM_MAX_BYTES:
+        # An honest error before AES-GCM raises its cryptic OverflowError on decrypt.
+        raise EncryptionError(
+            f"ciphertext is {len(ct)} bytes — above the ~2 GiB single-shot AES-GCM limit. "
+            "This container was not produced by this build's streaming path; a volume set "
+            "(read_volume_backup) is the large-archive path."
+        )
     key = _derive(passphrase.encode("utf-8"), salt, n, r, p)
     try:
         return AESGCM(key).decrypt(nonce, ct, None)

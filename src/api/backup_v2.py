@@ -66,7 +66,11 @@ def _restore_error(action: str, exc: Exception) -> HTTPException:
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])
 
-_MAX_RESTORE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB, same honest cap as legacy restore
+# The upload/RAM cap for the single-shot restore path. Aligned EXACTLY to the AES-GCM limit
+# (2**31-1 = src.safety.crypto._GCM_MAX_BYTES, a fixed cryptographic constant) so an
+# encrypted blob that passes this guard can't then overflow AES-GCM on decrypt — the old
+# 2*1024**3 (=2**31) was one byte too generous. Above this, use the streaming volume restore.
+_MAX_RESTORE_BYTES = 2**31 - 1
 
 
 @router.get("/inventory")
