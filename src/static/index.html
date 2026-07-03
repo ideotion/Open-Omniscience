@@ -14,6 +14,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Open Omniscience</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <!-- PWA: installable app metadata + theme colour + touch icon (item #69, offline-first). -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#11151a">
+  <link rel="apple-touch-icon" href="/static/icon.png">
   <link rel="stylesheet" href="/static/app.css">
   <!-- Alternative-interfaces gallery (Settings -> GUIs, maintainer-ruled 2026-06-17):
        apply the chosen skin BEFORE first paint so there is no flash of the default.
@@ -2179,5 +2183,16 @@
   <script src="/static/app.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
   <script src="/static/guis/gallery.js"></script>
+  <!-- PWA: register the offline shell service worker (item #69). Best-effort + guarded so
+       it can never break boot; it only caches the static shell, never API/data responses.
+       Served at /static/sw.js (scope /static/); full offline navigation of "/" needs a
+       backend route serving this file at root — see the PR. -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/static/sw.js").catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

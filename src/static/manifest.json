@@ -1,0 +1,16 @@
+{
+  "name": "Open Omniscience",
+  "short_name": "Omniscience",
+  "description": "Local-first, offline investigative-intelligence workbench. Your corpus stays on this machine.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#11151a",
+  "theme_color": "#11151a",
+  "icons": [
+    { "src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "/static/icon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }
+  ]
+}
