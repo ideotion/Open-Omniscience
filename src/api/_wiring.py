@@ -60,6 +60,7 @@ def wire(app) -> None:
     from src.api.scheduler import router as scheduler_router
     from src.api.search_omni import router as search_omni_router
     from src.api.settings import router as settings_router
+    from src.api.signals import router as signals_router
     from src.api.source_io import router as source_io_router
     from src.api.source_management import router as source_management_router
     from src.api.stats import router as stats_router
@@ -110,6 +111,7 @@ def wire(app) -> None:
         timemap_router,
         article_dates_router,
         ai_router,
+        signals_router,
     )
     for router in spine:
         app.include_router(router)

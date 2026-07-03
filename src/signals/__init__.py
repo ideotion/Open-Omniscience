@@ -33,6 +33,13 @@ from src.signals.coordination import (
     CoordinationResult,
     detect_coordination,
 )
+from src.signals.fdr import (
+    FdrError,
+    FdrResult,
+    benjamini_hochberg,
+    bh_adjusted,
+    fdr_selftest,
+)
 from src.signals.lineage import LineageResult, detect_wire_attribution, trace_lineage
 from src.signals.near_dup import (
     NearDupResult,
@@ -64,4 +71,11 @@ __all__ = [
     "LineageResult",
     "trace_lineage",
     "detect_wire_attribution",
+    # multiple-testing spine (Benjamini-Hochberg FDR; the pure computation lives
+    # in src.stats.fdr and is re-exported here, never re-implemented)
+    "FdrError",
+    "FdrResult",
+    "benjamini_hochberg",
+    "bh_adjusted",
+    "fdr_selftest",
 ]
