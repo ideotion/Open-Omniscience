@@ -824,3 +824,216 @@ def refresh_persisted_read_model(session, passphrase: str | None = None) -> dict
                 con.close()
             except Exception:  # noqa: BLE001
                 pass
+
+
+# --------------------------------------------------------------------------- #
+# D4 — the ``source_coverage`` per-country rollup (scaling 5A-bis;
+# docs/design/SCALING_DERIVED_LAYER_1000X.md).
+#
+# The choropleth map endpoint (``queries.source_country_counts``) re-scans the ARTICLES
+# table (per-country article count + mean tone via a source-country join) plus the sources
+# and mention tables on EVERY read. Unlike ``keyword_daily`` (millions of per-day rows),
+# the source-coverage RESULT is tiny (one row per country), so the honest win here is
+# RESULT-CACHING, not a columnar scan: build the small per-country aggregate ONCE (with
+# SQLite's native GROUP BY — faster than marshalling every row to Python) and cache it in
+# the derived store, so repeated map reads hit the cached rows instead of re-scanning.
+#
+# This is the D4 analog of D2/D3: keyed by the corpus epoch (so a re-index/prune/restore
+# forces a rebuild) AND by the article/mention id watermarks (so ordinary new-ingest is
+# picked up). FULL rebuild only — the result set is small, so there is no incremental
+# merge to get wrong. Parity is by construction (same GROUP BY as the live query) and
+# proven by :func:`source_coverage_parity`. HONESTY: counts only, no score; mean tone is
+# stored as (sum, n) so a country with no scored (English) article reports None honestly;
+# a country-less source/article goes to the '' unlocated bucket, never guessed onto a map.
+#
+# Like D2/D3 it is built + proven, dormant at runtime: the live map endpoint is NOT wired
+# to it yet (offline the store is in-memory = a per-process rebuild = no runtime gain; the
+# durability win lands with the persisted store, D1). The canonical store stays the source
+# of truth; a cold/missing rollup means the seam falls back to the live query.
+
+_SOURCE_COVERAGE_DDL = (
+    "CREATE OR REPLACE TABLE source_coverage ("
+    "country VARCHAR, sources BIGINT, articles BIGINT, keyword_mentions BIGINT, "
+    "sentiment_sum DOUBLE, sentiment_n BIGINT)"
+)
+
+
+def _norm_cc(cc) -> str:
+    """Normalise a country code the same way the live query does (trim + lowercase; a
+    country-less source/article -> the '' unlocated bucket, never guessed onto a map)."""
+    return (cc or "").strip().lower()
+
+
+def build_source_coverage(con, session) -> dict:
+    """(Re)build the per-country ``source_coverage`` rollup — the FULL build (D4).
+
+    Aggregates the choropleth measures with SQLite's native GROUP BY (one pass each, kept
+    in C — faster than streaming every article row to Python) and CACHES the small
+    per-country result in the derived store: sources per catalogued country, articles +
+    mean-tone (as sum+n) via the source-country join, and keyword mentions per denormalised
+    mention country. Records the article + mention id watermarks + as_of so
+    :func:`refresh_source_coverage` can decide full-vs-skip. Counts only, no score.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func
+    from sqlalchemy import text as _sql
+
+    from src.database.models import Article, KeywordMention, Source
+
+    ensure_store_meta(con)
+
+    # Sources per catalogued country (tiny table).
+    src_by_cc: dict[str, int] = {}
+    for cc, n in session.query(Source.country, func.count(Source.id)).group_by(Source.country):
+        src_by_cc[_norm_cc(cc)] = src_by_cc.get(_norm_cc(cc), 0) + int(n or 0)
+
+    # Articles + mean tone per source-country, in ONE scan (avg ignores NULL scores;
+    # count(sentiment_score) is the scored/English subset size). Same shape the live
+    # ``source_country_counts`` uses, so the rollup is byte-identical by construction.
+    art_by_cc: dict[str, tuple[int, float, int]] = {}
+    for cc, n, tone_sum, tone_n in session.query(
+        Source.country,
+        func.count(Article.id),
+        func.sum(Article.sentiment_score),
+        func.count(Article.sentiment_score),
+    ).join(Article, Article.source_id == Source.id).group_by(Source.country):
+        key = _norm_cc(cc)
+        cur = art_by_cc.get(key, (0, 0.0, 0))
+        art_by_cc[key] = (
+            cur[0] + int(n or 0),
+            cur[1] + float(tone_sum or 0.0),
+            cur[2] + int(tone_n or 0),
+        )
+
+    # Keyword mentions per denormalised source-country (index scan; no article decrypt).
+    kw_by_cc: dict[str, int] = {}
+    for cc, n in session.query(KeywordMention.country, func.count()).group_by(
+        KeywordMention.country
+    ):
+        kw_by_cc[_norm_cc(cc)] = kw_by_cc.get(_norm_cc(cc), 0) + int(n or 0)
+
+    countries = set(src_by_cc) | set(art_by_cc) | set(kw_by_cc)
+    rows = []
+    for cc in countries:
+        arts = art_by_cc.get(cc, (0, 0.0, 0))
+        rows.append((cc, int(src_by_cc.get(cc, 0)), int(arts[0]), int(kw_by_cc.get(cc, 0)),
+                     float(arts[1]), int(arts[2])))
+
+    con.execute(_SOURCE_COVERAGE_DDL)
+    if rows:
+        con.executemany("INSERT INTO source_coverage VALUES (?, ?, ?, ?, ?, ?)", rows)
+
+    max_art = session.execute(_sql("SELECT MAX(id) FROM articles")).scalar()
+    max_men = session.execute(_sql("SELECT MAX(id) FROM keyword_mentions")).scalar()
+    as_of = datetime.now(UTC).isoformat(timespec="seconds")
+    _set_meta(con, "source_coverage.last_article_id", int(max_art or 0))
+    _set_meta(con, "source_coverage.last_mention_id", int(max_men or 0))
+    _set_meta(con, "source_coverage.as_of", as_of)
+    return {
+        "rows": len(rows),
+        "countries": len([r for r in rows if r[0]]),  # excludes the '' unlocated bucket
+        "last_article_id": int(max_art or 0),
+        "last_mention_id": int(max_men or 0),
+        "as_of": as_of,
+    }
+
+
+def refresh_source_coverage(con, session, *, corpus_epoch: int) -> dict:
+    """Bring ``source_coverage`` up to date. FULL rebuild when the corpus epoch changed
+    (a re-index / prune / restore), when ordinary ingest advanced the article/mention id
+    watermark, or when there is no usable prior build. Otherwise a no-op (fresh).
+
+    The result set is tiny, so a rebuild is cheap and there is no incremental merge to get
+    wrong — the epoch/watermark decision keeps it fresh without re-scanning on every serve.
+    Returns ``{mode: 'full'|'fresh', ...}``.
+    """
+    from sqlalchemy import text as _sql
+
+    ensure_store_meta(con)
+    built_epoch = _get_meta(con, "source_coverage.built_epoch")
+    last_art = int(_get_meta(con, "source_coverage.last_article_id") or -1)
+    last_men = int(_get_meta(con, "source_coverage.last_mention_id") or -1)
+    cur_art = int(session.execute(_sql("SELECT MAX(id) FROM articles")).scalar() or 0)
+    cur_men = int(session.execute(_sql("SELECT MAX(id) FROM keyword_mentions")).scalar() or 0)
+    needs_full = (
+        built_epoch is None
+        or not _table_present(con, "source_coverage")
+        or int(built_epoch) != int(corpus_epoch)
+        or cur_art != last_art
+        or cur_men != last_men
+    )
+    if not needs_full:
+        return {"mode": "fresh", "corpus_epoch": int(corpus_epoch)}
+    tally = build_source_coverage(con, session)
+    _set_meta(con, "source_coverage.built_epoch", int(corpus_epoch))
+    return {"mode": "full", "corpus_epoch": int(corpus_epoch), **tally}
+
+
+def source_coverage_rows(con) -> list[dict]:
+    """The cached per-country coverage rows from the rollup — the serve primitive.
+
+    Shape mirrors ``queries.source_country_counts`` per-country rows: ``{country, sources,
+    articles, keywords, sentiment, sentiment_n}`` where ``sentiment`` is the mean over the
+    scored subset (None when no scored/English article — never a fabricated zero) and the
+    '' country is the unlocated bucket. Returns ``[]`` if the rollup is absent (caller
+    falls back to the live query). Counts only, no score.
+    """
+    try:
+        out = con.execute(
+            "SELECT country, sources, articles, keyword_mentions, sentiment_sum, "
+            "sentiment_n FROM source_coverage"
+        ).fetchall()
+    except Exception:  # noqa: BLE001 - missing/cold rollup -> fall back to live
+        return []
+    rows = []
+    for cc, sources, articles, kw, tone_sum, tone_n in out:
+        n = int(tone_n or 0)
+        rows.append({
+            "country": cc,
+            "sources": int(sources or 0),
+            "articles": int(articles or 0),
+            "keywords": int(kw or 0),
+            "sentiment": round(float(tone_sum) / n, 3) if n else None,
+            "sentiment_n": n,
+        })
+    return rows
+
+
+def source_coverage_parity(con, session) -> dict:
+    """Honest parity probe: compare the rollup's per-country coverage to the LIVE
+    ``queries.source_country_counts`` query, so a test can PROVE (on a real corpus) that
+    the cache is byte-faithful — the counts must match exactly (both derive from the same
+    GROUP BY). Read-only; counts only, no score.
+    """
+    from src.analytics.queries import source_country_counts
+
+    live = source_country_counts(session)
+    live_by_cc: dict[str, dict] = {r["country"]: r for r in live["by_country"]}
+    # Fold the live 'unlocated' bucket into the '' key for a like-for-like comparison.
+    unloc = live["unlocated"]
+    live_by_cc[""] = {"country": "", "sources": unloc["sources"], "articles": unloc["articles"],
+                      "keywords": unloc["keywords"], "sentiment": None, "sentiment_n": 0}
+
+    roll_by_cc = {r["country"]: r for r in source_coverage_rows(con)}
+    mismatches = 0
+    checked = 0
+    for cc, lr in live_by_cc.items():
+        rr = roll_by_cc.get(cc)
+        if cc == "" and lr["sources"] == 0 and lr["articles"] == 0 and lr["keywords"] == 0:
+            continue  # no unlocated data on either side -> nothing to compare
+        checked += 1
+        if rr is None or (rr["sources"], rr["articles"], rr["keywords"]) != (
+            lr["sources"], lr["articles"], lr["keywords"]
+        ):
+            mismatches += 1
+    return {
+        "countries_compared": checked,
+        "counts_match": mismatches == 0,
+        "mismatches": mismatches,
+        "method": (
+            "source_coverage rollup per-country {sources, articles, keyword mentions} vs "
+            "the live source_country_counts aggregation. Both derive from the same GROUP BY, "
+            "so the counts must match exactly. Counts only, no score."
+        ),
+    }

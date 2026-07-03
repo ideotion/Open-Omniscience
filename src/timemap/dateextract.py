@@ -266,6 +266,36 @@ _MONTHS.update({
     "جنوری": 1, "فروری": 2, "مارچ": 3, "اپریل": 4, "مئی": 5, "جولائی": 7,
     "اگست": 8, "ستمبر": 9, "اکتوبر": 10, "نومبر": 11, "دسمبر": 12,
 })
+# Additional languages (backend batch A, 2026-07-03): fa/ca/ml/te were absent from every
+# month table (date-diagnostics gap). SAFE to add — every regex below only yields a date
+# when a day number or a year sits ADJACENT, so vocabulary raises recall without inventing
+# dates from prose. Every token maps to ONE month.
+_MONTHS.update({
+    # Catalan ("5 de març de 2024") — Latin/Gregorian. abril/octubre/novembre already
+    # resolve via the Spanish/French tables, so these are the Catalan-specific forms.
+    "gener": 1, "febrer": 2, "març": 3, "maig": 5, "juny": 6, "juliol": 7,
+    "agost": 8, "setembre": 9, "desembre": 12,
+    # Persian (Farsi) — GREGORIAN (میلادی) transliterations ONLY. The SOLAR HIJRI names
+    # (فروردین/اردیبهشت/…) are DELIBERATELY OMITTED: they name a DIFFERENT calendar, so
+    # mapping them to Gregorian month numbers would FABRICATE dates (a Solar-Hijri
+    # "۱۵ فروردین ۱۴۰۳" is not 1403-01-15 Gregorian, and 1403 even passes the CE window).
+    # "مارس" (March) already resolves via the shared Arabic spelling. Persian "May"
+    # (مه / می) is WITHHELD — both are ultra-common Persian words ("fog" / the imperfective
+    # verb-prefix "می" / "wine"), a measured-class fabrication vector like the withheld
+    # Levantine نيسان/آب. Eastern-Arabic/Persian digits (۰-۹) parse via \d + int().
+    "ژانویه": 1, "فوریه": 2, "آوریل": 4, "ژوئن": 6, "ژوئیه": 7,
+    "اوت": 8, "اگوست": 8, "سپتامبر": 9, "اکتبر": 10, "نوامبر": 11, "دسامبر": 12,
+    # Malayalam (Malayalam script, Gregorian) — a distinct script, so no Latin/Arabic
+    # collision. AI-transliterated standard Gregorian names, FLAGGED FOR NATIVE REVIEW: a
+    # wrong glyph is a MISS (never a fabrication — a month only fires beside a day/year),
+    # so an imperfect table degrades honestly. Western digits are used in ml/te Gregorian
+    # dates and parse via \d.
+    "ജനുവരി": 1, "ഫെബ്രുവരി": 2, "മാർച്ച്": 3, "ഏപ്രിൽ": 4, "മേയ്": 5, "ജൂൺ": 6,
+    "ജൂലൈ": 7, "ഓഗസ്റ്റ്": 8, "സെപ്റ്റംബർ": 9, "ഒക്ടോബർ": 10, "നവംബർ": 11, "ഡിസംബർ": 12,
+    # Telugu (Telugu script, Gregorian) — a distinct script; same native-review flag.
+    "జనవరి": 1, "ఫిబ్రవరి": 2, "మార్చి": 3, "ఏప్రిల్": 4, "మే": 5, "జూన్": 6,
+    "జూలై": 7, "ఆగస్టు": 8, "సెప్టెంబర్": 9, "అక్టోబర్": 10, "నవంబర్": 11, "డిసెంబర్": 12,
+})
 # Cross-language HOMOGRAPH months — the same spelling names DIFFERENT months in
 # different languages, so a global single-value entry would INVENT dates (measured
 # live: Croatian "5. listopada 2024" = 5 OCTOBER was stored as 5 November via the

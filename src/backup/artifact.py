@@ -84,6 +84,35 @@ class ArtifactError(RuntimeError):
     """Raised when an artifact cannot be built or read safely."""
 
 
+class BackupSpaceError(ArtifactError):
+    """Raised by the disk-space preflight when a backup/restore lacks room to complete —
+    so it refuses LOUDLY up front instead of failing mid-write on a full disk (H3)."""
+
+
+# Safety factor for the single-file CREATE preflight: the corpus DB is snapshotted into a
+# temp dir (1x), zipped STORED (~1x), then the encrypted output written (~1x), so peak disk
+# is a few times the corpus size. 3x is a conservative floor (state/log/annotation members
+# are tiny beside the corpus DB).
+_BUILD_SPACE_FACTOR = 3
+
+
+def preflight_free_space(target: Path, needed: int, *, what: str) -> None:
+    """Refuse LOUDLY (BackupSpaceError, needs-X-vs-Y-free) if ``target``'s filesystem lacks
+    ``needed`` bytes, BEFORE any write starts — never a mid-write ENOSPC crash (H3).
+
+    Reuses the folder-backup free-space probe (fails safe to 0 on an unreadable path, so an
+    unmountable target fails the preflight rather than being silently written to)."""
+    from src.backup.folder_backup import free_bytes, human_bytes
+
+    free = free_bytes(target)
+    if needed > free:
+        raise BackupSpaceError(
+            f"Not enough free space for the {what}: needs about {human_bytes(needed)}, "
+            f"only {human_bytes(free)} free at {target}. Free up space or choose another "
+            "location, or use the large-data/volume backup for a big corpus."
+        )
+
+
 @dataclass
 class Member:
     name: str  # zip member name == data-dir-relative path (corpus.db is virtual)
@@ -375,6 +404,17 @@ def write_backup_v2(
     exceeds the cap uses :func:`write_volume_backup` (server-side volume set).
     """
     include_keys = passphrase is not None
+    # H3 disk-space preflight: refuse loudly before snapshotting if there is not enough room
+    # for the staged snapshot + zip + encrypted output, instead of failing mid-write on a
+    # full disk. Estimate from the live corpus DB (+ custody) size, times a peak-usage factor.
+    from src.backup.sqlite_backup import live_db_path
+
+    corpus_bytes = live_db_path().stat().st_size if live_db_path().exists() else 0
+    custody = data_dir() / _CUSTODY_DB
+    corpus_bytes += custody.stat().st_size if custody.exists() else 0
+    preflight_free_space(
+        dest.parent, corpus_bytes * _BUILD_SPACE_FACTOR, what="backup"
+    )
     tmp_dir = dest.parent / f".bak-build-{secrets.token_hex(6)}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -529,7 +569,13 @@ def read_artifact(
 
         blob = decrypt_bytes(blob, passphrase)  # loud on wrong passphrase/tamper
 
-    staging = (staging_root or data_dir()) / f".restore-{secrets.token_hex(8)}"
+    # H3 disk-space preflight: the members are extracted to the staging filesystem; the
+    # corpus DB (the bulk) is stored uncompressed in the zip, so the extracted size is at
+    # least the (decrypted) blob size. Refuse loudly before staging on a full disk.
+    root = staging_root or data_dir()
+    preflight_free_space(root, len(blob), what="restore")
+
+    staging = root / f".restore-{secrets.token_hex(8)}"
     staging.mkdir(parents=True, exist_ok=False)
 
     if blob[:16] == _SQLITE_MAGIC:

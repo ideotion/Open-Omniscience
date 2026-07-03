@@ -2130,6 +2130,37 @@ class StatSubscription(Base):
         return f"<StatSubscription({self.source}:{key} every {self.interval_days}d)>"
 
 
+class DerivedMeta(Base):
+    """A tiny canonical key->value store coordinating the DERIVED layer with the
+    canonical corpus (scaling 5A-bis / D3 corpus-epoch guard).
+
+    Today it holds ONE key: the *corpus epoch* -- a monotonic counter bumped by exactly
+    the non-append mutators (re-index / prune / restore-merge). The disposable columnar
+    rollup (:func:`src.analytics.columnar.refresh_keyword_daily`) compares its BUILT epoch
+    to this value; a change forces a FULL rebuild instead of an incremental merge, which
+    is what defeats the delete-then-reinsert double-count trap: ``index_article`` deletes
+    then re-inserts an article's mentions, so an id-watermark incremental merge would keep
+    the OLD contribution in the rollup AND re-add the re-inserted higher-id rows. Normal
+    new-article ingest does NOT bump the epoch (else every scrape pass would full-rebuild).
+
+    It is a COORDINATION watermark for a disposable cache, never an analytic and never a
+    score. Values are stored as TEXT (the epoch as a decimal string) for a schema-neutral,
+    extensible key->value shape; the typed helpers live in
+    :mod:`src.analytics.corpus_epoch`.
+    """
+
+    __tablename__ = "derived_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    def __repr__(self) -> str:
+        return f"<DerivedMeta({self.key}={self.value})>"
+
+
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation

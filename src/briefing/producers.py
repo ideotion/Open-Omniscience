@@ -2144,6 +2144,75 @@ def copypasta(session) -> list[Card]:
     return cards
 
 
+_MAX_BURY = 4
+
+
+def buried_topic(session) -> list[Card]:
+    """Surface a SOURCE under-covering a topic that is big across the rest of the corpus
+    (manipulation-pattern card #4 — the BURY half, the inverse of flooded_topic).
+
+    Names a STRUCTURE, never intent: a two-proportion z-test of the source's share of the
+    topic vs the rest-of-corpus share, over a family of (source, topic) pairs corrected with
+    Benjamini-Hochberg FDR (so the many comparisons cannot manufacture a finding). The
+    overwhelming innocent explanation — specialization (a different beat/region/language) —
+    is stated; no score.
+    """
+    try:
+        from src.analytics.concentration import BURY_CAVEAT, find_buried_topics
+
+        found = find_buried_topics(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("bury scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_BURY]:
+        pct_src = round(100 * it["source_share"], 1)
+        pct_corpus = round(100 * it["corpus_share"], 1)
+        cards.append(
+            Card(
+                type="buried_topic",
+                title=f"{it['source']} under-covers “{it['term']}”",
+                summary=(
+                    f"{it['source']} gave {pct_src}% of its coverage to “{it['term']}” "
+                    f"({it['source_articles_on_topic']} of {it['source_total']} articles), vs "
+                    f"{pct_corpus}% across the rest of the corpus. A different beat, region or "
+                    "language usually explains a low share — read it and judge."
+                ),
+                bucket="investigate",
+                signal={
+                    "metric": "gap_zscore",
+                    "value": it["gap_zscore"],
+                    "source_share": it["source_share"],
+                    "corpus_share": it["corpus_share"],
+                    "source_articles_on_topic": it["source_articles_on_topic"],
+                    "source_total": it["source_total"],
+                    "corpus_articles_on_topic": it["corpus_articles_on_topic"],
+                    "fdr_qvalue": it["fdr_qvalue"],
+                    "source": it["source"],
+                },
+                method=found.get("method", ""),
+                caveat=BURY_CAVEAT,
+                n=it["source_total"],
+                key=f"bury:{it['source_id']}:{it['term']}",
+                trigger=_trigger(
+                    "One source covered a widely-covered topic far below where the rest of the "
+                    "corpus sits. Specialization — a different beat, region or language — "
+                    "explains most low shares, so this is a shape to look at, never a claim it "
+                    "was deliberate. It survived multiple-testing correction. Read it and judge.",
+                    [
+                        ("This source's share of the topic", f"{pct_src}%"),
+                        ("The rest of the corpus's share", f"{pct_corpus}%"),
+                        ("Gap (two-proportion z, below)", str(it["gap_zscore"])),
+                        ("On the topic", f"{it['source_articles_on_topic']} of {it['source_total']}"),
+                        ("FDR-adjusted q-value", str(it["fdr_qvalue"])),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -2171,6 +2240,7 @@ _DEFAULT_PRODUCERS = (
     ("headline_body_mismatch", headline_body_mismatch),
     ("manufactured_emergence", manufactured_emergence),
     ("flooded_topic", flooded_topic),
+    ("buried_topic", buried_topic),
     ("copypasta", copypasta),
 )
 

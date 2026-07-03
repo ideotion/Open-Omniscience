@@ -1561,6 +1561,34 @@ def rollup_benchmark(
     )
 
 
+@router.get("/source-coverage-benchmark")
+def source_coverage_benchmark(
+    repeats: int = Query(3, ge=1, le=10, description="Timing runs per read"),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """The per-country source-coverage rollup benchmark (D4, scaling 5A-bis): builds the
+    ``source_coverage`` rollup in-memory over THIS corpus and times the per-country
+    choropleth aggregation both ways — the live scan of articles+sources+mentions (the map
+    read) vs reading the cached rows — reporting the speedup, a parity check (the counts
+    must match exactly), and the rollup wrapped in the honesty envelope. READ-ONLY,
+    in-memory (never a plaintext file), airplane-safe; generated on click only and never
+    transmitted. See src/monitoring/source_coverage_benchmark.py.
+    """
+    from src.monitoring.source_coverage_benchmark import run_source_coverage_benchmark
+
+    payload = run_source_coverage_benchmark(db, repeats=repeats)
+    body = envelope(
+        kind="source-coverage-benchmark",
+        query={"repeats": repeats},
+        count=len(payload.get("coverage", {}).get("value", []) or []),
+        payload=payload,
+    )
+    fname = f"oo-source-coverage-benchmark-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+    return JSONResponse(
+        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
 @router.get("/network")
 def network_preflight_log() -> JSONResponse:
     """The network-targets diagnostics log (maintainer↔developer channel):
