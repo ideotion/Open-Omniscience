@@ -1744,5 +1744,15 @@
   "Shortcuts reset to defaults.": "Pintasan disetel ulang ke bawaan.",
   "exact": "tepat",
   "estimated": "perkiraan",
-  "cached": "tersimpan"
+  "cached": "tersimpan",
+  "Cross-country map of a concept": "Peta lintas negara sebuah konsep",
+  "Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "Pilih ring lintas bahasa — satu konsep yang dihitung di semua bahasa — untuk melihat dari mana liputannya berasal, dipilah menurut negara dan bahasa sumber yang memproduksinya. Hanya hitungan; sumber dengan negara tak diketahui ditampilkan jujur (tak pernah dipetakan, tak pernah ditebak).",
+  "Concept (ring)": "Konsep (ring)",
+  "No cross-country coverage for this concept yet.": "Belum ada liputan lintas negara untuk konsep ini.",
+  "No located sources for this concept yet.": "Belum ada sumber berlokasi untuk konsep ini.",
+  "countries": "negara",
+  "By language": "Menurut bahasa",
+  "mentions per language": "penyebutan per bahasa",
+  "Not mapped (source country unknown)": "Tak dipetakan (negara sumber tak diketahui)",
+  "Mentions": "Penyebutan"
 }

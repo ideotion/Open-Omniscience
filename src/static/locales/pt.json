@@ -1744,5 +1744,15 @@
   "Shortcuts reset to defaults.": "Atalhos restaurados aos padrões.",
   "exact": "exato",
   "estimated": "estimado",
-  "cached": "em cache"
+  "cached": "em cache",
+  "Cross-country map of a concept": "Mapa transnacional de um conceito",
+  "Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "Escolha um anel entre idiomas — um mesmo conceito contado em todos os idiomas — para ver de onde vem sua cobertura, dividida pelo país e idioma da fonte que a produz. Apenas contagens; uma fonte com país desconhecido é mostrada com honestidade (nunca mapeada, nunca adivinhada).",
+  "Concept (ring)": "Conceito (anel)",
+  "No cross-country coverage for this concept yet.": "Ainda não há cobertura transnacional para este conceito.",
+  "No located sources for this concept yet.": "Ainda não há fontes localizadas para este conceito.",
+  "countries": "países",
+  "By language": "Por idioma",
+  "mentions per language": "menções por idioma",
+  "Not mapped (source country unknown)": "Não mapeado (país da fonte desconhecido)",
+  "Mentions": "Menções"
 }

@@ -1744,5 +1744,15 @@
   "Shortcuts reset to defaults.": "快捷键已恢复默认。",
   "exact": "精确",
   "estimated": "估算",
-  "cached": "缓存"
+  "cached": "缓存",
+  "Cross-country map of a concept": "概念的跨国地图",
+  "Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "选择一个跨语言环——同一概念在所有语言中的计数——以查看其报道来自何处，按产出来源的国家和语言划分。仅为计数；国家未知的来源会如实显示（绝不上图，绝不臆测）。",
+  "Concept (ring)": "概念（环）",
+  "No cross-country coverage for this concept yet.": "该概念暂无跨国报道。",
+  "No located sources for this concept yet.": "该概念暂无已定位来源。",
+  "countries": "个国家",
+  "By language": "按语言",
+  "mentions per language": "各语言的提及次数",
+  "Not mapped (source country unknown)": "未上图（来源国家未知）",
+  "Mentions": "提及"
 }

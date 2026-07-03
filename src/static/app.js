@@ -7751,6 +7751,59 @@
     }
 
     // -- Super-groups: groups of families ----------------------------------- //
+    // Cross-language ring -> per-language mention breakdown, indexed from /top?group=true
+    // (best-effort: only rings that fall in the fetched top-N carry a language breakdown).
+    let _ringLangIndex = {};
+    // Item #4: render a cross-language ring's coverage on the ooMap component — where the
+    // concept is covered (by the producing source's country) + its per-language split.
+    // Counts only, no score; unknown country is shown honestly, never mapped or guessed.
+    async function showRingMap(ringId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("sg-ringmap"), detail = $("sg-ringmap-detail");
+      if (!host) return;
+      if (!ringId) { host.innerHTML = ""; if (detail) detail.innerHTML = ""; return; }
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (detail) detail.innerHTML = "";
+      try {
+        const d = await api("/api/insights/ring-countries?ring_id=" + encodeURIComponent(ringId));
+        if (!d.found) { host.innerHTML = `<div class="muted">${esc(t("No cross-country coverage for this concept yet."))}</div>`; return; }
+        const values = {}, names = {}; let unloc = null;
+        (d.countries || []).forEach(c => {
+          if (!c.country) { unloc = c; return; }            // unlocated bucket — never mapped
+          values[c.country] = c.articles;                  // distinct-article spread per country
+          names[c.country] = (typeof ooRegionName === "function") ? ooRegionName(c.country, String(c.country).toUpperCase()) : String(c.country).toUpperCase();
+        });
+        const label = d.label || ringId;
+        if (!Object.keys(values).length) {
+          host.innerHTML = `<div class="muted">${esc(t("No located sources for this concept yet."))}</div>`;
+        } else {
+          host.innerHTML = "";
+          await ooMap(host, {
+            values, names, unit: t("articles"),
+            valueLabel: (iso, v) => `${v} ${t("articles")}`,
+            aria: `${label} — ${Object.keys(values).length} ${t("countries")}`,
+            method: d.method || "", caveat: d.caveat || "",
+          });
+        }
+        // Detail: the per-language mention split (from /top?group=true) + unlocated + a table.
+        const lb = _ringLangIndex[ringId];
+        const langBd = (lb && Object.keys(lb).length)
+          ? `<div class="hint" style="margin-top:4px"><b>${esc(t("By language"))}:</b> `
+            + Object.entries(lb).sort((a, b) => b[1] - a[1]).map(([lg, n]) =>
+                `${esc(lg === "?" ? t("unknown") : lg)} <span class="muted">${n}</span>`).join(" · ")
+            + ` <span class="muted">— ${esc(t("mentions per language"))}</span></div>`
+          : "";
+        const langs = (d.languages || []).length
+          ? `<div class="hint"><b>${esc(t("Languages"))}:</b> ${esc((d.languages || []).join(" · "))}</div>` : "";
+        const unlocNote = unloc
+          ? `<div class="card-caveat">${esc(t("Not mapped (source country unknown)"))}: ${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}</div>` : "";
+        const rows = (d.countries || []).filter(c => c.country)
+          .map(c => `<tr><td>${esc(names[c.country] || c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
+        const tbl = rows
+          ? `<table style="margin-top:8px"><thead><tr><th>${esc(t("Country"))}</th><th style="text-align:right">${esc(t("Articles"))}</th><th style="text-align:right">${esc(t("Mentions"))}</th></tr></thead><tbody>${rows}</tbody></table>` : "";
+        if (detail) detail.innerHTML = langs + langBd + unlocNote + tbl;
+      } catch (e) { host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
+    }
     async function loadSuperGroups() {
       const box = $("sg-list");
       box.innerHTML = '<div class="muted">Loading…</div>';
@@ -7764,6 +7817,17 @@
           `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
         $("sg-ring-options").innerHTML = (rings.rings || []).map(r =>
           `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
+        // Item #4: index the per-language mention breakdown carried by grouped ring rows,
+        // and fill the ring-map picker (kept selection across a refresh).
+        _ringLangIndex = {};
+        (top.terms || []).forEach(f => { if (f.ring_id && f.language_breakdown) _ringLangIndex[f.ring_id] = f.language_breakdown; });
+        const pick = $("sg-ringmap-pick");
+        if (pick) {
+          const cur = pick.value;
+          pick.innerHTML = `<option value="">—</option>` + (rings.rings || []).map(r =>
+            `<option value="${esc(r.id)}">${esc(r.id)} (${esc((r.languages || []).join("/"))})</option>`).join("");
+          if (cur && (rings.rings || []).some(r => r.id === cur)) pick.value = cur;
+        }
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
           : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
         const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);

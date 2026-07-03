@@ -1744,5 +1744,15 @@
   "Shortcuts reset to defaults.": "শর্টকাট ডিফল্টে রিসেট করা হয়েছে।",
   "exact": "নির্ভুল",
   "estimated": "আনুমানিক",
-  "cached": "ক্যাশে"
+  "cached": "ক্যাশে",
+  "Cross-country map of a concept": "একটি ধারণার দেশ-জুড়ে মানচিত্র",
+  "Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "একটি আন্তঃভাষা রিং নির্বাচন করুন — সব ভাষায় গণনা করা একটি ধারণা — এর কভারেজ কোথা থেকে আসে তা দেখতে, উৎসের দেশ ও ভাষা অনুযায়ী বিভক্ত। শুধু গণনা; অজানা দেশের উৎস সততার সঙ্গে দেখানো হয় (কখনও মানচিত্রে নয়, কখনও অনুমান নয়)।",
+  "Concept (ring)": "ধারণা (রিং)",
+  "No cross-country coverage for this concept yet.": "এই ধারণার জন্য এখনও দেশ-জুড়ে কভারেজ নেই।",
+  "No located sources for this concept yet.": "এই ধারণার জন্য এখনও অবস্থান-নির্ধারিত উৎস নেই।",
+  "countries": "দেশ",
+  "By language": "ভাষা অনুযায়ী",
+  "mentions per language": "প্রতি ভাষায় উল্লেখ",
+  "Not mapped (source country unknown)": "মানচিত্রে নেই (উৎসের দেশ অজানা)",
+  "Mentions": "উল্লেখ"
 }

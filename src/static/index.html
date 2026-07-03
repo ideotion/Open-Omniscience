@@ -863,6 +863,14 @@
       <datalist id="sg-family-options"></datalist>
       <datalist id="sg-ring-options"></datalist>
       <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+      <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <h2 style="font-size:13px;margin:0">Cross-country map of a concept</h2>
+        <p class="hint" style="margin-top:2px">Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).</p>
+        <div class="row"><div style="flex:2"><label for="sg-ringmap-pick">Concept (ring)</label>
+          <select id="sg-ringmap-pick" onchange="showRingMap(this.value)"><option value="">—</option></select></div></div>
+        <div id="sg-ringmap" style="margin-top:8px"></div>
+        <div id="sg-ringmap-detail" style="margin-top:8px"></div>
+      </div>
     </section>
 
     <section class="panel ins-view" id="ins-map" style="display:none">
