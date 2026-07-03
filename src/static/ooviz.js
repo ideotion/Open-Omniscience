@@ -397,6 +397,79 @@
     });
   }
 
+  // ----- slope chart geometry (Tufte slope / bump; honest by SHARED scale) ----- //
+
+  /**
+   * Pure geometry for a SLOPE chart: several series, each carrying one value per
+   * ordered STAGE, connected by straight segments across the stages. The honesty
+   * lives in the SHAPE of the output:
+   *   - ONE shared value scale over every finite value across every series, so two
+   *     series are directly comparable (a slope means the same thing everywhere);
+   *   - a missing value (isMissing) is a GAP: its point carries y:null + missing:true
+   *     so the renderer BREAKS the line there and NEVER bridges/zero-fills it (a
+   *     stage a term simply isn't in is absence, not a measured zero);
+   *   - straight segments between ADJACENT measured stage values — never an
+   *     interpolated curve through unmeasured points.
+   *
+   * series: [{label, values:[v|null, ...]}] aligned to opts.stages (the x labels).
+   * Returns pixel-space positions; the caller only templates the SVG. PURE, no DOM.
+   */
+  function slopeGeometry(series, opts) {
+    opts = opts || {};
+    series = series || [];
+    var width = opts.width || 320;
+    var height = opts.height || 220;
+    var pad = opts.pad || { l: 8, r: 8, t: 14, b: 22 };
+    var stages = opts.stages || [];
+    var nStages = stages.length;
+    var vs = [];
+    for (var i = 0; i < series.length; i++) {
+      var vals = series[i].values || [];
+      for (var j = 0; j < vals.length; j++) if (!isMissing(vals[j])) vs.push(vals[j]);
+    }
+    var v0 = vs.length ? Math.min.apply(null, vs) : 0;
+    var v1 = vs.length ? Math.max.apply(null, vs) : 1;
+    var stageX = [];
+    for (var s = 0; s < nStages; s++) {
+      stageX.push(nStages < 2 ? pad.l + (width - pad.l - pad.r) / 2
+        : pad.l + (width - pad.l - pad.r) * (s / (nStages - 1)));
+    }
+    var sy = linearScale(v0, v1, height - pad.b, pad.t); // inverted: larger value => higher
+    var outSeries = series.map(function (se) {
+      var vals = se.values || [];
+      var pts = [];
+      for (var k = 0; k < nStages; k++) {
+        var v = vals[k];
+        var miss = isMissing(v);
+        pts.push({ stage: k, x: stageX[k], value: miss ? null : v, missing: miss, y: miss ? null : sy(v) });
+      }
+      return { label: se.label, points: pts };
+    });
+    var yTicks = niceTicks(v0, v1, 4).map(function (v) { return { value: v, y: sy(v) }; });
+    return {
+      width: width, height: height, pad: pad,
+      stages: stages.map(function (lb, ix) { return { label: lb, x: stageX[ix] }; }),
+      series: outSeries, yTicks: yTicks, valueDomain: [v0, v1], nSeries: series.length, nStages: nStages,
+    };
+  }
+
+  /**
+   * Deterministic small-multiples GRID layout: N panels into a responsive column
+   * grid. cols defaults to a near-square (ceil(sqrt(n))) bounded by opts.maxCols,
+   * so the caller can render each cell at a shared scale (the small-multiples
+   * honesty win — comparable panels). PURE: returns {cols, rows, count, cells}.
+   */
+  function gridLayout(n, opts) {
+    opts = opts || {};
+    n = Math.max(0, n | 0);
+    var maxCols = opts.maxCols || 4;
+    var cols = opts.cols ? Math.max(1, opts.cols | 0) : Math.max(1, Math.min(maxCols, Math.ceil(Math.sqrt(n)) || 1));
+    var rows = Math.max(1, Math.ceil(n / cols));
+    var cells = [];
+    for (var i = 0; i < n; i++) cells.push({ i: i, col: i % cols, row: Math.floor(i / cols) });
+    return { cols: cols, rows: rows, count: n, cells: cells };
+  }
+
   // ----- binning (overplotting fix that is also the honesty fix) ----- //
 
   /**
@@ -505,6 +578,8 @@
     pathWithGaps: pathWithGaps,
     statSeriesPaths: statSeriesPaths,
     statChartGeometry: statChartGeometry,
+    slopeGeometry: slopeGeometry,
+    gridLayout: gridLayout,
     periodToYear: periodToYear,
     choroplethData: choroplethData,
     symbolRadii: symbolRadii,

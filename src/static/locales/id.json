@@ -1761,5 +1761,10 @@
   "No articles for this tag yet.": "Belum ada artikel untuk tag ini.",
   "offline stored copy": "salinan tersimpan luring",
   "+ {n} more (not shown)": "+ {n} lagi (tak ditampilkan)",
-  "Per-country articles vs mentions": "Artikel vs penyebutan per negara"
+  "Per-country articles vs mentions": "Artikel vs penyebutan per negara",
+  "Time scale": "Skala waktu",
+  "Linear": "Linear",
+  "Log": "Log",
+  "Even year-by-year sweep": "Sapuan merata, tahun demi tahun",
+  "Compress antiquity so recent years — where most events are — get more of the slider": "Memampatkan masa lampau agar tahun-tahun terkini — tempat sebagian besar peristiwa — mendapat lebih banyak bagian penggeser"
 }

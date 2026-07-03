@@ -1761,5 +1761,10 @@
   "No articles for this tag yet.": "এই ট্যাগের জন্য এখনও কোনো নিবন্ধ নেই।",
   "offline stored copy": "অফলাইন সংরক্ষিত কপি",
   "+ {n} more (not shown)": "+ আরও {n}টি (দেখানো হয়নি)",
-  "Per-country articles vs mentions": "দেশ অনুযায়ী নিবন্ধ বনাম উল্লেখ"
+  "Per-country articles vs mentions": "দেশ অনুযায়ী নিবন্ধ বনাম উল্লেখ",
+  "Time scale": "সময় স্কেল",
+  "Linear": "রৈখিক",
+  "Log": "লগ",
+  "Even year-by-year sweep": "বছর-প্রতি-বছর সমান সুইপ",
+  "Compress antiquity so recent years — where most events are — get more of the slider": "প্রাচীন সময়কে সংকুচিত করে যাতে সাম্প্রতিক বছরগুলো — যেখানে বেশিরভাগ ঘটনা — স্লাইডারের বেশি অংশ পায়"
 }

@@ -1761,5 +1761,10 @@
   "No articles for this tag yet.": "No articles for this tag yet.",
   "offline stored copy": "offline stored copy",
   "+ {n} more (not shown)": "+ {n} more (not shown)",
-  "Per-country articles vs mentions": "Per-country articles vs mentions"
+  "Per-country articles vs mentions": "Per-country articles vs mentions",
+  "Time scale": "Time scale",
+  "Linear": "Linear",
+  "Log": "Log",
+  "Even year-by-year sweep": "Even year-by-year sweep",
+  "Compress antiquity so recent years — where most events are — get more of the slider": "Compress antiquity so recent years — where most events are — get more of the slider"
 }
