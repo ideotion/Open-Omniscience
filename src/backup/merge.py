@@ -1055,13 +1055,32 @@ def merge_side_files(staged: StagedArtifact) -> dict:
             ann["kept_local"] += 1
             continue
         if name.startswith("annotations/imported/"):
-            # Re-validate the bundle's signature before adopting it (verify, not trust).
+            # The member is an imported-author RECORD, not a signed bundle: it was
+            # written by import_bundle AFTER verification, so its manifest+signature
+            # were stripped and it CANNOT be re-verified (its origin was proven at the
+            # original import, provenance kept in verify_reason). Re-passing it to
+            # import_bundle rejected it as malformed -> every imported author silently
+            # failed to restore. Adopt the verified record directly instead, mirroring
+            # how mine.json restores; the artifact's own signature vouches for the
+            # payload, and local always wins (only adopted when no local record exists).
             try:
-                from src.annotations.store import import_bundle
+                from src.annotations.store import adopt_imported_record
 
-                bundle = json.loads(path.read_text("utf-8"))
-                import_bundle(bundle, trusted=False)
-                ann["imported_authors"] += 1
+                record = json.loads(path.read_text("utf-8"))
+                # Honour the record's own trust flag ONLY for a signature-verified
+                # artifact (its signature binds the member bytes = the user's own
+                # web-of-trust decisions). An allow-unverified restore carries
+                # attacker-controllable member bytes, so its imported authors are
+                # adopted UNtrusted (the user re-affirms trust explicitly). The
+                # author_id is validated inside adopt_imported_record (path-traversal
+                # guard), so a crafted id is reported here, never written.
+                res = adopt_imported_record(
+                    record, allow_trusted=staged.signature_state == "verified"
+                )
+                if res.get("adopted"):
+                    ann["imported_authors"] += 1
+                else:
+                    ann["kept_local"] += 1
             except Exception as exc:  # noqa: BLE001 - each author independent, reported
                 ann["errors"].append(f"{name}: {exc}")
         else:

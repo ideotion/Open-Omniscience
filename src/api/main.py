@@ -659,13 +659,14 @@ def _structured_filters(
     language: str | None,
     tags: str | None,
     provenance: str | None = None,
+    source_type: str | None = None,
 ) -> list:
     """Build the non-text SQLAlchemy filter conditions.
 
     All values are bound as parameters by SQLAlchemy -- no string interpolation
     into SQL. Date strings are pre-validated by the caller.
     """
-    from sqlalchemy import false, or_
+    from sqlalchemy import false, func, or_
 
     filters: list = []
 
@@ -673,6 +674,26 @@ def _structured_filters(
         cond = _provenance_filter(session, provenance)
         if cond is not None:
             filters.append(cond)
+
+    if source_type:
+        # Slice by the raw content-provenance CHANNEL asserted on the source
+        # (news/newsletter/wiki/statistics/law/market/discovery/...). Source-level, so
+        # it never reads the encrypted article rows (same pattern as _provenance_filter):
+        # resolve the matching source ids, then Article.source_id.in_(...). Normalised
+        # (trim+lower; NULL/blank -> the reserved "untyped" bucket) IDENTICALLY to
+        # queries.source_type_facets, so clicking a facet returns exactly its count. An
+        # unknown value narrows to nothing (an honest empty result), never a 400.
+        from src.analytics.queries import SOURCE_TYPE_UNTYPED
+
+        st = source_type.strip().lower()
+        if st == SOURCE_TYPE_UNTYPED:
+            st_cond = or_(
+                Source.source_type.is_(None), func.trim(Source.source_type) == ""
+            )
+        else:
+            st_cond = func.lower(func.trim(Source.source_type)) == st
+        st_ids = [sid for (sid,) in session.query(Source.id).filter(st_cond)]
+        filters.append(Article.source_id.in_(st_ids) if st_ids else false())
 
     if source:
         source_obj = session.query(Source).filter_by(name=source).first()
@@ -777,6 +798,11 @@ def _article_row(a, *, keyword_count: int | None = None) -> dict:
         # Descriptive ingestion channel (wikipedia/newsletter/statistics/web) derived
         # from the source -- a filterable label, never a quality/credibility verdict.
         "provenance": provenance_of(src.domain if src else None, src.source_type if src else None),
+        # The raw content-provenance CHANNEL asserted on the source (news/newsletter/
+        # wiki/statistics/law/market/discovery/...): an ASSERTED descriptive fact known
+        # by construction (the ingest path / catalog), never a quality score. Broader
+        # than the curated `provenance` class above.
+        "source_type": src.source_type if src else None,
         "published_at": a.published_at.isoformat() if a.published_at else None,
         "language": a.language,
         # SECONDARY/DEDUCED language (§2.6): set only when `language` is absent; the UI
@@ -821,6 +847,7 @@ def _query_articles(
     sort_by: str | None = None,
     sort_dir: str | None = None,
     provenance: str | None = None,
+    source_type: str | None = None,
     keyword_id: int | None = None,
 ) -> tuple[list, int]:
     """Return ``(articles, total)`` applying full-text search + structured filters.
@@ -829,8 +856,9 @@ def _query_articles(
     precedence) and orders results by relevance; otherwise results are ordered by
     recency. ``sort_by`` (date|source|title|language|keyword_count) overrides that order
     with a metadata ordering (``sort_dir`` asc|desc, default desc). ``provenance`` narrows
-    to one content-provenance class. ``keyword_id`` enables the ``keyword_count`` sort
-    (the resolved keyword's per-article mentions). ``limit=None`` returns every match.
+    to one content-provenance class; ``source_type`` narrows to one raw source channel.
+    ``keyword_id`` enables the ``keyword_count`` sort (the resolved keyword's per-article
+    mentions). ``limit=None`` returns every match.
     """
     from sqlalchemy import and_
 
@@ -842,6 +870,7 @@ def _query_articles(
         language=language,
         tags=tags,
         provenance=provenance,
+        source_type=source_type,
     )
     descending = (sort_dir or "desc").lower() != "asc"
 
@@ -913,6 +942,7 @@ async def search_articles(
     sort_by: str | None = None,
     sort_dir: str | None = None,
     provenance: str | None = None,
+    source_type: str | None = None,
     limit: int = 100,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -930,6 +960,9 @@ async def search_articles(
     - tags: Filter by source tags (comma-separated).
     - provenance: Narrow to one content-provenance class (wikipedia|web|newsletter|
       statistics) -- a descriptive ingestion-channel filter, never a quality score.
+    - source_type: Narrow to one raw source channel (news|newsletter|wiki|statistics|
+      law|market|discovery|...) -- an asserted descriptive fact, never a quality score.
+      Not a fixed enum; an unknown value returns no results (never a 400).
     - sort_by: Order by a metadata field (date|source|title|language) or by
       keyword_count (the searched keyword's per-article mentions, when the query is a
       stored keyword). Default: relevance for a text query, else recency. Never a score.
@@ -947,6 +980,13 @@ async def search_articles(
     provenance = (provenance or "").strip().lower() or None
     if provenance == "all":
         provenance = None
+
+    # The raw source_type channel facet (news/newsletter/wiki/statistics/law/market/
+    # discovery/...): descriptive, not a fixed enum, so no 400 -- "all"/"" = no filter,
+    # an unknown value narrows to an honest empty result.
+    source_type = (source_type or "").strip().lower() or None
+    if source_type == "all":
+        source_type = None
 
     if limit < 1 or limit > 1000:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
@@ -988,6 +1028,15 @@ async def search_articles(
                 if provenance_of(a.source.domain if a.source else None,
                                  a.source.source_type if a.source else None) == provenance
             ]
+        if source_type:
+            from src.analytics.queries import SOURCE_TYPE_UNTYPED
+
+            ordered = [
+                a
+                for a in ordered
+                if ((a.source.source_type or "").strip().lower() or SOURCE_TYPE_UNTYPED)
+                == source_type
+            ]
         cmap = _keyword_counts(db, kw_id, [a.id for a in ordered])
         results = [_article_row(a, keyword_count=cmap.get(a.id)) for a in ordered]
         return {
@@ -1011,6 +1060,7 @@ async def search_articles(
         sort_by=sort_by,
         sort_dir=sort_dir,
         provenance=provenance,
+        source_type=source_type,
         keyword_id=kw_id,
     )
 

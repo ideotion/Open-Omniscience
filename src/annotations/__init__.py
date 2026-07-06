@@ -29,6 +29,7 @@ from src.annotations.bundle import (
 )
 from src.annotations.store import (
     add_annotation,
+    adopt_imported_record,
     aggregate_for_target,
     export_bundle,
     import_bundle,
@@ -44,6 +45,7 @@ __all__ = [
     "build_signed_bundle",
     "verify_bundle",
     "add_annotation",
+    "adopt_imported_record",
     "remove_annotation",
     "load_mine",
     "export_bundle",

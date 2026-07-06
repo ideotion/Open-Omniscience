@@ -564,6 +564,41 @@ def _tlang(target_lang: str | None) -> str | None:
     return c if (2 <= len(c) <= 3 and c.isalpha()) else None
 
 
+@router.get("/latest")
+def insights_latest(
+    limit: int = Query(20, ge=1, le=100),
+    window_days: int = Query(30, ge=1, le=3650),
+    min_words: int = Query(0, ge=0, description="Substance gate: minimum article word count"),
+    min_sources: int = Query(
+        0, ge=0, description="Substance gate: minimum in-article cited (external) sources"
+    ),
+    content_type: str | None = Query(None, description="Facet: source channel/content type"),
+    tag: str | None = Query(None, description="Facet: a source tag"),
+    collapse: bool = Query(True, description="Collapse near-identical wire reprints"),
+    facets: bool = Query(True, description="Include the available content-type/tag options"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Home "Latest in your corpus": newest articles (by un-spoofable collection time)
+    that pass TWO transparent substance gates (min words AND min cited sources), with
+    near-identical wire reprints collapsed. A recency LENS + filters, never a score or
+    a reweighting; each row shows its real word_count + cited-source count."""
+    from src.analytics.latest import latest_articles
+
+    key = _ckey(
+        "latest", limit=limit, window_days=window_days, min_words=min_words,
+        min_sources=min_sources, content_type=content_type or "", tag=tag or "",
+        collapse=collapse, facets=facets,
+    )
+    return _cached(
+        key,
+        lambda: latest_articles(
+            db, limit=limit, window_days=window_days, min_words=min_words,
+            min_sources=min_sources, content_type=content_type, tag=tag,
+            collapse=collapse, facets=facets,
+        ),
+    )
+
+
 @router.get("/top")
 def insights_top(
     days: int | None = Query(None, ge=1, le=3650),
@@ -688,6 +723,39 @@ def insights_associations(
     key = _ckey("associations", term=term, limit=limit, min_cooccur=min_cooccur, group=group)
     return _deadlined(db, key, lambda: rm.associations(
         db, term, limit=limit, min_cooccur=min_cooccur, group=group))
+
+
+@router.get("/source-types")
+def insights_source_types(db: Session = Depends(get_db)) -> dict:
+    """Article counts per raw source CHANNEL (content-provenance S2 facet), so the
+    corpus can be sliced by channel (news/newsletter/wiki/statistics/law/market/
+    discovery). An asserted descriptive fact, NO score. The `source_type=` param on
+    /api/articles applies the actual filter."""
+    return _cached(_ckey("source-types"), lambda: q.source_type_facets(db))
+
+
+@router.get("/keyword-stats")
+def insights_keyword_stats(
+    term: str,
+    window_days: int = Query(7, ge=1, le=365),
+    baseline_days: int = Query(30, ge=1, le=3650),
+    cooccur_limit: int = Query(5, ge=0, le=20),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Hover stats for one keyword (mention n · distinct-article spread · windowed
+    trend RATE · top co-occurrences) — the clickable-in-article-keyword hover.
+    Counts only, method + caveat, NO score."""
+    key = _ckey(
+        "keyword-stats", term=term, window_days=window_days,
+        baseline_days=baseline_days, cooccur_limit=cooccur_limit,
+    )
+    return _deadlined(
+        db, key,
+        lambda: q.keyword_stats(
+            db, term, window_days=window_days,
+            baseline_days=baseline_days, cooccur_limit=cooccur_limit,
+        ),
+    )
 
 
 @router.get("/context")
