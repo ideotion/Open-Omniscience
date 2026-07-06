@@ -551,6 +551,17 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     traceback — wrap each risky query and mark it degraded (StatementTimeout re-raised so
     the deadline still bites). The debug-bundle `_safe()` wrapper does the same at the
     aggregator level so one failing log never aborts the bundle.
+  - **ENDPOINT TESTS MUST OVERRIDE get_db, NEVER SEED SessionLocal (2026-07-06, PR #577):**
+    an endpoint test that needs seeded data must seed its ISOLATED fixture engine and route
+    the handler to it via `app.dependency_overrides[get_db] = lambda: session` (cleaned up in
+    a `finally`). NEVER open a raw `SessionLocal()` (the shared process/data_dir DB) and commit
+    rows into it — that DB persists across the WHOLE pytest session (conftest binds one
+    `OO_DATA_DIR`), so the rows pollute every later test that reads it. A wave-2 test did exactly
+    this (committed a `flood` keyword + recent mentions to SessionLocal), reddening 7
+    order-dependent trending/translation tests that pass alone. Same merged≠green /
+    order-dependent-pollution family as the rollup-serve fix (#572) — **run a FULL-suite health
+    check after every fast-merged parallel wave; per-PR CI misses cross-test pollution** because
+    the polluter and victim only collide in the combined run.
 
 ## Open queue (when maintainer says proceed)
 - **V0.1 RELEASE EXECUTION (maintainer ruled 2026-07-02, verbatim "proceed with everything
