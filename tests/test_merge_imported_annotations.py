@@ -125,6 +125,8 @@ def test_adopt_imported_record_rejects_a_bundleless_record(monkeypatch, tmp_path
         store.adopt_imported_record(bundle)
     # And the public untrusted-bundle verifier still rejects a record (unchanged).
     store.import_bundle(bundle, trusted=True)
-    record = json.loads(next((tmp_path / "annotations" / "imported").glob("*.json")).read_text())
+    record = json.loads(
+        next((tmp_path / "annotations" / "imported").glob("*.json")).read_text(encoding="utf-8")
+    )
     with pytest.raises(ValueError):
         store.import_bundle(record)  # the exact malformed-input path the bug hit
