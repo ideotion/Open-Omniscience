@@ -1674,6 +1674,7 @@
       try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); }
       catch (e) { renderHomeStatus(false); }
       loadBriefing();
+      loadHomeAlerts();
       loadHomeTrends();
       loadHomeRecent();
       refreshDraftCount();
@@ -1766,6 +1767,69 @@
       chartEnlarge(x.term, [{label: x.term, unit: t("mentions"),
         points: x.series.map(p => ({t: p.date, v: p.count}))}], _homeTrendCaveat || "");
     }
+    // Home severity alert strip (info / watch / urgent) — GET /api/signals/alerts, LOCAL,
+    // no network (reads the cached hazard snapshot; a producer NEVER fetches). Compact +
+    // honest: 'urgent' is ONLY a provider-declared RED hazard (we never promote a magnitude
+    // band); every alert states its provider + the snapshot's staleness ("silence is not
+    // safety"); the method + caveat are VISIBLE (invariant #23). Watch/convergence article
+    // sets open the exact corpus (openAnalysisForIds); a hazard URL is external so it goes
+    // through extLink (the confirm popup, invariant #7). The panel HIDES when there is
+    // nothing (Home is never blank-and-silent — the Briefing still renders below).
+    async function loadHomeAlerts() {
+      const panel = $("home-alerts-panel"), box = $("home-alerts");
+      if (!box) return;
+      try {
+        const d = await api("/api/signals/alerts");
+        if (!d || !d.total) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
+        if (panel) panel.hidden = false;
+        _renderHomeAlerts(d);
+      } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
+    }
+    function _renderHomeAlerts(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("home-alerts"); if (!box) return;
+      const TIER_LABEL = { urgent: t("Urgent"), watch: t("Watch"), info: t("Info") };
+      const TIER_CLASS = { urgent: "err", watch: "warn", info: "" };
+      const blocks = ["urgent", "watch", "info"].map(tier => {
+        const T = (d.tiers || {})[tier];
+        if (!T || !T.count) return "";
+        const items = [];
+        (T.hazards || []).forEach(h => {
+          const bits = [h.title || h.type || "", h.place || ""].filter(Boolean).map(esc).join(" · ");
+          const prov = h.source ? ` <span class="muted">${esc(t("via {p}").replace("{p}", h.source))}</span>` : "";
+          const link = (h.url && /^https?:\/\//i.test(h.url)) ? " " + extLink(h.url, t("source ↗")) : "";
+          items.push(`<li>${bits}${prov}${link}</li>`);
+        });
+        (T.watches || []).forEach(w => {
+          const nm = esc(w.name || w.query || "");
+          const n = (w.n_articles != null) ? ` <span class="muted">${esc(String(w.n_articles))} ${esc(t("articles"))}</span>` : "";
+          items.push(`<li>${nm}${n}</li>`);
+        });
+        (T.convergences || []).forEach(c => {
+          const pl = [c.place || "", c.place_country || ""].filter(Boolean).map(esc).join(", ");
+          const meta = ` <span class="muted">${esc(String(c.distinct_sources || 0))} ${esc(t("sources"))} · ${esc(String(c.n_articles || 0))} ${esc(t("articles"))}</span>`;
+          items.push(`<li>${pl}${meta}</li>`);
+        });
+        const open = (Array.isArray(T.article_ids) && T.article_ids.length)
+          ? ` <button class="ghost tiny" onclick="openAnalysisForIds(${esc(JSON.stringify(T.article_ids))}, ${esc(JSON.stringify(TIER_LABEL[tier]))})">${esc(t("Open corpus"))} ↗</button>`
+          : "";
+        return `<div class="alert-tier"><span class="pill ${TIER_CLASS[tier]}">${esc(TIER_LABEL[tier])} · ${esc(String(T.count))}</span>${open}<ul>${items.join("")}</ul></div>`;
+      }).join("");
+      // Hazard-snapshot staleness (silence is not safety): state the age + stale flag, or
+      // that there is no local snapshot at all.
+      let stale;
+      if (d.hazards_available) {
+        const age = (d.hazards_age_hours != null) ? " (" + esc(t("{h}h old").replace("{h}", Math.round(d.hazards_age_hours))) + ")" : "";
+        const asof = d.hazards_as_of ? esc(String(d.hazards_as_of).slice(0, 16).replace("T", " ")) : "—";
+        stale = `<span class="hint">${esc(t("Hazard snapshot"))}: ${asof}${age}${d.hazards_stale ? " · " + esc(t("stale")) : ""}</span>`;
+      } else {
+        stale = `<span class="hint">${esc(t("No local hazard snapshot — silence is not safety."))}</span>`;
+      }
+      // Caveat VISIBLE by default (#23); the method rides the #oo-tip hover (the "how").
+      const caveat = d.caveat ? `<div class="card-caveat" title="${esc(d.method || "")}">${esc(d.caveat)}</div>` : "";
+      box.innerHTML = `<div class="phead"><h2>${esc(t("Alerts"))}</h2><span class="sp"></span>${stale}</div>`
+        + blocks + caveat;
+    }
     // Live Home (the at-a-glance strip + briefing self-update; no Refresh button).
     // Only runs while Home is the active, visible tab (the LIVE registry). Cheap:
     // stats are server-cached ~30 s; the briefing feed re-renders ONLY when its
@@ -1778,6 +1842,7 @@
         if (data.generated_at !== _lastBriefGen) renderBriefing(data);
       } catch (e) {}
       loadHomeTrends();
+      loadHomeAlerts();
     }
 
     // -- The Home briefing (triage cards) ----------------------------------- //
@@ -2018,7 +2083,7 @@
       }).join("");
       const evidBlock = evid ? `<div class="evid">${evid}</div>` : "";
       const dismiss = c.dismissible === false ? ""
-        : `<button class="ghost tiny" onclick="dismissCard('${c.id}')">Dismiss</button>`;
+        : `<button class="ghost tiny" onclick="dismissCard(${esc(JSON.stringify(c.id))}, ${esc(JSON.stringify(c.type || ''))})">Dismiss</button>`;
       // Echo-chamber cards carry an actor signature: offer user-guided collapse (never auto).
       let collapseBtn = "";
       if (c.type === "echo_chamber" && sig.signature) {
@@ -2104,7 +2169,70 @@
     // The global "Show method" toggle was retired (P2-2, 2026-06-19): each Lead's
     // method + "why" now live behind a per-card "?" affordance (cardHtml -> infoBlock).
 
-    async function dismissCard(id) {
+    // Reasons offered when dismissing a Lead (the evidence-tier feedback loop). The chip
+    // KEYS are stable identifiers; only the labels translate. A free-text box captures
+    // anything the chips don't cover.
+    function _leadDismissReasons() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return [
+        ["not-relevant", t("Not relevant")],
+        ["already-knew", t("Already knew this")],
+        ["too-noisy", t("Too noisy / repetitive")],
+        ["not-useful", t("Not useful")],
+        ["disagree", t("I don't think this holds")],
+      ];
+    }
+    // Dismissing a Lead offers an OPTIONAL reason (POST /api/signals/dismiss-reason). The
+    // reason is recorded SEPARATELY from the dismissed-id set, so a failed record never
+    // blocks the (unchanged) dismissal mechanic (_dismissCardNow). A chip dismisses with
+    // that reason; the text box + Dismiss confirm with typed text; "Dismiss" with an empty
+    // box is a valid skip (an explicit "dismissed, no reason" — nothing is sent).
+    function dismissCard(id, type) {
+      const el = document.querySelector(`.card[data-card="${id}"]`);
+      const acts = el && el.querySelector(".acts");
+      if (!acts) { _dismissCardNow(id); return; }               // no card back — just dismiss
+      if (acts.querySelector(".lead-dismiss-form")) return;     // already open
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const form = document.createElement("div");
+      form.className = "lead-dismiss-form";
+      form.style.cssText = "margin-top:6px;width:100%";
+      form.addEventListener("click", (e) => e.stopPropagation());   // never flip the card while choosing
+      const label = document.createElement("div");
+      label.className = "hint"; label.textContent = t("Why dismiss? (optional)");
+      const chips = document.createElement("div");
+      chips.className = "lead-dreasons"; chips.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;margin:4px 0";
+      _leadDismissReasons().forEach(([k, lbl]) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "ghost tiny"; b.textContent = lbl;
+        b.addEventListener("click", (e) => { e.stopPropagation(); _leadDismissWith(id, type, k); });
+        chips.appendChild(b);
+      });
+      const row = document.createElement("div");
+      row.className = "row"; row.style.cssText = "gap:6px";
+      const inp = document.createElement("input");
+      inp.className = "lead-dreason-text"; inp.type = "text";
+      inp.placeholder = t("Add a reason…"); inp.style.flex = "1";
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.stopPropagation(); _leadDismissWith(id, type, inp.value.trim()); }
+      });
+      const go = document.createElement("button");
+      go.type = "button"; go.className = "ghost tiny"; go.textContent = t("Dismiss");
+      go.addEventListener("click", (e) => { e.stopPropagation(); _leadDismissWith(id, type, inp.value.trim()); });
+      row.appendChild(inp); row.appendChild(go);
+      form.appendChild(label); form.appendChild(chips); form.appendChild(row);
+      acts.appendChild(form);
+      inp.focus();
+    }
+    function _leadDismissWith(id, type, reason) {
+      // Record the OPTIONAL reason (best-effort — never blocks the dismissal); a blank
+      // reason is a valid skip and is not sent.
+      if (reason) {
+        api("/api/signals/dismiss-reason", {method: "POST",
+          body: JSON.stringify({card_id: id, reason: reason, card_type: type || null})}).catch(() => {});
+      }
+      _dismissCardNow(id);
+    }
+    async function _dismissCardNow(id) {
       try {
         await api("/api/briefing/dismiss", {method:"POST", body: JSON.stringify({id})});
         const el = document.querySelector(`.card[data-card="${id}"]`);
@@ -2433,11 +2561,44 @@
     // -- Agenda (world events): subscribe to calendars, filter & group ------ //
     const _MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const AG = { events: [], cals: [], caveat: "", meta: {}, categories: [] };
-    function agSubs() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.subs") || "null") || []); } catch (_e) { return new Set(); } }
-    function agSaveSubs(set) { localStorage.setItem("oo.agenda.subs", JSON.stringify([...set])); }
+    // The agenda calendar SUBSCRIPTIONS now live SERVER-SIDE (GET/PUT /api/agenda/prefs,
+    // D4) so they survive a browser reset AND a reinstall and ride backups — they used to
+    // sit in localStorage ("oo.agenda.subs"), invisible to the server and to every backup.
+    // Loaded once per agenda open into this in-memory cache so the sync getters stay
+    // synchronous; the setter fires a best-effort PUT (the UI never blocks on the
+    // round-trip). `configured=false` means the server has no explicit choice yet, so we
+    // keep the first-run default (subscribe to EVERY calendar) — never silently dropping a
+    // first-run user's calendars. NOTE: feed EXCLUSIONS and the chosen VIEW deliberately
+    // STAY per-machine in localStorage (below) — a per-device display/curation choice ruled
+    // per-machine (2026-06-15), not a corpus-level subscription that should ride a backup.
+    let _agPrefs = null;   // { subs: Set, configured: bool } — the server-backed subscriptions
+    function _agPrefsDefault() { return { subs: new Set(), configured: false }; }
+    async function agLoadPrefs() {
+      try {
+        const p = await api("/api/agenda/prefs");
+        _agPrefs = { subs: new Set(p.subs || []), configured: !!p.configured };
+      } catch (_e) {
+        // Offline / pre-unlock / older backend: a permissive in-memory default so the
+        // agenda still works; nothing is persisted until the server answers.
+        if (!_agPrefs) _agPrefs = _agPrefsDefault();
+      }
+      return _agPrefs;
+    }
+    function agPutPrefs(patch) {
+      // Persist a partial prefs update (best-effort — the in-memory cache already reflects
+      // it, so a failed write only means it won't survive this session). Loopback only.
+      api("/api/agenda/prefs", { method: "PUT", body: JSON.stringify(patch) }).catch(() => {});
+    }
+    function agSubs() { return new Set((_agPrefs || _agPrefsDefault()).subs); }
+    function agSaveSubs(set) {
+      if (!_agPrefs) _agPrefs = _agPrefsDefault();
+      _agPrefs.subs = new Set(set); _agPrefs.configured = true;
+      agPutPrefs({ subs: [..._agPrefs.subs] });
+    }
     // Per-machine EXCLUDED feed families (ruled 2026-06-15: "remove = reversible
-    // unsubscribe, never delete-from-catalog"). Excluded folders keep their honest
-    // verdicts in the directory (anti-hiding) but contribute no imported events.
+    // unsubscribe, never delete-from-catalog"; a per-machine store, kept in localStorage).
+    // Excluded folders keep their honest verdicts in the directory (anti-hiding) but
+    // contribute no imported events.
     function agExcluded() { try { return new Set(JSON.parse(localStorage.getItem("oo.agenda.excluded") || "null") || []); } catch (_e) { return new Set(); } }
     function agSaveExcluded(set) { localStorage.setItem("oo.agenda.excluded", JSON.stringify([...set])); }
 
@@ -2495,6 +2656,9 @@
           // Article-DEDUCED upcoming dates (the agenda's article-extracted layer).
           // Degrade quietly — never break the agenda if this is unavailable.
           api("/api/events/deduced").catch(() => ({ events: [] })),
+          // Server-side subscription prefs (D4) — populates _agPrefs before agExcluded()
+          // below reads it; a failure degrades to the permissive in-memory default.
+          agLoadPrefs(),
         ]);
         const excl = agExcluded();
         const imported = (imp.events || []).map(mapImportedToAgenda).filter(e => !excl.has(e.calendar));
@@ -2508,8 +2672,11 @@
         AG.categories = [...new Set((fac.categories || []).concat(importedKinds))].sort()
           .concat(deduced.length ? ["deduced"] : []);
         AG.meta = Object.fromEntries(fac.calendars.map(c => [c.key, c]));
-        // First run: subscribe to all calendars so the agenda isn't empty.
-        if (localStorage.getItem("oo.agenda.subs") == null) agSaveSubs(new Set(fac.calendars.map(c => c.key)));
+        // First run: the server has no explicit choice yet (configured=false) → default to
+        // subscribing to EVERY calendar so the agenda isn't empty. Kept in-memory (NOT
+        // persisted) until the user makes an explicit choice, so a newly-added catalog
+        // calendar is auto-included and nothing is ever silently dropped (honors the flag).
+        if (_agPrefs && !_agPrefs.configured) _agPrefs.subs = new Set(fac.calendars.map(c => c.key));
         $("agenda-country").innerHTML = '<option value="">all</option>' + fac.countries.map(x => `<option value="${esc(x)}">${agFlag(x)} ${esc(x)}</option>`).join("");
         $("agenda-tag").innerHTML = '<option value="">all</option>' + fac.tags.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("");
         if (!_agViewTabs) _agViewTabs = ooSubtabs($("agenda-views"), agendaSetView);
@@ -2748,6 +2915,9 @@
     // -- Agenda views: MONTH grid (the ruled default) + the original list ----- //
     // The tab shows DATA only (maintainer principle 2026-06-11): calendar
     // subscriptions and the feed directory live in Settings -> Agenda.
+    // The chosen VIEW (month/week/list/…) stays a per-device UI preference in localStorage
+    // (the subscriptions moved server-side; which layout you last looked at is transient,
+    // per-device display state — MONTH remains the ruled default).
     function agView() { return localStorage.getItem("oo.agenda.view") || "month"; }
     function agendaSetView(v) { localStorage.setItem("oo.agenda.view", v); if (_agViewTabs) _agViewTabs.paint(v); renderAgenda(); }
     let _agViewTabs = null;                          // the Month·Week·List ooSubtabs handle
@@ -11145,7 +11315,12 @@
     }
 
     async function loadWikiDumps() {
-      loadReadableDumps();  // keep the local-reader edition list in step
+      // Populate #dumpread-wiki (the readable editions) BEFORE the dump-FTS status renders:
+      // _renderDumpIndexStatus reads those options for the "Edition to index" select, so a
+      // race (index status resolving first) would otherwise leave that select empty on first
+      // open until the panel is re-opened.
+      await loadReadableDumps();
+      loadDumpIndexStatus();  // + the full-text index status (indexed editions, build state)
       try {
         const d = await api("/api/wiki/dumps");
         const t = $("dump-table");
@@ -11727,6 +11902,127 @@
           <pre style="max-height:420px;overflow:auto;white-space:pre-wrap;margin-top:6px">${esc(d.wikitext)}</pre>
         </div>`;
       } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+
+    // -- Full-text search over downloaded dump BODIES (local, zero network) --- //
+    // Unlike "Read a page" (titles only), this searches page CONTENT that a prior
+    // index build swept. The index is a disposable side-file beside the dumps
+    // (rebuildable, excluded from backups). An edition must be indexed first; a hit
+    // opens in the local dump reader above (a snapshot as of the dump date). Reuses
+    // GET /api/wiki/dumps/fts-search + /api/wiki/dumps/index (status/build/cancel/clear).
+    let _dumpFtsPoll = null;
+    async function loadDumpIndexStatus() {
+      const box = $("dumpfts-index"); if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const d = await api("/api/wiki/dumps/index");
+        _renderDumpIndexStatus(d);
+        // Keep polling while a build runs so progress + the indexed list update on
+        // their own; stop as soon as it settles (one interval at a time).
+        if (d.build && d.build.state === "running") {
+          if (!_dumpFtsPoll) _dumpFtsPoll = setInterval(loadDumpIndexStatus, 2500);
+        } else if (_dumpFtsPoll) { clearInterval(_dumpFtsPoll); _dumpFtsPoll = null; }
+      } catch (e) { box.textContent = t("Full-text index status unavailable."); }
+    }
+    function _renderDumpIndexStatus(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("dumpfts-index"); if (!box) return;
+      const eds = d.editions || [];
+      // Build-edition select = editions with a downloaded multistream dump (the
+      // readable set loadReadableDumps() already populated in #dumpread-wiki).
+      const bsel = $("dumpfts-build-wiki");
+      if (bsel) {
+        const rsel = $("dumpread-wiki");
+        const readable = rsel ? [...rsel.options].map(o => o.value).filter(Boolean) : [];
+        const cur = bsel.value;
+        bsel.innerHTML = readable.length
+          ? readable.map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join("")
+          : `<option value="">—</option>`;
+        if (cur && readable.includes(cur)) bsel.value = cur;
+      }
+      // Search-edition filter = indexed editions + an "all indexed" option.
+      const wsel = $("dumpfts-wiki");
+      if (wsel) {
+        const cur = wsel.value;
+        wsel.innerHTML = `<option value="">${esc(t("all indexed"))}</option>`
+          + eds.map(e => `<option value="${esc(e.wiki)}">${esc(e.wiki)}</option>`).join("");
+        if (cur && eds.some(e => e.wiki === cur)) wsel.value = cur;
+      }
+      const b = d.build || {};
+      let buildLine = "";
+      if (b.state === "running") buildLine = `<span class="pill">${esc(t("indexing"))} ${esc(b.wiki || "")} · ${esc(String(b.pages || 0))} ${esc(t("pages"))}</span>`;
+      else if (b.state === "error") buildLine = `<span class="pill err">${esc(t("index build failed"))}${b.error ? ": " + esc(b.error) : ""}</span>`;
+      else if (b.state === "cancelled") buildLine = `<span class="pill warn">${esc(t("index build cancelled"))}</span>`;
+      const coverage = eds.length
+        ? eds.map(e => `${esc(e.wiki)} (${esc(String(e.pages))} ${esc(t("pages"))})`).join(" · ")
+        : esc(t("No editions indexed yet — pick one above and Build index."));
+      box.innerHTML = `${buildLine ? buildLine + " " : ""}<span>${coverage}</span>`;
+    }
+    async function dumpFtsBuild() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const wiki = (($("dumpfts-build-wiki") || {}).value || "").trim();
+      if (!wiki) { toast(t("Pick a downloaded edition to index."), "err"); return; }
+      try {
+        await api("/api/wiki/dumps/index", {method:"POST", body: JSON.stringify({wiki})});
+        toast(t("Building the full-text index…"));
+        loadDumpIndexStatus();
+      } catch (e) { toast(e.message, "err"); }   // 409 already running / 404 no dump — surfaced honestly
+    }
+    async function dumpFtsCancel() {
+      try { await api("/api/wiki/dumps/index/cancel", {method:"POST"}); loadDumpIndexStatus(); }
+      catch (e) { toast(e.message, "err"); }
+    }
+    async function dumpFtsClear() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const wiki = (($("dumpfts-wiki") || {}).value || "").trim();   // "" = all editions
+      const which = wiki || t("all editions");
+      if (!confirm(t("Clear the full-text index for {w}? It is rebuildable from the local dump.").replace("{w}", which))) return;
+      try {
+        await api("/api/wiki/dumps/index" + (wiki ? "?wiki=" + encodeURIComponent(wiki) : ""), {method:"DELETE"});
+        toast(t("Index cleared.")); loadDumpIndexStatus();
+        const out = $("dumpfts-out"); if (out) out.innerHTML = "";
+      } catch (e) { toast(e.message, "err"); }
+    }
+    async function dumpFtsSearch() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const q = (($("dumpfts-q") || {}).value || "").trim();
+      const wiki = (($("dumpfts-wiki") || {}).value || "").trim();
+      const out = $("dumpfts-out"); if (!out) return;
+      if (!q) { out.innerHTML = `<div class="note err">${esc(t("Enter a full-text query."))}</div>`; return; }
+      out.textContent = t("Loading…");
+      try {
+        const url = "/api/wiki/dumps/fts-search?q=" + encodeURIComponent(q)
+          + (wiki ? "&wiki=" + encodeURIComponent(wiki) : "") + "&limit=30";
+        const d = await api(url);
+        const items = d.items || [];
+        if (!items.length) {
+          const msg = d.reason === "no-index"
+            ? t("No full-text index yet — pick a downloaded edition above and Build index first.")
+            : d.reason === "search-error"
+              ? t("The query could not be parsed — try plain words or AND/OR/NOT.")
+              : t("No matches in your indexed dump bodies.");
+          out.innerHTML = `<div class="note">${esc(msg)}</div>`;
+          return;
+        }
+        const rows = items.map(it => {
+          const link = `<a href="#" onclick="dumpFtsOpen(${esc(JSON.stringify(it.wiki))},${esc(JSON.stringify(it.title))});return false">${esc(it.title)}</a>`;
+          const snip = it.snippet ? `<div class="muted small">${esc(it.snippet)}</div>` : "";
+          return `<li>${link} <span class="muted">(${esc(it.wiki)})</span>${snip}</li>`;
+        }).join("");
+        out.innerHTML = `<div class="card"><div class="muted small">${esc(d.note || "")}</div><ul>${rows}</ul></div>`;
+      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    // Open a full-text hit in the LOCAL dump reader above (invariant #6: local first) —
+    // set the reader's edition + title and render its wikitext inline, then scroll to it.
+    function dumpFtsOpen(wiki, title) {
+      const sel = $("dumpread-wiki");
+      if (sel && ![...sel.options].some(o => o.value === wiki)) {
+        const o = document.createElement("option"); o.value = wiki; o.textContent = wiki; sel.appendChild(o);
+      }
+      if (sel) sel.value = wiki;
+      const ti = $("dumpread-title"); if (ti) ti.value = title;
+      dumpReadPage();
+      const box = $("dumpread-out"); if (box && box.scrollIntoView) box.scrollIntoView({behavior:"smooth", block:"nearest"});
     }
 
     async function loadWikiPages() {
