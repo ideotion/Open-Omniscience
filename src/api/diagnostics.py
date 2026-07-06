@@ -37,6 +37,7 @@ from src.database.models import (
     KeywordSuperGroup,
     Source,
 )
+from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
 from src.utils.export_envelope import envelope
 
@@ -417,7 +418,11 @@ def _export_deadline_seconds() -> float:
 
 @router.get("/keywords")
 def keyword_log(
-    db: Session = Depends(get_db),
+    # Field finding C: this heavy two-scan export contended with the live scrape. Run it
+    # on a DEDICATED read-only (query_only) WAL-snapshot connection so it can never take
+    # the write gate or stall a writer, never occupies a shared-pool slot for the whole
+    # streamed scan, and reads one consistent snapshot (src.database.read_snapshot).
+    db: Session = Depends(read_only_db),
     digest: bool = Query(
         False,
         description=(

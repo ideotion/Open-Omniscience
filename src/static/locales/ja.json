@@ -1761,5 +1761,10 @@
   "No articles for this tag yet.": "このタグの記事はまだありません。",
   "offline stored copy": "オフライン保存のコピー",
   "+ {n} more (not shown)": "他 {n} 件（非表示）",
-  "Per-country articles vs mentions": "国別の記事数と言及数"
+  "Per-country articles vs mentions": "国別の記事数と言及数",
+  "Time scale": "時間スケール",
+  "Linear": "線形",
+  "Log": "対数",
+  "Even year-by-year sweep": "年ごとの均等なスイープ",
+  "Compress antiquity so recent years — where most events are — get more of the slider": "古代を圧縮し、出来事の多い近年がスライダーの大半を占めるようにする"
 }

@@ -1761,5 +1761,10 @@
   "No articles for this tag yet.": "لا توجد بعد مقالات لهذا الوسم.",
   "offline stored copy": "نسخة محفوظة دون اتصال",
   "+ {n} more (not shown)": "+ {n} أخرى (غير معروضة)",
-  "Per-country articles vs mentions": "المقالات مقابل الإشارات حسب البلد"
+  "Per-country articles vs mentions": "المقالات مقابل الإشارات حسب البلد",
+  "Time scale": "مقياس الزمن",
+  "Linear": "خطي",
+  "Log": "لوغاريتمي",
+  "Even year-by-year sweep": "مسح منتظم، سنة بسنة",
+  "Compress antiquity so recent years — where most events are — get more of the slider": "يضغط العصور القديمة كي تحظى السنوات الأحدث — حيث تتركز معظم الأحداث — بجزء أكبر من المؤشر"
 }

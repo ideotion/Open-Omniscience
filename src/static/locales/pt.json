@@ -1761,5 +1761,10 @@
   "No articles for this tag yet.": "Ainda não há artigos para esta etiqueta.",
   "offline stored copy": "cópia armazenada offline",
   "+ {n} more (not shown)": "+ {n} mais (não exibidos)",
-  "Per-country articles vs mentions": "Artigos vs. menções por país"
+  "Per-country articles vs mentions": "Artigos vs. menções por país",
+  "Time scale": "Escala de tempo",
+  "Linear": "Linear",
+  "Log": "Log",
+  "Even year-by-year sweep": "Varredura uniforme, ano a ano",
+  "Compress antiquity so recent years — where most events are — get more of the slider": "Comprime a antiguidade para que os anos recentes — onde há mais eventos — ocupem mais do controle"
 }
