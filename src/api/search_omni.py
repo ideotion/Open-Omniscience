@@ -114,13 +114,54 @@ _WIKI_DOMAIN_LIKE = "%wikipedia.org"  # the wiki corpus source convention (xx.wi
 _WIKI_SCAN_CAP = 2000  # bound the wiki-membership scan over FTS hits (omnibar speed)
 
 
+def _dump_hits(q: str) -> tuple[list[dict], bool]:
+    """Top BM25F matches in the user's DOWNLOADED-dump bodies (the #573-deferred
+    dump-content search folded into the omnibar), or ``([], available)``.
+
+    Returns ``(items, available)`` where ``available`` is False when no dump index has
+    been built (honest empty state, never a fabricated result). Each item is labelled a
+    dump result (``dump: true``) and opens via the LOCAL dump reader
+    (``/api/wiki/dumps/page``); the snapshot-as-of-the-dump-date honesty travels with it.
+    Bounded to the first few hits (BM25F, title-weighted) — the full dump search is the
+    dedicated Settings surface. Failures degrade to no dump results, never break the group.
+    """
+    from urllib.parse import quote
+
+    from src.wiki.dump_index import search as dump_search
+
+    try:
+        res = dump_search(q, limit=_PER_GROUP)
+    except Exception:  # noqa: BLE001 - a dump-index hiccup must never break the omnibar
+        _LOG.warning("omni dump search failed for %r", q, exc_info=True)
+        return [], False
+    if res.get("reason") == "no-index":
+        return [], False  # no dump indexed yet -> honest empty, not an error
+    items: list[dict] = []
+    for it in res.get("items", []):
+        w = (it.get("wiki") or "").strip()
+        title = it.get("title") or ""
+        items.append(
+            {
+                "dump": True,  # labelled: a downloaded-dump body match, not a corpus article
+                "wiki": w,
+                "title": title,
+                "pageid": it.get("pageid"),
+                "snippet": it.get("snippet"),
+                # the LOCAL dump reader (a wikitext snapshot as of the dump date)
+                "url": f"/api/wiki/dumps/page?wiki={quote(w)}&title={quote(title)}",
+            }
+        )
+    return items, True
+
+
 def _wiki_group(db: Session, q: str) -> dict:
     """Wikipedia: search the wiki ARTICLE CONTENT, not only watched-page titles
     (maintainer 2026-06-21). Wiki page text (WikiPage.baseline_text) is stored
     COMPRESSED, so content search runs over the FTS-indexed corpus articles produced by
     the watched-page -> corpus sync (source domain ``xx.wikipedia.org``). When no indexed
     wiki content matches, fall back to the watched-pages title catalog (the prior
-    behaviour). Downloaded offline DUMPS are files, not full-text-searched yet."""
+    behaviour). Downloaded offline DUMP bodies are ALSO searched (via the dump FTS index,
+    when built) and returned as a labelled ``dump_items`` sub-list."""
     # 1) content hits among Wikipedia-edition articles, in FTS rank order (bounded).
     try:
         ids = search_ids(db, q)
@@ -167,7 +208,11 @@ def _wiki_group(db: Session, q: str) -> dict:
                             "published_at": by[aid][2].isoformat() if by[aid][2] else None,
                         }
                     )
-    # 2) watched-page TITLE catalog (fills remaining slots / the no-content fallback).
+    # 2) downloaded-dump BODY matches (labelled dump results; honest empty when none).
+    dump_items, dump_available = _dump_hits(q)
+    dump_note = " + downloaded-dump content" if dump_items else ""
+
+    # 3) watched-page TITLE catalog (fills remaining slots / the no-content fallback).
     pat = "%" + _like_escape(q) + "%"
     base = db.query(WikiPage).filter(WikiPage.title.ilike(pat, escape="\\"))
     if content_total:
@@ -180,9 +225,12 @@ def _wiki_group(db: Session, q: str) -> dict:
             "kind": "wiki",
             "items": content_items + title_items,
             "total": content_total,
+            "dump_items": dump_items,
+            "dump_available": dump_available,
             "note": "FTS5 content match over your Wikipedia corpus"
             + (" (within the top results)" if capped else "")
-            + (" + watched-page titles" if title_items else ""),
+            + (" + watched-page titles" if title_items else "")
+            + dump_note,
         }
     total = base.count()
     rows = base.order_by(WikiPage.title).limit(_PER_GROUP).all()
@@ -190,7 +238,10 @@ def _wiki_group(db: Session, q: str) -> dict:
         "kind": "wiki",
         "items": [{"page_id": p.id, "title": p.title, "wiki": p.wiki} for p in rows],
         "total": total,
-        "note": "title match over your watched-pages list (no indexed Wikipedia content matched)",
+        "dump_items": dump_items,
+        "dump_available": dump_available,
+        "note": "title match over your watched-pages list (no indexed Wikipedia content matched)"
+        + dump_note,
     }
 
 
