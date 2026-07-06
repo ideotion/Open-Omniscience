@@ -22,8 +22,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.database.session import get_db
@@ -111,3 +112,201 @@ def signals_flood(
         min_share=min_share,
         max_items=max_items,
     )
+
+
+# --------------------------------------------------------------------------- #
+#  Cards batch E — the read/write exploration surfaces behind the new Home Leads.
+#  Every handler delegates to a pure/analytics module and returns its method +
+#  caveat verbatim. Counts + statistics only, never a composite score; the
+#  producers auto-render as Home Leads through the generic card path.
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/alerts")
+def signals_alerts(
+    within_hours: int = Query(48, ge=1, le=720, description="Fired-watch recency window"),
+    hazard_max_age_hours: int = Query(48, ge=1, le=8760, description="Snapshot staleness cutoff"),
+    convergence_lookback_days: int = Query(45, ge=1, le=3650),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The severity-tiered LOCAL alert layer (info / watch / urgent) — NO network.
+
+    Aggregates cached hazard records (the provider's OWN severity), fired local watches, and
+    recent space-time convergences into transparent tiers. 'Urgent' is ONLY ever a
+    provider-declared red hazard alert; nothing is a fabricated urgency, no figure is a
+    score. Reads the local hazards snapshot (which discloses its own age) — never fetches."""
+    from src.analytics.alerts import compute_alerts
+
+    return compute_alerts(
+        db,
+        within_hours=within_hours,
+        hazard_max_age_hours=hazard_max_age_hours,
+        convergence_lookback_days=convergence_lookback_days,
+    )
+
+
+class HazardSnapshotBody(BaseModel):
+    """Records to cache locally (as returned by ``GET /api/hazards``), and/or a refresh flag."""
+
+    records: list[dict] = []
+
+
+@router.post("/hazards/snapshot")
+def signals_hazards_snapshot(
+    body: HazardSnapshotBody | None = None,
+    refresh: bool = Query(
+        False,
+        description="Also fetch the open USGS/GDACS feeds through the guarded ethical path "
+        "(kill-switch/robots/proxy honoured; refused while airplane mode is engaged) and "
+        "merge the result before saving.",
+    ),
+) -> dict:
+    """Update the LOCAL hazard snapshot the alert layer reads (NO producer ever fetches).
+
+    Two population paths, both honest: post the ``records`` the app already fetched via
+    ``GET /api/hazards`` (a pure local write, zero network here), and/or pass ``refresh=1``
+    to pull the open feeds through the SAME guarded fetcher the hazards relay uses (the
+    kill switch refuses it while airplane mode is engaged). A refresh that returns nothing
+    (offline / all feeds failed) never overwrites a good snapshot with an empty one —
+    failures are reported instead."""
+    from src.hazards.store import save_snapshot
+
+    records = list((body.records if body else None) or [])
+    failures: list[str] = []
+    if refresh:
+        try:
+            from src.api.hazards import fetch_hazards
+
+            fetched, failures = fetch_hazards(source="all")
+            records = fetched or records
+        except Exception as exc:  # noqa: BLE001 - a bad relay must not 500 the local write
+            failures.append(f"refresh: {type(exc).__name__}: {exc}")
+    if not records:
+        return {"saved": False, "count": 0, "failures": failures,
+                "note": "no records to save (offline or empty) — the previous snapshot is kept"}
+    saved = save_snapshot(records)
+    return {"saved": True, "count": len(saved["records"]), "saved_at": saved["saved_at"],
+            "failures": failures}
+
+
+class DismissReasonBody(BaseModel):
+    """An optional reason captured when a Lead is dismissed (the UI is Session F's)."""
+
+    card_id: str
+    reason: str = ""
+    card_type: str | None = None
+
+
+@router.post("/dismiss-reason")
+def signals_record_dismiss_reason(body: DismissReasonBody) -> dict:
+    """Capture an OPTIONAL reason when a Lead is dismissed — the evidence-tier feedback loop.
+
+    Local-only, no schema, no score: the reason is stored in a small JSON file this router
+    owns, SEPARATE from the dismissed-id set so it never risks the dismissal mechanic. A
+    blank reason is still recorded (an explicit 'dismissed, no reason' is real feedback)."""
+    from src.briefing.dismiss_reasons import record_reason
+
+    if not (body.card_id or "").strip():
+        raise HTTPException(status_code=400, detail="card_id is required")
+    entry = record_reason(body.card_id, body.reason, card_type=body.card_type)
+    return {"recorded": True, "entry": entry}
+
+
+@router.get("/dismiss-reasons")
+def signals_dismiss_reasons() -> dict:
+    """Read-only aggregate of captured dismissal reasons (counts by card type + reason).
+
+    Counts only, no score — an operator can see which card TYPES get dismissed and for
+    WHAT reasons, and tune the producers accordingly."""
+    from src.briefing.dismiss_reasons import reason_summary
+
+    return reason_summary()
+
+
+@router.get("/disputed-chronology")
+def signals_disputed_chronology(
+    lookback_days: int = Query(30, ge=1, le=365),
+    min_sources: int = Query(2, ge=2, le=20, description="Distinct sources that must disagree"),
+    tolerance_days: int = Query(2, ge=0, le=60, description="Dates within this many days agree"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The SAME story dated differently across DISTINCT sources — the exploration surface.
+
+    Within a near-duplicate story cluster, the deduced event dates disagree across distinct
+    sources. Names a SHAPE, never a verdict: the innocent twins (date-extraction ambiguity,
+    a timeline piece, an update date) ride the caveat; dates are deduced, never confirmed.
+    No score."""
+    from src.analytics.disputed_chronology import find_disputed_chronology
+
+    return find_disputed_chronology(
+        db, lookback_days=lookback_days, min_sources=min_sources, tolerance_days=tolerance_days
+    )
+
+
+@router.get("/story-propagation")
+def signals_story_propagation(
+    lookback_days: int = Query(21, ge=1, le=365),
+    min_sources: int = Query(3, ge=2, le=50, description="Distinct sources the term must reach"),
+    min_span_days: int = Query(2, ge=0, le=365, description="Min days first→last source"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The temporal CASCADE of a topic across your sources — the exploration surface.
+
+    Orders the distinct sources by WHEN each first carried a term (the diffusion cascade,
+    with day-gaps). Names a SHAPE, never a cause or an origin claim (a shared wire or
+    independent coverage look identical). Reads the denormalised keyword_mentions only. No
+    score."""
+    from src.analytics.story_propagation import find_story_propagation
+
+    return find_story_propagation(
+        db, lookback_days=lookback_days, min_sources=min_sources, min_span_days=min_span_days
+    )
+
+
+@router.get("/supply-chain-ripple")
+def signals_supply_chain_ripple(
+    window_days: int = Query(90, ge=7, le=730),
+    r_min: float = Query(0.5, ge=0.0, le=1.0, description="Min positive correlation to surface"),
+    fdr_q: float = Query(0.05, gt=0.0, le=1.0, description="Benjamini-Hochberg FDR level"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Commodity / keyword coverage CO-MOVEMENT — the exploration surface.
+
+    A Pearson correlation of daily coverage-volume series for each tracked commodity vs each
+    frequent topic, with a native Fisher-z p-value; the whole pair family is Benjamini-
+    Hochberg FDR-corrected so many comparisons cannot manufacture a co-movement. CO-OCCURRENCE,
+    NEVER causation (the verbatim non-negotiable rides the caveat). No score."""
+    from src.analytics.supply_chain_ripple import find_supply_chain_ripples
+
+    return find_supply_chain_ripples(db, window_days=window_days, r_min=r_min, fdr_q=fdr_q)
+
+
+@router.get("/weather-signals")
+def signals_weather_signals() -> dict:
+    """Read-only view of the derived weather SIGNAL keywords (kind='signal').
+
+    These are (date,place)-anchored signal rows derived from the corroboration clusters,
+    kept in their OWN local store so they are NEVER mixed with text keywords. The anomaly is
+    UNCHECKED against a baseline until the consented Open-Meteo fetch runs (never fabricated)."""
+    from src.analytics.weather_signals import load_signals
+
+    return load_signals()
+
+
+@router.post("/weather-signals/refresh")
+def signals_weather_signals_refresh(
+    min_articles: int = Query(3, ge=1, le=100, description="Cluster-size threshold rule"),
+    lookback_days: int = Query(90, ge=1, le=3650),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Derive AND persist the weather signal-keywords from the LOCAL corroboration data.
+
+    No network: the derivation scans the corpus only (keyword × place × window clusters that
+    clear the explicit article-count threshold) and writes kind='signal' rows to the store
+    this router owns — never the keyword tables, never a schema. Each row carries a
+    (date,place) anchor by construction and an anomaly-vs-stated-baseline note."""
+    from src.analytics.weather_signals import refresh_weather_signals
+
+    payload = refresh_weather_signals(db, min_articles=min_articles, lookback_days=lookback_days)
+    return {"derived": len(payload.get("signals", [])), "derived_at": payload.get("derived_at"),
+            "signals": payload.get("signals", []), "caveat": payload.get("caveat")}
