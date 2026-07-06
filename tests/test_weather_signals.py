@@ -121,42 +121,26 @@ def test_below_threshold_derives_nothing(session):
 
 
 def test_weather_signals_endpoints(session, data_dir):
-    from src.database.models import SessionLocal
-
-    # Seed into the shared app DB the endpoint reads — use HIGH UNIQUE ids + a unique
-    # place so this never collides with any other test's rows (test isolation).
-    s = SessionLocal()
-    try:
-        s.add(Source(id=88800, name="WeatherAlpha", domain="weatheralpha.test", country="it"))
-        # Reuse an existing 'flood' keyword if another test created one; else make it.
-        kw = s.query(Keyword).filter_by(normalized_term="flood").first()
-        if kw is None:
-            kw = Keyword(term="flood", normalized_term="flood", language="en")
-            s.add(kw)
-        s.flush()
-        on = date.today() - timedelta(days=5)
-        for i in range(3):
-            aid = 88800 + i
-            s.add(Article(
-                id=aid, url=f"https://w.test/{aid}", canonical_url=f"https://w.test/{aid}",
-                source_id=88800, title=f"Flood {aid}", content="the flood hit the city hard",
-                hash=f"wh{aid}", language="en",
-                published_at=datetime.now(UTC), created_at=datetime.now(UTC),
-            ))
-            s.add(KeywordMention(keyword_id=kw.id, article_id=aid, source_id=88800, observed_on=on, count=1))
-            s.add(ArticleMentionedPlace(article_id=aid, name="Weathertown", country="it", kind="city",
-                                        mentions=1, lat=45.44, lon=12.33, extractor="lexical-v1"))
-        s.commit()
-    finally:
-        s.close()
-
     from src.api.main import app
+    from src.database.session import get_db
 
-    with TestClient(app) as c:
-        # Read is empty until derived.
-        assert c.get("/api/signals/weather-signals").json()["signals"] == []
-        refreshed = c.post("/api/signals/weather-signals/refresh", params={"min_articles": 3}).json()
-        assert refreshed["derived"] >= 1
-        signals = c.get("/api/signals/weather-signals").json()["signals"]
-        assert any(x["term"] == "signal:flood" for x in signals)
-        assert all(x["anomaly"]["checked"] is False for x in signals)
+    # Seed the ISOLATED fixture DB and route the endpoint to it via a get_db override —
+    # NEVER SessionLocal. The refresh endpoint reads through Depends(get_db), so the
+    # override is all that is needed. (The previous version seeded a 'flood' keyword +
+    # recent mentions into the SHARED process DB and committed without cleanup, which
+    # polluted later trending/translation tests reading the same DB — a full-suite health
+    # check caught 7 order-dependent failures. This test now touches no shared state.)
+    _seed_flood_cluster(session, n=3)
+
+    app.dependency_overrides[get_db] = lambda: session
+    try:
+        with TestClient(app) as c:
+            # Read is empty until derived (the JSON store lives under the monkeypatched data_dir).
+            assert c.get("/api/signals/weather-signals").json()["signals"] == []
+            refreshed = c.post("/api/signals/weather-signals/refresh", params={"min_articles": 3}).json()
+            assert refreshed["derived"] >= 1
+            signals = c.get("/api/signals/weather-signals").json()["signals"]
+            assert any(x["term"] == "signal:flood" for x in signals)
+            assert all(x["anomaly"]["checked"] is False for x in signals)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
