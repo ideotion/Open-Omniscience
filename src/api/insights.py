@@ -725,6 +725,30 @@ def insights_associations(
         db, term, limit=limit, min_cooccur=min_cooccur, group=group))
 
 
+@router.get("/keyword-stats")
+def insights_keyword_stats(
+    term: str,
+    window_days: int = Query(7, ge=1, le=365),
+    baseline_days: int = Query(30, ge=1, le=3650),
+    cooccur_limit: int = Query(5, ge=0, le=20),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Hover stats for one keyword (mention n · distinct-article spread · windowed
+    trend RATE · top co-occurrences) — the clickable-in-article-keyword hover.
+    Counts only, method + caveat, NO score."""
+    key = _ckey(
+        "keyword-stats", term=term, window_days=window_days,
+        baseline_days=baseline_days, cooccur_limit=cooccur_limit,
+    )
+    return _deadlined(
+        db, key,
+        lambda: q.keyword_stats(
+            db, term, window_days=window_days,
+            baseline_days=baseline_days, cooccur_limit=cooccur_limit,
+        ),
+    )
+
+
 @router.get("/context")
 def insights_context(
     term: str,

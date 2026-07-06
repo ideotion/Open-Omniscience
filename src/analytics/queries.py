@@ -1568,6 +1568,120 @@ def associations(
     }
 
 
+def keyword_stats(
+    session,
+    term: str,
+    *,
+    window_days: int = 7,
+    baseline_days: int = 30,
+    cooccur_limit: int = 5,
+) -> dict:
+    """Compact hover stats for ONE keyword (the clickable-in-article-keyword hover):
+    total mentions + distinct-article spread + a windowed recent-vs-prior RATE + the
+    top co-occurring keywords. Counts only, method + caveat, NO score.
+
+    PERF (codec-decrypt lesson): mention n and article spread come from a single
+    aggregate over the keyword_mentions rows for THIS keyword_id (index-only via
+    ix_mention_covering) — NEVER the keyword_mentions -> articles join that drags
+    article pages through the SQLCipher codec. The trend windows scan the same
+    keyword_id-scoped rows on observed_on; co-occurrences reuse :func:`associations`
+    (which itself avoids the article join).
+    """
+    empty_trend = {
+        "window_days": window_days, "baseline_days": baseline_days,
+        "recent": 0, "prior": 0, "recent_per_day": 0.0, "prior_per_day": 0.0,
+        "expected": 0.0, "growth": 0.0,
+    }
+    kw = resolve_keyword(session, term)
+    if kw is None:
+        return {
+            "term": term, "resolved": None, "mentions": 0, "articles": 0,
+            "trend": empty_trend, "cooccurrences": [],
+            "method": "no stored keyword matched this term",
+            "caveat": "This term is not in your corpus yet — no counts to show.",
+        }
+
+    # Exact mention n + distinct-article spread over this keyword's mention rows.
+    # ix_mention_keyword_article is UNIQUE on (keyword_id, article_id), so a distinct
+    # article count is the row count; both served index-only (no article decrypt).
+    row = (
+        session.query(
+            func.count(func.distinct(KeywordMention.article_id)),
+            func.coalesce(func.sum(KeywordMention.count), 0),
+        )
+        .filter(KeywordMention.keyword_id == kw.id)
+        .one()
+    )
+    distinct_articles, total_mentions = int(row[0] or 0), int(row[1] or 0)
+
+    # Windowed recent-vs-prior RATE for this keyword — the SAME transparent ratio
+    # trending() uses (recent volume vs the prior-period rate), scanning only this
+    # keyword's rows on the observed_on covering index.
+    today = date.today()
+    w_start = today - timedelta(days=window_days)
+    b_start = w_start - timedelta(days=baseline_days)
+
+    def _sum(lo, hi) -> int:
+        return int(
+            session.query(func.coalesce(func.sum(KeywordMention.count), 0))
+            .filter(
+                KeywordMention.keyword_id == kw.id,
+                KeywordMention.observed_on >= lo,
+                KeywordMention.observed_on < hi,
+            )
+            .scalar()
+            or 0
+        )
+
+    recent = _sum(w_start, today + timedelta(days=1))
+    prior = _sum(b_start, w_start)
+    expected = (prior / baseline_days) * window_days
+    growth = round(recent / expected, 2) if expected >= 1 else float(recent)
+    trend_block = {
+        "window_days": window_days,
+        "baseline_days": baseline_days,
+        "recent": recent,
+        "prior": prior,
+        "recent_per_day": round(recent / window_days, 3),
+        "prior_per_day": round(prior / baseline_days, 3),
+        "expected": round(expected, 2),
+        "growth": growth,
+    }
+
+    # Top co-occurring keywords (count + PMI), reusing the vetted co-occurrence path.
+    cooccur: list[dict] = []
+    if cooccur_limit > 0:
+        assoc = associations(session, kw.term, limit=cooccur_limit, min_cooccur=2, group=False)
+        cooccur = [
+            {"term": p["term"], "normalized": p.get("normalized"),
+             "cooccur": p["cooccur"], "pmi": p["pmi"]}
+            for p in assoc.get("pairs", [])
+        ]
+
+    return {
+        "term": term,
+        "resolved": {
+            "term": kw.term, "normalized": kw.normalized_term,
+            "kind": kind_of(kw), "language": kw.language,
+        },
+        "mentions": total_mentions,
+        "articles": distinct_articles,
+        "trend": trend_block,
+        "cooccurrences": cooccur,
+        "method": (
+            "Mention n and article spread are exact counts over this keyword's "
+            "mention index (no article decrypt). The trend is recent volume vs the "
+            "prior-period rate (a transparent ratio, not a significance test). "
+            "Co-occurrences are keywords sharing an article, by count and PMI."
+        ),
+        "caveat": (
+            "Counts only, never a score. The trend ratio is noisy on a young corpus; "
+            "co-occurrence and PMI are association, not causation. Deduced from your "
+            "corpus, not a claim about the world."
+        ),
+    }
+
+
 def context(session, term: str, *, limit: int = 10, window: int = 180) -> dict:
     """Recent mention snippets for a keyword, sliced from the stored article text."""
     kw = resolve_keyword(session, term)
