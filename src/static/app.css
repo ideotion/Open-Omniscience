@@ -739,6 +739,11 @@
     .stat-strip .s { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
     .stat-strip .s b { font-size:15px; font-weight:700; letter-spacing:-.01em; }
     .stat-strip .s span { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    /* Home severity alert strip (Wave 3 H) — compact, honest tiers. Reuses .pill /
+       .card-caveat / .hint; only the list density is bespoke. */
+    .home-alerts .alert-tier { margin:6px 0; }
+    .home-alerts .alert-tier ul { margin:4px 0 0; padding-inline-start:18px; }
+    .home-alerts .alert-tier li { margin:2px 0; font-size:12.5px; }
     /* Corpus maturity tier — a descriptive STAGE chip beside the glance numbers.
        Subtle per-stage accent only; never a score bar, never fake precision. */
     .corpus-tier { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }

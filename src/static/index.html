@@ -179,6 +179,15 @@
         <div id="home-status" class="hint" style="margin:0"></div>
       </div>
 
+      <!-- Severity alert layer (info / watch / urgent) — GET /api/signals/alerts, LOCAL,
+           no network. 'Urgent' is ONLY ever a provider-declared RED hazard alert (never a
+           promoted magnitude band); every alert states its provider + the snapshot's
+           staleness; the method + caveat are visible. Populated by loadHomeAlerts(); hidden
+           until there is at least one alert so Home is never blank-and-silent. -->
+      <section class="panel home-alerts" id="home-alerts-panel" hidden>
+        <div id="home-alerts"></div>
+      </section>
+
       <!-- Home dashboard: a compact "Trending now" glance (UI rethink, Home →
            helicopter view). REDUNDANT by design — every term deep-links to its
            real tab (the analysis window / Insights → Trends); nothing here is
@@ -1076,7 +1085,7 @@
       </div>
 
       <button onclick="saveSettings()">Save preferences</button>
-      <div class="hint">Stored locally in app_settings.json under the data directory — no telemetry, nothing leaves the machine.</div>
+      <div class="hint">Stored in your encrypted corpus database (app_state) — your settings ride your backups; no telemetry, nothing leaves the machine.</div>
     </section>
 
     <section class="panel">
@@ -1259,6 +1268,36 @@
       <div class="hint">Reading happens entirely on this machine: the dump's index is scanned for the title, then one small
         block is decompressed at its byte offset. The text shown is raw wikitext (unrendered) as of the dump date — a snapshot, not the live article.</div>
       <div id="dumpread-out" style="margin-top:8px"></div>
+
+      <h3 style="margin-top:14px">Search downloaded dumps (full text)</h3>
+      <p class="muted" style="margin-top:0">Search the BODIES of your downloaded dumps, not just their titles. An edition must be indexed first — a one-time local sweep; the index is a side-file beside the dumps, rides no backup, and is rebuildable at any time. Matches are a snapshot as of the dump date, not the live article. Local, zero network.</p>
+      <div id="dumpfts-index" class="hint" style="margin-bottom:6px"></div>
+      <div class="row" style="gap:6px;align-items:end;flex-wrap:wrap">
+        <div style="flex:0 0 140px">
+          <label for="dumpfts-build-wiki">Edition to index</label>
+          <select id="dumpfts-build-wiki" title="Editions with a complete multistream dump on disk"><option value="">Loading…</option></select>
+        </div>
+        <div style="flex:0 0 auto;align-self:end">
+          <button class="secondary" onclick="dumpFtsBuild()">Build index</button>
+          <button class="secondary" onclick="dumpFtsCancel()">Cancel build</button>
+          <button class="danger" onclick="dumpFtsClear()">Clear index</button>
+        </div>
+      </div>
+      <div class="row" style="gap:6px;align-items:end;flex-wrap:wrap;margin-top:8px">
+        <div style="flex:2">
+          <label for="dumpfts-q">Full-text query</label>
+          <input id="dumpfts-q" placeholder="Words or a Boolean query (AND OR NOT)…"
+                 onkeydown="if(event.key==='Enter')dumpFtsSearch()">
+        </div>
+        <div style="flex:0 0 140px">
+          <label for="dumpfts-wiki">Edition</label>
+          <select id="dumpfts-wiki" title="Restrict the search to one indexed edition"><option value="">all indexed</option></select>
+        </div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="dumpFtsSearch()">Search dumps</button></div>
+      </div>
+      <div class="hint">Full-text search runs over the index built above — the same Boolean syntax and ranking as article search.
+        A result opens in the local reader above (its raw wikitext, as of the dump date).</div>
+      <div id="dumpfts-out" style="margin-top:8px"></div>
     </section>
     </div>
 
