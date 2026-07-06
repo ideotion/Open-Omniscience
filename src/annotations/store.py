@@ -130,6 +130,58 @@ def import_bundle(bundle: dict, *, trusted: bool = True) -> dict:
     }
 
 
+def adopt_imported_record(record: dict) -> dict:
+    """Adopt an already-verified imported-author RECORD directly (no re-verification).
+
+    An imported record is written by :func:`import_bundle` AFTER a signed bundle has
+    been verified: the manifest + signature are stripped and only the verified content
+    (plus a ``verify_reason`` provenance note) is kept. When such a record travels
+    inside a backup artifact (which is itself signature-verified as a whole), its
+    original bundle is gone, so it CANNOT be re-verified. This adopts the record as-is
+    — mirroring how ``mine.json`` restores — instead of re-running :func:`import_bundle`
+    (which correctly rejects a bundle-less record). Never used for untrusted input:
+    the caller is the additive restore over a verified artifact.
+
+    Local always wins: if a record for this author already exists locally it is kept
+    and nothing is overwritten (idempotent — re-running converges). The record is
+    validated structurally (a garbage/tampered non-record is refused, never adopted).
+    """
+    if not isinstance(record, dict):
+        raise ValueError("imported record is not an object")
+    if record.get("version") != STORE_VERSION:
+        raise ValueError(
+            f"not an imported-author record (version {record.get('version')!r}, "
+            f"expected {STORE_VERSION!r})"
+        )
+    aid = record.get("author_id")
+    if not isinstance(aid, str) or not aid:
+        raise ValueError("imported record has no author_id")
+    if not isinstance(record.get("annotations"), list):
+        raise ValueError("imported record has no annotations list")
+
+    path = _imported_dir() / f"{aid[:32]}.json"
+    if path.exists():
+        # The existing local identity/trust decision ALWAYS wins over an incoming copy.
+        return {
+            "author_id": aid,
+            "author_name": record.get("author_name"),
+            "annotations": len(record["annotations"]),
+            "trusted": bool(record.get("trusted")),
+            "adopted": False,
+            "reason": "an imported record for this author already exists locally",
+        }
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), "utf-8")
+    tmp.replace(path)
+    return {
+        "author_id": aid,
+        "author_name": record.get("author_name"),
+        "annotations": len(record["annotations"]),
+        "trusted": bool(record.get("trusted")),
+        "adopted": True,
+    }
+
+
 def _imported_records() -> list[dict]:
     out = []
     for p in sorted(_imported_dir().glob("*.json")):
