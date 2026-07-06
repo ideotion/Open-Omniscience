@@ -1724,6 +1724,7 @@
     // trending yet (Home is never blank-and-silent — the Briefing still renders);
     // "More in Insights →" deep-links to the canonical Trends view. Reuses
     // /api/insights/trending-windows + dashChartSvg; no new backend, no new poll.
+    let _homeTrendTerms = [], _homeTrendCaveat = "";   // stash for enlargeHomeTrend(i)
     async function loadHomeTrends() {
       const panel = $("home-trends-panel"), box = $("home-trends");
       if (!box) return;
@@ -1734,19 +1735,36 @@
         const terms = (wk && wk.terms) || [];
         if (!terms.length) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
         if (panel) panel.hidden = false;
-        const cards = terms.map(x => {
+        _homeTrendTerms = terms;              // stash so enlargeHomeTrend(i) needs no refetch
+        _homeTrendCaveat = d.caveat || "";
+        const cards = terms.map((x, i) => {
           const spark = Array.isArray(x.series)
             ? dashChartSvg(x.series.map(p => ({observed_on: p.date, price: p.count})), "")
+            : "";
+          // Click-to-enlarge into the interactive ooChart (invariant #16), matching
+          // the Insights Trends UX — the daily series is already in the payload.
+          const enlarge = Array.isArray(x.series)
+            ? `<button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeHomeTrend(${i})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>`
             : "";
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
               <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}</a>${kwTransHtml(x)}
-              <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span>
+              <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
           + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
       } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
+    }
+    // Enlarge a Home "Trending now" sparkline into the interactive ooChart (invariant
+    // #16). The daily series is already in the stashed payload — no extra fetch.
+    // Global (reached from the inline onclick, matching the card's local convention).
+    function enlargeHomeTrend(i) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const x = _homeTrendTerms[i];
+      if (!x || !Array.isArray(x.series)) return;   // defensive: nothing to enlarge
+      chartEnlarge(x.term, [{label: x.term, unit: t("mentions"),
+        points: x.series.map(p => ({t: p.date, v: p.count}))}], _homeTrendCaveat || "");
     }
     // Live Home (the at-a-glance strip + briefing self-update; no Refresh button).
     // Only runs while Home is the active, visible tab (the LIVE registry). Cheap:
@@ -9401,6 +9419,10 @@
           return `<div style="flex:1;min-width:240px">${head}${spark}${restList}</div>`;
         }).join("") || `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
         const note = $("trd-windows-note"); if (note) note.textContent = d.caveat || "";
+        // If a non-default lens (slope / small multiples) is active, re-render it with
+        // the fresh payload (visibility was already set by setTrendLens).
+        if (_trdLens === "slope") renderTrendSlope();
+        else if (_trdLens === "multiples") renderTrendMultiples();
       } catch (e) { /* additive panel — leave the single-window view intact on error */ }
     }
 
@@ -9418,6 +9440,180 @@
       const title = x.term + " — " + (LABELS[w.label] || w.label);
       const points = x.series.map(p => ({t: p.date, v: p.count}));
       chartEnlarge(title, [{label: x.term, unit: t("mentions"), points}], d.caveat || "");
+    }
+
+    // -- ooViz honest lenses over the trending-windows payload (batch F item 2) ---- //
+    // A Tufte SLOPE chart + a shared-scale SMALL-MULTIPLES grid, both built from the
+    // ooViz primitives (slopeGeometry / gridLayout) over the SAME _trendWindowsData
+    // already fetched by loadTrendWindows — no extra request. Additive: the default
+    // "Windows" lens is unchanged (the Desk lesson). Honest by construction (invariant
+    // #16): shared scales, n shown, bars when sparse, a GAP never zero-filled, no
+    // interpolated curve, counts only / no score, caveats visible.
+    let _trdLens = "windows";
+
+    // Slope of per-day mention RATE across the preset windows (24h · week · month).
+    // RATE = count ÷ window length, so the three nested windows are on a comparable
+    // magnitude (a raw count would trivially grow with span). A term missing from a
+    // window's rising set is absence, NOT zero — so its line BREAKS there (a gap).
+    function _slopeFromTrendWindows(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const windows = (d && d.windows) || [];
+      const DAYS = {"24h": 1, "7d": 7, "30d": 30};
+      const LAB = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
+      const order = ["24h", "7d", "30d"].filter(lab => windows.some(w => w.label === lab));
+      if (order.length < 2) return null;
+      const byTerm = {};
+      windows.forEach(w => {
+        if (!(w.label in DAYS)) return;
+        (w.terms || []).forEach(x => {
+          if (!byTerm[x.term]) byTerm[x.term] = {term: x.term, x, rates: {}};
+          byTerm[x.term].rates[w.label] = (x.recent || 0) / DAYS[w.label];
+        });
+      });
+      const rank = tm => tm.rates[order[0]] != null ? tm.rates[order[0]] : (tm.rates[order[order.length - 1]] || 0);
+      const terms = Object.values(byTerm).sort((a, b) => rank(b) - rank(a));
+      return {
+        stages: order.map(lab => LAB[lab] || lab),
+        series: terms.map(tm => ({
+          label: tm.term,
+          values: order.map(lab => lab in tm.rates ? +tm.rates[lab].toFixed(2) : null),
+        })),
+      };
+    }
+
+    // Render a slope chart from series aligned to ordered stages. Colour encodes
+    // DIRECTION (rising=--ok / falling=--err / flat=--muted — the same honest
+    // convention as dashChartSvg); each line is direct-labelled at its endpoint (no
+    // colour legend needed) and deep-links to that term's analysis window. Capped
+    // with the drop DISCLOSED (never silent). Built on ooViz.slopeGeometry.
+    const _SLOPE_MAX = 10;
+    function slopeChartSvg(spec) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (typeof ooViz === "undefined" || !ooViz.slopeGeometry) return "";
+      const stages = spec.stages || [];
+      let series = (spec.series || []).filter(s => (s.values || []).some(v => v != null && isFinite(v)));
+      if (!series.length || stages.length < 2) return `<div class="muted">${esc(t("Not enough data to compare yet."))}</div>`;
+      const dropped = Math.max(0, series.length - _SLOPE_MAX);
+      series = series.slice(0, _SLOPE_MAX);
+      const W = 360, H = Math.max(190, 46 + series.length * 13), pad = {l: 8, r: 104, t: 16, b: 24};
+      const g = ooViz.slopeGeometry(series, {stages, width: W, height: H, pad});
+      const grid = g.yTicks.map(tk =>
+        `<line x1="${pad.l}" x2="${(W - pad.r).toFixed(1)}" y1="${tk.y.toFixed(1)}" y2="${tk.y.toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 4" stroke-width="0.6"/>`
+        + `<text x="${pad.l}" y="${(tk.y - 1.5).toFixed(1)}" font-size="8" fill="var(--muted)">${fmtNum(tk.value)}</text>`).join("");
+      const xlab = g.stages.map((st, ix) =>
+        `<line x1="${st.x.toFixed(1)}" x2="${st.x.toFixed(1)}" y1="${pad.t}" y2="${(H - pad.b).toFixed(1)}" stroke="var(--border-soft)" stroke-width="1"/>`
+        + `<text x="${st.x.toFixed(1)}" y="${(H - pad.b + 12).toFixed(1)}" text-anchor="${ix === 0 ? "start" : ix === g.stages.length - 1 ? "end" : "middle"}" font-size="9" fill="var(--muted)">${esc(st.label)}</text>`).join("");
+      const lines = g.series.map(se => {
+        const finite = se.points.filter(p => !p.missing);
+        if (!finite.length) return "";
+        const first = finite[0].value, last = finite[finite.length - 1].value;
+        const col = last > first ? "var(--ok)" : last < first ? "var(--err)" : "var(--muted)";
+        let segs = "";
+        for (let i = 0; i < se.points.length - 1; i++) {
+          const a = se.points[i], b = se.points[i + 1];
+          if (a.missing || b.missing) continue;   // break at gaps, never bridge
+          segs += `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="${col}" stroke-width="1.6" opacity="0.85"/>`;
+        }
+        const dots = finite.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.6" fill="${col}"><title>${esc(se.label)}: ${fmtNum(p.value)}</title></circle>`).join("");
+        const lp = finite[finite.length - 1];
+        const lbl = `<text x="${(lp.x + 5).toFixed(1)}" y="${(lp.y + 3).toFixed(1)}" font-size="9" fill="var(--fg)" style="cursor:pointer" onclick='openAnalysisFor(${esc(JSON.stringify(se.label))});return false'>${esc(se.label)}</text>`;
+        return segs + dots + lbl;
+      }).join("");
+      const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--ok)">▲</span> ${esc(t("rising"))} · <span style="color:var(--err)">▼</span> ${esc(t("falling"))}`
+        + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", dropped))}</span>` : "") + `</div>`;
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(spec.aria || t("Slope chart"))}" style="max-width:${W}px;height:auto">${grid}${xlab}${lines}</svg>${legend}`
+        + (spec.caveat ? `<div class="card-caveat" style="margin-top:3px">${esc(spec.caveat)}</div>` : "");
+    }
+
+    // Shared-scale SMALL-MULTIPLES grid: N mini time-series panels on ONE common
+    // vertical scale (0..sharedMax) so panels are directly comparable — the whole
+    // point of small multiples. Each panel renders honestly (line when dense, bars
+    // when sparse per invariant #16, n shown) and never interpolates a curve; counts
+    // anchor at their true zero. Panels deep-link to their analysis window. Column
+    // count from ooViz.gridLayout.
+    function smallMultiplesSvg(panels, opts) {
+      opts = opts || {};
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (typeof ooViz === "undefined" || !ooViz.gridLayout) return "";
+      const live = (panels || []).filter(p => (p.points || []).length);
+      if (!live.length) return `<div class="muted">${esc(t("No series to show yet."))}</div>`;
+      let maxV = 0;
+      live.forEach(p => p.points.forEach(pt => { if (isFinite(pt.count) && pt.count > maxV) maxV = pt.count; }));
+      maxV = Math.max(1, maxV);
+      const lay = ooViz.gridLayout(live.length, {maxCols: opts.maxCols || 4});
+      const w = 200, h = 84, padL = 6, padR = 6, padT = 8, padB = 16;
+      const cell = (p) => {
+        const pts = p.points, n = pts.length;
+        const lineMode = n >= _SPARSE_BAR_MAX;
+        const plotW = w - padL - padR;
+        const X = i => padL + plotW * (n < 2 ? 0.5 : i / (n - 1));
+        const Y = v => padT + (h - padT - padB) * (1 - v / maxV);   // SHARED 0..maxV
+        const baseY = Y(0);
+        const up = pts[n - 1].count >= pts[0].count;
+        const col = up ? "var(--ok)" : "var(--err)";
+        const slot = plotW / Math.max(n, 1), bw = Math.max(2, Math.min(slot * 0.6, 14));
+        const body = lineMode
+          ? `<polyline fill="none" stroke="${col}" stroke-width="1.4" points="${pts.map((pt, i) => `${X(i).toFixed(1)},${Y(pt.count).toFixed(1)}`).join(" ")}"/>`
+          : pts.map((pt, i) => {
+              const cx = X(i), by = Y(pt.count), x0 = Math.max(padL, cx - bw / 2);
+              const bwc = Math.max(1, Math.min(w - padR, cx + bw / 2) - x0).toFixed(1);
+              return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${Math.max(0, baseY - by).toFixed(1)}" fill="${col}" opacity="0.72"/>`;
+            }).join("");
+        const gr = `<line x1="${padL}" x2="${w - padR}" y1="${Y(maxV).toFixed(1)}" y2="${Y(maxV).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3" stroke-width="0.5"/>`
+          + `<line x1="${padL}" x2="${w - padR}" y1="${baseY.toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`;
+        const svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${esc((p.label || "") + " — n=" + n)}" style="display:block">${gr}${body}</svg>`;
+        const oc = p.term != null ? `onclick='openAnalysisFor(${esc(JSON.stringify(p.term))});return false'` : "";
+        const head = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">`
+          + `<a href="#" ${oc} title="${esc(t("Open this keyword's own analysis window"))}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.label || "")}</a>`
+          + `<span class="muted" style="font-size:10px">n=${n}</span></div>`;
+        return `<div style="border:1px solid var(--border);border-radius:6px;padding:5px">${head}${svg}</div>`;
+      };
+      const cav = `<div class="card-caveat" style="margin-top:5px">${esc(opts.caveat || t("All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score."))} ${esc(t("Shared max:"))} ${esc(fmtNum(maxV))}</div>`;
+      return `<div style="display:grid;grid-template-columns:repeat(${lay.cols},minmax(0,1fr));gap:8px">${live.map(cell).join("")}</div>${cav}`;
+    }
+
+    function renderTrendSlope() {
+      const box = $("trd-slope"); if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_trendWindowsData) { box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`; return; }
+      const spec = _slopeFromTrendWindows(_trendWindowsData);
+      if (!spec) { box.innerHTML = `<div class="muted">${esc(t("Not enough windows to compare yet."))}</div>`; return; }
+      box.innerHTML = `<h2 style="font-size:13px">${esc(t("Mention rate across windows"))}</h2>`
+        + slopeChartSvg({
+            stages: spec.stages, series: spec.series,
+            aria: t("Mentions per day across the preset windows, one line per rising term"),
+            caveat: t("Mentions per day in each window (count ÷ window length); the windows are nested. A term missing from a window's rising set shows as a gap, never zero. Counts only, no score."),
+          });
+    }
+    function renderTrendMultiples() {
+      const box = $("trd-multiples"); if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_trendWindowsData) { box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`; return; }
+      const windows = _trendWindowsData.windows || [];
+      const wk = windows.find(w => w.label === "7d") || windows[0];
+      const terms = ((wk && wk.terms) || []).filter(x => Array.isArray(x.series));
+      if (!terms.length) { box.innerHTML = `<div class="muted">${esc(t("No rising keywords with a series yet."))}</div>`; return; }
+      const LAB = {"24h": t("Past 24h"), "7d": t("Past week"), "30d": t("Past month")};
+      const panels = terms.map(x => ({label: x.term, term: x.term, points: x.series.map(p => ({date: p.date, count: p.count}))}));
+      box.innerHTML = `<h2 style="font-size:13px">${esc(t("Small multiples"))} — ${esc(LAB[wk.label] || wk.label)}</h2>` + smallMultiplesSvg(panels, {});
+    }
+    // Switch the Trends chart lens (Windows / Rate slope / Small multiples). All three
+    // read the SAME _trendWindowsData (already fetched); no extra request. Global —
+    // reached from the inline onclick, matching the Trends subtab's local convention.
+    function setTrendLens(which) {
+      _trdLens = (which === "slope" || which === "multiples") ? which : "windows";
+      const winOn = _trdLens === "windows";
+      const set = (id, on) => { const e = $(id); if (e) e.style.display = on ? "" : "none"; };
+      set("trd-windows", winOn); set("trd-windows-note", winOn);
+      set("trd-slope", _trdLens === "slope"); set("trd-multiples", _trdLens === "multiples");
+      document.querySelectorAll("#trd-lens [data-trdlens]").forEach(b => {
+        const on = b.dataset.trdlens === _trdLens;
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+        b.style.borderColor = on ? "var(--accent)" : "";
+        b.style.color = on ? "var(--accent)" : "";
+      });
+      if (_trdLens === "slope") renderTrendSlope();
+      else if (_trdLens === "multiples") renderTrendMultiples();
     }
 
     // Reusable interactive-chart enlarge dialog (Item 1, Group E). Renders the
@@ -9870,10 +10066,30 @@
         </div>` : "";
       // In-map TIME slider (slice 5a) — appears above the bottom-left controls when
       // the Signals layer is on; sweeps the focus moment (antiquity -> near future).
+      // A Linear/Log toggle (batch F item 1) chooses the position->year mapping; the
+      // labelled tick strip names the year at 0/¼/½/¾/1 so the scale is never a hidden
+      // warp (log ticks bunch at the old end, linear ticks are evenly spaced).
+      const _tsc = opts.timeScale === "log" ? "log" : opts.timeScale;   // may be undefined when no toggle
+      const scaleBtns = opts.onTimeScale ? `<span class="oomap-tscale" role="group" aria-label="${esc(t("Time scale"))}" style="display:inline-flex;gap:3px">
+            <button class="tiny secondary" data-oomap-tscale="linear" aria-pressed="${_tsc !== "log"}"${_tsc !== "log" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Even year-by-year sweep"))}">${esc(t("Linear"))}</button>
+            <button class="tiny secondary" data-oomap-tscale="log" aria-pressed="${_tsc === "log"}"${_tsc === "log" ? ' style="border-color:var(--accent);color:var(--accent)"' : ""} title="${esc(t("Compress antiquity so recent years — where most events are — get more of the slider"))}">${esc(t("Log"))}</button>
+          </span>` : "";
+      const tickStrip = (Array.isArray(opts.focusTicks) && opts.focusTicks.length) ? `<div style="position:relative;height:11px;margin-top:1px">
+          ${opts.focusTicks.map(tk => {
+            const pos = tk.pos <= 0 ? 'left:0;transform:none;text-align:left'
+              : tk.pos >= 1 ? 'right:0;left:auto;transform:none;text-align:right'
+              : `left:${(tk.pos * 100).toFixed(1)}%;transform:translateX(-50%)`;
+            return `<span style="position:absolute;${pos};font-size:8.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap">${esc(tk.label)}</span>`;
+          }).join("")}
+        </div>` : "";
       const sliderHtml = opts.signalsOn ? `
-        <div class="oomap-time" style="position:absolute;bottom:36px;left:8px;right:8px;z-index:5;display:flex;align-items:center;gap:8px;background:color-mix(in srgb, var(--panel) 82%, transparent);padding:3px 8px;border-radius:6px">
-          <input type="range" data-oomap-focus min="0" max="1000" value="${opts.focusSlider != null ? opts.focusSlider : 1000}" step="1" style="flex:1" aria-label="${esc(t("Moment in focus"))}">
-          <strong style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${esc(opts.focusLabel || "")}</strong>
+        <div class="oomap-time" style="position:absolute;bottom:36px;left:8px;right:8px;z-index:5;display:flex;flex-direction:column;gap:1px;background:color-mix(in srgb, var(--panel) 82%, transparent);padding:3px 8px;border-radius:6px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="range" data-oomap-focus min="0" max="1000" value="${opts.focusSlider != null ? opts.focusSlider : 1000}" step="1" style="flex:1" aria-label="${esc(t("Moment in focus"))}">
+            <strong style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${esc(opts.focusLabel || "")}</strong>
+            ${scaleBtns}
+          </div>
+          ${tickStrip}
         </div>` : "";
 
       // In-map dimension picker (the "controls inside the map" convention) — the
@@ -10015,6 +10231,8 @@
       if (opts && opts.onLabels) { const lb = host.querySelector("[data-oomap-labels]"); if (lb) lb.addEventListener("click", () => opts.onLabels()); }
       if (opts && opts.onOsm) { const ob = host.querySelector("[data-oomap-osm]"); if (ob) ob.addEventListener("click", () => opts.onOsm()); }
       if (opts && opts.onFocus) { const fs = host.querySelector("[data-oomap-focus]"); if (fs) fs.addEventListener("input", () => opts.onFocus(+fs.value)); }
+      if (opts && opts.onTimeScale) host.querySelectorAll("[data-oomap-tscale]").forEach(b =>
+        b.addEventListener("click", () => opts.onTimeScale(b.dataset.oomapTscale)));
       if (opts && opts.onSignal) host.querySelectorAll("[data-oomap-sig]").forEach(g =>
         g.addEventListener("click", () => { const s = (host._ooSigVisible || [])[+g.dataset.oomapSig]; if (s) opts.onSignal(s, host._ooSigVisible || []); }));
       svg.addEventListener("wheel", e => {
@@ -10046,7 +10264,12 @@
     let _ooMapPayload = null, _ooMapDim = "sources", _ooMapGran = "country", _ooMapPlacesOn = false, _ooMapWhere = null, _ooMapLabelsOn = false;
     let _ooMapOsmOn = false, _ooMapOsmGeo = null, _ooMapOsmLoading = false;   // in-browser .pbf overlay (THEME-2)
     // Signals layer (slice 5a): lazily-fetched space-time events + the focus slider.
-    let _ooMapSignalsOn = false, _ooMapSignals = null, _ooMapFocusSlider = 1000, _ooMapFocusRAF = 0;
+    // _ooMapTimeScale = how the slider position maps to a focus YEAR (batch F item 1):
+    // "log" (default, unchanged) compresses antiquity so the recent end — where most
+    // events are — gets most of the travel; "linear" is an even year-by-year sweep.
+    // NEITHER is a hidden warp: the focus-year label + the tick strip name the actual
+    // year at every position, so the compression is always explicit.
+    let _ooMapSignalsOn = false, _ooMapSignals = null, _ooMapFocusSlider = 1000, _ooMapFocusRAF = 0, _ooMapTimeScale = "log";
     // Server-IP location layer (data-arch slice 6c): captured server IPs geolocated
     // OFFLINE, DISTINCT from the editorial Source.country choropleth. Lazily fetched.
     let _ooMapServerOn = false, _ooMapServerLoc = null;
@@ -10142,22 +10365,31 @@
       // slider position to a focus YEAR, and use an adaptive window (~1/12 of the
       // span) so the slider sweeps meaningfully whatever the corpus's time range.
       const sig = _ooMapSignalsOn && Array.isArray(_ooMapSignals) ? _ooMapSignals : [];
-      let focusT = null, windowY = 0, focusSlider = _ooMapFocusSlider, focusLabel = "";
+      let focusT = null, windowY = 0, focusSlider = _ooMapFocusSlider, focusLabel = "", focusTicks = [];
       if (sig.length) {
         const ts = sig.map(s => s.t);
         const tmin = Math.min(...ts), tmax = Math.max(...ts), spanY = tmax - tmin;
         windowY = Math.max(5, spanY / 12);
-        // LOGARITHMIC time slider (field test 2026-06-19 #14: "more recent events than
-        // medieval"). Map by AGE (years before the most recent), log-compressed, so the
-        // recent end of the slider gets most of the travel (fine resolution) while
-        // antiquity compresses — instead of a linear sweep that buries recent years.
-        // NOT a hidden warp: the focus YEAR label below is always shown, so the actual
-        // year at any slider position is explicit.
+        // Time slider (field test 2026-06-19 #14: "more recent events than medieval").
+        // Map slider position -> AGE (years before the most recent). LOG compresses
+        // antiquity so the recent end gets most of the travel (fine resolution) while
+        // antiquity compresses; LINEAR (batch F item 1) is an even year-by-year sweep.
+        // NEITHER is a hidden warp: the focus YEAR label below AND the tick strip name
+        // the actual year at each slider position, so the compression is explicit.
         const _LOGB = 10;
-        const frac = focusSlider / 1000;  // 0 = oldest, 1 = most recent
-        const age = spanY > 0 ? spanY * (Math.pow(_LOGB, 1 - frac) - 1) / (_LOGB - 1) : 0;
-        focusT = tmax - age;
+        const ageAt = (frac) => spanY <= 0 ? 0
+          : (_ooMapTimeScale === "linear"
+              ? spanY * (1 - frac)
+              : spanY * (Math.pow(_LOGB, 1 - frac) - 1) / (_LOGB - 1));
+        const yearAt = (frac) => tmax - ageAt(frac);
+        focusT = yearAt(focusSlider / 1000);   // 0 = oldest, 1 = most recent
         focusLabel = (typeof fmtYear === "function") ? fmtYear(focusT) : String(Math.round(focusT));
+        // Honest labelled ticks: the year at 0/.25/.5/.75/1 — non-uniform in log
+        // (compressed at the old end), uniform in linear — so the warp is VISIBLE.
+        focusTicks = [0, 0.25, 0.5, 0.75, 1].map(frac => ({
+          pos: frac,
+          label: (typeof fmtYear === "function") ? fmtYear(yearAt(frac)) : String(Math.round(yearAt(frac))),
+        }));
       }
       await ooMap(host, {
         values, names, points, aria, srRows,
@@ -10176,7 +10408,9 @@
           }
           _renderOoMapDim();
         },
-        signalsOn: _ooMapSignalsOn, signals: sig, focusT, windowY, focusSlider, focusLabel,
+        signalsOn: _ooMapSignalsOn, signals: sig, focusT, windowY, focusSlider, focusLabel, focusTicks,
+        timeScale: _ooMapTimeScale,
+        onTimeScale: v => { _ooMapTimeScale = (v === "linear" ? "linear" : "log"); _renderOoMapDim(); },
         onSignals: async () => {
           _ooMapSignalsOn = !_ooMapSignalsOn;
           if (_ooMapSignalsOn && _ooMapSignals == null) {
@@ -11847,6 +12081,7 @@
       if (key === "overview") renderAnOverview(_anLastParams);  // headline tile per lens
       if (key === "trend") renderAnTrend(_anLastParams);   // lazy: only fetch when the Trend tab is shown
       if (key === "related") renderAnRelated(_anLastParams);   // lazy: coordination/related computed on show
+      if (key === "competitive") renderAnCompetitive(_anLastParams);   // lazy: source-competitive on show
     }
     // The OVERVIEW screen (THEME-3): an honest headline tile per lens (counts only, no
     // synthesis), each deep-linking to its subtab. Bounded summary fetches; degrades
@@ -12113,6 +12348,7 @@
     // absence-is-not-absence caveat is visible. Each cluster branches via
     // openAnalysisForIds (the exact-set spawn) = a fresh corpus = associated research.
     const _anRelated = { key: null };
+    const _anCompetitive = { key: null };   // batch F item 4: Source-competitive ported into #an
     let _anRelatedClusters = [];
     let _anRelatedLinks = [];
     async function renderAnRelated(p) {
@@ -12490,9 +12726,10 @@
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
-      _anLastParams = p; _anTrend.key = null; _anRelated.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
+      _anLastParams = p; _anTrend.key = null; _anRelated.key = null; _anCompetitive.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
       if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
       if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
+      if ($("an-competitive") && $("an-competitive").style.display !== "none") setTimeout(() => renderAnCompetitive(p), 0);
       _toggleAnPrice();   // commodity overlay: show + render the Price subtab, or hide it
       try {
         const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
@@ -12611,6 +12848,89 @@
               + `<tbody>${rows}</tbody></table>`
             : `<div class="muted" style="margin-top:8px">${esc(t("No sources in this set."))}</div>`);
       } catch (e) { $("an-sources").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+
+    // Source-competitive subtab — ported from the retired #corpus-win modal into the
+    // #an flagship (batch F item 4, the ONE capability the modal had that #an lacked;
+    // absorption so the two-window consolidation loses nothing). How each source
+    // APPROACHES this corpus, side by side: VOLUME (exact article count) + TONE (VADER
+    // mean/label) + TIMING (first→last span) from /api/insights/corpus-sources (scoped
+    // to the #an corpus, article_ids OR query, via _resolve_corpus) + distinctive
+    // EMPHASIS terms from /api/framing (query-only, so shown when a query defines the
+    // corpus and honestly absent for an article-set corpus — never wrong data). Rows
+    // are ordered by volume ONLY — a DESCRIPTIVE comparison of divergence, never a
+    // ranking, a winner or a composite score. Tone carries the VADER English-only
+    // disclosure. n=1 ⇒ "nothing to compare". Lazy (rendered on show), cached per
+    // corpus. Reuses EXISTING endpoints — no new backend.
+    async function renderAnCompetitive(p) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("an-competitive"); if (!host) return;
+      p = p || _anLastParams;
+      if (!p) { host.innerHTML = `<div class="muted">${esc(t("Open the analysis from a keyword or a search first."))}</div>`; return; }
+      const key = p.toString();
+      if (_anCompetitive.key === key) return;   // already rendered for this corpus
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      const query = p.get("query");   // framing is query-only; absent for an article-set corpus
+      let cs, fr;
+      try {
+        [cs, fr] = await Promise.all([
+          api("/api/insights/corpus-sources?" + p.toString() + "&limit=200"),
+          query ? api("/api/framing?query=" + encodeURIComponent(query)).catch(() => null) : Promise.resolve(null),
+        ]);
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
+      const rows = (cs && cs.sources) || [];
+      if (!rows.length) { host.innerHTML = `<div class="muted">${esc(t("No sources for this corpus yet."))}</div>`; _anCompetitive.key = key; return; }
+      if (rows.length === 1) { host.innerHTML = `<div class="muted">${esc(t("Only one source in this corpus — nothing to compare."))}</div>`; _anCompetitive.key = key; return; }
+      const byName = {}; ((fr && fr.framing) || []).forEach(f => { if (f.source) byName[f.source] = f; });
+      const fmt = (n) => (n || 0).toLocaleString();
+      const firsts = rows.map(r => r.first).filter(Boolean).sort();
+      const lasts = rows.map(r => r.last).filter(Boolean).sort();
+      const corpusFirst = firsts[0] || null, corpusLast = lasts[lasts.length - 1] || null;
+      const day = (s) => (s || "").slice(0, 10);
+      const tonePill = (label, val) => {
+        if (val == null) return `<span class="muted">—</span>`;
+        const cls = label === "positive" ? "ok" : label === "negative" ? "err" : "";
+        const lab = label === "positive" ? t("Positive") : label === "negative" ? t("Negative")
+          : label === "neutral" ? t("Neutral") : (label || "");
+        return `<span class="pill ${cls}">${esc(lab)} ${val.toFixed(2)}</span>`;
+      };
+      const chips = (arr) => (arr || []).slice(0, 6).filter(Boolean)
+        .map(x => `<span class="pill" style="font-size:11px">${esc(x)}</span>`).join(" ");
+      const notRanking = t("Descriptive comparison — how these sources DIFFER, never a ranking or a credibility judgement. Rows are ordered by volume only (most-covering first); there is no winner and no composite score.");
+      const emphasisNA = query ? (fr ? t("No distinctive terms.") : t("Needs the [analysis] extra."))
+        : t("Distinctive terms need a keyword/search corpus (not an article set).");
+      const body = rows.map(r => {
+        const f = byName[r.name] || {};
+        const emphasis = (f.top_terms && f.top_terms.length) ? chips(f.top_terms)
+          : `<span class="muted" style="font-size:12px">${esc(emphasisNA)}</span>`;
+        const toneVal = (f.avg_tone != null) ? f.avg_tone : r.mean_tone;   // real value, never invented
+        const toneLbl = f.tone_label || null;
+        const span = (r.first && r.last) ? `${esc(day(r.first))} → ${esc(day(r.last))}` : `<span class="muted">—</span>`;
+        return `<tr style="border-bottom:1px solid var(--line)">
+          <td style="padding:5px 8px"><b style="font-size:13px">${esc(r.name || r.domain || "—")}</b>${r.domain ? `<div class="muted" style="font-size:11px">${esc(r.domain)}</div>` : ""}</td>
+          <td style="text-align:right;padding:5px 8px">${fmt(r.articles)}</td>
+          <td style="padding:5px 8px">${tonePill(toneLbl, toneVal)}</td>
+          <td style="padding:5px 8px;white-space:nowrap;font-size:12px">${span}</td>
+          <td style="padding:5px 8px">${emphasis}</td>
+        </tr>`;
+      }).join("");
+      host.innerHTML =
+        `<div class="hint" title="${esc(t("How each source APPROACHES this concept, side by side: volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and the outlet's distinctive emphasised terms. A microscope on divergence, not a verdict — no source is ranked above another, no quality is judged, no composite score is computed."))}">${esc(notRanking)}</div>` +
+        `<table style="width:100%;border-collapse:collapse;font-size:13px">
+           <thead><tr style="border-bottom:1px solid var(--line)">
+             <th style="text-align:start;padding:5px 8px">${esc(t("Source"))}</th>
+             <th style="text-align:right;padding:5px 8px" title="${esc(t("How many articles in this corpus come from this source — an exact count, never a score."))}">${esc(t("Volume"))}</th>
+             <th style="text-align:start;padding:5px 8px" title="${esc(t("Mean VADER tone for this source's coverage, with the label. VADER is an ENGLISH-lexicon method — tone for non-English coverage is unreliable or absent. A real value, never a verdict."))}">${esc(t("Tone"))} <span class="muted" style="font-weight:normal">${esc(t("(VADER tone)"))}</span></th>
+             <th style="text-align:start;padding:5px 8px" title="${esc(t("The first → last publication date for this source's coverage in the corpus — real dates, never a score."))}">${esc(t("Timing"))}</th>
+             <th style="text-align:start;padding:5px 8px" title="${esc(t("This outlet's most distinctive terms when covering the concept (from framing). Descriptive emphasis, not a judgement."))}">${esc(t("Emphasis"))}</th>
+           </tr></thead>
+           <tbody>${body}</tbody>
+         </table>` +
+        `<div class="hint" style="margin-top:6px">${esc(t("n ="))} ${fmt(cs.n_articles)} ${esc(t("articles"))}` +
+          `${(corpusFirst && corpusLast) ? ` · ${esc(day(corpusFirst))} → ${esc(day(corpusLast))}` : ""}` +
+          `${cs.capped ? ` · ${esc(t("(scoped to the top matched articles)"))}` : ""}. ` +
+          `${esc(cs.caveat || "")} ${esc((fr && fr.caveat) || "")}</div>`;
+      _anCompetitive.key = key;   // cache AFTER a successful render (retry on error)
     }
 
     async function doSearch() {

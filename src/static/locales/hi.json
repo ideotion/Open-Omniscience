@@ -1761,5 +1761,10 @@
   "No articles for this tag yet.": "इस टैग के लिए अभी कोई लेख नहीं है।",
   "offline stored copy": "ऑफ़लाइन सहेजी गई प्रति",
   "+ {n} more (not shown)": "+ {n} और (नहीं दिखाए गए)",
-  "Per-country articles vs mentions": "देश के अनुसार लेख बनाम उल्लेख"
+  "Per-country articles vs mentions": "देश के अनुसार लेख बनाम उल्लेख",
+  "Time scale": "समय पैमाना",
+  "Linear": "रैखिक",
+  "Log": "लॉग",
+  "Even year-by-year sweep": "साल-दर-साल समान स्वीप",
+  "Compress antiquity so recent years — where most events are — get more of the slider": "प्राचीन काल को संकुचित करता है ताकि हाल के वर्ष — जहाँ अधिकांश घटनाएँ हैं — स्लाइडर का अधिक भाग पाएँ"
 }

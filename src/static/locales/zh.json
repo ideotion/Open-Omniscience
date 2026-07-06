@@ -1761,5 +1761,10 @@
   "No articles for this tag yet.": "该标签暂无文章。",
   "offline stored copy": "离线保存的副本",
   "+ {n} more (not shown)": "另有 {n} 个（未显示）",
-  "Per-country articles vs mentions": "各国文章数与提及数对比"
+  "Per-country articles vs mentions": "各国文章数与提及数对比",
+  "Time scale": "时间刻度",
+  "Linear": "线性",
+  "Log": "对数",
+  "Even year-by-year sweep": "逐年均匀扫动",
+  "Compress antiquity so recent years — where most events are — get more of the slider": "压缩远古时间，让事件最多的近期年份占据滑块更大的范围"
 }
