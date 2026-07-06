@@ -1568,6 +1568,43 @@ def associations(
     }
 
 
+def source_type_facets(session) -> dict:
+    """Article counts per raw source CHANNEL (Source.source_type) — the content-
+    provenance S2 facet, so the corpus can be sliced by channel (news/newsletter/wiki/
+    statistics/law/market/discovery/...).
+
+    An ASSERTED descriptive fact known by construction (the ingest path / catalog sets
+    the channel), NEVER a quality/credibility score. Counts only. PERF: a GROUP BY over
+    articles joined to the small sources table on source_type — index-friendly, never
+    reads article content (no codec decrypt); Article.source_id is NOT NULL, so every
+    article is counted exactly once.
+    """
+    rows = (
+        session.query(
+            func.coalesce(Source.source_type, "news"), func.count(Article.id)
+        )
+        .join(Article, Article.source_id == Source.id)
+        .group_by(func.coalesce(Source.source_type, "news"))
+        .all()
+    )
+    facets = [
+        {"source_type": st, "articles": int(c)}
+        for st, c in sorted(rows, key=lambda r: (-int(r[1]), str(r[0])))
+    ]
+    return {
+        "facets": facets,
+        "total": sum(f["articles"] for f in facets),
+        "method": (
+            "Article counts grouped by the source's asserted source_type channel "
+            "(coalesced to 'news', the column default, when unset)."
+        ),
+        "caveat": (
+            "An asserted descriptive channel known by construction (the ingest path / "
+            "catalog), never a quality or credibility score. Counts only."
+        ),
+    }
+
+
 def keyword_stats(
     session,
     term: str,

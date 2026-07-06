@@ -725,6 +725,15 @@ def insights_associations(
         db, term, limit=limit, min_cooccur=min_cooccur, group=group))
 
 
+@router.get("/source-types")
+def insights_source_types(db: Session = Depends(get_db)) -> dict:
+    """Article counts per raw source CHANNEL (content-provenance S2 facet), so the
+    corpus can be sliced by channel (news/newsletter/wiki/statistics/law/market/
+    discovery). An asserted descriptive fact, NO score. The `source_type=` param on
+    /api/articles applies the actual filter."""
+    return _cached(_ckey("source-types"), lambda: q.source_type_facets(db))
+
+
 @router.get("/keyword-stats")
 def insights_keyword_stats(
     term: str,
