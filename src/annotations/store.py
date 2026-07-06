@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime
 
 from src.annotations.bundle import (
@@ -130,21 +131,36 @@ def import_bundle(bundle: dict, *, trusted: bool = True) -> dict:
     }
 
 
-def adopt_imported_record(record: dict) -> dict:
+# A legitimate author_id is the Ed25519 public-key hex (see bundle.author_id); this
+# is the WHITELIST the derived filename must satisfy. It doubles as a path-traversal
+# guard: an ``author_id`` carrying "/", "\\", ".." or a NUL can never reach the
+# filesystem-path derivation below (CWE-22), so a crafted/tampered record inside an
+# allow-unverified restore cannot escape the imported/ directory or hijack mine.json.
+_SAFE_AUTHOR_ID = re.compile(r"^[0-9A-Za-z_-]{1,128}$")
+
+
+def adopt_imported_record(record: dict, *, allow_trusted: bool = False) -> dict:
     """Adopt an already-verified imported-author RECORD directly (no re-verification).
 
     An imported record is written by :func:`import_bundle` AFTER a signed bundle has
     been verified: the manifest + signature are stripped and only the verified content
     (plus a ``verify_reason`` provenance note) is kept. When such a record travels
-    inside a backup artifact (which is itself signature-verified as a whole), its
-    original bundle is gone, so it CANNOT be re-verified. This adopts the record as-is
-    — mirroring how ``mine.json`` restores — instead of re-running :func:`import_bundle`
-    (which correctly rejects a bundle-less record). Never used for untrusted input:
-    the caller is the additive restore over a verified artifact.
+    inside a backup artifact its original bundle is gone, so it CANNOT be re-verified.
+    This adopts the record as-is — mirroring how ``mine.json`` restores — instead of
+    re-running :func:`import_bundle` (which correctly rejects a bundle-less record).
+
+    The record is UNTRUSTED input (its bytes come from a restore artifact that may be
+    allow-unverified), so it is validated hard: the ``author_id`` must match the safe
+    key-hex whitelist (a path-traversal guard — a "../" id cannot reach the path
+    derivation), and ``allow_trusted`` gates whether the record's own ``trusted`` flag
+    is honoured. The caller sets ``allow_trusted`` True ONLY for a signature-verified
+    artifact (whose signature binds the member bytes = the user's own web-of-trust
+    decisions); for an unverified artifact the adopted record is written UNtrusted, so
+    a crafted record can never silently escalate itself into a trusted contributor —
+    the user re-affirms trust explicitly via the web-of-trust UI.
 
     Local always wins: if a record for this author already exists locally it is kept
-    and nothing is overwritten (idempotent — re-running converges). The record is
-    validated structurally (a garbage/tampered non-record is refused, never adopted).
+    and nothing is overwritten (idempotent — re-running converges).
     """
     if not isinstance(record, dict):
         raise ValueError("imported record is not an object")
@@ -154,30 +170,39 @@ def adopt_imported_record(record: dict) -> dict:
             f"expected {STORE_VERSION!r})"
         )
     aid = record.get("author_id")
-    if not isinstance(aid, str) or not aid:
-        raise ValueError("imported record has no author_id")
+    if not isinstance(aid, str) or not _SAFE_AUTHOR_ID.match(aid):
+        raise ValueError("imported record author_id is missing or not a safe identifier")
     if not isinstance(record.get("annotations"), list):
         raise ValueError("imported record has no annotations list")
 
-    path = _imported_dir() / f"{aid[:32]}.json"
+    imported_dir = _imported_dir()
+    path = imported_dir / f"{aid[:32]}.json"
+    # Defence in depth: the derived path must resolve to a direct child of imported/.
+    if path.resolve().parent != imported_dir.resolve():
+        raise ValueError("imported record path escapes the annotations directory")
+
+    trusted = bool(record.get("trusted")) and allow_trusted
     if path.exists():
         # The existing local identity/trust decision ALWAYS wins over an incoming copy.
         return {
             "author_id": aid,
             "author_name": record.get("author_name"),
             "annotations": len(record["annotations"]),
-            "trusted": bool(record.get("trusted")),
+            "trusted": trusted,
             "adopted": False,
             "reason": "an imported record for this author already exists locally",
         }
+    # Write the record with the trust flag the CALLER's verification context allows —
+    # never the incoming flag verbatim (an unverified artifact must not auto-trust).
+    stored = {**record, "trusted": trusted}
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), "utf-8")
+    tmp.write_text(json.dumps(stored, ensure_ascii=False, indent=2), "utf-8")
     tmp.replace(path)
     return {
         "author_id": aid,
         "author_name": record.get("author_name"),
         "annotations": len(record["annotations"]),
-        "trusted": bool(record.get("trusted")),
+        "trusted": trusted,
         "adopted": True,
     }
 

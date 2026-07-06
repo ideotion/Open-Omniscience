@@ -138,6 +138,47 @@ def test_source_type_filter_applies_on_the_fts_path(db):
 
 
 @pytest.mark.skipif(not _HAVE_MAIN, reason="src.api.main needs the crypto extra (runs in CI)")
+def test_untyped_bucket_facet_matches_filter():
+    """A NULL source_type is bucketed 'untyped' (never mislabelled 'news'), and the
+    facet count for a channel EQUALS what the /api/articles filter returns for it."""
+    from src.analytics.queries import SOURCE_TYPE_UNTYPED, source_type_facets
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True,
+        connect_args={"check_same_thread": False}, poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add_all([
+        Source(id=1, name="BBC", domain="bbc.com", source_type="news"),
+        Source(id=2, name="Untyped", domain="untyped.test", source_type="news"),
+    ])
+    s.commit()
+    # Force a genuine NULL source_type (the ORM default 'news' fires on INSERT even for
+    # an explicit None; a real NULL comes from non-ORM paths -- e.g. the raw-SQL restore
+    # merge insert, and wikidata_apply targeting source_type IS NULL).
+    s.query(Source).filter_by(id=2).update({Source.source_type: None})
+    s.commit()
+    for i, sid in enumerate([1, 1, 2, 2, 2]):
+        s.add(Article(
+            url=f"https://x/{i}", canonical_url=f"https://x/{i}", source_id=sid,
+            title=f"t{i}", content="body", hash=f"h{i}".ljust(64, "0"), language="en",
+        ))
+    s.commit()
+    assert s.query(Source.source_type).filter_by(id=2).scalar() is None  # a real NULL
+
+    facets = {f["source_type"]: f["articles"] for f in source_type_facets(s)["facets"]}
+    # NULL is its own honest bucket, NOT folded into the default 'news'.
+    assert facets == {"news": 2, SOURCE_TYPE_UNTYPED: 3}
+    # facet count == filter result, for BOTH the real channel AND untyped.
+    news_titles, _ = _titles(s, source_type="news")
+    untyped_titles, _ = _titles(s, source_type=SOURCE_TYPE_UNTYPED)
+    assert len(news_titles) == facets["news"] == 2
+    assert len(untyped_titles) == facets[SOURCE_TYPE_UNTYPED] == 3
+    s.close()
+
+
+@pytest.mark.skipif(not _HAVE_MAIN, reason="src.api.main needs the crypto extra (runs in CI)")
 def test_article_row_exposes_raw_source_type(db):
     a = db.query(Article).filter_by(title="oil newsletter note").one()
     row = _article_row(a)

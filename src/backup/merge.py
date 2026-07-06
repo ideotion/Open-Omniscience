@@ -1067,7 +1067,16 @@ def merge_side_files(staged: StagedArtifact) -> dict:
                 from src.annotations.store import adopt_imported_record
 
                 record = json.loads(path.read_text("utf-8"))
-                res = adopt_imported_record(record)
+                # Honour the record's own trust flag ONLY for a signature-verified
+                # artifact (its signature binds the member bytes = the user's own
+                # web-of-trust decisions). An allow-unverified restore carries
+                # attacker-controllable member bytes, so its imported authors are
+                # adopted UNtrusted (the user re-affirms trust explicitly). The
+                # author_id is validated inside adopt_imported_record (path-traversal
+                # guard), so a crafted id is reported here, never written.
+                res = adopt_imported_record(
+                    record, allow_trusted=staged.signature_state == "verified"
+                )
                 if res.get("adopted"):
                     ann["imported_authors"] += 1
                 else:

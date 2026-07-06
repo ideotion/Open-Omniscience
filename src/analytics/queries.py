@@ -1568,35 +1568,48 @@ def associations(
     }
 
 
+# The bucket for a source whose channel was never asserted (NULL/blank source_type).
+# NOT coalesced to "news" (the ORM default) — a NULL was never ASSERTED as news, and
+# labelling it so would fabricate the very "asserted fact" the class promises AND make
+# the facet count disagree with the /api/articles?source_type= filter (which matches on
+# the real value, so it excludes NULL rows). Both the facet and the filter treat this
+# reserved key as "channel not asserted".
+SOURCE_TYPE_UNTYPED = "untyped"
+
+
 def source_type_facets(session) -> dict:
     """Article counts per raw source CHANNEL (Source.source_type) — the content-
     provenance S2 facet, so the corpus can be sliced by channel (news/newsletter/wiki/
     statistics/law/market/discovery/...).
 
     An ASSERTED descriptive fact known by construction (the ingest path / catalog sets
-    the channel), NEVER a quality/credibility score. Counts only. PERF: a GROUP BY over
-    articles joined to the small sources table on source_type — index-friendly, never
-    reads article content (no codec decrypt); Article.source_id is NOT NULL, so every
-    article is counted exactly once.
+    the channel), NEVER a quality/credibility score. Counts only. A source whose channel
+    was never asserted (NULL/blank source_type — e.g. a restore-merged or wikidata-
+    untyped source) is bucketed HONESTLY under ``SOURCE_TYPE_UNTYPED``, never relabelled
+    as the default 'news'. PERF: a GROUP BY over articles joined to the small sources
+    table on source_type — index-friendly, never reads article content (no codec
+    decrypt); Article.source_id is NOT NULL, so every article is counted exactly once.
     """
-    rows = (
-        session.query(
-            func.coalesce(Source.source_type, "news"), func.count(Article.id)
-        )
+    counts: dict[str, int] = {}
+    for st, c in (
+        session.query(Source.source_type, func.count(Article.id))
         .join(Article, Article.source_id == Source.id)
-        .group_by(func.coalesce(Source.source_type, "news"))
-        .all()
-    )
+        .group_by(Source.source_type)
+    ):
+        # Normalise identically to the filter (lowercase; NULL/blank -> untyped), so the
+        # facet count for a channel EQUALS what clicking it in /api/articles returns.
+        key = (st or "").strip().lower() or SOURCE_TYPE_UNTYPED
+        counts[key] = counts.get(key, 0) + int(c)
     facets = [
-        {"source_type": st, "articles": int(c)}
-        for st, c in sorted(rows, key=lambda r: (-int(r[1]), str(r[0])))
+        {"source_type": st, "articles": n}
+        for st, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     ]
     return {
         "facets": facets,
         "total": sum(f["articles"] for f in facets),
         "method": (
             "Article counts grouped by the source's asserted source_type channel "
-            "(coalesced to 'news', the column default, when unset)."
+            f"(lowercased; a source with no asserted channel is bucketed '{SOURCE_TYPE_UNTYPED}')."
         ),
         "caveat": (
             "An asserted descriptive channel known by construction (the ingest path / "
@@ -1653,7 +1666,9 @@ def keyword_stats(
 
     # Windowed recent-vs-prior RATE for this keyword — the SAME transparent ratio
     # trending() uses (recent volume vs the prior-period rate), scanning only this
-    # keyword's rows on the observed_on covering index.
+    # keyword's mention rows (keyword_id + observed_on range on ix_mention_keyword_date).
+    # This is a BOUNDED mention-table read for one keyword (small rows, never article
+    # content), NOT index-only (count isn't in that index) and NEVER the articles join.
     today = date.today()
     w_start = today - timedelta(days=window_days)
     b_start = w_start - timedelta(days=baseline_days)

@@ -24,10 +24,18 @@ Honesty baked in:
   * The cited-source count (outbound external links) is an APPROXIMATION — a tunable
     filter, gameable by link-stuffing, content-type-dependent — never a truth signal.
 
-Perf (codec-decrypt lesson): the candidate scan reads only small columns (index-
-friendly) bounded to the newest ``scan_cap`` in the window; the cited-source counts
-come from ``article_links`` (no article decrypt); article CONTENT is read only for the
-near-dup collapse and only for the freshest ``near_dup_cap`` survivors.
+Perf (codec-decrypt lesson): the candidate scan is a BOUNDED per-row read (the newest
+``scan_cap`` articles in the window). It selects only the gate/display columns and never
+the content blob, but the gate columns (``word_count``, ``language``) sit AFTER
+``content`` in the record, so each is a real per-row read (a page decrypt on an
+encrypted store) — the same bounded row scan the article-length diagnostic does, capped
+at ``scan_cap`` and cached at the endpoint. It is NEVER the pathological
+``keyword_mentions -> articles`` join the ledger warns against. The cited-source counts
+come from ``article_links`` (no article content); article CONTENT is read only for the
+near-dup collapse, and only for the freshest ``near_dup_cap`` survivors. (A covering
+index over the gate columns would make the candidate scan index-only, but a wide index
+on the hot ``articles`` table would tax the scrape write path — the bounded+cached scan
+is the cheaper trade for a Home surface; ``scan_cap`` keeps the worst case small.)
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -73,8 +81,8 @@ def latest_articles(
     tag: str | None = None,
     collapse: bool = True,
     facets: bool = True,
-    scan_cap: int = 500,
-    near_dup_cap: int = 400,
+    scan_cap: int = 300,
+    near_dup_cap: int = 300,
 ) -> dict:
     """The newest articles in the corpus that pass the user's transparent gates.
 
@@ -131,7 +139,9 @@ def latest_articles(
         if not tag_source_ids:
             return {**meta, **_method_caveat(scan_cap, near_dup_cap)}
 
-    # Candidate rows: small columns only, newest first, bounded to scan_cap. NO content.
+    # Candidate rows: gate/display columns only (never the content blob), newest first,
+    # bounded to scan_cap. Reading the trailing gate columns is a bounded per-row read
+    # (scan_cap max), NOT the keyword_mentions -> articles join.
     cand_q = session.query(
         Article.id, Article.source_id, Article.title,
         Article.created_at, Article.published_at, Article.language, Article.word_count,
@@ -231,7 +241,10 @@ def latest_articles(
             story["duplicates_collapsed"] += 1
             collapsed_total += 1
             dom = c.get("_source_domain")
-            if dom and dom not in story["also_reported_by"]:
+            own = (story.get("source") or {}).get("domain")
+            # "also reported by" = OTHER sources — never the survivor's own outlet
+            # re-scraping/re-posting the same story (that would overstate spread).
+            if dom and dom != own and dom not in story["also_reported_by"]:
                 story["also_reported_by"].append(dom)
             continue
         if len(emitted) >= limit:

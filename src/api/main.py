@@ -679,14 +679,20 @@ def _structured_filters(
         # Slice by the raw content-provenance CHANNEL asserted on the source
         # (news/newsletter/wiki/statistics/law/market/discovery/...). Source-level, so
         # it never reads the encrypted article rows (same pattern as _provenance_filter):
-        # resolve the matching source ids, then Article.source_id.in_(...). An unknown
-        # value narrows to nothing (an honest empty result), never a 400.
+        # resolve the matching source ids, then Article.source_id.in_(...). Normalised
+        # (trim+lower; NULL/blank -> the reserved "untyped" bucket) IDENTICALLY to
+        # queries.source_type_facets, so clicking a facet returns exactly its count. An
+        # unknown value narrows to nothing (an honest empty result), never a 400.
+        from src.analytics.queries import SOURCE_TYPE_UNTYPED
+
         st = source_type.strip().lower()
-        st_ids = [
-            sid for (sid,) in session.query(Source.id).filter(
-                func.lower(Source.source_type) == st
+        if st == SOURCE_TYPE_UNTYPED:
+            st_cond = or_(
+                Source.source_type.is_(None), func.trim(Source.source_type) == ""
             )
-        ]
+        else:
+            st_cond = func.lower(func.trim(Source.source_type)) == st
+        st_ids = [sid for (sid,) in session.query(Source.id).filter(st_cond)]
         filters.append(Article.source_id.in_(st_ids) if st_ids else false())
 
     if source:
@@ -1023,10 +1029,13 @@ async def search_articles(
                                  a.source.source_type if a.source else None) == provenance
             ]
         if source_type:
+            from src.analytics.queries import SOURCE_TYPE_UNTYPED
+
             ordered = [
                 a
                 for a in ordered
-                if (a.source.source_type or "").strip().lower() == source_type
+                if ((a.source.source_type or "").strip().lower() or SOURCE_TYPE_UNTYPED)
+                == source_type
             ]
         cmap = _keyword_counts(db, kw_id, [a.id for a in ordered])
         results = [_article_row(a, keyword_count=cmap.get(a.id)) for a in ordered]

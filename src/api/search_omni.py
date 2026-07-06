@@ -114,30 +114,41 @@ _WIKI_DOMAIN_LIKE = "%wikipedia.org"  # the wiki corpus source convention (xx.wi
 _WIKI_SCAN_CAP = 2000  # bound the wiki-membership scan over FTS hits (omnibar speed)
 
 
-def _dump_hits(q: str) -> tuple[list[dict], bool]:
+def _dump_hits(q: str) -> tuple[list[dict], bool, bool]:
     """Top BM25F matches in the user's DOWNLOADED-dump bodies (the #573-deferred
-    dump-content search folded into the omnibar), or ``([], available)``.
+    dump-content search folded into the omnibar).
 
-    Returns ``(items, available)`` where ``available`` is False when no dump index has
-    been built (honest empty state, never a fabricated result). Each item is labelled a
-    dump result (``dump: true``) and opens via the LOCAL dump reader
-    (``/api/wiki/dumps/page``); the snapshot-as-of-the-dump-date honesty travels with it.
-    Bounded to the first few hits (BM25F, title-weighted) — the full dump search is the
-    dedicated Settings surface. Failures degrade to no dump results, never break the group.
+    Returns ``(items, available, more)``: ``available`` is False when no dump index has
+    been built (honest empty state, never a fabricated result); ``more`` discloses that
+    the dump holds additional matches beyond the ``_PER_GROUP`` shown (the omnibar's
+    "how much matched is disclosed" contract — a cheap peek, one extra row fetched, since
+    the dump index exposes no total). Each item is labelled a dump result (``dump: true``)
+    and opens via the LOCAL dump reader (``/api/wiki/dumps/page``); the snapshot-as-of-the-
+    dump-date honesty travels with it. Failures degrade to no dump results, never break
+    the group.
     """
     from urllib.parse import quote
 
     from src.wiki.dump_index import search as dump_search
 
     try:
-        res = dump_search(q, limit=_PER_GROUP)
+        # +1 so we can honestly disclose "more exist" without an (unavailable) full count.
+        res = dump_search(q, limit=_PER_GROUP + 1)
+        # A half-typed Boolean can make the dump FTS error; fall back to a quoted phrase,
+        # exactly as the corpus path (search_ids) does above — never a mid-typing 400.
+        if res.get("reason") == "search-error":
+            res = dump_search('"' + q.replace('"', " ") + '"', limit=_PER_GROUP + 1)
     except Exception:  # noqa: BLE001 - a dump-index hiccup must never break the omnibar
         _LOG.warning("omni dump search failed for %r", q, exc_info=True)
-        return [], False
-    if res.get("reason") == "no-index":
-        return [], False  # no dump indexed yet -> honest empty, not an error
+        return [], False, False
+    if res.get("reason") in ("no-index", "search-error"):
+        # no-index: nothing indexed yet. search-error: even the phrase retry failed
+        # (a genuinely un-FTS-able query) -> no dump results, honestly, never a fake zero.
+        return [], res.get("reason") != "no-index", False
+    hits = res.get("items", [])
+    more = len(hits) > _PER_GROUP
     items: list[dict] = []
-    for it in res.get("items", []):
+    for it in hits[:_PER_GROUP]:
         w = (it.get("wiki") or "").strip()
         title = it.get("title") or ""
         items.append(
@@ -151,7 +162,7 @@ def _dump_hits(q: str) -> tuple[list[dict], bool]:
                 "url": f"/api/wiki/dumps/page?wiki={quote(w)}&title={quote(title)}",
             }
         )
-    return items, True
+    return items, True, more
 
 
 def _wiki_group(db: Session, q: str) -> dict:
@@ -209,8 +220,9 @@ def _wiki_group(db: Session, q: str) -> dict:
                         }
                     )
     # 2) downloaded-dump BODY matches (labelled dump results; honest empty when none).
-    dump_items, dump_available = _dump_hits(q)
-    dump_note = " + downloaded-dump content" if dump_items else ""
+    dump_items, dump_available, dump_more = _dump_hits(q)
+    dump_note = " + downloaded-dump content" + (" (more available)" if dump_more else "") \
+        if dump_items else ""
 
     # 3) watched-page TITLE catalog (fills remaining slots / the no-content fallback).
     pat = "%" + _like_escape(q) + "%"
@@ -227,6 +239,7 @@ def _wiki_group(db: Session, q: str) -> dict:
             "total": content_total,
             "dump_items": dump_items,
             "dump_available": dump_available,
+            "dump_more": dump_more,
             "note": "FTS5 content match over your Wikipedia corpus"
             + (" (within the top results)" if capped else "")
             + (" + watched-page titles" if title_items else "")
@@ -240,6 +253,7 @@ def _wiki_group(db: Session, q: str) -> dict:
         "total": total,
         "dump_items": dump_items,
         "dump_available": dump_available,
+        "dump_more": dump_more,
         "note": "title match over your watched-pages list (no indexed Wikipedia content matched)"
         + dump_note,
     }

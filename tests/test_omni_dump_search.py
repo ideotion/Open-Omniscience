@@ -94,6 +94,34 @@ def test_dump_hit_url_encodes_titles_with_spaces(db, tmp_path, monkeypatch):
     assert it["url"] == "/api/wiki/dumps/page?wiki=en&title=Mount%20Vesuvius"
 
 
+def test_dump_more_discloses_additional_matches(db, tmp_path, monkeypatch):
+    """When the dump holds more matches than the omnibar shows, dump_more discloses it
+    (the 'how much matched is disclosed' contract) without a fabricated total."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.wiki import dump_index
+
+    idx = tmp_path / "wiki_dumps" / "dump_index.sqlite"
+    conn = dump_index._open(idx)
+    try:
+        conn.executemany(
+            "INSERT INTO dump_pages(title, body, wiki, pageid) VALUES (?,?,?,?)",
+            [(f"Volcano {i}", "eruptions lava and magma volcano", "en", i) for i in range(6)],
+        )
+        conn.execute(
+            "INSERT INTO dump_index_meta(wiki, pages, chars, indexed_at) VALUES (?,?,?,?)",
+            ("en", 6, 100, "2026-07-06"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    from src.api.search_omni import _wiki_group
+
+    g = _wiki_group(db, "volcano")
+    assert len(g["dump_items"]) == 3  # only the first _PER_GROUP shown
+    assert g["dump_more"] is True
+    assert "more available" in g["note"]
+
+
 def test_no_dump_index_is_honest_empty(db, tmp_path, monkeypatch):
     # A fresh data dir with NO dump index -> no dump results, never a fabricated one,
     # and the corpus/watched-page group is otherwise unaffected.

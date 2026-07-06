@@ -116,6 +116,62 @@ def test_restore_keeps_local_author_record(monkeypatch, tmp_path):
     assert ann["kept_local"] == 1
 
 
+def test_unverified_artifact_adopts_untrusted(monkeypatch, tmp_path):
+    """An allow-unverified restore must NOT auto-trust an incoming author, even if the
+    record claims trusted:true -- a crafted record can't escalate its own trust."""
+    dir_a = tmp_path / "a"
+    monkeypatch.setenv("OO_DATA_DIR", str(dir_a))
+    store.import_bundle(_make_signed_bundle("Mallory"), trusted=True)  # record says trusted
+    record_file = next((dir_a / "annotations" / "imported").glob("*.json"))
+
+    staging = tmp_path / "staging"
+    member_name = f"annotations/imported/{record_file.name}"
+    dest = staging / member_name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(record_file, dest)
+
+    dir_b = tmp_path / "b"
+    monkeypatch.setenv("OO_DATA_DIR", str(dir_b))
+    from src.backup.merge import merge_side_files
+
+    staged = _staged_from(staging, member_name)
+    staged.signature_state = "unsigned"  # the allow-unverified restore posture
+    report = merge_side_files(staged)
+    assert report["annotations"]["imported_authors"] == 1
+    authors = store.list_authors()
+    assert authors[0]["trusted"] is False  # never auto-trusted from an unverified artifact
+
+
+def test_adopt_rejects_path_traversal_author_id(monkeypatch, tmp_path):
+    """A crafted author_id with path separators / traversal cannot write outside
+    imported/ (CWE-22): adopt refuses it and merge_side_files reports the error."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.annotations.store import STORE_VERSION, adopt_imported_record
+
+    for evil in ("../../../../escape_pwned", "../mine", "a/b", "..", "with space", ""):
+        with pytest.raises(ValueError):
+            adopt_imported_record({"version": STORE_VERSION, "author_id": evil, "annotations": []})
+
+    # end-to-end: a backup member carrying a traversal author_id is reported, not written.
+    staging = tmp_path / "staging"
+    member = "annotations/imported/innocuous.json"
+    dest = staging / member
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        json.dumps({
+            "version": STORE_VERSION, "author_id": "../../../../pwned_via_merge",
+            "author_name": "attacker",
+            "annotations": [{"target": "cnn.com", "kind": "note", "value": "x"}],
+        }),
+        encoding="utf-8",
+    )
+    from src.backup.merge import merge_side_files
+
+    report = merge_side_files(_staged_from(staging, member))
+    assert report["annotations"]["errors"], "a traversal author_id must be reported, not adopted"
+    assert report["annotations"]["imported_authors"] == 0
+
+
 def test_adopt_imported_record_rejects_a_bundleless_record(monkeypatch, tmp_path):
     """A raw signed BUNDLE (not a record) is refused by adopt (structural check),
     just as a RECORD is refused by import_bundle -- neither path is weakened."""
