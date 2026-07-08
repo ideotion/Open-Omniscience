@@ -564,6 +564,31 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the polluter and victim only collide in the combined run.
 
 ## Open queue (when maintainer says proceed)
+- **FIELD-TEST 2026-07-08 — full intake + diagnostics action plan captured in
+  [`docs/product/field-test-2026-07-08/LEDGER.md`](docs/product/field-test-2026-07-08/LEDGER.md)
+  (PR #583; items 1–7 merged via #580). CAPTURE-ONLY session on a live 59,566-article /
+  974,062-keyword / 2.28 GB corpus.** 11 items; the ledger's top "SESSION SUMMARY" has the
+  index + priorities. HEADLINE: the corpus is HEALTHY but the app does NOT SCALE, and the
+  scaling failures now cause CRASHES + DATA LOSS, not just slowness. **P0 next-session work
+  = stability/data-safety:** the app OOM-crashes under load (2.28 GB corpus + 6–10 GB backup
+  + an analytics death-spiral) and a crash in the maintainer's DELIBERATE disposable-VM test
+  = total corpus loss (Item 11 — the fix is "don't crash" + easy opt-in persistent data_dir
+  + reliable/VERIFIABLE/resumable backup [Item 9], NOT "stop using DispVMs"); the ROOT cure
+  is Item 8's perf work — an EXPRESSION INDEX on `coalesce(published_at,created_at)` (735 s of
+  full scans), CACHE the polled `signals/alerts`/`trending-windows`, SINGLE-FLIGHT polling +
+  a CONCURRENCY CAP + server DEADLINES to stop the request death-spiral, and turn ON the built
+  `keyword_daily` rollup serve. **P1:** job-ify heavy sync handlers (Item 4 Governments
+  auto-load; Item 10 diagnostics `/all` — already bundles everything + keeps the keyword
+  corpus separate, just needs a button + a job + per-member deadlines); keyword quality (Item 2
+  translation = 15.2% ring coverage; zh/ja/th SEGMENTER since junk is NOT prunable at β 0.95;
+  ko/vi/mr stoplists; and the manipulation cards flood/bury need LANGUAGE-AWARENESS — they
+  surface leaked filler + language artifacts). **P2 feature items:** Item 1 (indices OECD ids =
+  a 3-letter→2-letter FRED-code bug), Item 3 (auto-pick Wikidata-discovery countries + i18n),
+  Item 5 (Agenda: flood article-extracted dates + a global election/summit calendar), Item 6
+  (World-map ooSubtabs + story lenses). **OUTSTANDING MAINTAINER DECISION:** Item 7 rare-earths —
+  no free spot-price source; options captured (USGS supply-data [recommended] / free proxy /
+  authorized paid assessor / defer), maintainer had not answered at close. All honesty
+  non-negotiables preserved in every item (no fabricated numbers/scores; degrade loudly).
 - **V0.1 RELEASE EXECUTION (maintainer ruled 2026-07-02, verbatim "proceed with everything
   autonomously… Go with your plan. Push everything to go 0.1", plus the same-day coherence+ethics
   mandate): the release is being EXECUTED under full autonomy.** The sequenced plan + the
