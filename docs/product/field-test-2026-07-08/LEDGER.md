@@ -938,6 +938,37 @@ The detailed watchdog timeline (same 13:45–13:50 session) is the smoking gun f
   parity check just didn't complete at this scale. Verify the FTS index isn't stale
   (re-run the FTS rebuild if a real delta shows) — low priority.
 
+### 4th batch (flood card · network preflight · frontend errors + re-exports)
+- **NEW — the FLOOD manipulation card is polluted by leaked common words.**
+  `signals/flood` surfaces Dutch function/common verbs as "flooded topics":
+  **"kijk"** (=look/watch, share z=3.2) and **"zien"** (=see, z=2.52) from *Algemeen
+  Dagblad*, 66/48 recent articles. These aren't topics — they're content-free common
+  words that leaked the nl stoplist. Two consequences: (a) **nl has open-class stoplist
+  gaps** (kijk/zien are base forms addable to the scoped nl list), and (b) **the
+  manipulation cards inherit keyword-junk** → false-positive "flood"/"bury" alerts that
+  erode trust. This is exactly the open-class garbage the analyzer's `--generic-terms`
+  loop targets; it ties KW-5 (junk) directly to card quality. FIX: run the evidence-driven
+  stoplist loop on the real keyword log (Dutch batch), and consider the flood/bury cards
+  filtering terms that are ubiquitous in the SOURCE's own corpus (a source's stopword-like
+  filler is not a "pushed topic"). No fabrication — surface counts, but don't alert on
+  filler.
+- **Network preflight — reconfirms dead default calendar feeds (2026-06-13 finding E,
+  still open).** The default calendar feeds (`google`-hol = robots-DISALLOWED,
+  `cantonbecker`, `floern`, `monkeyness`, `ose`, `wcg-rel-*`, `gh-un-days`) show
+  unreachable/disallowed. Most verdicts read "network kill switch is active" because
+  AIRPLANE mode was engaged at export — so only the robots-disallowed ones
+  (calendar.google.com) are provably dead here; the rest are just kill-switched. Minor:
+  drop the guaranteed-fail (robots-disallowed) feeds from the shipped defaults so
+  preflight doesn't waste cycles on them.
+- **Frontend errors: CLEAN.** 1 error total (the known `/insights/graph` 503 from
+  08:25), 0 this session, `problems_total:0`, `locked_errors_total:0` — no JS errors, no
+  new failures. Confirms the app's only user-facing failure remains the mindmap 503.
+- **Re-exports (no change, no regression):** keyword-engine (974,062 kw · 15.2%
+  translation · β 0.9502), keyword-growth, keyword-selftest 43/43, FDR 10/10,
+  schema-drift (stamp still behind), slow-queries, integrity, date-diagnostics,
+  article-length, debug-bundle — all byte-stable across the re-runs (no re-index between
+  them), so the earlier analysis stands unchanged.
+
 ### Suggested build order
 DB date-range index (P0, cheapest+broadest) → memoise/cache the polled endpoints +
 turn on the rollup serve (P0) → fix the graph/mindmap 503 (P0/P1) → job-ify the heavy
