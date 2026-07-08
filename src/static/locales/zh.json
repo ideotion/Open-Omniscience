@@ -1830,5 +1830,6 @@
   "trend": "趋势",
   "with": "共现",
   "vs": "对比",
-  "Not in your corpus yet — no stats.": "尚未进入你的语料库——暂无统计。"
+  "Not in your corpus yet — no stats.": "尚未进入你的语料库——暂无统计。",
+  "No articles for this channel yet.": "该渠道暂无文章。"
 }

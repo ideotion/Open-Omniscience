@@ -1737,8 +1737,13 @@
           const cs = `${esc(String(a.cited_sources || 0))} ${esc(t("cited sources"))}`;
           const chan = src.source_type ? `<span class="pill">${esc(src.source_type)}</span>` : "";
           const facts = [wc, cs].filter(Boolean).join(" · ");
-          const also = (a.duplicates_collapsed > 0)
-            ? ` <span class="muted">— ${esc(t("also reported by {n} more").replace("{n}", String(a.duplicates_collapsed)))}</span>` : "";
+          // Spread honesty (anti-false-triangulation): count DISTINCT OTHER outlets that
+          // ran the same story (the backend's deduped `also_reported_by`, which excludes
+          // the survivor's own outlet re-posting) — NEVER the raw duplicates_collapsed,
+          // which would overstate independent confirmation. Absent when no OTHER outlet.
+          const others = (a.also_reported_by || []).length;
+          const also = others > 0
+            ? ` <span class="muted">— ${esc(t("also reported by {n} more").replace("{n}", String(others)))}</span>` : "";
           return `<div class="home-recent-row"><a href="${esc(a.url || ("/api/articles/" + a.id + "/view"))}" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
             + (meta ? ` <span class="muted">— ${meta}</span>` : "")
             + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;

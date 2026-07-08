@@ -65,6 +65,11 @@ def test_rows_show_real_word_and_cited_source_counts_never_a_score():
     assert "d.caveat" in _JS
     # unsegmented-language flag respected (word_count meaningless there)
     assert "a.unsegmented" in _JS
+    # spread honesty (anti-false-triangulation): "also reported by N" counts DISTINCT
+    # OTHER outlets (the backend's deduped also_reported_by), NEVER the raw collapse count
+    # (which includes the survivor's own outlet re-posting and would overstate spread).
+    assert "a.also_reported_by || []).length" in _JS
+    assert "a.duplicates_collapsed" not in _JS, "must not use the raw near-dup count for the spread claim"
 
 
 def test_recency_by_collection_time_and_reader_link_invariant6():

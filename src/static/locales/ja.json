@@ -1830,5 +1830,6 @@
   "trend": "トレンド",
   "with": "共起",
   "vs": "対",
-  "Not in your corpus yet — no stats.": "まだコーパスにありません — 統計なし。"
+  "Not in your corpus yet — no stats.": "まだコーパスにありません — 統計なし。",
+  "No articles for this channel yet.": "このチャネルの記事はまだありません。"
 }
