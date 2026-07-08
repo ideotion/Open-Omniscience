@@ -926,6 +926,37 @@ refused / server not responding). NOT an HTTP error status. Key facts:
    "the backup is still running in the background — reopen the task manager" when the
    job is actually alive; surface the real job error otherwise.
 
+### CONFIRMED 2026-07-08 (maintainer follow-up)
+The maintainer reports **the backup actually WENT THROUGH** (volume files were
+produced) despite the "Backup failed: NetworkError" message. This **confirms root
+cause (a): the JOB completed server-side; only a UI status-poll dropped** → the
+"failure" was a FALSE report. It **rules out the OOM-crash hypothesis** (the server
+survived to finish). So fix #1 (poll robustness — treat job-state as truth, never
+abort a live job on one dropped poll) is THE fix; the memory-bounding (#3) is
+secondary/precautionary. This is the exact "false Backup-failed" bug predicted.
+
+### GAP — no standalone "Verify this backup" action (the maintainer needs it)
+The maintainer: *"I cannot test if the files are corrupted or not… trying that out
+again to compare backup sizes."* Two problems:
+- **Comparing sizes is NOT an integrity test** — two backups of a growing corpus
+  legitimately differ (the corpus grew between runs), and equal size wouldn't prove
+  integrity anyway. Say this honestly; steer away from size-comparison as a check.
+- **The integrity machinery EXISTS but is un-exposed.** `verify_volume_set(out_dir)`
+  (`src/backup/volumes.py:152`) checks EVERY volume's ciphertext SHA-256 against the
+  manifest **without decrypting**, and the manifest also carries a whole-archive
+  plaintext SHA-256 + Ed25519 signature + Reed-Solomon parity. `read_volume_set`
+  (restore) runs all of this before merging (the "Verifying volumes…" phase,
+  app.js:4623). BUT there is **no standalone verify endpoint or UI** — the only way to
+  check today is to attempt a RESTORE (which verifies first; additive-merge so it's
+  safe, but heavy and not a pure "just check").
+- **FIX (high value, low effort — the backend fn already exists):** add a **"Verify a
+  backup" action** — a `POST /api/backup/v2/volumes/verify` (server-side path →
+  `verify_volume_set` + the parity-integrity check) + a button in the Export/Import
+  dialog, reporting "all N volumes intact (SHA-256 + signature OK)" or naming the
+  corrupt/missing ones, WITHOUT a restore. This directly answers "is my backup good?"
+  and pairs naturally with the volumes+parity design. ⏭ Acceptance: the user can verify
+  a saved backup folder in one click and get an honest intact/corrupt verdict.
+
 ### Immediate workaround (told to the maintainer)
 - **Engage airplane mode FIRST** (stops the scrape → frees the server), THEN run the
   volumes backup so it isn't contending with collection.
