@@ -13,6 +13,51 @@ Legend: **[NEW]** net-new · **[PLANNED]** already ruled/known · ✅ shipped ·
 
 ---
 
+## SESSION SUMMARY — index + priorities for the NEXT session (2026-07-08 close)
+
+Session was CAPTURE-ONLY (no product code changed). All 11 items below are pushed on
+PR **#583** (items 1–7 were merged earlier via PR #580 onto `0.1`; item 8+ are on
+branch `claude/repo-feedback-notes-035vbz`). Corpus under test: **59,566 articles ·
+974,062 keywords · 2.28 GB · 50 languages**, low-RAM Qubes VM.
+
+**The overriding theme: the corpus is HEALTHY, but the app does not SCALE — and the
+scaling failures are now causing CRASHES and DATA LOSS, not just slowness.** Fix
+priority for the next session:
+
+- **P0 — STABILITY / DATA-SAFETY (do first): Item 11 + Item 9 + Item 8.** The app
+  OOM-crashes under load (2.28 GB corpus + 6–10 GB backup + the analytics death spiral),
+  and a crash in the maintainer's (deliberate) disposable VM = total corpus loss. Needs:
+  bound backup memory, cap concurrent heavy work + server deadlines, a memory guard,
+  reliable + VERIFIABLE + resumable backups, easy opt-in persistent data_dir. **Item 8
+  P0** (the `coalesce(published_at,created_at)` expression index — 735 s of full scans;
+  cache the polled `signals/alerts`/`trending-windows`; single-flight polling + a
+  concurrency cap to stop the death spiral; turn on the built rollup serve) is the root
+  cure and feeds all three.
+- **P1 — make heavy things background jobs: Item 4 (Governments auto-load) + Item 10
+  (diagnostics `/all` as a job — it EXISTS, just needs a button + job + per-member
+  deadline) + the job-ify list in Item 8.** No synchronous multi-minute request handlers.
+- **P1 — keyword quality: Item 2 (translation — 15.2% ring coverage) + Item 8 KW-5**
+  (zh/ja/th segmenter — junk is NOT prunable, β 0.95; ko/vi/mr stoplists) + the
+  manipulation-card LANGUAGE-AWARENESS finding (flood/bury surface junk + language
+  artifacts).
+- **P2 — content/feature items: Item 1 (indices OECD ids — one-char ISO-3→ISO-2 bug) ·
+  Item 3 (auto-pick discovery countries + i18n) · Item 5 (agenda: flood article dates +
+  global election/summit calendar) · Item 6 (World-map ooSubtabs + story lenses) · Item 7
+  (more commodities; rare earths AWAITS the maintainer's ruling — see below).**
+
+**OUTSTANDING MAINTAINER DECISIONS (carry into the next session):**
+- **Item 7 rare earths** — no free spot-price source; options captured (USGS supply
+  data [recommended] / free proxy / authorized paid assessor / defer). Maintainer had
+  not answered when the session closed.
+
+**Items at a glance:** 1 indices/OECD · 2 keyword translation · 3 Wikidata-discovery
+auto-countries+i18n · 4 Governments auto-load · 5 Agenda flood+calendar · 6 World-map
+sub-tabs+stories · 7 commodities/rare-earths (decision pending) · 8 diagnostics analysis
+(perf/scaling — the big one) · 9 backup NetworkError+Verify+resumable · 10 diagnostics
+consolidation (job) · 11 crashes/OOM + disposable-VM durability.
+
+---
+
 ## Item 1 — Indices board is empty on most continents; OECD-tagged indices never show; want many more indices, properly tagged  [NEW / partly PLANNED]  ⏭
 
 **Verbatim:** "In the indice tab, there is no data for Africa subtab, Asia only
@@ -1251,15 +1296,27 @@ Both failure modes are now live: (a) dropped poll (server survives, backup finis
    backup only READS it — verify no exclusive-lock/rewrite path), and that WAL recovery +
    the unlock path come back cleanly after a hard kill.
 
-**Track B — data durability (a crash must not lose the corpus).**
-1. **data_dir MUST be on a PERSISTENT volume**, never a DispVM's ephemeral root. The app
-   should DETECT when it is running in an ephemeral/disposable context (data_dir on a
-   tmpfs / DispVM overlay) and WARN LOUDLY at boot: "your data will NOT survive a
-   restart — move data_dir to a persistent volume." Honest, not fabricated durability.
-2. **Document the Qubes persistent setup** (bind-mount data_dir to the AppVM's private
-   volume, or run in an AppVM not a DispVM) in install/USER_MANUAL.
-3. **The backups are now the ONLY copy** → Item 9's Verify action + the resumable
-   folder-backup completion are DATA-SAFETY-CRITICAL, not nice-to-haves.
+**Track B — data durability that RESPECTS disposable-VM testing (maintainer ruling
+2026-07-08).** The maintainer **prefers to keep testing in DISPOSABLE VMs — they attest
+fresh installs** — and will ALSO run a persistent VM, but the DispVM is the MAIN testing
+method. So the durability answer is NOT "use a persistent VM instead" — the app must
+work WELL in a deliberately-ephemeral context:
+1. **Track A (don't crash) is therefore the PRIMARY fix** — a DispVM that never crashes
+   loses only what the user already accepts as ephemeral; the corpus loss here was the
+   CRASH, not the DispVM per se.
+2. **Make persistence EASY + OPT-IN, don't fight the DispVM choice.** Support a
+   data_dir on a **bind-mounted persistent Qubes volume** (survives the DispVM) as a
+   documented option for when the user wants a persistent corpus inside a DispVM-based
+   launch. A ONE-TIME, non-nagging honest note ("this looks like a disposable VM — your
+   corpus won't survive a restart unless data_dir is on persistent storage; here's how")
+   — NOT a repeated warning that fights a deliberate choice.
+3. **Reliable EXTERNAL backup is the real durability lever for DispVM testing** → Item 9
+   (backup that completes + a Verify action + resumable folder blobs) is DATA-SAFETY-
+   CRITICAL: it is how a disposable-VM tester keeps anything worth keeping. The 2.28 GB
+   corpus took a day+ to scrape — losing it to a crash is expensive even when fresh
+   installs are the point.
+4. **Document the Qubes setup** (bind-mount data_dir; DispVM vs AppVM trade-offs) in
+   install/USER_MANUAL, framed for a fresh-install tester, not as "don't use DispVMs."
 
 ### Immediate guidance (told to the maintainer)
 - The DispVM corpus is almost certainly gone; the two backups are the only recovery —
