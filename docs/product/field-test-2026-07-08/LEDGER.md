@@ -713,3 +713,122 @@ this session) — amend this section with the ruling.
 - ⏭ Acceptance (part a): the commodity board is materially denser (critical minerals +
   fertilizers + more agri/precious), all via verified free ids. Part b: per the
   maintainer's chosen option(s).
+
+---
+
+## Item 8 — Field diagnostics 2026-07-08 (analysis + action plan; NO fixes)  [ANALYSIS/PLAN]  ⏭
+
+**Instruction:** "Now I will send you diagnostics logs. Analyze them and make an
+action plan accordingly. Don't fix, analyze, and plan, and commit the plan."
+
+**Logs analyzed (5):** keyword self-test · keyword-growth curve · keyword-engine
+report · date diagnostics · debug bundle. **Corpus at export:** 59,566 articles ·
+974,062 keywords · 3,395 sources · 131,675 price points · **2.28 GB** encrypted DB ·
+50 corpus languages · py3.13.5 · schema `b3d4e5f6a7c8`.
+
+### Headline verdict
+**The corpus is HEALTHY; the problem is PERFORMANCE AT SCALE.** No data loss, no
+`database is locked` errors (0), no counter drift (`drift:false`), no orphan keywords
+(0), self-test 43/43, entity precision 100%, schema drift false, FTS present. The
+ONLY user-facing error in the whole log is one **HTTP 503 on the mindmap**. So the
+engine is sound — the work is (1) make the analytics layer usable at 60K articles,
+(2) the keyword-quality tail (junk + coverage), (3) two date-recall language gaps.
+
+### P0 — DB date-range full scan is the single biggest cost  [NEW — high leverage]
+`SELECT min(coalesce(published_at, created_at)), max(...) FROM articles` — **4,775 ms
+each × 154 calls = 735 s total** (the #1 slow query). It is a FULL table scan of
+59,566 rows dragged through the SQLCipher codec because `coalesce(published_at,
+created_at)` has **no index**. Nearly every chart / time-scope / analytics view + the
+polled endpoints compute the corpus date span. The SAME expression is also used as a
+`>= cutoff` filter (un-indexed full scans) in `src/integrity/{collapse,actors,profile}.py`
+and `src/api/link_analysis.py`.
+- **FIX:** add an EXPRESSION INDEX `CREATE INDEX ... ON articles(coalesce(published_at,
+  created_at))` (Alembic migration) — accelerates the min/max AND every `>= cutoff`
+  filter on that expression; OR maintain a cheap cached corpus-date-range updated on
+  ingest. One small change, corpus-wide win. ⏭ Acceptance: the corpus-date-range query
+  drops from ~5 s to milliseconds; the integrity cutoff scans stop showing as slow.
+
+### P0 — Polled heavy endpoints melt the single worker  [PLANNED — 5A-bis, now MEASURED]
+- `GET /api/signals/alerts`: **p50 23.7 s / p95 60 s / max 104 s**, called **156×**.
+  `compute_alerts` (`src/analytics/alerts.py`) recomputes `find_convergences` over a
+  45-day lookback on EVERY poll — the code itself flags "a shared/memoised convergence
+  pass is a later optimisation" (:147). At 60K articles that is seconds-to-minutes, ×156.
+- `GET /api/insights/trending-windows`: p50 45 ms but **p95 24 s / max 37 s**, ×156
+  (the fast p50 = the columnar/counter serve when it hits; the tail = cold recompute).
+- Event-loop **watchdog** shows repeated 250–461 ms lag events; `in_flight_now: 9`
+  (requests piling up). The single worker stalls → the whole UI feels frozen.
+- **FIX:** (a) MEMOISE/CACHE the alert strip + trending-windows for the poll cadence —
+  serve a cached result refreshed every N min in the background, never recompute per
+  poll; (b) turn ON / persist the derived rollup serve (`OO_COLUMNAR_SERVE` +
+  `keyword_daily` in `src/analytics/columnar.py`, built but off-by-default) for the
+  windowed queries — the debug bundle IS the measurement that justifies shipping it.
+  ⏭ Acceptance: polled endpoints return in < ~200 ms from cache; watchdog lag events
+  stop; `in_flight` stays low during Home polling.
+
+### P0/P1 — The mindmap 503 (the only user-facing failure)  [NEW — bug]
+`GET /api/insights/graph?level=keyword&term=trump&hops=2` → **60 s → HTTP 503** →
+frontend `fetch-5xx`. The 2-hop keyword graph / associations is too heavy at 974K
+keywords.
+- **FIX:** extend the shipped associations optimization (batch-load + maintained
+  counters — the ledger's associations-perf work) to the graph/hops path; bound the
+  hop-2 fan-out; or serve via the rollup. ⏭ Acceptance: a 2-hop keyword graph returns
+  in a few seconds and never 503s.
+
+### P1 — Heavy synchronous operations must be background jobs  [PLANNED — Item 4 principle, generalized]
+Request-latency p95 (all block the single worker synchronously):
+`enrich-source-types` **8.5 min**, `governments/load-standard` **2.9 min** (= Item 4),
+`keyword-tags/backfill` **1 min**, `server-locations` **45 s**, `corpus-www` **28 s**,
+`corpus-sentiment` **18 s**, `top` **20 s**. Also `SELECT count(*) FROM keyword_mentions`
+**724 ms × 172 = 124 s** (counting a multi-million-row table repeatedly).
+- **FIX:** make the long ones task-manager JOBS (Item 4's "no synchronous multi-second
+  work on the event loop" — the FastAPI-freeze lesson), and serve `count(*)` from a
+  maintained counter/cache, never a repeat full count. ⏭ Acceptance: no request handler
+  runs multi-second synchronous work; heavy ops are cancellable jobs.
+
+### P1 — Corpus is junk-heavy: Heaps β = 0.95 (was 0.756)  [PLANNED — KW engine P4.4]
+The growth curve's β jumped to **0.9502** (r²=0.99) — β near 1 = a new keyword minted
+for almost every word = the signature of markup/code/**unsegmented** junk. Drivers
+(from `language_coverage`): **unsegmented (extraction BROKEN): zh 45,956 · th 21,230 ·
+ja 12,393 keywords** (no word segmenter); **no_stoplist (function words leak): ko
+12,104 · mr 10,221 · vi 8,072** + 10 more ≈ 44K keywords. (Surface noise scan says only
+5.5% flagged, but it can't see unsegmented over-minting — β is the truer signal.)
+- **FIX:** (a) OPERATIONAL — the maintainer runs "Clean up keywords" (re-index + prune)
+  on the live corpus; (b) a bundled **zh/ja/th SEGMENTER** (ledger P4.4, URGENT); (c)
+  **stoplists** for the no_stoplist languages — **Korean FIRST** (major language, 12K
+  keywords), then vi/mr. ⏭ Acceptance: β trends back below ~0.8 after segmenter +
+  stoplists + a clean re-index.
+
+### P1 — Translation coverage 15.2%  [evidence for Item 2]
+Only **76 of the top 500 keywords** are in a cross-language ring (550 rings total).
+Direct measurement of the Item-2 complaint (foreign keywords untranslated). Reinforces
+the Item-2 plan: grow rings corpus-driven + a bundled common-vocabulary dictionary +
+the persistent LLM fallback. Cross-reference Item 2.
+
+### P2 — Date recall improving (62.1%) but two language gaps  [PLANNED — F4]
+Coverage up to **62.1%** (was ~52%/37%). Specific gaps: **Persian (fa) = 0%** (0 of 44
+articles — Persian calendar/numerals not handled = a real bug) and **Hungarian (hu) =
+22%** (format not handled). Biggest missed kinds: month_name (2,427) + bare_year
+(2,179) — many are legit false positives per the probe's own caveat.
+- **FIX:** add Persian + Hungarian date handling to `src/timemap/dateextract.py` (+ the
+  lockstep `datediag.py` update, per the CJK-boundary lesson). ⏭ Acceptance: fa/hu
+  coverage rises materially; the probe reports no phantom gap.
+
+### P2 — Lemmatization ready to enable  [PLANNED — P4.3, operational]
+`lemma_preview`: 36 candidate groups / **73 of top-500 keywords would merge**
+(study/studied, issue/issued, country/countries…). `OO_FAMILY_LEMMA` is off. Maintainer
+reviews the preview + enables after the P3 measure. `tag_coverage` 0.2% (baseline tags
+never backfilled at scale — low priority; tie the backfill to the P1 job-ification).
+
+### Healthy — no action (recorded for confidence)
+Self-test 43/43 · corpus integrity: drift false, orphans 0, no dangling mentions, **0
+locked errors** (the single-writer gate is holding at 2.28 GB) · entity precision 100%
+· schema drift false · FTS present · last scrape pass stored 4,765 (dup 7,804;
+`ff:http_403` 622 = the known Tor-blocks-premium-news reality, expected). The
+counter-drift sweep reported "interrupted" (deadline-guarded, couldn't finish the full
+multi-million-row check in time) — not an error; the parts that completed show no drift.
+
+### Suggested build order
+DB date-range index (P0, cheapest+broadest) → memoise/cache the polled endpoints +
+turn on the rollup serve (P0) → fix the graph/mindmap 503 (P0/P1) → job-ify the heavy
+sync operations (P1) → keyword junk: segmenter + Korean/vi/mr stoplists (P1) → date
+fa/hu (P2). Item-2 translation + lemmatization are their own tracks.
