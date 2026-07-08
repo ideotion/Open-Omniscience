@@ -2189,6 +2189,50 @@ class AppState(Base):
         return f"<AppState({self.key})>"
 
 
+class EventImport(Base):
+    """One imported calendar EVENT, moved off the loose ``calendar_feed_imports.json``
+    side-file into the encrypted corpus DB (DB-reliability D1: durable, transactional, and
+    carried by a backup instead of sitting in cleartext beside the SQLCipher store).
+
+    STATUS (Wave 4 J — conservative slice): this is the DURABLE TABLE + a DUAL-WRITE MIRROR.
+    Every save of the imports store (:func:`src.events.feeds._save_json`) also writes here
+    through :mod:`src.events.event_store`, so the table is a faithful encrypted mirror at all
+    times — INCLUDING after an additive restore, because the side-file UNION-merge
+    (``merge_imported_store``) itself ends in that same save. The legacy JSON remains the
+    READ source of truth and the merge target, so behaviour is byte-unchanged and nothing
+    regresses. Promoting reads to this table + a native UNION-merge handler (and retiring the
+    JSON) is the deferred D1 follow-up; until then the table is registered in
+    :data:`src.backup.merge._MERGE_IGNORED` (local wins) so a restore report stays clean.
+
+    Keyed by ``(family_key, fingerprint)`` — the same calendar-family + normalized-title|date
+    identity the side-file uses. No FK (a standalone config-style table, like ``app_state``),
+    counts/facts only, never a score.
+    """
+
+    __tablename__ = "event_imports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    family_key: Mapped[str] = mapped_column(String(191), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(255), nullable=False)
+    family_name: Mapped[str | None] = mapped_column(String(300))
+    family_user: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    imported_at: Mapped[str | None] = mapped_column(String(40))  # ISO string, family-level
+    title: Mapped[str | None] = mapped_column(String(300))
+    date: Mapped[str | None] = mapped_column(String(20))  # yyyy-mm-dd, date-only precision
+    sources: Mapped[str | None] = mapped_column(Text)  # JSON array of feed ids (union)
+    uids: Mapped[str | None] = mapped_column(Text)  # JSON array of ICS UIDs (union)
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC)
+    )
+
+    __table_args__ = (
+        Index("ix_event_imports_family_fp", "family_key", "fingerprint", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<EventImport({self.family_key}:{self.fingerprint})>"
+
+
 # Example usage
 if __name__ == "__main__":
     # Test database connection and table creation
