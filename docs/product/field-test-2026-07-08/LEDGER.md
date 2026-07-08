@@ -842,6 +842,12 @@ per-content-type, script-aware). Real distributions now exist to set honest thre
   per-content-type + script-aware gates derived from these percentiles; each shown
   article displays its real word/source counts; no flat gate, no score.
 
+### Backup fails at the volumes path with "NetworkError" (see Item 9)  [NEW — bug, cross-ref]
+Reported live 2026-07-08; captured as **Item 9** below (kept separate from the
+diagnostics analysis, since it's an interactive bug not a log finding). Root cause is
+coupled to the P0/P1 perf findings above (server overload / possible crash during a
+long backup on a 2.28 GB corpus + a poll with no timeout/retry).
+
 ### Healthy — no action (recorded for confidence)
 Self-test 43/43 · corpus integrity: drift false, orphans 0, no dangling mentions, **0
 locked errors** (the single-writer gate is holding at 2.28 GB) · entity precision 100%
@@ -855,3 +861,83 @@ DB date-range index (P0, cheapest+broadest) → memoise/cache the polled endpoin
 turn on the rollup serve (P0) → fix the graph/mindmap 503 (P0/P1) → job-ify the heavy
 sync operations (P1) → keyword junk: segmenter + Korean/vi/mr stoplists (P1) → date
 fa/hu (P2). Item-2 translation + lemmatization are their own tracks.
+
+---
+
+## Item 9 — Backup fails: "NetworkError when attempting to fetch resource"  [NEW — bug]  ⏭
+
+**Verbatim:** "I have an error while trying to back-up : "Backup failed:
+NetworkError when attempting to fetch resource.""
+
+**Context:** the corpus is **2.28 GB** (from the debug bundle, > the 2 GiB single-file
+AES-GCM cap), on a low-RAM Qubes VM, with the server under the heavy analytics/scrape
+load documented in Item 8.
+
+### Root cause (grounded)
+
+"NetworkError when attempting to fetch resource" is a **browser-side `fetch()`
+network-layer failure** — the request never got a response (connection dropped /
+refused / server not responding). NOT an HTTP error status. Key facts:
+- **The error is from the backup-RUN flow, not inventory.** `_uxLoadInventory`
+  (app.js:4573) has its OWN catch → "Could not load the inventory". The "Backup
+  failed:" string (app.js:4719) wraps the RUN flow: `POST /api/backup/v2/volumes/start`
+  (4709) → `_uxPoll /api/backup/v2/volumes/status` (4710) → optional `folder/start`
+  (4712) + poll.
+- **The correct path is being used.** The unified Export dialog uses the **volumes +
+  parity** backup (server-side, streamed, <600 MB volumes) — which EXISTS precisely
+  because a 2.28 GB corpus exceeds the retired single-file 2 GiB cap. So this is NOT the
+  2 GiB-cap failure; it's a network-layer drop in the volumes flow.
+- **`api()` has NO timeout/retry** (app.js:1128 — a bare `fetch`, no AbortController).
+  So a SINGLE dropped request (e.g. one `/volumes/status` poll) throws and **fatally
+  aborts the whole backup UI** with "Backup failed", even though the backup JOB keeps
+  running server-side (VolumeBackupManager is a background worker — the poll is only a
+  status read).
+- **Why a request drops:** two candidates, both consistent with Item 8: (a) SERVER
+  OVERLOAD — the single worker + threadpool are saturated (signals/alerts 24 s ×156,
+  event-loop watchdog lags), so a status poll can't be answered before the connection
+  drops; (b) SERVER CRASH — the volumes backup is CPU/RAM-heavy (stream-read 2.28 GB +
+  AES-GCM per volume + Reed-Solomon parity via numpy) on a ~4.4 GB VM under concurrent
+  scrape load → possible OOM / process death → subsequent polls get connection-refused.
+- **Adjacent slowness:** `/api/backup/inventory` (`src/backup/inventory.py`) runs
+  several `SELECT count(*)` over huge tables (keywords 974K, mentions, dates) — slow at
+  this scale (ties to Item 8 P1 count(*)); it isn't the failing call here (own catch)
+  but will make the dialog sluggish to open.
+
+### Fix plan (for the autonomous session)
+
+1. **The status poll must survive a busy/slow server (the load-bearing fix).** A long
+   background job's UI must NOT die on one flaky poll. `_uxPoll` (and ideally `api()`)
+   should RETRY a network failure with backoff, and treat the JOB STATE as truth — if
+   `/volumes/status` is temporarily unreachable, keep polling, don't declare "Backup
+   failed." Only a job that reports `error`/`cancelled` is a real failure. Add a
+   client-side timeout so a hung request is retried, not left forever.
+2. **Confirm crash vs overload (diagnostic — needs the maintainer).** Check the app
+   terminal for a traceback / `Killed` (OOM) at the failure time, whether the app was
+   still responsive after the error (alive = dropped poll; dead/needs-restart = crash),
+   and whether a partial volume set appeared in the destination. This decides between
+   fix 1 (poll robustness, if the job survived) and fix 3 (memory bounding, if OOM).
+3. **Bound backup memory + reduce contention.** If OOM: verify/limit the peak RAM of
+   the volumes encrypt + Reed-Solomon parity on a low-RAM VM (stream in bounded chunks;
+   parity per-volume, not whole-corpus); and PAUSE/deprioritise the scrape while a
+   backup job runs (they contend for CPU/IO/the single writer). Fixing Item 8 (cheap
+   polls, no synchronous multi-second handlers) removes most of the overload pressure.
+4. **inventory via maintained counters** (Item 8 P1) so the dialog opens instantly.
+5. **Honest error + recovery UX.** Replace the fatal "Backup failed: NetworkError" with
+   "the backup is still running in the background — reopen the task manager" when the
+   job is actually alive; surface the real job error otherwise.
+
+### Immediate workaround (told to the maintainer)
+- **Engage airplane mode FIRST** (stops the scrape → frees the server), THEN run the
+  volumes backup so it isn't contending with collection.
+- Or the guaranteed-safe manual path (ledger standing advice): airplane/shutdown →
+  file-copy `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive — it is already
+  SQLCipher-encrypted at rest.
+- Check the terminal for an OOM/traceback to confirm the cause.
+
+### Notes / honesty
+- Data-safety-adjacent (the user cannot currently complete a backup at 2.28 GB) →
+  HIGH priority. No data was lost (the backup didn't corrupt anything — it failed to
+  produce an artifact).
+- ⏭ Acceptance: a volumes backup of a 2.28 GB corpus completes (or reports a real job
+  error), a transient poll drop never aborts a live backup, and memory stays bounded on
+  a low-RAM VM.
