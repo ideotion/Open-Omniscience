@@ -31,7 +31,7 @@ FDR correction (:mod:`src.stats.fdr`) so the many comparisons cannot manufacture
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import distinct, func
 
@@ -392,3 +392,147 @@ _METHOD = (
     "FDR level AND its gap clears z <= -z_min. Distinct SOURCES measure a topic's breadth. "
     "Reads the denormalised source_id only (no content decrypt). Counts only, no score."
 )
+
+
+# --------------------------------------------------------------------------- #
+#  Reading diet BY CONTENT CHANNEL — content-provenance S3
+#
+#  The SAME concentration/diet lens as the source-axis ``diet_self_audit`` producer
+#  (src/briefing/producers.py), applied to the CHANNEL axis (``Source.source_type``):
+#  over a window, what SHARE of the articles you COLLECTED each content channel
+#  (news / newsletter / wiki / statistics / law / market / discovery / ...) accounts
+#  for, plus a concentration measure (dominant-channel share + Gini) and an honest
+#  95% interval. "How much of my reading is newsletters vs web vs wiki."
+#
+#  It reuses the shared honest machinery — ``src.signals.concentration.concentration``
+#  (Gini + top-N share) and ``src.signals.intervals.wilson_interval`` (the closed-form
+#  95% CI the cards use) — so the maths is byte-identical to the source-axis path.
+# --------------------------------------------------------------------------- #
+
+DIET_BY_TYPE_CAVEAT = (
+    "This is a descriptive breakdown of WHERE your recent reading came from, by content "
+    "channel — an asserted fact known by construction (the ingest path / catalog sets the "
+    "channel), never a quality or credibility score. Counts only. Concentration (the "
+    "dominant-channel share and the Gini coefficient) measures how unevenly your intake is "
+    "spread across channels, not whether that spread is good or bad. The 95% interval "
+    "describes uncertainty WITHIN your corpus — a self-selected sample you chose the "
+    "sources for — never the world. Selection is yours: this is a mirror, not a cap."
+)
+
+# Below this many articles in the window the split is a thin sample: still a real count,
+# but the caveat says so (mirrors the source-axis diet producer's early-corpus note).
+_DIET_SMALL_N = 20
+
+
+def reading_diet_by_type(
+    session,
+    *,
+    days: int = 30,
+    top_n: int = 1,
+) -> dict:
+    """Reading diet across content CHANNELS (``Source.source_type``) over a window.
+
+    Over the last ``days`` days, the SHARE of the articles you COLLECTED that each content
+    channel accounts for, with a concentration measure (the dominant-channel share + the
+    Gini coefficient over the channel counts) and an honest Wilson 95% interval on that
+    share. Counts only, NO score. Method + caveat + n travel in the payload; a corpus too
+    small for the window degrades to an honest empty state, never a fabricated split.
+
+    Window: ``Article.created_at`` (the acquisition time — the un-spoofable "when it
+    entered your corpus", matching the source-axis diet path), never the source-controlled
+    ``published_at``. The window is served by ``idx_article_created_at``.
+
+    PERF (SQLCipher column-order codec trap): a GROUP BY over articles joined to the small
+    ``sources`` table. The window is a range scan on ``idx_article_created_at`` (EXPLAIN
+    QUERY PLAN: SEARCH articles USING INDEX idx_article_created_at) joined to sources by
+    primary key; it reads only small columns (``source_type`` / ``created_at`` / ``id`` /
+    ``source_id``) and NEVER the article ``content`` column, so the codec never drags the
+    large content payload (the 35 KB-row trap). ``Article.source_id`` is NOT NULL, so every
+    windowed article is counted exactly once, and the channel share EQUALS what the
+    /api/articles ``source_type`` filter returns for that channel.
+
+    ``top_n`` defaults to 1 (not the source axis's 3): a channel axis has FEW actors, so the
+    single dominant-channel share is the interpretable concentration headline — the full
+    per-channel breakdown (``channels``) and the Gini carry the rest. The Wilson CI is on the
+    top-``top_n`` share, computed from the exact integer channel counts (never a float round).
+    """
+    from src.analytics.queries import SOURCE_TYPE_UNTYPED
+    from src.database.models import Article, Source
+    from src.signals.concentration import concentration as _concentration
+    from src.signals.intervals import wilson_interval
+
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+    rows = (
+        session.query(Source.source_type, func.count(Article.id))
+        .join(Article, Article.source_id == Source.id)
+        .filter(Article.created_at >= cutoff)
+        .group_by(Source.source_type)
+        .all()
+    )
+
+    # Normalise identically to source_type_facets / the /api/articles filter (lowercase;
+    # NULL/blank -> untyped), so a channel's diet share EQUALS clicking that channel.
+    counts: dict[str, int] = {}
+    for st, c in rows:
+        key = (st or "").strip().lower() or SOURCE_TYPE_UNTYPED
+        counts[key] = counts.get(key, 0) + int(c)
+
+    # Pass a float-valued mapping (the shared primitive is typed dict[str, float]); the
+    # integer counts stay in ``counts`` for the exact top-count arithmetic below.
+    result = _concentration({k: float(v) for k, v in counts.items()}, top_n=top_n)
+    total = int(result.total)
+
+    channels = [
+        {"source_type": str(s["label"]), "articles": int(s["value"]), "share": s["share"]}
+        for s in result.shares
+    ]
+    # Exact top-``top_n`` count from the integer channel counts (never a float round),
+    # for a Wilson 95% CI on the dominant-channel share.
+    ordered = sorted(counts.values(), reverse=True)
+    k = max(1, min(top_n, len(ordered))) if ordered else 0
+    top_count = sum(ordered[:k])
+    ci = wilson_interval(top_count, total) if total > 0 else None
+
+    extra = ""
+    if total == 0:
+        extra = " No articles were collected in this window, so there is no diet to show."
+    else:
+        if result.n < 2:
+            extra += (
+                " Only one channel is present in this window, so there is no concentration to "
+                "compare across channels — the Gini is undefined (null) and the share is 100% "
+                "of a single channel."
+            )
+        if total < _DIET_SMALL_N:
+            extra += (
+                f" Early-corpus note: only {total} article(s) in this window — read this as a "
+                "first hint from a small sample, not an established reading pattern."
+            )
+
+    payload = {
+        "days": days,
+        "total": total,
+        "n_channels": result.n,
+        "top_n": result.top_n,
+        "top_share": result.top_share,
+        "top_channels": [c["source_type"] for c in channels[:k]],
+        "gini": result.gini,
+        "interval": (
+            {"low": ci.low, "high": ci.high, "method": ci.method} if ci is not None else None
+        ),
+        "small_n": total < _DIET_SMALL_N,
+        "channels": channels,
+        "method": (
+            "Article counts grouped by the source's asserted source_type channel over the "
+            f"last {days} days (windowed on created_at, the acquisition time; lowercased, a "
+            f"source with no asserted channel is bucketed '{SOURCE_TYPE_UNTYPED}'). Share = a "
+            "channel's articles / all windowed articles. Concentration = the Gini coefficient "
+            f"over the channel counts + the top-{result.top_n} channel share, with a Wilson "
+            "score 95% interval on that share. Reads only small columns (never the article "
+            "content), so no large-payload codec decrypt. Counts only, no score."
+        ),
+        "caveat": DIET_BY_TYPE_CAVEAT + extra,
+    }
+    if total == 0:
+        payload["note"] = "no articles collected in this window"
+    return payload
