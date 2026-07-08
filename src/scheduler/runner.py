@@ -972,6 +972,32 @@ class BackgroundScheduler:
                         _LOG.info("source auto-enrichment: %s", _enr)
             except Exception:  # noqa: BLE001 - never fail the scrape on enrichment
                 _LOG.warning("source auto-enrichment failed", exc_info=True)
+            # Hazard + weather SIGNAL refresh (Wave 4 J): the severity-tiered alert layer
+            # (src/analytics/alerts.py) reads a LOCAL hazard snapshot, and the weather SIGNAL
+            # store feeds /api/signals/weather-signals -- both were only ever populated by an
+            # explicit manual POST, so in a normal continuous run they stayed empty. This
+            # freshness-gated, best-effort pass keeps them current, like the markets/law
+            # auto-track: the consented hazard snapshot fetches the open USGS/GDACS feeds
+            # through the shared guarded fetcher (kill-switch/robots/proxy; refused under
+            # airplane mode -> no socket), and the weather signals are derived LOCALLY from
+            # the corpus (no network). Opt-out via auto_track_signals.
+            try:
+                if getattr(settings, "auto_track_signals", True):
+                    from src.hazards.track import auto_snapshot_due
+
+                    haz = auto_snapshot_due(fetcher)
+                    if haz.get("snapshotted"):
+                        result["hazards_snapshotted"] = haz["snapshotted"]
+                        _LOG.info("hazard snapshot: %s", haz)
+
+                    from src.analytics.weather_signals import auto_refresh_weather_due
+
+                    wsig = auto_refresh_weather_due(session)
+                    if wsig.get("refreshed"):
+                        result["weather_signals"] = wsig["refreshed"]
+                        _LOG.info("weather signals refresh: %s", wsig)
+            except Exception:  # noqa: BLE001 - never fail the scrape on signal refresh
+                _LOG.warning("hazard/weather signal refresh failed", exc_info=True)
             # Precompute + cache the Home briefing so it loads instantly. Best-effort:
             # a briefing failure must never fail the scrape that just succeeded.
             _phase_set("briefing")

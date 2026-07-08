@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 _LOG = logging.getLogger(__name__)
 
@@ -180,5 +180,36 @@ def refresh_weather_signals(
     return save_signals(records, now=now)
 
 
-def _today(now: datetime | None = None) -> date:
-    return (now or datetime.now(UTC)).date()
+def auto_refresh_weather_due(
+    session,
+    *,
+    refresh_interval_hours: float = 24.0,
+    min_articles: int = 3,
+    lookback_days: int = 90,
+    now: datetime | None = None,
+) -> dict:
+    """Freshness-gated derive+persist of the weather SIGNAL keywords for the background pass.
+
+    Network-free (the derivation scans the corpus only). Refreshes at most every
+    ``refresh_interval_hours`` — a store younger than that is a no-op (``{"skipped":
+    "fresh"}``), so the corpus scan isn't repeated on every collect pass. Best-effort;
+    counts only. This is the scheduler-side wrapper around :func:`refresh_weather_signals`;
+    it fetches nothing, so it needs no airplane gate.
+    """
+    cur = load_signals()
+    derived_at = cur.get("derived_at")
+    ref = now or datetime.now(UTC)
+    if derived_at:
+        try:
+            dt = datetime.fromisoformat(derived_at)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            age_h = max(0.0, (ref - dt).total_seconds() / 3600.0)
+            if age_h < float(refresh_interval_hours):
+                return {"skipped": "fresh", "age_hours": round(age_h, 2)}
+        except (ValueError, TypeError):
+            pass  # unparseable timestamp -> treat as due and refresh
+    payload = refresh_weather_signals(
+        session, min_articles=min_articles, lookback_days=lookback_days, now=now
+    )
+    return {"refreshed": len(payload.get("signals", [])), "derived_at": payload.get("derived_at")}
