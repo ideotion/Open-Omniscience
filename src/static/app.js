@@ -8023,7 +8023,7 @@
       const box = $("ins-landscape");
       box.innerHTML = '<div class="muted" style="margin-top:8px">Loading…</div>';
       try {
-        const d = await api("/api/insights/top?group=true&limit=200");
+        const d = await api("/api/insights/top?group=true&limit=200" + tgtLangParam());
         _landscapeLoaded = true;
         const fams = d.terms || [];
         if (!fams.length) { box.innerHTML = '<div class="muted" style="margin-top:8px">No families yet — index the corpus.</div>'; return; }
@@ -8036,7 +8036,7 @@
             const fam = f.variants > 1;
             return `<button class="ls-chip" style="font-size:${(11.5*scale).toFixed(1)}px"
               title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
-              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${esc(f.term)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
+              onclick="pickTerm(${esc(JSON.stringify(f.term))})">${esc(f.term)}${kwTransHtml(f)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
           }).join("");
           return `<div class="ls-col"><div class="ls-h">${g.label} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");
@@ -8051,7 +8051,7 @@
       const kind = $("fam-kind").value;
       try {
         const [top, ov] = await Promise.all([
-          api(`/api/insights/top?group=true&limit=80${kind ? "&kind=" + encodeURIComponent(kind) : ""}`),
+          api(`/api/insights/top?group=true&limit=80${kind ? "&kind=" + encodeURIComponent(kind) : ""}` + tgtLangParam()),
           api("/api/insights/family/overrides"),
         ]);
         const fams = top.terms.filter(f => f.kind !== "term");
@@ -8062,7 +8062,7 @@
                onclick="familySplit(this)" title="split this form out">${esc(m.term)}${f.variants > 1 ? " ✕" : ""}</button>`).join("");
           return `<div class="fam-row">
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
-            <div class="fam-body"><div><b>${esc(f.term)}</b> <span class="pill">${esc(f.kind)}</span>
+            <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
