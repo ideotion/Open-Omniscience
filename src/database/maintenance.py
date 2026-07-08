@@ -51,6 +51,25 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS ix_mention_date_keyword ON keyword_mentions "
         "(observed_on, keyword_id, count)"
     ),
+    # Expression index on the article "observed date" = coalesce(published_at,
+    # created_at) (field-test 2026-07-08 Item 8 P0, the single biggest cost).
+    # The corpus date-range probe `min(coalesce(..)), max(coalesce(..))` and the
+    # `>= cutoff` range filters in integrity/link-analysis/analytics all wrote a
+    # bare `SCAN articles`, dragging every ~35 KB article row (content column)
+    # through the SQLCipher codec (measured 4,775 ms x 154 calls = 735 s). With
+    # this index those plans become index-only (`SCAN/SEARCH articles USING
+    # COVERING INDEX ix_article_observed`). SQLite matches an expression index
+    # ONLY when the query expression is written identically; every call site
+    # already uses func.coalesce(Article.published_at, Article.created_at), and
+    # SQLite normalises the qualified query form against this unqualified index
+    # expression. Byte-identical to migration 5ea842778603 (keep in lock-step).
+    # NOT on the ORM model: SQLAlchemy cannot reflect expression indexes, so
+    # `alembic check` never sees it -- the migration + this self-heal are the
+    # two canonical creators, exactly like the mention indexes above.
+    "ix_article_observed": (
+        "CREATE INDEX IF NOT EXISTS ix_article_observed "
+        "ON articles (coalesce(published_at, created_at))"
+    ),
 }
 
 
