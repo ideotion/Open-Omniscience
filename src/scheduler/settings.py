@@ -97,6 +97,13 @@ class SchedulerSettings:
     # source). Empty {} = OFF = the pure stratified order, byte-identical.
     country_priority: dict = field(default_factory=dict)
 
+    # Opt-out for the background hazard-snapshot + weather-signal refresh pass (Wave 4 J).
+    # When True (default) each collect pass keeps the local hazard snapshot (the severity
+    # alert tier's data) fresh via the consented USGS/GDACS fetch AND re-derives the weather
+    # SIGNAL keywords from the corpus (network-free) — both freshness-gated so they are
+    # usually no-ops. Set False to leave those stores to the explicit manual endpoints only.
+    auto_track_signals: bool = True
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -251,6 +258,7 @@ def load_settings() -> SchedulerSettings:
         # Reuses _coerce_target: a {iso2: weight} map cleaned to {lowercased-key: float>0},
         # exactly the shape the priority ladder needs (empty = OFF).
         country_priority=_coerce_target(raw.get("country_priority")),
+        auto_track_signals=_coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
     )
 
 
@@ -269,6 +277,10 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.autostart = _coerce_bool(updates["autostart"], current.autostart)
     if "continuous" in updates and updates["continuous"] is not None:
         current.continuous = _coerce_bool(updates["continuous"], current.continuous)
+    if "auto_track_signals" in updates and updates["auto_track_signals"] is not None:
+        current.auto_track_signals = _coerce_bool(
+            updates["auto_track_signals"], current.auto_track_signals
+        )
     if "collect_rate_mode" in updates and updates["collect_rate_mode"] is not None:
         rm = str(updates["collect_rate_mode"])
         if rm not in VALID_RATE_MODES:

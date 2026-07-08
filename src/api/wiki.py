@@ -228,6 +228,69 @@ def changes(
     return {"count": len(rows), "changes": [_serialize_rev(r, page=p) for r, p in rows]}
 
 
+@router.get("/pages/{page_id}/revisions")
+def page_revisions(
+    page_id: int,
+    limit: int = Query(50, ge=1, le=500),
+    flagged_only: bool = False,
+    include_diff: bool = True,
+    db: Session = Depends(get_db),
+) -> dict:
+    """The tracked-changes feed for ONE page: its stored revisions (newest first) with
+    per-revision diffs — the honest history the reader scrolls.
+
+    Reads the stored ``WikiRevision`` rows for the page (index ``ix_wikirev_page_time``),
+    bounded by ``limit`` with ``total`` disclosing the full count so the UI can say it is
+    a window. Each revision carries its metadata plus, when ``include_diff`` (default), the
+    STORED ``diff`` — the compact ``+added / -removed`` summary captured when the edit was
+    tracked (truncated per side at capture, so it is not a live re-diff). ``has_full_text``
+    flags revisions whose exact text is stored locally (materializable via
+    ``/api/wiki/revisions/{rev_id}``). DEDUCED, VERSIONED facts: a revision without a
+    stored diff had no parent or was tracked without diffs, and the list is the tracked
+    slice, not necessarily every historical revision. Counts only, no score, no network.
+    """
+    page = db.query(WikiPage).filter_by(id=page_id).first()
+    if page is None:
+        raise HTTPException(status_code=404, detail=f"Watched page {page_id} not found.")
+
+    base = db.query(WikiRevision).filter(WikiRevision.page_id == page_id)
+    scoped = base.filter(WikiRevision.flagged.is_(True)) if flagged_only else base
+    total = scoped.with_entities(func.count(WikiRevision.id)).scalar() or 0
+    flagged_total = (
+        base.filter(WikiRevision.flagged.is_(True))
+        .with_entities(func.count(WikiRevision.id))
+        .scalar()
+        or 0
+    )
+    rows = (
+        scoped.order_by(WikiRevision.timestamp.desc(), WikiRevision.id.desc()).limit(limit).all()
+    )
+
+    revisions = []
+    for r in rows:
+        item = _serialize_rev(r, page=page)
+        item["size"] = r.size
+        item["has_full_text"] = bool(r.full_text)
+        if include_diff:
+            item["diff"] = r.diff or ""
+        revisions.append(item)
+
+    return {
+        "page": _serialize_page(page, revs=int(total), flagged=int(flagged_total)),
+        "count": len(revisions),
+        "total": int(total),
+        "flagged_only": flagged_only,
+        "revisions": revisions,
+        "method": (
+            "Stored tracked revisions for this page, newest first. Each 'diff' is the "
+            "compact +added/-removed summary recorded when the edit was tracked (truncated "
+            "per side), not a live re-diff; a revision without a stored diff had no parent "
+            "or was tracked without diffs. Deduced from tracked edits, versioned; counts "
+            "only, no score."
+        ),
+    }
+
+
 # ----------------------------- offline dumps -------------------------------- #
 # Separate, optional, heavy: per-language baseline downloads (resumable).
 

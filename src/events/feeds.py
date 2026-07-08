@@ -111,7 +111,7 @@ def _load_json(name: str) -> dict:
         return {}
 
 
-def _save_json(name: str, data: dict) -> None:
+def _save_json(name: str, data: dict, *, mirror: bool = True) -> None:
     # Atomic write (temp + os.replace): these files hold the user's imported
     # events/verdicts -- a crash mid-write must never wipe them all.
     p = _store_path(name)
@@ -119,6 +119,23 @@ def _save_json(name: str, data: dict) -> None:
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, p)
+    # DB-reliability D1 (Wave 4 J): mirror the imported-events store into the encrypted
+    # ``event_imports`` table so the events are durable, transactional and carried by a
+    # backup (the JSON is cleartext + absent from backups). Best-effort MIRROR only — the
+    # JSON above stays authoritative + the merge target; a DB hiccup never breaks the import.
+    # Fires on EVERY normal write path (import_feed / import_ics_* / auto-import /
+    # remove_user_feed) to keep the mirror in sync. ``mirror=False`` is passed ONLY by the
+    # restore-side merge (``merge_imported_store``): the restore replaces the DB via an atomic
+    # swap and treats ``event_imports`` as local-wins (_MERGE_IGNORED), so a live-DB write
+    # there would violate the "live DB untouched until the swap" restore guarantee (torture
+    # T1/T7). The mirror re-syncs on the next normal event write.
+    if mirror and name == "calendar_feed_imports.json":
+        try:
+            from src.events.event_store import sync_imports
+
+            sync_imports(data)
+        except Exception:  # noqa: BLE001 - the mirror must never break the JSON write
+            pass
 
 
 def merge_imported_store(name: str, incoming: dict) -> dict:
@@ -156,7 +173,10 @@ def merge_imported_store(name: str, incoming: dict) -> dict:
             else:
                 local[feed_id] = verdict
                 added += 1
-    _save_json(name, local)
+    # mirror=False: this runs inside the restore commit, which must not touch the live DB
+    # before its atomic swap (torture T1/T7). event_imports is _MERGE_IGNORED (local wins);
+    # the mirror re-syncs on the next normal event write.
+    _save_json(name, local, mirror=False)
     return {"action": "merged", "added": added, "enriched": enriched, "kept_local": kept}
 
 

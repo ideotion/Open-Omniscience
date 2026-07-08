@@ -36,22 +36,26 @@ _CAVEAT = (
 
 
 def fetch_hazards(
-    source: str = "all", min_magnitude: float | None = None
+    source: str = "all", min_magnitude: float | None = None, *, fetcher=None
 ) -> tuple[list[dict], list[str]]:
     """Fetch + parse the open hazard feeds. Returns ``(records, failures)``.
 
     The reusable core of the relay — the route below wraps it, and the temporal map
     (``/api/timemap?hazards=true``) layers its records onto the space-time axis.
-    Best-effort: one bad feed lands in ``failures``, never raises.
+    Best-effort: one bad feed lands in ``failures``, never raises. ``fetcher`` lets a
+    caller (e.g. the scheduler's background snapshot pass) inject the shared per-pass
+    EthicalFetcher; unset it uses this module's own guarded fetcher. Either way the
+    kill switch / robots / proxy are honoured by the fetcher (airplane mode refuses).
     """
     from src.hazards.parse import PARSERS
 
+    f = fetcher or _fetcher
     want = list(_FEEDS) if source == "all" else [s for s in (source,) if s in _FEEDS]
     items: list[dict] = []
     failures: list[str] = []
     for key in want:
         try:
-            fetched = _fetcher.fetch(_FEEDS[key], require_html=False)
+            fetched = f.fetch(_FEEDS[key], require_html=False)
             rows = PARSERS[key](fetched.content)
             if key == "usgs" and min_magnitude is not None:
                 rows = [r for r in rows if (r.get("magnitude") or 0) >= min_magnitude]

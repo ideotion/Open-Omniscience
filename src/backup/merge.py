@@ -260,8 +260,13 @@ _MERGE_HANDLED = {
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
-# entirely, incoming values are never adopted by a merge).
-_MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state"}
+# entirely, incoming values are never adopted by a merge). ``event_imports`` (Wave 4 J) is a
+# DUAL-WRITE MIRROR of the ``calendar_feed_imports.json`` side-file, which is STILL the merge
+# target (``merge_side_files`` -> ``merge_imported_store``) and re-mirrors into the local DB
+# on its own save — so the events DO restore additively; this table just isn't the merge
+# handler yet (the native UNION-merge is the deferred D1 follow-up). Ignoring it here keeps
+# a restore report clean (an incoming corpus's mirror rows are redundant with the side-file).
+_MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state", "event_imports"}
 
 
 def _unmerged_tables(con: sqlite3.Connection) -> dict[str, int]:

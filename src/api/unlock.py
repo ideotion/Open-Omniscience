@@ -72,6 +72,10 @@ ALLOWED_WHILE_LOCKED = (
     "/api/legal/",
     "/static/",
     "/favicon",
+    # The root-scoped PWA service worker (served at "/sw.js" so it can control the
+    # whole origin) must be fetchable while locked so it can register from the
+    # unlock screen. It is just the static app shell — no store data.
+    "/sw.js",
 )
 
 

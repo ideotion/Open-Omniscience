@@ -804,6 +804,26 @@ def corpus_sources(session, *, article_ids: list[int], limit: int = 40) -> dict:
     }
 
 
+def unlocated_language_breakdown(session) -> dict[str, int]:
+    """``{language_code_or_"": count}`` — the per-LANGUAGE donut of the UNLOCATED articles
+    (their source has no catalogued country). Column-projected (``Article.language`` + a
+    COUNT over the indexed ``source_id`` join); never decrypts article content. Shared by
+    the live :func:`source_country_counts` and the D4 map serve so both compute it identically
+    (the rollup does not persist this breakdown). ``""`` = no/unknown language. No score."""
+    rows = (
+        session.query(Article.language, func.count(Article.id))
+        .join(Source, Article.source_id == Source.id)
+        .filter((Source.country.is_(None)) | (func.trim(Source.country) == ""))
+        .group_by(Article.language)
+        .all()
+    )
+    out: dict[str, int] = {}
+    for lang, n in rows:
+        key = (lang or "").strip().lower()
+        out[key] = out.get(key, 0) + int(n or 0)
+    return out
+
+
 def source_country_counts(session) -> dict:
     """Per-country choropleth measures (ooMap), keyed by the source's catalogued
     country (ISO-2): the count of SOURCES, the ARTICLES collected from them, the
@@ -855,21 +875,9 @@ def source_country_counts(session) -> dict:
     }
     # Per-LANGUAGE breakdown of the UNLOCATED articles (source has no country) — the
     # donut for the Library world map (field remark 10: "all 'no country' articles shown
-    # with a circular graph with per-language quantity"). Column-projected (Article.language
-    # + a COUNT over the indexed source_id join) — never decrypts article content. Matches
-    # the unlocated definition used above: country IS NULL or empty after trim.
-    unloc_lang_rows = (
-        session.query(Article.language, func.count(Article.id))
-        .join(Source, Article.source_id == Source.id)
-        .filter((Source.country.is_(None)) | (func.trim(Source.country) == ""))
-        .group_by(Article.language)
-        .all()
-    )
-    unloc_by_language: dict[str, int] = {}
-    for lang, n in unloc_lang_rows:
-        unloc_by_language[(lang or "").strip().lower()] = unloc_by_language.get(
-            (lang or "").strip().lower(), 0
-        ) + int(n or 0)
+    # with a circular graph with per-language quantity"). Shared with the D4 map serve so
+    # a served response is byte-identical here (the rollup does not persist this breakdown).
+    unloc_by_language = unlocated_language_breakdown(session)
 
     by_country: list[dict] = []
     unlocated_sources = 0

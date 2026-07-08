@@ -807,10 +807,14 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
     110m geometry has no polygon for -- a point, never an invented border.
     """
     def _compute() -> dict:
+        from src.analytics import map_serve
         from src.catalog.countries import continent_of, country_display_name
         from src.timemap.geocode import geocode
 
-        data = rm.source_country_counts(db)
+        # Opt-in (OO_COLUMNAR_MAP_SERVE=1, default off) in-memory D4 rollup serve; any miss
+        # falls back to the IDENTICAL live query. A served response carries a ``basis``
+        # disclosure (source + as-of); off/fallback it is the untouched live path.
+        data = map_serve.map_coverage(db) or rm.source_country_counts(db)
         for row in data["by_country"]:
             cc = row["country"]
             disp = country_display_name(cc)
@@ -973,9 +977,10 @@ def warm_cache(db: Session) -> dict:
     # Opt-in (OO_COLUMNAR_SERVE=1) in-memory rollup serve: (re)build it in the background so
     # the windowed views pick up new articles. No-op unless opted in; never blocks.
     try:
-        from src.analytics import rollup_serve
+        from src.analytics import map_serve, rollup_serve
 
         rollup_serve.refresh(db)
+        map_serve.refresh(db)  # opt-in (OO_COLUMNAR_MAP_SERVE=1) D4 map serve; no-op when off
     except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
         _LOG.warning("rollup serve refresh failed during warm_cache", exc_info=True)
 
