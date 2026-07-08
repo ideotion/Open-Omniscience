@@ -349,3 +349,94 @@ country SELECTION is a local DB read, no network).
 - ⏭ Acceptance: clicking with an empty input runs discovery against auto-selected
   under-represented countries (bounded, rotating, disclosed), never errors; all
   strings render in the active UI language; `--min 100` green.
+
+---
+
+## Item 4 — Governments tab must auto-load country statistics in the background (no "Load" button); visible in the task manager  [NEW + general principle]  ⏭
+
+**Verbatim:** "The Governments tab should automatically show data. Users should not
+have to do anything, it should automatically load country government statistical data
+such as GDP, population, life expectancy, population statistics, employment
+statistics, market statistics, government debt, and so forth. There shouldn't be a
+button "load....", because all loadings should be automatic, made in the background,
+and accessible within the task manager."
+
+**General principle asserted (applies app-wide):** *no manual "Load…/Refresh…"
+gate anywhere* — all loading is automatic, background, and surfaced in the task
+manager (the same philosophy as auto-collect, auto-index #21, and the markets
+auto-load already shipped). This item is the Governments instance; also audit the
+Settings → Statistics "Fetch figures" button and any other remaining manual loaders.
+
+### Code grounding
+
+- **Tab:** `data-tab="law"` labelled **"Governments"** (index.html:59; the code
+  anchor stayed `law` after the rename). Subtabs (`#gov-subtabs`): `gov-countries`
+  (per-country World Bank stats), `gov-map` (choropleth by indicator), `gov-law`
+  (world law). API `/api/governments/*` (`src/api/governments.py`).
+- **The button to remove:** `#gov-load-btn` → `app.js:3465 govLoadStandard(btn)` →
+  `POST /api/governments/load-standard` (consent-gated via `ensureOnline`).
+- **Backend (`src/api/governments.py:136 load_standard`):** loops the curated
+  indicator set (`src/stats/indicators.INDICATOR_CATALOG` / `indicator_ids()`),
+  fetches each via `statfetch.fetch_worldbank(code, "all")` for ALL countries, stores
+  vintaged `StatFigure`s (`store_figures`), records a `StatSubscription`
+  (worldbank/indicator/country="all"), refuses up front under airplane mode (409),
+  degrades loudly per indicator. It is a **synchronous request** (a `def` handler —
+  runs in the threadpool, but blocks that one request for the whole multi-indicator ×
+  all-countries fetch; not cancellable, not visible).
+- **The ongoing-refresh half ALREADY EXISTS:** `src/stats/subscriptions.py` replays
+  DUE subscriptions in the scheduler pass (freshness-gated, airplane-gated, new
+  vintage each time) — SHIPPED (ruling #12). So once subscriptions exist, refresh is
+  automatic. The GAP is the **initial** load (no subscriptions until the button is
+  clicked once) + **task-manager visibility**.
+- **Indicator catalog (`src/stats/indicators.py`) already covers the ask:** GDP
+  (NY.GDP.MKTP.CD/PCAP/growth), inflation (FP.CPI.TOTL.ZG), population (SP.POP.TOTL/
+  GROW), life expectancy (SP.DYN.LE00.IN), employment (SL.UEM.TOTL.ZS, SL.TLF.TOTL.IN),
+  government debt (GC.DOD.TOTL.GD.ZS, GC.NLD.TOTL.GD.ZS), Gini (SI.POV.GINI). **Only
+  "market statistics" is missing** — optional add: CM.MKT.LCAP.CD (market cap of
+  listed companies), CM.MKT.TRAD.CD (stocks traded), and/or cross-link the Indices
+  board. This is a data-breadth nicety, NOT the core of the item.
+
+### Fix plan (for the autonomous session)
+
+**A. Auto-seed + auto-load (no button).** Seed the curated indicator subscriptions
+(worldbank / each `indicator_id()` / country="all") automatically — at source-seed
+time or on the first online scheduler pass when none exist — so the **existing
+subscription-refresh machinery** fetches them on the next due pass with no manual
+trigger. The initial load then rides the same freshness-gated pass as ongoing
+refresh. This reuses shipped infrastructure (subscriptions + scheduler pass) rather
+than a new path.
+
+**B. Make the fetch a task-manager JOB.** Refactor the synchronous
+`load_standard` loop into a background job manager (worker thread, like
+DumpDownloadManager / the markets pass) surfaced in `/api/jobs` (kind e.g. `stats` /
+`governments`): progress = indicators done/total + current indicator + figures
+stored; **cancellable** (Stop); it is a **NETWORK job** whose DB writes take the
+single-writer gate (arbitrates with collect/import). Per-indicator failures degrade
+loudly (already do), never abort the set, never fabricate.
+
+**C. Consent = the ONE network consent, not a per-fetch popup.** Boot is airplane
+(zero-network); the first offline→online transition passes the ONE consent
+(`ensureOnline`, invariant #14), then background fetch runs like auto-collect/markets.
+Airplane refuses (already 409). No per-load button/popup.
+
+**D. Remove the button; render stored data with an honest background state.** Drop
+`#gov-load-btn` from index.html. The `gov-countries` / `gov-map` views render whatever
+is stored (auto-populated over time) with an honest empty/loading state — e.g.
+"Loading government data in the background — see the task manager" — never a blank and
+never a required click. Keep at most a manual "refresh now" INSIDE the task manager /
+Settings (Desk lesson — capability preserved, not a gate on the tab). `govLoadStandard`
+becomes that optional refresh or is retired.
+
+**E. Bandwidth ladder (already ruled):** stats fetches are small-payload / high-value
+→ run EARLY in the pass (with markets/commodities/weather), ahead of heavy crawling.
+
+### Notes / honesty
+- World Bank figures are a **stanced producer's published values**, VINTAGED (a
+  re-fetch is a new vintage, never an overwrite) — unchanged; keep the producer +
+  method + as-of + the existing caveat visible. No score.
+- Scale: the curated set × all countries is a bounded, freshness-gated fetch (annual
+  data changes rarely) — the freshness gate keeps passes cheap after the first load.
+- ⏭ Acceptance: a fresh online install populates the Governments tab automatically
+  (no click); the fetch appears in the task manager as a cancellable job; airplane
+  refuses; the tab shows an honest background state while loading; the same
+  no-manual-load principle is applied to the Settings → Statistics fetch button.
