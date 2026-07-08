@@ -856,6 +856,46 @@ locked errors** (the single-writer gate is holding at 2.28 GB) · entity precisi
 counter-drift sweep reported "interrupted" (deadline-guarded, couldn't finish the full
 multi-million-row check in time) — not an error; the parts that completed show no drift.
 
+### Follow-up perf exports (2026-07-08 15:48 session) — reconfirms P0, adds 3 findings
+A 2nd batch (FDR self-test · a 2nd debug bundle · standalone slow-queries · standalone
+request-latency · schema-drift) from a fresh restart, corpus now 2.282 GB. **The perf
+picture is WORSE, confirming P0 is the priority:**
+- `GET /api/signals/alerts` **p50 66 s / max 132 s** (was 24–104 s) — still the worst
+  endpoint, still Home-polled. P0 stands, more urgent.
+- **NEW: `POST /api/system/unlock` = 60 s** — unlocking the app at 2.28 GB takes a
+  full minute (the post-unlock warm/ANALYZE/seed is heavy at scale). UX pain on every
+  launch. The unlock was made "return fast + background the upkeep" earlier, but the
+  measured wall is 60 s — re-check that the heavy upkeep is truly backgrounded and the
+  UI is usable during it.
+- **NEW: `GET /api/insights/latest` = 59 s** — the just-shipped "Latest in your corpus"
+  S1 endpoint (wave-3) is slow at 60K articles. Its design bounded the scan
+  (`scan_cap=300`) + near-dup (`near_dup_cap=300`), but 59 s means the bound isn't
+  effective here (likely the near-dup content reads = SQLCipher decrypts). Needs the
+  same treatment as the other heavy reads (cache / rollup / tighter bound) BEFORE the
+  Home panel (S2) ships on top of it.
+- `GET /api/briefing` 30–37 s · `GET /api/articles` p95 25 s · `GET /api/database/stats`
+  3.7 s ×5 · **`GET /api/backup/inventory` 3.3 s** (confirms Item 9's slow-count note) ·
+  the diagnostic exports themselves are slow (`debug-bundle` 69 s, `integrity` 62 s —
+  the maintainer waits ~1 min per export).
+- Event-loop watchdog: lag up to **748 ms** with a batch of trivial routes (health,
+  settings, network, llm/health, sources) all stalled at ~980 ms together — the classic
+  single-worker freeze. `in_flight_now: 10`.
+- **NEW (low priority): alembic stamp is BEHIND.** `schema-drift`: `drift:false`
+  (self-heal keeps tables/columns/indexes in sync) BUT `migration.behind:true` — DB
+  stamped `b3d4e5f6a7c8`, code head `c1d2e3f4a5b6`. The self-heal masks it so the app
+  works, but the stamp lag is a latent risk for the next migration / cross-version
+  restore (RC-gate T4). FIX: the boot path should advance the stamp to head after the
+  self-heal ensures the schema, or investigate why a migration didn't stamp. Not
+  urgent (no drift), but reconcile it.
+- **Healthy (2nd confirmation):** FDR self-test 10/10 (the BH-FDR statistical spine for
+  the manipulation cards is sound) · counter drift 0 on the sampled check · 0 locked
+  errors · the only HTTP error remains the single `/insights/graph` 503 from 08:25.
+- **The standalone `slow-queries` export shows `installed:false, captured:0`** — the
+  slow-query listener attaches lazily and this was a fresh restart, so no statements
+  were captured yet; the EXPLAIN plans still confirm the named heavy queries use
+  covering indexes (the un-indexed `coalesce` min/max from the 14:34 bundle remains the
+  P0 target — it is not in the EXPLAIN set).
+
 ### Suggested build order
 DB date-range index (P0, cheapest+broadest) → memoise/cache the polled endpoints +
 turn on the rollup serve (P0) → fix the graph/mindmap 503 (P0/P1) → job-ify the heavy
