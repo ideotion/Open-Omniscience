@@ -640,3 +640,76 @@ the Law tab (lawsuits — cross-link). This ties the map to real corpus content 
   Hazards); Stories is the default and invites click-through into place+topic corpora
   across all continents; localized data is corpus-derived + honestly labeled; the
   Governments `#gov-map` overlap is resolved (consolidated or clearly distinct).
+
+---
+
+## Item 7 — Many more indexed commodities; rare earths especially (blocked on data source — question raised)  [NEW + PLANNED-expansion]  ⏭ (rare earths: AWAITS MAINTAINER RULING)
+
+**Verbatim:** "There should be much more indexed commodities. There should be rare
+earths, this is important. If it cannot be done for any reasons, ask questions so we
+can find solutions together."
+
+**Two separable parts:** (a) broaden the free commodity set — **doable now**; (b)
+rare earths — **blocked on data availability**, question raised (the maintainer
+explicitly invited it).
+
+### Code grounding
+
+- **Catalog:** `configs/commodity_feeds.yml` — **33 feeds** via free, no-key,
+  robots-permitting CSV: **FRED** (EIA daily energy) + **World Bank Pink Sheet** /
+  **IMF PCPS** (monthly, redistributed by FRED). Categories: energy 11, metals 7
+  (copper/aluminum/nickel/zinc/iron-ore/tin/lead), agriculture 9, precious 2
+  (gold/silver), strategic 1 (uranium), construction 2 (logs/sawnwood), fx 1.
+- **The rare-earth wall is documented in-file (line 204):** *"Rare-earth element
+  prices (Nd, Dy, Pr…) have NO free, no-API-key official series: producers publish via
+  paywalled assessors (Asian Metal, Argus). Honesty rule: we do not relay scraped or
+  guessed numbers — add a custom extraction rule pointing at a source you have the
+  right to read."* → the non-negotiable (no fabricated/scraped numbers) hitting a
+  genuine data-availability limit.
+- **Custom-rule mechanism exists:** `MarketExtractionRule` + the markets.py CRUD — a
+  maintainer-authorized paid source can be wired as a custom rule (the in-file note's
+  own suggested path).
+
+### Part (a) — broaden FREE commodities (DOABLE NOW, no question needed)
+
+The World Bank Pink Sheet has ~70 series; the catalog uses ~25 of them. Add (🔍 verify
+each FRED id on a networked machine — same ISO-code caution as Item 1):
+- **Critical/battery minerals (adjacent to rare earths, high strategic value):**
+  lithium, cobalt (WB Pink Sheet added these), molybdenum/manganese where free.
+- **Precious:** platinum, palladium.
+- **Agriculture:** barley, sorghum, palm oil, soybean/sunflower oil, tea, bananas,
+  oranges, tobacco, wool, groundnuts, fishmeal.
+- **Fertilizers (strategic, WB Pink Sheet):** phosphate rock, DAP, TSP, urea, potash.
+This is a straightforward catalog expansion via the existing FRED/WB path (a wrong id
+fails loudly, never fabricates).
+
+### Part (b) — rare earths: the honest constraint + options (QUESTION RAISED)
+
+Rare-earth SPOT prices have **no free, no-key, robots-permitting source** — only
+paywalled assessors (Argus, Asian Metal, SMM). The honesty non-negotiable forbids
+relaying scraped/guessed numbers, so we cannot ship a rare-earth *price* feed from a
+free source. But the intent (rare earths matter geopolitically) CAN be served by free
+official DATA:
+- **Option 1 — USGS Mineral Commodity Summaries (RECOMMENDED):** free, PUBLIC-DOMAIN,
+  official annual **production · reserves · net-import-reliance BY COUNTRY** for rare
+  earths + all critical minerals. Not prices, but arguably MORE valuable for a
+  geopolitics/datamining app (WHO mines/controls rare earths — China dominance) — and
+  it feeds the World map (Item 6) + Governments (Item 4) as localized data.
+- **Option 2 — free price-adjacent proxy:** a FRED Producer Price Index for rare-earth
+  metals, or a rare-earth/strategic-metals equity index, IF a free robots-permitting
+  series exists (verify). An official trend, labeled a proxy — not spot price.
+- **Option 3 — a paid assessor the maintainer authorizes:** provide/authorize Argus /
+  Asian Metal / SMM (a "source you have the right to read"), wired via a custom
+  `MarketExtractionRule`. Real spot prices, but needs the maintainer's subscription +
+  NOT bundled/shipped.
+- **Option 4 — broaden free commodities first (part a), defer RE prices.**
+Combinable (e.g. 1 + a). **PENDING the maintainer's answer** (asked via AskUserQuestion
+this session) — amend this section with the ruling.
+
+### Honesty / notes
+- No scraped/guessed numbers, ever (the in-file rule). A rare-earth surface must be
+  free official data (USGS/PPI, labeled by method) or a maintainer-authorized source
+  (custom rule) — never a relayed paywalled/scraped price.
+- ⏭ Acceptance (part a): the commodity board is materially denser (critical minerals +
+  fertilizers + more agri/precious), all via verified free ids. Part b: per the
+  maintainer's chosen option(s).
