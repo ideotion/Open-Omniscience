@@ -521,7 +521,7 @@ def reading_diet_by_type(
         "interval": (
             {"low": ci.low, "high": ci.high, "method": ci.method} if ci is not None else None
         ),
-        "small_n": total < _DIET_SMALL_N,
+        "small_n": 0 < total < _DIET_SMALL_N,  # a thin but NON-empty sample (empty -> note)
         "channels": channels,
         "method": (
             "Article counts grouped by the source's asserted source_type channel over the "

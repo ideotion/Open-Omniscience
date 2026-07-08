@@ -157,6 +157,11 @@ def test_concentration_gini_and_ci_present_and_no_score():
     # Method + caveat present; NO score field anywhere (walk the keys).
     assert "no score" in out["method"].lower()
     assert "never a quality or credibility score" in out["caveat"]
+    # The CI honesty non-negotiable is PINNED: the interval is scoped to the corpus, not the
+    # world (a future reword can't silently drop this guarantee).
+    cav = out["caveat"].lower()
+    assert "within your corpus" in cav
+    assert "never the world" in cav
     assert _score_like_keys(out) == []
     s.close()
 
@@ -234,7 +239,61 @@ def test_empty_window_is_honest_not_a_fabricated_split():
     assert out["gini"] is None
     assert out["interval"] is None
     assert out.get("note")  # an honest empty-state note, never a crash or a guessed split
+    # 'small_n' means a thin but NON-empty sample; an empty window is not "small", it is empty
+    # (the note/caveat say so) -- the field must not conflate the two.
+    assert out["small_n"] is False
     assert _score_like_keys(out) == []
+    s.close()
+
+
+def test_window_uses_created_at_not_the_spoofable_published_at():
+    """The window is ACQUISITION time (created_at), never the source-controlled published_at:
+    a fresh published_at on an OLD created_at is EXCLUDED, and an ancient published_at on a
+    RECENT created_at is INCLUDED. Pins the un-spoofable claim by design (not by NULL accident)."""
+    s = _session()
+    now = datetime.now(UTC)
+    src = Source(name="Sp", domain="spoof.test", source_type="news")
+    s.add(src)
+    s.flush()
+    # (created_at age days, published_at age days):
+    #   A collected long ago but claims a fresh publish date (the spoof) -> must be EXCLUDED
+    #   B collected recently but publish date is ancient                 -> must be INCLUDED
+    for i, (c_age, p_age) in enumerate([(400, 1), (1, 400)]):
+        s.add(
+            Article(
+                url=f"https://spoof.test/{i}",
+                canonical_url=f"https://spoof.test/{i}",
+                source_id=src.id,
+                title=f"t{i}",
+                content="body",
+                hash=f"{i:064d}",
+                language="en",
+                created_at=now - timedelta(days=c_age),
+                published_at=now - timedelta(days=p_age),
+            )
+        )
+    s.commit()
+
+    out = reading_diet_by_type(s, days=30)
+    # Only B (recent created_at) is in the 30-day acquisition window; A's fresh published_at
+    # does NOT pull it in -> the window is created_at, not published_at.
+    assert out["total"] == 1
+    assert _by_channel(out) == {"news": 1}
+    s.close()
+
+
+def test_gini_hand_computed_for_equal_channels_is_zero():
+    """Two channels with EQUAL counts -> a perfectly even split -> Gini 0.0 (a hand-checkable
+    value, so the wiring to the primitive is non-vacuous). CI bounds stay within [0, 1]."""
+    s = _session()
+    _seed(s, [("news", 5, 1), ("wiki", 5, 1)])
+
+    out = reading_diet_by_type(s, days=30)
+
+    assert out["gini"] == pytest.approx(0.0)
+    assert out["top_share"] == pytest.approx(0.5)
+    ci = out["interval"]
+    assert 0.0 <= ci["low"] <= ci["high"] <= 1.0
     s.close()
 
 
@@ -285,9 +344,12 @@ def test_endpoint_returns_method_caveat_and_no_score():
             r2 = client.get("/api/insights/reading-diet-by-type", params={"days": 3650})
             assert r2.status_code == 200, r2.text
 
-            # Out-of-range days -> 422 (validated), never silently clamped.
+            # Out-of-range days -> 422 (validated at BOTH bounds), never silently clamped.
             assert client.get(
                 "/api/insights/reading-diet-by-type", params={"days": 0}
+            ).status_code == 422
+            assert client.get(
+                "/api/insights/reading-diet-by-type", params={"days": 3651}
             ).status_code == 422
     finally:
         _app.dependency_overrides.pop(get_db, None)
