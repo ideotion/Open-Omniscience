@@ -543,3 +543,100 @@ match the ELECTIONS design already sketched (family↔event titles/tags + mentio
   (past + future, single-mention included, filterable down), a global
   election+summit calendar is visible across all continents, and moon glyphs are a
   minor toggleable layer rather than the only content.
+
+---
+
+## Item 6 — Elaborate the World map: give it sub-tabs, richer localized data, and a story-exploration UI  [PLANNED — extends the ooMap rework]  ⏭ (PLAN)
+
+**Verbatim:** "We should elaborate further the world map. Currently not useful.
+There should be sub-tabs like in all other tabs. We should plan to work on that to
+have richer localized data and allow the UI to incite users to using this interface
+to explore location-based stories (war, climate events, elections, accidents,
+lawsuits, etc.)."
+
+**Nature:** the maintainer said "plan to work on that" → this is a **design plan**,
+not a one-shot fix. Extends the **MAP REWORK — UNIVERSAL ooMap + CHOROPLETH** work
+(2026-06-18, slices 1–5b shipped): the map *component* is built and capable; what's
+missing is the **tab-level organization (ooSubtabs)**, the **story-first framing**,
+and **incitement UI**.
+
+### Code grounding (current state)
+
+- **Tab:** `data-tab="timemap"` labelled **"World map"** (index.html:58) → dispatch
+  `timemap: loadOoMapCoverage` (app.js:1181; slice 5b folded the temporal map in +
+  retired it). Panel `#tab-timemap` (index.html:967) is a **single `<section>`** —
+  `#oo-coverage-map` + `#oo-coverage-detail`, NO subtab nav. All richness lives in
+  **in-map overlay controls** (dimension picker sources/articles/keywords/tone,
+  continent grouping, places overlay, time-signals + slider) — powerful but hidden,
+  and it defaults to the least-compelling view (sources-per-country choropleth), which
+  is why it reads as "not useful."
+- **Story-type substrate already exists:** the signals layer plots timemap events by
+  KIND (`TMAP_KINDS`/`kindColor`); hazards via `/api/signals/alerts` (climate/disaster
+  snapshot); the When×Where extraction (`article_mentioned_places`, `article_entities`)
+  + `/api/insights/where`; keyword families (war/climate/election concepts). These are
+  the raw material for "location-based stories" — not yet organized as such.
+- **Overlap to reconcile:** the Governments tab ALSO has a world-map choropleth
+  (`#gov-map`, per-country statistical indicators via ooMap). Both use the same ooMap
+  component — the statistical lens could become a World-map subtab, or stay in
+  Governments (a consolidation decision for the plan).
+
+### Proposed plan (for a design + build session)
+
+**1. Give the World map an ooSubtabs strip** (invariant #18, the universal grammar
+every other tab has). Promote the hidden in-map dimensions into first-class LENSES.
+Proposed subtabs:
+  - **Stories** (the new HEADLINE lens) — location-based events/stories by TYPE
+    (war/conflict · climate events · elections · disasters/accidents · lawsuits ·
+    protests · economy…), plotted as points; each type a filter chip with a COUNT;
+    clicking a place/cluster opens its corpus (`openAnalysisForIds`) = a place+topic
+    investigation. This is the "incite users to explore location-based stories" ask.
+  - **Coverage** — the existing choropleth (sources · articles · keywords · tone per
+    country). Keep (the current default demotes to one lens among several).
+  - **Places** — the mentioned-places overlay (what the corpus is ABOUT), by article
+    spread, deduced-labeled.
+  - **Data** — per-country statistical choropleth ("richer localized data"; reuse the
+    Governments indicator set — GDP/population/etc. — or cross-link/consolidate the
+    `#gov-map`).
+  - **Hazards/Signals** — the live hazard snapshot layer (climate/disaster), honest
+    staleness shown.
+  The time slider stays an in-map control within the lenses where time matters
+  (Stories/Places), not a top subtab.
+
+**2. Richer localized data — derive story TYPES from the corpus (honestly).** A
+"story type" per place = the corpus's own signal, NOT a new classifier: articles
+mentioning place X that carry a topic-family's keywords (conflict/climate/election/
+legal…) → a "conflict near X" cluster, COUNTS only, "deduced from your corpus, never a
+verdict." Sources to fuse per place: the When×Where extraction (place ∩ topic
+keywords/families), the signal kinds, hazards, the elections calendar (Item 5), and
+the Law tab (lawsuits — cross-link). This ties the map to real corpus content =
+"richer localized data," reusing shipped extraction (no fabricated geodata).
+
+**3. Incitement UI (make the map an ENTRY POINT, not a passive choropleth).**
+  - Story-type chips with live counts ("142 climate · 88 conflict · 34 elections ·
+    27 lawsuits") as the invitation to click in.
+  - A "top locations right now" strip (places with the most recent/active stories) →
+    click → that place's corpus.
+  - Clickable clusters/countries → the place's corpus, organized by story type.
+  - An inviting empty/onboarding state that suggests what to explore, rather than a
+    blank choropleth.
+  - Hover previews of a place's top stories.
+
+### Honesty / non-negotiables carried
+- Story-type = deduced from rule-based keyword families / signal kinds / hazard types,
+  LABELED "deduced, never confirmed / never a verdict." No classifier fabrication, no
+  composite score, no "importance" ranking (counts + recency ordering, method stated).
+- ooMap honesty stays: "no data" ≠ zero (un-shaded, never a guessed colour);
+  unlocated bucketed + disclosed; deduced places "never confirmed"; VADER-EN-only
+  caveat on any tone lens; Tor "server location unavailable" honesty.
+- Reuse the shipped ooMap component + existing endpoints; new work is
+  organization/framing/incitement + the per-place story aggregation, not a new map
+  engine.
+
+### Notes
+- This is the maintainer's map-rework vision maturing from "choropleth of coverage"
+  (a producer-facing diagnostic) to "explore the world's stories" (a reader-facing
+  investigation surface) — the invariant-#8 "show DATA, the added value" principle.
+- ⏭ Acceptance (plan-level): World map has ooSubtabs (Stories/Coverage/Places/Data/
+  Hazards); Stories is the default and invites click-through into place+topic corpora
+  across all continents; localized data is corpus-derived + honestly labeled; the
+  Governments `#gov-map` overlap is resolved (consolidated or clearly distinct).
