@@ -952,6 +952,31 @@ The detailed watchdog timeline (same 13:45–13:50 session) is the smoking gun f
   filtering terms that are ubiquitous in the SOURCE's own corpus (a source's stopword-like
   filler is not a "pushed topic"). No fabrication — surface counts, but don't alert on
   filler.
+- **NEW — the BURY card is dominated by a LANGUAGE ARTIFACT (the bigger problem).**
+  `signals/bury` flags NON-English sources for "burying" ENGLISH keywords: Turkish
+  *Cumhuriyet*, Bengali *Jagonews24*, Azerbaijani *Yeniçağ*, Vietnamese *Thanh Nien*,
+  Greek *in.gr*, Bulgarian *24chasa* all show `source_share:0` of **"world" / "state" /
+  "public" / "trump"** (corpus_share ~7%). But those papers publish in Turkish/Bengali/
+  Vietnamese/Greek — so the *English* keyword "world" (they write "dünya"/"мир") is
+  trivially absent. That's **language, not burying.** Even "trump" (a proper noun that
+  should cross languages) is 0 for Thai *Matichon* / Bengali *Jagonews24* because they
+  transliterate the script (ทรัมป์ / ট্রাম্প). So on a 50-language corpus, comparing raw
+  language-specific keyword shares across multilingual sources produces mostly LANGUAGE
+  ARTIFACTS, not manipulation signals. (The statistical spine is SOUND — BH-FDR + two-
+  proportion z-test, 720 tests / 587 survivors, and the caveat honestly names
+  "specialization… language" — so it is honest-by-construction, but the signal is buried
+  in noise.)
+- **CONCLUSION — the manipulation cards need LANGUAGE-AWARENESS (couples to Item 2).**
+  Flood (leaked filler) + bury (language artifacts) share one root: the cards run on the
+  raw, per-language, junk-bearing keyword index. Fixes, in order: **(a)** SCOPE the
+  comparison to same-language cohorts (judge a source's topic share only against sources
+  that COULD carry it — same language/script), so "world" is compared among English
+  sources, not against Turkish ones; **(b)** UNIFY topics cross-language via rings
+  (Item 2) so world/dünya/мир are one concept (ring coverage is only 15.2%, the longer
+  game); **(c)** at minimum, exclude the trivial "source has ~0 articles in the
+  keyword's language" case before flagging a bury. Until then the flood/bury Leads are
+  low-precision on this multilingual corpus. A design finding for the manipulation-card
+  vertical, not a quick fix.
 - **Network preflight — reconfirms dead default calendar feeds (2026-06-13 finding E,
   still open).** The default calendar feeds (`google`-hol = robots-DISALLOWED,
   `cantonbecker`, `floern`, `monkeyness`, `ose`, `wcg-rel-*`, `gh-un-days`) show
