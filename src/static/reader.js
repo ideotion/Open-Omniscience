@@ -34,8 +34,9 @@
   }
   function kwLink(term, inner, cls) {
     // A real anchor (middle-/ctrl-click + "open in new tab" work natively); it
-    // simply navigates to the SPA — no handler, degrades gracefully.
-    return '<a class="' + cls + '" href="' + esc(analysisUrl(term))
+    // simply navigates to the SPA — no handler, degrades gracefully. data-kwstat lets
+    // the hover enrich its title with the keyword's real corpus stats (lazy, cached).
+    return '<a class="' + cls + '" data-kwstat="' + esc(term) + '" href="' + esc(analysisUrl(term))
       + '" target="_blank" rel="noopener" title="Analyse “' + esc(term)
       + '” across your corpus ↗">' + inner + "</a>";
   }
@@ -108,6 +109,7 @@
           a.href = analysisUrl(s.term);
           a.target = "_blank"; a.rel = "noopener";
           a.title = "Analyse “" + s.term + "” across your corpus ↗";
+          a.setAttribute("data-kwstat", s.term);   // hover enriches the title with real stats
           a.textContent = s.surface;
           frag.appendChild(a);
         });
@@ -116,6 +118,41 @@
       body.setAttribute("data-kw-marked", "1");
     } catch (_e) { /* the read pane must never break over a nicety */ }
   }
+
+  // In-reader keyword hover-stats (wave 4 I): on first hover of a keyword (an in-article
+  // mark or a Keywords-tab link), lazily enrich its native title with the keyword's REAL
+  // corpus stats — mentions, distinct-article spread, the windowed trend RATE, and the
+  // top co-occurrences (GET /api/insights/keyword-stats). Counts only, the endpoint's
+  // caveat rides along, NO score. Loopback-only (airplane-safe), cached per term, fully
+  // guarded — a failure leaves the existing "Analyse …" title untouched. The standalone
+  // reader has no #oo-tip bubble, so it uses the native title (its existing hover).
+  var _kwStatCache = {};
+  function kwStatLine(d) {
+    if (!d || !d.resolved) return "Not in your corpus yet — no stats.";
+    var bits = [num(d.mentions) + " mentions · " + num(d.articles) + " articles"];
+    var tr = d.trend || {};
+    if (tr.recent || tr.prior) bits.push("trend " + tr.growth + "× (" + tr.window_days + "d vs " + tr.baseline_days + "d)");
+    var co = (d.cooccurrences || []).slice(0, 4).map(function (c) { return c.term; }).filter(Boolean);
+    if (co.length) bits.push("with: " + co.join(", "));
+    return bits.join(" · ") + (d.caveat ? " · " + d.caveat : "");
+  }
+  function enrichKwStat(el) {
+    var term = el.getAttribute("data-kwstat");
+    if (!term || el.getAttribute("data-kwstat-done")) return;
+    el.setAttribute("data-kwstat-done", "1");   // one shot per element
+    if (_kwStatCache[term] !== undefined) {
+      if (_kwStatCache[term]) el.title = _kwStatCache[term] + "\n" + el.title;
+      return;
+    }
+    fetch("/api/insights/keyword-stats?term=" + encodeURIComponent(term), { headers: { Accept: "application/json" } })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (d) { var line = kwStatLine(d); _kwStatCache[term] = line; el.title = line + "\n" + el.title; })
+      .catch(function () { el.removeAttribute("data-kwstat-done"); });   // allow a later retry
+  }
+  document.addEventListener("mouseover", function (e) {
+    var el = e.target && e.target.closest ? e.target.closest("[data-kwstat]") : null;
+    if (el) enrichKwStat(el);
+  }, true);
 
   function show(key) {
     tabs.forEach(function (b) {

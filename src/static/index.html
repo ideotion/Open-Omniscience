@@ -211,6 +211,41 @@
         <div id="home-recent" style="margin-top:6px"><div class="muted">Loading…</div></div>
       </section>
 
+      <!-- Home dashboard: "Latest in your corpus" — a recency LENS with transparent
+           substance FILTERS (wave 4 I / GET /api/insights/latest). Newest first by
+           COLLECTION time (un-spoofable, never the publisher's claimed date), gated by
+           the min-words AND min-cited-sources thresholds the user sets and sees, with
+           near-identical wire reprints collapsed. Each row shows its REAL word count +
+           cited-source count + channel — counts, never a score. Populated by
+           loadHomeLatest(); hidden until the corpus has recent articles so Home is never
+           blank-and-silent (the Briefing still renders below). -->
+      <section class="panel" id="home-latest-panel" hidden>
+        <div class="phead"><h2>Latest in your corpus</h2><span class="sp"></span></div>
+        <p class="hint" style="margin:0">Newest first by collection time (never the publisher's claimed date). Set the substance gates; each article shows its real word count and cited-source count.</p>
+        <div class="row" style="margin-top:6px;gap:10px;flex-wrap:wrap;align-items:center">
+          <label class="muted small">Min words <input id="latest-minwords" type="number" min="0" step="50" value="0" style="width:80px" onchange="loadHomeLatest()"></label>
+          <label class="muted small">Min cited sources <input id="latest-minsources" type="number" min="0" step="1" value="0" style="width:64px" onchange="loadHomeLatest()"></label>
+          <select id="latest-channel" aria-label="Channel" onchange="loadHomeLatest()"></select>
+          <select id="latest-tag" aria-label="Tag" onchange="loadHomeLatest()"></select>
+          <label class="muted small"><input id="latest-collapse" type="checkbox" checked onchange="loadHomeLatest()"> Collapse near-identical reprints</label>
+        </div>
+        <div id="home-latest" style="margin-top:6px"><div class="muted">Loading…</div></div>
+      </section>
+
+      <!-- Home dashboard: "By channel" — the content-provenance facet (wave 4 I /
+           GET /api/insights/source-types). Article counts per asserted content CHANNEL
+           (newsletter / web article / wiki / statistic / law / market / discovery), a
+           descriptive fact known by construction, NEVER a quality score. Clicking a
+           channel opens the analysis window over exactly that channel's articles (via
+           /api/articles?source_type= -> the exact id set). Populated by
+           loadHomeChannels(); hidden until the corpus has channels so Home is never
+           blank-and-silent. -->
+      <section class="panel" id="home-channels-panel" hidden>
+        <div class="phead"><h2>By channel</h2><span class="sp"></span></div>
+        <p class="hint" style="margin:0">An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus.</p>
+        <div id="home-channels" style="margin-top:6px"><div class="muted">Loading…</div></div>
+      </section>
+
       <section class="panel">
         <div class="phead"><h2>Briefing</h2><span class="sp"></span>
           <span id="brief-generated" class="hint" style="margin:0"></span></div>
@@ -1567,6 +1602,23 @@
         <button class="secondary" onclick="runIrEval()" title="Run the IR retrieval-eval over a human-judged gold set (queries with documents graded 0/1/2; template at configs/ir_eval/gold_set.example.json). Leave the weight boxes empty to score the current BM25F ranking; fill BOTH to A/B two (title,body) weight sets via the conflation delta. Measure-before-trust; metrics only, no score.">Run IR eval over a gold set</button>
       </div>
       <div class="hint">The IR retrieval-eval scores the live search against a human-judged gold set — queries with documents graded 0/1/2 (copy the template at configs/ir_eval/gold_set.example.json and fill in your own article ids). With both weight boxes filled it A/Bs two BM25F (title,body) weight sets and reports the recall / precision / nDCG change separately, so the ranking default is chosen on evidence rather than guessed. Per-language, n always stated, never a composite score.</div>
+      <!-- Statistical-signal exploration surfaces (wave 4 I): the read-only endpoints that
+           had no UI. Counts + statistics only, each carries its own method + caveat, never
+           a score. flood/bury also auto-render as Home Leads — this is the explicit dig-in
+           surface. Un-keyed English (matches this diagnostics panel). -->
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="window.open('/api/signals/fdr-selftest?download=1','_blank')" title="Prove the Benjamini-Hochberg FDR correction (the multiple-testing spine under the flood/bury and lunar screens) on hand-computed fixtures — pass/fail per case, so a regression reddens both this export and CI. No DB, no network, no score.">FDR self-test (.json)</button>
+        <button class="secondary" onclick="window.open('/api/signals/flood','_blank')" title="Sources flooding a single topic far above their OWN history (the flood half of manipulation-pattern card #4). A two-proportion z-test vs the source's own prior share; volume is not importance, so a genuinely big story legitimately dominates. Counts + statistics only, never a score.">Flood signal (.json)</button>
+        <button class="secondary" onclick="window.open('/api/signals/bury','_blank')" title="Sources UNDER-covering a topic that is big across the rest of the corpus (the bury half of card #4). Every (source, broad topic) pair is Benjamini-Hochberg FDR-corrected so screening thousands of pairs cannot manufacture a finding; the innocent explanation (specialization) is stated. 'Absence of a flag is not absence of manipulation.' No score.">Bury signal (.json)</button>
+        <button class="secondary" onclick="window.open('/api/insights/lunar-correlation','_blank')" title="Screen the top keywords' daily coverage against the moon's illuminated fraction, FDR-corrected — a survivor beat multiple-testing, never a bare significant p. Correlation is not causation; the common honest outcome is that nothing survives. Counts + statistics only, no score.">Lunar-correlation screen (.json)</button>
+      </div>
+      <div class="hint">These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score.</div>
+      <div class="row" style="margin-top:6px;align-items:flex-start">
+        <textarea id="poll-fields" rows="3" style="min-width:340px" placeholder='Poll disclosed fields as JSON, e.g. {"pollster":"…","sponsor":"…","sample_size":1000,"fielding_dates":"…","population":"…","question_wording":"…","sampling_method":"…","margin_of_error":"…"}'></textarea>
+        <button class="secondary" onclick="pollTransparencyCheck()" title="POST a poll's DISCLOSED methodological fields to the Tier-2 transparency checklist — a per-item view of what was STATED vs not (who ran it, who paid, when, n, who was sampled, the exact question). It records PRESENCE only (a disclosed n=100 counts like n=10000), never grades or ranks or calls a poll 'useless'. No composite score.">Check poll transparency</button>
+      </div>
+      <pre id="poll-transparency-out" class="hint" style="white-space:pre-wrap;max-height:280px;overflow:auto"></pre>
+      <div class="hint">The poll-transparency checklist reads a poll's disclosed methodology fields (paste any subset as JSON) and reports what was stated versus not — the disclosure FLOOR, never a score. Non-disclosure of a core item outranks any disclosed imperfection, and the exact question is echoed when present; it surfaces the facts and lets you conclude.</div>
       <div class="row" style="margin-top:6px">
         <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
         <button class="secondary" onclick="reindexAllCorpus(this)">Re-index the whole corpus</button>
@@ -2058,8 +2110,15 @@
   <div id="lang-menu" role="menu" hidden
        style="position:fixed;z-index:300;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:70vh;overflow:auto"></div>
 
-  <!-- T10 slice 1: THE corpora window (keyword-click entry). One window
-       architecture; sub-tabs computed over the n member articles. -->
+  <!-- RETIRED (wave 4 I, absorption-test-gated): the legacy #corpus-win keyword modal is
+       DEAD — openCorpus() routes to openAnalysisFor(), which spawns an #an analysis tab,
+       and NOTHING opens this dialog (no live .showModal()/.show()). Every subtab it had
+       (Trend · Articles · Keywords · Mindmap · Links · Sentiment · Sources · Competitive)
+       is covered by the ONE #an window (a strict superset that also adds Overview · WWW ·
+       Related · Price · Advanced), so nothing is lost. The markup + the corpusTab/
+       renderCorpus* JS are left in place UNREACHABLE (they null-guard on #corpus-* nodes),
+       pending a browser-verified deletion pass (the Desk-lesson "made unreachable" bar).
+       Enforced by tests/test_ui_corpus_win_retired.py. -->
   <dialog id="corpus-win" style="width:min(760px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
       <b id="corpus-title" style="font-size:15px"></b>
