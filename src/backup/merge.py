@@ -260,12 +260,26 @@ _MERGE_HANDLED = {
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
-# entirely, incoming values are never adopted by a merge). ``event_imports`` (Wave 4 J) is a
-# DUAL-WRITE MIRROR of the ``calendar_feed_imports.json`` side-file, which is STILL the merge
-# target (``merge_side_files`` -> ``merge_imported_store``) and re-mirrors into the local DB
-# on its own save — so the events DO restore additively; this table just isn't the merge
-# handler yet (the native UNION-merge is the deferred D1 follow-up). Ignoring it here keeps
-# a restore report clean (an incoming corpus's mirror rows are redundant with the side-file).
+# entirely, incoming values are never adopted by a merge).
+#
+# ``event_imports`` (Wave 4 J) stays here as a REASONED deliberate omission, NOT a "handler
+# not built yet" TODO (Wave 5 L analysis). It is a DERIVED FULL-REPLACE MIRROR of the
+# authoritative ``calendar_feed_imports.json`` side-file: ``event_store.sync_imports`` DELETEs
+# the whole table and re-INSERTs the flattened JSON on every save, so the table has NO
+# independent identity — it is a cache of the JSON. The events restore additively through the
+# side-file UNION-merge (``merge_side_files`` -> ``merge_imported_store``), the merge target.
+# A native ``_MERGE_HANDLED`` handler for the TABLE would be actively WRONG while the JSON is
+# authoritative: (1) it would DOUBLE-ACCOUNT the same events in the restore report — once as
+# table rows in ``plan``, once as JSON entries in ``side_files``; (2) its natural row
+# ``local-wins`` semantics would DIVERGE from the side-file's ``union sources/uids`` semantics
+# (which wins regardless, being the source of truth). So the table stays side-file-authoritative
+# and the report stays clean (no ``_unmerged_tables`` entry), while ``run_restore``'s post-swap
+# ``_refresh_event_mirror`` keeps the durable table CORRECT after a restore (the side-file merge
+# runs with ``mirror=False`` PRE-swap — it must not touch the still-live OLD DB, torture T1/T7 —
+# so without the refresh the mirror would stay stale until the next calendar write). The true
+# native UNION-merge is the LARGER D1 follow-up that RETIRES the JSON as the merge target
+# (making the table the source of truth); that is out of this slice's scope. Restore
+# correctness is sacred — honest deferral beats a double-count bug.
 _MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state", "event_imports"}
 
 
@@ -1137,6 +1151,46 @@ def merge_side_files(staged: StagedArtifact) -> dict:
     return report
 
 
+def _refresh_event_mirror(side_files: dict) -> dict | None:
+    """After the atomic swap, refresh the durable ``event_imports`` mirror so it reflects the
+    just-restored calendar events (DB-reliability D1 follow-up, Wave 5 L).
+
+    ``merge_side_files`` unions ``calendar_feed_imports.json`` with ``mirror=False`` because it
+    runs PRE-swap, when the live DB is still the OLD corpus that must stay byte-identical
+    (torture T1/T7). So without this step the durable, encrypted, backup-carried table would
+    stay STALE after a restore until the next normal calendar write re-synced it — defeating
+    D1's whole point (the table, not the cleartext JSON, is the durable home of imported
+    events). Now the live DB IS the merged corpus, so we FULL-REPLACE the mirror from the
+    authoritative merged JSON via the same primitive normal writes use.
+
+    Honest by construction: a full replace from the authoritative JSON CONVERGES (table == JSON)
+    and can never double-count; ``sync_imports`` never raises (the JSON stays authoritative on
+    any DB hiccup); and a JSON read hiccup must NEVER empty an already-populated table. Returns
+    the sync status, or ``None`` when the restore carried no calendar side-file to merge (so the
+    report only grows the field when it actually applies)."""
+    cal = (side_files or {}).get("state", {}).get("calendar_feed_imports.json", {})
+    if not isinstance(cal, dict) or cal.get("action") != "merged":
+        return None
+    try:
+        from src.events.event_store import count as _ev_count
+        from src.events.event_store import sync_imports
+        from src.events.feeds import load_imports
+
+        merged = load_imports()
+        if not merged and _ev_count() > 0:
+            # A read hiccup returned {} while the table already holds rows: refusing to
+            # DELETE them (the JSON stays authoritative; the mirror re-syncs on next write).
+            return {"synced": False, "reason": "empty read guarded"}
+        return sync_imports(merged)
+    except Exception:  # noqa: BLE001 - the mirror refresh must never undo a committed restore
+        _LOG.warning(
+            "event_imports mirror refresh after restore failed; the JSON side-file is "
+            "authoritative and the mirror re-syncs on the next calendar write",
+            exc_info=True,
+        )
+        return {"synced": False, "reason": "refresh error"}
+
+
 _CUSTODY_COLS = (
     "seq, item_id, item_hash, action, actor, metadata_json,"
     " prev_entry_hash, entry_hash, signature_json, timestamp_json"
@@ -1405,6 +1459,15 @@ def run_restore(
 
     report["committed"] = True
     report["batch_id"] = batch_id
+    # DB-reliability D1 follow-up (Wave 5 L): refresh the durable ``event_imports`` mirror
+    # from the merged side-file now that the live DB IS the restored corpus. merge_side_files
+    # unioned the JSON with mirror=False PRE-swap (the OLD live DB had to stay untouched), so
+    # the durable table would otherwise stay stale until the next calendar write. Best-effort
+    # + guarded (see _refresh_event_mirror): a full replace from the authoritative JSON, never
+    # a double-count, never undoes a committed restore.
+    ev_mirror = _refresh_event_mirror(report.get("side_files") or {})
+    if ev_mirror is not None:
+        report["event_mirror"] = ev_mirror
     # P0-4 (maintainer ruling 2026-06-19): recompute the CORE-ENGINE derived metadata
     # for the newly-imported articles so an OLD backup aligns with the CURRENT engine
     # (keywords, date/place/entity extraction, sentiment); AI artifacts are left
