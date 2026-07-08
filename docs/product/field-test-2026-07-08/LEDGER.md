@@ -440,3 +440,106 @@ becomes that optional refresh or is retired.
   (no click); the fetch appears in the task manager as a cancellable job; airplane
   refuses; the tab shows an honest background state while loading; the same
   no-manual-load principle is applied to the Settings → Statistics fetch button.
+
+---
+
+## Item 5 — Agenda looks empty (only moon phases); must show ALL article-extracted dates + a comprehensive global election/summit calendar  [PLANNED — "flood it" ruling, re-raised with specifics]  ⏭
+
+**Verbatim:** "The Agenda seems empty. We should be able to see all article
+extracted dates. The problem should become "there's too much data" rather than
+currently showing moon phases and so forth. We should see country's next main
+leader's election dates, and any major events that have been grabbed from articles
+(G7 summits, BRICS summits, NATO, UNO, and other inter government entity's related
+events from the entire globe, including asia, middle east, africa, south america,
+Europe, oceania and north america."
+
+**Maps to:** the standing **"we should be flooded; it's the point of datamining —
+expand calendars massively (elections, summits, central banks, parliaments, courts,
+UN days, fiscal dates…), every entry sourced, movable dates marked"** ruling
+(2026-06-10), the **ELECTIONS & CIVIC VERTICAL** design (sourced elections calendar,
+France 2027 pilot), and the **AGENDA ARTICLE-EXTRACTED DATES** shipped backend. This
+feedback elevates all three from thin/pilot to comprehensive-and-visible.
+
+### Why it looks empty (three causes)
+
+1. **The article-extracted (deduced) layer is gated to near-nothing.**
+   `GET /api/events/deduced` (`src/api/events.py:178`) defaults `min_articles=2`, and
+   `datestore.upcoming_deduced` (`src/timemap/datestore.py:172`) is **FUTURE-ONLY**
+   (`days_ahead`) with a `HAVING COUNT(DISTINCT article_id) >= min_articles` gate
+   (`:208`). So on a real corpus almost every extracted date is filtered out — the
+   opposite of "too much data." The frontend `loadAgenda` (`app.js:2648`) does call
+   `/api/events/deduced` and maps it via `mapDeducedToAgenda` (`:2632`), so the
+   pipeline works — it's just starved by the gate + future-only.
+2. **Moons are an always-on glyph overlay, not a gated event.** `_astroByDate`
+   (`app.js:3098` `_ensureAstro`) paints a moon glyph on every relevant day
+   regardless of the event layers, so when the real layers are empty the moons are
+   all that's left → "only moon phases."
+3. **Curated global events are thin.** `configs/world_events.yml` (161 lines) has UN
+   days + some national days + a France election pilot + a `summits` calendar KEY that
+   is essentially unpopulated. No comprehensive global election calendar, no populated
+   G7/G20/BRICS/NATO/UNGA/SCO/ASEAN/AU/Arab-League/CELAC/Pacific-Islands-Forum/EU-Council
+   summit set across all continents.
+
+### Fix plan (for the autonomous session)
+
+**A. Show ALL article-extracted dates (invert the gate — flood, then let the user
+filter).**
+- The deduced layer should serve **the whole visible agenda window (past AND
+  future)**, not just "upcoming." Add/extend a windowed query
+  (`datestore.deduced_in_range(start, end, min_articles=1)`) that the agenda calls
+  with the view's actual date range (like the World-map signals layer serves its
+  window), instead of the fixed future-only `upcoming_deduced`.
+- Default `min_articles` to **1** (show single-mention dates) — the maintainer wants
+  "too much data" as the desired state. Keep `min_articles` as a **user filter** to
+  narrow down (the honest instrument), not a hidden default that hides everything.
+- Honesty carries unchanged: each deduced date keeps the "deduced · never confirmed"
+  pill, distinct-article + source counts, and the `article_ids` for open-through
+  (`mapDeducedToAgenda` already renders these). Flooding ≠ fabricating — every date is
+  a real extracted mention with provenance.
+- **Secondary lever — extraction recall.** The 2026-06/07 field diagnostics measured
+  date-extraction recall ~36–52% (F4), so even ungated the extracted set is thinner
+  than it should be. Improving `src/timemap/dateextract.py` recall (the F4 item) is a
+  separate, complementary task — note it, don't block A on it.
+
+**B. Make astronomy a subordinate/toggleable layer, not the default-dominant one.**
+Once A+B populate real content, moons recede naturally; additionally consider making
+the moon/season glyph overlay a **toggle** (off-able) so it never dominates. Keep it
+(computed-locally, honest) — just not the headline.
+
+**C. Comprehensive, SOURCED global election + intergovernmental-summit calendar.**
+Populate `configs/world_events.yml` (the `elections` + `summits` calendars) with:
+- **Next main-leader elections for every country** (presidential / general /
+  legislative), across ALL continents (the de-US-centring non-negotiable — explicitly
+  Asia, Middle East, Africa, South America, Europe, Oceania, North America). Each
+  entry: `official_url` (the electoral authority), `confirmed:true` for a scheduled
+  date, `confirmed:false` + typical window for a movable/announced-later one. **NEVER
+  fabricate a date** — an unscheduled election carries the authority source + a "date
+  not yet set" state, never a guessed day (the ELECTIONS-vertical rule).
+- **Intergovernmental summits from the whole globe:** G7, G20, BRICS, NATO, UN General
+  Assembly (UNGA), UN climate COP, SCO, ASEAN, African Union (AU), Arab League, CELAC,
+  Mercosur, Pacific Islands Forum, EU Council, APEC, Commonwealth (CHOGM), OIC, etc.
+  Movable summits carry `confirmed:false` + typical month + host + `official_url` (the
+  existing `summits` calendar convention already supports this — line 18 of the file).
+- This is a DATA-curation task: sourced, dated, provenance-carrying, never fabricated.
+  🔍 verify each date/source on a networked machine before shipping (the maintainer's
+  live env is networked). Movable future instances are marked, not invented.
+
+**D. Link article-grabbed summit/election mentions to the curated events.** The
+maintainer says events "grabbed from articles" — the deduced layer (A) surfaces the
+DATES articles mention; where a mentioned date coincides with a curated
+election/summit, they should reinforce (the curated event shows + the deduced count
+shows "N of your articles mention this"). Cross-referencing = the lexical/temporal
+match the ELECTIONS design already sketched (family↔event titles/tags + mentioned-date
+∩ event-date). Nice-to-have on top of A+C.
+
+### Notes / honesty
+- The agenda month-grid defaults to the current month; deduced/curated dates far in
+  the future won't show until navigated. That's fine, but the "flood" is felt when the
+  visible window actually serves its extracted dates (A) — confirm the deduced query
+  is window-driven, not a fixed horizon.
+- Everything stays labeled: curated = confirmed/movable + source; deduced = "never
+  confirmed" + counts. No score, no fabricated dates.
+- ⏭ Acceptance: on a real corpus the agenda is DENSE with article-extracted dates
+  (past + future, single-mention included, filterable down), a global
+  election+summit calendar is visible across all continents, and moon glyphs are a
+  minor toggleable layer rather than the only content.
