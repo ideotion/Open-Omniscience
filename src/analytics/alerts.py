@@ -143,8 +143,10 @@ def compute_alerts(
     #    NOTE (bounded, conscious tradeoff): this repeats the scan the
     #    space_time_convergence Home producer already runs each briefing refresh, so a
     #    refresh pays it twice. It is a bounded read of the small (no-content) place/date
-    #    tables over a RECENT lookback, on the background refresh thread — acceptable for
-    #    now; a shared/memoised convergence pass is a later optimisation, not correctness.
+    #    tables over a RECENT lookback, on the background refresh thread — acceptable.
+    #    The POLLED path no longer pays it per request: /api/signals/alerts is served
+    #    through the background-refreshed memo cache in src.analytics.poll_cache (field
+    #    test 2026-07-08, Item 8), so this scan runs on the background thread only.
     convergences: list[dict] = []
     try:
         from src.analytics.convergence import find_convergences

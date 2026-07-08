@@ -134,10 +134,18 @@ def signals_alerts(
     Aggregates cached hazard records (the provider's OWN severity), fired local watches, and
     recent space-time convergences into transparent tiers. 'Urgent' is ONLY ever a
     provider-declared red hazard alert; nothing is a fabricated urgency, no figure is a
-    score. Reads the local hazards snapshot (which discloses its own age) — never fetches."""
-    from src.analytics.alerts import compute_alerts
+    score. Reads the local hazards snapshot (which discloses its own age) — never fetches.
 
-    return compute_alerts(
+    POLLED endpoint (field test 2026-07-08, Item 8): served through a background-refreshed
+    memo cache (:mod:`src.analytics.poll_cache`) so the 45-day space-time convergence scan
+    that ``compute_alerts`` runs is NOT re-executed on every poll (the single-worker
+    death-spiral driver). The cached value is the SAME real ``compute_alerts`` result — a
+    visible ``as_of``/``cached`` discloses its age; a cold cache or a bind mismatch falls
+    back to a live compute (once). The memoisation adds an as_of, it does not change WHAT
+    is computed."""
+    from src.analytics import poll_cache
+
+    return poll_cache.get_alerts(
         db,
         within_hours=within_hours,
         hazard_max_age_hours=hazard_max_age_hours,
