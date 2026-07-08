@@ -8005,6 +8005,7 @@
         if (cat === "supergroups") loadSuperGroups();
         if (cat === "convergence") loadConvergences();
         if (cat === "watches") loadWatches();
+        if (cat === "lunar") loadLunar();
       }
     }
 
@@ -8498,6 +8499,87 @@
       } catch (e) {
         // Additive panel — degrade quietly, never throw.
         box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+      }
+    }
+
+    // -- Lunar correlation (wave 5): first-class surface for the read-only
+    // /api/insights/lunar-correlation screen (was a raw-JSON diagnostics button).
+    // Screens the top keywords' daily coverage against the moon's illuminated
+    // fraction, Benjamini-Hochberg FDR-corrected. The method + "correlation is not
+    // causation" caveat live in the panel intro (VISIBLE by default); the common,
+    // honest outcome (nothing survives) is stated, never hidden. The survivor flag
+    // is the FDR verdict, NOT a ranking — counts + statistics only, no score.
+    async function loadLunar() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("lunar-list"); if (!box) return;
+      const limEl = $("lunar-limit"), fdrEl = $("lunar-fdr");
+      const lim = Math.min(200, Math.max(1, parseInt(limEl ? limEl.value : "40", 10) || 40));
+      let q = parseFloat(fdrEl ? fdrEl.value : "0.05");
+      if (!(q > 0 && q <= 1)) q = 0.05;
+      box.innerHTML = `<div class="muted">${esc(t("Screening the corpus… a permutation test runs per keyword, so this can take a few seconds."))}</div>`;
+      try {
+        const d = await api(`/api/insights/lunar-correlation?limit=${lim}&fdr_q=${q}`);
+        const results = d.results || [];
+        // Honest summary — counts only (tested · skipped · survivors).
+        const summary = `<div class="muted" style="margin-bottom:8px">${d.tested || 0} ${esc(t("tested"))} · ${d.skipped || 0} ${esc(t("skipped"))} · <strong>${d.survivors || 0}</strong> ${esc(t("survivors"))}</div>`;
+        if (!results.length) {
+          // tested==0 -> too few active days; state it, never a blank pane.
+          box.innerHTML = summary + `<div class="muted">${esc(t("No series had enough active days to test."))}</div>`;
+          return;
+        }
+        // Never hide an empty result: when nothing survives, say so prominently.
+        const noneNote = (d.survivors === 0)
+          ? `<div class="card-caveat" style="margin-bottom:8px">${esc(t("No series survived the multiple-testing correction — the honest, expected result."))}</div>`
+          : "";
+        const header = `<tr>
+          <th>${esc(t("Term"))}</th><th style="text-align:right">r</th>
+          <th style="text-align:right">${esc(t("p-value"))}</th><th style="text-align:right">n</th>
+          <th style="text-align:right">${esc(t("active days"))}</th>
+          <th style="text-align:right">${esc(t("q-value"))}</th><th>${esc(t("survived"))}</th></tr>`;
+        const rows = results.map(r => {
+          // The survivor flag is the FDR verdict, never a ranking.
+          const surv = r.survives
+            ? `<span class="pill ok">${esc(t("survived"))}</span>`
+            : `<span class="muted">—</span>`;
+          const qv = (r.q_value == null) ? "—" : (+r.q_value).toFixed(4);
+          const num = (v, dp) => (v == null || isNaN(+v)) ? "—" : (+v).toFixed(dp);
+          return `<tr>
+            <td>${esc(r.term)}</td>
+            <td style="text-align:right">${num(r.r, 3)}</td>
+            <td style="text-align:right">${num(r.p_value, 4)}</td>
+            <td style="text-align:right" class="muted">${r.n}</td>
+            <td style="text-align:right" class="muted">${r.active_days}</td>
+            <td style="text-align:right">${qv}</td>
+            <td>${surv}</td></tr>`;
+        }).join("");
+        box.innerHTML = summary + noneNote + `<div style="overflow:auto"><table>${header}${rows}</table></div>`;
+      } catch (e) {
+        // Additive panel — degrade quietly, never throw.
+        box.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+      }
+    }
+
+    async function lunarTestTerm() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("lunar-single"); if (!out) return;
+      const termEl = $("lunar-term");
+      const term = (termEl ? termEl.value : "").trim();
+      if (!term) { out.textContent = ""; return; }
+      out.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const d = await api("/api/insights/lunar-correlation?term=" + encodeURIComponent(term));
+        const r = d.result;
+        if (!r) {
+          // Honest skip: too few active days to test this one keyword.
+          out.innerHTML = `<div class="muted">${esc(t("Too few active days to test this keyword honestly."))}</div>`;
+          return;
+        }
+        const stat = `<strong>${esc(r.term)}</strong> · r ${(+r.r).toFixed(3)} · ${esc(t("p-value"))} ${(+r.p_value).toFixed(4)} · n ${r.n} · ${r.active_days} ${esc(t("active days"))}`;
+        // The single-test note (keyed, VISIBLE): one test is not a screen.
+        out.innerHTML = `<div>${stat}</div>
+          <div class="card-caveat" style="margin-top:4px">${esc(t("A single test, not corrected for multiple comparisons — screen many keywords for an honest, FDR-corrected result."))}</div>`;
+      } catch (e) {
+        out.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
       }
     }
 

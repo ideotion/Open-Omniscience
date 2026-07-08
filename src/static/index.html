@@ -803,6 +803,7 @@
         <button data-tab="map">Map</button>
         <button data-tab="convergence">Convergence</button>
         <button data-tab="watches">Watches</button>
+        <button data-tab="lunar">Lunar</button>
       </nav>
     </section>
 
@@ -995,6 +996,29 @@
       </div>
       <div id="wt-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
       <div id="wt-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+    </section>
+
+    <!-- Lunar correlation (wave 5): a first-class surface for the read-only
+         /api/insights/lunar-correlation screen (it was a raw-JSON diagnostics
+         button). Screens the top keywords' daily coverage against the moon's
+         illuminated fraction, FDR-corrected — a survivor beat multiple testing.
+         The method + "correlation is not causation" caveat are VISIBLE; the
+         common honest outcome (nothing survives) is stated, never hidden.
+         Counts + statistics only, the survivor flag is the FDR verdict, no score. -->
+    <section class="panel ins-view" id="ins-lunar" style="display:none">
+      <h2 style="margin-top:0;font-size:13px">Lunar correlation</h2>
+      <p class="hint" style="margin-top:0">Does a keyword's daily coverage line up with the moon's illuminated fraction? This screens the most-mentioned keywords with a circular-shift permutation test and corrects the whole family with Benjamini-Hochberg FDR, so a survivor beat multiple testing — never a bare significant p. Correlation is not causation; the common, honest outcome is that nothing survives. Counts and statistics only, no score.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap">
+        <div><label for="lunar-limit">Terms to screen</label><input id="lunar-limit" type="number" value="40" min="1" max="200" style="width:110px"></div>
+        <div><label for="lunar-fdr">FDR level</label><input id="lunar-fdr" type="number" value="0.05" min="0.001" max="1" step="0.01" style="width:110px"></div>
+        <div style="flex:0 0 auto"><button onclick="loadLunar()">Refresh</button></div>
+      </div>
+      <div id="lunar-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="flex:2"><label for="lunar-term">Test one keyword</label><input id="lunar-term" placeholder="keyword to test" onkeydown="if(event.key==='Enter')lunarTestTerm()"></div>
+        <div style="flex:0 0 auto"><button class="secondary" onclick="lunarTestTerm()">Test one keyword</button></div>
+      </div>
+      <div id="lunar-single" class="hint" style="margin-top:8px"></div>
     </section>
     </div>
 
