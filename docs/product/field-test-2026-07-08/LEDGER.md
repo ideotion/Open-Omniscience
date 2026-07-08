@@ -721,8 +721,8 @@ this session) — amend this section with the ruling.
 **Instruction:** "Now I will send you diagnostics logs. Analyze them and make an
 action plan accordingly. Don't fix, analyze, and plan, and commit the plan."
 
-**Logs analyzed (5):** keyword self-test · keyword-growth curve · keyword-engine
-report · date diagnostics · debug bundle. **Corpus at export:** 59,566 articles ·
+**Logs analyzed (6):** keyword self-test · keyword-growth curve · keyword-engine
+report · date diagnostics · debug bundle · article-length. **Corpus at export:** 59,566 articles ·
 974,062 keywords · 3,395 sources · 131,675 price points · **2.28 GB** encrypted DB ·
 50 corpus languages · py3.13.5 · schema `b3d4e5f6a7c8`.
 
@@ -818,6 +818,29 @@ articles — Persian calendar/numerals not handled = a real bug) and **Hungarian
 (study/studied, issue/issued, country/countries…). `OO_FAMILY_LEMMA` is off. Maintainer
 reviews the preview + enables after the P3 measure. `tag_coverage` 0.2% (baseline tags
 never backfilled at scale — low priority; tie the backfill to the P1 job-ification).
+
+### P2 — Article-length distributions: calibration for "Latest in your corpus" + confirms unsegmentation  [PLANNED — Home-Latest S0→S1]
+This is the S0 calibration diagnostic for the ledger's **Home "Latest in your corpus"**
+recency lens (transparent substance filter: ≥min words AND ≥min cited sources,
+per-content-type, script-aware). Real distributions now exist to set honest thresholds:
+- **Whole corpus:** word_count mean 627 / median 400 / p10 101 / p90 1208; ~9.8% are
+  <100 words. **Cited sources: median 1, and 33.9% of articles cite ZERO** outbound
+  sources (p25 = 0) — a flat "≥1 source" gate would drop a third of the corpus, so the
+  gate MUST be per-content-type + user-adjustable (never a hidden score).
+- **By content type (justifies per-type thresholds):** broadcaster median 231 / wire-
+  agency 197 / blog 94 are legitimately SHORT; legal 1659 / scientific 650 /
+  geopolitical 1005 / fact-checker 752 are long. A flat word gate would wrongly penalise
+  wire/broadcaster — use per-type floors (or the type's own p10/p25), not one number.
+- **CONFIRMS the unsegmented problem from a 2nd angle:** `zh` mean **34 words / median
+  17**, `ja` mean 57 / median 24, `th` mean 137 (all `unsegmented:true`). A real Chinese
+  article showing "17 words" proves `len(text.split())` is meaningless there — so the
+  word gate MUST skip zh/ja/th (the diagnostic already emits `unsegmented_languages`),
+  and it re-confirms Item-8-P1 (the segmenter is needed for extraction AND length).
+- **FIX / USE:** feed these into the Home-Latest **S1** recency endpoint (`created_at`
+  order + per-content-type min_words/min_cited, script-aware skip for zh/ja/th, near-dup
+  collapse) — the thresholds are now evidence-based, not guessed. ⏭ Acceptance: S1 uses
+  per-content-type + script-aware gates derived from these percentiles; each shown
+  article displays its real word/source counts; no flat gate, no score.
 
 ### Healthy — no action (recorded for confidence)
 Self-test 43/43 · corpus integrity: drift false, orphans 0, no dangling mentions, **0
