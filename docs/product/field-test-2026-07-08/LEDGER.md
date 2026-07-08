@@ -896,6 +896,48 @@ picture is WORSE, confirming P0 is the priority:**
   covering indexes (the un-indexed `coalesce` min/max from the 14:34 bundle remains the
   P0 target — it is not in the EXPLAIN set).
 
+### 3rd batch (request-latency watchdog timeline + integrity) — THE DEATH-SPIRAL finding  [NEW — architectural, elevates P0]
+The detailed watchdog timeline (same 13:45–13:50 session) is the smoking gun for
+*why* the app melts, not just that endpoints are slow:
+- **Requests STACK without cancellation → a death spiral.** By 13:50 a single
+  `GET /api/insights/trending-windows` had been **in-flight for 217 s and was still
+  running**, alongside 8–9 other heavy queries concurrently (a 2nd `trending-windows`
+  187 s, two `diagnostics/keywords` 184 s, `signals/flood` 151 s, `insights/lunar-
+  correlation` 142 s, `signals/bury` 111 s, `keyword-engine` 79 s, `rollup-benchmark`
+  55 s). The Home polls (`briefing`/`signals/alerts`/`trending-windows`/`latest`) fire
+  every few seconds, each takes 60–200 s, and **nothing is cancelled when the client
+  gives up** — so new polls pile onto unfinished old ones, all contending for the ONE
+  SQLCipher connection + the GIL, making every request progressively slower. A single
+  watchdog event shows the loop lagging **24.8 s** at once.
+- **This means caching/indexing alone is NOT enough — the stacking must be stopped.**
+  Add (beyond the P0 index + rollup serve): **(a) server-side DEADLINES** on heavy
+  analytics endpoints (return a partial/`503` after N s instead of running for minutes
+  — the deadline-guarded pattern the diagnostics sweeps already use); **(b) client
+  SINGLE-FLIGHT polling** — never issue a new poll while the previous is in flight
+  (drop or supersede it), and cancel superseded requests (AbortController); **(c) a
+  CONCURRENCY CAP** on heavy analytics so 10 don't thrash the single connection (they
+  contend anyway — serialising is faster than thrashing). This is the load-bearing
+  architectural fix; the index + rollup make each query cheap, but the stacking is what
+  turns "slow" into "frozen for minutes."
+- **NEW heavy endpoints seen this batch:** `signals/flood` (66–151 s), `signals/bury`
+  (27–111 s), `insights/lunar-correlation` (57–142 s), `diagnostics/keywords` (100–184 s).
+  These + the manipulation-card signal endpoints all need the same rollup/cache/deadline
+  treatment (they scan the corpus live).
+- **Integrity `auto_cleanup` (ran 13:19) REFINES the KW-5 junk fix:** the prune scanned
+  **918,743 keywords and found 0 orphans / pruned 0** — so the junk is NOT prunable
+  orphans; every keyword is really referenced. The reduction therefore CANNOT come from
+  "Clean up keywords / prune" — it must come from the **zh/ja/th segmenter** (re-extract
+  produces fewer, correct tokens) + the **ko/vi/mr stoplists**, applied via a re-index.
+  A re-index WITHOUT a segmenter won't shrink the zh/ja/th junk. (The same pass's
+  `reconcile_keyword_language` is WORKING — it relanguaged **4,427** keywords, all
+  lang→lang first-write-wins corrections.) So KW-5's real levers are segmenter+stoplists,
+  not pruning — sharpen the plan accordingly.
+- **Minor: FTS integrity check inconclusive.** The integrity sweep reports
+  `fts.present:false` + `fts_rows:null` (couldn't count under the deadline), while
+  schema-drift reports `fts_present:true`. FTS exists (search works); the row-count
+  parity check just didn't complete at this scale. Verify the FTS index isn't stale
+  (re-run the FTS rebuild if a real delta shows) — low priority.
+
 ### Suggested build order
 DB date-range index (P0, cheapest+broadest) → memoise/cache the polled endpoints +
 turn on the rollup serve (P0) → fix the graph/mindmap 503 (P0/P1) → job-ify the heavy
