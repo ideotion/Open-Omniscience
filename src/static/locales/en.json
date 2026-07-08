@@ -1831,5 +1831,18 @@
   "with": "with",
   "vs": "vs",
   "Not in your corpus yet — no stats.": "Not in your corpus yet — no stats.",
-  "No articles for this channel yet.": "No articles for this channel yet."
+  "No articles for this channel yet.": "No articles for this channel yet.",
+  "Tracked changes": "Tracked changes",
+  "anon": "anon",
+  "minor": "minor",
+  "bot": "bot",
+  "full text stored": "full text stored",
+  "The exact text of this revision is stored on this machine.": "The exact text of this revision is stored on this machine.",
+  "tracked revisions": "tracked revisions",
+  "Showing": "Showing",
+  "No tracked revisions stored for this page yet.": "No tracked revisions stored for this page yet.",
+  "No flagged tracked revisions stored for this page yet.": "No flagged tracked revisions stored for this page yet.",
+  "No stored diff (no parent, or tracked without diffs).": "No stored diff (no parent, or tracked without diffs).",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "See this page's tracked revision history — the stored edits, newest first, with each diff."
 }

@@ -1831,5 +1831,18 @@
   "with": "avec",
   "vs": "contre",
   "Not in your corpus yet — no stats.": "Pas encore dans votre corpus — aucune statistique.",
-  "No articles for this channel yet.": "Aucun article pour ce canal pour l'instant."
+  "No articles for this channel yet.": "Aucun article pour ce canal pour l'instant.",
+  "Tracked changes": "Modifications suivies",
+  "anon": "anon.",
+  "minor": "mineure",
+  "bot": "robot",
+  "full text stored": "texte intégral stocké",
+  "The exact text of this revision is stored on this machine.": "Le texte exact de cette révision est stocké sur cette machine.",
+  "tracked revisions": "révisions suivies",
+  "Showing": "Affichage de",
+  "No tracked revisions stored for this page yet.": "Aucune révision suivie stockée pour cette page pour l'instant.",
+  "No flagged tracked revisions stored for this page yet.": "Aucune révision suivie signalée stockée pour cette page pour l'instant.",
+  "No stored diff (no parent, or tracked without diffs).": "Aucune différence stockée (pas de version parente, ou suivi sans différences).",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "La tranche d'éditions suivies stockée sur cette machine, les plus récentes d'abord — pas nécessairement toutes les révisions historiques. Chaque différence est le résumé compact ajouté / supprimé capturé au moment du suivi de l'édition (tronqué de chaque côté), pas une re-comparaison en direct. Décomptes uniquement, aucun score.",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "Voir l'historique des révisions suivies de cette page — les éditions stockées, les plus récentes d'abord, avec chaque différence."
 }

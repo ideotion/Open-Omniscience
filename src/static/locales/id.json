@@ -1831,5 +1831,18 @@
   "with": "dengan",
   "vs": "vs",
   "Not in your corpus yet — no stats.": "Belum ada di korpus Anda — tidak ada statistik.",
-  "No articles for this channel yet.": "Belum ada artikel untuk saluran ini."
+  "No articles for this channel yet.": "Belum ada artikel untuk saluran ini.",
+  "Tracked changes": "Perubahan terlacak",
+  "anon": "anon",
+  "minor": "kecil",
+  "bot": "bot",
+  "full text stored": "teks lengkap tersimpan",
+  "The exact text of this revision is stored on this machine.": "Teks persis revisi ini disimpan di mesin ini.",
+  "tracked revisions": "revisi terlacak",
+  "Showing": "Menampilkan",
+  "No tracked revisions stored for this page yet.": "Belum ada revisi terlacak yang tersimpan untuk halaman ini.",
+  "No flagged tracked revisions stored for this page yet.": "Belum ada revisi terlacak yang ditandai tersimpan untuk halaman ini.",
+  "No stored diff (no parent, or tracked without diffs).": "Tidak ada diff tersimpan (tanpa versi induk, atau dilacak tanpa diff).",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "Potongan suntingan terlacak yang disimpan di mesin ini, terbaru dahulu — belum tentu setiap revisi historis. Setiap diff adalah ringkasan ringkas ditambah / dihapus yang direkam saat suntingan dilacak (dipangkas di tiap sisi), bukan pembandingan ulang langsung. Hanya hitungan, tanpa skor.",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "Lihat riwayat revisi terlacak halaman ini — suntingan tersimpan, terbaru dahulu, dengan tiap diff."
 }

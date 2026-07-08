@@ -2192,6 +2192,29 @@
     </div>
   </dialog>
 
+  <!-- Wikipedia tracked-changes view (wave 5): the per-page revision history the
+       "tracked-changes tab" ruling asks for (Wikipedia-as-a-living-source). Reads
+       GET /api/wiki/pages/{id}/revisions — the STORED tracked slice, newest first,
+       each revision with its compact +added/-removed diff captured at track time
+       (truncated per side, NOT a live re-diff), editor/comment metadata, and a
+       "full text stored" marker. Honest window (showing N of M) + a visible caveat;
+       flagged-only toggle reuses the endpoint param. Counts only, no score. -->
+  <dialog id="wiki-tc" style="width:min(820px,96vw);max-height:92vh;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <b style="font-size:13px">Tracked changes</b>
+      <b id="wiki-tc-title" class="muted" style="font-size:13px;font-weight:500"></b>
+      <span style="margin-inline-start:auto"></span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+        <input type="checkbox" id="wiki-tc-flagged" style="width:auto" onchange="loadWikiTC()"> flagged only
+      </label>
+      <button class="secondary tiny" onclick="loadWikiTC()">Refresh</button>
+      <button class="icon-btn" onclick="document.getElementById('wiki-tc').close()" aria-label="Close" title="Close">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div id="wiki-tc-body" style="padding:12px 16px;overflow:auto;max-height:calc(92vh - 110px)"><div class="muted">Loading…</div></div>
+    <div id="wiki-tc-method" class="card-caveat" style="padding:0 16px 14px"></div>
+  </dialog>
+
   <dialog id="folder-picker" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:0">
     <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px">
       <strong>Pick a folder</strong>

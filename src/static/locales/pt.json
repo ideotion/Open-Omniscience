@@ -1831,5 +1831,18 @@
   "with": "com",
   "vs": "vs.",
   "Not in your corpus yet — no stats.": "Ainda não está no seu corpus — sem estatísticas.",
-  "No articles for this channel yet.": "Ainda não há artigos para este canal."
+  "No articles for this channel yet.": "Ainda não há artigos para este canal.",
+  "Tracked changes": "Alterações rastreadas",
+  "anon": "anôn.",
+  "minor": "menor",
+  "bot": "bot",
+  "full text stored": "texto completo armazenado",
+  "The exact text of this revision is stored on this machine.": "O texto exato desta revisão está armazenado neste computador.",
+  "tracked revisions": "revisões rastreadas",
+  "Showing": "Mostrando",
+  "No tracked revisions stored for this page yet.": "Ainda não há revisões rastreadas armazenadas para esta página.",
+  "No flagged tracked revisions stored for this page yet.": "Ainda não há revisões rastreadas sinalizadas armazenadas para esta página.",
+  "No stored diff (no parent, or tracked without diffs).": "Sem diferença armazenada (sem versão anterior, ou rastreado sem diferenças).",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "O segmento de edições rastreadas armazenado neste computador, as mais recentes primeiro — não necessariamente todas as revisões históricas. Cada diferença é o resumo compacto de adicionado / removido capturado quando a edição foi rastreada (truncado de cada lado), não uma recomparação ao vivo. Apenas contagens, sem pontuação.",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "Ver o histórico de revisões rastreadas desta página — as edições armazenadas, as mais recentes primeiro, com cada diferença."
 }

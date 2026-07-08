@@ -1831,5 +1831,18 @@
   "with": "مع",
   "vs": "مقابل",
   "Not in your corpus yet — no stats.": "ليست في مجموعتك بعد — لا إحصاءات.",
-  "No articles for this channel yet.": "لا توجد مقالات لهذه القناة بعد."
+  "No articles for this channel yet.": "لا توجد مقالات لهذه القناة بعد.",
+  "Tracked changes": "التغييرات المتتبَّعة",
+  "anon": "مجهول",
+  "minor": "طفيف",
+  "bot": "بوت",
+  "full text stored": "النص الكامل مُخزَّن",
+  "The exact text of this revision is stored on this machine.": "النص الدقيق لهذه المراجعة مُخزَّن على هذا الجهاز.",
+  "tracked revisions": "مراجعات متتبَّعة",
+  "Showing": "عرض",
+  "No tracked revisions stored for this page yet.": "لا توجد مراجعات متتبَّعة مُخزَّنة لهذه الصفحة حتى الآن.",
+  "No flagged tracked revisions stored for this page yet.": "لا توجد مراجعات متتبَّعة مُعلَّمة مُخزَّنة لهذه الصفحة حتى الآن.",
+  "No stored diff (no parent, or tracked without diffs).": "لا يوجد فرق مُخزَّن (لا نسخة أصل، أو تم التتبُّع دون فروق).",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "الشريحة المتتبَّعة من التعديلات المُخزَّنة على هذا الجهاز، الأحدث أولاً — ليست بالضرورة كل مراجعة تاريخية. كل فرق هو الملخص المُوجز للمُضاف / المحذوف المُلتقَط عند تتبُّع التعديل (مقتطع من كل جانب)، وليس إعادة مقارنة حيّة. أعداد فقط، بلا تقييم.",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "عرض سِجِل المراجعات المتتبَّعة لهذه الصفحة — التعديلات المُخزَّنة، الأحدث أولاً، مع كل فرق."
 }

@@ -12175,6 +12175,7 @@
             <td class="muted" style="font-size:12px">${p.last_checked_at?esc(p.last_checked_at.slice(0,16).replace("T"," ")):"never"}</td>
             <td>${p.revisions}</td><td class="muted">${p.flagged}</td>
             <td style="white-space:nowrap">
+              <button class="tiny secondary" onclick="openWikiTC(${p.id}, ${esc(JSON.stringify(p.title))}, ${esc(JSON.stringify(p.wiki))})" title="See this page's tracked revision history — the stored edits, newest first, with each diff.">Tracked changes</button>
               <button class="tiny secondary" onclick="trackWikiPage(${p.id})">Track</button>
               <button class="tiny danger" onclick="deleteWikiPage(${p.id}, ${esc(JSON.stringify(p.title))})">Delete</button>
             </td></tr>`).join("")
@@ -12252,6 +12253,87 @@
           <div class="muted" style="font-size:12px;margin-bottom:6px">${esc(d.wiki)} · ${esc(d.title)} · rev ${d.revid}
             · <a href="${esc(d.diff_url)}" target="_blank" rel="noopener">view on Wikipedia</a></div>${lines}</div>`;
       } catch (e) { el.innerHTML=""; toast("Diff: " + e.message, "err"); }
+    }
+
+    // --- Wikipedia tracked-changes view (wave 5) --------------------------- //
+    // The per-page tracked revision history the "tracked-changes tab" ruling asks
+    // for (Wikipedia-as-a-living-source). Reads GET /api/wiki/pages/{id}/revisions —
+    // the STORED tracked slice (newest first): each revision's compact +added/-removed
+    // diff captured at track time (truncated per side, NOT a live re-diff), the
+    // editor/comment metadata, and a "full text stored" marker for revisions whose
+    // exact text is on this machine. Honest window (showing N of M) + a VISIBLE caveat
+    // mirroring the endpoint method; the flagged-only toggle reuses the endpoint param.
+    // Counts only, no score; all strings flow through the i18n engine.
+    let _wikiTc = { id: null, title: "", wiki: "" };
+    function openWikiTC(id, title, wiki) {
+      _wikiTc = { id: id, title: title || "", wiki: wiki || "" };
+      const ttl = $("wiki-tc-title");
+      if (ttl) ttl.textContent = (_wikiTc.wiki ? _wikiTc.wiki + " · " : "") + _wikiTc.title;
+      const fo = $("wiki-tc-flagged"); if (fo) fo.checked = false;
+      const dlg = $("wiki-tc");
+      if (dlg && typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
+      loadWikiTC();
+    }
+
+    function _wikiRevRow(r, t) {
+      const ts = r.timestamp ? esc(r.timestamp.slice(0, 16).replace("T", " ")) : "—";
+      const editor = esc(r.editor || "—");
+      const pills = [];
+      if (r.editor_anon) pills.push(`<span class="pill warn">${esc(t("anon"))}</span>`);
+      if (r.minor) pills.push(`<span class="pill">${esc(t("minor"))}</span>`);
+      if (r.bot) pills.push(`<span class="pill">${esc(t("bot"))}</span>`);
+      if (r.has_full_text) pills.push(`<span class="pill ok" title="${esc(t("The exact text of this revision is stored on this machine."))}">${esc(t("full text stored"))}</span>`);
+      const pill = pills.length ? " " + pills.join(" ") : "";
+      const delta = (r.delta_bytes == null) ? "" :
+        `<span style="color:${r.delta_bytes < 0 ? 'var(--err)' : 'var(--ok)'}">${r.delta_bytes > 0 ? '+' : ''}${r.delta_bytes}</span>`;
+      const reasons = (r.flag_reasons || []).filter(Boolean)
+        .map(x => `<span class="pill warn">${esc(x)}</span>`).join(" ");
+      const comment = r.comment ? `<div class="muted" style="font-size:12px;margin-top:2px">${esc(r.comment)}</div>` : "";
+      const raw = (r.diff || "").trim();
+      // Each diff line is the stored +added / -removed summary (same format the
+      // changes-feed diff uses); context/other lines render muted. Never a live re-diff.
+      const diff = raw
+        ? raw.split("\n").map(l => {
+            const cls = l.charAt(0) === "+" ? "ok" : l.charAt(0) === "-" ? "err" : "muted";
+            return `<div style="color:var(--${cls});white-space:pre-wrap;font-size:12px">${esc(l)}</div>`;
+          }).join("")
+        : `<div class="muted" style="font-size:12px">${esc(t("No stored diff (no parent, or tracked without diffs)."))}</div>`;
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div><span class="muted" style="font-size:12px">${ts}</span> · <strong>${editor}</strong>${pill}</div>
+          <div>${delta}</div></div>
+        ${reasons ? `<div style="margin-top:3px">${reasons}</div>` : ""}
+        ${comment}
+        <div style="margin-top:6px">${diff}</div></div>`;
+    }
+
+    async function loadWikiTC() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const body = $("wiki-tc-body"), meth = $("wiki-tc-method");
+      if (!body || _wikiTc.id == null) return;
+      const flaggedEl = $("wiki-tc-flagged");
+      const flagged = (flaggedEl && flaggedEl.checked) ? "true" : "false";
+      body.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      if (meth) meth.textContent = "";
+      try {
+        const d = await api(`/api/wiki/pages/${_wikiTc.id}/revisions?limit=50&flagged_only=${flagged}&include_diff=true`);
+        const revs = d.revisions || [];
+        if (!revs.length) {
+          // Honest empty state (flagged-aware), never a blank pane.
+          body.innerHTML = `<div class="muted">${esc(t(flagged === "true"
+            ? "No flagged tracked revisions stored for this page yet."
+            : "No tracked revisions stored for this page yet."))}</div>`;
+        } else {
+          // Honest window: showing `count` of `total` — the endpoint discloses it is a slice.
+          const cap = `<div class="muted" style="margin-bottom:8px">${esc(t("Showing"))} ${d.count} / ${d.total} ${esc(t("tracked revisions"))}</div>`;
+          body.innerHTML = cap + revs.map(r => _wikiRevRow(r, t)).join("");
+        }
+        // VISIBLE caveat (keyed ×12) mirroring the endpoint's method — never hidden.
+        if (meth) meth.textContent = t("The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.");
+      } catch (e) {
+        // Additive surface — degrade quietly, never throw.
+        body.innerHTML = `<div class="muted">${esc(t("Could not load") + ": " + e.message)}</div>`;
+      }
     }
 
     // --- Search-tab time-range control (ooTimeScope reuse) ----------------- //

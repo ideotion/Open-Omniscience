@@ -1831,5 +1831,18 @@
   "with": "共起",
   "vs": "対",
   "Not in your corpus yet — no stats.": "まだコーパスにありません — 統計なし。",
-  "No articles for this channel yet.": "このチャネルの記事はまだありません。"
+  "No articles for this channel yet.": "このチャネルの記事はまだありません。",
+  "Tracked changes": "追跡された変更",
+  "anon": "匿名",
+  "minor": "細部",
+  "bot": "ボット",
+  "full text stored": "全文を保存済み",
+  "The exact text of this revision is stored on this machine.": "このリビジョンの正確なテキストはこのマシンに保存されています。",
+  "tracked revisions": "件の追跡リビジョン",
+  "Showing": "表示中：",
+  "No tracked revisions stored for this page yet.": "このページの追跡されたリビジョンはまだ保存されていません。",
+  "No flagged tracked revisions stored for this page yet.": "このページのフラグ付き追跡リビジョンはまだ保存されていません。",
+  "No stored diff (no parent, or tracked without diffs).": "保存された差分はありません（親リビジョンがない、または差分なしで追跡）。",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "このマシンに保存された、追跡された編集の一部で、新しい順です — 必ずしもすべての履歴リビジョンではありません。各差分は、編集を追跡した時点で取得された、追加 / 削除の簡潔な要約（各側で切り詰め）であり、リアルタイムの再差分ではありません。件数のみで、スコアはありません。",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "このページの追跡されたリビジョン履歴を表示します — 保存された編集を新しい順に、各差分とともに。"
 }

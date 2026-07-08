@@ -1831,5 +1831,18 @@
   "with": "共现",
   "vs": "对比",
   "Not in your corpus yet — no stats.": "尚未进入你的语料库——暂无统计。",
-  "No articles for this channel yet.": "该渠道暂无文章。"
+  "No articles for this channel yet.": "该渠道暂无文章。",
+  "Tracked changes": "已跟踪的更改",
+  "anon": "匿名",
+  "minor": "小修改",
+  "bot": "机器人",
+  "full text stored": "已存储全文",
+  "The exact text of this revision is stored on this machine.": "此修订版本的准确文本已存储在本机。",
+  "tracked revisions": "条已跟踪的修订",
+  "Showing": "显示",
+  "No tracked revisions stored for this page yet.": "尚未为此页面存储任何已跟踪的修订。",
+  "No flagged tracked revisions stored for this page yet.": "尚未为此页面存储任何被标记的已跟踪修订。",
+  "No stored diff (no parent, or tracked without diffs).": "无存储的差异（无父版本，或跟踪时未记录差异）。",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "存储在本机的已跟踪编辑片段，最新的在前——不一定是每一个历史修订。每个差异是跟踪该编辑时捕获的紧凑的新增 / 删除摘要（每侧均被截断），并非实时重新比对。仅为计数，没有评分。",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "查看此页面的已跟踪修订历史——存储的编辑，最新的在前，附每处差异。"
 }

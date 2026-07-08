@@ -1831,5 +1831,18 @@
   "with": "সঙ্গে",
   "vs": "বনাম",
   "Not in your corpus yet — no stats.": "এখনও আপনার কর্পাসে নেই — কোনো পরিসংখ্যান নেই।",
-  "No articles for this channel yet.": "এই চ্যানেলের জন্য এখনও কোনো নিবন্ধ নেই।"
+  "No articles for this channel yet.": "এই চ্যানেলের জন্য এখনও কোনো নিবন্ধ নেই।",
+  "Tracked changes": "ট্র্যাক করা পরিবর্তন",
+  "anon": "বেনামী",
+  "minor": "সামান্য",
+  "bot": "বট",
+  "full text stored": "সম্পূর্ণ পাঠ্য সংরক্ষিত",
+  "The exact text of this revision is stored on this machine.": "এই সংশোধনের হুবহু পাঠ্য এই মেশিনে সংরক্ষিত আছে।",
+  "tracked revisions": "ট্র্যাক করা সংশোধন",
+  "Showing": "দেখানো হচ্ছে",
+  "No tracked revisions stored for this page yet.": "এই পৃষ্ঠার জন্য এখনও কোনো ট্র্যাক করা সংশোধন সংরক্ষিত নেই।",
+  "No flagged tracked revisions stored for this page yet.": "এই পৃষ্ঠার জন্য এখনও কোনো পতাকাঙ্কিত ট্র্যাক করা সংশোধন সংরক্ষিত নেই।",
+  "No stored diff (no parent, or tracked without diffs).": "কোনো সংরক্ষিত পার্থক্য নেই (কোনো মূল সংস্করণ নেই, বা পার্থক্য ছাড়াই ট্র্যাক করা)।",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "এই মেশিনে সংরক্ষিত, ট্র্যাক করা সম্পাদনার অংশ, নতুনতমগুলো আগে — অগত্যা প্রতিটি ঐতিহাসিক সংশোধন নয়। প্রতিটি পার্থক্য হলো সম্পাদনা ট্র্যাক করার সময় ধারণ করা সংক্ষিপ্ত যোগ / বাদ সারাংশ (প্রতি পাশে কাটা), কোনো লাইভ পুনঃতুলনা নয়। কেবল গণনা, কোনো স্কোর নেই।",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "এই পৃষ্ঠার ট্র্যাক করা সংশোধন ইতিহাস দেখুন — সংরক্ষিত সম্পাদনা, নতুনতমগুলো আগে, প্রতিটি পার্থক্য সহ।"
 }

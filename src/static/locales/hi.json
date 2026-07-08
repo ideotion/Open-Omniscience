@@ -1831,5 +1831,18 @@
   "with": "साथ",
   "vs": "बनाम",
   "Not in your corpus yet — no stats.": "अभी तक आपके संग्रह में नहीं — कोई आँकड़े नहीं।",
-  "No articles for this channel yet.": "इस चैनल के लिए अभी तक कोई लेख नहीं।"
+  "No articles for this channel yet.": "इस चैनल के लिए अभी तक कोई लेख नहीं।",
+  "Tracked changes": "ट्रैक किए गए परिवर्तन",
+  "anon": "अनाम",
+  "minor": "छोटा",
+  "bot": "बॉट",
+  "full text stored": "पूरा पाठ संग्रहीत",
+  "The exact text of this revision is stored on this machine.": "इस संशोधन का सटीक पाठ इस मशीन पर संग्रहीत है।",
+  "tracked revisions": "ट्रैक किए गए संशोधन",
+  "Showing": "दिखा रहे हैं",
+  "No tracked revisions stored for this page yet.": "इस पृष्ठ के लिए अभी तक कोई ट्रैक किया गया संशोधन संग्रहीत नहीं है।",
+  "No flagged tracked revisions stored for this page yet.": "इस पृष्ठ के लिए अभी तक कोई फ़्लैग किया गया ट्रैक संशोधन संग्रहीत नहीं है।",
+  "No stored diff (no parent, or tracked without diffs).": "कोई संग्रहीत अंतर नहीं (कोई मूल संस्करण नहीं, या बिना अंतर के ट्रैक किया गया)।",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "इस मशीन पर संग्रहीत, ट्रैक किए गए संपादनों का अंश, नवीनतम पहले — आवश्यक रूप से हर ऐतिहासिक संशोधन नहीं। प्रत्येक अंतर वह संक्षिप्त जोड़ा गया / हटाया गया सारांश है जो संपादन ट्रैक करते समय लिया गया था (प्रत्येक ओर से काटा गया), कोई लाइव पुनः-तुलना नहीं। केवल गणनाएँ, कोई स्कोर नहीं।",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "इस पृष्ठ का ट्रैक किया गया संशोधन इतिहास देखें — संग्रहीत संपादन, नवीनतम पहले, प्रत्येक अंतर के साथ।"
 }

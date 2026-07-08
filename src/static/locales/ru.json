@@ -1831,5 +1831,18 @@
   "with": "с",
   "vs": "против",
   "Not in your corpus yet — no stats.": "Пока нет в вашем корпусе — статистики нет.",
-  "No articles for this channel yet.": "Пока нет статей для этого канала."
+  "No articles for this channel yet.": "Пока нет статей для этого канала.",
+  "Tracked changes": "Отслеживаемые изменения",
+  "anon": "аноним",
+  "minor": "малая",
+  "bot": "бот",
+  "full text stored": "полный текст сохранён",
+  "The exact text of this revision is stored on this machine.": "Точный текст этой версии сохранён на этом устройстве.",
+  "tracked revisions": "отслеживаемых версий",
+  "Showing": "Показано",
+  "No tracked revisions stored for this page yet.": "Для этой страницы пока не сохранено отслеживаемых версий.",
+  "No flagged tracked revisions stored for this page yet.": "Для этой страницы пока не сохранено отмеченных отслеживаемых версий.",
+  "No stored diff (no parent, or tracked without diffs).": "Нет сохранённого различия (нет родительской версии или отслеживалось без диффов).",
+  "The tracked slice of edits stored on this machine, newest first — not necessarily every historical revision. Each diff is the compact added / removed summary captured when the edit was tracked (truncated per side), not a live re-diff. Counts only, no score.": "Отслеживаемый срез правок, сохранённый на этом устройстве, сначала новейшие — не обязательно все исторические версии. Каждое различие — это компактная сводка добавлено / удалено, зафиксированная в момент отслеживания правки (усечённая с каждой стороны), а не пересчёт различий в реальном времени. Только подсчёты, без оценки.",
+  "See this page's tracked revision history — the stored edits, newest first, with each diff.": "Посмотреть историю отслеживаемых версий этой страницы — сохранённые правки, сначала новейшие, с каждым различием."
 }
