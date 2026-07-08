@@ -1677,7 +1677,120 @@
       loadHomeAlerts();
       loadHomeTrends();
       loadHomeRecent();
+      loadHomeLatest();
+      loadHomeChannels();
       refreshDraftCount();
+    }
+    // Home "Latest in your corpus" (wave 4 I / GET /api/insights/latest): a recency LENS
+    // with transparent substance FILTERS — newest first by COLLECTION time (un-spoofable,
+    // never the publisher's claimed date), gated by the min-words AND min-cited-sources
+    // thresholds the user sets AND sees, near-identical wire reprints collapsed. Each row
+    // shows its REAL word count + cited-source count + channel — counts, NEVER a score.
+    // The facet <select>s (content type + tag) are populated once from the endpoint's
+    // window-wide options (independent of the active gates) and preserve the selection.
+    // Hidden until the corpus has recent articles so Home is never blank-and-silent (the
+    // Briefing still renders); when it HAS articles but none pass the gates it shows the
+    // panel with an honest "loosen the gates" message so the controls stay reachable.
+    async function loadHomeLatest() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("home-latest-panel"), box = $("home-latest");
+      if (!panel || !box) return;
+      const mw = Math.max(0, parseInt(($("latest-minwords") || {}).value, 10) || 0);
+      const ms = Math.max(0, parseInt(($("latest-minsources") || {}).value, 10) || 0);
+      const ct = (($("latest-channel") || {}).value || "").trim();
+      const tg = (($("latest-tag") || {}).value || "").trim();
+      const collapse = ($("latest-collapse") ? $("latest-collapse").checked : true) ? "1" : "0";
+      box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const p = new URLSearchParams({
+          limit: "12", min_words: String(mw), min_sources: String(ms),
+          collapse, facets: "1",
+        });
+        if (ct) p.set("content_type", ct);
+        if (tg) p.set("tag", tg);
+        const d = await api("/api/insights/latest?" + p.toString());
+        const arts = d.articles || [];
+        const types = d.available_content_types || {};
+        const tags = d.available_tags || [];
+        // No recent articles in the corpus at all (not just "none pass the gates") ->
+        // hide the panel entirely so Home is never blank-and-silent.
+        if (!arts.length && !Object.keys(types).length && !tags.length) {
+          panel.hidden = true; return;
+        }
+        panel.hidden = false;
+        _fillLatestFacet($("latest-channel"), t("All channels"),
+          Object.keys(types).map(k => ({v: k, label: k, n: types[k]})));
+        _fillLatestFacet($("latest-tag"), t("All tags"),
+          tags.map(x => ({v: x.tag, label: x.tag, n: x.articles})));
+        if (!arts.length) {
+          box.innerHTML = `<div class="muted">${esc(t("No recent articles pass these gates yet — loosen the gates or collect more."))}</div>`;
+          return;
+        }
+        box.innerHTML = arts.map(a => {
+          const src = (a.source || {});
+          const date = String(a.created_at || "").slice(0, 10);
+          const meta = [esc(src.name || src.domain || ""), esc(date)].filter(Boolean).join(" · ");
+          // REAL substance figures (counts, never a score): word count (flagged when the
+          // language is unsegmented, where word_count is meaningless) + cited sources.
+          const wc = (a.word_count != null && !a.unsegmented)
+            ? `${esc(String(a.word_count))} ${esc(t("words"))}` : "";
+          const cs = `${esc(String(a.cited_sources || 0))} ${esc(t("cited sources"))}`;
+          const chan = src.source_type ? `<span class="pill">${esc(src.source_type)}</span>` : "";
+          const facts = [wc, cs].filter(Boolean).join(" · ");
+          const also = (a.duplicates_collapsed > 0)
+            ? ` <span class="muted">— ${esc(t("also reported by {n} more").replace("{n}", String(a.duplicates_collapsed)))}</span>` : "";
+          return `<div class="home-recent-row"><a href="${esc(a.url || ("/api/articles/" + a.id + "/view"))}" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
+            + (meta ? ` <span class="muted">— ${meta}</span>` : "")
+            + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;
+        }).join("")
+          + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
+      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
+    }
+    // Populate a Latest facet <select> once (preserving the current selection), an "all"
+    // default first then each option with its article count. Idempotent: repopulates so a
+    // growing corpus surfaces new channels/tags, but keeps what the user picked.
+    function _fillLatestFacet(sel, allLabel, opts) {
+      if (!sel) return;
+      const cur = sel.value;
+      const parts = [`<option value="">${esc(allLabel)}</option>`];
+      opts.forEach(o => { if (o.v) parts.push(`<option value="${esc(o.v)}">${esc(o.label)} (${esc(String(o.n))})</option>`); });
+      sel.innerHTML = parts.join("");
+      if (cur && opts.some(o => o.v === cur)) sel.value = cur;
+    }
+    // Home "By channel" (wave 4 I / GET /api/insights/source-types): the content-provenance
+    // facet — article counts per ASSERTED content channel (news/newsletter/wiki/statistics/
+    // law/market/discovery/untyped), a descriptive fact known by construction, NEVER a
+    // quality score. Clicking a channel opens the analysis window over EXACTLY that
+    // channel's articles: /api/articles?source_type= resolves the id set, which every
+    // analysis subtab honours (openAnalysisForIds), so the whole corpus narrows honestly
+    // by channel using only endpoints that already exist. Hidden when the corpus has no
+    // channels (Home is never blank-and-silent).
+    async function loadHomeChannels() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const panel = $("home-channels-panel"), box = $("home-channels");
+      if (!panel || !box) return;
+      try {
+        const d = await api("/api/insights/source-types");
+        const facets = (d.facets || []).filter(f => (f.articles || 0) > 0);
+        if (!facets.length) { panel.hidden = true; box.innerHTML = ""; return; }
+        panel.hidden = false;
+        box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
+          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))}</span></button>`).join("")
+          + `</div>`;
+      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
+    }
+    // Open the analysis window over exactly one content channel's articles. Resolves the
+    // channel to an explicit id set through /api/articles?source_type= (the endpoint that
+    // supports the filter) then hands it to openAnalysisForIds, so ALL analysis subtabs
+    // (keywords / WWW / mindmap / …) narrow to the channel — not just the article list.
+    async function openChannelCorpus(st) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const d = await api("/api/articles?source_type=" + encodeURIComponent(st) + "&limit=1000");
+        const ids = (d.results || []).map(a => a.id).filter(Boolean);
+        if (!ids.length) { toast(t("No articles for this channel yet.")); return; }
+        openAnalysisForIds(ids, t("Channel: {c}").replace("{c}", st));
+      } catch (e) { toast((e && e.message) || String(e), "err"); }
     }
     // Home "Most recent by tag" (item #36 / Home helicopter view): a recency LENS onto the
     // corpus, never a reweighting — newest-first by the article's PUBLISHED date among sources
@@ -8757,6 +8870,23 @@
       if (wa && wb) { p.set("weights_a", wa); p.set("weights_b", wb); }
       window.open("/api/diagnostics/ir-eval?" + p.toString(), "_blank");
     }
+    // Diagnostics: POST a poll's DISCLOSED methodological fields (any subset, as JSON) to
+    // the Tier-2 transparency checklist (/api/insights/poll-transparency) and show the
+    // result. It records PRESENCE only — a disclosed n=100 counts exactly like n=10000 —
+    // and never grades, ranks, or calls a poll 'useless'; no composite score. Un-keyed
+    // English (matches the diagnostics panel).
+    async function pollTransparencyCheck() {
+      const box = document.getElementById("poll-transparency-out");
+      const raw = ((document.getElementById("poll-fields") || {}).value || "").trim();
+      let fields;
+      try { fields = raw ? JSON.parse(raw) : {}; }
+      catch (e) { if (box) box.textContent = "Invalid JSON: " + ((e && e.message) || e); return; }
+      if (box) box.textContent = "Checking…";
+      try {
+        const d = await api("/api/insights/poll-transparency", {method: "POST", body: JSON.stringify(fields)});
+        if (box) box.textContent = JSON.stringify(d, null, 2);
+      } catch (e) { if (box) box.textContent = "Error: " + ((e && e.message) || e); }
+    }
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
@@ -9426,7 +9556,7 @@
         return;
       }
       const chips = d.terms.map((term) =>
-        `<button class="chip" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
+        `<button class="chip" data-kwstat="${esc(term.term)}" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}${kwTransHtml(term)}${kwTentativeHtml(term)}`
         + ` <span class="muted">${term.articles}</span></button>`).join(" ");
       // Audit-07 B1 disclosure: our extractor does NOT segment CJK, so those keywords
@@ -9466,7 +9596,7 @@
       return terms.map(t => `<div style="padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:6px">
         <button class="tiny danger" title="exclude this keyword" style="margin:0;padding:0 6px"
           onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-        <a href="#" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>${kwTransHtml(t)}
+        <a href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)}" onclick='pickTerm(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>${kwTransHtml(t)}
         <span class="pill">${esc(t.kind)}</span> <span class="muted">${extra(t)}</span></div>`).join("");
     }
     // Trends as clickable horizontal BAR graphs (field test 2026-06-19 #25): keywords
@@ -9483,7 +9613,7 @@
         const pct = Math.max(2, Math.round((v / max) * 100));
         return `<div class="tb-row">
           <button class="tiny danger tb-x" title="exclude this keyword" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
-          <a class="tb-label" href="#" title="${esc(t.term)} — open in analysis (trend + worldwide spread)"
+          <a class="tb-label" href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)} — open in analysis (trend + worldwide spread)"
              onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
           <span class="tb-bar" aria-hidden="true"><span class="tb-fill" style="width:${pct}%"></span></span>
           <span class="tb-val muted">${esc(labelOf(t))}</span>
@@ -14189,6 +14319,59 @@
         pressT = setTimeout(() => show(el, t.clientX, t.clientY), 450);
       }, {passive: true});
       document.addEventListener("touchend", () => { clearTimeout(pressT); hideT = setTimeout(hide, 2600); }, {passive: true});
+    })();
+
+    // Keyword hover-stats (wave 4 I / GET /api/insights/keyword-stats): hovering any
+    // keyword surface marked data-kwstat surfaces its REAL stats — total mentions,
+    // distinct-article spread, the windowed recent-vs-prior trend RATE, and the top
+    // co-occurring keywords — through the ONE #oo-tip bubble (invariant #17). Counts
+    // only, the endpoint's method/caveat ride along, NO score. Lazy + cached per term
+    // (no fetch storm on a list of chips); the fetch is loopback-only so it is airplane-
+    // safe. The bubble renders plain textContent, so the stats are one honest
+    // " · "-separated line. It writes the element's title/ooTip (the #oo-tip convention)
+    // and, when that element's bubble is already open, updates it live (hint -> loading
+    // -> stats) without touching the ooTip internals.
+    (function ooKwStatInit() {
+      const cache = new Map();   // term -> formatted line ; null = in-flight
+      let hovered = null;
+      function fmt(d) {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        if (!d || !d.resolved) return t("Not in your corpus yet — no stats.");
+        const bits = [`${d.mentions} ${t("mentions")} · ${d.articles} ${t("articles")}`];
+        const tr = d.trend || {};
+        if (tr.recent || tr.prior) bits.push(`${t("trend")} ${tr.growth}× (${tr.window_days}d ${t("vs")} ${tr.baseline_days}d)`);
+        const co = (d.cooccurrences || []).slice(0, 4).map((c) => c.term).filter(Boolean);
+        if (co.length) bits.push(`${t("with")}: ${co.join(", ")}`);
+        const head = d.resolved.term || d.term || "";
+        return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + d.caveat : ""}`;
+      }
+      function applyTo(el, text) {
+        el.dataset.ooTip = text;                                   // #oo-tip reads this
+        if (el.getAttribute("title") != null) el.setAttribute("title", text);
+        const tip = document.getElementById("oo-tip");
+        if (tip && tip.classList.contains("show") && hovered === el) tip.textContent = text;
+      }
+      async function load(el, term) {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        if (cache.has(term)) { const v = cache.get(term); if (v) applyTo(el, v); return; }
+        cache.set(term, null);                              // in-flight guard (no dup fetch)
+        applyTo(el, t("Loading keyword stats…"));           // immediate honest placeholder
+        try {
+          const d = await api("/api/insights/keyword-stats?term=" + encodeURIComponent(term));
+          const text = fmt(d);
+          cache.set(term, text);
+          applyTo(el, text);
+        } catch (_e) { cache.delete(term); }                // allow a later retry
+      }
+      function onHover(e) {
+        const el = e.target && e.target.closest ? e.target.closest("[data-kwstat]") : null;
+        if (!el) { hovered = null; return; }
+        hovered = el;
+        const term = el.getAttribute("data-kwstat");
+        if (term) load(el, term);
+      }
+      document.addEventListener("mouseover", onHover, true);
+      document.addEventListener("focusin", onHover, true);
     })();
 
     document.addEventListener("click", function _externalLinkGuard(e) {
