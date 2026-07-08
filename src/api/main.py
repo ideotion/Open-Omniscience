@@ -44,6 +44,7 @@ from fastapi.responses import (
     JSONResponse,
     PlainTextResponse,
     RedirectResponse,
+    Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
@@ -466,6 +467,36 @@ async def favicon() -> RedirectResponse:
     allowed while the store is locked, and so is ``/static/`` — the redirect
     target — so this works on the unlock screen too."""
     return RedirectResponse(url="/static/favicon.svg", status_code=308)
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker() -> Response:
+    """Serve the app-shell service worker from the ROOT path so it can control
+    scope ``/`` (full offline navigation of the app), which the ``/static`` mount
+    cannot grant.
+
+    A service worker's maximum scope is its own URL path, so ``/static/sw.js`` is
+    capped at ``/static/``; only a script served at ``/`` (or one carrying the
+    ``Service-Worker-Allowed: /`` header) may claim the whole origin. This route
+    serves the SAME file as ``/static/sw.js`` with that header — the worker's own
+    ``fetch`` guard is unchanged, so it still only ever caches/replays the static
+    shell under ``/static/`` and NEVER an API/data response (see the file header).
+    ``text/javascript`` is required because the security-headers middleware sets
+    ``X-Content-Type-Options: nosniff`` (a wrong type would refuse to execute).
+    """
+    sw_path = Path(__file__).parent.parent / "static" / "sw.js"
+    if not sw_path.exists():
+        return Response(status_code=404)
+    return Response(
+        content=sw_path.read_text(encoding="utf-8"),
+        media_type="text/javascript",
+        headers={
+            # Grant the worker origin-wide scope (this is what /static cannot do).
+            "Service-Worker-Allowed": "/",
+            # Never pin a stale worker: always revalidate so shell updates land.
+            "Cache-Control": "no-cache",
+        },
+    )
 
 
 # Serve static files (HTML5 frontend). Register the JS/CSS MIME types explicitly so
