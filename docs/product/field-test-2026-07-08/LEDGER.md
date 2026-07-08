@@ -275,3 +275,77 @@ tentative}` to every keyword row. Audit + wire the surfaces listed in gap #3.
    a foreign keyword with no ring shows a labeled translation (verified or ≈AI) or a
    neutral translate affordance — never bare; the original is always present; coverage
    measurable via the keyword-engine report.
+
+---
+
+## Item 3 — "Discover new sources (Wikidata)" errors "Enter country codes first"; should auto-pick countries, and be in all UI languages  [NEW]  ⏭
+
+**Verbatim:** "In settings, in data-backup, clicking on "discover new sources
+(wikidata)", an error code appears saying: "Enter country codes first, e.g.
+ke,ng,br". It should automatically do that and in all of the app's languages."
+
+**Two asks:** (a) don't require manual country-code entry — auto-select the
+countries; (b) the button + its messages must be translated (×12).
+
+### Code grounding
+
+- **Button + input:** `src/static/index.html:1560-1561` — a text input `#discover-cc`
+  (placeholder "countries e.g. ke,ng,br") + a button `onclick="discoverSources(this)"`.
+  The label ("Discover new sources (Wikidata) ↗") and the long `title` tip are
+  **hardcoded English** (not keyed). The tip already says *"pick under-represented
+  countries to keep coverage balanced."*
+- **Handler:** `src/static/app.js:8700 discoverSources(btn)` — reads `#discover-cc`;
+  if empty → `toast(t("Enter country codes first, e.g. ke,ng,br"), "err")` and
+  returns. Then `ensureOnline(...)` consent gate → `POST /api/diagnostics/discover-sources?countries=…`.
+  The status strings `"Discovering…"`, `` `Added ${d.added} disabled sources — review
+  in Settings → Sources` ``, `"Discovery failed — see console"` are **hardcoded
+  English** (the empty-input toast is the only keyed string).
+- **Endpoint:** `src/api/diagnostics.py:920 discover_sources_endpoint` —
+  `countries: str = Query(...)` is **required**; splits to ISO-2 codes; discovers
+  Wikidata media orgs per country, adds them `enabled:false` for review; 409 under
+  airplane mode; guarded transport; docstring says *"Bounded to a handful of countries
+  per call … pick UNDER-REPRESENTED countries to keep the catalogue's coverage
+  balanced."*
+- **The auto-select mechanism ALREADY EXISTS:** `src/catalog/coverage.py` →
+  `country_counts_from_session(session)` + `coverage_report(counts, thin_threshold=3)`
+  returns `{"thin": [...], "missing": [...]}`. It is already used by
+  `src/discovery/channels.py::catalog_channel` to target thin/missing countries.
+  Also `queries.source_country_counts(session)` (from the map work).
+
+### Fix plan (for the autonomous session)
+
+**A. Auto-select countries (server-side, single source of truth).** Make the
+endpoint's `countries` param **optional**; when absent/empty, auto-derive the target
+list from `coverage_report(...)` — the **under-represented** countries (`missing`
+first, then `thin`). This matches the button's own tip AND the **de-US-centring
+non-negotiable** (discovery that automatically improves balance). Keep it **bounded
+per call** (the docstring already promises "a handful" — each country queries several
+media types) and **rotate** across calls (least-recently-discovered first, like the
+continuous per-country round-robin) so repeated clicks progressively cover the world
+without one huge unbounded call. The manual `#discover-cc` input stays as an
+**optional override** (the Desk lesson — don't remove the capability). Frontend: when
+the input is empty, DON'T toast-and-return; call the endpoint with no `countries` and
+show a keyed status like "Discovering for under-represented countries…". Consent gate
+(`ensureOnline`) and airplane-refusal are unchanged (still networked to Wikidata; the
+country SELECTION is a local DB read, no network).
+
+**B. i18n (×12).** Key every user-facing string on this control:
+- The button label "Discover new sources (Wikidata) ↗" + its `title` tip
+  (index.html:1561).
+- The input placeholder "countries e.g. ke,ng,br".
+- The status strings in `discoverSources`: "Discovering…", "Added N disabled sources
+  — review in Settings → Sources" (interpolated → use `t()` with a count arg),
+  "Discovery failed — see console", and the new auto-mode status.
+- Verify with `python scripts/i18n_report.py --min 100`. Non-en AI-drafted, flagged
+  for native review (per house convention). Coordinate with the parallel session on
+  the locale files (hot-conflict surface) — additive keys only.
+
+### Notes / honesty
+- Auto-selecting under-represented countries is the on-mission choice, but keep it
+  **transparent**: the status/result should say which countries were targeted (e.g.
+  "Discovered for: ng, ke, bd, …") so the user knows what the app chose on their
+  behalf — never a silent, opaque selection.
+- Still adds sources **disabled** for review; nothing scraped until enabled. Unchanged.
+- ⏭ Acceptance: clicking with an empty input runs discovery against auto-selected
+  under-represented countries (bounded, rotating, disclosed), never errors; all
+  strings render in the active UI language; `--min 100` green.
