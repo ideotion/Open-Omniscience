@@ -448,8 +448,9 @@ def reading_diet_by_type(
     primary key; it reads only small columns (``source_type`` / ``created_at`` / ``id`` /
     ``source_id``) and NEVER the article ``content`` column, so the codec never drags the
     large content payload (the 35 KB-row trap). ``Article.source_id`` is NOT NULL, so every
-    windowed article is counted exactly once, and the channel share EQUALS what the
-    /api/articles ``source_type`` filter returns for that channel.
+    windowed article is counted exactly once, and a channel's articles match the BUCKETING of
+    the /api/articles ``source_type`` filter (identical normalisation), so the two never
+    disagree on which channel an article belongs to.
 
     ``top_n`` defaults to 1 (not the source axis's 3): a channel axis has FEW actors, so the
     single dominant-channel share is the interpretable concentration headline — the full
@@ -471,7 +472,7 @@ def reading_diet_by_type(
     )
 
     # Normalise identically to source_type_facets / the /api/articles filter (lowercase;
-    # NULL/blank -> untyped), so a channel's diet share EQUALS clicking that channel.
+    # NULL/blank -> untyped), so a channel here is the SAME bucket clicking that channel gives.
     counts: dict[str, int] = {}
     for st, c in rows:
         key = (st or "").strip().lower() or SOURCE_TYPE_UNTYPED
