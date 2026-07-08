@@ -13,6 +13,51 @@ Legend: **[NEW]** net-new · **[PLANNED]** already ruled/known · ✅ shipped ·
 
 ---
 
+## SESSION SUMMARY — index + priorities for the NEXT session (2026-07-08 close)
+
+Session was CAPTURE-ONLY (no product code changed). All 11 items below are pushed on
+PR **#583** (items 1–7 were merged earlier via PR #580 onto `0.1`; item 8+ are on
+branch `claude/repo-feedback-notes-035vbz`). Corpus under test: **59,566 articles ·
+974,062 keywords · 2.28 GB · 50 languages**, low-RAM Qubes VM.
+
+**The overriding theme: the corpus is HEALTHY, but the app does not SCALE — and the
+scaling failures are now causing CRASHES and DATA LOSS, not just slowness.** Fix
+priority for the next session:
+
+- **P0 — STABILITY / DATA-SAFETY (do first): Item 11 + Item 9 + Item 8.** The app
+  OOM-crashes under load (2.28 GB corpus + 6–10 GB backup + the analytics death spiral),
+  and a crash in the maintainer's (deliberate) disposable VM = total corpus loss. Needs:
+  bound backup memory, cap concurrent heavy work + server deadlines, a memory guard,
+  reliable + VERIFIABLE + resumable backups, easy opt-in persistent data_dir. **Item 8
+  P0** (the `coalesce(published_at,created_at)` expression index — 735 s of full scans;
+  cache the polled `signals/alerts`/`trending-windows`; single-flight polling + a
+  concurrency cap to stop the death spiral; turn on the built rollup serve) is the root
+  cure and feeds all three.
+- **P1 — make heavy things background jobs: Item 4 (Governments auto-load) + Item 10
+  (diagnostics `/all` as a job — it EXISTS, just needs a button + job + per-member
+  deadline) + the job-ify list in Item 8.** No synchronous multi-minute request handlers.
+- **P1 — keyword quality: Item 2 (translation — 15.2% ring coverage) + Item 8 KW-5**
+  (zh/ja/th segmenter — junk is NOT prunable, β 0.95; ko/vi/mr stoplists) + the
+  manipulation-card LANGUAGE-AWARENESS finding (flood/bury surface junk + language
+  artifacts).
+- **P2 — content/feature items: Item 1 (indices OECD ids — one-char ISO-3→ISO-2 bug) ·
+  Item 3 (auto-pick discovery countries + i18n) · Item 5 (agenda: flood article dates +
+  global election/summit calendar) · Item 6 (World-map ooSubtabs + story lenses) · Item 7
+  (more commodities; rare earths AWAITS the maintainer's ruling — see below).**
+
+**OUTSTANDING MAINTAINER DECISIONS (carry into the next session):**
+- **Item 7 rare earths** — no free spot-price source; options captured (USGS supply
+  data [recommended] / free proxy / authorized paid assessor / defer). Maintainer had
+  not answered when the session closed.
+
+**Items at a glance:** 1 indices/OECD · 2 keyword translation · 3 Wikidata-discovery
+auto-countries+i18n · 4 Governments auto-load · 5 Agenda flood+calendar · 6 World-map
+sub-tabs+stories · 7 commodities/rare-earths (decision pending) · 8 diagnostics analysis
+(perf/scaling — the big one) · 9 backup NetworkError+Verify+resumable · 10 diagnostics
+consolidation (job) · 11 crashes/OOM + disposable-VM durability.
+
+---
+
 ## Item 1 — Indices board is empty on most continents; OECD-tagged indices never show; want many more indices, properly tagged  [NEW / partly PLANNED]  ⏭
 
 **Verbatim:** "In the indice tab, there is no data for Africa subtab, Asia only
@@ -713,3 +758,580 @@ this session) — amend this section with the ruling.
 - ⏭ Acceptance (part a): the commodity board is materially denser (critical minerals +
   fertilizers + more agri/precious), all via verified free ids. Part b: per the
   maintainer's chosen option(s).
+
+---
+
+## Item 8 — Field diagnostics 2026-07-08 (analysis + action plan; NO fixes)  [ANALYSIS/PLAN]  ⏭
+
+**Instruction:** "Now I will send you diagnostics logs. Analyze them and make an
+action plan accordingly. Don't fix, analyze, and plan, and commit the plan."
+
+**Logs analyzed (6):** keyword self-test · keyword-growth curve · keyword-engine
+report · date diagnostics · debug bundle · article-length. **Corpus at export:** 59,566 articles ·
+974,062 keywords · 3,395 sources · 131,675 price points · **2.28 GB** encrypted DB ·
+50 corpus languages · py3.13.5 · schema `b3d4e5f6a7c8`.
+
+### Headline verdict
+**The corpus is HEALTHY; the problem is PERFORMANCE AT SCALE.** No data loss, no
+`database is locked` errors (0), no counter drift (`drift:false`), no orphan keywords
+(0), self-test 43/43, entity precision 100%, schema drift false, FTS present. The
+ONLY user-facing error in the whole log is one **HTTP 503 on the mindmap**. So the
+engine is sound — the work is (1) make the analytics layer usable at 60K articles,
+(2) the keyword-quality tail (junk + coverage), (3) two date-recall language gaps.
+
+### P0 — DB date-range full scan is the single biggest cost  [NEW — high leverage]
+`SELECT min(coalesce(published_at, created_at)), max(...) FROM articles` — **4,775 ms
+each × 154 calls = 735 s total** (the #1 slow query). It is a FULL table scan of
+59,566 rows dragged through the SQLCipher codec because `coalesce(published_at,
+created_at)` has **no index**. Nearly every chart / time-scope / analytics view + the
+polled endpoints compute the corpus date span. The SAME expression is also used as a
+`>= cutoff` filter (un-indexed full scans) in `src/integrity/{collapse,actors,profile}.py`
+and `src/api/link_analysis.py`.
+- **FIX:** add an EXPRESSION INDEX `CREATE INDEX ... ON articles(coalesce(published_at,
+  created_at))` (Alembic migration) — accelerates the min/max AND every `>= cutoff`
+  filter on that expression; OR maintain a cheap cached corpus-date-range updated on
+  ingest. One small change, corpus-wide win. ⏭ Acceptance: the corpus-date-range query
+  drops from ~5 s to milliseconds; the integrity cutoff scans stop showing as slow.
+
+### P0 — Polled heavy endpoints melt the single worker  [PLANNED — 5A-bis, now MEASURED]
+- `GET /api/signals/alerts`: **p50 23.7 s / p95 60 s / max 104 s**, called **156×**.
+  `compute_alerts` (`src/analytics/alerts.py`) recomputes `find_convergences` over a
+  45-day lookback on EVERY poll — the code itself flags "a shared/memoised convergence
+  pass is a later optimisation" (:147). At 60K articles that is seconds-to-minutes, ×156.
+- `GET /api/insights/trending-windows`: p50 45 ms but **p95 24 s / max 37 s**, ×156
+  (the fast p50 = the columnar/counter serve when it hits; the tail = cold recompute).
+- Event-loop **watchdog** shows repeated 250–461 ms lag events; `in_flight_now: 9`
+  (requests piling up). The single worker stalls → the whole UI feels frozen.
+- **FIX:** (a) MEMOISE/CACHE the alert strip + trending-windows for the poll cadence —
+  serve a cached result refreshed every N min in the background, never recompute per
+  poll; (b) turn ON / persist the derived rollup serve (`OO_COLUMNAR_SERVE` +
+  `keyword_daily` in `src/analytics/columnar.py`, built but off-by-default) for the
+  windowed queries — the debug bundle IS the measurement that justifies shipping it.
+  ⏭ Acceptance: polled endpoints return in < ~200 ms from cache; watchdog lag events
+  stop; `in_flight` stays low during Home polling.
+
+### P0/P1 — The mindmap 503 (the only user-facing failure)  [NEW — bug]
+`GET /api/insights/graph?level=keyword&term=trump&hops=2` → **60 s → HTTP 503** →
+frontend `fetch-5xx`. The 2-hop keyword graph / associations is too heavy at 974K
+keywords.
+- **FIX:** extend the shipped associations optimization (batch-load + maintained
+  counters — the ledger's associations-perf work) to the graph/hops path; bound the
+  hop-2 fan-out; or serve via the rollup. ⏭ Acceptance: a 2-hop keyword graph returns
+  in a few seconds and never 503s.
+
+### P1 — Heavy synchronous operations must be background jobs  [PLANNED — Item 4 principle, generalized]
+Request-latency p95 (all block the single worker synchronously):
+`enrich-source-types` **8.5 min**, `governments/load-standard` **2.9 min** (= Item 4),
+`keyword-tags/backfill` **1 min**, `server-locations` **45 s**, `corpus-www` **28 s**,
+`corpus-sentiment` **18 s**, `top` **20 s**. Also `SELECT count(*) FROM keyword_mentions`
+**724 ms × 172 = 124 s** (counting a multi-million-row table repeatedly).
+- **FIX:** make the long ones task-manager JOBS (Item 4's "no synchronous multi-second
+  work on the event loop" — the FastAPI-freeze lesson), and serve `count(*)` from a
+  maintained counter/cache, never a repeat full count. ⏭ Acceptance: no request handler
+  runs multi-second synchronous work; heavy ops are cancellable jobs.
+
+### P1 — Corpus is junk-heavy: Heaps β = 0.95 (was 0.756)  [PLANNED — KW engine P4.4]
+The growth curve's β jumped to **0.9502** (r²=0.99) — β near 1 = a new keyword minted
+for almost every word = the signature of markup/code/**unsegmented** junk. Drivers
+(from `language_coverage`): **unsegmented (extraction BROKEN): zh 45,956 · th 21,230 ·
+ja 12,393 keywords** (no word segmenter); **no_stoplist (function words leak): ko
+12,104 · mr 10,221 · vi 8,072** + 10 more ≈ 44K keywords. (Surface noise scan says only
+5.5% flagged, but it can't see unsegmented over-minting — β is the truer signal.)
+- **FIX:** (a) OPERATIONAL — the maintainer runs "Clean up keywords" (re-index + prune)
+  on the live corpus; (b) a bundled **zh/ja/th SEGMENTER** (ledger P4.4, URGENT); (c)
+  **stoplists** for the no_stoplist languages — **Korean FIRST** (major language, 12K
+  keywords), then vi/mr. ⏭ Acceptance: β trends back below ~0.8 after segmenter +
+  stoplists + a clean re-index.
+
+### P1 — Translation coverage 15.2%  [evidence for Item 2]
+Only **76 of the top 500 keywords** are in a cross-language ring (550 rings total).
+Direct measurement of the Item-2 complaint (foreign keywords untranslated). Reinforces
+the Item-2 plan: grow rings corpus-driven + a bundled common-vocabulary dictionary +
+the persistent LLM fallback. Cross-reference Item 2.
+
+### P2 — Date recall improving (62.1%) but two language gaps  [PLANNED — F4]
+Coverage up to **62.1%** (was ~52%/37%). Specific gaps: **Persian (fa) = 0%** (0 of 44
+articles — Persian calendar/numerals not handled = a real bug) and **Hungarian (hu) =
+22%** (format not handled). Biggest missed kinds: month_name (2,427) + bare_year
+(2,179) — many are legit false positives per the probe's own caveat.
+- **FIX:** add Persian + Hungarian date handling to `src/timemap/dateextract.py` (+ the
+  lockstep `datediag.py` update, per the CJK-boundary lesson). ⏭ Acceptance: fa/hu
+  coverage rises materially; the probe reports no phantom gap.
+
+### P2 — Lemmatization ready to enable  [PLANNED — P4.3, operational]
+`lemma_preview`: 36 candidate groups / **73 of top-500 keywords would merge**
+(study/studied, issue/issued, country/countries…). `OO_FAMILY_LEMMA` is off. Maintainer
+reviews the preview + enables after the P3 measure. `tag_coverage` 0.2% (baseline tags
+never backfilled at scale — low priority; tie the backfill to the P1 job-ification).
+
+### P2 — Article-length distributions: calibration for "Latest in your corpus" + confirms unsegmentation  [PLANNED — Home-Latest S0→S1]
+This is the S0 calibration diagnostic for the ledger's **Home "Latest in your corpus"**
+recency lens (transparent substance filter: ≥min words AND ≥min cited sources,
+per-content-type, script-aware). Real distributions now exist to set honest thresholds:
+- **Whole corpus:** word_count mean 627 / median 400 / p10 101 / p90 1208; ~9.8% are
+  <100 words. **Cited sources: median 1, and 33.9% of articles cite ZERO** outbound
+  sources (p25 = 0) — a flat "≥1 source" gate would drop a third of the corpus, so the
+  gate MUST be per-content-type + user-adjustable (never a hidden score).
+- **By content type (justifies per-type thresholds):** broadcaster median 231 / wire-
+  agency 197 / blog 94 are legitimately SHORT; legal 1659 / scientific 650 /
+  geopolitical 1005 / fact-checker 752 are long. A flat word gate would wrongly penalise
+  wire/broadcaster — use per-type floors (or the type's own p10/p25), not one number.
+- **CONFIRMS the unsegmented problem from a 2nd angle:** `zh` mean **34 words / median
+  17**, `ja` mean 57 / median 24, `th` mean 137 (all `unsegmented:true`). A real Chinese
+  article showing "17 words" proves `len(text.split())` is meaningless there — so the
+  word gate MUST skip zh/ja/th (the diagnostic already emits `unsegmented_languages`),
+  and it re-confirms Item-8-P1 (the segmenter is needed for extraction AND length).
+- **FIX / USE:** feed these into the Home-Latest **S1** recency endpoint (`created_at`
+  order + per-content-type min_words/min_cited, script-aware skip for zh/ja/th, near-dup
+  collapse) — the thresholds are now evidence-based, not guessed. ⏭ Acceptance: S1 uses
+  per-content-type + script-aware gates derived from these percentiles; each shown
+  article displays its real word/source counts; no flat gate, no score.
+
+### Backup fails at the volumes path with "NetworkError" (see Item 9)  [NEW — bug, cross-ref]
+Reported live 2026-07-08; captured as **Item 9** below (kept separate from the
+diagnostics analysis, since it's an interactive bug not a log finding). Root cause is
+coupled to the P0/P1 perf findings above (server overload / possible crash during a
+long backup on a 2.28 GB corpus + a poll with no timeout/retry).
+
+### Healthy — no action (recorded for confidence)
+Self-test 43/43 · corpus integrity: drift false, orphans 0, no dangling mentions, **0
+locked errors** (the single-writer gate is holding at 2.28 GB) · entity precision 100%
+· schema drift false · FTS present · last scrape pass stored 4,765 (dup 7,804;
+`ff:http_403` 622 = the known Tor-blocks-premium-news reality, expected). The
+counter-drift sweep reported "interrupted" (deadline-guarded, couldn't finish the full
+multi-million-row check in time) — not an error; the parts that completed show no drift.
+
+### Follow-up perf exports (2026-07-08 15:48 session) — reconfirms P0, adds 3 findings
+A 2nd batch (FDR self-test · a 2nd debug bundle · standalone slow-queries · standalone
+request-latency · schema-drift) from a fresh restart, corpus now 2.282 GB. **The perf
+picture is WORSE, confirming P0 is the priority:**
+- `GET /api/signals/alerts` **p50 66 s / max 132 s** (was 24–104 s) — still the worst
+  endpoint, still Home-polled. P0 stands, more urgent.
+- **NEW: `POST /api/system/unlock` = 60 s** — unlocking the app at 2.28 GB takes a
+  full minute (the post-unlock warm/ANALYZE/seed is heavy at scale). UX pain on every
+  launch. The unlock was made "return fast + background the upkeep" earlier, but the
+  measured wall is 60 s — re-check that the heavy upkeep is truly backgrounded and the
+  UI is usable during it.
+- **NEW: `GET /api/insights/latest` = 59 s** — the just-shipped "Latest in your corpus"
+  S1 endpoint (wave-3) is slow at 60K articles. Its design bounded the scan
+  (`scan_cap=300`) + near-dup (`near_dup_cap=300`), but 59 s means the bound isn't
+  effective here (likely the near-dup content reads = SQLCipher decrypts). Needs the
+  same treatment as the other heavy reads (cache / rollup / tighter bound) BEFORE the
+  Home panel (S2) ships on top of it.
+- `GET /api/briefing` 30–37 s · `GET /api/articles` p95 25 s · `GET /api/database/stats`
+  3.7 s ×5 · **`GET /api/backup/inventory` 3.3 s** (confirms Item 9's slow-count note) ·
+  the diagnostic exports themselves are slow (`debug-bundle` 69 s, `integrity` 62 s —
+  the maintainer waits ~1 min per export).
+- Event-loop watchdog: lag up to **748 ms** with a batch of trivial routes (health,
+  settings, network, llm/health, sources) all stalled at ~980 ms together — the classic
+  single-worker freeze. `in_flight_now: 10`.
+- **NEW (low priority): alembic stamp is BEHIND.** `schema-drift`: `drift:false`
+  (self-heal keeps tables/columns/indexes in sync) BUT `migration.behind:true` — DB
+  stamped `b3d4e5f6a7c8`, code head `c1d2e3f4a5b6`. The self-heal masks it so the app
+  works, but the stamp lag is a latent risk for the next migration / cross-version
+  restore (RC-gate T4). FIX: the boot path should advance the stamp to head after the
+  self-heal ensures the schema, or investigate why a migration didn't stamp. Not
+  urgent (no drift), but reconcile it.
+- **Healthy (2nd confirmation):** FDR self-test 10/10 (the BH-FDR statistical spine for
+  the manipulation cards is sound) · counter drift 0 on the sampled check · 0 locked
+  errors · the only HTTP error remains the single `/insights/graph` 503 from 08:25.
+- **The standalone `slow-queries` export shows `installed:false, captured:0`** — the
+  slow-query listener attaches lazily and this was a fresh restart, so no statements
+  were captured yet; the EXPLAIN plans still confirm the named heavy queries use
+  covering indexes (the un-indexed `coalesce` min/max from the 14:34 bundle remains the
+  P0 target — it is not in the EXPLAIN set).
+
+### 3rd batch (request-latency watchdog timeline + integrity) — THE DEATH-SPIRAL finding  [NEW — architectural, elevates P0]
+The detailed watchdog timeline (same 13:45–13:50 session) is the smoking gun for
+*why* the app melts, not just that endpoints are slow:
+- **Requests STACK without cancellation → a death spiral.** By 13:50 a single
+  `GET /api/insights/trending-windows` had been **in-flight for 217 s and was still
+  running**, alongside 8–9 other heavy queries concurrently (a 2nd `trending-windows`
+  187 s, two `diagnostics/keywords` 184 s, `signals/flood` 151 s, `insights/lunar-
+  correlation` 142 s, `signals/bury` 111 s, `keyword-engine` 79 s, `rollup-benchmark`
+  55 s). The Home polls (`briefing`/`signals/alerts`/`trending-windows`/`latest`) fire
+  every few seconds, each takes 60–200 s, and **nothing is cancelled when the client
+  gives up** — so new polls pile onto unfinished old ones, all contending for the ONE
+  SQLCipher connection + the GIL, making every request progressively slower. A single
+  watchdog event shows the loop lagging **24.8 s** at once.
+- **This means caching/indexing alone is NOT enough — the stacking must be stopped.**
+  Add (beyond the P0 index + rollup serve): **(a) server-side DEADLINES** on heavy
+  analytics endpoints (return a partial/`503` after N s instead of running for minutes
+  — the deadline-guarded pattern the diagnostics sweeps already use); **(b) client
+  SINGLE-FLIGHT polling** — never issue a new poll while the previous is in flight
+  (drop or supersede it), and cancel superseded requests (AbortController); **(c) a
+  CONCURRENCY CAP** on heavy analytics so 10 don't thrash the single connection (they
+  contend anyway — serialising is faster than thrashing). This is the load-bearing
+  architectural fix; the index + rollup make each query cheap, but the stacking is what
+  turns "slow" into "frozen for minutes."
+- **NEW heavy endpoints seen this batch:** `signals/flood` (66–151 s), `signals/bury`
+  (27–111 s), `insights/lunar-correlation` (57–142 s), `diagnostics/keywords` (100–184 s).
+  These + the manipulation-card signal endpoints all need the same rollup/cache/deadline
+  treatment (they scan the corpus live).
+- **Integrity `auto_cleanup` (ran 13:19) REFINES the KW-5 junk fix:** the prune scanned
+  **918,743 keywords and found 0 orphans / pruned 0** — so the junk is NOT prunable
+  orphans; every keyword is really referenced. The reduction therefore CANNOT come from
+  "Clean up keywords / prune" — it must come from the **zh/ja/th segmenter** (re-extract
+  produces fewer, correct tokens) + the **ko/vi/mr stoplists**, applied via a re-index.
+  A re-index WITHOUT a segmenter won't shrink the zh/ja/th junk. (The same pass's
+  `reconcile_keyword_language` is WORKING — it relanguaged **4,427** keywords, all
+  lang→lang first-write-wins corrections.) So KW-5's real levers are segmenter+stoplists,
+  not pruning — sharpen the plan accordingly.
+- **Minor: FTS integrity check inconclusive.** The integrity sweep reports
+  `fts.present:false` + `fts_rows:null` (couldn't count under the deadline), while
+  schema-drift reports `fts_present:true`. FTS exists (search works); the row-count
+  parity check just didn't complete at this scale. Verify the FTS index isn't stale
+  (re-run the FTS rebuild if a real delta shows) — low priority.
+
+### 4th batch (flood card · network preflight · frontend errors + re-exports)
+- **NEW — the FLOOD manipulation card is polluted by leaked common words.**
+  `signals/flood` surfaces Dutch function/common verbs as "flooded topics":
+  **"kijk"** (=look/watch, share z=3.2) and **"zien"** (=see, z=2.52) from *Algemeen
+  Dagblad*, 66/48 recent articles. These aren't topics — they're content-free common
+  words that leaked the nl stoplist. Two consequences: (a) **nl has open-class stoplist
+  gaps** (kijk/zien are base forms addable to the scoped nl list), and (b) **the
+  manipulation cards inherit keyword-junk** → false-positive "flood"/"bury" alerts that
+  erode trust. This is exactly the open-class garbage the analyzer's `--generic-terms`
+  loop targets; it ties KW-5 (junk) directly to card quality. FIX: run the evidence-driven
+  stoplist loop on the real keyword log (Dutch batch), and consider the flood/bury cards
+  filtering terms that are ubiquitous in the SOURCE's own corpus (a source's stopword-like
+  filler is not a "pushed topic"). No fabrication — surface counts, but don't alert on
+  filler.
+- **NEW — the BURY card is dominated by a LANGUAGE ARTIFACT (the bigger problem).**
+  `signals/bury` flags NON-English sources for "burying" ENGLISH keywords: Turkish
+  *Cumhuriyet*, Bengali *Jagonews24*, Azerbaijani *Yeniçağ*, Vietnamese *Thanh Nien*,
+  Greek *in.gr*, Bulgarian *24chasa* all show `source_share:0` of **"world" / "state" /
+  "public" / "trump"** (corpus_share ~7%). But those papers publish in Turkish/Bengali/
+  Vietnamese/Greek — so the *English* keyword "world" (they write "dünya"/"мир") is
+  trivially absent. That's **language, not burying.** Even "trump" (a proper noun that
+  should cross languages) is 0 for Thai *Matichon* / Bengali *Jagonews24* because they
+  transliterate the script (ทรัมป์ / ট্রাম্প). So on a 50-language corpus, comparing raw
+  language-specific keyword shares across multilingual sources produces mostly LANGUAGE
+  ARTIFACTS, not manipulation signals. (The statistical spine is SOUND — BH-FDR + two-
+  proportion z-test, 720 tests / 587 survivors, and the caveat honestly names
+  "specialization… language" — so it is honest-by-construction, but the signal is buried
+  in noise.)
+- **CONCLUSION — the manipulation cards need LANGUAGE-AWARENESS (couples to Item 2).**
+  Flood (leaked filler) + bury (language artifacts) share one root: the cards run on the
+  raw, per-language, junk-bearing keyword index. Fixes, in order: **(a)** SCOPE the
+  comparison to same-language cohorts (judge a source's topic share only against sources
+  that COULD carry it — same language/script), so "world" is compared among English
+  sources, not against Turkish ones; **(b)** UNIFY topics cross-language via rings
+  (Item 2) so world/dünya/мир are one concept (ring coverage is only 15.2%, the longer
+  game); **(c)** at minimum, exclude the trivial "source has ~0 articles in the
+  keyword's language" case before flagging a bury. Until then the flood/bury Leads are
+  low-precision on this multilingual corpus. A design finding for the manipulation-card
+  vertical, not a quick fix.
+- **Network preflight — reconfirms dead default calendar feeds (2026-06-13 finding E,
+  still open).** The default calendar feeds (`google`-hol = robots-DISALLOWED,
+  `cantonbecker`, `floern`, `monkeyness`, `ose`, `wcg-rel-*`, `gh-un-days`) show
+  unreachable/disallowed. Most verdicts read "network kill switch is active" because
+  AIRPLANE mode was engaged at export — so only the robots-disallowed ones
+  (calendar.google.com) are provably dead here; the rest are just kill-switched. Minor:
+  drop the guaranteed-fail (robots-disallowed) feeds from the shipped defaults so
+  preflight doesn't waste cycles on them.
+- **Frontend errors: CLEAN.** 1 error total (the known `/insights/graph` 503 from
+  08:25), 0 this session, `problems_total:0`, `locked_errors_total:0` — no JS errors, no
+  new failures. Confirms the app's only user-facing failure remains the mindmap 503.
+- **Re-exports (no change, no regression):** keyword-engine (974,062 kw · 15.2%
+  translation · β 0.9502), keyword-growth, keyword-selftest 43/43, FDR 10/10,
+  schema-drift (stamp still behind), slow-queries, integrity, date-diagnostics,
+  article-length, debug-bundle — all byte-stable across the re-runs (no re-index between
+  them), so the earlier analysis stands unchanged.
+
+### Suggested build order
+DB date-range index (P0, cheapest+broadest) → memoise/cache the polled endpoints +
+turn on the rollup serve (P0) → fix the graph/mindmap 503 (P0/P1) → job-ify the heavy
+sync operations (P1) → keyword junk: segmenter + Korean/vi/mr stoplists (P1) → date
+fa/hu (P2). Item-2 translation + lemmatization are their own tracks.
+
+---
+
+## Item 9 — Backup fails: "NetworkError when attempting to fetch resource"  [NEW — bug]  ⏭
+
+**Verbatim:** "I have an error while trying to back-up : "Backup failed:
+NetworkError when attempting to fetch resource.""
+
+**Context:** the corpus is **2.28 GB** (from the debug bundle, > the 2 GiB single-file
+AES-GCM cap), on a low-RAM Qubes VM, with the server under the heavy analytics/scrape
+load documented in Item 8.
+
+### Root cause (grounded)
+
+"NetworkError when attempting to fetch resource" is a **browser-side `fetch()`
+network-layer failure** — the request never got a response (connection dropped /
+refused / server not responding). NOT an HTTP error status. Key facts:
+- **The error is from the backup-RUN flow, not inventory.** `_uxLoadInventory`
+  (app.js:4573) has its OWN catch → "Could not load the inventory". The "Backup
+  failed:" string (app.js:4719) wraps the RUN flow: `POST /api/backup/v2/volumes/start`
+  (4709) → `_uxPoll /api/backup/v2/volumes/status` (4710) → optional `folder/start`
+  (4712) + poll.
+- **The correct path is being used.** The unified Export dialog uses the **volumes +
+  parity** backup (server-side, streamed, <600 MB volumes) — which EXISTS precisely
+  because a 2.28 GB corpus exceeds the retired single-file 2 GiB cap. So this is NOT the
+  2 GiB-cap failure; it's a network-layer drop in the volumes flow.
+- **`api()` has NO timeout/retry** (app.js:1128 — a bare `fetch`, no AbortController).
+  So a SINGLE dropped request (e.g. one `/volumes/status` poll) throws and **fatally
+  aborts the whole backup UI** with "Backup failed", even though the backup JOB keeps
+  running server-side (VolumeBackupManager is a background worker — the poll is only a
+  status read).
+- **Why a request drops:** two candidates, both consistent with Item 8: (a) SERVER
+  OVERLOAD — the single worker + threadpool are saturated (signals/alerts 24 s ×156,
+  event-loop watchdog lags), so a status poll can't be answered before the connection
+  drops; (b) SERVER CRASH — the volumes backup is CPU/RAM-heavy (stream-read 2.28 GB +
+  AES-GCM per volume + Reed-Solomon parity via numpy) on a ~4.4 GB VM under concurrent
+  scrape load → possible OOM / process death → subsequent polls get connection-refused.
+- **Adjacent slowness:** `/api/backup/inventory` (`src/backup/inventory.py`) runs
+  several `SELECT count(*)` over huge tables (keywords 974K, mentions, dates) — slow at
+  this scale (ties to Item 8 P1 count(*)); it isn't the failing call here (own catch)
+  but will make the dialog sluggish to open.
+
+### Fix plan (for the autonomous session)
+
+1. **The status poll must survive a busy/slow server (the load-bearing fix).** A long
+   background job's UI must NOT die on one flaky poll. `_uxPoll` (and ideally `api()`)
+   should RETRY a network failure with backoff, and treat the JOB STATE as truth — if
+   `/volumes/status` is temporarily unreachable, keep polling, don't declare "Backup
+   failed." Only a job that reports `error`/`cancelled` is a real failure. Add a
+   client-side timeout so a hung request is retried, not left forever.
+2. **Confirm crash vs overload (diagnostic — needs the maintainer).** Check the app
+   terminal for a traceback / `Killed` (OOM) at the failure time, whether the app was
+   still responsive after the error (alive = dropped poll; dead/needs-restart = crash),
+   and whether a partial volume set appeared in the destination. This decides between
+   fix 1 (poll robustness, if the job survived) and fix 3 (memory bounding, if OOM).
+3. **Bound backup memory + reduce contention.** If OOM: verify/limit the peak RAM of
+   the volumes encrypt + Reed-Solomon parity on a low-RAM VM (stream in bounded chunks;
+   parity per-volume, not whole-corpus); and PAUSE/deprioritise the scrape while a
+   backup job runs (they contend for CPU/IO/the single writer). Fixing Item 8 (cheap
+   polls, no synchronous multi-second handlers) removes most of the overload pressure.
+4. **inventory via maintained counters** (Item 8 P1) so the dialog opens instantly.
+5. **Honest error + recovery UX.** Replace the fatal "Backup failed: NetworkError" with
+   "the backup is still running in the background — reopen the task manager" when the
+   job is actually alive; surface the real job error otherwise.
+
+### CONFIRMED 2026-07-08 (maintainer follow-up)
+The maintainer reports **the backup actually WENT THROUGH** (volume files were
+produced) despite the "Backup failed: NetworkError" message. This **confirms root
+cause (a): the JOB completed server-side; only a UI status-poll dropped** → the
+"failure" was a FALSE report. It **rules out the OOM-crash hypothesis** (the server
+survived to finish). So fix #1 (poll robustness — treat job-state as truth, never
+abort a live job on one dropped poll) is THE fix; the memory-bounding (#3) is
+secondary/precautionary. This is the exact "false Backup-failed" bug predicted.
+
+### GAP — no standalone "Verify this backup" action (the maintainer needs it)
+The maintainer: *"I cannot test if the files are corrupted or not… trying that out
+again to compare backup sizes."* Two problems:
+- **Comparing sizes is NOT an integrity test** — two backups of a growing corpus
+  legitimately differ (the corpus grew between runs), and equal size wouldn't prove
+  integrity anyway. Say this honestly; steer away from size-comparison as a check.
+- **The integrity machinery EXISTS but is un-exposed.** `verify_volume_set(out_dir)`
+  (`src/backup/volumes.py:152`) checks EVERY volume's ciphertext SHA-256 against the
+  manifest **without decrypting**, and the manifest also carries a whole-archive
+  plaintext SHA-256 + Ed25519 signature + Reed-Solomon parity. `read_volume_set`
+  (restore) runs all of this before merging (the "Verifying volumes…" phase,
+  app.js:4623). BUT there is **no standalone verify endpoint or UI** — the only way to
+  check today is to attempt a RESTORE (which verifies first; additive-merge so it's
+  safe, but heavy and not a pure "just check").
+- **FIX (high value, low effort — the backend fn already exists):** add a **"Verify a
+  backup" action** — a `POST /api/backup/v2/volumes/verify` (server-side path →
+  `verify_volume_set` + the parity-integrity check) + a button in the Export/Import
+  dialog, reporting "all N volumes intact (SHA-256 + signature OK)" or naming the
+  corrupt/missing ones, WITHOUT a restore. This directly answers "is my backup good?"
+  and pairs naturally with the volumes+parity design. ⏭ Acceptance: the user can verify
+  a saved backup folder in one click and get an honest intact/corrupt verdict.
+
+### Immediate workaround (told to the maintainer)
+- **Engage airplane mode FIRST** (stops the scrape → frees the server), THEN run the
+  volumes backup so it isn't contending with collection.
+- Or the guaranteed-safe manual path (ledger standing advice): airplane/shutdown →
+  file-copy `data/open_omniscience.db` (+ `-wal`/`-shm`) to a drive — it is already
+  SQLCipher-encrypted at rest.
+- Check the terminal for an OOM/traceback to confirm the cause.
+
+### Notes / honesty
+- Data-safety-adjacent (the user cannot currently complete a backup at 2.28 GB) →
+  HIGH priority. No data was lost (the backup didn't corrupt anything — it failed to
+  produce an artifact).
+- ⏭ Acceptance: a volumes backup of a 2.28 GB corpus completes (or reports a real job
+  error), a transient poll drop never aborts a live backup, and memory stays bounded on
+  a low-RAM VM.
+
+### SIZE FYI (maintainer follow-up 2) — the backup includes the large-data blobs, and the sizes DIFFER
+The maintainer retried: same error, and the two artifacts were **~6 GB then ~10 GB**.
+The corpus DB is only 2.28 GB → so these backups include the **folder blobs** (wiki
+dumps / offline maps / Ollama models) copied by the SECOND phase of the flow
+(`/folder/start` after `/volumes/start`). Two implications:
+- **The 6→10 GB difference is a RED FLAG for an incomplete folder-copy phase.** The
+  unified Export runs volumes (corpus, ~2.5 GB with parity) THEN the folder copy (the
+  multi-GB blobs). If the poll-drop interrupts during the folder phase, the folder copy
+  is PARTIAL — fewer blobs — so the total is smaller. 6 GB vs 10 GB is consistent with
+  one run copying more blobs than the other before the drop (or different tickboxes).
+  So one/both runs may be MISSING blobs — the user can't tell because the UI said
+  "failed." (The corpus volumes portion is likely complete; the blob portion is the
+  uncertain part.)
+- **The folder backup is RESUMABLE** (`FolderBackupManager`: additive, skip-if-present,
+  the dest dir IS the durable progress) — so re-running to the SAME dest COMPLETES it
+  (adds the missing blobs, skips existing). This should be surfaced: "resume/continue a
+  folder backup" rather than "failed, start over."
+- **The Verify action (above) must cover BOTH parts** — the volumes manifest (SHA-256)
+  AND the folder manifest (per-file checksums/sizes vs what SHOULD be there), so "is my
+  backup complete?" is answerable for the blob half too, not just the corpus.
+- Reinforces the poll-robustness fix (#1): the folder-copy phase, being long, is the
+  most likely place a single dropped poll aborts a backup that is actually still
+  copying.
+
+---
+
+## Item 10 — Diagnostics can't be produced reliably (they time out); consolidate + guarantee production  [NEW — the consolidation mostly EXISTS but is unreachable/un-jobified]  ⏭
+
+**Verbatim:** "I wasn't able to produce the other diagnostics, they each took too long
+to produce. We need to find a way to guarantee that they can be produced, otherwise
+they are not useful. I'm wondering if certain diagnostics shouldn't be merged. As I'm
+trying to produce all of them each time I run the app, maybe we could centralize
+everything into fewer categories, while keeping apart the big ones such as the entire
+corpus of keywords."
+
+**Direct cause:** running ~16 slow diagnostics INDIVIDUALLY = 16 concurrent heavy
+requests = the Item-8 death spiral. Each also takes 60–200 s at 60K articles.
+
+### Code grounding — the consolidation ALREADY EXISTS (but is unreachable + un-jobified)
+
+- **`GET /api/diagnostics/all` (src/api/diagnostics.py:1944)** already does what the
+  maintainer asks: bundles EVERY diagnostic into ONE zip, runs members **sequentially**
+  (not concurrent — no self-inflicted death spiral), `_safe`-isolates each (a failing
+  member writes `<name>.error.txt`, the bundle continues), and **deliberately keeps the
+  full keyword CORPUS dump OUT** — it ships the bounded keyword-log DIGEST and points to
+  the separate sized/paged "All keywords" export. This is EXACTLY "centralize into fewer
+  categories, keep apart the big keyword corpus."
+- **BUT there is NO UI button for `/all`** (grep of app.js: none). So the maintainer
+  physically can't trigger the one-archive path — they click each diagnostic button →
+  the concurrent-request storm.
+- **`/all` has NO per-member DEADLINE** (line ~1986: `for name, fn in members:
+  z.writestr(name, _member_bytes(fn()))` — catches exceptions, NOT slowness). A 200 s
+  member runs the full 200 s; the sum of 16 members at 60K could be 15–50 min → the
+  synchronous request never returns before the browser drops it. And `/all` is a plain
+  synchronous handler returning the whole zip in memory (no job, no streaming-to-file).
+- The `debug-bundle` sub-aggregate already shows the right pattern to generalize:
+  `_safe()` wrappers + `statement_deadline` (line 486 uses a per-export deadline).
+
+### Fix plan (for the autonomous session)
+
+1. **Surface `/all` as a UI button** ("Download all diagnostics") — one sequential
+   archive INSTEAD of 16 concurrent clicks. This alone kills the death spiral the
+   maintainer hit. (Cheapest, highest-impact single step.)
+2. **Make `/all` a BACKGROUND JOB (the reliability GUARANTEE).** Run it server-side in a
+   worker, write the zip to a file, the UI polls status + downloads when ready. A job
+   CANNOT browser-timeout — this is the "guarantee they can be produced" the maintainer
+   wants, independent of how slow the corpus is. (Same pattern as Item 4 / the
+   death-spiral fix: no synchronous multi-minute request handlers.) Surface it in the
+   task manager (cancellable, progress = members done/total).
+3. **Per-member DEADLINE inside `/all`** — wrap each member in `statement_deadline` so a
+   slow member writes a partial/`timed_out` marker and the bundle MOVES ON. Combined
+   with the existing `_safe` error isolation, the archive ALWAYS completes in bounded
+   time with per-section honesty (a section that couldn't finish says so — the
+   degrade-loudly non-negotiable). This guarantees production EVEN before the Item-8
+   perf work lands.
+4. **Keep the structure the maintainer described** (already right): ONE consolidated
+   "all diagnostics" archive + the big keyword-CORPUS export kept SEPARATE (its own
+   sized/paged job). Optionally group the individual buttons under category headers
+   (Health · Keyword-engine · Signals) for targeted use, but the one "all" job is the
+   primary path.
+5. **Accelerated by Item 8** — once the P0/P1 perf work lands (date index, caching,
+   rollup serve, deadlines, concurrency cap), each member is fast and the bundle
+   completes quickly; but the job+deadline (steps 2–3) make it RELIABLE regardless.
+
+### Notes / honesty
+- Partial/timed-out sections are LABELED (the `_safe` + deadline pattern) — never a
+  fabricated or silently-missing diagnostic value; a bundle that couldn't compute a
+  section says so.
+- Diagnostics are read-only, on-demand, never transmitted (unchanged).
+- ⏭ Acceptance: one click reliably produces the full diagnostics archive in bounded
+  time (slow sections marked partial/timed-out, never a hang or a browser NetworkError),
+  as a cancellable task-manager job, WITHOUT freezing the app; the full keyword corpus
+  stays a separate paged export.
+
+---
+
+## Item 11 — The app CRASHES under load (likely OOM); a disposable-VM launch turned a crash into TOTAL data loss  [NEW — CRITICAL, data-safety]  ⏭
+
+**Verbatim:** "the app crashed a few times, I had to launch again. In the latest
+crash, the terminal shut down, and as I was in a disposable template VM based on a
+terminal launch, the disposable VM shut down, and I wasn't able to save anything else
+except the diagnostics logs I already gave you and both backups that might be corrupt."
+
+**Severity: CRITICAL.** The maintainer LOST the ~60K-article corpus — the disposable
+VM shut down with everything in it; only the externally-saved diagnostics + the two
+(possibly-incomplete) backups survived.
+
+### This REOPENS the OOM hypothesis (corrects Item 9's first follow-up)
+Item 9's follow-up set aside the OOM-crash theory because one backup completed. That was
+one lucky instance — the app is in fact **crashing repeatedly**. So the backup
+"NetworkError" is, at least sometimes, a **real server crash**, not just a dropped poll.
+Both failure modes are now live: (a) dropped poll (server survives, backup finishes) AND
+(b) the process DIES.
+
+### Root cause (grounded)
+- **OOM on a low-RAM VM is the prime suspect.** The ~4.4 GB Qubes VM runs: the 2.28 GB
+  corpus, a backup that encrypts + Reed-Solomon-parities a **6–10 GB** output, AND the
+  Item-8 death spiral (multiple 100–200 s analytics queries allocating concurrently). A
+  crash that "shut down the terminal" = the process was killed (OOM-killer / unhandled
+  fatal), which in a terminal-launched DISPOSABLE Qubes VM tears down the whole VM.
+- **Two independent failures compound:** (1) the app should not crash; (2) even if it
+  does, a crash must not vaporize the corpus — but a DispVM launch makes the data
+  ephemeral by construction.
+
+### Fix plan (for the autonomous session) — two tracks
+
+**Track A — the app must not crash (memory safety).**
+1. **Bound backup memory** (Item 9 #3, now CRITICAL): verify the volumes backup truly
+   STREAMS (never whole-archive in RAM) and that Reed-Solomon parity is computed
+   per-volume with bounded buffers, not over the whole 6–10 GB at once. Measure peak RSS
+   on a low-RAM VM.
+2. **Cap concurrent heavy work** (Item 8 death-spiral fix): a concurrency limit +
+   server-side deadlines so 10 heavy analytics queries don't allocate simultaneously and
+   exhaust RAM. Pause/deprioritise the scrape during a backup.
+3. **A memory guard**: refuse/queue heavy operations (backup, all-diagnostics, heavy
+   analytics) when free RAM is low, with an honest message — degrade, never OOM-crash.
+4. **Crash resilience**: confirm a crash mid-backup cannot corrupt the LIVE DB (the
+   backup only READS it — verify no exclusive-lock/rewrite path), and that WAL recovery +
+   the unlock path come back cleanly after a hard kill.
+
+**Track B — data durability that RESPECTS disposable-VM testing (maintainer ruling
+2026-07-08).** The maintainer **prefers to keep testing in DISPOSABLE VMs — they attest
+fresh installs** — and will ALSO run a persistent VM, but the DispVM is the MAIN testing
+method. So the durability answer is NOT "use a persistent VM instead" — the app must
+work WELL in a deliberately-ephemeral context:
+1. **Track A (don't crash) is therefore the PRIMARY fix** — a DispVM that never crashes
+   loses only what the user already accepts as ephemeral; the corpus loss here was the
+   CRASH, not the DispVM per se.
+2. **Make persistence EASY + OPT-IN, don't fight the DispVM choice.** Support a
+   data_dir on a **bind-mounted persistent Qubes volume** (survives the DispVM) as a
+   documented option for when the user wants a persistent corpus inside a DispVM-based
+   launch. A ONE-TIME, non-nagging honest note ("this looks like a disposable VM — your
+   corpus won't survive a restart unless data_dir is on persistent storage; here's how")
+   — NOT a repeated warning that fights a deliberate choice.
+3. **Reliable EXTERNAL backup is the real durability lever for DispVM testing** → Item 9
+   (backup that completes + a Verify action + resumable folder blobs) is DATA-SAFETY-
+   CRITICAL: it is how a disposable-VM tester keeps anything worth keeping. The 2.28 GB
+   corpus took a day+ to scrape — losing it to a crash is expensive even when fresh
+   installs are the point.
+4. **Document the Qubes setup** (bind-mount data_dir; DispVM vs AppVM trade-offs) in
+   install/USER_MANUAL, framed for a fresh-install tester, not as "don't use DispVMs."
+
+### Immediate guidance (told to the maintainer)
+- The DispVM corpus is almost certainly gone; the two backups are the only recovery —
+  **do not overwrite or delete them.**
+- VERIFY them by attempting a RESTORE into a fresh, PERSISTENT app instance (restore
+  checks every volume's SHA-256 before merging; additive, so it's safe). If the folder
+  (blob) half was partial, re-run the folder backup to the same dest — it resumes.
+- Run the app in a **persistent AppVM (or bind-mount data_dir to persistent storage)**,
+  not a terminal-launched DispVM, so a crash never destroys the corpus.
+- The crashes are likely OOM — until fixed: engage airplane during backup, don't run all
+  diagnostics at once, and give the VM more RAM if possible.
+
+### Notes / honesty
+- Be honest that a DispVM is ephemeral BY DESIGN — the app can warn + guide, but cannot
+  make a disposable VM persistent. The fix is a persistent data_dir + not OOM-crashing.
+- ⏭ Acceptance: the app does not OOM-crash under backup + analytics load on a low-RAM
+  VM (memory bounded + guarded); boot warns loudly if data_dir is ephemeral; a hard
+  crash never corrupts the live DB nor loses committed data on a persistent data_dir.
