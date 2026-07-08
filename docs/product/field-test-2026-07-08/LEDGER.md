@@ -1110,3 +1110,171 @@ again to compare backup sizes."* Two problems:
 - ⏭ Acceptance: a volumes backup of a 2.28 GB corpus completes (or reports a real job
   error), a transient poll drop never aborts a live backup, and memory stays bounded on
   a low-RAM VM.
+
+### SIZE FYI (maintainer follow-up 2) — the backup includes the large-data blobs, and the sizes DIFFER
+The maintainer retried: same error, and the two artifacts were **~6 GB then ~10 GB**.
+The corpus DB is only 2.28 GB → so these backups include the **folder blobs** (wiki
+dumps / offline maps / Ollama models) copied by the SECOND phase of the flow
+(`/folder/start` after `/volumes/start`). Two implications:
+- **The 6→10 GB difference is a RED FLAG for an incomplete folder-copy phase.** The
+  unified Export runs volumes (corpus, ~2.5 GB with parity) THEN the folder copy (the
+  multi-GB blobs). If the poll-drop interrupts during the folder phase, the folder copy
+  is PARTIAL — fewer blobs — so the total is smaller. 6 GB vs 10 GB is consistent with
+  one run copying more blobs than the other before the drop (or different tickboxes).
+  So one/both runs may be MISSING blobs — the user can't tell because the UI said
+  "failed." (The corpus volumes portion is likely complete; the blob portion is the
+  uncertain part.)
+- **The folder backup is RESUMABLE** (`FolderBackupManager`: additive, skip-if-present,
+  the dest dir IS the durable progress) — so re-running to the SAME dest COMPLETES it
+  (adds the missing blobs, skips existing). This should be surfaced: "resume/continue a
+  folder backup" rather than "failed, start over."
+- **The Verify action (above) must cover BOTH parts** — the volumes manifest (SHA-256)
+  AND the folder manifest (per-file checksums/sizes vs what SHOULD be there), so "is my
+  backup complete?" is answerable for the blob half too, not just the corpus.
+- Reinforces the poll-robustness fix (#1): the folder-copy phase, being long, is the
+  most likely place a single dropped poll aborts a backup that is actually still
+  copying.
+
+---
+
+## Item 10 — Diagnostics can't be produced reliably (they time out); consolidate + guarantee production  [NEW — the consolidation mostly EXISTS but is unreachable/un-jobified]  ⏭
+
+**Verbatim:** "I wasn't able to produce the other diagnostics, they each took too long
+to produce. We need to find a way to guarantee that they can be produced, otherwise
+they are not useful. I'm wondering if certain diagnostics shouldn't be merged. As I'm
+trying to produce all of them each time I run the app, maybe we could centralize
+everything into fewer categories, while keeping apart the big ones such as the entire
+corpus of keywords."
+
+**Direct cause:** running ~16 slow diagnostics INDIVIDUALLY = 16 concurrent heavy
+requests = the Item-8 death spiral. Each also takes 60–200 s at 60K articles.
+
+### Code grounding — the consolidation ALREADY EXISTS (but is unreachable + un-jobified)
+
+- **`GET /api/diagnostics/all` (src/api/diagnostics.py:1944)** already does what the
+  maintainer asks: bundles EVERY diagnostic into ONE zip, runs members **sequentially**
+  (not concurrent — no self-inflicted death spiral), `_safe`-isolates each (a failing
+  member writes `<name>.error.txt`, the bundle continues), and **deliberately keeps the
+  full keyword CORPUS dump OUT** — it ships the bounded keyword-log DIGEST and points to
+  the separate sized/paged "All keywords" export. This is EXACTLY "centralize into fewer
+  categories, keep apart the big keyword corpus."
+- **BUT there is NO UI button for `/all`** (grep of app.js: none). So the maintainer
+  physically can't trigger the one-archive path — they click each diagnostic button →
+  the concurrent-request storm.
+- **`/all` has NO per-member DEADLINE** (line ~1986: `for name, fn in members:
+  z.writestr(name, _member_bytes(fn()))` — catches exceptions, NOT slowness). A 200 s
+  member runs the full 200 s; the sum of 16 members at 60K could be 15–50 min → the
+  synchronous request never returns before the browser drops it. And `/all` is a plain
+  synchronous handler returning the whole zip in memory (no job, no streaming-to-file).
+- The `debug-bundle` sub-aggregate already shows the right pattern to generalize:
+  `_safe()` wrappers + `statement_deadline` (line 486 uses a per-export deadline).
+
+### Fix plan (for the autonomous session)
+
+1. **Surface `/all` as a UI button** ("Download all diagnostics") — one sequential
+   archive INSTEAD of 16 concurrent clicks. This alone kills the death spiral the
+   maintainer hit. (Cheapest, highest-impact single step.)
+2. **Make `/all` a BACKGROUND JOB (the reliability GUARANTEE).** Run it server-side in a
+   worker, write the zip to a file, the UI polls status + downloads when ready. A job
+   CANNOT browser-timeout — this is the "guarantee they can be produced" the maintainer
+   wants, independent of how slow the corpus is. (Same pattern as Item 4 / the
+   death-spiral fix: no synchronous multi-minute request handlers.) Surface it in the
+   task manager (cancellable, progress = members done/total).
+3. **Per-member DEADLINE inside `/all`** — wrap each member in `statement_deadline` so a
+   slow member writes a partial/`timed_out` marker and the bundle MOVES ON. Combined
+   with the existing `_safe` error isolation, the archive ALWAYS completes in bounded
+   time with per-section honesty (a section that couldn't finish says so — the
+   degrade-loudly non-negotiable). This guarantees production EVEN before the Item-8
+   perf work lands.
+4. **Keep the structure the maintainer described** (already right): ONE consolidated
+   "all diagnostics" archive + the big keyword-CORPUS export kept SEPARATE (its own
+   sized/paged job). Optionally group the individual buttons under category headers
+   (Health · Keyword-engine · Signals) for targeted use, but the one "all" job is the
+   primary path.
+5. **Accelerated by Item 8** — once the P0/P1 perf work lands (date index, caching,
+   rollup serve, deadlines, concurrency cap), each member is fast and the bundle
+   completes quickly; but the job+deadline (steps 2–3) make it RELIABLE regardless.
+
+### Notes / honesty
+- Partial/timed-out sections are LABELED (the `_safe` + deadline pattern) — never a
+  fabricated or silently-missing diagnostic value; a bundle that couldn't compute a
+  section says so.
+- Diagnostics are read-only, on-demand, never transmitted (unchanged).
+- ⏭ Acceptance: one click reliably produces the full diagnostics archive in bounded
+  time (slow sections marked partial/timed-out, never a hang or a browser NetworkError),
+  as a cancellable task-manager job, WITHOUT freezing the app; the full keyword corpus
+  stays a separate paged export.
+
+---
+
+## Item 11 — The app CRASHES under load (likely OOM); a disposable-VM launch turned a crash into TOTAL data loss  [NEW — CRITICAL, data-safety]  ⏭
+
+**Verbatim:** "the app crashed a few times, I had to launch again. In the latest
+crash, the terminal shut down, and as I was in a disposable template VM based on a
+terminal launch, the disposable VM shut down, and I wasn't able to save anything else
+except the diagnostics logs I already gave you and both backups that might be corrupt."
+
+**Severity: CRITICAL.** The maintainer LOST the ~60K-article corpus — the disposable
+VM shut down with everything in it; only the externally-saved diagnostics + the two
+(possibly-incomplete) backups survived.
+
+### This REOPENS the OOM hypothesis (corrects Item 9's first follow-up)
+Item 9's follow-up set aside the OOM-crash theory because one backup completed. That was
+one lucky instance — the app is in fact **crashing repeatedly**. So the backup
+"NetworkError" is, at least sometimes, a **real server crash**, not just a dropped poll.
+Both failure modes are now live: (a) dropped poll (server survives, backup finishes) AND
+(b) the process DIES.
+
+### Root cause (grounded)
+- **OOM on a low-RAM VM is the prime suspect.** The ~4.4 GB Qubes VM runs: the 2.28 GB
+  corpus, a backup that encrypts + Reed-Solomon-parities a **6–10 GB** output, AND the
+  Item-8 death spiral (multiple 100–200 s analytics queries allocating concurrently). A
+  crash that "shut down the terminal" = the process was killed (OOM-killer / unhandled
+  fatal), which in a terminal-launched DISPOSABLE Qubes VM tears down the whole VM.
+- **Two independent failures compound:** (1) the app should not crash; (2) even if it
+  does, a crash must not vaporize the corpus — but a DispVM launch makes the data
+  ephemeral by construction.
+
+### Fix plan (for the autonomous session) — two tracks
+
+**Track A — the app must not crash (memory safety).**
+1. **Bound backup memory** (Item 9 #3, now CRITICAL): verify the volumes backup truly
+   STREAMS (never whole-archive in RAM) and that Reed-Solomon parity is computed
+   per-volume with bounded buffers, not over the whole 6–10 GB at once. Measure peak RSS
+   on a low-RAM VM.
+2. **Cap concurrent heavy work** (Item 8 death-spiral fix): a concurrency limit +
+   server-side deadlines so 10 heavy analytics queries don't allocate simultaneously and
+   exhaust RAM. Pause/deprioritise the scrape during a backup.
+3. **A memory guard**: refuse/queue heavy operations (backup, all-diagnostics, heavy
+   analytics) when free RAM is low, with an honest message — degrade, never OOM-crash.
+4. **Crash resilience**: confirm a crash mid-backup cannot corrupt the LIVE DB (the
+   backup only READS it — verify no exclusive-lock/rewrite path), and that WAL recovery +
+   the unlock path come back cleanly after a hard kill.
+
+**Track B — data durability (a crash must not lose the corpus).**
+1. **data_dir MUST be on a PERSISTENT volume**, never a DispVM's ephemeral root. The app
+   should DETECT when it is running in an ephemeral/disposable context (data_dir on a
+   tmpfs / DispVM overlay) and WARN LOUDLY at boot: "your data will NOT survive a
+   restart — move data_dir to a persistent volume." Honest, not fabricated durability.
+2. **Document the Qubes persistent setup** (bind-mount data_dir to the AppVM's private
+   volume, or run in an AppVM not a DispVM) in install/USER_MANUAL.
+3. **The backups are now the ONLY copy** → Item 9's Verify action + the resumable
+   folder-backup completion are DATA-SAFETY-CRITICAL, not nice-to-haves.
+
+### Immediate guidance (told to the maintainer)
+- The DispVM corpus is almost certainly gone; the two backups are the only recovery —
+  **do not overwrite or delete them.**
+- VERIFY them by attempting a RESTORE into a fresh, PERSISTENT app instance (restore
+  checks every volume's SHA-256 before merging; additive, so it's safe). If the folder
+  (blob) half was partial, re-run the folder backup to the same dest — it resumes.
+- Run the app in a **persistent AppVM (or bind-mount data_dir to persistent storage)**,
+  not a terminal-launched DispVM, so a crash never destroys the corpus.
+- The crashes are likely OOM — until fixed: engage airplane during backup, don't run all
+  diagnostics at once, and give the VM more RAM if possible.
+
+### Notes / honesty
+- Be honest that a DispVM is ephemeral BY DESIGN — the app can warn + guide, but cannot
+  make a disposable VM persistent. The fix is a persistent data_dir + not OOM-crashing.
+- ⏭ Acceptance: the app does not OOM-crash under backup + analytics load on a low-RAM
+  VM (memory bounded + guarded); boot warns loudly if data_dir is ephemeral; a hard
+  crash never corrupts the live DB nor loses committed data on a persistent data_dir.
