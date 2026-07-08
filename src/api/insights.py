@@ -734,6 +734,23 @@ def insights_source_types(db: Session = Depends(get_db)) -> dict:
     return _cached(_ckey("source-types"), lambda: q.source_type_facets(db))
 
 
+@router.get("/reading-diet-by-type")
+def insights_reading_diet_by_type(
+    days: int = Query(30, ge=1, le=3650),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Reading diet across content CHANNELS (content-provenance S3): over the last
+    ``days`` days, the SHARE of the corpus each content channel (news/newsletter/wiki/
+    statistics/law/market/discovery/...) accounts for, with a concentration measure
+    (dominant-channel share + Gini) and an honest Wilson 95% interval. "How much of my
+    reading is newsletters vs web vs wiki." The SAME diet/concentration lens as the
+    source-axis reading-diet Lead, applied to the channel axis. Counts only, method +
+    caveat, NO score; an honest empty state when the window holds no articles."""
+    from src.analytics.concentration import reading_diet_by_type
+
+    return reading_diet_by_type(db, days=days)
+
+
 @router.get("/keyword-stats")
 def insights_keyword_stats(
     term: str,
