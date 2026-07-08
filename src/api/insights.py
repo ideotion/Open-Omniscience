@@ -1001,6 +1001,19 @@ def warm_cache(db: Session) -> dict:
     except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
         _LOG.warning("rollup serve refresh failed during warm_cache", exc_info=True)
 
+    # Background-refresh the POLLED alert strip (field test 2026-07-08, Item 8): the
+    # Home strip polls /api/signals/alerts, whose compute_alerts runs a 45-day space-time
+    # convergence scan (p50 23.7s / p95 60s) that MUST NOT run on the request thread. This
+    # (re)builds the memoised result off the request path (own session_scope, guarded so
+    # at most one runs), so every poll is served instantly from cache with a visible
+    # as_of. Non-blocking; runs regardless of the insights TTL below. Best-effort.
+    try:
+        from src.analytics import poll_cache
+
+        poll_cache.refresh(db)
+    except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
+        _LOG.warning("alert poll-cache refresh failed during warm_cache", exc_info=True)
+
     warmed: list[str] = []
     # Warm the EXACT keys the surfaces request, or the warm value is never a hit and
     # the user pays the cold heavy query themselves (P0-4, field test 2026-06-22: the
