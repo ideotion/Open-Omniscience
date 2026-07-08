@@ -51,6 +51,11 @@ def test_spa_stats_are_counts_with_method_caveat_no_score():
     assert 'd.caveat ? " · " + d.caveat : ""' in _JS
     # honest empty state for an unknown term
     assert 't("Not in your corpus yet — no stats.")' in _JS
+    # the transient "Loading…" placeholder is live-bubble-only (persist=false), never
+    # written to dataset.ooTip/title, so an abandoned+failed fetch can't strand it as
+    # the element's permanent tooltip (runtime-review fix).
+    assert 'applyTo(el, t("Loading keyword stats…"), false)' in _JS
+    assert "function applyTo(el, text, persist)" in _JS
 
 
 def test_reader_marks_and_hover_handler():

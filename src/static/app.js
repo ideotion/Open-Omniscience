@@ -14350,23 +14350,34 @@
         const head = d.resolved.term || d.term || "";
         return `${head} — ${bits.join(" · ")}${d.caveat ? " · " + d.caveat : ""}`;
       }
-      function applyTo(el, text) {
-        el.dataset.ooTip = text;                                   // #oo-tip reads this
-        if (el.getAttribute("title") != null) el.setAttribute("title", text);
+      function applyTo(el, text, persist) {
+        // persist=true writes the #oo-tip convention (dataset.ooTip + title) so the next
+        // hover shows it instantly; persist=false updates ONLY the currently-open bubble
+        // (used for the transient "Loading…" state, so an abandoned+failed fetch can never
+        // strand "Loading…" as the element's permanent tooltip — the runtime-review fix).
+        if (persist) {
+          el.dataset.ooTip = text;                                 // #oo-tip reads this
+          if (el.getAttribute("title") != null) el.setAttribute("title", text);
+        }
         const tip = document.getElementById("oo-tip");
         if (tip && tip.classList.contains("show") && hovered === el) tip.textContent = text;
       }
       async function load(el, term) {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-        if (cache.has(term)) { const v = cache.get(term); if (v) applyTo(el, v); return; }
+        if (cache.has(term)) { const v = cache.get(term); if (v) applyTo(el, v, true); return; }
         cache.set(term, null);                              // in-flight guard (no dup fetch)
-        applyTo(el, t("Loading keyword stats…"));           // immediate honest placeholder
+        applyTo(el, t("Loading keyword stats…"), false);    // live bubble only — never persisted
         try {
           const d = await api("/api/insights/keyword-stats?term=" + encodeURIComponent(term));
           const text = fmt(d);
           cache.set(term, text);
-          applyTo(el, text);
-        } catch (_e) { cache.delete(term); }                // allow a later retry
+          applyTo(el, text, true);
+        } catch (_e) {
+          cache.delete(term);                               // allow a later retry
+          // if still hovering, revert the transient "Loading…" back to the element's own hint
+          const tip = document.getElementById("oo-tip");
+          if (tip && tip.classList.contains("show") && hovered === el) tip.textContent = el.dataset.ooTip || "";
+        }
       }
       function onHover(e) {
         const el = e.target && e.target.closest ? e.target.closest("[data-kwstat]") : null;
