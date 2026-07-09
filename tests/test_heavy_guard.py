@@ -211,7 +211,10 @@ def test_flight_key_is_bind_qualified():
     s2 = _sqlite_session()
     assert flight_key(s1, "k") != flight_key(s2, "k"), "different DBs must not share a flight key"
     assert flight_key(s1, "k") == flight_key(s1, "k"), "same DB → stable key"
-    assert flight_key(None, "k").endswith("bind=nobind")
+    # Unknown bind (no session) → a PER-CALLER key, never the constant that would let two
+    # unknown-bind callers (possibly over different DBs) wrongly SHARE a flight result.
+    assert flight_key(None, "k").startswith("k|nobind=")
+    assert flight_key(None, "k") != flight_key(None, "k"), "unknown bind → never a shared key"
 
 
 # --------------------------------------------------------------------------- #

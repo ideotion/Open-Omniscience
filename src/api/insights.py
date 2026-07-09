@@ -12,9 +12,12 @@ src/analytics/queries.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os as _os
+import threading as _threading
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -25,8 +28,8 @@ from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.database.maintenance import StatementTimeout, statement_deadline
-from src.jobs.background import BackgroundJob, register_job
 from src.database.session import get_db
+from src.jobs.background import BackgroundJob, register_job
 from src.utils.cache import SimpleCache
 
 _LOG = logging.getLogger("api.insights")
@@ -308,24 +311,96 @@ def include_term(body: TermBody) -> dict:
     return remove_excluded(body.term).to_dict()
 
 
-def _status_cache_key(db: Session) -> str:
-    """A DATA-AWARE cache key for /status: the session's DB bind + a write-probe
-    (``PRAGMA data_version`` + ``total_changes()``). Repeat polls with no intervening write
-    reuse the same key (a cache HIT — the whole point, collapsing the field's 172 repeated
-    full counts); ANY write bumps the probe so the progress number stays live (honest,
-    never stale-through-a-write); and a different DB (a test fixture on its own engine) gets
-    a different key, so a cached status is never served for the wrong corpus."""
-    from sqlalchemy import text
+# --- /status data-version probe (D0) -------------------------------------- #
+# The /status cache key must change whenever the corpus is written by ANY connection, so a
+# poll after a commit never serves a stale count. SQLite's ``PRAGMA data_version`` reports
+# exactly that — but ONLY on a LONG-LIVED connection: the value is connection-LOCAL, and on
+# a FRESH connection it reads a value that does NOT track other connections' commits, while
+# ``total_changes()`` resets to 0. Under the churning overflow pool (session.py closes
+# overflow connections on return, each re-deriving the SQLCipher key) a request handler
+# tends to see a fresh connection, so probing on the request's own connection went blind: a
+# poll on a fresh connection AFTER another connection committed produced the SAME key and
+# served the stale count for the whole TTL (the confirmed #595/A3 defect).
+#
+# The fix: read ``data_version`` on our OWN pinned, probe-only connection per engine. Because
+# that connection is never a writer's, it observes every OTHER-connection commit (the
+# pragma's documented purpose). It is read-only, guarded by a lock (a raw DBAPI connection is
+# not safe for concurrent use), and rebuilt once on any error (dispose-safe). A strong engine
+# reference is held alongside so ``id(engine)`` cannot be recycled onto a stale probe
+# connection (the test-fixture hazard); tests clear it via ``_reset_status_probe_for_tests``.
+_PROBE_LOCK = _threading.Lock()
+_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> pinned raw DBAPI connection (never returned to the pool)
+_PROBE_ENGINES: dict[int, Any] = {}  # id(engine) -> engine (strong ref pins id() against recycle)
 
+
+def _data_version(bind) -> str | None:
+    """The SQLite ``PRAGMA data_version`` read on a PINNED probe-only connection for ``bind``
+    (an Engine) — a value that bumps whenever ANY other connection commits, and is stable
+    otherwise. Returns the value as a string, or ``None`` when unavailable (the caller then
+    falls back to a per-call key — never a wrong cache hit)."""
+    eid = id(bind)
+    with _PROBE_LOCK:
+        for attempt in (0, 1):  # rebuild the pinned connection once if it went stale/disposed
+            conn = _PROBE_CONNS.get(eid)
+            try:
+                if conn is None:
+                    conn = bind.raw_connection()  # held, never .close()d on success -> pinned
+                    _PROBE_CONNS[eid] = conn
+                    _PROBE_ENGINES[eid] = bind
+                cur = conn.cursor()
+                try:
+                    cur.execute("PRAGMA data_version")
+                    row = cur.fetchone()
+                finally:
+                    cur.close()
+                return str(row[0]) if row and row[0] is not None else None
+            except Exception:  # noqa: BLE001 - stale/disposed conn -> drop + rebuild once, else give up
+                _PROBE_CONNS.pop(eid, None)
+                try:
+                    if conn is not None:
+                        conn.close()
+                except Exception:  # noqa: BLE001 - best-effort cleanup
+                    pass
+                if attempt == 1:
+                    return None
+        return None
+
+
+def _reset_status_probe_for_tests() -> None:
+    """Close every pinned probe connection and clear the registry (test hook). A fixture
+    engine's ``id()`` must not survive into another test's probe, and its pinned connection
+    must not leak — the autouse fixtures in the /status tests call this between tests."""
+    with _PROBE_LOCK:
+        for conn in _PROBE_CONNS.values():
+            with contextlib.suppress(Exception):  # best-effort cleanup
+                conn.close()
+        _PROBE_CONNS.clear()
+        _PROBE_ENGINES.clear()
+
+
+def _status_cache_key(db: Session) -> str:
+    """A DATA-AWARE cache key for /status: the session's DB bind + the SQLite
+    ``PRAGMA data_version`` read on a PINNED probe connection (:func:`_data_version`).
+
+    Repeat polls with no intervening write reuse the same key (a cache HIT — the whole
+    point, collapsing the field's 172 repeated full counts); a commit by ANY connection
+    bumps ``data_version`` so the progress number stays live (honest, never stale-through-a-
+    write — including a write on a DIFFERENT pooled connection than the poller's, the case
+    the old same-connection probe missed); and a different DB (a test fixture on its own
+    engine) gets a different ``id(bind)``, so a cached status is never served for the wrong
+    corpus."""
     parts = ["status"]
     try:
         bind = db.get_bind()
         parts.append(str(id(bind)))
         if getattr(getattr(bind, "dialect", None), "name", "") == "sqlite":
-            parts.append(str(db.execute(text("PRAGMA data_version")).scalar()))
-            parts.append(str(db.execute(text("SELECT total_changes()")).scalar()))
+            dv = _data_version(bind)
+            if dv is None:
+                # Probe unavailable -> a per-call key (never a wrong hit; loses caching only).
+                return "|".join(["status", "noprobe", str(id(db))])
+            parts.append(dv)
     except Exception:  # noqa: BLE001 - any probe failure -> a per-call key (never a wrong hit)
-        parts = ["status", "noprobe", str(id(db))]
+        return "|".join(["status", "noprobe", str(id(db))])
     return "|".join(parts)
 
 

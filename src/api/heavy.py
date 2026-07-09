@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import os
 import threading
+import uuid
 from typing import Any, Callable
 
 from sqlalchemy.orm import Session
@@ -136,14 +137,19 @@ def flight_key(session: Session | None, name: str) -> str:
     """A single-flight key qualified by the session's DB engine, so a flight computed over
     one database is never shared with a request on another (test fixtures on their own
     engines). ``get_db``/``session_scope`` all derive from the one module ``SessionLocal``
-    in production → the same bind id → correct sharing; a test fixture engine differs."""
-    bind_id = "nobind"
+    in production → the same bind id → correct sharing; a test fixture engine differs.
+
+    When the bind is unknown (no session, or ``get_bind()`` raised) we mint a per-CALLER key
+    (a uuid) rather than the constant ``nobind`` a naive fallback would use: an unknown-bind
+    flight must NOT be shared, because two such callers could be over different databases and
+    sharing would return one corpus's result to the other. A per-caller key simply disables
+    single-flight collapsing for that (rare) call — the safe, honest default."""
     try:
         if session is not None:
-            bind_id = str(id(session.get_bind()))
-    except Exception:  # noqa: BLE001 - any doubt -> a per-caller key (never a wrong share)
-        bind_id = "nobind"
-    return f"{name}|bind={bind_id}"
+            return f"{name}|bind={id(session.get_bind())}"
+    except Exception:  # noqa: BLE001 - fall through to a per-caller key (never a wrong share)
+        pass
+    return f"{name}|nobind={uuid.uuid4().hex}"
 
 
 def run_heavy(key: str, compute: Callable[[], Any]) -> Any:
