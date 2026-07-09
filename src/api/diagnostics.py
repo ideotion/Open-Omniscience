@@ -1668,8 +1668,8 @@ def columnar_status() -> dict:
         # The in-memory windowed rollup serve — AUTOMATIC when duckdb is available; this
         # shows the mode (auto/forced) + whether it's built, so the self-tuning is visible.
         "rollup_serve": rollup_serve.status(),
-        # The in-memory D4 map-coverage serve — OPT-IN (OO_COLUMNAR_MAP_SERVE=1), default off;
-        # shows whether it's enabled + built so the operator can see the map speedup state.
+        # The in-memory D4 map-coverage serve — AUTOMATIC when duckdb is available since
+        # P1.11 (OO_COLUMNAR_MAP_SERVE overrides: 0 off / 1 on); shows the mode + build state.
         "map_serve": map_serve.status(),
         "ip_geo": ip_geo.freshness() | {"attribution": ip_geo.ATTRIBUTION},
         "method": (

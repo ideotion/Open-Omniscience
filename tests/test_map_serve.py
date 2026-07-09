@@ -1,13 +1,16 @@
-"""Opt-in in-memory serve for the per-country map-coverage aggregation (D4, scaling 5A-bis).
+"""In-memory serve for the per-country map-coverage aggregation (D4, scaling 5A-bis).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
-Proves the opt-in map serve is SAFE and FAITHFUL: OFF by default the map endpoint is the
-untouched live path; opted-in-but-not-built falls back to live; opted-in-and-built serves a
-payload BYTE-IDENTICAL to the live source_country_counts (by_country + unlocated incl. the
-per-language donut + totals) plus a ``basis`` disclosure; and it is BIND-AWARE — it never
-answers for a database it was not built over (#572).
+Proves the map serve is SAFE and FAITHFUL: AUTO-ON when duckdb is available (P1.11 —
+flipped 2026-07-09 on the 12:14 field logs' #1 slow query, the map country GROUP BY at
+~150 s/call) with the rollup_serve tri-state (``OO_COLUMNAR_MAP_SERVE=0`` forces off,
+``=1`` forces on, unset = auto); forced-off is the untouched live path even with a built
+rollup; enabled-but-not-built falls back to live; built serves a payload BYTE-IDENTICAL to
+the live source_country_counts (by_country + unlocated incl. the per-language donut +
+totals) plus a ``basis`` disclosure; and it is BIND-AWARE — it never answers for a
+database it was not built over (#572).
 """
 
 from __future__ import annotations
@@ -98,16 +101,27 @@ def _build_over(session):
     return con
 
 
-def test_default_off_returns_none_even_if_a_rollup_were_present(db, monkeypatch):
+def test_default_is_auto_on_and_zero_forces_off_even_with_a_built_rollup(db, monkeypatch):
+    """P1.11: unset = AUTO-ON when duckdb is available (this file already skips without
+    it); '0' forces off — even a built rollup must then never answer; '1' forces on."""
     from src.analytics import map_serve
 
     monkeypatch.delenv("OO_COLUMNAR_MAP_SERVE", raising=False)
+    assert map_serve.serve_mode() == "auto"
+    assert map_serve.serve_enabled() is True
+
+    monkeypatch.setenv("OO_COLUMNAR_MAP_SERVE", "0")
+    assert map_serve.serve_mode() == "forced-off"
     assert map_serve.serve_enabled() is False
-    _build_over(db)  # even with a built rollup, the opt-in gate keeps it off
+    _build_over(db)  # even with a built rollup, forced-off keeps the live path untouched
     assert map_serve.map_coverage(db) is None
 
+    monkeypatch.setenv("OO_COLUMNAR_MAP_SERVE", "1")
+    assert map_serve.serve_mode() == "forced-on"
+    assert map_serve.serve_enabled() is True
 
-def test_opt_in_but_not_built_falls_back_to_live(db, monkeypatch):
+
+def test_enabled_but_not_built_falls_back_to_live(db, monkeypatch):
     from src.analytics import map_serve
 
     monkeypatch.setenv("OO_COLUMNAR_MAP_SERVE", "1")
@@ -185,8 +199,9 @@ def test_endpoint_serves_basis_and_matches_the_live_endpoint(tmp_path, monkeypat
     try:
         client = TestClient(app)
 
-        # Live (serve off).
-        monkeypatch.delenv("OO_COLUMNAR_MAP_SERVE", raising=False)
+        # Live (serve forced off — unset is now AUTO-ON, which would kick a background
+        # build against the process store and race this test's fixture engine).
+        monkeypatch.setenv("OO_COLUMNAR_MAP_SERVE", "0")
         live = client.get("/api/insights/map-coverage").json()
         assert "basis" not in live
 

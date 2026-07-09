@@ -1043,9 +1043,10 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
         from src.catalog.countries import continent_of, country_display_name
         from src.timemap.geocode import geocode
 
-        # Opt-in (OO_COLUMNAR_MAP_SERVE=1, default off) in-memory D4 rollup serve; any miss
-        # falls back to the IDENTICAL live query. A served response carries a ``basis``
-        # disclosure (source + as-of); off/fallback it is the untouched live path.
+        # In-memory D4 rollup serve — AUTO-ON when duckdb is available (P1.11; the map
+        # country GROUP BY was the 12:14 field logs' #1 slow query at ~150 s/call). Any
+        # miss falls back to the IDENTICAL live query. A served response carries a
+        # ``basis`` disclosure (source + as-of); off/fallback it is the untouched live path.
         data = map_serve.map_coverage(db) or rm.source_country_counts(db)
         for row in data["by_country"]:
             cc = row["country"]
@@ -1219,7 +1220,7 @@ def warm_cache(db: Session) -> dict:
         from src.analytics import map_serve, rollup_serve
 
         rollup_serve.refresh(db)
-        map_serve.refresh(db)  # opt-in (OO_COLUMNAR_MAP_SERVE=1) D4 map serve; no-op when off
+        map_serve.refresh(db)  # D4 map serve (auto-on with duckdb, P1.11); no-op when off
     except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
         _LOG.warning("rollup serve refresh failed during warm_cache", exc_info=True)
 

@@ -1,4 +1,4 @@
-"""Opt-in in-memory serve for the per-country map-coverage aggregation (D4, scaling 5A-bis).
+"""In-memory serve for the per-country map-coverage aggregation (D4, scaling 5A-bis).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -8,11 +8,14 @@ re-scans the articles + keyword_mentions tables on EVERY read. The ``source_cove
 rollup (:mod:`src.analytics.columnar`, D4) is built + parity-tested but was dormant. This
 module serves it, mirroring :mod:`src.analytics.rollup_serve` (the keyword_daily serve) — a
 ONE process-lifetime in-memory DuckDB rollup, built once in the background, read under a
-lock — with ONE deliberate difference: it is **OPT-IN, default OFF**.
+lock.
 
-WHY OPT-IN (unlike the auto-on keyword serve): offline the store is in-memory, so it is a
-per-process rebuild — a long-running-app amortisation the operator turns on knowingly via
-``OO_COLUMNAR_MAP_SERVE=1``. Off by default it is byte-for-byte the untouched live path.
+AUTOMATIC by default since P1.11 (SCALE_ROADMAP 2026-07-09): the 12:14 field logs made the
+map/ring country GROUP BY the #1 slow query — **748 s total, ~150 s/call, max 211 s** on
+the live 3.06 M-keyword / 20.9 M-mention corpus — while this serve sat dormant behind its
+opt-in flag. Like rollup_serve it now turns itself ON whenever the columnar extra (duckdb)
+is installed; ``OO_COLUMNAR_MAP_SERVE`` remains a deployment override (``0`` forces off,
+``1`` forces on).
 
 SAFE BY CONSTRUCTION (the same guarantees as rollup_serve):
   * every serve is wrapped — ANY miss/error returns ``None`` and the caller falls back to
@@ -51,12 +54,29 @@ _STATE: dict = {"con": None, "built_at": 0.0, "rows": 0, "bind": None}
 _STALE_S = int(os.getenv("OO_COLUMNAR_MAP_SERVE_TTL_S", "900"))  # 15 min default
 
 
-def serve_enabled() -> bool:
-    """OPT-IN, default OFF (distinct from rollup_serve's auto-on keyword serve).
+def serve_mode() -> str:
+    """How the serve is decided: 'forced-on'/'forced-off' via OO_COLUMNAR_MAP_SERVE, else
+    'auto' (the default — on whenever the columnar extra is installed). Mirrors
+    :func:`rollup_serve.serve_mode`."""
+    env = os.getenv("OO_COLUMNAR_MAP_SERVE")
+    if env == "1":
+        return "forced-on"
+    if env == "0":
+        return "forced-off"
+    return "auto"
 
-    On only when ``OO_COLUMNAR_MAP_SERVE=1`` AND the columnar extra (duckdb) is available.
-    Off by default the map endpoint is byte-for-byte the untouched live query."""
-    if os.getenv("OO_COLUMNAR_MAP_SERVE") != "1":
+
+def serve_enabled() -> bool:
+    """AUTOMATIC by default (P1.11, flipped 2026-07-09 on the 12:14 field measurement:
+    the map/ring country GROUP BY was the #1 slow query at ~150 s/call with this serve
+    dormant behind its opt-in flag).
+
+    On whenever the columnar extra (duckdb) is available — the same tri-state as
+    rollup_serve: ``OO_COLUMNAR_MAP_SERVE=0`` forces off, ``=1`` forces on, unset = auto.
+    SAFE by construction: any miss falls back to the identical live query, the rollup
+    builds in a background thread, and the bind-aware guard (#572) never answers for a
+    database it was not built over."""
+    if serve_mode() == "forced-off":
         return False
     from src.analytics import columnar
 
@@ -71,7 +91,7 @@ def status() -> dict:
         rows = _STATE["rows"]
     return {
         "enabled": serve_enabled(),
-        "opt_in": os.getenv("OO_COLUMNAR_MAP_SERVE") == "1",
+        "mode": serve_mode(),  # auto | forced-on | forced-off
         "built": con is not None,
         "built_at": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
