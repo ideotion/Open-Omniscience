@@ -307,10 +307,37 @@ def include_term(body: TermBody) -> dict:
     return remove_excluded(body.term).to_dict()
 
 
+def _status_cache_key(db: Session) -> str:
+    """A DATA-AWARE cache key for /status: the session's DB bind + a write-probe
+    (``PRAGMA data_version`` + ``total_changes()``). Repeat polls with no intervening write
+    reuse the same key (a cache HIT — the whole point, collapsing the field's 172 repeated
+    full counts); ANY write bumps the probe so the progress number stays live (honest,
+    never stale-through-a-write); and a different DB (a test fixture on its own engine) gets
+    a different key, so a cached status is never served for the wrong corpus."""
+    from sqlalchemy import text
+
+    parts = ["status"]
+    try:
+        bind = db.get_bind()
+        parts.append(str(id(bind)))
+        if getattr(getattr(bind, "dialect", None), "name", "") == "sqlite":
+            parts.append(str(db.execute(text("PRAGMA data_version")).scalar()))
+            parts.append(str(db.execute(text("SELECT total_changes()")).scalar()))
+    except Exception:  # noqa: BLE001 - any probe failure -> a per-call key (never a wrong hit)
+        parts = ["status", "noprobe", str(id(db))]
+    return "|".join(parts)
+
+
 @router.get("/status")
 def insights_status(db: Session = Depends(get_db)) -> dict:
-    """Indexing progress + corpus keyword/entity totals."""
-    return q.status(db)
+    """Indexing progress + corpus keyword/entity totals.
+
+    POLLED by the Insights "N to index" ticker. Served through a DATA-AWARE cache
+    (:func:`_status_cache_key`) so a burst of identical polls does not re-run the corpus
+    counts every time (the field's 124 s of repeated full scans), while a write still
+    invalidates it so the progress stays live. The counts themselves are the REAL values —
+    the ``mentions`` total now comes from the maintained counters (see q.status)."""
+    return _cached(_status_cache_key(db), lambda: q.status(db))
 
 
 @router.post("/reindex")
