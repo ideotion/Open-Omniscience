@@ -7,9 +7,10 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 These four languages had NO month vocabulary (a date-diagnostics gap). This file pins:
   * each new native date extracts to the expected (iso, precision);
   * "miss over invent" — a bare month word with no adjacent day/year yields nothing;
-  * the DELIBERATE OMISSIONS never fabricate — Persian SOLAR HIJRI month names (a different
-    calendar) and Persian "May" (مه/می, an ultra-common word) are withheld and must NOT
-    produce a date;
+  * Persian SOLAR HIJRI (Jalali) month names are now CONVERTED to Gregorian by exact
+    calendar arithmetic (fa-gated), never blindly mapped and never fabricated — see the
+    dedicated golden-conversion suite in tests/test_wave8_dates_fa_hu.py;
+  * Persian "May" (مه/می, an ultra-common word) stays WITHHELD and must NOT produce a date;
   * the datediag probe stays in LOCKSTEP (ca/fa/ml/te are in MONTH_VOCAB_LANGS and
     analyze_article reports zero actionable gap on a native date).
 
@@ -77,11 +78,17 @@ def test_miss_over_invent_bare_month_word():
     assert _dates("سپتامبر خوب بود.", "fa") == []
 
 
-def test_persian_solar_hijri_names_are_not_fabricated():
-    # Solar Hijri months name a DIFFERENT calendar; mapping them to Gregorian numbers would
-    # fabricate a date (and the year 1403 even passes the CE window). They are omitted.
-    assert _dates("۱۵ فروردین ۱۴۰۳ برگزار شد.", "fa") == []
-    assert _dates("۵ اردیبهشت ۱۴۰۳", "fa") == []
+def test_persian_solar_hijri_names_convert_not_fabricate():
+    # Solar Hijri months name a DIFFERENT calendar. They used to be omitted (a blind
+    # month-number mapping would fabricate — 15 Farvardin 1403 is NOT 1403-01-15); they
+    # are now CONVERTED by exact arithmetic (fa-gated). The result must be the true
+    # Gregorian date, never the blind mapping, and never a date outside fa.
+    assert _dates("۱۵ فروردین ۱۴۰۳ برگزار شد.", "fa") == [("2024-04-03", "day")]
+    assert _dates("۵ اردیبهشت ۱۴۰۳", "fa") == [("2024-04-24", "day")]
+    # NOT the blind month-number mapping (would have been 1403-01-15 / 1403-02-05):
+    assert ("1403-01-15", "day") not in _dates("۱۵ فروردین ۱۴۰۳", "fa")
+    # A Jalali name in a NON-fa article never fabricates (the fa gate holds):
+    assert _dates("۱۵ فروردین ۱۴۰۳ برگزار شد.", "ar") == []
 
 
 def test_persian_may_is_withheld_as_a_fabrication_vector():
