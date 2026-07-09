@@ -760,6 +760,17 @@ class BaselineExtractor:
                 ):
                     continue
                 phrase = " ".join(words)
+                # Drop a phrase whose JOINED form is itself a stopword ENTRY. The vendored
+                # scoped lists carry many MULTI-WORD stopword phrases — 379 of 645 in vi.txt
+                # (e.g. "bao giờ" = when) — whose component syllables are NOT standalone
+                # entries, so the per-word check above lets the whole filler phrase leak as a
+                # keyword. Matching the joined phrase activates those existing entries (field
+                # test 2026-07-08). NOTE: this is a PARTIAL fix for syllable-segmented
+                # languages (vi/zh/ja/th) — the single-syllable fragments + multi-syllable
+                # function words that fragment across token boundaries still leak; the real
+                # cure is a word segmenter (ledger P4.4, ruling-gated).
+                if phrase in stop:
+                    continue
                 _record(phrase, window[0][1])
 
         terms = [
