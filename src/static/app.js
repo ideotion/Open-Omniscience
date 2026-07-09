@@ -9009,7 +9009,7 @@
       }
       if (box) box.innerHTML = `<div class="muted">${esc(t("Checking…"))}</div>`;
       try {
-        const d = await api("/api/insights/poll-transparency", { method: "POST", body: JSON.stringify(fields) });
+        const d = await api("/api/insights/poll-transparency", {method: "POST", body: JSON.stringify(fields)});
         _renderPollTransparency(d);
       } catch (e) { if (box) box.innerHTML = `<div class="err">${esc(t("Error:") + " " + ((e && e.message) || e))}</div>`; }
     }
