@@ -236,3 +236,59 @@ def test_persian_and_hungarian_are_in_month_vocab_langs():
     # real gap rather than "no vocabulary" (the diagnostics honesty contract).
     assert "fa" in datediag.MONTH_VOCAB_LANGS
     assert "hu" in datediag.MONTH_VOCAB_LANGS
+
+
+# --------------------------------------------------------------------------- #
+# Fabrication regressions — adversarial-audit repros, 2026-07-09 (post-merge   #
+# fix-forward of PR #590). Each of these once STORED a wrong date; the fix is  #
+# a word/ZWNJ lookbehind on _FA_MY_RE + claim-on-ROUTE in the fa numeric       #
+# router + a fa guard on day-first numerics with a Jalali-range year. The      #
+# non-negotiable under test: SKIPPED, never guessed — an empty result is the   #
+# only honest answer for every one of these inputs.                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_fa_month_name_word_tail_never_fabricates():
+    # دی (Dey) is the tail of common words: عادی "ordinary" / اقتصادی "economic".
+    # A bare Jalali year after such a word used to store Dey 1403 (2024-12-21).
+    assert _dates("سال عادی ۱۴۰۳ بود.", "fa") == []
+    assert _dates("رشد اقتصادی ۱۴۰۳ کند بود.", "fa") == []
+    # The REAL month usage (space-preceded) still extracts at month precision.
+    assert _dates("در دی ۱۴۰۳ رخ داد", "fa") == [("2024-12-21", "month")]
+
+
+def test_fa_invalid_numeric_jalali_is_skipped_not_read_as_ce():
+    # 30 Esfand 1402 does not exist (1402 is not a Jalali leap year). This used
+    # to fall through to the generic numeric loop and store 1402-12-30 CE — a
+    # medieval date fabricated from a typo'd/impossible Jalali date.
+    assert _dates("۱۴۰۲/۱۲/۳۰", "fa") == []
+    assert _dates("1402/12/30", "fa") == []  # ASCII digits take the same path
+    # The valid leap-year counterpart still converts exactly.
+    assert _dates("۱۴۰۳/۱۲/۳۰", "fa") == [("2025-03-20", "day")]
+
+
+def test_fa_out_of_window_jalali_is_skipped_not_read_as_ce():
+    # Jalali 1420 = 2041 CE, outside the acceptance window: the router must
+    # claim-and-skip, never let the generic loop store 1420-01-01 CE.
+    assert _dates("افق ۱۴۲۰/۰۱/۰۱ اعلام شد", "fa") == []
+
+
+def test_fa_day_first_numeric_with_jalali_year_is_skipped_not_guessed():
+    # Persian numeric convention is year-first; a day-first form with a
+    # Jalali-range year is order-ambiguous. It used to be read by the generic
+    # DMY loop as 1403-03-11 CE; now it is claimed and skipped — never converted
+    # on an assumed field order, never read as CE.
+    assert _dates("۱۱/۰۳/۱۴۰۳", "fa") == []
+    # Day-first with a GREGORIAN year is unaffected (the normal DMY path).
+    assert _dates("۱۱/۰۳/۲۰۲۴", "fa") == [("2024-03-11", "day")]
+
+
+def test_fa_fabrication_fixes_keep_datediag_in_lockstep():
+    # The probe imports the SAME compiled _FA_MY_RE, so the tightened lookbehind
+    # propagates: neither the extractor nor the probe fires on the word-tail
+    # text — no phantom per-language gap is reported.
+    r = datediag.analyze_article("سال عادی ۱۴۰۳ بود.", language="fa",
+                                 anchor=ANCHOR, today=TODAY)
+    assert r["n_extracted"] == 0
+    assert all(h["kind"] != "month_name"
+               for h in datediag.recall_probe("سال عادی ۱۴۰۳ بود.", language="fa"))

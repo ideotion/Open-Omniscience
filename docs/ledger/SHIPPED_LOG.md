@@ -2884,3 +2884,26 @@
   ALL scripts so a date is never carved out of a longer mixed-numeral. COROLLARY (lockstep
   rule): every extractor vocabulary/pattern gain MUST land in `datediag.py` the same commit,
   or the probe reports phantom gaps / undercounts (MONTH_VOCAB_LANGS had 5 stale omissions).
+
+## 2026-07-09 — fa Jalali fabrication fix-forward (post-merge audit of PR #590)
+
+A post-merge adversarial audit of #590 found the Jalali→Gregorian arithmetic EXACT but three
+inputs that STORED a wrong date: (V1, new in #590) `_FA_MY_RE` had no left boundary and دی (Dey)
+is the word-tail of common Persian words, so "سال عادی ۱۴۰۳" fabricated Dey 1403; (V2) the fa
+numeric router claimed only on SUCCESS, so an invalid (۱۴۰۲/۱۲/۳۰, 30 Esfand non-leap) or
+out-of-window (۱۴۲۰/۰۱/۰۱) Jalali date fell through to the generic numeric loop and stored a
+medieval CE date; (V3) day-first ۱۱/۰۳/۱۴۰۳ was read as 1403-03-11 CE by the generic DMY loop.
+Fixes: `(?<![\w‌])` lookbehind on `_FA_MY_RE` (word char + Persian ZWNJ); CLAIM-ON-ROUTE in
+the fa numeric router; a fa-gated claim on day-first numerics with a Jalali-range year (order is
+an assumption we refuse — skipped, never guessed). datediag lockstep holds by construction (it
+imports the same compiled pattern objects). 5 pinning regressions; controls hand-verified.
+
+**LESSON (refines VERIFY-BEFORE-PUSH):** #590's own pre-push verification claimed 5 skeptic
+lenses and still shipped 3 fabrications — the lenses verified the POSITIVE space (goldens exact,
+gates hold) and never attacked the NEGATIVE space (inputs that must yield NOTHING). A
+no-fabrication skeptic must generate should-be-empty inputs per pattern — every alternation
+member as a word-tail/prose fragment, every router failure path, every order-ambiguous form —
+and assert `[]`. Corollaries: a language/calendar router must CLAIM-ON-ROUTE (consume the span
+even when validation fails) or generic loops re-read the digits under another calendar; with
+`_MIN_YEAR=1000`, any 4-digit year leaking past a router stores a plausible medieval CE date, so
+routers over shared numeric shapes are fabrication-critical.
