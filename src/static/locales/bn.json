@@ -1950,5 +1950,14 @@
   "Folder to import from": "যে ফোল্ডার থেকে ইমপোর্ট করবেন",
   "Passphrase (to decrypt the corpus backup)": "পাসফ্রেজ (কর্পাস ব্যাকআপ ডিক্রিপ্ট করতে)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "পাসফ্রেজ — কর্পাস এনক্রিপ্ট করে (পাসফ্রেজ হারালে পুনরুদ্ধার নেই)",
-  "Restore a legacy backup file": "একটি লেগ্যাসি ব্যাকআপ ফাইল পুনরুদ্ধার করুন"
+  "Restore a legacy backup file": "একটি লেগ্যাসি ব্যাকআপ ফাইল পুনরুদ্ধার করুন",
+  "Loading country data in the background…": "পটভূমিতে দেশভিত্তিক ডেটা লোড হচ্ছে…",
+  "(stopped early — partial)": "(তাড়াতাড়ি থেমে গেছে — আংশিক)",
+  "Enriching in the background…": "পটভূমিতে সমৃদ্ধ করা হচ্ছে…",
+  "Typed source types:": "উৎসের ধরন পূরণ করা হয়েছে:",
+  "Enrich failed — see console": "সমৃদ্ধ করা ব্যর্থ — কনসোল দেখুন",
+  "Applying baseline tags in the background…": "পটভূমিতে বেসলাইন ট্যাগ প্রয়োগ করা হচ্ছে…",
+  "Backfill failed:": "ব্যাকফিল ব্যর্থ:",
+  "Applied baseline tags:": "বেসলাইন ট্যাগ প্রয়োগ করা হয়েছে:",
+  "tags": "ট্যাগ"
 }

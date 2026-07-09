@@ -1139,6 +1139,31 @@
       } finally { _bumpInflight(-1); }
     }
 
+    // Poll a background-job status endpoint to a terminal state and hand back the
+    // FINAL status. The heavy button actions (governments load / enrich source types /
+    // keyword-tag backfill) now return {started, job:{...}} and finish in a daemon
+    // thread — so a caller must poll ``.../status`` instead of parsing the immediate
+    // response, or it reports the empty start-state as a false result (the #595/A2
+    // contract break: "Loaded 0 figures." / "Typed 0 of 0" / "Tagged undefined"). The
+    // job status shape is src/jobs/background.py:BackgroundJob.status() —
+    // {state: idle|running|done|cancelled|error, done, total, detail, progress,
+    //  error, result, ...}. Returns the last status on timeout (never hangs forever).
+    async function pollJobStatus(statusUrl, opts = {}) {
+      const intervalMs = opts.intervalMs || 1500;
+      const maxMs = opts.maxMs || 1800000;  // 30 min: enrich-source-types can run ~8 min
+      const onProgress = opts.onProgress;
+      const t0 = Date.now();
+      let last = null;
+      while (true) {
+        last = await api(statusUrl);
+        if (onProgress) { try { onProgress(last); } catch (e) {} }
+        const st = last && last.state;
+        if (st === "done" || st === "error" || st === "cancelled" || st === "idle") return last;
+        if (Date.now() - t0 > maxMs) return last;  // give up polling; hand back what we have
+        await new Promise((r) => setTimeout(r, intervalMs));
+      }
+    }
+
     // ===================================================================== //
     //  SHELL "0.05": navigation, customization, command palette, docs, home //
     //  Built on top of the existing (tested) feature functions below — this  //
@@ -3587,8 +3612,23 @@
       const old = btn && btn.textContent;
       if (btn) { btn.disabled = true; btn.textContent = t("Loading…"); }
       try {
-        const r = await api("/api/governments/load-standard", {method: "POST", body: JSON.stringify({})});
-        toast(t("Loaded country data:") + " " + (r.stored || 0) + " " + t("figures."), "ok");
+        // The load runs ~3 min in a background job (returns {started, job}); poll the
+        // job to completion and report the REAL stored figures — never the empty
+        // start-state (which read "Loaded 0 figures." the instant the job began).
+        await api("/api/governments/load-standard", {method: "POST", body: JSON.stringify({})});
+        toast(t("Loading country data in the background…"), "ok",
+          (typeof openTaskManager === "function") ? openTaskManager : null);
+        const st = await pollJobStatus("/api/governments/load-standard/status", {
+          onProgress: (s) => { if (btn && s.total) btn.textContent = t("Loading…") + " " + (s.done || 0) + "/" + s.total; },
+        });
+        if (st.state === "error") {
+          toast((st.error) || t("Could not load country data."), "err");
+        } else {
+          const res = st.result || {};
+          let msg = t("Loaded country data:") + " " + (res.stored || 0) + " " + t("figures.");
+          if (res.complete === false) msg += " " + t("(stopped early — partial)");
+          toast(msg, "ok");
+        }
         _govCountriesInit = false; _govMapInit = false; _govMapData = null;
         loadGovCountries();
       } catch (e) {
@@ -8310,19 +8350,27 @@
     // -- Keyword explorer (Item AC: explore by tag, hide, apply baseline tags) ---- //
     let _kxAutoBackfilled = false;
     async function loadKeywordExplorer() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("kx-facets");
       if (!box) return;
-      box.innerHTML = '<div class="muted">Loading…</div>';
+      box.innerHTML = '<div class="muted">' + esc(t("Loading…")) + '</div>';
       $("kx-keywords").innerHTML = "";
       try {
         const f = await api("/api/insights/keyword-tags/facets");
         // §3.H: tagging at ingest is forward-only, so a pre-existing corpus shows no
         // tags until a backfill runs. Auto-apply the baseline tags ONCE (silent, local,
-        // idempotent — the auto-index #21 pattern) when the explorer opens empty.
+        // idempotent — the auto-index #21 pattern) when the explorer opens empty. The
+        // backfill is now a ~1-min background job (returns {started, job}), so we POLL
+        // it to completion BEFORE re-rendering — the old code re-rendered the instant it
+        // STARTED (still empty) and the one-shot guard never retried.
         const empty = (f.axes || ["type", "topic"]).every(ax => !((f.facets && f.facets[ax]) || []).length);
         if (empty && !_kxAutoBackfilled) {
           _kxAutoBackfilled = true;
-          try { await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"}); } catch (e) {}
+          box.innerHTML = '<div class="muted">' + esc(t("Applying baseline tags in the background…")) + '</div>';
+          try {
+            await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"});
+            await pollJobStatus("/api/insights/keyword-tags/backfill/status");
+          } catch (e) {}
           return loadKeywordExplorer();  // re-render with the freshly applied tags (guard prevents a loop)
         }
         box.innerHTML = (f.axes || ["type", "topic"]).map(ax => {
@@ -8358,12 +8406,19 @@
     }
 
     async function kxBackfill() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
-        toast("Applying baseline tags…");
-        const r = await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"});
-        toast(`Tagged ${r.tagged_keywords} keyword(s) (${r.tags_added} tags).`);
+        toast(t("Applying baseline tags in the background…"));
+        // The backfill scans the whole keyword table (~1 min) in a background job
+        // (returns {started, job}); poll to completion for the REAL numbers instead of
+        // "Tagged undefined keyword(s) (undefined tags)." from the start-state.
+        await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"});
+        const st = await pollJobStatus("/api/insights/keyword-tags/backfill/status");
+        if (st.state === "error") { toast(t("Backfill failed:") + " " + (st.error || ""), "err"); return; }
+        const res = st.result || {};
+        toast(t("Applied baseline tags:") + " " + (res.tagged_keywords || 0) + " " + t("keywords") + " · " + (res.tags_added || 0) + " " + t("tags"));
         loadKeywordExplorer();
-      } catch (e) { toast("Backfill failed: " + e.message, "err"); }
+      } catch (e) { toast(t("Backfill failed:") + " " + e.message, "err"); }
     }
 
     // -- Most-cited sources (corpus-wide co-citation) ----------------------- //
@@ -8885,15 +8940,25 @@
           && !await ensureOnline(t("Fill source types from Wikidata (egresses to Wikidata over your transport)"))) return;
       const old = btn.textContent;
       btn.disabled = true;
-      btn.textContent = "Enriching from Wikidata…";
+      btn.textContent = t("Enriching in the background…");
       try {
-        const d = await api("/api/diagnostics/enrich-source-types", { method: "POST" });
-        btn.textContent = `Typed ${d.sources_typed || 0} of ${d.scanned || 0} scanned`;
+        // Runs ~8 min in a background job (returns {mode, started, job}); poll the job
+        // to completion for the REAL tally instead of the empty start-state ("Typed 0
+        // of 0 scanned" the instant it began).
+        await api("/api/diagnostics/enrich-source-types", { method: "POST" });
+        const st = await pollJobStatus("/api/diagnostics/enrich-source-types/status");
+        if (st.state === "error") {
+          btn.textContent = t("Enrich failed — see console");
+          console.error("enrichSourceTypes", st.error);
+        } else {
+          const res = st.result || {};
+          btn.textContent = t("Typed source types:") + " " + (res.sources_typed || 0) + "/" + (res.scanned || 0);
+        }
       } catch (e) {
-        btn.textContent = "Enrich failed — see console";
+        btn.textContent = t("Enrich failed — see console");
         console.error("enrichSourceTypes", e);
       }
-      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 5000);
+      setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
     }
 
     // Diagnostics: DISCOVER new sources from Wikidata for chosen countries and add

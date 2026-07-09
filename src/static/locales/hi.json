@@ -1950,5 +1950,14 @@
   "Folder to import from": "जिस फ़ोल्डर से आयात करना है",
   "Passphrase (to decrypt the corpus backup)": "पासफ़्रेज़ (कॉर्पस बैकअप डिक्रिप्ट करने के लिए)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "पासफ़्रेज़ — कॉर्पस एन्क्रिप्ट करता है (खोया पासफ़्रेज़ पुनर्प्राप्त नहीं)",
-  "Restore a legacy backup file": "एक पुरानी बैकअप फ़ाइल पुनर्स्थापित करें"
+  "Restore a legacy backup file": "एक पुरानी बैकअप फ़ाइल पुनर्स्थापित करें",
+  "Loading country data in the background…": "देश डेटा पृष्ठभूमि में लोड हो रहा है…",
+  "(stopped early — partial)": "(जल्दी रुक गया — आंशिक)",
+  "Enriching in the background…": "पृष्ठभूमि में समृद्ध किया जा रहा है…",
+  "Typed source types:": "स्रोत प्रकार भरे गए:",
+  "Enrich failed — see console": "समृद्ध करना विफल — कंसोल देखें",
+  "Applying baseline tags in the background…": "पृष्ठभूमि में आधार टैग लागू किए जा रहे हैं…",
+  "Backfill failed:": "बैकफ़िल विफल:",
+  "Applied baseline tags:": "आधार टैग लागू किए गए:",
+  "tags": "टैग"
 }

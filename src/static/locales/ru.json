@@ -1950,5 +1950,14 @@
   "Folder to import from": "Папка для импорта",
   "Passphrase (to decrypt the corpus backup)": "Парольная фраза (для расшифровки резервной копии корпуса)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "Парольная фраза — шифрует корпус (восстановление при утере невозможно)",
-  "Restore a legacy backup file": "Восстановить устаревший файл резервной копии"
+  "Restore a legacy backup file": "Восстановить устаревший файл резервной копии",
+  "Loading country data in the background…": "Загрузка данных по странам в фоновом режиме…",
+  "(stopped early — partial)": "(остановлено досрочно — частично)",
+  "Enriching in the background…": "Обогащение в фоновом режиме…",
+  "Typed source types:": "Типы источников заполнены:",
+  "Enrich failed — see console": "Ошибка обогащения — см. консоль",
+  "Applying baseline tags in the background…": "Применение базовых тегов в фоновом режиме…",
+  "Backfill failed:": "Ошибка заполнения:",
+  "Applied baseline tags:": "Базовые теги применены:",
+  "tags": "теги"
 }

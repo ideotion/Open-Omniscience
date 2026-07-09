@@ -1950,5 +1950,14 @@
   "Folder to import from": "Ordner, aus dem importiert wird",
   "Passphrase (to decrypt the corpus backup)": "Passphrase (zum Entschlüsseln der Korpus-Sicherung)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "Passphrase — verschlüsselt den Korpus (keine Wiederherstellung bei Verlust)",
-  "Restore a legacy backup file": "Eine alte Sicherungsdatei wiederherstellen"
+  "Restore a legacy backup file": "Eine alte Sicherungsdatei wiederherstellen",
+  "Loading country data in the background…": "Länderdaten werden im Hintergrund geladen…",
+  "(stopped early — partial)": "(vorzeitig abgebrochen — unvollständig)",
+  "Enriching in the background…": "Anreicherung im Hintergrund…",
+  "Typed source types:": "Quellentypen ausgefüllt:",
+  "Enrich failed — see console": "Anreicherung fehlgeschlagen — siehe Konsole",
+  "Applying baseline tags in the background…": "Basis-Tags werden im Hintergrund angewendet…",
+  "Backfill failed:": "Nachtragen fehlgeschlagen:",
+  "Applied baseline tags:": "Basis-Tags angewendet:",
+  "tags": "Tags"
 }

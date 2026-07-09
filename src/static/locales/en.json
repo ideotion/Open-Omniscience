@@ -1950,5 +1950,14 @@
   "Folder to import from": "Folder to import from",
   "Passphrase (to decrypt the corpus backup)": "Passphrase (to decrypt the corpus backup)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "Passphrase — encrypts the corpus (no recovery for a lost passphrase)",
-  "Restore a legacy backup file": "Restore a legacy backup file"
+  "Restore a legacy backup file": "Restore a legacy backup file",
+  "Loading country data in the background…": "Loading country data in the background…",
+  "(stopped early — partial)": "(stopped early — partial)",
+  "Enriching in the background…": "Enriching in the background…",
+  "Typed source types:": "Typed source types:",
+  "Enrich failed — see console": "Enrich failed — see console",
+  "Applying baseline tags in the background…": "Applying baseline tags in the background…",
+  "Backfill failed:": "Backfill failed:",
+  "Applied baseline tags:": "Applied baseline tags:",
+  "tags": "tags"
 }

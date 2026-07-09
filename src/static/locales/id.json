@@ -1950,5 +1950,14 @@
   "Folder to import from": "Folder untuk mengimpor",
   "Passphrase (to decrypt the corpus backup)": "Frasa sandi (untuk mendekripsi cadangan korpus)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "Frasa sandi — mengenkripsi korpus (tidak ada pemulihan jika hilang)",
-  "Restore a legacy backup file": "Pulihkan berkas cadangan lama"
+  "Restore a legacy backup file": "Pulihkan berkas cadangan lama",
+  "Loading country data in the background…": "Memuat data negara di latar belakang…",
+  "(stopped early — partial)": "(berhenti lebih awal — sebagian)",
+  "Enriching in the background…": "Memperkaya di latar belakang…",
+  "Typed source types:": "Tipe sumber terisi:",
+  "Enrich failed — see console": "Gagal memperkaya — lihat konsol",
+  "Applying baseline tags in the background…": "Menerapkan tag dasar di latar belakang…",
+  "Backfill failed:": "Pengisian gagal:",
+  "Applied baseline tags:": "Tag dasar diterapkan:",
+  "tags": "tag"
 }
