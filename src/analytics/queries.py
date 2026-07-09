@@ -13,6 +13,8 @@ stored article text around the recorded first-occurrence offset.
 from __future__ import annotations
 
 import math
+import os
+import time
 from datetime import date, timedelta
 from typing import Any
 
@@ -1445,6 +1447,8 @@ def associations(
     days: int | None = None,
     start=None,
     end=None,
+    corpus_total: int | None = None,
+    article_cap: int | None = None,
 ) -> dict:
     """Keywords that co-occur with ``term`` in the same articles, ranked by PMI.
 
@@ -1453,6 +1457,16 @@ def associations(
     ``days`` / ``start`` / ``end`` window the analysis (maintainer 2026-06-11:
     the date spectrum is tweakable); PMI is then computed WITHIN the window —
     the method string says so.
+
+    ``corpus_total`` (the PMI denominator = distinct articles in the window) may be
+    passed pre-computed so a caller running many associations() in a loop — the layered
+    keyword graph — computes that scan ONCE instead of once per call; when ``None`` it is
+    computed here (byte-identical). ``article_cap`` bounds a very frequent term's article
+    set to a DETERMINISTIC, time-spanning sample so the co-occurrence aggregation stays
+    bounded regardless of corpus size; when it truncates, ``articles_bounded`` is set and
+    ``articles_sampled`` reports the sample size (never a silent cut). Both default to the
+    un-bounded behaviour, so the /associations endpoint and every existing caller are
+    unchanged.
     """
     if days and not start:
         start = date.today() - timedelta(days=days)
@@ -1460,10 +1474,14 @@ def associations(
     if kw is None:
         return {"term": term, "resolved": None, "pairs": []}
     total = (
-        _window_filter(
-            session.query(func.count(func.distinct(KeywordMention.article_id))), start, end
-        ).scalar()
-        or 0
+        corpus_total
+        if corpus_total is not None
+        else (
+            _window_filter(
+                session.query(func.count(func.distinct(KeywordMention.article_id))), start, end
+            ).scalar()
+            or 0
+        )
     )
     target_articles = [
         a
@@ -1475,6 +1493,17 @@ def associations(
             end,
         ).distinct()
     ]
+    articles_total = len(target_articles)
+    articles_bounded = False
+    if article_cap is not None and articles_total > article_cap:
+        # Bound a very frequent term to a DETERMINISTIC sample of EXACTLY ``article_cap``
+        # ids spread EVENLY across the full sorted range (index projection i*N//cap) —
+        # no recency bias (cross-time recall is sacred), reproducible, and it caps both the
+        # co-occurrence scan below and the IN() size. (A plain ``[::step]`` would waste half
+        # the budget just past the boundary, e.g. 1201 ids -> 601.)
+        ordered = sorted(target_articles)
+        target_articles = [ordered[(i * articles_total) // article_cap] for i in range(article_cap)]
+        articles_bounded = True
     n_a = len(target_articles)
     if not target_articles or total == 0:
         return {
@@ -1562,11 +1591,14 @@ def associations(
     caveat = "Association is not causation; PMI on small samples is noisy."
     if ringed:
         caveat += " " + _RING_CAVEAT
-    return {
+    result = {
         "term": term,
         "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
         "corpus_articles": int(total),
-        "n_articles_with_term": n_a,
+        # The TRUE population (articles mentioning the term), even when the co-occurrence
+        # below was computed over a bounded SAMPLE of them — the honest count, never the
+        # sample size (which, when bounded, is reported separately as ``articles_sampled``).
+        "n_articles_with_term": articles_total,
         "grouped": group,
         "pairs": pairs[:limit],
         "window": {"days": days, "start": str(start) if start else None, "end": str(end) if end else None},
@@ -1574,6 +1606,17 @@ def associations(
         + (" within the selected window" if (start or end) else ""),
         "caveat": caveat,
     }
+    if article_cap is not None:
+        # Only present when the caller asked for bounding (the graph); the /associations
+        # endpoint and every existing caller pass no cap, so the dict is byte-unchanged.
+        result["articles_sampled"] = n_a
+        result["articles_bounded"] = articles_bounded
+        if articles_bounded:
+            result["caveat"] = (
+                f"{caveat} Computed over a {n_a}-of-{articles_total} time-spanning sample "
+                "of this term's articles (bounded for responsiveness)."
+            )
+    return result
 
 
 # The bucket for a source whose channel was never asserted (NULL/blank source_type).
@@ -2109,6 +2152,39 @@ def _overlap_edges(nodes: list[dict], sets: dict[str, set[int]], *, min_overlap:
     return edges[: max(3 * len(nodes), 60)]  # keep the picture legible, not a hairball
 
 
+# --- Keyword-graph bounding (Item 8, field-test 2026-07-08) ------------------- #
+#
+# ``GET /api/insights/graph?level=keyword&term=…&hops=2`` fanned out ~6 associations()
+# calls (hop-1 + the top hop-2 relatives) over a 974K-keyword corpus and blew past the
+# request deadline (60s -> 503 -> a broken frontend). These caps make the work BOUNDED
+# regardless of corpus size; whenever a cap actually truncates the result the payload
+# DISCLOSES it (a ``bounded`` flag + a disclosure appended to the visible caveat), never a
+# silent truncation. The associations() batch-optimization (n_b via the maintained
+# article_count counter, one Keyword IN, ZERO per-co-keyword COUNT(DISTINCT)/session.get)
+# is inherited unchanged; on top we (a) compute the corpus-total denominator ONCE and
+# thread it into every call (it was recomputed once per associations() call), and (b) bound
+# each term's article set so a high-frequency seed can't drag the whole build past budget.
+def _graph_int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.environ.get(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+# Per-term article sample: a term in more than this many articles has its co-occurrence
+# computed over a DETERMINISTIC, time-spanning sample (bounds each associations() call so
+# the whole build stays bounded no matter how frequent the seed is). Kept at 900 so the
+# sampled set fed to co_rows' ``article_id.in_(...)`` stays UNDER SQLite's 999 bound-variable
+# cap — the repo-wide invariant (cf. latest.py:_SQL_IN_CHUNK=900, the *_IN_CHUNK modules); a
+# larger value would risk "too many SQL variables" (an OperationalError -> 500) on a build
+# with the historical 999 limit, for exactly the high-frequency seeds this feature targets.
+GRAPH_ARTICLE_CAP = _graph_int_env("OO_GRAPH_ARTICLE_CAP", 900)
+# Hop-2 branches: relatives of the strongest hop-1 relatives to expand (was hardcoded 5).
+GRAPH_HOP2_PARENTS = _graph_int_env("OO_GRAPH_HOP2_PARENTS", 4)
+# Hard cap on total edges kept (the strongest by co-occurrence) — keeps the picture legible.
+GRAPH_MAX_EDGES = _graph_int_env("OO_GRAPH_MAX_EDGES", 160)
+
+
 def layered_graph(
     session,
     *,
@@ -2119,16 +2195,52 @@ def layered_graph(
     days: int | None = None,
     start=None,
     end=None,
+    hop2_parents: int | None = None,
+    article_cap: int | None = None,
+    max_edges: int | None = None,
+    time_budget_s: float | None = None,
 ) -> dict:
-    """One zoom level of the keyword graph: keyword (≤2 hops) / family / supergroup."""
+    """One zoom level of the keyword graph: keyword (≤2 hops) / family / supergroup.
+
+    The keyword level is BOUNDED (Item 8): the corpus-total PMI denominator is computed
+    ONCE and threaded into every associations() call; each term's article set is sampled to
+    ``article_cap`` (deterministic, time-spanning — no recency bias); the hop-2 fan-out is
+    ``hop2_parents`` branches; nodes are capped at ``limit_nodes`` and edges at
+    ``max_edges``; an optional ``time_budget_s`` stops expanding to hop-2 once the wall
+    clock exceeds it, returning the hop-1 graph already built. Any cap that truncates the
+    result sets ``bounded`` and appends a visible disclosure to ``caveat`` — never a silent
+    cut. ``None`` for a cap means "use the module default"."""
+    hop2_parents = GRAPH_HOP2_PARENTS if hop2_parents is None else hop2_parents
+    article_cap = GRAPH_ARTICLE_CAP if article_cap is None else article_cap
+    max_edges = GRAPH_MAX_EDGES if max_edges is None else max_edges
     if level == "keyword":
         if not term:
             return {"level": level, "nodes": [], "edges": [], "error": "term required"}
-        base = associations(session, term, limit=12, group=True, days=days, start=start, end=end)
+        t0 = time.monotonic()
+        bounded = False
+        # Window resolution mirrors associations() so the corpus total we compute ONCE below
+        # uses the SAME window the calls will use (byte-identical PMI to the un-bounded path).
+        if days and not start:
+            start = date.today() - timedelta(days=days)
+        # The PMI corpus denominator, computed ONCE (was recomputed inside every call).
+        corpus_total = (
+            _window_filter(
+                session.query(func.count(func.distinct(KeywordMention.article_id))), start, end
+            ).scalar()
+            or 0
+        )
+        base = associations(
+            session, term, limit=12, group=True, start=start, end=end,
+            corpus_total=corpus_total, article_cap=article_cap,
+        )
+        bounded = bounded or bool(base.get("articles_bounded"))
         center = (base.get("resolved") or {}).get("term", term)
         nodes = [{"id": center, "label": center, "kind": "keyword", "center": True, "size": 13}]
         edges, seen = [], {center}
         for p in base.get("pairs", []):
+            if len(nodes) >= limit_nodes:
+                bounded = True  # more hop-1 relatives than the node cap allows
+                break
             if p["term"] in seen:
                 continue
             seen.add(p["term"])
@@ -2144,12 +2256,23 @@ def layered_graph(
             )
             edges.append({"a": center, "b": p["term"], "weight": p.get("cooccur", 1), "pmi": p.get("pmi")})
         if hops >= 2:
-            for p in base.get("pairs", [])[:5]:  # relatives of the strongest relatives
+            for p in base.get("pairs", [])[:hop2_parents]:  # relatives of the strongest relatives
+                if len(nodes) >= limit_nodes:
+                    bounded = True
+                    break
+                if time_budget_s is not None and (time.monotonic() - t0) > time_budget_s:
+                    # Out of budget: return the hop-1 graph already built rather than push
+                    # into another heavy call and risk the hard deadline (never a 503).
+                    bounded = True
+                    break
                 second = associations(
-                    session, p["term"], limit=4, group=True, days=days, start=start, end=end
+                    session, p["term"], limit=4, group=True, start=start, end=end,
+                    corpus_total=corpus_total, article_cap=article_cap,
                 )
+                bounded = bounded or bool(second.get("articles_bounded"))
                 for p2 in second.get("pairs", []):
                     if len(nodes) >= limit_nodes:
+                        bounded = True
                         break
                     if p2["term"] not in seen:
                         seen.add(p2["term"])
@@ -2166,14 +2289,29 @@ def layered_graph(
                     edges.append(
                         {"a": p["term"], "b": p2["term"], "weight": p2.get("cooccur", 1), "pmi": p2.get("pmi")}
                     )
-        return {
+        if len(edges) > max_edges:
+            # Keep the strongest edges by co-occurrence (deterministic); disclose the cut.
+            edges = sorted(edges, key=lambda e: -(e.get("weight") or 0))[:max_edges]
+            bounded = True
+        caveat = "Association is not causation; PMI on small samples is noisy."
+        out = {
             "level": level,
             "term": center,
             "nodes": nodes,
             "edges": edges,
             "method": "PMI/co-occurrence association, two hops (relatives, and their relatives)",
-            "caveat": "Association is not causation; PMI on small samples is noisy.",
+            "caveat": caveat,
         }
+        if bounded:
+            out["bounded"] = True
+            out["disclosure"] = (
+                f"Bounded view for responsiveness: up to {limit_nodes} nodes, "
+                f"{hop2_parents} hop-2 branches, ≤{article_cap} articles sampled per term. "
+                "Narrow the term or the time window for a finer view."
+            )
+            # Surface it in the field the frontend already renders (visible-by-default).
+            out["caveat"] = caveat + " " + out["disclosure"]
+        return out
 
     if level == "family":
         top = top_terms(session, limit=limit_nodes, group=True, days=days)
