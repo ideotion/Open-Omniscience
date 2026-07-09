@@ -36,11 +36,15 @@ from __future__ import annotations
 import logging
 import os
 import platform
-import resource
 import shutil
 import sys
 import threading
 import time
+
+try:
+    import resource  # Unix-only: getrusage peak-RSS cross-check
+except ModuleNotFoundError:  # pragma: no cover - Windows has no `resource` module
+    resource = None  # type: ignore[assignment]
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -178,12 +182,24 @@ def sample_peak_rss(interval_s: float = 0.05) -> Iterator[_RssPeak]:
         holder.peak_bytes = max(holder.peak_bytes, proc.memory_info().rss)
 
 
-def _ru_maxrss_mb() -> float:
-    """Peak RSS since process start (getrusage). Linux reports KiB, macOS bytes."""
+def _ru_maxrss_mb() -> float | None:
+    """Peak RSS since process start (getrusage). Linux reports KiB, macOS bytes.
+    Returns None on Windows, where the ``resource`` module does not exist -- the
+    primary peak-RSS metric is the cross-platform psutil sampler, so this is only
+    the honest cross-check and degrades cleanly rather than fabricating a number."""
+    if resource is None:  # pragma: no cover - Windows only
+        return None
     val = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     if sys.platform == "darwin":
         return round(val / 1024 / 1024, 1)
     return round(val / 1024, 1)  # KiB -> MiB
+
+
+def _ru_delta_mb(before: float | None, after: float | None) -> float | None:
+    """getrusage peak-RSS delta, or None when unavailable (Windows)."""
+    if before is None or after is None:
+        return None
+    return round(after - before, 1)
 
 
 # --------------------------------------------------------------------------- #
@@ -486,7 +502,7 @@ def backup_bench(
         )
         out["wall_s"] = round(time.perf_counter() - t0, 3)
     out["peak_rss_mb"] = round(peak.peak_bytes / 1024 / 1024, 1)
-    out["ru_maxrss_delta_mb"] = round(_ru_maxrss_mb() - ru_before, 1)
+    out["ru_maxrss_delta_mb"] = _ru_delta_mb(ru_before, _ru_maxrss_mb())
     out["volumes"] = summary.get("volumes")
     out["plaintext_bytes"] = summary.get("plaintext_bytes")
     out["parity_available"] = summary.get("parity_available")
@@ -517,7 +533,7 @@ def restore_bench(
         )
         out["wall_s"] = round(time.perf_counter() - t0, 3)
     out["peak_rss_mb"] = round(peak.peak_bytes / 1024 / 1024, 1)
-    out["ru_maxrss_delta_mb"] = round(_ru_maxrss_mb() - ru_before, 1)
+    out["ru_maxrss_delta_mb"] = _ru_delta_mb(ru_before, _ru_maxrss_mb())
     out["verified"] = True  # read_volume_backup raises on any verify/parity failure
     if staged is not None:
         with suppress(Exception):  # cleanup is best-effort
