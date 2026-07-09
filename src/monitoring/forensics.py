@@ -1,0 +1,306 @@
+"""Session forensics + data-dir inventory — the "automate what I need from you" slice.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+Born from the 2026-07-09 field event (a 4-day run that died silently of OOM, a
+"130 GB database" that turned out to be an 11.7 GB DB plus ~120 GB of something
+else, and a 981 s unlock), where root-causing needed THREE manual commands from
+the maintainer. This module makes the app answer those questions ITSELF, so every
+future diagnostics export carries them:
+
+1. ``data_dir_inventory`` — what the data folder actually holds: per-entry sizes,
+   the DB / ``-wal`` / ``-shm`` called out, and DETECTION of orphaned backup/restore
+   staging (``.bak-build-*`` / ``.restore-*`` dirs, ``*.oopart`` temps). A crashed
+   backup orphans a staging dir CONTAINING A PLAINTEXT corpus snapshot — that is
+   both the prime disk-bloat suspect and an at-rest-encryption violation, so it is
+   surfaced loudly. Sizes and app-owned names only; file CONTENTS are never read.
+2. A clean-shutdown SENTINEL — ``session_state.json`` is stamped "running" at boot
+   and "clean" at shutdown; the next boot reports whether the previous session
+   ended cleanly, paired with the last recorded RSS from ``collect_perf.jsonl``.
+   An unclean end with RSS near the machine's RAM is CONSISTENT WITH an external
+   OOM kill — reported as exactly that: an inference, never a kernel-log fact.
+3. Unlock timing — the unlock path records the ``-wal`` size BEFORE the database
+   is opened plus per-phase durations, so "why was unlock slow" answers itself
+   (WAL recovery vs migration/self-heal vs upkeep) on every boot.
+
+Everything here is best-effort and local-only: a failure returns a structured
+note (degrade loudly, never a 500), and nothing is transmitted by the app.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from src.paths import data_dir
+
+_LOG = logging.getLogger(__name__)
+
+# Orphaned-staging name patterns, grounded in the backup/restore code (never guessed):
+# backup builds stage into ``.bak-build-<hex>`` (src/backup/artifact.py:418) with a
+# PLAINTEXT ``corpus.db`` snapshot inside (:290); restores stage into
+# ``.restore-<hex>`` (:515); the folder backup's in-progress temps are ``*.oopart``
+# (src/backup/folder_backup.py:48). All are cleaned on success — their presence
+# means a CRASHED run left them behind.
+_STAGING_DIR_PREFIXES = (".bak-build-", ".restore-")
+_PART_SUFFIX = ".oopart"
+_PLAINTEXT_MEMBER_NAMES = ("corpus.db", "custody_log.db")
+
+_DB_NAME = "open_omniscience.db"
+
+
+def _state_path() -> Path:
+    return data_dir() / "session_state.json"
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _tree_size(root: Path) -> tuple[int, int]:
+    """(bytes, files) under root — never follows symlinks out of the tree, never
+    reads contents; unreadable entries are skipped (counted via best-effort)."""
+    total = 0
+    files = 0
+    try:
+        if root.is_symlink():
+            return 0, 0  # a symlink is a pointer, not data held HERE — never followed
+        if root.is_file():
+            return root.stat().st_size, 1
+        for p in root.rglob("*"):
+            try:
+                if p.is_symlink() or not p.is_file():
+                    continue
+                total += p.stat().st_size
+                files += 1
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return total, files
+
+
+def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
+    """Top-level inventory of the data folder: name, kind, recursive size.
+
+    Answers "what IS the 130 GB" without a terminal: the DB triple is called out,
+    orphaned backup/restore staging is detected by the exact prefixes the backup
+    code uses, and a staging dir that contains a plaintext corpus snapshot is
+    flagged as such (name check only — contents are never read). Counts and
+    sizes only; no score."""
+    root = data_dir()
+    out: dict[str, Any] = {
+        "data_dir": str(root),
+        "generated_at": _now(),
+        "entries": [],
+        "suspect_staging": [],
+        "totals": {},
+        "method": (
+            "Recursive on-disk sizes of the data folder's top-level entries, symlinks "
+            "never followed, file contents never read. suspect_staging lists orphaned "
+            "backup/restore temp dirs by the exact name patterns the backup code uses "
+            "(.bak-build-*/.restore-*/*.oopart) — present only after a crashed run. "
+            "plaintext_snapshot means the dir CONTAINS a decrypted corpus snapshot by "
+            "member NAME; treat it as sensitive and remove it deliberately. Local "
+            "diagnostics only; nothing is transmitted."
+        ),
+    }
+    if not root.is_dir():
+        out["note"] = "data dir does not exist (fresh install / custom OO_DATA_DIR)"
+        return out
+
+    entries: list[dict[str, Any]] = []
+    db_bytes = wal_bytes = shm_bytes = staging_bytes = 0
+    try:
+        children = sorted(root.iterdir(), key=lambda p: p.name)
+    except OSError as exc:
+        out["note"] = f"data dir unreadable: {exc.__class__.__name__}"
+        return out
+
+    for child in children:
+        size, files = _tree_size(child)
+        kind = "dir" if child.is_dir() and not child.is_symlink() else "file"
+        name = child.name
+        if name == _DB_NAME:
+            kind = "db"
+            db_bytes = size
+        elif name == f"{_DB_NAME}-wal":
+            kind = "wal"
+            wal_bytes = size
+        elif name == f"{_DB_NAME}-shm":
+            kind = "shm"
+            shm_bytes = size
+        entry: dict[str, Any] = {"name": name, "kind": kind, "bytes": size, "files": files}
+        is_staging = (kind == "dir" and name.startswith(_STAGING_DIR_PREFIXES)) or name.endswith(
+            _PART_SUFFIX
+        )
+        if is_staging:
+            staging_bytes += size
+            suspect = dict(entry)
+            if kind == "dir":
+                try:
+                    members = {p.name for p in child.iterdir()}
+                except OSError:
+                    members = set()
+                suspect["plaintext_snapshot"] = any(
+                    m in members for m in _PLAINTEXT_MEMBER_NAMES
+                )
+            out["suspect_staging"].append(suspect)
+        entries.append(entry)
+
+    entries.sort(key=lambda e: -int(e["bytes"]))
+    out["entries"] = entries[:max_entries]
+    out["entries_truncated"] = max(0, len(entries) - max_entries)
+    total = sum(int(e["bytes"]) for e in entries)
+    out["totals"] = {
+        "total_bytes": total,
+        "db_bytes": db_bytes,
+        "wal_bytes": wal_bytes,
+        "shm_bytes": shm_bytes,
+        "orphaned_staging_bytes": staging_bytes,
+        "other_bytes": max(0, total - db_bytes - wal_bytes - shm_bytes - staging_bytes),
+    }
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Clean-shutdown sentinel + previous-session verdict                           #
+# --------------------------------------------------------------------------- #
+
+_PREV_AT_BOOT: dict[str, Any] | None = None
+_PREV_LOADED = False
+
+
+def _read_state() -> dict[str, Any] | None:
+    try:
+        return json.loads(_state_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _write_state(state: dict[str, Any]) -> None:
+    try:
+        tmp = _state_path().with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
+        os.replace(tmp, _state_path())
+    except OSError:
+        _LOG.warning("could not persist session_state.json", exc_info=True)
+
+
+def record_session_start() -> dict[str, Any] | None:
+    """Stamp this session 'running'; returns the PREVIOUS session's state (the
+    forensic input). Call once at process start; best-effort."""
+    global _PREV_AT_BOOT, _PREV_LOADED
+    prev = _read_state()
+    if not _PREV_LOADED:
+        _PREV_AT_BOOT = prev
+        _PREV_LOADED = True
+    _write_state(
+        {
+            "state": "running",
+            "started_at": _now(),
+            "pid": os.getpid(),
+            # carry the last unlock record forward so one boot's timing survives
+            # into the next export even if the next unlock is fast
+            "last_unlock": (prev or {}).get("last_unlock"),
+        }
+    )
+    return prev
+
+
+def record_clean_shutdown() -> None:
+    """Flip the sentinel to 'clean'. Called from the lifespan shutdown; a session
+    that dies without reaching this reads as UNCLEAN on the next boot."""
+    state = _read_state() or {}
+    state["state"] = "clean"
+    state["ended_at"] = _now()
+    _write_state(state)
+
+
+def _last_collect_perf_sample() -> dict[str, Any] | None:
+    """The last collect_perf JSONL line (the collector's own RSS/memory record) —
+    the closest thing to a flight recorder for an externally-killed process."""
+    path = data_dir() / "collect_perf.jsonl"
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    for line in reversed(raw.splitlines()):
+        line = line.strip()
+        if line:
+            try:
+                d = json.loads(line)
+                return {
+                    "ts": d.get("ts"),
+                    "rss_mb": d.get("rss_mb"),
+                    "mem_avail_mb": d.get("mem_avail_mb"),
+                    "elapsed_s": d.get("elapsed_s"),
+                    "pass_id": d.get("pass_id"),
+                }
+            except ValueError:
+                return None
+    return None
+
+
+def record_unlock_timing(record: dict[str, Any]) -> None:
+    """Persist the unlock path's own timing record (wal bytes before open,
+    per-phase ms, total) into the sentinel file. Best-effort."""
+    state = _read_state() or {"state": "running", "started_at": _now(), "pid": os.getpid()}
+    state["last_unlock"] = {**record, "at": _now()}
+    _write_state(state)
+
+
+def wal_bytes_before_open() -> int | None:
+    """The -wal file size, intended to be read BEFORE the DB is first opened —
+    a large value predicts WAL-recovery time inside the first connection."""
+    try:
+        return (data_dir() / f"{_DB_NAME}-wal").stat().st_size
+    except OSError:
+        return None
+
+
+def previous_session_report() -> dict[str, Any]:
+    """The forensic verdict on the PREVIOUS session, computed from the sentinel
+    captured at THIS boot + the collector's last flight-recorder sample."""
+    prev = _PREV_AT_BOOT if _PREV_LOADED else _read_state()
+    out: dict[str, Any] = {
+        "generated_at": _now(),
+        "method": (
+            "A clean-shutdown sentinel (session_state.json stamped 'running' at boot, "
+            "'clean' at shutdown) + the collector's last self-recorded RSS sample. An "
+            "unclean end whose last RSS approaches the machine's RAM is CONSISTENT WITH "
+            "an external OOM kill — an INFERENCE from the app's own records, never a "
+            "kernel-log fact; confirm with the host's journal if it matters."
+        ),
+    }
+    if prev is None:
+        out["previous_session"] = "unknown"
+        out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
+        return out
+    state = str(prev.get("state"))
+    out["previous_session"] = {
+        "running": "unclean-end",  # died without reaching the shutdown hook
+        "clean": "clean",
+    }.get(state, f"unknown({state})")
+    out["started_at"] = prev.get("started_at")
+    out["ended_at"] = prev.get("ended_at")
+    out["last_unlock"] = prev.get("last_unlock")
+    if out["previous_session"] == "unclean-end":
+        out["last_collector_sample"] = _last_collect_perf_sample()
+    return out
+
+
+def session_forensics() -> dict[str, Any]:
+    """The one-call diagnostic block: inventory + previous-session verdict +
+    the last unlock timing. Rides the debug bundle / the all-diagnostics zip."""
+    cur = _read_state() or {}
+    return {
+        "inventory": data_dir_inventory(),
+        "previous_session": previous_session_report(),
+        "last_unlock": cur.get("last_unlock"),
+    }

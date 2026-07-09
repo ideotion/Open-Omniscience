@@ -244,6 +244,17 @@ async def lifespan(app: FastAPI):
     exactly as before — never a lock screen over a plaintext file."""
     from src.api.unlock import app_lock_state
 
+    # Clean-shutdown sentinel (session forensics, 2026-07-09): stamp 'running' now,
+    # 'clean' at shutdown — the next boot then reports an unclean end honestly (the
+    # 4-day field run died silently of OOM with no in-app trace; this is the flight
+    # recorder that makes the next such death self-explaining).
+    try:
+        from src.monitoring.forensics import record_session_start
+
+        record_session_start()
+    except Exception:  # noqa: BLE001 - forensics must never block startup
+        logger.warning("could not stamp the session sentinel", exc_info=True)
+
     state = app_lock_state()
     if state.startswith("unlocked"):
         run_deferred_startup()
@@ -270,6 +281,12 @@ async def lifespan(app: FastAPI):
         logger.warning("Error stopping scheduler on shutdown", exc_info=True)
 
     dispose_engine()
+    try:
+        from src.monitoring.forensics import record_clean_shutdown
+
+        record_clean_shutdown()
+    except Exception:  # noqa: BLE001 - best-effort
+        logger.warning("could not stamp the clean-shutdown sentinel", exc_info=True)
     logger.info("Open Omniscience API shut down cleanly")
 
 

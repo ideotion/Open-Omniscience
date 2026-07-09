@@ -1729,6 +1729,18 @@ def report_frontend_error(err: _FrontendError) -> dict:
     return {"ok": True}
 
 
+@router.get("/session-forensics")
+def session_forensics_report() -> dict:
+    """Session forensics (2026-07-09 field event): the data-dir inventory (per-entry
+    sizes; orphaned PLAINTEXT backup staging detected loudly), the previous session's
+    clean/unclean-end verdict with the collector's last RSS sample (the honest OOM
+    inference), and the last unlock's own phase timings + the -wal size before open.
+    Local diagnostics only — sizes and app-owned names, never file contents."""
+    from src.monitoring.forensics import session_forensics as _sf
+
+    return _sf()
+
+
 @router.get("/frontend-errors")
 def frontend_errors(limit: int = Query(200, ge=1, le=2000)) -> dict:
     """The captured browser errors (log #1) + the rolling-log summary counts."""
@@ -1801,6 +1813,7 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     from src.monitoring.errorlog import recent_errors
     from src.monitoring.errorlog import summary as error_log_summary
     from src.monitoring.field_test import recent_results as _field_test_results
+    from src.monitoring.forensics import session_forensics as _session_forensics
     from src.monitoring.integrity import corpus_integrity as _corpus_integrity
     from src.monitoring.latency import summary as _latency_summary
     from src.monitoring.preflight import recent_results as source_results
@@ -1933,6 +1946,13 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
         "slow_queries": _safe(lambda: _slowquery_summary(db)),
         "schema_drift": _safe(lambda: _schema_drift(db)),
         "corpus_integrity": _safe(lambda: _corpus_integrity(db)),
+        # Session forensics (2026-07-09 field event): data-dir inventory (what IS the
+        # disk usage — orphaned PLAINTEXT backup staging detected loudly), the previous
+        # session's clean/unclean-end verdict (+ the collector's last RSS sample = the
+        # OOM-inference flight recorder), and the last unlock's own phase timings with
+        # the -wal size before open. Automates the three questions the 2026-07-09
+        # root-cause needed the maintainer's terminal for.
+        "session_forensics": _safe(_session_forensics),
         "method": (
             "Verbatim runtime facts, tracking states, network verdicts, per-click "
             "import outcomes and the rolling WARNING+ error log. Nothing inferred; "
@@ -2006,6 +2026,7 @@ def all_diagnostics(db: Session = Depends(get_db)) -> Response:
         ("schema-drift.json", lambda: schema_drift_report(db=db)),
         ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
         ("frontend-errors.json", lambda: frontend_errors(limit=500)),
+        ("session-forensics.json", lambda: session_forensics_report()),
     ]
     results: list[dict] = []
     buf = io.BytesIO()
