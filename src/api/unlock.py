@@ -220,7 +220,13 @@ def _finish_unlock() -> None:
 
     dispose_engine()  # drop any pre-unlock failed pool state
     set_startup("running", "opening the database", queryable=False)
+    # Session forensics (2026-07-09, the 981 s field unlock): record the -wal size
+    # BEFORE the first connection (a large WAL predicts recovery time inside it) and
+    # time the synchronous phases, so "why was unlock slow" answers itself in the
+    # next diagnostics export instead of needing the maintainer's stopwatch.
+    _t = _forensic_timer()
     init_db()  # schema self-heal — fast on an existing store; makes the DB queryable
+    _t.phase("init_db (schema self-heal + migrations + WAL recovery)")
     # The corpus is now fully usable — everything the background thread does below
     # (ANALYZE, catalog seed-dedup, COUNTs, cache warm) is best-effort optimization.
     # Tell the unlock page it may enter the Console NOW rather than wait out the whole
@@ -238,6 +244,8 @@ def _finish_unlock() -> None:
             activate_kill_switch()
         except Exception:  # noqa: BLE001 - never block the unlock on this
             _LOG.warning("could not engage airplane mode at unlock", exc_info=True)
+    _t.phase("airplane guard")
+    _t.finish()  # persist {wal_bytes_before, phases, total_ms} for the next export
 
     def _upkeep() -> None:
         try:
@@ -250,6 +258,54 @@ def _finish_unlock() -> None:
             set_startup("ready", "", error=str(exc))
 
     threading.Thread(target=_upkeep, name="oo-startup-upkeep", daemon=True).start()
+
+
+class _forensic_timer:
+    """Times the SYNCHRONOUS unlock phases + the -wal size before the first
+    connection, and persists the record via forensics.record_unlock_timing.
+    Every step is best-effort: a forensics failure never touches the unlock."""
+
+    def __init__(self) -> None:
+        import time as _time
+
+        self._time = _time
+        self._t0 = _time.monotonic()
+        self._last = self._t0
+        self._phases: list[dict] = []
+        try:
+            from src.monitoring.forensics import wal_bytes_before_open
+
+            self._wal = wal_bytes_before_open()
+        except Exception:  # noqa: BLE001
+            self._wal = None
+
+    def phase(self, name: str) -> None:
+        now = self._time.monotonic()
+        self._phases.append({"phase": name, "ms": round((now - self._last) * 1000, 1)})
+        self._last = now
+
+    def finish(self) -> None:
+        try:
+            from src.monitoring.forensics import record_unlock_timing
+
+            record_unlock_timing(
+                {
+                    "wal_bytes_before_open": self._wal,
+                    "phases": self._phases,
+                    "synchronous_total_ms": round(
+                        (self._time.monotonic() - self._t0) * 1000, 1
+                    ),
+                    "method": (
+                        "Wall-clock over the SYNCHRONOUS unlock phases (the wait the "
+                        "user actually feels); the background upkeep is tracked "
+                        "separately by startup-status. wal_bytes_before_open read "
+                        "before the first connection — a large WAL predicts recovery "
+                        "time inside init_db."
+                    ),
+                }
+            )
+        except Exception:  # noqa: BLE001 - forensics never blocks the unlock
+            _LOG.debug("could not record unlock timing", exc_info=True)
 
 
 @router.post("/unlock")
