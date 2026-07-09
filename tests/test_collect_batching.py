@@ -361,6 +361,82 @@ def test_contention_race_batched_ingest_vs_concurrent_writer_exact_counters(monk
 
 
 # --------------------------------------------------------------------------- #
+# The gate is NEVER held across a network fetch (the reproduced hazard, pinned)
+# --------------------------------------------------------------------------- #
+
+
+class _GateProbeSession(FakeSession):
+    """Records whether the write gate was held at every article GET."""
+
+    def __init__(self):
+        super().__init__()
+        self.held: list[bool] = []
+
+    def get(self, url, **kw):
+        if "/news/" in url:
+            from src.database.writer import write_gate
+
+            self.held.append(write_gate.stats()["held"])
+        return super().get(url, **kw)
+
+
+def test_gate_is_never_held_during_an_article_fetch(monkeypatch):
+    """Reproduced before the fix: feed bookkeeping written BEFORE the article
+    loop left the session dirty, the loop's first dedup SELECT AUTOFLUSHED it,
+    and the write gate was then held ACROSS the article fetch (legacy: the
+    first fetch; batched: the WHOLE feed — the field log's 438 s max single
+    write-wait signature). Pinned on the REAL gate-wired SessionLocal, both
+    paths, first-contact feed (the worst case: the validators row is new)."""
+    from src.database.session import init_db, session_scope
+
+    init_db()
+    for env in ("0", "8"):  # legacy AND batched
+        monkeypatch.setenv("OO_COLLECT_COMMIT_BATCH", env)
+        dom = f"gatehold{env}-{uuid.uuid4().hex[:6]}.example"
+        sess = _GateProbeSession()
+        _routed_source(sess, dom, 4)
+        with session_scope() as s:
+            src = Source(name=dom, domain=dom, rss_url=f"https://{dom}/feed.xml",
+                         language="en", enabled=False)
+            s.add(src)
+            s.commit()
+            t = ingest_source(s, src, fetcher=_fetcher(sess))
+            assert t["stored"] == 4
+        assert sess.held == [False, False, False, False], (env, sess.held)
+
+
+def test_sequential_next_source_never_inherits_a_dirty_gate(monkeypatch):
+    """The sequential pass shares ONE session across sources: source A's feed
+    bookkeeping must be COMMITTED before ingest_source returns, or source B's
+    first dedup query autoflushes it and holds the gate across B's fetches."""
+    from src.database.models import FeedFetchState
+    from src.database.session import init_db, session_scope
+
+    init_db()
+    monkeypatch.setenv("OO_COLLECT_COMMIT_BATCH", "8")
+    doms = [f"seq{i}-{uuid.uuid4().hex[:6]}.example" for i in range(2)]
+    sess = _GateProbeSession()
+    for d in doms:
+        _routed_source(sess, d, 3)
+    with session_scope() as s:
+        srcs = []
+        for d in doms:
+            src = Source(name=d, domain=d, rss_url=f"https://{d}/feed.xml",
+                         language="en", enabled=False)
+            s.add(src)
+            srcs.append(src)
+        s.commit()
+        for src in srcs:
+            ingest_source(s, src, fetcher=_fetcher(sess))
+        # No fetch — of EITHER source — ever ran under a held gate.
+        assert sess.held == [False] * 6, sess.held
+        # And the bookkeeping still landed (deferred, never dropped).
+        for src in srcs:
+            state = s.get(FeedFetchState, src.id)
+            assert state is not None and state.last_status == 200
+
+
+# --------------------------------------------------------------------------- #
 # Crawl path parity
 # --------------------------------------------------------------------------- #
 

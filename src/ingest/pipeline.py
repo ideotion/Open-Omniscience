@@ -391,15 +391,17 @@ def ingest_source(
         # failure. A transient error is NOT a "feed is quiet" signal — reset any
         # backoff so a recovered feed is re-checked at the normal cadence.
         _update_feed_backoff(session, source.id, reset=True)
+        _commit_feed_bookkeeping(session)
         return tally
-
-    _record_feed_state(session, source.id, feed_resp)
 
     if feed_resp.status_code == 304:
         # Unchanged since last pass — nothing new to parse or ingest. The server
-        # answered honestly, so this is NOT penalised: clear any backoff.
+        # answered honestly, so this is NOT penalised: clear any backoff. No
+        # article fetches follow, so writing the bookkeeping here is safe.
+        _record_feed_state(session, source.id, feed_resp)
         tally["not_modified"] = 1
         _update_feed_backoff(session, source.id, reset=True)
+        _commit_feed_bookkeeping(session)
         return tally
 
     parsed = feedparser.parse(feed_resp.content)
@@ -437,16 +439,44 @@ def ingest_source(
                 if v:
                     tally[k] = tally.get(k, 0) + v
 
-    # De-churn backoff: a 200 that stored ZERO new articles means this feed
-    # served only content we already have. Delay its next re-check (capped,
-    # self-resetting); ANY new article resets it. Servers that ignore conditional
-    # GET (full 200 every pass) are exactly the case this catches.
+    # Feed bookkeeping runs AFTER the article loop, DELIBERATELY (P1.8 skeptic
+    # finding, reproduced empirically): validators/backoff written BEFORE the
+    # loop leave the session DIRTY, and the loop's first dedup SELECT then
+    # AUTOFLUSHES them — acquiring the single-writer gate and holding it ACROSS
+    # the article fetch (a slow fetch + politeness while holding the gate = the
+    # field log's 438 s max single write-wait; the batched path would have held
+    # it across the WHOLE feed). Down here the loop runs on a CLEAN session —
+    # no autoflush, no gate — and the de-churn backoff (a 200 that stored ZERO
+    # new articles delays this feed's next re-check, capped, self-resetting)
+    # reads the true post-flush stored count.
+    _record_feed_state(session, source.id, feed_resp)
     if tally[IngestResult.STORED.value] > 0:
         _update_feed_backoff(session, source.id, reset=True)
     else:
         _update_feed_backoff(session, source.id, reset=False)
+    _commit_feed_bookkeeping(session)
 
     return tally
+
+
+def _commit_feed_bookkeeping(session: Session) -> None:
+    """Commit the per-feed validators/backoff rows so ``ingest_source`` always
+    RETURNS WITH A CLEAN SESSION.
+
+    Best-effort: the bookkeeping is an optimisation (conditional GET /
+    de-churn), so a failed commit rolls back and is logged, never raised — but
+    it must never stay PENDING: a dirty session hands the single-writer gate
+    to the NEXT source's dedup query via autoflush, and the gate is then held
+    across that source's network fetches (the P1.8 skeptic finding — the
+    sequential pass shares one session across every source).
+    """
+    try:
+        session.commit()
+    except Exception:  # noqa: BLE001 - bookkeeping is auxiliary, never fatal
+        session.rollback()
+        import logging
+
+        logging.getLogger(__name__).debug("feed bookkeeping commit failed", exc_info=True)
 
 
 def _feed_conditional_headers(session: Session, source_id: int) -> dict[str, str]:
