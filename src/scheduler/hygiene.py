@@ -31,7 +31,9 @@ import gc
 import logging
 import os
 import sys
+import threading
 import time
+from pathlib import Path
 
 _LOG = logging.getLogger("scheduler.hygiene")
 
@@ -124,11 +126,124 @@ def release_pass_state() -> dict | None:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# WAL checkpoint hygiene (P0.3 E4): under multi-day continuous writes the -wal
+# file can grow without bound (a runaway -wal is a named suspect in the field's
+# unexplained ~120 GB data folder). Between passes — NEVER mid-worker — run
+# ``PRAGMA wal_checkpoint(TRUNCATE)`` through ``write_lock()`` so it can never
+# run concurrently with a gated writer, and report the MEASURED effect.
+# --------------------------------------------------------------------------- #
+
+_CKPT_STATE_LOCK = threading.Lock()
+_LAST_CKPT_MONO: float | None = None
+
+
+def wal_checkpoint_enabled() -> bool:
+    return os.getenv("OO_WAL_CHECKPOINT", "1") != "0"
+
+
+def _ckpt_min_interval_s() -> float:
+    try:
+        return max(0.0, float(os.getenv("OO_WAL_CHECKPOINT_MIN_S", "") or 300.0))
+    except (TypeError, ValueError):
+        return 300.0
+
+
+def _ckpt_busy_timeout_ms() -> int:
+    # Bounded on purpose: with an active long reader, TRUNCATE calls the busy
+    # handler until the reader finishes — the default 30 s connection timeout
+    # would hold the write gate that long between passes. 5 s bounds the hold;
+    # an unfinished checkpoint returns the honest busy=1 and is retried next
+    # pass boundary.
+    try:
+        return max(0, int(os.getenv("OO_WAL_CHECKPOINT_BUSY_MS", "") or 5000))
+    except (TypeError, ValueError):
+        return 5000
+
+
+def checkpoint_wal(
+    *, engine=None, force: bool = False, busy_timeout_ms: int | None = None
+) -> dict | None:
+    """Run ``PRAGMA wal_checkpoint(TRUNCATE)`` at a pass boundary, measured.
+
+    Serialised through ``write_lock()`` (the same gate every writer takes), so
+    it can NEVER run beside a gated writer — it queues behind one instead.
+    Rate-limited by ``OO_WAL_CHECKPOINT_MIN_S`` (default 300 s) so fast
+    recycled passes don't churn; ``force=True`` bypasses the cadence (tests /
+    explicit maintenance). Returns the measured record — busy flag, frames,
+    wal bytes before/after, duration — or None (disabled / not due /
+    non-SQLite / error). Never raises.
+    """
+    global _LAST_CKPT_MONO
+    if not wal_checkpoint_enabled():
+        return None
+    try:
+        if engine is None:
+            from src.database.session import engine as _global_engine
+
+            engine = _global_engine
+        if engine.url.get_backend_name() != "sqlite":
+            return None  # WAL checkpointing is a SQLite concern only
+        with _CKPT_STATE_LOCK:
+            now = time.monotonic()
+            if (
+                not force
+                and _LAST_CKPT_MONO is not None
+                and (now - _LAST_CKPT_MONO) < _ckpt_min_interval_s()
+            ):
+                return None
+            _LAST_CKPT_MONO = now
+
+        db_path = engine.url.database
+        wal = Path(str(db_path) + "-wal") if db_path and db_path != ":memory:" else None
+        bytes_before = wal.stat().st_size if wal and wal.exists() else 0
+        busy_ms = _ckpt_busy_timeout_ms() if busy_timeout_ms is None else busy_timeout_ms
+
+        from src.database.writer import write_lock
+
+        t0 = time.monotonic()
+        raw = engine.raw_connection()
+        try:
+            cur = raw.cursor()
+            with write_lock():
+                # PRAGMAs are not DML, so pysqlite opens no implicit
+                # transaction here — the checkpoint runs outside any BEGIN.
+                cur.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
+                row = cur.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            cur.execute("PRAGMA busy_timeout=30000")  # restore before pool reuse
+            cur.close()
+        finally:
+            raw.close()
+        duration_ms = round((time.monotonic() - t0) * 1000.0, 1)
+        bytes_after = wal.stat().st_size if wal and wal.exists() else 0
+        busy, log_frames, ckpt_frames = (
+            (int(row[0]), int(row[1]), int(row[2])) if row else (None, None, None)
+        )
+        out = {
+            "busy": busy,  # 1 = an active reader pinned the WAL: honest partial
+            "log_frames": log_frames,
+            "checkpointed_frames": ckpt_frames,
+            "wal_bytes_before": bytes_before,
+            "wal_bytes_after": bytes_after,
+            "duration_ms": duration_ms,
+        }
+        _LOG.info("wal checkpoint(TRUNCATE): %s", out)
+        return out
+    except Exception:  # noqa: BLE001 - hygiene must never break the run loop
+        _LOG.warning("wal checkpoint failed; run loop continues", exc_info=True)
+        return None
+
+
 def run_pass_hygiene() -> dict | None:
     """The composed between-pass hygiene step (called from the scheduler's
-    run boundary, never mid-worker). Best-effort; never raises."""
+    run boundary, never mid-worker): memory release + WAL checkpoint.
+    Best-effort; never raises."""
     try:
-        return release_pass_state()
+        out = release_pass_state() or {}
+        # Always present so the run report shows whether a checkpoint ran
+        # (None = disabled / not due / skipped — never a silent omission).
+        out["wal_checkpoint"] = checkpoint_wal()
+        return out
     except Exception:  # noqa: BLE001 - hygiene must never break the run loop
         _LOG.warning("pass hygiene failed; run loop continues", exc_info=True)
         return None
