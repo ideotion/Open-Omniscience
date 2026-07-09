@@ -540,7 +540,66 @@ def reindex_all_batch(
     }
 
 
-def prune_orphan_keywords(session: Session, *, chunk: int = 500) -> dict:
+# --------------------------------------------------------------------------- #
+# P1.12 (SCALE_ROADMAP 2026-07-09): the background maintenance passes — counter
+# reconcile (measured 86–104 s/pass) and orphan prune (32 s of full counts) at
+# 3.06 M keywords — carry an INTERNAL soft deadline + a RESUMABLE watermark, so a
+# pass stops cleanly at its budget, persists where it got to (a ``derived_meta``
+# row — in the corpus, so it survives restarts and travels with backups), and the
+# next pass resumes instead of re-scanning from zero. Partial state is never
+# silent: the reconcile stamps ONLY the keywords it verified (the counter
+# envelope keeps disclosing ``estimated`` until a sweep completes within the
+# freshness window) and both tallies report ``complete``/``resumed_from_id``.
+# --------------------------------------------------------------------------- #
+
+RECONCILE_CURSOR_KEY = "counter_reconcile_cursor"
+PRUNE_CURSOR_KEY = "orphan_prune_cursor"
+# Keyword ids per slice (module-level so tests can shrink them to exercise the resume).
+_RECONCILE_SCAN_CHUNK = 50_000
+_PRUNE_SCAN_CHUNK = 20_000
+
+
+def _maint_budget_s(env: str, default: float = 30.0) -> float:
+    """The soft per-pass budget in seconds (0 or negative = unbounded)."""
+    import os
+
+    try:
+        return float(os.getenv(env, str(default)))
+    except ValueError:
+        return default
+
+
+def _cursor_get(session: Session, key: str) -> int:
+    """The persisted resume watermark (0 = start of the keyword table). Degrades to 0
+    on any doubt — a lost cursor only costs a re-scan, never a wrong number."""
+    from src.database.models import DerivedMeta
+
+    try:
+        raw = session.query(DerivedMeta.value).filter(DerivedMeta.key == key).scalar()
+        return int(raw) if raw is not None else 0
+    except Exception:  # noqa: BLE001 - a coordination read must never break the pass
+        return 0
+
+
+def _cursor_set(session: Session, key: str, value: int) -> None:
+    """Persist the watermark (0 clears it back to 'sweep from the start'). Joins the
+    caller's transaction; the caller commits. Best-effort by design."""
+    from datetime import UTC, datetime
+
+    from src.database.models import DerivedMeta
+
+    try:
+        row = session.get(DerivedMeta, key)
+        if row is None:
+            session.add(DerivedMeta(key=key, value=str(int(value)), updated_at=datetime.now(UTC)))
+        else:
+            row.value = str(int(value))
+            row.updated_at = datetime.now(UTC)
+    except Exception:  # noqa: BLE001 - a coordination write must never break the pass
+        _LOG.warning("maintenance cursor write failed (%s)", key, exc_info=True)
+
+
+def prune_orphan_keywords(session: Session, *, chunk: int = 500, budget_s: float | None = None) -> dict:
     """Delete keywords that NO view references — pure garbage collection, never a cap.
 
     A keyword with ZERO ``KeywordMention`` rows contributes nothing to any analytic
@@ -552,72 +611,120 @@ def prune_orphan_keywords(session: Session, *, chunk: int = 500) -> dict:
 
     Curation-safe: a keyword whose ``normalized_term`` is referenced by a family override
     or a super-group member is KEPT even if momentarily mention-less (the user's
-    structure must survive). Takes the single-writer gate; chunked under the 999-variable
-    limit. Counts only — no score."""
-    from sqlalchemy import func, select
+    structure must survive). Takes the single-writer gate per slice; chunked under the
+    999-variable limit. Counts only — no score.
+
+    P1.12: the scan walks the keyword table in id-ordered SLICES (each slice's orphan
+    test is one covering-index range scan of the mentions table — never the old
+    whole-table anti-join + full count, the measured 32 s at 3.06 M keywords) under a
+    soft DEADLINE (``budget_s``, default ``OO_PRUNE_BUDGET_S`` = 30 s; <= 0 unbounded).
+    A pass that hits its budget stops cleanly, persists its watermark (``derived_meta``
+    ``orphan_prune_cursor``) and reports ``complete: false``; the next pass RESUMES
+    there. Correctness does not depend on the cursor: a keyword skipped this pass is
+    simply pruned by a later sweep."""
+    import time as _time
 
     from src.database.models import KeywordFamilyOverride, KeywordSuperGroupMember
     from src.database.writer import write_lock
 
-    total = int(session.query(func.count(Keyword.id)).scalar() or 0)
-    # Authoritative orphan test: id NOT present in the mentions table (not the counter,
-    # which could be momentarily stale) — one anti-join over the indexed keyword_id.
-    mentioned = select(KeywordMention.keyword_id).distinct().scalar_subquery()
-    candidate_ids = [
-        kid for (kid,) in session.query(Keyword.id).filter(Keyword.id.notin_(mentioned)).all()
-    ]
-    if not candidate_ids:
-        return {"keywords": total, "orphans": 0, "pruned": 0, "kept_curated": 0}
+    budget = budget_s if budget_s is not None else _maint_budget_s("OO_PRUNE_BUDGET_S")
+    scan_chunk = _PRUNE_SCAN_CHUNK  # ids per slice (one mention index range scan each)
+    t0 = _time.monotonic()
 
+    after_id = _cursor_get(session, PRUNE_CURSOR_KEY)
+    resumed_from = after_id
     # Protect curated structure (overrides / super-group members reference the term).
     curated_terms = {
         t for (t,) in session.query(KeywordFamilyOverride.normalized_term).all()
     } | {
         t for (t,) in session.query(KeywordSuperGroupMember.normalized_term).all()
     }
-    prunable: list[int] = []
-    kept_curated = 0
-    for i in range(0, len(candidate_ids), 900):
-        batch = candidate_ids[i : i + 900]
-        for kid, term in session.query(Keyword.id, Keyword.normalized_term).filter(
-            Keyword.id.in_(batch)
-        ):
-            if term in curated_terms:
-                kept_curated += 1
-            else:
-                prunable.append(kid)
 
-    # Pruning DELETES mention-less keyword rows, so the disposable columnar rollup must
-    # FULL-rebuild rather than incrementally merge (the D3 double-count guard). Bump once,
-    # before the delete loop, only when there is something to prune. Best-effort.
-    if prunable:
-        from src.analytics.corpus_epoch import bump_corpus_epoch
-
-        bump_corpus_epoch(session, reason="prune_orphan_keywords")
-
+    scanned = 0
+    orphans = 0
     pruned = 0
-    with write_lock():
-        for i in range(0, len(prunable), chunk):
-            batch = prunable[i : i + chunk]
-            try:
-                session.query(KeywordTag).filter(KeywordTag.keyword_id.in_(batch)).delete(
-                    synchronize_session=False
-                )
-                pruned += (
-                    session.query(Keyword).filter(Keyword.id.in_(batch)).delete(
-                        synchronize_session=False
-                    )
-                    or 0
-                )
-                session.commit()
-            except Exception:  # noqa: BLE001 - one bad chunk must not abort the GC
-                session.rollback()
-                _LOG.warning("orphan-keyword prune chunk failed", exc_info=True)
+    kept_curated = 0
+    epoch_bumped = False
+    complete = False
+    while True:
+        ids = [
+            kid
+            for (kid,) in session.query(Keyword.id)
+            .filter(Keyword.id > after_id)
+            .order_by(Keyword.id)
+            .limit(scan_chunk)
+        ]
+        if not ids:
+            complete = True
+            break
+        lo, hi = after_id, ids[-1]
+        # Authoritative orphan test for the slice: which of these ids appear in the
+        # mentions table (covering (keyword_id, article_id) index range scan — not the
+        # counter, which could be momentarily stale).
+        mentioned = {
+            kid
+            for (kid,) in session.query(KeywordMention.keyword_id)
+            .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
+            .distinct()
+        }
+        candidates = [kid for kid in ids if kid not in mentioned]
+        orphans += len(candidates)
+        prunable: list[int] = []
+        if candidates:
+            for i in range(0, len(candidates), 900):
+                batch = candidates[i : i + 900]
+                for kid, term in session.query(Keyword.id, Keyword.normalized_term).filter(
+                    Keyword.id.in_(batch)
+                ):
+                    if term in curated_terms:
+                        kept_curated += 1
+                    else:
+                        prunable.append(kid)
+        # Pruning DELETES mention-less keyword rows, so the disposable columnar rollup
+        # must FULL-rebuild rather than incrementally merge (the D3 double-count guard).
+        # Bump once per pass, before the first delete, only when something is pruned.
+        if prunable and not epoch_bumped:
+            from src.analytics.corpus_epoch import bump_corpus_epoch
+
+            bump_corpus_epoch(session, reason="prune_orphan_keywords")
+            epoch_bumped = True
+        if prunable:
+            with write_lock():
+                for i in range(0, len(prunable), chunk):
+                    batch = prunable[i : i + chunk]
+                    try:
+                        session.query(KeywordTag).filter(
+                            KeywordTag.keyword_id.in_(batch)
+                        ).delete(synchronize_session=False)
+                        pruned += (
+                            session.query(Keyword)
+                            .filter(Keyword.id.in_(batch))
+                            .delete(synchronize_session=False)
+                            or 0
+                        )
+                        session.commit()
+                    except Exception:  # noqa: BLE001 - one bad chunk must not abort the GC
+                        session.rollback()
+                        _LOG.warning("orphan-keyword prune chunk failed", exc_info=True)
+        scanned += len(ids)
+        after_id = hi
+        # Persist the watermark WITH the slice (the resume point survives a restart).
+        _cursor_set(session, PRUNE_CURSOR_KEY, after_id)
+        session.commit()
+        if budget > 0 and _time.monotonic() - t0 > budget:
+            break  # soft deadline: stop cleanly; the cursor resumes the sweep next pass
+    if complete:
+        _cursor_set(session, PRUNE_CURSOR_KEY, 0)
+        session.commit()
     return {
-        "keywords": total,
-        "orphans": len(candidate_ids),
+        "keywords": scanned,  # scanned THIS pass (never the old 32 s whole-table count)
+        "orphans": orphans,
         "pruned": int(pruned),
         "kept_curated": kept_curated,
+        "complete": complete,
+        "resumed_from_id": resumed_from,
+        "cursor_id": 0 if complete else after_id,
+        "budget_s": budget,
     }
 
 
@@ -673,63 +780,123 @@ def _fresh_window_hours() -> int:
         return 24
 
 
-def reconcile_keyword_counters(session: Session, *, now=None) -> dict:
+def reconcile_keyword_counters(
+    session: Session, *, now=None, budget_s: float | None = None
+) -> dict:
     """Recompute the counters EXACTLY from the live mentions, detect drift, and stamp
     ``Keyword.last_reconciled_at`` (Slice 2 — the bounded background reconcile).
 
     This is the authoritative repair for the rare cascade-delete drift
     (``ondelete=CASCADE`` bypasses the incremental maintenance in :func:`index_article`).
-    It is the one place a full ``GROUP BY`` over the mentions is paid — OFF the request
-    path (the hot endpoints read the counters, never this) — so after it runs the
+    It is the one place a ``GROUP BY`` over the mentions is paid — OFF the request path
+    (the hot endpoints read the counters, never this) — so after a sweep completes the
     counters are proven equal to the canonical store and the honesty envelope can
     disclose them as ``exact``. Counts only, no score. Returns a tally including
-    ``drift_repaired`` = how many keyword counters were wrong before this pass.
-    """
+    ``drift_repaired`` = how many keyword counters were wrong in the swept range.
+
+    P1.12 (measured 86–104 s/pass at 3.06 M keywords): the sweep walks the keyword table
+    in id-ordered SLICES — each slice one covering-index range GROUP BY over the mentions,
+    never the whole-table scan — under a soft DEADLINE (``budget_s``, default
+    ``OO_RECONCILE_BUDGET_S`` = 30 s; <= 0 unbounded). A pass that hits its budget stops
+    cleanly, persists its watermark (``derived_meta`` ``counter_reconcile_cursor``) and
+    reports ``complete: false``; the next pass RESUMES there. PARTIAL STATE IS NEVER
+    SILENT: only the keywords a pass actually verified get stamped, so
+    :func:`counter_envelope` keeps disclosing ``estimated`` until a whole sweep lands
+    within the freshness window — half-reconciled counters can never masquerade as
+    ``exact`` (the envelope/basis discipline)."""
+    import time as _time
     from datetime import UTC, datetime
 
     from sqlalchemy import func
 
     stamp = now or datetime.now(UTC)
-    agg = {
-        kid: (int(m or 0), int(a or 0))
-        for kid, m, a in (
-            session.query(
-                KeywordMention.keyword_id,
-                func.sum(KeywordMention.count),
-                func.count(func.distinct(KeywordMention.article_id)),
-            ).group_by(KeywordMention.keyword_id)
-        )
-    }
-    # Detect drift: compare every keyword's CURRENT counters to the recomputed truth.
-    # O(keywords) (a small-row scan of the keywords table), never a per-keyword mention
-    # scan — and runs in the background, not on a read.
+    budget = budget_s if budget_s is not None else _maint_budget_s("OO_RECONCILE_BUDGET_S")
+    scan_chunk = _RECONCILE_SCAN_CHUNK
+    t0 = _time.monotonic()
+
+    after_id = _cursor_get(session, RECONCILE_CURSOR_KEY)
+    resumed_from = after_id
+    scanned = 0
+    with_mentions = 0
     drift = 0
-    for kid, cur_m, cur_a in session.query(
-        Keyword.id, Keyword.mention_count, Keyword.article_count
-    ):
-        if (int(cur_m or 0), int(cur_a or 0)) != agg.get(kid, (0, 0)):
-            drift += 1
-    # Repair: zero all, set the keywords that have mentions, stamp the watermark on
-    # EVERY keyword (so a never-mentioned keyword is also "verified 0 as of now").
-    session.query(Keyword).update(
-        {Keyword.mention_count: 0, Keyword.article_count: 0, Keyword.last_reconciled_at: stamp},
-        synchronize_session=False,
-    )
-    if agg:
-        session.bulk_update_mappings(
-            Keyword,
-            [
-                {"id": kid, "mention_count": m, "article_count": a, "last_reconciled_at": stamp}
-                for kid, (m, a) in agg.items()
-            ],
+    complete = False
+    while True:
+        ids = [
+            kid
+            for (kid,) in session.query(Keyword.id)
+            .filter(Keyword.id > after_id)
+            .order_by(Keyword.id)
+            .limit(scan_chunk)
+        ]
+        if not ids:
+            complete = True
+            break
+        lo, hi = after_id, ids[-1]
+        # The slice's truth: one covering-index range GROUP BY over the mentions. Every
+        # keyword id in (lo, hi] is in `ids` (consecutive ordered ids), so the range
+        # filter is exactly this slice.
+        agg = {
+            kid: (int(m or 0), int(a or 0))
+            for kid, m, a in (
+                session.query(
+                    KeywordMention.keyword_id,
+                    func.sum(KeywordMention.count),
+                    func.count(func.distinct(KeywordMention.article_id)),
+                )
+                .filter(KeywordMention.keyword_id > lo, KeywordMention.keyword_id <= hi)
+                .group_by(KeywordMention.keyword_id)
+            )
+        }
+        # Detect drift within the slice (small-row keyword scan, background only).
+        for kid, cur_m, cur_a in session.query(
+            Keyword.id, Keyword.mention_count, Keyword.article_count
+        ).filter(Keyword.id > lo, Keyword.id <= hi):
+            if (int(cur_m or 0), int(cur_a or 0)) != agg.get(kid, (0, 0)):
+                drift += 1
+        # Repair the slice: zero + stamp everything in range (a never-mentioned keyword
+        # is also "verified 0 as of now"), then set the keywords that have mentions.
+        session.query(Keyword).filter(Keyword.id > lo, Keyword.id <= hi).update(
+            {
+                Keyword.mention_count: 0,
+                Keyword.article_count: 0,
+                Keyword.last_reconciled_at: stamp,
+            },
+            synchronize_session=False,
         )
-    session.commit()
-    total = session.query(func.count(Keyword.id)).scalar() or 0
+        if agg:
+            session.bulk_update_mappings(
+                Keyword,
+                [
+                    {
+                        "id": kid,
+                        "mention_count": m,
+                        "article_count": a,
+                        "last_reconciled_at": stamp,
+                    }
+                    for kid, (m, a) in agg.items()
+                ],
+            )
+        scanned += len(ids)
+        with_mentions += len(agg)
+        after_id = hi
+        # Persist the watermark WITH the slice's repair (one commit; the resume point
+        # survives an app restart and travels with the corpus).
+        _cursor_set(session, RECONCILE_CURSOR_KEY, after_id)
+        session.commit()
+        if budget > 0 and _time.monotonic() - t0 > budget:
+            break  # soft deadline: stop cleanly; the stamps above disclose the partial
+    if complete:
+        _cursor_set(session, RECONCILE_CURSOR_KEY, 0)
+        session.commit()
     return {
-        "keywords": int(total),
-        "with_mentions": len(agg),
+        "keywords": scanned,  # scanned THIS pass (a sweep may span several passes)
+        "with_mentions": with_mentions,
         "drift_repaired": int(drift),
         "as_of": stamp.isoformat(timespec="seconds"),
+        "complete": complete,
+        "resumed_from_id": resumed_from,
+        "cursor_id": 0 if complete else after_id,
+        "budget_s": budget,
     }
 
 
@@ -1081,40 +1248,63 @@ def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:
     small data-dir marker, so it is a no-op on most scrape passes. Off the request path
     (called from warm_cache after a pass), best-effort, never raises. The marker records
     the last run + tally so the corpus-integrity diagnostic can show it ("automatic and
-    part of the logs")."""
+    part of the logs").
+
+    P1.12: the prune runs under its soft deadline and may report ``complete: false``.
+    While the LAST prune sweep is incomplete, the freshness gate lets the NEXT call
+    RESUME the prune (only the prune — the language reconcile already ran this cycle and
+    is not re-paid per resume), so a budget-bounded sweep converges pass by pass instead
+    of stalling 12 h at its cursor."""
     import json
     from datetime import datetime, timedelta
 
     now = now or datetime.now()
     state = keyword_cleanup_state()
     last = state.get("last_run")
+    fresh = False
     if last:
         try:
-            if datetime.fromisoformat(last) > now - timedelta(hours=_cleanup_hours()):
-                return {"skipped": "fresh", "last_run": last}
+            fresh = datetime.fromisoformat(last) > now - timedelta(hours=_cleanup_hours())
         except (ValueError, TypeError):
-            pass  # unparseable marker → treat as due
+            fresh = False  # unparseable marker → treat as due
+    prev_prune = (state.get("last_tally") or {}).get("prune") or {}
+    if fresh and prev_prune.get("complete") is not False:
+        return {"skipped": "fresh", "last_run": last}
 
     tally: dict = {"at": now.isoformat(timespec="seconds")}
-    try:
-        tally["prune"] = prune_orphan_keywords(session)
-    except Exception:  # noqa: BLE001 - a background safety net must never break the pass
-        session.rollback()
-        _LOG.warning("automatic orphan-keyword prune failed", exc_info=True)
-        tally["prune"] = {"skipped": "error"}
-    try:
-        tally["language"] = reconcile_keyword_language(session)
-    except Exception:  # noqa: BLE001
-        session.rollback()
-        _LOG.warning("automatic keyword-language reconcile failed", exc_info=True)
-        tally["language"] = {"skipped": "error"}
+    if fresh:
+        # Resume ONLY the incomplete prune sweep (bounded by its own budget); anchor the
+        # 12 h cadence to the ORIGINAL run so resumes never slide the clock.
+        marker_run = last
+        tally["resumed_prune"] = True
+        try:
+            tally["prune"] = prune_orphan_keywords(session)
+        except Exception:  # noqa: BLE001 - a background safety net must never break the pass
+            session.rollback()
+            _LOG.warning("automatic orphan-keyword prune resume failed", exc_info=True)
+            tally["prune"] = {"skipped": "error"}
+        tally["language"] = {"skipped": "ran this cycle"}
+    else:
+        marker_run = tally["at"]
+        try:
+            tally["prune"] = prune_orphan_keywords(session)
+        except Exception:  # noqa: BLE001 - a background safety net must never break the pass
+            session.rollback()
+            _LOG.warning("automatic orphan-keyword prune failed", exc_info=True)
+            tally["prune"] = {"skipped": "error"}
+        try:
+            tally["language"] = reconcile_keyword_language(session)
+        except Exception:  # noqa: BLE001
+            session.rollback()
+            _LOG.warning("automatic keyword-language reconcile failed", exc_info=True)
+            tally["language"] = {"skipped": "error"}
 
     # Record the marker (freshness + the diagnostics log). Best-effort.
     try:
         p = _cleanup_marker_path()
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(
-            json.dumps({"last_run": tally["at"], "last_tally": tally}, ensure_ascii=False),
+            json.dumps({"last_run": marker_run, "last_tally": tally}, ensure_ascii=False),
             encoding="utf-8",
         )
     except Exception:  # noqa: BLE001 - the marker is an optimisation, not correctness

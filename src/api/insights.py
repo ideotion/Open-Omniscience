@@ -444,7 +444,12 @@ def insights_reindex(limit: int = Query(300, ge=1, le=5000), db: Session = Depen
 def insights_prune_keywords(db: Session = Depends(get_db)) -> dict:
     """Garbage-collect keywords that no view references (zero mentions) — the cleanup
     that shrinks an inflated keyword count after a markup re-index drain. Pure GC, not a
-    cap: a keyword with any mention is never touched; curated terms are kept."""
+    cap: a keyword with any mention is never touched; curated terms are kept.
+
+    P1.12: the pass runs under a soft deadline (OO_PRUNE_BUDGET_S, default 30 s) so this
+    synchronous request can never hang the worker on a multi-million-keyword corpus; a
+    partial pass says so honestly (``complete: false`` + the persisted resume cursor) and
+    the sweep continues on the next call or the automatic background cleanup."""
     from src.analytics.store import prune_orphan_keywords
 
     return prune_orphan_keywords(db)
