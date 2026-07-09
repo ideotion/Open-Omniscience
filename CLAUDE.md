@@ -410,7 +410,12 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
 - Lessons that cost a bug: duplicate top-level JS function names silently
   override — grep before declaring. Sizes lie, diffs don't (`git diff
   --numstat` before fearing loss). Agent findings get hand-re-verified before
-  shipping (the 06-audit false-positive lesson). Tests must NEVER assert
+  shipping (the 06-audit false-positive lesson). NEVER switch git branches while
+  a background test suite is running (2026-07-09: a checkout mid-run made a
+  SUBPROCESS-spawning determinism test import the OLD code from the mutated
+  working tree → a phantom suite failure that took a clean re-run to disprove;
+  same family as the review-agent checkout-restore hazard — the working tree
+  belongs to the running suite until it finishes). Tests must NEVER assert
   POSITIVE facts against the shared mutable `src.api.main.app` singleton's
   `.routes` — that process-global read made the additive-restore guard flaky in
   CI (1 failed on `/v2/restore` absent, never reproducible locally even per a
