@@ -2230,7 +2230,7 @@ def layered_graph(
             or 0
         )
         base = associations(
-            session, term, limit=12, group=True, start=start, end=end,
+            session, term, limit=12, group=True, days=days, start=start, end=end,
             corpus_total=corpus_total, article_cap=article_cap,
         )
         bounded = bounded or bool(base.get("articles_bounded"))
@@ -2266,7 +2266,7 @@ def layered_graph(
                     bounded = True
                     break
                 second = associations(
-                    session, p["term"], limit=4, group=True, start=start, end=end,
+                    session, p["term"], limit=4, group=True, days=days, start=start, end=end,
                     corpus_total=corpus_total, article_cap=article_cap,
                 )
                 bounded = bounded or bool(second.get("articles_bounded"))

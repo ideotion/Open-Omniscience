@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.api.heavy import guarded_read
 from src.database.session import get_db
 
 router = APIRouter(prefix="/api/signals", tags=["signals"])
@@ -78,8 +79,16 @@ def signals_bury(
     statistics only, never a score."""
     from src.analytics.concentration import find_buried_topics
 
-    return find_buried_topics(
-        db, window_days=window_days, fdr_q=fdr_q, z_min=z_min, max_items=max_items
+    # Heaviest of the manipulation scans (FDR family over ALL source×topic pairs, corpus-wide,
+    # measured 27-111 s) with no cache — the cap + deadline stop it thrashing the one
+    # connection during the Home poll storm (field test 2026-07-08, Item 8).
+    key = f"bury|wd={window_days}|q={fdr_q}|z={z_min}|n={max_items}"
+    return guarded_read(
+        db,
+        key,
+        lambda: find_buried_topics(
+            db, window_days=window_days, fdr_q=fdr_q, z_min=z_min, max_items=max_items
+        ),
     )
 
 
@@ -104,13 +113,18 @@ def signals_flood(
     only, never a score."""
     from src.analytics.concentration import find_flooded_topics
 
-    return find_flooded_topics(
+    key = f"flood|rd={recent_days}|bd={baseline_days}|z={z_min}|ms={min_share}|n={max_items}"
+    return guarded_read(
         db,
-        recent_days=recent_days,
-        baseline_days=baseline_days,
-        z_min=z_min,
-        min_share=min_share,
-        max_items=max_items,
+        key,
+        lambda: find_flooded_topics(
+            db,
+            recent_days=recent_days,
+            baseline_days=baseline_days,
+            z_min=z_min,
+            min_share=min_share,
+            max_items=max_items,
+        ),
     )
 
 
@@ -246,8 +260,13 @@ def signals_disputed_chronology(
     No score."""
     from src.analytics.disputed_chronology import find_disputed_chronology
 
-    return find_disputed_chronology(
-        db, lookback_days=lookback_days, min_sources=min_sources, tolerance_days=tolerance_days
+    key = f"disputed-chronology|lb={lookback_days}|ms={min_sources}|tol={tolerance_days}"
+    return guarded_read(
+        db,
+        key,
+        lambda: find_disputed_chronology(
+            db, lookback_days=lookback_days, min_sources=min_sources, tolerance_days=tolerance_days
+        ),
     )
 
 
@@ -266,8 +285,13 @@ def signals_story_propagation(
     score."""
     from src.analytics.story_propagation import find_story_propagation
 
-    return find_story_propagation(
-        db, lookback_days=lookback_days, min_sources=min_sources, min_span_days=min_span_days
+    key = f"story-propagation|lb={lookback_days}|ms={min_sources}|span={min_span_days}"
+    return guarded_read(
+        db,
+        key,
+        lambda: find_story_propagation(
+            db, lookback_days=lookback_days, min_sources=min_sources, min_span_days=min_span_days
+        ),
     )
 
 
@@ -286,7 +310,12 @@ def signals_supply_chain_ripple(
     NEVER causation (the verbatim non-negotiable rides the caveat). No score."""
     from src.analytics.supply_chain_ripple import find_supply_chain_ripples
 
-    return find_supply_chain_ripples(db, window_days=window_days, r_min=r_min, fdr_q=fdr_q)
+    key = f"supply-chain-ripple|wd={window_days}|r={r_min}|q={fdr_q}"
+    return guarded_read(
+        db,
+        key,
+        lambda: find_supply_chain_ripples(db, window_days=window_days, r_min=r_min, fdr_q=fdr_q),
+    )
 
 
 @router.get("/weather-signals")

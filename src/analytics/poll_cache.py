@@ -41,6 +41,7 @@ No score anywhere — every figure stays a real count carried straight from
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import threading
@@ -145,18 +146,26 @@ def _store(key: str, payload: dict, bind: object | None) -> float | None:
 
 
 def _decorate(payload: dict, *, built_at: float, cached: bool, now: float) -> dict:
-    """Attach the visible freshness disclosure. Returns a NEW top-level dict so the
-    cached payload object is never mutated across serves. Adds NO score field."""
-    return {
-        **payload,
-        "as_of": _iso(built_at),
-        "cache_age_s": max(0, int(now - built_at)),
-        "cached": bool(cached),
-        "cache_note": (
-            "Memoised alert strip: the SAME locally-computed result, refreshed in the "
-            "background — see as_of for its age. Nothing here is fetched from the network."
-        ),
-    }
+    """Attach the visible freshness disclosure. Returns a DEEP COPY of the cached payload
+    so NO downstream caller can corrupt the cache: ``{**payload, …}`` only copies the TOP
+    level, so a caller that mutates a nested list/dict in a served result (e.g. annotating
+    convergence rows) would silently corrupt the shared cached object that later serves —
+    and followers — reuse. The deep copy makes each serve independent. The alert payload is
+    a small, bounded set of convergence clusters, so copying it is negligible next to the
+    convergence scan this whole module exists to avoid. Adds NO score field."""
+    out = copy.deepcopy(payload)
+    out.update(
+        {
+            "as_of": _iso(built_at),
+            "cache_age_s": max(0, int(now - built_at)),
+            "cached": bool(cached),
+            "cache_note": (
+                "Memoised alert strip: the SAME locally-computed result, refreshed in the "
+                "background — see as_of for its age. Nothing here is fetched from the network."
+            ),
+        }
+    )
+    return out
 
 
 def get_alerts(
