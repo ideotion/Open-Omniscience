@@ -46,6 +46,16 @@ zip: ooalldiagnostics202607091306):**
   the wave-7 alert cache works (p50 25 ms, was 23.7 s). FLAGS: an FTS present/absent
   probe contradiction (verify search works; re-index heals), and 71% of 3.06 M keywords
   are single-article (the segmenter ruling keeps climbing).
+- **12:14-boot follow-up logs (same day, analyzed 2026-07-09):** unlock **1,645 s** on the
+  next boot ⇒ the one-time-migration hypothesis is REFUTED (P0.4 escalated, see the row);
+  trending-windows 62 calls / 3,286 s (the TTL rollup rebuild churns); NEW #1 slow query =
+  the map/ring country GROUP BY at ~150 s/call (⇒ P1.11 flip on the existing map serve);
+  counter-reconcile 86–104 s/pass at 3.06 M keywords (⇒ P1.12); the integrity FTS-absent
+  verdict co-occurred with its own deadline interrupt (supports the D4 probe-artifact fix,
+  shipped #600). GOOD: full-curve Heaps **β = 0.8156** (r²=.998; the 0.95 was a subset
+  artifact — the vocabulary IS saturating), entity precision 98.6%, selftest 43/43, FDR
+  spine 10/10, dated coverage back to 1995 (cross-time recall real). The full per-language
+  keyword export (61 files) is in hand for the segmenter/stoplist track when ruled.
 
 ---
 
@@ -56,8 +66,8 @@ zip: ooalldiagnostics202607091306):**
 | P0.1 | **Backup at 100 GB+** (Item 9, escalated by the 2026-07-09 crash) | OPEN — top priority | Root-cause the crash from the logs. Kill every whole-corpus materialization on the path (the disposable **plaintext corpus snapshot** = decrypt-the-world, dead at scale; the in-RAM zip paths died at 2 GiB already). Target: **server-side, streaming, bounded-RAM, RESUMABLE, VERIFIABLE, INCREMENTAL** — the volumes+parity engine already checksums per volume, so re-emit only changed volumes (natural incremental). No browser delivery of the artifact. Acceptance: a 100 GB backup completes with bounded RAM, survives interruption + resumes, `verify` passes, measured wall-time reported honestly. |
 | P0.2 | **Restore/import at scale** | OPEN — untestable today | Once P0.1 produces a 100 GB artifact: staged, resumable, disk-preflighted restore; the additive-merge stays sacred. Acceptance: the maintainer's real 100 GB backup imports on a fresh install. |
 | P0.3 | **Crash root-cause + crash-safety** (Item 11) | ROOT-CAUSED 2026-07-09: OOM in a 21.6-h continuous crawl pass (RSS 10.6 GB > VM RAM; silent external kill) | The fix is COLLECTOR-side (A1's API caps don't cover it): (a) find + bound the per-pass memory accumulation (candidates: per-worker session/identity maps, trafilatura caches, feed seen-sets, keyword maps); (b) PASS RECYCLING — bound a pass's duration/work so a marathon pass can't accumulate for a day; (c) an RSS MEMORY GUARD that gracefully pauses collection before the OOM-killer fires (degrade loudly, never die silently); (d) WAL checkpoint hygiene under multi-day writes. DispVM ruling stands. |
-| P0.4 | **Unlock at scale** (re-opened; 60 s @ 2.28 GB in the 07-08 ledger, **981 s measured** 2026-07-09) | ROOT-CAUSE HYPOTHESIS: the one-time reinstall migration (newer code vs old DB stamp ⇒ synchronous init_db ran migrations + built the new expression index over 268 K articles through the codec, zero progress UI), possibly + WAL recovery after the OOM kill | DISCRIMINATOR (maintainer): is the NEXT unlock fast? FIXES either way: migrations/index-builds inside unlock must be a VISIBLE progress phase (never a silent 16-min wall) and backgroundable where safe; WAL-recovery time surfaced honestly. Acceptance: steady-state unlock < 2 s at 100 GB; a one-time migration shows honest progress; the UI is responsive during upkeep. |
-| P0.5 | **Scale test harness** | OPEN — the structural gap | Everything so far was verified at MB–GB scale; 100 GB behavior was discovered in the field. Build a synthetic large-corpus generator + a scheduled benchmark suite (unlock time, backup wall, hot-endpoint p95s, WAL size under write load) so the next scale cliff is found in dev. |
+| P0.4 | **Unlock at scale — ESCALATED** (60 s @ 2.28 GB in the 07-08 ledger; **981 s** then **1,645 s (27.4 min)** on consecutive 2026-07-09 boots) | The one-time-migration hypothesis is **REFUTED** (12:14-boot logs): the cost RECURS every boot and grew; the schema stamp did not advance between boots. Prime suspects now: (i) WAL recovery after unclean shutdowns (free test: stop via the in-app Shutdown button, then time the next unlock), (ii) corpus-scaled synchronous init_db work. | The instrumentation to name it is NOW MERGED (#596 per-phase timing + wal-bytes-before-open; #599 honest elapsed-clock UI): the maintainer UPDATES the install → the very next boot's export names the phase. GAMMA's G2 unlock-wall benchmark reproduces it in dev against a synthetic ~12 GB corpus. Acceptance unchanged: steady-state unlock < 2 s at 100 GB; any long phase visible and honest. |
+| P0.5 | **Scale test harness** | **SHIPPED #601 (GAMMA G1/G2/G3)** — synthetic corpus generator (Base.metadata schema-parity, deterministic seed, synthetic marker) + benchmark runner (unlock wall · backup wall + peak RSS · restore round-trip · hot-endpoint p95s · WAL growth) + a CI smoke tier; the 50–100 GB tier is operator-run via scripts/ | The benchmark report format is the ACCEPTANCE CONTRACT for Round 2 (ZETA/ETA below). Post-merge audit pending. |
 
 ## P1 — SNAPPINESS AT SCALE (adoption-critical)
 
@@ -78,13 +88,15 @@ batched commits.
 | P1.1 | ALPHA A1: **server deadlines + concurrency cap + single-flight** (the death-spiral structural fix) | IN FLIGHT |
 | P1.2 | ALPHA A2: **job-ify heavy sync handlers** (enrich-source-types 8.5 min · governments 2.9 min · backfill · server-locations) | IN FLIGHT |
 | P1.3 | ALPHA A3: **`count(*)` from maintained counters** (724 ms × 172) | IN FLIGHT |
-| P1.4 | **`/api/insights/latest` 59 s** (near-dup content reads defeat the scan cap — SQLCipher decrypts) | OPEN |
+| P1.4 | `/api/insights/latest` (measured 40 s @ 268 K) | **SHIPPED #600 D1** (near-dup bounded via content-prefix fold) — re-measure on the next field export |
 | P1.5 | **Storage-composition diagnostic** — per-table bytes (dbstat) so we know what the 130 GB IS; informs P0.1/P1.6/P1.5-hygiene | OPEN, small, high-leverage |
 | P1.6 | **Corpus-epoch mechanism** (`derived_meta` + `bump_corpus_epoch` wired into re-index/prune/restore) — prerequisite for persisted INCREMENTAL rollups (designed in 5A-bis D3, not built) | OPEN |
 | P1.7 | **5 TB architecture verify-before-trust review** — single-file SQLCipher at 5 TB (page cache, VACUUM infeasibility, backup windows, single writer) validated against `docs/design/DATA_ARCHITECTURE_SKELETON.md` (it anticipated 1000×). Constraint carried: **cross-time recall is sacred** — no partitioning that makes old data second-class. Design session, then measured slices. | OPEN |
+| P1.11 | **FLIP ON the D4 map serve** (`map_serve.enabled: false` today): the 12:14 logs' #1 slow query is the map/ring country GROUP BY — **748 s total, ~150 s/call, max 211 s** — plus map_data at 146 s median; the opt-in serve already exists (Wave 4) with bind-aware fallback. Measured justification to default it on. | NEW — next round |
+| P1.12 | **Background maintenance joins the job/deadline regime**: the counter-reconcile scans (86–104 s/pass) + the orphan-prune count (32 s) are heavy at 3.06 M keywords — keep freshness-gated, add deadlines + off-peak scheduling. | NEW |
 | P1.8 | **Collector-path write batching** — the writer gate measured 847 K s cumulative wait / 22% of worker-time across the 21.6-h pass (the long-deferred strategy-P1.3 item now has its live justification; the `index_article(commit=False)` primitive already exists) | PROMOTED 2026-07-09 |
-| P1.9 | **Job-ify the diagnostics `/all` export** (Item 10) — measured 36+ min in-flight, repeatedly blocking the event loop | CONFIRMED AT SCALE |
-| P1.10 | trending-windows cold path at 20.9 M mentions (467 s/call while the in-memory rollup builds) — the concrete D1-persisted-columnar justification (see Ruling-gated #2) + consider serving a STALE-BUT-DISCLOSED previous rollup during the rebuild | OPEN |
+| P1.9 | Job-ify the diagnostics `/all` export (Item 10; measured 36+ min blocking the loop) | **SHIPPED #600 D2** (+ stale-.part sweep hardening) — EPSILON's UI wiring for the job flow is the remaining half if not in #599 |
+| P1.10 | trending-windows cold path (467 s/call; the 12:14 logs show 62 calls / 3,286 s total — the 15-min-TTL rebuild over 20.9 M mentions CHURNS) | **PARTLY SHIPPED #600 D3** (previous rollup served stale-but-disclosed). REMAINING: replace the TTL rebuild cadence with corpus-epoch-gated refresh + the D1 persisted store (Ruling-gated #2) so the rebuild happens on CHANGE, not on a timer |
 
 **Definition of snappy (acceptance, measured via the latency reservoir + the P0.5 bench):**
 every interactive endpoint p95 < ~500 ms at 100 GB; unlock < 2 s; no UI action blocks > 1 s
@@ -143,6 +155,49 @@ without becoming a visible job; background work never freezes the UI.
   job; it is pausable/persisted (the reindex job), but schedule it deliberately.
 - The graded IR gold set (unlocks BM25F default + lemmatization measures).
 - Rollup benchmark + fresh diagnostics after ALPHA lands (measures waves 7–9 on real data).
+
+## ROUND 2 — the next two autonomous sessions (spec, so any future session can emit the prompts)
+
+Both follow the proven contract: read CLAUDE.md in full first · file-disjoint territories ·
+commit-per-item + `git show HEAD --stat` all-files check · FULL suite per item (py3.13 .venv)
+· mypy 127 / ruff F,B / bandit -ll / single alembic head · mid-run + pre-push rebase onto the
+fresh tip · pre-push NEGATIVE-SPACE skeptics run to completion BEFORE push (two-connection
+shape for any cache) · shipped.csv append-only · draft PR onto the current cycle branch.
+
+- **ZETA (backend · P0.1/P0.2 backup rework):** territory src/backup/** + src/safety/crypto.py
+  + new tests. Kill every whole-corpus materialization (the plaintext `snapshot_sqlite` staging
+  + in-RAM zip paths); stream the SQLite backup API into the existing volumes+parity writer;
+  INCREMENTAL = re-emit only changed volumes (per-volume checksums exist); a `verify` command;
+  resumable; server-side only. ACCEPTANCE = GAMMA's benchmark report (#601 format) at a
+  synthetic 50–100 GB corpus: bounded peak RSS, interruption + resume, verify passes, honest
+  wall-time; restore round-trip additive-merge-sacred. The maintainer runs ONE live validation
+  at the end (the only attended step; it is the v0.2.0 gate item).
+- **ETA (backend · P0.3 collector + P1.8):** territory src/scheduler/** + src/ingest/** +
+  src/monitoring/collect_perf.py + new tests. (a) find + bound the per-pass memory
+  accumulation (the 21.6-h pass reached RSS 10.6 GB); (b) PASS RECYCLING (bound pass
+  duration/work); (c) an RSS MEMORY GUARD that pauses collection loudly before the OOM-killer;
+  (d) WAL checkpoint hygiene under multi-day writes; (e) P1.8 collector write-batching (the
+  `index_article(commit=False)` primitive exists; 22% of worker-time measured blocked).
+  ACCEPTANCE: a long synthetic collect run (GAMMA harness) with flat RSS + the guard proven to
+  pause-not-die; zero-loss batching (the proven `_redo_committed` fallback pattern).
+- Small riders for whichever session fits: P1.11 flip on the D4 map serve (bind-aware fallback
+  intact); the `noprobe` fallback cache key lacks a bind qualifier (probe-failure path only,
+  insights.py); the 30-min `pollJobStatus` ceiling can toast a "0" tally for a still-running
+  job (app.js); P1.12 reconcile deadlines.
+
+## OPERATIONAL (maintainer's machine — refreshed 2026-07-09 after the 12:14 logs)
+
+1. **UPDATE THE INSTALL** (pull the current cycle branch) — the single highest-value action:
+   the next boot then self-reports the 27-min unlock's per-phase timing + WAL-size-before-open
+   (#596) and the data-dir inventory that names the ~120 GB incl. any orphaned PLAINTEXT
+   backup staging (#596 + the #599 Settings panel). Replaces every earlier terminal ask.
+2. Free WAL discriminator: stop the app with the in-app SHUTDOWN button before a restart —
+   next unlock fast ⇒ WAL recovery was the recurring cost; still ~20 min ⇒ corpus-scaled init.
+3. Keep the exported per-language keyword log (the 61-file zip) — it is the input for the
+   segmenter/stoplist session once the bundled-artifact ruling is made; re-exportable but slow.
+4. Interim backup stays: app stopped → filesystem-copy the data folder (encrypted at rest).
+5. The graded IR gold set + the two scale-critical rulings (segmenter artifact · httpfs
+   bundling) whenever ready.
 
 ## SEQUENCE (the short version)
 
