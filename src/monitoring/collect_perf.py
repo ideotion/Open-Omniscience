@@ -291,6 +291,23 @@ class CollectionMonitor:
         mem_avail = vit.get("mem_avail_mb")
         waiters = int(wstats.get("waiters", 0) or 0)
 
+        # Feed the RSS memory guard (P0.3 E3) with this tick's MEASURED
+        # readings: the guard is the hard stop above the governor's mem-low
+        # back-off — it pauses collection loudly before the OOM-killer can
+        # fire. Module-attribute access so tests can swap the singleton;
+        # best-effort (a guard fault must never break a tick).
+        guard_engaged = None
+        try:
+            from src.scheduler import memguard
+
+            guard_engaged = memguard.memory_guard.observe(
+                rss_mb=vit.get("rss_mb"),
+                mem_avail_mb=mem_avail,
+                mem_total_mb=vit.get("mem_total_mb"),
+            )
+        except Exception:  # noqa: BLE001
+            _LOG.debug("memory-guard observe failed", exc_info=True)
+
         # Per-tick deltas of the gate's cumulative wait/contention counters.
         now_mono = self._now()
         total_wait = wstats.get("total_wait_s")
@@ -381,6 +398,7 @@ class CollectionMonitor:
             "mem_avail_mb": mem_avail,
             "mem_total_mb": vit.get("mem_total_mb"),
             "rss_mb": vit.get("rss_mb"),
+            "memory_guard_engaged": guard_engaged,
             # Per-component memory gauges (P0.3 E1): where a marathon pass
             # accumulates. All measured; None where not instrumented.
             "mem": self._mem_gauges(),

@@ -100,9 +100,10 @@ class _PassWindDown:
 
     Workers consult :meth:`admit` BEFORE starting a source — a non-blocking
     check, so nothing is ever interrupted mid-fetch and no lock is held while
-    deciding. Reasons: ``"budget"`` (wall-clock budget expired), ``"work"``
-    (per-pass source cap reached). ``now`` is injectable for deterministic
-    tests. Thread-safe.
+    deciding. Reasons: ``"memory"`` (the RSS memory guard engaged — P0.3 E3,
+    checked FIRST: new work must never start under proven memory pressure),
+    ``"budget"`` (wall-clock budget expired), ``"work"`` (per-pass source cap
+    reached). ``now`` is injectable for deterministic tests. Thread-safe.
     """
 
     def __init__(self, *, budget_s: float, max_sources: int, now=time.monotonic) -> None:
@@ -114,6 +115,12 @@ class _PassWindDown:
 
     def admit(self) -> str | None:
         """None = process the next source; else the wind-down reason."""
+        # Module-attribute access on purpose (memguard.memory_guard), so tests
+        # can swap the singleton; a non-blocking read, no lock held here.
+        from src.scheduler import memguard
+
+        if memguard.memory_guard.engaged:
+            return "memory"
         if self._deadline is not None and self._now() >= self._deadline:
             return "budget"
         if self._max:
@@ -780,7 +787,14 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
                         summary.get("bottleneck", {}).get("verdict"),
                     )
         else:
+            from src.scheduler import memguard as _memguard
+
             for idx, source in enumerate(sources):
+                # The parallel path's monitor feeds the memory guard each tick;
+                # the sequential path has no monitor, so poll it directly every
+                # few sources (cheap psutil read) — the guard works both ways.
+                if idx % 16 == 0:
+                    _memguard.memory_guard.poll()
                 reason = wind.admit()
                 if reason:
                     _defer(source, reason)
@@ -849,6 +863,8 @@ class BackgroundScheduler:
         self._last_error: str | None = None
         # Inter-pass gap in continuous mode (instance attr so tests can shrink it).
         self._continuous_gap_s = _CONTINUOUS_GAP_S
+        # How often a memory pause re-polls the guard (instance attr for tests).
+        self._mem_pause_poll_s = 5.0
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -891,6 +907,14 @@ class BackgroundScheduler:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
+            # RSS memory guard (P0.3 E3): while engaged, PAUSE between passes —
+            # loudly (phase + status carry the real numbers), resumably (the
+            # guard re-polls and releases itself when memory recovers; stop()
+            # still interrupts promptly). Holding here holds NOTHING: no
+            # session, no gate, no permit — deadlock-free by construction.
+            self._wait_while_memory_paused()
+            if self._stop.is_set():
+                break
             self._do_run()
             if self._stop.is_set():
                 break
@@ -908,6 +932,30 @@ class BackgroundScheduler:
             with self._state_lock:
                 self._next_run = datetime.now(UTC) + timedelta(seconds=gap_s)
             self._stop.wait(gap_s)
+
+    def _wait_while_memory_paused(self) -> None:
+        """Block (interruptibly) while the memory guard is engaged.
+
+        Re-polls the guard on a short cadence so recovery is noticed within
+        seconds; the paused state is visible as phase 'paused-low-memory'
+        (rides the collect job + scheduler status). Returns immediately when
+        the guard is disabled or healthy.
+        """
+        from src.scheduler import memguard
+
+        waited = False
+        while not self._stop.is_set() and memguard.memory_guard.poll():
+            if not waited:
+                waited = True
+                _phase_set("paused-low-memory")
+                _LOG.warning(
+                    "collection paused (low memory): %s — resumes when memory "
+                    "recovers or on operator action",
+                    (memguard.memory_guard.state().get("reason") or "memory pressure"),
+                )
+            self._stop.wait(max(0.01, self._mem_pause_poll_s))
+        if waited:
+            _phase_set(None)
 
     def _do_run(self) -> None:
         # Skip if another run holds the lock (manual + scheduled racing).
@@ -1161,7 +1209,11 @@ class BackgroundScheduler:
     # -- introspection ----------------------------------------------------- #
 
     def status(self) -> dict:
+        from src.scheduler import memguard
+
         s = self._settings_provider()
+        # Read outside the state lock (the guard has its own lock; no nesting).
+        guard_state = memguard.memory_guard.state()
         with self._state_lock:
             return {
                 "running": self.is_running(),
@@ -1177,6 +1229,9 @@ class BackgroundScheduler:
                 # Pass recycling honesty (P0.3 E2): how many sources the last
                 # pass boundary deferred — they run FIRST next pass.
                 "deferred_carryover": deferred_carryover_count(),
+                # RSS memory guard (P0.3 E3): the loud paused-low-memory state
+                # with the real numbers — never a silent stall.
+                "memory_guard": guard_state,
             }
 
     def activity(self, session) -> dict:
