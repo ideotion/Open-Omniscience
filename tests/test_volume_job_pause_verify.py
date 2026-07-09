@@ -37,7 +37,7 @@ def test_pause_keeps_partials_and_resume_log(tmp_path):
         destp = Path(dest)
         destp.mkdir(parents=True, exist_ok=True)
         (destp / "vol-abc-00000-x1.ooenc").write_bytes(b"finished volume")
-        (destp / BUILDING_NAME).write_text('{"kind": "oo-volumes-2-building"}')
+        (destp / BUILDING_NAME).write_text('{"kind": "oo-volumes-2-building"}', encoding="utf-8")
         started.set()
         while not should_stop():
             time.sleep(0.01)

@@ -68,9 +68,9 @@ def _src(corpus: Path) -> CorpusSource:
 
 def _members(tmp: Path) -> list[MemberFile]:
     a = tmp / "app_settings.json"
-    a.write_text('{"k": 1}')
+    a.write_text('{"k": 1}', encoding="utf-8")
     b = tmp / "empty.log"
-    b.write_text("")
+    b.write_text("", encoding="utf-8")
     return [
         MemberFile("app_settings.json", "state", a),
         MemberFile("logs/empty.log", "logs", b),
@@ -106,8 +106,8 @@ def test_round_trip_and_no_corpus_materialization(tmp_path):
     assert staged.signature_state == "verified"
     assert staged.hash_failures == []
     assert staged.corpus_path.read_bytes() == corpus.read_bytes()
-    assert (staged.staging_dir / "app_settings.json").read_text() == '{"k": 1}'
-    assert (staged.staging_dir / "logs/empty.log").read_text() == ""  # 0-byte member
+    assert (staged.staging_dir / "app_settings.json").read_text(encoding="utf-8") == '{"k": 1}'
+    assert (staged.staging_dir / "logs/empty.log").read_text(encoding="utf-8") == ""  # 0-byte member
     assert staged.encrypted is True
     # the envelope's corpus facts were computed (real table counts, no score)
     assert staged.manifest["corpus"]["tables"]["articles"] == 400
@@ -593,12 +593,12 @@ def test_janitor_sweeps_stale_spares_fresh_and_live(tmp_path):
     old = time.time() - 48 * 3600
     stale_dir = tmp_path / ".bak-build-dead01"
     stale_dir.mkdir()
-    (stale_dir / "corpus.db").write_text("leaked plaintext")
+    (stale_dir / "corpus.db").write_text("leaked plaintext", encoding="utf-8")
     os.utime(stale_dir / "corpus.db", (old, old))
     os.utime(stale_dir, (old, old))
 
     stale_part = tmp_path / "vol-x-00001.ooenc.oopart"
-    stale_part.write_text("partial")
+    stale_part.write_text("partial", encoding="utf-8")
     os.utime(stale_part, (old, old))
 
     fresh_dir = tmp_path / ".restore-fresh01"
@@ -606,17 +606,17 @@ def test_janitor_sweeps_stale_spares_fresh_and_live(tmp_path):
 
     live_dir = tmp_path / ".bak-build-live01"
     live_dir.mkdir()
-    (live_dir / "f").write_text("x")
+    (live_dir / "f").write_text("x", encoding="utf-8")
     os.utime(live_dir / "f", (old, old))
     os.utime(live_dir, (old, old))  # old, but registered as a LIVE job
 
     keep_manifest = tmp_path / "volumes.json"
-    keep_manifest.write_text("{}")
+    keep_manifest.write_text("{}", encoding="utf-8")
     keep_building = tmp_path / BUILDING_NAME
-    keep_building.write_text("{}")  # the resume log is never swept
+    keep_building.write_text("{}", encoding="utf-8")  # the resume log is never swept
     os.utime(keep_building, (old, old))
     keep_vol = tmp_path / "vol-x-00001.ooenc"
-    keep_vol.write_text("v")
+    keep_vol.write_text("v", encoding="utf-8")
     os.utime(keep_vol, (old, old))
 
     with active_staging(live_dir):
@@ -633,7 +633,7 @@ def test_janitor_age_guards_on_the_newest_file_inside_a_staging_dir(tmp_path):
     old = time.time() - 48 * 3600
     d = tmp_path / ".bak-build-writing"
     d.mkdir()
-    (d / "being-written.oopart").write_text("x")  # fresh mtime
+    (d / "being-written.oopart").write_text("x", encoding="utf-8")  # fresh mtime
     os.utime(d, (old, old))
     assert sweep_stale_backup_temps(tmp_path) == 0
     assert d.exists()
@@ -650,6 +650,6 @@ def test_cleanup_stale_staging_covers_bak_build_and_ooparts(tmp_path, monkeypatc
         d.mkdir()
         os.utime(d, (old, old))
     f = tmp_path / "a.oopart"
-    f.write_text("x")
+    f.write_text("x", encoding="utf-8")
     os.utime(f, (old, old))
     assert artifact_mod.cleanup_stale_staging() == 3
