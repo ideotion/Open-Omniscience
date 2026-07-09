@@ -20,8 +20,16 @@ the mode + build state so the self-optimisation is observable. SAFE BY CONSTRUCT
   * the shared DuckDB connection is guarded by a lock (a DuckDB connection is not safe for
     concurrent use); the background build works on its OWN connection and swaps it in
     atomically, so a serve never touches a half-built store;
-  * a FULL rebuild is used (always correct — no incremental double-count trap), refreshed
-    periodically and after a scrape pass, so new articles appear after the next rebuild;
+  * a FULL rebuild is used (always correct — no incremental double-count trap), and since
+    P1.10 (SCALE_ROADMAP 2026-07-09) rebuilds are CHANGE-GATED, not timed: the 12:14 field
+    logs showed the blind 15-min TTL churning (62 trending-windows calls / 3,286 s over an
+    unchanged corpus). A rebuild now fires when the corpus EPOCH changed (re-index / prune
+    / restore — even by another connection) OR the mention tail ADVANCED (max mention id;
+    ordinary ingest appends without bumping the epoch, so a pure epoch gate would freeze
+    the rollup during collection), throttled to at most one rebuild per
+    ``OO_COLUMNAR_SERVE_TTL_S`` (default 15 min), with a LONG backstop rebuild
+    (``OO_COLUMNAR_SERVE_BACKSTOP_S``, default 1 h) for change classes the cheap token
+    cannot see (cascade deletes, in-place backfills). Staleness stays DISCLOSED (as_of);
   * numbers are the SAME the live query would return (mentions exact; the distinct-article
     count is the disclosed upper bound, equal today under the unique keyword+article index)
     — the caller attaches a ``basis`` disclosure stating the source + as-of.
@@ -47,10 +55,28 @@ _LOG = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 # Ensures at most ONE background build runs at a time.
 _BUILD_LOCK = threading.Lock()
-_STATE: dict = {"con": None, "built_at": 0.0, "rows": 0, "bind": None}
+_STATE: dict = {
+    "con": None,
+    "built_at": 0.0,
+    "rows": 0,
+    "bind": None,
+    # P1.10 change gate: the serve_gate.change_token the current build reflects, whether a
+    # newer corpus state has been DETECTED (pending -> disclosed as stale), and the last
+    # cheap token check (so serves don't re-check on every request).
+    "token": None,
+    "pending": False,
+    "checked_at": 0.0,
+}
 
-# Rebuild if the served rollup is older than this (a full rebuild; bounded staleness).
-_STALE_S = int(os.getenv("OO_COLUMNAR_SERVE_TTL_S", "900"))  # 15 min default
+# P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
+# corpus changes continuously during collection — same env var, same default, so a tuned
+# deployment keeps its cadence bound). Rebuilds inside the window wait for it to elapse.
+_MIN_REBUILD_S = int(os.getenv("OO_COLUMNAR_SERVE_TTL_S", "900"))  # 15 min default
+# The LONG backstop: rebuild even with an unchanged token after this long — the honest
+# bound on change classes the cheap token cannot see (cascade deletes, in-place backfills).
+_BACKSTOP_S = int(os.getenv("OO_COLUMNAR_SERVE_BACKSTOP_S", "3600"))  # 1 h default
+# Throttle for the cheap token check itself (3 index-only queries), per serve path.
+_CHECK_EVERY_S = 30.0
 
 
 def serve_mode() -> str:
@@ -85,6 +111,7 @@ def status() -> dict:
         con = _STATE["con"]
         built_at = _STATE["built_at"]
         rows = _STATE["rows"]
+        pending = _STATE["pending"]
     return {
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
@@ -94,20 +121,28 @@ def status() -> dict:
         ),
         "keyword_daily_rows": rows,
         "building": _BUILD_LOCK.locked(),
-        "ttl_s": _STALE_S,
+        # P1.10 change gate: rebuild on CHANGE (epoch / mention tail), not on a timer.
+        "refresh": "change-gated",
+        "change_pending": pending,
+        "min_rebuild_s": _MIN_REBUILD_S,
+        "backstop_s": _BACKSTOP_S,
     }
 
 
 def _build_and_swap() -> None:
     """Build a FRESH in-memory rollup on its own session/connection, then swap it in."""
     try:
-        from src.analytics import columnar
+        from src.analytics import columnar, serve_gate
         from src.database.session import session_scope
 
         con = columnar.connect(passphrase=None)  # offline -> in-memory (never a file)
         if con is None:
             return
         with session_scope() as s:
+            # Token BEFORE the build (conservative: rows landing DURING the build make the
+            # recorded token compare "changed" next check -> one extra rebuild, never a
+            # silently-missed one).
+            token = serve_gate.change_token(s)
             columnar.build_keyword_daily(con, s)
             rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
             built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
@@ -117,6 +152,8 @@ def _build_and_swap() -> None:
             _STATE["built_at"] = time.time()
             _STATE["rows"] = int(rows)
             _STATE["bind"] = built_bind
+            _STATE["token"] = token
+            _STATE["pending"] = False
             if old is not None:
                 try:
                     old.close()  # safe: serves hold _LOCK, so none is mid-query here
@@ -136,11 +173,65 @@ def _trigger_build_async() -> None:
     threading.Thread(target=_build_and_swap, name="rollup-build", daemon=True).start()
 
 
-def refresh(_session: Session | None = None) -> None:
-    """Trigger a background (re)build — called from warm_cache after a scrape pass so the
-    served rollup picks up new articles. No-op unless opted in. Never blocks."""
-    if serve_enabled():
+def _maybe_refresh(session: Session, *, force_check: bool = False) -> None:
+    """The P1.10 CHANGE GATE — kick a background rebuild only when the corpus visibly
+    changed (epoch bumped / mention tail advanced) or the long backstop elapsed; a blind
+    timer rebuilt the 20.9 M-mention rollup every 15 min regardless (the measured churn).
+
+    Call ONLY with a session on the SAME bind the rollup was built over (the caller checks
+    ``_same_bind`` first) — comparing another database's ids to this rollup's token would
+    be meaningless. Never blocks: the token check is 2–3 index-only queries, itself
+    throttled to once per ``_CHECK_EVERY_S`` (``force_check`` skips that throttle — the
+    post-pass ``refresh`` uses it, a completed pass being a natural batch boundary)."""
+    now = time.time()
+    with _LOCK:
+        built_at = _STATE["built_at"]
+        token = _STATE["token"]
+        checked_at = _STATE["checked_at"]
+    age = now - built_at
+    if age > _BACKSTOP_S:
+        # The honest bound on change classes the cheap token cannot see (cascade deletes,
+        # in-place backfills): rebuild even with an unchanged token.
+        with _LOCK:
+            _STATE["pending"] = True
         _trigger_build_async()
+        return
+    if age < _MIN_REBUILD_S:
+        return  # churn bound: never rebuild more often than this, however busy ingest is
+    if not force_check and now - checked_at < _CHECK_EVERY_S:
+        return  # token checked recently -> nothing new to learn yet
+    from src.analytics import serve_gate
+
+    cur = serve_gate.change_token(session)
+    with _LOCK:
+        _STATE["checked_at"] = now
+    if cur is None:
+        return  # can't tell -> stay on the backstop cadence (never churn on doubt)
+    if token is None or cur != token:
+        with _LOCK:
+            _STATE["pending"] = True
+        _trigger_build_async()
+
+
+def refresh(session: Session | None = None) -> None:
+    """(Re)build trigger — called from warm_cache after a scrape pass so the served rollup
+    picks up new articles. CHANGE-GATED since P1.10: a pass that changed nothing (or a
+    call within the min-rebuild window) no longer forces a full rebuild of the rollup.
+    No-op unless enabled. Never blocks."""
+    if not serve_enabled():
+        return
+    with _LOCK:
+        have = _STATE["con"] is not None
+        built_bind = _STATE["bind"]
+    if not have:
+        _trigger_build_async()
+        return
+    if session is None or not _same_bind(session, built_bind):
+        # Can't run the cheap check against this rollup -> the old unconditional rebuild
+        # (rebuild-on-doubt: freshness is the safe direction; _BUILD_LOCK bounds the cost).
+        _trigger_build_async()
+        return
+    _maybe_refresh(session, force_check=True)
 
 
 def _same_bind(session: Session | None, built_bind) -> bool:
@@ -167,8 +258,9 @@ def windowed_rows(
     produces before the hidden-word / family / ring layers).
 
     Returns ``None`` (fallback) when: not opted in, the rollup is not built yet, or ANY
-    error. Triggers a background (re)build when the rollup is missing or stale, but serves
-    the current one meanwhile (never blocks)."""
+    error. Kicks a background (re)build when the rollup is missing or the change gate
+    detects a newer corpus state (P1.10), but serves the current one meanwhile (never
+    blocks)."""
     if not serve_enabled() or not days:
         return None
     from datetime import date, timedelta
@@ -178,14 +270,13 @@ def windowed_rows(
     start = date.today() - timedelta(days=days)
     with _LOCK:
         have = _STATE["con"] is not None
-        stale = time.time() - _STATE["built_at"] > _STALE_S
         built_bind = _STATE["bind"]
-    if not have or stale:
-        _trigger_build_async()  # background; returns immediately
     if not have:
+        _trigger_build_async()  # background; returns immediately
         return None  # nothing built yet -> live fallback (a build is now underway)
     if not _same_bind(_session, built_bind):
         return None  # rollup reflects a DIFFERENT database than this caller -> live fallback
+    _maybe_refresh(_session)  # change-gated background rebuild; serves the current build
     try:
         with _LOCK:
             con = _STATE["con"]
@@ -210,14 +301,13 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
 
     with _LOCK:
         have = _STATE["con"] is not None
-        stale = time.time() - _STATE["built_at"] > _STALE_S
         built_bind = _STATE["bind"]
-    if not have or stale:
-        _trigger_build_async()
     if not have:
+        _trigger_build_async()
         return None
     if not _same_bind(_session, built_bind):
         return None  # rollup reflects a DIFFERENT database than this caller -> live fallback
+    _maybe_refresh(_session)  # change-gated background rebuild; serves the current build
     try:
         with _LOCK:
             con = _STATE["con"]
@@ -236,13 +326,15 @@ def basis(_days: int) -> dict:
     build's numbers being served STALE-BUT-DISCLOSED while a rebuild runs (instead of falling
     back to a full mentions scan). Not a score.
 
-    ``stale`` = the served rollup is older than the refresh interval; ``rebuilding`` = a
-    background build is in flight right now. Either way the numbers are the real previous
-    build's (never a blend), with ``as_of`` visible so the staleness is honest."""
+    ``stale`` = a NEWER corpus state is known to exist than the one served (the P1.10
+    change gate detected it, or the backstop elapsed); ``rebuilding`` = a background build
+    is in flight right now. Either way the numbers are the real previous build's (never a
+    blend), with ``as_of`` visible so the staleness is honest."""
     with _LOCK:
         built_at = _STATE["built_at"]
+        pending = _STATE["pending"]
     age_s = (time.time() - built_at) if built_at else None
-    stale = bool(built_at) and age_s is not None and age_s > _STALE_S
+    stale = bool(built_at) and (pending or (age_s is not None and age_s > _BACKSTOP_S))
     rebuilding = _BUILD_LOCK.locked()
     note = (
         "Served from the in-memory keyword-daily rollup for speed. Mention counts are "

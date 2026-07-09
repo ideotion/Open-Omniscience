@@ -26,7 +26,14 @@ _ZY, _ZX = "zy", "zx"  # private source-countries: nothing else in the suite see
 
 
 @pytest.fixture()
-def client():
+def client(monkeypatch):
+    # This file asserts the LIVE endpoint reflects rows seeded moments ago into the
+    # PROCESS store. The D4 map serve is AUTO-ON since P1.11 and (correctly) answers
+    # from its last rollup build within the min-rebuild window — which, mid-suite, can
+    # predate this file's seeds (same bind, so the #572 guard does not fall back).
+    # Force the live path: these tests pin the endpoint's enrichment/honesty, not the
+    # serve (tests/test_map_serve.py + tests/test_serve_change_gate.py own that).
+    monkeypatch.setenv("OO_COLUMNAR_MAP_SERVE", "0")
     from src.api.main import app
 
     with TestClient(app) as c:

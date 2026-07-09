@@ -77,16 +77,29 @@ def db():
 
 @pytest.fixture(autouse=True)
 def _reset_serve_state():
+    # Mirror test_rollup_serve's fixture: the serve is a PROCESS-GLOBAL singleton whose
+    # build runs on a daemon thread — a trigger fired here (e.g. the not-built test) can
+    # land a process-store rollup in _STATE AFTER a naive clear, polluting a later test on
+    # the same bind. Drain any in-flight build and clear BOTH before and after each test.
     from src.analytics import map_serve
 
+    def _drain_and_clear():
+        if map_serve._BUILD_LOCK.acquire(timeout=30):
+            map_serve._BUILD_LOCK.release()
+        con = map_serve._STATE.get("con")
+        if con is not None:
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001
+                pass
+        map_serve._STATE.update(
+            {"con": None, "built_at": 0.0, "rows": 0, "bind": None,
+             "token": None, "pending": False, "checked_at": 0.0}
+        )
+
+    _drain_and_clear()
     yield
-    con = map_serve._STATE.get("con")
-    if con is not None:
-        try:
-            con.close()
-        except Exception:  # noqa: BLE001
-            pass
-    map_serve._STATE.update({"con": None, "built_at": 0.0, "rows": 0, "bind": None})
+    _drain_and_clear()
 
 
 def _build_over(session):
