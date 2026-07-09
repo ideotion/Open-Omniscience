@@ -267,6 +267,72 @@ def test_resume_after_source_changed_mid_gap_yields_one_consistent_state(tmp_pat
     assert staged.corpus_path.read_bytes() == corpus.read_bytes()
 
 
+def test_interrupted_refresh_keeps_the_previous_backup_restorable(tmp_path):
+    """Crash-safe refresh: an incremental run that dies mid-corpus must leave
+    the PREVIOUS complete backup fully verifiable and restorable (emitted
+    volumes use run-unique names; the manifest swap is atomic; superseded
+    volumes are garbage-collected only after finalize)."""
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus)
+    old_bytes = corpus.read_bytes()
+
+    data = bytearray(old_bytes)
+    for off in range(VOL, len(data), VOL):  # change every slice
+        data[off + 3] ^= 0xFF
+    corpus.write_bytes(bytes(data))
+    with pytest.raises(VolumeStopped):
+        _backup(tmp_path, dest, corpus, should_stop=_interrupt_after(3))
+
+    # the previous set is still complete: verify ok, restore yields the OLD state
+    report = verify_stream_backup(dest)
+    assert report["ok"] is True, report["problems"]
+    staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st-old")
+    assert staged.corpus_path.read_bytes() == old_bytes
+
+    s = _backup(tmp_path, dest, corpus)  # resume completes the refresh
+    assert s["resumed"] is True
+    staged2 = read_stream_backup(dest, "pw", staging_root=tmp_path / "st-new")
+    assert staged2.corpus_path.read_bytes() == bytes(data)
+
+
+def test_cancelled_refresh_cleanup_spares_the_previous_complete_set(tmp_path):
+    from src.backup.stream_backup import cleanup_cancelled_build
+
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus)
+    old_bytes = corpus.read_bytes()
+
+    data = bytearray(old_bytes)
+    data[VOL + 5] ^= 0xFF
+    corpus.write_bytes(bytes(data))
+    with pytest.raises(VolumeStopped):
+        _backup(tmp_path, dest, corpus, should_stop=_interrupt_after(2))
+
+    removed = cleanup_cancelled_build(dest)  # the manager's cancel path
+    assert removed >= 0
+    assert not (dest / BUILDING_NAME).exists()
+    staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
+    assert staged.corpus_path.read_bytes() == old_bytes  # previous backup intact
+
+
+def test_cancelled_first_build_vanishes_entirely(tmp_path):
+    from src.backup.stream_backup import cleanup_cancelled_build
+
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    with pytest.raises(VolumeStopped):
+        _backup(tmp_path, dest, corpus, should_stop=_interrupt_after(3))
+    cleanup_cancelled_build(dest)
+    assert list(dest.glob("*.ooenc")) == []
+    assert not (dest / MANIFEST_NAME).exists()
+    assert not (dest / BUILDING_NAME).exists()
+
+
 # --------------------------------------------------------------------------- #
 # Tamper + corruption (verify, Z3)
 # --------------------------------------------------------------------------- #

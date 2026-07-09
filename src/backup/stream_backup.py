@@ -194,11 +194,14 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
-def _vol_name(member: str, i: int) -> str:
-    """Deterministic, filesystem-safe volume name for (member, slice) — stable
-    across runs so incremental matching lands on the same file."""
+def _vol_name(member: str, i: int, run_token: str) -> str:
+    """Filesystem-safe volume name for (member, slice), unique PER RUN for newly
+    emitted volumes. A refresh never overwrites a file the previous complete
+    manifest references (reused volumes keep their recorded names; superseded
+    ones are garbage-collected only AFTER the new manifest is finalized) — so an
+    interrupted or cancelled refresh leaves the previous backup fully restorable."""
     tag = hashlib.sha256(member.encode("utf-8")).hexdigest()[:12]
-    return f"vol-{tag}-{i:05d}.ooenc"
+    return f"vol-{tag}-{i:05d}-{run_token}.ooenc"
 
 
 def _key_check(passphrase: str) -> str:
@@ -481,6 +484,7 @@ class _EmitState:
     key_check: str
     should_stop: Callable[[], bool] | None
     progress_cb: Callable[[dict[str, Any]], None] | None
+    run_token: str = ""
     phase: str = "members"
     reused: int = 0
     emitted: int = 0
@@ -544,28 +548,32 @@ def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
                 whole.update(b)
                 remaining -= len(b)
             psha = sh.hexdigest()
-            vname = _vol_name(mf.name, i)
-            vpath = st.dest / vname
             pooled = st.pool.get((mf.name, i))
+            reuse_path = st.dest / str(pooled.get("name", "")) if pooled else None
             if (
                 pooled is not None
+                and reuse_path is not None
                 and pooled.get("plaintext_sha256") == psha
                 and int(pooled.get("plaintext_bytes", -1)) == slice_len
-                and vpath.exists()
-                and _sha256_file(vpath) == pooled.get("sha256")
+                and reuse_path.exists()
+                and _sha256_file(reuse_path) == pooled.get("sha256")
             ):
                 entry = {
-                    "name": vname,
+                    "name": reuse_path.name,
                     "member": mf.name,
                     "slice": i,
                     "sha256": pooled["sha256"],
-                    "bytes": vpath.stat().st_size,
+                    "bytes": reuse_path.stat().st_size,
                     "plaintext_bytes": slice_len,
                     "plaintext_sha256": psha,
                 }
                 st.reused += 1
                 st.bytes_reused += slice_len
             else:
+                # A run-unique name: never overwrite a volume the previous
+                # complete manifest still references (crash-safe refresh).
+                vname = _vol_name(mf.name, i, st.run_token)
+                vpath = st.dest / vname
                 tmp = st.dest / (vname + ".oopart")
                 fh.seek(offset)
                 consumed, csha = encrypt_stream_to_hashed(
@@ -587,7 +595,7 @@ def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
                 st.emitted += 1
                 st.bytes_emitted += slice_len
             st.volumes.append(entry)
-            vol_names.append(vname)
+            vol_names.append(str(entry["name"]))
             st.save_building()
             st.progress()
     return {
@@ -637,9 +645,11 @@ def _load_reuse_pool(
 
 def _gc_orphan_volumes(dest: Path, manifest: dict[str, Any]) -> int:
     """After a successful finalize, remove volume/parity files the manifest does
-    not reference (superseded slices from a shrunk member, an older format, or a
-    changed passphrase) plus any leftover ``.oopart`` temps. The manifest is the
-    single source of truth for what the set contains."""
+    not reference (superseded generations from a refresh, slices of a shrunk
+    member, an older format, a changed passphrase) plus leftover ``.oopart``
+    temps. Runs ONLY once the new manifest is atomically in place — until then
+    every file of the previous complete set stays untouched (crash-safe refresh).
+    The manifest is the single source of truth for what the set contains."""
     referenced = {v["name"] for v in manifest.get("volumes") or []}
     par = manifest.get("parity") or {}
     referenced |= {pv["name"] for pv in par.get("volumes") or []}
@@ -649,6 +659,36 @@ def _gc_orphan_volumes(dest: Path, manifest: dict[str, Any]) -> int:
             if p.name not in referenced:
                 p.unlink(missing_ok=True)
                 removed += 1
+    return removed
+
+
+def cleanup_cancelled_build(dest: Path | str) -> int:
+    """An explicitly CANCELLED build's cleanup: remove the resume log and every
+    volume/parity/temp file NOT referenced by the last COMPLETE, SIGNED manifest —
+    so a first backup's partials vanish entirely (a partial set must never be
+    mistaken for a good one), while cancelling an incremental REFRESH leaves the
+    previous complete backup fully intact and restorable."""
+    destp = Path(dest)
+    referenced: set[str] = set()
+    try:
+        m = load_manifest(destp)
+        if m.get("kind") != STREAM_KIND or _manifest_signature_state(m) == "verified":
+            # a legacy (v1) or verified v2 set survives a cancelled refresh
+            referenced = {v["name"] for v in m.get("volumes") or []}
+            referenced |= {
+                pv["name"] for pv in (m.get("parity") or {}).get("volumes") or []
+            }
+        else:
+            (destp / MANIFEST_NAME).unlink(missing_ok=True)  # unsigned index: not a set
+    except (VolumeError, OSError, ValueError):
+        (destp / MANIFEST_NAME).unlink(missing_ok=True)
+    removed = 0
+    for pattern in ("*.ooenc", "*.oopar", "*.oopart"):
+        for p in destp.glob(pattern):
+            if p.name not in referenced:
+                p.unlink(missing_ok=True)
+                removed += 1
+    (destp / BUILDING_NAME).unlink(missing_ok=True)
     return removed
 
 
@@ -701,6 +741,7 @@ def write_stream_backup(
                 key_check=_key_check(passphrase),
                 should_stop=should_stop,
                 progress_cb=progress_cb,
+                run_token=secrets.token_hex(3),
             )
             st.phase = "collecting"
             st.progress()

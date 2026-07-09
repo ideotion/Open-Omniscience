@@ -473,6 +473,16 @@ class VolumeRestoreBody(BaseModel):
     src: str
     passphrase: str
     allow_unverified: bool = False
+    # An oo-volumes-2 backup carries the corpus as its at-rest SQLCipher bytes
+    # (never decrypted at backup time); restoring it needs the corpus's OWN
+    # passphrase. Empty = try the live unlocked key, then the backup passphrase
+    # (they are usually the same operator secret) — a wrong key fails loudly.
+    corpus_passphrase: str = ""
+
+
+class VolumeVerifyBody(BaseModel):
+    src: str
+    passphrase: str = ""  # empty = checksums/signature only (nothing decrypted)
 
 
 @router.get("/v2/volumes/status")
@@ -511,8 +521,28 @@ def volume_backup_restore(body: VolumeRestoreBody) -> dict:
 
     try:
         return get_volume_manager().start_restore(
-            body.src, body.passphrase, allow_unverified=body.allow_unverified
+            body.src,
+            body.passphrase,
+            allow_unverified=body.allow_unverified,
+            corpus_passphrase=body.corpus_passphrase or None,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/v2/volumes/verify")
+def volume_backup_verify(body: VolumeVerifyBody) -> dict:
+    """VERIFY a volume-set backup end to end as a background job (P0.1): manifest
+    signature + every data/parity volume checksum + structure; with the passphrase
+    every volume is additionally stream-decrypted into a hash sink (nothing
+    written, the live corpus untouched). The report (naming exactly which volumes
+    are bad and whether parity can recover them) lands in the job summary."""
+    from src.backup.volume_job import get_volume_manager
+
+    try:
+        return get_volume_manager().start_verify(body.src, body.passphrase or None)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -521,10 +551,24 @@ def volume_backup_restore(body: VolumeRestoreBody) -> dict:
 
 @router.post("/v2/volumes/cancel")
 def volume_backup_cancel() -> dict:
-    """Cancel a running volume BUILD — stops between volumes + removes the partial set.
+    """Cancel a running volume BUILD — stops between volumes; a cancelled FIRST
+    build's partial set is removed (never mistakable for a good backup) while a
+    cancelled incremental REFRESH keeps the previous complete set restorable.
     A restore mid-merge is atomic and not interruptible."""
     from src.backup.volume_job import get_volume_manager
 
     mgr = get_volume_manager()
     mgr.cancel()
+    return mgr.status()
+
+
+@router.post("/v2/volumes/pause")
+def volume_backup_pause() -> dict:
+    """PAUSE a running volume BUILD keeping the finished volumes + the resume
+    log — starting the same backup again continues where it left off (P0.1
+    resumable). No effect on a restore/verify."""
+    from src.backup.volume_job import get_volume_manager
+
+    mgr = get_volume_manager()
+    mgr.pause()
     return mgr.status()
