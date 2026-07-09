@@ -1959,5 +1959,6 @@
   "Applying baseline tags in the background…": "正在后台应用基线标签…",
   "Backfill failed:": "回填失败：",
   "Applied baseline tags:": "已应用基线标签：",
-  "tags": "标签"
+  "tags": "标签",
+  "The app is busy — retrying shortly…": "应用繁忙——即将重试…"
 }

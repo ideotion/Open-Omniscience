@@ -1959,5 +1959,6 @@
   "Applying baseline tags in the background…": "Aplicando etiquetas de referencia en segundo plano…",
   "Backfill failed:": "Error al rellenar:",
   "Applied baseline tags:": "Etiquetas de referencia aplicadas:",
-  "tags": "etiquetas"
+  "tags": "etiquetas",
+  "The app is busy — retrying shortly…": "La aplicación está ocupada — reintentando en breve…"
 }

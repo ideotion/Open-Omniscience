@@ -1125,17 +1125,42 @@
       if (_vitalsOpen) _trapTab($("vitals-pop"), e);
     }
 
+    // Backpressure: A1's heavy-load guard returns 429 + Retry-After when the server is
+    // saturated (a spike of heavy analytics), and the slowapi rate limiter can too. A 429
+    // means the request was REFUSED before doing any work, so a bounded retry that honours
+    // Retry-After is safe for GET and POST alike — it reads as the app protecting itself,
+    // never as breakage. After the retries are spent the caller sees the honest error.
+    const _API_MAX_RETRIES = 4;
+    const _API_RETRY_MAX_MS = 8000;
+    let _busyNoticeAt = 0;
+    function _noteBusyRetry() {
+      const now = Date.now();
+      if (now - _busyNoticeAt < 8000) return;  // one notice per burst — never a toast storm
+      _busyNoticeAt = now;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      toast(t("The app is busy — retrying shortly…"), "warn");
+    }
     async function api(path, opts={}) {
       _bumpInflight(1);
       try {
-        const res = await fetch(path, {
-          headers: {"Content-Type": "application/json"}, ...opts,
-        });
-        const text = await res.text();
-        let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-        if (res.status === 503 && data && data.locked) { location.replace("/unlock"); throw new Error(data.detail); }
-        if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
-        return data;
+        for (let attempt = 0; ; attempt++) {
+          const res = await fetch(path, {
+            headers: {"Content-Type": "application/json"}, ...opts,
+          });
+          if (res.status === 429 && attempt < _API_MAX_RETRIES) {
+            const ra = parseFloat(res.headers.get("Retry-After"));
+            const waitMs = Math.min(
+              (isFinite(ra) && ra >= 0) ? ra * 1000 : 500 * (attempt + 1), _API_RETRY_MAX_MS);
+            _noteBusyRetry();
+            await new Promise((r) => setTimeout(r, waitMs));
+            continue;  // 429 = refused before work; re-issuing is safe
+          }
+          const text = await res.text();
+          let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+          if (res.status === 503 && data && data.locked) { location.replace("/unlock"); throw new Error(data.detail); }
+          if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
+          return data;
+        }
       } finally { _bumpInflight(-1); }
     }
 
@@ -1979,14 +2004,17 @@
     // stats are server-cached ~30 s; the briefing feed re-renders ONLY when its
     // generated_at actually changes, so the user's card triage is never reset.
     async function refreshHomeLive() {
+      // Awaited end-to-end so the LIVE single-flight guard covers the WHOLE Home chain
+      // (under 429 backpressure a poll can outlast its 15 s interval; without this the
+      // trailing trends/alerts would race the next tick).
       try { const s = await api("/api/database/stats"); renderHomeStats(s.counts); } catch (e) {}
       try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); } catch (e) {}
       try {
         const data = await api("/api/briefing");
         if (data.generated_at !== _lastBriefGen) renderBriefing(data);
       } catch (e) {}
-      loadHomeTrends();
-      loadHomeAlerts();
+      try { await loadHomeTrends(); } catch (e) {}
+      try { await loadHomeAlerts(); } catch (e) {}
     }
 
     // -- The Home briefing (triage cards) ----------------------------------- //
@@ -5622,8 +5650,19 @@
       stopLive();
       const spec = LIVE[name];
       if (!spec) return;
-      spec.fn();
-      _live = {name, timer: setInterval(() => { if (!document.hidden) spec.fn(); }, spec.ms)};
+      // Single-flight: never stack an identical poll while the previous one is still in
+      // flight. Under 429 backpressure a poll (which awaits several api() calls, each of
+      // which may itself be retrying) can outlast its interval; without this guard the
+      // ticks pile up and add load exactly when the server is already saturated.
+      // refreshHomeLive returns a promise for its whole awaited chain, so Home is covered.
+      let inflight = false;
+      const tick = async () => {
+        if (inflight) return;
+        inflight = true;
+        try { await spec.fn(); } finally { inflight = false; }
+      };
+      tick();
+      _live = {name, timer: setInterval(() => { if (!document.hidden) tick(); }, spec.ms)};
     }
     function stopLive() { if (_live) { clearInterval(_live.timer); _live = null; } }
     document.addEventListener("visibilitychange", () => {

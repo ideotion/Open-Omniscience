@@ -1959,5 +1959,6 @@
   "Applying baseline tags in the background…": "Applying baseline tags in the background…",
   "Backfill failed:": "Backfill failed:",
   "Applied baseline tags:": "Applied baseline tags:",
-  "tags": "tags"
+  "tags": "tags",
+  "The app is busy — retrying shortly…": "The app is busy — retrying shortly…"
 }

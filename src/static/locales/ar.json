@@ -1959,5 +1959,6 @@
   "Applying baseline tags in the background…": "جارٍ تطبيق الوسوم المرجعية في الخلفية…",
   "Backfill failed:": "فشل التعبئة:",
   "Applied baseline tags:": "تم تطبيق الوسوم المرجعية:",
-  "tags": "الوسوم"
+  "tags": "الوسوم",
+  "The app is busy — retrying shortly…": "التطبيق مشغول — ستُعاد المحاولة قريبًا…"
 }

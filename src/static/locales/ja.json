@@ -1959,5 +1959,6 @@
   "Applying baseline tags in the background…": "ベースラインタグをバックグラウンドで適用中…",
   "Backfill failed:": "バックフィルに失敗しました:",
   "Applied baseline tags:": "ベースラインタグを適用しました:",
-  "tags": "タグ"
+  "tags": "タグ",
+  "The app is busy — retrying shortly…": "アプリがビジー状態です — まもなく再試行します…"
 }

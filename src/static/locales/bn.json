@@ -1959,5 +1959,6 @@
   "Applying baseline tags in the background…": "পটভূমিতে বেসলাইন ট্যাগ প্রয়োগ করা হচ্ছে…",
   "Backfill failed:": "ব্যাকফিল ব্যর্থ:",
   "Applied baseline tags:": "বেসলাইন ট্যাগ প্রয়োগ করা হয়েছে:",
-  "tags": "ট্যাগ"
+  "tags": "ট্যাগ",
+  "The app is busy — retrying shortly…": "অ্যাপ ব্যস্ত — শীঘ্রই আবার চেষ্টা করা হচ্ছে…"
 }

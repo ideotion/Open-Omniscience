@@ -1959,5 +1959,6 @@
   "Applying baseline tags in the background…": "Menerapkan tag dasar di latar belakang…",
   "Backfill failed:": "Pengisian gagal:",
   "Applied baseline tags:": "Tag dasar diterapkan:",
-  "tags": "tag"
+  "tags": "tag",
+  "The app is busy — retrying shortly…": "Aplikasi sedang sibuk — mencoba lagi sebentar…"
 }

@@ -1959,5 +1959,6 @@
   "Applying baseline tags in the background…": "Применение базовых тегов в фоновом режиме…",
   "Backfill failed:": "Ошибка заполнения:",
   "Applied baseline tags:": "Базовые теги применены:",
-  "tags": "теги"
+  "tags": "теги",
+  "The app is busy — retrying shortly…": "Приложение занято — скоро повторим попытку…"
 }
