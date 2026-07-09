@@ -9000,6 +9000,96 @@
       setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
     }
 
+    // Session forensics (E2, #596): surface the app's own root-cause records so a crash /
+    // slow unlock / mystery disk-bloat answers itself. Read-only GET; the backend method
+    // strings (the OOM INFERENCE wording, the inventory method) are shown VERBATIM — they
+    // are caveats, kept visible, never re-worded. No delete affordance this round.
+    function _fmtTs(s) {
+      return s ? String(s).replace("T", " ").replace(/(\+00:00|Z)$/, " UTC") : "—";
+    }
+    function _renderSessionForensics(d, t) {
+      const parts = [];
+      // 1) Previous-session verdict (the honest OOM inference).
+      const prev = d.previous_session || {};
+      const v = prev.previous_session;
+      let badge;
+      if (v === "clean") badge = '<span class="pill ok">' + esc(t("Ended cleanly")) + "</span>";
+      else if (v === "unclean-end") badge = '<span class="pill warn">' + esc(t("Ended unexpectedly")) + "</span>";
+      else badge = '<span class="pill">' + esc(String(v || "—")) + "</span>";
+      let ph = "<div><b>" + esc(t("Previous session")) + "</b> " + badge + "</div>";
+      if (prev.started_at || prev.ended_at)
+        ph += '<div class="muted">' + esc(t("Started")) + " " + esc(_fmtTs(prev.started_at)) +
+              " · " + esc(t("Ended")) + " " + esc(_fmtTs(prev.ended_at)) + "</div>";
+      const smp = prev.last_collector_sample;
+      if (smp)
+        ph += '<div class="muted">' + esc(t("Last recorded memory")) + ": " +
+              (smp.rss_mb != null ? esc(smp.rss_mb) + " MB RSS" : "—") +
+              (smp.mem_avail_mb != null ? " · " + esc(smp.mem_avail_mb) + " MB " + esc(t("available")) : "") + "</div>";
+      if (prev.method) ph += '<div class="card-caveat">' + esc(prev.method) + "</div>";  // verbatim inference
+      if (prev.note) ph += '<div class="muted">' + esc(prev.note) + "</div>";
+      parts.push('<div style="margin-top:6px">' + ph + "</div>");
+
+      // 2) Last unlock timing (why unlock was slow — one-time migrations / index / WAL recovery).
+      const u = d.last_unlock || prev.last_unlock;
+      if (u) {
+        let uh = "<div><b>" + esc(t("Last unlock")) + "</b> ";
+        if (u.synchronous_total_ms != null) uh += esc((u.synchronous_total_ms / 1000).toFixed(1)) + " s";
+        uh += "</div>";
+        if (u.wal_bytes_before_open != null)
+          uh += '<div class="muted">' + esc(t("WAL before first open")) + ": " + esc(humanBytes(u.wal_bytes_before_open)) + "</div>";
+        if (Array.isArray(u.phases) && u.phases.length)
+          uh += '<div class="muted">' + esc(t("phases")) + ": " +
+                u.phases.map((p) => esc(p.phase) + " (" + esc(Math.round(p.ms)) + " ms)").join(" · ") + "</div>";
+        if (u.method) uh += '<div class="card-caveat">' + esc(u.method) + "</div>";  // verbatim method
+        parts.push('<div style="margin-top:8px">' + uh + "</div>");
+      }
+
+      // 3) Data-dir inventory (what fills the disk; orphaned PLAINTEXT staging flagged loudly).
+      const inv = d.inventory || {};
+      const tot = inv.totals || {};
+      let ih = "<div><b>" + esc(t("Data folder")) + '</b> <span class="muted">' + esc(inv.data_dir || "") + "</span></div>";
+      ih += '<div class="muted">' + esc(t("Total on disk")) + ": " + esc(humanBytes(tot.total_bytes || 0)) +
+            " (" + esc(t("database")) + " " + esc(humanBytes(tot.db_bytes || 0)) +
+            " · WAL " + esc(humanBytes(tot.wal_bytes || 0)) +
+            " · " + esc(t("other")) + " " + esc(humanBytes(tot.other_bytes || 0)) + ")</div>";
+      const stg = inv.suspect_staging || [];
+      if (stg.length) {
+        let sh = '<div class="note warn" style="margin-top:6px"><b>' + esc(t("Orphaned staging detected")) + "</b> " +
+                 esc(humanBytes(tot.orphaned_staging_bytes || 0)) + '<ul style="margin:4px 0 0 16px">';
+        stg.forEach((s) => {
+          sh += "<li>" + esc(s.name) + " — " + esc(humanBytes(s.bytes || 0));
+          if (s.plaintext_snapshot) sh += " <b>" + esc(t("Decrypted copy on disk — remove it deliberately.")) + "</b>";
+          sh += "</li>";
+        });
+        ih += sh + "</ul></div>";
+      }
+      const ent = (inv.entries || []).slice(0, 12);
+      if (ent.length)
+        ih += '<div class="muted" style="margin-top:4px">' +
+              ent.map((e) => esc(e.name) + ' <span class="pill">' + esc(e.kind) + "</span> " + esc(humanBytes(e.bytes || 0)) +
+                (e.files ? " · " + esc(e.files) + " " + esc(t("files")) : "")).join("<br>") + "</div>";
+      if (inv.method) ih += '<div class="card-caveat">' + esc(inv.method) + "</div>";  // verbatim method
+      if (inv.note) ih += '<div class="muted">' + esc(inv.note) + "</div>";
+      parts.push('<div style="margin-top:8px">' + ih + "</div>");
+
+      return parts.join("");
+    }
+    async function loadSessionForensics(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("session-forensics-out");
+      if (!out) return;
+      if (btn) btn.disabled = true;
+      out.innerHTML = '<div class="muted">' + esc(t("Loading…")) + "</div>";
+      try {
+        const d = await api("/api/diagnostics/session-forensics");
+        out.innerHTML = _renderSessionForensics(d, t);
+      } catch (e) {
+        out.innerHTML = '<div class="note err">' + esc(t("Could not load session forensics.")) + " " + esc(e.message) + "</div>";
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     // Diagnostics: DISCOVER new sources from Wikidata for chosen countries and add
     // them DISABLED for review (never scraped until enabled). Networked -> consent-gated.
     async function discoverSources(btn) {
