@@ -309,11 +309,17 @@ def unlock_bench(
     import tempfile
 
     src = Path(corpus_path)
-    tmp_root = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="oo-unlock-"))
+    tmp_root = Path(work_dir) if work_dir else Path(
+        tempfile.mkdtemp(prefix=".oo-unlock-", dir=src.parent)
+    )  # beside the corpus, SAME filesystem: /tmp is tmpfs on the Qubes field machine
+    # (the ledger lesson) -- a RAM-disk copy would fake I/O costs and ENOSPC at 50 GB
     copy_dir = tmp_root / "cold"
     result: dict[str, Any] = {
         "method": "init_db + ensure_* self-heals + optimize_at_boot on a cold file "
-        "copy; cold builds ix_article_observed over every article, warm re-runs it",
+        "copy; cold builds ix_article_observed over every article, warm re-runs it. "
+        "COLD means no-index/no-stats/fresh-engine ONLY: the copy just wrote the file, "
+        "so reads come from the OS page cache -- a machine with RAM > corpus understates "
+        "the field's disk-I/O term (disclosed, not corrected)",
     }
     try:
         t_copy = time.perf_counter()
@@ -358,7 +364,9 @@ def wal_bench(
     import tempfile
 
     src = Path(corpus_path)
-    tmp_root = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="oo-wal-"))
+    tmp_root = Path(work_dir) if work_dir else Path(
+        tempfile.mkdtemp(prefix=".oo-wal-", dir=src.parent)
+    )  # same-filesystem rule as unlock_bench (never tmpfs /tmp)
     copy_dir = tmp_root / "wal"
     out: dict[str, Any] = {
         "writes": writes,
@@ -596,6 +604,16 @@ def run_full(
         "notes": "Measured times/bytes/status only -- NO scores or rankings. "
         "Peak RSS is a sampled maximum; unlock/wal run on a cold copy.",
     }
+    if not report["corpus"].get("encrypted"):
+        # The acceptance-instrument caveat (post-merge audit, 2026-07-09): the field
+        # cost is DOMINATED by the SQLCipher codec (~26 s of a measured 32 s wall), so
+        # a plaintext corpus understates backup/restore/unlock/endpoints across the
+        # board. Never silent -- the Round-2 acceptance gate must see encrypted:true.
+        report["plaintext_caveat"] = (
+            "PLAINTEXT corpus: every SQLCipher codec cost is ABSENT from these numbers. "
+            "Do NOT use this report for scale-acceptance decisions; regenerate the "
+            "corpus with --passphrase and assert corpus.encrypted == true."
+        )
     phase_out: dict[str, Any] = report["phases"]
 
     if "unlock" in phases:

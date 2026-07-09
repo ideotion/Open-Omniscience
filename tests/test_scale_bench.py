@@ -213,3 +213,27 @@ def test_unlock_sequence_covers_every_init_db_self_heal():
     assert missing == set(), f"bench unlock sequence is missing init_db self-heals: {missing}"
     # Sanity: the sequence is non-trivial (guards against both regexes matching {}).
     assert "ensure_hot_indexes" in bench_names
+
+
+def test_plaintext_report_carries_the_loud_acceptance_caveat(tmp_path):
+    """The acceptance-instrument guard (post-merge audit 2026-07-09): a report over a
+    PLAINTEXT corpus must carry the loud plaintext_caveat (codec costs absent — never
+    usable for scale-acceptance), and an ENCRYPTED corpus's report must NOT carry it."""
+    from src.testing.corpus_gen import CorpusSpec, generate_corpus
+    from src.testing.scale_bench import run_full
+
+    pdir = tmp_path / "plain"; pdir.mkdir(); plain = pdir / "open_omniscience.db"
+    generate_corpus(plain, CorpusSpec(articles=20, seed=7, sources=3, mentions_per_article=4,
+                                      fresh_keywords_per_article=2, content_words=30))
+    rep = run_full(pdir, phases=("wal",), wal_writes=5, backup_passphrase="bp")
+    assert "PLAINTEXT corpus" in rep.get("plaintext_caveat", "")
+    assert "encrypted" in rep["plaintext_caveat"]  # says how to fix it
+
+    edir = tmp_path / "enc"; edir.mkdir(); enc = edir / "open_omniscience.db"
+    generate_corpus(enc, CorpusSpec(articles=20, seed=7, sources=3, mentions_per_article=4,
+                                    fresh_keywords_per_article=2, content_words=30,
+                                    passphrase="bench-secret"))
+    rep2 = run_full(edir, phases=("wal",), wal_writes=5, corpus_passphrase="bench-secret",
+                    backup_passphrase="bp")
+    assert "plaintext_caveat" not in rep2
+    assert rep2["corpus"]["encrypted"] is True
