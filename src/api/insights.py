@@ -65,6 +65,20 @@ def _ckey(name: str, **params) -> str:
     return name + "|" + "|".join(f"{k}={params[k]}" for k in sorted(params))
 
 
+def _bind_key(db, key: str) -> str:
+    """Bind-qualify a TTL cache key with the session's DB engine id (D5), so a cached
+    insights payload is NEVER shared across databases — a test fixture on its own engine and
+    the live store computing the same query params get DISTINCT entries (the latent Wave-1
+    cross-corpus-share class the audit flagged). Byte-identical BEHAVIOUR for the single-engine
+    production case (a constant prefix on every key → the same hit/miss). On an unknown bind we
+    return the UNqualified key (never a per-instance key), so dummy-``db`` unit tests still share
+    correctly and the background warmer's keys still match the endpoint's for the same engine."""
+    try:
+        return f"e{id(db.get_bind())}|{key}"
+    except Exception:  # noqa: BLE001 - unknown bind -> unqualified (shared), never per-caller
+        return key
+
+
 def _cached(key: str, compute):
     """Return the cached payload (flagged ``cached: true``) or compute, stamp the
     freshness window, store and return it. Disabled when the TTL is 0."""
@@ -111,13 +125,14 @@ def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None)
     the miss stores), so a transient overrun/backpressure never poisons the cache.
     """
     fkey = flight_key(db, key)
+    bkey = _bind_key(db, key)  # D5: bind-qualify the TTL cache key (never cross-corpus)
 
     def _run():
         with statement_deadline(db):
             return compute()
 
     try:
-        return _cached(key, lambda: run_heavy(fkey, _run))
+        return _cached(bkey, lambda: run_heavy(fkey, _run))
     except StatementTimeout as exc:
         if on_timeout is not None:
             return on_timeout(exc)
@@ -931,7 +946,7 @@ def insights_source_types(db: Session = Depends(get_db)) -> dict:
     corpus can be sliced by channel (news/newsletter/wiki/statistics/law/market/
     discovery). An asserted descriptive fact, NO score. The `source_type=` param on
     /api/articles applies the actual filter."""
-    return _cached(_ckey("source-types"), lambda: q.source_type_facets(db))
+    return _cached(_bind_key(db, _ckey("source-types")), lambda: q.source_type_facets(db))
 
 
 @router.get("/reading-diet-by-type")
@@ -1053,7 +1068,7 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
         )
         return data
 
-    return _cached(_ckey("map-coverage"), _compute)
+    return _cached(_bind_key(db, _ckey("map-coverage")), _compute)
 
 
 @router.get("/server-locations")
@@ -1231,18 +1246,21 @@ def warm_cache(db: Session) -> dict:
     # constants are asserted against app.js in tests so a drift reddens CI. Warmed for
     # the English (tl=None) path — a non-English UI still recomputes once (a follow-up:
     # decouple the cheap translation annotation from the expensive aggregation cache).
+    # D5: bind-qualify the warm keys with THIS session's engine, exactly as the endpoints do
+    # (_deadlined), so a warmed value is a HIT for the same production engine — and never
+    # warms a key a request on a different engine would read (the P0-4 dead-warm trap avoided).
     specs: list[tuple[str, object]] = []
     for lim, st in (WARM_TRENDING_HOME, WARM_TRENDING_INSIGHTS):
         specs.append(
             (
-                _ckey("trending-windows", country=None, kind=None, limit=lim, series_top=st, tl=None),
+                _bind_key(db, _ckey("trending-windows", country=None, kind=None, limit=lim, series_top=st, tl=None)),
                 lambda lim=lim, st=st: rm.trending_windows(
                     db, country=None, kind=None, limit=lim, series_top=st, target_lang=None
                 ),
             )
         )
     specs.append(
-        (_ckey("top", days=None, country=None, kind=None, limit=20, group=True),
+        (_bind_key(db, _ckey("top", days=None, country=None, kind=None, limit=20, group=True)),
          lambda: rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True))
     )
     if _CACHE_TTL_S <= 0:
@@ -1425,7 +1443,7 @@ def insights_headline_body_mismatch(
     from src.analytics.headline_body import find_headline_body_mismatch
 
     return _cached(
-        _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit),
+        _bind_key(db, _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit)),
         lambda: find_headline_body_mismatch(
             db, recent_days=recent_days, d_min=d_min, max_items=limit
         ),
@@ -1446,7 +1464,7 @@ def insights_manufactured_emergence(
     from src.analytics.emergence import find_manufactured_emergence
 
     return _cached(
-        _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit),
+        _bind_key(db, _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit)),
         lambda: find_manufactured_emergence(
             db, recent_days=recent_days, min_sources=min_sources, max_items=limit
         ),
@@ -1467,7 +1485,7 @@ def insights_flooded_topics(
     from src.analytics.concentration import find_flooded_topics
 
     return _cached(
-        _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit),
+        _bind_key(db, _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit)),
         lambda: find_flooded_topics(db, recent_days=recent_days, z_min=z_min, max_items=limit),
     )
 
@@ -1488,7 +1506,7 @@ def insights_copypasta(
     from src.analytics.copypasta import find_copypasta
 
     return _cached(
-        _ckey("copypasta", recent_days=recent_days, k=k, min_sources=min_sources, limit=limit),
+        _bind_key(db, _ckey("copypasta", recent_days=recent_days, k=k, min_sources=min_sources, limit=limit)),
         lambda: find_copypasta(
             db, recent_days=recent_days, k=k, min_sources=min_sources, max_items=limit
         ),

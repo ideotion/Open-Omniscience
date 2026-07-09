@@ -82,6 +82,51 @@ def test_warm_cache_populates_the_keys_the_endpoints_use(monkeypatch):
     assert ins.warm_cache(db=object())["warmed"] == []
 
 
+def test_ckey_caches_are_bind_qualified_no_fixture_live_sharing():
+    """D5: two DIFFERENT engines must never share a cached insights payload — a fixture on
+    its own engine and the live store compute the same query params but get DISTINCT cache
+    keys (the latent Wave-1 cross-corpus-share class). Byte-identical on ONE engine (a
+    constant prefix); an unknown bind stays UNqualified (shared), never per-instance."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base
+
+    e1 = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(e1)
+    e2 = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(e2)
+    s1 = sessionmaker(bind=e1, future=True)()
+    s2 = sessionmaker(bind=e2, future=True)()
+    key = "top|days=7|group=True"
+    assert ins._bind_key(s1, key) != ins._bind_key(s2, key), "different engines -> distinct keys"
+    assert ins._bind_key(s1, key) == ins._bind_key(s1, key), "same engine -> stable key"
+    assert ins._bind_key(s1, key).startswith(f"e{id(e1)}|")
+    # unknown bind -> UNqualified and stable across dummy instances (never a per-caller key,
+    # so dummy-db unit tests + the same-engine warmer keys still match correctly).
+    assert ins._bind_key(object(), key) == ins._bind_key(object(), key) == key
+
+
+def test_warmer_and_endpoint_agree_on_the_bind_qualified_key():
+    """D5 dead-warm guard (P0-4): warm_cache and the endpoint both route the SAME (name,
+    params) through _bind_key(db, _ckey(...)), so for the SAME engine the keys are identical
+    by construction — a warmed value is a HIT, never dead."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Base
+
+    e = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(e)
+    s = sessionmaker(bind=e, future=True)()
+    lim, st = ins.WARM_TRENDING_HOME
+    ck = ins._ckey("trending-windows", country=None, kind=None, limit=lim, series_top=st, tl=ins._tlang(None))
+    warm_key = ins._bind_key(s, ck)
+    endpoint_key = ins._bind_key(s, ck)  # the endpoint's _deadlined builds the identical key
+    assert warm_key == endpoint_key
+    assert warm_key.startswith(f"e{id(e)}|"), "the warmed/served key is qualified by the engine"
+
+
 def test_associations_endpoint_is_cached(monkeypatch):
     # The per-query analysis endpoints (associations / graph) are heavy whole-corpus
     # co-occurrence; caching by their args makes re-opening the same term instant.
