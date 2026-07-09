@@ -593,6 +593,15 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   COROLLARIES: the D1 persisted columnar store and the zh/ja/th segmenter rulings are now
   SCALE-critical, not nice-to-have; interim backup = app stopped → filesystem-copy the data
   folder (encrypted at rest).
+- **NEXT CYCLE = 0.2, GATED ON THE P0 SCALE SET (maintainer ruled 2026-07-09, option "A" —
+  supersedes the earlier 0.1.0→0.11.0 idea):** v0.2.0 tags when backup-at-scale is verified on
+  the live corpus + the collector OOM fix + unlock-at-scale land ("0.2 = the version that
+  survives a 100 GB field run"). Mechanics mirror the 0.09→0.1 flip (#547 batch): pyproject
+  0.1.0→0.2.0 · tag v0.2.0 with a WATCHED-green CI run at the SHA · the maintainer renames the
+  default branch 0.1→0.2 · every CLAUDE.md cycle-branch reference rewritten in the SAME PR.
+  HARD GUARD: never flip while parallel sessions are in flight on `origin/0.1` (the #548
+  stale-base revert precedent) — execute in a quiet window after the gate passes. Full row in
+  `docs/product/SCALE_ROADMAP.md` (Ruling-gated #4).
 - **FIELD-TEST 2026-07-08 — full intake + diagnostics action plan captured in
   [`docs/product/field-test-2026-07-08/LEDGER.md`](docs/product/field-test-2026-07-08/LEDGER.md)
   (PR #583; items 1–7 merged via #580). CAPTURE-ONLY session on a live 59,566-article /
