@@ -168,8 +168,13 @@ shape for any cache) · shipped.csv append-only · draft PR onto the current cyc
   + new tests. Kill every whole-corpus materialization (the plaintext `snapshot_sqlite` staging
   + in-RAM zip paths); stream the SQLite backup API into the existing volumes+parity writer;
   INCREMENTAL = re-emit only changed volumes (per-volume checksums exist); a `verify` command;
-  resumable; server-side only. ACCEPTANCE = GAMMA's benchmark report (#601 format) at a
-  synthetic 50–100 GB corpus: bounded peak RSS, interruption + resume, verify passes, honest
+  resumable; server-side only. ACCEPTANCE = GAMMA's benchmark report (#601 format, honesty
+  fixes #604) at a synthetic 50–100 GB corpus, under the AUDIT CONDITIONS: (a) the corpus is
+  ENCRYPTED and the gate ASSERTS `report.corpus.encrypted == true` (a plaintext run omits every
+  SQLCipher codec cost — the report now carries a loud plaintext_caveat, but the gate must
+  check); (b) the OFFICIAL backup number comes from a fresh-process `--phases backup` run (the
+  full 5-phase run's earlier phases inflate process-lifetime ru_maxrss and can mask a brief
+  backup RSS spike); (c) bounded peak RSS, interruption + resume, verify passes, honest
   wall-time; restore round-trip additive-merge-sacred. The maintainer runs ONE live validation
   at the end (the only attended step; it is the v0.2.0 gate item).
 - **ETA (backend · P0.3 collector + P1.8):** territory src/scheduler/** + src/ingest/** +
