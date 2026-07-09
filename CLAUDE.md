@@ -577,6 +577,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     fabrication-critical, not recall tweaks.
 
 ## Open queue (when maintainer says proceed)
+- **SCALE MANDATE (maintainer ruled 2026-07-09; the consolidated roadmap lives in
+  [`docs/product/SCALE_ROADMAP.md`](docs/product/SCALE_ROADMAP.md) — read it before picking
+  work):** a live 4–5-day run grew the corpus to **~100–130 GB**; the app must be designed to
+  handle **5 TB** databases with proper indexing and stay **SNAPPY** ("responsiveness is quite
+  important, otherwise it will slow or block user adoption — this app is useless if it is not
+  used"). **Large-database data-safety is THE top priority: at 100 GB+ the backup tool CRASHES
+  the app (no safe in-app copy path exists; import untestable).** Field event 2026-07-09: the
+  4-day run self-stopped hours before the maintainer returned (root-cause PENDING the
+  diagnostics zip); unlock is very slow again at this scale (the 07-08 ledger's 60 s Item-8
+  finding, escalated). P0 = backup/restore at scale (ATTENDED — kill every whole-corpus
+  materialization incl. the plaintext-snapshot decrypt; streaming/bounded-RAM/resumable/
+  verifiable/incremental via changed-volume re-emit) · crash root-cause + WAL-checkpoint
+  hygiene · unlock-at-scale · a scale test harness (everything so far was verified at MB–GB).
+  COROLLARIES: the D1 persisted columnar store and the zh/ja/th segmenter rulings are now
+  SCALE-critical, not nice-to-have; interim backup = app stopped → filesystem-copy the data
+  folder (encrypted at rest).
 - **FIELD-TEST 2026-07-08 — full intake + diagnostics action plan captured in
   [`docs/product/field-test-2026-07-08/LEDGER.md`](docs/product/field-test-2026-07-08/LEDGER.md)
   (PR #583; items 1–7 merged via #580). CAPTURE-ONLY session on a live 59,566-article /
