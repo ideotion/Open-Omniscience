@@ -1950,5 +1950,14 @@
   "Folder to import from": "要从中导入的文件夹",
   "Passphrase (to decrypt the corpus backup)": "密码短语（用于解密语料库备份）",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "密码短语 — 加密语料库（丢失后无法找回）",
-  "Restore a legacy backup file": "恢复旧版备份文件"
+  "Restore a legacy backup file": "恢复旧版备份文件",
+  "Loading country data in the background…": "正在后台加载国家数据…",
+  "(stopped early — partial)": "（提前停止——部分完成）",
+  "Enriching in the background…": "正在后台补充…",
+  "Typed source types:": "已填充来源类型：",
+  "Enrich failed — see console": "补充失败——请查看控制台",
+  "Applying baseline tags in the background…": "正在后台应用基线标签…",
+  "Backfill failed:": "回填失败：",
+  "Applied baseline tags:": "已应用基线标签：",
+  "tags": "标签"
 }

@@ -1950,5 +1950,14 @@
   "Folder to import from": "Pasta a partir da qual importar",
   "Passphrase (to decrypt the corpus backup)": "Frase-passe (para desencriptar a cópia do corpus)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "Frase-passe — encripta o corpus (sem recuperação em caso de perda)",
-  "Restore a legacy backup file": "Restaurar um ficheiro de cópia de segurança antigo"
+  "Restore a legacy backup file": "Restaurar um ficheiro de cópia de segurança antigo",
+  "Loading country data in the background…": "Carregando dados por país em segundo plano…",
+  "(stopped early — partial)": "(interrompido antes do fim — parcial)",
+  "Enriching in the background…": "Enriquecendo em segundo plano…",
+  "Typed source types:": "Tipos de fonte preenchidos:",
+  "Enrich failed — see console": "Falha ao enriquecer — veja o console",
+  "Applying baseline tags in the background…": "Aplicando etiquetas de referência em segundo plano…",
+  "Backfill failed:": "Falha no preenchimento:",
+  "Applied baseline tags:": "Etiquetas de referência aplicadas:",
+  "tags": "etiquetas"
 }

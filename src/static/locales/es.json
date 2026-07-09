@@ -1950,5 +1950,14 @@
   "Folder to import from": "Carpeta desde la que importar",
   "Passphrase (to decrypt the corpus backup)": "Frase de contraseña (para descifrar la copia del corpus)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "Frase de contraseña — cifra el corpus (sin recuperación si se pierde)",
-  "Restore a legacy backup file": "Restaurar un archivo de copia de seguridad heredado"
+  "Restore a legacy backup file": "Restaurar un archivo de copia de seguridad heredado",
+  "Loading country data in the background…": "Cargando datos por país en segundo plano…",
+  "(stopped early — partial)": "(detenido antes de tiempo — parcial)",
+  "Enriching in the background…": "Enriqueciendo en segundo plano…",
+  "Typed source types:": "Tipos de fuente asignados:",
+  "Enrich failed — see console": "Error al enriquecer — consulta la consola",
+  "Applying baseline tags in the background…": "Aplicando etiquetas de referencia en segundo plano…",
+  "Backfill failed:": "Error al rellenar:",
+  "Applied baseline tags:": "Etiquetas de referencia aplicadas:",
+  "tags": "etiquetas"
 }

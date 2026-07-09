@@ -1950,5 +1950,14 @@
   "Folder to import from": "مجلد الاستيراد منه",
   "Passphrase (to decrypt the corpus backup)": "عبارة المرور (لفك تشفير نسخة المجموعة الاحتياطية)",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "عبارة المرور — تشفّر المجموعة (لا استرداد لعبارة مرور مفقودة)",
-  "Restore a legacy backup file": "استعادة ملف نسخ احتياطي قديم"
+  "Restore a legacy backup file": "استعادة ملف نسخ احتياطي قديم",
+  "Loading country data in the background…": "جارٍ تحميل بيانات الدول في الخلفية…",
+  "(stopped early — partial)": "(توقّف مبكرًا — جزئي)",
+  "Enriching in the background…": "جارٍ الإثراء في الخلفية…",
+  "Typed source types:": "تم تحديد أنواع المصادر:",
+  "Enrich failed — see console": "فشل الإثراء — راجع وحدة التحكّم",
+  "Applying baseline tags in the background…": "جارٍ تطبيق الوسوم المرجعية في الخلفية…",
+  "Backfill failed:": "فشل التعبئة:",
+  "Applied baseline tags:": "تم تطبيق الوسوم المرجعية:",
+  "tags": "الوسوم"
 }

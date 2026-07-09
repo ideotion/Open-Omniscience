@@ -1950,5 +1950,14 @@
   "Folder to import from": "インポート元のフォルダー",
   "Passphrase (to decrypt the corpus backup)": "パスフレーズ（コーパスのバックアップを復号するため）",
   "Passphrase — encrypts the corpus (no recovery for a lost passphrase)": "パスフレーズ — コーパスを暗号化します（紛失時の復旧手段はありません）",
-  "Restore a legacy backup file": "レガシーのバックアップファイルを復元"
+  "Restore a legacy backup file": "レガシーのバックアップファイルを復元",
+  "Loading country data in the background…": "国データをバックグラウンドで読み込み中…",
+  "(stopped early — partial)": "（途中で停止 — 一部のみ）",
+  "Enriching in the background…": "バックグラウンドで補完中…",
+  "Typed source types:": "ソース種別を設定しました:",
+  "Enrich failed — see console": "補完に失敗しました — コンソールを確認してください",
+  "Applying baseline tags in the background…": "ベースラインタグをバックグラウンドで適用中…",
+  "Backfill failed:": "バックフィルに失敗しました:",
+  "Applied baseline tags:": "ベースラインタグを適用しました:",
+  "tags": "タグ"
 }
