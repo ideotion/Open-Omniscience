@@ -396,6 +396,48 @@ def jobs_history(limit: int = 20) -> dict:
     return {"runs": runs, "count": len(runs)}
 
 
+def _background_jobs() -> list[dict]:
+    """The generic background jobs (field test 2026-07-08, Item 8 P1): the heavy button
+    actions that used to run synchronously — governments load-standard, enrich-source-types,
+    keyword-tags backfill — now run on a worker thread. Shown while RUNNING (or failed);
+    the DB-writer ones join the arbitration set. Aggregated live from the registry, no
+    shadow state."""
+    from src.jobs.background import all_job_statuses
+
+    jobs: list[dict] = []
+    for s in all_job_statuses():
+        if s["state"] not in ("running", "error"):
+            continue  # idle/done/cancelled are not shown (mirrors the reindex/import helpers)
+        state = "failed" if s["state"] == "error" else "running"
+        jobs.append(
+            {
+                "id": s["kind"],
+                "kind": s["kind"],
+                "label": s["label"],
+                "state": state,
+                "progress": s.get("progress"),
+                "detail": s.get("detail"),
+                "error": s.get("error"),
+                "actions": ["cancel"] if state == "running" else [],
+            }
+        )
+    return jobs
+
+
+# DB-writer job kinds that must arbitrate with each other + collection (they take the
+# single-writer gate). Kept next to _background_jobs so a new writer kind is added in ONE
+# place. The generic background writers commit per unit, so they release the gate between
+# units — but they still contend, so the UI's "queue / proceed / stop the other" ask fires.
+_DB_WRITER_KINDS = (
+    "collect",
+    "import",
+    "reindex",
+    "governments",
+    "enrich-source-types",
+    "keyword-tags-backfill",
+)
+
+
 @router.get("")
 def list_jobs() -> dict:
     """Every visible job, aggregated LIVE from the owning systems (no shadow
@@ -414,6 +456,7 @@ def list_jobs() -> dict:
     jobs.extend(_import_jobs())
     jobs.extend(_reindex_jobs())
     jobs.extend(_model_pull_jobs())
+    jobs.extend(_background_jobs())
     jobs.extend(_task_jobs())
     f = _live_fetch()
     if f:
@@ -425,7 +468,7 @@ def list_jobs() -> dict:
     # writer lock nor (usually) hosts. The arbitration ASK therefore fires
     # only for DB-WRITER collisions (collect/import kinds); bulk downloads
     # keep their own single-download, reorderable queue among themselves.
-    db_writers = [j for j in running if j["kind"] in ("collect", "import", "reindex")]
+    db_writers = [j for j in running if j["kind"] in _DB_WRITER_KINDS]
     return {
         "jobs": jobs,
         "running": len(running),
@@ -522,6 +565,14 @@ def cancel_job(job_id: str) -> dict:
             "online": not kill_switch_active(),
             "detail": "collection stopped; the network kill switch is now engaged",
         }
+    # Generic background jobs (governments / enrich-source-types / keyword-tags-backfill):
+    # cooperative cancel — the worker stops at its next safe point. The id IS the kind.
+    from src.jobs.background import get_job as _get_bg_job
+
+    bg = _get_bg_job(job_id)
+    if bg is not None:
+        bg.cancel()
+        return {"cancelled": job_id, "detail": f"{bg.label} — stopping at the next safe point"}
     raise HTTPException(status_code=404, detail=f"unknown or uncancellable job {job_id!r}")
 
 

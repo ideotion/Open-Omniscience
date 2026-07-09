@@ -25,6 +25,7 @@ from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.database.maintenance import StatementTimeout, statement_deadline
+from src.jobs.background import BackgroundJob, register_job
 from src.database.session import get_db
 from src.utils.cache import SimpleCache
 
@@ -1979,14 +1980,39 @@ def keywords_by_tag(
     return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}
 
 
-@router.post("/keyword-tags/backfill")
-def backfill_keyword_tags(
-    limit: int = Query(0, ge=0, le=500000), db: Session = Depends(get_db)
-) -> dict:
-    """Apply curated baseline tags to EXISTING keywords (the retroactive pass).
-
-    Tagging at ingest is forward-only, so a pre-existing corpus has no baseline tags
-    until this runs. Idempotent; counts only, never invents a tag. ``limit=0`` = all."""
+def _backfill_tags_worker(ctx, *, limit: int | None) -> dict:
+    """Baseline-tag backfill off the request thread (field test Item 8 P1). A DB writer with
+    no network; opaque to progress (it scans the keyword table internally), soft cancel."""
     from src.analytics.store import backfill_baseline_tags
+    from src.database.session import session_scope
 
-    return backfill_baseline_tags(db, limit=limit or None)
+    with session_scope() as db:
+        return backfill_baseline_tags(db, limit=limit)
+
+
+_TAGS_BACKFILL_JOB = register_job(
+    BackgroundJob(
+        "keyword-tags-backfill", "Applying baseline keyword tags", _backfill_tags_worker,
+        is_writer=True,
+    )
+)
+
+
+@router.post("/keyword-tags/backfill")
+def backfill_keyword_tags(limit: int = Query(0, ge=0, le=500000)) -> dict:
+    """Apply curated baseline tags to EXISTING keywords (the retroactive pass) as a
+    BACKGROUND JOB — it scans the whole keyword table (~1 min at 60K articles), so it must
+    not run synchronously in the request (field test 2026-07-08, Item 8 P1). Tagging at
+    ingest is forward-only, so a pre-existing corpus has no baseline tags until this runs.
+    Idempotent; counts only, never invents a tag. ``limit=0`` = all. Poll
+    ``/keyword-tags/backfill/status`` or the task manager for the result."""
+    try:
+        return {"started": True, "job": _TAGS_BACKFILL_JOB.start(limit=(limit or None))}
+    except RuntimeError:
+        return {"started": False, "job": _TAGS_BACKFILL_JOB.status()}
+
+
+@router.get("/keyword-tags/backfill/status")
+def backfill_keyword_tags_status() -> dict:
+    """Live status of the background baseline-tag backfill (state/result/error)."""
+    return _TAGS_BACKFILL_JOB.status()
