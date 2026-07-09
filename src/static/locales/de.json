@@ -1642,7 +1642,6 @@
   "Back up (volumes + parity)": "Sichern (Volumes + Parität)",
   "Restore from a volume backup folder": "Aus einem Volume-Backup-Ordner wiederherstellen",
   "Passphrase (encrypts the backup)": "Passphrase (verschlüsselt das Backup)",
-  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first).": "Die Standard-Länderindikatoren für jedes Land von der Weltbank abrufen (online, fragt zuerst um Zustimmung).",
   "Source-catalogue reach (how many countries the catalog spans, scored against ISO 3166):": "Reichweite des Quellenkatalogs (wie viele Länder der Katalog abdeckt, bewertet anhand von ISO 3166):",
   "A world map of how many ARTICLES you have collected per country (by each source's catalogued country). Measured from the data; refreshes live.": "Eine Weltkarte, die zeigt, wie viele ARTIKEL Sie pro Land gesammelt haben (nach dem katalogisierten Land jeder Quelle). Aus den Daten gemessen; in Echtzeit aktualisiert.",
   "Everything you've DOWNLOADED and everything the app has EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.": "Alles, was Sie HERUNTERGELADEN haben, und alles, was die App daraus EXTRAPOLIERT hat — echte Zählungen und Größen auf der Festplatte, niemals eine Schätzung.",
@@ -1980,5 +1979,6 @@
   "Orphaned staging detected": "Verwaiste Staging-Dateien erkannt",
   "Decrypted copy on disk — remove it deliberately.": "Entschlüsselte Kopie auf der Festplatte — bewusst entfernen.",
   "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "Nach einem Update kann die erste Entsperrung einmalige Migrationen ausführen und Indizes neu aufbauen — das kann bei einem großen Korpus mehrere Minuten dauern und geschieht nur einmal.",
-  "Elapsed": "Vergangen"
+  "Elapsed": "Vergangen",
+  "Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). Once loaded, new vintages then refresh automatically in the background.": "Die Standard-Länderindikatoren für jedes Land von der Weltbank abrufen (online, fragt zuerst um Zustimmung). Nach dem Laden werden neue Datenstände dann automatisch im Hintergrund aktualisiert."
 }
