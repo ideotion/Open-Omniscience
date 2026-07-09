@@ -1978,5 +1978,7 @@
   "database": "数据库",
   "other": "其他",
   "Orphaned staging detected": "检测到孤立的暂存文件",
-  "Decrypted copy on disk — remove it deliberately.": "磁盘上存在解密副本——请谨慎手动删除。"
+  "Decrypted copy on disk — remove it deliberately.": "磁盘上存在解密副本——请谨慎手动删除。",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "更新之后，首次解锁可能会执行一次性迁移并重建索引——在大型语料库上这可能需要几分钟，且只会发生一次。",
+  "Elapsed": "已用时"
 }

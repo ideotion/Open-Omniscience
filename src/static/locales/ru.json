@@ -1978,5 +1978,7 @@
   "database": "база данных",
   "other": "прочее",
   "Orphaned staging detected": "Обнаружены осиротевшие временные файлы",
-  "Decrypted copy on disk — remove it deliberately.": "Расшифрованная копия на диске — удалите её осознанно."
+  "Decrypted copy on disk — remove it deliberately.": "Расшифрованная копия на диске — удалите её осознанно.",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "После обновления первая разблокировка может выполнить разовые миграции и перестроить индексы — на большом корпусе это может занять несколько минут и происходит только один раз.",
+  "Elapsed": "Прошло"
 }

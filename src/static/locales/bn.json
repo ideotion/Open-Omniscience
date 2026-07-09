@@ -1978,5 +1978,7 @@
   "database": "ডেটাবেস",
   "other": "অন্যান্য",
   "Orphaned staging detected": "অনাথ স্টেজিং শনাক্ত হয়েছে",
-  "Decrypted copy on disk — remove it deliberately.": "ডিস্কে ডিক্রিপ্ট করা কপি — সচেতনভাবে সরান।"
+  "Decrypted copy on disk — remove it deliberately.": "ডিস্কে ডিক্রিপ্ট করা কপি — সচেতনভাবে সরান।",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "আপডেটের পর, প্রথম আনলকে এককালীন মাইগ্রেশন চলতে পারে এবং ইনডেক্স পুনর্নির্মিত হতে পারে — বড় কর্পাসে এতে কয়েক মিনিট লাগতে পারে, এবং এটি কেবল একবারই ঘটে।",
+  "Elapsed": "অতিবাহিত"
 }

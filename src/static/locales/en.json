@@ -1978,5 +1978,7 @@
   "database": "database",
   "other": "other",
   "Orphaned staging detected": "Orphaned staging detected",
-  "Decrypted copy on disk — remove it deliberately.": "Decrypted copy on disk — remove it deliberately."
+  "Decrypted copy on disk — remove it deliberately.": "Decrypted copy on disk — remove it deliberately.",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.",
+  "Elapsed": "Elapsed"
 }

@@ -1978,5 +1978,7 @@
   "database": "डेटाबेस",
   "other": "अन्य",
   "Orphaned staging detected": "अनाथ स्टेजिंग का पता चला",
-  "Decrypted copy on disk — remove it deliberately.": "डिस्क पर डिक्रिप्टेड प्रति — इसे जानबूझकर हटाएँ।"
+  "Decrypted copy on disk — remove it deliberately.": "डिस्क पर डिक्रिप्टेड प्रति — इसे जानबूझकर हटाएँ।",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "अपडेट के बाद, पहली बार अनलॉक करने पर एक-बार माइग्रेशन चल सकता है और इंडेक्स फिर से बन सकते हैं — बड़े कोष पर इसमें कई मिनट लग सकते हैं, और यह केवल एक बार होता है।",
+  "Elapsed": "बीता समय"
 }

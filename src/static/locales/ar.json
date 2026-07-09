@@ -1978,5 +1978,7 @@
   "database": "قاعدة البيانات",
   "other": "أخرى",
   "Orphaned staging detected": "تم اكتشاف ملفات مؤقتة يتيمة",
-  "Decrypted copy on disk — remove it deliberately.": "نسخة مفكوكة التشفير على القرص — احذفها عن قصد."
+  "Decrypted copy on disk — remove it deliberately.": "نسخة مفكوكة التشفير على القرص — احذفها عن قصد.",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "بعد التحديث، قد يُجري أول فتحٍ للقفل عمليات ترحيل لمرة واحدة ويعيد بناء الفهارس — قد يستغرق ذلك عدة دقائق على مجموعة كبيرة، ويحدث مرة واحدة فقط.",
+  "Elapsed": "المنقضي"
 }

@@ -1978,5 +1978,7 @@
   "database": "データベース",
   "other": "その他",
   "Orphaned staging detected": "孤立したステージングを検出",
-  "Decrypted copy on disk — remove it deliberately.": "ディスク上に復号済みコピー — 意図的に削除してください。"
+  "Decrypted copy on disk — remove it deliberately.": "ディスク上に復号済みコピー — 意図的に削除してください。",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "アップデート後の最初のロック解除では、一度きりのマイグレーションとインデックスの再構築が実行されることがあります。大規模なコーパスでは数分かかることがあり、これは一度だけです。",
+  "Elapsed": "経過"
 }

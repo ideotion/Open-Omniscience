@@ -1978,5 +1978,7 @@
   "database": "basis data",
   "other": "lainnya",
   "Orphaned staging detected": "Staging yatim terdeteksi",
-  "Decrypted copy on disk — remove it deliberately.": "Salinan terdekripsi di disk — hapus secara sengaja."
+  "Decrypted copy on disk — remove it deliberately.": "Salinan terdekripsi di disk — hapus secara sengaja.",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "Setelah pembaruan, buka kunci pertama mungkin menjalankan migrasi sekali jalan dan membangun ulang indeks — ini bisa memakan beberapa menit pada korpus besar, dan hanya terjadi sekali.",
+  "Elapsed": "Berlalu"
 }

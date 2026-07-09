@@ -154,8 +154,10 @@
     <h1>Preparing your corpus…</h1>
     <p>Your corpus is unlocked. Getting it ready — this can take a moment on a large
        database, and only happens once per start.</p>
+    <p class="tm">After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.</p>
     <div class="prep-bar" aria-hidden="true"><div class="prep-fill"></div></div>
     <p class="prep-phase" id="prep-phase" role="status" aria-live="polite">opening the database</p>
+    <p class="prep-phase" id="prep-elapsed" aria-live="polite"></p>
   </div>
 </div>
 
@@ -335,10 +337,38 @@
       location.replace("/");  // fail-open: enter anyway rather than trap the user
     }
 
+    // Honest elapsed-time clock (E3 / P0.4 UI half). The unlock POST runs init_db
+    // SYNCHRONOUSLY (schema self-heal + one-time migrations + index builds + WAL
+    // recovery) BEFORE it returns, so on a first unlock after an upgrade the button
+    // could sit pending for minutes with NO feedback (the 981 s field case was exactly
+    // this, invisible). We show the preparing view + a ticking elapsed clock the MOMENT
+    // the passphrase is submitted — never a fabricated percent, just real elapsed time
+    // and the honest one-time-migration explanation.
+    let _prepTimer = null, _prepStart = 0;
+    function _stopPrep() { if (_prepTimer) { clearInterval(_prepTimer); _prepTimer = null; } }
+    function _startPrep() {
+      ["view-unlock", "view-create", "view-open"].forEach((v) => $(v).classList.add("hidden"));
+      $("view-preparing").classList.remove("hidden");
+      _prepStart = Date.now();
+      const el = $("prep-elapsed");
+      _stopPrep();
+      const tick = () => {
+        const s = Math.max(0, Math.floor((Date.now() - _prepStart) / 1000));
+        const mm = String(Math.floor(s / 60)).padStart(2, "0");
+        const ss = String(s % 60).padStart(2, "0");
+        if (el) el.textContent = t("Elapsed") + " " + mm + ":" + ss;
+      };
+      tick();
+      _prepTimer = setInterval(tick, 1000);
+    }
+
     async function go(btn, fn) {
       btn.disabled = true;
+      _startPrep();  // show the preparing view + elapsed clock NOW, before the (possibly
+                     // multi-minute) synchronous init_db that runs inside fn()
       try { await fn(); await waitReadyThenEnter(); }
       catch (e) {
+        _stopPrep();
         const box = btn.id === "btn-unlock" ? $("msg") : $("msg2");
         box.textContent = e.message || t("Wrong passphrase — try again.");
         btn.disabled = false;

@@ -1978,5 +1978,7 @@
   "database": "Datenbank",
   "other": "Sonstiges",
   "Orphaned staging detected": "Verwaiste Staging-Dateien erkannt",
-  "Decrypted copy on disk — remove it deliberately.": "Entschlüsselte Kopie auf der Festplatte — bewusst entfernen."
+  "Decrypted copy on disk — remove it deliberately.": "Entschlüsselte Kopie auf der Festplatte — bewusst entfernen.",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "Nach einem Update kann die erste Entsperrung einmalige Migrationen ausführen und Indizes neu aufbauen — das kann bei einem großen Korpus mehrere Minuten dauern und geschieht nur einmal.",
+  "Elapsed": "Vergangen"
 }

@@ -1978,5 +1978,7 @@
   "database": "base de données",
   "other": "autre",
   "Orphaned staging detected": "Fichiers temporaires orphelins détectés",
-  "Decrypted copy on disk — remove it deliberately.": "Copie déchiffrée sur le disque — supprimez-la délibérément."
+  "Decrypted copy on disk — remove it deliberately.": "Copie déchiffrée sur le disque — supprimez-la délibérément.",
+  "After an update, the first unlock may run one-time migrations and rebuild indexes — this can take several minutes on a large corpus, and happens only once.": "Après une mise à jour, le premier déverrouillage peut exécuter des migrations ponctuelles et reconstruire les index — cela peut prendre plusieurs minutes sur un grand corpus, et n'arrive qu'une seule fois.",
+  "Elapsed": "Écoulé"
 }
