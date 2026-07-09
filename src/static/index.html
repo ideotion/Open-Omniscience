@@ -1650,12 +1650,42 @@
         <button class="secondary" onclick="window.open('/api/insights/lunar-correlation','_blank')" title="Screen the top keywords' daily coverage against the moon's illuminated fraction, FDR-corrected — a survivor beat multiple-testing, never a bare significant p. Correlation is not causation; the common honest outcome is that nothing survives. Counts + statistics only, no score.">Lunar-correlation screen (.json)</button>
       </div>
       <div class="hint">These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score.</div>
-      <div class="row" style="margin-top:6px;align-items:flex-start">
-        <textarea id="poll-fields" rows="3" style="min-width:340px" placeholder='Poll disclosed fields as JSON, e.g. {"pollster":"…","sponsor":"…","sample_size":1000,"fielding_dates":"…","population":"…","question_wording":"…","sampling_method":"…","margin_of_error":"…"}'></textarea>
-        <button class="secondary" onclick="pollTransparencyCheck()" title="POST a poll's DISCLOSED methodological fields to the Tier-2 transparency checklist — a per-item view of what was STATED vs not (who ran it, who paid, when, n, who was sampled, the exact question). It records PRESENCE only (a disclosed n=100 counts like n=10000), never grades or ranks or calls a poll 'useless'. No composite score.">Check poll transparency</button>
+      <!-- B3 (F2): per-field poll-transparency form (was a paste-raw-JSON box). Each field
+           is a standard methodological disclosure (AAPOR Transparency Initiative-style). It
+           records what was STATED, never whether a value is good — a disclosed n=100 counts
+           like n=10000, non-disclosure of a core item outranks any disclosed imperfection,
+           and it never grades or ranks a poll. No score. The raw-JSON box is kept as a
+           collapsed power-user fallback (never lose a tool). -->
+      <div id="poll-transparency-box" style="margin-top:6px">
+        <div class="hint">Enter what a poll DISCLOSED and get a per-item checklist of what was stated versus not — the disclosure FLOOR, never a score. It records PRESENCE only (a disclosed n=100 counts like n=10000), non-disclosure of a core item outranks any disclosed imperfection, and it never grades, ranks, or calls a poll “useless”. It surfaces the facts and lets you conclude.</div>
+        <div class="small muted" style="margin-top:6px;font-weight:600">Core disclosures — the floor to interpret a poll</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:4px">
+          <div><label for="pf_pollster" class="small muted">Who conducted the poll</label><input id="pf_pollster" type="text" style="width:100%"></div>
+          <div><label for="pf_sponsor" class="small muted">Who paid for or commissioned it</label><input id="pf_sponsor" type="text" style="width:100%"></div>
+          <div><label for="pf_fielding_dates" class="small muted">When it was in the field</label><input id="pf_fielding_dates" type="text" style="width:100%"></div>
+          <div><label for="pf_sample_size" class="small muted">Sample size (n)</label><input id="pf_sample_size" type="text" style="width:100%"></div>
+          <div><label for="pf_population" class="small muted">Who was sampled (the population)</label><input id="pf_population" type="text" style="width:100%"></div>
+        </div>
+        <div style="margin-top:6px"><label for="pf_question_wording" class="small muted">The exact question asked</label><textarea id="pf_question_wording" rows="2" style="width:100%"></textarea></div>
+        <div class="small muted" style="margin-top:8px;font-weight:600">Supplementary disclosures</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:4px">
+          <div><label for="pf_sampling_method" class="small muted">Sampling method (probability vs not)</label><input id="pf_sampling_method" type="text" style="width:100%"></div>
+          <div><label for="pf_margin_of_error" class="small muted">Margin of error / credibility interval</label><input id="pf_margin_of_error" type="text" style="width:100%"></div>
+          <div><label for="pf_mode" class="small muted">Mode (phone / online / in-person …)</label><input id="pf_mode" type="text" style="width:100%"></div>
+          <div><label for="pf_weighting" class="small muted">Weighting / adjustments</label><input id="pf_weighting" type="text" style="width:100%"></div>
+          <div><label for="pf_response_rate" class="small muted">Response / completion rate</label><input id="pf_response_rate" type="text" style="width:100%"></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="secondary" onclick="pollTransparencyCheck()" title="Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.">Check poll transparency</button>
+          <button class="secondary" onclick="pollTransparencyClear()">Clear the form</button>
+        </div>
+        <details style="margin-top:6px">
+          <summary class="small muted">Advanced: paste disclosed fields as JSON</summary>
+          <textarea id="poll-fields" rows="3" style="min-width:340px;width:100%;margin-top:4px" placeholder='{"pollster":"…","sponsor":"…","sample_size":1000,"question_wording":"…"}'></textarea>
+          <div class="hint">Any keys here override the fields above (and extra keys are allowed) — for a disclosure the form has no box for.</div>
+        </details>
+        <div id="poll-transparency-out" style="margin-top:8px"></div>
       </div>
-      <pre id="poll-transparency-out" class="hint" style="white-space:pre-wrap;max-height:280px;overflow:auto"></pre>
-      <div class="hint">The poll-transparency checklist reads a poll's disclosed methodology fields (paste any subset as JSON) and reports what was stated versus not — the disclosure FLOOR, never a score. Non-disclosure of a core item outranks any disclosed imperfection, and the exact question is echoed when present; it surfaces the facts and lets you conclude.</div>
       <div class="row" style="margin-top:6px">
         <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
         <button class="secondary" onclick="reindexAllCorpus(this)">Re-index the whole corpus</button>

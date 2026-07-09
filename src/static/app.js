@@ -8958,22 +8958,104 @@
       if (wa && wb) { p.set("weights_a", wa); p.set("weights_b", wb); }
       window.open("/api/diagnostics/ir-eval?" + p.toString(), "_blank");
     }
-    // Diagnostics: POST a poll's DISCLOSED methodological fields (any subset, as JSON) to
-    // the Tier-2 transparency checklist (/api/insights/poll-transparency) and show the
-    // result. It records PRESENCE only — a disclosed n=100 counts exactly like n=10000 —
-    // and never grades, ranks, or calls a poll 'useless'; no composite score. Un-keyed
-    // English (matches the diagnostics panel).
+    // Diagnostics: the Tier-2 poll-transparency CHECKLIST (/api/insights/poll-transparency).
+    // B3 (field-test F2): the per-field form is the primary input; the raw-JSON box (a
+    // collapsed fallback) overrides/extends it for power users (never lose a tool). Renders
+    // a per-item checklist of what was STATED vs not — the disclosure FLOOR, never a score:
+    // a disclosed n=100 counts like n=10000, non-disclosure of a CORE item outranks any
+    // disclosed imperfection, and it never grades, ranks, or calls a poll "useless".
+    const POLL_FIELDS = [
+      { key: "pollster", tier: "core" }, { key: "sponsor", tier: "core" },
+      { key: "fielding_dates", tier: "core" }, { key: "sample_size", tier: "core" },
+      { key: "population", tier: "core" }, { key: "question_wording", tier: "core" },
+      { key: "sampling_method", tier: "supplementary" }, { key: "margin_of_error", tier: "supplementary" },
+      { key: "mode", tier: "supplementary" }, { key: "weighting", tier: "supplementary" },
+      { key: "response_rate", tier: "supplementary" },
+    ];
+    function _pollFieldLabel(key) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const m = {
+        pollster: "Who conducted the poll", sponsor: "Who paid for or commissioned it",
+        fielding_dates: "When it was in the field", sample_size: "Sample size (n)",
+        population: "Who was sampled (the population)", question_wording: "The exact question asked",
+        sampling_method: "Sampling method (probability vs not)", margin_of_error: "Margin of error / credibility interval",
+        mode: "Mode (phone / online / in-person …)", weighting: "Weighting / adjustments",
+        response_rate: "Response / completion rate",
+      };
+      return t(m[key] || key);
+    }
+    function pollTransparencyClear() {
+      POLL_FIELDS.forEach(f => { const el = document.getElementById("pf_" + f.key); if (el) el.value = ""; });
+      const raw = document.getElementById("poll-fields"); if (raw) raw.value = "";
+      const box = document.getElementById("poll-transparency-out"); if (box) box.innerHTML = "";
+    }
     async function pollTransparencyCheck() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const box = document.getElementById("poll-transparency-out");
+      // Build the disclosed fields from the per-field form; only non-empty values count.
+      const fields = {};
+      POLL_FIELDS.forEach(f => {
+        const el = document.getElementById("pf_" + f.key);
+        const v = el ? (el.value || "").trim() : "";
+        if (v) fields[f.key] = v;
+      });
+      // The raw-JSON fallback OVERRIDES / EXTENDS the form (power-user path, never lost).
       const raw = ((document.getElementById("poll-fields") || {}).value || "").trim();
-      let fields;
-      try { fields = raw ? JSON.parse(raw) : {}; }
-      catch (e) { if (box) box.textContent = "Invalid JSON: " + ((e && e.message) || e); return; }
-      if (box) box.textContent = "Checking…";
+      if (raw) {
+        let extra;
+        try { extra = JSON.parse(raw); }
+        catch (e) { if (box) box.innerHTML = `<div class="err">${esc(t("Invalid JSON:") + " " + ((e && e.message) || e))}</div>`; return; }
+        if (extra && typeof extra === "object") Object.assign(fields, extra);
+      }
+      if (box) box.innerHTML = `<div class="muted">${esc(t("Checking…"))}</div>`;
       try {
-        const d = await api("/api/insights/poll-transparency", {method: "POST", body: JSON.stringify(fields)});
-        if (box) box.textContent = JSON.stringify(d, null, 2);
-      } catch (e) { if (box) box.textContent = "Error: " + ((e && e.message) || e); }
+        const d = await api("/api/insights/poll-transparency", { method: "POST", body: JSON.stringify(fields) });
+        _renderPollTransparency(d);
+      } catch (e) { if (box) box.innerHTML = `<div class="err">${esc(t("Error:") + " " + ((e && e.message) || e))}</div>`; }
+    }
+    // Render the checklist honestly: a PLAIN tally (never a score), the missing CORE
+    // disclosures highlighted as the interpretation floor, each item marked stated / not
+    // stated (neutral marks, never good/bad), the verbatim question when present, the
+    // factual disclosure-gap notes, and the backend method + caveat verbatim (visible).
+    function _renderPollTransparency(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const box = document.getElementById("poll-transparency-out"); if (!box || !d) return;
+      const tally = `${fmtNum(d.n_disclosed)} / ${fmtNum(d.n_items)} ${t("standard disclosures stated")}`;
+      // Missing CORE disclosures = the floor a reader lacks (highlighted, never a verdict).
+      const gaps = (d.core_gaps || []).map(k => _pollFieldLabel(k));
+      const floor = gaps.length
+        ? `<div class="card-caveat" style="margin-top:6px">${esc(t("Missing core disclosures — needed to interpret this poll at all:"))} ${esc(gaps.join(" · "))}</div>`
+        : `<div class="hint" style="margin-top:6px">${esc(t("All core disclosures are stated."))}</div>`;
+      const item = c => {
+        const label = _pollFieldLabel(c.key);
+        // PRESENCE only, neutral marks — never a good/bad value judgment.
+        const mark = c.disclosed
+          ? `<span style="color:var(--accent);white-space:nowrap">✓ ${esc(t("stated"))}</span>`
+          : `<span class="muted" style="white-space:nowrap">— ${esc(t("not stated"))}</span>`;
+        return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"${c.why ? ` title="${esc(c.why)}"` : ""}>
+          <span${c.disclosed ? "" : ' class="muted"'}>${esc(label)}</span>${mark}</div>`;
+      };
+      const section = (title, tier) => {
+        const rows = (d.checklist || []).filter(c => c.tier === tier).map(item).join("");
+        return rows ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(title)}</div>${rows}</div>` : "";
+      };
+      const q = d.question
+        ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(t("The exact question, shown verbatim as structure:"))}</div>
+             <blockquote style="margin:4px 0;padding:6px 10px;border-left:3px solid var(--border);white-space:pre-wrap">${esc(d.question)}</blockquote></div>`
+        : "";
+      const notes = (d.notes || []).length
+        ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(t("Notes"))}</div>
+             <ul style="margin:4px 0;padding-left:18px">${d.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul></div>`
+        : "";
+      box.innerHTML = `
+        <div><strong>${esc(tally)}</strong> <span class="muted">(${esc(t("a tally, never a score"))})</span></div>
+        ${floor}
+        ${section(t("Core disclosures — the floor to interpret a poll"), "core")}
+        ${section(t("Supplementary disclosures"), "supplementary")}
+        ${q}
+        ${notes}
+        ${d.caveat ? `<div class="card-caveat" style="margin-top:8px">${esc(d.caveat)}</div>` : ""}
+        ${d.method ? `<div class="hint" style="margin-top:4px">${esc(d.method)}</div>` : ""}`;
     }
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
