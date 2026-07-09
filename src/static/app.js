@@ -1197,6 +1197,7 @@
       analyze: "an-subtabs", insights: "ins-subtabs", settings: "set-subtabs",
       agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
       law: "gov-subtabs",   // Governments: Countries · Map · Law
+      timemap: "oomap-lenses",   // World map: Coverage · Stories · Places · Server IPs (field-test Item 6)
     };
     function _relocateSubtabs(name) {
       const strip = $("subtab-strip"); if (!strip) return;
@@ -8957,22 +8958,104 @@
       if (wa && wb) { p.set("weights_a", wa); p.set("weights_b", wb); }
       window.open("/api/diagnostics/ir-eval?" + p.toString(), "_blank");
     }
-    // Diagnostics: POST a poll's DISCLOSED methodological fields (any subset, as JSON) to
-    // the Tier-2 transparency checklist (/api/insights/poll-transparency) and show the
-    // result. It records PRESENCE only — a disclosed n=100 counts exactly like n=10000 —
-    // and never grades, ranks, or calls a poll 'useless'; no composite score. Un-keyed
-    // English (matches the diagnostics panel).
+    // Diagnostics: the Tier-2 poll-transparency CHECKLIST (/api/insights/poll-transparency).
+    // B3 (field-test F2): the per-field form is the primary input; the raw-JSON box (a
+    // collapsed fallback) overrides/extends it for power users (never lose a tool). Renders
+    // a per-item checklist of what was STATED vs not — the disclosure FLOOR, never a score:
+    // a disclosed n=100 counts like n=10000, non-disclosure of a CORE item outranks any
+    // disclosed imperfection, and it never grades, ranks, or calls a poll "useless".
+    const POLL_FIELDS = [
+      { key: "pollster", tier: "core" }, { key: "sponsor", tier: "core" },
+      { key: "fielding_dates", tier: "core" }, { key: "sample_size", tier: "core" },
+      { key: "population", tier: "core" }, { key: "question_wording", tier: "core" },
+      { key: "sampling_method", tier: "supplementary" }, { key: "margin_of_error", tier: "supplementary" },
+      { key: "mode", tier: "supplementary" }, { key: "weighting", tier: "supplementary" },
+      { key: "response_rate", tier: "supplementary" },
+    ];
+    function _pollFieldLabel(key) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const m = {
+        pollster: "Who conducted the poll", sponsor: "Who paid for or commissioned it",
+        fielding_dates: "When it was in the field", sample_size: "Sample size (n)",
+        population: "Who was sampled (the population)", question_wording: "The exact question asked",
+        sampling_method: "Sampling method (probability vs not)", margin_of_error: "Margin of error / credibility interval",
+        mode: "Mode (phone / online / in-person …)", weighting: "Weighting / adjustments",
+        response_rate: "Response / completion rate",
+      };
+      return t(m[key] || key);
+    }
+    function pollTransparencyClear() {
+      POLL_FIELDS.forEach(f => { const el = document.getElementById("pf_" + f.key); if (el) el.value = ""; });
+      const raw = document.getElementById("poll-fields"); if (raw) raw.value = "";
+      const box = document.getElementById("poll-transparency-out"); if (box) box.innerHTML = "";
+    }
     async function pollTransparencyCheck() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const box = document.getElementById("poll-transparency-out");
+      // Build the disclosed fields from the per-field form; only non-empty values count.
+      const fields = {};
+      POLL_FIELDS.forEach(f => {
+        const el = document.getElementById("pf_" + f.key);
+        const v = el ? (el.value || "").trim() : "";
+        if (v) fields[f.key] = v;
+      });
+      // The raw-JSON fallback OVERRIDES / EXTENDS the form (power-user path, never lost).
       const raw = ((document.getElementById("poll-fields") || {}).value || "").trim();
-      let fields;
-      try { fields = raw ? JSON.parse(raw) : {}; }
-      catch (e) { if (box) box.textContent = "Invalid JSON: " + ((e && e.message) || e); return; }
-      if (box) box.textContent = "Checking…";
+      if (raw) {
+        let extra;
+        try { extra = JSON.parse(raw); }
+        catch (e) { if (box) box.innerHTML = `<div class="err">${esc(t("Invalid JSON:") + " " + ((e && e.message) || e))}</div>`; return; }
+        if (extra && typeof extra === "object") Object.assign(fields, extra);
+      }
+      if (box) box.innerHTML = `<div class="muted">${esc(t("Checking…"))}</div>`;
       try {
         const d = await api("/api/insights/poll-transparency", {method: "POST", body: JSON.stringify(fields)});
-        if (box) box.textContent = JSON.stringify(d, null, 2);
-      } catch (e) { if (box) box.textContent = "Error: " + ((e && e.message) || e); }
+        _renderPollTransparency(d);
+      } catch (e) { if (box) box.innerHTML = `<div class="err">${esc(t("Error:") + " " + ((e && e.message) || e))}</div>`; }
+    }
+    // Render the checklist honestly: a PLAIN tally (never a score), the missing CORE
+    // disclosures highlighted as the interpretation floor, each item marked stated / not
+    // stated (neutral marks, never good/bad), the verbatim question when present, the
+    // factual disclosure-gap notes, and the backend method + caveat verbatim (visible).
+    function _renderPollTransparency(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const box = document.getElementById("poll-transparency-out"); if (!box || !d) return;
+      const tally = `${fmtNum(d.n_disclosed)} / ${fmtNum(d.n_items)} ${t("standard disclosures stated")}`;
+      // Missing CORE disclosures = the floor a reader lacks (highlighted, never a verdict).
+      const gaps = (d.core_gaps || []).map(k => _pollFieldLabel(k));
+      const floor = gaps.length
+        ? `<div class="card-caveat" style="margin-top:6px">${esc(t("Missing core disclosures — needed to interpret this poll at all:"))} ${esc(gaps.join(" · "))}</div>`
+        : `<div class="hint" style="margin-top:6px">${esc(t("All core disclosures are stated."))}</div>`;
+      const item = c => {
+        const label = _pollFieldLabel(c.key);
+        // PRESENCE only, neutral marks — never a good/bad value judgment.
+        const mark = c.disclosed
+          ? `<span style="color:var(--accent);white-space:nowrap">✓ ${esc(t("stated"))}</span>`
+          : `<span class="muted" style="white-space:nowrap">— ${esc(t("not stated"))}</span>`;
+        return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"${c.why ? ` title="${esc(c.why)}"` : ""}>
+          <span${c.disclosed ? "" : ' class="muted"'}>${esc(label)}</span>${mark}</div>`;
+      };
+      const section = (title, tier) => {
+        const rows = (d.checklist || []).filter(c => c.tier === tier).map(item).join("");
+        return rows ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(title)}</div>${rows}</div>` : "";
+      };
+      const q = d.question
+        ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(t("The exact question, shown verbatim as structure:"))}</div>
+             <blockquote style="margin:4px 0;padding:6px 10px;border-left:3px solid var(--border);white-space:pre-wrap">${esc(d.question)}</blockquote></div>`
+        : "";
+      const notes = (d.notes || []).length
+        ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(t("Notes"))}</div>
+             <ul style="margin:4px 0;padding-left:18px">${d.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul></div>`
+        : "";
+      box.innerHTML = `
+        <div><strong>${esc(tally)}</strong> <span class="muted">(${esc(t("a tally, never a score"))})</span></div>
+        ${floor}
+        ${section(t("Core disclosures — the floor to interpret a poll"), "core")}
+        ${section(t("Supplementary disclosures"), "supplementary")}
+        ${q}
+        ${notes}
+        ${d.caveat ? `<div class="card-caveat" style="margin-top:8px">${esc(d.caveat)}</div>` : ""}
+        ${d.method ? `<div class="hint" style="margin-top:4px">${esc(d.method)}</div>` : ""}`;
     }
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
@@ -10388,7 +10471,7 @@
           const ring = cls === "confirmed"
             ? `fill="${col}" fill-opacity="0.82" stroke="var(--bg)" stroke-width="0.4"`
             : `fill="transparent" stroke="${col}" stroke-width="1.1"${cls === "deduced" ? ' stroke-dasharray="1.6 1.2"' : ""}`;
-          const ti = `${s.title} — ${fmtDate(s)} · ${TMAP_KINDS[s.kind]?.l || s.kind}${s.place ? " · " + s.place : ""} · ${_ooSigClassLabel(cls)}`;
+          const ti = `${s.title} — ${fmtDate(s)} · ${kindLabel(s.kind)}${s.place ? " · " + s.place : ""} · ${_ooSigClassLabel(cls)}`;
           // a larger transparent hit disc keeps the whole marker clickable (the
           // temporal-map lesson: hollow rings were clickable only on the 1px edge).
           const clk = opts.onSignal ? ` data-oomap-sig="${i}" style="cursor:pointer"` : "";
@@ -10525,7 +10608,7 @@
         ${opts.serverOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;background:#8b5cf6"></span>${esc(t("server IP location (CDN edge / anycast)"))}</span>` : ""}
         ${opts.serverOn && opts.serverMeta ? `<span class="muted" title="${esc(t("Many sources sharing one host/ASN — a shape to investigate, never a verdict."))}">${esc(opts.serverMeta)}</span>` : ""}
         ${opts.serverOn ? `<span class="muted">${esc(t("IP Geolocation by DB-IP"))} · <a href="https://db-ip.com" target="_blank" rel="noopener">db-ip.com</a> · CC BY 4.0</span>` : ""}
-        ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(TMAP_KINDS[k]?.l || k)}</span>`).join("") : ""}
+        ${opts.signalsOn ? sigKinds.map(k => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${kindColor(k)}"></span>${esc(kindLabel(k))}</span>`).join("") : ""}
         ${opts.signalsOn ? `<span class="muted" style="display:inline-flex;align-items:center;gap:6px" title="${esc(t("Shape = certainty; colour = kind."))}">● ${esc(t("confirmed"))} · ▲ ${esc(t("scheduled"))} · ◆ ${esc(t("deduced"))}</span>` : ""}
         ${osm ? `<span class="muted" title="${esc(t("Bounded preview from a downloaded .osm.pbf — not the full region; no network."))}">${esc(t("offline OSM"))}: ${(osm.points || []).length} ${esc(t("nodes"))} · ${(osm.lines || []).length} ${esc(t("ways"))}${osm.truncated ? " · " + esc(t("preview")) : ""}${osm.areaCount ? " · " + osm.areaCount + " " + esc(t("country boundaries")) : ""}</span>` : ""}
       </div>
@@ -10660,6 +10743,91 @@
     // Server-IP location layer (data-arch slice 6c): captured server IPs geolocated
     // OFFLINE, DISTINCT from the editorial Source.country choropleth. Lazily fetched.
     let _ooMapServerOn = false, _ooMapServerLoc = null;
+    // World-map LENS strip (field-test Item 6): the map's lenses become first-class
+    // ooSubtabs. Each lens PRESETS the existing in-map layer state (a Coverage
+    // choropleth vs the Stories/Places/Server overlays); the in-map toggles still
+    // fine-tune within a lens (they can COMBINE layers). The lens does not add a map
+    // engine — it drives the state _renderOoMapDim already reads. "coverage" is the
+    // default (always-available, no extra fetch); Stories is one click away.
+    let _ooMapLens = "coverage", _ooMapLensTabs = null;
+    // Story-type (kind) filter under the Stories lens: null = all kinds; a kind string
+    // narrows the plotted signals to that story type. Client-side over already-fetched
+    // signals (no new endpoint). Counts only, deduced — never a verdict.
+    let _ooMapStoryKind = null;
+    // Preset the map into a named lens: toggle the layer flags, lazily fetch that
+    // lens's data (reusing the SAME endpoints the in-map toggles use — no new fetch),
+    // then re-render. Fired by the ooSubtabs strip (incl. its {initial}).
+    async function selectOoMapLens(key) {
+      _ooMapLens = key;
+      _ooMapSignalsOn = (key === "stories");
+      _ooMapPlacesOn = (key === "places");
+      _ooMapServerOn = (key === "servers");
+      if (key !== "stories") _ooMapStoryKind = null;   // don't leak a kind filter across lenses
+      try {
+        if (key === "stories" && _ooMapSignals == null) {
+          const d = await api("/api/timemap?limit=4000");
+          _ooMapSignals = (d.signals || []).filter(s => typeof s.t === "number" && s.lat != null && s.lon != null);
+        } else if (key === "places" && !_ooMapWhere) {
+          _ooMapWhere = await api("/api/insights/where?limit=400");
+        } else if (key === "servers" && !_ooMapServerLoc) {
+          _ooMapServerLoc = await api("/api/insights/server-locations");
+        }
+      } catch (_e) {
+        // Degrade honestly: an empty layer + the empty state, never a crash.
+        if (key === "stories" && _ooMapSignals == null) _ooMapSignals = [];
+        if (key === "places" && !_ooMapWhere) _ooMapWhere = { places: [] };
+        if (key === "servers" && !_ooMapServerLoc) _ooMapServerLoc = { countries: [], clusters: [], unavailable: {} };
+      }
+      _renderOoMapLensDesc();
+      _renderOoMapLensBar();
+      if (_ooMapPayload) _renderOoMapDim();
+    }
+    // A one-line, honest description of the active lens (translated).
+    function _renderOoMapLensDesc() {
+      const el = $("oomap-lens-desc"); if (!el) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      const d = {
+        coverage: t("Countries shaded by a measured dimension of your corpus — no data stays un-shaded, never zero. No score."),
+        stories: t("Location-based events extracted from your corpus, by type. Deduced, never a verdict — click a place to open its corpus."),
+        places: t("The places your articles mention — what the corpus is about. Deduced from text, never confirmed."),
+        servers: t("Where the servers we reached are located (offline geo) — a CDN edge / anycast host, not the publisher's origin; unavailable over Tor."),
+      };
+      el.textContent = d[_ooMapLens] || "";
+    }
+    // Story-type chips under the Stories lens (field-test Item 6 incitement UI): the
+    // event KINDS present in the corpus with a COUNT each, clickable to filter the
+    // plotted signals to one story type. Counts only, deduced — "142 climate · 88
+    // conflict" is the invitation to click in, never a ranking/score. Empty otherwise.
+    function _renderOoMapLensBar() {
+      const bar = $("oomap-lens-bar"); if (!bar) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      if (_ooMapLens !== "stories") { bar.innerHTML = ""; return; }
+      const sig = Array.isArray(_ooMapSignals) ? _ooMapSignals : [];
+      if (!sig.length) {
+        bar.innerHTML = `<div class="muted">${esc(t("No located events in your corpus yet — collect more, or explore the Coverage lens."))}</div>`;
+        return;
+      }
+      const counts = {};
+      sig.forEach(s => { const k = s.kind || "article"; counts[k] = (counts[k] || 0) + 1; });
+      const kinds = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+      const chip = (key, label, n, on, dot) => `<button type="button" class="tiny secondary" data-story-kind="${esc(key)}" aria-pressed="${on ? "true" : "false"}"`
+        + `${on ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+        + (dot ? `<span style="width:8px;height:8px;border-radius:50%;background:${dot};display:inline-block;margin-right:4px;vertical-align:middle"></span>` : "")
+        + `${esc(label)}${n != null ? ` <span class="muted">${esc(fmtNum(n))}</span>` : ""}</button>`;
+      const allOn = _ooMapStoryKind == null;
+      const chips = [chip("__all", t("All stories"), sig.length, allOn, null)]
+        .concat(kinds.map(k => chip(k, kindLabel(k), counts[k], _ooMapStoryKind === k, kindColor(k))));
+      bar.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+          <span class="muted" style="font-size:12px">${esc(t("Story types"))}:</span>${chips.join("")}
+        </div>
+        <div class="card-caveat" style="margin-top:5px">${esc(t("Story types are deduced from your corpus by event kind — counts only, never a verdict or ranking."))}</div>`;
+      bar.querySelectorAll("[data-story-kind]").forEach(b => b.addEventListener("click", () => {
+        const k = b.dataset.storyKind;
+        _ooMapStoryKind = (k === "__all") ? null : k;
+        _renderOoMapLensBar();
+        if (_ooMapPayload) _renderOoMapDim();
+      }));
+    }
     // Aggregate the per-country values into CONTINENTS (slice 4): a SUM for counts,
     // a sentiment_n-WEIGHTED mean for tone (the honest cross-country average).
     function _ooMapContinentAgg(rows, dim) {
@@ -10751,7 +10919,10 @@
       // Signals layer: derive the time span from the plottable signals, map the
       // slider position to a focus YEAR, and use an adaptive window (~1/12 of the
       // span) so the slider sweeps meaningfully whatever the corpus's time range.
-      const sig = _ooMapSignalsOn && Array.isArray(_ooMapSignals) ? _ooMapSignals : [];
+      let sig = _ooMapSignalsOn && Array.isArray(_ooMapSignals) ? _ooMapSignals : [];
+      // Story-lens (field-test Item 6): narrow the plotted signals to one story type
+      // when a kind chip is selected. Client-side over the already-fetched signals.
+      if (sig.length && _ooMapStoryKind) sig = sig.filter(s => (s.kind || "article") === _ooMapStoryKind);
       let focusT = null, windowY = 0, focusSlider = _ooMapFocusSlider, focusLabel = "", focusTicks = [];
       if (sig.length) {
         const ts = sig.map(s => s.t);
@@ -10905,7 +11076,7 @@
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
           <strong>${esc(s.title)}</strong>
-          <span class="pill">${esc(TMAP_KINDS[s.kind]?.l || s.kind)}</span> ${conf} ${geo}
+          <span class="pill">${esc(kindLabel(s.kind))}</span> ${conf} ${geo}
         </div>
         <div class="muted" style="margin-top:5px;font-size:13px">
           ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${esc(String(s.country).toUpperCase())})` : ""}
@@ -10980,17 +11151,36 @@
       } finally { _ooMapOsmLoading = false; }
     }
 
+    // B2 (F1): when the map-coverage rollup serves the payload (OO_COLUMNAR_MAP_SERVE),
+    // it attaches a `basis` {source, as_of, note} disclosure so the reader knows the
+    // counts are as-of the last rollup build (new sources/articles appear after the next
+    // rebuild). Render it via the shared basisChip (the disc form → "cached · as of …",
+    // the note in the #oo-tip hover). Renders NOTHING when basis is absent (the live
+    // path) — never a fabricated staleness. A DISCLOSURE, never a score.
+    function _renderMapBasis() {
+      const el = $("oo-coverage-basis"); if (!el) return;
+      const b = _ooMapPayload && _ooMapPayload.basis;
+      el.innerHTML = b ? basisChip(null, b) : "";
+    }
     async function loadOoMapCoverage() {
       const host = $("oo-coverage-map"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         _ooMapPayload = await api("/api/insights/map-coverage");
+        _renderMapBasis();   // rollup staleness disclosure, when present (else nothing)
         if (!(_ooMapPayload.by_country || []).length) {
           host.innerHTML = `<div class="muted">${esc(t("No located sources yet — add sources with a country, or collect some articles."))}</div>`;
           return;
         }
+        _renderOoMapLensDesc();
+        // Fast first paint (the coverage base for the current lens), THEN wire the
+        // lens strip — its {initial}/select re-applies the active lens (loading the
+        // Stories/Places/Server data lazily and re-rendering). ooSubtabs returns null
+        // if the nav is absent, so the map still renders without the strip.
         await _renderOoMapDim();
+        if (!_ooMapLensTabs) _ooMapLensTabs = ooSubtabs($("oomap-lenses"), selectOoMapLens, {initial: _ooMapLens});
+        else _ooMapLensTabs.select(_ooMapLens);
       } catch (e) {
         host.innerHTML = `<div class="err">${esc(t("Could not load coverage:") + " " + e.message)}</div>`;
       }
@@ -11026,6 +11216,13 @@
       article:{c:"#a371f7", l:"Article"},
     };
     const kindColor = k => (TMAP_KINDS[k] || {c:"var(--muted)"}).c;
+    // Translated label for a signal/story KIND (field-test Item 6): the TMAP_KINDS
+    // labels are a bounded, meaningful vocabulary (Conflict · Climate · Civic …) keyed
+    // ×12, so the story lens and the signals legend read in the active UI language.
+    function kindLabel(k) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      return t((TMAP_KINDS[k] || {}).l || k);
+    }
 
     let TMAP = {signals: [], range: null, caveat: ""};
     let TMAP_FOCUS = null;                       // fractional year in focus
@@ -14378,6 +14575,11 @@
     // already been loaded.
     document.addEventListener("oo:langchange", () => {
       try { if (_ooMapPayload && typeof _renderOoMapDim === "function") _renderOoMapDim(); } catch (_e) {}
+      // World-map lens desc + story chips are rendered at render time (kindLabel/t), so
+      // re-render them too so the whole map surface tracks the new locale (field-test Item 6).
+      try { if (typeof _renderOoMapLensDesc === "function") _renderOoMapLensDesc(); } catch (_e) {}
+      try { if (typeof _renderOoMapLensBar === "function") _renderOoMapLensBar(); } catch (_e) {}
+      try { if (typeof _renderMapBasis === "function") _renderMapBasis(); } catch (_e) {}
       try {
         const tbl = $("src-table");
         if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
