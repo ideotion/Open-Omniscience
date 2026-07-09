@@ -11069,12 +11069,24 @@
       } finally { _ooMapOsmLoading = false; }
     }
 
+    // B2 (F1): when the map-coverage rollup serves the payload (OO_COLUMNAR_MAP_SERVE),
+    // it attaches a `basis` {source, as_of, note} disclosure so the reader knows the
+    // counts are as-of the last rollup build (new sources/articles appear after the next
+    // rebuild). Render it via the shared basisChip (the disc form → "cached · as of …",
+    // the note in the #oo-tip hover). Renders NOTHING when basis is absent (the live
+    // path) — never a fabricated staleness. A DISCLOSURE, never a score.
+    function _renderMapBasis() {
+      const el = $("oo-coverage-basis"); if (!el) return;
+      const b = _ooMapPayload && _ooMapPayload.basis;
+      el.innerHTML = b ? basisChip(null, b) : "";
+    }
     async function loadOoMapCoverage() {
       const host = $("oo-coverage-map"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         _ooMapPayload = await api("/api/insights/map-coverage");
+        _renderMapBasis();   // rollup staleness disclosure, when present (else nothing)
         if (!(_ooMapPayload.by_country || []).length) {
           host.innerHTML = `<div class="muted">${esc(t("No located sources yet — add sources with a country, or collect some articles."))}</div>`;
           return;
@@ -14485,6 +14497,7 @@
       // re-render them too so the whole map surface tracks the new locale (field-test Item 6).
       try { if (typeof _renderOoMapLensDesc === "function") _renderOoMapLensDesc(); } catch (_e) {}
       try { if (typeof _renderOoMapLensBar === "function") _renderOoMapLensBar(); } catch (_e) {}
+      try { if (typeof _renderMapBasis === "function") _renderMapBasis(); } catch (_e) {}
       try {
         const tbl = $("src-table");
         if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
