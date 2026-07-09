@@ -23,6 +23,7 @@ import logging
 import os
 import random
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 
 from src.database.query import capped
@@ -35,6 +36,92 @@ _LOG = logging.getLogger(__name__)
 # pathologically fast/empty pass (e.g. every feed answered 304) not hot-spin.
 # Interruptible (Event.wait), so stop() still returns promptly.
 _CONTINUOUS_GAP_S = 5.0
+
+
+# --------------------------------------------------------------------------- #
+# Pass recycling (P0.3 E2, field event 2026-07-09): ONE continuous crawl pass
+# ran 21.6 hours and accumulated per-pass memory until the kernel OOM-killer
+# fired. A pass is therefore BOUNDED — in wall-clock (OO_PASS_BUDGET_MINUTES,
+# default 60; 0 = unbounded, the old behaviour) and optionally in work
+# (OO_PASS_MAX_SOURCES, default 0 = off). When the budget expires the pass ends
+# CLEANLY: in-flight sources finish (politeness untouched, no thread is ever
+# interrupted), the not-yet-started remainder is DEFERRED and runs FIRST next
+# pass (ordering, never exclusion — no source starved), per-pass state is
+# released (src/scheduler/hygiene), and continuous mode starts the next pass.
+# --------------------------------------------------------------------------- #
+
+
+def _env_pass_float(name: str, default: float) -> float:
+    try:
+        v = float(os.getenv(name, "") or default)
+        return v if v >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _pass_budget_s() -> float:
+    """The per-pass wall-clock budget in seconds (0 disables recycling)."""
+    return _env_pass_float("OO_PASS_BUDGET_MINUTES", 60.0) * 60.0
+
+
+def _pass_max_sources() -> int:
+    """Optional per-pass work cap (sources admitted); 0 = off."""
+    return int(_env_pass_float("OO_PASS_MAX_SOURCES", 0.0))
+
+
+# Source ids deferred at the last pass boundary, in their fair-rotation order.
+# In-process state on purpose: a restart simply runs a fresh full pass (the
+# rotation covers everyone over time); within a process the carryover
+# guarantees a deferred source is FIRST in line, so recycling never starves.
+_DEFER_LOCK = threading.Lock()
+_DEFERRED_IDS: list[int] = []
+
+
+def _record_deferred(ids: list[int]) -> None:
+    with _DEFER_LOCK:
+        _DEFERRED_IDS[:] = list(ids)
+
+
+def _consume_deferred() -> list[int]:
+    with _DEFER_LOCK:
+        ids = list(_DEFERRED_IDS)
+        _DEFERRED_IDS.clear()
+        return ids
+
+
+def deferred_carryover_count() -> int:
+    """How many sources the last pass boundary deferred (status honesty)."""
+    with _DEFER_LOCK:
+        return len(_DEFERRED_IDS)
+
+
+class _PassWindDown:
+    """Decides when an in-flight pass stops taking NEW sources.
+
+    Workers consult :meth:`admit` BEFORE starting a source — a non-blocking
+    check, so nothing is ever interrupted mid-fetch and no lock is held while
+    deciding. Reasons: ``"budget"`` (wall-clock budget expired), ``"work"``
+    (per-pass source cap reached). ``now`` is injectable for deterministic
+    tests. Thread-safe.
+    """
+
+    def __init__(self, *, budget_s: float, max_sources: int, now=time.monotonic) -> None:
+        self._now = now
+        self._deadline = (now() + budget_s) if budget_s > 0 else None
+        self._max = max(0, int(max_sources))
+        self._admitted = 0
+        self._lock = threading.Lock()
+
+    def admit(self) -> str | None:
+        """None = process the next source; else the wind-down reason."""
+        if self._deadline is not None and self._now() >= self._deadline:
+            return "budget"
+        if self._max:
+            with self._lock:
+                if self._admitted >= self._max:
+                    return "work"
+                self._admitted += 1
+        return None
 
 
 def round_robin_interleave(sources: list, *, rng: random.Random | None = None) -> list:
@@ -500,6 +587,16 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         sources, country_priority=getattr(settings, "country_priority", None) or None
     )
 
+    # Pass-recycling carryover (P0.3 E2): sources the LAST pass boundary
+    # deferred run FIRST this pass, in their recorded order — recycling is
+    # ordering, never exclusion, so a wound-down pass can never starve a
+    # source. A deferred id no longer in the selection simply drops out.
+    carry = _consume_deferred()
+    if carry:
+        rank = {sid: i for i, sid in enumerate(carry)}
+        head = sorted((s for s in sources if s.id in rank), key=lambda s: rank[s.id])
+        sources = head + [s for s in sources if s.id not in rank]
+
     # Per-feed de-churn backoff (field log finding F): skip RSS feeds that are
     # within a CAPPED, self-resetting backoff window (a recent 200 served only
     # duplicates). This is an additive pre-filter — it changes only WHICH feeds
@@ -568,6 +665,19 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         if settings.mode == "crawl"
         else None
     )
+    # The pass-boundary decider (P0.3 E2): when the wall-clock budget or work
+    # cap is reached the pass stops ADMITTING new sources; whatever is in
+    # flight finishes (politeness untouched) and the remainder is deferred to
+    # run first next pass. Checked before each source — never mid-fetch.
+    wind = _PassWindDown(budget_s=_pass_budget_s(), max_sources=_pass_max_sources())
+    deferred_sources: list = []
+    deferred_lock = threading.Lock()
+    wind_reasons: dict[str, int] = {}
+
+    def _defer(source, reason: str) -> None:
+        with deferred_lock:
+            deferred_sources.append(source)
+            wind_reasons[reason] = wind_reasons.get(reason, 0) + 1
     # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
     # the sequential loop (governor off, unchanged behaviour).
     w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
@@ -615,6 +725,13 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
             )
 
             def _worker(source):
+                # Pass boundary check BEFORE any permit/session/gate is taken:
+                # a wound-down worker holds nothing and returns immediately
+                # (the source is deferred, never dropped).
+                reason = wind.admit()
+                if reason:
+                    _defer(source, reason)
+                    return {}, 0, 0
                 # Acquire a governor permit BEFORE opening a DB session, so a
                 # throttled (parked) worker holds no connection or key in memory.
                 governor.acquire()
@@ -664,6 +781,10 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
                     )
         else:
             for idx, source in enumerate(sources):
+                reason = wind.admit()
+                if reason:
+                    _defer(source, reason)
+                    continue
                 _progress_set(current=source.domain, done=idx, pages=pages_fetched)
                 tally, pages, processed = _process_source(
                     source, session=session, fetcher=fetcher,
@@ -675,8 +796,20 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     finally:
         _progress_set(_clear=True)
 
+    recycled: str | None = None
+    if deferred_sources:
+        # The exactness invariant: every selected source was either processed
+        # or is recorded here, in order, to run FIRST next pass.
+        _record_deferred([s.id for s in deferred_sources])
+        recycled = max(wind_reasons.items(), key=lambda kv: kv[1])[0]
+        _LOG.info(
+            "pass wound down (%s): %d source(s) deferred to run first next pass",
+            recycled,
+            len(deferred_sources),
+        )
+
     finished = datetime.now(UTC)
-    return {
+    out = {
         "mode": settings.mode,
         "sources_processed": sources_processed,
         "articles_stored": agg.get("stored", 0),
@@ -686,6 +819,10 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         "finished_at": finished.isoformat(),
         "duration_s": round((finished - started).total_seconds(), 2),
     }
+    if deferred_sources:
+        out["recycled"] = recycled
+        out["deferred_next_pass"] = len(deferred_sources)
+    return out
 
 
 class BackgroundScheduler:
@@ -1037,6 +1174,9 @@ class BackgroundScheduler:
                 "settings": s.to_dict(),
                 "progress": current_progress(),
                 "phase": current_phase(),
+                # Pass recycling honesty (P0.3 E2): how many sources the last
+                # pass boundary deferred — they run FIRST next pass.
+                "deferred_carryover": deferred_carryover_count(),
             }
 
     def activity(self, session) -> dict:
