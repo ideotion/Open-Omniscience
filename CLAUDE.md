@@ -606,6 +606,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     sessions, write bookkeeping AFTER the network loop and COMMIT it before returning so the
     session leaves clean (tests/test_collect_batching.py pins both collector paths + the
     sequential shared-session case).
+  - **A "STREAMING" PIPELINE IS ONLY AS BOUNDED AS ITS WORST STAGE + INCREMENTAL-IN-PLACE IS A
+    DATA-LOSS FOOTGUN (2026-07-09, the P0.1 backup rework):** (a) the "already streaming"
+    volumes+parity path OOMed anyway because `write_parity` loaded EVERY volume into RAM at once
+    (N×512 MiB = the whole archive — 11.7 GB on the 10 GB field VM); when a path claims
+    bounded-RAM, grep every stage INCLUDING the resilience/erasure/checksum layers for whole-set
+    materialization (now banded, bytewise-identical, test-pinned). (b) changed-volume re-emit
+    under deterministic per-slice file names would have OVERWRITTEN files the previous complete
+    manifest references — an interrupted refresh degrades the last good backup (the rsync
+    --inplace hazard); the safe shape is run-unique names for emissions + atomic manifest swap +
+    garbage-collection only AFTER finalize. Corollary: file names in a manifest anyone can
+    self-sign are traversal-guarded before verify/restore touches the filesystem (a signature
+    proves consistency with the EMBEDDED key, never trust). Full entries in SHIPPED_LOG 2026-07-09.
 
 ## Open queue (when maintainer says proceed)
 - **SCALE MANDATE (maintainer ruled 2026-07-09; the consolidated roadmap lives in

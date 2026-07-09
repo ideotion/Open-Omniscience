@@ -2974,3 +2974,28 @@ the WHOLE feed). Probe: a fake session asserting `write_gate.stats()["held"] is 
 gate-wired sessions, write bookkeeping AFTER the network loop and COMMIT it before returning so
 the session leaves clean — the sequential pass shares ONE session across sources, so pending
 bookkeeping otherwise gates the NEXT source's fetches too.
+## 2026-07-09 — P0.1 streaming backup engine (Round 2 ZETA, oo-volumes-2)
+
+Full row in shipped.csv (backup/scale). Two reusable lessons:
+
+**LESSON — a "streaming" pipeline is only as bounded as its WORST stage; audit the
+resilience layer too.** The roadmap assumed "the volumes+parity streaming path should
+already handle 11.7 GB". The volume writer did stream — but `write_parity`/`recover_volumes`
+loaded EVERY volume into RAM at once (`_load_padded` × N = the whole archive), so the parity
+stage alone was a guaranteed OOM at the field's 11.7 GB corpus on the 10 GB VM — on the very
+path meant to save the corpus. When a path is claimed bounded-RAM at scale, grep every stage
+(including erasure/verification/checksum layers) for whole-set materialization; one stage
+voids the claim. Fix: banded GF(2^8) (encode holds (M+1) bands, decode (erased+1)) —
+bytewise-identical output, test-pinned.
+
+**LESSON — incremental-in-place is a data-loss footgun (the rsync --inplace hazard).**
+The first cut of changed-volume re-emit used deterministic per-slice file names, i.e.
+re-emitted volumes OVERWROTE the files the previous complete manifest referenced — so an
+interrupted refresh would have degraded the user's last good backup (caught by the pre-push
+negative-space pass, fixed before ship). The safe shape: emitted volumes get RUN-UNIQUE
+names, reused ones keep theirs, the new manifest lands by atomic replace, and superseded
+files are garbage-collected only AFTER finalize — an interrupted or cancelled refresh then
+leaves the previous set fully verifiable and restorable (test-pinned). Corollary for any
+manifest-of-files format: names in a manifest anyone can self-sign must be traversal-guarded
+before verify/restore touches the filesystem (a signature proves consistency with the
+EMBEDDED key, not trust).
