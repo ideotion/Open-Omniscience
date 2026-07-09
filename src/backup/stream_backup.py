@@ -1,0 +1,1240 @@
+"""The oo-volumes-2 STREAMING backup engine — P0.1 backup-at-scale (2026-07-09).
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+WHY (the 2026-07-09 field event): the previous large-backup path materialized the
+WHOLE corpus twice before a single volume was written — a disposable PLAINTEXT
+snapshot (decrypt-the-world; an at-rest-encryption violation while staged) and an
+oo-backup-2 zip of it — and its Reed-Solomon parity then loaded the whole volume
+set into RAM. At the field's 11.7 GB corpus on a 10 GB VM that is a guaranteed
+OOM ON THE VERY PATH MEANT TO SAVE THE CORPUS. This engine replaces the container
+so that NO step ever holds or writes a whole-corpus copy:
+
+  * MEMBER-STREAMED: each artifact member (corpus, custody, state files, logs,
+    annotations, keys, the signed oo-backup-2 manifest) is sliced and encrypted
+    DIRECTLY into independently-authenticated OOENC2 volumes. There is no zip.
+  * THE CORPUS IS NEVER DECRYPTED AT BACKUP TIME: the live database FILE is
+    streamed as-is (raw SQLCipher bytes when the store is encrypted), inside a
+    single writer-gate window after a WAL checkpoint — a consistent snapshot with
+    ZERO staging disk and bounded RAM (one 4 MiB chunk at a time). A plaintext
+    store streams its plaintext bytes; the OOENC2 volume envelope is the at-rest
+    protection either way.
+  * INCREMENTAL: every volume records the SHA-256 of its plaintext slice, so a
+    re-run against the same destination re-emits ONLY changed volumes (checksum
+    compared, never size/mtime — a same-length slice with different bytes always
+    re-emits). Unchanged SQLCipher pages keep their ciphertext bytes on disk, so
+    an append-mostly corpus reuses most volumes. Reuse of an on-disk volume is
+    itself checksum-verified against the manifest before it is trusted.
+  * RESUMABLE = the same mechanism: an interrupted run leaves its finished
+    volumes plus ``volumes.building.json`` (an interim entry log) and NO final
+    manifest — so a partial set can never be mistaken for a good backup — and the
+    next run re-hashes every slice against the CURRENT database state inside one
+    gate window, reusing what still matches and re-emitting the rest. Every
+    completed manifest therefore describes ONE consistent database state, never a
+    mix of two.
+  * PASSPHRASE-BOUND REUSE: the manifest carries a ``key_check`` token; volumes
+    written under a different passphrase are never mixed into a new set (a run
+    with a new passphrase re-emits everything, stated in the summary notes).
+  * VERIFIABLE: :func:`verify_stream_backup` checks the Ed25519-signed volume
+    manifest, every data + parity volume checksum and the member/slice structure
+    WITHOUT decrypting anything; given the passphrase it additionally
+    stream-decrypts every volume into a hash sink (nothing written to disk) and
+    cross-checks the signed inner envelope. It names exactly which volumes are
+    bad and whether parity can still recover them.
+
+RESTORE: volumes are verified (+ parity-recovered), then stream-decrypted member
+by member into a staging dir. An encrypted corpus/custody member is converted to
+the plaintext copy the additive merge engine requires — the ONLY point where
+plaintext touches disk, inside the transient ``.restore-*`` staging the janitor
+reclaims — using the corpus's OWN passphrase (tried in order: the explicit
+``corpus_passphrase``, the live unlocked key, the backup passphrase). The merge
+itself stays byte-for-byte the additive-only engine (nothing replaced, ever).
+
+HONESTY: the writer gate is HELD while the corpus member streams (that is the
+consistency guarantee), so collection writes pause for the duration — reported
+as ``gate_held_s`` in the summary and as the "corpus (writes paused)" phase,
+never hidden. All wall times and byte counts in the summary are measured.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import math
+import os
+import re
+import secrets
+import shutil
+import threading
+import time
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # runtime import stays lazy (artifact <-> stream_backup seam)
+    from src.backup.artifact import StagedArtifact
+
+from src.backup.volumes import (
+    MANIFEST_NAME,
+    VOLUME_SIZE_DEFAULT,
+    VolumeError,
+    VolumeStopped,
+    _sha256_file,
+    load_manifest,
+    verify_volume_set,
+)
+from src.paths import data_dir
+from src.safety.crypto import (
+    EncryptionError,
+    decrypt_bytes,
+    decrypt_stream,
+    encrypt_bytes,
+    encrypt_stream_to_hashed,
+)
+
+_LOG = logging.getLogger("backup.stream")
+
+STREAM_KIND = "oo-volumes-2"
+BUILDING_NAME = "volumes.building.json"
+_BUILDING_KIND = "oo-volumes-2-building"
+_CHUNK = 4 * 1024 * 1024
+_KEY_CHECK_PLAINTEXT = b"oo-volumes-2 key check"
+_CHECKPOINT_WAIT_S = 30.0
+_SAFE_ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+_COMMITMENT_METHOD = (
+    "sha256-chain-v1: sha256 over the per-article "
+    "sha256(canonical_bytes({id,hash})) leaves in hash order (streamed, O(1) memory)"
+)
+
+
+# --------------------------------------------------------------------------- #
+#  Active-staging registry (Z4): the janitor must NEVER sweep a live job's dirs.
+# --------------------------------------------------------------------------- #
+_ACTIVE_STAGING: set[str] = set()
+_ACTIVE_LOCK = threading.Lock()
+
+
+@contextmanager
+def active_staging(path: Path | str) -> Iterator[None]:
+    """Mark ``path`` as belonging to a RUNNING backup/restore job for the duration."""
+    key = str(Path(path).resolve())
+    with _ACTIVE_LOCK:
+        _ACTIVE_STAGING.add(key)
+    try:
+        yield
+    finally:
+        with _ACTIVE_LOCK:
+            _ACTIVE_STAGING.discard(key)
+
+
+def is_active_staging(path: Path | str) -> bool:
+    """True when ``path`` is (or lives inside) a registered live job's staging."""
+    s = str(Path(path).resolve())
+    with _ACTIVE_LOCK:
+        return any(s == a or s.startswith(a + os.sep) for a in _ACTIVE_STAGING)
+
+
+_TEMP_DIR_PREFIXES = (".bak-build-", ".restore-")
+_TEMP_FILE_SUFFIXES = (".oopart", ".reassembling")
+
+
+def sweep_stale_backup_temps(root: Path | str, *, max_age_hours: float = 24.0) -> int:
+    """Remove ORPHANED backup/restore temps under ``root`` (non-recursive):
+    ``.bak-build-*`` / ``.restore-*`` staging dirs and ``*.oopart`` /
+    ``*.reassembling`` files older than ``max_age_hours``. A LIVE job's paths are
+    protected twice over — the active-staging registry and the age guard (a dir
+    being written has a fresh mtime). Never touches volumes, manifests or the
+    resume log (``volumes.building.json``). Returns the number removed."""
+    rootp = Path(root)
+    if not rootp.is_dir():
+        return 0
+    removed = 0
+    cutoff = time.time() - max_age_hours * 3600
+    try:
+        entries = list(rootp.iterdir())
+    except OSError:  # pragma: no cover - unreadable root
+        return 0
+    for p in entries:
+        try:
+            if is_active_staging(p):
+                continue
+            if p.is_dir() and p.name.startswith(_TEMP_DIR_PREFIXES):
+                # A dir's own mtime can stay old while files are written INSIDE it —
+                # age-guard on the newest entry within, so a live tree is never swept.
+                newest = p.stat().st_mtime
+                for sub in p.rglob("*"):
+                    try:
+                        newest = max(newest, sub.stat().st_mtime)
+                    except OSError:  # pragma: no cover
+                        continue
+                if newest < cutoff:
+                    shutil.rmtree(p, ignore_errors=True)
+                    removed += 1
+            elif p.is_file() and p.name.endswith(_TEMP_FILE_SUFFIXES):
+                if p.stat().st_mtime < cutoff:
+                    p.unlink(missing_ok=True)
+                    removed += 1
+        except OSError:  # pragma: no cover - fs race; janitor is best-effort
+            continue
+    return removed
+
+
+# --------------------------------------------------------------------------- #
+#  Small helpers
+# --------------------------------------------------------------------------- #
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=1, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _vol_name(member: str, i: int) -> str:
+    """Deterministic, filesystem-safe volume name for (member, slice) — stable
+    across runs so incremental matching lands on the same file."""
+    tag = hashlib.sha256(member.encode("utf-8")).hexdigest()[:12]
+    return f"vol-{tag}-{i:05d}.ooenc"
+
+
+def _key_check(passphrase: str) -> str:
+    return encrypt_bytes(_KEY_CHECK_PLAINTEXT, passphrase).hex()
+
+
+def _key_check_ok(token: str | None, passphrase: str) -> bool:
+    if not token:
+        return False
+    try:
+        return decrypt_bytes(bytes.fromhex(token), passphrase) == _KEY_CHECK_PLAINTEXT
+    except (EncryptionError, ValueError):
+        return False
+
+
+def _manifest_signature_state(m: dict[str, Any]) -> str:
+    """verified | bad-signature | unsigned — over the manifest minus its signature."""
+    sig = m.get("signature")
+    if not isinstance(sig, dict) or not sig.get("signature") or not sig.get("public_key"):
+        return "unsigned"
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        from src.reporting.evidence import canonical_bytes
+
+        body = {k: v for k, v in m.items() if k != "signature"}
+        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(sig["public_key"]))
+        pub.verify(bytes.fromhex(sig["signature"]), canonical_bytes(body))
+        return "verified"
+    except Exception:  # noqa: BLE001 - any failure is exactly "bad-signature"
+        return "bad-signature"
+
+
+def _sign_manifest(m: dict[str, Any]) -> dict[str, str]:
+    from src.reporting.evidence import (
+        canonical_bytes,
+        load_or_create_signing_key,
+        public_key_hex,
+    )
+
+    key = load_or_create_signing_key()
+    body = {k: v for k, v in m.items() if k != "signature"}
+    return {
+        "algorithm": "ed25519",
+        "public_key": public_key_hex(key),
+        "signature": key.sign(canonical_bytes(body)).hex(),
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Corpus source (the live default + a seam for tests/benches)
+# --------------------------------------------------------------------------- #
+@dataclass
+class CorpusSource:
+    """What the corpus member streams from. ``freeze()`` yields the residual WAL
+    path (or None) with the file guaranteed stable for the duration. ``facts_key``
+    opens the store for the descriptive stats when the ambient process key is not
+    its key (test/bench corpora); the live store always opens with the ambient key."""
+
+    path: Path
+    member_name: str
+    encrypted: bool
+    freeze: Callable[[], Any]  # context manager -> Path | None (residual wal)
+    facts_key: str | None = None
+
+
+@contextmanager
+def _no_freeze() -> Iterator[None]:
+    yield None
+
+
+def _drain_wal(db_path: Path) -> Path | None:
+    """Fold the WAL into the main file (TRUNCATE checkpoint, retried briefly).
+    Returns the WAL path if frames REMAIN (a long reader held them) — the caller
+    then carries the WAL as a member instead of blocking forever."""
+    from src.database.session import engine
+
+    wal = db_path.with_name(db_path.name + "-wal")
+    deadline = time.monotonic() + _CHECKPOINT_WAIT_S
+    while True:
+        try:
+            with engine.connect() as conn:
+                conn.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:  # noqa: BLE001 - checkpoint is best-effort; the wal member covers it
+            _LOG.warning("backup: WAL checkpoint failed", exc_info=True)
+            break
+        if not wal.exists() or wal.stat().st_size == 0:
+            return None
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
+    return wal if wal.exists() and wal.stat().st_size > 0 else None
+
+
+def _live_corpus_source(
+    tmp_dir: Path, include_newsletters: bool, notes: list[str]
+) -> CorpusSource:
+    from src.backup.sqlite_backup import live_db_path
+    from src.database.connect import is_encrypted_file
+
+    live = live_db_path()
+    enc = bool(is_encrypted_file(live))
+    member = "corpus.db.sqlcipher" if enc else "corpus.db"
+    if include_newsletters:
+
+        @contextmanager
+        def freeze() -> Iterator[Path | None]:
+            from src.database.writer import write_lock
+
+            with write_lock():
+                yield _drain_wal(live)
+
+        return CorpusSource(path=live, member_name=member, encrypted=enc, freeze=freeze)
+
+    # Newsletter exclusion needs a modifiable copy: a DISPOSABLE snapshot that
+    # PRESERVES the at-rest encryption state (never a plaintext staging), filtered
+    # in place, streamed instead of the live file. Snapshot pages are re-encrypted
+    # with fresh IVs, so incremental reuse does not apply to filtered runs.
+    from src.database.connect import snapshot_preserving
+
+    snap = tmp_dir / member
+    snapshot_preserving(live, snap)
+    _drop_newsletters_in_file(snap)
+    notes.append(
+        "newsletters excluded: the corpus was snapshotted and filtered, so "
+        "incremental volume reuse does not apply to this run"
+    )
+    return CorpusSource(path=snap, member_name=member, encrypted=enc, freeze=_no_freeze)
+
+
+def _drop_newsletters_in_file(db_path: Path) -> int:
+    """Drop imported-newsletter articles from a DISPOSABLE snapshot, plaintext or
+    SQLCipher (opened through the one factory with the ambient key)."""
+    from src.backup.artifact import _drop_newsletter_rows
+    from src.database.connect import connect
+
+    con = connect(db_path, check_same_thread=False)
+    try:
+        return _drop_newsletter_rows(con)
+    finally:
+        con.close()
+
+
+def _corpus_facts(path: Path, key: str | None = None) -> tuple[dict[str, Any], str | None]:
+    """Table counts + a streamed article commitment + the alembic revision, read
+    through the ONE connection factory (plaintext or SQLCipher with the ambient
+    key). Bounded memory: the commitment is a running hash chain, never a list.
+
+    Degrades honestly: an unreadable store (e.g. a bench file that is not an OO
+    corpus) yields empty counts and a null commitment rather than failing the
+    backup — the member checksums still protect the bytes themselves."""
+    from src.database.connect import connect
+
+    counts: dict[str, int] = {}
+    commitment: dict[str, Any] | None = None
+    rev: str | None = None
+    try:
+        conn = connect(path, key=key, check_same_thread=False)
+    except Exception:  # noqa: BLE001 - stats are descriptive; bytes are still protected
+        _LOG.warning("backup: could not open the corpus for stats", exc_info=True)
+        return {"tables": counts, "articles_commitment": None}, None
+    try:
+        cur = conn.cursor()
+        try:
+            tables = [
+                r[0]
+                for r in cur.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'article_fts%'"
+                ).fetchall()
+            ]
+            for t in tables:
+                if _SAFE_ID.match(t):
+                    cur.execute(f'SELECT COUNT(*) FROM "{t}"')  # noqa: S608  # nosec B608 - identifier from sqlite_master, validated against _SAFE_ID; no user input
+                    counts[t] = int(cur.fetchone()[0])
+            if "articles" in counts:
+                from src.reporting.evidence import canonical_bytes
+
+                h = hashlib.sha256()
+                n_rows = 0
+                # hash order rides the unique hash index (index-only scan) — an
+                # id-ordered scan would drag whole article rows (content included)
+                # through the SQLCipher codec (the measured column-order trap).
+                cur.execute("SELECT id, hash FROM articles ORDER BY hash")
+                while True:
+                    rows = cur.fetchmany(10_000)
+                    if not rows:
+                        break
+                    for rid, ahash in rows:
+                        h.update(
+                            hashlib.sha256(canonical_bytes({"id": rid, "hash": ahash})).digest()
+                        )
+                        n_rows += 1
+                commitment = {
+                    "method": _COMMITMENT_METHOD,
+                    "value": h.hexdigest(),
+                    "n": n_rows,
+                }
+            try:
+                cur.execute("SELECT version_num FROM alembic_version")
+                row = cur.fetchone()
+                rev = row[0] if row else None
+            except Exception:  # noqa: BLE001 - unstamped file: honest None
+                rev = None
+        finally:
+            cur.close()
+    except Exception:  # noqa: BLE001 - stats stay descriptive, never fail the backup
+        _LOG.warning("backup: corpus stats failed", exc_info=True)
+    finally:
+        conn.close()
+    return {"tables": counts, "articles_commitment": commitment}, rev
+
+
+# --------------------------------------------------------------------------- #
+#  Members
+# --------------------------------------------------------------------------- #
+@dataclass
+class MemberFile:
+    name: str  # artifact member name (zip-member-style relative path)
+    role: str
+    path: Path  # stable source file on disk
+
+
+def _collect_side_members(tmp_dir: Path) -> list[MemberFile]:
+    """Stage every non-corpus member into ``tmp_dir`` (small copies, stable while
+    they hash + encrypt). Custody is snapshotted PRESERVING its encryption state —
+    plaintext never touches disk at backup time. Keys are always included (the
+    volume backup is always encrypted; D2)."""
+    from src.backup.artifact import _ANNOTATIONS_DIR, _CUSTODY_DB, _KEYS_DIR
+    from src.backup.artifact import _LOG_FILES as LOG_FILES
+    from src.backup.artifact import _STATE_FILES as STATE_FILES
+    from src.database.connect import snapshot_preserving
+
+    base = data_dir()
+    members: list[MemberFile] = []
+
+    custody_src = base / _CUSTODY_DB
+    if custody_src.exists():
+        snap = tmp_dir / _CUSTODY_DB
+        snapshot_preserving(custody_src, snap)
+        members.append(MemberFile(_CUSTODY_DB, "custody", snap))
+
+    def _stage(rel: str, role: str, src: Path) -> None:
+        dst = tmp_dir / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        members.append(MemberFile(rel, role, dst))
+
+    for name in STATE_FILES:
+        p = base / name
+        if p.exists():
+            _stage(name, "state", p)
+    for name in LOG_FILES:
+        p = base / name
+        if p.exists():
+            _stage(f"logs/{name}", "logs", p)
+    ann = base / _ANNOTATIONS_DIR
+    if ann.is_dir():
+        for p in sorted(ann.rglob("*.json")):
+            _stage(str(p.relative_to(base)), "annotations", p)
+    keys = base / _KEYS_DIR
+    if keys.is_dir():
+        for p in sorted(keys.iterdir()):
+            if p.is_file():
+                _stage(str(p.relative_to(base)), "keys", p)
+    return members
+
+
+# --------------------------------------------------------------------------- #
+#  Emit
+# --------------------------------------------------------------------------- #
+@dataclass
+class _EmitState:
+    dest: Path
+    passphrase: str
+    volume_size: int
+    chunk_size: int
+    pool: dict[tuple[str, int], dict[str, Any]]
+    building_path: Path
+    key_check: str
+    should_stop: Callable[[], bool] | None
+    progress_cb: Callable[[dict[str, Any]], None] | None
+    phase: str = "members"
+    reused: int = 0
+    emitted: int = 0
+    bytes_reused: int = 0
+    bytes_emitted: int = 0
+
+    def __post_init__(self) -> None:
+        self.volumes: list[dict[str, Any]] = []
+
+    def progress(self) -> None:
+        if self.progress_cb is not None:
+            self.progress_cb(
+                {
+                    "phase": self.phase,
+                    "volumes_written": self.reused + self.emitted,
+                    "volumes_reused": self.reused,
+                    "volumes_emitted": self.emitted,
+                    "bytes_written": self.bytes_emitted,
+                    "bytes_reused": self.bytes_reused,
+                }
+            )
+
+    def save_building(self) -> None:
+        _write_json_atomic(
+            self.building_path,
+            {
+                "kind": _BUILDING_KIND,
+                "key_check": self.key_check,
+                "volume_size": self.volume_size,
+                "chunk_size": self.chunk_size,
+                "volumes": self.volumes,
+            },
+        )
+
+
+def _emit_member(st: _EmitState, mf: MemberFile) -> dict[str, Any]:
+    """Slice ``mf`` into volumes: hash each plaintext slice, REUSE the existing
+    volume when both the slice hash and the on-disk ciphertext hash match the
+    pool (checksum, never size/mtime), else encrypt + emit. The source file must
+    be stable for the duration (side members are staged copies; the corpus is
+    frozen by the writer gate)."""
+    size = mf.path.stat().st_size
+    n_slices = max(1, math.ceil(size / st.volume_size)) if size else 1
+    whole = hashlib.sha256()
+    vol_names: list[str] = []
+    with open(mf.path, "rb") as fh:
+        for i in range(n_slices):
+            if st.should_stop is not None and st.should_stop():
+                st.save_building()
+                raise VolumeStopped("volume backup stopped")
+            offset = i * st.volume_size
+            slice_len = max(0, min(st.volume_size, size - offset))
+            sh = hashlib.sha256()
+            fh.seek(offset)
+            remaining = slice_len
+            while remaining:
+                b = fh.read(min(st.chunk_size, remaining))
+                if not b:
+                    raise VolumeError(f"{mf.path} shrank while being backed up")
+                sh.update(b)
+                whole.update(b)
+                remaining -= len(b)
+            psha = sh.hexdigest()
+            vname = _vol_name(mf.name, i)
+            vpath = st.dest / vname
+            pooled = st.pool.get((mf.name, i))
+            if (
+                pooled is not None
+                and pooled.get("plaintext_sha256") == psha
+                and int(pooled.get("plaintext_bytes", -1)) == slice_len
+                and vpath.exists()
+                and _sha256_file(vpath) == pooled.get("sha256")
+            ):
+                entry = {
+                    "name": vname,
+                    "member": mf.name,
+                    "slice": i,
+                    "sha256": pooled["sha256"],
+                    "bytes": vpath.stat().st_size,
+                    "plaintext_bytes": slice_len,
+                    "plaintext_sha256": psha,
+                }
+                st.reused += 1
+                st.bytes_reused += slice_len
+            else:
+                tmp = st.dest / (vname + ".oopart")
+                fh.seek(offset)
+                consumed, csha = encrypt_stream_to_hashed(
+                    fh, tmp, st.passphrase, limit=slice_len, chunk_size=st.chunk_size
+                )
+                if consumed != slice_len:
+                    tmp.unlink(missing_ok=True)
+                    raise VolumeError(f"{mf.path} changed size while being backed up")
+                os.replace(tmp, vpath)
+                entry = {
+                    "name": vname,
+                    "member": mf.name,
+                    "slice": i,
+                    "sha256": csha,
+                    "bytes": vpath.stat().st_size,
+                    "plaintext_bytes": slice_len,
+                    "plaintext_sha256": psha,
+                }
+                st.emitted += 1
+                st.bytes_emitted += slice_len
+            st.volumes.append(entry)
+            vol_names.append(vname)
+            st.save_building()
+            st.progress()
+    return {
+        "name": mf.name,
+        "role": mf.role,
+        "plaintext_bytes": size,
+        "plaintext_sha256": whole.hexdigest(),
+        "volumes": vol_names,
+    }
+
+
+def _load_reuse_pool(
+    dest: Path, passphrase: str
+) -> tuple[dict[tuple[str, int], dict[str, Any]], list[str]]:
+    """Entries from a previous complete manifest + a previous run's building log,
+    ONLY when their ``key_check`` proves the same passphrase (mixing passphrases
+    would poison the set: reused volumes would not decrypt with the new one)."""
+    pool: dict[tuple[str, int], dict[str, Any]] = {}
+    notes: list[str] = []
+    for fname in (MANIFEST_NAME, BUILDING_NAME):
+        p = dest / fname
+        if not p.exists():
+            continue
+        try:
+            m = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            notes.append(f"unreadable {fname} at the destination ignored")
+            continue
+        kind = m.get("kind")
+        if kind not in (STREAM_KIND, _BUILDING_KIND):
+            notes.append(
+                f"existing {kind or 'unknown'} set at the destination: no incremental "
+                "reuse (older format); volumes are fully re-written"
+            )
+            continue
+        if not _key_check_ok(m.get("key_check"), passphrase):
+            notes.append(
+                f"existing volumes ({fname}) were written under a DIFFERENT passphrase: "
+                "nothing reused, full re-emission"
+            )
+            continue
+        for v in m.get("volumes") or []:
+            if all(k in v for k in ("member", "slice", "sha256", "plaintext_sha256")):
+                pool[(str(v["member"]), int(v["slice"]))] = v
+    return pool, notes
+
+
+def _gc_orphan_volumes(dest: Path, manifest: dict[str, Any]) -> int:
+    """After a successful finalize, remove volume/parity files the manifest does
+    not reference (superseded slices from a shrunk member, an older format, or a
+    changed passphrase) plus any leftover ``.oopart`` temps. The manifest is the
+    single source of truth for what the set contains."""
+    referenced = {v["name"] for v in manifest.get("volumes") or []}
+    par = manifest.get("parity") or {}
+    referenced |= {pv["name"] for pv in par.get("volumes") or []}
+    removed = 0
+    for pattern in ("*.ooenc", "*.oopar", "*.oopart"):
+        for p in dest.glob(pattern):
+            if p.name not in referenced:
+                p.unlink(missing_ok=True)
+                removed += 1
+    return removed
+
+
+# --------------------------------------------------------------------------- #
+#  Write
+# --------------------------------------------------------------------------- #
+def write_stream_backup(
+    dest_dir: Path | str,
+    passphrase: str,
+    *,
+    include_newsletters: bool = True,
+    volume_size: int | None = None,
+    parity_fraction: float = 0.1,
+    should_stop: Callable[[], bool] | None = None,
+    progress_cb: Callable[[dict[str, Any]], None] | None = None,
+    corpus_source: CorpusSource | None = None,
+    side_members: list[MemberFile] | None = None,
+) -> dict[str, Any]:
+    """Build (or incrementally refresh / resume) an oo-volumes-2 set at ``dest_dir``.
+
+    See the module docstring for the guarantees. ``corpus_source``/``side_members``
+    are seams for tests and benches; production uses the live store + data dir.
+    Returns a measured summary (volumes reused/emitted, gate-held seconds, wall)."""
+    if not passphrase:
+        raise VolumeError("the volume backup is always encrypted: a passphrase is required")
+    vsize = volume_size or VOLUME_SIZE_DEFAULT
+    if vsize < 1024:
+        raise VolumeError("volume size too small")
+    t0 = time.monotonic()
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    sweep_stale_backup_temps(dest)
+    notes: list[str] = []
+    pool, pool_notes = _load_reuse_pool(dest, passphrase)
+    notes.extend(pool_notes)
+    resumed = bool(pool) and (dest / BUILDING_NAME).exists()
+
+    tmp_dir = dest / f".bak-build-{secrets.token_hex(6)}"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    gate_held_s = 0.0
+    with active_staging(tmp_dir):
+        try:
+            st = _EmitState(
+                dest=dest,
+                passphrase=passphrase,
+                volume_size=vsize,
+                chunk_size=_CHUNK,
+                pool=pool,
+                building_path=dest / BUILDING_NAME,
+                key_check=_key_check(passphrase),
+                should_stop=should_stop,
+                progress_cb=progress_cb,
+            )
+            st.phase = "collecting"
+            st.progress()
+            side = side_members if side_members is not None else _collect_side_members(tmp_dir)
+            src = (
+                corpus_source
+                if corpus_source is not None
+                else _live_corpus_source(tmp_dir, include_newsletters, notes)
+            )
+            corpus_bytes = src.path.stat().st_size
+            side_bytes = sum(m.path.stat().st_size for m in side)
+            _preflight_dest(dest, corpus_bytes, side_bytes, parity_fraction)
+
+            members_out: list[dict[str, Any]] = []
+            st.phase = "members"
+            for mf in side:
+                e = _emit_member(st, mf)
+                members_out.append(e)
+
+            st.phase = "corpus (writes paused)"
+            st.progress()
+            gate_t0 = time.monotonic()
+            wal_member: str | None = None
+            with src.freeze() as wal_path:
+                ce = _emit_member(st, MemberFile(src.member_name, "corpus", src.path))
+                ce["sqlcipher"] = src.encrypted
+                members_out.append(ce)
+                if wal_path is not None:
+                    we = _emit_member(
+                        st, MemberFile(src.member_name + "-wal", "corpus-wal", wal_path)
+                    )
+                    we["sqlcipher"] = src.encrypted
+                    members_out.append(we)
+                    wal_member = we["name"]
+                    notes.append(
+                        "the live WAL could not fully checkpoint (a long reader was "
+                        "active); the residual WAL rides as a member and is folded "
+                        "back in at restore"
+                    )
+                stats, arev = _corpus_facts(src.path, key=src.facts_key)
+            gate_held_s = time.monotonic() - gate_t0
+
+            st.phase = "finalizing"
+            st.progress()
+            envelope = _build_envelope(members_out, src, stats, arev, notes)
+            env_path = tmp_dir / "manifest.json"
+            env_path.write_text(
+                json.dumps(envelope, ensure_ascii=False, indent=1), encoding="utf-8"
+            )
+            members_out.append(
+                _emit_member(st, MemberFile("manifest.json", "manifest", env_path))
+            )
+
+            vman: dict[str, Any] = {
+                "kind": STREAM_KIND,
+                "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "volume_size": vsize,
+                "chunk_size": _CHUNK,
+                "key_check": st.key_check,
+                "corpus_member": src.member_name,
+                "corpus_encrypted": src.encrypted,
+                "wal_member": wal_member,
+                "plaintext_bytes": sum(int(m["plaintext_bytes"]) for m in members_out),
+                "members": members_out,
+                "volumes": st.volumes,
+                "parity": None,
+                "notes": notes,
+            }
+            _write_json_atomic(dest / MANIFEST_NAME, vman)
+
+            parity: dict[str, Any] | None = None
+            from src.backup.parity import parity_available
+
+            if parity_available():
+                st.phase = "parity"
+                st.progress()
+                from src.backup.parity import write_parity
+
+                parity = write_parity(dest, parity_fraction=parity_fraction)
+
+            # Sign LAST so the signature covers the parity block too.
+            final = load_manifest(dest)
+            final.pop("signature", None)
+            final["signature"] = _sign_manifest(final)
+            _write_json_atomic(dest / MANIFEST_NAME, final)
+            (dest / BUILDING_NAME).unlink(missing_ok=True)
+            gc_removed = _gc_orphan_volumes(dest, final)
+
+            return {
+                "envelope": envelope,
+                "format": STREAM_KIND,
+                "volumes": len(st.volumes),
+                "volumes_reused": st.reused,
+                "volumes_emitted": st.emitted,
+                "bytes_reused": st.bytes_reused,
+                "bytes_emitted": st.bytes_emitted,
+                "plaintext_bytes": vman["plaintext_bytes"],
+                "corpus_bytes": corpus_bytes,
+                "corpus_encrypted": src.encrypted,
+                "parity": parity,
+                "parity_available": parity_available(),
+                "dest": str(dest),
+                "resumed": resumed,
+                "orphans_removed": gc_removed,
+                "gate_held_s": round(gate_held_s, 3),
+                "wall_s": round(time.monotonic() - t0, 3),
+                "notes": notes,
+            }
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _preflight_dest(
+    dest: Path, corpus_bytes: int, side_bytes: int, parity_fraction: float
+) -> None:
+    """Refuse loudly up front when the destination clearly lacks room. Existing
+    volumes count toward the budget (an incremental refresh mostly reuses them)."""
+    from src.backup.artifact import preflight_free_space
+
+    needed = int((corpus_bytes + side_bytes) * (1.0 + max(0.0, parity_fraction)) * 1.02)
+    needed += 64 * 1024 * 1024
+    existing = 0
+    for p in dest.glob("*.ooenc"):
+        try:
+            existing += p.stat().st_size
+        except OSError:  # pragma: no cover
+            continue
+    needed = max(needed - existing, int(corpus_bytes * max(0.0, parity_fraction)))
+    preflight_free_space(dest, needed, what="volume backup")
+
+
+def _build_envelope(
+    members_out: list[dict[str, Any]],
+    src: CorpusSource,
+    stats: dict[str, Any],
+    alembic_rev: str | None,
+    notes: list[str],
+) -> dict[str, Any]:
+    """The signed oo-backup-2 manifest envelope, carried as the ``manifest.json``
+    member — same schema as the zip artifact so the staging/merge path reads it
+    unchanged; ``container``/``corpus_encrypted`` are additive facts."""
+    from src.backup.artifact import BACKUP_SCHEMA, _excluded_inventory
+    from src.reporting.evidence import (
+        canonical_bytes,
+        load_or_create_signing_key,
+        public_key_hex,
+    )
+    from src.utils.export_envelope import app_version
+
+    key = load_or_create_signing_key()
+    manifest = {
+        "backup_schema": BACKUP_SCHEMA,
+        "app_version": app_version(),
+        "alembic_rev": alembic_rev,
+        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "encrypted": True,
+        "keys_included": True,
+        "container": STREAM_KIND,
+        "corpus_member": src.member_name,
+        "corpus_encrypted": src.encrypted,
+        "members": [
+            {
+                "name": m["name"],
+                "role": m["role"],
+                "sha256": m["plaintext_sha256"],
+                "bytes": m["plaintext_bytes"],
+                "sqlcipher": bool(m.get("sqlcipher")),
+            }
+            for m in members_out
+        ],
+        "excluded": _excluded_inventory(),
+        "corpus": stats,
+        "notes": list(notes),
+    }
+    return {
+        "manifest": manifest,
+        "signature": key.sign(canonical_bytes(manifest)).hex(),
+        "public_key": public_key_hex(key),
+        "algorithm": "ed25519",
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Verify
+# --------------------------------------------------------------------------- #
+def verify_stream_backup(
+    src_dir: Path | str, passphrase: str | None = None
+) -> dict[str, Any]:
+    """End-to-end verification of a volume set WITHOUT touching the live corpus.
+
+    Without a passphrase: manifest signature, every data + parity volume checksum,
+    member/slice structure, orphan files — nothing decrypted, nothing written.
+    With the passphrase: additionally stream-decrypts EVERY volume into a hash
+    sink (still nothing written), checks each member's whole-plaintext checksum,
+    and cross-checks the signed inner envelope's member hashes against the volume
+    manifest. Reports exactly which volumes are bad and whether parity can still
+    recover them."""
+    src = Path(src_dir)
+    m = load_manifest(src)
+    report: dict[str, Any] = {
+        "kind": m.get("kind"),
+        "ok": True,
+        "problems": [],
+        "bad_volumes": [],
+        "missing_volumes": [],
+        "volumes": len(m.get("volumes") or []),
+        "signature": None,
+        "parity": None,
+        "decrypted": False,
+        "method": (
+            "manifest signature + per-volume ciphertext SHA-256 + structure; "
+            "with the passphrase every volume is stream-decrypted into a hash "
+            "sink and member/envelope checksums are cross-checked"
+        ),
+    }
+
+    def _fail(problem: str) -> None:
+        report["ok"] = False
+        report["problems"].append(problem)
+
+    if m.get("kind") == STREAM_KIND:
+        state = _manifest_signature_state(m)
+        report["signature"] = state
+        if state != "verified":
+            _fail(
+                f"volume manifest signature: {state} — the set's index cannot be "
+                "trusted (an interrupted finalize or tampering); re-run the backup"
+            )
+    else:
+        report["signature"] = "not-applicable (oo-volumes-1 sets are unsigned)"
+
+    status = verify_volume_set(src)
+    report["bad_volumes"] = status["bad"]
+    report["missing_volumes"] = status["missing"]
+    if status["bad"]:
+        _fail("corrupt or missing data volumes: " + ", ".join(sorted(status["bad"])))
+
+    par = m.get("parity")
+    bad_parity: list[str] = []
+    if par:
+        for pv in par.get("volumes") or []:
+            p = src / pv["name"]
+            if not p.exists() or _sha256_file(p) != pv["sha256"]:
+                bad_parity.append(pv["name"])
+        usable = int(par.get("count", 0)) - len(bad_parity)
+        report["parity"] = {
+            "volumes": int(par.get("count", 0)),
+            "bad": bad_parity,
+            "tolerance_remaining": max(0, usable),
+        }
+        if bad_parity:
+            _fail(
+                "corrupt parity volumes (data may be intact but protection is "
+                "reduced — re-run the backup to regenerate parity): "
+                + ", ".join(sorted(bad_parity))
+            )
+        report["recoverable"] = bool(status["bad"]) and len(status["bad"]) <= max(0, usable)
+    else:
+        report["recoverable"] = False
+
+    if m.get("kind") == STREAM_KIND:
+        vol_by_name = {v["name"]: v for v in m.get("volumes") or []}
+        for mm in m.get("members") or []:
+            for vname in mm.get("volumes") or []:
+                if vname not in vol_by_name:
+                    _fail(f"member {mm['name']} references a volume missing from the index: {vname}")
+        known = set(vol_by_name) | {pv["name"] for pv in (par or {}).get("volumes") or []}
+        orphans = sorted(
+            p.name
+            for p in list(src.glob("*.ooenc")) + list(src.glob("*.oopar"))
+            if p.name not in known
+        )
+        if orphans:
+            report["orphans"] = orphans  # informational: not part of the set
+
+    if passphrase and m.get("kind") == STREAM_KIND and not status["bad"]:
+        if not _key_check_ok(m.get("key_check"), passphrase):
+            _fail("the passphrase does not match this volume set")
+        else:
+            report["decrypted"] = True
+            envelope_bytes: bytearray | None = None
+            for mm in m.get("members") or []:
+                h = hashlib.sha256()
+                collect: bytearray | None = (
+                    bytearray() if mm.get("name") == "manifest.json" else None
+                )
+
+                def _sink(b: bytes, _h: Any = h, _c: bytearray | None = collect) -> None:
+                    _h.update(b)
+                    if _c is not None:
+                        _c.extend(b)
+
+                try:
+                    for vname in mm.get("volumes") or []:
+                        decrypt_stream(src / vname, _sink, passphrase)
+                except EncryptionError as exc:
+                    _fail(f"member {mm['name']} failed to decrypt: {exc}")
+                    continue
+                if h.hexdigest() != mm.get("plaintext_sha256"):
+                    _fail(f"member {mm['name']} failed its whole-plaintext checksum")
+                if collect is not None:
+                    envelope_bytes = collect
+            if envelope_bytes is not None:
+                report.update(_crosscheck_envelope(bytes(envelope_bytes), m))
+                if report.get("envelope_signature") == "bad-signature" or report.get(
+                    "envelope_mismatches"
+                ):
+                    _fail("the signed inner envelope does not match the volume index")
+    return report
+
+
+def _crosscheck_envelope(env_bytes: bytes, vman: dict[str, Any]) -> dict[str, Any]:
+    """Verify the inner oo-backup-2 envelope signature and tie its member hashes
+    to the volume manifest's (the defense against a consistently-rewritten index)."""
+    out: dict[str, Any] = {}
+    try:
+        envelope = json.loads(env_bytes.decode("utf-8"))
+    except ValueError:
+        return {"envelope_signature": "bad-signature", "envelope_mismatches": ["unparseable"]}
+    manifest = envelope.get("manifest") or {}
+    state = "unsigned"
+    if envelope.get("signature") and envelope.get("public_key"):
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+            from src.reporting.evidence import canonical_bytes
+
+            pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(envelope["public_key"]))
+            pub.verify(bytes.fromhex(envelope["signature"]), canonical_bytes(manifest))
+            state = "verified"
+        except Exception:  # noqa: BLE001
+            state = "bad-signature"
+    out["envelope_signature"] = state
+    env_members = {mm["name"]: mm for mm in manifest.get("members") or []}
+    mismatches: list[str] = []
+    for mm in vman.get("members") or []:
+        name = mm.get("name")
+        if name == "manifest.json":
+            continue  # the envelope cannot list itself
+        em = env_members.get(name)
+        if em is None:
+            mismatches.append(f"{name}: absent from the signed envelope")
+        elif em.get("sha256") != mm.get("plaintext_sha256"):
+            mismatches.append(f"{name}: envelope/index checksum disagreement")
+    out["envelope_mismatches"] = mismatches
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Read / restore staging
+# --------------------------------------------------------------------------- #
+def read_stream_backup(
+    src_dir: Path | str,
+    passphrase: str,
+    staging_root: Path | None = None,
+    *,
+    corpus_passphrase: str | None = None,
+) -> "StagedArtifact":
+    """Verify + (parity-)recover + reassemble an oo-volumes-2 set into a staged
+    artifact the additive merge engine consumes. Streams member by member
+    (bounded RAM); an encrypted corpus/custody member is converted to the
+    plaintext staged copy the merge requires — the only plaintext materialization,
+    inside the transient ``.restore-*`` staging. Raises loudly on anything that
+    cannot be verified."""
+    src = Path(src_dir)
+    m = load_manifest(src)
+    if m.get("kind") != STREAM_KIND:
+        raise VolumeError(f"not an {STREAM_KIND} set (kind={m.get('kind')!r})")
+    sig_state = _manifest_signature_state(m)
+    if sig_state == "bad-signature":
+        raise VolumeError(
+            "the volume manifest fails its signature check — the set's index has "
+            "been altered or corrupted; refusing to restore from it"
+        )
+
+    status = verify_volume_set(src)
+    if status["bad"]:
+        from src.backup.parity import recover_volumes
+
+        unrepaired = (
+            recover_volumes(m, status["bad"], out_dir=src) if m.get("parity") else status["bad"]
+        )
+        if unrepaired:
+            raise VolumeError(
+                "corrupt or missing volumes that could not be recovered: "
+                + ", ".join(sorted(unrepaired))
+            )
+
+    root = staging_root or data_dir()
+    _preflight_staging(root, m)
+    staging = root / f".restore-{secrets.token_hex(8)}"
+    staging.mkdir(parents=True, exist_ok=False)
+    with active_staging(staging):
+        try:
+            vol_by_name = {v["name"]: v for v in m.get("volumes") or []}
+            for mm in m.get("members") or []:
+                out_path = staging / mm["name"]
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                h = hashlib.sha256()
+                with open(out_path, "wb") as fout:
+                    for vname in mm.get("volumes") or []:
+                        if vname not in vol_by_name:
+                            raise VolumeError(
+                                f"member {mm['name']} references an unknown volume {vname}"
+                            )
+
+                        def _sink(b: bytes, _f: Any = fout, _h: Any = h) -> None:
+                            _f.write(b)
+                            _h.update(b)
+
+                        decrypt_stream(src / vname, _sink, passphrase)
+                if h.hexdigest() != mm.get("plaintext_sha256"):
+                    raise VolumeError(
+                        f"member {mm['name']} failed its plaintext checksum after reassembly"
+                    )
+
+            verified_absent = _prepare_staged_corpus_files(
+                staging, m, passphrase, corpus_passphrase
+            )
+            from src.backup.artifact import _finalize_staged
+
+            return _finalize_staged(
+                staging, was_encrypted=True, verified_absent=verified_absent
+            )
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+
+
+def _preflight_staging(root: Path, m: dict[str, Any]) -> None:
+    """Staging needs: every member's plaintext + a plaintext conversion of an
+    encrypted corpus/custody member + the merge's working copy of the live DB."""
+    from src.backup.artifact import preflight_free_space
+
+    members = m.get("members") or []
+    total = sum(int(mm.get("plaintext_bytes", 0)) for mm in members)
+    if m.get("corpus_encrypted"):
+        corpus = next((mm for mm in members if mm.get("role") == "corpus"), None)
+        if corpus:
+            total += int(corpus.get("plaintext_bytes", 0))
+    try:
+        from src.backup.sqlite_backup import live_db_path
+
+        p = live_db_path()
+        total += p.stat().st_size if p.exists() else 0
+    except Exception:  # noqa: BLE001 - no live store (bench/offline): staging-only budget
+        pass
+    preflight_free_space(root, total + 64 * 1024 * 1024, what="restore staging")
+
+
+def _prepare_staged_corpus_files(
+    staging: Path, m: dict[str, Any], passphrase: str, corpus_passphrase: str | None
+) -> frozenset[str]:
+    """Fold a carried WAL, convert SQLCipher members (corpus/custody) to the
+    plaintext staged copies the merge engine reads, and return the member names
+    whose bytes were verified during reassembly but then removed to reclaim disk."""
+    from src.database.connect import get_passphrase, is_encrypted_file
+
+    verified_absent: set[str] = set()
+    corpus_member = str(m.get("corpus_member") or "corpus.db")
+    wal_member = m.get("wal_member")
+    cpath = staging / corpus_member
+    keys = [k for k in (corpus_passphrase, get_passphrase(), passphrase) if k]
+
+    if m.get("corpus_encrypted"):
+        plain = staging / "corpus.db"
+        # Opening with the right key also replays a carried WAL before export.
+        _export_plaintext_with_keys(cpath, plain, keys)
+        cpath.unlink(missing_ok=True)
+        for suffix in ("-wal", "-shm"):
+            cpath.with_name(cpath.name + suffix).unlink(missing_ok=True)
+        verified_absent.add(corpus_member)
+        if wal_member:
+            verified_absent.add(str(wal_member))
+    elif wal_member and (staging / str(wal_member)).exists():
+        _fold_plain_wal(cpath)
+        (staging / str(wal_member)).unlink(missing_ok=True)
+        cpath.with_name(cpath.name + "-shm").unlink(missing_ok=True)
+        verified_absent.add(str(wal_member))
+        # folding the WAL legitimately rewrote the staged corpus AFTER its bytes
+        # were checksum-verified during reassembly — exempt it from the re-check.
+        verified_absent.add(corpus_member)
+
+    custody = staging / "custody_log.db"
+    if custody.exists() and is_encrypted_file(custody):
+        tmp = staging / "custody_log.db.plain"
+        _export_plaintext_with_keys(custody, tmp, keys)
+        os.replace(tmp, custody)
+        # The plaintext differs from the manifest's (encrypted) member bytes —
+        # those were verified during reassembly, before the conversion.
+        verified_absent.add("custody_log.db")
+    return frozenset(verified_absent)
+
+
+def _fold_plain_wal(db_path: Path) -> None:
+    import sqlite3
+
+    con = sqlite3.connect(str(db_path))
+    try:
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        con.commit()
+    finally:
+        con.close()
+
+
+def _export_plaintext_with_keys(src: Path, dest: Path, keys: list[str]) -> None:
+    """Decrypt a staged SQLCipher member into a plaintext copy, trying each
+    candidate key in order. Fails loudly (naming the fix) when none opens it."""
+    from src.database.connect import WrongPassphraseError, connect
+
+    last: Exception | None = None
+    for key in dict.fromkeys(keys):
+        try:
+            conn = connect(src, key=key, check_same_thread=False)
+        except WrongPassphraseError as exc:
+            last = exc
+            continue
+        except Exception as exc:  # noqa: BLE001 - driver/file trouble: keep the cause
+            last = exc
+            continue
+        try:
+            dest.unlink(missing_ok=True)
+            conn.execute("ATTACH DATABASE ? AS snap KEY ''", (str(dest),))
+            cur = conn.cursor()
+            try:
+                cur.execute("SELECT sqlcipher_export('snap')")
+            finally:
+                cur.close()
+            conn.execute("DETACH DATABASE snap")
+            return
+        finally:
+            conn.close()
+    raise VolumeError(
+        "the corpus member is SQLCipher-encrypted and none of the available "
+        "passphrases open it — the backup carries the source store's own "
+        "encryption; pass that passphrase (corpus_passphrase) to restore"
+    ) from last

@@ -195,15 +195,50 @@ def encrypt_stream_to(
         return _encrypt_stream(fin, fout, aes, prefix, chunk_size, limit)
 
 
-def decrypt_file(
-    src: str | os.PathLike[str],
+def encrypt_stream_to_hashed(
+    fin,
     dst: str | os.PathLike[str],
     passphrase: str,
-) -> None:
-    """Stream-decrypt an OOENC2 file written by :func:`encrypt_file`.
+    *,
+    limit: int,
+    chunk_size: int = _CHUNK_DEFAULT,
+) -> tuple[int, str]:
+    """:func:`encrypt_stream_to` that ALSO returns the SHA-256 of the CIPHERTEXT
+    file it wrote, hashed while writing — so a volume writer never needs a second
+    read pass over multi-GB output just to checksum it (P0.1 bounded-IO)."""
+    import hashlib
 
+    header, prefix, aes = _header_and_cipher(passphrase, chunk_size)
+    h = hashlib.sha256()
+
+    class _HashingOut:
+        def __init__(self, fh) -> None:
+            self._fh = fh
+
+        def write(self, b: bytes) -> int:
+            h.update(b)
+            return self._fh.write(b)
+
+    with open(dst, "wb") as fout:
+        out = _HashingOut(fout)
+        out.write(header)
+        consumed = _encrypt_stream(fin, out, aes, prefix, chunk_size, limit)
+    return consumed, h.hexdigest()
+
+
+def decrypt_stream(
+    src: str | os.PathLike[str],
+    write,
+    passphrase: str,
+) -> int:
+    """Stream-decrypt an OOENC2 file, passing each plaintext chunk to ``write``
+    (a ``bytes -> Any`` callable: a file's ``write``, a hasher's ``update``, …).
+
+    The sink form lets a VERIFY pass prove a volume decrypts and checksum its
+    plaintext WITHOUT writing anything to disk. Returns the plaintext byte count.
     Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
     extended stream -- never silently yields a partial archive."""
+    total = 0
     with open(src, "rb") as fin:
         header = fin.read(_HEADER2_LEN)
         if len(header) < _HEADER2_LEN or header[:8] != _MAGIC2:
@@ -218,20 +253,34 @@ def decrypt_file(
             raise EncryptionError("malformed encrypted file (bad chunk size)")
         aes = AESGCM(_derive(passphrase.encode("utf-8"), salt, n, r, p))
         block = chunk_size + _TAG
-        with open(dst, "wb") as fout:
-            counter = 0
-            prev = fin.read(block)
-            while True:
-                cur = fin.read(block)
-                final = not cur
-                try:
-                    pt = aes.decrypt(_chunk_nonce(prefix, counter, final), prev, None)
-                except InvalidTag as exc:
-                    raise EncryptionError(
-                        "wrong passphrase or the file has been altered"
-                    ) from exc
-                fout.write(pt)
-                counter += 1
-                if final:
-                    break
-                prev = cur
+        counter = 0
+        prev = fin.read(block)
+        while True:
+            cur = fin.read(block)
+            final = not cur
+            try:
+                pt = aes.decrypt(_chunk_nonce(prefix, counter, final), prev, None)
+            except InvalidTag as exc:
+                raise EncryptionError(
+                    "wrong passphrase or the file has been altered"
+                ) from exc
+            write(pt)
+            total += len(pt)
+            counter += 1
+            if final:
+                break
+            prev = cur
+    return total
+
+
+def decrypt_file(
+    src: str | os.PathLike[str],
+    dst: str | os.PathLike[str],
+    passphrase: str,
+) -> None:
+    """Stream-decrypt an OOENC2 file written by :func:`encrypt_file`.
+
+    Raises loudly on a wrong passphrase, tamper, truncation, reordering or an
+    extended stream -- never silently yields a partial archive."""
+    with open(dst, "wb") as fout:
+        decrypt_stream(src, fout.write, passphrase)
