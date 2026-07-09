@@ -120,7 +120,15 @@ without becoming a visible job; background work never freezes the UI.
 1. **zh/ja/th segmenter + ko/mr stoplist artifacts** — which library/wordlist to vendor + license. NOW SCALE-CRITICAL (storage), not just quality. Highest-value single ruling.
 2. **httpfs crypto-extension bundling** (per-OS) — unblocks the D1 persisted encrypted columnar store, which the 5 TB target effectively requires. Second-highest.
 3. Item 7 rare earths source (USGS supply data recommended / proxy / paid / defer).
-4. Version bump 0.1.0 → 0.11.0 scope (version-only recommended vs full branch flip).
+4. ~~Version bump 0.1.0 → 0.11.0~~ **DECIDED 2026-07-09: the next cycle is 0.2 (supersedes
+   the 0.11 idea), and v0.2.0 GATES ON THE P0 SCALE SET (option A)** — backup-at-scale
+   verified on the live corpus + the collector OOM fix + unlock-at-scale. "0.2 = the
+   version that survives a 100 GB field run." Mechanics mirror the 0.09→0.1 flip
+   (#547 batch: pyproject 0.1.0→0.2.0 · tag v0.2.0 with a WATCHED-green CI run · the
+   maintainer renames the default branch 0.1→0.2 · CLAUDE.md cycle refs rewritten in the
+   SAME PR). HARD GUARD: never flip while parallel sessions are in flight on origin/0.1
+   (the #548 stale-base revert precedent) — execute in a quiet window after the P0 gate
+   passes. Tracked as task #10 in the session tracker.
 5. Keyword hover-stats Slice 2 (which stats).
 6. Lemmatization default-on (needs the gold-set measure).
 7. Retention/eviction posture (after the P1.5 storage numbers are in).
