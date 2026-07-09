@@ -80,7 +80,7 @@ def _cached(key: str, compute):
     return out
 
 
-def _deadlined(db: Session, key: str, compute):
+def _deadlined(db: Session, key: str, compute, *, on_timeout=None):
     """Cache + a statement DEADLINE around the heaviest per-keyword reads.
 
     The per-keyword analysis subtabs (associations / graph / framing) are
@@ -92,6 +92,12 @@ def _deadlined(db: Session, key: str, compute):
     deadline runs INSIDE the compute, so it only fires on a cache MISS — a hot
     cache hit never touches the connection. Layered on top of the existing TTL
     cache + background warm (#455/#458), which remain the primary speed lever.
+
+    ``on_timeout(exc)``: when given, a StatementTimeout returns its value (an honest
+    DEGRADED payload) instead of raising 503 — the graph endpoint uses this so a
+    too-large graph degrades to an actionable message, never a 60s->503 (Item 8). A
+    degraded payload is NOT cached (the exception fires inside ``compute``, before the
+    cache stores), so a transient overrun never poisons the cache.
     """
     def _run():
         with statement_deadline(db):
@@ -100,7 +106,62 @@ def _deadlined(db: Session, key: str, compute):
     try:
         return _cached(key, _run)
     except StatementTimeout as exc:
+        if on_timeout is not None:
+            return on_timeout(exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _graph_budget_s() -> float:
+    """Soft wall-clock budget for the keyword-graph build (Item 8), well under the hard
+    statement deadline (OO_STATEMENT_TIMEOUT_S, 60 s). ``layered_graph`` stops expanding
+    to hop-2 once it exceeds this and returns the hop-1 graph already built — so the
+    endpoint returns a bounded PARTIAL in a few seconds rather than running to the hard
+    deadline and 503ing. Read per-call so it can be tuned/overridden in tests."""
+    try:
+        return max(1.0, float(_os.environ.get("OO_GRAPH_BUDGET_S", "15")))
+    except (TypeError, ValueError):
+        return 15.0
+
+
+def _graph_degraded(exc, *, level, term=None, n_articles=None):
+    """An honest DEGRADED graph payload for the last-resort hard-deadline net: an EMPTY
+    graph (renders as the frontend's graceful "no associations yet" state) carrying an
+    actionable message in the fields the frontend already shows (``caveat``), never a 503.
+    The soft budget in ``layered_graph`` makes this rare — it returns a partial first.
+
+    The shape MIRRORS the level it stands in for so a client that branches on ``level``
+    isn't misled on the timeout path: the ``article_ids`` radial-map path reports
+    ``level="article"`` + ``n_articles`` (like ``article_graph``), the keyword/family/
+    supergroup path reports the co-occurrence ``method`` + ``term``.
+    """
+    msg = (
+        "This graph is too large to build within the time budget — narrow the "
+        + ("selection" if level == "article" else "term or the time window (fewer articles)")
+        + " for a result."
+    )
+    out: dict = {
+        "level": level or "keyword",
+        "nodes": [],
+        "edges": [],
+        "degraded": True,
+        "bounded": True,
+        "disclosure": msg,
+    }
+    if level == "article":
+        out["n_articles"] = n_articles
+        out["method"] = (
+            "Keywords of the selected article(s), sized by mention count, radiating "
+            "from the most-mentioned term (deterministic, always outward)."
+        )
+        out["caveat"] = (
+            "A concept map of the keywords present, not a co-occurrence network; not causation. "
+            + msg
+        )
+    else:
+        out["term"] = term
+        out["method"] = "PMI/co-occurrence association, two hops (relatives, and their relatives)"
+        out["caveat"] = "Association is not causation; PMI on small samples is noisy. " + msg
+    return out
 
 
 def _resolve_corpus(
@@ -1662,8 +1723,11 @@ def insights_graph(
             end_date=None, language=None, tags=None, cap=cap,
         )
         # Cache by the exact id set so re-opening the same analysis mindmap is instant.
-        return _deadlined(db, _ckey("graph-articles", ids=",".join(map(str, ids))),
-                          lambda: rm.article_graph(db, article_ids=ids))
+        return _deadlined(
+            db, _ckey("graph-articles", ids=",".join(map(str, ids))),
+            lambda: rm.article_graph(db, article_ids=ids),
+            on_timeout=lambda exc: _graph_degraded(exc, level="article", n_articles=len(ids)),
+        )
     if level not in ("keyword", "family", "supergroup"):
         raise HTTPException(status_code=400, detail="level must be keyword|family|supergroup")
     if level == "keyword" and not (term or "").strip():
@@ -1677,9 +1741,18 @@ def insights_graph(
             raise HTTPException(status_code=400, detail=f"bad date: {d!r}") from None
 
     key = _ckey("graph", level=level, term=term, hops=hops, days=days, start=start, end=end)
-    return _deadlined(db, key, lambda: rm.layered_graph(
-        db, level=level, term=term, hops=hops, days=days, start=_parse(start), end=_parse(end)
-    ))
+    # The keyword build is BOUNDED (bounded fan-out + per-term article sample + a soft
+    # wall-clock budget that returns the hop-1 graph if hop-2 would overrun) so it finishes
+    # in a few seconds regardless of corpus size; the hard deadline + degraded fallback are
+    # the last-resort net so a pathological corpus degrades to a message, NEVER a 60s->503.
+    return _deadlined(
+        db, key,
+        lambda: rm.layered_graph(
+            db, level=level, term=term, hops=hops, days=days,
+            start=_parse(start), end=_parse(end), time_budget_s=_graph_budget_s(),
+        ),
+        on_timeout=lambda exc: _graph_degraded(exc, level=level, term=term),
+    )
 
 
 # --- Keyword tags (Item AC): explore + user curation of type/topic tags -------- #
