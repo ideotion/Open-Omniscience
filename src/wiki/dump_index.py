@@ -58,11 +58,26 @@ def index_path(base_dir: Path | None = None) -> Path:
     return Path(base_dir) / _INDEX_NAME
 
 
+_BUSY_TIMEOUT_MS = 30_000  # module constant so a test can shrink the wait
+
+
 def _open(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), check_same_thread=False, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+    # WAL is a PERSISTENT property of the file, so the mode switch matters only on
+    # the very first open — and switching needs a moment with NO other connection
+    # active, which is exactly what a concurrent build+read races on (the macOS
+    # observation lane caught 'database is locked' here, 2026-07-09; the custody-log
+    # fix is the same family). Read the mode first (lock-free), attempt the switch
+    # only when needed, and NEVER fail an index build over it: if a concurrent
+    # opener already switched, we inherit WAL; if not, rollback mode is correct too.
+    try:
+        mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+        if mode != "wal":
+            conn.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.OperationalError:
+        pass  # the pragma is an optimization, not a correctness requirement
     conn.execute(
         "CREATE VIRTUAL TABLE IF NOT EXISTS dump_pages USING fts5("
         "title, body, wiki UNINDEXED, pageid UNINDEXED, "
