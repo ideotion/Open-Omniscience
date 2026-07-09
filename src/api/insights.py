@@ -13,6 +13,7 @@ src/analytics/queries.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import logging
 import os as _os
 import threading as _threading
@@ -393,6 +394,22 @@ def _reset_status_probe_for_tests() -> None:
         _PROBE_ENGINES.clear()
 
 
+_NOPROBE_SEQ = itertools.count()
+
+
+def _noprobe_key(bind) -> str:
+    """The probe-unavailable fallback key: TRULY per-call, so it can never produce a
+    wrong cache hit (it only loses caching). The old fallback keyed on ``id(db)`` — a
+    per-request Session address that CPython recycles, so within the cache TTL a LATER
+    request's Session could land on the same address and hit an entry computed for a
+    different engine (wrong corpus) or for a pre-write snapshot (with the probe down,
+    writes are invisible — the ALPHA lesson: per-connection state is blind on pools).
+    A monotonic nonce cannot recur; the bind id keeps the key attributable per engine;
+    the SimpleCache max_size bounds the one-shot entries."""
+    qualifier = f"e{id(bind)}" if bind is not None else "nobind"
+    return "|".join(["status", "noprobe", qualifier, str(next(_NOPROBE_SEQ))])
+
+
 def _status_cache_key(db: Session) -> str:
     """A DATA-AWARE cache key for /status: the session's DB bind + the SQLite
     ``PRAGMA data_version`` read on a PINNED probe connection (:func:`_data_version`).
@@ -403,19 +420,19 @@ def _status_cache_key(db: Session) -> str:
     write — including a write on a DIFFERENT pooled connection than the poller's, the case
     the old same-connection probe missed); and a different DB (a test fixture on its own
     engine) gets a different ``id(bind)``, so a cached status is never served for the wrong
-    corpus."""
+    corpus. Probe unavailable/failed -> :func:`_noprobe_key` (per-call, never a wrong hit)."""
     parts = ["status"]
+    bind = None
     try:
         bind = db.get_bind()
         parts.append(str(id(bind)))
         if getattr(getattr(bind, "dialect", None), "name", "") == "sqlite":
             dv = _data_version(bind)
             if dv is None:
-                # Probe unavailable -> a per-call key (never a wrong hit; loses caching only).
-                return "|".join(["status", "noprobe", str(id(db))])
+                return _noprobe_key(bind)
             parts.append(dv)
     except Exception:  # noqa: BLE001 - any probe failure -> a per-call key (never a wrong hit)
-        return "|".join(["status", "noprobe", str(id(db))])
+        return _noprobe_key(bind)
     return "|".join(parts)
 
 
