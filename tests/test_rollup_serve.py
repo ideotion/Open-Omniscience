@@ -19,9 +19,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.analytics import columnar
+from src.analytics import columnar, rollup_serve
 from src.analytics import queries as q
-from src.analytics import rollup_serve
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
 from src.database.models import Article, Base, Source
@@ -62,15 +61,27 @@ def session():
 
 @pytest.fixture(autouse=True)
 def _reset_serve_state():
-    # Never leak the process-lifetime singleton between tests.
+    # The rollup serve is a PROCESS-GLOBAL singleton and its build runs on a daemon thread;
+    # because the serve is auto-on whenever duckdb is available, ANY test across the suite that
+    # runs a windowed top_terms/trending can leave a background _build_and_swap in flight that
+    # later swaps _STATE (con/bind/built_at) out from under a test HERE — a stale-serve test
+    # then observes a FRESH build and flakes (order-dependent, exposed by a base move). So drain
+    # any in-flight build (wait out _BUILD_LOCK) and clear the singleton BOTH before and after
+    # each test, not just after.
+    def _drain_and_clear():
+        if rollup_serve._BUILD_LOCK.acquire(timeout=30):
+            rollup_serve._BUILD_LOCK.release()
+        con = rollup_serve._STATE.get("con")
+        if con is not None:
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001
+                pass
+        rollup_serve._STATE.update({"con": None, "built_at": 0.0, "rows": 0, "bind": None})
+
+    _drain_and_clear()
     yield
-    con = rollup_serve._STATE.get("con")
-    if con is not None:
-        try:
-            con.close()
-        except Exception:  # noqa: BLE001
-            pass
-    rollup_serve._STATE.update({"con": None, "built_at": 0.0, "rows": 0, "bind": None})
+    _drain_and_clear()
 
 
 def _canon(res):
