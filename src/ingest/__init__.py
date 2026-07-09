@@ -103,6 +103,31 @@ class BlockedTarget(FetchFailed):
 
 # How long a robots.txt decision is cached, in seconds.
 _ROBOTS_TTL = 3600.0
+
+
+def _env_cap(name: str, default: int, *, floor: int) -> int:
+    """Parse a positive integer cap from the environment, defensively."""
+    try:
+        return max(floor, int(os.getenv(name, "") or default))
+    except (TypeError, ValueError):
+        return default
+
+
+# Per-pass host-cache bounds (P0.3 E1, field event 2026-07-09: a 21.6-hour
+# marathon pass accumulated memory until the kernel OOM-killer fired). The
+# robots cache holds a RobotFileParser (rule lists can be tens of KB for big
+# sites) per host ever contacted; on a very wide crawl that grows for the whole
+# pass. Bounding it costs at most a robots RE-FETCH for an evicted host (the
+# fail-closed semantics are unchanged — an evicted entry is simply recomputed).
+_ROBOTS_CACHE_MAX = _env_cap("OO_ROBOTS_CACHE_MAX", 4096, floor=64)
+# The per-host last-request timestamps are tiny but also unbounded. POLITENESS
+# WINS OVER THE BOUND: an entry is evicted only when its host was last fetched
+# more than _LAST_REQUEST_SAFE_AGE_S ago (default 6 h — far beyond any plausible
+# robots Crawl-delay), so eviction can never permit an early re-fetch. If every
+# entry is younger than that, the map is left over-cap (a dict of floats; the
+# honest trade).
+_LAST_REQUEST_MAX = _env_cap("OO_HOST_STATE_MAX", 8192, floor=64)
+_LAST_REQUEST_SAFE_AGE_S = 6 * 3600.0
 # Bound on redirects followed (each hop is re-validated against the SSRF guard).
 _MAX_REDIRECTS = 5
 # HTTP statuses worth retrying (transient server-side / rate-limit signals). 4xx
@@ -220,13 +245,62 @@ class EthicalFetcher:
         self._now = time.monotonic
 
     def _host_lock(self, netloc: str) -> threading.Lock:
-        """Return (creating if needed) the lock that serialises fetches to ``netloc``."""
+        """Return (creating if needed) the lock that serialises fetches to ``netloc``.
+
+        The lock map is deliberately UNBOUNDED: evicting a lock object another
+        thread may already hold a reference to would let two threads fetch the
+        same host concurrently (politeness is never traded for memory — a
+        threading.Lock is ~100 bytes, and the fetcher is per-pass so the map
+        dies with the pass; pass recycling bounds the pass).
+        """
         with self._host_locks_guard:
             lock = self._host_locks.get(netloc)
             if lock is None:
                 lock = threading.Lock()
                 self._host_locks[netloc] = lock
             return lock
+
+    def cache_stats(self) -> dict:
+        """Sizes of the per-pass host caches (memory instrumentation, P0.3 E1).
+
+        Read by the collection-perf monitor each tick so a marathon pass's
+        accumulation is measured, not guessed. Plain lengths — cheap, no locks
+        beyond the GIL (an off-by-one under concurrent mutation is fine for a
+        gauge).
+        """
+        return {
+            "robots": len(self._robots),
+            "last_request": len(self._last_request),
+            "host_locks": len(self._host_locks),
+        }
+
+    def _bound_host_caches(self) -> None:
+        """Keep the per-pass host caches bounded on a very wide/long pass.
+
+        Best-effort and defensive (a bookkeeping error must never break a
+        fetch). Robots entries are evicted oldest-expiry-first (expired entries
+        sort first by construction — same TTL for all), which only costs an
+        evicted host a robots re-fetch; the fail-closed decision is recomputed,
+        never assumed. ``_last_request`` entries are evicted ONLY when older
+        than ``_LAST_REQUEST_SAFE_AGE_S`` so a forgotten timestamp can never
+        permit an impolitely early re-fetch (politeness outranks the bound).
+        """
+        try:
+            if len(self._robots) > _ROBOTS_CACHE_MAX:
+                items = sorted(self._robots.items(), key=lambda kv: kv[1][1])
+                for key, _ in items[: len(items) - _ROBOTS_CACHE_MAX]:
+                    self._robots.pop(key, None)
+            if len(self._last_request) > _LAST_REQUEST_MAX:
+                now = self._now()
+                items2 = sorted(self._last_request.items(), key=lambda kv: kv[1])
+                excess = len(items2) - _LAST_REQUEST_MAX
+                for key, last in items2:
+                    if excess <= 0 or (now - last) < _LAST_REQUEST_SAFE_AGE_S:
+                        break  # sorted ascending: the rest are younger still
+                    self._last_request.pop(key, None)
+                    excess -= 1
+        except Exception:  # noqa: BLE001 - a cache bound must never break a fetch
+            pass
 
     @property
     def _real_session(self) -> bool:
@@ -261,6 +335,9 @@ class EthicalFetcher:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise FetchFailed(f"unsupported or malformed URL: {url!r}")
+
+        # Cheap length check per fetch; evicts only when a cap is exceeded (E1).
+        self._bound_host_caches()
 
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
 

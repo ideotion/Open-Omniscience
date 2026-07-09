@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import threading
 import time
 from datetime import UTC, datetime
@@ -96,13 +97,20 @@ def _vitals() -> dict:
     """Process + system CPU% and memory, via psutil. All fields None on any error
     (psutil missing / sandbox) so the governor simply skips that back-off — never a
     fabricated number."""
-    out = {"cpu_sys_pct": None, "cpu_proc_pct": None, "mem_avail_mb": None, "rss_mb": None}
+    out = {
+        "cpu_sys_pct": None,
+        "cpu_proc_pct": None,
+        "mem_avail_mb": None,
+        "mem_total_mb": None,
+        "rss_mb": None,
+    }
     try:
         import psutil
 
         out["cpu_sys_pct"] = psutil.cpu_percent(interval=None)
         vm = psutil.virtual_memory()
         out["mem_avail_mb"] = round(vm.available / (1024 * 1024), 1)
+        out["mem_total_mb"] = round(vm.total / (1024 * 1024), 1)
         proc = _proc_handle()
         out["cpu_proc_pct"] = proc.cpu_percent(interval=None)
         out["rss_mb"] = round(proc.memory_info().rss / (1024 * 1024), 1)
@@ -163,6 +171,7 @@ class CollectionMonitor:
         vitals_fn=None,
         writer_stats_fn=None,
         now_fn=None,
+        cache_stats_fn=None,
     ) -> None:
         self._gov = governor
         self._pass_id = pass_id
@@ -173,6 +182,9 @@ class CollectionMonitor:
         self._vitals_fn = vitals_fn or _vitals
         self._writer_stats_fn = writer_stats_fn or _writer_stats
         self._rate_fn = rate_fn  # () -> measured_kbps; else diff bytes_total
+        # Optional per-component memory gauges (P0.3 E1): e.g. the fetcher's
+        # host-cache sizes. Best-effort; None = not instrumented.
+        self._cache_stats_fn = cache_stats_fn
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._started_at = time.time()
@@ -183,6 +195,11 @@ class CollectionMonitor:
         self._max_inflight = 0
         self._max_cpu_sys = 0.0
         self._min_mem_avail: float | None = None
+        # RSS curve across the pass (P0.3 E1): first/last/max, so a marathon
+        # pass's accumulation is a measured number in the summary line.
+        self._rss_first: float | None = None
+        self._rss_last: float | None = None
+        self._rss_max: float | None = None
         self._max_writer_waiters = 0
         self._writer_wait_start: float | None = None
         self._writer_wait_last: float = 0.0
@@ -322,6 +339,12 @@ class CollectionMonitor:
         if mem_avail is not None:
             self._min_mem_avail = mem_avail if self._min_mem_avail is None else min(self._min_mem_avail, mem_avail)
         self._max_writer_waiters = max(self._max_writer_waiters, waiters)
+        rss = vit.get("rss_mb")
+        if rss is not None:
+            if self._rss_first is None:
+                self._rss_first = rss
+            self._rss_last = rss
+            self._rss_max = rss if self._rss_max is None else max(self._rss_max, rss)
         tw = wstats.get("total_wait_s")
         if isinstance(tw, (int, float)):
             if self._writer_wait_start is None:
@@ -356,10 +379,30 @@ class CollectionMonitor:
             "cpu_sys_pct": cpu_sys,
             "cpu_proc_pct": vit.get("cpu_proc_pct"),
             "mem_avail_mb": mem_avail,
+            "mem_total_mb": vit.get("mem_total_mb"),
             "rss_mb": vit.get("rss_mb"),
+            # Per-component memory gauges (P0.3 E1): where a marathon pass
+            # accumulates. All measured; None where not instrumented.
+            "mem": self._mem_gauges(),
         }
         _set_latest(sample)
         _append_jsonl(sample)
+
+    def _mem_gauges(self) -> dict:
+        """Cheap allocator + component gauges for one sample (best-effort)."""
+        out: dict = {"py_alloc_blocks": None, "fetcher": None}
+        try:
+            # Live CPython allocator blocks — a leak shows as monotonic growth
+            # here even when RSS is masked by allocator arenas.
+            out["py_alloc_blocks"] = sys.getallocatedblocks()
+        except Exception:  # noqa: BLE001
+            pass
+        if self._cache_stats_fn is not None:
+            try:
+                out["fetcher"] = self._cache_stats_fn()
+            except Exception:  # noqa: BLE001 - a gauge must never break a tick
+                out["fetcher"] = None
+        return out
 
     def _classify(self) -> dict:
         """Label the limiting factor from the pass aggregates — a transparent
@@ -410,6 +453,13 @@ class CollectionMonitor:
             "kind": "summary",
             "duration_s": round(time.time() - self._started_at, 1),
             "bottleneck": self._classify(),
+            # The pass's measured RSS curve (P0.3 E1): growth across a pass is
+            # the OOM signature — first/last/max make it one auditable line.
+            "rss_mb": {
+                "first": self._rss_first,
+                "last": self._rss_last,
+                "max": self._rss_max,
+            },
         }
         if result:
             summary["articles_stored"] = result.get("articles_stored")

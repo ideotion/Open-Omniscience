@@ -609,6 +609,9 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
                 governor=governor,
                 pass_id=started.isoformat(timespec="seconds"),
                 mode=settings.mode,
+                # Per-component memory gauges (P0.3 E1): the fetcher's host
+                # caches are per-pass state; their growth rides every sample.
+                cache_stats_fn=getattr(fetcher, "cache_stats", None),
             )
 
             def _worker(source):
@@ -796,6 +799,15 @@ class BackgroundScheduler:
             report["ok"] = False
             report["error"] = str(exc)
         finally:
+            # Between-pass memory hygiene (P0.3 E1): release per-pass state at
+            # the run boundary — never mid-worker; the pool is joined and the
+            # run session closed by the time we get here. Measured + recorded
+            # on the run report so the effect is auditable, never guessed.
+            from src.scheduler.hygiene import run_pass_hygiene
+
+            hygiene = run_pass_hygiene()
+            if hygiene:
+                report["hygiene"] = hygiene
             report["finished_at"] = datetime.now(UTC).isoformat(timespec="seconds")
             # One auditable line per run (WP3/RM-06); best-effort by design.
             from src.scheduler.runlog import record_run
