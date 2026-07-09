@@ -1022,13 +1022,23 @@
     </section>
     </div>
 
-    <!-- ========================== TEMPORAL MAP ======================= -->
+    <!-- ========================== WORLD MAP ========================== -->
     <div class="tab-page" id="tab-timemap">
     <section class="panel">
-      <h2>World coverage <span class="muted" style="font-weight:400">— a choropleth of your corpus</span></h2>
-      <p class="muted" style="margin-top:0">Each country is shaded by how many of your sources are based there — darker means more. A country with no located source stays un-shaded — honestly “no data”, never zero. Small territories the coarse outline can’t draw appear as points, and sources with no country are counted but never placed on the map. Use the in-map controls to change what’s measured (sources · articles · keywords · tone), group by continent, overlay the places your corpus mentions, or turn on the time signals and sweep the moment in focus.</p>
+      <h2>World map <span class="muted" style="font-weight:400">— explore your corpus by place</span></h2>
+      <!-- Lens strip (invariant #18 ooSubtabs, field-test Item 6): the map's lenses become
+           first-class subtabs. Relocated into #subtab-strip at runtime by _relocateSubtabs. -->
+      <nav class="tabs" id="oomap-lenses" aria-label="Map lens">
+        <button type="button" data-tab="coverage">Coverage</button>
+        <button type="button" data-tab="stories">Stories</button>
+        <button type="button" data-tab="places">Places</button>
+        <button type="button" data-tab="servers">Server IPs</button>
+      </nav>
+      <p class="muted" id="oomap-lens-desc" style="margin-top:6px"></p>
+      <div id="oomap-lens-bar" style="margin-top:8px"></div>
       <div id="oo-coverage-map" style="margin-top:8px"></div>
       <div id="oo-coverage-detail" style="margin-top:8px"></div>
+      <p class="hint" style="margin-top:8px">Each lens presets the map; the in-map controls still fine-tune what’s measured, group by continent, and combine layers. Per-country statistical data (GDP, population, life expectancy…) lives in the Governments tab. Small territories the coarse outline can’t draw appear as points; data with no country is counted but never placed on the map.</p>
     </section>
     </div>
 
