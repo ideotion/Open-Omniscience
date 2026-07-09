@@ -1300,6 +1300,7 @@ def trending_windows(
     returns the unchanged response (no ``series`` keys).
     """
     windows = []
+    served_basis = None  # the rollup disclosure (D3): stale/rebuilding/as_of, surfaced once
     for label, wdays, bdays in _TREND_WINDOWS:
         res = trending(
             session,
@@ -1312,6 +1313,8 @@ def trending_windows(
             min_recent=1 if wdays == 1 else 2,
             target_lang=target_lang,
         )
+        if served_basis is None and res.get("basis"):
+            served_basis = res["basis"]
         terms = res["terms"]
         if series_top > 0:
             for t in terms[:series_top]:
@@ -1336,7 +1339,7 @@ def trending_windows(
                 "scanned": res["scanned"],
             }
         )
-    return {
+    out: dict[str, Any] = {
         "windows": windows,
         "method": (
             "Rising keywords per window: recent volume vs the prior-period rate "
@@ -1347,6 +1350,9 @@ def trending_windows(
             "before the ratio; with many terms scanned, some ratios run high by chance."
         ),
     }
+    if served_basis is not None:  # disclose that the windows were served from the (maybe stale) rollup
+        out["basis"] = served_basis
+    return out
 
 
 def _group_pairs(
