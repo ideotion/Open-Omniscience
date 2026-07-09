@@ -1920,26 +1920,22 @@ def map_data(
 def status(session) -> dict:
     """Indexing status for the Insights tab.
 
-    ``mentions`` (total ``keyword_mentions`` rows) is served from the MAINTAINED per-keyword
-    counter ``SUM(Keyword.article_count)`` instead of ``count(*) FROM keyword_mentions`` —
-    the latter was the single slowest query in the field diagnostics (724 ms × 172 polls =
-    124 s; a full scan of the multi-GB mention table dragged through the SQLCipher codec).
-    The sum is EXACT-equal to that row count by construction: ``ix_mention_keyword_article``
-    is UNIQUE on ``(keyword_id, article_id)``, so each keyword's ``article_count`` (distinct
-    articles) IS its row count in ``keyword_mentions``. The honesty envelope (``counters``)
-    discloses ``basis: exact`` when every counter-backing keyword was reconciled, or
-    ``estimated`` when a counter may have drifted (a cascade delete) — so the figure is never
-    presented as exact when it might not be (field test 2026-07-08, Item 8 P1)."""
-    from src.analytics.store import counter_envelope
-
+    Every count here is the REAL, EXACT value. The field's cost from this endpoint —
+    ``count(*) FROM keyword_mentions`` measured 724 ms × 172 polls = 124 s — is removed at
+    the ENDPOINT by a data-aware cache (:func:`src.api.insights._status_cache_key`) that
+    collapses repeat polls while any write invalidates it, NOT by trading the exact count
+    for a maintained-counter sum. (A counter-derived ``SUM(article_count)`` would be cheaper
+    per cold compute but can drift silently on a cascade delete — presenting a wrong number
+    as exact would breach the honesty non-negotiable — so the exact count stays; a
+    correctness-gated counter-serve is a possible future optimisation, but only once its
+    basis is tied to the corpus epoch, not the reconcile watermark.)"""
     total_articles = session.query(func.count(Article.id)).scalar() or 0
     indexed = session.query(func.count(func.distinct(KeywordMention.article_id))).scalar() or 0
     keywords = session.query(func.count(Keyword.id)).scalar() or 0
     entities = (
         session.query(func.count(Keyword.id)).filter(Keyword.is_entity.is_(True)).scalar() or 0
     )
-    # == count(*) FROM keyword_mentions, from the maintained counters (see docstring).
-    mentions = session.query(func.coalesce(func.sum(Keyword.article_count), 0)).scalar() or 0
+    mentions = session.query(func.count(KeywordMention.id)).scalar() or 0
     return {
         "total_articles": int(total_articles),
         "indexed_articles": int(indexed),
@@ -1947,9 +1943,6 @@ def status(session) -> dict:
         "keywords": int(keywords),
         "entities": int(entities),
         "mentions": int(mentions),
-        "mentions_basis": "maintained per-keyword counters (== keyword_mentions rows under the "
-        "unique (keyword_id, article_id) index)",
-        "counters": counter_envelope(session).to_dict(),
     }
 
 

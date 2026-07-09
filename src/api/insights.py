@@ -336,8 +336,8 @@ def insights_status(db: Session = Depends(get_db)) -> dict:
     POLLED by the Insights "N to index" ticker. Served through a DATA-AWARE cache
     (:func:`_status_cache_key`) so a burst of identical polls does not re-run the corpus
     counts every time (the field's 124 s of repeated full scans), while a write still
-    invalidates it so the progress stays live. The counts themselves are the REAL values —
-    the ``mentions`` total now comes from the maintained counters (see q.status)."""
+    invalidates it so the progress stays live. The counts themselves are the REAL, exact
+    values (q.status)."""
     return _cached(_status_cache_key(db), lambda: q.status(db))
 
 

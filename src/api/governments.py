@@ -147,16 +147,19 @@ def _load_standard_worker(ctx, *, wanted: list[str]) -> dict:
 
     per_indicator: list[dict] = []
     total_fetched = total_stored = 0
+    complete = True  # False if we stop early (cancel / airplane refusal) — an HONEST partial
     ctx.set_progress(done=0, total=len(wanted), detail="starting")
     with session_scope() as db:
         for i, code in enumerate(wanted):
             if ctx.stopping:
+                complete = False
                 break
             ctx.set_progress(detail=f"fetching {code}")
             try:
                 figures = statfetch.fetch_worldbank(code, "all")
             except RuntimeError as exc:  # the kill-switch up-front refusal
                 per_indicator.append({"indicator": code, "status": "refused", "detail": str(exc)})
+                complete = False
                 break  # airplane mode: stop — every subsequent fetch would refuse too
             except Exception as exc:  # noqa: BLE001 - transport/decode: degrade loudly, continue
                 logger.warning("governments load-standard: %s failed", code, exc_info=True)
@@ -179,13 +182,20 @@ def _load_standard_worker(ctx, *, wanted: list[str]) -> dict:
         "requested": wanted,
         "fetched": total_fetched,
         "stored": total_stored,
+        "complete": complete,  # honest: did it finish the whole set, or stop early?
         "per_indicator": per_indicator,
         "caveat": _CAVEAT,
     }
 
 
+# cancellable=True: the worker checks ctx.stopping between indicators, so the task-manager
+# Cancel button is HONEST (it stops at the next indicator). store_figures is idempotent per
+# vintage, so a partial run + re-run never double-counts.
 _GOV_JOB = register_job(
-    BackgroundJob("governments", "Loading government statistics", _load_standard_worker, is_writer=True)
+    BackgroundJob(
+        "governments", "Loading government statistics", _load_standard_worker,
+        is_writer=True, cancellable=True,
+    )
 )
 
 

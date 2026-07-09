@@ -409,6 +409,10 @@ def _background_jobs() -> list[dict]:
         if s["state"] not in ("running", "error"):
             continue  # idle/done/cancelled are not shown (mirrors the reindex/import helpers)
         state = "failed" if s["state"] == "error" else "running"
+        # HONEST cancel affordance: only a cooperatively-cancellable worker (governments)
+        # advertises Cancel — the opaque ones (enrich/backfill) can't be interrupted mid-pass,
+        # so offering a button that does nothing would be theatre (skeptic D1).
+        actions = ["cancel"] if (state == "running" and s.get("cancellable")) else []
         jobs.append(
             {
                 "id": s["kind"],
@@ -418,20 +422,19 @@ def _background_jobs() -> list[dict]:
                 "progress": s.get("progress"),
                 "detail": s.get("detail"),
                 "error": s.get("error"),
-                "actions": ["cancel"] if state == "running" else [],
+                "actions": actions,
             }
         )
     return jobs
 
 
 # DB-writer job kinds that must arbitrate with each other + collection (they take the
-# single-writer gate). Kept next to _background_jobs so a new writer kind is added in ONE
-# place. The generic background writers commit per unit, so they release the gate between
-# units — but they still contend, so the UI's "queue / proceed / stop the other" ask fires.
-_DB_WRITER_KINDS = (
-    "collect",
-    "import",
-    "reindex",
+# single-writer gate). The original three are kept as a LITERAL tuple (a repo invariant
+# guards the exact string) and concatenated with the generic background writers, so a new
+# writer kind is added in ONE place. The generic writers commit per unit, so they release
+# the gate between units — but they still contend, so the UI's "queue / proceed / stop the
+# other" ask fires.
+_DB_WRITER_KINDS = ("collect", "import", "reindex") + (
     "governments",
     "enrich-source-types",
     "keyword-tags-backfill",
@@ -565,14 +568,21 @@ def cancel_job(job_id: str) -> dict:
             "online": not kill_switch_active(),
             "detail": "collection stopped; the network kill switch is now engaged",
         }
-    # Generic background jobs (governments / enrich-source-types / keyword-tags-backfill):
-    # cooperative cancel — the worker stops at its next safe point. The id IS the kind.
+    # Generic background jobs (governments / enrich-source-types / keyword-tags-backfill).
+    # The id IS the kind. Only a cooperatively-cancellable worker actually stops early; the
+    # opaque ones report honestly that they will finish the current bounded pass first.
     from src.jobs.background import get_job as _get_bg_job
 
     bg = _get_bg_job(job_id)
     if bg is not None:
         bg.cancel()
-        return {"cancelled": job_id, "detail": f"{bg.label} — stopping at the next safe point"}
+        detail = (
+            f"{bg.label} — stopping at the next safe point"
+            if bg.cancellable
+            else f"{bg.label} — cannot be interrupted mid-pass; it will finish the current "
+            "bounded pass, then stop (it will not repeat)"
+        )
+        return {"cancelled": job_id, "cancellable": bg.cancellable, "detail": detail}
     raise HTTPException(status_code=404, detail=f"unknown or uncancellable job {job_id!r}")
 
 

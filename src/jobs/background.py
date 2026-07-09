@@ -70,11 +70,18 @@ class BackgroundJob:
         worker: Callable[..., Any],
         *,
         is_writer: bool = False,
+        cancellable: bool = False,
     ) -> None:
         self.kind = kind
         self.label = label
         self._worker = worker
         self.is_writer = is_writer
+        # HONESTY (no theater): only advertise a Cancel affordance when the worker actually
+        # checks ctx.stopping and stops early. A worker that wraps an OPAQUE library call
+        # (apply_source_types / backfill_baseline_tags loop internally, take no ctx) cannot
+        # be interrupted mid-pass — for those cancellable=False, so /api/jobs offers no
+        # cancel button and a completed run is NEVER mislabelled 'cancelled'.
+        self.cancellable = cancellable
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -120,7 +127,10 @@ class BackgroundJob:
             result = self._worker(ctx, **kwargs)
             with self._lock:
                 self._result = result
-                self._state = "cancelled" if self._stop.is_set() else "done"
+                # Only a COOPERATIVELY-cancellable worker can end 'cancelled' (it broke on
+                # ctx.stopping). An opaque worker always runs to completion -> 'done', so a
+                # late cancel() never mislabels a finished-with-full-result run.
+                self._state = "cancelled" if (self.cancellable and self._stop.is_set()) else "done"
         except Exception as exc:  # noqa: BLE001 - a worker crash must not take the app down
             with self._lock:
                 self._error = f"{type(exc).__name__}: {exc}"[:300]
@@ -154,6 +164,7 @@ class BackgroundJob:
                 "label": self.label,
                 "state": state,
                 "running": state == "running",
+                "cancellable": self.cancellable,
                 "done": done,
                 "total": total,
                 "detail": self._detail or None,

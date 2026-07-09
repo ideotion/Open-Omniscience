@@ -53,7 +53,7 @@ def test_worker_progress_is_visible():
     job._thread.join(3)
 
 
-def test_cancel_stops_the_worker_and_reports_cancelled():
+def test_cancel_stops_a_cooperative_worker_and_reports_cancelled():
     started = threading.Event()
     calls = [0]
 
@@ -63,14 +63,33 @@ def test_cancel_stops_the_worker_and_reports_cancelled():
             calls[0] += 1
         return "stopped-clean"
 
-    job = BackgroundJob("test-cancel", "T", worker)
+    job = BackgroundJob("test-cancel", "T", worker, cancellable=True)
     job.start()
     assert started.wait(2)
     job.cancel()
     job._thread.join(3)
     st = job.status()
     assert st["state"] == "cancelled", "a cancelled worker must not be reported as done"
-    assert st["running"] is False
+    assert st["running"] is False and st["cancellable"] is True
+
+
+def test_a_noncancellable_job_never_reports_cancelled_even_if_cancel_is_called():
+    """The honesty gate (skeptic D1/D2): an opaque worker that cannot check ctx.stopping
+    runs to completion — a cancel() must NOT mislabel its finished, full-result run."""
+    hold = threading.Event()
+
+    def opaque(ctx):
+        hold.wait(2)  # ignores ctx.stopping — cannot cooperatively stop
+        return {"done": True}
+
+    job = BackgroundJob("test-opaque", "T", opaque, cancellable=False)
+    job.start()
+    job.cancel()  # user clicks cancel, but this worker can't honour it
+    hold.set()
+    job._thread.join(3)
+    st = job.status()
+    assert st["state"] == "done", "an uncancellable worker that finished must be 'done', not 'cancelled'"
+    assert st["cancellable"] is False and st["result"] == {"done": True}
 
 
 def test_a_second_start_while_running_is_refused():
