@@ -570,7 +570,9 @@ def _weighted_langs(n: int, rng: random.Random) -> list[tuple[str, str]]:
 
 def _source_tags(sid: int) -> str:
     tags = ("news", "investigative", "science", "financial", "state-media", "history")
-    return ",".join({tags[sid % len(tags)], tags[(sid // 3) % len(tags)]})
+    # sorted(): a bare set join depends on PYTHONHASHSEED iteration order and broke
+    # the byte-reproducible guarantee (post-merge audit repro, 2026-07-09).
+    return ",".join(sorted({tags[sid % len(tags)], tags[(sid // 3) % len(tags)]}))
 
 
 def _source_type(sid: int) -> str:

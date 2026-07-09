@@ -322,6 +322,10 @@ def test_determinism_survives_hash_randomization(tmp_path):
         "FROM keyword_mentions ORDER BY keyword_id,article_id'): h.update(repr(r).encode())\n"
         "for r in con.execute('SELECT id,term,mention_count,article_count FROM keywords "
         "ORDER BY id'): h.update(repr(r).encode())\n"
+        # sources carried the set-join defect (tags order flipped with PYTHONHASHSEED);
+        # the fingerprint must cover the table that broke, or the test is blind to it.
+        "for r in con.execute('SELECT id,name,domain,tags,language,country FROM sources "
+        "ORDER BY id'): h.update(repr(r).encode())\n"
         "print(h.hexdigest())\n"
     )
     root = str(Path(__file__).resolve().parents[1])
