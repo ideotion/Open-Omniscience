@@ -2146,7 +2146,10 @@ def _all_diagnostics_worker(ctx) -> dict:
         return {"cancelled": True, "members": results}
     _os.replace(part_path, final_path)  # atomic publish
     # Keep only the newest archive (the channel is one-shot; old ones just consume disk).
-    for old in out_dir.glob("oo-all-diagnostics-*.zip"):
+    # Also sweep any stale ``.part`` left by a PREVIOUS crashed/killed run — this run's own
+    # part was just renamed away, and the job is single-instance, so no live writer is
+    # touched (no orphaned staging accumulates across hard-kills).
+    for old in (*out_dir.glob("oo-all-diagnostics-*.zip"), *out_dir.glob("oo-all-diagnostics-*.zip.part")):
         if old != final_path:
             with contextlib.suppress(OSError):
                 old.unlink()

@@ -77,6 +77,18 @@ def test_worker_builds_a_file_reports_progress_and_survives_a_failing_member(tin
     assert list(tiny_members.glob("*.part")) == [], "no partial left behind"
 
 
+def test_worker_sweeps_a_stale_part_from_a_previous_crashed_run(tiny_members):
+    """A hard-kill between the .part open and the atomic rename leaves a stale .part; the next
+    successful run must sweep it, so orphaned staging can't accumulate across crashes."""
+    stale = tiny_members / "oo-all-diagnostics-20200101-000000.zip.part"
+    stale.write_bytes(b"half a zip from a killed run")
+    ctx = _Ctx()
+    res = d._all_diagnostics_worker(ctx)
+    assert os.path.exists(res["path"])
+    assert not stale.exists(), "a stale .part from a previous crashed run must be swept"
+    assert list(tiny_members.glob("*.part")) == []
+
+
 def test_worker_cancel_between_members_leaves_no_served_file(tiny_members):
     ctx = _Ctx(stop=True)  # stopping from the start -> break before the first member
     res = d._all_diagnostics_worker(ctx)
