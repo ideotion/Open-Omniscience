@@ -66,6 +66,9 @@ def test_scale_smoke_generate_and_benchmark(tmp_path):
     corpus_db = corpus_dir / "open_omniscience.db"
 
     # 1) Generate a ~target-size synthetic corpus (engine-mode, isolated).
+    # ENCRYPTED: the P0.1 audit conditions ruled a plaintext corpus omits every
+    # SQLCipher codec cost, so even the smoke tier measures the real thing (and
+    # exercises the encrypted-corpus-member restore conversion end to end).
     summary = generate_corpus(
         corpus_db,
         CorpusSpec(
@@ -76,6 +79,7 @@ def test_scale_smoke_generate_and_benchmark(tmp_path):
             fresh_keywords_per_article=8,
             head_pool=40_000,
             content_words=200,
+            passphrase="scale-smoke-corpus-pass",
         ),
     )
     assert summary["synthetic"] is True
@@ -86,16 +90,18 @@ def test_scale_smoke_generate_and_benchmark(tmp_path):
     env = {
         **os.environ,
         "OO_DATA_DIR": str(corpus_dir),
-        "OO_DB_PLAINTEXT": "1",
         "OO_NO_SCHEDULER": "1",
         "OO_AUTOSEED": "0",
     }
+    env.pop("OO_DB_PLAINTEXT", None)
     proc = subprocess.run(
         [
             sys.executable,
             str(_REPO_ROOT / "scripts" / "run_scale_bench.py"),
             "--corpus", str(corpus_dir),
+            "--corpus-passphrase", "scale-smoke-corpus-pass",
             "--backup-passphrase", "scale-smoke-only-pass",
+            "--gate",
             "--out", str(report_path),
             "--repeats", "4",
             "--wal-writes", "3000",
@@ -116,10 +122,14 @@ def test_scale_smoke_generate_and_benchmark(tmp_path):
     assert "generated_at" in report
     assert report["machine"]["cpu_count"] is not None
     assert report["corpus"]["synthetic"] is True
+    assert report["corpus"]["encrypted"] is True  # the audit-condition corpus
+    assert "plaintext_caveat" not in report
     assert report["corpus"]["row_counts"]["articles"] == summary["articles"]
+    # the P0.1 acceptance gate ran and passed on this report
+    assert report["acceptance_gate"]["ok"] is True, report["acceptance_gate"]["failures"]
 
     phases = report["phases"]
-    assert set(phases) == {"unlock", "endpoints", "backup", "restore", "wal"}
+    assert set(phases) == {"unlock", "endpoints", "backup", "verify", "restore", "wal"}
     for name, ph in phases.items():
         assert "error" not in ph, f"phase {name} errored: {ph.get('error')}"
 
@@ -129,11 +139,17 @@ def test_scale_smoke_generate_and_benchmark(tmp_path):
     assert unlock["hot_indexes_created_warm"] == []
     assert unlock["warm_unlock_s"] <= unlock["cold_unlock_s"] + 0.5
 
-    # backup: at least one volume, a real wall + peak RSS.
+    # backup: at least one volume, a real wall + peak RSS, the streaming format.
     backup = phases["backup"]
     assert backup["volumes"] >= 1
     assert backup["wall_s"] > 0
     assert backup["peak_rss_mb"] > 0
+    assert backup["format"] == "oo-volumes-2"
+    assert backup["corpus_encrypted"] is True  # the corpus member stays ciphertext
+
+    # verify: the end-to-end set verification (deep: decrypts into a hash sink).
+    assert phases["verify"]["ok"] is True
+    assert phases["verify"]["report"]["decrypted"] is True
 
     # restore verified; wal grew; every endpoint answered (200 on this corpus).
     assert phases["restore"]["verified"] is True

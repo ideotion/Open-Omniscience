@@ -74,7 +74,7 @@ DEFAULT_ENDPOINTS: tuple[tuple[str, str], ...] = (
     ("/api/insights/graph?level=supergroup", "graph"),
 )
 
-ALL_PHASES: tuple[str, ...] = ("unlock", "endpoints", "backup", "restore", "wal")
+ALL_PHASES: tuple[str, ...] = ("unlock", "endpoints", "backup", "verify", "restore", "wal")
 
 
 # --------------------------------------------------------------------------- #
@@ -487,19 +487,55 @@ def backup_bench(
     passphrase: str,
     include_newsletters: bool = True,
     parity_fraction: float = 0.1,
+    interrupt_volumes: int = 0,
 ) -> dict[str, Any]:
-    """Measure the REAL volumes+parity backup wall + PEAK RSS. Backs up the
-    process's live store (``live_db_path``), so the caller must have pointed
-    OO_DATA_DIR at the corpus before importing the app."""
+    """Measure the REAL streaming (oo-volumes-2) backup wall + PEAK RSS. Backs up
+    the process's live store (``live_db_path``), so the caller must have pointed
+    OO_DATA_DIR at the corpus before importing the app.
+
+    ``interrupt_volumes`` > 0 PROVES resumability at this scale: a first run is
+    stopped after that many volumes (measured, reported under ``interrupted``),
+    then the SAME backup is started again and must complete by reusing the
+    finished volumes. NOTE the completed run's wall then includes reuse, so it is
+    NOT the official full-backup number — run with 0 for that (stated in method)."""
     from src.backup.artifact import write_volume_backup
+    from src.backup.volumes import VolumeStopped
 
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
     out: dict[str, Any] = {
-        "method": "src.backup.artifact.write_volume_backup (streamed OOENC2 volumes "
-        "+ Reed-Solomon parity); wall is end-to-end, peak RSS is a sampled maximum"
+        "method": "src.backup.artifact.write_volume_backup (oo-volumes-2 member-streamed "
+        "OOENC2 volumes + banded Reed-Solomon parity; the corpus streams as its at-rest "
+        "bytes under the writer gate); wall is end-to-end, peak RSS is a sampled maximum"
     }
     ru_before = _ru_maxrss_mb()
+    if interrupt_volumes > 0:
+        calls = {"n": 0}
+
+        def _stop() -> bool:
+            calls["n"] += 1
+            return calls["n"] > interrupt_volumes
+
+        t_int = time.perf_counter()
+        try:
+            write_volume_backup(
+                dest,
+                passphrase,
+                include_newsletters=include_newsletters,
+                parity_fraction=parity_fraction,
+                should_stop=_stop,
+            )
+            out["interrupted"] = {"error": "the run completed before the interrupt fired"}
+        except VolumeStopped:
+            out["interrupted"] = {
+                "after_volumes": interrupt_volumes,
+                "wall_s": round(time.perf_counter() - t_int, 3),
+            }
+        out["method"] += (
+            "; interrupted after "
+            f"{interrupt_volumes} volumes then RESUMED — the completed wall below "
+            "includes volume reuse, NOT a full-backup number"
+        )
     with sample_peak_rss() as peak:
         t0 = time.perf_counter()
         summary = write_volume_backup(
@@ -511,10 +547,44 @@ def backup_bench(
         out["wall_s"] = round(time.perf_counter() - t0, 3)
     out["peak_rss_mb"] = round(peak.peak_bytes / 1024 / 1024, 1)
     out["ru_maxrss_delta_mb"] = _ru_delta_mb(ru_before, _ru_maxrss_mb())
-    out["volumes"] = summary.get("volumes")
-    out["plaintext_bytes"] = summary.get("plaintext_bytes")
-    out["parity_available"] = summary.get("parity_available")
+    for key in (
+        "volumes",
+        "volumes_reused",
+        "volumes_emitted",
+        "plaintext_bytes",
+        "corpus_bytes",
+        "corpus_encrypted",
+        "parity_available",
+        "format",
+        "resumed",
+        "gate_held_s",
+        "notes",
+    ):
+        out[key] = summary.get(key)
     out["dest_bytes"] = _dir_bytes(dest)
+    return out
+
+
+def verify_bench(src_dir: str | Path, *, passphrase: str | None = None) -> dict[str, Any]:
+    """Measure the end-to-end VERIFY of the produced volume set (P0.1): manifest
+    signature + every volume checksum, and — with the passphrase — a full
+    stream-decrypt of every volume into a hash sink (nothing written). Reports
+    the verifier's own verdict verbatim plus wall + peak RSS."""
+    from src.backup.stream_backup import verify_stream_backup
+
+    out: dict[str, Any] = {
+        "method": "src.backup.stream_backup.verify_stream_backup; with the passphrase "
+        "every volume is stream-decrypted into a hash sink (nothing written to disk)"
+    }
+    ru_before = _ru_maxrss_mb()
+    with sample_peak_rss() as peak:
+        t0 = time.perf_counter()
+        report = verify_stream_backup(Path(src_dir), passphrase)
+        out["wall_s"] = round(time.perf_counter() - t0, 3)
+    out["peak_rss_mb"] = round(peak.peak_bytes / 1024 / 1024, 1)
+    out["ru_maxrss_delta_mb"] = _ru_delta_mb(ru_before, _ru_maxrss_mb())
+    out["ok"] = report.get("ok")
+    out["report"] = report
     return out
 
 
@@ -573,6 +643,7 @@ def run_full(
     repeats: int = 8,
     wal_writes: int = 5000,
     parity_fraction: float = 0.1,
+    interrupt_volumes: int = 0,
     now: Callable[[], Any] | None = None,
 ) -> dict[str, Any]:
     """Run the requested phases against the PROCESS's live corpus (the file at
@@ -634,9 +705,21 @@ def run_full(
         shutil.rmtree(backup_dir, ignore_errors=True)
         phase_out["backup"] = _guard(
             lambda: backup_bench(
-                backup_dir, passphrase=backup_passphrase, parity_fraction=parity_fraction
+                backup_dir,
+                passphrase=backup_passphrase,
+                parity_fraction=parity_fraction,
+                interrupt_volumes=interrupt_volumes,
             )
         )
+
+    if "verify" in phases:
+        _LOG.info("scale-bench: verify phase")
+        if not backup_dir.exists():
+            phase_out["verify"] = {"skipped": "no backup was produced to verify"}
+        else:
+            phase_out["verify"] = _guard(
+                lambda: verify_bench(backup_dir, passphrase=backup_passphrase)
+            )
 
     if "restore" in phases:
         _LOG.info("scale-bench: restore phase")
@@ -680,3 +763,118 @@ def _guard(fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - degrade loudly, don't abort the report
         _LOG.warning("scale-bench phase failed", exc_info=True)
         return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+# --------------------------------------------------------------------------- #
+# Acceptance gate (the P0.1 audit conditions — Round 2 / ZETA)
+# --------------------------------------------------------------------------- #
+def acceptance_gate(
+    report: dict[str, Any],
+    *,
+    max_backup_peak_rss_mb: float | None = None,
+    official: bool = False,
+) -> dict[str, Any]:
+    """Evaluate a benchmark report against the P0.1 acceptance AUDIT CONDITIONS.
+
+    Checks (each recorded with its evidence; ``ok`` only when every applicable
+    check passes — nothing is scored, nothing weighted):
+
+      * the corpus under test is ENCRYPTED (``report.corpus.encrypted == true``)
+        — a plaintext corpus omits every SQLCipher codec cost, so its numbers
+        must never gate a scale decision (the plaintext_caveat made it loud;
+        this makes it BLOCKING);
+      * the backup phase ran without error, and — when a bound is supplied —
+        its sampled peak RSS stayed under ``max_backup_peak_rss_mb``. The gate
+        NEVER invents a bound: with no bound given, the check reports the
+        measured value as not-evaluated;
+      * the verify phase ran and its verdict is ok;
+      * the restore phase ran without error (the additive round-trip);
+      * ``official=True`` additionally requires the report to be a
+        fresh-process ``--phases backup`` run (earlier phases inflate
+        process-lifetime ru_maxrss and can mask a backup RSS spike), and then
+        requires only the backup checks.
+    """
+    checks: list[dict[str, Any]] = []
+    failures: list[str] = []
+
+    def _check(name: str, ok: bool | None, evidence: Any) -> None:
+        checks.append({"name": name, "ok": ok, "evidence": evidence})
+        if ok is False:
+            failures.append(name)
+
+    corpus = report.get("corpus") or {}
+    _check(
+        "corpus_encrypted",
+        bool(corpus.get("encrypted")),
+        {"encrypted": corpus.get("encrypted"), "path": corpus.get("path")},
+    )
+    if report.get("plaintext_caveat"):
+        _check("no_plaintext_caveat", False, report["plaintext_caveat"])
+
+    phases = report.get("phases") or {}
+    requested = list(report.get("phases_requested") or [])
+    if official:
+        _check(
+            "official_backup_process",
+            requested == ["backup"],
+            {
+                "phases_requested": requested,
+                "why": "the OFFICIAL backup number comes from a fresh-process "
+                "--phases backup run (other phases inflate process-lifetime RSS)",
+            },
+        )
+
+    backup = phases.get("backup") or {}
+    _check(
+        "backup_ran",
+        bool(backup) and "error" not in backup and backup.get("wall_s") is not None,
+        {"error": backup.get("error"), "wall_s": backup.get("wall_s")},
+    )
+    peak = backup.get("peak_rss_mb")
+    if max_backup_peak_rss_mb is not None:
+        _check(
+            "backup_peak_rss_bounded",
+            peak is not None and float(peak) <= float(max_backup_peak_rss_mb),
+            {"peak_rss_mb": peak, "bound_mb": max_backup_peak_rss_mb},
+        )
+    else:
+        _check(
+            "backup_peak_rss_bounded",
+            None,
+            {"peak_rss_mb": peak, "bound_mb": None, "note": "no bound supplied — not evaluated"},
+        )
+    if backup.get("interrupted") is not None:
+        _check(
+            "interrupt_and_resume",
+            isinstance(backup.get("interrupted"), dict)
+            and "error" not in backup["interrupted"]
+            and bool(backup.get("resumed"))
+            and int(backup.get("volumes_reused") or 0) > 0,
+            {
+                "interrupted": backup.get("interrupted"),
+                "resumed": backup.get("resumed"),
+                "volumes_reused": backup.get("volumes_reused"),
+            },
+        )
+
+    if not official:
+        verify = phases.get("verify") or {}
+        _check(
+            "verify_ok",
+            bool(verify) and "error" not in verify and verify.get("ok") is True,
+            {"error": verify.get("error"), "ok": verify.get("ok")},
+        )
+        restore = phases.get("restore") or {}
+        _check(
+            "restore_ran",
+            bool(restore) and "error" not in restore and "skipped" not in restore,
+            {"error": restore.get("error"), "skipped": restore.get("skipped")},
+        )
+
+    return {
+        "ok": not failures,
+        "failures": failures,
+        "checks": checks,
+        "method": "each audit condition checked against the report's measured "
+        "evidence; no scores, no weighting — any failed check fails the gate",
+    }

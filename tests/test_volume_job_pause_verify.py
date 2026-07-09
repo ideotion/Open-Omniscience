@@ -106,3 +106,46 @@ def test_verify_failure_is_surfaced_not_swallowed(tmp_path):
     st = _wait(mgr)
     assert st["state"] == "error"
     assert "no volume manifest" in st["error"]
+
+
+def test_verify_and_pause_endpoints_are_wired(tmp_path):
+    """The API routes COMPOSE to the paths the engine expects (the slice-1c 404
+    lesson: assert the full route, never the two halves side by side)."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as client:
+        # verify: a non-folder src is a 400 (the manager's loud refusal)
+        res = client.post(
+            "/api/backup/v2/volumes/verify",
+            json={"src": str(tmp_path / "does-not-exist")},
+        )
+        assert res.status_code == 400
+        # a real (empty) folder starts the job; the missing manifest surfaces as
+        # a job ERROR in status — never a silent success
+        vdir = tmp_path / "v"
+        vdir.mkdir()
+        res = client.post("/api/backup/v2/volumes/verify", json={"src": str(vdir)})
+        assert res.status_code == 200
+        deadline = time.time() + 5
+        st = res.json()
+        while time.time() < deadline and st["state"] == "running":
+            time.sleep(0.05)
+            st = client.get("/api/backup/v2/volumes/status").json()
+        assert st["state"] == "error" and "manifest" in (st["error"] or "")
+
+        # pause: always answers with the job status (no-op when idle)
+        res = client.post("/api/backup/v2/volumes/pause")
+        assert res.status_code == 200 and "state" in res.json()
+
+        # the restore body accepts corpus_passphrase (422 would mean a schema gap)
+        res = client.post(
+            "/api/backup/v2/volumes/restore",
+            json={
+                "src": str(tmp_path / "nope"),
+                "passphrase": "x",
+                "corpus_passphrase": "y",
+            },
+        )
+        assert res.status_code == 400  # not-a-folder, past schema validation
