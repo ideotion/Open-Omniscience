@@ -1918,7 +1918,17 @@ def map_data(
 
 
 def status(session) -> dict:
-    """Indexing status for the Insights tab."""
+    """Indexing status for the Insights tab.
+
+    Every count here is the REAL, EXACT value. The field's cost from this endpoint —
+    ``count(*) FROM keyword_mentions`` measured 724 ms × 172 polls = 124 s — is removed at
+    the ENDPOINT by a data-aware cache (:func:`src.api.insights._status_cache_key`) that
+    collapses repeat polls while any write invalidates it, NOT by trading the exact count
+    for a maintained-counter sum. (A counter-derived ``SUM(article_count)`` would be cheaper
+    per cold compute but can drift silently on a cascade delete — presenting a wrong number
+    as exact would breach the honesty non-negotiable — so the exact count stays; a
+    correctness-gated counter-serve is a possible future optimisation, but only once its
+    basis is tied to the corpus epoch, not the reconcile watermark.)"""
     total_articles = session.query(func.count(Article.id)).scalar() or 0
     indexed = session.query(func.count(func.distinct(KeywordMention.article_id))).scalar() or 0
     keywords = session.query(func.count(Keyword.id)).scalar() or 0
@@ -2230,7 +2240,7 @@ def layered_graph(
             or 0
         )
         base = associations(
-            session, term, limit=12, group=True, start=start, end=end,
+            session, term, limit=12, group=True, days=days, start=start, end=end,
             corpus_total=corpus_total, article_cap=article_cap,
         )
         bounded = bounded or bool(base.get("articles_bounded"))
@@ -2266,7 +2276,7 @@ def layered_graph(
                     bounded = True
                     break
                 second = associations(
-                    session, p["term"], limit=4, group=True, start=start, end=end,
+                    session, p["term"], limit=4, group=True, days=days, start=start, end=end,
                     corpus_total=corpus_total, article_cap=article_cap,
                 )
                 bounded = bounded or bool(second.get("articles_bounded"))

@@ -39,6 +39,7 @@ from src.database.models import (
 )
 from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
+from src.jobs.background import BackgroundJob, register_job
 from src.utils.export_envelope import envelope
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
@@ -898,23 +899,49 @@ def enrich_sources(db: Session = Depends(get_db)) -> JSONResponse:
     return JSONResponse({"mode": "corpus", **result})
 
 
-@router.post("/enrich-source-types")
-def enrich_source_types(
-    limit: int = Query(200, ge=1, le=2000), db: Session = Depends(get_db)
-) -> JSONResponse:
-    """Fill ``Source.source_type`` from Wikidata — the NETWORKED enrichment pass.
-
-    Egresses to Wikidata over clearnet (through the guarded factory: kill switch +
-    proxy), so the frontend gates it with the one network consent. Refuses up front
-    with a clean 409 while airplane mode is engaged (never a traceback). Bounded per
-    call (``limit``) since each source costs two lookups; click again to continue."""
+def _enrich_source_types_worker(ctx, *, limit: int) -> dict:
+    """The Wikidata source-type enrichment, off the request thread (field test Item 8 P1).
+    Opaque to progress (apply_source_types loops internally); cancel is soft — it takes
+    effect when the bounded ``limit`` pass returns. Its own write_lock keeps the gate
+    window bounded to the final commit."""
     from src.catalog.wikidata_apply import apply_source_types
+    from src.database.session import session_scope
 
+    with session_scope() as db:
+        return apply_source_types(db, limit=limit)
+
+
+_ENRICH_JOB = register_job(
+    BackgroundJob(
+        "enrich-source-types", "Enriching source types (Wikidata)", _enrich_source_types_worker,
+        is_writer=True,
+    )
+)
+
+
+@router.post("/enrich-source-types")
+def enrich_source_types(limit: int = Query(200, ge=1, le=2000)) -> JSONResponse:
+    """Fill ``Source.source_type`` from Wikidata — the NETWORKED enrichment pass, run as a
+    BACKGROUND JOB so it no longer freezes the app for ~8 min (field test 2026-07-08,
+    Item 8 P1). Egresses to Wikidata over clearnet (through the guarded factory: kill switch
+    + proxy), so the frontend gates it with the one network consent. Refuses up front with a
+    clean 409 while airplane mode is engaged. Bounded per call (``limit``) since each source
+    costs two lookups; click again to continue. Poll ``/enrich-source-types/status`` or the
+    task manager for progress."""
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
     try:
-        result = apply_source_types(db, limit=limit)
-    except RuntimeError as exc:  # the kill-switch up-front refusal
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return JSONResponse({"mode": "wikidata", **result})
+        return JSONResponse({"mode": "wikidata", "started": True, "job": _ENRICH_JOB.start(limit=limit)})
+    except RuntimeError:
+        return JSONResponse({"mode": "wikidata", "started": False, "job": _ENRICH_JOB.status()})
+
+
+@router.get("/enrich-source-types/status")
+def enrich_source_types_status() -> JSONResponse:
+    """Live status of the background Wikidata source-type enrichment."""
+    return JSONResponse(_ENRICH_JOB.status())
 
 
 @router.post("/discover-sources")

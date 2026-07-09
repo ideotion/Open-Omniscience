@@ -23,7 +23,9 @@ from sqlalchemy.orm import Session
 from src.analytics import queries as q
 from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
+from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.database.maintenance import StatementTimeout, statement_deadline
+from src.jobs.background import BackgroundJob, register_job
 from src.database.session import get_db
 from src.utils.cache import SimpleCache
 
@@ -80,35 +82,49 @@ def _cached(key: str, compute):
     return out
 
 
-def _deadlined(db: Session, key: str, compute, *, on_timeout=None):
-    """Cache + a statement DEADLINE around the heaviest per-keyword reads.
+def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None):
+    """Cache + a bounded-concurrency guard + a statement DEADLINE around the heaviest reads.
 
-    The per-keyword analysis subtabs (associations / graph / framing) are
-    whole-corpus co-occurrence aggregations that, on a large encrypted corpus,
-    could run for minutes — the field "Loading… forever" freeze (remark 8). The
-    deadline (``statement_deadline``, OO_STATEMENT_TIMEOUT_S, default 60 s) aborts
-    a runaway aggregation with a typed StatementTimeout, which we map to an honest
-    HTTP 503 ("…exceeded the Ns deadline…") instead of an unbounded hang. The
-    deadline runs INSIDE the compute, so it only fires on a cache MISS — a hot
-    cache hit never touches the connection. Layered on top of the existing TTL
-    cache + background warm (#455/#458), which remain the primary speed lever.
+    The per-keyword analysis subtabs (associations / graph / framing) and the polled
+    windowed aggregations (top / trending / trending-windows / latest / corpus facets)
+    are whole-corpus scans that, on a large encrypted corpus, could each run for minutes —
+    the field "Loading… forever" freeze, and worse, the request DEATH-SPIRAL where the
+    polls stack faster than they finish (field test 2026-07-08, Item 8). Three nested nets:
 
-    ``on_timeout(exc)``: when given, a StatementTimeout returns its value (an honest
-    DEGRADED payload) instead of raising 503 — the graph endpoint uses this so a
-    too-large graph degrades to an actionable message, never a 60s->503 (Item 8). A
-    degraded payload is NOT cached (the exception fires inside ``compute``, before the
-    cache stores), so a transient overrun never poisons the cache.
+      * TTL CACHE + background warm (#455/#458) — the primary speed lever; a hot hit never
+        touches the connection (the guard/deadline below only run on a cache MISS).
+      * BOUNDED CONCURRENCY + SINGLE-FLIGHT (:func:`src.api.heavy.run_heavy`) — at most
+        ``OO_HEAVY_CONCURRENCY`` distinct heavy computes at once, and identical concurrent
+        misses share ONE compute; the excess fast-fails :class:`HeavyBusy` (→ 429) so the
+        polls can never pile onto the one SQLCipher connection.
+      * A statement DEADLINE (``statement_deadline``, OO_STATEMENT_TIMEOUT_S, default 60 s)
+        aborts a runaway aggregation with a typed StatementTimeout (→ 503) instead of an
+        unbounded hang.
+
+    ``on_timeout(exc)`` / ``on_busy(exc)``: when given, a StatementTimeout / HeavyBusy
+    returns that value (an honest DEGRADED payload) instead of raising — the graph endpoint
+    uses on_timeout so a too-large graph degrades to a message, never a 60s->503 (Item 8).
+    A degraded/busy payload is NOT cached (both exceptions fire OUTSIDE ``_cached``, before
+    the miss stores), so a transient overrun/backpressure never poisons the cache.
     """
+    fkey = flight_key(db, key)
+
     def _run():
         with statement_deadline(db):
             return compute()
 
     try:
-        return _cached(key, _run)
+        return _cached(key, lambda: run_heavy(fkey, _run))
     except StatementTimeout as exc:
         if on_timeout is not None:
             return on_timeout(exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except HeavyBusy as exc:
+        if on_busy is not None:
+            return on_busy(exc)
+        raise HTTPException(
+            status_code=429, detail=str(exc), headers={"Retry-After": "2"}
+        ) from exc
 
 
 def _graph_budget_s() -> float:
@@ -159,8 +175,28 @@ def _graph_degraded(exc, *, level, term=None, n_articles=None):
         )
     else:
         out["term"] = term
-        out["method"] = "PMI/co-occurrence association, two hops (relatives, and their relatives)"
-        out["caveat"] = "Association is not causation; PMI on small samples is noisy. " + msg
+        # Mirror the REAL per-level method/caveat (queries.layered_graph) so a family/
+        # supergroup timeout isn't handed the keyword co-occurrence wording (#591 nit).
+        _level_wording = {
+            "family": (
+                "shared-article overlap between keyword FAMILIES (top members each)",
+                "Families group surface forms of one entity; overlap counts articles, not causation.",
+            ),
+            "supergroup": (
+                "shared-article overlap between SUPER-GROUPS (curated groups of families); "
+                "top unassigned families shown for context",
+                "Super-groups are the user's own curation; overlap counts articles, not causation.",
+            ),
+        }
+        method, caveat = _level_wording.get(
+            out["level"],
+            (
+                "PMI/co-occurrence association, two hops (relatives, and their relatives)",
+                "Association is not causation; PMI on small samples is noisy.",
+            ),
+        )
+        out["method"] = method
+        out["caveat"] = caveat + " " + msg
     return out
 
 
@@ -272,10 +308,37 @@ def include_term(body: TermBody) -> dict:
     return remove_excluded(body.term).to_dict()
 
 
+def _status_cache_key(db: Session) -> str:
+    """A DATA-AWARE cache key for /status: the session's DB bind + a write-probe
+    (``PRAGMA data_version`` + ``total_changes()``). Repeat polls with no intervening write
+    reuse the same key (a cache HIT — the whole point, collapsing the field's 172 repeated
+    full counts); ANY write bumps the probe so the progress number stays live (honest,
+    never stale-through-a-write); and a different DB (a test fixture on its own engine) gets
+    a different key, so a cached status is never served for the wrong corpus."""
+    from sqlalchemy import text
+
+    parts = ["status"]
+    try:
+        bind = db.get_bind()
+        parts.append(str(id(bind)))
+        if getattr(getattr(bind, "dialect", None), "name", "") == "sqlite":
+            parts.append(str(db.execute(text("PRAGMA data_version")).scalar()))
+            parts.append(str(db.execute(text("SELECT total_changes()")).scalar()))
+    except Exception:  # noqa: BLE001 - any probe failure -> a per-call key (never a wrong hit)
+        parts = ["status", "noprobe", str(id(db))]
+    return "|".join(parts)
+
+
 @router.get("/status")
 def insights_status(db: Session = Depends(get_db)) -> dict:
-    """Indexing progress + corpus keyword/entity totals."""
-    return q.status(db)
+    """Indexing progress + corpus keyword/entity totals.
+
+    POLLED by the Insights "N to index" ticker. Served through a DATA-AWARE cache
+    (:func:`_status_cache_key`) so a burst of identical polls does not re-run the corpus
+    counts every time (the field's 124 s of repeated full scans), while a write still
+    invalidates it so the progress stays live. The counts themselves are the REAL, exact
+    values (q.status)."""
+    return _cached(_status_cache_key(db), lambda: q.status(db))
 
 
 @router.post("/reindex")
@@ -433,7 +496,7 @@ def insights_corpus_keywords(
         )
         return res
 
-    return _cached(key, _compute)
+    return _deadlined(db, key, _compute)
 
 
 @router.get("/corpus-www")
@@ -472,7 +535,7 @@ def insights_corpus_www(
             "caveat": "Deduced from article text, never confirmed; counts only.",
         }
 
-    return _cached(key, _compute)
+    return _deadlined(db, key, _compute)
 
 
 @router.get("/corpus-facet-articles")
@@ -542,7 +605,7 @@ def insights_corpus_sentiment(
         res["capped"] = total > len(ids)
         return res
 
-    return _cached(key, _compute)
+    return _deadlined(db, key, _compute)
 
 
 @router.get("/corpus-sources")
@@ -576,7 +639,7 @@ def insights_corpus_sources(
         res["capped"] = total > len(ids)
         return res
 
-    return _cached(key, _compute)
+    return _deadlined(db, key, _compute)
 
 
 @router.get("/corpus-coordination")
@@ -610,7 +673,7 @@ def insights_corpus_coordination(
         res["capped"] = total > len(ids)
         return res
 
-    return _cached(key, _compute)
+    return _deadlined(db, key, _compute)
 
 
 def _tlang(target_lang: str | None) -> str | None:
@@ -650,7 +713,8 @@ def insights_latest(
         min_sources=min_sources, content_type=content_type or "", tag=tag or "",
         collapse=collapse, facets=facets,
     )
-    return _cached(
+    return _deadlined(
+        db,
         key,
         lambda: latest_articles(
             db, limit=limit, window_days=window_days, min_words=min_words,
@@ -702,7 +766,7 @@ def insights_top(
             out["counts"] = counter_envelope(db).to_dict()
         return out
 
-    return _cached(key, _compute)
+    return _deadlined(db, key, _compute)
 
 
 @router.get("/trending")
@@ -719,7 +783,7 @@ def insights_trending(
     tl = _tlang(target_lang)
     key = _ckey("trending", window_days=window_days, baseline_days=baseline_days,
                 country=country, kind=kind, limit=limit, tl=tl)
-    return _cached(key, lambda: rm.trending(
+    return _deadlined(db, key, lambda: rm.trending(
         db,
         window_days=window_days,
         baseline_days=baseline_days,
@@ -756,7 +820,7 @@ def insights_trending_windows(
     tl = _tlang(target_lang)
     key = _ckey("trending-windows", country=country, kind=kind, limit=limit,
                 series_top=series_top, tl=tl)
-    return _cached(key, lambda: rm.trending_windows(
+    return _deadlined(db, key, lambda: rm.trending_windows(
         db, country=country, kind=_kind(kind), limit=limit, series_top=series_top, target_lang=tl
     ))
 
@@ -929,7 +993,7 @@ def insights_server_locations(db: Session = Depends(get_db)) -> dict:
     visible by default. Until the country DB is bundled (a networked-machine step), the
     located countries are empty and everything lands honestly in the unavailable buckets.
     """
-    return _cached(_ckey("server-locations"), lambda: q.server_locations(db))
+    return _deadlined(db, _ckey("server-locations"), lambda: q.server_locations(db))
 
 
 @router.get("/lunar-correlation")
@@ -952,22 +1016,29 @@ def insights_lunar_correlation(
     """
     from src.analytics import lunar
 
-    if term:
-        corr = lunar.correlate_keyword(db, term)
-        return {
-            "term": term,
-            "result": corr.to_dict() if corr else None,
-            "single_test": True,
-            "variable": "illuminated_fraction",
-            "method": lunar.LUNAR_METHOD,
-            "caveat": lunar.CORRELATION_CAVEAT,
-            "note": (
-                "A single test, NOT corrected for multiple comparisons — screen many series "
-                "(omit 'term') for an honest, FDR-corrected result."
-                if corr else "Too few active days to test this keyword honestly."
-            ),
-        }
-    return lunar.lunar_screen(db, limit=limit, fdr_q=fdr_q)
+    def _compute() -> dict:
+        if term:
+            corr = lunar.correlate_keyword(db, term)
+            return {
+                "term": term,
+                "result": corr.to_dict() if corr else None,
+                "single_test": True,
+                "variable": "illuminated_fraction",
+                "method": lunar.LUNAR_METHOD,
+                "caveat": lunar.CORRELATION_CAVEAT,
+                "note": (
+                    "A single test, NOT corrected for multiple comparisons — screen many series "
+                    "(omit 'term') for an honest, FDR-corrected result."
+                    if corr else "Too few active days to test this keyword honestly."
+                ),
+            }
+        return lunar.lunar_screen(db, limit=limit, fdr_q=fdr_q)
+
+    # No TTL cache here (not polled); the corpus-wide lunar SCREEN is one of the heaviest
+    # unprotected scans (measured 57-142 s) — the cap + deadline stop it thrashing the one
+    # connection (field test 2026-07-08, Item 8).
+    key = _ckey("lunar-correlation", term=term or "", limit=limit, fdr_q=fdr_q)
+    return guarded_read(db, key, _compute)
 
 
 class PollFieldsBody(BaseModel):
@@ -1909,14 +1980,39 @@ def keywords_by_tag(
     return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}
 
 
-@router.post("/keyword-tags/backfill")
-def backfill_keyword_tags(
-    limit: int = Query(0, ge=0, le=500000), db: Session = Depends(get_db)
-) -> dict:
-    """Apply curated baseline tags to EXISTING keywords (the retroactive pass).
-
-    Tagging at ingest is forward-only, so a pre-existing corpus has no baseline tags
-    until this runs. Idempotent; counts only, never invents a tag. ``limit=0`` = all."""
+def _backfill_tags_worker(ctx, *, limit: int | None) -> dict:
+    """Baseline-tag backfill off the request thread (field test Item 8 P1). A DB writer with
+    no network; opaque to progress (it scans the keyword table internally), soft cancel."""
     from src.analytics.store import backfill_baseline_tags
+    from src.database.session import session_scope
 
-    return backfill_baseline_tags(db, limit=limit or None)
+    with session_scope() as db:
+        return backfill_baseline_tags(db, limit=limit)
+
+
+_TAGS_BACKFILL_JOB = register_job(
+    BackgroundJob(
+        "keyword-tags-backfill", "Applying baseline keyword tags", _backfill_tags_worker,
+        is_writer=True,
+    )
+)
+
+
+@router.post("/keyword-tags/backfill")
+def backfill_keyword_tags(limit: int = Query(0, ge=0, le=500000)) -> dict:
+    """Apply curated baseline tags to EXISTING keywords (the retroactive pass) as a
+    BACKGROUND JOB — it scans the whole keyword table (~1 min at 60K articles), so it must
+    not run synchronously in the request (field test 2026-07-08, Item 8 P1). Tagging at
+    ingest is forward-only, so a pre-existing corpus has no baseline tags until this runs.
+    Idempotent; counts only, never invents a tag. ``limit=0`` = all. Poll
+    ``/keyword-tags/backfill/status`` or the task manager for the result."""
+    try:
+        return {"started": True, "job": _TAGS_BACKFILL_JOB.start(limit=(limit or None))}
+    except RuntimeError:
+        return {"started": False, "job": _TAGS_BACKFILL_JOB.status()}
+
+
+@router.get("/keyword-tags/backfill/status")
+def backfill_keyword_tags_status() -> dict:
+    """Live status of the background baseline-tag backfill (state/result/error)."""
+    return _TAGS_BACKFILL_JOB.status()

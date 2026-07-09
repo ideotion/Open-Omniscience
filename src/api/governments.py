@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.catalog.countries import to_iso2, to_iso3
 from src.database.session import get_db, session_scope
+from src.jobs.background import BackgroundJob, register_job
 from src.stats import indicators as ind
 from src.stats.store import list_figures
 
@@ -133,39 +134,37 @@ class LoadStandardBody(BaseModel):
     indicators: list[str] | None = None  # subset of the catalog; None/empty = all curated
 
 
-@router.post("/load-standard")
-def load_standard(body: LoadStandardBody | None = None) -> dict:
-    """Fetch the curated indicator set for ALL countries (the one-click "load country
-    data"). The ONE networked action: it refuses up front under airplane mode (409,
-    never a traceback), routes through the guarded factory, stores each as a vintaged
-    figure, and records a subscription so the scheduler can refresh new vintages. A
-    transport failure on one indicator degrades LOUDLY (recorded), never aborts the set
-    or fabricates a figure."""
-    from src.ingest import kill_switch_active
+def _load_standard_worker(ctx, *, wanted: list[str]) -> dict:
+    """The governments load, off the request thread (field test 2026-07-08, Item 8 P1).
+
+    Commits PER INDICATOR so the single-writer gate is taken+released between indicators
+    (collection interleaves) instead of being held for the whole 2.9 min run — a genuine
+    fix over the old one-transaction handler — and so the Governments tab sees data appear
+    progressively. Cancellable between indicators; each indicator's failure degrades loudly
+    (recorded), never aborts the set or fabricates a figure."""
     from src.stats import fetch as statfetch
     from src.stats.store import store_figures
 
-    wanted = [c for c in (body.indicators if body else None) or ind.indicator_ids() if ind.is_curated(c)]
-    if not wanted:
-        raise HTTPException(status_code=422, detail="no curated indicators selected")
-    # Refuse up front, before any DB session, so airplane mode is a clean 409.
-    if kill_switch_active():
-        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
-
     per_indicator: list[dict] = []
     total_fetched = total_stored = 0
-    refused = False
+    complete = True  # False if we stop early (cancel / airplane refusal) — an HONEST partial
+    ctx.set_progress(done=0, total=len(wanted), detail="starting")
     with session_scope() as db:
-        for code in wanted:
+        for i, code in enumerate(wanted):
+            if ctx.stopping:
+                complete = False
+                break
+            ctx.set_progress(detail=f"fetching {code}")
             try:
                 figures = statfetch.fetch_worldbank(code, "all")
             except RuntimeError as exc:  # the kill-switch up-front refusal
-                refused = True
                 per_indicator.append({"indicator": code, "status": "refused", "detail": str(exc)})
+                complete = False
                 break  # airplane mode: stop — every subsequent fetch would refuse too
             except Exception as exc:  # noqa: BLE001 - transport/decode: degrade loudly, continue
                 logger.warning("governments load-standard: %s failed", code, exc_info=True)
                 per_indicator.append({"indicator": code, "status": "error", "detail": str(exc)[:200]})
+                ctx.set_progress(done=i + 1)
                 continue
             tally = store_figures(db, figures)
             total_fetched += len(figures)
@@ -177,12 +176,55 @@ def load_standard(body: LoadStandardBody | None = None) -> dict:
                 record_subscription(db, source="worldbank", indicator=code, country="all")
             except Exception:  # noqa: BLE001 - tracking is additive, never blocks the fetch
                 pass
-    if refused:
-        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+            db.commit()  # release the writer gate between indicators (arbitrate w/ collect)
+            ctx.set_progress(done=i + 1)
     return {
         "requested": wanted,
         "fetched": total_fetched,
         "stored": total_stored,
+        "complete": complete,  # honest: did it finish the whole set, or stop early?
         "per_indicator": per_indicator,
         "caveat": _CAVEAT,
     }
+
+
+# cancellable=True: the worker checks ctx.stopping between indicators, so the task-manager
+# Cancel button is HONEST (it stops at the next indicator). store_figures is idempotent per
+# vintage, so a partial run + re-run never double-counts.
+_GOV_JOB = register_job(
+    BackgroundJob(
+        "governments", "Loading government statistics", _load_standard_worker,
+        is_writer=True, cancellable=True,
+    )
+)
+
+
+@router.post("/load-standard")
+def load_standard(body: LoadStandardBody | None = None) -> dict:
+    """Fetch the curated indicator set for ALL countries (the one-click "load country
+    data") as a BACKGROUND JOB — returns immediately with the job status instead of
+    freezing the app for ~3 min (field test 2026-07-08, Item 4 + Item 8 P1). The ONE
+    networked action: refuses up front under airplane mode (409, never a traceback); the
+    worker routes through the guarded factory, stores each as a vintaged figure, records a
+    subscription so the scheduler auto-refreshes new vintages, and commits per indicator so
+    collection is never blocked for the whole run. Poll ``/load-standard/status`` or the
+    task manager (``/api/jobs``) for progress; the tab reads stored figures as they land."""
+    from src.ingest import kill_switch_active
+
+    wanted = [c for c in (body.indicators if body else None) or ind.indicator_ids() if ind.is_curated(c)]
+    if not wanted:
+        raise HTTPException(status_code=422, detail="no curated indicators selected")
+    # Refuse up front, before starting the job, so airplane mode is a clean 409.
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+    try:
+        return {"started": True, "job": _GOV_JOB.start(wanted=wanted)}
+    except RuntimeError:
+        # Already running — return the live status rather than 409 (idempotent button).
+        return {"started": False, "job": _GOV_JOB.status()}
+
+
+@router.get("/load-standard/status")
+def load_standard_status() -> dict:
+    """Live status of the background government-statistics load (state/progress/error)."""
+    return _GOV_JOB.status()

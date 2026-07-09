@@ -10,7 +10,7 @@
 # Providers (all free, machine-readable, no key, robots-permitting):
 #   • FRED (https://fred.stlouisfed.org/graph/fredgraph.csv?id=<ID>) — US named
 #     indices, VIX and Nikkei as clean CSV (date col 0, value col 1; missing = ".").
-#   • FRED · OECD MEI "Share Prices" (id SPASTT01<ISO3>M661N) — a MONTHLY share-price
+#   • FRED · OECD MEI "Share Prices" (id SPASTT01<ISO2>M661N) — a MONTHLY share-price
 #     INDEX (base 2015 = 100) for ~40 economies on every continent. This is the
 #     honest ALL-CONTINENT path: the NAMED exchange indices (DAX, FTSE 100, CAC 40,
 #     Hang Seng…) are NOT available through a free, robots-PERMITTING daily feed —
@@ -20,8 +20,12 @@
 #     (2015 = 100, monthly), NOT the named exchange's point level. Labelled as such.
 #
 # Honesty notes:
-#   • The OECD `SPASTT01<ISO3>M661N` IDs follow a documented FRED/OECD pattern and are
-#     accurate to our knowledge, but were NOT live-verified in the build environment
+#   • The OECD `SPASTT01<ISO2>M661N` IDs use the FRED 2-letter ISO country code
+#     (CORRECTED 2026-07-09: the ids previously used a 3-letter code — SPASTT01DEUM661N
+#     etc. — which does NOT exist on FRED, so every OECD index 404'd and its continent
+#     showed empty on the board; field test 2026-07-08 Item 1). Four are live-confirmed
+#     (US/CN/ES/KR = SPASTT01{US,CN,ES,KR}M661N); the rest follow the same documented
+#     FRED/OECD 2-letter pattern but were NOT all live-verified in the build environment
 #     (no outbound network here). If a provider retires/renames one the import fails
 #     LOUDLY (HTTP error / no rows) rather than inventing data — fix the URL here.
 #     Verify on a networked machine; candidates welcome via PR.
@@ -97,27 +101,27 @@ feeds:
 
   # --- ALL CONTINENTS — OECD MEI share-price indices (FRED, monthly, 2015=100) --- #
   # Europe
-  - {key: idx_oecd_deu, name: "Germany — share prices", symbol: SPASTT01DEUM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01DEUM661N", currency: EUR, unit: idx, market: "Germany · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_gbr, name: "United Kingdom — share prices", symbol: SPASTT01GBRM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01GBRM661N", currency: GBP, unit: idx, market: "UK · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_fra, name: "France — share prices", symbol: SPASTT01FRAM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01FRAM661N", currency: EUR, unit: idx, market: "France · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_ita, name: "Italy — share prices", symbol: SPASTT01ITAM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01ITAM661N", currency: EUR, unit: idx, market: "Italy · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_esp, name: "Spain — share prices", symbol: SPASTT01ESPM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01ESPM661N", currency: EUR, unit: idx, market: "Spain · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_che, name: "Switzerland — share prices", symbol: SPASTT01CHEM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01CHEM661N", currency: CHF, unit: idx, market: "Switzerland · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_nld, name: "Netherlands — share prices", symbol: SPASTT01NLDM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01NLDM661N", currency: EUR, unit: idx, market: "Netherlands · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_swe, name: "Sweden — share prices", symbol: SPASTT01SWEM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01SWEM661N", currency: SEK, unit: idx, market: "Sweden · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_deu, name: "Germany — share prices", symbol: SPASTT01DEM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01DEM661N", currency: EUR, unit: idx, market: "Germany · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_gbr, name: "United Kingdom — share prices", symbol: SPASTT01GBM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01GBM661N", currency: GBP, unit: idx, market: "UK · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_fra, name: "France — share prices", symbol: SPASTT01FRM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01FRM661N", currency: EUR, unit: idx, market: "France · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_ita, name: "Italy — share prices", symbol: SPASTT01ITM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01ITM661N", currency: EUR, unit: idx, market: "Italy · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_esp, name: "Spain — share prices", symbol: SPASTT01ESM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01ESM661N", currency: EUR, unit: idx, market: "Spain · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_che, name: "Switzerland — share prices", symbol: SPASTT01CHM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01CHM661N", currency: CHF, unit: idx, market: "Switzerland · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_nld, name: "Netherlands — share prices", symbol: SPASTT01NLM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01NLM661N", currency: EUR, unit: idx, market: "Netherlands · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_swe, name: "Sweden — share prices", symbol: SPASTT01SEM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01SEM661N", currency: SEK, unit: idx, market: "Sweden · OECD share-price index", continent: "Europe", tags: ["oecd", "share-price"]}
   # Asia
-  - {key: idx_oecd_kor, name: "South Korea — share prices", symbol: SPASTT01KORM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01KORM661N", currency: KRW, unit: idx, market: "Korea · OECD share-price index", continent: "Asia", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_ind, name: "India — share prices", symbol: SPASTT01INDM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01INDM661N", currency: INR, unit: idx, market: "India · OECD share-price index", continent: "Asia", tags: ["oecd", "share-price", "emerging"]}
-  - {key: idx_oecd_chn, name: "China — share prices", symbol: SPASTT01CHNM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01CHNM661N", currency: CNY, unit: idx, market: "China · OECD share-price index", continent: "Asia", tags: ["oecd", "share-price", "emerging"]}
-  - {key: idx_oecd_idn, name: "Indonesia — share prices", symbol: SPASTT01IDNM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01IDNM661N", currency: IDR, unit: idx, market: "Indonesia · OECD share-price index", continent: "Asia", tags: ["oecd", "share-price", "emerging"]}
+  - {key: idx_oecd_kor, name: "South Korea — share prices", symbol: SPASTT01KRM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01KRM661N", currency: KRW, unit: idx, market: "Korea · OECD share-price index", continent: "Asia", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_ind, name: "India — share prices", symbol: SPASTT01INM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01INM661N", currency: INR, unit: idx, market: "India · OECD share-price index", continent: "Asia", tags: ["oecd", "share-price", "emerging"]}
+  - {key: idx_oecd_chn, name: "China — share prices", symbol: SPASTT01CNM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01CNM661N", currency: CNY, unit: idx, market: "China · OECD share-price index", continent: "Asia", tags: ["oecd", "share-price", "emerging"]}
+  - {key: idx_oecd_idn, name: "Indonesia — share prices", symbol: SPASTT01IDM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01IDM661N", currency: IDR, unit: idx, market: "Indonesia · OECD share-price index", continent: "Asia", tags: ["oecd", "share-price", "emerging"]}
   # North America
-  - {key: idx_oecd_can, name: "Canada — share prices", symbol: SPASTT01CANM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01CANM661N", currency: CAD, unit: idx, market: "Canada · OECD share-price index", continent: "North America", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_mex, name: "Mexico — share prices", symbol: SPASTT01MEXM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01MEXM661N", currency: MXN, unit: idx, market: "Mexico · OECD share-price index", continent: "North America", tags: ["oecd", "share-price", "emerging"]}
+  - {key: idx_oecd_can, name: "Canada — share prices", symbol: SPASTT01CAM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01CAM661N", currency: CAD, unit: idx, market: "Canada · OECD share-price index", continent: "North America", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_mex, name: "Mexico — share prices", symbol: SPASTT01MXM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01MXM661N", currency: MXN, unit: idx, market: "Mexico · OECD share-price index", continent: "North America", tags: ["oecd", "share-price", "emerging"]}
   # South America
-  - {key: idx_oecd_bra, name: "Brazil — share prices", symbol: SPASTT01BRAM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01BRAM661N", currency: BRL, unit: idx, market: "Brazil · OECD share-price index", continent: "South America", tags: ["oecd", "share-price", "emerging"]}
-  - {key: idx_oecd_chl, name: "Chile — share prices", symbol: SPASTT01CHLM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01CHLM661N", currency: CLP, unit: idx, market: "Chile · OECD share-price index", continent: "South America", tags: ["oecd", "share-price", "emerging"]}
+  - {key: idx_oecd_bra, name: "Brazil — share prices", symbol: SPASTT01BRM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01BRM661N", currency: BRL, unit: idx, market: "Brazil · OECD share-price index", continent: "South America", tags: ["oecd", "share-price", "emerging"]}
+  - {key: idx_oecd_chl, name: "Chile — share prices", symbol: SPASTT01CLM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01CLM661N", currency: CLP, unit: idx, market: "Chile · OECD share-price index", continent: "South America", tags: ["oecd", "share-price", "emerging"]}
   # Africa
-  - {key: idx_oecd_zaf, name: "South Africa — share prices", symbol: SPASTT01ZAFM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01ZAFM661N", currency: ZAR, unit: idx, market: "South Africa · OECD share-price index", continent: "Africa", tags: ["oecd", "share-price", "emerging"]}
+  - {key: idx_oecd_zaf, name: "South Africa — share prices", symbol: SPASTT01ZAM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01ZAM661N", currency: ZAR, unit: idx, market: "South Africa · OECD share-price index", continent: "Africa", tags: ["oecd", "share-price", "emerging"]}
   # Oceania
-  - {key: idx_oecd_aus, name: "Australia — share prices", symbol: SPASTT01AUSM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01AUSM661N", currency: AUD, unit: idx, market: "Australia · OECD share-price index", continent: "Oceania", tags: ["oecd", "share-price"]}
-  - {key: idx_oecd_nzl, name: "New Zealand — share prices", symbol: SPASTT01NZLM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01NZLM661N", currency: NZD, unit: idx, market: "New Zealand · OECD share-price index", continent: "Oceania", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_aus, name: "Australia — share prices", symbol: SPASTT01AUM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01AUM661N", currency: AUD, unit: idx, market: "Australia · OECD share-price index", continent: "Oceania", tags: ["oecd", "share-price"]}
+  - {key: idx_oecd_nzl, name: "New Zealand — share prices", symbol: SPASTT01NZM661N, category: index, url: "https://fred.stlouisfed.org/graph/fredgraph.csv?id=SPASTT01NZM661N", currency: NZD, unit: idx, market: "New Zealand · OECD share-price index", continent: "Oceania", tags: ["oecd", "share-price"]}
