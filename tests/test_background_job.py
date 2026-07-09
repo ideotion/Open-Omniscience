@@ -22,9 +22,19 @@ from src.jobs.background import (
 
 
 def test_start_runs_the_worker_and_reports_done():
-    job = BackgroundJob("test-done", "T", lambda ctx: {"ok": 1})
+    # The worker BLOCKS on `release` so the just-started state is deterministically
+    # "running" (a trivial worker could finish before start() returns its status, racing
+    # the assertion — especially under full-suite load).
+    release = threading.Event()
+
+    def worker(ctx):
+        release.wait(2)
+        return {"ok": 1}
+
+    job = BackgroundJob("test-done", "T", worker)
     s = job.start()
     assert s["state"] == "running"
+    release.set()
     job._thread.join(3)
     st = job.status()
     assert st["state"] == "done"
@@ -105,9 +115,11 @@ def test_a_second_start_while_running_is_refused():
         job.start()  # already running -> refused, never a second worker
     hold.set()
     job._thread.join(3)
-    # After it finishes, a fresh start is allowed again.
+    # After it finishes, a fresh start is ALLOWED again (no RuntimeError). The state may be
+    # running or already done (hold is now set, so this worker no longer blocks) — either is
+    # a valid post-start state; the point is that start() succeeded.
     hold2 = job.start()
-    assert hold2["state"] == "running"
+    assert hold2["state"] in ("running", "done")
     job._thread.join(3)
 
 
