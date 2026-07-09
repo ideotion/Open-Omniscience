@@ -43,7 +43,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import os as _os
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -52,6 +54,17 @@ from src.analytics.managed import UNSEGMENTED
 from src.database.models import Article, ArticleLink, Source
 
 _SQL_IN_CHUNK = 900  # stay under the SQLite bound-variable limit
+
+# Near-dup collapse compares a bounded PREFIX of each body, not the whole blob (D1 / P1.4).
+# On the SQLCipher store a full-content read decrypts every overflow page of every candidate
+# — 300 articles x tens of KB — which defeated the scan caps and measured 59 s at 268 K
+# articles. Wire reprints share the lede, so a leading-chars prefix keeps the signal while
+# bounding the per-row decrypt to the first page(s). OO_LATEST_NEARDUP_PREFIX_CHARS overrides.
+def _neardup_prefix_chars() -> int:
+    try:
+        return max(500, int(_os.getenv("OO_LATEST_NEARDUP_PREFIX_CHARS", "4000")))
+    except (TypeError, ValueError):
+        return 4000
 
 
 def _split_tags(tags: str | None) -> list[str]:
@@ -139,13 +152,24 @@ def latest_articles(
         if not tag_source_ids:
             return {**meta, **_method_caveat(scan_cap, near_dup_cap)}
 
-    # Candidate rows: gate/display columns only (never the content blob), newest first,
-    # bounded to scan_cap. Reading the trailing gate columns is a bounded per-row read
-    # (scan_cap max), NOT the keyword_mentions -> articles join.
-    cand_q = session.query(
+    # Candidate rows: gate/display columns, newest first, bounded to scan_cap. Reading the
+    # trailing gate column `word_count` (it sits AFTER `content` in the record) already
+    # decrypts each candidate's content overflow pages on the SQLCipher store — so when
+    # near-dup collapse is on we FOLD a bounded content PREFIX into this SAME scan
+    # (``func.substr``, cheap once the pages are decrypted anyway, ~+5 ms/300 rows measured).
+    # That eliminates the near-dup pass's SEPARATE full-content read, which re-decrypted the
+    # same pages a second time and defeated the scan caps (the field's 59 s at 268 K
+    # articles — verified: two-query 92 ms vs folded 51 ms per 300 rows). Never the full blob
+    # (bounded to `prefix_chars`), never the keyword_mentions -> articles join.
+    prefix_chars = _neardup_prefix_chars()
+    want_prefix = collapse and near_dup_cap > 0
+    cols: list[Any] = [
         Article.id, Article.source_id, Article.title,
         Article.created_at, Article.published_at, Article.language, Article.word_count,
-    ).filter(Article.created_at >= since)
+    ]
+    if want_prefix:
+        cols.append(func.substr(Article.content, 1, prefix_chars))
+    cand_q = session.query(*cols).filter(Article.created_at >= since)
     if ct is not None:
         cand_q = cand_q.join(Source, Article.source_id == Source.id).filter(
             func.lower(func.coalesce(Source.source_type, "news")) == ct
@@ -172,7 +196,9 @@ def latest_articles(
 
     # Apply the two transparent gates, preserving recency order.
     candidates: list[dict] = []
-    for aid, sid, title, created, published, lang, wc in rows:
+    for row in rows:
+        aid, sid, title, created, published, lang, wc = row[:7]
+        body_prefix = row[7] if want_prefix else None  # the folded near-dup prefix, or None
         base = (lang or "").split("-", 1)[0].strip().lower()
         unseg = base in UNSEGMENTED
         cited = link_count.get(aid, 0)
@@ -201,28 +227,26 @@ def latest_articles(
                     "tags": info.get("tags", []),
                 },
                 "_source_domain": info.get("domain"),
+                "_body_prefix": body_prefix,  # internal: near-dup input, stripped from output
             }
         )
     meta["candidates_after_gates"] = len(candidates)
 
-    # Near-dup collapse: cluster the freshest survivors (bounded content reads), then
-    # keep the FIRST (= freshest, recency order) member of each cluster and fold the
-    # rest into it.
+    # Near-dup collapse: cluster the freshest survivors on the body PREFIX already fetched
+    # in the candidate scan (NO second content read), then keep the FIRST (= freshest,
+    # recency order) member of each cluster and fold the rest into it. Wire reprints share
+    # the lede, so the prefix carries the signal; a compressed body (content NULL) falls back
+    # to title-only near-dup for that row (disclosed — no ingest path compresses today).
     cluster_of: dict[str, str] = {}
-    if collapse and near_dup_cap > 0 and len(candidates) >= 2:
+    if want_prefix and len(candidates) >= 2:
         subset = candidates[:near_dup_cap]
         meta["collapse_bounded"] = len(candidates) > near_dup_cap
+        meta["collapse_prefix_chars"] = prefix_chars
         docs: dict[str, str] = {}
-        sub_ids = [c["id"] for c in subset]
-        text_by_id: dict[int, tuple[str | None, str | None]] = {}
-        for i in range(0, len(sub_ids), _SQL_IN_CHUNK):
-            chunk = sub_ids[i : i + _SQL_IN_CHUNK]
-            for art in session.query(Article).filter(Article.id.in_(chunk)):
-                body = art.get_content() if hasattr(art, "get_content") else (art.content or "")
-                text_by_id[art.id] = (art.title, body)
         for c in subset:
-            title, body = text_by_id.get(c["id"], (c["title"], ""))
-            docs[str(c["id"])] = ((title or "") + "\n" + (body or "")).strip()
+            title = c["title"] or ""
+            body = c.get("_body_prefix") or ""
+            docs[str(c["id"])] = (title + "\n" + body).strip()
         if len([d for d in docs.values() if d]) >= 2:
             from src.signals.near_dup import near_duplicate_clusters
 
@@ -250,7 +274,7 @@ def latest_articles(
         if len(emitted) >= limit:
             # Enough distinct stories; keep scanning only to attach dups of shown ones.
             continue
-        story = {k: v for k, v in c.items() if k != "_source_domain"}
+        story = {k: v for k, v in c.items() if k not in ("_source_domain", "_body_prefix")}
         story["duplicates_collapsed"] = 0
         story["also_reported_by"] = []
         if key is not None:
@@ -301,8 +325,10 @@ def _method_caveat(scan_cap: int, near_dup_cap: int) -> dict:
             "publisher's claimed published_at) within the window. Each shown story "
             "passes your gates (word_count AND cited-source count); near-identical wire "
             "reprints are collapsed into the freshest copy. The scan is bounded to the "
-            f"{scan_cap} newest candidates; near-dup collapse reads at most {near_dup_cap} "
-            "of them."
+            f"{scan_cap} newest candidates; near-dup collapse compares at most {near_dup_cap} "
+            f"of them on the first {_neardup_prefix_chars()} characters of each body (the "
+            "shared lede that identifies a reprint) — so a rewrite that changes the opening "
+            "but keeps the body may not be collapsed."
         ),
         "caveat": (
             "Counts only, never a score — a recency LENS with transparent substance "

@@ -219,6 +219,150 @@ def test_url_is_the_local_reader(corpus):
     assert r["articles"][0]["url"] == "/api/articles/1/view"
 
 
+# ------------------- D1: near-dup collapse on a bounded content prefix ------------------- #
+
+
+def _prefix_corpus():
+    """Two articles that SHARE a long lede (within the prefix) but differ after it, plus a
+    third that shares text with the first only in the TAIL (beyond the prefix)."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Article, Base, Source
+
+    eng = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(eng)
+    s = sessionmaker(bind=eng, future=True)()
+    s.add_all([
+        Source(id=1, name="A", domain="a.test", source_type="news", tags="news"),
+        Source(id=2, name="B", domain="b.test", source_type="news", tags="news"),
+        Source(id=3, name="C", domain="c.test", source_type="news", tags="news"),
+    ])
+    s.commit()
+    now = datetime.now(UTC)
+    lede = ("The government today unveiled a sweeping new economic package as inflation "
+            "pressures mounted across the region. Officials described the measures in "
+            "detail at a lengthy press briefing. ") * 20  # ~4k+ chars -> spans the prefix
+    tail_x = (" A completely unrelated closing section about sports fixtures. ") * 40
+    tail_y = (" A different unrelated closing about weather patterns and rainfall. ") * 40
+    shared_tail = (" IDENTICAL TAIL BOILERPLATE that only appears late in the body. ") * 40
+
+    def art(i, sid, content, mins):
+        return Article(id=i, url=f"https://x/{i}", canonical_url=f"https://x/{i}", source_id=sid,
+                       title=f"t{i}", hash=f"h{i}", language="en", word_count=900, content=content,
+                       published_at=now, created_at=now - timedelta(minutes=mins))
+
+    s.add_all([
+        art(1, 1, lede + tail_x, 1),        # shares the LEDE with 2 (within prefix) -> collapse
+        art(2, 2, lede + tail_y, 2),        # reprint: same lede, different tail
+        art(3, 3, "Unrelated opening. " * 300 + shared_tail, 3),  # shares only a TAIL with none in-prefix
+    ])
+    s.commit()
+    return s
+
+
+def test_neardup_collapse_uses_the_bounded_prefix():
+    from src.analytics.latest import latest_articles
+
+    s = _prefix_corpus()
+    r = latest_articles(s, limit=20)
+    ids = _ids(r)
+    # 1 and 2 share the lede (within the 4000-char prefix) -> collapsed into the freshest (1).
+    assert ids[0] == 1
+    assert 2 not in ids, "a reprint sharing the lede must collapse via the folded prefix"
+    assert r["articles"][0]["duplicates_collapsed"] == 1
+    # 3 shares no in-prefix text with anything -> stays a distinct story (disclosed limit).
+    assert 3 in ids
+    s.close()
+
+
+def test_neardup_prefix_is_disclosed_and_not_leaked(corpus):
+    from src.analytics.latest import latest_articles
+
+    r = latest_articles(corpus, limit=20)
+    assert r["collapse_prefix_chars"] == 4000
+    assert "first 4000 characters" in r["method"]
+    # The internal near-dup input must never leak into the payload.
+    for a in r["articles"]:
+        assert "_body_prefix" not in a and "_source_domain" not in a
+
+
+def test_neardup_prefix_env_override(monkeypatch):
+    from src.analytics.latest import latest_articles
+
+    monkeypatch.setenv("OO_LATEST_NEARDUP_PREFIX_CHARS", "800")
+    s = _prefix_corpus()
+    r = latest_articles(s, limit=20)
+    assert r["collapse_prefix_chars"] == 800
+    assert "first 800 characters" in r["method"]
+    s.close()
+
+
+def test_collapse_off_reads_no_prefix_and_folds_nothing():
+    from src.analytics.latest import latest_articles
+
+    s = _prefix_corpus()
+    r = latest_articles(s, limit=20, collapse=False)
+    assert set(_ids(r)) == {1, 2, 3}
+    assert "collapse_prefix_chars" not in r  # want_prefix False -> the prefix column is never read
+    s.close()
+
+
+def test_neardup_prefix_bounds_the_comparison_window(monkeypatch):
+    """Two reprints with DIFFERENT ~300-char openings but an IDENTICAL body: a TINY prefix
+    compares only the (distinct) openings -> NOT collapsed; a LARGE prefix reaches the shared
+    body -> collapsed. Proves the collapse compares exactly the disclosed prefix window (the
+    honest limitation stated in the method), and that the fold reads that window, not the blob."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.analytics.latest import latest_articles
+    from src.database.models import Article, Base, Source
+
+    eng = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(eng)
+    s = sessionmaker(bind=eng, future=True)()
+    s.add_all([
+        Source(id=1, name="A", domain="a.test", source_type="news", tags="news"),
+        Source(id=2, name="B", domain="b.test", source_type="news", tags="news"),
+    ])
+    s.commit()
+    now = datetime.now(UTC)
+    # VARIED (non-repeated) text so shingle sets are rich: repeated phrases collapse to a
+    # handful of distinct shingles and never reach the 0.7 threshold. Distinct openings run
+    # past the 500-char prefix floor; the shared body then dominates a large window.
+    open_a = " ".join(f"Alpha lead sentence {i} for the first outlet only, item {i*2}." for i in range(18))
+    open_b = " ".join(f"Beta headline clause {i} for the second outlet instead, note {i*3}." for i in range(18))
+    body = " ".join(
+        f"Shared wire sentence {i} on the central bank decision and its outcome {i+5}."
+        for i in range(200)
+    )  # ~13k chars, ~200 distinct sentences
+    s.add_all([
+        Article(id=1, url="https://x/1", canonical_url="https://x/1", source_id=1, title="t1",
+                hash="h1", language="en", word_count=900, content=open_a + body,
+                published_at=now, created_at=now - timedelta(minutes=1)),
+        Article(id=2, url="https://x/2", canonical_url="https://x/2", source_id=2, title="t2",
+                hash="h2", language="en", word_count=900, content=open_b + body,
+                published_at=now, created_at=now - timedelta(minutes=2)),
+    ])
+    s.commit()
+
+    monkeypatch.setenv("OO_LATEST_NEARDUP_PREFIX_CHARS", "500")  # the floor: only the openings
+    small = latest_articles(s, limit=20)
+    assert {1, 2} <= set(_ids(small)), "at the tiny prefix the distinct openings are not folded"
+    assert small["collapse_prefix_chars"] == 500
+
+    monkeypatch.setenv("OO_LATEST_NEARDUP_PREFIX_CHARS", "6000")
+    large = latest_articles(s, limit=20)
+    assert 2 not in _ids(large), "with the shared body inside the prefix, the reprint collapses"
+    assert large["articles"][0]["duplicates_collapsed"] == 1
+    s.close()
+
+
 # ----------------------------- wiring (no fastapi) ----------------------------- #
 
 def test_endpoint_is_wired():
