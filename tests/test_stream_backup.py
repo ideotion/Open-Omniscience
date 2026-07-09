@@ -405,6 +405,41 @@ def test_unsigned_manifest_is_not_ok(tmp_path):
     assert report["ok"] is False and report["signature"] == "unsigned"
 
 
+def test_traversal_member_names_in_a_self_signed_manifest_are_refused(tmp_path):
+    """A signature only proves internal consistency with the EMBEDDED key —
+    anyone can self-sign a manifest. A member or volume name that points outside
+    the staging/set directory must refuse BEFORE any filesystem write."""
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus)
+
+    from src.backup.stream_backup import _sign_manifest
+
+    m = load_manifest(dest)
+    m["members"][0]["name"] = "../../escape.json"  # traversal member
+    m.pop("signature", None)
+    m["signature"] = _sign_manifest(m)  # consistently re-signed (attacker's power)
+    (dest / MANIFEST_NAME).write_text(json.dumps(m, indent=1), encoding="utf-8")
+
+    with pytest.raises(VolumeError, match="unsafe member path"):
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st")
+    with pytest.raises(VolumeError, match="unsafe member path"):
+        verify_stream_backup(dest)
+    assert not (tmp_path / "escape.json").exists()
+
+    m = load_manifest(dest)
+    m["members"][0]["name"] = "app_settings.json"  # restore a sane member name
+    m["volumes"][0]["name"] = "../outside.ooenc"  # traversal VOLUME name
+    m.pop("signature", None)
+    m["signature"] = _sign_manifest(m)
+    (dest / MANIFEST_NAME).write_text(json.dumps(m, indent=1), encoding="utf-8")
+    with pytest.raises(VolumeError, match="unsafe volume file name"):
+        verify_stream_backup(dest)
+    with pytest.raises(VolumeError, match="unsafe volume file name"):
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st2")
+
+
 def test_wrong_backup_passphrase_fails_loudly(tmp_path):
     corpus = tmp_path / "corpus.db"
     _make_corpus(corpus)
@@ -427,6 +462,32 @@ def _sqlcipher_available() -> bool:
         return True
     except ImportError:
         return False
+
+
+@pytest.mark.skipif(not _sqlcipher_available(), reason="sqlcipher3 not installed")
+def test_legacy_plaintext_download_refuses_an_encrypted_store(tmp_path, monkeypatch):
+    """Z1's last reachable decrypt-the-world: GET /api/database/backup exported
+    an ENCRYPTED corpus into a plaintext temp file. backup_to now refuses loudly
+    for an encrypted store, pointing at the streaming encrypted backup; a
+    plaintext store keeps the page-copy behavior."""
+    import src.backup.sqlite_backup as sb
+    from src.database.connect import connect
+
+    enc = tmp_path / "enc.db"
+    con = connect(enc, key="k")
+    con.execute("CREATE TABLE articles(id INTEGER PRIMARY KEY)")
+    con.commit()
+    con.close()
+    monkeypatch.setattr(sb, "live_db_path", lambda: enc)
+    with pytest.raises(sb.BackupError, match="never decrypts the corpus"):
+        sb.backup_to(tmp_path / "out.db")
+    assert not (tmp_path / "out.db").exists()  # nothing plaintext was written
+
+    plain = tmp_path / "plain.db"
+    sqlite3.connect(plain).execute("CREATE TABLE articles(id INTEGER PRIMARY KEY)").close()
+    monkeypatch.setattr(sb, "live_db_path", lambda: plain)
+    out = sb.backup_to(tmp_path / "out2.db")
+    assert out.exists()  # the plaintext-store path is unchanged
 
 
 @pytest.mark.skipif(not _sqlcipher_available(), reason="sqlcipher3 not installed")

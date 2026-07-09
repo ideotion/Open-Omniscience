@@ -194,6 +194,45 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+_SAFE_VOL_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _require_safe_member_name(name: str) -> None:
+    """Member names come from a manifest ANYONE can self-sign — the reassembly
+    must never write outside its staging dir (the zip path's _safe_extract
+    equivalent). Absolute paths, drive letters, backslashes and '..' refuse."""
+    p = Path(name)
+    if (
+        not name
+        or p.is_absolute()
+        or "\\" in name
+        or ".." in p.parts
+        or name.startswith("/")
+        or ":" in name.split("/", 1)[0]
+    ):
+        raise VolumeError(f"unsafe member path in the volume manifest: {name!r}")
+
+
+def _require_safe_volume_name(name: str) -> None:
+    """Volume file names must be plain basenames — never a path that could make
+    verify/restore read or write outside the set directory."""
+    if not name or not _SAFE_VOL_NAME.match(name):
+        raise VolumeError(f"unsafe volume file name in the volume manifest: {name!r}")
+
+
+def _require_safe_manifest_names(m: dict[str, Any]) -> None:
+    """Reject traversal/absolute names ANYWHERE a manifest names a file. A
+    signature only proves internal consistency with the EMBEDDED key — anyone
+    can self-sign — so verify, parity recovery and reassembly all guard names
+    BEFORE touching the filesystem."""
+    for v in m.get("volumes") or []:
+        _require_safe_volume_name(str(v.get("name") or ""))
+    for pv in (m.get("parity") or {}).get("volumes") or []:
+        _require_safe_volume_name(str(pv.get("name") or ""))
+    for mm in m.get("members") or []:
+        _require_safe_member_name(str(mm.get("name") or ""))
+
+
 def _vol_name(member: str, i: int, run_token: str) -> str:
     """Filesystem-safe volume name for (member, slice), unique PER RUN for newly
     emitted volumes. A refresh never overwrites a file the previous complete
@@ -753,7 +792,9 @@ def write_stream_backup(
             )
             corpus_bytes = src.path.stat().st_size
             side_bytes = sum(m.path.stat().st_size for m in side)
-            _preflight_dest(dest, corpus_bytes, side_bytes, parity_fraction)
+            _preflight_dest(
+                dest, corpus_bytes, side_bytes, parity_fraction, reuse_possible=bool(pool)
+            )
 
             members_out: list[dict[str, Any]] = []
             st.phase = "members"
@@ -855,21 +896,30 @@ def write_stream_backup(
 
 
 def _preflight_dest(
-    dest: Path, corpus_bytes: int, side_bytes: int, parity_fraction: float
+    dest: Path,
+    corpus_bytes: int,
+    side_bytes: int,
+    parity_fraction: float,
+    *,
+    reuse_possible: bool,
 ) -> None:
     """Refuse loudly up front when the destination clearly lacks room. Existing
-    volumes count toward the budget (an incremental refresh mostly reuses them)."""
+    volumes count toward the budget ONLY when they can actually be reused — a
+    passphrase change (or an unreadable manifest) re-emits everything while the
+    previous set stays on disk until the finalize garbage-collects it, so the
+    budget must then cover both generations at once."""
     from src.backup.artifact import preflight_free_space
 
     needed = int((corpus_bytes + side_bytes) * (1.0 + max(0.0, parity_fraction)) * 1.02)
     needed += 64 * 1024 * 1024
-    existing = 0
-    for p in dest.glob("*.ooenc"):
-        try:
-            existing += p.stat().st_size
-        except OSError:  # pragma: no cover
-            continue
-    needed = max(needed - existing, int(corpus_bytes * max(0.0, parity_fraction)))
+    if reuse_possible:
+        existing = 0
+        for p in dest.glob("*.ooenc"):
+            try:
+                existing += p.stat().st_size
+            except OSError:  # pragma: no cover
+                continue
+        needed = max(needed - existing, int(corpus_bytes * max(0.0, parity_fraction)))
     preflight_free_space(dest, needed, what="volume backup")
 
 
@@ -941,6 +991,8 @@ def verify_stream_backup(
     recover them."""
     src = Path(src_dir)
     m = load_manifest(src)
+    if m.get("kind") == STREAM_KIND:
+        _require_safe_manifest_names(m)
     report: dict[str, Any] = {
         "kind": m.get("kind"),
         "ok": True,
@@ -1110,6 +1162,7 @@ def read_stream_backup(
     m = load_manifest(src)
     if m.get("kind") != STREAM_KIND:
         raise VolumeError(f"not an {STREAM_KIND} set (kind={m.get('kind')!r})")
+    _require_safe_manifest_names(m)
     sig_state = _manifest_signature_state(m)
     if sig_state == "bad-signature":
         raise VolumeError(

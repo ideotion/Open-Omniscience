@@ -64,17 +64,30 @@ def live_db_path() -> Path:
 
 
 def backup_to(dest: Path) -> Path:
-    """Write a consistent PLAINTEXT snapshot of the live database to ``dest``.
+    """Write a consistent snapshot of a PLAINTEXT live database to ``dest``
+    (online backup API: WAL-safe, page-consistent).
 
-    Plaintext source: the online backup API (WAL-safe, page-consistent).
-    Encrypted source: ``sqlcipher_export`` into a plaintext target -- the
-    backup API cannot cross an encryption boundary (verified empirically).
-    Callers that need the snapshot to KEEP the live encryption state (working
-    copies, pre-restore safety nets) use ``connect.snapshot_preserving``.
+    An ENCRYPTED live store REFUSES loudly (P0.1, 2026-07-09): exporting it here
+    meant decrypting the WHOLE corpus into a plaintext temp file — an
+    at-rest-encryption violation and, at field scale (11.7 GB on a 10 GB VM,
+    /tmp = tmpfs on the reference Qubes machine), an OOM/disk-death on a
+    single click. The supported encrypted-corpus backup is the streaming
+    volumes+parity export (Settings -> Export / write_volume_backup), which
+    never decrypts the corpus at all. Callers that need a snapshot KEEPING the
+    live encryption state use ``connect.snapshot_preserving``.
     """
-    from src.database.connect import snapshot_to_plaintext
+    from src.database.connect import is_encrypted_file, snapshot_to_plaintext
 
-    return snapshot_to_plaintext(live_db_path(), Path(dest))
+    src = live_db_path()
+    if is_encrypted_file(src):
+        raise BackupError(
+            "the corpus is encrypted: this legacy download would decrypt the whole "
+            "database into a plaintext file (an at-rest-encryption violation, and an "
+            "out-of-memory/disk crash at field scale). Use the streaming encrypted "
+            "backup instead (Settings -> Export / the volumes+parity backup) — it "
+            "never decrypts the corpus."
+        )
+    return snapshot_to_plaintext(src, Path(dest))
 
 
 def validate_sqlite_file(path: Path) -> int:
