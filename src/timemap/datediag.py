@@ -29,6 +29,8 @@ from src.timemap.dateextract import (
     _CJK_REL_RE,
     _CJK_WD_RE,
     _EN_AGO_RE,
+    _FA_DMY_RE,
+    _FA_MY_RE,
     _KO_REL_RE,
     _KO_WD_RE,
     _MONTHS,
@@ -63,8 +65,10 @@ MONTH_VOCAB_LANGS: frozenset[str] = frozenset(
      "el", "uk", "et", "ur", "sl",
      # Slice-B additions (2026-07-02): Croatian, Czech, Malay, Filipino, Swahili.
      "hr", "cs", "ms", "tl", "sw",
-     # Backend batch A (2026-07-03): Catalan, Persian (Gregorian names only — Solar Hijri
-     # deliberately omitted; May withheld as a fabrication vector), Malayalam, Telugu.
+     # Backend batch A (2026-07-03): Catalan, Persian, Malayalam, Telugu. Persian now
+     # resolves BOTH Gregorian transliterations AND Solar-Hijri (Jalali) names by exact
+     # conversion (wave 8, 2026-07-08; fa-gated); "May" (مه/می) stays withheld as a
+     # fabrication vector.
      "ca", "fa", "ml", "te"}
 )
 
@@ -110,6 +114,12 @@ _PROBES: tuple[tuple[str, re.Pattern[str], frozenset[str] | None], ...] = (
     ("cjk_date", _CJK_RE, None),
     ("numeric", _NUMERIC_RE, None),
     ("month_name", _MONTH_RE, None),
+    # Persian Solar-Hijri (Jalali) named dates — the extractor's OWN patterns
+    # (exact lockstep), fa-GATED because the month names are ordinary Persian
+    # words elsewhere: a Jalali name outside fa is deliberately skipped by the
+    # extractor, so probing it there would report a phantom, permanent gap.
+    ("month_name", _FA_DMY_RE, frozenset({"fa"})),
+    ("month_name", _FA_MY_RE, frozenset({"fa"})),
     ("weekday", _WD_RE, None),
     # The phrase forms reuse the extractor's OWN compiled patterns (exact
     # lockstep, including the "hari minggu ini" exclusion), so an extractor
