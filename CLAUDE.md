@@ -562,6 +562,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     order-dependent-pollution family as the rollup-serve fix (#572) — **run a FULL-suite health
     check after every fast-merged parallel wave; per-PR CI misses cross-test pollution** because
     the polluter and victim only collide in the combined run.
+  - **NO-FABRICATION SKEPTICS MUST ATTACK THE NEGATIVE SPACE (2026-07-09, the #590 Jalali
+    fix-forward):** #590's pre-push verification ran 5 skeptic lenses and STILL shipped 3
+    fabrication repros, because every lens verified the POSITIVE space (goldens convert exactly,
+    gates hold) and none generated SHOULD-BE-EMPTY inputs. For an extractor, a skeptic must
+    enumerate per pattern: every alternation member as a WORD-TAIL/fragment (Persian دی ends
+    عادی/اقتصادی — month names are substrings of prose), every router FAILURE path (an invalid
+    date falling through a claim-on-success router gets re-read by the generic loops under
+    another calendar — the fix is CLAIM-ON-ROUTE: consume the span the moment the year says
+    Jalali, add only on success), and every order-ambiguous form (day-first digits with a
+    Jalali-range year: skip, never convert on an assumed field order). Each must assert `[]`.
+    Corollary: `_MIN_YEAR=1000` means ANY 4-digit year that leaks past a calendar router is
+    stored as a plausible medieval CE date — routers over shared numeric shapes are
+    fabrication-critical, not recall tweaks.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD-TEST 2026-07-08 — full intake + diagnostics action plan captured in

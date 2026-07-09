@@ -961,8 +961,14 @@ _FA_ALT = "|".join(sorted(_FA_MONTHS, key=len, reverse=True))  # longest first
 # never a fragment of a longer numeral; the month is flanked by the day and year,
 # so it can never be a substring of a prose word (both neighbours are required).
 _FA_DMY_RE = re.compile(rf"(?<!\d)(\d{{1,2}})\s+({_FA_ALT})\s+(\d{{4}})(?!\d)")
-# month-name + year ("خرداد ۱۴۰۳") -> month precision (no day).
-_FA_MY_RE = re.compile(rf"({_FA_ALT})\s+(\d{{4}})(?!\d)")
+# month-name + year ("خرداد ۱۴۰۳") -> month precision (no day). The lookbehind is
+# LOAD-BEARING: several Solar-Hijri month names are word TAILS of common Persian
+# words — دی (Dey) ends عادی "ordinary" / شادی "joy" / اقتصادی "economic", مهر ends
+# many names — so without it a bare Jalali year after such a word fabricated a
+# month-precision date ("سال عادی ۱۴۰۳" stored Dey 1403; adversarial-audit repro
+# 2026-07-09). Blocks a preceding word char AND a ZWNJ (U+200C, the Persian
+# compound joiner, which is not \w); legitimate usage is space/punct-preceded.
+_FA_MY_RE = re.compile(rf"(?<![\w\u200c])({_FA_ALT})\s+(\d{{4}})(?!\d)")
 # Numeric year-first Jalali ("۱۴۰۳/۰۳/۱۱"). Only interpreted as Jalali when the
 # year is in the Solar-Hijri news range (well clear of the Gregorian 1900+ news
 # years), so a Gregorian date written with Persian digits ("۲۰۲۴/۰۶/۱۱") falls
@@ -1058,9 +1064,22 @@ def extract_dates(
         for m in _FA_NUM_YMD_RE.finditer(text):  # ۱۴۰۳/۰۳/۱۱ (numeric Jalali; Gregorian years fall through)
             jy, jm, jd = int(m.group(1)), int(m.group(2)), int(m.group(3))
             if _FA_JY_MIN <= jy <= _FA_JY_MAX:
+                # Claim-on-ROUTE, not claim-on-success: once the year says Jalali,
+                # this span is Persian-calendar territory. An invalid (۳۰ اسفند in a
+                # non-leap year) or out-of-window date is SKIPPED, never guessed —
+                # and the claim stops the generic numeric loops below from re-reading
+                # the SAME digits as a medieval CE date (۱۴۰۲/۱۲/۳۰ was stored as
+                # 1402-12-30 CE; adversarial-audit repro 2026-07-09).
                 d = _jalali_valid(jy, jm, jd, today)
-                if d and claim(*m.span()):
+                if claim(*m.span()) and d:
                     add(d, "day", m)
+        for m in _NUM_DMY_RE.finditer(text):  # ۱۱/۰۳/۱۴۰۳ — day-first digits with a Jalali-range year
+            if _FA_JY_MIN <= int(m.group(3)) <= _FA_JY_MAX:
+                # A Jalali-range year in the day-first order: Persian convention is
+                # year-first, so the field order here is an assumption we refuse to
+                # make — claimed and SKIPPED (never converted, and never re-read as
+                # CE by the generic DMY loop, which stored ۱۱/۰۳/۱۴۰۳ as 1403-03-11 CE).
+                claim(*m.span())
         for m in _FA_MY_RE.finditer(text):  # خرداد ۱۴۰۳ (Jalali month + year -> month precision)
             mon = _FA_MONTHS.get(m.group(1))
             d = _jalali_valid(int(m.group(2)), mon, 1, today) if mon else None
