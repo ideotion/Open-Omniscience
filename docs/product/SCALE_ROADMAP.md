@@ -13,13 +13,39 @@ queue, the wave-1→8 parallel-session audits, and the 2026-07-09 field event (4
 app self-stopped, backup crash, slow unlock). CLAUDE.md remains the ruling ledger; this is
 the working priority list. Update rows here as items close.
 
-**The 2026-07-09 field event (root-cause PENDING the diagnostics zip the maintainer is
-exporting):** 4+ day continuous run → app stopped on its own hours before the maintainer
-returned → DB ~130 GB → backup tool crashes the app → app reinstalled with the preserved
-data folder → unlock very slow. First data questions for the logs: what stopped the app
-(OOM death-spiral?); the `-wal` file size before unlock (WAL-replay hypothesis); what is
-IN the 130 GB (per-table composition); where the backup died (plaintext-snapshot decrypt /
-RAM / disk).
+**The 2026-07-09 field event — ROOT-CAUSED from the diagnostics zip (analyzed 2026-07-09;
+zip: ooalldiagnostics202607091306):**
+- **The crash = OOM during a 21.6-hour continuous crawl pass.** The app died SILENTLY at
+  07-05 21:32 (no error/traceback = external-kill signature); the last collect_perf sample
+  seconds earlier shows **process RSS 10,599 MB on a ~10,237 MB VM**, 77,885 s into ONE
+  crawl pass at 50-worker parallelism — memory accumulates across a marathon pass until
+  the kernel OOM-killer fires. (Confirm: `journalctl -k | grep -i oom` in the VM.)
+- **Writer-gate saturation measured:** 847,351 s cumulative write-wait across the pass
+  (≈22% of all worker-time), 234,551 contentions, max single wait 438 s — the deferred
+  COLLECTOR-path write-batching (strategy P1.3) now has its live justification. PROMOTED.
+- **The "130 GB" is NOT the database: db_bytes = 11.7 GB** (268,241 articles / 3.06 M
+  keywords / 20.9 M mentions). The other ~120 GB in the data folder is unidentified —
+  suspects in order: ORPHANED PLAINTEXT STAGING from the crashed backup attempts (would
+  also be an at-rest-encryption violation — check first), wiki dumps / OSM regions, a
+  runaway `-wal`. Maintainer command: `du -sh <data_dir>/* | sort -rh`.
+- **The backup crash ≈ OOM too:** the crashing path materializes the corpus (plaintext
+  snapshot + in-RAM packaging) — guaranteed death at 11.7 GB on a 10 GB VM. The
+  volumes+parity streaming path should already handle 11.7 GB; P0.1 = make streaming the
+  ONLY path + clean any orphaned plaintext staging.
+- **Unlock = 981 s measured (ONE post).** Most likely the ONE-TIME reinstall cost: newer
+  code vs the 4-day-old DB (schema stamp behind head) ⇒ synchronous init_db ran
+  migrations/self-heals incl. building the new expression index over 268 K articles
+  through the codec, with zero progress UI; possibly + WAL recovery from the OOM kill.
+  DISCRIMINATOR: if the NEXT unlock is fast → one-time (fix = visible progress + move
+  index builds to a background job); if still slow → WAL/deeper.
+- **Post-unlock slowness measured:** trending-windows **467 s/call ×6** (the in-memory
+  rollup was STILL BUILDING at export — the D1 persisted-columnar promotion made flesh);
+  map-coverage 24 s; /latest 12.6 s; the diagnostics `/all` export itself ran **36+ min**
+  and repeatedly blocked the event loop (Item 10 job-ify confirmed).
+- **Healthy:** zero counter drift, zero dangling mentions, 0 locked errors this session;
+  the wave-7 alert cache works (p50 25 ms, was 23.7 s). FLAGS: an FTS present/absent
+  probe contradiction (verify search works; re-index heals), and 71% of 3.06 M keywords
+  are single-article (the segmenter ruling keeps climbing).
 
 ---
 
@@ -29,8 +55,8 @@ RAM / disk).
 |---|------|-------|--------------------|
 | P0.1 | **Backup at 100 GB+** (Item 9, escalated by the 2026-07-09 crash) | OPEN — top priority | Root-cause the crash from the logs. Kill every whole-corpus materialization on the path (the disposable **plaintext corpus snapshot** = decrypt-the-world, dead at scale; the in-RAM zip paths died at 2 GiB already). Target: **server-side, streaming, bounded-RAM, RESUMABLE, VERIFIABLE, INCREMENTAL** — the volumes+parity engine already checksums per volume, so re-emit only changed volumes (natural incremental). No browser delivery of the artifact. Acceptance: a 100 GB backup completes with bounded RAM, survives interruption + resumes, `verify` passes, measured wall-time reported honestly. |
 | P0.2 | **Restore/import at scale** | OPEN — untestable today | Once P0.1 produces a 100 GB artifact: staged, resumable, disk-preflighted restore; the additive-merge stays sacred. Acceptance: the maintainer's real 100 GB backup imports on a fresh install. |
-| P0.3 | **Crash root-cause + crash-safety** (Item 11) | OPEN — logs pending | Why did the app stop after ~4 days? (Prime suspect: the request/memory death-spiral — ALPHA A1's concurrency cap + deadlines land the structural fix; the logs confirm or refute.) Add a memory guard; **WAL checkpoint hygiene** under multi-day continuous writes (a runaway WAL is a crash suspect AND the unlock suspect); prove crash-mid-backup can never corrupt the live DB. DispVM ruling stands: durability must work in deliberately-ephemeral VMs. |
-| P0.4 | **Unlock at scale** (re-opened; first fixed in PR #550, re-measured 60 s @ 2.28 GB in the 07-08 ledger Item 8, now much worse at 130 GB) | OPEN | Suspects: (a) WAL replay inside the synchronous `init_db`; (b) `init_db` self-heals assuming "fast on an existing store" breaks at scale; (c) the "backgrounded" upkeep (ANALYZE/COUNT/warm) saturating the single worker so the app is unusable even after unlock returns. Acceptance: unlock returns < 2 s at 100 GB; the UI is responsive during upkeep; upkeep is deferrable/skippable and never blocks interaction. |
+| P0.3 | **Crash root-cause + crash-safety** (Item 11) | ROOT-CAUSED 2026-07-09: OOM in a 21.6-h continuous crawl pass (RSS 10.6 GB > VM RAM; silent external kill) | The fix is COLLECTOR-side (A1's API caps don't cover it): (a) find + bound the per-pass memory accumulation (candidates: per-worker session/identity maps, trafilatura caches, feed seen-sets, keyword maps); (b) PASS RECYCLING — bound a pass's duration/work so a marathon pass can't accumulate for a day; (c) an RSS MEMORY GUARD that gracefully pauses collection before the OOM-killer fires (degrade loudly, never die silently); (d) WAL checkpoint hygiene under multi-day writes. DispVM ruling stands. |
+| P0.4 | **Unlock at scale** (re-opened; 60 s @ 2.28 GB in the 07-08 ledger, **981 s measured** 2026-07-09) | ROOT-CAUSE HYPOTHESIS: the one-time reinstall migration (newer code vs old DB stamp ⇒ synchronous init_db ran migrations + built the new expression index over 268 K articles through the codec, zero progress UI), possibly + WAL recovery after the OOM kill | DISCRIMINATOR (maintainer): is the NEXT unlock fast? FIXES either way: migrations/index-builds inside unlock must be a VISIBLE progress phase (never a silent 16-min wall) and backgroundable where safe; WAL-recovery time surfaced honestly. Acceptance: steady-state unlock < 2 s at 100 GB; a one-time migration shows honest progress; the UI is responsive during upkeep. |
 | P0.5 | **Scale test harness** | OPEN — the structural gap | Everything so far was verified at MB–GB scale; 100 GB behavior was discovered in the field. Build a synthetic large-corpus generator + a scheduled benchmark suite (unlock time, backup wall, hot-endpoint p95s, WAL size under write load) so the next scale cliff is found in dev. |
 
 ## P1 — SNAPPINESS AT SCALE (adoption-critical)
@@ -56,7 +82,9 @@ batched commits.
 | P1.5 | **Storage-composition diagnostic** — per-table bytes (dbstat) so we know what the 130 GB IS; informs P0.1/P1.6/P1.5-hygiene | OPEN, small, high-leverage |
 | P1.6 | **Corpus-epoch mechanism** (`derived_meta` + `bump_corpus_epoch` wired into re-index/prune/restore) — prerequisite for persisted INCREMENTAL rollups (designed in 5A-bis D3, not built) | OPEN |
 | P1.7 | **5 TB architecture verify-before-trust review** — single-file SQLCipher at 5 TB (page cache, VACUUM infeasibility, backup windows, single writer) validated against `docs/design/DATA_ARCHITECTURE_SKELETON.md` (it anticipated 1000×). Constraint carried: **cross-time recall is sacred** — no partitioning that makes old data second-class. Design session, then measured slices. | OPEN |
-| P1.8 | Whatever the 2026-07-09 diagnostics zip surfaces (new measured hot spots) | PENDING LOGS |
+| P1.8 | **Collector-path write batching** — the writer gate measured 847 K s cumulative wait / 22% of worker-time across the 21.6-h pass (the long-deferred strategy-P1.3 item now has its live justification; the `index_article(commit=False)` primitive already exists) | PROMOTED 2026-07-09 |
+| P1.9 | **Job-ify the diagnostics `/all` export** (Item 10) — measured 36+ min in-flight, repeatedly blocking the event loop | CONFIRMED AT SCALE |
+| P1.10 | trending-windows cold path at 20.9 M mentions (467 s/call while the in-memory rollup builds) — the concrete D1-persisted-columnar justification (see Ruling-gated #2) + consider serving a STALE-BUT-DISCLOSED previous rollup during the rebuild | OPEN |
 
 **Definition of snappy (acceptance, measured via the latency reservoir + the P0.5 bench):**
 every interactive endpoint p95 < ~500 ms at 100 GB; unlock < 2 s; no UI action blocks > 1 s
