@@ -129,19 +129,9 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                 "examples": worst,
             }
 
-            # -- FTS staleness --------------------------------------------------- #
-            arts = _scalar(session, "SELECT COUNT(*) FROM articles")
-            fts = _scalar(session, "SELECT COUNT(*) FROM article_fts")
-            report["fts"] = {
-                "present": fts is not None,
-                "articles": arts,
-                "fts_rows": fts,
-                "delta": (None if (arts is None or fts is None) else arts - fts),
-                "note": (
-                    "article_fts is kept in sync by triggers; a large delta means the "
-                    "index is stale (re-run the FTS rebuild)."
-                ),
-            }
+            # (FTS presence/health/staleness is probed OUTSIDE this shared deadline — see
+            #  below — so its authoritative sqlite_master read and its own bounded row COUNT
+            #  never race the counter-drift scan for the shared budget.)
 
             # -- foreign-key integrity (bounded) --------------------------------- #
             try:
@@ -154,6 +144,41 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
                 report["foreign_key_violations"] = None
     except StatementTimeout:
         timed_out = True
+
+    # -- FTS presence / health / staleness (D4) --------------------------------- #
+    # Probed OUTSIDE the shared counter-drift deadline (which has now exited, restoring the
+    # progress handler): presence comes from sqlite_master — authoritative, and the SAME
+    # source the schema-drift probe reads, so the two can no longer disagree — and the row
+    # COUNT gets its OWN bounded budget. The old COUNT-based presence mislabelled a slow or
+    # damaged index as "absent" (the 2026-07-09 contradiction: integrity said absent while
+    # schema-drift said present, fts_rows null). fts_status also detects post-crash corruption
+    # (healthy=false) so a re-index can heal it.
+    from src.database.fts import fts_status
+
+    fts = fts_status(session)
+    arts = None
+    try:
+        with statement_deadline(session, seconds=15):
+            _a = session.execute(text("SELECT count(*) FROM articles")).scalar()
+        arts = int(_a) if _a is not None else 0
+    except Exception:  # noqa: BLE001 - a slow/failed article count degrades only the delta
+        arts = None
+    fts_rows = fts.get("rows")
+    report["fts"] = {
+        "present": fts.get("present"),
+        "healthy": fts.get("healthy"),
+        "articles": arts,
+        "fts_rows": fts_rows,
+        "count_status": fts.get("count_status"),
+        "error": fts.get("error"),
+        "delta": None if (arts is None or fts_rows is None) else arts - fts_rows,
+        "note": (
+            "Presence is read from the schema, never a COUNT (which on a large FTS index can "
+            "time out and would then be misread as absent). article_fts is kept in sync by "
+            "triggers; a large delta means the index is stale (re-run the FTS rebuild); "
+            "healthy=false means the index is damaged (a re-index heals it)."
+        ),
+    }
 
     # The automatic keyword-cleanup run (prune orphans + reconcile language) is
     # freshness-gated and off the request path; surface its last run + tally here so the

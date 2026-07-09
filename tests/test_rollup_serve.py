@@ -13,7 +13,7 @@ makes it safe to ship off-by-default.
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import create_engine
@@ -174,3 +174,116 @@ def test_corpus_wide_is_never_touched(session, monkeypatch):
     out = q.top_terms(session, group=True, limit=20)  # corpus-wide
     assert "basis" not in out
     assert out["terms"]
+
+
+# ------------------------- D3: serve-previous-during-rebuild ------------------------- #
+
+
+def test_serves_previous_rollup_stale_but_disclosed_during_rebuild(session, monkeypatch):
+    """While a rebuild runs, the PREVIOUS in-memory rollup is served — the real previous-build
+    numbers with as_of visible — NOT a live 21M-mention scan; basis discloses it stale. The
+    D3 regression guard: this must never quietly regress into a live scan during a rebuild."""
+    kw = dict(window_days=_WIDE, baseline_days=_WIDE, min_recent=1, limit=100)
+    live = q.trending(session, **kw)  # default off -> the live numbers
+
+    con = columnar.connect(passphrase=None)
+    columnar.build_keyword_daily(con, session)
+    rollup_serve._STATE["con"] = con
+    rollup_serve._STATE["bind"] = session.get_bind()
+    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._STALE_S + 1000)  # STALE
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    # A rebuild would run over the PRODUCTION store; in a test just record that it was asked.
+    triggered: list[int] = []
+    monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: triggered.append(1))
+
+    served = q.trending(session, **kw)
+    assert served["basis"]["source"] == "columnar-rollup"
+    assert served["basis"]["stale"] is True, "the served rollup is disclosed stale"
+    assert served["basis"]["as_of"], "the previous build's as_of is visible"
+    assert served["basis"]["age_seconds"] >= rollup_serve._STALE_S
+    assert "PREVIOUS build" in served["basis"]["note"]
+
+    def canon(res):
+        return sorted((t["normalized"], t["recent"], t["prior"]) for t in res["terms"])
+
+    assert canon(served) == canon(live), "the previous build's REAL numbers, never a blend"
+    assert triggered, "a rebuild was triggered while the stale rollup kept serving"
+
+
+def test_trending_windows_surfaces_the_rollup_basis(session, monkeypatch):
+    """trending_windows (the Home poll the field measured at 467 s cold) must SURFACE the
+    stale-but-disclosed rollup basis, not drop it — otherwise the staleness never reaches the
+    endpoint that is actually polled."""
+    con = columnar.connect(passphrase=None)
+    columnar.build_keyword_daily(con, session)
+    rollup_serve._STATE["con"] = con
+    rollup_serve._STATE["bind"] = session.get_bind()
+    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._STALE_S + 500)  # stale
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: None)
+
+    tw = q.trending_windows(session, limit=10)
+    assert len(tw["windows"]) == 3
+    assert tw["basis"]["source"] == "columnar-rollup"
+    assert tw["basis"]["stale"] is True, "the Home poll discloses the stale rollup"
+
+
+def test_no_previous_build_falls_back_to_live_never_the_rollup(session, monkeypatch):
+    """D3 keeps fallback-to-live when there is NO previous build: the serve primitives return
+    None (never a partial/empty rollup answer) and the caller runs the live query."""
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    rollup_serve._STATE.update({"con": None, "built_at": 0.0, "bind": None})
+    # Don't spawn a background build in the test; just confirm the None fallback.
+    monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: None)
+    assert rollup_serve.windowed_counts(session, lo=date(2000, 1, 1), hi=date(2100, 1, 1)) is None
+    assert rollup_serve.windowed_rows(session, days=_WIDE) is None
+    out = q.trending(session, window_days=_WIDE, baseline_days=_WIDE, min_recent=1, limit=20)
+    assert "basis" not in out, "no previous build -> the live path, no rollup basis"
+    assert out["terms"]
+
+
+def test_rollup_never_served_to_a_different_database(session, monkeypatch):
+    """Bind-awareness stays sacred: a rollup built over ONE engine is never served to a
+    request on ANOTHER (a second corpus). Two engines/sessions — the shape production's test
+    fixtures take, and the exact wrong-corpus hazard the _same_bind guard exists for."""
+    con = columnar.connect(passphrase=None)
+    columnar.build_keyword_daily(con, session)  # built over `session`'s engine
+    rollup_serve._STATE["con"] = con
+    rollup_serve._STATE["bind"] = session.get_bind()
+    rollup_serve._STATE["built_at"] = time.time()
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: None)
+
+    e2 = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(e2)
+    s2 = sessionmaker(bind=e2, future=True)()
+    s2.add(Source(name="S2", domain="y.test", country="fr"))
+    s2.commit()
+    try:
+        assert rollup_serve.windowed_counts(s2, lo=date(2000, 1, 1), hi=date(2100, 1, 1)) is None
+        assert rollup_serve.windowed_rows(s2, days=_WIDE) is None
+        out = q.trending(s2, window_days=_WIDE, baseline_days=_WIDE, min_recent=1, limit=20)
+        assert "basis" not in out, "the wrong-engine request must never see the rollup basis"
+    finally:
+        s2.close()
+
+
+def test_basis_discloses_stale_and_rebuilding():
+    """The basis disclosure itself (D3): stale + age when the build is old, rebuilding when a
+    build is in flight."""
+    fresh = rollup_serve.basis(7)
+    assert fresh["stale"] is False and fresh["rebuilding"] is False  # nothing built
+
+    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._STALE_S + 100)
+    b = rollup_serve.basis(7)
+    assert b["stale"] is True and b["age_seconds"] >= rollup_serve._STALE_S
+    assert "PREVIOUS build" in b["note"]
+
+    acquired = rollup_serve._BUILD_LOCK.acquire(blocking=False)
+    try:
+        assert rollup_serve.basis(7)["rebuilding"] is True
+    finally:
+        if acquired:
+            rollup_serve._BUILD_LOCK.release()

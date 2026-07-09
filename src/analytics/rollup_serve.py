@@ -232,18 +232,37 @@ def windowed_counts(_session: Session, *, lo, hi) -> dict[int, int] | None:
 
 def basis(_days: int) -> dict:
     """The honesty disclosure the caller attaches when a response was served from the
-    rollup: the source + as-of + the upper-bound note. Not a score."""
+    rollup: the source, as-of, age, and — the D3 addition — whether these are the PREVIOUS
+    build's numbers being served STALE-BUT-DISCLOSED while a rebuild runs (instead of falling
+    back to a full mentions scan). Not a score.
+
+    ``stale`` = the served rollup is older than the refresh interval; ``rebuilding`` = a
+    background build is in flight right now. Either way the numbers are the real previous
+    build's (never a blend), with ``as_of`` visible so the staleness is honest."""
     with _LOCK:
         built_at = _STATE["built_at"]
+    age_s = (time.time() - built_at) if built_at else None
+    stale = bool(built_at) and age_s is not None and age_s > _STALE_S
+    rebuilding = _BUILD_LOCK.locked()
+    note = (
+        "Served from the in-memory keyword-daily rollup for speed. Mention counts are "
+        "exact; article counts are an upper bound (equal under the current one-row-per-"
+        "keyword-per-article index). Reflects the corpus as of the last rollup build; "
+        "new articles appear after the next background rebuild."
+    )
+    if stale or rebuilding:
+        note += (
+            " A rebuild is in progress — these are the PREVIOUS build's numbers, served "
+            "stale-but-disclosed (see as_of) rather than falling back to a full mentions "
+            "scan; the next build supersedes them."
+        )
     return {
         "source": "columnar-rollup",
         "as_of": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
         ),
-        "note": (
-            "Served from the in-memory keyword-daily rollup for speed. Mention counts are "
-            "exact; article counts are an upper bound (equal under the current one-row-per-"
-            "keyword-per-article index). Reflects the corpus as of the last rollup build; "
-            "new articles appear after the next background rebuild."
-        ),
+        "age_seconds": int(age_s) if age_s is not None else None,
+        "stale": stale,
+        "rebuilding": rebuilding,
+        "note": note,
     }

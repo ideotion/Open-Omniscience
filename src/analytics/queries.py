@@ -1300,6 +1300,7 @@ def trending_windows(
     returns the unchanged response (no ``series`` keys).
     """
     windows = []
+    served_basis = None  # the rollup disclosure (D3): stale/rebuilding/as_of, surfaced once
     for label, wdays, bdays in _TREND_WINDOWS:
         res = trending(
             session,
@@ -1312,6 +1313,8 @@ def trending_windows(
             min_recent=1 if wdays == 1 else 2,
             target_lang=target_lang,
         )
+        if served_basis is None and res.get("basis"):
+            served_basis = res["basis"]
         terms = res["terms"]
         if series_top > 0:
             for t in terms[:series_top]:
@@ -1336,7 +1339,7 @@ def trending_windows(
                 "scanned": res["scanned"],
             }
         )
-    return {
+    out: dict[str, Any] = {
         "windows": windows,
         "method": (
             "Rising keywords per window: recent volume vs the prior-period rate "
@@ -1347,6 +1350,9 @@ def trending_windows(
             "before the ratio; with many terms scanned, some ratios run high by chance."
         ),
     }
+    if served_basis is not None:  # disclose that the windows were served from the (maybe stale) rollup
+        out["basis"] = served_basis
+    return out
 
 
 def _group_pairs(
@@ -1923,11 +1929,13 @@ def status(session) -> dict:
     Every count here is the REAL, EXACT value. The field's cost from this endpoint —
     ``count(*) FROM keyword_mentions`` measured 724 ms × 172 polls = 124 s — is removed at
     the ENDPOINT by a data-aware cache (:func:`src.api.insights._status_cache_key`) that
-    collapses repeat polls while any write invalidates it, NOT by trading the exact count
-    for a maintained-counter sum. (A counter-derived ``SUM(article_count)`` would be cheaper
-    per cold compute but can drift silently on a cascade delete — presenting a wrong number
-    as exact would breach the honesty non-negotiable — so the exact count stays; a
-    correctness-gated counter-serve is a possible future optimisation, but only once its
+    collapses repeat polls but invalidates on a commit by ANY connection (it reads
+    ``PRAGMA data_version`` on a pinned probe connection, so a write on a DIFFERENT pooled
+    connection than the poller's still bumps the key — the #595/A3 fix), NOT by trading the
+    exact count for a maintained-counter sum. (A counter-derived ``SUM(article_count)`` would
+    be cheaper per cold compute but can drift silently on a cascade delete — presenting a
+    wrong number as exact would breach the honesty non-negotiable — so the exact count stays;
+    a correctness-gated counter-serve is a possible future optimisation, but only once its
     basis is tied to the corpus epoch, not the reconcile watermark.)"""
     total_articles = session.query(func.count(Article.id)).scalar() or 0
     indexed = session.query(func.count(func.distinct(KeywordMention.article_id))).scalar() or 0

@@ -12,9 +12,12 @@ src/analytics/queries.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os as _os
+import threading as _threading
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -25,8 +28,8 @@ from src.analytics import readmodel as rm
 from src.analytics.convergence import find_convergences
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
 from src.database.maintenance import StatementTimeout, statement_deadline
-from src.jobs.background import BackgroundJob, register_job
 from src.database.session import get_db
+from src.jobs.background import BackgroundJob, register_job
 from src.utils.cache import SimpleCache
 
 _LOG = logging.getLogger("api.insights")
@@ -60,6 +63,20 @@ _read_cache = SimpleCache(max_size=128, default_ttl=max(1, _CACHE_TTL_S))
 
 def _ckey(name: str, **params) -> str:
     return name + "|" + "|".join(f"{k}={params[k]}" for k in sorted(params))
+
+
+def _bind_key(db, key: str) -> str:
+    """Bind-qualify a TTL cache key with the session's DB engine id (D5), so a cached
+    insights payload is NEVER shared across databases — a test fixture on its own engine and
+    the live store computing the same query params get DISTINCT entries (the latent Wave-1
+    cross-corpus-share class the audit flagged). Byte-identical BEHAVIOUR for the single-engine
+    production case (a constant prefix on every key → the same hit/miss). On an unknown bind we
+    return the UNqualified key (never a per-instance key), so dummy-``db`` unit tests still share
+    correctly and the background warmer's keys still match the endpoint's for the same engine."""
+    try:
+        return f"e{id(db.get_bind())}|{key}"
+    except Exception:  # noqa: BLE001 - unknown bind -> unqualified (shared), never per-caller
+        return key
 
 
 def _cached(key: str, compute):
@@ -108,13 +125,14 @@ def _deadlined(db: Session, key: str, compute, *, on_timeout=None, on_busy=None)
     the miss stores), so a transient overrun/backpressure never poisons the cache.
     """
     fkey = flight_key(db, key)
+    bkey = _bind_key(db, key)  # D5: bind-qualify the TTL cache key (never cross-corpus)
 
     def _run():
         with statement_deadline(db):
             return compute()
 
     try:
-        return _cached(key, lambda: run_heavy(fkey, _run))
+        return _cached(bkey, lambda: run_heavy(fkey, _run))
     except StatementTimeout as exc:
         if on_timeout is not None:
             return on_timeout(exc)
@@ -308,24 +326,96 @@ def include_term(body: TermBody) -> dict:
     return remove_excluded(body.term).to_dict()
 
 
-def _status_cache_key(db: Session) -> str:
-    """A DATA-AWARE cache key for /status: the session's DB bind + a write-probe
-    (``PRAGMA data_version`` + ``total_changes()``). Repeat polls with no intervening write
-    reuse the same key (a cache HIT — the whole point, collapsing the field's 172 repeated
-    full counts); ANY write bumps the probe so the progress number stays live (honest,
-    never stale-through-a-write); and a different DB (a test fixture on its own engine) gets
-    a different key, so a cached status is never served for the wrong corpus."""
-    from sqlalchemy import text
+# --- /status data-version probe (D0) -------------------------------------- #
+# The /status cache key must change whenever the corpus is written by ANY connection, so a
+# poll after a commit never serves a stale count. SQLite's ``PRAGMA data_version`` reports
+# exactly that — but ONLY on a LONG-LIVED connection: the value is connection-LOCAL, and on
+# a FRESH connection it reads a value that does NOT track other connections' commits, while
+# ``total_changes()`` resets to 0. Under the churning overflow pool (session.py closes
+# overflow connections on return, each re-deriving the SQLCipher key) a request handler
+# tends to see a fresh connection, so probing on the request's own connection went blind: a
+# poll on a fresh connection AFTER another connection committed produced the SAME key and
+# served the stale count for the whole TTL (the confirmed #595/A3 defect).
+#
+# The fix: read ``data_version`` on our OWN pinned, probe-only connection per engine. Because
+# that connection is never a writer's, it observes every OTHER-connection commit (the
+# pragma's documented purpose). It is read-only, guarded by a lock (a raw DBAPI connection is
+# not safe for concurrent use), and rebuilt once on any error (dispose-safe). A strong engine
+# reference is held alongside so ``id(engine)`` cannot be recycled onto a stale probe
+# connection (the test-fixture hazard); tests clear it via ``_reset_status_probe_for_tests``.
+_PROBE_LOCK = _threading.Lock()
+_PROBE_CONNS: dict[int, Any] = {}  # id(engine) -> pinned raw DBAPI connection (never returned to the pool)
+_PROBE_ENGINES: dict[int, Any] = {}  # id(engine) -> engine (strong ref pins id() against recycle)
 
+
+def _data_version(bind) -> str | None:
+    """The SQLite ``PRAGMA data_version`` read on a PINNED probe-only connection for ``bind``
+    (an Engine) — a value that bumps whenever ANY other connection commits, and is stable
+    otherwise. Returns the value as a string, or ``None`` when unavailable (the caller then
+    falls back to a per-call key — never a wrong cache hit)."""
+    eid = id(bind)
+    with _PROBE_LOCK:
+        for attempt in (0, 1):  # rebuild the pinned connection once if it went stale/disposed
+            conn = _PROBE_CONNS.get(eid)
+            try:
+                if conn is None:
+                    conn = bind.raw_connection()  # held, never .close()d on success -> pinned
+                    _PROBE_CONNS[eid] = conn
+                    _PROBE_ENGINES[eid] = bind
+                cur = conn.cursor()
+                try:
+                    cur.execute("PRAGMA data_version")
+                    row = cur.fetchone()
+                finally:
+                    cur.close()
+                return str(row[0]) if row and row[0] is not None else None
+            except Exception:  # noqa: BLE001 - stale/disposed conn -> drop + rebuild once, else give up
+                _PROBE_CONNS.pop(eid, None)
+                try:
+                    if conn is not None:
+                        conn.close()
+                except Exception:  # noqa: BLE001 - best-effort cleanup
+                    pass
+                if attempt == 1:
+                    return None
+        return None
+
+
+def _reset_status_probe_for_tests() -> None:
+    """Close every pinned probe connection and clear the registry (test hook). A fixture
+    engine's ``id()`` must not survive into another test's probe, and its pinned connection
+    must not leak — the autouse fixtures in the /status tests call this between tests."""
+    with _PROBE_LOCK:
+        for conn in _PROBE_CONNS.values():
+            with contextlib.suppress(Exception):  # best-effort cleanup
+                conn.close()
+        _PROBE_CONNS.clear()
+        _PROBE_ENGINES.clear()
+
+
+def _status_cache_key(db: Session) -> str:
+    """A DATA-AWARE cache key for /status: the session's DB bind + the SQLite
+    ``PRAGMA data_version`` read on a PINNED probe connection (:func:`_data_version`).
+
+    Repeat polls with no intervening write reuse the same key (a cache HIT — the whole
+    point, collapsing the field's 172 repeated full counts); a commit by ANY connection
+    bumps ``data_version`` so the progress number stays live (honest, never stale-through-a-
+    write — including a write on a DIFFERENT pooled connection than the poller's, the case
+    the old same-connection probe missed); and a different DB (a test fixture on its own
+    engine) gets a different ``id(bind)``, so a cached status is never served for the wrong
+    corpus."""
     parts = ["status"]
     try:
         bind = db.get_bind()
         parts.append(str(id(bind)))
         if getattr(getattr(bind, "dialect", None), "name", "") == "sqlite":
-            parts.append(str(db.execute(text("PRAGMA data_version")).scalar()))
-            parts.append(str(db.execute(text("SELECT total_changes()")).scalar()))
+            dv = _data_version(bind)
+            if dv is None:
+                # Probe unavailable -> a per-call key (never a wrong hit; loses caching only).
+                return "|".join(["status", "noprobe", str(id(db))])
+            parts.append(dv)
     except Exception:  # noqa: BLE001 - any probe failure -> a per-call key (never a wrong hit)
-        parts = ["status", "noprobe", str(id(db))]
+        return "|".join(["status", "noprobe", str(id(db))])
     return "|".join(parts)
 
 
@@ -856,7 +946,7 @@ def insights_source_types(db: Session = Depends(get_db)) -> dict:
     corpus can be sliced by channel (news/newsletter/wiki/statistics/law/market/
     discovery). An asserted descriptive fact, NO score. The `source_type=` param on
     /api/articles applies the actual filter."""
-    return _cached(_ckey("source-types"), lambda: q.source_type_facets(db))
+    return _cached(_bind_key(db, _ckey("source-types")), lambda: q.source_type_facets(db))
 
 
 @router.get("/reading-diet-by-type")
@@ -978,7 +1068,7 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
         )
         return data
 
-    return _cached(_ckey("map-coverage"), _compute)
+    return _cached(_bind_key(db, _ckey("map-coverage")), _compute)
 
 
 @router.get("/server-locations")
@@ -1156,18 +1246,21 @@ def warm_cache(db: Session) -> dict:
     # constants are asserted against app.js in tests so a drift reddens CI. Warmed for
     # the English (tl=None) path — a non-English UI still recomputes once (a follow-up:
     # decouple the cheap translation annotation from the expensive aggregation cache).
+    # D5: bind-qualify the warm keys with THIS session's engine, exactly as the endpoints do
+    # (_deadlined), so a warmed value is a HIT for the same production engine — and never
+    # warms a key a request on a different engine would read (the P0-4 dead-warm trap avoided).
     specs: list[tuple[str, object]] = []
     for lim, st in (WARM_TRENDING_HOME, WARM_TRENDING_INSIGHTS):
         specs.append(
             (
-                _ckey("trending-windows", country=None, kind=None, limit=lim, series_top=st, tl=None),
+                _bind_key(db, _ckey("trending-windows", country=None, kind=None, limit=lim, series_top=st, tl=None)),
                 lambda lim=lim, st=st: rm.trending_windows(
                     db, country=None, kind=None, limit=lim, series_top=st, target_lang=None
                 ),
             )
         )
     specs.append(
-        (_ckey("top", days=None, country=None, kind=None, limit=20, group=True),
+        (_bind_key(db, _ckey("top", days=None, country=None, kind=None, limit=20, group=True)),
          lambda: rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True))
     )
     if _CACHE_TTL_S <= 0:
@@ -1350,7 +1443,7 @@ def insights_headline_body_mismatch(
     from src.analytics.headline_body import find_headline_body_mismatch
 
     return _cached(
-        _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit),
+        _bind_key(db, _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit)),
         lambda: find_headline_body_mismatch(
             db, recent_days=recent_days, d_min=d_min, max_items=limit
         ),
@@ -1371,7 +1464,7 @@ def insights_manufactured_emergence(
     from src.analytics.emergence import find_manufactured_emergence
 
     return _cached(
-        _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit),
+        _bind_key(db, _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit)),
         lambda: find_manufactured_emergence(
             db, recent_days=recent_days, min_sources=min_sources, max_items=limit
         ),
@@ -1392,7 +1485,7 @@ def insights_flooded_topics(
     from src.analytics.concentration import find_flooded_topics
 
     return _cached(
-        _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit),
+        _bind_key(db, _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit)),
         lambda: find_flooded_topics(db, recent_days=recent_days, z_min=z_min, max_items=limit),
     )
 
@@ -1413,7 +1506,7 @@ def insights_copypasta(
     from src.analytics.copypasta import find_copypasta
 
     return _cached(
-        _ckey("copypasta", recent_days=recent_days, k=k, min_sources=min_sources, limit=limit),
+        _bind_key(db, _ckey("copypasta", recent_days=recent_days, k=k, min_sources=min_sources, limit=limit)),
         lambda: find_copypasta(
             db, recent_days=recent_days, k=k, min_sources=min_sources, max_items=limit
         ),

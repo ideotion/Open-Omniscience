@@ -31,6 +31,7 @@ then OR. So ``(a OR b) AND c`` differs from ``a OR (b AND c)`` differs from
 from __future__ import annotations
 
 import logging
+import os as _os
 import re
 from dataclasses import dataclass, field
 
@@ -301,6 +302,107 @@ def optimize_after_bulk(session: Session) -> dict:
     except Exception:  # noqa: BLE001 - a tuning step must never break the caller
         session.rollback()
         _LOG.warning("planner optimize failed", exc_info=True)
+    return out
+
+
+def _fts_probe_deadline_s() -> float:
+    """Deadline for the cheap FTS health probe (OO_FTS_PROBE_DEADLINE_S, default 5s)."""
+    try:
+        return max(0.5, float(_os.getenv("OO_FTS_PROBE_DEADLINE_S", "5")))
+    except (TypeError, ValueError):
+        return 5.0
+
+
+def _fts_count_deadline_s() -> float:
+    """Deadline for the (potentially slow, index-enumerating) FTS row COUNT
+    (OO_FTS_COUNT_DEADLINE_S, default 15s)."""
+    try:
+        return max(0.5, float(_os.getenv("OO_FTS_COUNT_DEADLINE_S", "15")))
+    except (TypeError, ValueError):
+        return 15.0
+
+
+def fts_status(session: Session) -> dict:
+    """Robust, transaction/timing-safe status of the ``article_fts`` search index (D4).
+
+    PRESENCE is read from ``sqlite_master`` — the authoritative table list, a metadata read
+    that never scans and never trips the statement deadline — NOT from a ``COUNT(*)`` over
+    the external-content FTS5 index (which enumerates the whole index, can hit the deadline,
+    and was then MISREAD as "table absent", contradicting the schema-drift probe that reads
+    the same list). So the two probes can no longer disagree silently: both derive presence
+    from the schema.
+
+    Returns (SQLite only; ``{"supported": False, ...}`` on another backend):
+      * ``present``      — ``article_fts`` is declared in the schema (authoritative); ``None``
+        only if even the metadata read failed.
+      * ``healthy``      — a cheap bounded probe (``SELECT rowid ... LIMIT 1``) ran without a
+        corruption error. ``False`` = the index exists but is DAMAGED (a post-crash malformed
+        FTS index — a re-index / ``ensure_fts`` rebuild heals it, the actionable verdict D4
+        asked for); ``None`` = present but could not confirm (the probe timed out).
+      * ``rows``         — the indexed-row count, or ``None`` when the count timed out /
+        errored (``count_status`` says which) — NEVER conflated with absence.
+      * ``count_status`` — ok | timed_out | error | skipped.
+      * ``error``        — the probe error message when unhealthy / the count failed.
+
+    Callers should run this OUTSIDE any enclosing ``statement_deadline`` block: it manages its
+    own bounded deadlines, and nesting the progress-handler-based deadline would clobber the
+    outer one on exit.
+    """
+    from src.database.maintenance import StatementTimeout, statement_deadline
+
+    bind = session.get_bind()
+    if getattr(getattr(bind, "dialect", None), "name", "") != "sqlite":
+        return {
+            "supported": False, "present": None, "healthy": None, "rows": None,
+            "count_status": "skipped", "error": None,
+        }
+
+    out: dict = {
+        "supported": True, "present": False, "healthy": None, "rows": None,
+        "count_status": "skipped", "error": None,
+    }
+
+    # 1) PRESENCE via sqlite_master (fast, authoritative, deadline-proof — a virtual table is
+    #    listed with type='table', exactly what schema-drift's get_table_names() reads).
+    try:
+        row = session.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='article_fts'")
+        ).fetchone()
+        out["present"] = row is not None
+    except Exception as exc:  # noqa: BLE001 - a diagnostic degrades, never crashes
+        out["present"] = None
+        out["error"] = str(exc)[:200]
+        return out
+    if not out["present"]:
+        return out  # genuinely absent -> init_db()/ensure_fts() recreates it (a re-index heals)
+
+    # 2) HEALTH: a cheap bounded probe that surfaces post-crash corruption FAST (a malformed
+    #    FTS index raises here, quickly, distinct from a slow-but-fine large index).
+    try:
+        with statement_deadline(session, seconds=_fts_probe_deadline_s()):
+            session.execute(text("SELECT rowid FROM article_fts LIMIT 1")).fetchone()
+        out["healthy"] = True
+    except StatementTimeout:
+        out["healthy"] = None  # present but too slow to confirm — NOT corruption, NOT absent
+        out["count_status"] = "timed_out"
+        return out
+    except Exception as exc:  # noqa: BLE001 - a corruption error is the actionable signal
+        out["healthy"] = False
+        out["error"] = str(exc)[:200]
+        out["count_status"] = "error"
+        return out  # damaged -> don't attempt the heavier COUNT; re-index heals
+
+    # 3) ROWS (best-effort; a slow COUNT is reported as timed_out, never "absent").
+    try:
+        with statement_deadline(session, seconds=_fts_count_deadline_s()):
+            n = session.execute(text("SELECT count(*) FROM article_fts")).scalar()
+        out["rows"] = int(n) if n is not None else 0
+        out["count_status"] = "ok"
+    except StatementTimeout:
+        out["count_status"] = "timed_out"
+    except Exception as exc:  # noqa: BLE001 - count failure is disclosed, presence stands
+        out["count_status"] = "error"
+        out["error"] = str(exc)[:200]
     return out
 
 
