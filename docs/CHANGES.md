@@ -1,6 +1,18 @@
 # Changelog
 
-> The repository’s **default branch is the active cycle branch** (currently `0.1`, renamed from `0.09` at the alpha flip); each cycle branch `0.0N` produced release `0.0.N`, and the consolidated `0.09` cycle produced **`0.1.0`, the first alpha** — the cycle branch was renamed `0.09 → 0.1` to match (see the README's version note).
+> The repository’s **default branch is the active cycle branch** (currently `0.2`, renamed from `0.1` at the 0.2 flip, itself renamed from `0.09` at the alpha flip); each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, and the `0.1` cycle now bumps to **`0.2.0`, data safety at scale** (the tagged release is gated on the live-corpus scale validation) — the cycle branch is renamed `0.1 → 0.2` to match (see the README's version note).
+
+## 0.2.0 — data safety at scale (the `0.1` cycle, version set 2026-07-10)
+
+The `0.2` cycle re-engineers the app to survive **large corpora** — a live multi-day run
+reached ~100–130 GB. Shipped so far: a streaming, bounded-RAM, resumable, verifiable
+backup/restore engine (`oo-volumes-2` — no plaintext corpus snapshot, incremental
+changed-volume re-emit); the collector out-of-memory root-cause fix (pass recycling + an
+RSS memory guard + inter-pass WAL checkpoints); unlock-at-scale instrumentation; and a
+synthetic-corpus scale-test harness. **The `v0.2.0` tag is gated on the maintainer's
+live-corpus validation** of the P0 scale set — the P0 engines are shipped, awaiting that
+run (see [`docs/product/SCALE_ROADMAP.md`](product/SCALE_ROADMAP.md)); the version is set in
+pyproject but 0.2 is not yet a tagged release.
 
 ## 0.1.0 — deeper sense-making (the 0.09 cycle, released 2026-07-02)
 

@@ -140,7 +140,11 @@ without becoming a visible job; background work never freezes the UI.
    maintainer renames the default branch 0.1→0.2 · CLAUDE.md cycle refs rewritten in the
    SAME PR). HARD GUARD: never flip while parallel sessions are in flight on origin/0.1
    (the #548 stale-base revert precedent) — execute in a quiet window after the P0 gate
-   passes. Tracked as task #10 in the session tracker.
+   passes. Tracked as task #10 in the session tracker. **EXECUTED 2026-07-10 (version+docs
+   half): pyproject `0.1.0→0.2.0` + all CLAUDE.md/README/CHANGES/CONTRIBUTING current-branch
+   pointers rewritten `0.1→0.2` (no parallel PRs open on `origin/0.1` — guard clear). PENDING
+   (maintainer + CI): the `0.1 → 0.2` default-branch rename, and the `v0.2.0` tag — still
+   gated on the P0 live-corpus validation (P0.4 unlock-at-scale unresolved).**
 5. Keyword hover-stats Slice 2 (which stats).
 6. Lemmatization default-on (needs the gold-set measure).
 7. Retention/eviction posture (after the P1.5 storage numbers are in).
