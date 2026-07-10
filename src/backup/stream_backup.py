@@ -224,13 +224,24 @@ def _require_safe_manifest_names(m: dict[str, Any]) -> None:
     """Reject traversal/absolute names ANYWHERE a manifest names a file. A
     signature only proves internal consistency with the EMBEDDED key — anyone
     can self-sign — so verify, parity recovery and reassembly all guard names
-    BEFORE touching the filesystem."""
+    BEFORE touching the filesystem. This MUST cover every manifest field that
+    becomes a path: the volume registry, parity volumes, member names AND their
+    per-member volume references, plus the top-level ``corpus_member`` /
+    ``wal_member`` (the restore corpus-fold path turns those into ``staging /
+    <name>`` and unlinks them — an unguarded ``..`` escapes the staging dir into
+    the data dir, i.e. an arbitrary-file delete of the live corpus)."""
     for v in m.get("volumes") or []:
         _require_safe_volume_name(str(v.get("name") or ""))
     for pv in (m.get("parity") or {}).get("volumes") or []:
         _require_safe_volume_name(str(pv.get("name") or ""))
     for mm in m.get("members") or []:
         _require_safe_member_name(str(mm.get("name") or ""))
+        for vname in mm.get("volumes") or []:
+            _require_safe_volume_name(str(vname or ""))
+    if m.get("corpus_member") is not None:
+        _require_safe_member_name(str(m.get("corpus_member")))
+    if m.get("wal_member") is not None:
+        _require_safe_member_name(str(m.get("wal_member")))
 
 
 def _vol_name(member: str, i: int, run_token: str) -> str:
@@ -348,8 +359,21 @@ def _live_corpus_source(
 
         @contextmanager
         def freeze() -> Iterator[Path | None]:
-            from src.database.writer import write_lock
+            from src.database.writer import gate_enabled, write_lock
 
+            if not gate_enabled():
+                # The write gate IS the snapshot-consistency guarantee: collection
+                # writes pause while the corpus streams. Under OO_WRITE_GATE=0 the
+                # lock is a no-op, so a concurrent commit could tear the streamed
+                # image while the summary still reports a "writes paused" phase.
+                # Degrade LOUDLY — never present a possibly-inconsistent backup as
+                # a paused-and-consistent one.
+                notes.append(
+                    "WARNING: OO_WRITE_GATE=0 — the write gate was disabled, so the "
+                    "corpus was NOT streamed under a write pause. If collection was "
+                    "active this snapshot may be inconsistent; re-enable the gate (or "
+                    "stop collection) for a guaranteed-consistent backup."
+                )
             with write_lock():
                 yield _drain_wal(live)
 
@@ -851,8 +875,17 @@ def write_stream_backup(
                 "parity": None,
                 "notes": notes,
             }
-            _write_json_atomic(dest / MANIFEST_NAME, vman)
 
+            # CRASH-SAFE FINALIZE: build the fully-signed (+parity) manifest in
+            # memory and swap the canonical dest/volumes.json exactly ONCE. The
+            # previous complete backup's signed manifest stays intact at the
+            # canonical path until that single atomic replace — so an interrupt,
+            # a kill, OR a parity failure (e.g. the GF(2^8) N+M ceiling at very
+            # large corpora) leaves the previous backup fully verifiable and
+            # restorable, and no UNSIGNED manifest is ever written to the
+            # canonical path (which cleanup_cancelled_build would treat as a
+            # disposable partial and delete). Volumes carry per-run names, so
+            # superseded ones are garbage-collected only AFTER the swap.
             parity: dict[str, Any] | None = None
             from src.backup.parity import parity_available
 
@@ -861,13 +894,21 @@ def write_stream_backup(
                 st.progress()
                 from src.backup.parity import write_parity
 
-                parity = write_parity(dest, parity_fraction=parity_fraction)
+                # Records parity into vman in memory + writes the .oopar files;
+                # never touches dest/volumes.json (write_manifest=False).
+                parity = write_parity(
+                    dest,
+                    parity_fraction=parity_fraction,
+                    manifest=vman,
+                    write_manifest=False,
+                )
 
-            # Sign LAST so the signature covers the parity block too.
-            final = load_manifest(dest)
-            final.pop("signature", None)
-            final["signature"] = _sign_manifest(final)
-            _write_json_atomic(dest / MANIFEST_NAME, final)
+            # Sign LAST so the signature covers the parity block too, then swap
+            # the canonical manifest atomically as the single commit point.
+            vman.pop("signature", None)
+            vman["signature"] = _sign_manifest(vman)
+            _write_json_atomic(dest / MANIFEST_NAME, vman)
+            final = vman
             (dest / BUILDING_NAME).unlink(missing_ok=True)
             gc_removed = _gc_orphan_volumes(dest, final)
 

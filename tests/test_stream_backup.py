@@ -440,6 +440,139 @@ def test_traversal_member_names_in_a_self_signed_manifest_are_refused(tmp_path):
         read_stream_backup(dest, "pw", staging_root=tmp_path / "st2")
 
 
+def test_traversal_corpus_and_wal_member_fields_are_refused(tmp_path):
+    """The restore corpus-fold path turns the top-level ``corpus_member`` /
+    ``wal_member`` manifest fields into ``staging / <name>`` and UNLINKS them, so
+    an unguarded ``..`` escapes the ``.restore-*`` staging dir one level up (in
+    production that is the data dir holding the LIVE corpus) — an arbitrary-file
+    delete on the very restore path meant to protect the corpus. The manifest is
+    self-signable, so these fields must refuse BEFORE any filesystem touch."""
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus)
+
+    from src.backup.stream_backup import _sign_manifest
+
+    st_root = tmp_path / "st"
+    st_root.mkdir()
+    sentinel = st_root / "SENTINEL_LIVE"  # what "staging/../SENTINEL_LIVE" resolves to
+    sentinel.write_text("do not delete me", encoding="utf-8")
+
+    # wal_member traversal → the plaintext-corpus fold branch would unlink it
+    m = load_manifest(dest)
+    m["corpus_encrypted"] = False
+    m["wal_member"] = "../SENTINEL_LIVE"
+    m.pop("signature", None)
+    m["signature"] = _sign_manifest(m)  # attacker self-signs
+    (dest / MANIFEST_NAME).write_text(json.dumps(m, indent=1), encoding="utf-8")
+    with pytest.raises(VolumeError, match="unsafe member path"):
+        read_stream_backup(dest, "pw", staging_root=st_root)
+    assert sentinel.exists()  # refused BEFORE the unlink — the crown assertion
+    with pytest.raises(VolumeError, match="unsafe member path"):
+        verify_stream_backup(dest)
+
+    # corpus_member traversal → the encrypted branch would open+unlink an arbitrary DB
+    m = load_manifest(dest)
+    m["wal_member"] = None
+    m["corpus_member"] = "../SENTINEL_LIVE"
+    m.pop("signature", None)
+    m["signature"] = _sign_manifest(m)
+    (dest / MANIFEST_NAME).write_text(json.dumps(m, indent=1), encoding="utf-8")
+    with pytest.raises(VolumeError, match="unsafe member path"):
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st2")
+    assert sentinel.exists()
+
+    # a per-member volume reference is also a name→path; verify's decrypt loop
+    # opened it directly (no membership check) — now guarded too
+    m = load_manifest(dest)
+    m["corpus_member"] = "corpus.db"
+    m["members"][0]["volumes"] = ["../outside.ooenc"]
+    m.pop("signature", None)
+    m["signature"] = _sign_manifest(m)
+    (dest / MANIFEST_NAME).write_text(json.dumps(m, indent=1), encoding="utf-8")
+    with pytest.raises(VolumeError, match="unsafe volume file name"):
+        verify_stream_backup(dest)
+    with pytest.raises(VolumeError, match="unsafe volume file name"):
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st3")
+
+
+def test_finalize_parity_failure_preserves_the_previous_backup(tmp_path, monkeypatch):
+    """CRASH-SAFE FINALIZE: a parity failure during a refresh (the GF(2^8) N+M
+    ceiling at very large corpora, or any write_parity error) must NOT destroy
+    the previous complete backup. The canonical manifest is swapped exactly once,
+    AFTER the signed+parity manifest is built, so an interrupt/kill/parity-raise
+    leaves the previous SIGNED manifest intact and restorable — and never leaves
+    an UNSIGNED manifest that a subsequent cancel would delete as a partial."""
+    pytest.importorskip("numpy")  # the parity path
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus)  # B_prev, signed + parity
+    prev = load_manifest(dest)
+    assert prev.get("signature") and prev.get("parity")
+    assert verify_stream_backup(dest)["ok"] is True
+
+    # a refresh whose parity stage fails after volumes were (re-)emitted
+    con = sqlite3.connect(corpus)  # mutate the existing corpus so some volumes re-emit
+    con.executemany(
+        "INSERT INTO articles(hash, content) VALUES(?,?)",
+        [(f"m{i:05d}", "y" * 3000) for i in range(60)],
+    )
+    con.commit()
+    con.close()
+    import src.backup.parity as parity_mod
+
+    def _boom(*a, **k):
+        raise VolumeError("simulated parity ceiling (N+M >= 256)")
+
+    monkeypatch.setattr(parity_mod, "write_parity", _boom)
+    with pytest.raises(VolumeError, match="parity"):
+        _backup(tmp_path, dest, corpus)
+
+    # the previous backup's SIGNED manifest is untouched and still restorable
+    after = load_manifest(dest)
+    assert after.get("signature") == prev.get("signature")  # never overwritten
+    assert verify_stream_backup(dest)["ok"] is True
+
+    # F7: a cancel-cleanup preserves the complete signed set (deletes only the
+    # failed refresh's orphan volumes), never wipes it
+    from src.backup.stream_backup import cleanup_cancelled_build
+
+    cleanup_cancelled_build(dest)
+    assert verify_stream_backup(dest)["ok"] is True
+    staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "restore")
+    assert staged is not None
+
+
+def test_disabled_write_gate_discloses_the_lost_consistency_guarantee(tmp_path, monkeypatch):
+    """OO_WRITE_GATE=0 makes the write-pause a no-op, so the corpus can be
+    streamed while collection commits — a possibly-torn image. The live corpus
+    freeze must say so loudly in its notes, never present it as a paused/
+    consistent snapshot. (Exercises the production _live_corpus_source path, which
+    _backup's injected test corpus_source bypasses.)"""
+    import src.backup.sqlite_backup as sb
+    import src.database.writer as writer_mod
+    from src.backup.stream_backup import _live_corpus_source
+
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    monkeypatch.setattr(sb, "live_db_path", lambda: corpus)
+
+    # gate enabled (default): no warning note
+    notes: list[str] = []
+    with _live_corpus_source(tmp_path, include_newsletters=True, notes=notes).freeze():
+        pass
+    assert not any("OO_WRITE_GATE=0" in n for n in notes)
+
+    # gate disabled: a loud warning is appended for the summary/envelope
+    monkeypatch.setattr(writer_mod, "gate_enabled", lambda: False)
+    notes2: list[str] = []
+    with _live_corpus_source(tmp_path, include_newsletters=True, notes=notes2).freeze():
+        pass
+    assert any("OO_WRITE_GATE=0" in n and "may be inconsistent" in n for n in notes2)
+
+
 def test_wrong_backup_passphrase_fails_loudly(tmp_path):
     corpus = tmp_path / "corpus.db"
     _make_corpus(corpus)

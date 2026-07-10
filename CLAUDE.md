@@ -622,6 +622,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     garbage-collection only AFTER finalize. Corollary: file names in a manifest anyone can
     self-sign are traversal-guarded before verify/restore touches the filesystem (a signature
     proves consistency with the EMBEDDED key, never trust). Full entries in SHIPPED_LOG 2026-07-09.
+  - **TRAVERSAL-GUARD EVERY NAME→PATH FIELD, ATOMIC-SWAP THE CANONICAL ARTIFACT, AND TEST THE REAL
+    PATH (2026-07-10, the post-merge audit of the Round-2 backup wave):** the same backup engine's
+    hardening pass (draft PR `claude/zeta-hardening-audit`) shipped WITH a traversal guard on
+    `members[].name`/`volumes[].name` — but MISSED the top-level `corpus_member`/`wal_member` and the
+    per-member `members[].volumes[]` refs, which restore turned into `staging/<name>` + `unlink` = an
+    arbitrary-file DELETE of the LIVE corpus from a self-signed hostile backup. RULE: enumerate EVERY
+    manifest/config field that becomes a filesystem path (not just the ones literally named "name")
+    and run them ALL through the one guard, on BOTH the verify and restore paths. (b) the crash-safe
+    corollary above was stated but the code still wrote the NEW unsigned/parity-less manifest OVER the
+    canonical `dest/volumes.json` before signing+parity — a crash/kill/parity-failure in that window
+    left an unsigned-complete manifest that `cleanup_cancelled_build` (unsigned⇒disposable) then
+    DELETED, previous backup included. Build the fully-signed(+parity) manifest in memory and swap the
+    canonical path in ONE atomic `os.replace`; the prior signed manifest must survive until that single
+    commit point (an uncaught erasure-code ceiling — GF(2⁸) N+M<256 ≈ 128 GB corpus — must not be able
+    to destroy the last good backup). (c) a TEST DOUBLE injected via a parameter (here `corpus_source`)
+    BYPASSES the production code path — a fix in the real path (`_live_corpus_source`'s gate check) needs
+    a test that drives the real path (monkeypatch `live_db_path`), or the test passes while the fix is
+    unexercised. Also: `# nosec`/bandit runs in CI only (not the sandbox venv); the mypy ratchet counts
+    import-closure errors, so verify NEW errors are in YOUR files (per-file `mypy <file>` shows 0) before
+    trusting a red count. Full entry in SHIPPED_LOG 2026-07-10.
 
 ## Open queue (when maintainer says proceed)
 - **SCALE MANDATE (maintainer ruled 2026-07-09; the consolidated roadmap lives in

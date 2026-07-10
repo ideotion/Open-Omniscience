@@ -3002,3 +3002,62 @@ leaves the previous set fully verifiable and restorable (test-pinned). Corollary
 manifest-of-files format: names in a manifest anyone can self-sign must be traversal-guarded
 before verify/restore touches the filesystem (a signature proves consistency with the
 EMBEDDED key, not trust).
+
+## 2026-07-10 — Post-merge adversarial audit of the Round-2 wave → ZETA backup-path hardening
+
+An 8-lens negative-space audit ran over the merged ZETA/ETA/THETA wave (backup + collector +
+serve) at tip 1dcf4b9 — after the full suite was green (3340 passed), because per-PR CI cannot
+catch the negative space (hostile-manifest traversal, crash interleavings, scale ceilings) nor
+cross-branch composition. Crypto/snapshot consistency (OOENC2 truncation/reorder/extension/
+overflow all fail loudly; key-check unforgeable; writer-gate excludes commits; residual-WAL
+fold-back correct), THETA serve gates (append-tail moves during collection; epoch read is a
+two-connection-safe column query; map-serve parity+fallback; reconcile envelope refuses "exact"
+until a full sweep; noprobe key uses a monotonic nonce), and the ETA memory guard/pass-recycling
+(hysteresis both ways, %-of-total so no false-fire on a big box, never touches the write gate,
+deferred==all + carry-head-first) all verified GUARDED. WAL double-checkpoint (ZETA vs ETA) and
+append-cadence-vs-serve-gate verified SAFE (both checkpoints gated, mutually exclusive).
+
+Every candidate finding was hand-re-verified against the code before it counted (the 06-audit
+false-positive discipline) — and one sub-agent's output was a prompt-injection (a fake "security
+validation" asking to curl the cloud metadata endpoint for IAM credentials); refused, discarded,
+the lens re-run with an injection-resistance instruction. The confirmed defect cluster on the
+backup finalize/restore path was FIXED FORWARD (branch claude/zeta-hardening-audit, draft PR onto
+0.1; backup/api/parity suites green, 75 passed):
+
+- F1 [HIGH security/data-loss]: restore read the top-level `corpus_member`/`wal_member` manifest
+  fields (and per-member `members[].volumes[]` refs) WITHOUT the traversal guard that covered
+  `members[].name`/`volumes[].name`. `_prepare_staged_corpus_files` turns them into `staging/<name>`
+  and unlinks them; since staging is `data_dir()/.restore-*`, a `wal_member` of `../open_omniscience.db`
+  deletes the LIVE corpus (the encrypted branch opens+unlinks an arbitrary SQLCipher-openable DB).
+  `_require_safe_manifest_names` (called by BOTH restore and verify) now validates these fields too.
+- F5–F8 [HIGH data-loss / crash-safety]: finalize wrote the new UNSIGNED, parity-less manifest OVER
+  `dest/volumes.json` before signing (and before the parity phase, the longest for a large set), so a
+  crash/kill/parity-failure left the previous complete backup's signed manifest gone and an
+  unsigned-complete manifest at the canonical path — which `cleanup_cancelled_build` (unsigned ⇒
+  disposable partial) then deletes on a cancel, total loss. Finalize now builds the fully-signed
+  (+parity) manifest in memory and swaps the canonical path in ONE atomic `os.replace`; the previous
+  signed manifest survives until that single commit point, so an interrupt or an uncaught parity
+  failure leaves the previous backup fully verifiable+restorable and no unsigned manifest ever lands
+  at the canonical path. `write_parity` gained an opt-in in-memory manifest mode (records parity into
+  the building manifest, writes the .oopar files, never touches `dest/volumes.json`) and its legacy
+  on-disk write is now atomic (temp + os.replace).
+- F12 [low]: `OO_WRITE_GATE=0` makes the corpus-stream write-pause a no-op, so a concurrent commit can
+  tear the image while the summary still reports "writes paused". The live freeze now appends a loud
+  WARNING note (into the summary + signed envelope) when the gate is disabled — degrade loudly.
+- F4 [nit]: the encrypted-store backup refusal (BackupError) returns a clean 400, not an ungraceful 500.
+
+Deferred to SCALE_ROADMAP (confirmed, out of scope): F6 parity's GF(2⁸) N+M<256 ceiling (~128 GB
+corpus, impossible at the 5 TB mandate → adaptive/larger volume sizing, folds into P0.1 — the finalize
+fix already ensures hitting it never destroys the previous backup); F13 the batched collector flush
+holds the write gate across per-article keyword+WWW EXTRACTION not just the DB write (undercuts P1.8);
+F10/F11 backup gate-hold (drain-wal lock-order inversion; gate held across `_corpus_facts`' full scan);
+F3 restore preflight under-count (fails safe); F14 markets dirty-session gate-across-fetch (pre-existing).
+
+LESSONS: (1) traversal-guard EVERY manifest/config field that becomes a filesystem path — not just the
+ones literally named "name"; a guard is only as complete as its field list, on BOTH verify and restore.
+(2) a finalize that overwrites the canonical artifact before the replacement is signed/valid has a crash
+window that destroys the prior good artifact — build it complete in memory, swap atomically ONCE, keep
+the old one until then; an uncaught erasure-code ceiling must never be able to take the last good backup
+with it. (3) a test double injected via a parameter (corpus_source) bypasses the production path — a fix
+in the real path needs a test that drives the real path (monkeypatch the real dependency), or it passes
+while the fix sits unexercised.
