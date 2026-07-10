@@ -96,3 +96,119 @@ def stamp_if_unstamped(engine) -> bool:
         return True
     except Exception:
         return False
+
+
+def _head_revision() -> str | None:
+    """The single alembic head revision id (None if it can't be resolved)."""
+    from alembic.script import ScriptDirectory
+
+    try:
+        heads = ScriptDirectory.from_config(_alembic_config()).get_heads()
+    except Exception:  # noqa: BLE001 - a guarded helper degrades, never raises
+        return None
+    return heads[0] if len(heads) == 1 else None
+
+
+def _current_stamp(engine) -> str | None:
+    """The revision stamped on an OPEN engine's DB (None if unstamped/unreadable)."""
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).fetchone()
+        return row[0] if row else None
+    except Exception:  # noqa: BLE001 - no alembic_version table -> unstamped
+        return None
+
+
+# FTS5 external-content shadow tables (article_fts + its _data/_idx/_docsize/_config) are
+# created by ensure_fts, NOT the ORM, so compare_metadata always reports them as "extra"
+# (remove_table). They are the only benign schema difference on an at-head store, so we
+# filter them and treat every OTHER diff as evidence the schema is not at head.
+_FTS_SHADOW_PREFIX = "article_fts"
+
+
+def _schema_diffs_vs_head(engine) -> list[str] | None:
+    """Real schema differences between the live DB and the ORM head (empty == at head).
+
+    Uses alembic's own ``compare_metadata`` (its drift detector) and filters ONLY the FTS5
+    shadow tables it cannot know about. CONSERVATIVE by construction: any diff we cannot
+    classify as benign counts AGAINST parity, so we never falsely claim head. ``None`` if
+    the comparison itself failed (treated as "cannot verify" -> do not advance)."""
+    try:
+        from alembic.autogenerate import compare_metadata
+        from alembic.migration import MigrationContext
+
+        from src.database.models import Base
+
+        real: list[str] = []
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            for diff in compare_metadata(ctx, Base.metadata):
+                entries = diff if isinstance(diff, list) else [diff]
+                for entry in entries:
+                    op = str(entry[0])
+                    obj = entry[-1]
+                    name = str(getattr(obj, "name", obj))
+                    if op == "remove_table" and name.startswith(_FTS_SHADOW_PREFIX):
+                        continue  # ensure_fts's shadow table, not an ORM object
+                    real.append(f"{op}:{name}")
+        return real
+    except Exception:  # noqa: BLE001 - cannot verify parity -> caller must not advance
+        return None
+
+
+def align_stamp_to_head(engine) -> dict:
+    """Advance the alembic stamp to head IFF the live schema is verified fully at head (DB-8).
+
+    The boot self-heals (``ensure_*`` + ``ensure_hot_indexes`` + ``ensure_fts``) bring an
+    old store's SCHEMA to head without touching the alembic stamp, leaving a "lying stamp"
+    — behind head while the schema is ahead. That lie breaks the next real migration and the
+    cross-version restore's ``alembic upgrade`` (it re-adds already-present columns/indexes →
+    "duplicate column"/"index already exists"). This aligns the stamp so the stamp tells the
+    truth.
+
+    SAFE BY CONSTRUCTION: it advances ONLY when ``compare_metadata`` (FTS-shadow-filtered)
+    reports the schema is fully at head, so a store that is GENUINELY behind (a missing
+    column) keeps its stamp and still migrates. Best-effort and never raises into boot. The
+    cheap stamp check runs first, so the (metadata-only, corpus-size-independent)
+    compare_metadata cost is paid only on the transient behind-stamp store, never at steady
+    state.
+
+    Returns a small verdict dict ``{"action": …}`` — one of ``unstamped`` (fresh; leave to
+    stamp_if_unstamped), ``at-head``, ``unknown-revision`` (a newer/foreign fork; leave
+    alone), ``no-head`` (couldn't resolve head), ``schema-behind`` (genuinely behind — the
+    stamp is KEPT so it migrates), ``cannot-verify`` (the parity check errored — stamp
+    KEPT), or ``advanced`` (the fix).
+
+    HONEST RESIDUAL: parity is verified at the SCHEMA level (tables/columns/indexes). The one
+    pure DATA migration with no schema signature (``normalize_country_codes``, a catalog
+    normalization) is not separately verified; its effect is re-achieved by the boot catalog
+    seed/normalization, so advancing past it risks at most a minor un-normalized catalog
+    value, never corruption or data loss."""
+    try:
+        current = _current_stamp(engine)
+        if current is None:
+            return {"action": "unstamped"}  # stamp_if_unstamped owns the fresh path
+        head = _head_revision()
+        if head is None:
+            return {"action": "no-head"}
+        if current == head:
+            return {"action": "at-head", "rev": current}
+        if current not in known_revisions():
+            return {"action": "unknown-revision", "rev": current}  # newer/foreign: leave alone
+        diffs = _schema_diffs_vs_head(engine)
+        if diffs is None:
+            return {"action": "cannot-verify", "from": current}  # never advance on doubt
+        if diffs:
+            return {"action": "schema-behind", "from": current, "diffs": diffs[:10]}
+        # Verified at head: safe to tell the truth in the stamp.
+        from alembic import command
+
+        with engine.begin() as conn:
+            cfg = _alembic_config()
+            cfg.attributes["connection"] = conn
+            command.stamp(cfg, "head")
+        return {"action": "advanced", "from": current, "to": head}
+    except Exception:  # noqa: BLE001 - a stamp-alignment must never break app startup
+        return {"action": "error"}
