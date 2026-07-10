@@ -373,7 +373,7 @@ note where reality now stands). See the linked feature docs for detail.
 - **Worldwide source coverage:** ✅ packaged markets catalog + a **data-derived
   generator** (Wikidata CC0) for news media **and** institutions per country, with a
   coverage report. CSV import/export of the source list. See
-  [ROADMAP.md](ROADMAP.md).
+  [ROADMAP.md](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md).
 - **Cross-referencing & correlation (5.4):** ✅ **keyword & entity analytics** —
   extraction at ingest, mention store with context, trends, PMI associations
   ("mind-map"), and a per-country/city map. See [USER_MANUAL.md](USER_MANUAL.md).
@@ -827,7 +827,7 @@ synthesis) and we collapse back to one in 0.06.
 
 ## Content-analysis strategy — links, uniformity, and the original source
 
-> Concrete, staged strategies for the vision in [`ROADMAP.md`](ROADMAP.md):
+> Concrete, staged strategies for the vision in [`ROADMAP.md`](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md):
 > use article **links** to assemble what's talking about the same thing, surface
 > media **uniformity**, and trace information back to its **original source** — while
 > keeping the **user in power**, the analysis **transparent and local**, and never

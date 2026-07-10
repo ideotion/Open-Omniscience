@@ -1,6 +1,6 @@
 # Release plan — 0.0.8 ("trustworthy MVP, hardened")
 
-> Execution plan for the **Now** horizon of [ROADMAP.md](ROADMAP.md), written at the close of
+> Execution plan for the **Now** horizon of [ROADMAP.md](../archive/roadmaps/RICE_BACKLOG_pre-0.2.md), written at the close of
 > the v0.0.7 audit (PR #56).
 >
 > **STATUS: EXECUTED — all nine work packages delivered** (PRs #59, #60, #61 on branch

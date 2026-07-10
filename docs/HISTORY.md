@@ -537,7 +537,7 @@ moved to `quarantine/`.
 ## Quality Check-up — post-merge (v0.4)
 
 Honest assessment of the repository immediately after Phases 0–5 were merged into
-`0.04`. Companion to the upgraded plan in [`ROADMAP.md`](ROADMAP.md) §"Phase 6".
+`0.04`. Companion to the upgraded plan in [`ROADMAP.md`](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md) §"Phase 6".
 
 > ## Update after Phase 6 execution
 > Status against the issues below (all green, branch `claude/kind-lovelace-ulpTc`):

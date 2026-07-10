@@ -648,6 +648,13 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     trusting a red count. Full entry in SHIPPED_LOG 2026-07-10.
 
 ## Open queue (when maintainer says proceed)
+- **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
+  [`docs/ROADMAP.md`](docs/ROADMAP.md) (DB limitations · performance/scale · known bugs ·
+  feature backlog, each with status) — read it for the overview; the DEEP scale detail stays
+  in [`docs/product/SCALE_ROADMAP.md`](docs/product/SCALE_ROADMAP.md); design intent stays in
+  `docs/FUTURE_DEVELOPMENTS.md`; THIS ledger stays the binding source of truth. The three dead
+  roadmap homes (old `docs/ROADMAP.md`, `docs/product/ROADMAP.md`, `BACKLOG_GROUPED.md`) were
+  archived to `docs/archive/roadmaps/` (nothing deleted).
 - **SCALE MANDATE (maintainer ruled 2026-07-09; the consolidated roadmap lives in
   [`docs/product/SCALE_ROADMAP.md`](docs/product/SCALE_ROADMAP.md) — read it before picking
   work):** a live 4–5-day run grew the corpus to **~100–130 GB**; the app must be designed to

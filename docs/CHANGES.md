@@ -1353,7 +1353,7 @@ no-server, no-telemetry posture; every new surface states its limits.
 ## 0.06 — Phase B: safety, sense-making, accessibility & governance
 
 A second slice of the `0.06` work, organised around four themes from
-the "Next version — action plans" section of [`ROADMAP.md`](ROADMAP.md). Each ships an honest Phase 1 today; none weakens the
+the "Next version — action plans" section of [`ROADMAP.md`](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md). Each ships an honest Phase 1 today; none weakens the
 local-first, no-server, no-telemetry posture. See [`GOVERNANCE.md`](GOVERNANCE.md).
 
 - **At-risk-user safety (`src/safety/`).** New **Settings → Safety** panel and `/api/safety`
@@ -1387,8 +1387,8 @@ local-first, no-server, no-telemetry posture. See [`GOVERNANCE.md`](GOVERNANCE.m
 The first slice of the `0.06` "intelligence layer" — the **GUI spine**. The unifying
 idea is *one measurement engine, many domains*; this ships the engine's framework and
 its first pure primitive, and turns **Home into a triage briefing**. Guiding docs:
-[`ROADMAP.md`](ROADMAP.md) (what & why) and
-[`ROADMAP.md`](ROADMAP.md) (how); user guide: [`USER_MANUAL.md`](USER_MANUAL.md).
+[`ROADMAP.md`](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md) (what & why) and
+[`ROADMAP.md`](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md) (how); user guide: [`USER_MANUAL.md`](USER_MANUAL.md).
 
 - **`src/signals/` — pure, DB-free measurement primitives.** First shipped:
   `concentration` (Gini coefficient + top-N share), property-tested with exact
@@ -1593,7 +1593,7 @@ A wave of usability work on top of the feature set below, plus documentation:
   `groups` form.
 - **Docs:** added an extensive end-user manual ([USER_MANUAL.md](USER_MANUAL.md))
   covering every tab, control, setting, workflow, env var and API area, and an
-  [ROADMAP.md](ROADMAP.md) capturing in-flight design decisions
+  [ROADMAP.md](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md) capturing in-flight design decisions
   (notably a planned chain-of-custody "automatic, background, dummy-proof"
   redesign — not yet built).
 
@@ -1611,7 +1611,7 @@ A large feature wave (all tested; dependency-free vanilla-JS UI; no fabricated d
   worldwide markets catalog. See [USER_MANUAL.md](USER_MANUAL.md).
 - **Worldwide source catalog:** a **data-derived generator** (Wikidata CC0 +
   optional GDELT/Media Cloud) for news + institutions per country, coverage report,
-  and **CSV import/export** of the source list. See [ROADMAP.md](ROADMAP.md).
+  and **CSV import/export** of the source list. See [ROADMAP.md](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md).
 - **Insights — keyword & entity analytics:** extraction at ingest (people/orgs/
   places as single units; opt-in spaCy), a mention store with context, and
   trends / PMI associations / per-country-city map. See [USER_MANUAL.md](USER_MANUAL.md).

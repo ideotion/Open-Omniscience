@@ -1,5 +1,9 @@
 # Scale & Stability Roadmap — consolidated 2026-07-09
 
+> **This is the DEEP scale/stability detail** (P0/P1 measured numbers, acceptance criteria,
+> session territories). The top-level board that summarizes it — alongside the feature
+> backlog, DB limitations and known bugs — is **[`docs/ROADMAP.md`](../ROADMAP.md)**.
+
 **THE MANDATE (maintainer, 2026-07-09, verbatim intent):** a live test grew the corpus to
 **~100–130 GB in 4–5 days**; the app must therefore be designed to handle **5 TB databases**
 with proper indexing, staying **snappy** — "snappiness / responsiveness is quite important,

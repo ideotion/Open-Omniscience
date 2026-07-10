@@ -127,7 +127,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
 - ✅ **Data-derived worldwide catalog generator** (Wikidata CC0 + optional
   GDELT/Media Cloud merge) for news media **and** official institutions per
   country, with a coverage report driving gaps — see
-  [docs/ROADMAP.md](docs/ROADMAP.md).
+  [docs/archive/roadmaps/DESIGN_MEMORY_pre-0.2.md](docs/archive/roadmaps/DESIGN_MEMORY_pre-0.2.md).
 - ✅ **Keyword & entity analytics** (the **Insights** tab): keywords/entities are
   extracted from ingested article text (people/orgs/places as single units; opt-in
   spaCy `[nlp]` for real NER), stored as mentions with context, and surfaced as
@@ -243,7 +243,7 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
 - 🚧 Volume/anomaly **monitoring** dashboards, and cross-linking Wikipedia diffs into the
   Insights keyword analytics.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phasing.
+See [docs/FUTURE_DEVELOPMENTS.md](docs/FUTURE_DEVELOPMENTS.md) for the full phasing.
 
 **Honesty note:** several previously-advertised "analysis" components (deepfake,
 propaganda, cognitive-bias, bot detection) were **fabricated** — returning
@@ -318,7 +318,8 @@ The docs are consolidated into a small set of complete guides
   chain of custody).
 - **[QUICKSTART](docs/QUICKSTART.md)** — install + the end-to-end loop.
 - **[DESIGN](docs/DESIGN.md)** — what the app is and isn't, the pillar map, GUI reasoning.
-- **[ROADMAP](docs/ROADMAP.md)** — design memory (north star), phased plan + status, open questions.
+- **[ROADMAP](docs/ROADMAP.md)** — the forward-looking board (DB limitations, performance & scale, known bugs, feature backlog + status).
+- **[FUTURE_DEVELOPMENTS](docs/FUTURE_DEVELOPMENTS.md)** — persistent design memory (north star): design intent + open questions.
 - **[ARCHITECTURE](docs/ARCHITECTURE.md)** — database/config, the HTTP API map, and i18n.
 - **[ETHICS](docs/ETHICS.md)** — principles, compliance (GPLv3), third-party notices.
 - **[SECURITY](docs/SECURITY.md)** — threat model, local-first posture, the security audit.

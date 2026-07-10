@@ -1,5 +1,10 @@
 # V0.1 ALPHA — The Two Action Plans (canonical, retrievable)
 
+> ⚠️ **HISTORICAL / proposal-stage (2026-06-12).** These two commissioned plans predate the
+> 0.2 cycle; several steps shipped independently and the rest are folded into
+> **[`docs/ROADMAP.md`](../ROADMAP.md)** (§4 feature backlog). Kept as the retrievable home of
+> the original commission.
+
 > **Status:** maintainer-commissioned 2026-06-12; awaiting maintainer review.
 > This file is THE retrievable home of both plans. The analyses they come
 > from: FUTURE_DEVELOPMENTS § "User-centric reflections" (the thinking
