@@ -587,6 +587,14 @@ CONTINENT_OF: dict[str, str] = {
     code: continent for continent, block in _CONTINENT_BLOCKS.items() for code in block.split()
 }
 CONTINENT_OF.update({"xk": "Europe", "an": "North America"})
+# Supranational / transnational bodies (International, European Union) have no ISO-3166
+# country and are genuinely NOT of a single continent. Rather than leave them uncategorised
+# (invisible to the regional-balance report) OR fabricate a continent, they get their own
+# honest "Global" region (delegated ruling 2026-07-10). A source that is genuinely
+# transnational carries country "int" (or "eu") and is then counted under Global — never
+# forced into a continent it does not belong to. (De-US-centring: the "International" bodies
+# that were deliberately left uncountried now have a truthful home.)
+CONTINENT_OF.update({"int": "Global", "eu": "Global"})
 
 CONTINENTS: tuple[str, ...] = (
     "Africa",
@@ -596,6 +604,7 @@ CONTINENTS: tuple[str, ...] = (
     "South America",
     "Oceania",
     "Antarctica",
+    "Global",  # supranational / transnational bodies (International, EU) — not a continent
 )
 
 
