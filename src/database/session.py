@@ -156,10 +156,19 @@ def init_db() -> None:
 
     Base.metadata.create_all(engine)
 
-    # Build the full-text search index (SQLite FTS5). No-op on other backends.
+    # Ensure the full-text search index (SQLite FTS5). No-op on other backends. The index
+    # is maintained incrementally by triggers, so ``ensure_fts`` rebuilds ONLY when needed
+    # (fresh table with existing articles, or an interrupted past build) — NOT on every
+    # boot, which was the P0.4 unlock-at-scale regression (a corpus-scaled codec rebuild
+    # recurring 981 s → 1,645 s at 130 GB). A rebuild is a one-time, honestly-logged event.
     from src.database.fts import ensure_fts
 
-    ensure_fts(engine)
+    _fts_action = ensure_fts(engine)
+    if _fts_action == "rebuilt":
+        _LOG.info(
+            "FTS index rebuilt from the base table (one-time: fresh table with existing "
+            "articles, or a prior incomplete build); steady-state boots skip this."
+        )
 
     # Mark a freshly-created DB at the current migration baseline so future schema
     # changes apply via `alembic upgrade head`. No-op if already alembic-managed.
@@ -218,6 +227,30 @@ def init_db() -> None:
     ensure_keyword_extractor_column(engine)
     ensure_wiki_text_columns(engine)
     ensure_supergroup_ring_column(engine)
+
+    # DB-8: the self-heals above bring an OLD store's schema to head WITHOUT touching the
+    # alembic stamp, leaving a "lying stamp" (behind head while the schema is ahead) that
+    # breaks the next real migration and the cross-version restore's `alembic upgrade`
+    # (re-adding already-present columns -> "duplicate column"). Align the stamp to head,
+    # but ONLY when the schema is verified fully at head (a genuinely-behind store keeps its
+    # stamp and still migrates). Cheap when already at head; best-effort, never raises.
+    from src.database.migrate import align_stamp_to_head
+
+    _stamp = align_stamp_to_head(engine)
+    if _stamp.get("action") == "advanced":
+        _LOG.info(
+            "alembic stamp aligned to head (%s -> %s) after schema self-heal; the stamp "
+            "no longer lags the healed schema.",
+            _stamp.get("from"),
+            _stamp.get("to"),
+        )
+    elif _stamp.get("action") == "schema-behind":
+        _LOG.info(
+            "alembic stamp left at %s: the schema is genuinely behind head (%s) and must "
+            "migrate, not be stamped forward.",
+            _stamp.get("from"),
+            _stamp.get("diffs"),
+        )
 
 
 def get_session() -> SASession:
