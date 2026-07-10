@@ -8,7 +8,7 @@
 > the codebase (all claims checkable against named modules); the companion
 > user-half lives in FUTURE_DEVELOPMENTS ("User-centric reflections").
 > Findings carry proposed severities — the maintainer arbitrates them into
-> `docs/product/RELEASE_0.1_RC_GATE.md`.
+> `docs/archive/releases/RELEASE_0.1_RC_GATE.md`.
 
 ## 0. The honest frame
 
@@ -170,7 +170,7 @@ be dishonest.
 
 > **The canonical, full version of this plan — every step with its
 > rationale, commentary, and acceptance criteria — lives in
-> `docs/product/V01_ALPHA_ACTION_PLANS.md` (Plan B).** The list below is
+> `docs/archive/releases/V01_ALPHA_ACTION_PLANS.md` (Plan B).** The list below is
 > the summary that stays with the findings.
 
 - **B0 · Arbitrate this audit** (maintainer): confirm severities; fold rows

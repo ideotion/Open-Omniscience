@@ -12,7 +12,7 @@ otherwise it will slow or block user adoption, and this app is useless if it is 
 corpus up (the backup tool crashes the app), so we cannot test import either.**
 
 This doc consolidates every open item from: the field-test ledgers
-(`docs/product/field-test-2026-06-14/`, `-2026-06-15/`, `-2026-07-08/`), the CLAUDE.md Open
+(`docs/archive/field-tests/field-test-2026-06-14/`, `-2026-06-15/`, and the live `docs/product/field-test-2026-07-08/`), the CLAUDE.md Open
 queue, the wave-1→8 parallel-session audits, and the 2026-07-09 field event (4-day run,
 app self-stopped, backup crash, slow unlock). CLAUDE.md remains the ruling ledger; this is
 the working priority list. Update rows here as items close.

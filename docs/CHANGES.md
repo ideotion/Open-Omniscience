@@ -23,8 +23,8 @@ corpora/analysis-window system, the omnibar global-search rework, agenda views +
 catalog depth, the ooMap world map, local AI (Settings → AI), newsletter import,
 official statistics with vintages, and a large slice of the i18n long tail — and
 ships as **0.1.0**, the first alpha. Known accepted limits are recorded in
-[`docs/product/RELEASE_0.1_PLAN.md`](product/RELEASE_0.1_PLAN.md) §4; the row-by-row
-release gate is [`docs/product/RELEASE_0.1_RC_GATE.md`](product/RELEASE_0.1_RC_GATE.md).
+[`docs/archive/releases/RELEASE_0.1_PLAN.md`](archive/releases/RELEASE_0.1_PLAN.md) §4; the row-by-row
+release gate is [`docs/archive/releases/RELEASE_0.1_RC_GATE.md`](archive/releases/RELEASE_0.1_RC_GATE.md).
 See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) for what comes next.
 
 - **The world map, rebuilt: a choropleth you can read — with the temporal map
@@ -1209,7 +1209,7 @@ See [`docs/FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) for what comes next.
 ## 0.08 part 2 — the sense-making horizon
 
 Part 2 of the `0.08` cycle (the whole roadmap push ships under `0.08` per maintainer
-direction; plan: [`docs/product/RELEASE_0.0.8_PLAN_PART2.md`](product/RELEASE_0.0.8_PLAN_PART2.md),
+direction; plan: [`docs/archive/releases/RELEASE_0.0.8_PLAN_PART2.md`](archive/releases/RELEASE_0.0.8_PLAN_PART2.md),
 WP1–WP5 all delivered):
 
 - **Methods appendix** (*Search → Methods appendix*): one click turns the current search
@@ -1242,7 +1242,7 @@ WP1–WP5 all delivered):
 ## 0.08 — executing the product roadmap: trust gates + investigation recipes
 
 The `0.08` cycle executed the post-audit product roadmap
-([`docs/product/RELEASE_0.0.8_PLAN.md`](product/RELEASE_0.0.8_PLAN.md), WP1–WP9 all
+([`docs/archive/releases/RELEASE_0.0.8_PLAN.md`](archive/releases/RELEASE_0.0.8_PLAN.md), WP1–WP9 all
 delivered) and closed **every remaining audit finding — the register reads 29/29 FIXED**.
 
 - **Investigation recipes (the headline).** The Home briefing gains three space-time

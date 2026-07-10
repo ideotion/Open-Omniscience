@@ -154,7 +154,7 @@ slice onto `0.09`, stacked, CI-subscribed.** The maintainer merges; nothing self
   `Article.hash`; never fabricate an IP, location, or exact count — degrade loudly.
 - One PR per slice, **draft onto `0.09`**, stacked, CI subscribed; mark UI PRs
   **"browser-unverified, needs click-through."** Update
-  `docs/product/RELEASE_0.1_RC_GATE.md` rows you touch.
+  `docs/archive/releases/RELEASE_0.1_RC_GATE.md` rows you touch.
 
 ## Close-out
 Update `CLAUDE.md` with the session rulings + a Shipped-batch-log entry per slice (verdict +

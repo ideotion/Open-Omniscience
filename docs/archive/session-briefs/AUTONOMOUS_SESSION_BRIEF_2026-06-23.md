@@ -5,7 +5,7 @@ merges two parallel tracks into one: (A) the **field‑test keyword‑reduction 
 (the maintainer's "address the ~400k keywords for good"), and (B) the **full remaining V0.1‑alpha
 inventory** (everything still open in the 0.09 cycle toward the tag). It is the consolidated,
 prioritised, evidence‑cited synthesis of `CLAUDE.md` (the live ledger),
-`docs/product/RELEASE_0.1_RC_GATE.md` (the canonical gate), `BACKLOG_GROUPED.md`,
+`docs/archive/releases/RELEASE_0.1_RC_GATE.md` (the canonical gate), `BACKLOG_GROUPED.md`,
 `FUTURE_DEVELOPMENTS.md`, and the 2026‑06‑21/22/23 field‑test exports. It does **not** restate the
 non‑negotiables — it assumes them.
 
@@ -205,7 +205,7 @@ no path bypasses it.
 
 ## 4. THE RELEASE GATE (the path to the V0.1 tag — maintainer pivot, ruling #1)
 
-`docs/product/RELEASE_0.1_RC_GATE.md` is authoritative; the tag is earned the day **every RC‑BLOCKING row
+`docs/archive/releases/RELEASE_0.1_RC_GATE.md` is authoritative; the tag is earned the day **every RC‑BLOCKING row
 reads ✅** (ruling #2 HOLDS the 0.0.9→0.1 flip until then).
 
 ### 4.1 Final claim‑sweep + docs↔app reciprocity (RC‑BLOCKING, §5)
