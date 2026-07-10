@@ -67,6 +67,58 @@ def is_commerce_domain(host: str | None) -> bool:
     return name.endswith(_COMMERCE_NAME_SUFFIXES)  # acme-shop / band-merch
 
 
+# Infrastructure / CDN / analytics / boilerplate-legal filter (maintainer field 2026-07-10:
+# citation discovery surfaced fonts.googleapis.com, policies.google.com, creativecommons.org,
+# bsky.app, t.me — ranked HIGH precisely because they are ubiquitous footer/asset links on
+# nearly every page, not because they are sources). These are never journalism sources.
+# Conservative + explainable, mirroring is_commerce_domain: an exact infrastructure
+# registrable domain (or a subdomain of one) OR a leftmost non-content host label. A false
+# positive costs only one un-suggested candidate (never auto-enabled), so we err toward
+# under-filtering, never toward wrongly skipping a real outlet.
+_INFRA_DOMAINS = frozenset(
+    {
+        # CDN / asset / font / script / media hosts
+        "googleapis.com", "gstatic.com", "googleusercontent.com", "ytimg.com",
+        "jsdelivr.net", "unpkg.com", "jquery.com", "bootstrapcdn.com", "cloudfront.net",
+        "akamaihd.net", "akamai.net", "fastly.net", "cloudflare.com", "cloudflareinsights.com",
+        "gravatar.com", "wp.com", "twimg.com", "fbcdn.net", "staticflickr.com",
+        # analytics / tracking / ads
+        "google-analytics.com", "googletagmanager.com", "doubleclick.net",
+        "googlesyndication.com", "googleadservices.com", "scorecardresearch.com",
+        "quantserve.com", "hotjar.com", "mixpanel.com", "chartbeat.com",
+        # licenses / standards / boilerplate (footer links on nearly every page)
+        "creativecommons.org", "w3.org", "schema.org", "gnu.org", "iana.org",
+        "gdpr.eu", "gdpr-info.eu", "whatwg.org",
+    }
+)
+_INFRA_LABELS = frozenset(
+    {
+        "fonts", "cdn", "cdns", "static", "assets", "ajax", "img", "imgs",
+        "analytics", "ads", "adservice", "adservices", "pixel", "telemetry",
+        "tagmanager", "gtm", "doubleclick",
+        "policies", "policy", "legal", "gdpr", "cookies", "consent",
+    }
+)
+
+
+def is_infrastructure_domain(host: str | None) -> bool:
+    """True for a CDN / asset / analytics / boilerplate-legal host a journalism
+    source-discovery must never suggest (fonts.googleapis.com, policies.google.com,
+    creativecommons.org …). Fires on a leftmost non-content label (``fonts.``/``cdn.``/
+    ``static.``/``policies.`` …) or an exact infrastructure registrable domain (or a
+    subdomain of one). Conservative: it does NOT match a content aggregator on the same
+    parent (news.google.com passes — only the specific policy/asset subdomains are caught)."""
+    if not host:
+        return False
+    h = host.lower().strip(".")
+    labels = h.split(".")
+    if len(labels) < 2:
+        return False
+    if labels[0] in _INFRA_LABELS:  # fonts./cdn./static./policies.<domain>
+        return True
+    return any(h == d or h.endswith("." + d) for d in _INFRA_DOMAINS)
+
+
 def _existing_domains(session) -> set[str]:
     from src.database.models import Source, SourceCandidate
 
@@ -93,7 +145,7 @@ def _add_candidate(session, *, domain: str, name: str | None, channel: str, evid
 
 def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -> list[str]:
     """Suggest external domains that >= min_citations distinct stored articles cite."""
-    from src.catalog.normalize import registrable_domain
+    from src.catalog.normalize import is_social, registrable_domain
     from src.database.models import ArticleLink
 
     known = _existing_domains(session)
@@ -105,16 +157,25 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
             by_domain[dom.lower()].add(aid)
 
     created: list[str] = []
-    skipped_commerce = 0
+    skipped = {"commerce": 0, "social": 0, "infrastructure": 0}
     for dom, ids in sorted(by_domain.items(), key=lambda kv: -len(kv[1])):
         if len(created) >= cap:
             break
         if len(ids) < min_citations or dom in known:
             continue
+        # A domain frequently cited by articles is NOT automatically a source: storefronts
+        # (field 2026-06-13), social platforms, and CDN/analytics/boilerplate-legal hosts
+        # (bsky.app/t.me/fonts.googleapis.com/policies.google.com/creativecommons.org —
+        # field 2026-07-10) are ubiquitous footer/asset links, ranked HIGH by raw citation
+        # count precisely because they appear everywhere. Never suggest them.
         if is_commerce_domain(dom):
-            # A storefront/merch domain frequently cited by articles is still not
-            # a journalism source — never suggest it (field log 2026-06-13).
-            skipped_commerce += 1
+            skipped["commerce"] += 1
+            continue
+        if is_social(dom):
+            skipped["social"] += 1
+            continue
+        if is_infrastructure_domain(dom):
+            skipped["infrastructure"] += 1
             continue
         _add_candidate(
             session,
@@ -131,8 +192,12 @@ def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -
         known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
     if created:
         session.flush()  # autoflush is off app-wide; make the rows visible to callers
-    if skipped_commerce:
-        _LOG.debug("citation discovery skipped %d commerce/storefront domain(s)", skipped_commerce)
+    if any(skipped.values()):
+        _LOG.debug(
+            "citation discovery skipped commerce=%(commerce)d social=%(social)d "
+            "infrastructure=%(infrastructure)d domain(s)",
+            skipped,
+        )
     return created
 
 
@@ -188,6 +253,26 @@ def catalog_channel(session, *, cap: int, thin_threshold: int = 3) -> list[str]:
     return created
 
 
+def prune_noise_candidates(session) -> int:
+    """Delete already-staged PENDING candidates the noise filters now reject (commerce /
+    social / infrastructure). Discovery filtering is forward-only, so a candidate staged
+    before a filter existed (e.g. fonts.googleapis.com/bsky.app before 2026-07-10) lingers
+    in the list; this self-cleans it on the next discovery pass. Only ``status='candidate'``
+    rows are removed — a promoted source or a REMEMBERED dismissal is never touched."""
+    from src.catalog.normalize import is_social
+    from src.database.models import SourceCandidate
+
+    removed = 0
+    for r in session.query(SourceCandidate).filter(SourceCandidate.status == "candidate").all():
+        dom = (r.domain or "").lower()
+        if is_commerce_domain(dom) or is_social(dom) or is_infrastructure_domain(dom):
+            session.delete(r)
+            removed += 1
+    if removed:
+        session.flush()
+    return removed
+
+
 def run_discovery(session, *, per_run: int = 10) -> dict:
     """Run the offline channels under the operator's budget. Returns the report
     that goes into the scheduler run log (the visible record of what happened)."""
@@ -203,6 +288,7 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
     # must never be broken by this side feature.
     try:
         with session.begin_nested():
+            pruned = prune_noise_candidates(session)  # self-clean earlier noise
             half = max(1, per_run // 2)
             cited = citation_channel(session, cap=half)
             remaining = per_run - len(cited)
@@ -218,6 +304,7 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
         "enabled": True,
         "budget": per_run,
         "created": len(cited) + len(catalogd),
+        "pruned_noise": pruned,
         "citation": cited,
         "catalog": catalogd,
     }
