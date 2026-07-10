@@ -87,6 +87,7 @@ def update_settings(body: SettingsUpdate) -> dict:
 @router.post("/backup/encrypted")
 def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
     """Download a passphrase-encrypted snapshot of the corpus (AES-256-GCM + scrypt)."""
+    from src.backup.sqlite_backup import BackupError
     from src.safety import make_encrypted_backup
     from src.safety.crypto import EncryptionError
 
@@ -94,7 +95,10 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
         raise HTTPException(status_code=400, detail="a passphrase is required")
     try:
         blob = make_encrypted_backup(body.passphrase)
-    except EncryptionError as exc:
+    except (EncryptionError, BackupError) as exc:
+        # BackupError includes the encrypted-store refusal (an encrypted corpus
+        # must use the streaming encrypted backup, not this decrypt-to-plaintext
+        # path) — surface it as a clean 400, never an ungraceful 500.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return StreamingResponse(
         io.BytesIO(blob),
