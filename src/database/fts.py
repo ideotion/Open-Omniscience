@@ -244,19 +244,105 @@ _FTS_DDL = [
 ]
 
 
-def ensure_fts(engine: Engine) -> None:
-    """Create the FTS5 virtual table + sync triggers and (re)build the index.
+def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
+    """Create the FTS5 virtual table + sync triggers; (re)build the index ONLY when needed.
+
+    THE UNLOCK-AT-SCALE FIX (P0.4). This runs from ``init_db`` on EVERY unlock. The old
+    code unconditionally ran ``INSERT INTO article_fts(article_fts) VALUES ('rebuild')``,
+    which for an external-content FTS5 table DELETES the whole index and re-reads every
+    article's ``title`` + ``content`` from the base table through the SQLCipher codec — a
+    corpus-scaled cost that RECURRED on every boot (measured 981 s → 1,645 s on the field's
+    130 GB corpus; an index build would be one-time, this recurred). But the index is kept
+    current INCREMENTALLY by the ``article_fts_ai/ad/au`` triggers, so once populated it
+    never needs a full rebuild on a normal boot.
+
+    ``rebuild`` decides the rebuild, never the DDL (the table + triggers are always ensured):
+      * ``"auto"`` (default) — rebuild only when it is genuinely needed:
+        - the FTS table was just created here while the store has articles (a schema
+          upgrade: the triggers never fired for rows inserted before the table existed), or
+        - the table exists but is EMPTY while articles exist (a past rebuild that never
+          completed). Steady-state boots (table present + populated) SKIP the rebuild.
+      * ``"always"`` — force a full rebuild (the explicit re-index / index-repair path).
+      * ``"never"`` — ensure only the DDL, never rebuild.
+
+    Returns the action taken: ``"rebuilt"`` | ``"skipped"`` | ``"skipped-non-sqlite"``.
+
+    SCOPE OF THE BOOT SELF-HEAL (measured, deliberate): the boot path self-heals only a
+    fully-EMPTY index (docsize == 0 while articles exist) — an O(1) probe. It does NOT try to
+    detect a PARTIAL index (some rows indexed, some not) or a CORRUPT one, because the only
+    way to detect partialness is to compare the indexed-row count against the article count,
+    and ``count(*) FROM articles`` was measured at 74 s cold on a 2.7 GB encrypted corpus (a
+    codec-heavy scan) — reintroducing the very corpus-scaled boot cost this fix removes. A
+    partial/corrupt index is UNREACHABLE via normal operation anyway (ingest is an atomic
+    INSERT + trigger; ``'rebuild'`` is atomic; restore runs a full rebuild in ``verify_copy``;
+    re-index never touches article content) — it can arise only from external file corruption
+    (e.g. a torn filesystem-copy backup). Those are the ``fts_status`` (D4) diagnostic's job:
+    it reports a damaged/incomplete index and the explicit re-index job heals it
+    (``rebuild="always"``).
 
     No-op for non-SQLite engines (PostgreSQL would use its own tsvector path).
     Safe to call repeatedly; called from ``init_db``.
     """
     if engine.dialect.name != "sqlite":
-        return
+        return "skipped-non-sqlite"
+    if rebuild not in ("auto", "always", "never"):
+        raise ValueError(f"rebuild must be one of auto|always|never, got {rebuild!r}")
     with engine.begin() as conn:
+        # Was the FTS table ALREADY present before this (idempotent) create? A table that
+        # already existed is kept in sync by the triggers; a table we create here has never
+        # seen the trigger fire for pre-existing rows.
+        existed = (
+            conn.execute(
+                text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='article_fts'")
+            ).fetchone()
+            is not None
+        )
         for ddl in _FTS_DDL:
             conn.execute(text(ddl))
-        # Rebuild from base table so pre-existing rows are indexed.
-        conn.execute(text("INSERT INTO article_fts(article_fts) VALUES ('rebuild')"))
+        action = _decide_fts_rebuild(conn, rebuild, existed)
+        if action == "rebuilt":
+            conn.execute(text("INSERT INTO article_fts(article_fts) VALUES ('rebuild')"))
+    return action
+
+
+def _decide_fts_rebuild(conn, rebuild: str, existed_before: bool) -> str:
+    """Decide whether ``ensure_fts`` should run the corpus-scaled ``'rebuild'``.
+
+    All probes here are CHEAP (``LIMIT 1`` / a shadow-table lookup) — none scans the corpus
+    or reads article content through the codec, so the decision itself is fast even at 5 TB.
+
+    THE EXTERNAL-CONTENT GOTCHA: ``SELECT rowid FROM article_fts`` reads the *content* table
+    (``articles``), NOT the index, so it can NEVER tell "is the index populated?" — it
+    returns rows even after ``'delete-all'`` empties the index (verified). The reliable,
+    term-independent index-population probe is the FTS5 ``article_fts_docsize`` shadow table
+    (one row per indexed document; 0 rows == empty index, verified)."""
+    if rebuild == "always":
+        return "rebuilt"
+    if rebuild == "never":
+        return "skipped"
+    # auto:
+    if not existed_before:
+        # Freshly created: index any pre-existing articles the triggers never saw. A no-op
+        # when ``articles`` is empty (fresh install / a test that creates FTS then inserts).
+        return "rebuilt"
+    # Table already existed -> the triggers have kept it current. Only guard the
+    # present-but-EMPTY-while-articles-exist case (a rare interrupted past rebuild): search
+    # would silently return nothing until a manual re-index, so self-heal it.
+    articles_present = (
+        conn.execute(text("SELECT 1 FROM articles LIMIT 1")).fetchone() is not None
+    )
+    if not articles_present:
+        return "skipped"
+    try:
+        index_has_docs = (
+            conn.execute(text("SELECT 1 FROM article_fts_docsize LIMIT 1")).fetchone() is not None
+        )
+    except Exception:  # noqa: BLE001 - a columnsize=0 build has no docsize shadow
+        # Cannot cheaply prove the index is empty -> trust the triggers and SKIP rather than
+        # risk a corpus-scaled rebuild on a false negative (a false skip only costs a manual
+        # re-index; a false rebuild reintroduces the P0.4 slow boot).
+        return "skipped"
+    return "rebuilt" if not index_has_docs else "skipped"
 
 
 def optimize_after_bulk(session: Session) -> dict:

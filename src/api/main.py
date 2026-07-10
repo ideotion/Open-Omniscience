@@ -249,9 +249,15 @@ async def lifespan(app: FastAPI):
     # 4-day field run died silently of OOM with no in-app trace; this is the flight
     # recorder that makes the next such death self-explaining).
     try:
-        from src.monitoring.forensics import record_session_start
+        from src.monitoring.forensics import data_dir_persistence, record_session_start
 
         record_session_start()
+        # A11: honestly warn ONCE at boot if the corpus is on a provably-volatile root
+        # (RAM-backed / Qubes disposable), pointing at the opt-in persistent OO_DATA_DIR.
+        # Never "stop using disposable VMs" — only how to keep the corpus.
+        _persist = data_dir_persistence()
+        if _persist.get("at_risk") is True:
+            logger.warning("data-dir persistence: %s", _persist.get("note"))
     except Exception:  # noqa: BLE001 - forensics must never block startup
         logger.warning("could not stamp the session sentinel", exc_info=True)
 

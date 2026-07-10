@@ -33,8 +33,10 @@ and progress via ``progress_cb``. The pausable task-manager job + endpoints wrap
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -361,6 +363,193 @@ def restore_folder_backup(
 
 
 # --------------------------------------------------------------------------- #
+# Verify (A6): does the folder backup still match its manifest?
+# --------------------------------------------------------------------------- #
+VERIFY_SCHEMA = "oo-folder-verify-1"
+_PROBLEM_CAP = 200
+# Ollama content-addressed blob names embed their own sha256: `sha256-<64 hex>` on disk
+# (`sha256:<hex>` in some manifests). That is the ONE stored integrity value in a folder
+# backup, so a model blob's bytes are verified against its name.
+_BLOB_SHA_RE = re.compile(r"^sha256[-:]([0-9a-fA-F]{64})$")
+
+
+def _safe_member_path(root: Path, category: str, rel: str) -> Path | None:
+    """Resolve ``<root>/<category>/<rel>``, refusing any path that escapes ``<root>/<category>``.
+
+    A manifest is untrusted input (a folder backup on an external drive can be edited): every
+    name->path field is traversal-guarded before we stat/hash it (the ledger's binding rule)."""
+    if category not in _CATEGORIES or not rel:
+        return None
+    base = root / category
+    candidate = base / rel
+    try:
+        base_r = base.resolve()
+        cand_r = candidate.resolve()
+    except OSError:
+        return None
+    if cand_r != base_r and base_r not in cand_r.parents:
+        return None
+    return candidate
+
+
+def _blob_sha256_from_name(rel: str) -> str | None:
+    """The embedded sha256 hex of a content-addressed Ollama blob, else None (a model
+    manifest or an unexpected name has no stored checksum)."""
+    m = _BLOB_SHA_RE.match(rel.rsplit("/", 1)[-1])
+    return m.group(1).lower() if m else None
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(_COPY_BUF), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def verify_folder_backup(
+    src_root: str | os.PathLike,
+    *,
+    verify_model_checksums: bool = True,
+    progress_cb: Callable[[dict], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict:
+    """Verify a folder backup against its manifest — the standalone integrity check the
+    volumes backup already has (``/volumes/verify``) but the folder backup lacked.
+
+    HONEST BY DESIGN, matching what a folder backup actually stores:
+      * EVERY manifest-listed file must be PRESENT with the exact SIZE recorded.
+      * The content-addressed Ollama model blobs (``blobs/sha256-<hex>``) are ALSO
+        content-verified: their bytes are streamed-hashed and compared to the sha256 in
+        their name (bounded RAM). This is the only stored checksum in a folder backup.
+      * Wikipedia dumps + OSM extracts carry NO stored checksum (immutable public
+        re-downloads; re-hashing tens of GB every run defeats the point), so they are
+        SIZE-verified only — stated per file (``size_only``) and in the caveat, never
+        dressed up as a content check.
+
+    ``should_stop`` cancels between files (a stopped run reports ``ok=False`` — an
+    incomplete verify can never claim success); ``progress_cb`` gets a live tally.
+    Counts only, no score. Never raises — a broken manifest is an honest verdict."""
+    root = Path(src_root)
+    out: dict = {
+        "schema": VERIFY_SCHEMA,
+        "dest": str(root),
+        "manifest_found": False,
+        "ok": False,
+    }
+    try:
+        manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        out["reason"] = (
+            "no finalized manifest at this path — an interrupted/incomplete folder backup "
+            "never writes one, so there is nothing to verify against."
+        )
+        return out
+    out["manifest_found"] = True
+    out["backup_created_at"] = manifest.get("created_at") if isinstance(manifest, dict) else None
+
+    # The manifest is UNTRUSTED external-drive input: a damaged/foreign structure must yield an
+    # honest ok=False verdict, NEVER a crash (skeptic finding) and NEVER a false ok=True (a
+    # non-list category or a non-dict entry silently dropped would leave files_total=0 = a
+    # fake "all clear"). So malformed structure is COUNTED, not ignored.
+    cats = manifest.get("categories") if isinstance(manifest, dict) else None
+    if not isinstance(cats, dict):
+        out["reason"] = (
+            "the manifest has no valid 'categories' object — it is not a folder-backup "
+            "manifest, or it is damaged; nothing could be verified."
+        )
+        return out
+    entries: list[tuple[str, dict]] = []
+    malformed = 0
+    for c, lst in cats.items():
+        if not isinstance(lst, list):
+            malformed += 1  # a category whose value is not a file list = a damaged manifest
+            continue
+        for e in lst:
+            if isinstance(e, dict):
+                entries.append((str(c), e))
+            else:
+                malformed += 1
+    total = len(entries)
+    summary = {
+        "ok": 0,
+        "size_only": 0,
+        "missing": 0,
+        "size_mismatch": 0,
+        "checksum_mismatch": 0,
+        "traversal_refused": 0,
+    }
+    problems: list[dict] = []
+    checked = checksummed = 0
+    stopped = False
+    for category, e in entries:
+        if should_stop is not None and should_stop():
+            stopped = True
+            break
+        rel = str(e.get("rel", ""))
+        try:
+            size = int(e.get("size", -1))
+        except (TypeError, ValueError):
+            size = -1
+        path = _safe_member_path(root, category, rel)
+        status: str
+        detail: dict = {}
+        if path is None:
+            status = "traversal_refused"
+        elif not path.is_file():
+            status = "missing"
+        elif (actual := path.stat().st_size) != size:
+            status = "size_mismatch"
+            detail = {"expected_size": size, "actual_size": actual}
+        else:
+            blob_hex = _blob_sha256_from_name(rel) if category == "models" else None
+            if blob_hex is not None and verify_model_checksums:
+                checksummed += 1
+                status = "ok" if _sha256_file(path) == blob_hex else "checksum_mismatch"
+            else:
+                status = "size_only"  # present + right size; no stored checksum for this file
+        summary[status] += 1
+        checked += 1
+        if status not in ("ok", "size_only") and len(problems) < _PROBLEM_CAP:
+            problems.append({"category": category, "rel": rel, "status": status, **detail})
+        if progress_cb is not None:
+            progress_cb({"files_total": total, "files_done": checked, "checksummed": checksummed})
+
+    summary["malformed_entries"] = malformed
+    failures = (
+        summary["missing"]
+        + summary["size_mismatch"]
+        + summary["checksum_mismatch"]
+        + summary["traversal_refused"]
+        + malformed  # a structurally-damaged manifest is a failure, never a silent "all clear"
+    )
+    out.update(
+        {
+            "ok": (not stopped) and failures == 0,
+            "stopped": stopped,
+            "files_total": total,
+            "files_checked": checked,
+            "files_checksummed": checksummed,
+            "summary": summary,
+            "problems": problems,
+            "problems_truncated": max(0, failures - len(problems)),
+            "method": (
+                "Every manifest-listed file must be present with the exact recorded size; "
+                "content-addressed Ollama model blobs (blobs/sha256-<hex>) are additionally "
+                "hashed and matched to the sha256 in their name. Manifest paths are "
+                "traversal-guarded before any stat/hash. Counts only, no score."
+            ),
+            "caveat": (
+                "Wikipedia dumps and OSM extracts carry no stored checksum (immutable public "
+                "re-downloads), so they are size-verified only (size_only) — a size match is "
+                "NOT a proof of content. Model blobs ARE content-verified."
+            ),
+        }
+    )
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # The pausable job (one giant copy at a time, visible in the task manager)
 # --------------------------------------------------------------------------- #
 import threading  # noqa: E402  (kept local to the job section)
@@ -378,13 +567,14 @@ class FolderBackupManager:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._state = "idle"  # idle|running|paused|done|error|cancelled
-        self._mode = "backup"  # backup|restore
+        self._mode = "backup"  # backup|restore|verify
         self._dest: str | None = None
         self._categories: list[str] = []
         self._progress: dict = {}
         self._error: str | None = None
         self._cancelled = False
         self._targets: dict[str, Path] | None = None
+        self._verify: dict | None = None
 
     def _alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -428,10 +618,13 @@ class FolderBackupManager:
                         f"Not enough free space at {destp}: needs {human_bytes(need)}, "
                         f"only {human_bytes(free)} free."
                     )
-            else:
+            elif mode in ("restore", "verify"):
                 destp = Path(dest)
                 if not destp.is_dir():
-                    raise ValueError(f"{destp} is not a folder to restore from.")
+                    verb = "verify" if mode == "verify" else "restore from"
+                    raise ValueError(f"{destp} is not a folder to {verb}.")
+            else:
+                raise ValueError(f"unknown folder-backup mode {mode!r}")
             self._stop.clear()
             self._cancelled = False
             self._state = "running"
@@ -441,7 +634,12 @@ class FolderBackupManager:
             self._error = None
             self._progress = {}
             self._targets = _targets
-            target = self._run_backup if mode == "backup" else self._run_restore
+            self._verify = None
+            target = {
+                "backup": self._run_backup,
+                "restore": self._run_restore,
+                "verify": self._run_verify,
+            }[mode]
             self._thread = threading.Thread(
                 target=target, args=(destp, items, cats), daemon=True, name="folder-backup"
             )
@@ -484,6 +682,23 @@ class FolderBackupManager:
                 self._state = "error"
                 self._error = str(exc)
 
+    def _run_verify(self, srcp: Path, _items: list[BackupItem], _cats: list[str]) -> None:
+        try:
+            res = verify_folder_backup(
+                srcp, progress_cb=self._on_prog, should_stop=self._stop.is_set
+            )
+            with self._lock:
+                if res.get("stopped"):
+                    self._state = "cancelled" if self._cancelled else "paused"
+                else:
+                    self._state = "done"
+                self._verify = res
+                self._progress = {**self._progress, "verify": res}
+        except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+            with self._lock:
+                self._state = "error"
+                self._error = str(exc)
+
     def pause(self) -> None:
         self._stop.set()  # the worker stops between/within files; state -> paused
 
@@ -503,7 +718,7 @@ class FolderBackupManager:
 
     def status(self) -> dict:
         with self._lock:
-            return {
+            out = {
                 "state": self._state,
                 "mode": self._mode,
                 "dest": self._dest,
@@ -512,6 +727,9 @@ class FolderBackupManager:
                 "error": self._error,
                 "running": self._alive(),
             }
+            if self._verify is not None:
+                out["verify"] = self._verify  # the last verify verdict (read-only)
+            return out
 
 
 _FOLDER_MANAGER: FolderBackupManager | None = None

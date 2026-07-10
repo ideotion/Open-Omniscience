@@ -77,7 +77,7 @@ The deep detail (measured numbers, acceptance criteria, session territories) liv
 | **P0.1** | Backup at 100 GB+ — the `oo-volumes-2` streaming engine (no plaintext corpus snapshot, no zip, bounded RAM incl. banded parity, incremental changed-volume re-emit, resumable, verifiable) | 🔧 engine shipped — **awaiting the maintainer's live-corpus validation** (the v0.2.0 gate item) |
 | **P0.2** | Restore/import at scale — streams member-by-member, disk-preflights staging, hands to the unchanged additive merge | 🔧 engine half shipped — full-scale proof gated on an operator run |
 | **P0.3** | Crash root-cause — OOM in a 21.6-h crawl pass (**RSS 10.6 GB > VM RAM**); fix = pass recycling + an RSS memory guard + inter-pass WAL checkpoints | 🔧 collector fix shipped — awaiting live-run validation |
-| **P0.4** | **Unlock at scale (ESCALATED, still the standing blocker)** — 1,645 s at scale; instrumentation merged (#596/#599) but the phase is not yet named/fixed | 🚧 unresolved |
+| **P0.4** | **Unlock at scale** — ROOT-CAUSED + fixed (Session A, `claude/a-scale-backend-p04-9faxvb`): `init_db`→`ensure_fts` ran the FTS5 `'rebuild'` (a corpus-scaled codec re-read) UNCONDITIONALLY on EVERY boot; the sync triggers already maintain the index, so it now rebuilds only when needed. Measured on a 112k/2.7 GB **encrypted** synthetic corpus: 28.6 s → **0.002 s** per boot; G2 warm unlock **0.012 s** (acceptance <2 s). | 🔧 **fixed on synthetic — awaiting the maintainer's live-corpus validation** (the standing v0.2 gate item; never claim closed on synthetic) |
 | **P0.5** | Scale test harness (GAMMA: synthetic-corpus generator + benchmark runner + CI smoke tier) | ✅ shipped (#601) |
 
 ### P1 — snappiness at scale (adoption-critical)

@@ -295,12 +295,219 @@ def previous_session_report() -> dict[str, Any]:
     return out
 
 
+def _ollama_store_bytes() -> tuple[str | None, int, int]:
+    """(store path, bytes, files) of the Ollama model store — which lives OUTSIDE data_dir
+    (~/.ollama/models or $OLLAMA_MODELS / the systemd store), so data_dir_inventory misses
+    it entirely. Best-effort: a protected/unreadable store degrades to whatever _tree_size
+    could stat (never a crash), and a missing store is (path, 0, 0)."""
+    try:
+        from src.backup.ollama_models import default_store
+
+        store = default_store()
+    except Exception:  # noqa: BLE001 - the store path helper is optional
+        return None, 0, 0
+    if store is None or not store.is_dir():
+        return (str(store) if store else None), 0, 0
+    nbytes, files = _tree_size(store)
+    return str(store), nbytes, files
+
+
+def storage_footprint() -> dict[str, Any]:
+    """The COMPLETE on-disk footprint of the app across ALL stores, ITEMIZED per component
+    (maintainer field 2026-07-10, A12b): the reported "database size" must cover EVERYTHING,
+    not just data_dir. data_dir_inventory answers "what is inside the data folder", but the
+    Ollama model store lives OUTSIDE data_dir, so its bytes were absent from any single total.
+
+    Components (each an explicit line, bytes only, symlinks never followed, contents never
+    read): the database triple (db / -wal / -shm), wiki_dumps, osm_regions, backup/restore
+    staging (orphaned = a crashed run), any other data-dir contents, AND the external Ollama
+    model store. ``grand_total_bytes`` sums them all. Best-effort per component; no score."""
+    inv = data_dir_inventory()
+    totals = inv.get("totals", {})
+    entries = {str(e.get("name")): int(e.get("bytes", 0)) for e in inv.get("entries", [])}
+    db_name = _DB_NAME
+
+    def _dir_bytes(name: str) -> int:
+        return int(entries.get(name, 0))
+
+    data_dir_bytes = int(totals.get("total_bytes", 0))
+    other = int(totals.get("other_bytes", 0))
+    # wiki_dumps / osm_regions are top-level dirs counted inside other_bytes; itemize them
+    # out so the "other" line is the genuine remainder.
+    wiki = _dir_bytes("wiki_dumps")
+    osm = _dir_bytes("osm_regions")
+    staging = int(totals.get("orphaned_staging_bytes", 0))
+    other_remainder = max(0, other - wiki - osm)
+
+    components: list[dict[str, Any]] = [
+        {"name": "database", "kind": "db", "bytes": int(totals.get("db_bytes", 0)),
+         "detail": db_name, "outside_data_dir": False},
+        {"name": "database WAL", "kind": "wal", "bytes": int(totals.get("wal_bytes", 0)),
+         "detail": f"{db_name}-wal", "outside_data_dir": False},
+        {"name": "database SHM", "kind": "shm", "bytes": int(totals.get("shm_bytes", 0)),
+         "detail": f"{db_name}-shm", "outside_data_dir": False},
+        {"name": "wiki dumps", "kind": "wiki_dumps", "bytes": wiki, "outside_data_dir": False},
+        {"name": "OSM regions", "kind": "osm_regions", "bytes": osm, "outside_data_dir": False},
+        {"name": "backup/restore staging", "kind": "staging", "bytes": staging,
+         "detail": "orphaned = a crashed backup/restore left it (see suspect_staging)",
+         "outside_data_dir": False},
+        {"name": "other (data folder)", "kind": "other", "bytes": other_remainder,
+         "outside_data_dir": False},
+    ]
+    ollama_path, ollama_bytes, ollama_files = _ollama_store_bytes()
+    components.append(
+        {"name": "Ollama model store", "kind": "ollama_models", "bytes": ollama_bytes,
+         "files": ollama_files, "detail": ollama_path, "outside_data_dir": True}
+    )
+    grand_total = data_dir_bytes + ollama_bytes
+    components.sort(key=lambda c: -int(c["bytes"]))
+    return {
+        "generated_at": _now(),
+        "data_dir": str(data_dir()),
+        "ollama_store": ollama_path,
+        "components": components,
+        "totals": {
+            "data_dir_bytes": data_dir_bytes,
+            "ollama_models_bytes": ollama_bytes,
+            "grand_total_bytes": grand_total,
+        },
+        "method": (
+            "Recursive on-disk sizes of every app store, itemized per component. The database "
+            "triple + wiki_dumps + osm_regions + staging live in the data folder; the Ollama "
+            "model store lives OUTSIDE it (so it was missing from any data-dir-only total). "
+            "grand_total_bytes is the true on-disk footprint. Symlinks never followed, file "
+            "contents never read, counts/bytes only — no score. Best-effort per component."
+        ),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Data-dir persistence: is the corpus on a volatile (disposable) filesystem?    #
+# --------------------------------------------------------------------------- #
+_VOLATILE_FS = frozenset({"tmpfs", "ramfs"})  # RAM-backed: definitely cleared on restart
+
+
+def _filesystem_type(path: Path) -> str | None:
+    """The filesystem type backing ``path`` via Linux ``/proc/mounts`` (longest mount-point
+    prefix wins). ``None`` off Linux / when /proc is unavailable — honest unknown, never a
+    guess. Best-effort, cheap (a small text read)."""
+    try:
+        target = str(path.resolve())
+    except OSError:
+        target = str(path)
+    best_len, best_fs = -1, None
+    try:
+        with open("/proc/mounts", encoding="utf-8") as f:
+            for line in f:
+                cols = line.split()
+                if len(cols) < 3:
+                    continue
+                mp = cols[1].replace("\\040", " ")  # octal-escaped space
+                fstype = cols[2]
+                if target == mp or mp == "/" or target.startswith(mp.rstrip("/") + "/"):
+                    if len(mp) > best_len:
+                        best_len, best_fs = len(mp), fstype
+    except OSError:
+        return None
+    return best_fs
+
+
+def _qubes_disposable() -> bool | None:
+    """True/False if we can PROVE Qubes disposability, else None (unknown — never a guess).
+
+    Reads the qubesdb persistence key via ``qubesdb-read`` (``none`` == disposable). Absent
+    on non-Qubes / when the tool is not present -> None. Never nags an ordinary AppVM (whose
+    $HOME IS persistent) on a false positive."""
+    if not Path("/etc/qubes-release").exists():
+        return None
+    import shutil as _sh
+    import subprocess  # noqa: S404 - reading a local qubesdb key, no shell, no user input
+
+    exe = _sh.which("qubesdb-read")
+    if not exe:
+        return None
+    try:
+        out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [exe, "/qubes-vm-persistence"], capture_output=True, text=True, timeout=3
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip() == "none"
+
+
+def data_dir_persistence() -> dict[str, Any]:
+    """Honest, best-effort assessment of whether the corpus survives a restart, so the app can
+    NUDGE a user on a likely-EPHEMERAL root toward an opt-in persistent ``OO_DATA_DIR`` (the
+    2026-07-09 field event: a disposable-VM crash vaporized a ~60K-article corpus).
+
+    HONESTY: it signals only what it can PROVE — a RAM-backed (tmpfs) data folder is
+    definitely volatile; a Qubes disposable VM is provable via qubesdb; everything else is
+    ``unknown`` (never a guess). It NEVER says "stop using disposable VMs" — only "here is how
+    to keep your corpus across restarts." When ``OO_DATA_DIR`` is set the user chose the
+    location, so we only remind them to ensure it is persistent."""
+    dd = data_dir()
+    override = os.getenv("OO_DATA_DIR")
+    fstype = _filesystem_type(dd)
+    volatile_fs = (fstype in _VOLATILE_FS) if fstype else None
+    disposable = _qubes_disposable()
+
+    if volatile_fs:
+        at_risk: bool | None = True
+        reason = (
+            f"the data folder is on a {fstype} (RAM-backed) filesystem, which is cleared "
+            "when this machine restarts."
+        )
+    elif disposable:
+        at_risk = True
+        reason = "this is a Qubes disposable VM — its storage is discarded on shutdown."
+    elif override:
+        at_risk = False
+        reason = "OO_DATA_DIR is set to an explicit location (ensure it is a persistent path)."
+    else:
+        at_risk = None
+        reason = "could not prove whether this location survives a restart (unknown)."
+
+    note = None
+    if at_risk is True:
+        note = (
+            f"Your corpus is being written to {dd}, which {reason} To keep it across restarts, "
+            "set OO_DATA_DIR to a persistent path (a bind-mounted folder or an external drive) "
+            "before launching, or copy the encrypted data folder off this machine. Your corpus "
+            "is reconstitutable from the web, but re-scraping is slow — this one-time setup "
+            "avoids that."
+        )
+    return {
+        "data_dir": str(dd),
+        "explicit_override": bool(override),
+        "filesystem": fstype,
+        "volatile_filesystem": volatile_fs,
+        "qubes": Path("/etc/qubes-release").exists(),
+        "qubes_disposable": disposable,
+        "at_risk": at_risk,
+        "reason": reason,
+        "note": note,
+        "how_to_persist": (
+            "Set OO_DATA_DIR=/path/on/a/persistent/or/bind-mounted/volume before launching "
+            "(the installer accepts it too); the corpus, keys and custody log then live there."
+        ),
+        "method": (
+            "tmpfs/ramfs data folder = provably volatile; Qubes disposability read from "
+            "qubesdb; otherwise honest 'unknown'. Local read-only checks; no network, no score."
+        ),
+    }
+
+
 def session_forensics() -> dict[str, Any]:
-    """The one-call diagnostic block: inventory + previous-session verdict +
-    the last unlock timing. Rides the debug bundle / the all-diagnostics zip."""
+    """The one-call diagnostic block: inventory + previous-session verdict + the last unlock
+    timing + the complete storage footprint + the data-dir persistence assessment. Rides the
+    debug bundle / the all-diagnostics zip."""
     cur = _read_state() or {}
     return {
         "inventory": data_dir_inventory(),
+        "storage_footprint": storage_footprint(),
+        "data_dir_persistence": data_dir_persistence(),
         "previous_session": previous_session_report(),
         "last_unlock": cur.get("last_unlock"),
     }

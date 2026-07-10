@@ -20,6 +20,15 @@ UI_PATH="/"; UI_NAME="Console"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"
 
+# Persistent app environment (A11): if the installer recorded settings -- notably an
+# opt-in persistent OO_DATA_DIR pointing at a bind-mounted/external volume so the corpus
+# survives on a disposable/ephemeral VM -- load them so every launch uses that location.
+# The file lives in the install tree (0600, owner-only); a plain KEY='value' env file.
+if [ -f "$DIR/oo.env" ]; then
+    # shellcheck disable=SC1091
+    . "$DIR/oo.env" || true
+fi
+
 PORT="${OO_PORT:-8000}"
 BASE="http://127.0.0.1:${PORT}"
 URL="${BASE}${UI_PATH}"

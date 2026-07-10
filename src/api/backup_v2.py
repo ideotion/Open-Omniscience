@@ -437,6 +437,31 @@ def folder_backup_restore(body: FolderRestoreBody) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/folder/verify")
+def folder_backup_verify(body: FolderRestoreBody) -> dict:
+    """Verify a folder backup at ``src`` against its manifest — the standalone integrity check
+    the volumes backup already has (``/v2/volumes/verify``) but the folder backup lacked.
+
+    Read-only. Every manifest-listed file must be present with the exact recorded size; the
+    content-addressed Ollama model blobs (``blobs/sha256-<hex>``) are additionally content-
+    hashed. Wiki dumps + OSM extracts carry NO stored checksum (immutable public downloads) so
+    they are size-verified only — stated per file. Runs as the (single) folder job, so it
+    surfaces in /api/jobs + /folder/status and is cancellable; the verdict rides
+    ``status()['verify']`` (schema ``oo-folder-verify-1``: ok, files_checked, files_checksummed,
+    summary{ok,size_only,missing,size_mismatch,checksum_mismatch,traversal_refused}, problems).
+    400 on a bad path; 409 if a folder job is already running."""
+    from src.backup.folder_backup import get_folder_manager
+
+    try:
+        return get_folder_manager().start(
+            body.src, _folder_categories(body.categories), mode="verify"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/folder/{action}")
 def folder_backup_action(action: str) -> dict:
     """Pause / resume / cancel the running folder job (routed to the owner)."""
