@@ -9,10 +9,17 @@ real per-table/per-index byte totals over a seeded store (indexes grouped under 
 table); the honest degrade blocks (dbstat not compiled in — the sqlcipher3 build's
 production reality; a deadline abort; a non-SQLite backend) — degrade, NEVER 500; no
 score-shaped keys anywhere; and the endpoint + all-diagnostics wiring.
+
+DBSTAT AVAILABILITY IS PROBED, NOT ASSUMED (macOS lane failure at #606's head SHA):
+SQLITE_ENABLE_DBSTAT_VTAB is a per-BUILD flag — Linux stdlib sqlite3 has it, the macOS
+runner's Python build does NOT (and the sqlcipher3 build never does). The two tests that
+need the full per-table split skip where dbstat is absent; the degrade tests run
+everywhere (on macOS the degrade path is exercised natively — it IS the behavior there).
 """
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
 
 import pytest
@@ -24,9 +31,27 @@ from src.monitoring.storage import storage_composition
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
 
+def _dbstat_available() -> bool:
+    """Does THIS interpreter's SQLite build compile in the dbstat vtab? (SQLAlchemy's
+    sqlite dialect rides the same stdlib sqlite3 library, so this probe matches the
+    engine the tests use.)"""
+    try:
+        con = sqlite3.connect(":memory:")
+        try:
+            con.execute("SELECT COUNT(*) FROM dbstat").fetchone()
+            return True
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001 - any failure = the build lacks the vtab
+        return False
+
+
+_HAS_DBSTAT = _dbstat_available()
+
+
 @pytest.fixture()
 def db(tmp_path):
-    # FILE-backed (dbstat pages are real on-disk pages; stdlib sqlite3 compiles dbstat in).
+    # FILE-backed (dbstat pages are real on-disk pages).
     engine = create_engine(
         f"sqlite:///{tmp_path / 'store.db'}",
         future=True,
@@ -63,6 +88,10 @@ def _walk_keys(obj):
             yield from _walk_keys(v)
 
 
+@pytest.mark.skipif(
+    not _HAS_DBSTAT,
+    reason="dbstat not compiled into this SQLite build (e.g. the macOS runner's Python)",
+)
 def test_reports_real_per_table_and_per_index_bytes(db):
     out = storage_composition(db)
     assert out["available"] is True
@@ -144,6 +173,10 @@ def test_non_sqlite_backend_reports_unsupported():
     assert out["dialect"] == "postgresql"
 
 
+@pytest.mark.skipif(
+    not _HAS_DBSTAT,
+    reason="dbstat not compiled into this SQLite build (e.g. the macOS runner's Python)",
+)
 def test_endpoint_serves_and_downloads(tmp_path):
     from fastapi.testclient import TestClient
 

@@ -2923,12 +2923,15 @@ storage-composition diagnostic; the /status noprobe cache key and pollJobStatus 
 riders. P1.6 roadmap row corrected (the corpus-epoch mechanism WAS already shipped).
 
 REUSABLE LESSONS / EMPIRICAL FACTS:
-- **The bundled sqlcipher3 build ships WITHOUT SQLITE_ENABLE_DBSTAT_VTAB** (probed
-  2026-07-09: `no such table: dbstat` on a sqlcipher3 connection, while the stdlib
-  sqlite3 has it). Any dbstat-based introspection therefore DEGRADES on the encrypted
-  live store — design such diagnostics with an honest `{available:false, reason}` block
-  plus the PRAGMA-level facts (page_size/page_count/freelist_count work everywhere), and
-  test the degrade path as the production path.
+- **dbstat is a PER-BUILD SQLite capability — probe it, never assume it** (probed
+  2026-07-09: `no such table: dbstat` on a sqlcipher3 connection; Linux stdlib sqlite3
+  has it; the macOS CI runner's Python build does NOT — the observation lane caught two
+  `available is True` assertions red at #606's head SHA, fixed forward with a runtime
+  `_dbstat_available()` skip-probe). Any dbstat-based introspection DEGRADES on the
+  encrypted live store and on some plaintext platforms — design it with an honest
+  `{available:false, reason}` block plus the PRAGMA-level facts
+  (page_size/page_count/freelist_count work everywhere), and test the degrade path as a
+  production path.
 - **Never key a cache on `id()` of a per-request object.** CPython recycles addresses:
   within a TTL window a later request's Session can land on the SAME `id(db)` and hit an
   entry computed for a different engine (wrong corpus) or a pre-write snapshot. A
