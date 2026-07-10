@@ -489,6 +489,7 @@ def read_volume_backup(
     staging_root: Path | None = None,
     *,
     corpus_passphrase: str | None = None,
+    include_merge_budget: bool = True,
 ) -> StagedArtifact:
     """Verify + (parity-)recover + reassemble a volume-set backup from the server-side
     directory ``src_dir``, then stage it like any oo-backup-2 artifact. Streams the
@@ -506,7 +507,11 @@ def read_volume_backup(
 
     if load_manifest(src_dir).get("kind") == STREAM_KIND:
         return read_stream_backup(
-            src_dir, passphrase, staging_root, corpus_passphrase=corpus_passphrase
+            src_dir,
+            passphrase,
+            staging_root,
+            corpus_passphrase=corpus_passphrase,
+            include_merge_budget=include_merge_budget,
         )
 
     staging = (staging_root or data_dir()) / f".restore-{secrets.token_hex(8)}"

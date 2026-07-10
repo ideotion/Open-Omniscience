@@ -600,14 +600,18 @@ def restore_bench(
 
     out: dict[str, Any] = {
         "method": "src.backup.artifact.read_volume_backup (verify + parity-recover + "
-        "streamed reassembly + stage); wall is end-to-end, peak RSS sampled"
+        "streamed reassembly + stage; STAGE-ONLY, so the disk preflight excludes "
+        "the merge's working-copy budget); wall is end-to-end, peak RSS sampled"
     }
     ru_before = _ru_maxrss_mb()
     staged = None
     with sample_peak_rss() as peak:
         t0 = time.perf_counter()
         staged = read_volume_backup(
-            Path(src_dir), passphrase, Path(staging_root) if staging_root else None
+            Path(src_dir),
+            passphrase,
+            Path(staging_root) if staging_root else None,
+            include_merge_budget=False,  # the bench stages + cleans, never merges
         )
         out["wall_s"] = round(time.perf_counter() - t0, 3)
     out["peak_rss_mb"] = round(peak.peak_bytes / 1024 / 1024, 1)

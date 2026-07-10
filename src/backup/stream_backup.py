@@ -1151,6 +1151,7 @@ def read_stream_backup(
     staging_root: Path | None = None,
     *,
     corpus_passphrase: str | None = None,
+    include_merge_budget: bool = True,
 ) -> "StagedArtifact":
     """Verify + (parity-)recover + reassemble an oo-volumes-2 set into a staged
     artifact the additive merge engine consumes. Streams member by member
@@ -1184,7 +1185,7 @@ def read_stream_backup(
             )
 
     root = staging_root or data_dir()
-    _preflight_staging(root, m)
+    _preflight_staging(root, m, include_merge_budget=include_merge_budget)
     staging = root / f".restore-{secrets.token_hex(8)}"
     staging.mkdir(parents=True, exist_ok=False)
     with active_staging(staging):
@@ -1224,9 +1225,14 @@ def read_stream_backup(
             raise
 
 
-def _preflight_staging(root: Path, m: dict[str, Any]) -> None:
+def _preflight_staging(
+    root: Path, m: dict[str, Any], *, include_merge_budget: bool = True
+) -> None:
     """Staging needs: every member's plaintext + a plaintext conversion of an
-    encrypted corpus/custody member + the merge's working copy of the live DB."""
+    encrypted corpus/custody member + (in the app's restore flow, where a merge
+    follows) the merge's working copy of the live DB. A caller that only STAGES
+    (the benchmark's round-trip probe) passes ``include_merge_budget=False`` —
+    each step preflights what it will actually do, never less."""
     from src.backup.artifact import preflight_free_space
 
     members = m.get("members") or []
@@ -1235,13 +1241,14 @@ def _preflight_staging(root: Path, m: dict[str, Any]) -> None:
         corpus = next((mm for mm in members if mm.get("role") == "corpus"), None)
         if corpus:
             total += int(corpus.get("plaintext_bytes", 0))
-    try:
-        from src.backup.sqlite_backup import live_db_path
+    if include_merge_budget:
+        try:
+            from src.backup.sqlite_backup import live_db_path
 
-        p = live_db_path()
-        total += p.stat().st_size if p.exists() else 0
-    except Exception:  # noqa: BLE001 - no live store (bench/offline): staging-only budget
-        pass
+            p = live_db_path()
+            total += p.stat().st_size if p.exists() else 0
+        except Exception:  # noqa: BLE001 - no live store (fresh install): staging-only
+            pass
     preflight_free_space(root, total + 64 * 1024 * 1024, what="restore staging")
 
 
