@@ -705,6 +705,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   stay until their sessions complete). Sessions branch as `claude/a-*` / `claude/b-*`; shared
   append-targets (this ledger, shipped.csv, ROADMAP, external_artifacts.yml, repo-invariants)
   merge ADDITIVELY — never revert the sibling session's lines (the #548 precedent).
+  **ADDENDUM (maintainer-directed 2026-07-10, same day — two new items routed into the briefs):**
+  (i) **"Database size" must mean EVERYTHING** — the reported storage footprint covers db +
+  wal + wiki dumps + OSM regions + staging + the OLLAMA MODEL STORE (which lives OUTSIDE
+  data_dir — reuse `ollama_models.default_store()`/`store_status()`, honest unavailable state),
+  itemized per component (private encrypted corpus vs re-downloadable public blobs stated),
+  never just the SQLite file. Backend aggregation = Session A (brief A12b); display = Session B
+  (brief B14). (ii) **LLM language detection for unknown-language articles — OPT-IN, CLEARLY
+  LLM-DEDUCED** (brief B15): local-Ollama detection ONLY for the residue py3langid leaves
+  unknown; NEVER overwrites the asserted `Article.language` nor a detector-filled
+  `detected_language`; provenance per result (model + prompt version); a visible abortable job,
+  never the scrape hot path; the result surfaces as a THIRD, labelled provenance class
+  ("AI-derived · unreliable" convention); a garbage/unvalidatable model answer stores NOTHING.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL

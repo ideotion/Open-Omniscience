@@ -166,6 +166,7 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **One recurrence model** (RULE + dated INSTANCES + `since:` origin year) · **month-span events** ("Dry January") · **full iCal import** · **saved-filter "smart calendars"** · **catalog depth flood** (elections/summits/central banks/courts/UN days) · **agenda i18n** · **temporal-map player speeds** 0.05×–16×. 🎨
 
 ### LLM / AI
+- **LLM language detection for unknown-language articles** (maintainer-directed 2026-07-10) — opt-in local-Ollama detection for the residue the offline detector leaves unknown; a third, clearly-labelled LLM-deduced provenance class (never overwrites asserted/detector channels); visible job, honest refusal on garbage answers. → Session B (brief B15). 🚧 delegated
 - **LLM-assisted perception** — who/where/when extraction (dates/places/orgs, no "what") as confirmable candidates in the AI layer, distinct toggleable layers. 🎨
 - **Eval-first harness** — difficulty-tiered, phenomenon-tagged, ×12 langs; precision/recall/hallucination per stratum; the gate for every perception/sentiment change. 🎨
 - **Multilingual sentiment** to replace English-only VADER (XLM-R ONNX, per-language gated) — *or* pivot to a subjectivity/loaded-language signal feeding the manipulation cards. ⬜ open
@@ -211,6 +212,7 @@ The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMEN
   auto-watch all 12 UI editions · Wikipedia tab → Settings · agenda ↔ wiki linking. 🎨
 
 ### UI / UX & onboarding
+- **"Database size" shows EVERYTHING** (maintainer-directed 2026-07-10) — the storage footprint everywhere it is reported covers db + wal + wiki dumps + OSM maps + staging + the Ollama model store (outside `data_dir`), itemized per component with the private-corpus vs re-downloadable distinction. Backend → Session A (A12b); display → Session B (B14). 🚧 delegated
 - **Home → dashboard / helicopter view — remaining** (top ooChart graphs, a pausable/a11y synthesized-Leads carousel, dynamic commodity-when-trending sections, most-recent-by-tag). 🚧 partial
 - **"Latest in your corpus"** recency lens with a transparent substance filter (min words + cited-sources, script-aware length, near-dup collapse; the S0 length diagnostic shipped). 🎨
 - **Clickable in-article keywords — stats hover bubble** (mention count/spread, trend rate, translation, co-occurrences; counts only, method visible). 🎨
