@@ -1,4 +1,4 @@
-"""Opt-in in-memory serve for the per-country map-coverage aggregation (D4, scaling 5A-bis).
+"""In-memory serve for the per-country map-coverage aggregation (D4, scaling 5A-bis).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -8,11 +8,14 @@ re-scans the articles + keyword_mentions tables on EVERY read. The ``source_cove
 rollup (:mod:`src.analytics.columnar`, D4) is built + parity-tested but was dormant. This
 module serves it, mirroring :mod:`src.analytics.rollup_serve` (the keyword_daily serve) — a
 ONE process-lifetime in-memory DuckDB rollup, built once in the background, read under a
-lock — with ONE deliberate difference: it is **OPT-IN, default OFF**.
+lock.
 
-WHY OPT-IN (unlike the auto-on keyword serve): offline the store is in-memory, so it is a
-per-process rebuild — a long-running-app amortisation the operator turns on knowingly via
-``OO_COLUMNAR_MAP_SERVE=1``. Off by default it is byte-for-byte the untouched live path.
+AUTOMATIC by default since P1.11 (SCALE_ROADMAP 2026-07-09): the 12:14 field logs made the
+map/ring country GROUP BY the #1 slow query — **748 s total, ~150 s/call, max 211 s** on
+the live 3.06 M-keyword / 20.9 M-mention corpus — while this serve sat dormant behind its
+opt-in flag. Like rollup_serve it now turns itself ON whenever the columnar extra (duckdb)
+is installed; ``OO_COLUMNAR_MAP_SERVE`` remains a deployment override (``0`` forces off,
+``1`` forces on).
 
 SAFE BY CONSTRUCTION (the same guarantees as rollup_serve):
   * every serve is wrapped — ANY miss/error returns ``None`` and the caller falls back to
@@ -45,18 +48,51 @@ _LOG = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 # Ensures at most ONE background build runs at a time.
 _BUILD_LOCK = threading.Lock()
-_STATE: dict = {"con": None, "built_at": 0.0, "rows": 0, "bind": None}
+_STATE: dict = {
+    "con": None,
+    "built_at": 0.0,
+    "rows": 0,
+    "bind": None,
+    # P1.10 change gate (mirrors rollup_serve): the serve_gate.change_token the current
+    # build reflects, whether a newer corpus state was DETECTED, and the last cheap check.
+    "token": None,
+    "pending": False,
+    "checked_at": 0.0,
+}
 
-# Rebuild if the served rollup is older than this (bounded staleness; a full rebuild).
-_STALE_S = int(os.getenv("OO_COLUMNAR_MAP_SERVE_TTL_S", "900"))  # 15 min default
+# P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
+# corpus changes continuously during collection; same env var + default as before).
+_MIN_REBUILD_S = int(os.getenv("OO_COLUMNAR_MAP_SERVE_TTL_S", "900"))  # 15 min default
+# The LONG backstop: rebuild even with an unchanged token after this long — bounds the
+# change classes the cheap token cannot see (source-country edits, sentiment backfills).
+_BACKSTOP_S = int(os.getenv("OO_COLUMNAR_MAP_SERVE_BACKSTOP_S", "3600"))  # 1 h default
+# Throttle for the cheap token check itself (4 index-only queries), per serve path.
+_CHECK_EVERY_S = 30.0
+
+
+def serve_mode() -> str:
+    """How the serve is decided: 'forced-on'/'forced-off' via OO_COLUMNAR_MAP_SERVE, else
+    'auto' (the default — on whenever the columnar extra is installed). Mirrors
+    :func:`rollup_serve.serve_mode`."""
+    env = os.getenv("OO_COLUMNAR_MAP_SERVE")
+    if env == "1":
+        return "forced-on"
+    if env == "0":
+        return "forced-off"
+    return "auto"
 
 
 def serve_enabled() -> bool:
-    """OPT-IN, default OFF (distinct from rollup_serve's auto-on keyword serve).
+    """AUTOMATIC by default (P1.11, flipped 2026-07-09 on the 12:14 field measurement:
+    the map/ring country GROUP BY was the #1 slow query at ~150 s/call with this serve
+    dormant behind its opt-in flag).
 
-    On only when ``OO_COLUMNAR_MAP_SERVE=1`` AND the columnar extra (duckdb) is available.
-    Off by default the map endpoint is byte-for-byte the untouched live query."""
-    if os.getenv("OO_COLUMNAR_MAP_SERVE") != "1":
+    On whenever the columnar extra (duckdb) is available — the same tri-state as
+    rollup_serve: ``OO_COLUMNAR_MAP_SERVE=0`` forces off, ``=1`` forces on, unset = auto.
+    SAFE by construction: any miss falls back to the identical live query, the rollup
+    builds in a background thread, and the bind-aware guard (#572) never answers for a
+    database it was not built over."""
+    if serve_mode() == "forced-off":
         return False
     from src.analytics import columnar
 
@@ -69,29 +105,37 @@ def status() -> dict:
         con = _STATE["con"]
         built_at = _STATE["built_at"]
         rows = _STATE["rows"]
+        pending = _STATE["pending"]
     return {
         "enabled": serve_enabled(),
-        "opt_in": os.getenv("OO_COLUMNAR_MAP_SERVE") == "1",
+        "mode": serve_mode(),  # auto | forced-on | forced-off
         "built": con is not None,
         "built_at": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
         ),
         "source_coverage_rows": rows,
         "building": _BUILD_LOCK.locked(),
-        "ttl_s": _STALE_S,
+        # P1.10 change gate: rebuild on CHANGE (epoch / id tails), not on a timer.
+        "refresh": "change-gated",
+        "change_pending": pending,
+        "min_rebuild_s": _MIN_REBUILD_S,
+        "backstop_s": _BACKSTOP_S,
     }
 
 
 def _build_and_swap() -> None:
     """Build a FRESH in-memory source_coverage rollup on its own session/connection, swap."""
     try:
-        from src.analytics import columnar
+        from src.analytics import columnar, serve_gate
         from src.database.session import session_scope
 
         con = columnar.connect(passphrase=None)  # offline -> in-memory (never a file)
         if con is None:
             return
         with session_scope() as s:
+            # Token BEFORE the build (conservative: rows landing DURING the build compare
+            # "changed" next check -> one extra rebuild, never a silently-missed one).
+            token = serve_gate.change_token(s, articles=True, sources=True)
             columnar.build_source_coverage(con, s)
             rows = con.execute("SELECT COUNT(*) FROM source_coverage").fetchone()[0]
             built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
@@ -101,6 +145,8 @@ def _build_and_swap() -> None:
             _STATE["built_at"] = time.time()
             _STATE["rows"] = int(rows)
             _STATE["bind"] = built_bind
+            _STATE["token"] = token
+            _STATE["pending"] = False
             if old is not None:
                 try:
                     old.close()  # safe: serves hold _LOCK, so none is mid-query here
@@ -120,11 +166,57 @@ def _trigger_build_async() -> None:
     threading.Thread(target=_build_and_swap, name="map-rollup-build", daemon=True).start()
 
 
-def refresh(_session: Session | None = None) -> None:
-    """Trigger a background (re)build — called from warm_cache after a scrape pass so the
-    served rollup picks up new sources/articles. No-op unless opted in. Never blocks."""
-    if serve_enabled():
+def _maybe_refresh(session: Session, *, force_check: bool = False) -> None:
+    """The P1.10 CHANGE GATE (mirrors rollup_serve._maybe_refresh) — rebuild only when the
+    corpus visibly changed (epoch bumped / mention-article-source id tails advanced) or the
+    long backstop elapsed; never on a bare timer. Call only with a session on the SAME bind
+    the rollup was built over (the caller checks ``_same_bind`` first). Never blocks."""
+    now = time.time()
+    with _LOCK:
+        built_at = _STATE["built_at"]
+        token = _STATE["token"]
+        checked_at = _STATE["checked_at"]
+    age = now - built_at
+    if age > _BACKSTOP_S:
+        with _LOCK:
+            _STATE["pending"] = True
         _trigger_build_async()
+        return
+    if age < _MIN_REBUILD_S:
+        return  # churn bound: never rebuild more often than this
+    if not force_check and now - checked_at < _CHECK_EVERY_S:
+        return
+    from src.analytics import serve_gate
+
+    cur = serve_gate.change_token(session, articles=True, sources=True)
+    with _LOCK:
+        _STATE["checked_at"] = now
+    if cur is None:
+        return  # can't tell -> stay on the backstop cadence (never churn on doubt)
+    if token is None or cur != token:
+        with _LOCK:
+            _STATE["pending"] = True
+        _trigger_build_async()
+
+
+def refresh(session: Session | None = None) -> None:
+    """(Re)build trigger — called from warm_cache after a scrape pass so the served rollup
+    picks up new sources/articles. CHANGE-GATED since P1.10: a pass that changed nothing no
+    longer forces a full rebuild. No-op unless enabled. Never blocks."""
+    if not serve_enabled():
+        return
+    with _LOCK:
+        have = _STATE["con"] is not None
+        built_bind = _STATE["bind"]
+    if not have:
+        _trigger_build_async()
+        return
+    if session is None or not _same_bind(session, built_bind):
+        # Can't run the cheap check against this rollup -> the old unconditional rebuild
+        # (rebuild-on-doubt; _BUILD_LOCK bounds the cost).
+        _trigger_build_async()
+        return
+    _maybe_refresh(session, force_check=True)
 
 
 def _same_bind(session: Session | None, built_bind) -> bool:
@@ -147,23 +239,23 @@ def map_coverage(session: Session) -> dict | None:
     The rollup carries per-country sources / articles / keyword mentions / tone; the
     unlocated per-language donut is computed LIVE from the caller's session (a small
     ``sources -> articles.language`` scan) so the payload is byte-identical to the live
-    query. Returns ``None`` (fallback) when: not opted in, the rollup is not built yet, a
-    DIFFERENT database than the caller's, empty, or ANY error. Triggers a background
-    (re)build when the rollup is missing or stale, serving the current one meanwhile."""
+    query. Returns ``None`` (fallback) when: not enabled, the rollup is not built yet, a
+    DIFFERENT database than the caller's, empty, or ANY error. Kicks a background
+    (re)build when the rollup is missing or the change gate detects a newer corpus state
+    (P1.10), serving the current one meanwhile."""
     if not serve_enabled():
         return None
     from src.analytics import columnar
 
     with _LOCK:
         have = _STATE["con"] is not None
-        stale = time.time() - _STATE["built_at"] > _STALE_S
         built_bind = _STATE["bind"]
-    if not have or stale:
-        _trigger_build_async()  # background; returns immediately
     if not have:
+        _trigger_build_async()  # background; returns immediately
         return None  # nothing built yet -> live fallback (a build is now underway)
     if not _same_bind(session, built_bind):
         return None  # rollup reflects a DIFFERENT database than this caller -> live fallback
+    _maybe_refresh(session)  # change-gated background rebuild; serves the current build
     try:
         with _LOCK:
             con = _STATE["con"]
@@ -222,17 +314,32 @@ def _assemble(session: Session, rows: list[dict]) -> dict:
 
 def basis() -> dict:
     """The honesty disclosure attached when the response was served from the rollup: the
-    source + as-of. Not a score."""
+    source + as-of, plus (P1.10) whether a NEWER corpus state is known to exist than the
+    one served (``stale``) and whether a rebuild is in flight (``rebuilding``) — the same
+    stale-but-disclosed convention as rollup_serve. Not a score."""
     with _LOCK:
         built_at = _STATE["built_at"]
+        pending = _STATE["pending"]
+    age_s = (time.time() - built_at) if built_at else None
+    stale = bool(built_at) and (pending or (age_s is not None and age_s > _BACKSTOP_S))
+    rebuilding = _BUILD_LOCK.locked()
+    note = (
+        "Served from the in-memory per-country source-coverage rollup for speed. Counts "
+        "are exact as of the last rollup build; the unlocated per-language donut is "
+        "computed live. New sources/articles appear after the next background rebuild."
+    )
+    if stale or rebuilding:
+        note += (
+            " A newer corpus state was detected — these are the PREVIOUS build's numbers, "
+            "served stale-but-disclosed (see as_of) while the background rebuild runs."
+        )
     return {
         "source": "columnar-rollup",
         "as_of": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
         ),
-        "note": (
-            "Served from the in-memory per-country source-coverage rollup for speed. Counts "
-            "are exact as of the last rollup build; the unlocated per-language donut is "
-            "computed live. New sources/articles appear after the next background rebuild."
-        ),
+        "age_seconds": int(age_s) if age_s is not None else None,
+        "stale": stale,
+        "rebuilding": rebuilding,
+        "note": note,
     }
