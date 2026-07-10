@@ -147,6 +147,8 @@ class MemoryGuard:
         rss_frac_pct: float | None = None
         if rss_mb is not None and mem_total_mb:
             rss_frac_pct = 100.0 * rss_mb / mem_total_mb
+        tripped_reason: str | None = None
+        resumed = False
         with self._lock:
             self._last = {
                 "rss_mb": rss_mb,
@@ -168,15 +170,7 @@ class MemoryGuard:
                         self._reason = self._describe(rss_frac_pct, mem_avail_mb, over_rss, over_avail)
                         self._over = 0
                         self._under = 0
-                        _LOG.warning(
-                            "MEMORY GUARD ENGAGED — collection pausing before the "
-                            "OOM-killer can fire: %s (thresholds: rss >= %.0f%% of "
-                            "total or available <= %.0f MB, %d consecutive samples)",
-                            self._reason,
-                            self.rss_pct,
-                            self.avail_floor_mb,
-                            self.trip_after,
-                        )
+                        tripped_reason = self._reason
                 else:
                     self._over = 0
             else:
@@ -185,10 +179,26 @@ class MemoryGuard:
                 if healthy_rss and healthy_avail and not (over_rss or over_avail):
                     self._under += 1
                     if self._under >= self.resume_after:
-                        self._resume_locked("memory recovered")
+                        self._resume_locked()
+                        resumed = True
                 else:
                     self._under = 0
-            return self._engaged
+            engaged = self._engaged
+        # Log OUTSIDE the lock (skeptic nit: the jsonl error handler does file
+        # I/O; workers' admit() checks must never queue behind a log write).
+        if tripped_reason:
+            _LOG.warning(
+                "MEMORY GUARD ENGAGED — collection pausing before the "
+                "OOM-killer can fire: %s (thresholds: rss >= %.0f%% of "
+                "total or available <= %.0f MB, %d consecutive samples)",
+                tripped_reason,
+                self.rss_pct,
+                self.avail_floor_mb,
+                self.trip_after,
+            )
+        if resumed:
+            _LOG.warning("memory guard released (memory recovered) — collection resumes")
+        return engaged
 
     def poll(self) -> bool:
         """Take a fresh reading NOW (between passes, when no monitor is
@@ -204,19 +214,23 @@ class MemoryGuard:
         """Explicit resume (a user pressed start/run-now/resume). The guard
         re-trips after ``trip_after`` fresh over-threshold samples if memory
         is still genuinely low — reset is a retry, never an override forever."""
+        was_engaged = False
         with self._lock:
             if self._engaged:
-                self._resume_locked(reason)
+                self._resume_locked()
+                was_engaged = True
             self._over = 0
             self._under = 0
+        if was_engaged:
+            _LOG.warning("memory guard released (%s) — collection resumes", reason)
 
-    def _resume_locked(self, why: str) -> None:
+    def _resume_locked(self) -> None:
+        # Caller logs OUTSIDE the lock (see observe/reset).
         self._engaged = False
         self._reason = None
         self._since = None
         self._over = 0
         self._under = 0
-        _LOG.warning("memory guard released (%s) — collection resumes", why)
 
     @staticmethod
     def _describe(rss_frac_pct, mem_avail_mb, over_rss: bool, over_avail: bool) -> str:
@@ -243,6 +257,13 @@ class MemoryGuard:
                     "resume_rss_pct": self.resume_rss_pct,
                 },
                 "last_reading": dict(self._last),
+                # Honest visibility: an "enabled" guard with no readings (no
+                # psutil) is BLIND — surfaced, never implied protection.
+                "readings_available": (
+                    any(v is not None for k, v in self._last.items() if k != "ts")
+                    if self._last
+                    else None
+                ),
                 "method": (
                     "Measured psutil readings; engages only after "
                     f"{self.trip_after} consecutive over-threshold samples, "

@@ -369,7 +369,9 @@ def ingest_source(
 
     Returns a tally keyed by IngestResult value, plus the feed entry count.
     """
-    tally = {r.value: 0 for r in IngestResult}
+    # STAGED is transient by contract (resolved at flush) — it must never
+    # appear as a permanent zero line in a user-facing tally.
+    tally = {r.value: 0 for r in IngestResult if r is not IngestResult.STAGED}
     tally["entries"] = 0
     tally["not_modified"] = 0  # feeds answered 304 Not Modified (skipped cheaply)
 
@@ -450,7 +452,10 @@ def ingest_source(
     # new articles delays this feed's next re-check, capped, self-resetting)
     # reads the true post-flush stored count.
     _record_feed_state(session, source.id, feed_resp)
-    if tally[IngestResult.STORED.value] > 0:
+    if tally[IngestResult.STORED.value] > 0 or tally.get("errors", 0) > 0:
+        # New content stored — or OUR store errored (skeptic finding D2): a
+        # store failure is NOT a "feed is quiet" signal, and a prompt re-fetch
+        # is exactly the loss-recovery path. Same rule as the fetch-error case.
         _update_feed_backoff(session, source.id, reset=True)
     else:
         _update_feed_backoff(session, source.id, reset=False)

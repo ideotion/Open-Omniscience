@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -98,7 +98,7 @@ class ArticleBatch:
     caller AFTER flush (a staged article's disposition is only known then).
     """
 
-    def __init__(self, session: Session, source: "Source", *, size: int | None = None) -> None:
+    def __init__(self, session: Session, source: Source, *, size: int | None = None) -> None:
         self._session = session
         self._source = source
         self._size = collect_batch_size() if size is None else max(1, size)
@@ -179,11 +179,14 @@ class ArticleBatch:
     def flush(self) -> None:
         """Write every staged article in ONE gate window; zero loss on failure.
 
-        A commit-time collision or transient lock rolls the batch back and
-        REDOES it one article at a time (the proven ``ingest_emails``
-        fallback) — a single conflict never drops its batch-mates. Never
-        raises a DB error (the redo path absorbs them honestly into the
-        tally); a non-DB error propagates (a real bug must stay loud).
+        A failed batched commit rolls back and REDOES the batch one article at
+        a time (the proven ``ingest_emails`` fallback) — a single conflict
+        never drops its batch-mates. The catch is deliberately BROAD
+        (skeptic-hardened): even a non-DB failure mid-flush (a MemoryError
+        building rows — this IS the OOM session) must roll back (so
+        flushed-uncommitted rows can never leak into a later bookkeeping
+        commit unindexed and untallied) and hand every entry to the redo path.
+        Never raises; every entry's disposition lands in the tally.
         """
         if not self._pending:
             return
@@ -194,7 +197,7 @@ class ArticleBatch:
         self._pending_text_bytes = 0
         try:
             self._flush_batched(entries)
-        except SQLAlchemyError:
+        except Exception:  # noqa: BLE001 - zero loss outranks tidiness
             self._session.rollback()
             _LOG.warning(
                 "batched collect commit failed; redoing %d article(s) one at a time",
@@ -202,35 +205,52 @@ class ArticleBatch:
                 exc_info=True,
             )
             for e in entries:
-                self._store_one(e)
+                # Per-entry guard (skeptic finding): an unexpected error on ONE
+                # redo (e.g. a pool-checkout timeout) must not abort the
+                # remaining batch-mates. A skipped article is counted honestly
+                # and re-fetched next pass (content-hash dedup keeps it single).
+                try:
+                    self._store_one(e)
+                except Exception:  # noqa: BLE001 - zero loss outranks tidiness
+                    self.tally["errors"] += 1
+                    _LOG.warning(
+                        "collect redo: unexpected error storing %s; recounted "
+                        "as an error, re-fetched next pass",
+                        e.requested_url,
+                        exc_info=True,
+                    )
 
     def _flush_batched(self, entries: list[_StagedArticle]) -> None:
         from src.database.models import Article
         from src.ingest.pipeline import _exists, _maybe_record_custody
 
         to_store: list[tuple[_StagedArticle, Article]] = []
+        dups = 0
         for e in entries:
             # Re-check the DB at flush time: another worker may have stored the
             # same content since this entry was staged (reads never gate).
             if _exists(self._session, hash=e.content_hash):
-                self.tally["duplicate"] += 1
+                dups += 1
                 continue
             to_store.append((e, self._article_row(e)))
-        if not to_store:
-            return
-        for _, a in to_store:
-            self._session.add(a)
-        # The ONE gate window for the whole batch opens at this flush (ids are
-        # assigned here) and closes at the commit below.
-        self._session.flush()
-        if os.getenv("OO_NO_INDEX") != "1":
-            from src.analytics.extract import get_extractor
+        if to_store:
+            for _, a in to_store:
+                self._session.add(a)
+            # The ONE gate window for the whole batch opens at this flush (ids
+            # are assigned here) and closes at the commit below.
+            self._session.flush()
+            if os.getenv("OO_NO_INDEX") != "1":
+                from src.analytics.extract import get_extractor
 
-            extractor = get_extractor("baseline")
-            for e, a in to_store:
-                self._index_one(a, extractor)
-                self._links_one(a.id, e.links)
-        self._session.commit()
+                extractor = get_extractor("baseline")
+                for e, a in to_store:
+                    self._index_one(a, extractor)
+                    self._links_one(a.id, e.links)
+            self._session.commit()
+        # Tally ONLY after the commit succeeded (skeptic finding D1): a failed
+        # batch redoes EVERY entry, and a duplicate counted here would then be
+        # recounted by the redo — 3 dispositions for 2 staged articles.
+        self.tally["duplicate"] += dups
         self.tally["stored"] += len(to_store)
         for _, a in to_store:
             _maybe_record_custody(a)
@@ -332,7 +352,10 @@ class ArticleBatch:
         except OperationalError:
             self._session.rollback()
             self.tally["errors"] += 1
-            _LOG.warning("collect redo: an article could not be stored (db locked); skipped")
+            _LOG.warning(
+                "collect redo: an article could not be stored (transient db "
+                "error); skipped this pass, re-fetched next pass"
+            )
             return
         article = holder["article"]
         self.tally["stored"] += 1

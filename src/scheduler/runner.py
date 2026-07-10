@@ -98,9 +98,10 @@ def deferred_carryover_count() -> int:
 class _PassWindDown:
     """Decides when an in-flight pass stops taking NEW sources.
 
-    Workers consult :meth:`admit` BEFORE starting a source — a non-blocking
-    check, so nothing is ever interrupted mid-fetch and no lock is held while
-    deciding. Reasons: ``"memory"`` (the RSS memory guard engaged — P0.3 E3,
+    Workers consult :meth:`admit` BEFORE starting a source — a cheap check
+    (the guard's own mutex + this class's counter mutex, both leaf-level and
+    held for nanoseconds), so nothing is ever interrupted mid-fetch. Reasons:
+    ``"memory"`` (the RSS memory guard engaged — P0.3 E3,
     checked FIRST: new work must never start under proven memory pressure),
     ``"budget"`` (wall-clock budget expired), ``"work"`` (per-pass source cap
     reached). ``now`` is injectable for deterministic tests. Thread-safe.
@@ -116,18 +117,26 @@ class _PassWindDown:
     def admit(self) -> str | None:
         """None = process the next source; else the wind-down reason."""
         # Module-attribute access on purpose (memguard.memory_guard), so tests
-        # can swap the singleton; a non-blocking read, no lock held here.
+        # can swap the singleton.
         from src.scheduler import memguard
 
         if memguard.memory_guard.engaged:
             return "memory"
-        if self._deadline is not None and self._now() >= self._deadline:
-            return "budget"
-        if self._max:
-            with self._lock:
-                if self._admitted >= self._max:
-                    return "work"
-                self._admitted += 1
+        with self._lock:
+            # Forward-progress floor (skeptic-hardened): a pathologically small
+            # budget (an env typo) must never yield zero progress forever — the
+            # FIRST source of a pass is always admitted; only the budget defers
+            # after it. The memory reason above deliberately has NO floor (under
+            # proven memory pressure zero new work is the point).
+            if (
+                self._deadline is not None
+                and self._now() >= self._deadline
+                and self._admitted > 0
+            ):
+                return "budget"
+            if self._max and self._admitted >= self._max:
+                return "work"
+            self._admitted += 1
         return None
 
 
@@ -809,12 +818,15 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
                 sources_processed += processed
     finally:
         _progress_set(_clear=True)
+        # Record deferrals in the FINALLY (skeptic-hardened): even if the pool
+        # section raises, whatever was already deferred keeps its run-first
+        # claim on the next pass (the exactness invariant: every selected
+        # source was either processed or is recorded here, in order).
+        if deferred_sources:
+            _record_deferred([s.id for s in deferred_sources])
 
     recycled: str | None = None
     if deferred_sources:
-        # The exactness invariant: every selected source was either processed
-        # or is recorded here, in order, to run FIRST next pass.
-        _record_deferred([s.id for s in deferred_sources])
         recycled = max(wind_reasons.items(), key=lambda kv: kv[1])[0]
         _LOG.info(
             "pass wound down (%s): %d source(s) deferred to run first next pass",
@@ -947,14 +959,22 @@ class BackgroundScheduler:
         while not self._stop.is_set() and memguard.memory_guard.poll():
             if not waited:
                 waited = True
-                _phase_set("paused-low-memory")
+                # No pass will start while paused: a stale next_run would
+                # otherwise render as a live countdown in the UI (honesty).
+                with self._state_lock:
+                    self._next_run = None
                 _LOG.warning(
                     "collection paused (low memory): %s — resumes when memory "
                     "recovers or on operator action",
                     (memguard.memory_guard.state().get("reason") or "memory pressure"),
                 )
+            # Re-asserted EVERY iteration: a concurrently finishing run-now
+            # pass clears the phase in its finally, which would otherwise
+            # leave an hours-long pause looking like idle (skeptic finding).
+            _phase_set("paused-low-memory")
             self._stop.wait(max(0.01, self._mem_pause_poll_s))
-        if waited:
+        if waited and current_phase() == "paused-low-memory":
+            # Guarded clear: never wipe a phase a just-started pass owns.
             _phase_set(None)
 
     def _do_run(self) -> None:

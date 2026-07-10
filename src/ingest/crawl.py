@@ -146,7 +146,8 @@ def crawl_source(
     start = start_url or f"https://{source.domain}"
     base_host = _registrable_host(urlparse(start).netloc)
 
-    tally = {r.value: 0 for r in IngestResult}
+    # STAGED is transient by contract (resolved at flush) — never a tally line.
+    tally = {r.value: 0 for r in IngestResult if r is not IngestResult.STAGED}
     report = CrawlReport(source=source.name, start_url=start, tally=tally)
 
     queue: deque[tuple[str, int]] = deque([(start, 0)])

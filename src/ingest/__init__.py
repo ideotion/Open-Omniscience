@@ -240,6 +240,12 @@ class EthicalFetcher:
         # is only touched under its lock. Different hosts run in parallel.
         self._host_locks: dict[str, threading.Lock] = {}
         self._host_locks_guard = threading.Lock()
+        # Serialises WRITES to ``_last_request`` against the eviction sweep
+        # (skeptic finding 2026-07-09: an unsynchronised sweep could pop a
+        # FRESH stamp written between its snapshot and its pop, letting the
+        # next fetch of that host skip the politeness delay). Reads stay
+        # lock-free (a stale read only ever sleeps MORE, never less).
+        self._host_state_guard = threading.Lock()
         # sleep is indirected so tests can run without real delays.
         self._sleep = time.sleep
         self._now = time.monotonic
@@ -274,31 +280,71 @@ class EthicalFetcher:
             "host_locks": len(self._host_locks),
         }
 
+    def _declares_crawl_delay(self, key_or_netloc: str) -> bool:
+        """True when the cached robots decision for this host declares a
+        Crawl-delay (checked under both scheme keys for a bare netloc)."""
+        keys = (
+            (key_or_netloc,)
+            if "://" in key_or_netloc
+            else (f"https://{key_or_netloc}", f"http://{key_or_netloc}")
+        )
+        for k in keys:
+            cached = self._robots.get(k)
+            if cached is not None and cached[0] is not None:
+                try:
+                    if cached[0].crawl_delay(self.user_agent):
+                        return True
+                except Exception:  # noqa: BLE001 - unknowable delay: keep the entry
+                    return True
+        return False
+
     def _bound_host_caches(self) -> None:
         """Keep the per-pass host caches bounded on a very wide/long pass.
 
         Best-effort and defensive (a bookkeeping error must never break a
-        fetch). Robots entries are evicted oldest-expiry-first (expired entries
-        sort first by construction — same TTL for all), which only costs an
-        evicted host a robots re-fetch; the fail-closed decision is recomputed,
-        never assumed. ``_last_request`` entries are evicted ONLY when older
-        than ``_LAST_REQUEST_SAFE_AGE_S`` so a forgotten timestamp can never
-        permit an impolitely early re-fetch (politeness outranks the bound).
+        fetch), and POLITENESS OUTRANKS THE BOUND (skeptic-hardened 2026-07-09):
+
+        * A robots entry whose parser declares a ``Crawl-delay`` is NEVER
+          evicted — an in-flight fetch between its robots check and its
+          rate-limit read must always still see the declared delay. Evicting a
+          delay-LESS entry is semantically neutral for pacing (the rate limit
+          falls back to ``min_interval_s``, exactly what that entry yields)
+          and only costs a fail-closed robots recompute on the next contact.
+        * ``_last_request`` stamps are mutated ONLY under ``_host_state_guard``
+          (shared with the writer in the fetch path), so eviction can never
+          race a fresh stamp out of the map (the TOCTOU a skeptic reproduced);
+          an entry is evicted only when older than ``_LAST_REQUEST_SAFE_AGE_S``
+          AND its host declares no Crawl-delay, so a forgotten timestamp can
+          never permit an impolitely early re-fetch. All-young over-cap maps
+          simply stay over cap (a dict of floats — the honest trade).
         """
         try:
             if len(self._robots) > _ROBOTS_CACHE_MAX:
                 items = sorted(self._robots.items(), key=lambda kv: kv[1][1])
-                for key, _ in items[: len(items) - _ROBOTS_CACHE_MAX]:
+                excess = len(items) - _ROBOTS_CACHE_MAX
+                for key, (decision, _expiry) in items:
+                    if excess <= 0:
+                        break
+                    if decision is not None:
+                        try:
+                            if decision.crawl_delay(self.user_agent):
+                                continue  # politeness-critical: never evicted
+                        except Exception:  # noqa: BLE001 - unknowable: keep it
+                            continue
                     self._robots.pop(key, None)
-            if len(self._last_request) > _LAST_REQUEST_MAX:
-                now = self._now()
-                items2 = sorted(self._last_request.items(), key=lambda kv: kv[1])
-                excess = len(items2) - _LAST_REQUEST_MAX
-                for key, last in items2:
-                    if excess <= 0 or (now - last) < _LAST_REQUEST_SAFE_AGE_S:
-                        break  # sorted ascending: the rest are younger still
-                    self._last_request.pop(key, None)
                     excess -= 1
+            if len(self._last_request) > _LAST_REQUEST_MAX:
+                with self._host_state_guard:
+                    now = self._now()
+                    items2 = sorted(self._last_request.items(), key=lambda kv: kv[1])
+                    excess = len(items2) - _LAST_REQUEST_MAX
+                    for key, last in items2:
+                        if excess <= 0 or (now - last) < _LAST_REQUEST_SAFE_AGE_S:
+                            break  # sorted ascending: the rest are younger still
+                        if self._declares_crawl_delay(key):
+                            continue  # a long declared delay outlives the safe age
+                        self._last_request.pop(key, None)
+                        excess -= 1
         except Exception:  # noqa: BLE001 - a cache bound must never break a fetch
             pass
 
@@ -388,7 +434,8 @@ class EthicalFetcher:
                 except requests.RequestException as exc:
                     transient = FetchFailed(f"request error for {url}: {exc}")
                 finally:
-                    self._last_request[parsed.netloc] = self._now()
+                    with self._host_state_guard:
+                        self._last_request[parsed.netloc] = self._now()
 
                 if transient is None and response.status_code not in _RETRYABLE_STATUS:
                     break  # got a definitive (success or non-retryable) response

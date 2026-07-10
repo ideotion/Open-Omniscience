@@ -265,6 +265,81 @@ def test_death_between_batch_commits_loses_nothing_on_reingest(monkeypatch):
     db.close()
 
 
+def test_flush_time_duplicate_is_counted_once_even_through_a_redo(monkeypatch):
+    """Skeptic finding D1 pinned: a flush-time duplicate must not be counted
+    again when the batched commit fails and the redo re-walks every entry —
+    exactly one disposition per staged article."""
+    from sqlalchemy.exc import OperationalError as OpErr
+
+    domain = "batch-dupcount.example"
+    db, source = _mem_db(domain)
+    sess = FakeSession()
+    _routed_source(sess, domain, 2)
+    from src.ingest.pipeline import store_fetched
+
+    batch = ArticleBatch(db, source, size=10)
+    fetcher = _fetcher(sess)
+    for i in range(2):
+        store_fetched(db, source, fetcher.fetch(f"https://{domain}/news/{i}"), batch=batch)
+    # A concurrent worker stored entry 1's content -> flush-time duplicate.
+    victim = batch._pending[1]
+    db.add(Article(
+        url="https://elsewhere.example/copy2", canonical_url="https://elsewhere.example/copy2",
+        source_id=source.id, title="copy", content=victim.text, hash=victim.content_hash,
+    ))
+    db.commit()
+    # And the batched commit itself fails ONCE (transient lock) -> redo path.
+    real_commit = db.commit
+    state = {"raised": False}
+
+    def _commit_once_locked():
+        if not state["raised"]:
+            state["raised"] = True
+            raise OpErr("stmt", {}, Exception("database is locked"))
+        real_commit()
+
+    monkeypatch.setattr(db, "commit", _commit_once_locked)
+    batch.flush()
+    monkeypatch.undo()
+    # Exactly one disposition per staged entry: 1 stored + 1 duplicate — never
+    # 1 stored + 2 duplicates (the double-count the redo used to add).
+    assert batch.tally == {"stored": 1, "duplicate": 1, "errors": 0}
+    db.close()
+
+
+def test_store_errors_never_advance_the_feed_backoff(monkeypatch):
+    """Skeptic finding D2 pinned: a feed that served NEW articles whose stores
+    failed on OUR side (transient db errors) is NOT 'quiet' — backing it off
+    would delay exactly the re-fetch that recovers the loss."""
+    from sqlalchemy.exc import OperationalError as OpErr
+
+    from src.database.models import FeedFetchState
+
+    domain = "batch-errbackoff.example"
+    db, source = _mem_db(domain)
+    sess = FakeSession()
+    _routed_source(sess, domain, 2)
+
+    def _always_locked(*a, **k):
+        raise OpErr("stmt", {}, Exception("database is locked"))
+
+    # Batched commit fails AND every per-article redo exhausts its retries.
+    monkeypatch.setattr(
+        "src.ingest.batch.ArticleBatch._flush_batched",
+        lambda self, entries: _always_locked(),
+    )
+    monkeypatch.setattr("src.database.write.run_write_with_retry", _always_locked)
+    monkeypatch.setenv("OO_COLLECT_COMMIT_BATCH", "8")
+    tally = ingest_source(db, source, fetcher=_fetcher(sess))
+    monkeypatch.undo()
+    assert tally["stored"] == 0
+    assert tally["errors"] == 2
+    state = db.get(FeedFetchState, source.id)
+    assert state is not None
+    assert state.skip_until is None  # our failure never penalises the feed
+    db.close()
+
+
 # --------------------------------------------------------------------------- #
 # The gate: fewer acquisitions, and a real contention race with exact counters
 # --------------------------------------------------------------------------- #

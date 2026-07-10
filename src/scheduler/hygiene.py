@@ -33,6 +33,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import suppress
 from pathlib import Path
 
 _LOG = logging.getLogger("scheduler.hygiene")
@@ -93,10 +94,8 @@ def release_pass_state() -> dict | None:
         _LOG.debug("trafilatura reset_caches unavailable", exc_info=True)
 
     gc_collected = None
-    try:
+    with suppress(Exception):
         gc_collected = gc.collect()
-    except Exception:  # noqa: BLE001
-        pass
 
     trimmed = _malloc_trim()
     rss_after = _rss_mb()
@@ -205,13 +204,21 @@ def checkpoint_wal(
         raw = engine.raw_connection()
         try:
             cur = raw.cursor()
-            with write_lock():
-                # PRAGMAs are not DML, so pysqlite opens no implicit
-                # transaction here — the checkpoint runs outside any BEGIN.
-                cur.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
-                row = cur.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-            cur.execute("PRAGMA busy_timeout=30000")  # restore before pool reuse
-            cur.close()
+            try:
+                with write_lock():
+                    # PRAGMAs are not DML, so pysqlite opens no implicit
+                    # transaction here — the checkpoint runs outside any BEGIN.
+                    cur.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
+                    row = cur.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            finally:
+                # ALWAYS restore before the connection returns to the pool
+                # (skeptic finding: a raise between the two PRAGMAs would
+                # otherwise hand later writers a silently shrunken lock
+                # allowance — the exact 'database is locked' family the 30 s
+                # default was shipped to prevent).
+                with suppress(Exception):
+                    cur.execute("PRAGMA busy_timeout=30000")
+                    cur.close()
         finally:
             raw.close()
         duration_ms = round((time.monotonic() - t0) * 1000.0, 1)

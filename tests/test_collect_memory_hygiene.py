@@ -109,6 +109,72 @@ def test_last_request_eviction_never_forgets_a_recent_host(monkeypatch):
     assert len(f._last_request) == 8
 
 
+def test_crawl_delay_robots_entries_are_never_evicted(monkeypatch):
+    """Politeness outranks the bound (skeptic-hardened): an in-flight fetch
+    between its robots check and its rate-limit read must still see a declared
+    Crawl-delay — so delay-carrying robots entries are exempt from eviction
+    (evicting a delay-LESS entry is pacing-neutral: min_interval applies)."""
+    from urllib.robotparser import RobotFileParser
+
+    monkeypatch.setattr("src.ingest._ROBOTS_CACHE_MAX", 4)
+    f = _fetcher()
+    delayed = RobotFileParser()
+    delayed.parse(["User-agent: *", "Crawl-delay: 30", "Allow: /"])
+    plain = RobotFileParser()
+    plain.parse(["User-agent: *", "Allow: /"])
+    now = f._now()
+    # 3 delay-carrying entries (oldest expiries — prime eviction candidates)
+    # + 5 plain ones. Only plain entries may be evicted.
+    for i in range(3):
+        f._robots[f"https://delayed{i}.example"] = (delayed, now + i)
+    for i in range(5):
+        f._robots[f"https://plain{i}.example"] = (plain, now + 100 + i)
+    f._bound_host_caches()
+    for i in range(3):
+        assert f"https://delayed{i}.example" in f._robots
+    assert len(f._robots) == 4  # bound met entirely from the plain entries
+
+
+def test_last_request_eviction_serialises_with_the_fetch_writer(monkeypatch):
+    """The reproduced TOCTOU pinned: the eviction sweep takes the same guard
+    the fetch path's stamp-writer takes, so a FRESH stamp can never be popped
+    between the sweep's snapshot and its pop (which would skip the politeness
+    delay on the next fetch)."""
+    monkeypatch.setattr("src.ingest._LAST_REQUEST_MAX", 2)
+    f = _fetcher()
+    now = f._now()
+    f._last_request = {f"old{i}.example": now - 8 * 3600 for i in range(4)}
+
+    result: dict = {}
+
+    def _sweep():
+        f._bound_host_caches()
+        result["done"] = True
+
+    # A writer holding the guard (as the fetch path does around its stamp
+    # write) blocks the sweep entirely — no snapshot/pop can interleave.
+    with f._host_state_guard:
+        t = threading.Thread(target=_sweep)
+        t.start()
+        t.join(0.3)
+        assert "done" not in result  # the sweep is waiting on the guard
+    t.join(5.0)
+    assert result.get("done") is True
+    assert len(f._last_request) == 2  # and then it evicted correctly
+
+    # Crawl-delay hosts keep their stamps even when stale + over cap.
+    delayed_host = "delayed.example"
+    from urllib.robotparser import RobotFileParser
+
+    rp = RobotFileParser()
+    rp.parse(["User-agent: *", "Crawl-delay: 30000", "Allow: /"])
+    f._robots[f"https://{delayed_host}"] = (rp, f._now() + 100)
+    f._last_request = {delayed_host: now - 9 * 3600,
+                       **{f"o{i}.example": now - 8 * 3600 for i in range(4)}}
+    f._bound_host_caches()
+    assert delayed_host in f._last_request
+
+
 def test_host_locks_are_never_evicted(monkeypatch):
     """Evicting a lock another thread may hold a reference to would let two
     threads fetch one host concurrently — so locks are exempt by design."""

@@ -142,7 +142,10 @@ def test_wind_down_zero_budget_and_zero_cap_admit_forever():
 # --------------------------------------------------------------------------- #
 
 
-def test_expired_budget_defers_every_source_and_records_carryover(monkeypatch):
+def test_expired_budget_defers_the_rest_after_the_progress_floor(monkeypatch):
+    """An already-expired budget still admits EXACTLY ONE source (the
+    forward-progress floor: a pathological budget — an env typo — must never
+    yield zero progress forever) and defers the rest, exactly."""
     monkeypatch.setenv("OO_PASS_BUDGET_MINUTES", "0.0000001")  # already expired
     session = _mem_session()
     tag = "rc" + uuid.uuid4().hex[:6]
@@ -150,13 +153,14 @@ def test_expired_budget_defers_every_source_and_records_carryover(monkeypatch):
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0,
                              session=_RecordingFeedSession())
     res = run_scrape_once(session, fetcher, SchedulerSettings(mode="rss"))
-    assert res["sources_processed"] == 0
-    assert res["deferred_next_pass"] == 4
+    assert res["sources_processed"] == 1  # the floor: never zero forever
+    assert res["deferred_next_pass"] == 3
     assert res["recycled"] == "budget"
-    assert runner.deferred_carryover_count() == 4
-    # The exactness invariant: the carryover is EXACTLY the un-run set (its
-    # order is the pass's fair-rotation order, which shuffles by design).
-    assert sorted(runner._consume_deferred()) == sorted(ids)
+    assert runner.deferred_carryover_count() == 3
+    # The exactness invariant: processed + deferred == every selected source
+    # (order is the pass's fair-rotation order, which shuffles by design).
+    deferred = runner._consume_deferred()
+    assert len(deferred) == 3 and set(deferred) < set(ids)
     session.close()
 
 
