@@ -655,6 +655,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `docs/FUTURE_DEVELOPMENTS.md`; THIS ledger stays the binding source of truth. The three dead
   roadmap homes (old `docs/ROADMAP.md`, `docs/product/ROADMAP.md`, `BACKLOG_GROUPED.md`) were
   archived to `docs/archive/roadmaps/` (nothing deleted).
+- **SESSION A PROGRESS (2026-07-10, branch `claude/a-scale-backend-p04-9faxvb`, one draft PR onto
+  0.2, commit-per-item; full detail = the 8 `docs/ledger/shipped.csv` rows):** SHIPPED, each
+  skeptic-verified pre-push (negative-space lenses) + full-suite-green (py3.13 .venv, 3361 passed):
+  **A1 P0.4 unlock ROOT-CAUSED + fixed** (`ensure_fts` ran the FTS5 `'rebuild'` — a corpus-scaled
+  codec re-read — on EVERY boot; now rebuilds only when needed; MEASURED 28.6 s → 0.002 s on a
+  112k/2.7 GB encrypted synthetic corpus, G2 warm unlock 0.012 s — **fixed on synthetic, live-run
+  is the final gate, NOT closed**), **A7** corpus-epoch→restore-merge (DB-7), **A8** alembic
+  stamp-align after self-heal with a DATA FLOOR so it never stamps past a fabricated/wrong-data
+  migration (DB-8), **A6** folder-backup verify (`/api/backup/folder/verify`, UI→B), **A11** opt-in
+  persistent `OO_DATA_DIR` via install.sh/launch.sh + honest tmpfs/Qubes-disposable detection
+  (never "stop using DispVMs"), **A12b** unified itemized storage-footprint incl. the external
+  Ollama store. A12/A4 were **found already resolved** (forensics inventory / the #595 data-version
+  status cache — no dup). A9 riders INVESTIGATED, none shipped (F14 non-reproducible: SessionLocal
+  is autoflush=False; F10/F11 data-safety-backup-path risk > LOW gain; F13 index_article-split risk
+  vs GIL-marginal). **A13 httpfs bundling BLOCKED** (contingency): `extensions.duckdb.org` is not in
+  the network egress allowlist (curl 403 "Host not in allowlist"), so the per-OS crypto-extension
+  binaries can't be fetched/attested — the in-memory columnar fallback stays, NO checksum
+  fabricated; D1/D2/D3 stay gated on a networked machine or an allowlist entry. MID-SESSION
+  maintainer asks handled: discovery-candidate noise filter (CDN/analytics/boilerplate + the missing
+  is_social; `bsky.app`/`t.me`/`fonts.googleapis.com`/`policies.google.com`/`creativecommons.org`)
+  + the storage-footprint = A12b. REMAINING (pending, machinery largely exists): A2 (extend
+  deadline/single-flight coverage; core in `src/api/heavy.py`), A3 (job-ify server-locations etc.),
+  A5 (heavy-endpoint sweep), A10 (off-peak maintenance scheduling), A14 (5 TB design doc).
 - **PARALLEL AUTONOMOUS SESSIONS A+B — MAINTAINER RULED 2026-07-10 (verbatim "1 a / 2 a / 3 a /
   4 a" to the four pre-clearance questions; briefs at `docs/design/AUTONOMOUS_SESSION_BRIEF_
   2026-07-10_A_SCALE_BACKEND.md` + `_B_PRODUCT_UX.md` — the operating manuals, incl. the
