@@ -295,12 +295,100 @@ def previous_session_report() -> dict[str, Any]:
     return out
 
 
+def _ollama_store_bytes() -> tuple[str | None, int, int]:
+    """(store path, bytes, files) of the Ollama model store — which lives OUTSIDE data_dir
+    (~/.ollama/models or $OLLAMA_MODELS / the systemd store), so data_dir_inventory misses
+    it entirely. Best-effort: a protected/unreadable store degrades to whatever _tree_size
+    could stat (never a crash), and a missing store is (path, 0, 0)."""
+    try:
+        from src.backup.ollama_models import default_store
+
+        store = default_store()
+    except Exception:  # noqa: BLE001 - the store path helper is optional
+        return None, 0, 0
+    if store is None or not store.is_dir():
+        return (str(store) if store else None), 0, 0
+    nbytes, files = _tree_size(store)
+    return str(store), nbytes, files
+
+
+def storage_footprint() -> dict[str, Any]:
+    """The COMPLETE on-disk footprint of the app across ALL stores, ITEMIZED per component
+    (maintainer field 2026-07-10, A12b): the reported "database size" must cover EVERYTHING,
+    not just data_dir. data_dir_inventory answers "what is inside the data folder", but the
+    Ollama model store lives OUTSIDE data_dir, so its bytes were absent from any single total.
+
+    Components (each an explicit line, bytes only, symlinks never followed, contents never
+    read): the database triple (db / -wal / -shm), wiki_dumps, osm_regions, backup/restore
+    staging (orphaned = a crashed run), any other data-dir contents, AND the external Ollama
+    model store. ``grand_total_bytes`` sums them all. Best-effort per component; no score."""
+    inv = data_dir_inventory()
+    totals = inv.get("totals", {})
+    entries = {str(e.get("name")): int(e.get("bytes", 0)) for e in inv.get("entries", [])}
+    db_name = _DB_NAME
+
+    def _dir_bytes(name: str) -> int:
+        return int(entries.get(name, 0))
+
+    data_dir_bytes = int(totals.get("total_bytes", 0))
+    other = int(totals.get("other_bytes", 0))
+    # wiki_dumps / osm_regions are top-level dirs counted inside other_bytes; itemize them
+    # out so the "other" line is the genuine remainder.
+    wiki = _dir_bytes("wiki_dumps")
+    osm = _dir_bytes("osm_regions")
+    staging = int(totals.get("orphaned_staging_bytes", 0))
+    other_remainder = max(0, other - wiki - osm)
+
+    components: list[dict[str, Any]] = [
+        {"name": "database", "kind": "db", "bytes": int(totals.get("db_bytes", 0)),
+         "detail": db_name, "outside_data_dir": False},
+        {"name": "database WAL", "kind": "wal", "bytes": int(totals.get("wal_bytes", 0)),
+         "detail": f"{db_name}-wal", "outside_data_dir": False},
+        {"name": "database SHM", "kind": "shm", "bytes": int(totals.get("shm_bytes", 0)),
+         "detail": f"{db_name}-shm", "outside_data_dir": False},
+        {"name": "wiki dumps", "kind": "wiki_dumps", "bytes": wiki, "outside_data_dir": False},
+        {"name": "OSM regions", "kind": "osm_regions", "bytes": osm, "outside_data_dir": False},
+        {"name": "backup/restore staging", "kind": "staging", "bytes": staging,
+         "detail": "orphaned = a crashed backup/restore left it (see suspect_staging)",
+         "outside_data_dir": False},
+        {"name": "other (data folder)", "kind": "other", "bytes": other_remainder,
+         "outside_data_dir": False},
+    ]
+    ollama_path, ollama_bytes, ollama_files = _ollama_store_bytes()
+    components.append(
+        {"name": "Ollama model store", "kind": "ollama_models", "bytes": ollama_bytes,
+         "files": ollama_files, "detail": ollama_path, "outside_data_dir": True}
+    )
+    grand_total = data_dir_bytes + ollama_bytes
+    components.sort(key=lambda c: -int(c["bytes"]))
+    return {
+        "generated_at": _now(),
+        "data_dir": str(data_dir()),
+        "ollama_store": ollama_path,
+        "components": components,
+        "totals": {
+            "data_dir_bytes": data_dir_bytes,
+            "ollama_models_bytes": ollama_bytes,
+            "grand_total_bytes": grand_total,
+        },
+        "method": (
+            "Recursive on-disk sizes of every app store, itemized per component. The database "
+            "triple + wiki_dumps + osm_regions + staging live in the data folder; the Ollama "
+            "model store lives OUTSIDE it (so it was missing from any data-dir-only total). "
+            "grand_total_bytes is the true on-disk footprint. Symlinks never followed, file "
+            "contents never read, counts/bytes only — no score. Best-effort per component."
+        ),
+    }
+
+
 def session_forensics() -> dict[str, Any]:
     """The one-call diagnostic block: inventory + previous-session verdict +
-    the last unlock timing. Rides the debug bundle / the all-diagnostics zip."""
+    the last unlock timing + the complete storage footprint. Rides the debug bundle /
+    the all-diagnostics zip."""
     cur = _read_state() or {}
     return {
         "inventory": data_dir_inventory(),
+        "storage_footprint": storage_footprint(),
         "previous_session": previous_session_report(),
         "last_unlock": cur.get("last_unlock"),
     }

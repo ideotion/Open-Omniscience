@@ -1742,6 +1742,31 @@ def session_forensics_report() -> dict:
     return _sf()
 
 
+@router.get("/storage-footprint")
+def storage_footprint_report(download: bool = Query(False)) -> JSONResponse:
+    """The COMPLETE on-disk footprint across ALL app stores, ITEMIZED per component (A12b):
+    the database triple (db/-wal/-shm) + wiki_dumps + osm_regions + backup/restore staging +
+    other data-folder contents + the Ollama model store (which lives OUTSIDE data_dir, so a
+    data-dir-only total missed it) + a grand total. Answers "how much disk is this app using"
+    in one payload. Sizes only, symlinks never followed, file contents never read; no score.
+    With ``download=1`` it returns as a dated attachment."""
+    from src.monitoring.forensics import storage_footprint as _sf
+
+    payload = _sf()
+    body = envelope(
+        kind="storage-footprint",
+        query={},
+        count=len(payload.get("components") or []),
+        payload=payload,
+    )
+    if download:
+        fname = f"oo-storage-footprint-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+        return JSONResponse(
+            body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+        )
+    return JSONResponse(body)
+
+
 @router.get("/storage-composition")
 def storage_composition_report(
     download: bool = Query(False), db: Session = Depends(get_db)
@@ -2051,6 +2076,8 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
         ("frontend-errors.json", lambda: frontend_errors(limit=500)),
         ("session-forensics.json", lambda: session_forensics_report()),
+        # A12b: itemized footprint across ALL stores incl. the external Ollama model store.
+        ("storage-footprint.json", lambda: storage_footprint_report(download=False)),
         # P1.5: per-table/per-index bytes (dbstat) — what the on-disk GB actually IS.
         ("storage-composition.json", lambda: storage_composition_report(download=False, db=db)),
     ]
