@@ -69,12 +69,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   present. Every consent/caveat string ships ×12 locales. Applies to every
   surface built or reworked from now on (T9+); the network consent popup
   (invariant #14) and the restore preview (T6) are the reference patterns.
-- **The current cycle branch is `0.1`** (the default branch, RENAMED from `0.09` at the
-  2026-07-02 alpha flip) ⇒ release `0.1.0`, the first alpha. Cut/rebase branches from
-  `origin/0.1` and open PRs onto `0.1` now (NOT `0.09` — the old name; `git fetch origin 0.1`).
-  Version single-sourced from pyproject (`0.1.0`). Historical `0.0.8`/`0.08`/`0.09` tags +
-  "draft PR onto 0.09" shipped-log entries are RECORDS of when that was the branch, not the
-  current version/branch.
+- **The current cycle is `0.2` (version `0.2.0`), the data-safety-at-scale cycle.** This
+  flip PR bumps pyproject `0.1.0 → 0.2.0`; the maintainer renames the default branch
+  `0.1 → 0.2` right after it merges (mirrors #547 — `0.1` was itself renamed from `0.09`
+  at the 2026-07-02 alpha flip). Cut/rebase branches from `origin/0.2` (or `origin/0.1`
+  until the rename lands) and open PRs onto the current cycle branch; `git fetch` the tip
+  first. Version single-sourced from pyproject (`0.2.0`). Historical `0.0.8`/`0.08`/`0.09`/`0.1`
+  tags + "draft PR onto 0.09"/"onto 0.1" shipped-log entries are RECORDS of when those were
+  the branch, not the current version/branch. The `v0.2.0` release TAG is still gated on the
+  P0 live-corpus scale validation (Open-queue 0.2 ruling + `docs/product/SCALE_ROADMAP.md`) —
+  the version reads 0.2.0 but 0.2 is not yet a tagged release.
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit). Model catalog
   stays date-stamped (`CATALOG_AS_OF` + freshness test); clearnet is a stated
   install prerequisite for model downloads.
@@ -395,11 +399,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `freshness_issue.py` (ONE rolling `freshness`-labelled issue, opened/updated/closed
   idempotently). Add `upstream_check:{github,type}` to a registry entry to watch it.
 - Maintainer merges PRs fast: after `git push`, if the output says
-  "[new branch]", the previous PR was merged — open a NEW PR onto `0.1` (the
-  current cycle branch; was `0.09` before the 2026-07-02 rename).
-  COROLLARY (near-miss 2026-06-15): local `origin/0.1` goes STALE within
-  minutes given the fast merges — ALWAYS `git fetch origin 0.1` immediately
-  before `git checkout -B <branch> origin/0.1`, or a doc/ledger branch can be
+  "[new branch]", the previous PR was merged — open a NEW PR onto `0.2` (the
+  current cycle branch; was `0.1` before the 2026-07-10 rename, `0.09` before that).
+  COROLLARY (near-miss 2026-06-15): local `origin/0.2` goes STALE within
+  minutes given the fast merges — ALWAYS `git fetch origin 0.2` immediately
+  before `git checkout -B <branch> origin/0.2`, or a doc/ledger branch can be
   cut from a pre-merge base and a 3-way merge could drop a just-merged ledger
   edit on the same lines. (Caught when a finding-F ledger update branched from a
   stale base and the entry was missing; re-cut from a freshly-fetched tip. This
@@ -669,6 +673,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   HARD GUARD: never flip while parallel sessions are in flight on `origin/0.1` (the #548
   stale-base revert precedent) — execute in a quiet window after the gate passes. Full row in
   `docs/product/SCALE_ROADMAP.md` (Ruling-gated #4).
+  **EXECUTED 2026-07-10 (version+docs half, this PR — maintainer-asked "bump to version 0.2"):**
+  pyproject `0.1.0→0.2.0` + every CLAUDE.md/README/CHANGES/CONTRIBUTING current-cycle-branch
+  pointer rewritten `0.1→0.2` (historical `0.09`/`0.1` records preserved). Guard clear — NO
+  parallel PRs were open on `origin/0.1` at flip time (`list_pull_requests base=0.1 state=open`
+  → empty), and the branch was cut from the fresh `origin/0.1` tip. **STILL PENDING, deliberately
+  NOT in this PR (maintainer + CI):** (1) the maintainer renames the default branch `0.1 → 0.2`
+  right after merge (mirrors #547); (2) the `v0.2.0` TAG waits on the P0 live-corpus scale
+  validation — P0.1/P0.2/P0.3 engines are shipped awaiting the maintainer's live run, and
+  **P0.4 unlock-at-scale is still unresolved** (SCALE_ROADMAP P0). So the version now reads
+  0.2.0 but 0.2 is not yet a tagged release.
 - **FIELD-TEST 2026-07-08 — full intake + diagnostics action plan captured in
   [`docs/product/field-test-2026-07-08/LEDGER.md`](docs/product/field-test-2026-07-08/LEDGER.md)
   (PR #583; items 1–7 merged via #580). CAPTURE-ONLY session on a live 59,566-article /

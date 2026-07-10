@@ -5,25 +5,34 @@
 ---
 
 **Author:** [Ideotion](https://github.com/ideotion)
-**Version:** 0.1.0 (alpha — the first release past the `0.0.x` pre-alpha series; see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md))
+**Version:** 0.2.0 (alpha — the data-safety-at-scale cycle; the tagged release awaits the live-corpus scale validation, see [docs/product/SCALE_ROADMAP.md](docs/product/SCALE_ROADMAP.md))
 **License:** [GNU GPLv3](LICENSE)
 
 ---
 
 > **On the version number.** The `0.0.x` series deliberately **under-stated** maturity
-> (honesty over hype) while the software was being proven. With the `0.09` cycle
-> consolidated — at-rest encryption, the additive-only + volumes+parity backup story,
-> the analysis-window/corpora system, the release gate reconciled row by row — the
-> project moves to **`0.1.0`, an alpha**: usable and honest about every limit, not
-> finished. Beta and `1.0` still have to be earned. Development cycles are named after
-> the version they produce (branch `0.06 → … → 0.09 → 0.1` ⇒ `0.0.6 → … → 0.0.9 → 0.1.0`;
-> the `0.09` cycle culminated in `0.1.0` and the cycle branch was renamed `0.09 → 0.1`).
-> See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
+> (honesty over hype) while the software was being proven. The `0.09` cycle consolidated
+> the alpha — at-rest encryption, the additive-only + volumes+parity backup story, the
+> analysis-window/corpora system — and shipped as **`0.1.0`, the first alpha**. The
+> project now opens the **`0.2`** cycle: **data safety at scale** — "the version that
+> survives a 100 GB field run" (streaming, bounded-RAM backup/restore, the collector
+> out-of-memory fix, unlock-at-scale). `0.2.0` is honest about every limit, not finished;
+> beta and `1.0` still have to be earned, and the `v0.2.0` **tag awaits the live-corpus
+> scale validation**. Development cycles are named after the version they produce (branch
+> `0.06 → … → 0.09 → 0.1 → 0.2` ⇒ `0.0.6 → … → 0.0.9 → 0.1.0 → 0.2.0`; the `0.09` cycle
+> culminated in `0.1.0`, and the cycle branch is renamed `0.1 → 0.2` — as `0.09 → 0.1`
+> before it). See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
-## Status — v0.1.0: the deeper sense-making cycle, shipped
+## Status — v0.2.0: data safety at scale
 
-> **`0.1.0` is the current release** (default branch `0.1`, renamed from `0.09` at the
-> flip). The `0.0.8` cycle shipped in full —
+> **`0.2.0` is the current version** (the cycle branch renames `0.1 → 0.2`, as `0.09 → 0.1`
+> before it). The `0.2` cycle hardens the app for **large corpora** — a live multi-day run
+> reached ~100–130 GB — with streaming, bounded-RAM backup/restore, the collector
+> out-of-memory fix, and unlock-at-scale instrumentation
+> ([`docs/product/SCALE_ROADMAP.md`](docs/product/SCALE_ROADMAP.md)); the **tagged release
+> awaits the maintainer's live-corpus validation** of the P0 scale set.
+
+> **`0.1.0` — the deeper sense-making alpha, shipped 2026-07-02.** The `0.0.8` cycle shipped in full —
 > the whole product-roadmap push (trust hardening, the investigation-recipe cards and
 > `/investigate` dashboards, the typed ORM, all 29 audit findings closed — the `0.07`
 > audit fixed 20 and deferred 9 with rationale; the 9 were closed in `0.0.8`
