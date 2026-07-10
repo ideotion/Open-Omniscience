@@ -580,12 +580,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     Corollary: `_MIN_YEAR=1000` means ANY 4-digit year that leaks past a calendar router is
     stored as a plausible medieval CE date — routers over shared numeric shapes are
     fabrication-critical, not recall tweaks.
-  - **sqlcipher3 ships WITHOUT dbstat (2026-07-09, THETA R2):** the bundled sqlcipher3 build
-    lacks SQLITE_ENABLE_DBSTAT_VTAB ("no such table: dbstat") while the stdlib sqlite3 has it —
-    dbstat-based introspection (the P1.5 storage-composition diagnostic) DEGRADES on the
-    encrypted live store; design it with an honest `{available:false, reason}` block + the
-    PRAGMA-level facts (page_size/page_count/freelist_count work everywhere) and TEST the
-    degrade path as the production path.
+  - **dbstat is a PER-BUILD SQLite capability — probe it, never assume it (2026-07-09, THETA
+    R2 + the #606 macOS fix-forward):** SQLITE_ENABLE_DBSTAT_VTAB is a compile flag: the
+    bundled sqlcipher3 NEVER has it ("no such table: dbstat"), Linux stdlib sqlite3 has it,
+    and the macOS CI runner's Python build does NOT (the observation lane caught two
+    `available is True` assertions red at #606's head SHA — merged≠green). So dbstat-based
+    introspection (the P1.5 storage-composition diagnostic) DEGRADES on the encrypted live
+    store AND on some plaintext platforms: design it with an honest `{available:false,
+    reason}` block + the PRAGMA-level facts (page_size/page_count/freelist_count work
+    everywhere), TEST the degrade path as a production path, and gate any
+    full-split test on a runtime `_dbstat_available()` probe, not on platform guesses.
   - **NEVER key a cache on `id()` of a per-request object (2026-07-09, THETA R2):** CPython
     recycles addresses — within a TTL window a later request's Session can land on the same
     `id(db)` and hit an entry computed for a DIFFERENT engine (wrong corpus) or a pre-write
