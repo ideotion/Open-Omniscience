@@ -90,7 +90,20 @@
         n.addEventListener("click", () => { try { onClick(); } finally { n.remove(); } });
       }
       $("toast").appendChild(n);
-      setTimeout(() => n.remove(), onClick ? 8000 : 5000);
+      // Stay on screen at least a few seconds; errors/warnings linger longer (they carry
+      // failure info the user needs to read), and hovering or keyboard-focusing the message
+      // PAUSES the auto-dismiss so it is never lost mid-read (resumes with a short grace on
+      // leave). Floor of 4 s so no message ever flashes.
+      const base = kind === "err" ? 9000 : kind === "warn" ? 7000 : 5000;
+      const dur = Math.max(4000, onClick ? Math.max(base, 8000) : base);
+      n.tabIndex = 0;  // focusable so keyboard users get the same hover-pause
+      let timer = setTimeout(() => n.remove(), dur);
+      const pause = () => clearTimeout(timer);
+      const resume = () => { clearTimeout(timer); timer = setTimeout(() => n.remove(), 1500); };
+      n.addEventListener("mouseenter", pause);
+      n.addEventListener("mouseleave", resume);
+      n.addEventListener("focusin", pause);
+      n.addEventListener("focusout", resume);
     }
 
     // -- Background-activity indicator -------------------------------------- //

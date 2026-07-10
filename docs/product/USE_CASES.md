@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scri
 
 Each step is labelled **[works today]** (verified capability), **[after audit fixes]** (works
 today *because of* the v0.0.7 audit), or **[needs RM-xx]** (requires a roadmap item from
-[ROADMAP.md](ROADMAP.md)). No scenario relies on the quarantined, fabricated "detection"
+[ROADMAP.md](../archive/roadmaps/RICE_BACKLOG_pre-0.2.md)). No scenario relies on the quarantined, fabricated "detection"
 features — where a persona wants those, the honest substitute or honest gap is stated.
 
 > **UI map** (the current flat left sidebar): Home · Insights · World map · Governments ·

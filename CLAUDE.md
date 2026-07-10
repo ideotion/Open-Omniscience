@@ -648,6 +648,34 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     trusting a red count. Full entry in SHIPPED_LOG 2026-07-10.
 
 ## Open queue (when maintainer says proceed)
+- **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
+  [`docs/ROADMAP.md`](docs/ROADMAP.md) (DB limitations · performance/scale · known bugs ·
+  feature backlog, each with status) — read it for the overview; the DEEP scale detail stays
+  in [`docs/product/SCALE_ROADMAP.md`](docs/product/SCALE_ROADMAP.md); design intent stays in
+  `docs/FUTURE_DEVELOPMENTS.md`; THIS ledger stays the binding source of truth. The three dead
+  roadmap homes (old `docs/ROADMAP.md`, `docs/product/ROADMAP.md`, `BACKLOG_GROUPED.md`) were
+  archived to `docs/archive/roadmaps/` (nothing deleted).
+- **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
+  MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
+  "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL
+  UI-language editions AUTO-INGESTED as first-class corpus `Article`s (metadata linking to the
+  original source, through the ONE `index_article` hook → keyword engine + date extraction +
+  When×Where×Who + sentiment, exactly like any scraped article) — "they ARE articles, treat them as
+  such." The ONLY difference: wiki text changes over time, so the **track-change / audit / version
+  history is a per-article LINKED LAYER keyed by `article_id`, the same way a synthesis/translation
+  links via `ArticleAnalysis`.** **Country LAWS get the identical treatment** — `LawDocument` becomes
+  a first-class Article (keywords/metadata/dates) with `LawRevision` as its linked audit layer. The
+  unifying pattern = **a versioned source is an Article + a linked revision/audit trail**. CODE-VERIFIED
+  current state (2026-07-10): watched wiki PAGES already become corpus Articles via `src/wiki/corpus.py`
+  (keyworded + searchable), but downloaded DUMPS are files-only (no auto whole-edition ingest — this is
+  the standing "dumps→corpus" gap + the 2026-06-12 superseding "auto-track the whole edition after a
+  dump download" ruling, now the plan of record); LAWS are a SEPARATE tracked vertical (`src/law/`,
+  `LawDocument`/`LawRevision`, "mirrors the Wikipedia tracker") that does NOT flow through `index_article`,
+  so laws are NOT yet corpus Articles. HONEST MECHANISM: full-edition bulk ingest = **dump-as-baseline +
+  `recentchanges`-delta**, NEVER per-article network scraping (won't scale to ~6M+ articles/edition).
+  **SCALE-CRITICAL + GATED: tens of millions of articles = squarely the 5 TB / storage-hygiene /
+  segmenter problem (`SCALE_ROADMAP.md`) — do NOT start before the P0 scale set lands.** Recorded on the
+  roadmap under "Wikipedia as a living source" + the world-law vertical.
 - **SCALE MANDATE (maintainer ruled 2026-07-09; the consolidated roadmap lives in
   [`docs/product/SCALE_ROADMAP.md`](docs/product/SCALE_ROADMAP.md) — read it before picking
   work):** a live 4–5-day run grew the corpus to **~100–130 GB**; the app must be designed to

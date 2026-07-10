@@ -825,7 +825,7 @@ python scripts/verify_evidence.py bundle.json [signer_pubkey]
 The full design — and exactly what each mechanism does and does **not** prove — is
 in [`docs/USER_MANUAL.md`](USER_MANUAL.md). *(A planned overhaul to make
 this tab dummy-proof and largely automatic is captured in
-[`docs/ROADMAP.md`](ROADMAP.md).)*
+[`docs/ROADMAP.md`](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md).)*
 
 ### 3.8a Source integrity
 
@@ -1359,7 +1359,7 @@ sweep"). None is a bug; each shapes how to read a result.
 [INSIGHTS](USER_MANUAL.md) · [MARKETS](USER_MANUAL.md) · [WIKIPEDIA](USER_MANUAL.md) ·
 [DATABASE](ARCHITECTURE.md) · [API_DOCUMENTATION](ARCHITECTURE.md) ·
 [SECURITY](SECURITY.md) · [PRODUCT_SYNTHESIS](DESIGN.md) ·
-[OPEN_QUESTIONS](ROADMAP.md).
+[OPEN_QUESTIONS](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md).
 
 *© 2026 Ideotion — built for investigative journalism, honestly. GPLv3.*
 
@@ -1385,8 +1385,8 @@ Reference depth for each tool, consolidated from the former per-feature guides. 
 ## The Home briefing — intelligence as honest "cards"
 
 > **Status:** `0.06` Phase A (the GUI spine) — shipped and tested. The phased plan
-> lives in [`ROADMAP.md` → "0.06 — The Intelligence Layer"](ROADMAP.md); the
-> *what & why* in [`ROADMAP.md`](ROADMAP.md).
+> lives in [`ROADMAP.md` → "0.06 — The Intelligence Layer"](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md); the
+> *what & why* in [`ROADMAP.md`](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md).
 
 The **Home** tab is no longer just at-a-glance stats. It is a **triage feed**: the
 app gathers and measures in the background, then surfaces *candidate stories* as
@@ -1568,7 +1568,7 @@ composable verticals as cards (emotion, IP/legal news); the **law / IP primary-s
 change-tracking verticals** (ingesting `legislation.gov.uk`, EUR-Lex, patents/dockets)
 remain the documented next step — they reuse the existing change-tracking and
 near-dup/correlation engines but require live external sources. See
-[`ROADMAP.md`](ROADMAP.md) Phases B–E.
+[`ROADMAP.md`](archive/roadmaps/DESIGN_MEMORY_pre-0.2.md) Phases B–E.
 
 
 ---

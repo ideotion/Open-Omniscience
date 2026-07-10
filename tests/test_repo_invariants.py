@@ -1332,6 +1332,22 @@ def test_version_single_sourced_from_pyproject():
     )
 
 
+def test_toast_messages_stay_on_screen():
+    """Bottom-right popup/toast messages (including errors) must stay on screen at least a few
+    seconds and pause while the user is reading them (maintainer-asked 2026-07-10). Guards
+    against a regression to a too-short fixed auto-dismiss. The single ``toast()`` function in
+    app.js drives every bottom-right message, so asserting on it covers the whole SPA."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function toast(msg" in app, "the single bottom-right toast() function must exist"
+    # errors/warnings linger longer than the default, and a hard minimum floor prevents flashes
+    assert 'kind === "err" ? 9000' in app, "error toasts must linger longer than the default"
+    assert "Math.max(4000" in app, "a minimum on-screen floor (>= a few seconds) must be enforced"
+    # hover / keyboard focus pauses the auto-dismiss so a message is never lost mid-read
+    assert 'n.addEventListener("mouseenter"' in app and 'n.addEventListener("focusin"' in app, (
+        "toast must pause its auto-dismiss on hover AND keyboard focus"
+    )
+
+
 def test_red_lines_not_crossed():
     """GOVERNANCE.md dual-use red lines, enforced as a tripwire: forbidden capabilities
     (biometric recognition, private-individual tracking, central telemetry) must not appear

@@ -5,7 +5,7 @@
 > respects the §0.5 invariants (local-first, ethical-by-construction, FOSS-only, auditable,
 > provenance, operator-privacy), and carries an explicit invariant check. This is the
 > product-strategy companion to the engineering planning in
-> [`docs/ROADMAP.md`](../ROADMAP.md).
+> [`docs/ROADMAP.md`](DESIGN_MEMORY_pre-0.2.md).
 
 ## 1. Backlog
 
