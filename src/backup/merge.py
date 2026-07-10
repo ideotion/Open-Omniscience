@@ -1459,6 +1459,25 @@ def run_restore(
 
     report["committed"] = True
     report["batch_id"] = batch_id
+
+    # DB-7 (corpus-epoch → restore-merge): a committed merge is a bulk mutation of the live
+    # corpus, and the restore is "the one residual mutator" not yet wired to the corpus
+    # epoch. Bump it once, unconditionally, so the disposable derived rollups (the
+    # keyword_daily / source_coverage serves) FULL-rebuild after the restore instead of
+    # trusting an incremental id-watermark merge across it. The post-swap re-index below
+    # ALSO bumps when it runs, but this explicit bump covers reindex_imported=False (the
+    # merge-engine + torture path), an empty import set, and a re-index that hiccups after
+    # the additive merge already committed. Over-bumping is harmless (it only forces a
+    # correct rebuild); best-effort so a coordination write never undoes a committed restore.
+    try:
+        from src.analytics.corpus_epoch import bump_corpus_epoch
+        from src.database.session import session_scope
+
+        with session_scope() as _epoch_sess:
+            report["corpus_epoch"] = bump_corpus_epoch(_epoch_sess, reason="restore_merge")
+    except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
+        _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
+
     # DB-reliability D1 follow-up (Wave 5 L): refresh the durable ``event_imports`` mirror
     # from the merged side-file now that the live DB IS the restored corpus. merge_side_files
     # unioned the JSON with mirror=False PRE-swap (the OLD live DB had to stay untouched), so
