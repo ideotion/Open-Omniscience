@@ -26,6 +26,9 @@ _LANGS = [
     "nl", "no", "nb", "pl", "pt", "ru", "sl", "sv",
     # 2026-07-01 follow-up: bs aliased to the Croatian (hr) BCS list.
     "bs",
+    # 2026-07-10 segmenter wave: zh/ja/th become segmentable via the [segmentation]
+    # extra so their stoplist applies; ko (Hangul) + mr (Marathi) are space-segmented.
+    "zh", "ja", "th", "ko", "mr",
 ]
 
 

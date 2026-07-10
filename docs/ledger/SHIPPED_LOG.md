@@ -3061,3 +3061,72 @@ the old one until then; an uncaught erasure-code ceiling must never be able to t
 with it. (3) a test double injected via a parameter (corpus_source) bypasses the production path — a fix
 in the real path needs a test that drives the real path (monkeypatch the real dependency), or it passes
 while the fix sits unexercised.
+
+---
+
+## 2026-07-10 — B1: offline zh/ja/th word segmentation ([segmentation] extra) + ko/mr stoplists
+
+Maintainer delegated ruling 2a (pick & ship a license-clean offline segmenter). Session B,
+branch `claude/b-segmenter`, draft PR onto 0.2.
+
+WHAT. zh/ja/th keywords were junk at scale (field test 2026-07-08: zh 46k + th 21k + ja 12k junk
+keywords, Heaps β≈0.95, prune finds no orphans — segmentation is the ONLY lever) because the
+whitespace tokenizer sees a whole zh/ja sentence as ONE giant "word" and shatters Thai at its
+combining marks. These languages were honestly reported `unsegmented`.
+
+CHOSEN. jieba (MIT, zh) + janome (Apache-2.0 bundled dict, ja) + pythainlp newmm (Apache-2.0, th)
+— all pure-local, OFFLINE (dictionaries bundled IN THE WHEEL, no model download, no network;
+verified), pip-installable via a NEW `[segmentation]` extra (preferred over repo vendoring: no
+100MB rule, no license-file duplication, no `*_AS_OF` so no registry entry needed per the freshness
+protocol). pythainlp core pulls ZERO extra deps.
+
+SEAM. `src/analytics/segmentation.py`: `segment(text, lang) -> [(word, offset)] | None` (jieba
+`tokenize` yields offsets directly; janome/pythainlp offsets reconstructed with a forward-cursor
+`text.find` since surfaces concatenate to the input) + `segmenter_available(lang)` (a lightweight
+`__import__` probe that does NOT load dictionaries — safe to call from a status check). Hooked into
+`extract._terms()`: when `segment()` returns tokens, use them with a language-aware `min_len=2`
+(CJK words are 2 chars — 中国/政策/経済 — so the Latin 3-char floor would drop them); else the
+byte-identical whitespace `_WORD_RE` path (`min_len=_MIN_TERM_LEN=3`). GRACEFUL DEGRADE by
+construction: extra absent OR `OO_SEGMENTATION=0` → `segment()` returns None → old tokenizer, and
+zh/ja/th stay `unsegmented` (a core install is byte-unchanged; proven by test + the Core-only CI job).
+
+STATUS FLIP. `managed.language_status()` is now segmenter-aware (zh/ja/th → `functional` only when a
+segmenter is present, the vendored stoplist then applying); `is_managed` refactored to
+`language_status(lang)=="functional"` (byte-identical for every existing language); `engine_report`
+routes through the ONE source of truth. ko (Hangul) + mr (Marathi) added to MANAGED_LANGUAGES
+(space-segmented, distinct scripts) with vendored stopwords-iso lists. Source-gating (`is_unmanaged`)
+follows: with the extra installed, zh/ja/th sources seed ENABLED (existing sources keep their
+operator choice — no disruption).
+
+STOPLISTS. Vendored from stopwords-iso 0.7.1 (byte-identical to 0.7.0 for existing languages):
+zh 794 / ja 134 / th 116 / ko 679 / mr 99. `STOPWORDS_ISO_AS_OF` 2026-06→2026-07, registry
+`last_verified` 2026-07-10 (external-freshness green). sr/az stay honestly uncovered (absent from
+stopwords-iso).
+
+MEASURED (fixtures). OFF: whole SENTENCES as one keyword (`中国政府今天宣布了新的经济政策`) /
+Thai mark-fragments. ON: real RECURRING words (经济/政策/市场/影响, 経済/政府/市場,
+เศรษฐกิจ/รัฐบาล/ผลกระทบ). The corpus-level win is recurrence across articles (Heaps β falls from
+~0.95), which is what makes aggregations meaningful.
+
+CI. The main test job installs `[segmentation]` (the capability + the 3 zh/ja/th self-test golden
+cases run for real); the Core-only job (no extra) proves graceful degrade. Retroactive path: a
+keyword-only re-index applies segmentation to an existing corpus.
+
+VERIFIED (py3.13 venv): 73 seg/managed/report/extract + 241 keyword/freshness/invariants green;
+ruff F/B clean; mypy 0 new in-file errors; selftest 46/46 (incl. segmentation_{zh,ja,th}).
+NEGATIVE-SPACE SKEPTIC PASS found + FIXED two real defects the first cut introduced: (1)
+`language_status()` normalized the code (`zh-CN`→`zh`→functional) but `segment()` required an EXACT
+match, so a region/script-tagged article (`zh-CN`, `zh-Hans`, `ZH`) reported 'functional' (source
+seeds ENABLED) while extraction silently skipped segmentation — FIX: normalize the bare ISO code in
+`segment()`/`segmenter_available()` AND at the top of `extract._terms()` (which also routes a
+region-tagged code to its proper scoped stoplist, a correctness bonus). (2) the 2-char floor was
+per-DOCUMENT, so a stray 2-letter LATIN token (`vs`/`ai`/`eu`) leaked in a CJK doc — FIX: a per-TOKEN
+script-aware floor (`_term_floor`/`_CJK_THAI_RE`: 2 for a CJK/Thai word, 3 for Latin even inside a
+segmented doc). Both pinned by tests. REFUTED: byte-identical fallback, offset fidelity, import
+cycle, heavy status-check load, kill switch, adversarial inputs, determinism. RESIDUAL (honest): a
+few uncovered CJK function words leak (stopwords-iso `ja` is a thin 134-word list) — the same
+iterative stoplist tail every language has, far better than whole-sentence junk (never fabricated).
+
+LESSONS folded into the Session-rituals "Lessons" subsection: optional-seam design, `min_len=2` for
+CJK, offset reconstruction via forward-cursor, lightweight importability probe for status checks,
+the Heaps-β corpus-recurrence framing.

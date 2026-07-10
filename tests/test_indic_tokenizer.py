@@ -50,7 +50,10 @@ def test_bengali_content_survives_grammar_is_filtered():
 
 
 def test_hi_bn_are_now_managed():
+    from src.analytics.segmentation import segmenter_available
+
     assert is_managed("hi") and is_managed("bn")
     assert language_status("hi") == "functional" and language_status("bn") == "functional"
-    # zh/ja stay unsegmented — a stoplist can't fix missing segmentation.
-    assert language_status("zh") == "unsegmented"
+    # zh stays unsegmented WITHOUT the [segmentation] extra (a stoplist can't fix missing
+    # segmentation), and flips to functional only when the segmenter is installed.
+    assert language_status("zh") == ("functional" if segmenter_available("zh") else "unsegmented")

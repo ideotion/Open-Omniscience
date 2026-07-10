@@ -120,6 +120,19 @@ nlp = [
     "spacy>=3.7",
 ]
 
+# Optional word segmentation for the space-less scripts (zh/ja/th) the whitespace
+# tokenizer cannot split — without it a whole Chinese/Japanese sentence became ONE
+# junk "keyword" and Thai shattered at its marks (field test 2026-07-08). All three
+# are pure-local, OFFLINE (dictionaries bundled in the wheel, no model download, no
+# network) and license-clean: jieba (MIT) / janome (Apache-2.0) / pythainlp (Apache-2.0).
+# A core install works without them — src/analytics/segmentation.py degrades to the
+# whitespace tokenizer and zh/ja/th stay honestly reported "unsegmented".
+segmentation = [
+    "jieba>=0.42",
+    "janome>=0.5",
+    "pythainlp>=5.0",
+]
+
 # Optional GPG-based signing path (cryptography/Ed25519 is in core).
 crypto = [
     "python-gnupg>=0.5.2",

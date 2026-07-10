@@ -359,7 +359,7 @@ class StopwordsManager:
 
 # Dated provenance for the vendored stopwords-iso snapshot (registered in
 # configs/external_artifacts.yml; the freshness/protocol guard enforces it).
-STOPWORDS_ISO_AS_OF = "2026-06"
+STOPWORDS_ISO_AS_OF = "2026-07"
 
 
 # Curated temporal-deictic adverbs (yesterday/today/tomorrow + now/recently/currently
