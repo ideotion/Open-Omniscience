@@ -2774,6 +2774,32 @@ def test_library_central_dashboard():
     assert "AI summaries" in html and "Wikipedia dumps" in html and "Offline map regions" in html
 
 
+def test_storage_footprint_shown_wherever_db_size_shows():
+    """B14 (A12b display half): the COMPLETE on-disk footprint — db+wal+shm+wiki_dumps+
+    osm_regions+staging+other+Ollama model store — is shown on the Library dashboard AND the
+    task-manager System tab, with the encrypted-private-corpus vs re-downloadable-public split
+    VISIBLE (not toggled). Bytes only, no score; a recursive disk walk fetched LAZILY (on tab
+    open) + cached, NEVER on the live poll."""
+    html = _ui_source()
+    # the A12b backend endpoint is consumed
+    assert "/api/diagnostics/storage-footprint" in html
+    assert "renderStorageFootprint" in html and "_fetchStorageFootprint" in html
+    # hosted on BOTH surfaces + wired lazily (tab-open, not the poller)
+    assert 'id="library-storage"' in html and 'id="vitals-storage"' in html
+    assert 'renderStorageFootprint("library-storage")' in html
+    assert 'renderStorageFootprint("vitals-storage")' in html
+    # the honest private-vs-public split is rendered (not hidden behind a toggle) — and the
+    # private label does NOT over-claim encryption (no fabricated security: -shm + staging in
+    # the private sum are not necessarily encrypted, so it is "Private (local)").
+    assert "Private (local; corpus encrypted at rest)" in html
+    assert "Encrypted private corpus" not in html
+    assert "_SF_PUBLIC" in html  # wiki/osm/models classed re-downloadable
+    # NO score, and it must NOT ride the live poll (fetch is cached + forced only on Re-measure)
+    assert "Re-measure" in html
+    # cache guard: the fetch dedupes an in-flight walk so two hosts don't double-walk
+    assert "_sfPending" in html and "_sfCache" in html
+
+
 def test_settings_chrome_cleanups():
     """Field remarks 11/12/14/15: the Settings intro box is removed, Appearance + GUIs are
     fused into one 'Graphics' subtab (nothing lost), the sticky chrome is opaque (matching

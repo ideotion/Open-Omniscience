@@ -151,6 +151,8 @@
         <div class="tm-panel" id="tm-system" style="display:none">
           <div id="vitals-body"></div>
           <div id="vitals-note"></div>
+          <div style="margin-top:10px;font-weight:600">Storage footprint</div>
+          <div id="vitals-storage"><div class="muted" style="font-size:12px">Loading…</div></div>
         </div>
       </div>
 
@@ -421,6 +423,15 @@
         COUNT(*) or on-disk byte size — nothing is estimated.</div>
       <div id="db-stats" class="stat-grid"><div class="muted">Loading…</div></div>
       <div id="db-file" class="hint" style="margin-top:10px"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Storage footprint</h2>
+      <div class="hint" style="margin-bottom:10px">The COMPLETE on-disk footprint across every store —
+        the encrypted database, its WAL, Wikipedia dumps, offline map regions, backup staging, and the
+        local AI-model store (which lives outside the data folder). Only the encrypted corpus is
+        irreplaceable; the rest is re-downloadable. A recursive size measurement, so it runs on demand.</div>
+      <div id="library-storage"><div class="muted">Loading…</div></div>
     </section>
 
     <section class="panel">
