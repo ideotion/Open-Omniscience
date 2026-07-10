@@ -1617,7 +1617,8 @@
         <div id="session-forensics-out" class="small" style="margin-top:6px"></div>
       </div>
       <div class="row" style="margin-top:6px">
-        <button onclick="window.open('/api/diagnostics/all','_blank')" title="Every diagnostics log in one archive — one click instead of nine. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
+        <button id="all-diag-btn" onclick="runAllDiagnostics(this)" title="Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
+        <span id="all-diag-status" class="small" style="margin-left:6px"></span>
         <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Keyword log (.zip)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">All keywords (.zip)</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/keyword-selftest?download=1','_blank')">Keyword self-test (.json)</button>

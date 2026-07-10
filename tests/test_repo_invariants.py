@@ -4745,3 +4745,22 @@ def test_vitals_poll_backs_off_when_panel_closed():
         "the network/airplane poll must remain its own separate _adaptivePoll (untouched)"
     )
 
+
+
+def test_all_diagnostics_runs_as_a_background_job():
+    """B6 / field-test Item 10: the 'All diagnostics (.zip)' button no longer does a
+    SYNCHRONOUS build that freezes the single-worker server for minutes on a large corpus.
+    It starts the background job (POST /all-job), polls /all-job/status, shows live progress,
+    and downloads /all-job/download when ready. JOB-STATE-AS-TRUTH: a dropped poll shows a
+    'connection hiccup — retrying', never 'failed'. Browser-unverified per fork-3 —
+    node-checked + grep-guarded here."""
+    ui = _ui_source()
+    assert 'runAllDiagnostics(this)' in ui, "the button must call the background-job handler"
+    assert "async function runAllDiagnostics" in ui, "the handler must be defined"
+    assert "/api/diagnostics/all-job" in ui, "it must start the background job"
+    assert "/api/diagnostics/all-job/status" in ui, "it must poll job status"
+    assert "/api/diagnostics/all-job/download" in ui, "it must download when ready"
+    assert 'id="all-diag-status"' in ui, "a live-progress status element must exist"
+    assert "Connection hiccup" in ui, "a dropped poll must degrade honestly, not say 'failed'"
+    # The old synchronous window.open('/api/diagnostics/all') blocking click is gone.
+    assert "window.open('/api/diagnostics/all','_blank')" not in ui, "the synchronous /all click must be replaced"

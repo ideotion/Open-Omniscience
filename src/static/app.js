@@ -9175,6 +9175,55 @@
       } finally { if (btn) btn.disabled = false; }
     }
 
+    // All-diagnostics archive as a BACKGROUND job (D2, field-test Item 10): the old button
+    // did a SYNCHRONOUS /api/diagnostics/all build that froze the single-worker server for
+    // minutes on a large corpus. This starts the background job, polls its status, shows live
+    // progress, and downloads when ready. JOB-STATE-AS-TRUTH: a dropped poll shows an honest
+    // "connection hiccup — retrying", NEVER "failed" — only a backend error state says failed.
+    async function runAllDiagnostics(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("all-diag-status");
+      const set = (msg) => { if (el) el.textContent = msg; };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      if (btn) btn.disabled = true;
+      set(t("Starting…"));
+      try {
+        // Start (idempotent: if one is already running the backend returns started:false and
+        // we simply poll the in-flight build).
+        try { await api("/api/diagnostics/all-job", { method: "POST" }); }
+        catch (e) { /* a transient start failure still lets us poll an existing job */ }
+        let miss = 0;
+        for (let i = 0; i < 1800; i++) {  // ~60 min ceiling at 2 s (bounded, never infinite)
+          let s;
+          try { s = await api("/api/diagnostics/all-job/status"); miss = 0; }
+          catch (e) {
+            miss++;
+            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
+            await sleep(Math.min(2000 * miss, 10000));  // backoff, capped
+            if (miss > 30) { set(t("Still building — check the task manager.")); break; }
+            continue;
+          }
+          const state = s && s.state;
+          if (state === "done" && s.ready) {
+            const sz = s.download_bytes ? " · " + _fmtBytes(s.download_bytes) : "";
+            set(t("Ready — downloading…") + sz);
+            window.open("/api/diagnostics/all-job/download", "_blank");
+            break;
+          }
+          if (state === "error") { set(t("Build failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { set(t("Build cancelled.")); break; }
+          if (state === "done") { set(t("Done — check the task manager for the file.")); break; }
+          // running / idle: show live progress
+          const pct = (s.progress && s.progress.percent != null) ? " " + s.progress.percent + "%" : "";
+          const member = s.detail ? " · " + s.detail : "";
+          set(t("Building in the background…") + pct + member);
+          await sleep(2000);
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
     // /api/diagnostics/ir-eval report for a gold-set FILE — score the live search at the
     // current BM25F default, or (both weight boxes filled) A/B two (title,body) weight
