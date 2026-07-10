@@ -655,6 +655,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `docs/FUTURE_DEVELOPMENTS.md`; THIS ledger stays the binding source of truth. The three dead
   roadmap homes (old `docs/ROADMAP.md`, `docs/product/ROADMAP.md`, `BACKLOG_GROUPED.md`) were
   archived to `docs/archive/roadmaps/` (nothing deleted).
+- **PARALLEL AUTONOMOUS SESSIONS A+B — MAINTAINER RULED 2026-07-10 (verbatim "1 a / 2 a / 3 a /
+  4 a" to the four pre-clearance questions; briefs at `docs/design/AUTONOMOUS_SESSION_BRIEF_
+  2026-07-10_A_SCALE_BACKEND.md` + `_B_PRODUCT_UX.md` — the operating manuals, incl. the
+  territory contract that keeps the two sessions collision-free):** (1a) **P0 engineering vs the
+  synthetic GAMMA harness is CLEARED** — Session A may root-cause AND fix P0.4 unlock-at-scale
+  (+ the P0 riders: corpus-epoch→restore-merge, folder-manifest verify) against the synthetic
+  corpus, everything test-pinned + benchmark-proven; the maintainer's LIVE-corpus run stays the
+  FINAL validation gate (never claim P0 closed on synthetic evidence alone). (2a) **the zh/ja/th
+  SEGMENTER ruling is DELEGATED — pick & ship** license-clean offline segmenters (prefer a
+  pip-installable `[segmentation]` extra over repo vendoring; graceful degrade; registry
+  entries; measured junk reduction) + ko/vi/mr stoplists where a real source exists. (3a) **ALL
+  ~9 pending rulings are delegated with full autonomy INCLUDING vendored binaries** — the per-OS
+  httpfs crypto-extension bundling attempt is cleared (sha256-pinned, registry-tracked,
+  verify-before-LOAD; on any fetch/attestation failure record the blocker, never fabricate),
+  hover-stats/region-value/rare-earths(USGS)/sentiment decided by Session B with conservative
+  defaults recorded here; lemmatization default-on STAYS measure-gated (the gold set is
+  maintainer-made — cannot be honestly synthesized); the v0.2.0 TAG stays held (unchanged).
+  (4a) **the doc-archival pass is CLEARED** — session-briefs/releases/field-tests →
+  `docs/archive/` subfolders, non-lossy, links retargeted (the two live 2026-07-10 A/B briefs
+  stay until their sessions complete). Sessions branch as `claude/a-*` / `claude/b-*`; shared
+  append-targets (this ledger, shipped.csv, ROADMAP, external_artifacts.yml, repo-invariants)
+  merge ADDITIVELY — never revert the sibling session's lines (the #548 precedent).
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL

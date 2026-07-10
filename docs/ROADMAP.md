@@ -245,15 +245,19 @@ anchoring), Node 0 = the maintainer's own machine. **User corpora never touch th
 
 ## 5. Pending maintainer rulings (nothing moves until picked)
 
-1. **zh/ja/th segmenter + ko/mr stoplist artifacts** — which library/wordlist to vendor + license. *Highest-value single ruling* (now scale-critical for storage).
-2. **httpfs crypto-extension bundling** (per-OS) — unblocks the D1 persisted encrypted columnar store the 5 TB target needs. *Second-highest.*
-3. **Rare-earths price source** — USGS supply data (recommended) / free proxy / authorized paid assessor / defer.
-4. **`v0.2.0` tag** — held until the P0 live-corpus scale validation lands (esp. P0.4 unlock). The version+docs flip is done; the branch rename is done.
-5. **Keyword hover-stats** — which stats to show (Slice 2 of clickable keywords).
-6. **Lemmatization default-on** — needs the gold-set measure first.
-7. **Retention / eviction posture** — after the P1.5 storage-composition numbers are in.
-8. **`global` / `transnational` region value** in the source schema.
-9. **Multilingual sentiment classifier vs subjectivity pivot.**
+> **2026-07-10 delegation ruling ("1a 2a 3a 4a"):** most of these were DELEGATED to the two
+> parallel autonomous sessions (briefs in `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-10_*`);
+> each decision gets recorded in `CLAUDE.md` when executed.
+
+1. **zh/ja/th segmenter + ko/mr stoplist artifacts** — **DELEGATED to Session B (pick & ship**, license-clean/offline, prefer a pip extra, measured junk reduction). Was the highest-value pending ruling.
+2. **httpfs crypto-extension bundling** (per-OS) — **DELEGATED to Session A (attempt cleared incl. binaries**, sha256-pinned + registry + verify-before-LOAD; honest blocker recorded if the fetch/attestation fails). Unblocks the D1 persisted columnar store.
+3. **Rare-earths price source** — **DELEGATED to Session B: USGS supply data** (descriptive supply figures, clearly not spot prices).
+4. **`v0.2.0` tag** — **STAYS HELD** until the P0 live-corpus scale validation lands (esp. P0.4 unlock). The version+docs flip is done; the branch rename is done.
+5. **Keyword hover-stats** — **DELEGATED to Session B** (decide the counts-only stat set, record it).
+6. **Lemmatization default-on** — **STAYS measure-gated** (the gold set is corpus-specific and maintainer-made; cannot be honestly synthesized).
+7. **Retention / eviction posture** — **STAYS pending** (after the P1.5 storage-composition numbers are in).
+8. **`global` / `transnational` region value** — **DELEGATED to Session B** (implement).
+9. **Multilingual sentiment classifier vs subjectivity pivot** — **DELEGATED to Session B** under the pyproject no-torch/onnx constraint (⇒ subjectivity/loaded-language pivot or a recorded deferral).
 
 ---
 
