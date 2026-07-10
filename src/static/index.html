@@ -1249,6 +1249,14 @@
       </div>
     </section>
     <section class="panel">
+      <h2>Detect unknown languages (AI)</h2>
+      <p class="muted" style="margin-top:0">Some articles arrive with no language tag, and the fast offline detector cannot always classify them (short text, low confidence, or a language it does not cover). This OPT-IN pass asks the local model to identify the language of those still-unknown articles. It is AI-derived and unreliable — a THIRD, clearly-labelled provenance class shown inline in the article view. It NEVER overwrites the source-asserted or offline-deduced language, and a garbage or unclear answer stores nothing. It runs as a cancellable background job (watch it in the task manager), never during scraping, and only on this machine's local model.</p>
+      <div class="row" style="align-items:center;gap:10px">
+        <button id="langdetect-btn" onclick="runLangDetect(this)">Detect languages</button>
+        <span id="langdetect-status" class="hint"></span>
+      </div>
+    </section>
+    <section class="panel">
       <h2>Custom extractors</h2>
       <p class="muted" style="margin-top:0">Your own AI extractors — each a prompt that pulls one kind of rich metadata from an article (an extension of the built-in who / where / when). Output items are stored as AI-derived metadata of the type you name, shown beside the article and labelled "AI-derived · unreliable", never mixed into the trusted keyword index. Define and manage them here; run them over a selection from the search toolbar or an analysis window (the "Run extractor" action), or automatically on new articles via each extractor's run-on-ingest toggle.</p>
       <div id="ai-prompts-list" class="hint">Loading…</div>

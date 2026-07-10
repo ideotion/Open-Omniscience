@@ -413,3 +413,111 @@ def run_custom_prompt(
             _bgtasks.finish(_tok)
 
     return StreamingResponse(_stream(), media_type="application/x-ndjson")
+
+
+# --------------------------------------------------------------------------- #
+# B15: OPT-IN local-LLM language detection for articles STILL unknown after the
+# offline detector. A THIRD, labelled "AI-derived · unreliable" language class in
+# ai_keyword — NEVER Article.language / Article.detected_language. Detector-first,
+# validated (garbage stores nothing), cancellable, visible in /api/jobs, never on
+# the scrape hot path. Local loopback only; airplane mode refuses it at the client.
+# --------------------------------------------------------------------------- #
+from src.ai_layer.langdetect_llm import detect_for_articles, unknown_language_work  # noqa: E402
+from src.database.session import session_scope  # noqa: E402
+from src.jobs.background import BackgroundJob, register_job  # noqa: E402
+
+_LANGDETECT_LIMIT = 500  # per-run bound (opt-in; re-run to continue the tail)
+
+
+def _langdetect_worker(ctx, *, model: str | None = None, limit: int = _LANGDETECT_LIMIT) -> dict:
+    """Detect a language label for articles the offline detector could not classify.
+    Opt-in + cancellable; writes ONLY ai_keyword(kind=language). No-op (never a wall of
+    failed events) when the local model is unavailable."""
+    tally: dict = {"total": 0, "stored": 0, "skipped": 0, "failed": 0, "none": 0, "ran": False}
+    client = OllamaClient()
+    try:
+        if not client.is_available():
+            tally["reason"] = "the local model is unavailable (Ollama down or airplane mode)"
+            return tally
+    except Exception:  # noqa: BLE001
+        tally["reason"] = "the local model is unavailable"
+        return tally
+    mdl = model or active_model()
+    bound = max(1, min(int(limit or _LANGDETECT_LIMIT), 5000))
+    with session_scope() as session:  # read the worklist, then release the session
+        work = unknown_language_work(session, bound)
+    tally["total"] = len(work)
+    ctx.set_progress(done=0, total=len(work), detail=f"model {mdl}")
+    tally["ran"] = True
+    if not work:
+        return tally
+    done = 0
+    for event in detect_for_articles(work, client, model=mdl, should_stop=lambda: ctx.stopping):
+        ev = event.get("event")
+        if ev == "item":
+            done += 1
+            st = event.get("status")
+            if st in ("stored", "skipped", "failed", "none"):
+                tally[st] += 1
+            ctx.set_progress(done=done, detail=f"{tally['stored']} labelled")
+        elif ev == "done":
+            tally["aborted"] = bool(event.get("aborted"))
+    return tally
+
+
+_LANGDETECT_JOB = register_job(
+    BackgroundJob(
+        "ai-langdetect", "Detecting article languages (AI, unreliable)", _langdetect_worker,
+        is_writer=True, cancellable=True,
+    )
+)
+
+
+class LangDetectBody(BaseModel):
+    model: str | None = None
+    limit: int | None = None
+
+
+@router.post("/detect-language")
+def ai_detect_language_start(body: LangDetectBody | None = None) -> dict:
+    """Start the OPT-IN local-LLM language-detection job. Writes a THIRD 'AI-derived ·
+    unreliable' language class into ai_keyword — never the authoritative or offline-deduced
+    channels. Cancellable + visible in /api/jobs; never the scrape hot path. 409-free: returns
+    the current status if a run is already in flight."""
+    b = body or LangDetectBody()
+    try:
+        return {"started": True, "job": _LANGDETECT_JOB.start(model=b.model, limit=b.limit or _LANGDETECT_LIMIT)}
+    except RuntimeError:
+        return {"started": False, "job": _LANGDETECT_JOB.status()}
+
+
+@router.get("/detect-language/status")
+def ai_detect_language_status() -> dict:
+    """Live status of the language-detection job (state, progress, and the final tally)."""
+    return _LANGDETECT_JOB.status()
+
+
+@router.post("/detect-language/cancel")
+def ai_detect_language_cancel() -> dict:
+    """Ask the running job to stop at its next article (cooperative; never kills a thread)."""
+    _LANGDETECT_JOB.cancel()
+    return _LANGDETECT_JOB.status()
+
+
+@router.get("/detect-language/candidates")
+def ai_detect_language_candidates(db: Session = Depends(get_db)) -> dict:
+    """How many articles are the job's actual worklist — still unknown after the offline
+    detector AND not yet AI-labelled (the SAME predicate as unknown_language_work, so the
+    count falls as the job runs and reaches 0 when the reachable tail is done). Counts only,
+    no score."""
+    from sqlalchemy import func, or_, select
+
+    from src.ai_layer.langdetect_llm import _already_labelled
+
+    unset = lambda col: or_(col.is_(None), col == "")  # noqa: E731
+    n = db.execute(
+        select(func.count(Article.id)).where(
+            unset(Article.language), unset(Article.detected_language), ~_already_labelled()
+        )
+    ).scalar() or 0
+    return {"candidates": int(n)}

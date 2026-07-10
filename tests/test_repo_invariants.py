@@ -4794,3 +4794,35 @@ def test_all_diagnostics_runs_as_a_background_job():
     assert "Connection hiccup" in ui, "a dropped poll must degrade honestly, not say 'failed'"
     # The old synchronous window.open('/api/diagnostics/all') blocking click is gone.
     assert "window.open('/api/diagnostics/all','_blank')" not in ui, "the synchronous /all click must be replaced"
+
+
+def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
+    """B15: the OPT-IN local-LLM language detector for articles STILL unknown after the
+    offline detector writes a THIRD 'AI-derived · unreliable' provenance class (ai_keyword
+    kind='language') and NEVER the authoritative Article.language nor the offline-deduced
+    Article.detected_language. Detector-first, validated (garbage stores nothing), a
+    cancellable background job — never the scrape hot path."""
+    mod = (_SRC / "ai_layer" / "langdetect_llm.py").read_text(encoding="utf-8")
+    api = (_SRC / "api" / "ai.py").read_text(encoding="utf-8")
+    ui = _ui_source()
+    # writes ONLY ai_keyword(kind="language") via the store helper (the "never overwrites the
+    # trusted channels" guarantee is proven behaviourally in tests/test_ai_langdetect.py::
+    # test_detect_stores_only_ai_keyword_and_never_touches_article_language).
+    assert 'LANG_KIND = "language"' in mod
+    assert "record_keywords(" in mod and "kind=LANG_KIND" in mod
+    # no UPDATE of the trusted columns: record_keywords takes language=code as a KEYWORD arg,
+    # so the module never contains a dotted assignment to a .language attribute.
+    assert ".language =" not in mod and ".detected_language =" not in mod
+    # detector-first: the worklist requires BOTH channels unset
+    assert "unset(Article.language)" in mod and "unset(Article.detected_language)" in mod
+    # validated: a reply outside the known code set stores nothing (miss over invent)
+    assert "KNOWN_LANG_CODES" in mod and "in KNOWN_LANG_CODES" in mod
+    # no score anywhere in the AI-derived language layer (honesty by construction)
+    assert "score" not in mod.lower()
+    # a cancellable, is_writer background job (visible in /api/jobs), never inline in a scrape
+    assert 'BackgroundJob(' in api and '"ai-langdetect"' in api
+    assert "cancellable=True" in api and "is_writer=True" in api
+    assert "should_stop=lambda: ctx.stopping" in api
+    # the endpoints + the opt-in Settings button + candidate count
+    assert '@router.post("/detect-language")' in api and '@router.get("/detect-language/candidates")' in api
+    assert "runLangDetect" in ui and 'id="langdetect-btn"' in ui and "loadLangDetectCount" in ui
