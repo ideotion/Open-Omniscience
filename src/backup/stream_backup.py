@@ -224,13 +224,24 @@ def _require_safe_manifest_names(m: dict[str, Any]) -> None:
     """Reject traversal/absolute names ANYWHERE a manifest names a file. A
     signature only proves internal consistency with the EMBEDDED key — anyone
     can self-sign — so verify, parity recovery and reassembly all guard names
-    BEFORE touching the filesystem."""
+    BEFORE touching the filesystem. This MUST cover every manifest field that
+    becomes a path: the volume registry, parity volumes, member names AND their
+    per-member volume references, plus the top-level ``corpus_member`` /
+    ``wal_member`` (the restore corpus-fold path turns those into ``staging /
+    <name>`` and unlinks them — an unguarded ``..`` escapes the staging dir into
+    the data dir, i.e. an arbitrary-file delete of the live corpus)."""
     for v in m.get("volumes") or []:
         _require_safe_volume_name(str(v.get("name") or ""))
     for pv in (m.get("parity") or {}).get("volumes") or []:
         _require_safe_volume_name(str(pv.get("name") or ""))
     for mm in m.get("members") or []:
         _require_safe_member_name(str(mm.get("name") or ""))
+        for vname in mm.get("volumes") or []:
+            _require_safe_volume_name(str(vname or ""))
+    if m.get("corpus_member") is not None:
+        _require_safe_member_name(str(m.get("corpus_member")))
+    if m.get("wal_member") is not None:
+        _require_safe_member_name(str(m.get("wal_member")))
 
 
 def _vol_name(member: str, i: int, run_token: str) -> str:

@@ -440,6 +440,63 @@ def test_traversal_member_names_in_a_self_signed_manifest_are_refused(tmp_path):
         read_stream_backup(dest, "pw", staging_root=tmp_path / "st2")
 
 
+def test_traversal_corpus_and_wal_member_fields_are_refused(tmp_path):
+    """The restore corpus-fold path turns the top-level ``corpus_member`` /
+    ``wal_member`` manifest fields into ``staging / <name>`` and UNLINKS them, so
+    an unguarded ``..`` escapes the ``.restore-*`` staging dir one level up (in
+    production that is the data dir holding the LIVE corpus) — an arbitrary-file
+    delete on the very restore path meant to protect the corpus. The manifest is
+    self-signable, so these fields must refuse BEFORE any filesystem touch."""
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus)
+
+    from src.backup.stream_backup import _sign_manifest
+
+    st_root = tmp_path / "st"
+    st_root.mkdir()
+    sentinel = st_root / "SENTINEL_LIVE"  # what "staging/../SENTINEL_LIVE" resolves to
+    sentinel.write_text("do not delete me", encoding="utf-8")
+
+    # wal_member traversal → the plaintext-corpus fold branch would unlink it
+    m = load_manifest(dest)
+    m["corpus_encrypted"] = False
+    m["wal_member"] = "../SENTINEL_LIVE"
+    m.pop("signature", None)
+    m["signature"] = _sign_manifest(m)  # attacker self-signs
+    (dest / MANIFEST_NAME).write_text(json.dumps(m, indent=1), encoding="utf-8")
+    with pytest.raises(VolumeError, match="unsafe member path"):
+        read_stream_backup(dest, "pw", staging_root=st_root)
+    assert sentinel.exists()  # refused BEFORE the unlink — the crown assertion
+    with pytest.raises(VolumeError, match="unsafe member path"):
+        verify_stream_backup(dest)
+
+    # corpus_member traversal → the encrypted branch would open+unlink an arbitrary DB
+    m = load_manifest(dest)
+    m["wal_member"] = None
+    m["corpus_member"] = "../SENTINEL_LIVE"
+    m.pop("signature", None)
+    m["signature"] = _sign_manifest(m)
+    (dest / MANIFEST_NAME).write_text(json.dumps(m, indent=1), encoding="utf-8")
+    with pytest.raises(VolumeError, match="unsafe member path"):
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st2")
+    assert sentinel.exists()
+
+    # a per-member volume reference is also a name→path; verify's decrypt loop
+    # opened it directly (no membership check) — now guarded too
+    m = load_manifest(dest)
+    m["corpus_member"] = "corpus.db"
+    m["members"][0]["volumes"] = ["../outside.ooenc"]
+    m.pop("signature", None)
+    m["signature"] = _sign_manifest(m)
+    (dest / MANIFEST_NAME).write_text(json.dumps(m, indent=1), encoding="utf-8")
+    with pytest.raises(VolumeError, match="unsafe volume file name"):
+        verify_stream_backup(dest)
+    with pytest.raises(VolumeError, match="unsafe volume file name"):
+        read_stream_backup(dest, "pw", staging_root=tmp_path / "st3")
+
+
 def test_wrong_backup_passphrase_fails_loudly(tmp_path):
     corpus = tmp_path / "corpus.db"
     _make_corpus(corpus)
