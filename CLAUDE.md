@@ -595,6 +595,17 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     connection's bump inside a long-lived session; and gate on the epoch AND an append id tail,
     since ordinary ingest appends without bumping the epoch (a pure epoch gate freezes the
     rollup during collection).
+  - **AUTOFLUSH CAN HAND THE WRITE GATE TO A READ — never enter a fetch loop on a DIRTY
+    session (2026-07-09, ETA P1.8):** the single-writer gate acquires on FLUSH, and
+    SQLAlchemy AUTOFLUSHES dirty state on the next QUERY — so feed bookkeeping written
+    BEFORE the collector's article loop meant the loop's first dedup SELECT acquired the
+    gate and held it ACROSS the article fetch (a slow Tor fetch + politeness while holding
+    the gate = the field's 438 s max single write-wait; a batched loop would hold it across
+    the WHOLE feed). Probe empirically — a fake session asserting
+    `write_gate.stats()["held"] is False` inside `get()` — and the rule: on gate-wired
+    sessions, write bookkeeping AFTER the network loop and COMMIT it before returning so the
+    session leaves clean (tests/test_collect_batching.py pins both collector paths + the
+    sequential shared-session case).
 
 ## Open queue (when maintainer says proceed)
 - **SCALE MANDATE (maintainer ruled 2026-07-09; the consolidated roadmap lives in

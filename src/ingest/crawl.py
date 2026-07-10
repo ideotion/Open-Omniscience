@@ -146,52 +146,72 @@ def crawl_source(
     start = start_url or f"https://{source.domain}"
     base_host = _registrable_host(urlparse(start).netloc)
 
-    tally = {r.value: 0 for r in IngestResult}
+    # STAGED is transient by contract (resolved at flush) — never a tally line.
+    tally = {r.value: 0 for r in IngestResult if r is not IngestResult.STAGED}
     report = CrawlReport(source=source.name, start_url=start, tally=tally)
 
     queue: deque[tuple[str, int]] = deque([(start, 0)])
     queued: set[str] = {canonicalize_url(start)}
 
-    while queue:
-        if report.pages_fetched >= cfg.max_pages:
-            report.stopped_reason = "max_pages"
-            break
+    # P1.8 collector write batching: buffer stores across the crawl so several
+    # articles share ONE gate window/fsync; fetches stay outside any gate.
+    # OO_COLLECT_COMMIT_BATCH=0 restores the legacy per-article path exactly.
+    from src.ingest.batch import ArticleBatch, collect_batch_size
 
-        url, depth = queue.popleft()
+    batch = ArticleBatch(session, source) if collect_batch_size() > 0 else None
+    try:
+        while queue:
+            if report.pages_fetched >= cfg.max_pages:
+                report.stopped_reason = "max_pages"
+                break
 
-        try:
-            fetched = fetcher.fetch(url, require_html=True)
-        except RobotsDisallowed:
-            tally[IngestResult.BLOCKED_ROBOTS.value] += 1
-            continue
-        except RobotsUnavailable:
-            tally[IngestResult.ROBOTS_UNAVAILABLE.value] += 1
-            continue
-        except FetchError:
-            tally[IngestResult.FETCH_FAILED.value] += 1
-            continue
+            url, depth = queue.popleft()
 
-        report.pages_fetched += 1
-
-        # Store the page if it is a real article (dedup handled inside).
-        outcome = store_fetched(session, source, fetched)
-        tally[outcome.result.value] += 1
-
-        # Harvest links to keep discovering, even from non-article index pages,
-        # but never beyond the depth bound.
-        if depth >= cfg.max_depth:
-            continue
-        for link in _harvest_links(fetched.content, fetched.final_url):
-            if cfg.same_domain_only and _registrable_host(urlparse(link).netloc) != base_host:
+            try:
+                fetched = fetcher.fetch(url, require_html=True)
+            except RobotsDisallowed:
+                tally[IngestResult.BLOCKED_ROBOTS.value] += 1
                 continue
-            canon = canonicalize_url(link)
-            if canon in queued:
+            except RobotsUnavailable:
+                tally[IngestResult.ROBOTS_UNAVAILABLE.value] += 1
                 continue
-            # Skip links whose canonical form is already stored (cheap pre-filter).
-            if _exists(session, canonical_url=canon):
+            except FetchError:
+                tally[IngestResult.FETCH_FAILED.value] += 1
                 continue
-            queued.add(canon)
-            queue.append((link, depth + 1))
+
+            report.pages_fetched += 1
+
+            # Store the page if it is a real article (dedup handled inside).
+            outcome = store_fetched(session, source, fetched, batch=batch)
+            if outcome.result is not IngestResult.STAGED:
+                tally[outcome.result.value] += 1
+
+            # Harvest links to keep discovering, even from non-article index pages,
+            # but never beyond the depth bound.
+            if depth >= cfg.max_depth:
+                continue
+            for link in _harvest_links(fetched.content, fetched.final_url):
+                if cfg.same_domain_only and _registrable_host(urlparse(link).netloc) != base_host:
+                    continue
+                canon = canonicalize_url(link)
+                if canon in queued:
+                    continue
+                # Skip links whose canonical form is already stored — or staged
+                # in the uncommitted batch (cheap pre-filter, no double fetch).
+                if batch is not None and batch.has_canonical(canon):
+                    continue
+                if _exists(session, canonical_url=canon):
+                    continue
+                queued.add(canon)
+                queue.append((link, depth + 1))
+    finally:
+        # ZERO LOSS: staged entries always get their write attempt; the tally
+        # then carries the true stored/duplicate counts.
+        if batch is not None:
+            batch.flush()
+            for k, v in batch.tally.items():
+                if v:
+                    tally[k] = tally.get(k, 0) + v
 
     if report.stopped_reason == "completed" and report.pages_fetched >= cfg.max_pages and queue:
         report.stopped_reason = "max_pages"

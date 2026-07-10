@@ -145,3 +145,15 @@ def _write_gate_not_leaked(request):
             "(would hang the next writer): a session was flushed but never "
             "committed/rolled-back/closed. Use session_scope()/get_db, or close()."
         )
+
+
+@pytest.fixture(autouse=True)
+def _memory_guard_not_leaked():
+    """The RSS memory guard (P0.3 E3) is a process-global latch; a test that
+    legitimately trips it (e.g. a monitor tick fed low-memory vitals) must
+    never leak a paused-low-memory state into the next test — the same
+    order-dependent-pollution class as the write-gate guard above."""
+    yield
+    from src.scheduler.memguard import memory_guard
+
+    memory_guard.reset(reason="test isolation")

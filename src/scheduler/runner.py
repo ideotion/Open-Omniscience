@@ -23,6 +23,7 @@ import logging
 import os
 import random
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 
 from src.database.query import capped
@@ -35,6 +36,108 @@ _LOG = logging.getLogger(__name__)
 # pathologically fast/empty pass (e.g. every feed answered 304) not hot-spin.
 # Interruptible (Event.wait), so stop() still returns promptly.
 _CONTINUOUS_GAP_S = 5.0
+
+
+# --------------------------------------------------------------------------- #
+# Pass recycling (P0.3 E2, field event 2026-07-09): ONE continuous crawl pass
+# ran 21.6 hours and accumulated per-pass memory until the kernel OOM-killer
+# fired. A pass is therefore BOUNDED — in wall-clock (OO_PASS_BUDGET_MINUTES,
+# default 60; 0 = unbounded, the old behaviour) and optionally in work
+# (OO_PASS_MAX_SOURCES, default 0 = off). When the budget expires the pass ends
+# CLEANLY: in-flight sources finish (politeness untouched, no thread is ever
+# interrupted), the not-yet-started remainder is DEFERRED and runs FIRST next
+# pass (ordering, never exclusion — no source starved), per-pass state is
+# released (src/scheduler/hygiene), and continuous mode starts the next pass.
+# --------------------------------------------------------------------------- #
+
+
+def _env_pass_float(name: str, default: float) -> float:
+    try:
+        v = float(os.getenv(name, "") or default)
+        return v if v >= 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _pass_budget_s() -> float:
+    """The per-pass wall-clock budget in seconds (0 disables recycling)."""
+    return _env_pass_float("OO_PASS_BUDGET_MINUTES", 60.0) * 60.0
+
+
+def _pass_max_sources() -> int:
+    """Optional per-pass work cap (sources admitted); 0 = off."""
+    return int(_env_pass_float("OO_PASS_MAX_SOURCES", 0.0))
+
+
+# Source ids deferred at the last pass boundary, in their fair-rotation order.
+# In-process state on purpose: a restart simply runs a fresh full pass (the
+# rotation covers everyone over time); within a process the carryover
+# guarantees a deferred source is FIRST in line, so recycling never starves.
+_DEFER_LOCK = threading.Lock()
+_DEFERRED_IDS: list[int] = []
+
+
+def _record_deferred(ids: list[int]) -> None:
+    with _DEFER_LOCK:
+        _DEFERRED_IDS[:] = list(ids)
+
+
+def _consume_deferred() -> list[int]:
+    with _DEFER_LOCK:
+        ids = list(_DEFERRED_IDS)
+        _DEFERRED_IDS.clear()
+        return ids
+
+
+def deferred_carryover_count() -> int:
+    """How many sources the last pass boundary deferred (status honesty)."""
+    with _DEFER_LOCK:
+        return len(_DEFERRED_IDS)
+
+
+class _PassWindDown:
+    """Decides when an in-flight pass stops taking NEW sources.
+
+    Workers consult :meth:`admit` BEFORE starting a source — a cheap check
+    (the guard's own mutex + this class's counter mutex, both leaf-level and
+    held for nanoseconds), so nothing is ever interrupted mid-fetch. Reasons:
+    ``"memory"`` (the RSS memory guard engaged — P0.3 E3,
+    checked FIRST: new work must never start under proven memory pressure),
+    ``"budget"`` (wall-clock budget expired), ``"work"`` (per-pass source cap
+    reached). ``now`` is injectable for deterministic tests. Thread-safe.
+    """
+
+    def __init__(self, *, budget_s: float, max_sources: int, now=time.monotonic) -> None:
+        self._now = now
+        self._deadline = (now() + budget_s) if budget_s > 0 else None
+        self._max = max(0, int(max_sources))
+        self._admitted = 0
+        self._lock = threading.Lock()
+
+    def admit(self) -> str | None:
+        """None = process the next source; else the wind-down reason."""
+        # Module-attribute access on purpose (memguard.memory_guard), so tests
+        # can swap the singleton.
+        from src.scheduler import memguard
+
+        if memguard.memory_guard.engaged:
+            return "memory"
+        with self._lock:
+            # Forward-progress floor (skeptic-hardened): a pathologically small
+            # budget (an env typo) must never yield zero progress forever — the
+            # FIRST source of a pass is always admitted; only the budget defers
+            # after it. The memory reason above deliberately has NO floor (under
+            # proven memory pressure zero new work is the point).
+            if (
+                self._deadline is not None
+                and self._now() >= self._deadline
+                and self._admitted > 0
+            ):
+                return "budget"
+            if self._max and self._admitted >= self._max:
+                return "work"
+            self._admitted += 1
+        return None
 
 
 def round_robin_interleave(sources: list, *, rng: random.Random | None = None) -> list:
@@ -500,6 +603,16 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         sources, country_priority=getattr(settings, "country_priority", None) or None
     )
 
+    # Pass-recycling carryover (P0.3 E2): sources the LAST pass boundary
+    # deferred run FIRST this pass, in their recorded order — recycling is
+    # ordering, never exclusion, so a wound-down pass can never starve a
+    # source. A deferred id no longer in the selection simply drops out.
+    carry = _consume_deferred()
+    if carry:
+        rank = {sid: i for i, sid in enumerate(carry)}
+        head = sorted((s for s in sources if s.id in rank), key=lambda s: rank[s.id])
+        sources = head + [s for s in sources if s.id not in rank]
+
     # Per-feed de-churn backoff (field log finding F): skip RSS feeds that are
     # within a CAPPED, self-resetting backoff window (a recent 200 served only
     # duplicates). This is an additive pre-filter — it changes only WHICH feeds
@@ -568,6 +681,19 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         if settings.mode == "crawl"
         else None
     )
+    # The pass-boundary decider (P0.3 E2): when the wall-clock budget or work
+    # cap is reached the pass stops ADMITTING new sources; whatever is in
+    # flight finishes (politeness untouched) and the remainder is deferred to
+    # run first next pass. Checked before each source — never mid-fetch.
+    wind = _PassWindDown(budget_s=_pass_budget_s(), max_sources=_pass_max_sources())
+    deferred_sources: list = []
+    deferred_lock = threading.Lock()
+    wind_reasons: dict[str, int] = {}
+
+    def _defer(source, reason: str) -> None:
+        with deferred_lock:
+            deferred_sources.append(source)
+            wind_reasons[reason] = wind_reasons.get(reason, 0) + 1
     # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
     # the sequential loop (governor off, unchanged behaviour).
     w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
@@ -609,9 +735,19 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
                 governor=governor,
                 pass_id=started.isoformat(timespec="seconds"),
                 mode=settings.mode,
+                # Per-component memory gauges (P0.3 E1): the fetcher's host
+                # caches are per-pass state; their growth rides every sample.
+                cache_stats_fn=getattr(fetcher, "cache_stats", None),
             )
 
             def _worker(source):
+                # Pass boundary check BEFORE any permit/session/gate is taken:
+                # a wound-down worker holds nothing and returns immediately
+                # (the source is deferred, never dropped).
+                reason = wind.admit()
+                if reason:
+                    _defer(source, reason)
+                    return {}, 0, 0
                 # Acquire a governor permit BEFORE opening a DB session, so a
                 # throttled (parked) worker holds no connection or key in memory.
                 governor.acquire()
@@ -660,7 +796,18 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
                         summary.get("bottleneck", {}).get("verdict"),
                     )
         else:
+            from src.scheduler import memguard as _memguard
+
             for idx, source in enumerate(sources):
+                # The parallel path's monitor feeds the memory guard each tick;
+                # the sequential path has no monitor, so poll it directly every
+                # few sources (cheap psutil read) — the guard works both ways.
+                if idx % 16 == 0:
+                    _memguard.memory_guard.poll()
+                reason = wind.admit()
+                if reason:
+                    _defer(source, reason)
+                    continue
                 _progress_set(current=source.domain, done=idx, pages=pages_fetched)
                 tally, pages, processed = _process_source(
                     source, session=session, fetcher=fetcher,
@@ -671,9 +818,24 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
                 sources_processed += processed
     finally:
         _progress_set(_clear=True)
+        # Record deferrals in the FINALLY (skeptic-hardened): even if the pool
+        # section raises, whatever was already deferred keeps its run-first
+        # claim on the next pass (the exactness invariant: every selected
+        # source was either processed or is recorded here, in order).
+        if deferred_sources:
+            _record_deferred([s.id for s in deferred_sources])
+
+    recycled: str | None = None
+    if deferred_sources:
+        recycled = max(wind_reasons.items(), key=lambda kv: kv[1])[0]
+        _LOG.info(
+            "pass wound down (%s): %d source(s) deferred to run first next pass",
+            recycled,
+            len(deferred_sources),
+        )
 
     finished = datetime.now(UTC)
-    return {
+    out = {
         "mode": settings.mode,
         "sources_processed": sources_processed,
         "articles_stored": agg.get("stored", 0),
@@ -683,6 +845,10 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
         "finished_at": finished.isoformat(),
         "duration_s": round((finished - started).total_seconds(), 2),
     }
+    if deferred_sources:
+        out["recycled"] = recycled
+        out["deferred_next_pass"] = len(deferred_sources)
+    return out
 
 
 class BackgroundScheduler:
@@ -709,6 +875,8 @@ class BackgroundScheduler:
         self._last_error: str | None = None
         # Inter-pass gap in continuous mode (instance attr so tests can shrink it).
         self._continuous_gap_s = _CONTINUOUS_GAP_S
+        # How often a memory pause re-polls the guard (instance attr for tests).
+        self._mem_pause_poll_s = 5.0
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -751,6 +919,14 @@ class BackgroundScheduler:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
+            # RSS memory guard (P0.3 E3): while engaged, PAUSE between passes —
+            # loudly (phase + status carry the real numbers), resumably (the
+            # guard re-polls and releases itself when memory recovers; stop()
+            # still interrupts promptly). Holding here holds NOTHING: no
+            # session, no gate, no permit — deadlock-free by construction.
+            self._wait_while_memory_paused()
+            if self._stop.is_set():
+                break
             self._do_run()
             if self._stop.is_set():
                 break
@@ -768,6 +944,38 @@ class BackgroundScheduler:
             with self._state_lock:
                 self._next_run = datetime.now(UTC) + timedelta(seconds=gap_s)
             self._stop.wait(gap_s)
+
+    def _wait_while_memory_paused(self) -> None:
+        """Block (interruptibly) while the memory guard is engaged.
+
+        Re-polls the guard on a short cadence so recovery is noticed within
+        seconds; the paused state is visible as phase 'paused-low-memory'
+        (rides the collect job + scheduler status). Returns immediately when
+        the guard is disabled or healthy.
+        """
+        from src.scheduler import memguard
+
+        waited = False
+        while not self._stop.is_set() and memguard.memory_guard.poll():
+            if not waited:
+                waited = True
+                # No pass will start while paused: a stale next_run would
+                # otherwise render as a live countdown in the UI (honesty).
+                with self._state_lock:
+                    self._next_run = None
+                _LOG.warning(
+                    "collection paused (low memory): %s — resumes when memory "
+                    "recovers or on operator action",
+                    (memguard.memory_guard.state().get("reason") or "memory pressure"),
+                )
+            # Re-asserted EVERY iteration: a concurrently finishing run-now
+            # pass clears the phase in its finally, which would otherwise
+            # leave an hours-long pause looking like idle (skeptic finding).
+            _phase_set("paused-low-memory")
+            self._stop.wait(max(0.01, self._mem_pause_poll_s))
+        if waited and current_phase() == "paused-low-memory":
+            # Guarded clear: never wipe a phase a just-started pass owns.
+            _phase_set(None)
 
     def _do_run(self) -> None:
         # Skip if another run holds the lock (manual + scheduled racing).
@@ -796,6 +1004,15 @@ class BackgroundScheduler:
             report["ok"] = False
             report["error"] = str(exc)
         finally:
+            # Between-pass memory hygiene (P0.3 E1): release per-pass state at
+            # the run boundary — never mid-worker; the pool is joined and the
+            # run session closed by the time we get here. Measured + recorded
+            # on the run report so the effect is auditable, never guessed.
+            from src.scheduler.hygiene import run_pass_hygiene
+
+            hygiene = run_pass_hygiene()
+            if hygiene:
+                report["hygiene"] = hygiene
             report["finished_at"] = datetime.now(UTC).isoformat(timespec="seconds")
             # One auditable line per run (WP3/RM-06); best-effort by design.
             from src.scheduler.runlog import record_run
@@ -1012,7 +1229,11 @@ class BackgroundScheduler:
     # -- introspection ----------------------------------------------------- #
 
     def status(self) -> dict:
+        from src.scheduler import memguard
+
         s = self._settings_provider()
+        # Read outside the state lock (the guard has its own lock; no nesting).
+        guard_state = memguard.memory_guard.state()
         with self._state_lock:
             return {
                 "running": self.is_running(),
@@ -1025,6 +1246,12 @@ class BackgroundScheduler:
                 "settings": s.to_dict(),
                 "progress": current_progress(),
                 "phase": current_phase(),
+                # Pass recycling honesty (P0.3 E2): how many sources the last
+                # pass boundary deferred — they run FIRST next pass.
+                "deferred_carryover": deferred_carryover_count(),
+                # RSS memory guard (P0.3 E3): the loud paused-low-memory state
+                # with the real numbers — never a silent stall.
+                "memory_guard": guard_state,
             }
 
     def activity(self, session) -> dict:

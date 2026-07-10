@@ -145,8 +145,13 @@ def scheduler_equilibrium(db: Session = Depends(get_db)) -> dict:
 def scheduler_start() -> dict:
     """Start the background ingestion loop (the first run begins immediately)."""
     from src.ingest import clear_kill_switch
+    from src.scheduler import memguard
 
     clear_kill_switch()
+    # An explicit start is a USER ACTION: release a paused-low-memory latch and
+    # try again (the guard re-trips after fresh sustained samples if memory is
+    # still genuinely low — a retry, never a permanent override).
+    memguard.memory_guard.reset(reason="operator started collection")
     started = get_scheduler().start()
     return {"started": started, **_status_payload()}
 
@@ -166,11 +171,28 @@ def scheduler_stop() -> dict:
 @router.post("/run-now")
 def scheduler_run_now() -> dict:
     from src.ingest import clear_kill_switch
+    from src.scheduler import memguard
 
     clear_kill_switch()
+    # A user-triggered run releases a paused-low-memory latch (see /start).
+    memguard.memory_guard.reset(reason="operator ran collection now")
     """Trigger one immediate run. Returns started=False if a run is already active."""
     started = get_scheduler().run_now()
     return {"started": started, **_status_payload()}
+
+
+@router.post("/memory-guard/resume")
+def memory_guard_resume() -> dict:
+    """Release the paused-low-memory latch explicitly (P0.3 E3 user action).
+
+    The guard re-engages after fresh sustained over-threshold samples if
+    memory is still genuinely low — this is a retry, never an override of the
+    measurement. Status (incl. the guard's numbers) rides the response.
+    """
+    from src.scheduler import memguard
+
+    memguard.memory_guard.reset(reason="operator resumed via the API")
+    return _status_payload()
 
 
 @router.get("/targets")

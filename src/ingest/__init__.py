@@ -103,6 +103,31 @@ class BlockedTarget(FetchFailed):
 
 # How long a robots.txt decision is cached, in seconds.
 _ROBOTS_TTL = 3600.0
+
+
+def _env_cap(name: str, default: int, *, floor: int) -> int:
+    """Parse a positive integer cap from the environment, defensively."""
+    try:
+        return max(floor, int(os.getenv(name, "") or default))
+    except (TypeError, ValueError):
+        return default
+
+
+# Per-pass host-cache bounds (P0.3 E1, field event 2026-07-09: a 21.6-hour
+# marathon pass accumulated memory until the kernel OOM-killer fired). The
+# robots cache holds a RobotFileParser (rule lists can be tens of KB for big
+# sites) per host ever contacted; on a very wide crawl that grows for the whole
+# pass. Bounding it costs at most a robots RE-FETCH for an evicted host (the
+# fail-closed semantics are unchanged — an evicted entry is simply recomputed).
+_ROBOTS_CACHE_MAX = _env_cap("OO_ROBOTS_CACHE_MAX", 4096, floor=64)
+# The per-host last-request timestamps are tiny but also unbounded. POLITENESS
+# WINS OVER THE BOUND: an entry is evicted only when its host was last fetched
+# more than _LAST_REQUEST_SAFE_AGE_S ago (default 6 h — far beyond any plausible
+# robots Crawl-delay), so eviction can never permit an early re-fetch. If every
+# entry is younger than that, the map is left over-cap (a dict of floats; the
+# honest trade).
+_LAST_REQUEST_MAX = _env_cap("OO_HOST_STATE_MAX", 8192, floor=64)
+_LAST_REQUEST_SAFE_AGE_S = 6 * 3600.0
 # Bound on redirects followed (each hop is re-validated against the SSRF guard).
 _MAX_REDIRECTS = 5
 # HTTP statuses worth retrying (transient server-side / rate-limit signals). 4xx
@@ -215,18 +240,113 @@ class EthicalFetcher:
         # is only touched under its lock. Different hosts run in parallel.
         self._host_locks: dict[str, threading.Lock] = {}
         self._host_locks_guard = threading.Lock()
+        # Serialises WRITES to ``_last_request`` against the eviction sweep
+        # (skeptic finding 2026-07-09: an unsynchronised sweep could pop a
+        # FRESH stamp written between its snapshot and its pop, letting the
+        # next fetch of that host skip the politeness delay). Reads stay
+        # lock-free (a stale read only ever sleeps MORE, never less).
+        self._host_state_guard = threading.Lock()
         # sleep is indirected so tests can run without real delays.
         self._sleep = time.sleep
         self._now = time.monotonic
 
     def _host_lock(self, netloc: str) -> threading.Lock:
-        """Return (creating if needed) the lock that serialises fetches to ``netloc``."""
+        """Return (creating if needed) the lock that serialises fetches to ``netloc``.
+
+        The lock map is deliberately UNBOUNDED: evicting a lock object another
+        thread may already hold a reference to would let two threads fetch the
+        same host concurrently (politeness is never traded for memory — a
+        threading.Lock is ~100 bytes, and the fetcher is per-pass so the map
+        dies with the pass; pass recycling bounds the pass).
+        """
         with self._host_locks_guard:
             lock = self._host_locks.get(netloc)
             if lock is None:
                 lock = threading.Lock()
                 self._host_locks[netloc] = lock
             return lock
+
+    def cache_stats(self) -> dict:
+        """Sizes of the per-pass host caches (memory instrumentation, P0.3 E1).
+
+        Read by the collection-perf monitor each tick so a marathon pass's
+        accumulation is measured, not guessed. Plain lengths — cheap, no locks
+        beyond the GIL (an off-by-one under concurrent mutation is fine for a
+        gauge).
+        """
+        return {
+            "robots": len(self._robots),
+            "last_request": len(self._last_request),
+            "host_locks": len(self._host_locks),
+        }
+
+    def _declares_crawl_delay(self, key_or_netloc: str) -> bool:
+        """True when the cached robots decision for this host declares a
+        Crawl-delay (checked under both scheme keys for a bare netloc)."""
+        keys = (
+            (key_or_netloc,)
+            if "://" in key_or_netloc
+            else (f"https://{key_or_netloc}", f"http://{key_or_netloc}")
+        )
+        for k in keys:
+            cached = self._robots.get(k)
+            if cached is not None and cached[0] is not None:
+                try:
+                    if cached[0].crawl_delay(self.user_agent):
+                        return True
+                except Exception:  # noqa: BLE001 - unknowable delay: keep the entry
+                    return True
+        return False
+
+    def _bound_host_caches(self) -> None:
+        """Keep the per-pass host caches bounded on a very wide/long pass.
+
+        Best-effort and defensive (a bookkeeping error must never break a
+        fetch), and POLITENESS OUTRANKS THE BOUND (skeptic-hardened 2026-07-09):
+
+        * A robots entry whose parser declares a ``Crawl-delay`` is NEVER
+          evicted — an in-flight fetch between its robots check and its
+          rate-limit read must always still see the declared delay. Evicting a
+          delay-LESS entry is semantically neutral for pacing (the rate limit
+          falls back to ``min_interval_s``, exactly what that entry yields)
+          and only costs a fail-closed robots recompute on the next contact.
+        * ``_last_request`` stamps are mutated ONLY under ``_host_state_guard``
+          (shared with the writer in the fetch path), so eviction can never
+          race a fresh stamp out of the map (the TOCTOU a skeptic reproduced);
+          an entry is evicted only when older than ``_LAST_REQUEST_SAFE_AGE_S``
+          AND its host declares no Crawl-delay, so a forgotten timestamp can
+          never permit an impolitely early re-fetch. All-young over-cap maps
+          simply stay over cap (a dict of floats — the honest trade).
+        """
+        try:
+            if len(self._robots) > _ROBOTS_CACHE_MAX:
+                items = sorted(self._robots.items(), key=lambda kv: kv[1][1])
+                excess = len(items) - _ROBOTS_CACHE_MAX
+                for key, (decision, _expiry) in items:
+                    if excess <= 0:
+                        break
+                    if decision is not None:
+                        try:
+                            if decision.crawl_delay(self.user_agent):
+                                continue  # politeness-critical: never evicted
+                        except Exception:  # noqa: BLE001 - unknowable: keep it
+                            continue
+                    self._robots.pop(key, None)
+                    excess -= 1
+            if len(self._last_request) > _LAST_REQUEST_MAX:
+                with self._host_state_guard:
+                    now = self._now()
+                    items2 = sorted(self._last_request.items(), key=lambda kv: kv[1])
+                    excess = len(items2) - _LAST_REQUEST_MAX
+                    for key, last in items2:
+                        if excess <= 0 or (now - last) < _LAST_REQUEST_SAFE_AGE_S:
+                            break  # sorted ascending: the rest are younger still
+                        if self._declares_crawl_delay(key):
+                            continue  # a long declared delay outlives the safe age
+                        self._last_request.pop(key, None)
+                        excess -= 1
+        except Exception:  # noqa: BLE001 - a cache bound must never break a fetch
+            pass
 
     @property
     def _real_session(self) -> bool:
@@ -261,6 +381,9 @@ class EthicalFetcher:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https") or not parsed.netloc:
             raise FetchFailed(f"unsupported or malformed URL: {url!r}")
+
+        # Cheap length check per fetch; evicts only when a cap is exceeded (E1).
+        self._bound_host_caches()
 
         self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
 
@@ -311,7 +434,8 @@ class EthicalFetcher:
                 except requests.RequestException as exc:
                     transient = FetchFailed(f"request error for {url}: {exc}")
                 finally:
-                    self._last_request[parsed.netloc] = self._now()
+                    with self._host_state_guard:
+                        self._last_request[parsed.netloc] = self._now()
 
                 if transient is None and response.status_code not in _RETRYABLE_STATUS:
                     break  # got a definitive (success or non-retryable) response

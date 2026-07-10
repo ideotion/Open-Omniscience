@@ -83,6 +83,10 @@ class IngestResult(str, Enum):
     ROBOTS_UNAVAILABLE = "robots_unavailable"
     FETCH_FAILED = "fetch_failed"
     EXTRACT_FAILED = "extract_failed"
+    # P1.8 collector write batching: buffered for the next batched commit —
+    # a TRANSIENT state, never a final tally line (the batch's flush resolves
+    # it to stored/duplicate/errors, which the caller merges).
+    STAGED = "staged"
 
 
 @dataclass
@@ -99,15 +103,20 @@ def ingest_url(
     url: str,
     *,
     fetcher: EthicalFetcher,
+    batch=None,
 ) -> IngestOutcome:
     """Fetch, extract, dedup and store a single article URL.
 
     Deduplication is by canonical URL (cheap, pre-fetch) and by content hash
     (post-extract, catches the same article served at different URLs).
+    ``batch`` (an :class:`~src.ingest.batch.ArticleBatch`, P1.8) buffers the
+    store for a batched commit instead of committing per article.
     """
     canonical = canonicalize_url(url)
 
-    if _exists(session, canonical_url=canonical):
+    if _exists(session, canonical_url=canonical) or (
+        batch is not None and batch.has_canonical(canonical)
+    ):
         return IngestOutcome(url, IngestResult.DUPLICATE, detail="canonical url already stored")
 
     try:
@@ -119,16 +128,23 @@ def ingest_url(
     except FetchError as exc:
         return IngestOutcome(url, IngestResult.FETCH_FAILED, detail=str(exc))
 
-    return store_fetched(session, source, fetched)
+    return store_fetched(session, source, fetched, batch=batch)
 
 
-def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
+def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> IngestOutcome:
     """Extract, dedup and store an already-fetched page.
 
     Split out of :func:`ingest_url` so callers that have *already* fetched a page
     (notably the recursive crawler, which harvests links from the same bytes) can
     store it without a second network round-trip -- preserving the "one fetch per
     URL" invariant. ``fetched`` is an :class:`~src.ingest.FetchResult`.
+
+    ``batch`` (P1.8 collector write batching): when given, the extracted
+    article is STAGED for the batch's next batched commit instead of paying
+    three gate windows here — the outcome is :attr:`IngestResult.STAGED` and
+    the final disposition (stored/duplicate) lands in ``batch.tally`` at
+    flush. ``None`` (every non-collector caller) keeps the legacy per-article
+    path byte-identical.
     """
     doc = extract_article(fetched.content, url=fetched.final_url)
     if doc is None:
@@ -137,6 +153,13 @@ def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
         )
 
     content_hash = generate_content_hash(doc.text)
+    # In-batch dedup FIRST, on the actual unique column (the email-import
+    # lesson: two pages serving the same body in ONE uncommitted batch would
+    # collide at flush on UNIQUE articles.hash).
+    if batch is not None and batch.has_hash(content_hash):
+        return IngestOutcome(
+            fetched.requested_url, IngestResult.DUPLICATE, detail="content hash already staged"
+        )
     if _exists(session, hash=content_hash):
         return IngestOutcome(
             fetched.requested_url, IngestResult.DUPLICATE, detail="content hash already stored"
@@ -144,6 +167,11 @@ def store_fetched(session: Session, source: Source, fetched) -> IngestOutcome:
 
     # Prefer the page's declared canonical link; fall back to the final fetched URL.
     canonical_final = canonicalize_url(doc.canonical_url or fetched.final_url)
+    if batch is not None:
+        batch.stage(fetched, doc, canonical_final, content_hash)
+        return IngestOutcome(
+            fetched.requested_url, IngestResult.STAGED, detail="buffered for a batched commit"
+        )
     now = datetime.now(UTC)
     article = Article(
         url=fetched.requested_url,
@@ -341,7 +369,9 @@ def ingest_source(
 
     Returns a tally keyed by IngestResult value, plus the feed entry count.
     """
-    tally = {r.value: 0 for r in IngestResult}
+    # STAGED is transient by contract (resolved at flush) — it must never
+    # appear as a permanent zero line in a user-facing tally.
+    tally = {r.value: 0 for r in IngestResult if r is not IngestResult.STAGED}
     tally["entries"] = 0
     tally["not_modified"] = 0  # feeds answered 304 Not Modified (skipped cheaply)
 
@@ -363,42 +393,95 @@ def ingest_source(
         # failure. A transient error is NOT a "feed is quiet" signal — reset any
         # backoff so a recovered feed is re-checked at the normal cadence.
         _update_feed_backoff(session, source.id, reset=True)
+        _commit_feed_bookkeeping(session)
         return tally
-
-    _record_feed_state(session, source.id, feed_resp)
 
     if feed_resp.status_code == 304:
         # Unchanged since last pass — nothing new to parse or ingest. The server
-        # answered honestly, so this is NOT penalised: clear any backoff.
+        # answered honestly, so this is NOT penalised: clear any backoff. No
+        # article fetches follow, so writing the bookkeeping here is safe.
+        _record_feed_state(session, source.id, feed_resp)
         tally["not_modified"] = 1
         _update_feed_backoff(session, source.id, reset=True)
+        _commit_feed_bookkeeping(session)
         return tally
 
     parsed = feedparser.parse(feed_resp.content)
     links = [e.link for e in parsed.entries if getattr(e, "link", None)][:max_items]
     tally["entries"] = len(links)
 
-    for link in links:
-        outcome = ingest_url(session, source, link, fetcher=fetcher)
-        tally[outcome.result.value] += 1
-        # Break the raw fetch_failed count down by WHY (Tor-403 vs DNS vs connect
-        # vs …) so a report isn't a mystery number. Flat int keys ("ff:<reason>")
-        # so the scheduler's scalar tally-aggregation sums them for free; the
-        # per-reason counts always sum to fetch_failed (unknown -> "other").
-        if outcome.result is IngestResult.FETCH_FAILED:
-            rk = fetch_reason_key(classify_fetch_failure(outcome.detail))
-            tally[rk] = tally.get(rk, 0) + 1
+    # P1.8 collector write batching: buffer stores across this feed's items so
+    # several articles share ONE gate window/fsync (the field pass measured
+    # 847 K s of cumulative write-wait at per-article commits). Fetches still
+    # happen OUTSIDE any gate; OO_COLLECT_COMMIT_BATCH=0 restores the legacy
+    # per-article path exactly.
+    from src.ingest.batch import ArticleBatch, collect_batch_size
 
-    # De-churn backoff: a 200 that stored ZERO new articles means this feed
-    # served only content we already have. Delay its next re-check (capped,
-    # self-resetting); ANY new article resets it. Servers that ignore conditional
-    # GET (full 200 every pass) are exactly the case this catches.
-    if tally[IngestResult.STORED.value] > 0:
+    batch = ArticleBatch(session, source) if collect_batch_size() > 0 else None
+    try:
+        for link in links:
+            outcome = ingest_url(session, source, link, fetcher=fetcher, batch=batch)
+            if outcome.result is IngestResult.STAGED:
+                continue  # resolved at flush; merged from batch.tally below
+            tally[outcome.result.value] += 1
+            # Break the raw fetch_failed count down by WHY (Tor-403 vs DNS vs connect
+            # vs …) so a report isn't a mystery number. Flat int keys ("ff:<reason>")
+            # so the scheduler's scalar tally-aggregation sums them for free; the
+            # per-reason counts always sum to fetch_failed (unknown -> "other").
+            if outcome.result is IngestResult.FETCH_FAILED:
+                rk = fetch_reason_key(classify_fetch_failure(outcome.detail))
+                tally[rk] = tally.get(rk, 0) + 1
+    finally:
+        # ZERO LOSS: staged entries always get their write attempt, even if a
+        # mid-feed error aborts the loop — and the backoff decision below then
+        # sees the true stored count.
+        if batch is not None:
+            batch.flush()
+            for k, v in batch.tally.items():
+                if v:
+                    tally[k] = tally.get(k, 0) + v
+
+    # Feed bookkeeping runs AFTER the article loop, DELIBERATELY (P1.8 skeptic
+    # finding, reproduced empirically): validators/backoff written BEFORE the
+    # loop leave the session DIRTY, and the loop's first dedup SELECT then
+    # AUTOFLUSHES them — acquiring the single-writer gate and holding it ACROSS
+    # the article fetch (a slow fetch + politeness while holding the gate = the
+    # field log's 438 s max single write-wait; the batched path would have held
+    # it across the WHOLE feed). Down here the loop runs on a CLEAN session —
+    # no autoflush, no gate — and the de-churn backoff (a 200 that stored ZERO
+    # new articles delays this feed's next re-check, capped, self-resetting)
+    # reads the true post-flush stored count.
+    _record_feed_state(session, source.id, feed_resp)
+    if tally[IngestResult.STORED.value] > 0 or tally.get("errors", 0) > 0:
+        # New content stored — or OUR store errored (skeptic finding D2): a
+        # store failure is NOT a "feed is quiet" signal, and a prompt re-fetch
+        # is exactly the loss-recovery path. Same rule as the fetch-error case.
         _update_feed_backoff(session, source.id, reset=True)
     else:
         _update_feed_backoff(session, source.id, reset=False)
+    _commit_feed_bookkeeping(session)
 
     return tally
+
+
+def _commit_feed_bookkeeping(session: Session) -> None:
+    """Commit the per-feed validators/backoff rows so ``ingest_source`` always
+    RETURNS WITH A CLEAN SESSION.
+
+    Best-effort: the bookkeeping is an optimisation (conditional GET /
+    de-churn), so a failed commit rolls back and is logged, never raised — but
+    it must never stay PENDING: a dirty session hands the single-writer gate
+    to the NEXT source's dedup query via autoflush, and the gate is then held
+    across that source's network fetches (the P1.8 skeptic finding — the
+    sequential pass shares one session across every source).
+    """
+    try:
+        session.commit()
+    except Exception:  # noqa: BLE001 - bookkeeping is auxiliary, never fatal
+        session.rollback()
+        import logging
+
+        logging.getLogger(__name__).debug("feed bookkeeping commit failed", exc_info=True)
 
 
 def _feed_conditional_headers(session: Session, source_id: int) -> dict[str, str]:
