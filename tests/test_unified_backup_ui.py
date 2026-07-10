@@ -98,6 +98,49 @@ def test_legacy_single_file_restore_is_kept_for_migration():
     assert "v2Preview()" in _HTML
 
 
+def test_backup_poll_is_job_state_as_truth_not_transport_failure():
+    """B5 (field-test Item 9): a dropped /volumes/status poll must NOT print a fatal
+    "Backup failed" over a healthy running job. The poll retries transport hiccups with
+    backoff and shows an honest "connection hiccup — retrying"; only a backend-reported
+    error/cancelled STATE is a real failure."""
+    poll = _APP[_APP.index("function _uxPoll("):]
+    poll = poll[: poll.index("\n    }\n")]
+    # a transport catch retries (does not reject on the first failed poll)
+    assert "Connection hiccup" in poll
+    assert "MAX_FAILS" in poll and "fails++" in poll
+    # only a backend error/cancelled state rejects
+    assert 'state === "error"' in poll and 'state === "cancelled"' in poll
+    # the START request is ALSO job-state-as-truth: a lost start response consults /status
+    # before declaring failure, so a running job never shows a fatal "Backup failed".
+    assert "_uxStartThenPoll" in _APP
+    starter = _APP[_APP.index("async function _uxStartThenPoll("):]
+    starter = starter[: starter.index("\n    }\n")]
+    assert "await api(statusUrl)" in starter and "throw e" in starter
+    # every start/resume/verify goes through it (no bare await api(.../start) left)
+    assert "() => api(\"/api/backup/v2/volumes/start\"" in _APP
+    assert "() => api(\"/api/backup/folder/resume\"" in _APP
+
+
+def test_backup_pause_resume_and_paused_label_are_wired():
+    """B5: paused != complete. The export dialog exposes Pause/Resume, and a paused job
+    shows the paused label (never "Backup complete")."""
+    assert 'id="ux-pause"' in _HTML and "_uxPauseResume" in _APP
+    assert "_uxShowPaused" in _APP and "Backup paused." in _APP
+    # pause routes to the live phase's endpoint; resume continues, never re-does finished work
+    assert "/api/backup/v2/volumes/pause" in _APP and "/api/backup/folder/pause" in _APP
+    assert "/api/backup/folder/resume" in _APP
+
+
+def test_backup_verify_job_is_wired_into_the_import_dialog():
+    """B5: the shipped verify job is reachable — verify a backup's integrity without
+    restoring (the live corpus untouched), reporting bad/missing volumes + recoverability."""
+    assert "_uxImVerify" in _APP and "_uxRenderVerify" in _APP
+    assert "/api/backup/v2/volumes/verify" in _APP
+    assert 'onclick="_uxImVerify(this)"' in _HTML
+    # honest report fields (no score): bad/missing volumes + parity recoverability
+    assert "bad_volumes" in _APP and "recoverable" in _APP
+
+
 def test_llm_models_are_integrated_not_a_separate_panel():
     # the separate .oomodels panel + its handlers are gone
     assert "<h2>Local LLM models (separate backup)</h2>" not in _HTML

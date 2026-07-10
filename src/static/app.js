@@ -4724,8 +4724,13 @@
         volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"), done: t("Done.") };
       const rest = { verifying: t("Verifying volumes…"), reassembling: t("Reassembling the archive…"),
         merging: t("Merging (additive)…"), done: t("Done.") };
-      const m = (mode === "restore" ? rest : back);
-      return m[phase] || phase || (mode === "restore" ? t("Restoring…") : t("Backing up…"));
+      // verify + restore share the phase names (verifying/reassembling); only a backup
+      // uses the write-side names. Default is mode-aware so a verify never falls back to
+      // "Backing up…" or shows a raw untranslated phase.
+      const m = (mode === "backup" ? back : rest);
+      const dflt = mode === "backup" ? t("Backing up…")
+        : mode === "verify" ? t("Verifying volumes…") : t("Restoring…");
+      return m[phase] || dflt;
     }
     function _uxProgressView(kind, s, t) {
       const p = s.progress || {};
@@ -4771,9 +4776,30 @@
       const prefix = ui.prefix ? `${esc(ui.prefix)}: ` : "";
       const startMs = Date.now();
       return new Promise((resolve, reject) => {
+        // JOB-STATE-AS-TRUTH (field-test Item 9): a dropped/failed status poll does NOT
+        // mean the backup failed — the job keeps running server-side. So a transport hiccup
+        // shows an honest "connection hiccup — retrying" and keeps polling with backoff;
+        // ONLY a backend-reported error/cancelled STATE is a real failure. Without this a
+        // single lost /volumes/status poll printed a fatal "Backup failed: NetworkError"
+        // over a healthy multi-hour job.
+        let fails = 0;                    // consecutive poll-transport failures
+        const MAX_FAILS = 40;             // give up POLLING (not the job) after ~minutes of backoff
         const tick = async () => {
           let s;
-          try { s = await api(url); } catch (e) { return reject(e); }
+          try {
+            s = await api(url);
+            fails = 0;                    // a good poll clears the hiccup
+          } catch (e) {
+            fails++;
+            if (fails > MAX_FAILS) {
+              return reject(new Error(t("Lost contact with the backup job — check the task manager; it may still be running.")));
+            }
+            if (ui.label) {
+              ui.label.innerHTML = prefix + `<span class="muted">${esc(t("Connection hiccup — retrying…"))}</span>`;
+            }
+            setTimeout(tick, Math.min(1200 * Math.pow(1.6, fails - 1), 15000));
+            return;
+          }
           const state = s.state || "";
           const view = _uxProgressView(kind, s, t);
           _uxPaintBar(ui.bar, view);
@@ -4794,6 +4820,33 @@
       });
     }
 
+    // Which phase is live, so the Pause button can address the right job and a Resume
+    // re-enters where it left off. The volume + folder jobs are RESUMABLE (their manifest /
+    // dest dir IS the durable progress), so pause never risks the partial data.
+    let _uxPhase = null;   // "volumes" | "folder" | null
+
+    // JOB-STATE-AS-TRUTH for the START request too (skeptic MED-LOW): the start/resume/verify
+    // POST returns AFTER the worker thread is spawned, so a transport hiccup that loses the
+    // RESPONSE (the request reached the server, the job is running) must NOT print a fatal
+    // "failed". On a start error we consult /status: if the job is actually live we fall
+    // through to the poll; only a genuine reject (no job / idle, or /status also unreachable)
+    // re-throws so a real 400/409 still surfaces.
+    async function _uxStartThenPoll(startCall, statusUrl, kind, ui) {
+      try {
+        await startCall();
+      } catch (e) {
+        let st = null;
+        try { st = await api(statusUrl); } catch (_) { throw e; }  // can't confirm → original error
+        const s = (st && st.state) || "";
+        // Only a LIVE job (running|paused) proves the start reached the server despite the
+        // lost response. NOT "done": a just-started job cannot be instantly done, so a "done"
+        // here is a STALE state from a prior run and must not mask a failed start as complete.
+        if (!(s === "running" || s === "paused")) throw e;
+        // else: the job is live despite the lost start response → poll it
+      }
+      return _uxPoll(statusUrl, kind, ui);
+    }
+
     async function _uxRun(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dest = (document.getElementById("ux-dest").value || "").trim();
@@ -4802,26 +4855,88 @@
       if (!pass) { toast(t("Enter a passphrase for the encrypted corpus."), "err"); return; }
       const prog = document.getElementById("ux-progress");
       const bar = document.getElementById("ux-bar");
+      const pauseBtn = document.getElementById("ux-pause");
       const blobs = [];
       if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) blobs.push("models");
       if (document.getElementById("ux-c-maps") && document.getElementById("ux-c-maps").checked) blobs.push("osm_regions");
       if (document.getElementById("ux-c-wiki") && document.getElementById("ux-c-wiki").checked) blobs.push("wiki_dumps");
       btn.disabled = true;
+      if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "pause"; pauseBtn.textContent = t("Pause"); }
       try {
-        await api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) });
-        await _uxPoll("/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") });
+        _uxPhase = "volumes";
+        const s1 = await _uxStartThenPoll(
+          () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) }),
+          "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") });
+        if (s1 && s1.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
         if (blobs.length) {
-          await api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: blobs }) });
-          await _uxPoll("/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
+          _uxPhase = "folder";
+          const s2 = await _uxStartThenPoll(
+            () => api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: blobs }) }),
+            "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
+          if (s2 && s2.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
         }
+        _uxPhase = null;
         if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
         prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)}`;
       } catch (e) {
+        _uxPhase = null;
         if (bar) bar.style.display = "none";
+        if (pauseBtn) pauseBtn.style.display = "none";
         prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;
         console.error("ux run", e);
       }
       btn.disabled = false;
+    }
+
+    // Paused ≠ complete (the paused-state label, field-test Item 9): show the honest state
+    // and flip the button to Resume so the user continues where it left off.
+    function _uxShowPaused(prog, bar, pauseBtn, t) {
+      if (bar) bar.style.display = "none";
+      prog.innerHTML = `<b>${esc(t("Backup paused."))}</b> ${esc(t("Resume to continue where it left off."))}`;
+      if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "resume"; pauseBtn.textContent = t("Resume"); }
+    }
+
+    // Pause the live phase, or resume a paused backup — continuing from the resume log /
+    // already-copied files, never re-doing finished work.
+    async function _uxPauseResume(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn.dataset.mode === "resume") { btn.dataset.mode = "pause"; await _uxResume(btn); return; }
+      const ep = _uxPhase === "folder" ? "/api/backup/folder/pause" : "/api/backup/v2/volumes/pause";
+      btn.disabled = true;
+      try { await api(ep, { method: "POST" }); }
+      catch (e) { toast(t("Could not pause:") + " " + (e.message || e), "err"); btn.disabled = false; }
+      // The poll then observes state="paused" and _uxShowPaused flips this button to Resume.
+    }
+
+    async function _uxResume(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prog = document.getElementById("ux-progress");
+      const bar = document.getElementById("ux-bar");
+      if (_uxPhase === "folder") {
+        // The folder copy has a dedicated resume endpoint (re-plans + skips copied files).
+        btn.dataset.mode = "pause"; btn.textContent = t("Pause");
+        try {
+          // Re-enable the Pause button for the resumed copy (skeptic MED: it was stuck
+          // disabled through the whole multi-GB resume). _uxStartThenPoll keeps the resume
+          // request hiccup-tolerant (job-state-as-truth), same as a fresh start.
+          btn.disabled = false;
+          const s = await _uxStartThenPoll(
+            () => api("/api/backup/folder/resume", { method: "POST" }),
+            "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
+          if (s && s.state === "paused") { _uxShowPaused(prog, bar, btn, t); return; }
+          _uxPhase = null;
+          if (bar) bar.style.display = "none"; btn.style.display = "none";
+          prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc((document.getElementById("ux-dest").value || "").trim())}`;
+        } catch (e) {
+          _uxPhase = null; if (bar) bar.style.display = "none"; btn.style.display = "none";
+          prog.innerHTML = `<span class="note err">${esc(t("Backup failed:"))} ${esc(e.message || e)}</span>`;
+        }
+        return;
+      }
+      // Volumes phase: re-running the flow continues the corpus from its resume log,
+      // then does any selected large-data blobs.
+      _uxRun(document.getElementById("ux-run"));
     }
 
     // ---- Unified Import dialog (folder discovery) -------------------------- //
@@ -4839,6 +4954,67 @@
       document.getElementById("ux-imp-run").disabled = true;
       _uxImFound = null; _uxImSrc = "";
       document.getElementById("ux-import").showModal();
+    }
+
+    // VERIFY a backup at the source folder without restoring (field-test Item 9). Runs the
+    // shipped /volumes/verify job: manifest signature + every volume + parity checksum; with
+    // a passphrase every volume is additionally stream-decrypted into a hash sink (nothing
+    // written, the live corpus untouched). Names exactly which volumes are bad and whether
+    // parity can still recover them — honest, no score.
+    async function _uxImVerify(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const src = (document.getElementById("ux-imp-src").value || "").trim();
+      if (!src) { toast(t("Enter a folder to scan."), "err"); return; }
+      const st = document.getElementById("ux-imp-status");
+      const summary = document.getElementById("ux-imp-summary");
+      const bar = document.getElementById("ux-imp-bar");
+      const prog = document.getElementById("ux-imp-progress");
+      // A passphrase is OPTIONAL for verify (structural check needs none); with it, the
+      // deep decrypt-check runs. Reveal the field so the user can add one if they want it.
+      document.getElementById("ux-imp-pass-row").style.display = "block";
+      const passEl = document.getElementById("ux-imp-pass");
+      const pass = (passEl && passEl.value) || "";
+      summary.innerHTML = ""; st.textContent = t("Verifying…"); btn.disabled = true;
+      try {
+        const s = await _uxStartThenPoll(
+          () => api("/api/backup/v2/volumes/verify", { method: "POST", body: JSON.stringify({ src, passphrase: pass }) }),
+          "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Verify") });
+        if (bar) bar.style.display = "none"; prog.textContent = "";
+        _uxRenderVerify(summary, (s && s.summary && s.summary.report) || {}, t);
+        st.textContent = "";
+      } catch (e) {
+        if (bar) bar.style.display = "none"; prog.textContent = "";
+        summary.innerHTML = `<span class="note err">${esc(t("Verification failed:"))} ${esc(e.message || e)}</span>`;
+        st.textContent = "";
+      }
+      btn.disabled = false;
+    }
+
+    function _uxRenderVerify(host, rep, t) {
+      if (!rep || typeof rep !== "object" || rep.ok === undefined) {
+        host.innerHTML = `<span class="muted">${esc(t("No verification report was returned."))}</span>`;
+        return;
+      }
+      const lines = [];
+      lines.push(rep.ok === true
+        ? `<b style="color:var(--ok)">✓ ${esc(t("Backup verified — the set is complete and intact."))}</b>`
+        : `<b style="color:var(--err)">✗ ${esc(t("Verification found problems:"))}</b>`);
+      if (typeof rep.volumes === "number") {
+        host.dataset.ok = String(rep.ok);
+        lines.push(`<div class="muted">${rep.volumes} ${esc(t("volumes"))} · ${esc(t("signature:"))} ${esc(String(rep.signature || "—"))}${rep.decrypted ? " · " + esc(t("decrypted & checked")) : ""}</div>`);
+      }
+      const probs = Array.isArray(rep.problems) ? rep.problems : [];
+      if (probs.length) lines.push(`<ul style="margin:4px 0 0;padding-left:18px">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul>`);
+      if (rep.bad_volumes && rep.bad_volumes.length || (rep.missing_volumes && rep.missing_volumes.length)) {
+        const bad = (rep.bad_volumes || []).concat(rep.missing_volumes || []);
+        const rec = rep.recoverable ? esc(t("recoverable from parity")) : esc(t("NOT recoverable — the backup is incomplete"));
+        lines.push(`<div style="color:var(--err)">${esc(t("Corrupt/missing:"))} ${esc(bad.join(", "))} — ${rec}</div>`);
+      }
+      if (rep.parity && typeof rep.parity === "object") {
+        lines.push(`<div class="muted">${esc(t("Parity:"))} ${rep.parity.volumes} · ${esc(t("can still lose"))} ${rep.parity.tolerance_remaining}</div>`);
+      }
+      if (rep.method) lines.push(`<div class="hint" style="margin-top:4px">${esc(t("Method:"))} ${esc(rep.method)}</div>`);
+      host.innerHTML = lines.join("");
     }
 
     async function _uxImScan(btn) {
