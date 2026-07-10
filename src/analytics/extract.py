@@ -33,6 +33,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from html import unescape
 
+from src.analytics.managed import normalize_lang
+from src.analytics.segmentation import segment
 from src.services.stopwords import stopwords_manager
 
 # A word token: starts with a (unicode) letter, may contain letters, marks,
@@ -63,6 +65,22 @@ _WORD_RE = re.compile(
 _DEFAULT_MAX_TERMS = 80
 _DEFAULT_MAX_ENTITIES = 80
 _MIN_TERM_LEN = 3
+# A word segmenter (zh/ja/th) yields SHORT real words — 中国 (China), 政策 (policy),
+# 日本 (Japan) are 2 characters — so the Latin 3-char minimum would drop most of them.
+# A space-less script has no 1-char function words to protect against (the stoplist +
+# per-language filtering handle 了/的/は/を), so 2 is the honest floor there.
+_MIN_SEG_TERM_LEN = 2
+# CJK ideographs + kana + Hangul syllables + Thai — the scripts the 2-char floor is for.
+# A LATIN token in a segmented doc (a stray "vs"/"ai"/"eu") keeps the 3-char floor, so
+# lowering the floor for real CJK/Thai words never leaks 2-letter Latin junk.
+_CJK_THAI_RE = re.compile(r"[぀-ヿ㐀-鿿가-힣฀-๿豈-﫿]")
+
+
+def _term_floor(word: str, segmented: bool) -> int:
+    """Minimum length for a candidate term: 2 for a CJK/Thai word in a segmented doc,
+    3 otherwise (the Latin floor). Per-TOKEN, not per-document, so a Latin token inside
+    a CJK article is still held to 3."""
+    return _MIN_SEG_TERM_LEN if (segmented and _CJK_THAI_RE.search(word)) else _MIN_TERM_LEN
 
 # --------------------------------------------------------------------------- #
 # Markup strip at the extraction chokepoint (field diagnostics 2026-06-21)
@@ -723,11 +741,26 @@ class BaselineExtractor:
     # -- topical terms ----------------------------------------------------- #
 
     def _terms(self, text: str, language: str) -> list[ExtractedTerm]:
+        # Bare ISO code: a region/script subtag (zh-CN, en-US) must reach the SAME
+        # segmenter + scoped stoplist as its base language, and must agree with
+        # managed.language_status() (which normalizes) — else a zh-CN article reports
+        # 'functional' while extraction silently skips segmentation.
+        language = normalize_lang(language)
         stop = _stopset(language)
-        # De-elide each token: the contracted article (l'/d'/qu'/c'…) is noise, so
-        # "l'assemblée" is the keyword "assemblée" and "qu'il" reduces to the stopword
-        # "il". Without this the whole "l'assemblée" form was kept as a keyword.
-        toks = [(_deelide(m.group(0).lower()), m.start()) for m in _WORD_RE.finditer(text)]
+        # A word segmenter (the optional [segmentation] extra) rescues a space-less
+        # script (zh/ja/th) — real words instead of one sentence-long token / mark
+        # fragments. It returns (word, offset); None means "not segmentable here" and
+        # we fall back to the byte-identical whitespace tokenizer below.
+        seg = segment(text, language)
+        if seg is not None:
+            toks = [(w.lower(), off) for w, off in seg]
+            segmented = True
+        else:
+            # De-elide each token: the contracted article (l'/d'/qu'/c'…) is noise, so
+            # "l'assemblée" is the keyword "assemblée" and "qu'il" reduces to the stopword
+            # "il". Without this the whole "l'assemblée" form was kept as a keyword.
+            toks = [(_deelide(m.group(0).lower()), m.start()) for m in _WORD_RE.finditer(text)]
+            segmented = False
         counts: Counter[str] = Counter()
         first_at: dict[str, int] = {}
 
@@ -739,7 +772,7 @@ class BaselineExtractor:
         # see _is_code_token) and glued <digits><token> fragments (1h15 -> h15), which
         # leaked ~35k junk keywords; real designations (a-10, covid-19, b52, mp3) stay.
         for word, off in toks:
-            if len(word) < _MIN_TERM_LEN or word in stop or word.isdigit():
+            if len(word) < _term_floor(word, segmented) or word in stop or word.isdigit():
                 continue
             if _is_code_token(word):
                 continue
@@ -755,7 +788,7 @@ class BaselineExtractor:
                 # Drop a phrase if ANY token is a stopword, too short/numeric, or a
                 # code token, so fillers/codes don't leak inside n-grams.
                 if any(
-                    w in stop or len(w) < _MIN_TERM_LEN or w.isdigit() or _is_code_token(w)
+                    w in stop or len(w) < _term_floor(w, segmented) or w.isdigit() or _is_code_token(w)
                     for w in words
                 ):
                     continue

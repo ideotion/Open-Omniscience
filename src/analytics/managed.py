@@ -1,10 +1,12 @@
 """Which content languages the keyword/analytics engine can MANAGE today.
 
 A language is *managed* when keyword extraction is functional: a stoplist exists
-AND the script is space-segmented. ``zh``/``ja`` have no word segmentation, so their
-extraction is broken; the *no_stoplist* languages tokenise but leak function words —
-junk that pollutes analytics (false keywords, skewed associations) AND inflates the
-corpus (every aggregation pays for it).
+AND its words can be tokenised. ``zh``/``ja``/``th`` have no word segmentation in the
+core install, so their extraction is broken UNLESS the optional ``[segmentation]``
+extra (jieba / janome / pythainlp — see src.analytics.segmentation) is installed, at
+which point they carry a vendored stoplist and become functional. The *no_stoplist*
+languages tokenise but leak function words — junk that pollutes analytics (false
+keywords, skewed associations) AND inflates the corpus (every aggregation pays for it).
 
 Maintainer ruling (2026-06-18): sources in UNMANAGED languages seed **disabled by
 default** — kept, never deleted, re-enablable — so the app stops accumulating
@@ -59,6 +61,13 @@ MANAGED_LANGUAGES: frozenset[str] = frozenset(
         # fragment; th is UNSEGMENTED below. Both verified 2026-06-22.)
         "fa", "ur", "uk", "ro", "cs", "sk", "ca", "sw", "az", "et",
         "tr", "fi", "bs", "hr",
+        # 2026-07-10 segmenter wave: ko (Hangul) + mr (Marathi/Devanagari) are
+        # SPACE-segmented (eojeol / word boundaries) and now carry the full vendored
+        # stopwords-iso list — distinct scripts, so the global union stays collision-free.
+        # (Korean particles stay glued to their noun, the same agglutination caveat as
+        # tr/fi; a morphological analyser is future work.) zh/ja/th are handled below —
+        # they only reach "functional" when the [segmentation] extra is present.
+        "ko", "mr",
     }
 )
 # No word segmentation -> keyword extraction is broken regardless of a stoplist.
@@ -82,7 +91,7 @@ def is_managed(lang: str | None) -> bool:
     An unknown/empty language is NOT 'managed' but is also not 'unmanaged' for the
     gating purpose — callers decide; the source gating leaves unknown-language
     sources enabled (we cannot justify disabling what we cannot classify)."""
-    return normalize_lang(lang) in MANAGED_LANGUAGES
+    return language_status(lang) == "functional"
 
 
 def language_status(lang: str | None) -> str:
@@ -91,7 +100,13 @@ def language_status(lang: str | None) -> str:
     if not n:
         return "unknown"
     if n in UNSEGMENTED:
-        return "unsegmented"
+        # A word segmenter (the optional [segmentation] extra) turns a space-less
+        # script into real words; with the vendored stoplist present zh/ja/th are then
+        # functional. Absent the extra they stay honestly 'unsegmented' (a core install
+        # is byte-unchanged). The import is local to avoid an import cycle.
+        from src.analytics.segmentation import segmenter_available
+
+        return "functional" if segmenter_available(n) else "unsegmented"
     if n in MANAGED_LANGUAGES:
         return "functional"
     return "no_stoplist"

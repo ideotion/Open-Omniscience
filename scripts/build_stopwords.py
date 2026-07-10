@@ -37,15 +37,21 @@ from __future__ import annotations
 import pathlib
 import sys
 
-# The space-segmented managed languages we vendor a full stoplist for.
-# (zh/ja/th are UNSEGMENTED — a stoplist can't help; not fetched here. sr/bs/az are
-# managed but ABSENT from stopwords-iso, so they keep their hand-grown batches.)
+# The languages we vendor a full stoplist for.
+# (sr/az are managed but ABSENT from stopwords-iso, so they keep their hand-grown
+# batches. zh/ja/th used to be excluded as UNSEGMENTED — a stoplist can't help without
+# word segmentation — but the 2026-07-10 [segmentation] extra (jieba/janome/pythainlp)
+# now produces real words, so their stoplist finally applies; vendored here too.)
 LANGS = [
     # 2026-06-23 original no_stoplist wave
     "tr", "ro", "uk", "fi", "ur", "cs", "ca", "sk", "et", "hi", "vi", "bn", "fa", "sw",
     # 2026-07-01 wave: managed languages that had only PARTIAL hand-grown batches
     "ar", "bg", "da", "de", "el", "es", "hr", "hu", "id", "it",
     "nl", "no", "pl", "pt", "ru", "sl", "sv",
+    # 2026-07-10 segmenter wave: zh/ja/th become segmentable via the [segmentation]
+    # extra, so their stoplist now works; ko (Hangul) + mr (Marathi) are space-segmented
+    # and were no_stoplist. All distinct scripts -> language-scoped, collision-free.
+    "zh", "ja", "th", "ko", "mr",
     # Managed languages ABSENT from stopwords-iso, sourced via a linguistically-sound
     # alias (documented below), not a fabricated list:
     #   nb  Norwegian Bokmål  -> the "no" list is Bokmål-based.
