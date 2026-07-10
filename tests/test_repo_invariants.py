@@ -4576,7 +4576,11 @@ def test_home_card_click_diagnostics_and_download_all_wired():
     # The Settings -> Diagnostics buttons: the new ones + the dense row shed the
     # redundant "Download " prefix (screen space). The "All diagnostics" button leads.
     assert "/api/diagnostics/home-cards?download=1" in html
-    assert "window.open('/api/diagnostics/all'" in html
+    # The "All diagnostics" button now runs the BACKGROUND job (B6/#622): the old synchronous
+    # window.open('/api/diagnostics/all') froze the single-worker server for ~36 min on a large
+    # corpus, so the button POSTs /all-job (backend below), polls status, downloads when ready.
+    assert 'onclick="runAllDiagnostics(this)"' in html and 'id="all-diag-status"' in html
+    assert '@router.post("/all-job")' in diag  # the non-blocking background-job endpoint
     assert ">All diagnostics (.zip)<" in html
     assert ">Keyword log (.zip)<" in html  # de-prefixed
     assert ">Debug bundle (.json)<" in html  # de-prefixed
