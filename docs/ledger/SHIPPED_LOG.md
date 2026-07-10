@@ -2907,3 +2907,39 @@ and assert `[]`. Corollaries: a language/calendar router must CLAIM-ON-ROUTE (co
 even when validation fails) or generic loops re-read the digits under another calendar; with
 `_MIN_YEAR=1000`, any 4-digit year leaking past a router stores a plausible medieval CE date, so
 routers over shared numeric shapes are fabrication-critical.
+
+## 2026-07-09 — ETA Round-2: collector OOM fix (P0.3) + collector write batching (P1.8)
+
+**BUILD (branch claude/eta-memory-bounded-collection-6dt90s, draft PR onto 0.1; commit per item;
+FULL suite green per item on the py3.13 .venv; mypy 127; ruff F,B; bandit -ll clean):** the
+2026-07-09 field event — kernel OOM at RSS 10,599 MB on a ~10,237 MB VM, 21.6 h into ONE
+continuous crawl pass, killed SILENTLY; plus 847,351 s cumulative writer-gate wait (~22% of
+worker time, 234,551 contentions, max single wait 438 s).
+
+E1 instrument+bound: fetcher host caches bounded (robots cap = fail-closed recompute on
+eviction; last-request evicted politeness-first, only >6 h old; host locks NEVER evicted —
+eviction would let two threads hit one host); per-sample memory gauges + the RSS curve on every
+pass summary; between-pass release (trafilatura reset_caches + gc + glibc malloc_trim), measured.
+E2 pass recycling: OO_PASS_BUDGET_MINUTES (default 60) + OO_PASS_MAX_SOURCES bound one pass; the
+un-run remainder defers and runs FIRST next pass (exactness pinned: processed + deferred == all).
+E3 RSS memory guard: measured psutil trip/resume latch, hysteresis both ways, missing readings
+carry no information; pauses loudly (phase paused-low-memory + status.memory_guard), resumes on
+measured recovery or user action; never touches the writer gate. E4 WAL checkpoint(TRUNCATE)
+between passes via write_lock(), measured, honest busy=1 partial under an active reader.
+E5/P1.8 write batching: fetch/extract/links OUTSIDE the gate (HTML dropped at stage; buffer
+bounded by count AND bytes), ONE transaction per batch via index_article(commit=False) +
+rollback-then-redo-per-article; zero loss pinned (Nth-article collision, death-between-commits,
+live contention race with exact counters). Soak (src/testing/collect_soak.py, zero-network by
+construction — socket.socket is a TRAP in the smoke test): flat RSS across recycled passes,
+guard proven pause-not-die on injected fake readings, gate windows/article measured.
+
+**THE REUSABLE LESSON (found by the pre-push skeptic pass, reproduced empirically):** AUTOFLUSH
+CAN HAND THE WRITE GATE TO A READ. The gate acquires on FLUSH, and SQLAlchemy autoflushes dirty
+state on the next QUERY — feed bookkeeping written BEFORE the article loop meant the loop's
+first dedup SELECT acquired the gate and held it ACROSS the article fetch (legacy: the whole
+first fetch of every first-contact feed — the field's 438 s max-single-wait signature; batched:
+the WHOLE feed). Probe: a fake session asserting `write_gate.stats()["held"] is False` inside
+`get()` (before the fix: legacy [True,F,F,F,F], batched [True×5]; after: all False). Rule: on
+gate-wired sessions, write bookkeeping AFTER the network loop and COMMIT it before returning so
+the session leaves clean — the sequential pass shares ONE session across sources, so pending
+bookkeeping otherwise gates the NEXT source's fetches too.
