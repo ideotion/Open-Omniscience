@@ -386,6 +386,30 @@ configure_ollama_store_access() {
 # --------------------------------------------------------------------------- #
 # Double-click launcher (desktop integration)
 # --------------------------------------------------------------------------- #
+# A11 (DispVM durability): persist an opt-in OO_DATA_DIR into the launcher env so the corpus
+# lives on a bind-mounted/external volume and SURVIVES on a disposable/ephemeral VM (the
+# 2026-07-09 field event: a disposable-VM crash vaporized a ~60K-article corpus). Seamless:
+# no prompt -- a user runs `OO_DATA_DIR=/mnt/persist/oo ./install.sh`. The path is validated
+# (creatable + writable) and recorded 0600 in oo.env, which launch.sh sources on every start.
+persist_data_dir() {
+    local dd="${OO_DATA_DIR:-}"
+    [ -n "$dd" ] || return 0
+    case "$dd" in "~/"*) dd="$HOME/${dd#\~/}" ;; esac
+    if ! mkdir -p "$dd" 2>/dev/null || [ ! -w "$dd" ]; then
+        warn "OO_DATA_DIR='$dd' is not usable (not creatable/writable) — keeping the default data location."
+        return 0
+    fi
+    local abs envf tmp
+    abs="$(cd "$dd" && pwd)"
+    envf="$SRC_DIR/oo.env"
+    tmp="$(mktemp "${SRC_DIR}/.oo-env-XXXXXX" 2>/dev/null || echo "${envf}.tmp")"
+    { [ -f "$envf" ] && grep -v '^export OO_DATA_DIR=' "$envf" 2>/dev/null; } > "$tmp" || true
+    printf 'export OO_DATA_DIR=%q\n' "$abs" >> "$tmp"
+    mv "$tmp" "$envf"
+    chmod 600 "$envf" 2>/dev/null || true
+    ok "Persistent data location recorded: $abs — the corpus will survive restarts there."
+}
+
 make_launcher() {
     # Seamless: create the launcher by default, no prompt (maintainer 2026-06-20).
     # OO_MAKE_LAUNCHER=0 still opts out (tests + power users).
@@ -540,6 +564,7 @@ do_install() {
     ensure_python
     create_venv
     pip_install "$extras"
+    persist_data_dir   # record an opt-in persistent OO_DATA_DIR before the DB is initialised there
     init_database
     make_launcher
     setup_autostart

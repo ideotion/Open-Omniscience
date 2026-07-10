@@ -381,14 +381,133 @@ def storage_footprint() -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- #
+# Data-dir persistence: is the corpus on a volatile (disposable) filesystem?    #
+# --------------------------------------------------------------------------- #
+_VOLATILE_FS = frozenset({"tmpfs", "ramfs"})  # RAM-backed: definitely cleared on restart
+
+
+def _filesystem_type(path: Path) -> str | None:
+    """The filesystem type backing ``path`` via Linux ``/proc/mounts`` (longest mount-point
+    prefix wins). ``None`` off Linux / when /proc is unavailable — honest unknown, never a
+    guess. Best-effort, cheap (a small text read)."""
+    try:
+        target = str(path.resolve())
+    except OSError:
+        target = str(path)
+    best_len, best_fs = -1, None
+    try:
+        with open("/proc/mounts", encoding="utf-8") as f:
+            for line in f:
+                cols = line.split()
+                if len(cols) < 3:
+                    continue
+                mp = cols[1].replace("\\040", " ")  # octal-escaped space
+                fstype = cols[2]
+                if target == mp or mp == "/" or target.startswith(mp.rstrip("/") + "/"):
+                    if len(mp) > best_len:
+                        best_len, best_fs = len(mp), fstype
+    except OSError:
+        return None
+    return best_fs
+
+
+def _qubes_disposable() -> bool | None:
+    """True/False if we can PROVE Qubes disposability, else None (unknown — never a guess).
+
+    Reads the qubesdb persistence key via ``qubesdb-read`` (``none`` == disposable). Absent
+    on non-Qubes / when the tool is not present -> None. Never nags an ordinary AppVM (whose
+    $HOME IS persistent) on a false positive."""
+    if not Path("/etc/qubes-release").exists():
+        return None
+    import shutil as _sh
+    import subprocess  # noqa: S404 - reading a local qubesdb key, no shell, no user input
+
+    exe = _sh.which("qubesdb-read")
+    if not exe:
+        return None
+    try:
+        out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [exe, "/qubes-vm-persistence"], capture_output=True, text=True, timeout=3
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip() == "none"
+
+
+def data_dir_persistence() -> dict[str, Any]:
+    """Honest, best-effort assessment of whether the corpus survives a restart, so the app can
+    NUDGE a user on a likely-EPHEMERAL root toward an opt-in persistent ``OO_DATA_DIR`` (the
+    2026-07-09 field event: a disposable-VM crash vaporized a ~60K-article corpus).
+
+    HONESTY: it signals only what it can PROVE — a RAM-backed (tmpfs) data folder is
+    definitely volatile; a Qubes disposable VM is provable via qubesdb; everything else is
+    ``unknown`` (never a guess). It NEVER says "stop using disposable VMs" — only "here is how
+    to keep your corpus across restarts." When ``OO_DATA_DIR`` is set the user chose the
+    location, so we only remind them to ensure it is persistent."""
+    dd = data_dir()
+    override = os.getenv("OO_DATA_DIR")
+    fstype = _filesystem_type(dd)
+    volatile_fs = (fstype in _VOLATILE_FS) if fstype else None
+    disposable = _qubes_disposable()
+
+    if volatile_fs:
+        at_risk: bool | None = True
+        reason = (
+            f"the data folder is on a {fstype} (RAM-backed) filesystem, which is cleared "
+            "when this machine restarts."
+        )
+    elif disposable:
+        at_risk = True
+        reason = "this is a Qubes disposable VM — its storage is discarded on shutdown."
+    elif override:
+        at_risk = False
+        reason = "OO_DATA_DIR is set to an explicit location (ensure it is a persistent path)."
+    else:
+        at_risk = None
+        reason = "could not prove whether this location survives a restart (unknown)."
+
+    note = None
+    if at_risk is True:
+        note = (
+            f"Your corpus is being written to {dd}, which {reason} To keep it across restarts, "
+            "set OO_DATA_DIR to a persistent path (a bind-mounted folder or an external drive) "
+            "before launching, or copy the encrypted data folder off this machine. Your corpus "
+            "is reconstitutable from the web, but re-scraping is slow — this one-time setup "
+            "avoids that."
+        )
+    return {
+        "data_dir": str(dd),
+        "explicit_override": bool(override),
+        "filesystem": fstype,
+        "volatile_filesystem": volatile_fs,
+        "qubes": Path("/etc/qubes-release").exists(),
+        "qubes_disposable": disposable,
+        "at_risk": at_risk,
+        "reason": reason,
+        "note": note,
+        "how_to_persist": (
+            "Set OO_DATA_DIR=/path/on/a/persistent/or/bind-mounted/volume before launching "
+            "(the installer accepts it too); the corpus, keys and custody log then live there."
+        ),
+        "method": (
+            "tmpfs/ramfs data folder = provably volatile; Qubes disposability read from "
+            "qubesdb; otherwise honest 'unknown'. Local read-only checks; no network, no score."
+        ),
+    }
+
+
 def session_forensics() -> dict[str, Any]:
-    """The one-call diagnostic block: inventory + previous-session verdict +
-    the last unlock timing + the complete storage footprint. Rides the debug bundle /
-    the all-diagnostics zip."""
+    """The one-call diagnostic block: inventory + previous-session verdict + the last unlock
+    timing + the complete storage footprint + the data-dir persistence assessment. Rides the
+    debug bundle / the all-diagnostics zip."""
     cur = _read_state() or {}
     return {
         "inventory": data_dir_inventory(),
         "storage_footprint": storage_footprint(),
+        "data_dir_persistence": data_dir_persistence(),
         "previous_session": previous_session_report(),
         "last_unlock": cur.get("last_unlock"),
     }

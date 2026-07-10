@@ -1742,6 +1742,17 @@ def session_forensics_report() -> dict:
     return _sf()
 
 
+@router.get("/data-dir-persistence")
+def data_dir_persistence_report() -> dict:
+    """Honest assessment of whether the corpus survives a restart (A11): a RAM-backed (tmpfs)
+    data folder or a Qubes disposable VM is PROVABLY volatile; everything else is 'unknown'
+    (never a guess). ``at_risk`` + ``note`` drive the one-time nudge toward the opt-in
+    persistent OO_DATA_DIR. Never 'stop using disposable VMs' — only how to keep the corpus."""
+    from src.monitoring.forensics import data_dir_persistence as _dp
+
+    return _dp()
+
+
 @router.get("/storage-footprint")
 def storage_footprint_report(download: bool = Query(False)) -> JSONResponse:
     """The COMPLETE on-disk footprint across ALL app stores, ITEMIZED per component (A12b):
