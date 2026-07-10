@@ -194,11 +194,21 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Severity-tiered local alert layer** (info/watch/urgent from hazard severity + fresh-news tag-families + watch matches; urgent = a Home banner; local-only, user-owned thresholds). 🎨
 - **Seven remaining space-time scenario cards** (news-desert atlas, disputed-chronology detector, silent-disasters, law-takes-effect watch, story-propagation tracer, supply-chain ripple, election-window desk) + a per-card `/investigate` view. 🎨
 
-### Wikipedia as a living source
-- **Dedicated tracked-changes tab** — scroll/discover/analyze edits through time. 🎨
-- **Dumps → corpus ingestion path** — stream-parse downloaded XML into the pipeline (idempotent, bounded, visible job). 🎨
-- **Edition-wide auto-track after a dump download** (retire per-article watching; dump = baseline, `recentchanges` = delta). 🎨 (superseding ruling, explicitly not current work)
-- **Auto-watch all 12 UI-language editions by default** · **Wikipedia tab → Settings** (test-gated) · **agenda ↔ wiki linking**. ⬜/🎨
+### Versioned sources as first-class Articles — Wikipedia + laws (maintainer-directed 2026-07-10, future version)
+The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) →
+"Versioned sources as first-class Articles"; **gated on the P0 scale set — do not start before it lands**):
+- **All Wikipedia articles of all UI-language editions auto-ingested as first-class `Article`s** — full
+  pipeline (keyword engine + date extraction + When×Where×Who + sentiment), metadata linking to the
+  original source, exactly like any scraped article. Bulk mechanism = **dump-as-baseline + `recentchanges`-delta**
+  (not per-article scraping — won't scale to ~6M+/edition). 🎨 scale-critical
+- **Track-change / version history as a per-article linked layer** keyed by `article_id` — the same pattern
+  as a synthesis/translation via `ArticleAnalysis`. Generalize `WikiRevision`/`LawRevision` into this layer. 🎨
+- **Country LAWS get the identical treatment** — promote `LawDocument` to a first-class Article
+  (keywords/metadata/dates), with `LawRevision` as its linked audit trail (today laws are a separate
+  tracked vertical that does NOT flow through `index_article`). 🎨
+- Prior sub-items folded in: dumps → corpus ingestion path · edition-wide auto-track after a dump download
+  (the 2026-06-12 superseding ruling, now the plan of record) · a dedicated tracked-changes tab ·
+  auto-watch all 12 UI editions · Wikipedia tab → Settings · agenda ↔ wiki linking. 🎨
 
 ### UI / UX & onboarding
 - **Home → dashboard / helicopter view — remaining** (top ooChart graphs, a pausable/a11y synthesized-Leads carousel, dynamic commodity-when-trending sections, most-recent-by-tag). 🚧 partial

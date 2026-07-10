@@ -1,5 +1,81 @@
 # Future developments
 
+## Versioned sources as first-class Articles — Wikipedia + laws (2026-07-10, maintainer-directed; MARK FOR THE FUTURE VERSION — not now)
+
+**The directive (maintainer, verbatim intent).** Significantly revamp Wikipedia article
+handling. Today it "seems that we're downloading entire language-based corpora" (dumps) and the
+articles inside a corpus "don't seem to be available when searching for keywords." The maintainer
+wants: **all Wikipedia articles from all of the app's UI-language editions automatically scraped
+and added to the database, with all article metadata linking to the original article source — the
+same way any other source-type's articles are scraped.** The *only* difference from a normal
+article is that Wikipedia articles **change over time**, so the **track-change / audit / version
+history should be linked to each article the same way a synthesis or a translation is linked to an
+article, with its own metadata.** Wikipedia articles must go through the **keyword engine, date
+extraction, When×Where×Who, sentiment — the full pipeline. They ARE articles and should be treated
+as such.** **The same applies to country's laws**: a law is an Article (metadata, keywords, dates),
+and — like a Wikipedia article — it needs version control / audit trail / track-change linked to
+each law.
+
+**The unifying principle:** a **VERSIONED SOURCE = an Article (the primary object, through the one
+`index_article` hook) + a linked revision/audit layer keyed by `article_id`** — architecturally the
+`ArticleAnalysis` pattern (`article_id` FK · `kind` · `result` · provenance), which is exactly how
+LLM summaries/translations already attach to an article. Wikipedia and laws are the first two
+instances of this one pattern; any other source that has an authoritative changing text (official
+statistics vintages, tracked gazettes, case-law) can reuse it later.
+
+**Current state (code-verified 2026-07-10 — so the record is honest):**
+- **Wikipedia — partially there for WATCHED PAGES.** `src/wiki/corpus.py` already upserts a watched
+  page as ONE corpus `Article` through the single `index_article` hook (keywords + When×Where×Who
+  follow), under ONE catalog `Source` per edition (`Wikipedia (en)`, domain `en.wikipedia.org`, so
+  wiki rows stay filterable), carrying `latest_text` + `latest_text_revid`. So watched-page wiki
+  articles DO get keyworded and ARE searchable (the omnibar wiki-content search, shipped 2026-06-21).
+  Per-revision full text is stored in `WikiRevision.full_text`.
+- **The gap the maintainer hit:** downloaded **dumps are essentially files.** `ingest_dump_page` /
+  `ingest_dump_pages` (corpus.py) can ingest a *given title list* from a downloaded dump through the
+  same pipeline, and `dump_index.py` builds a title index — but there is **no automatic whole-edition
+  ingest** and **no auto-track-after-download**, so downloading `enwiki` does NOT populate the corpus
+  with all its articles as searchable, keyword-indexed Articles. This IS the standing "dumps → corpus
+  ingestion path" + the recorded-but-unbuilt **superseding ruling** (2026-06-12): *once an edition
+  dump is downloaded, the whole edition is tracked automatically; per-article watching is retired;
+  dump = baseline, `recentchanges` = the delta.* This directive makes that ruling the plan of record.
+- **Laws — a SEPARATE tracked vertical, NOT yet Articles.** `LawDocument` + `LawRevision` (baseline →
+  diff → flag, `src/law/track.py`, explicitly "mirrors the Wikipedia tracker") track legal documents
+  and their versions, but law text does **not** flow through `index_article` — so laws are **not**
+  corpus Articles and do **not** go through the keyword engine / date extraction / metadata pipeline.
+  The directive promotes `LawDocument` to a first-class Article, with `LawRevision` becoming (or
+  feeding) the per-article linked audit layer — the same pattern as Wikipedia.
+
+**Design points to settle when built:**
+1. **Article-first, version-linked schema.** The Article row is canonical and carries `latest_text`;
+   the revision history is a linked layer (`WikiRevision` / `LawRevision` generalized to an
+   article-keyed audit trail, sibling to `ArticleAnalysis`). Metadata links to the original source
+   (canonical URL + revid + edition `Source`), exactly like a scraped article's provenance.
+2. **Bulk ingest = the DUMP, not per-article network scraping.** "Automatically scraped like any
+   other source" is the *outcome* (all editions as first-class Articles); the honest *mechanism* at
+   full-edition scale is **dump-as-baseline + `recentchanges`-delta**, because per-article HTTP
+   scraping of ~6M+ enwiki articles would hammer the network and never finish. Ongoing changes arrive
+   via `recentchanges` and re-run `index_article` (so keywords/dates follow the newest version, as
+   watched pages already do).
+3. **This is SCALE-CRITICAL and collides with the 0.2 mandate.** Ingesting all UI editions is tens of
+   millions of articles — this is squarely the 5 TB / snappiness / storage-hygiene problem
+   (`SCALE_ROADMAP.md`). Tiered depth (which editions, article namespace only, size honesty per
+   edition), the keyword-junk/segmentation rulings (zh/ja/th), and the persisted-columnar/rollup work
+   are all prerequisites. Do NOT start this before the P0 scale set lands.
+4. **Version layer honesty.** The audit trail is stored + shown with provenance (revid, timestamp,
+   ORES/flag signals already exist for wiki); never a fabricated "importance" of an edit — surface the
+   measured delta, as the current trackers do.
+5. **Dedup + metadata parity.** Wiki/law Articles dedup by content hash like any article; the edition
+   `Source` + `recentchanges` provenance stays a filterable class (email-vs-web-vs-wiki-vs-law
+   separable), so the corpus never silently blends a Wikipedia claim with a reported one.
+6. **Build-time checks:** confirm the whole-edition ingest is idempotent per (wiki, title, revid);
+   confirm laws routed through `index_article` don't pollute source-competitive/trust views (a law is
+   a primary document, not a news source — it may want its own `source_type`); reconcile with the
+   backup stance (`wiki_dumps/` is excluded as re-downloadable, but the *ingested Articles* ride the
+   corpus backup — decide whether re-ingest-from-dump or backup-the-rows is the restore path at scale).
+
+**Status: recorded, NOT built. Future version, gated on the P0 scale set.** Tracked on the roadmap
+under "Wikipedia as a living source" and the world-law vertical.
+
 ## Remove the legacy single-file backup RESTORE (2026-07-01, maintainer-flagged)
 
 The size-capped single-file backup **create** was retired 2026-07-01 (the `POST
