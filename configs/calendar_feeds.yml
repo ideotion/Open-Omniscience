@@ -13,12 +13,19 @@
 #   verifier flags them when the pinned year falls behind the current one.
 # FIELD-TEST VERDICTS (2026-06-11, 511/511 feeds checked on a live install):
 # - calendar.google.com's robots.txt DISALLOWS its /calendar/ical/ paths: all
-#   Google feeds are refused by our fail-closed fetcher. Entries stay listed
-#   (the UI shows the honest verdict) but WorldPublicHoliday — 239/252 OK —
-#   is the working holiday provider.
+#   Google feeds are refused by our fail-closed fetcher; WorldPublicHoliday —
+#   239/252 OK — is the working holiday provider.
 # - www.webcal.guru's robots likewise disallows its download endpoints.
 # - 13 WPH country codes delivered no iCal (defunct/uninhabited ISO codes,
 #   e.g. Antarctica, Serbia-Montenegro) and were pruned from the directory.
+# DEAD DEFAULT HOSTS ARE FILTERED AT LOAD (2026-07-10, field finding E / B7):
+#   calendar.google.com, www.webcal.guru, cantonbecker.com and space.floern.com
+#   NEVER delivered (robots-disallowed or fail-closed-undetermined), so the Google
+#   "second source" beside every WPH feed implied a corroboration that did not exist.
+#   src.events.feeds._DEAD_DEFAULT_HOSTS now drops their feeds from the LOADED
+#   directory entirely (UI, preflight, auto-import) — a clean, honest, single-provider
+#   default set. The entries stay here as the dated field-verified record; the
+#   fail-closed robots policy still guards any feed a USER adds themselves.
 catalog_as_of: "2026-06"
 families:
   - key: holidays-ad

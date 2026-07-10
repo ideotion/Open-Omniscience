@@ -432,7 +432,9 @@ _MD_NOYEAR_RE = re.compile(
 # language) they are SKIPPED, never guessed (the _MONTH_LANG_OVERRIDES policy
 # applied to relative words). DELIBERATE OMISSIONS (miss over invent): hi "कल"
 # and bare bn "কাল" are BIDIRECTIONAL (yesterday AND tomorrow — only context
-# disambiguates); ro ASCII "maine" (Maine, USA) — only diacritic "mâine".
+# disambiguates); ro ASCII "maine" (Maine, USA) — only diacritic "mâine"; hu bare
+# "ma" (= today) is a 2-char token that stands alone in too much prose; fa امروز /
+# فردا collide with media-outlet names (Emruz daily / Radio Farda).
 _REL_WORDS = {
     "yesterday": -1, "today": 0, "tomorrow": 1,
     "hier": -1, "aujourd'hui": 0, "aujourd’hui": 0, "demain": 1,
@@ -466,6 +468,15 @@ _REL_WORDS = {
     "dün": -1, "bugün": 0, "yarın": 1,
     # id/ms
     "kemarin": -1, "besok": 1, "hari ini": 0,
+    # hu — distinctive Hungarian words, no cross-language collision (contrast bare "ma"
+    # = today, a 2-char token that stands alone in far too much prose — OMITTED, miss
+    # over invent).
+    "tegnap": -1, "holnap": 1,
+    # fa — ONLY دیروز (yesterday). امروز and فردا are DELIBERATELY OMITTED: Persian
+    # temporal words are common MEDIA-OUTLET names (روزنامه امروز = the Emruz daily,
+    # رادیو فردا = Radio Farda — both verifier-measured false positives), the same
+    # fabrication risk as ro ASCII "maine" (Maine). دیروز carries no such outlet name.
+    "دیروز": -1,
 }
 # token -> base languages allowed to resolve it. A gated token with no language
 # hint, or a language outside its set, is skipped — never guessed.

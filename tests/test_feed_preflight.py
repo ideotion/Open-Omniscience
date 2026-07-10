@@ -58,11 +58,13 @@ def test_feed_preflight_writes_verdict_log():
     summary = fpf.run_feed_preflight(_Fetcher(), sample_per_provider=2)
     assert fpf.has_run_before() is True
     # Robots checked once per distinct host; the denial is recorded, not hidden.
-    assert summary["hosts"] >= 5
+    # (After the B7 dead-host filter the loaded directory has ~4 distinct working hosts;
+    # calendar.google.com is no longer bundled, so it is no longer preflighted.)
+    assert summary["hosts"] >= 3
     assert summary["robots_denied"] >= 1
     records = fpf.recent_results()
     robots = [r for r in records if r["kind"] == "robots"]
-    assert {r["host"] for r in robots} >= {"calendar.google.com", "worldpublicholiday.com"}
+    assert {r["host"] for r in robots} >= {"worldpublicholiday.com"}
     denied = next(r for r in robots if r["host"] == "worldpublicholiday.com")
     assert denied["robots"] == "disallowed"
     # Samples are bounded per provider AND never taken where robots said no.

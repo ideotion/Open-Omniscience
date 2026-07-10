@@ -30,11 +30,11 @@ from src.database.models import (
     KeywordTag,
 )
 
-# Languages with FUNCTIONAL keyword extraction today live in the ONE source of
-# truth (src.analytics.managed) — shared with the source-language gating so the
-# engine report and "which sources to disable" can never disagree.
-from src.analytics.managed import MANAGED_LANGUAGES as _FUNCTIONAL
-from src.analytics.managed import UNSEGMENTED as _UNSEGMENTED
+# Language status lives in the ONE source of truth (src.analytics.managed) — shared
+# with the source-language gating so the engine report and "which sources to disable"
+# can never disagree. It is segmenter-aware: zh/ja/th report 'functional' when the
+# optional [segmentation] extra is installed, 'unsegmented' otherwise.
+from src.analytics.managed import language_status as _language_status
 
 
 def _is_acronym(n: str) -> bool:
@@ -129,11 +129,10 @@ def _extraction_noise(session: Session, cap: int = 60000) -> dict:
 
 
 def _lang_status(lang: str) -> str:
-    if lang in _UNSEGMENTED:
-        return "unsegmented"  # no word segmentation -> extraction broken
-    if lang in _FUNCTIONAL:
-        return "functional"
-    return "no_stoplist"  # tokenises, but function words leak (analytics unreliable)
+    # One source of truth (segmenter-aware): 'functional' | 'unsegmented' |
+    # 'no_stoplist' | 'unknown'. zh/ja/th flip to functional when the [segmentation]
+    # extra is installed; a core install still reports them 'unsegmented'.
+    return _language_status(lang)
 
 
 def _pct(n: int, d: int) -> float | None:
@@ -341,7 +340,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             "method": "share of the most-mentioned keywords carrying >=1 baseline/user tag (Item AC)",
         },
         "language_coverage": {
-            "method": "functional = has a stoplist + space-segmented; unsegmented (zh/ja) = extraction broken; no_stoplist = function words leak",
+            "method": "functional = has a stoplist + tokenisable; unsegmented (zh/ja/th without the [segmentation] extra) = extraction broken; no_stoplist = function words leak",
             "languages": languages,
         },
         "extraction_noise": _extraction_noise(session),

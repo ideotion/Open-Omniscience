@@ -149,7 +149,13 @@ def test_lemma_preview_surfaces_candidate_conflations():
 
 
 def test_language_status_is_honest():
-    assert _lang_status("zh") == "unsegmented" and _lang_status("ja") == "unsegmented"
+    from src.analytics.segmentation import segmenter_available
+
+    # zh/ja flip to 'functional' when the optional [segmentation] extra is installed,
+    # 'unsegmented' otherwise — honest in both environments.
+    want_zh = "functional" if segmenter_available("zh") else "unsegmented"
+    want_ja = "functional" if segmenter_available("ja") else "unsegmented"
+    assert _lang_status("zh") == want_zh and _lang_status("ja") == want_ja
     assert _lang_status("en") == "functional" and _lang_status("ru") == "functional"
     assert _lang_status("vi") == "no_stoplist" and _lang_status("xx") == "no_stoplist"
 

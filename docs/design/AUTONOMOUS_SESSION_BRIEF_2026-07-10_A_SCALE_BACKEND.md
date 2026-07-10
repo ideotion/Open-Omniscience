@@ -157,6 +157,21 @@ guessing). Never "stop using DispVMs" messaging.
 exports) as a diagnostics endpoint + debug-bundle member, so the next field export names
 the 120 GB. Flag any plaintext staging leftovers LOUDLY (a would-be at-rest violation).
 
+### A12b — "Database size" must mean EVERYTHING (maintainer-directed 2026-07-10 — backend half)
+Wherever the app reports its storage footprint, the number must cover the WHOLE footprint,
+not just the SQLite file: db + `-wal`/`-shm` + `wiki_dumps/` + `osm_regions/` + staging/
+exports + **the Ollama MODEL store — which lives OUTSIDE `data_dir()`** (`OLLAMA_MODELS` or
+`~/.ollama/models`; reuse `src/backup/ollama_models.py:default_store()`/`store_status()`,
+honest `{available:false, reason}` when unreadable — the protected systemd store case).
+**Do:** one shared aggregation helper (extend the A12/forensics breakdown; cached briefly —
+never a full tree-walk per poll) feeding a per-component payload
+`{component, bytes, location, note}` + an honest TOTAL; wire it into the existing size
+surfaces' BACKENDS (`src/api/database.py` sizes, the Library overview `src/api/library.py`,
+the debug bundle). Components stay itemized — a user must see WHAT is big (the DB is
+private corpus; dumps/maps/models are re-downloadable public blobs — say so, it's the
+backup-stance distinction). Publish the payload contract in the PR body — **Session B wires
+the DISPLAY** (Library/System tab). Do not edit `src/static/**`.
+
 ### A13 — httpfs crypto-extension bundling attempt → D1 persisted encrypted columnar store (ruled 3a: cleared, incl. binaries)
 The blocker: DuckDB refuses an *authenticated* encrypted write without the OpenSSL `httpfs`
 extension. Attempt: fetch the official per-OS/arch `httpfs` extension binaries for the

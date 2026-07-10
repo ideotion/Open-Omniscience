@@ -1,9 +1,10 @@
 # Vendored stopword lists — stopwords-iso
 
 Source:  https://github.com/stopwords-iso/stopwords-iso
-Package: stopwordsiso 0.7.0 (PyPI), file stopwords-iso.json
+Package: stopwordsiso 0.7.0 (2026-06 waves) / 0.7.1 (2026-07 segmenter wave — the
+         two releases emit byte-identical lists for the languages we vendor)
 License: MIT (see the upstream repository)
-As of:   2026-06
+As of:   2026-07
 
 These per-language stopword lists cover the space-segmented languages whose
 function words leaked as keywords. Two waves:

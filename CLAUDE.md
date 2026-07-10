@@ -646,6 +646,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     unexercised. Also: `# nosec`/bandit runs in CI only (not the sandbox venv); the mypy ratchet counts
     import-closure errors, so verify NEW errors are in YOUR files (per-file `mypy <file>` shows 0) before
     trusting a red count. Full entry in SHIPPED_LOG 2026-07-10.
+  - **OFFLINE WORD SEGMENTATION IS AN OPTIONAL SEAM, NOT A CORE CHANGE (2026-07-10, B1 segmenter):**
+    to add a capability that only some installs have (zh/ja/th segmentation via jieba/janome/pythainlp),
+    make it a pip EXTRA with a `segment()->[(word,offset)]|None` seam and a segmenter-aware
+    `language_status()`; the whole point is that a core install stays BYTE-IDENTICAL (the `None`
+    fallback runs the old tokenizer) — pin BOTH sides: the segmenter-present tests skip when the extra
+    is absent, and tests that hardcoded "zh is unsegmented" must be rewritten to assert against the
+    source-of-truth (`segmenter_available(lang)`), not a constant, or they flake between environments
+    (installed vs not). Three empirical facts worth keeping: (a) CJK words are 2 chars (中国/政策/経済),
+    so a segmented path needs `min_len=2` — the Latin 3-char floor drops real words; (b) a segmenter's
+    surface tokens CONCATENATE to the input, so janome/pythainlp offsets reconstruct exactly with a
+    forward-cursor `text.find(s, cursor)` (jieba yields offsets directly) — and the offset feeds a
+    provenance sentence-slice, so validate `text[off:off+len(w)]==w`; (c) a status/gating check must use
+    a LIGHTWEIGHT importability probe (`__import__` only), NEVER the heavy loader, or a mere
+    `language_status()` call triggers jieba's prefix-dict build. The corpus-level win is that real words
+    RECUR across articles (Heaps β drops from ~0.95), which is what makes aggregations meaningful — the
+    per-article count is a red herring. Full entry in SHIPPED_LOG 2026-07-10.
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -688,7 +704,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   FINAL validation gate (never claim P0 closed on synthetic evidence alone). (2a) **the zh/ja/th
   SEGMENTER ruling is DELEGATED — pick & ship** license-clean offline segmenters (prefer a
   pip-installable `[segmentation]` extra over repo vendoring; graceful degrade; registry
-  entries; measured junk reduction) + ko/vi/mr stoplists where a real source exists. (3a) **ALL
+  entries; measured junk reduction) + ko/vi/mr stoplists where a real source exists.
+  **EXECUTED 2026-07-10 (Session B, branch `claude/b-segmenter`; shipped.csv row): CHOSE jieba
+  (MIT, zh) + janome (Apache-2.0, ja) + pythainlp newmm (Apache-2.0, th) — pure-local, dicts
+  bundled IN-WHEEL (no download/network/*_AS_OF, no registry entry needed), a new
+  `[segmentation]` pip extra (no repo vendoring). Hooked into `extract._terms()` behind
+  `segment()` (offset-preserving) with a language-aware `min_len=2` for CJK/Thai; graceful
+  degrade by construction (extra absent / `OO_SEGMENTATION=0` → byte-identical whitespace path,
+  zh/ja/th stay `unsegmented`). `managed.language_status()` is now segmenter-aware (zh/ja/th →
+  `functional` only when the segmenter is present); ko(Hangul)+mr(Marathi) added to
+  MANAGED_LANGUAGES with vendored stopwords-iso lists (zh/ja/th/ko/mr .txt added; sr/az stay
+  honestly uncovered). CI's main job installs `[segmentation]` so it is exercised; the Core-only
+  job proves the degrade. Measured on fixtures: whole-sentence junk / Thai mark-fragments → real
+  RECURRING words (经济/政策, 経済/政府, เศรษฐกิจ/รัฐบาล). LESSON below.** (3a) **ALL
   ~9 pending rulings are delegated with full autonomy INCLUDING vendored binaries** — the per-OS
   httpfs crypto-extension bundling attempt is cleared (sha256-pinned, registry-tracked,
   verify-before-LOAD; on any fetch/attestation failure record the blocker, never fabricate),
@@ -700,6 +728,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   stay until their sessions complete). Sessions branch as `claude/a-*` / `claude/b-*`; shared
   append-targets (this ledger, shipped.csv, ROADMAP, external_artifacts.yml, repo-invariants)
   merge ADDITIVELY — never revert the sibling session's lines (the #548 precedent).
+  **ADDENDUM (maintainer-directed 2026-07-10, same day — two new items routed into the briefs):**
+  (i) **"Database size" must mean EVERYTHING** — the reported storage footprint covers db +
+  wal + wiki dumps + OSM regions + staging + the OLLAMA MODEL STORE (which lives OUTSIDE
+  data_dir — reuse `ollama_models.default_store()`/`store_status()`, honest unavailable state),
+  itemized per component (private encrypted corpus vs re-downloadable public blobs stated),
+  never just the SQLite file. Backend aggregation = Session A (brief A12b); display = Session B
+  (brief B14). (ii) **LLM language detection for unknown-language articles — OPT-IN, CLEARLY
+  LLM-DEDUCED** (brief B15): local-Ollama detection ONLY for the residue py3langid leaves
+  unknown; NEVER overwrites the asserted `Article.language` nor a detector-filled
+  `detected_language`; provenance per result (model + prompt version); a visible abortable job,
+  never the scrape hot path; the result surfaces as a THIRD, labelled provenance class
+  ("AI-derived · unreliable" convention); a garbage/unvalidatable model answer stores NOTHING.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL

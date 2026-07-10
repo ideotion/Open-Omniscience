@@ -457,6 +457,37 @@ def _check_structural() -> list[dict]:
                 "multi",
             )
         )
+
+    # 5) OPTIONAL word segmentation ([segmentation] extra): a space-less script
+    # (zh/ja/th) yields REAL words instead of one sentence-long junk token. Checked
+    # only when that language's segmenter is installed — a core install omits the case
+    # (the feature is a no-op there and the language stays honestly 'unsegmented').
+    from src.analytics.extract import BaselineExtractor
+    from src.analytics.segmentation import segmenter_available
+
+    _seg_cases = [
+        # (lang, text, a real content word that MUST survive, the whole sentence that must NOT be a keyword)
+        ("zh", "中国政府今天宣布了新的经济政策。", "经济", "中国政府今天宣布了新的经济政策"),
+        ("ja", "日本政府は新しい経済政策を発表した。", "経済", "日本政府は新しい経済政策を発表した"),
+        ("th", "รัฐบาลไทยประกาศนโยบายเศรษฐกิจใหม่", "เศรษฐกิจ", None),
+    ]
+    for lang, text, want_term, junk in _seg_cases:
+        if not segmenter_available(lang):
+            continue  # a core install has no segmenter for this language — omit, never fail
+        seg_terms = {t.normalized for t in BaselineExtractor().extract(text, language=lang) if t.kind == "term"}
+        seg_fails: list[str] = []
+        if want_term not in seg_terms:
+            seg_fails.append(f"{lang}: expected the real word {want_term!r} among terms, got {sorted(seg_terms)[:8]}")
+        if junk and junk in seg_terms:
+            seg_fails.append(f"{lang}: the whole sentence {junk!r} must not survive as one keyword")
+        out.append(
+            _result(
+                f"segmentation_{lang}",
+                f"{lang}: word segmentation yields real words, not one sentence-long junk token",
+                seg_fails,
+                "multi",
+            )
+        )
     return out
 
 

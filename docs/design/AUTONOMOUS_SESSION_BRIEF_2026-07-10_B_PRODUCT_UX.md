@@ -188,6 +188,41 @@ DATA_ARCH.md` → `docs/archive/session-briefs/` (**EXCEPT the two live 2026-07-
 Retarget EVERY inbound link (grep before and after); nothing deleted; `docs/README.md` +
 `docs/archive/` READMEs updated.
 
+### B14 — "Database size" shows EVERYTHING (maintainer-directed 2026-07-10 — display half)
+Session A ships the backend aggregation (A12b: db + wal + wiki dumps + OSM regions +
+staging + the Ollama model store, per-component `{component, bytes, location, note}` + an
+honest total). YOUR half: wherever the UI shows a storage/database size (the Library tab —
+"the central dashboard of everything downloaded" — and the task-manager System tab), render
+the TOTAL with the per-component breakdown visible (not hidden behind a toggle; the #oo-tip
+hover carries the long form per the layering convention). Distinguish honestly: the
+encrypted private corpus vs re-downloadable public blobs (dumps/maps/models) vs the
+models-live-outside-the-data-folder note. If A's endpoint hasn't merged yet when you get
+here, ship against the contract in A's PR body and mark browser-unverified as usual. ×12
+keys for the new labels.
+
+### B15 — LLM language detection for unknown-language articles (maintainer-directed 2026-07-10; OPT-IN, clearly LLM-deduced)
+The substrate: `Article.language` is the ASSERTED channel (never overwritten);
+`detected_language` is the DEDUCED channel (offline py3langid, confidence-gated;
+`reconcile_article_language` fills it corpus-wide). The ask: an OPTION to run the LOCAL LLM
+(Ollama, loopback) over articles whose language is STILL unknown after the offline detector,
+writing the result into the metadata **clearly labelled as LLM-deduced** — a third
+provenance class, never conflated with asserted or detector-deduced.
+**Binding constraints:** (a) ordering — py3langid first (free, deterministic); the LLM only
+for the residue; (b) NEVER overwrites `Article.language` or a detector-filled
+`detected_language`; (c) provenance recorded per result (model + prompt version — the
+`ArticleAnalysis`/`ai_keyword` convention; decide the storage seam: recommended =
+`detected_language` + a stored provenance marker (e.g. a `language_source` field or the
+ai_layer row) so stoplist selection can use it while the UI labels it "AI-derived ·
+unreliable" — record your choice in CLAUDE.md); (d) OPT-IN + a visible, abortable JOB
+(never in the scrape hot path — the #389 post-pass pattern; airplane mode refuses the
+Ollama call as everywhere); (e) the UI surfaces it as derived data everywhere the language
+shows (the two-class asserted/deduced header convention gains the LLM class); (f) honest
+failure — a model that answers garbage/none stores NOTHING (never a fabricated language);
+validate the answer against the known language-code set before storing. Tests: the
+never-overwrite rules, the residue-only selection, the garbage-answer refusal, zero
+`KeywordMention` writes. Entry points: a Settings action + optionally per-corpus from the
+analysis window (the bulk-LLM patterns).
+
 ## 4. Definition of done (per item and for the session)
 
 Tests green (full suite where runnable; CI-noted where not) · skeptics (incl. negative-space
