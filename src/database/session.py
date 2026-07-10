@@ -244,12 +244,13 @@ def init_db() -> None:
             _stamp.get("from"),
             _stamp.get("to"),
         )
-    elif _stamp.get("action") == "schema-behind":
+    elif _stamp.get("action") in ("schema-behind", "behind-data-floor"):
         _LOG.info(
-            "alembic stamp left at %s: the schema is genuinely behind head (%s) and must "
-            "migrate, not be stamped forward.",
+            "alembic stamp left at %s (%s): kept so a pending migration runs rather than "
+            "being stamped forward. detail=%s",
             _stamp.get("from"),
-            _stamp.get("diffs"),
+            _stamp.get("action"),
+            _stamp.get("diffs") or _stamp.get("floor"),
         )
 
 

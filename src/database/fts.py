@@ -266,9 +266,19 @@ def ensure_fts(engine: Engine, *, rebuild: str = "auto") -> str:
       * ``"never"`` — ensure only the DDL, never rebuild.
 
     Returns the action taken: ``"rebuilt"`` | ``"skipped"`` | ``"skipped-non-sqlite"``.
-    Deliberately does NOT try to detect and heal a *corrupt* index on the boot path (that
-    would reintroduce a slow, corpus-scaled rebuild after every crash): ``fts_status``
-    reports a damaged index and the explicit re-index job heals it (``rebuild="always"``).
+
+    SCOPE OF THE BOOT SELF-HEAL (measured, deliberate): the boot path self-heals only a
+    fully-EMPTY index (docsize == 0 while articles exist) — an O(1) probe. It does NOT try to
+    detect a PARTIAL index (some rows indexed, some not) or a CORRUPT one, because the only
+    way to detect partialness is to compare the indexed-row count against the article count,
+    and ``count(*) FROM articles`` was measured at 74 s cold on a 2.7 GB encrypted corpus (a
+    codec-heavy scan) — reintroducing the very corpus-scaled boot cost this fix removes. A
+    partial/corrupt index is UNREACHABLE via normal operation anyway (ingest is an atomic
+    INSERT + trigger; ``'rebuild'`` is atomic; restore runs a full rebuild in ``verify_copy``;
+    re-index never touches article content) — it can arise only from external file corruption
+    (e.g. a torn filesystem-copy backup). Those are the ``fts_status`` (D4) diagnostic's job:
+    it reports a damaged/incomplete index and the explicit re-index job heals it
+    (``rebuild="always"``).
 
     No-op for non-SQLite engines (PostgreSQL would use its own tsvector path).
     Safe to call repeatedly; called from ``init_db``.
