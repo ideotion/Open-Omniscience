@@ -190,6 +190,42 @@ shape for any cache) · shipped.csv append-only · draft PR onto the current cyc
   insights.py); the 30-min `pollJobStatus` ceiling can toast a "0" tally for a still-running
   job (app.js); P1.12 reconcile deadlines.
 
+## POST-MERGE ADVERSARIAL AUDIT of the Round-2 wave (2026-07-10)
+
+An 8-lens negative-space audit of the merged ZETA/ETA/THETA wave (backup + collector + serve)
+ran after the merge (suite green, 3340 passed). Crypto/snapshot consistency, THETA serve gates,
+and the ETA memory guard/recycling all verified GUARDED. A cluster of real negative-space defects
+concentrated in the backup finalize/restore path — **FIXED FORWARD** on `claude/zeta-hardening-audit`
+(draft PR onto 0.1): (F1) restore turned unvalidated `corpus_member`/`wal_member` manifest fields
+into an arbitrary-file DELETE of the live corpus (a self-signed hostile backup) — the traversal guard
+now covers them + per-member volume refs; (F5–F8) finalize overwrote the previous signed manifest
+before signing+parity, and an uncaught parity failure + `cleanup_cancelled_build`'s "unsigned =
+disposable" assumption could destroy a complete backup — finalize now swaps the canonical manifest
+in a single atomic replace so a crash/parity-failure leaves the previous backup intact; (F12) a loud
+note when `OO_WRITE_GATE=0` voids the snapshot guarantee; (F4) 400-not-500 on the encrypted refusal.
+
+**DEFERRED to this roadmap (confirmed but out of the fix-forward scope):**
+- **F6 — parity does not scale to the mandate (design item, ties to P0.1/5TB):** Reed-Solomon over
+  GF(2⁸) caps at N+M < 256 volumes = ~128 GB corpus at 512 MiB volumes (raises `VolumeError`); a
+  5 TB corpus is ~10,000 volumes — impossible with fixed 512 MiB volumes. The field corpus (11.7 GB,
+  n≈23) and a 100 GB run (n≈200) are fine, so it does not block today, but the backup PARITY design
+  needs adaptive/larger volume sizing (or a different erasure scheme) before the 5 TB target. The
+  finalize fix already ensures hitting the ceiling never destroys the previous backup. **Fold into the
+  P0.1 backup-at-scale design.**
+- **F13 — batched collector flush holds the write gate across per-article keyword+WWW EXTRACTION**
+  (CPU), not just the DB write (`src/ingest/batch.py`) — undercuts P1.8's own purpose (the 847 K s
+  write-wait fix) under 50-worker collection. MED. Extract before the flush so the gate window is the
+  write only. (ETA territory follow-up; measure the net effect against the fsync win.)
+- **F10/F11 — backup↔collector gate-hold:** `_drain_wal` takes the write gate THEN a pool connection
+  (inverted vs workers' connection→gate; bounded by pool_timeout, self-resolving stall, WAL checkpoint
+  skipped under pool pressure); and the gate is held across `_corpus_facts`' full `COUNT(*)`+articles
+  scan, not just the byte stream (adds minutes to the pause at scale, disclosed via `gate_held_s`).
+  Both LOW. Fix: checkout connection before gate; compute facts after gate release.
+- **F3 — `run_restore` disk preflight under-counts** the pre-restore safety snapshot + merge working
+  copy (fails SAFE — corpus intact on ENOSPC; weakens only the "refuse up front" UX). LOW.
+- **F14 — markets `run_rule` leaves a dirty session → `import_due_feeds` query→fetch holds the gate
+  across a CSV fetch** (pre-existing, single-threaded markets pass). LOW. Commit/rollback before the loop.
+
 ## OPERATIONAL (maintainer's machine — refreshed 2026-07-09 after the 12:14 logs)
 
 1. **UPDATE THE INSTALL** (pull the current cycle branch) — the single highest-value action:
