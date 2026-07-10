@@ -48,8 +48,8 @@ def test_bounded_batch_and_roundrobin():
     f = _StubFetcher(ICS)
     r1 = F.auto_import_due_feeds(f, batch=3)
     assert r1["picked"] == 3 and r1["imported"] == 3
-    # The whole FETCHABLE directory is due on a fresh machine — robots-disallowed
-    # hosts (google-hol/webcal, ~254 feeds) are excluded from the auto round-robin.
+    # The whole directory is due on a fresh machine — the robots-dead default hosts
+    # (google/webcal/cantonbecker/floern) are filtered out of load_families entirely.
     assert r1["due"] >= 200
     assert f.calls == 3              # bounded: exactly `batch` fetches, never all 500
     # A second pass skips the just-imported feeds (backoff) and covers DIFFERENT ones.
@@ -77,23 +77,25 @@ def test_failure_does_not_abort_batch_and_backs_off():
     assert r2["picked"] == 4         # the NEXT four, not the same four
 
 
-def test_robots_disallowed_hosts_excluded_from_auto_import_but_stay_listed():
-    """Field test 2026-06-22: ~238 robots-dead google-hol feeds sort BEFORE the working
-    wph feeds, so the round-robin attempted dead feeds for many passes. The auto-import
-    must skip the field-verified robots-disallowed hosts — but they STAY in the directory
-    (the UI shows them with their honest verdict; the operator can still import manually)."""
+def test_robots_dead_default_hosts_are_filtered_from_the_directory():
+    """B7 / field finding E: the robots-dead default hosts (the dead Google "second
+    source" beside every WPH feed, webcal.guru, cantonbecker, floern) are filtered OUT
+    of the loaded directory entirely, so they can never be listed, previewed, or
+    auto-imported — an honest single-provider default set. (Field test 2026-06-22 first
+    just SKIPPED them in the round-robin; now they are gone from load_families.)"""
     from urllib.parse import urlparse
 
-    # The dead hosts are still LISTED (load_families is untouched).
+    # The dead hosts are NOT in the loaded directory.
     listed_hosts = {
         urlparse(fd["url"]).netloc
         for fam in F.load_families()
         for fd in fam["feeds"]
     }
-    assert F._AUTO_IMPORT_SKIP_HOSTS <= listed_hosts  # they ARE in the catalog
+    assert not (listed_hosts & F._DEAD_DEFAULT_HOSTS), (
+        f"a robots-dead host leaked into the directory: {listed_hosts & F._DEAD_DEFAULT_HOSTS}"
+    )
 
-    # But the auto-import round-robin never picks a feed on those hosts. Drain a LOT of
-    # batches (more than enough to reach the working feeds) and assert no dead host fired.
+    # And the auto-import round-robin never fetches one (trivially, since none is listed).
     f = _StubFetcher(ICS)
     fetched_hosts: set[str] = set()
     real_fetch = f.fetch
@@ -106,8 +108,6 @@ def test_robots_disallowed_hosts_excluded_from_auto_import_but_stay_listed():
     for _ in range(60):  # 60 * 8 = 480 picks — covers the whole fetchable directory
         F.auto_import_due_feeds(f, batch=8)
     assert fetched_hosts, "the auto-import should have fetched SOME feeds"
-    assert not (fetched_hosts & F._AUTO_IMPORT_SKIP_HOSTS), (
-        f"auto-import fetched a robots-disallowed host: {fetched_hosts & F._AUTO_IMPORT_SKIP_HOSTS}"
-    )
-    # The working WorldPublicHoliday host IS reached (not starved by the dead feeds).
+    assert not (fetched_hosts & F._DEAD_DEFAULT_HOSTS)
+    # The working WorldPublicHoliday host IS reached.
     assert "worldpublicholiday.com" in fetched_hosts

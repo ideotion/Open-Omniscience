@@ -42,16 +42,25 @@ CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "calendar_feeds
 _MAX_FEED_BYTES = 5 * 1024 * 1024  # an .ics beyond this is refused, not truncated
 _MAX_EVENTS_PER_FEED = 3000  # bounded import, like every other scan
 
-# Hosts whose robots.txt DISALLOWS their iCal endpoints (field-verified 2026-06-11,
-# recorded in configs/calendar_feeds.yml's header): the fail-closed fetcher refuses
-# every feed on them, so the per-pass auto-import round-robin would burn slots + a
-# robots fetch on guaranteed-dead feeds — and because "google-hol-*" sorts BEFORE the
-# working "wph-*" ids, the ~238 dead Google feeds starved the 239 working
-# WorldPublicHoliday feeds for many passes (field test 2026-06-22). These feeds STAY
-# LISTED in the directory with their honest verdict (load_families is untouched, the UI
-# shows them, the operator can still verify/import them manually) — only the AUTOMATIC
-# round-robin skips them. NOT a fabricated verdict: each is the host's own robots choice.
-_AUTO_IMPORT_SKIP_HOSTS: frozenset[str] = frozenset({"calendar.google.com", "www.webcal.guru"})
+# Robots-dead default hosts. The bundled directory shipped every country holiday with
+# BOTH a Google Calendar feed and a WorldPublicHoliday feed — but calendar.google.com's
+# robots.txt DISALLOWS its /calendar/ical/ paths (field-verified 2026-06-11), so the
+# Google feed NEVER delivered: it was a dead "second source" the UI showed beside the
+# working one, implying a corroboration that did not exist. www.webcal.guru likewise
+# disallows its download endpoints; cantonbecker.com + space.floern.com are robots-
+# undetermined (fail-closed refuses them; the local Meeus astronomy already covers moons/
+# eclipses). These are now filtered OUT of the loaded directory entirely (load_families),
+# so they no longer appear in the UI, the preflight, or the auto-import — a clean,
+# honest, single-provider default set (B7 / field finding E). NOT a fabricated verdict:
+# each is the host's own robots choice. The bundled YAML keeps the full dated record;
+# the fail-closed robots policy still guards any feed a USER adds themselves (user
+# calendars go through a separate path, not this directory).
+_DEAD_DEFAULT_HOSTS: frozenset[str] = frozenset(
+    {"calendar.google.com", "www.webcal.guru", "cantonbecker.com", "space.floern.com"}
+)
+# Back-compat alias: the auto-import round-robin still guards on this set (belt-and-
+# suspenders — load_families already excludes them, so it is a no-op for defaults).
+_AUTO_IMPORT_SKIP_HOSTS: frozenset[str] = _DEAD_DEFAULT_HOSTS
 
 
 # --------------------------------------------------------------------------- #
@@ -68,7 +77,15 @@ def _raw() -> dict:
 def load_families() -> list[dict]:
     out = []
     for fam in _raw().get("families", []):
-        feeds = [f for f in fam.get("feeds", []) if f.get("id") and f.get("url")]
+        feeds = [
+            f
+            for f in (fam.get("feeds") or [])
+            if f.get("id")
+            and f.get("url")
+            and urlparse(str(f["url"])).netloc not in _DEAD_DEFAULT_HOSTS
+        ]
+        # A family left with no working feed (e.g. Google-only, or webcal-only) drops
+        # out entirely — it could never have produced an event.
         if not (fam.get("key") and feeds):
             continue
         out.append(

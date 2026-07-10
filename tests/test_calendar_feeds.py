@@ -32,22 +32,26 @@ ICS = (
 # --------------------------------------------------------------------------- #
 #  Bundled catalog integrity
 # --------------------------------------------------------------------------- #
-def test_catalog_families_and_duplicates():
+def test_catalog_families_and_are_dead_host_free():
+    from urllib.parse import urlparse
+
     fams = F.load_families()
-    assert len(fams) >= 250, "the aggregated directory should be fully integrated"
+    assert len(fams) >= 200, "the aggregated directory should be fully integrated"
     ids = [fd["id"] for fam in fams for fd in fam["feeds"]]
     assert len(ids) == len(set(ids)), "feed ids must be unique"
-    # The duplication is the point: most country families carry BOTH providers.
-    multi = [f for f in fams if len(f["feeds"]) > 1]
-    assert len(multi) >= 200
+    # B7 / finding E: the robots-dead default hosts (Google's dead "second source",
+    # webcal.guru, cantonbecker, floern) are filtered OUT of the loaded directory —
+    # an honest single-provider default set, no fake corroboration.
+    hosts = {urlparse(fd["url"]).netloc for fam in fams for fd in fam["feeds"]}
+    assert not (hosts & F._DEAD_DEFAULT_HOSTS), f"a robots-dead host leaked into the directory: {hosts & F._DEAD_DEFAULT_HOSTS}"
     fr = next(f for f in fams if f["key"] == "holidays-fr")
-    assert {fd["provider"] for fd in fr["feeds"]} == {"Google Calendar", "WorldPublicHoliday"}
+    assert {fd["provider"] for fd in fr["feeds"]} == {"WorldPublicHoliday"}
     assert all(fd["url"].startswith(("http://", "https://")) for fam in fams for fd in fam["feeds"])
 
 
 def test_directory_status_shape():
     status = F.directory_status()
-    assert status["total_feeds"] >= 490
+    assert status["total_feeds"] >= 200  # ~242 working single-provider feeds after the dead-host filter
     assert status["catalog_as_of"] == "2026-06"
     assert any(d["name"] == "Nager.Date" for d in status["directory_only"])
 
@@ -91,29 +95,50 @@ def _isolated_store(monkeypatch, tmp_path):
 
 
 def test_verify_records_honest_verdicts():
-    v = F.verify_feed(_StubFetcher(ICS), "google-hol-fr")
+    # Fixtures use WORKING feeds (the dead google/floern feeds are filtered out now).
+    v = F.verify_feed(_StubFetcher(ICS), "wph-hol-fr")
     assert v["status"] == "ok" and v["events"] == 2
-    v2 = F.verify_feed(_StubFetcher("<html></html>"), "wph-hol-fr")
+    v2 = F.verify_feed(_StubFetcher("<html></html>"), "monkeyness-moons")
     assert v2["status"] == "not_ical"
-    # WPH is year-pinned 2026: not stale today, so no false alarm.
-    assert "stale_year" not in v2
-    v3 = F.verify_feed(_StubFetcher(RuntimeError("boom")), "floern-launches")
+    v3 = F.verify_feed(_StubFetcher(RuntimeError("boom")), "ose-calendar")
     assert v3["status"] == "unreachable" and "boom" in v3["error"]
-    assert set(F.load_verdicts()) == {"google-hol-fr", "wph-hol-fr", "floern-launches"}
+    assert set(F.load_verdicts()) == {"wph-hol-fr", "monkeyness-moons", "ose-calendar"}
 
 
-def test_import_dedups_within_family_keeping_all_sources():
-    r1 = F.import_feed(_StubFetcher(ICS), "google-hol-fr")
+def test_verify_rejects_a_filtered_dead_feed():
+    # A robots-dead default feed is no longer in the loaded directory -> not verifiable.
+    assert F.feed_by_id("google-hol-fr") is None
+    with pytest.raises(KeyError):
+        F.verify_feed(_StubFetcher(ICS), "google-hol-fr")
+
+
+def test_import_dedups_within_family_keeping_all_sources(monkeypatch):
+    # After the dead-host filter no bundled family carries two providers, so drive the
+    # cross-provider dedup logic with a two-feed fixture family (decoupled from the catalog).
+    fam = {
+        "key": "holidays-fr",
+        "name": "France — public holidays",
+        "kind": "holidays",
+        "country": "FR",
+        "feeds": [
+            {"id": "wph-hol-fr", "provider": "WorldPublicHoliday", "url": "https://worldpublicholiday.com/x.ics"},
+            {"id": "alt-hol-fr", "provider": "Alt", "url": "https://example.org/fr.ics"},
+        ],
+    }
+    monkeypatch.setattr(F, "load_families", lambda: [fam])
+    monkeypatch.setattr(F, "feed_by_id", lambda fid: next(((fam, fd) for fd in fam["feeds"] if fd["id"] == fid), None))
+
+    r1 = F.import_feed(_StubFetcher(ICS), "wph-hol-fr")
     assert r1["added"] == 2 and r1["family"] == "holidays-fr"
     # The second provider carries the same two events -> merged, both sources listed.
-    r2 = F.import_feed(_StubFetcher(ICS), "wph-hol-fr")
+    r2 = F.import_feed(_StubFetcher(ICS), "alt-hol-fr")
     assert r2["added"] == 0 and r2["merged_into_existing"] == 2
     events = F.imported_agenda(family="holidays-fr")
     assert len(events) == 2
-    assert all(set(e["sources"]) == {"google-hol-fr", "wph-hol-fr"} for e in events)
+    assert all(set(e["sources"]) == {"wph-hol-fr", "alt-hol-fr"} for e in events)
     # A different date for the "same" title stays a SEPARATE entry (disagreement shown).
     other = ICS.replace("20260714", "20260715")
-    F.import_feed(_StubFetcher(other), "wph-hol-fr")
+    F.import_feed(_StubFetcher(other), "alt-hol-fr")
     titles = [(e["title"], e["date"]) for e in F.imported_agenda(family="holidays-fr")]
     assert ("Bastille Day", "2026-07-14") in titles and ("Bastille Day", "2026-07-15") in titles
 
@@ -127,8 +152,9 @@ def test_feed_api_shapes():
         r = c.get("/api/events/feeds")
         assert r.status_code == 200
         body = r.json()
-        assert body["total_feeds"] >= 490
-        assert any(f["duplicates"] for f in body["families"])
+        assert body["total_feeds"] >= 200  # ~242 working feeds after the dead-host filter
+        # No family carries a duplicate provider now (the dead Google "second source" is gone).
+        assert all(not f["duplicates"] for f in body["families"])
         assert c.post("/api/events/feeds/nope/verify").status_code == 404
         r2 = c.get("/api/events/imported")
         assert r2.status_code == 200 and "events" in r2.json()
