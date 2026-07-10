@@ -545,6 +545,34 @@ def test_finalize_parity_failure_preserves_the_previous_backup(tmp_path, monkeyp
     assert staged is not None
 
 
+def test_disabled_write_gate_discloses_the_lost_consistency_guarantee(tmp_path, monkeypatch):
+    """OO_WRITE_GATE=0 makes the write-pause a no-op, so the corpus can be
+    streamed while collection commits — a possibly-torn image. The live corpus
+    freeze must say so loudly in its notes, never present it as a paused/
+    consistent snapshot. (Exercises the production _live_corpus_source path, which
+    _backup's injected test corpus_source bypasses.)"""
+    import src.backup.sqlite_backup as sb
+    import src.database.writer as writer_mod
+    from src.backup.stream_backup import _live_corpus_source
+
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    monkeypatch.setattr(sb, "live_db_path", lambda: corpus)
+
+    # gate enabled (default): no warning note
+    notes: list[str] = []
+    with _live_corpus_source(tmp_path, include_newsletters=True, notes=notes).freeze():
+        pass
+    assert not any("OO_WRITE_GATE=0" in n for n in notes)
+
+    # gate disabled: a loud warning is appended for the summary/envelope
+    monkeypatch.setattr(writer_mod, "gate_enabled", lambda: False)
+    notes2: list[str] = []
+    with _live_corpus_source(tmp_path, include_newsletters=True, notes=notes2).freeze():
+        pass
+    assert any("OO_WRITE_GATE=0" in n and "may be inconsistent" in n for n in notes2)
+
+
 def test_wrong_backup_passphrase_fails_loudly(tmp_path):
     corpus = tmp_path / "corpus.db"
     _make_corpus(corpus)

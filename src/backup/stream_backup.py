@@ -359,8 +359,21 @@ def _live_corpus_source(
 
         @contextmanager
         def freeze() -> Iterator[Path | None]:
-            from src.database.writer import write_lock
+            from src.database.writer import gate_enabled, write_lock
 
+            if not gate_enabled():
+                # The write gate IS the snapshot-consistency guarantee: collection
+                # writes pause while the corpus streams. Under OO_WRITE_GATE=0 the
+                # lock is a no-op, so a concurrent commit could tear the streamed
+                # image while the summary still reports a "writes paused" phase.
+                # Degrade LOUDLY — never present a possibly-inconsistent backup as
+                # a paused-and-consistent one.
+                notes.append(
+                    "WARNING: OO_WRITE_GATE=0 — the write gate was disabled, so the "
+                    "corpus was NOT streamed under a write pause. If collection was "
+                    "active this snapshot may be inconsistent; re-enable the gate (or "
+                    "stop collection) for a guaranteed-consistent backup."
+                )
             with write_lock():
                 yield _drain_wal(live)
 
