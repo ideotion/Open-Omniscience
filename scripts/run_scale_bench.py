@@ -81,6 +81,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--repeats", type=int, default=8, help="GETs per endpoint")
     p.add_argument("--wal-writes", type=int, default=5000)
     p.add_argument("--parity-fraction", type=float, default=0.1)
+    p.add_argument(
+        "--interrupt-volumes", type=int, default=0,
+        help="prove resumability: interrupt the backup after N volumes, then resume "
+        "(the completed wall then includes reuse — NOT an official full-backup number)",
+    )
+    p.add_argument(
+        "--gate", action="store_true",
+        help="evaluate the P0.1 acceptance gate on the report (exit 1 on failure): "
+        "corpus MUST be encrypted; backup/verify/restore phases error-free",
+    )
+    p.add_argument(
+        "--max-backup-rss-mb", type=float, default=None,
+        help="gate bound for the backup phase's sampled peak RSS (no default — the "
+        "gate never invents a bound; without it the RSS check is not evaluated)",
+    )
+    p.add_argument(
+        "--official", action="store_true",
+        help="gate in OFFICIAL mode: requires this run to be a fresh-process "
+        "--phases backup run (other phases inflate process-lifetime RSS)",
+    )
     return p
 
 
@@ -113,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         os.environ.setdefault("OO_DB_PLAINTEXT", "1")
 
-    from src.testing.scale_bench import ALL_PHASES, run_full
+    from src.testing.scale_bench import ALL_PHASES, acceptance_gate, run_full
 
     if args.phases.strip().lower() == "all":
         phases = list(ALL_PHASES)
@@ -124,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: unknown phase(s): {unknown}; valid: {ALL_PHASES}", file=sys.stderr)
             return 2
 
-    needs_backup = "backup" in phases or "restore" in phases
+    needs_backup = any(x in phases for x in ("backup", "verify", "restore"))
     if needs_backup and not args.backup_passphrase:
         print(
             "error: the backup/restore phases need --backup-passphrase "
@@ -141,13 +161,25 @@ def main(argv: list[str] | None = None) -> int:
         repeats=args.repeats,
         wal_writes=args.wal_writes,
         parity_fraction=args.parity_fraction,
+        interrupt_volumes=args.interrupt_volumes,
     )
+    gate = None
+    if args.gate:
+        gate = acceptance_gate(
+            report,
+            max_backup_peak_rss_mb=args.max_backup_rss_mb,
+            official=args.official,
+        )
+        report["acceptance_gate"] = gate
     text = json.dumps(report, indent=2, ensure_ascii=False)
     if args.out:
         args.out.write_text(text, encoding="utf-8")
         print(f"wrote report -> {args.out}", file=sys.stderr)
     else:
         print(text)
+    if gate is not None and not gate["ok"]:
+        print(f"acceptance gate FAILED: {gate['failures']}", file=sys.stderr)
+        return 1
     return 0
 
 

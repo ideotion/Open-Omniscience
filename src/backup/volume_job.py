@@ -29,12 +29,13 @@ class VolumeBackupManager:
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
-        self._state = "idle"  # idle|running|cancelled|done|error
-        self._mode = "backup"  # backup|restore
+        self._state = "idle"  # idle|running|paused|cancelled|done|error
+        self._mode = "backup"  # backup|restore|verify
         self._dest: str | None = None
         self._progress: dict[str, Any] = {}
         self._error: str | None = None
         self._summary: dict[str, Any] | None = None
+        self._pause_requested = False
 
     def _alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -82,6 +83,7 @@ class VolumeBackupManager:
             if not destp.is_dir():
                 raise ValueError(f"{destp} is not a folder.")
             self._stop.clear()
+            self._pause_requested = False
             self._state, self._mode, self._dest = "running", "backup", str(destp)
             self._error, self._summary = None, None
             self._progress = {"phase": "starting"}
@@ -116,9 +118,20 @@ class VolumeBackupManager:
                 self._summary = {k: v for k, v in summary.items() if k != "envelope"}
                 self._progress = {**self._progress, "phase": "done"}
         except VolumeStopped:
-            self._cleanup_partial(destp)
             with self._lock:
-                self._state = "cancelled"
+                paused = self._pause_requested
+            if paused:
+                # PAUSE keeps the finished volumes + the resume log: starting the
+                # backup again continues from them (the engine re-verifies every
+                # slice, so a resumed set is still one consistent snapshot). The
+                # partial set has NO final manifest, so it can never be mistaken
+                # for a good backup meanwhile.
+                with self._lock:
+                    self._state = "paused"
+            else:
+                self._cleanup_partial(destp)
+                with self._lock:
+                    self._state = "cancelled"
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             _LOG.exception("volume backup failed")
             with self._lock:
@@ -131,6 +144,7 @@ class VolumeBackupManager:
         passphrase: str,
         *,
         allow_unverified: bool = False,
+        corpus_passphrase: str | None = None,
         _restore_fn: Callable[..., dict] | None = None,
     ) -> dict:
         with self._lock:
@@ -139,19 +153,20 @@ class VolumeBackupManager:
             if not srcp.is_dir():
                 raise ValueError(f"{srcp} is not a folder to restore from.")
             self._stop.clear()
+            self._pause_requested = False
             self._state, self._mode, self._dest = "running", "restore", str(srcp)
             self._error, self._summary = None, None
             self._progress = {"phase": "verifying"}
             self._thread = threading.Thread(
                 target=self._run_restore,
-                args=(srcp, passphrase, allow_unverified, _restore_fn),
+                args=(srcp, passphrase, allow_unverified, corpus_passphrase, _restore_fn),
                 daemon=True,
                 name="volume-restore",
             )
             self._thread.start()
             return self.status()
 
-    def _run_restore(self, srcp, passphrase, allow_unverified, restore_fn):
+    def _run_restore(self, srcp, passphrase, allow_unverified, corpus_passphrase, restore_fn):
         try:
             if restore_fn is not None:
                 summary = restore_fn(srcp, passphrase)
@@ -163,7 +178,9 @@ class VolumeBackupManager:
             from src.backup.merge import run_restore
 
             self._on_prog({"phase": "reassembling"})
-            staged = read_volume_backup(srcp, passphrase)  # verify + parity-recover + reassemble
+            staged = read_volume_backup(
+                srcp, passphrase, corpus_passphrase=corpus_passphrase
+            )  # verify + parity-recover + reassemble
             try:
                 self._on_prog({"phase": "merging"})
 
@@ -192,17 +209,80 @@ class VolumeBackupManager:
             with self._lock:
                 self._state, self._error = "error", str(exc)
 
+    # -- verify -------------------------------------------------------------- #
+    def start_verify(
+        self,
+        src: str,
+        passphrase: str | None = None,
+        *,
+        _verify_fn: Callable[..., dict] | None = None,
+    ) -> dict:
+        """Run the end-to-end volume-set verification as a background job (a 100 GB
+        set is a full read — never on the request thread). Without a passphrase:
+        signature + every checksum; with it: every volume is also stream-decrypted
+        into a hash sink. The report lands in ``summary``."""
+        with self._lock:
+            self._reap_or_reject()
+            srcp = Path(src)
+            if not srcp.is_dir():
+                raise ValueError(f"{srcp} is not a folder to verify.")
+            self._stop.clear()
+            self._pause_requested = False
+            self._state, self._mode, self._dest = "running", "verify", str(srcp)
+            self._error, self._summary = None, None
+            self._progress = {"phase": "verifying"}
+            self._thread = threading.Thread(
+                target=self._run_verify,
+                args=(srcp, passphrase, _verify_fn),
+                daemon=True,
+                name="volume-verify",
+            )
+            self._thread.start()
+            return self.status()
+
+    def _run_verify(self, srcp, passphrase, verify_fn):
+        try:
+            fn = verify_fn
+            if fn is None:
+                from src.backup.stream_backup import verify_stream_backup
+
+                fn = verify_stream_backup
+            report = fn(srcp, passphrase)
+            with self._lock:
+                self._state = "done"
+                self._summary = {"report": report}
+                self._progress = {"phase": "done"}
+        except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+            _LOG.exception("volume verify failed")
+            with self._lock:
+                self._state, self._error = "error", str(exc)
+
     # -- controls ----------------------------------------------------------- #
     def cancel(self) -> None:
-        """Stop a running backup (between volumes). A restore is not interruptible
+        """Stop a running backup (between volumes) and CLEAN its partial set so it
+        can never be mistaken for a good backup. A restore is not interruptible
         mid-merge (the merge is atomic); cancel only affects a build."""
+        with self._lock:
+            self._pause_requested = False
+        self._stop.set()
+
+    def pause(self) -> None:
+        """Stop a running backup (between volumes) KEEPING the finished volumes +
+        the resume log — starting the same backup again continues where it left
+        off (P0.1 resumable). No effect on a restore/verify."""
+        with self._lock:
+            if self._mode != "backup":
+                return
+            self._pause_requested = True
         self._stop.set()
 
     def _cleanup_partial(self, destp: Path) -> None:
-        for pat in ("vol-*.ooenc", "par-*.oopar"):
-            for p in destp.glob(pat):
-                p.unlink(missing_ok=True)
-        (destp / "volumes.json").unlink(missing_ok=True)
+        # A cancelled FIRST build vanishes entirely (never mistakable for a good
+        # backup); a cancelled incremental REFRESH keeps the previous complete,
+        # signed set fully restorable (crash-safe refresh semantics).
+        from src.backup.stream_backup import cleanup_cancelled_build
+
+        cleanup_cancelled_build(destp)
 
     def status(self) -> dict:
         with self._lock:

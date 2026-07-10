@@ -252,31 +252,39 @@ def _drop_newsletter_articles(db_path: Path) -> int:
     """
     con = sqlite3.connect(str(db_path))
     try:
-        cur = con.cursor()
-        marks = ",".join("?" * len(_NEWSLETTER_DOMAINS))
-        src_ids = [r[0] for r in cur.execute(
-            f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 - marks is only ?-placeholders; domains are bound params
-        if not src_ids:
-            return 0
-        sq = ",".join("?" * len(src_ids))
-        art_ids = [r[0] for r in cur.execute(
-            f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 - sq is only ?-placeholders; ids are bound params
-        if not art_ids:
-            return 0
-        tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
-        for t in tables:
-            if t == "articles" or not _SAFE_TABLE.match(t):
-                continue
-            cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]  # noqa: S608  # nosec B608 - t validated against _SAFE_TABLE (from the schema, not input)
-            if "article_id" in cols:
-                _delete_in(cur, t, "article_id", art_ids)
-        _delete_in(cur, "articles", "id", art_ids)
-        con.commit()
-        cur.execute("VACUUM")
-        con.commit()
-        return len(art_ids)
+        return _drop_newsletter_rows(con)
     finally:
         con.close()
+
+
+def _drop_newsletter_rows(con) -> int:
+    """The connection-level core of :func:`_drop_newsletter_articles`, so the
+    streaming backup can filter an ENCRYPTED disposable snapshot through a keyed
+    SQLCipher connection (plaintext never staged at backup time). The caller owns
+    (and closes) the connection."""
+    cur = con.cursor()
+    marks = ",".join("?" * len(_NEWSLETTER_DOMAINS))
+    src_ids = [r[0] for r in cur.execute(
+        f"SELECT id FROM sources WHERE domain IN ({marks})", _NEWSLETTER_DOMAINS)]  # noqa: S608  # nosec B608 - marks is only ?-placeholders; domains are bound params
+    if not src_ids:
+        return 0
+    sq = ",".join("?" * len(src_ids))
+    art_ids = [r[0] for r in cur.execute(
+        f"SELECT id FROM articles WHERE source_id IN ({sq})", src_ids)]  # noqa: S608  # nosec B608 - sq is only ?-placeholders; ids are bound params
+    if not art_ids:
+        return 0
+    tables = [r[0] for r in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    for t in tables:
+        if t == "articles" or not _SAFE_TABLE.match(t):
+            continue
+        cols = [c[1] for c in cur.execute(f"PRAGMA table_info({t})")]  # noqa: S608  # nosec B608 - t validated against _SAFE_TABLE (from the schema, not input)
+        if "article_id" in cols:
+            _delete_in(cur, t, "article_id", art_ids)
+    _delete_in(cur, "articles", "id", art_ids)
+    con.commit()
+    cur.execute("VACUUM")
+    con.commit()
+    return len(art_ids)
 
 
 def _collect_members(
@@ -449,68 +457,62 @@ def write_volume_backup(
     progress_cb: "Callable[[dict], None] | None" = None,
 ) -> dict:
     """Build the LARGE encrypted backup as a SET of <600 MB volumes + parity into the
-    server-side directory ``dest_dir`` (field test 2026-06-24; maintainer "volumes +
-    parity"). No 2 GiB cap, never the whole archive in RAM. The same signed oo-backup-2
-    ZIP is built, then streamed-sliced into independently-authenticated OOENC2 volumes
-    (each < 600 MB) with a manifest, and Reed-Solomon parity volumes so a corrupt/lost
-    volume -- including a corpus volume -- can be rebuilt. Always encrypted (a passphrase
-    is required). ``should_stop``/``progress_cb`` drive the task-manager job. Returns a
-    summary dict."""
-    from src.backup.parity import parity_available, write_parity
-    from src.backup.volumes import VOLUME_SIZE_DEFAULT, write_volume_set
+    server-side directory ``dest_dir``.
+
+    Since the P0.1 scale rework (2026-07-09) this delegates to the oo-volumes-2
+    STREAMING engine (:mod:`src.backup.stream_backup`): members are sliced and
+    encrypted DIRECTLY into volumes — no plaintext corpus snapshot (the corpus
+    streams as its at-rest bytes inside one writer-gate window), no intermediate
+    zip, bounded RAM end to end, INCREMENTAL (only changed volumes re-emit) and
+    RESUMABLE (an interrupted run continues; a partial set can never be mistaken
+    for a complete one — it has no final manifest). Always encrypted (a passphrase
+    is required). ``should_stop``/``progress_cb`` drive the task-manager job.
+    Returns a measured summary dict."""
+    from src.backup.stream_backup import write_stream_backup
 
     if not passphrase:
         raise ArtifactError("the volume backup is always encrypted: a passphrase is required")
-    dest = Path(dest_dir)
-    dest.mkdir(parents=True, exist_ok=True)
-    tmp_dir = dest / f".bak-build-{secrets.token_hex(6)}"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        if progress_cb is not None:
-            progress_cb({"phase": "building", "volumes_written": 0, "bytes_written": 0})
-        zip_path, envelope = _build_backup_zip(
-            tmp_dir, include_keys=True, include_newsletters=include_newsletters
-        )
-        vmanifest = write_volume_set(
-            zip_path,
-            dest,
-            passphrase,
-            volume_size=volume_size or VOLUME_SIZE_DEFAULT,
-            should_stop=should_stop,
-            progress_cb=progress_cb,
-        )
-        parity = None
-        if parity_available():
-            if progress_cb is not None:
-                progress_cb(
-                    {"phase": "parity", "volumes_written": len(vmanifest["volumes"]),
-                     "bytes_written": vmanifest["plaintext_bytes"]}
-                )
-            parity = write_parity(dest, parity_fraction=parity_fraction)
-        return {
-            "envelope": envelope,
-            "volumes": len(vmanifest["volumes"]),
-            "plaintext_bytes": vmanifest["plaintext_bytes"],
-            "parity": parity,  # None if numpy/[analysis] absent -> volumes-only (honest)
-            "parity_available": parity_available(),
-            "dest": str(dest),
-        }
-    finally:
-        import shutil
-
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return write_stream_backup(
+        Path(dest_dir),
+        passphrase,
+        include_newsletters=include_newsletters,
+        volume_size=volume_size,
+        parity_fraction=parity_fraction,
+        should_stop=should_stop,
+        progress_cb=progress_cb,
+    )
 
 
 def read_volume_backup(
-    src_dir: Path, passphrase: str, staging_root: Path | None = None
+    src_dir: Path,
+    passphrase: str,
+    staging_root: Path | None = None,
+    *,
+    corpus_passphrase: str | None = None,
+    include_merge_budget: bool = True,
 ) -> StagedArtifact:
     """Verify + (parity-)recover + reassemble a volume-set backup from the server-side
     directory ``src_dir``, then stage it like any oo-backup-2 artifact. Streams the
     reassembly to disk (never the whole archive in RAM, no 2 GiB cap). Raises loudly on
-    unrecoverable corruption (named volumes) or a checksum/signature failure."""
+    unrecoverable corruption (named volumes) or a checksum/signature failure.
+
+    Dispatches on the manifest kind: oo-volumes-2 (member-streamed, the current
+    writer — an encrypted corpus member is converted with ``corpus_passphrase``,
+    falling back to the live key then the backup passphrase) or the legacy
+    oo-volumes-1 zip reassembly (read forever, D7)."""
     import shutil
 
-    from src.backup.volumes import read_volume_set
+    from src.backup.stream_backup import STREAM_KIND, read_stream_backup
+    from src.backup.volumes import load_manifest, read_volume_set
+
+    if load_manifest(src_dir).get("kind") == STREAM_KIND:
+        return read_stream_backup(
+            src_dir,
+            passphrase,
+            staging_root,
+            corpus_passphrase=corpus_passphrase,
+            include_merge_budget=include_merge_budget,
+        )
 
     staging = (staging_root or data_dir()) / f".restore-{secrets.token_hex(8)}"
     staging.mkdir(parents=True, exist_ok=False)
@@ -604,10 +606,21 @@ def read_artifact(
     return _finalize_staged(staging, was_encrypted)
 
 
-def _finalize_staged(staging: Path, was_encrypted: bool) -> StagedArtifact:
+def _finalize_staged(
+    staging: Path,
+    was_encrypted: bool,
+    *,
+    verified_absent: frozenset[str] = frozenset(),
+) -> StagedArtifact:
     """Validate the manifest, verify its signature + member hashes, and build the
     StagedArtifact for an ALREADY-EXTRACTED oo-backup-2 staging dir. Shared by the
-    in-memory upload path (read_artifact) and the volume-set path (read_volume_backup)."""
+    in-memory upload path (read_artifact) and the volume-set paths (read_volume_backup).
+
+    ``verified_absent`` names members whose bytes the STREAMING reassembly already
+    checksum-verified and then removed or converted (an encrypted corpus/custody
+    member becomes the plaintext copy the merge reads; keeping both would double
+    the staging disk at corpus scale) — they are exempt from the missing/hash
+    check here, having passed the equivalent check upstream."""
     envelope = json.loads((staging / "manifest.json").read_text("utf-8"))
     manifest = envelope.get("manifest") or {}
     if manifest.get("backup_schema") != BACKUP_SCHEMA:
@@ -636,6 +649,8 @@ def _finalize_staged(staging: Path, was_encrypted: bool) -> StagedArtifact:
 
     hash_failures: list[str] = []
     for m in manifest.get("members", []):
+        if m["name"] in verified_absent:
+            continue  # checksum-verified during streamed reassembly, then converted
         p = staging / m["name"]
         if not p.exists():
             hash_failures.append(f"{m['name']}: missing from archive")
@@ -665,18 +680,14 @@ def cleanup_staging(staged: StagedArtifact) -> None:
 
 
 def cleanup_stale_staging(max_age_hours: float = 24.0) -> int:
-    """Boot-time janitor: remove .restore-* staging dirs older than max_age_hours
-    (a crashed restore must not leak gigabytes silently). Returns count removed."""
-    import shutil
-    import time
+    """Boot-time janitor: remove orphaned backup/restore temps in the data dir —
+    ``.restore-*`` AND ``.bak-build-*`` staging dirs plus ``*.oopart`` /
+    ``*.reassembling`` files older than ``max_age_hours``. A crashed backup must
+    not leak gigabytes silently (2026-07-09 field event: ~120 GB of unidentified
+    data-dir growth, prime suspect = orphaned staging — which for the OLD format
+    contained a PLAINTEXT corpus snapshot, an at-rest-encryption violation on top).
+    Age-guarded and registry-guarded: a LIVE job's staging is never touched
+    (src.backup.stream_backup.active_staging). Returns count removed."""
+    from src.backup.stream_backup import sweep_stale_backup_temps
 
-    removed = 0
-    cutoff = time.time() - max_age_hours * 3600
-    for p in data_dir().glob(".restore-*"):
-        try:
-            if p.is_dir() and p.stat().st_mtime < cutoff:
-                shutil.rmtree(p, ignore_errors=True)
-                removed += 1
-        except OSError:  # pragma: no cover
-            continue
-    return removed
+    return sweep_stale_backup_temps(data_dir(), max_age_hours=max_age_hours)

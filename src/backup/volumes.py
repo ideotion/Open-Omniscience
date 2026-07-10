@@ -36,6 +36,10 @@ from src.safety.crypto import decrypt_file, encrypt_stream_to
 
 MANIFEST_NAME = "volumes.json"
 VOLUME_KIND = "oo-volumes-1"
+# The member-streamed successor (src/backup/stream_backup.py) shares the manifest
+# file name and the flat ``volumes`` list contract (so parity + verify work on
+# both); load_manifest accepts either kind, the per-format readers check theirs.
+_KNOWN_KINDS = (VOLUME_KIND, "oo-volumes-2")
 VOLUME_SIZE_DEFAULT = 512 * 1024 * 1024  # 512 MiB plaintext/volume (< 600 MB encrypted)
 _CHUNK = 4 * 1024 * 1024
 _COPY_BUF = 1 << 20
@@ -144,7 +148,7 @@ def load_manifest(out_dir: str | os.PathLike[str]) -> dict[str, Any]:
     if not p.exists():
         raise VolumeError(f"no volume manifest ({MANIFEST_NAME}) in {out_dir}")
     m = json.loads(p.read_text(encoding="utf-8"))
-    if m.get("kind") != VOLUME_KIND:
+    if m.get("kind") not in _KNOWN_KINDS:
         raise VolumeError(f"not an Open Omniscience volume set (kind={m.get('kind')!r})")
     return m
 
@@ -186,6 +190,12 @@ def read_volume_set(
     ``recover`` is the slice-2 parity hook: given the manifest and the bad-volume list it
     rebuilds them on disk and returns the volumes it could NOT repair."""
     m = load_manifest(out_dir)
+    if m.get("kind") != VOLUME_KIND:
+        raise VolumeError(
+            f"this is an {m.get('kind')!r} member-streamed set — read it with "
+            "src.backup.stream_backup.read_stream_backup (the volume restore "
+            "dispatches automatically)"
+        )
     out = Path(out_dir)
     status = verify_volume_set(out_dir)
     if status["bad"]:
