@@ -31,6 +31,7 @@ import logging
 import sys
 import threading
 import time
+from contextlib import suppress
 from datetime import UTC, datetime
 
 _LOG = logging.getLogger("monitoring.collect_perf")
@@ -409,12 +410,10 @@ class CollectionMonitor:
     def _mem_gauges(self) -> dict:
         """Cheap allocator + component gauges for one sample (best-effort)."""
         out: dict = {"py_alloc_blocks": None, "fetcher": None}
-        try:
+        with suppress(Exception):
             # Live CPython allocator blocks — a leak shows as monotonic growth
             # here even when RSS is masked by allocator arenas.
             out["py_alloc_blocks"] = sys.getallocatedblocks()
-        except Exception:  # noqa: BLE001
-            pass
         if self._cache_stats_fn is not None:
             try:
                 out["fetcher"] = self._cache_stats_fn()
