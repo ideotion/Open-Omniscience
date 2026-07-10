@@ -1172,7 +1172,11 @@
     // contract break: "Loaded 0 figures." / "Typed 0 of 0" / "Tagged undefined"). The
     // job status shape is src/jobs/background.py:BackgroundJob.status() —
     // {state: idle|running|done|cancelled|error, done, total, detail, progress,
-    //  error, result, ...}. Returns the last status on timeout (never hangs forever).
+    //  error, result, ...}. Returns the last status on timeout (never hangs forever) —
+    //  marked `timedOut: true` so a caller can tell "we stopped WATCHING" apart from
+    //  "the job finished": a non-terminal status carries the empty/partial start-state
+    //  tallies, and toasting those as a result would fabricate a completion ("Loaded 0
+    //  figures." for a job still running). Use _jobStillRunning(st) at the call site.
     async function pollJobStatus(statusUrl, opts = {}) {
       const intervalMs = opts.intervalMs || 1500;
       const maxMs = opts.maxMs || 1800000;  // 30 min: enrich-source-types can run ~8 min
@@ -1184,9 +1188,20 @@
         if (onProgress) { try { onProgress(last); } catch (e) {} }
         const st = last && last.state;
         if (st === "done" || st === "error" || st === "cancelled" || st === "idle") return last;
-        if (Date.now() - t0 > maxMs) return last;  // give up polling; hand back what we have
+        if (Date.now() - t0 > maxMs) {
+          // Give up POLLING, not the job: it keeps running server-side.
+          if (last && typeof last === "object") last.timedOut = true;
+          return last;
+        }
         await new Promise((r) => setTimeout(r, intervalMs));
       }
+    }
+
+    // True when a pollJobStatus result means the job has NOT reached a terminal state
+    // (we stopped watching, it is still running). Callers must report that honestly
+    // instead of reading st.result — the not-yet-final tallies read as "0".
+    function _jobStillRunning(st) {
+      return !!st && (st.timedOut === true || st.state === "running");
     }
 
     // ===================================================================== //
@@ -3651,6 +3666,11 @@
         });
         if (st.state === "error") {
           toast((st.error) || t("Could not load country data."), "err");
+        } else if (_jobStillRunning(st)) {
+          // Polling gave up before the job finished — say so; never toast the
+          // not-yet-final tally as if it were the result ("Loaded 0 figures.").
+          toast(t("Still loading in the background — check the task manager for the result."), "ok",
+            (typeof openTaskManager === "function") ? openTaskManager : null);
         } else {
           const res = st.result || {};
           let msg = t("Loaded country data:") + " " + (res.stored || 0) + " " + t("figures.");
@@ -8454,6 +8474,11 @@
         await api("/api/insights/keyword-tags/backfill?limit=0", {method: "POST"});
         const st = await pollJobStatus("/api/insights/keyword-tags/backfill/status");
         if (st.state === "error") { toast(t("Backfill failed:") + " " + (st.error || ""), "err"); return; }
+        if (_jobStillRunning(st)) {
+          // Stopped watching, not finished — never report the start-state's zeros.
+          toast(t("Still running in the background — check the task manager for the result."));
+          return;
+        }
         const res = st.result || {};
         toast(t("Applied baseline tags:") + " " + (res.tagged_keywords || 0) + " " + t("keywords") + " · " + (res.tags_added || 0) + " " + t("tags"));
         loadKeywordExplorer();
@@ -8989,6 +9014,9 @@
         if (st.state === "error") {
           btn.textContent = t("Enrich failed — see console");
           console.error("enrichSourceTypes", st.error);
+        } else if (_jobStillRunning(st)) {
+          // Stopped watching, not finished — never show the start-state's "0/0".
+          btn.textContent = t("Still running in the background — see the task manager.");
         } else {
           const res = st.result || {};
           btn.textContent = t("Typed source types:") + " " + (res.sources_typed || 0) + "/" + (res.scanned || 0);

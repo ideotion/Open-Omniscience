@@ -580,6 +580,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     Corollary: `_MIN_YEAR=1000` means ANY 4-digit year that leaks past a calendar router is
     stored as a plausible medieval CE date — routers over shared numeric shapes are
     fabrication-critical, not recall tweaks.
+  - **sqlcipher3 ships WITHOUT dbstat (2026-07-09, THETA R2):** the bundled sqlcipher3 build
+    lacks SQLITE_ENABLE_DBSTAT_VTAB ("no such table: dbstat") while the stdlib sqlite3 has it —
+    dbstat-based introspection (the P1.5 storage-composition diagnostic) DEGRADES on the
+    encrypted live store; design it with an honest `{available:false, reason}` block + the
+    PRAGMA-level facts (page_size/page_count/freelist_count work everywhere) and TEST the
+    degrade path as the production path.
+  - **NEVER key a cache on `id()` of a per-request object (2026-07-09, THETA R2):** CPython
+    recycles addresses — within a TTL window a later request's Session can land on the same
+    `id(db)` and hit an entry computed for a DIFFERENT engine (wrong corpus) or a pre-write
+    snapshot. A "per-call" key must be a monotonic nonce (can never recur) qualified by the
+    BIND; a bounded cache absorbs the one-shot entries. COROLLARY (change-gating rollups): read
+    the corpus epoch with a COLUMN query, never `session.get` — the identity map hides another
+    connection's bump inside a long-lived session; and gate on the epoch AND an append id tail,
+    since ordinary ingest appends without bumping the epoch (a pure epoch gate freezes the
+    rollup during collection).
   - **AUTOFLUSH CAN HAND THE WRITE GATE TO A READ — never enter a fetch loop on a DIRTY
     session (2026-07-09, ETA P1.8):** the single-writer gate acquires on FLUSH, and
     SQLAlchemy AUTOFLUSHES dirty state on the next QUERY — so feed bookkeeping written

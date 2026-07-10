@@ -77,7 +77,10 @@ def _reset_serve_state():
                 con.close()
             except Exception:  # noqa: BLE001
                 pass
-        rollup_serve._STATE.update({"con": None, "built_at": 0.0, "rows": 0, "bind": None})
+        rollup_serve._STATE.update(
+            {"con": None, "built_at": 0.0, "rows": 0, "bind": None,
+             "token": None, "pending": False, "checked_at": 0.0}
+        )
 
     _drain_and_clear()
     yield
@@ -201,7 +204,7 @@ def test_serves_previous_rollup_stale_but_disclosed_during_rebuild(session, monk
     columnar.build_keyword_daily(con, session)
     rollup_serve._STATE["con"] = con
     rollup_serve._STATE["bind"] = session.get_bind()
-    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._STALE_S + 1000)  # STALE
+    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._BACKSTOP_S + 1000)  # STALE
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
     # A rebuild would run over the PRODUCTION store; in a test just record that it was asked.
     triggered: list[int] = []
@@ -211,7 +214,7 @@ def test_serves_previous_rollup_stale_but_disclosed_during_rebuild(session, monk
     assert served["basis"]["source"] == "columnar-rollup"
     assert served["basis"]["stale"] is True, "the served rollup is disclosed stale"
     assert served["basis"]["as_of"], "the previous build's as_of is visible"
-    assert served["basis"]["age_seconds"] >= rollup_serve._STALE_S
+    assert served["basis"]["age_seconds"] >= rollup_serve._BACKSTOP_S
     assert "PREVIOUS build" in served["basis"]["note"]
 
     def canon(res):
@@ -229,7 +232,7 @@ def test_trending_windows_surfaces_the_rollup_basis(session, monkeypatch):
     columnar.build_keyword_daily(con, session)
     rollup_serve._STATE["con"] = con
     rollup_serve._STATE["bind"] = session.get_bind()
-    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._STALE_S + 500)  # stale
+    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._BACKSTOP_S + 500)  # stale
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
     monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: None)
 
@@ -287,9 +290,9 @@ def test_basis_discloses_stale_and_rebuilding():
     fresh = rollup_serve.basis(7)
     assert fresh["stale"] is False and fresh["rebuilding"] is False  # nothing built
 
-    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._STALE_S + 100)
+    rollup_serve._STATE["built_at"] = time.time() - (rollup_serve._BACKSTOP_S + 100)
     b = rollup_serve.basis(7)
-    assert b["stale"] is True and b["age_seconds"] >= rollup_serve._STALE_S
+    assert b["stale"] is True and b["age_seconds"] >= rollup_serve._BACKSTOP_S
     assert "PREVIOUS build" in b["note"]
 
     acquired = rollup_serve._BUILD_LOCK.acquire(blocking=False)

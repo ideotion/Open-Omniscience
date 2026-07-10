@@ -240,7 +240,10 @@ class ReindexJobManager:
                 # a paused/cancelled run leaves pruning for when it finishes.
                 completed = not self._stop.is_set()
                 if completed and self._prune_after:
-                    pr = prune_orphan_keywords(session)
+                    # UNBOUNDED here (budget_s=0): the user explicitly asked for the
+                    # cleanup and this worker thread is already pausable/cancellable —
+                    # the P1.12 soft deadline is for the AUTOMATIC background passes.
+                    pr = prune_orphan_keywords(session, budget_s=0)
                     with self._lock:
                         self._tally["pruned"] = int(pr.get("pruned", 0))
                         self._tally["kept_curated"] = int(pr.get("kept_curated", 0))

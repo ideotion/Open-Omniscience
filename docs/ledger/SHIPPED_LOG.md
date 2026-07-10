@@ -2908,6 +2908,37 @@ even when validation fails) or generic loops re-read the digits under another ca
 `_MIN_YEAR=1000`, any 4-digit year leaking past a router stores a plausible medieval CE date, so
 routers over shared numeric shapes are fabrication-critical.
 
+## 2026-07-09 — THETA R2: serve-by-default + rebuild-on-change (P1.11 · P1.10 · P1.12 · P1.5 + riders)
+
+Branch `claude/theta-field-logs-snappy-0u0fb0`, draft PR onto 0.1. The 12:14 field logs'
+snappiness batch: the D4 map serve flipped DEFAULT-ON (tri-state like rollup_serve; the
+map/ring country GROUP BY was the #1 slow query at ~150 s/call with the built serve
+dormant); the blind 15-min TTL rollup rebuild replaced by CHANGE-GATED refresh
+(`src/analytics/serve_gate.change_token` = corpus epoch + append id tails; min-rebuild
+interval bounds churn under continuous ingest; 1-h backstop covers token-invisible change
+classes; staleness stays disclosed via basis.as_of/stale); reconcile/prune gained soft
+deadlines + resumable `derived_meta` watermarks (partial passes disclosed — the envelope
+refuses `exact` until a sweep completes); NEW `src/monitoring/storage.py` dbstat
+storage-composition diagnostic; the /status noprobe cache key and pollJobStatus timeout
+riders. P1.6 roadmap row corrected (the corpus-epoch mechanism WAS already shipped).
+
+REUSABLE LESSONS / EMPIRICAL FACTS:
+- **The bundled sqlcipher3 build ships WITHOUT SQLITE_ENABLE_DBSTAT_VTAB** (probed
+  2026-07-09: `no such table: dbstat` on a sqlcipher3 connection, while the stdlib
+  sqlite3 has it). Any dbstat-based introspection therefore DEGRADES on the encrypted
+  live store — design such diagnostics with an honest `{available:false, reason}` block
+  plus the PRAGMA-level facts (page_size/page_count/freelist_count work everywhere), and
+  test the degrade path as the production path.
+- **Never key a cache on `id()` of a per-request object.** CPython recycles addresses:
+  within a TTL window a later request's Session can land on the SAME `id(db)` and hit an
+  entry computed for a different engine (wrong corpus) or a pre-write snapshot. A
+  "per-call" key must be a monotonic nonce (can never recur), qualified by the BIND for
+  attributability; a bounded cache (SimpleCache max_size) absorbs the one-shot entries.
+- **Change-gating a derived-layer rebuild needs BOTH the epoch AND an append watermark:**
+  ordinary ingest appends without bumping the corpus epoch (by design), so a pure
+  epoch gate freezes the rollup during collection; and the epoch must be read with a
+  COLUMN query (`session.query(DerivedMeta.value)...`), never `session.get`, whose
+  identity map hides another connection's bump inside a long-lived session.
 ## 2026-07-09 — ETA Round-2: collector OOM fix (P0.3) + collector write batching (P1.8)
 
 **BUILD (branch claude/eta-memory-bounded-collection-6dt90s, draft PR onto 0.1; commit per item;

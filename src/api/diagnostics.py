@@ -1668,8 +1668,8 @@ def columnar_status() -> dict:
         # The in-memory windowed rollup serve — AUTOMATIC when duckdb is available; this
         # shows the mode (auto/forced) + whether it's built, so the self-tuning is visible.
         "rollup_serve": rollup_serve.status(),
-        # The in-memory D4 map-coverage serve — OPT-IN (OO_COLUMNAR_MAP_SERVE=1), default off;
-        # shows whether it's enabled + built so the operator can see the map speedup state.
+        # The in-memory D4 map-coverage serve — AUTOMATIC when duckdb is available since
+        # P1.11 (OO_COLUMNAR_MAP_SERVE overrides: 0 off / 1 on); shows the mode + build state.
         "map_serve": map_serve.status(),
         "ip_geo": ip_geo.freshness() | {"attribution": ip_geo.ATTRIBUTION},
         "method": (
@@ -1740,6 +1740,33 @@ def session_forensics_report() -> dict:
     from src.monitoring.forensics import session_forensics as _sf
 
     return _sf()
+
+
+@router.get("/storage-composition")
+def storage_composition_report(
+    download: bool = Query(False), db: Session = Depends(get_db)
+) -> JSONResponse:
+    """Per-table / per-index BYTES of the live store via SQLite dbstat (P1.5) — names
+    what the on-disk gigabytes actually ARE (mentions vs articles vs FTS shadow tables vs
+    indexes), complementing session forensics' file-level inventory. Read-only,
+    deadline-bounded; degrades to an honest ``{available: false, reason}`` block when
+    dbstat is not compiled into this SQLite/SQLCipher build — never a 500. Counts/bytes
+    only, no score. With ``download=1`` it returns as a dated attachment."""
+    from src.monitoring.storage import storage_composition as _sc
+
+    payload = _sc(db)
+    body = envelope(
+        kind="storage-composition",
+        query={},
+        count=len(payload.get("tables") or []),
+        payload=payload,
+    )
+    if download:
+        fname = f"oo-storage-composition-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+        return JSONResponse(
+            body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+        )
+    return JSONResponse(body)
 
 
 @router.get("/frontend-errors")
@@ -1817,6 +1844,7 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     from src.monitoring.forensics import session_forensics as _session_forensics
     from src.monitoring.integrity import corpus_integrity as _corpus_integrity
     from src.monitoring.latency import summary as _latency_summary
+    from src.monitoring.storage import storage_composition as _storage_composition
     from src.monitoring.preflight import recent_results as source_results
     from src.monitoring.schema_drift import schema_drift as _schema_drift
     from src.monitoring.slowquery import summary as _slowquery_summary
@@ -1954,6 +1982,10 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
         # the -wal size before open. Automates the three questions the 2026-07-09
         # root-cause needed the maintainer's terminal for.
         "session_forensics": _safe(_session_forensics),
+        # Storage composition (P1.5): per-table/per-index bytes via dbstat — names what
+        # the on-disk GB actually IS (the 130-GB-in-days field event). Deadline-bounded;
+        # degrades to {available:false, reason} where dbstat is not compiled in.
+        "storage_composition": _safe(lambda: _storage_composition(db)),
         "method": (
             "Verbatim runtime facts, tracking states, network verdicts, per-click "
             "import outcomes and the rolling WARNING+ error log. Nothing inferred; "
@@ -2019,6 +2051,8 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
         ("frontend-errors.json", lambda: frontend_errors(limit=500)),
         ("session-forensics.json", lambda: session_forensics_report()),
+        # P1.5: per-table/per-index bytes (dbstat) — what the on-disk GB actually IS.
+        ("storage-composition.json", lambda: storage_composition_report(download=False, db=db)),
     ]
 
 
