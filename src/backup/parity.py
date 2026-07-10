@@ -218,6 +218,8 @@ def write_parity(
     parity_count: int | None = None,
     parity_fraction: float = 0.1,
     band_bytes: int = _BAND_BYTES_DEFAULT,
+    manifest: dict[str, Any] | None = None,
+    write_manifest: bool = True,
 ) -> dict[str, Any]:
     """Compute M parity volumes for an existing volume set and record them in the manifest.
 
@@ -227,12 +229,20 @@ def write_parity(
 
     BOUNDED RAM: the stripe is processed in ``band_bytes`` bands — (M+1) bands in memory,
     never the whole volume set (the whole-set load was itself an OOM at field scale).
-    Banding is bytewise-exact: the parity files are identical to a whole-stripe encode."""
+    Banding is bytewise-exact: the parity files are identical to a whole-stripe encode.
+
+    ``manifest`` / ``write_manifest``: the streaming finalize passes the IN-MEMORY
+    building manifest and ``write_manifest=False`` so parity is recorded into that dict
+    WITHOUT touching ``dest/volumes.json`` — the caller then signs it and swaps the
+    canonical manifest exactly once, keeping the previous complete backup's signed
+    manifest intact until that atomic replace. Standalone callers (default) load and
+    rewrite the on-disk manifest as before, but atomically."""
     np = _np()
     if band_bytes < 1:
         raise VolumeError("band_bytes must be >= 1")
     out = Path(out_dir)
-    manifest = load_manifest(out)
+    if manifest is None:
+        manifest = load_manifest(out)
     data_files = [out / v["name"] for v in manifest["volumes"]]
     n = len(data_files)
     if n == 0:
@@ -278,7 +288,12 @@ def write_parity(
         "stripe_len": stripe,
         "volumes": par_meta,
     }
-    (out / MANIFEST_NAME).write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    if write_manifest:
+        # Atomic (temp + os.replace on the same dir/FS), matching the engine's
+        # manifest discipline — a torn write can never leave an unreadable index.
+        tmp = out / (MANIFEST_NAME + ".tmp")
+        tmp.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+        os.replace(tmp, out / MANIFEST_NAME)
     return manifest["parity"]
 
 

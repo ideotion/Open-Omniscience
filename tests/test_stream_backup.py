@@ -497,6 +497,54 @@ def test_traversal_corpus_and_wal_member_fields_are_refused(tmp_path):
         read_stream_backup(dest, "pw", staging_root=tmp_path / "st3")
 
 
+def test_finalize_parity_failure_preserves_the_previous_backup(tmp_path, monkeypatch):
+    """CRASH-SAFE FINALIZE: a parity failure during a refresh (the GF(2^8) N+M
+    ceiling at very large corpora, or any write_parity error) must NOT destroy
+    the previous complete backup. The canonical manifest is swapped exactly once,
+    AFTER the signed+parity manifest is built, so an interrupt/kill/parity-raise
+    leaves the previous SIGNED manifest intact and restorable — and never leaves
+    an UNSIGNED manifest that a subsequent cancel would delete as a partial."""
+    pytest.importorskip("numpy")  # the parity path
+    corpus = tmp_path / "corpus.db"
+    _make_corpus(corpus)
+    dest = tmp_path / "dest"
+    _backup(tmp_path, dest, corpus)  # B_prev, signed + parity
+    prev = load_manifest(dest)
+    assert prev.get("signature") and prev.get("parity")
+    assert verify_stream_backup(dest)["ok"] is True
+
+    # a refresh whose parity stage fails after volumes were (re-)emitted
+    con = sqlite3.connect(corpus)  # mutate the existing corpus so some volumes re-emit
+    con.executemany(
+        "INSERT INTO articles(hash, content) VALUES(?,?)",
+        [(f"m{i:05d}", "y" * 3000) for i in range(60)],
+    )
+    con.commit()
+    con.close()
+    import src.backup.parity as parity_mod
+
+    def _boom(*a, **k):
+        raise VolumeError("simulated parity ceiling (N+M >= 256)")
+
+    monkeypatch.setattr(parity_mod, "write_parity", _boom)
+    with pytest.raises(VolumeError, match="parity"):
+        _backup(tmp_path, dest, corpus)
+
+    # the previous backup's SIGNED manifest is untouched and still restorable
+    after = load_manifest(dest)
+    assert after.get("signature") == prev.get("signature")  # never overwritten
+    assert verify_stream_backup(dest)["ok"] is True
+
+    # F7: a cancel-cleanup preserves the complete signed set (deletes only the
+    # failed refresh's orphan volumes), never wipes it
+    from src.backup.stream_backup import cleanup_cancelled_build
+
+    cleanup_cancelled_build(dest)
+    assert verify_stream_backup(dest)["ok"] is True
+    staged = read_stream_backup(dest, "pw", staging_root=tmp_path / "restore")
+    assert staged is not None
+
+
 def test_wrong_backup_passphrase_fails_loudly(tmp_path):
     corpus = tmp_path / "corpus.db"
     _make_corpus(corpus)
