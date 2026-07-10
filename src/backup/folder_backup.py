@@ -446,16 +446,30 @@ def verify_folder_backup(
         )
         return out
     out["manifest_found"] = True
-    out["backup_created_at"] = manifest.get("created_at")
+    out["backup_created_at"] = manifest.get("created_at") if isinstance(manifest, dict) else None
 
-    cats = manifest.get("categories", {})
-    entries = [
-        (str(c), e)
-        for c, lst in cats.items()
-        if isinstance(lst, list)
-        for e in lst
-        if isinstance(e, dict)
-    ]
+    # The manifest is UNTRUSTED external-drive input: a damaged/foreign structure must yield an
+    # honest ok=False verdict, NEVER a crash (skeptic finding) and NEVER a false ok=True (a
+    # non-list category or a non-dict entry silently dropped would leave files_total=0 = a
+    # fake "all clear"). So malformed structure is COUNTED, not ignored.
+    cats = manifest.get("categories") if isinstance(manifest, dict) else None
+    if not isinstance(cats, dict):
+        out["reason"] = (
+            "the manifest has no valid 'categories' object — it is not a folder-backup "
+            "manifest, or it is damaged; nothing could be verified."
+        )
+        return out
+    entries: list[tuple[str, dict]] = []
+    malformed = 0
+    for c, lst in cats.items():
+        if not isinstance(lst, list):
+            malformed += 1  # a category whose value is not a file list = a damaged manifest
+            continue
+        for e in lst:
+            if isinstance(e, dict):
+                entries.append((str(c), e))
+            else:
+                malformed += 1
     total = len(entries)
     summary = {
         "ok": 0,
@@ -501,11 +515,13 @@ def verify_folder_backup(
         if progress_cb is not None:
             progress_cb({"files_total": total, "files_done": checked, "checksummed": checksummed})
 
+    summary["malformed_entries"] = malformed
     failures = (
         summary["missing"]
         + summary["size_mismatch"]
         + summary["checksum_mismatch"]
         + summary["traversal_refused"]
+        + malformed  # a structurally-damaged manifest is a failure, never a silent "all clear"
     )
     out.update(
         {

@@ -75,20 +75,23 @@ def is_commerce_domain(host: str | None) -> bool:
 # registrable domain (or a subdomain of one) OR a leftmost non-content host label. A false
 # positive costs only one un-suggested candidate (never auto-enabled), so we err toward
 # under-filtering, never toward wrongly skipping a real outlet.
+# EXACT registrable domains that are PURELY infrastructure/tracking/boilerplate and are never
+# a plausible journalism source. DELIBERATELY EXCLUDES real content publishers a corpus might
+# legitimately cite (w3.org / gnu.org / iana.org / whatwg.org / cloudflare.com's blog) — the
+# err-toward-under-filtering rule: a false positive here would silently drop a real source.
 _INFRA_DOMAINS = frozenset(
     {
         # CDN / asset / font / script / media hosts
         "googleapis.com", "gstatic.com", "googleusercontent.com", "ytimg.com",
         "jsdelivr.net", "unpkg.com", "jquery.com", "bootstrapcdn.com", "cloudfront.net",
-        "akamaihd.net", "akamai.net", "fastly.net", "cloudflare.com", "cloudflareinsights.com",
+        "akamaihd.net", "akamai.net", "fastly.net", "cloudflareinsights.com",
         "gravatar.com", "wp.com", "twimg.com", "fbcdn.net", "staticflickr.com",
         # analytics / tracking / ads
         "google-analytics.com", "googletagmanager.com", "doubleclick.net",
         "googlesyndication.com", "googleadservices.com", "scorecardresearch.com",
         "quantserve.com", "hotjar.com", "mixpanel.com", "chartbeat.com",
-        # licenses / standards / boilerplate (footer links on nearly every page)
-        "creativecommons.org", "w3.org", "schema.org", "gnu.org", "iana.org",
-        "gdpr.eu", "gdpr-info.eu", "whatwg.org",
+        # licenses / markup / boilerplate (footer/markup links on nearly every page)
+        "creativecommons.org", "schema.org", "gdpr.eu", "gdpr-info.eu",
     }
 )
 _INFRA_LABELS = frozenset(
@@ -104,17 +107,25 @@ _INFRA_LABELS = frozenset(
 def is_infrastructure_domain(host: str | None) -> bool:
     """True for a CDN / asset / analytics / boilerplate-legal host a journalism
     source-discovery must never suggest (fonts.googleapis.com, policies.google.com,
-    creativecommons.org …). Fires on a leftmost non-content label (``fonts.``/``cdn.``/
-    ``static.``/``policies.`` …) or an exact infrastructure registrable domain (or a
-    subdomain of one). Conservative: it does NOT match a content aggregator on the same
-    parent (news.google.com passes — only the specific policy/asset subdomains are caught)."""
+    creativecommons.org …).
+
+    Fires on: (a) a leftmost non-content label (``fonts.``/``cdn.``/``static.``/``policies.``
+    …) ONLY on a SUBDOMAIN (``len(labels) >= 3``) — so ``policies.google.com`` is caught but a
+    real 2-label registrable org whose NAME happens to be an infra word (``policy.org``,
+    ``legal.io``, ``ads.net``) is NOT (skeptic finding: the leftmost-label rule must never fire
+    on a registrable name); or (b) an exact infrastructure registrable domain (or a subdomain
+    of one). Conservative — a content aggregator on the same parent (news.google.com) passes.
+
+    Residual (accepted, err-under-filter): a multi-part-eTLD registrable name whose second
+    level is an infra word (``policy.co.uk``) can still match the label rule — rare, and a
+    false positive only costs one un-suggested candidate (never auto-enabled)."""
     if not host:
         return False
     h = host.lower().strip(".")
     labels = h.split(".")
     if len(labels) < 2:
         return False
-    if labels[0] in _INFRA_LABELS:  # fonts./cdn./static./policies.<domain>
+    if len(labels) >= 3 and labels[0] in _INFRA_LABELS:  # a SUBDOMAIN label: fonts.X / policies.X
         return True
     return any(h == d or h.endswith("." + d) for d in _INFRA_DOMAINS)
 

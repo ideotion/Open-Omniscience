@@ -121,6 +121,47 @@ def test_verify_no_manifest_is_an_honest_verdict(tmp_path):
     assert "reason" in rep  # honest, never a crash
 
 
+def _write_manifest(dest, obj):
+    dest.mkdir(exist_ok=True)
+    (dest / MANIFEST_NAME).write_text(json.dumps(obj), encoding="utf-8")
+
+
+def test_verify_malformed_categories_is_an_honest_verdict_not_a_crash(tmp_path):
+    """Skeptic finding: a manifest whose 'categories' is not an object (a JSON array/string/
+    number/null) is UNTRUSTED external input — it must yield ok=False honestly, NEVER raise
+    (the function's 'never raises' contract)."""
+    for bad in ([1, 2, 3], "broken", 5, None):
+        dest = tmp_path / f"m-{type(bad).__name__}"
+        _write_manifest(dest, {"schema": "oo-folder-backup-1", "categories": bad})
+        rep = verify_folder_backup(dest)  # must not raise
+        assert rep["manifest_found"] is True
+        assert rep["ok"] is False
+        assert "reason" in rep
+
+
+def test_verify_corrupted_but_parseable_manifest_is_not_a_false_ok(tmp_path):
+    """Skeptic finding: a parseable manifest whose category VALUES are non-lists (or whose
+    entries are non-dicts) must NOT report ok=True (files_total=0 would fake an 'all clear')."""
+    dest = tmp_path / "corrupt"
+    _write_manifest(
+        dest,
+        {"categories": {"wiki_dumps": "BROKEN", "models": [42, {"rel": "x", "size": "y"}]}},
+    )
+    rep = verify_folder_backup(dest)
+    assert rep["ok"] is False  # structural damage is a failure, never a silent OK
+    assert rep["summary"]["malformed_entries"] >= 2
+
+    # A genuinely EMPTY (but well-formed) backup is still a legitimate ok=True.
+    empty = tmp_path / "genuinely-empty"
+    _write_manifest(empty, {"categories": {"wiki_dumps": [], "osm_regions": [], "models": []}})
+    assert verify_folder_backup(empty)["ok"] is True
+
+    # A manifest with NO categories key at all is a damaged/foreign manifest, not "empty".
+    nokey = tmp_path / "nokey"
+    _write_manifest(nokey, {"schema": "oo-folder-backup-1"})
+    assert verify_folder_backup(nokey)["ok"] is False
+
+
 def test_manager_verify_mode_surfaces_the_verdict(tmp_path):
     """The verify runs as the (single) folder job so it is visible/cancellable in /api/jobs;
     the verdict rides status()['verify']."""

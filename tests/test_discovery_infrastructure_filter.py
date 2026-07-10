@@ -37,8 +37,7 @@ INFRA_HOSTS = [
     "assets.example.org",        # "assets" host label
     "www.google-analytics.com",  # analytics (exact set, subdomain)
     "googletagmanager.com",      # tag manager (exact set)
-    "w3.org",                    # standards boilerplate
-    "schema.org",                # markup vocabulary
+    "schema.org",                # markup vocabulary (pure boilerplate, never a news source)
 ]
 
 # Hosts the filter must NOT reject (real outlets / aggregators — false positives cost
@@ -53,6 +52,22 @@ LEGIT_HOSTS = [
     "static-news.com",       # "static-news" registrable name, not a "static." label
     "assetmanagement.com",   # contains "asset" but is one word / different label
     "en.wikipedia.org",
+    # Skeptic finding: a real 2-label registrable ORG whose NAME is an infra word must NOT be
+    # filtered by the leftmost-label rule (that rule is for SUBDOMAINS only). These are exactly
+    # the advocacy/policy/legal orgs a journalism corpus cites.
+    "policy.org",
+    "legal.io",
+    "consent.org",
+    "cookies.org",
+    "analytics.io",
+    "ads.net",
+    "pixel.com",
+    "static.com",
+    "assets.co",
+    # Real content publishers trimmed from the exact set (err-under-filter):
+    "w3.org",
+    "gnu.org",
+    "cloudflare.com",
 ]
 
 
