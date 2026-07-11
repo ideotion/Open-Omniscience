@@ -33,7 +33,14 @@ _LANG_NAMES = {
     "da": "Danish", "nb": "Norwegian", "no": "Norwegian", "fi": "Finnish", "hu": "Hungarian",
     "ro": "Romanian", "cs": "Czech", "sr": "Serbian", "sl": "Slovenian", "fa": "Persian",
     "ur": "Urdu", "th": "Thai", "vi": "Vietnamese", "ca": "Catalan", "sk": "Slovak",
+    "ko": "Korean", "he": "Hebrew", "mr": "Marathi", "ta": "Tamil", "hr": "Croatian",
+    "et": "Estonian", "lt": "Lithuanian", "lv": "Latvian", "az": "Azerbaijani",
 }
+
+# The app's KNOWN language-code vocabulary (ISO 639-1). Shared as the validation set for any
+# LLM that must return a language code — a reply outside this set is garbage and stores nothing
+# (B15 langdetect). Single source of truth so the two ai_layer LLM helpers agree.
+KNOWN_LANG_CODES: frozenset[str] = frozenset(_LANG_NAMES)
 
 # Refusal / meta phrases that mean the model didn't actually translate.
 _REFUSAL = re.compile(

@@ -1542,7 +1542,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
@@ -4210,6 +4210,56 @@
       } catch (e) {
         if (status) status.innerHTML = `<span class="note err">${esc(e.message)}</span>`;
       } finally { if (btn) btn.disabled = false; }
+    }
+
+    // --- B15: OPT-IN local-LLM language detection for articles STILL unknown after the
+    // offline detector. Writes a THIRD "AI-derived · unreliable" language class (ai_keyword
+    // kind="language") — NEVER Article.language / detected_language. A cancellable background
+    // job (also visible in the task manager); this button starts it + shows live progress. -- //
+    async function loadLangDetectCount() {
+      const el = $("langdetect-status");
+      if (!el) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const d = await api("/api/ai/detect-language/candidates");
+        const n = d.candidates || 0;
+        el.textContent = n
+          ? `${n} ${t("article(s) still unknown after the offline detector.")}`
+          : t("No articles are missing a language — nothing to detect.");
+      } catch (e) { /* the count is a hint; leave it blank on error */ }
+    }
+    async function runLangDetect(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("langdetect-status");
+      if (btn) btn.disabled = true;
+      if (el) el.textContent = t("Starting…");
+      let fails = 0;
+      try {
+        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({}) });
+        for (;;) {
+          let s;
+          // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while the job runs.
+          try { s = await api("/api/ai/detect-language/status"); fails = 0; }
+          catch (_e) {
+            if (++fails > 30) { if (el) el.textContent = t("Lost contact with the job — see the task manager."); break; }
+            if (el) el.textContent = t("Connection hiccup — retrying…");
+            await new Promise((r) => setTimeout(r, Math.min(2000 * fails, 8000))); continue;
+          }
+          const st = s.state, p = s.progress || {}, res = s.result || {};
+          if (st === "running") {
+            if (el) el.textContent = `${p.done || 0}/${p.total || 0}` + (s.detail ? ` · ${esc(s.detail)}` : "");
+            await new Promise((r) => setTimeout(r, 2000)); continue;
+          }
+          if (st === "done") {
+            if (res.ran === false) el.textContent = t("The local model is unavailable (Ollama down or airplane mode).");
+            else el.textContent = `${t("Done.")} ${res.stored || 0} ${t("labelled")} · ${res.none || 0} ${t("unclear")} · ${res.total || 0} ${t("scanned")}`;
+          } else if (st === "cancelled") el.textContent = t("Cancelled.");
+          else if (st === "error") el.textContent = t("Failed:") + " " + esc(s.error || "");
+          else el.textContent = "";
+          break;
+        }
+      } catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
+      if (btn) btn.disabled = false;
     }
 
     // --- Custom extractors (Settings → Models) — a managed list of user-defined AI
