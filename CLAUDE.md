@@ -766,6 +766,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `detected_language`; provenance per result (model + prompt version); a visible abortable job,
   never the scrape hot path; the result surfaces as a THIRD, labelled provenance class
   ("AI-derived · unreliable" convention); a garbage/unvalidatable model answer stores NOTHING.
+- **SIX CONSECUTIVE AUTONOMOUS SESSIONS S1–S6 — MAINTAINER RULED 2026-07-11 (answers "1 yes ·
+  2 yes · 3 excluded · 4 yes · 5 yes" to the five pre-clearance questions; conventions =
+  `docs/design/SESSIONS_2026-07-11_CONVENTIONS.md`, briefs = `AUTONOMOUS_SESSION_BRIEF_
+  2026-07-11_S{1..6}_*.md`):** one session per reconciled-ROADMAP tier, run CONSECUTIVELY —
+  the maintainer MERGES each session's PRs before launching the next (that cadence is the
+  conflict-free guarantee; branch prefix `claude/s<N>-*`). (1) S1 = the Tier-0 RELEASE KIT:
+  the live P0 validation becomes a push-button in-app job + runbook + tag-day prep — the
+  live RUN and the TAG stay maintainer-only. (2) S3 builds D1/D2/D3 persisted-columnar
+  machinery NOW, GATED behind `secure_crypto_available()` (CI may INSTALL httpfs; local
+  skips honestly; activates when the maintainer drops the pinned binaries in — never relax
+  the gate, never fabricate a checksum). (3) the Wikipedia+laws VERSIONED-SOURCES revamp
+  stays EXCLUDED (P0-gated — not even foundations). (5) each session ABSORBS the previous
+  session's closeout CARRY-OVERs. NETWORKED work is excluded program-wide (each brief carries
+  the operator list). Skeptics-complete-before-push + the negative-space lens are program
+  gates; every session ends with a closeout ledger row + carry-over PR section.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL
