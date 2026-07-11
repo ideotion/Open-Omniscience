@@ -11,7 +11,7 @@ non-negotiables in `CLAUDE.md`). Do **not** start ❓ items until the maintainer
 matching question; do **not** implement 🔒 items until the maintainer gives UI input.
 
 **Detail & provenance.** Full per-item capture (verbatim quotes + analysis + actions) is in
-`docs/product/field-test-2026-06-14/LEDGER_full.md`. Concept memos and seed data are in the
+`docs/archive/field-tests/field-test-2026-06-14/LEDGER_full.md`. Concept memos and seed data are in the
 same folder. The parallel session's grouped backlog (for dedup) is
 `parallel_backlog_reference.md`.
 

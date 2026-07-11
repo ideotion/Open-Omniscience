@@ -7,7 +7,7 @@
 > all documents and guides and in-app documents are coherent, and that the app really
 > says what the docs say, and reversely… Ethics is a major constraint, and a must-have."*
 > This document is the plan **and** the record of how each decision was arbitrated
-> under that grant. `docs/product/RELEASE_0.1_RC_GATE.md` stays the row-by-row gate;
+> under that grant. `docs/archive/releases/RELEASE_0.1_RC_GATE.md` stays the row-by-row gate;
 > this file is the sequenced execution + the arbitration log. Under-claim is safe,
 > over-claim is not — every "verified" below cites how.
 

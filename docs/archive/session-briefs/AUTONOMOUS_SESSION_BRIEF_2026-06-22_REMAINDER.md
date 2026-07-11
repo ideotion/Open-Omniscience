@@ -1,7 +1,7 @@
 # AUTONOMOUS SESSION BRIEF — 2026-06-22 FIELD TEST, REMAINDER
 
 **This document is the opening prompt for a fully autonomous build session.** It is the
-*continuation* of `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-22.md`. The P0 reliability/
+*continuation* of `docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-06-22.md`. The P0 reliability/
 performance batch and several P1 items from that brief have already SHIPPED and MERGED into
 `0.09` (PRs #439 + #441). This brief covers **everything that remains**, with the merged
 work explicitly recorded in §0.5 so it is never redone. Every item is evidence-cited and

@@ -50,5 +50,8 @@ one that matches what you need.
 - **[HISTORY.md](HISTORY.md)** — a consolidated archive of audits, the security proof
   trail, quality check-ups, the salvage map, and the early phase/optimization reports.
 - **[archive/](archive/)** — historical planning docs (pre-0.2 roadmaps under
-  `archive/roadmaps/`, machine-readable audit findings, raw phase-report data, the public
-  presentation).
+  `archive/roadmaps/`, spent autonomous-session briefs under
+  [`archive/session-briefs/`](archive/session-briefs/), superseded release plans + gates under
+  [`archive/releases/`](archive/releases/), closed field-test ledgers under
+  [`archive/field-tests/`](archive/field-tests/), machine-readable audit findings, raw
+  phase-report data, the public presentation).

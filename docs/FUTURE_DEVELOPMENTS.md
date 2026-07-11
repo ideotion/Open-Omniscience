@@ -285,7 +285,7 @@ future release**, once the single-file format is fully retired. When doing so:
 
 ### AUTONOMOUS BRIEF 2026-06-24 — UNRESOLVED & PARTIAL (audited against the code 2026-06-25)
 
-> Authoritative status of the `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md` scope,
+> Authoritative status of the `docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md` scope,
 > verified item-by-item against the actual tree by a 6-agent parallel audit (not from memory).
 > SHIPPED + merged into `0.09` this session: Tier 1.1 (statement-deadline guard), 2.3 (search
 > Enter→new tab), 2.4 (Library world map + donut), 2.5 (Library dashboard), 3.7–3.11 (intro-box
@@ -1784,7 +1784,7 @@ surprises:
 > critical reflection, and deduce what the app still owes them. Companion
 > piece: `docs/audit/07_TRANSVERSAL_AUDIT_V01.md` (the systems half).
 > **THE ACTION PLANS live canonically in
-> `docs/product/V01_ALPHA_ACTION_PLANS.md`** — both plans in full, every
+> `docs/archive/releases/V01_ALPHA_ACTION_PLANS.md`** — both plans in full, every
 > step with its rationale + commentary + acceptance criteria, plus the
 > maintainer's verbatim commission for recall. This section keeps the
 > REFLECTIONS (scenarios + contradictions) the plan was deduced from.
@@ -1886,7 +1886,7 @@ A9. **"What changed since I last looked"** *(S2 retention, honestly):* a
 
 *The full ACTION PLAN built from these features — step order, rationale
 per decision, my commentary, acceptance criteria, dependencies — lives in
-`docs/product/V01_ALPHA_ACTION_PLANS.md` (Plan A).*
+`docs/archive/releases/V01_ALPHA_ACTION_PLANS.md` (Plan A).*
 
 ---
 

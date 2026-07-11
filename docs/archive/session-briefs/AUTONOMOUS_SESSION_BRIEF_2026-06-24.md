@@ -19,7 +19,7 @@ and from this brief, which you commit to the repo as your first step.
 ## 0. First moves — every time your context resets
 
 1. **Bootstrap your durable memory (do this ONCE, as PR #1):** write this entire brief
-   verbatim to `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md` and ship it as a
+   verbatim to `docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-06-24.md` and ship it as a
    doc-only PR. This is your reset-proof memory — after ANY context reset, re-read that
    committed brief. (Skip the write if the file already exists; just re-read it.)
 2. **Read `CLAUDE.md` in full.** It is the single ledger of every maintainer ruling and your

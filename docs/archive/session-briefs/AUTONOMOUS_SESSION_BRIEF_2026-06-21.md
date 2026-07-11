@@ -2,7 +2,7 @@
 
 **How to use this file:** paste it verbatim as the first message of a fresh autonomous
 session, OR keep it in the repo and tell the session "read
-`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-06-21.md` and execute it." Everything the
+`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-06-21.md` and execute it." Everything the
 session needs is below; it should still read `CLAUDE.md` in full first (the ledger is the
 source of truth and overrides any conflict here).
 

@@ -14,7 +14,7 @@ It is the product of two internet-research reviews (scaling 10×/100×/1000×; p
 source authentication & tamper-evidence) cross-checked against this codebase, plus the
 maintainer's rulings. Where a recommendation is still gated on verification it is parked
 in the **VERIFY** list (§8); the autonomous build brief lives at
-`docs/design/AUTONOMOUS_BUILD_BRIEF_DATA_ARCH.md`.
+`docs/archive/session-briefs/AUTONOMOUS_BUILD_BRIEF_DATA_ARCH.md`.
 
 ---
 

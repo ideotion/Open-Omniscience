@@ -285,7 +285,7 @@ The session is done when:
   remains.
 
 Keep the rule-based index **trusted**; everything new is a **labelled, reversible, disposable**
-augmentation. Update `docs/product/RELEASE_0.1_RC_GATE.md` rows you close.
+augmentation. Update `docs/archive/releases/RELEASE_0.1_RC_GATE.md` rows you close.
 
 ---
 

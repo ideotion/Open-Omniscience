@@ -449,7 +449,7 @@ rebuildable derived layer behind the seam. The canonical store is NEVER time-par
 - Running keyword cleanup / baseline-tag backfill on the LIVE corpus; generating translation
   rings (networked machine, Wikidata blocked in CI); the per-OS/arch httpfs + Ollama binary
   builds (networked, multi-arch); flipping 0.0.9 → 0.1 (a release decision, held until every
-  RC-BLOCKING row in `docs/product/RELEASE_0.1_RC_GATE.md` is ✅); human click-through (maintainer
+  RC-BLOCKING row in `docs/archive/releases/RELEASE_0.1_RC_GATE.md` is ✅); human click-through (maintainer
   QA — flag per feature).
 
 ## 6. The per-step loop
