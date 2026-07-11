@@ -164,8 +164,8 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Collector write-batching** (the risky keystone-#1 refactor) — `index_article(commit=False)` + batch + per-article fallback + no-loss test. 🎨 (`COLLECTOR_WRITER_BATCHING.md`)
 
 ### Database / scaling (columnar & rollups)
-- **D1 persisted encrypted DuckDB store** — blocked on per-OS httpfs binaries. 🔒 (see DB-3)
-- **D2 `keyword_daily` rollup** (gated on D1) + **D3 incremental refresh + epoch full-rebuild gate**. 🎨
+- **D1 persisted encrypted DuckDB store** — ruling given 2026-07-11 (#2): **S3 builds the machinery now**, gated behind `secure_crypto_available()` (CI installs the extension; local skips honestly); the per-OS binaries themselves stay a 🛠 networked operator step (see DB-3). 🚧
+- **D2 `keyword_daily` rollup + D3 incremental epoch-gated refresh** — S3 builds against the gated D1 store. 🚧
 - **D5 Roaring co-occurrence bitmaps** (pyroaring) — optional, off the critical path. 🎨
 
 ### Maps & geo

@@ -18,6 +18,13 @@ The cleanest metadata the app can add — an ASSERTED channel fact, no classifie
 doc's backward-compat verification (additive-restore carries `source_type`; staged-upgrade
 migrates before merge) is binding.
 
+### S6.1b — Secondary-source `cited` provenance: the remaining slices
+The half-shipped sibling of S6.1 (slice 1 landed): the background job that resolves citing
+relationships at corpus scale, denormalize `citing_source_id`, surface the citing trail in
+the reader/analysis ("the sources' sources"), and wire the dormant `external_sources`
+resolution. Deterministic, never fuzzy; the anti-false-triangulation framing (shared origin
+≠ independent confirmation) travels on every surface.
+
 ### S6.2 — Backup completeness: FILE members (wiki dumps / OSM / models) + retire the legacy restore
 The long-ruled reversal of design D3: backups may carry the big public blobs so a restore
 never re-downloads tens of GB over Tor.
@@ -59,10 +66,13 @@ exist and a model to clear it — do NOT ship extraction this session.
 
 ### S6.6 — Agenda depth (the offline-codeable set)
 The ONE recurrence model (RULE + dated INSTANCES + `since:` origin year — fixes the
-year-pinned-import class) · month-span events ("Dry January" banners) · full iCal import
-(idempotent per source,uid) · saved-filter smart calendars (subscribe to a tag query) ·
-agenda i18n. The eclipse canon + world religious calendars need SOURCED data → operator
-list (never fabricate a date; the Meeus-computed moons/seasons pattern is the bar).
+year-pinned-import class) · **deduced events as FIRST-CLASS agenda entries** with keyword
+links (the backend `/api/events/deduced` exists; parity with the moon/season treatment;
+"deduced · never confirmed" pill stays visible) · month-span events ("Dry January" banners)
+· full iCal import (idempotent per source,uid) · saved-filter smart calendars (subscribe to
+a tag query) · i18n for the NEW agenda surfaces this session builds (S4 keys the
+pre-existing tail). The eclipse canon + world religious calendars need SOURCED data →
+operator list (never fabricate a date; the Meeus-computed moons/seasons pattern is the bar).
 
 ### S6.7 — Maps & task-manager comfort (small, real)
 Temporal linear/log time-scale toggle (labelled ticks, no hidden warp) + feed the map's
@@ -80,10 +90,18 @@ If, and only if, everything above is verified: pick from disputed-chronology det
 story-propagation tracer (both computable from existing lineage/date substrate with honest
 innocent-explanations). Skip the ones needing external baselines.
 
-## Explicitly NOT yours
+## Explicitly NOT yours — name these in the program closeout's next-cycle list
 Versioned sources (gated — ruling #3) · elections roster/calendar data, eclipse data,
 lexicons, any fetch (networked/operator) · Tor/Stem integration, oo-netcut, self-update,
-portability, voice, the Mirror (each needs its own design session or maintainer step).
+portability, voice, the Mirror (each needs its own design session or maintainer step) ·
+and the CONSCIOUSLY-PARKED partials no session takes this program: the Open-Meteo remainder
+(anomaly baselines / signal-keywords / reader row / map overlay), the lunar-effects
+framework remainder, the hand-rolled offline vector map, the OSM bandwidth-cap + country
+sub-extracts + consented exact-size refresh, the "which country next & why" schedule panel,
+the evidence-tier card remainder (what's-missing inversions · BH-FDR · dismiss-with-reason
+· card-diagnostics export — fold the cheap ones into S6.4 only if trivially adjacent).
+Parking them HERE is what keeps the closeout honest — they must appear on the next-cycle
+list, not silently vanish.
 
 ## Closeout — the PROGRAM closeout
 Ledger rows + ROADMAP flips + a final **program summary**: what the six sessions shipped
