@@ -1062,6 +1062,9 @@
       // switching to it is instant (no new fetch); the 2 s poll keeps it fresh.
       if (key === "schedule") _renderSchedule();
       if (key === "coverage") loadTagCoverage();
+      // The storage footprint is a recursive disk walk — measure it lazily when the System
+      // tab is opened (cached; the vitals poll never triggers it), so opening the tab is snappy.
+      if (key === "system") renderStorageFootprint("vitals-storage");
     }
     // a11y focus management for the two non-native dialogs (palette, task manager)
     // -- the native <dialog>.showModal() modals trap focus implicitly (OO-D13-001).
@@ -1259,7 +1262,7 @@
       timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
       agenda: loadAgenda,
-      library: () => { renderLibraryOverview(); loadCoverage(); },  // stats handled by the live poller (startLive)
+      library: () => { renderLibraryOverview(); loadCoverage(); renderStorageFootprint("library-storage"); },  // stats handled by the live poller (startLive); the footprint walk is lazy, once
       custody: loadCustody,
       integrity: loadIntegrity,
       settings: loadSettings,
@@ -5750,6 +5753,84 @@
 
     let DB_KEYS = null;   // current rendered stat keys (rebuild grid only when they change)
 
+    // B14: the COMPLETE on-disk footprint (A12b backend, GET /api/diagnostics/storage-footprint)
+    // shown wherever storage size shows — the Library dashboard + the task-manager System tab.
+    // It is a RECURSIVE disk walk (potentially slow on a 100 GB+ corpus), so it is fetched
+    // LAZILY on tab open + CACHED — NEVER on the live poll (which would self-inflict the freeze
+    // the scale mandate warns against) — with a Re-measure button. Honest split: the ENCRYPTED
+    // private corpus (irreplaceable) vs re-downloadable PUBLIC blobs (dumps/maps/models). Bytes
+    // only, no score; the method rides the #oo-tip hover.
+    const _SF_PUBLIC = new Set(["wiki_dumps", "osm_regions", "ollama_models"]);
+    let _sfCache = null;     // last storage-footprint payload (envelope .data)
+    let _sfPending = null;   // in-flight promise, so two hosts share one walk
+
+    async function _fetchStorageFootprint(force) {
+      if (_sfCache && !force) return _sfCache;
+      if (_sfPending) return _sfPending;
+      _sfPending = api("/api/diagnostics/storage-footprint")
+        .then(r => { _sfCache = (r && r.data) || null; _sfPending = null; return _sfCache; })
+        .catch(e => { _sfPending = null; throw e; });
+      return _sfPending;
+    }
+
+    function _sfLabel(kind, name, t) {
+      const L = { db: t("Database"), wal: t("Database WAL"), shm: t("Database SHM"),
+        wiki_dumps: t("Wikipedia dumps"), osm_regions: t("Offline map regions"),
+        staging: t("Backup/restore staging"), other: t("Other (data folder)"),
+        ollama_models: t("Local AI models") };
+      return L[kind] || name || kind;
+    }
+
+    function _sfPaint(host, d, t) {
+      if (!d || !Array.isArray(d.components)) {
+        host.innerHTML = `<div class="muted">${esc(t("No storage measurement yet."))}</div>`; return;
+      }
+      const total = (d.totals || {}).grand_total_bytes || 0;
+      const priv = d.components.filter(c => !_SF_PUBLIC.has(c.kind)).reduce((a, c) => a + (c.bytes || 0), 0);
+      const pub = d.components.filter(c => _SF_PUBLIC.has(c.kind)).reduce((a, c) => a + (c.bytes || 0), 0);
+      const rows = d.components.filter(c => (c.bytes || 0) > 0).sort((a, b) => b.bytes - a.bytes).map(c => {
+        const pct = total ? Math.round(100 * c.bytes / total) : 0;
+        const isPub = _SF_PUBLIC.has(c.kind);
+        // "encrypted" is strictly true only of the DB triple (SQLCipher at rest); the honest
+        // per-component tag is public=re-downloadable vs private=local. The summary line below
+        // carries the "encrypted corpus" framing where the DB dominates the private bytes.
+        const tag = isPub ? t("re-downloadable") : t("private (local)");
+        const ttl = (c.detail || "") + (c.outside_data_dir ? ` · ${t("outside the data folder")}` : "");
+        return `<div class="sf-row" style="display:flex;gap:8px;align-items:center;margin:3px 0"${ttl ? ` title="${esc(ttl)}"` : ""}>`
+          + `<div style="flex:0 0 42%;min-width:0">${esc(_sfLabel(c.kind, c.name, t))} <span class="muted" style="font-size:11px">· ${esc(tag)}</span></div>`
+          + `<div style="flex:1;height:8px;background:var(--panel2, rgba(128,128,128,.18));border-radius:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${isPub ? "var(--muted, #8c95a6)" : "var(--accent)"}"></div></div>`
+          + `<div style="flex:0 0 auto;font-variant-numeric:tabular-nums">${esc(_fmtBytes(c.bytes))}</div></div>`;
+      }).join("");
+      host.innerHTML =
+        `<div class="row" style="justify-content:space-between;align-items:baseline;gap:8px">`
+        + `<div><b style="font-size:1.15em">${esc(_fmtBytes(total))}</b> <span class="muted">${esc(t("on disk, all stores"))}</span></div>`
+        + `<button class="secondary" style="font-size:11px;padding:2px 8px" onclick="renderStorageFootprint('${esc(host.id)}', true)">${esc(t("Re-measure"))}</button></div>`
+        + `<div class="muted" style="font-size:11px;margin:3px 0 8px"${d.method ? ` title="${esc(d.method)}"` : ""}>`
+        // Honest label (no fabricated security): the private sum includes -shm + backup
+        // staging, which are NOT necessarily encrypted — so it is "Private (local)", with the
+        // corpus's at-rest encryption noted, not a blanket "encrypted" claim over every byte.
+        + `${esc(t("Private (local; corpus encrypted at rest)"))}: <b>${esc(_fmtBytes(priv))}</b> · `
+        + `${esc(t("Re-downloadable (dumps / maps / models)"))}: <b>${esc(_fmtBytes(pub))}</b></div>`
+        + rows;
+    }
+
+    // Fetch (lazily, cached) + paint the footprint into a host. Paints the cache instantly on
+    // re-open, then re-measures only when forced. Called on Library-tab open + System-tab open.
+    async function renderStorageFootprint(hostId, force) {
+      const host = document.getElementById(hostId);
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      if (_sfCache && !force) { _sfPaint(host, _sfCache, t); return; }
+      host.innerHTML = `<div class="muted">${esc(t("Measuring on-disk footprint…"))}</div>`;
+      try {
+        const d = await _fetchStorageFootprint(force);
+        _sfPaint(host, d, t);
+        if (typeof loadDbStats === "function" && document.getElementById("db-file")) loadDbStats();
+      } catch (e) {
+        host.innerHTML = `<div class="note err">${esc(t("Could not measure storage:"))} ${esc(e.message || e)}</div>`;
+      }
+    }
+
     // Library central dashboard (field remark 16): the at-a-glance roll-up of everything
     // DOWNLOADED (the raw, re-downloadable layer) + everything EXTRAPOLATED (the AI-derived
     // layer). Honest counts + on-disk byte sizes only, no score; own stamp so the 16s poll
@@ -5832,10 +5913,16 @@
           const n = document.getElementById("db-n-" + k);
           if (n) animateCount(n, v);
         }
+        // The DB file is ONE component of the whole footprint; once the Storage-footprint
+        // panel has measured it, show the all-stores total here too so the number is honest
+        // about being only the database (never implying it is the app's whole disk use).
+        const _t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+        const gt = _sfCache && (_sfCache.totals || {}).grand_total_bytes;
+        const foot = gt ? ` <span class="muted">· ${esc(_t("all stores"))} <strong>${esc(_fmtBytes(gt))}</strong> (${esc(_t("see Storage footprint below"))})</span>` : "";
         $("db-file").innerHTML = s.file
           ? `Backend <span class="pill">${esc(s.backend)}</span> · on disk ` +
             `<strong>${humanBytes(s.file.bytes)}</strong> ` +
-            `<span class="muted">(${esc(s.file.path)})</span>`
+            `<span class="muted">(${esc(s.file.path)})</span>` + foot
           : `Backend <span class="pill">${esc(s.backend)}</span> · ${esc(s.url_summary)}`;
       } catch (e) { el.innerHTML = `<div class="note err">Could not load stats: ${esc(e.message)}</div>`; DB_KEYS = null; }
     }
