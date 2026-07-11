@@ -723,6 +723,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   hover-stats/region-value/rare-earths(USGS)/sentiment decided by Session B with conservative
   defaults recorded here; lemmatization default-on STAYS measure-gated (the gold set is
   maintainer-made — cannot be honestly synthesized); the v0.2.0 TAG stays held (unchanged).
+  **3a DECISIONS EXECUTED/RECORDED 2026-07-10 (Session B, B12; conservative defaults):**
+  • **REGION VALUE — BUILT** (branch `claude/b-region-usgs`): supranational/transnational bodies
+    (International, EU) now get an honest **"Global"** region (`src/catalog/countries.py`:
+    `CONTINENT_OF int/eu → Global` + `CONTINENTS` gains "Global"), so the "International" bodies the
+    de-US-centring pass left uncountried have a truthful home in the regional-balance report instead
+    of being invisible or forced into a continent. A source is Global only if it carries country
+    `int`/`eu`; unknown stays uncategorised (never fabricated Global). test_country_normalization
+    updated (the old `continent_of("eu") is None` guard flipped to `== "Global"`). Populating
+    individual International sources with `int` is a follow-up data-curation step.
+  • **RARE-EARTHS — DECIDED: USGS supply-data** (recommended option). No free rare-earth SPOT-price
+    source exists; the honest path is USGS **Mineral Commodity Summaries** (annual production /
+    reserves / net-import-reliance — SUPPLY figures, explicitly labelled NOT spot prices, so no
+    fabricated market number). Build = a stats-agency entry + an annual-supply parser under
+    `src/stats/` (a follow-up slice, gated on the maintainer's next stats pass); the current
+    commodities board stays price-only + honest about the gap. Recorded as the chosen direction.
+  • **MULTILINGUAL SENTIMENT — DECIDED: DEFER the model path, pivot to rule-based subjectivity.**
+    pyproject BANS torch/onnx/transformers, so no multilingual transformer classifier is admissible.
+    The honest direction is the **subjectivity / loaded-language rule-based lexicon** feeding the
+    manipulation cards (never a fabricated neutral); a first slice needs per-language subjectivity
+    lexicons (license-clean, corpus-sourced) — deferred until a real source is vetted. Meanwhile the
+    shipped VADER-**English-only** sentiment stays, already labelled English-only (no silent
+    cross-language scoring). Recorded, not built this round.
+  • **LEMMATIZATION default-on — STAYS measure-gated** (deferral confirmed): the retrieval-quality
+    gold set is corpus-specific + maintainer-made and cannot be honestly synthesized, so
+    `OO_FAMILY_LEMMA` stays default-off. The `lemma_preview` diagnostic already surfaces the candidate
+    conflations for the maintainer to review before flipping it; no cheap further-surfacing needed.
   (4a) **the doc-archival pass is CLEARED** — session-briefs/releases/field-tests →
   `docs/archive/` subfolders, non-lossy, links retargeted (the two live 2026-07-10 A/B briefs
   stay until their sessions complete). Sessions branch as `claude/a-*` / `claude/b-*`; shared

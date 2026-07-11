@@ -70,7 +70,9 @@ def test_reference_data_is_complete():
     assert set(CONTINENT_OF) >= ISO_3166_1_ALPHA2
     assert continent_of("fr") == "Europe"
     assert continent_of("Brazil") == "South America"
-    assert continent_of("eu") is None  # supranational: no continent claimed
+    # Supranational bodies (International, EU) now get an honest "Global" region rather than
+    # being uncategorised (delegated ruling 2026-07-10) — never forced into a continent.
+    assert continent_of("eu") == "Global"
 
 
 # --- the shipped catalogs stay canonical (regression guard) ------------------ #
@@ -208,3 +210,18 @@ def test_iso3_iso2_bridge_is_consistent():
     # one user-assigned exception the rest of this module already recognises).
     real = sum(1 for a2 in ISO3_TO_ISO2.values() if a2 in ISO_3166_1_ALPHA2)
     assert real >= len(ISO3_TO_ISO2) - 2
+
+
+def test_global_region_for_transnational_bodies():
+    """Delegated ruling 2026-07-10: International / EU (supranational, no ISO country) get
+    an honest 'Global' region instead of being uncategorised or forced into a continent."""
+    from src.catalog.countries import CONTINENTS, continent_of
+
+    assert "Global" in CONTINENTS
+    assert continent_of("int") == "Global"
+    assert continent_of("International") == "Global"
+    assert continent_of("eu") == "Global"
+    # A real country is unaffected.
+    assert continent_of("fr") == "Europe"
+    # Unknown / None stays uncategorised, never fabricated Global.
+    assert continent_of("zz") is None and continent_of(None) is None
