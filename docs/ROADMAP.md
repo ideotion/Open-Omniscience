@@ -108,10 +108,10 @@ briefing/trending/associations — **guarded** ✅; integrity reads (profile/act
 fixity) — **guarded** ✅ (#628); residual to verify under load: `diagnostics/keywords`
 (100–184 s), `debug-bundle` (69 s), `/api/articles` p95 25 s. 🚧
 
-**Deferred perf riders (post-merge audit — NOT picked up by the wave):** F13 batched collector
-flush holds the write gate across per-article *extraction* (not just the write) · F10/F11
-backup↔collector gate-hold ordering · F14 markets `run_rule` dirty session holds the gate
-across a CSV fetch. ⬜ (low/med — the A9 item, not reached)
+**Perf riders (post-merge audit) — INVESTIGATED & DECLINED by Session A (correcting an
+earlier "not reached" here):** F14 non-reproducible (`SessionLocal` is `autoflush=False` —
+the claimed mechanism cannot fire) · F10/F11 backup-path risk > LOW gain · F13 split-risk
+vs GIL-marginal. Revisit is reproducer-first only (S2 brief). ⬜ closed-unless-reproduced
 
 ---
 
@@ -153,7 +153,7 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **zh / ja / Thai segmentation** — ✅ **SHIPPED (B1)**: jieba/janome/pythainlp via the optional `[segmentation]` extra (pure-local, dicts in-wheel, zero network, graceful degrade) + ko/vi/mr (and fa/hu/…) stoplists vendored. Remaining 🛠: install the extra on the live box + "Clean up keywords" re-index to apply retroactively; measure the real junk reduction.
 - **Date-extraction recall — the residual tail** — hu/fa relative-day words shipped (B4); the remaining `date-like-but-unextracted` classes + CJK dates (now unblocked by the segmenter). 🚧
 - **Open-class stoplist sweep** — the measured `analyze_keyword_log --generic-terms` loop over a fresh export (kills the FLOOD filler + "rising"-card leaks; never a hand-guess). 🛠 operational
-- **Trans-language equivalence — remaining** — the cross-country map view + surfacing `language_breakdown` in the frontend; local-LLM proposing candidate rings. 🚧 partial (slice 1 shipped)
+- **Trans-language equivalence — remaining** — the cross-country ring MAP ✅ shipped in Groups (`showRingMap`, 2026-07-03); residue: the `language_breakdown`/`members` hover on the Trends/Home merged rows (→ S4.2) + local-LLM proposing candidate rings. 🚧
 - **Lemmatization default-on** — `OO_FAMILY_LEMMA` (73 of top-500 would merge) — stays measure-gated on the maintainer-made gold set (re-confirmed by ruling 3a execution). 🔒
 - **Keyword-log-driven catalog pruning** as a repeatable workflow. 🛠 operational
 
@@ -161,11 +161,11 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Backups include downloaded Wikipedia dumps** — dedup-by-checksum, additive restore must place FILE members into `wiki_dumps`. 🎨 (reverses design D3)
 - **Remove the legacy single-file backup RESTORE** once the format is fully retired (keep the additive-merge engine). 🎨
 - **Unified Import + unified Export/Backup dialogs** on the streaming-volume path — shipped earlier; the B5 wave (⏳ #624) added job-state-as-truth polling, the paused-state label and verify/pause-resume wiring. Remaining: click-through 🛠 + key the new strings ×12. 🚧
-- **Collector write-batching** (the risky keystone-#1 refactor) — `index_article(commit=False)` + batch + per-article fallback + no-loss test. 🎨 (`COLLECTOR_WRITER_BATCHING.md`)
+- **Collector write-batching** — ✅ SHIPPED as P1.8 (`src/ingest/batch.py` + `tests/test_collect_batching.py`; this row lagged §2's own ✅) — S6 verify-marks the no-loss battery.
 
 ### Database / scaling (columnar & rollups)
-- **D1 persisted encrypted DuckDB store** — blocked on per-OS httpfs binaries. 🔒 (see DB-3)
-- **D2 `keyword_daily` rollup** (gated on D1) + **D3 incremental refresh + epoch full-rebuild gate**. 🎨
+- **D1 persisted encrypted DuckDB store** — ruling given 2026-07-11 (#2): **S3 builds the machinery now**, gated behind `secure_crypto_available()` (CI installs the extension; local skips honestly); the per-OS binaries themselves stay a 🛠 networked operator step (see DB-3). 🚧
+- **D2 `keyword_daily` rollup + D3 incremental epoch-gated refresh** — S3 builds against the gated D1 store. 🚧
 - **D5 Roaring co-occurrence bitmaps** (pyroaring) — optional, off the critical path. 🎨
 
 ### Maps & geo
@@ -192,22 +192,22 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **`ooViz` honest-chart family** (small multiples, dumbbell/slope for vintages + CIs, association scatter with no regression line, treemap, histogram/box, Sankey, availability heatmap, population pyramid, error bars) with the reject-list gate. Primitives exist, not wired to a surface. 🎨
 - **News / plural-stance source diversity** — 105 verified `enabled:false` rows filling Caribbean/Pacific/sub-Saharan/Central-Asia/MENA gaps; dedup `statssa.gov.za`. The `global`/`transnational` region value is ✅ **BUILT** (B12 ⏳ #621: `int`/`eu` → "Global", never fabricated); populating individual International sources with `int` is the follow-up curation. 🎨
 - **De-US-centring remainder** — run the Wikidata generator for the 73 named gaps; raise the located share (≈49% of domains carry no country). 🛠
-- **Content-provenance class** — descriptive `source_type` controlled vocab + backfill (fixes newsletters mislabeled as news) → facet → reading-diet-by-type. 🎨
+- **Content-provenance class** — ✅ found SHIPPED end-to-end (ingestion stamps `source_type` + backfill; `insights_source_types` facet; reading-diet-by-channel in `concentration.py`) — S6 verify-marks against the design doc's acceptance. 
 - **Secondary-source `cited` provenance class — remaining slices** (background job at scale, denormalize `citing_source_id`, surface the citing trail, wire dormant `external_sources`). 🚧 partial
 - **DuckDuckGo query discovery channel** (off-by-default, per-query logging, budgeted) + Wikidata generator as a scheduled refresh. 🎨
-- **Expand commodity feeds** (oil, gas, LNG, sand, cereals, sugar) — needs clearnet-verified robots-permitting sources. 🛠 · **Rare earths: DECIDED (B12) = USGS Mineral Commodity Summaries SUPPLY data** (production/reserves/net-import-reliance, explicitly not spot prices — no free spot source exists); the stats-agency + annual-supply parser is the build. ⬜ · fix the S&P500-is-an-index reclassification. ⬜
+- **Expand commodity feeds** (oil, gas, LNG, sand, cereals, sugar) — needs clearnet-verified robots-permitting sources. 🛠 · **Rare earths: DECIDED (B12) = USGS Mineral Commodity Summaries SUPPLY data** (production/reserves/net-import-reliance, explicitly not spot prices — no free spot source exists); the stats-agency + annual-supply parser is the build (→ S5.1). ⬜ · S&P500-is-an-index reclassification — ✅ found done (`idx_sp500` + the commodities board excludes `index` symbols per the recorded ruling in `markets.py`).
 
 ### Manipulation cards & the civic vertical
 - **FLOOD/BURY cards — remaining quality** — both cards exist; BURY gained same-language cohort scoping (B3 ⏳ #620). Remaining: the FLOOD open-class filler (the measured stoplist sweep, §"Keyword engine") + the full same-language *denominator* rescoping with ring-translation bridging (labelled follow-up). 🚧
 - **Event-timed-operation card** ("October surprise" = emergence + source-laundering + agenda; needs an elections roster). 🎨
 - **Elections & civic vertical** — sourced `elections` calendar (France 2027 pilot, movable-marked), curated candidate rosters with provenance, "name the shape, never prescribe". 🎨
 - **Poll analysis** — a method-audit tier stack (Tier 2 transparency checklist + verbatim question display first); no composite score, non-disclosure outranks disclosed-imperfection. 🎨
-- **Evidence-tiered cards — remaining** (power-style "what's missing" inversions; Benjamini–Hochberg once p-values exist; dismiss-with-reason feedback; card-diagnostics export). 🚧 partial
+- **Evidence-tiered cards — remaining** (power-style "what's missing" inversions; Benjamini–Hochberg once p-values exist; card-diagnostics export — NOTE: dismiss-with-reason appears SHIPPED in the 2026-07-03 batch-E commit; verify-first before building any of this row). 🚧 partial
 
 ### Convergence, watches & alerting
-- **New Home producers** ("Converging now", "On the horizon" = agenda ∩ watched keywords, "Through time / anniversary", "Your watch-rules fired"). 🎨
-- **Severity-tiered local alert layer** (info/watch/urgent from hazard severity + fresh-news tag-families + watch matches; urgent = a Home banner; local-only, user-owned thresholds). 🎨
-- **Seven remaining space-time scenario cards** (news-desert atlas, disputed-chronology detector, silent-disasters, law-takes-effect watch, story-propagation tracer, supply-chain ripple, election-window desk) + a per-card `/investigate` view. 🎨
+- **New Home producers** — "Converging now" (`space_time_convergence`) + "watch-rules fired" (`watch_matches`) ✅ exist and register; the TWO missing: **"On the horizon"** (agenda ∩ watched keywords) + **"Through time / anniversary"** → S6.4. 🚧
+- **Severity-tiered local alert layer** — ✅ SHIPPED (`src/analytics/alerts.py` + the Home strip; "urgent" = provider-declared ONLY, never a promoted count — the ruled no-escalation boundary). Extension (tag-family spike input, capped at watch/info) → S6.4. 🚧
+- **Space-time scenario cards** — disputed-chronology, story-propagation, supply-chain-ripple ✅ SHIPPED (2026-07-03, `tests/test_scenario_cards.py`); remaining: silent-disasters + law-takes-effect (codeable → S6.9 stretch) · news-desert atlas + election-window desk (external baselines/roster — 🛠 operator-gated). 🚧
 
 ### Versioned sources as first-class Articles — Wikipedia + laws (maintainer-directed 2026-07-10, future version)
 The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMENTS.md) →
@@ -242,7 +242,7 @@ The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMEN
 - **Continuous-collection remainder** — the first-run country/language emphasis picker + an explainable "which country next & why" schedule panel (background auto-collect + stratified interleave already shipped). ⬜
 
 ### Weather / IPCC / lunar
-- **Open-Meteo remainder** — anomaly baselines, deduced signal-keywords, a reader weather-context row, a temporal-map overlay (slice 1 suggest-to-fetch cards shipped). 🚧 partial
+- **Open-Meteo remainder** — anomaly baselines, deduced signal-keywords, a reader weather-context row, a map overlay (slice 1 suggest-to-fetch cards shipped; the 2026-07-03 batch-E commit mentions "weather signals" — VERIFY-FIRST what remains before building). 🚧 partial
 - **IPCC as a source + prediction-tracking** — PDF-to-text ingest, predictions as first-class dated claims, a retrospective promises-due lens. 🎨
 - **Lunar-effects testing framework** — correlate any daily series vs the lunar series (Pearson/Spearman + phase-bucket contrast, mandatory BH-FDR, pre-registration UI). 🚧 partial
 
