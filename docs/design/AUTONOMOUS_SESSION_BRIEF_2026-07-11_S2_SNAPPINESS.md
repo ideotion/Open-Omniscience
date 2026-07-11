@@ -8,18 +8,24 @@ becoming a visible job · background work never freezes the UI. Read
 
 ## Queue (top-down)
 
-### S2.1 — A9: the write-gate hold riders (F13 · F10/F11 · F14)
-The single-writer gate is the app's scarcest resource; holding it across non-DB work is the
-field's 438-s-wait signature. Fix each with a gate-hold regression test (the empirical
-`write_gate.stats()["held"] is False` probe pattern from `tests/test_collect_batching.py`):
-- **F13 (MED):** the batched collector flush holds the gate across per-article keyword+WWW
-  **extraction**, not just the write — extract first, then take the gate for the write only.
-- **F10/F11 (LOW):** backup's `_drain_wal` takes the gate then a pool connection (inverted
-  order), and the gate is held across `_corpus_facts`' full COUNT+scan — reorder/move out.
-- **F14 (LOW):** markets `run_rule` enters its CSV fetch with a dirty session, so autoflush
-  hands the gate to the network wait — commit/rollback before the loop (the ETA P1.8 lesson).
-Backup-path edits are data-safety-critical: the ZETA lessons (traversal guards, atomic
-finalize, test the REAL path not a parameter-injected double) are binding.
+### S2.1 — A9: the write-gate hold riders — REPRODUCER-FIRST (Session A already investigated and DECLINED all three; start from that record)
+The ledger's SESSION A PROGRESS entry is binding context: **"A9 riders INVESTIGATED, none
+shipped (F14 non-reproducible: SessionLocal is autoflush=False; F10/F11 data-safety-
+backup-path risk > LOW gain; F13 index_article-split risk vs GIL-marginal)."** So this is
+NOT "fix three bugs" — it is: build the empirical gate-hold REPRODUCER for each claim (the
+`write_gate.stats()["held"]` probe pattern from `tests/test_collect_batching.py`, which
+already pins the fetch/extract-outside-gate property), and ship a change ONLY where a
+reproducer demonstrates a real hold worth its risk:
+- **F14:** presumed REFUTED (`SessionLocal` is `autoflush=False` — the claimed mechanism
+  cannot fire). Close it with the reproducer-as-evidence unless one proves otherwise.
+- **F13:** the reproducer decides whether the extraction-inside-gate window is real and
+  material (Session A judged the split risk vs GIL-marginal — respect that judgment unless
+  your measurement overturns it).
+- **F10/F11:** backup-path edits carry recorded risk > gain; touch `stream_backup.py` ONLY
+  with a demonstrated hold AND the full ZETA lessons (traversal guards, atomic finalize,
+  test the REAL path — never a parameter-injected double).
+Whatever the outcome, fix the stale `docs/ROADMAP.md` A9 line ("not reached" is wrong — it
+was investigated & declined) in the same PR, and record the evidence in the ledger.
 
 ### S2.2 — A10: off-peak background maintenance
 Counter-reconcile (86–104 s/pass) + orphan-prune slices already run deadline-budgeted with
@@ -34,12 +40,14 @@ through the maintained/reconciled counters with the honesty envelope
 (`{value, basis, as_of}`); keep the reconcile pass as the drift net. The `/status`
 data-aware cache shipped — verify and extend to the remaining sites.
 
-### S2.4 — P1.2 residual: the last unguarded heavy reads
-`corpus-www` (28 s) and `corpus-sentiment` (18 s) are plain `def` handlers — verify whether
-they run under `guarded_read`; guard or job-ify what isn't (mirror #628's pattern: deadline +
-cap + param-qualified single-flight; a deadline overrun raises, never returns truncated data
-as complete). Then sweep for any OTHER heavy read that slipped the net (an Explore agent over
-`src/api/` looking for corpus-scaled queries outside `heavy.py`).
+### S2.4 — P1.2 residual: the guard-coverage SWEEP
+`corpus-www` and `corpus-sentiment` are believed ALREADY guarded (both return through
+`_deadlined` in `src/api/insights.py` — TTL cache + `run_heavy` cap/single-flight +
+statement deadline) — confirm that in one look, then the real work: an Explore-agent sweep
+of `src/api/` for ANY corpus-scaled read still outside `heavy.py`/`_deadlined`, guarding or
+job-ifying what the sweep finds (mirror #628's pattern; a deadline overrun raises, never
+returns truncated data as complete). Update the stale ROADMAP P1.2 wording with the sweep's
+verdict.
 
 ### S2.5 — The measured residue
 `diagnostics/keywords` (100–184 s) and `debug-bundle` (69 s): bound/cache/job-ify as fits

@@ -108,10 +108,10 @@ briefing/trending/associations — **guarded** ✅; integrity reads (profile/act
 fixity) — **guarded** ✅ (#628); residual to verify under load: `diagnostics/keywords`
 (100–184 s), `debug-bundle` (69 s), `/api/articles` p95 25 s. 🚧
 
-**Deferred perf riders (post-merge audit — NOT picked up by the wave):** F13 batched collector
-flush holds the write gate across per-article *extraction* (not just the write) · F10/F11
-backup↔collector gate-hold ordering · F14 markets `run_rule` dirty session holds the gate
-across a CSV fetch. ⬜ (low/med — the A9 item, not reached)
+**Perf riders (post-merge audit) — INVESTIGATED & DECLINED by Session A (correcting an
+earlier "not reached" here):** F14 non-reproducible (`SessionLocal` is `autoflush=False` —
+the claimed mechanism cannot fire) · F10/F11 backup-path risk > LOW gain · F13 split-risk
+vs GIL-marginal. Revisit is reproducer-first only (S2 brief). ⬜ closed-unless-reproduced
 
 ---
 

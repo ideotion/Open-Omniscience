@@ -22,9 +22,16 @@ Per `docs/design/PERSISTED_DUCKDB_HTTPFS.md` + `SCALING_DERIVED_LAYER_1000X.md`:
 - One `connect()` path under the SAME passphrase (no second key surface); the EMPIRICAL
   encryption gate is test-enforced (sentinel absent from raw bytes · won't open without the
   key · opens with it).
-- A verify-before-LOAD step for the extension binary (sha256 against the registry pin;
-  refuse on mismatch/missing — the registry `duckdb-crypto-extension` floor must equal the
-  pyproject `[columnar]` floor, already test-enforced).
+- A verify-before-LOAD step for the extension binary, with the CI story made explicit
+  (the current registry entry carries a VERSION coupling, no sha256 — and you cannot add
+  real ones offline): (a) the verify MECHANISM is proven against a local fixture
+  "extension" whose sha256 IS pinned in a test fixture registry; (b) refuse-on-missing /
+  refuse-on-mismatch are themselves pinned tests (so the local sandbox refuses honestly);
+  (c) the CI httpfs lane runs under a clearly-marked CI-only trust path (checksum computed
+  in-lane, asserted stable across the run, NEVER promoted into `external_artifacts.yml`);
+  (d) the real per-OS sha256 fields stay ABSENT until the operator's networked fetch+pin
+  step — the registry `duckdb-crypto-extension` floor == pyproject `[columnar]` floor stays
+  test-enforced.
 - Lifecycle: build-once persist, survive restarts, invalidate on corpus-epoch change,
   excluded from backups (rebuildable), cold/missing → live query fallback (slower, never
   wrong). `OO_` env kill-switch.
@@ -55,6 +62,10 @@ in the repo** — the ZETA lessons are binding (run-unique names, atomic manifes
 previous complete backup must survive ANY failure mid-refresh, traversal-guard every
 name→path, test the real path), and the skeptic pass must include an interrupted-refresh +
 tier-crossing torture matrix. GAMMA-tier proof at the sandbox's disk cap.
+**Validation-staleness handoff:** this changes the engine the v0.2.0 tag's live validation
+covers. If the maintainer's live P0.1 run happened before this merges, your closeout MUST
+say the S1 validation job needs a RE-RUN before tag-day (the S1 report is engine-version-
+stamped precisely so this staleness is detectable).
 
 ### S3.4 — DB-10: the retention/eviction + incremental-vacuum DECISION MEMO
 Design-only (the posture is ruling-gated on the maintainer's footprint numbers): a decision

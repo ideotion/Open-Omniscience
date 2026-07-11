@@ -33,7 +33,9 @@ the OPERATOR'S OWN live corpus and emits ONE exportable JSON+readable report:
   window → report flat-vs-climbing RSS, guard trips, pass recycling counts.
 - **The verdict block:** per-check `pass | fail | not-measurable-here (reason)` against the
   written acceptance bars — measurements only, NO composite score, NEVER a fabricated pass;
-  a check that cannot run reports WHY. Wire it as a debug-bundle member too.
+  a check that cannot run reports WHY. The report is **backup-engine-version/format-stamped**
+  (so a later engine change — e.g. S3's adaptive volume sizing — makes a stale validation
+  detectable). Wire it as a debug-bundle member too.
 Design constraints: heavy work off the event loop (job thread), writer-gate discipline for
 the backup window (it already owns this), bounded staging with disk preflight, honest
 cleanup of the staging dir on cancel/finish.
@@ -58,7 +60,10 @@ Adversarial pass over your own S1.2 job with the data-safety lenses (this touche
 path — the most consequence-laden code in the repo): the job must be UNABLE to corrupt or
 delete live data under any input (staging-only writes, traversal-guarded paths per the ZETA
 lessons, atomicity where it writes reports), and a crashed/cancelled validation leaves no
-half-state that a later backup could mistake for real. Pin these as tests.
+half-state that a later backup could mistake for real. Tests must drive the **REAL
+live-corpus source path** (monkeypatch `live_db_path`, never a `corpus_source` parameter
+double — the ZETA (c) lesson: an injected double bypasses exactly the code being validated).
+Pin these as tests.
 
 ## Explicitly NOT yours
 The live run itself, the tag push, click-throughs (operator). Tiers 1–5 (sessions 2–6).
