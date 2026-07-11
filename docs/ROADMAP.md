@@ -2,7 +2,9 @@
 
 The single forward-looking board: current limitations, performance work, known bugs, and
 the feature backlog, with a status + priority on every item. Consolidated 2026-07-10 from
-the previously-scattered planning docs.
+the previously-scattered planning docs; **reconciled 2026-07-11 after the parallel A+B
+autonomous wave** (Session A = scale backend, Session B = product/UX — ~25 items shipped;
+see the 2026-07-10/11 rows in the ledger).
 
 > **Where each kind of information lives** (read this first — it is the map):
 >
@@ -35,11 +37,15 @@ scaling failures now cause crashes and data loss, not just slowness.** So 0.2's 
 
 - `pyproject` version is **`0.2.0`**; the default branch is **`0.2`**.
 - The **`v0.2.0` tag is HELD** — gated on the maintainer's live-corpus validation of the **P0
-  scale set** (see §3). The engines are shipped; the field validation is the remaining gate,
-  and **P0.4 (unlock-at-scale) is still unresolved**.
+  scale set** (see §2). All four P0 engines are now shipped **including P0.4 unlock-at-scale
+  (root-caused + fixed on the synthetic harness)** — the maintainer's live-corpus run is the
+  one remaining gate.
 - **Definition of "snappy" (the acceptance bar for 0.2):** every interactive endpoint p95
   **< ~500 ms** at 100 GB · **unlock < 2 s** · no UI action blocks > 1 s without becoming a
   visible job · background work never freezes the UI.
+- **Just merged (the parallel A+B wave):** the Session B chain **#620–#627** + Session A's
+  **#628** (integrity heavy-read guards) + **#629** (B10 i18n keying of the new strings) are
+  all on `0.2`. The ⏳-marked items below reference those PRs and are now shipped.
 
 ---
 
@@ -47,21 +53,20 @@ scaling failures now cause crashes and data loss, not just slowness.** So 0.2's 
 
 | # | Limitation | Detail | Status | Ref |
 |---|---|---|---|---|
-| DB-1 | **Unlock is slow and worsening at scale** | 60 s @ 2.28 GB → **981 s → 1,645 s (27.4 min)** on consecutive boots; the one-time-migration hypothesis is **refuted** (cost recurs and grows). Suspects: WAL recovery after unclean shutdown, corpus-scaled synchronous `init_db`. | 🚧 root-cause pending live export (P0.4) | SCALE_ROADMAP P0.4 |
+| DB-1 | **Unlock at scale** | ROOT-CAUSED + FIXED (A1): `ensure_fts` ran the FTS5 `'rebuild'` — a corpus-scaled codec re-read — on EVERY boot; now rebuilds only when needed. Measured on a 112k/2.7 GB encrypted synthetic corpus: 28.6 s → **0.002 s**; warm unlock **0.012 s** (bar < 2 s). | 🔧 fixed on synthetic — **live-corpus validation is the remaining gate** (never claim closed on synthetic) | SCALE_ROADMAP P0.4 |
 | DB-2 | **5 TB single-file SQLCipher unvalidated** | Page cache, VACUUM infeasibility, backup windows, single-writer behaviour at 5 TB never measured. Cross-time recall is sacred — no partitioning that makes old data second-class. | 🎨 design-only | SCALE_ROADMAP P1.7 · `DATA_ARCHITECTURE_SKELETON.md` |
-| DB-3 | **Persisted encrypted columnar store (D1) blocked** | The in-memory rollup is rebuilt every boot (dies at scale); the persisted encrypted DuckDB store needs the per-OS **httpfs crypto-extension** bundled. Verified: DuckDB will not write an *authenticated* encrypted file without it. | 🔒 ruling-gated | SCALE_ROADMAP Ruling-gated #2 · `PERSISTED_DUCKDB_HTTPFS.md` |
-| DB-4 | **Keyword-table growth is a storage problem** | Heaps β ≈ 0.82–0.95; **zh 46K + th 21K + ja 12K** junk keywords from missing segmentation, ko/vi/mr stoplist gaps. Prune finds 0 orphans — the lever is segmentation, not pruning. | 🔒 ruling-gated (segmenter) | SCALE_ROADMAP P1.5 / Ruling-gated #1 |
-| DB-5 | **~120 GB of the data folder unidentified** | `db_bytes` = 11.7 GB but the folder is ~130 GB. Suspects: orphaned plaintext staging (would be an at-rest-encryption violation), wiki/OSM downloads, a runaway `-wal`. Needs a `du -sh` breakdown. | 🚧 diagnostic | SCALE_ROADMAP 2026-07-09 event |
+| DB-3 | **Persisted encrypted columnar store (D1) blocked** | The bundling attempt ran (A13, ruling 3a) and hit a hard wall: `extensions.duckdb.org` is **not in the network egress allowlist** (403) — no checksum fabricated, the in-memory fallback stays. Needs a **networked machine** (or an allowlist entry) to fetch + pin the per-OS httpfs binaries; D2/D3 stay gated behind it. | 🛠 operational (was ruling-gated; ruling given, attempt blocked) | SCALE_ROADMAP Ruling-gated #2 · `PERSISTED_DUCKDB_HTTPFS.md` |
+| DB-4 | **Keyword-table junk growth** | SEGMENTER SHIPPED (B1): zh/ja/th word segmentation via the optional `[segmentation]` extra (jieba MIT · janome Apache-2.0 · pythainlp Apache-2.0 — pure-local, dicts in-wheel, zero network) + ko/vi/mr (and fa/hu/…) stoplists vendored; graceful degrade without the extra. | 🔧 shipped — remaining: **install the extra + "Clean up keywords" re-index on the live corpus** to apply retroactively and measure the real junk reduction | SCALE_ROADMAP P1.5 / Ruling-gated #1 (executed) |
+| DB-5 | **~120 GB of the data folder unidentified** | The instruments are now shipped: the A12 `du`-style data-dir breakdown + the A12b/B14 itemized storage footprint (incl. the external Ollama store). The mystery itself is still unnamed. | 🔧 diagnostics shipped — **awaiting the maintainer's next field export** to name the 120 GB | SCALE_ROADMAP 2026-07-09 event |
 | DB-6 | **dbstat absent on the encrypted store** | The bundled `sqlcipher3` ships without dbstat, so the per-table storage-composition report degrades to PRAGMA totals only on the live encrypted DB. | ✅ shipped w/ honest limit; dbstat-enabled build is the follow-up | SCALE_ROADMAP P1.5 |
-| DB-7 | **Corpus-epoch not wired into restore-merge** | `bump_corpus_epoch` ships and is wired into reindex/prune, but not the restore-merge (the one residual mutator). Over-bump harmless; a missed bump is bounded by the serve backstop TTL. | 🚧 residual | SCALE_ROADMAP P1.6 |
-| DB-8 | **Alembic stamp behind head** | Self-heal keeps the schema in sync but the DB stamp lags the code head — a latent risk for the next migration / cross-version restore. | ⬜ low priority | field-test 2026-07-08 Item 8 |
 | DB-9 | **Backup parity ceiling < 5 TB** | Reed-Solomon over GF(2⁸) caps at N+M < 256 volumes ≈ **128 GB** at 512 MiB volumes; a 5 TB corpus is ~10,000 volumes. Fine at field scale; needs adaptive/larger volume sizing before 5 TB. | 🎨 design-only (fold into P0.1) | SCALE_ROADMAP post-merge audit F6 |
 | DB-10 | **Near-dup content growth / eviction posture** | Wire reprints stored whole inflate storage; tiered-retention eviction is designed but not built (default-off, WARC-gated); incremental-vacuum posture at 5 TB undecided. | 🎨 design-only | SCALE_ROADMAP P1.5 |
 
 **Already resolved (this cycle):** expression index on `coalesce(published_at,created_at)`
 (was 735 s of full scans → index-only, #588) ✅ · corpus-epoch mechanism (`derived_meta`) ✅ ·
-covering mention indexes / FTS optimize / batched commits / the single-writer gate ✅ ·
-storage-composition diagnostic ✅.
+**corpus-epoch wired into the restore-merge** (was DB-7; A7) ✅ · **alembic stamp self-heals to
+head** (was DB-8; A8) ✅ · covering mention indexes / FTS optimize / batched commits / the
+single-writer gate ✅ · storage-composition diagnostic ✅.
 
 ---
 
@@ -84,27 +89,29 @@ The deep detail (measured numbers, acceptance criteria, session territories) liv
 
 | Item | What | Status |
 |---|---|---|
-| **P1.1** | **Death-spiral fix**: server-side deadlines + client single-flight polling + a concurrency cap (requests stacked without cancellation; one endpoint was in-flight 217 s) | 🚧 in progress (ALPHA A1) |
-| **P1.2** | Job-ify heavy sync handlers (enrich-source-types 8.5 min · governments 2.9 min · corpus-www 28 s · sentiment 18 s · top 20 s …) | 🚧 in progress (ALPHA A2) |
-| **P1.3** | `count(*)` from maintained counters (`SELECT count(*) FROM keyword_mentions` = 724 ms × 172 = 124 s) | 🚧 in progress (ALPHA A3) |
+| **P1.1** | **Death-spiral fix**: server-side deadlines + client single-flight polling + a concurrency cap (requests stacked without cancellation; one endpoint was in-flight 217 s) | ✅ shipped (the `heavy.py` admission guard + honest 429 client retry); the last uncovered reads — integrity profile/actors/prominence/fixity — are now guarded too (#628) |
+| **P1.2** | Job-ify heavy sync handlers (enrich-source-types 8.5 min · governments 2.9 min · diagnostics `/all` 36 min — all background jobs now; heavy reads guarded) | ✅ largely shipped — residual: audit `corpus-www` (28 s) / `corpus-sentiment` (18 s) for individual guards |
+| **P1.3** | `count(*)` from maintained counters (`SELECT count(*) FROM keyword_mentions` = 724 ms × 172 = 124 s) | 🚧 partial — the `/status` data-aware cache shipped (count stays EXACT); a sweep of the remaining `count(*)` call sites is unverified |
 | **P1.4** | `/insights/latest` (40 s @ 268 K → near-dup bounded) | ✅ shipped — re-measure on next field export |
-| **P1.5** | Storage-composition diagnostic | ✅ shipped (dbstat-limited on encrypted store) |
-| **P1.6** | Corpus-epoch mechanism | ✅ shipped (not yet wired into restore-merge — see DB-7) |
-| **P1.7** | 5 TB architecture verify-before-trust review | 🎨 design-only |
+| **P1.5** | Storage-composition diagnostic | ✅ shipped (dbstat-limited on encrypted store) + the itemized all-stores footprint (A12b/B14 ⏳ #625) |
+| **P1.6** | Corpus-epoch mechanism | ✅ shipped — **now incl. the restore-merge wiring** (A7) |
+| **P1.7** | 5 TB architecture verify-before-trust review | 🎨 design-only (the A14 if-time item — not reached) |
 | **P1.8** | Collector-path write batching (writer gate: 847,351 s cumulative wait / 22% of worker-time / max 438 s) | ✅ shipped |
-| **P1.9** | Job-ify the diagnostics `/all` export (was 36+ min blocking the loop) | ✅ backend shipped — UI wiring remaining |
+| **P1.9** | Job-ify the diagnostics `/all` export (was 36+ min blocking the loop) | ✅ complete — backend (#600 D2) + the UI job button (B6, #622) |
 | **P1.10** | trending-windows cold path (467 s/call; 62 calls / 3,286 s) — stale-but-disclosed serve + change-gated refresh | ✅ shipped — D1 persisted store still pending (see DB-3) |
 | **P1.11** | Flip on the D4 map serve (map GROUP BY was 748 s total / ~150 s per call) | ✅ shipped |
-| **P1.12** | Background maintenance under the job/deadline regime (counter-reconcile 86–104 s/pass; prune 32 s) | ✅ deadline half shipped — off-peak scheduling remains |
+| **P1.12** | Background maintenance under the job/deadline regime (counter-reconcile 86–104 s/pass; prune 32 s) | ✅ deadline half shipped — **off-peak scheduling remains** (A10, not reached) |
 
-**New heavy endpoints still needing rollup/cache/deadline (from the 2026-07-08 field test):**
-`signals/flood` (66–151 s), `signals/bury` (27–111 s), `insights/lunar-correlation`
-(57–142 s), `diagnostics/keywords` (100–184 s), plus slow diagnostic exports (`debug-bundle`
-69 s, `integrity` 62 s, `briefing` 30–37 s, `/api/articles` p95 25 s). ⬜
+**Heavy-endpoint sweep status (was the ⬜ list from the 2026-07-08 field test):**
+`signals/alerts`/`flood`/`bury` + `insights/lunar-correlation` + `server-locations` +
+briefing/trending/associations — **guarded** ✅; integrity reads (profile/actors/prominence/
+fixity) — **guarded** ✅ (#628); residual to verify under load: `diagnostics/keywords`
+(100–184 s), `debug-bundle` (69 s), `/api/articles` p95 25 s. 🚧
 
-**Deferred perf riders (post-merge audit):** F13 batched collector flush holds the write gate
-across per-article *extraction* (not just the write) · F10/F11 backup↔collector gate-hold
-ordering · F14 markets `run_rule` dirty session holds the gate across a CSV fetch. ⬜ (low/med)
+**Deferred perf riders (post-merge audit — NOT picked up by the wave):** F13 batched collector
+flush holds the write gate across per-article *extraction* (not just the write) · F10/F11
+backup↔collector gate-hold ordering · F14 markets `run_rule` dirty session holds the gate
+across a CSV fetch. ⬜ (low/med — the A9 item, not reached)
 
 ---
 
@@ -112,18 +119,25 @@ ordering · F14 markets `run_rule` dirty session holds the gate across a CSV fet
 
 | Bug | Impact | Status |
 |---|---|---|
-| **App OOM crash under load** | A crash in a disposable VM = **total corpus loss**. Collector fix shipped; needs the live-run validation. | 🔧 fix shipped, awaiting validation (P0.3) |
-| **Disposable-VM durability** | The DispVM crash vaporized a ~60K-article corpus. Fix = easy opt-in **persistent data_dir** (bind-mount) + an honest note — *not* "stop using DispVMs". | ⬜ design |
-| **Backup UI reports false "NetworkError / Backup failed"** | `api()`/`_uxPoll` has no timeout/retry; one dropped `/volumes/status` poll aborts the UI though the job keeps running. Fix = treat job-state as truth, retry with backoff. | ⬜ root-caused, fix pending |
-| **No standalone "Verify this backup" action** | `verify_volume_set` exists but is un-exposed; the only check today is attempting a restore. Must cover both the volumes manifest and the folder manifest. | ⬜ backend fn exists, no endpoint/UI |
-| **Indices board empty on most continents** | The OECD `SPASTT01<ISO3>M661N` feed ids use 3-letter codes but FRED uses 2-letter → every OECD feed 404s (empty Europe/Asia/Africa/S.America/Oceania). A 19-row correction table exists. | ⬜ fix planned |
-| **FLOOD card polluted by leaked common words** | `signals/flood` surfaces Dutch filler ("kijk"/"zien") as topics — nl open-class stoplist gaps + cards inherit keyword junk. Needs language-aware scoping. | ⬜ design finding |
-| **BURY card dominated by language artifacts** | `signals/bury` flags non-English sources for "burying" English keywords they simply write in their own language. Needs same-language cohort scoping. | ⬜ design finding |
-| **Date-extraction recall gaps** | Overall 62.1%; **Persian (fa) 0%** (calendar/numerals unhandled — a real bug), Hungarian 22%. | ⬜ (P2) |
-| **Dead default calendar feeds** | Several bundled holiday/religious feeds are robots-disallowed or dead — drop from the shipped defaults. | ⬜ minor |
-| **FTS present/absent probe contradiction** | The integrity sweep can report `fts.present:false` (deadline-interrupted) vs schema-drift `fts_present:true`; verify search works / re-index heals. | ⬜ low |
+| **App OOM crash under load** | A crash in a disposable VM = **total corpus loss**. Collector fix shipped (pass recycling + RSS memory guard + WAL checkpoints); needs the live-run validation. | 🔧 fix shipped, awaiting validation (P0.3) |
+| **FLOOD card polluted by leaked common words** | `signals/flood` surfaces Dutch filler ("kijk"/"zien") as topics. Deliberately NOT hand-stoplisted (open-class words need the **measured** keyword-log sweep / lemmatization track, per the ledger discipline); the words are flagged for the next keyword-log review. | ⬜ open — the honest lever is `analyze_keyword_log --generic-terms` on a fresh export 🛠 |
+| **Date-extraction recall — the broader tail** | hu/fa relative-day words shipped (B4, #617 — measure-first found the field figures 0%/22% were STALE); the residual `date-like-but-unextracted` classes + CJK dates remain. | 🚧 residual (P2) |
+| **`diagnostics/keywords` + `debug-bundle` under load** | 100–184 s / 69 s in the field export — verify the guard/job coverage catches them at scale. | ⬜ verify next field run |
 
-**Recently fixed (this cycle):** restore arbitrary-file-DELETE from a hostile backup (traversal
+**Fixed by the A+B wave (⏳ = in the open PR chain, done pending merge):**
+disposable-VM durability — opt-in persistent `data_dir` + honest ephemeral-root note (A11) ✅ ·
+backup UI false "NetworkError/Backup failed" — job-state-as-truth polling + capped-backoff
+retry + paused-state label + verify/pause-resume wiring (B5) ⏳ #624 ·
+standalone backup **verify** — volumes verify job (already shipped) + the **folder-manifest
+verify** backend (A6) ✅ + its UI (B5) ⏳ #624 ·
+indices board empty on most continents — all 19 OECD FRED ids corrected to 2-letter ISO +
+a convention-pinning regression guard (B2, #614) ✅ ·
+BURY card language artifacts — same-language cohort scoping (B3) ⏳ #620 ·
+dead default calendar feeds filtered from the loaded directory (B7, #619) ✅ ·
+FTS present/absent probe contradiction — both probes derive presence from the schema;
+a timed-out count reports `count_status=timed_out`, never "absent" (verified B11c) ✅.
+
+**Fixed earlier this cycle:** restore arbitrary-file-DELETE from a hostile backup (traversal
 guard) ✅ · finalize could destroy a complete backup mid-swap (atomic manifest replace) ✅ ·
 mindmap 503 at 974K keywords (bounded + deadline, never 503) ✅ · alert-strip 24 s → sub-ms
 (memo cache) ✅ · autoflush held the write gate across a fetch (the 438 s signature) ✅.
@@ -136,17 +150,17 @@ Design rationale for most of these lives in [`docs/FUTURE_DEVELOPMENTS.md`](FUTU
 this is the tracked list. Items already shipped are omitted (see the ledger).
 
 ### Keyword engine & quality
-- **zh / ja / Thai segmentation** — vendor an offline, license-clean, no-network segmenter (jieba/pkuseg/MeCab class). Now **scale-critical** (junk keyword storage). 🔒 ruling-gated
-- **Date-extraction recall** — raise from 62% (fa 0%, hu 22%); CJK dates tie to segmentation. ⬜
-- **`reconcile_keyword_language` + evidence-grown stoplists** — kill "rising"-card leaks (annons/koji/ali) and open-class filler. ⬜
+- **zh / ja / Thai segmentation** — ✅ **SHIPPED (B1)**: jieba/janome/pythainlp via the optional `[segmentation]` extra (pure-local, dicts in-wheel, zero network, graceful degrade) + ko/vi/mr (and fa/hu/…) stoplists vendored. Remaining 🛠: install the extra on the live box + "Clean up keywords" re-index to apply retroactively; measure the real junk reduction.
+- **Date-extraction recall — the residual tail** — hu/fa relative-day words shipped (B4); the remaining `date-like-but-unextracted` classes + CJK dates (now unblocked by the segmenter). 🚧
+- **Open-class stoplist sweep** — the measured `analyze_keyword_log --generic-terms` loop over a fresh export (kills the FLOOD filler + "rising"-card leaks; never a hand-guess). 🛠 operational
 - **Trans-language equivalence — remaining** — the cross-country map view + surfacing `language_breakdown` in the frontend; local-LLM proposing candidate rings. 🚧 partial (slice 1 shipped)
-- **Lemmatization default-on** — `OO_FAMILY_LEMMA` (73 of top-500 would merge) — enable after a gold-set measure. 🔒 ruling-gated #6
+- **Lemmatization default-on** — `OO_FAMILY_LEMMA` (73 of top-500 would merge) — stays measure-gated on the maintainer-made gold set (re-confirmed by ruling 3a execution). 🔒
 - **Keyword-log-driven catalog pruning** as a repeatable workflow. 🛠 operational
 
 ### Backup, import / export & data-safety
 - **Backups include downloaded Wikipedia dumps** — dedup-by-checksum, additive restore must place FILE members into `wiki_dumps`. 🎨 (reverses design D3)
 - **Remove the legacy single-file backup RESTORE** once the format is fully retired (keep the additive-merge engine). 🎨
-- **Unified Import + unified Export/Backup dialogs** on the streaming-volume path — one entry each, options pop-up, live progress. 🚧 partial (design in `UNIFIED_IMPORT_EXPORT.md`)
+- **Unified Import + unified Export/Backup dialogs** on the streaming-volume path — shipped earlier; the B5 wave (⏳ #624) added job-state-as-truth polling, the paused-state label and verify/pause-resume wiring. Remaining: click-through 🛠 + key the new strings ×12. 🚧
 - **Collector write-batching** (the risky keystone-#1 refactor) — `index_article(commit=False)` + batch + per-article fallback + no-loss test. 🎨 (`COLLECTOR_WRITER_BATCHING.md`)
 
 ### Database / scaling (columnar & rollups)
@@ -166,25 +180,25 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **One recurrence model** (RULE + dated INSTANCES + `since:` origin year) · **month-span events** ("Dry January") · **full iCal import** · **saved-filter "smart calendars"** · **catalog depth flood** (elections/summits/central banks/courts/UN days) · **agenda i18n** · **temporal-map player speeds** 0.05×–16×. 🎨
 
 ### LLM / AI
-- **LLM language detection for unknown-language articles** (maintainer-directed 2026-07-10) — opt-in local-Ollama detection for the residue the offline detector leaves unknown; a third, clearly-labelled LLM-deduced provenance class (never overwrites asserted/detector channels); visible job, honest refusal on garbage answers. → Session B (brief B15). 🚧 delegated
+- **LLM language detection for unknown-language articles** — ✅ **BUILT (B15)** ⏳ #626: opt-in, detector-first, a third clearly-labelled "AI-derived · unreliable" provenance class, never overwrites the asserted/detector channels, garbage answers store nothing, visible abortable job. Remaining 🛠: browser click-through + run it on the live corpus.
 - **LLM-assisted perception** — who/where/when extraction (dates/places/orgs, no "what") as confirmable candidates in the AI layer, distinct toggleable layers. 🎨
 - **Eval-first harness** — difficulty-tiered, phenomenon-tagged, ×12 langs; precision/recall/hallucination per stratum; the gate for every perception/sentiment change. 🎨
-- **Multilingual sentiment** to replace English-only VADER (XLM-R ONNX, per-language gated) — *or* pivot to a subjectivity/loaded-language signal feeding the manipulation cards. ⬜ open
+- **Multilingual sentiment** — **DECIDED (B12, ruling 3a executed): the model path is deferred** (pyproject bans torch/onnx/transformers), pivot to a rule-based **subjectivity/loaded-language** signal feeding the manipulation cards. Build pending: license-clean per-language subjectivity lexicons. ⬜ decided, not built
 - **Offline LLM USB kit** (checksummed Ollama binary + one small model — the air-gapped path) · **hardware-tier messaging** · **live ollama.com library browse**. 🎨
 - **LLM-as-grader / attributed-claims + embedding novelty** — recorded, not approved (leaning against a composite grade). ⬜ open
 
 ### Sources, statistics & diversity
 - **`stat_indicators.yml`** curated dated series + freshness test · **more parsers** (OECD SDMX-JSON 1.0, IMF 3.0, WHO OData, FAOSTAT) · **SDMX live-verify** (networked). 🎨/🛠
 - **`ooViz` honest-chart family** (small multiples, dumbbell/slope for vintages + CIs, association scatter with no regression line, treemap, histogram/box, Sankey, availability heatmap, population pyramid, error bars) with the reject-list gate. Primitives exist, not wired to a surface. 🎨
-- **News / plural-stance source diversity** — 105 verified `enabled:false` rows filling Caribbean/Pacific/sub-Saharan/Central-Asia/MENA gaps; schema needs a `global`/`transnational` region value; dedup `statssa.gov.za`. 🎨
+- **News / plural-stance source diversity** — 105 verified `enabled:false` rows filling Caribbean/Pacific/sub-Saharan/Central-Asia/MENA gaps; dedup `statssa.gov.za`. The `global`/`transnational` region value is ✅ **BUILT** (B12 ⏳ #621: `int`/`eu` → "Global", never fabricated); populating individual International sources with `int` is the follow-up curation. 🎨
 - **De-US-centring remainder** — run the Wikidata generator for the 73 named gaps; raise the located share (≈49% of domains carry no country). 🛠
 - **Content-provenance class** — descriptive `source_type` controlled vocab + backfill (fixes newsletters mislabeled as news) → facet → reading-diet-by-type. 🎨
 - **Secondary-source `cited` provenance class — remaining slices** (background job at scale, denormalize `citing_source_id`, surface the citing trail, wire dormant `external_sources`). 🚧 partial
 - **DuckDuckGo query discovery channel** (off-by-default, per-query logging, budgeted) + Wikidata generator as a scheduled refresh. 🎨
-- **Expand commodity feeds** (rare earths, oil, gas, LNG, sand, cereals, sugar) — needs clearnet-verified robots-permitting sources. 🛠 · fix the S&P500-is-an-index reclassification. ⬜
+- **Expand commodity feeds** (oil, gas, LNG, sand, cereals, sugar) — needs clearnet-verified robots-permitting sources. 🛠 · **Rare earths: DECIDED (B12) = USGS Mineral Commodity Summaries SUPPLY data** (production/reserves/net-import-reliance, explicitly not spot prices — no free spot source exists); the stats-agency + annual-supply parser is the build. ⬜ · fix the S&P500-is-an-index reclassification. ⬜
 
 ### Manipulation cards & the civic vertical
-- **Flood/BURY card — the BURY half** (a source under-covering a topic big elsewhere; needs a real external trigger). 🎨
+- **FLOOD/BURY cards — remaining quality** — both cards exist; BURY gained same-language cohort scoping (B3 ⏳ #620). Remaining: the FLOOD open-class filler (the measured stoplist sweep, §"Keyword engine") + the full same-language *denominator* rescoping with ring-translation bridging (labelled follow-up). 🚧
 - **Event-timed-operation card** ("October surprise" = emergence + source-laundering + agenda; needs an elections roster). 🎨
 - **Elections & civic vertical** — sourced `elections` calendar (France 2027 pilot, movable-marked), curated candidate rosters with provenance, "name the shape, never prescribe". 🎨
 - **Poll analysis** — a method-audit tier stack (Tier 2 transparency checklist + verbatim question display first); no composite score, non-disclosure outranks disclosed-imperfection. 🎨
@@ -212,14 +226,15 @@ The headline revamp (full design in [`FUTURE_DEVELOPMENTS.md`](FUTURE_DEVELOPMEN
   auto-watch all 12 UI editions · Wikipedia tab → Settings · agenda ↔ wiki linking. 🎨
 
 ### UI / UX & onboarding
-- **"Database size" shows EVERYTHING** (maintainer-directed 2026-07-10) — the storage footprint everywhere it is reported covers db + wal + wiki dumps + OSM maps + staging + the Ollama model store (outside `data_dir`), itemized per component with the private-corpus vs re-downloadable distinction. Backend → Session A (A12b); display → Session B (B14). 🚧 delegated
-- **Home → dashboard / helicopter view — remaining** (top ooChart graphs, a pausable/a11y synthesized-Leads carousel, dynamic commodity-when-trending sections, most-recent-by-tag). 🚧 partial
-- **"Latest in your corpus"** recency lens with a transparent substance filter (min words + cited-sources, script-aware length, near-dup collapse; the S0 length diagnostic shipped). 🎨
-- **Clickable in-article keywords — stats hover bubble** (mention count/spread, trend rate, translation, co-occurrences; counts only, method visible). 🎨
-- **Remove the Insights search bar** once the omnibar absorbs term-exploration · **editable keybindings panel** in Settings · **guided-setup wizard remaining slices** (encryption-choice + sources-by-theme steps). ⬜
+- **"Database size" shows EVERYTHING** — ✅ **BUILT** (A12b backend ✅ + B14 display ⏳ #625): the Library + System-tab "Storage footprint" panels render the all-stores total (db/wal/wiki/OSM/staging/**Ollama store outside data_dir**) with the private-vs-re-downloadable split visible; lazy-measured + cached, never on the poll. Remaining 🛠: click-through.
+- **Home dashboard + "Latest in your corpus"** — ✅ verified SHIPPED (B8: `/api/insights/latest` + `src/analytics/latest.py` with user-set-and-seen gates, near-dup collapse, script-aware length; `#home-latest-panel` + trends + recent-by-tag). Remaining: the **synthesized-Leads carousel** (pausable/a11y — the one deferred nicety). 🚧
+- **Clickable in-article keywords — stats hover** — ✅ verified SHIPPED (B9: `keyword-stats` endpoint + reader/SPA #oo-tip hovers; mentions · spread · windowed trend rate · top co-occurrences, counts-only).
+- **Editable keybindings panel** — ✅ verified SHIPPED (B11b: Settings → Shortcuts).
+- **Remove the Insights search bar** — 🔒 gated (B11a): first verify the omnibar Enter→analysis-window fully absorbs `exploreTerm()`'s 4-endpoint view (trend + associations + context + mindmap); a browser-unverified removal risks losing a tool (the Desk lesson).
+- **Guided-setup wizard remaining slices** (encryption-choice + sources-by-theme steps). ⬜
 - **Onboarding & training** — first-run tour as dismissible Home cards + contextual "why" notes + a supervised training curriculum (in-repo, never hosted). 🎨
-- **i18n long tail** — ~105–140 remaining chrome strings + server-built Home-card **title** translation design + composite-string format support. 🚧 ongoing
-- **Human click-through of all browser-unverified UI**. 🛠
+- **i18n long tail** — the 44 new B5/B14/B15 strings are now keyed ×12 (B10, #629) ✅; remaining: the pre-existing ~105–140 chrome tail + server-built Home-card **title** translation design + composite-string format support. 🚧 ongoing
+- **Human click-through of all browser-unverified UI** — now including the whole B wave (B3/B5/B14/B15 + storage panels + backup dialogs). 🛠
 
 ### Network / transport / Tor
 - **Reliable Tor & per-source transport** — optional in-app Stem-controlled `tor` process; per-source circuit isolation by default; clearnet-for-Tor-hostile sources only as an explicit consented per-source opt-in. 🎨
@@ -245,21 +260,27 @@ anchoring), Node 0 = the maintainer's own machine. **User corpora never touch th
 
 ---
 
-## 5. Pending maintainer rulings (nothing moves until picked)
+## 5. Maintainer rulings — outcome board (reconciled 2026-07-11)
 
-> **2026-07-10 delegation ruling ("1a 2a 3a 4a"):** most of these were DELEGATED to the two
-> parallel autonomous sessions (briefs in `docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-10_*`);
-> each decision gets recorded in `CLAUDE.md` when executed.
+> The 2026-07-10 delegation ("1a 2a 3a 4a") sent most of these into the parallel A+B wave.
+> Outcomes below; each executed decision is recorded in `CLAUDE.md`.
 
-1. **zh/ja/th segmenter + ko/mr stoplist artifacts** — **DELEGATED to Session B (pick & ship**, license-clean/offline, prefer a pip extra, measured junk reduction). Was the highest-value pending ruling.
-2. **httpfs crypto-extension bundling** (per-OS) — **DELEGATED to Session A (attempt cleared incl. binaries**, sha256-pinned + registry + verify-before-LOAD; honest blocker recorded if the fetch/attestation fails). Unblocks the D1 persisted columnar store.
-3. **Rare-earths price source** — **DELEGATED to Session B: USGS supply data** (descriptive supply figures, clearly not spot prices).
-4. **`v0.2.0` tag** — **STAYS HELD** until the P0 live-corpus scale validation lands (esp. P0.4 unlock). The version+docs flip is done; the branch rename is done.
-5. **Keyword hover-stats** — **DELEGATED to Session B** (decide the counts-only stat set, record it).
-6. **Lemmatization default-on** — **STAYS measure-gated** (the gold set is corpus-specific and maintainer-made; cannot be honestly synthesized).
-7. **Retention / eviction posture** — **STAYS pending** (after the P1.5 storage-composition numbers are in).
-8. **`global` / `transnational` region value** — **DELEGATED to Session B** (implement).
-9. **Multilingual sentiment classifier vs subjectivity pivot** — **DELEGATED to Session B** under the pyproject no-torch/onnx constraint (⇒ subjectivity/loaded-language pivot or a recorded deferral).
+**Executed by the wave:**
+1. **zh/ja/th segmenter + stoplists** — ✅ **EXECUTED (B1)**: jieba/janome/pythainlp via the `[segmentation]` pip extra + ko/vi/mr (and more) stoplists vendored. 🛠 remaining: live-corpus re-index + measured junk reduction.
+5. **Keyword hover-stats** — ✅ **RESOLVED (B9)**: found already shipped with exactly the recommended counts-only set.
+8. **`global`/`transnational` region value** — ✅ **BUILT (B12** ⏳ #621): `int`/`eu` → "Global"; follow-up = curate `int` onto the International sources.
+
+**Decided, build pending:**
+3. **Rare-earths** — **USGS Mineral Commodity Summaries supply data** (not spot prices). Parser/agency build ⬜.
+9. **Multilingual sentiment** — model path **deferred** (no-torch/onnx constraint); pivot to a rule-based subjectivity/loaded-language lexicon. Lexicon sourcing ⬜.
+
+**Attempted, honestly blocked:**
+2. **httpfs crypto-extension bundling** — the fetch hit the network egress allowlist (403 on `extensions.duckdb.org`); **no checksum fabricated**, in-memory fallback stays. Needs a networked machine or an allowlist entry. 🛠 (see DB-3)
+
+**Still with the maintainer:**
+4. **`v0.2.0` tag** — HELD until the P0 live-corpus validation (all four P0 engines now shipped; the live run is the last gate). 🛠
+6. **Lemmatization default-on** — measure-gated on the maintainer-made gold set. 🛠
+7. **Retention / eviction posture** — decide after the storage-footprint numbers from the next field export are in. 🔒
 
 ---
 
