@@ -183,14 +183,16 @@ def find_flooded_topics(
 
 
 BURY_CAVEAT = (
-    "One source covered a topic FAR BELOW the corpus norm — a topic that many other "
-    "sources covered heavily. The overwhelming innocent explanation is SPECIALIZATION: a "
-    "source has a different beat, region, or language, so covering a widely-covered topic "
-    "little (or not at all) is normal and expected. This names a SHAPE — 'this source, "
-    "this broadly-covered topic, far below where the rest of the corpus sits' — never a "
-    "claim the source deliberately buried or suppressed it. Read it and judge. And note: "
-    "the absence of a flag here is NOT evidence that nothing was under-covered — this "
-    "surfaces only the sharpest gaps that survive multiple-testing correction."
+    "One source covered a topic FAR BELOW the norm of OTHER SOURCES IN ITS OWN LANGUAGE — "
+    "a topic those same-language peers covered heavily. (The comparison is language-scoped "
+    "so a source is never flagged for not covering a topic simply because it writes in a "
+    "different language.) The overwhelming innocent explanation is still SPECIALIZATION: a "
+    "source has a different beat or region, so covering a widely-covered topic little (or "
+    "not at all) is normal and expected. This names a SHAPE — 'this source, this "
+    "broadly-covered topic, far below where its same-language peers sit' — never a claim "
+    "the source deliberately buried or suppressed it. Read it and judge. And note: the "
+    "absence of a flag here is NOT evidence that nothing was under-covered — this surfaces "
+    "only the sharpest gaps that survive multiple-testing correction."
 )
 
 
@@ -295,6 +297,28 @@ def find_buried_topics(
     topic_meta = {k: (a, s) for k, a, s in big}
     big_ids = [k for k, _, _ in big]
 
+    # SAME-LANGUAGE COHORT SCOPING (field test 2026-07-08): a source is only compared
+    # against other sources for a keyword OF ITS OWN LANGUAGE. Without this, a non-English
+    # source that simply writes in its own language (covering "verkiezingen", not the
+    # English keyword "election") looked like it was "burying" every English topic — a
+    # false positive, not suppression. A pair whose source-language or keyword-language is
+    # unknown is skipped (miss over invent). (Ring translations that bridge languages —
+    # election/verkiezingen as one concept — are a labelled follow-up.)
+    from src.analytics.managed import normalize_lang
+
+    source_lang: dict[int, str] = {}
+    for i in range(0, len(cand_ids), 400):
+        for sid, lang in session.query(Source.id, Source.language).filter(
+            Source.id.in_(cand_ids[i : i + 400])
+        ):
+            source_lang[int(sid)] = normalize_lang(lang)
+    keyword_lang: dict[int, str] = {}
+    for i in range(0, len(big_ids), 400):
+        for kid, lang in session.query(Keyword.id, Keyword.language).filter(
+            Keyword.id.in_(big_ids[i : i + 400])
+        ):
+            keyword_lang[int(kid)] = normalize_lang(lang)
+
     # Per (source, topic) distinct articles (only non-zero pairs are returned; missing = 0).
     pair: dict[tuple[int, int], int] = {}
     for i in range(0, len(cand_ids), 400):  # bounded IN() under the SQLite variable limit
@@ -319,7 +343,18 @@ def find_buried_topics(
         rest_n = n_corpus - n_s
         if rest_n <= 0:
             continue
+        s_lang = source_lang.get(sid)
         for kid in big_ids:
+            # Same-language cohort: exclude a pair only when we have POSITIVE evidence the
+            # source and keyword are in DIFFERENT languages — a non-English source does not
+            # "bury" an English keyword it simply never uses (it writes its own language).
+            # When either language is unknown we cannot rule out same-language, so the pair
+            # is still compared (the pre-change behaviour); a real corpus carries languages
+            # (Source.language from the catalog, Keyword.language from the reconcile pass),
+            # so the labelled cross-language false positive is the case actually fixed.
+            kw_lang = keyword_lang.get(kid)
+            if kw_lang and s_lang and s_lang != kw_lang:
+                continue
             a_t, _s_t = topic_meta[kid]
             a_s = pair.get((sid, kid), 0)
             rest_a = a_t - a_s
@@ -367,6 +402,7 @@ def find_buried_topics(
                 "source_articles_on_topic": t["a_s"],
                 "source_total": t["n_s"],
                 "corpus_articles_on_topic": t["a_t"],
+                "cohort_language": keyword_lang.get(t["kid"]),
                 "fdr_qvalue": round(adj_q, 5) if adj_q is not None else None,
             }
         )
@@ -379,6 +415,7 @@ def find_buried_topics(
         "fdr_q": fdr_q,
         "tests": len(tests),
         "survivors": len(survivors),
+        "same_language_scoped": True,
         "method": _METHOD,
         "caveat": BURY_CAVEAT,
     }
@@ -387,10 +424,15 @@ def find_buried_topics(
 _METHOD = (
     "For every (source with enough articles, topic broad across the corpus) pair in the "
     "window: a two-proportion z-test of the source's share of the topic vs the "
-    "rest-of-corpus share (one-sided, is the source BELOW?). The whole family of pairs is "
-    "corrected with Benjamini-Hochberg FDR; a pair is surfaced only if it survives at the "
-    "FDR level AND its gap clears z <= -z_min. Distinct SOURCES measure a topic's breadth. "
-    "Reads the denormalised source_id only (no content decrypt). Counts only, no score."
+    "rest-of-corpus share (one-sided, is the source BELOW?). SAME-LANGUAGE COHORT SCOPING: "
+    "a pair whose source and keyword are KNOWN to be in different languages is excluded, so "
+    "a non-English source is never flagged for 'burying' an English keyword it simply never "
+    "uses (it writes its own language) — only under-coverage relative to same-language peers "
+    "counts (when either language is unknown the pair is still compared). The whole family "
+    "of pairs is corrected with Benjamini-Hochberg FDR; a pair is surfaced only if it "
+    "survives at the FDR level AND its gap clears z <= -z_min. Distinct SOURCES measure a "
+    "topic's breadth. Reads the denormalised source_id + the small source/keyword language "
+    "columns only (no content decrypt). Counts only, no score."
 )
 
 

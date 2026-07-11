@@ -129,6 +129,33 @@ def test_no_broad_topic_no_finding(db):
     assert "note" in out
 
 
+def test_bury_does_not_flag_a_cross_language_source(db):
+    """B3 / field test 2026-07-08: a non-English source must NOT be flagged for 'burying'
+    an English keyword it simply never uses (it writes in its own language). Same-language
+    cohort scoping excludes a pair KNOWN to be in different languages."""
+    _ART[0] = 0
+    # An English keyword covered heavily by six English sources -> broad.
+    db.add(Keyword(id=1, term="election", normalized_term="election", language="en"))
+    db.add(Keyword(id=2, term="sports", normalized_term="sports", language="en"))
+    db.add(Keyword(id=3, term="verkiezingen", normalized_term="verkiezingen", language="nl"))
+    db.commit()
+    for sid in range(1, 7):
+        db.add(Source(id=sid, name=f"en{sid}", domain=f"en{sid}.test", language="en"))
+    db.commit()
+    for sid in range(1, 7):
+        _articles_with_topic(db, sid, 20, keyword_id=1)  # en sources cover the en keyword
+    # A Dutch source, active, covers the EN keyword zero (it writes Dutch) -> would be a
+    # false "bury" of "election" WITHOUT language scoping.
+    db.add(Source(id=7, name="nl-source", domain="nl.test", language="nl"))
+    db.commit()
+    _articles_with_topic(db, 7, 30, keyword_id=3)  # covers its OWN-language topic instead
+
+    out = find_buried_topics(db)
+    flagged = {i["source"] for i in out["items"]}
+    assert "nl-source" not in flagged, "a Dutch source must not be flagged for burying an English keyword"
+    assert out.get("same_language_scoped") is True
+
+
 def test_bury_producer_emits_a_valid_no_score_card(db):
     from src.briefing.producers import buried_topic
 
