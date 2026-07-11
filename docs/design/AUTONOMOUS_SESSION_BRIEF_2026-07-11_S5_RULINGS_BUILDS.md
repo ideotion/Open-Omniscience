@@ -50,8 +50,9 @@ counts, denylist affordance (a wrong merge → a `_MISLEMMA_DENYLIST` entry the 
 can note). The default STAYS off — this is the review instrument, not the flip.
 
 ### S5.5 — Small decided items
-- **S&P 500 is an INDEX, not a commodity** — reclassify (the long-standing item; alias the
-  anchor like `#database`→`#library` so nothing breaks).
+- **S&P 500 reclassification — VERIFY-ONLY:** already done (`idx_sp500` in
+  `configs/index_feeds.yml`, the commodities board excludes `index` symbols per the recorded
+  ruling in `src/api/markets.py`). Confirm + flip the stale ROADMAP ⬜ row; build nothing.
 - **`int` country curation seam:** the "Global" region shipped (B12) but individual
   International sources still lack `country: int` — add the deterministic, hand-review-able
   candidate list (an Explore agent over the catalog for unambiguous transnational bodies —
@@ -60,11 +61,12 @@ can note). The default STAYS off — this is the review instrument, not the flip
 - **Retention decision memo check:** S3 wrote it; verify the instrumentation it asked for
   exists so the maintainer's next export carries the numbers.
 
-### S5.6 — (stretch) Content-provenance class S1
-If the queue is done, pull S6's highest-value item forward: the `source_type` controlled
-vocabulary + per-ingest-path population + deterministic backfill (fixes newsletters
-mislabeled as "news"; schema-neutral, additive-restore-safe — the design doc's
-backward-compat notes are binding).
+### S5.6 — (stretch) Secondary-source `cited` provenance slices (forward-pull from S6.1b)
+Content-provenance S1→S3 was found ALREADY SHIPPED (S6.1 verify-marks it) — the live
+forward-pull target is S6.1b: the `cited` provenance remaining slices (the background
+citing-resolve job at scale, denormalize `citing_source_id`, surface the citing trail, wire
+the dormant `external_sources`). Pull it forward only if your queue is genuinely done;
+S6.1b carries the matching "if S5 didn't take it" guard.
 
 ## Explicitly NOT yours
 Grading the gold set, fetching USGS/lexicon data, the keyword-log export (operator) ·

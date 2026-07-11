@@ -22,8 +22,14 @@ recorded in `CLAUDE.md`.
 
 - You are session N of 6. Later sessions own the later tiers — do NOT wander into their
   queues except for (a) carry-overs explicitly handed to you, or (b) a forward-pull written
-  into BOTH briefs (currently only S5.6 ↔ S6.1). If you finish early, deepen your own
+  into BOTH briefs (currently only S5.6 ↔ S6.1b). If you finish early, deepen your own
   tier's verification instead.
+- **STALENESS GUARD (program-wide, binding):** before building ANY queue item, verify it
+  against the tree (grep the named functions/endpoints/files) — briefs and the board can lag
+  merged work, and this repo's history proves it (the B-session found four "open" items
+  already built; the brief-verification pass found four more). Finding an item already
+  shipped is a RESULT: mark it verified in the ledger + flip the board, per the
+  "found already built" precedent — never rebuild, never silently skip.
 - Cut EVERY branch from a **freshly fetched** `origin/0.2`
   (`git fetch origin 0.2 && git checkout -B claude/s<N>-<slug> origin/0.2`); verify
   `git show origin/0.2:pyproject.toml` reads `0.2.0` before trusting the base. Branch

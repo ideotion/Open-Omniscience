@@ -18,12 +18,13 @@ lookarounds are binding). THE DISCIPLINE: every vocabulary/pattern gain lands in
 `datediag.py` the SAME commit; the #590 negative-space skeptic pass (month-name word-tails,
 router fallthrough, order-ambiguous forms → assert `[]`) is mandatory before push.
 
-### S4.2 — Ring-translation frontend
-Surface what the backend already computes: the cross-country ring split
-(`/api/insights/ring-countries`) as a view, and `language_breakdown` + `members` on merged
-keyword rows in the Trends/Home lists (original → translation already renders; show the
-per-language composition on demand via the #oo-tip layering). De-US-centring in action:
-a concept's coverage ACROSS languages becomes visible. ×12 keys for new chrome.
+### S4.2 — Ring-translation frontend: the Trends/Home breakdown layer (the map view is SHIPPED)
+The cross-country ring MAP + per-language breakdown already shipped in Groups (`showRingMap`,
+2026-07-03) — do not rebuild. The genuine residue: surface `language_breakdown` + `members`
+on the merged keyword rows in the **Trends + Home lists** (original → translation already
+renders; add the per-language composition on demand via the #oo-tip layering). De-US-centring
+in action: a concept's coverage ACROSS languages becomes visible where users actually read
+trends. ×12 keys for new chrome.
 
 ### S4.3 — The synthesized-Leads carousel (the last Home-dashboard piece)
 A rolling carousel of simplified Lead cards on Home: LOCAL analytic synthesis only (never
@@ -35,9 +36,11 @@ every card deep-links to its real surface.
 ### S4.4 — B11a: the Insights search-bar absorption, verified then removed
 The gate: prove the omnibar Enter→analysis-window flow fully absorbs `exploreTerm()`'s
 4-endpoint view (trend + associations + context snippets + mindmap) — write the absorption
-TEST that asserts each capability exists on the analysis window, then remove `#ins-term` +
-the Explore button (the Desk lesson: the test is what makes removal safe). If a capability
-is genuinely missing, port it first or leave the bar and record why.
+TEST that asserts each capability exists on the analysis window. Then HIDE the bar behind
+that test (make it unreachable), leaving physical deletion to a post-click-through pass —
+this is a browser-less session and the item was deferred precisely for that reason (the
+proven made-unreachable pattern). If a capability is genuinely missing, port it first or
+leave the bar and record why.
 
 ### S4.5 — i18n long tail
 `scripts/i18n_report.py --audit-chrome` → key the remaining static chrome clusters ×12
@@ -55,13 +58,15 @@ stoplist candidates automatically — propose, human judges, NEVER auto-apply. T
 the FLOOD-filler loop without hand-guessing stopwords (the ledger's no-blanket-rule
 discipline).
 
-### S4.7 — Guided-wizard remaining slices
-The two deferred steps of the first-launch wizard: the **encryption-choice step** (absorbs
-the pre-DB choice into the guided flow — encryption-by-default preserved, no-recovery
-stated honestly, length guidance; reorder never removal) and the **sources-by-theme step**
-(drive it from the catalog's real tag taxonomy + the country/language-emphasis picker;
-ends at the consented first collect — the ONE consent popup fires, the wizard never POSTs
-the network itself; test-pinned like the existing wizard invariants).
+### S4.7 — Guided-wizard remaining slice: sources-by-theme
+The encryption-choice flow is SHIPPED on `unlock.html` (language-first → create-passphrase,
+2026-06-20) and cannot architecturally live in the in-app wizard (which runs post-unlock,
+after the DB exists) — do not attempt to move it. The genuine remainder: the
+**sources-by-theme step** (drive it from the catalog's real tag taxonomy + the
+country/language-emphasis picker; ends at the consented first collect — the ONE consent
+popup fires, the wizard never POSTs the network itself; test-pinned like the existing
+wizard invariants), plus **consolidating the now-redundant wizard language step** (the
+unlock page already handles language-first).
 
 ### S4.8 — (stretch) BURY denominator rescoping
 The labelled follow-up from #620: full same-language denominator rescoping with

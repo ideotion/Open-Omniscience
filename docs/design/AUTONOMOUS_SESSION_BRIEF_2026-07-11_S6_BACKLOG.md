@@ -10,49 +10,64 @@ build it, not even foundations.** Read `SESSIONS_2026-07-11_CONVENTIONS.md` §0 
 
 ## Queue (top-down — get as deep as verification-quality allows)
 
-### S6.1 — Content-provenance class S1→S3 (if S5 didn't take S1)
-The cleanest metadata the app can add — an ASSERTED channel fact, no classifier: the
-`source_type` controlled vocabulary + per-ingest-path population + deterministic backfill
-(fixes newsletters mislabeled "news"), → the facet surface, → reading-diet-BY-TYPE
-(extend `analytics/concentration.py`). Descriptive, never a credibility score. The design
-doc's backward-compat verification (additive-restore carries `source_type`; staged-upgrade
-migrates before merge) is binding.
+**FIRST ACT: re-derive this queue against the tree** (the conventions' staleness guard).
+The verification pass already found the 2026-07-02/03 wave shipped several rows this tier's
+board still showed open — assume more of the same and verify EVERY item before building.
 
-### S6.1b — Secondary-source `cited` provenance: the remaining slices
+### S6.1 — Content-provenance class: VERIFY-AND-MARK (found already shipped end-to-end)
+Tree evidence: ingestion stamps `source_type` per channel (`src/api/ingestion.py:178–197`,
+incl. the newsletter backfill), the facet endpoint exists (`insights_source_types`,
+`src/api/insights.py`), and reading-diet-by-channel is in `analytics/concentration.py`.
+Your job: verify S1→S3 against the design doc's acceptance (incl. the additive-restore
+carries-`source_type` check), mark the board + ledger per the already-built precedent, and
+ship ONLY genuine residue found on inspection.
+
+### S6.1b — Secondary-source `cited` provenance: the remaining slices (if S5 didn't take it)
 The half-shipped sibling of S6.1 (slice 1 landed): the background job that resolves citing
 relationships at corpus scale, denormalize `citing_source_id`, surface the citing trail in
 the reader/analysis ("the sources' sources"), and wire the dormant `external_sources`
 resolution. Deterministic, never fuzzy; the anti-false-triangulation framing (shared origin
 ≠ independent confirmation) travels on every surface.
 
-### S6.2 — Backup completeness: FILE members (wiki dumps / OSM / models) + retire the legacy restore
-The long-ruled reversal of design D3: backups may carry the big public blobs so a restore
-never re-downloads tens of GB over Tor.
-- Additive-restore FILE placement: manifest-listed file members placed into
-  `wiki_dumps/`/`osm_regions/`/the model store — bit-identical dedup by checksum, NEVER
-  overwrite a differing local file, skip non-`done` downloads by construction, opt-in per
-  category (small backups stay small), traversal-guarded per the ZETA lessons.
-- Then remove the LEGACY single-file RESTORE path (endpoints + `_MAX_RESTORE_BYTES` + the
-  UI remnant), absorption-test-gated — the volumes/folder paths must demonstrably cover
-  every restore need first. Data-safety-critical: full skeptic matrix before push.
+### S6.2 — Backup completeness: FILE members in the SIGNED VOLUME ARTIFACT + a survivable legacy path
+Scope precision (the folder engine ALREADY exists — `src/backup/folder_backup.py` carries
+wiki/OSM/models with checksum dedup, additive never-overwrite restore, per-category opt-in;
+do NOT duplicate it): **the genuinely-open delta is file members inside the signed encrypted
+VOLUME artifact's manifest**, so ONE portable artifact can carry the blobs.
+- Additive-restore FILE placement from the volume manifest into `wiki_dumps/`/`osm_regions/`/
+  the model store — bit-identical dedup by checksum, NEVER overwrite a differing local file,
+  skip non-`done` downloads by construction, opt-in per category. The ZETA name→path
+  traversal enumeration applies to every NEW manifest field, on BOTH verify and restore.
+- **Legacy single-file restore — a READER must survive.** The volumes/folder paths can never
+  DECODE an old-format artifact, so removing the legacy path outright would strand any user
+  whose only backup is old-format — permanent data loss of exactly the kind this program
+  exists to prevent. You may consolidate/hide the legacy UI surface behind the unified
+  Import dialog, but the old-format → additive-merge READER stays; final retirement is
+  GATED on the maintainer's explicit "format fully retired in the field" confirmation —
+  a condition no offline session can verify. Data-safety-critical: full skeptic matrix
+  before push.
 
-### S6.3 — Collector write-batching (the keystone refactor, live-justified)
-Per `COLLECTOR_WRITER_BATCHING.md` + the field's 847,351 s cumulative gate-wait: restructure
-the collector's store path onto `index_article(commit=False)` batches with the proven
-rollback-then-redo-per-article fallback. NO-LOSS is the bar: the batched==per-article parity
-test, the contention race test, and the gate-hold probe all mandatory. S2's F13 fix
-(extract-outside-gate) composes with this — verify both together.
+### S6.3 — Collector write-batching: VERIFY-AND-MARK (found already shipped as P1.8)
+Tree evidence: `src/ingest/batch.py` implements exactly the `COLLECTOR_WRITER_BATCHING.md`
+design (its docstring cites the same 847,351 s figure; `commit=False`, redo-per-article
+fallback, gate-never-across-fetch; `tests/test_collect_batching.py`). Your job: verify the
+no-loss battery is complete, verify composition with whatever S2's A9 reproducer pass
+concluded about F13, mark the board + ledger, and fix the stale ROADMAP §4 "write-batching
+🎨" row.
 
-### S6.4 — Convergence & attention: the new Home producers + the local alert layer
-Pure local analytics, high daily value:
-- Producers: **"Converging now"** (fresh space-time convergences) · **"On the horizon"**
-  (agenda events ∩ the user's watched/trending keywords) · **"Through time"** (anniversary
-  lens: today vs the corpus's past years) · **"Your watch-rules fired"** (the watch engine
-  already runs — surface it). Each a real producer with `_trigger`, no scores, fail-safe
-  registration, honest empty states.
-- The severity-tiered LOCAL alert layer: info/watch/urgent from hazard severity + tag-family
-  spikes + watch matches; urgent = a Home banner; thresholds user-owned + explained;
-  local-only, no notifications/network/telemetry (the ruled boundary).
+### S6.4 — Convergence & attention: the TWO missing producers + a capped alert extension
+Tree evidence trims this: `space_time_convergence` and `watch_matches` producers ALREADY
+exist and register ("Converging now" / "watch-rules fired" ≈ shipped), and the
+severity-tiered alert layer is SHIPPED (`src/analytics/alerts.py` + the Home strip +
+`tests/test_alert_layer.py`). The real work:
+- Build the TWO genuinely-missing producers: **"On the horizon"** (agenda events ∩ the
+  user's watched/trending keywords) and **"Through time"** (anniversary lens: today vs the
+  corpus's past years). Real producers with `_trigger`, no scores, fail-safe registration,
+  honest empty states.
+- Alert layer: EXTEND-only, and the shipped invariant is BINDING — **"urgent" is ONLY a
+  provider-declared red hazard alert; a count/spike is NEVER promoted into it** (the ruled
+  no-escalation boundary: watch matches and tag-family spikes cap at watch/info). Any change
+  to that boundary is a maintainer ruling, not yours.
 
 ### S6.5 — The LLM-perception EVAL HARNESS (the gate for the whole perception track)
 Build the harness BEFORE any extraction feature (the ruled eval-first order): a
@@ -69,9 +84,10 @@ The ONE recurrence model (RULE + dated INSTANCES + `since:` origin year — fixe
 year-pinned-import class) · **deduced events as FIRST-CLASS agenda entries** with keyword
 links (the backend `/api/events/deduced` exists; parity with the moon/season treatment;
 "deduced · never confirmed" pill stays visible) · month-span events ("Dry January" banners)
-· full iCal import (idempotent per source,uid) · saved-filter smart calendars (subscribe to
-a tag query) · i18n for the NEW agenda surfaces this session builds (S4 keys the
-pre-existing tail). The eclipse canon + world religious calendars need SOURCED data →
+· EXTEND the existing VEVENT/uid import (`src/events/feeds.py` already parses + dedups per
+source,uid — the new parts are RRULE recurrence expansion, month-spans, `since:` origins;
+don't rebuild the parser) · saved-filter smart calendars (subscribe to a tag query) · i18n
+for the NEW agenda surfaces this session builds (S4 keys the pre-existing tail). The eclipse canon + world religious calendars need SOURCED data →
 operator list (never fabricate a date; the Meeus-computed moons/seasons pattern is the bar).
 
 ### S6.7 — Maps & task-manager comfort (small, real)
@@ -86,9 +102,12 @@ onboarding track's first slice): teaches airplane/consent/corpus concepts in the
 honest voice; ×12; never blocks; never auto-fires network.
 
 ### S6.9 — (stretch) Scenario cards with honest local triggers
-If, and only if, everything above is verified: pick from disputed-chronology detector /
-story-propagation tracer (both computable from existing lineage/date substrate with honest
-innocent-explanations). Skip the ones needing external baselines.
+Disputed-chronology, story-propagation AND supply-chain-ripple already shipped (2026-07-03,
+`tests/test_scenario_cards.py`) — do not rebuild. If, and only if, everything above is
+verified: pick from the genuinely-remaining set — **silent-disasters** / **law-takes-effect
+watch** (both computable from existing hazard/law/date substrate with honest
+innocent-explanations). Skip news-desert-atlas and election-window-desk (external baselines
+/ roster data — operator-gated).
 
 ## Explicitly NOT yours — name these in the program closeout's next-cycle list
 Versioned sources (gated — ruling #3) · elections roster/calendar data, eclipse data,
