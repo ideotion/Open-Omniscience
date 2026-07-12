@@ -2888,3 +2888,59 @@ This session accumulated ~**2,192** `GET /api/scheduler/activity` + **1,525** `/
 **699** `/api/scheduler/status` requests — thousands of polls contending with the single encrypted
 connection (a long-standing finding). → consolidate into one status poll / SSE push + adaptive backoff
 when idle (the airplane/scheduler responses already push state to lean on).
+
+## 2026-07-12 planning program — storage 5 TB v2 + the optimization designs (maintainer↔Fable-5 planning session; DESIGN-ONLY)
+
+A dedicated planning-only dialogue (held while the S1–S6 autonomous program ran; the
+maintainer's instruction was "don't code — only planning") produced a coherent optimization
+program. **The full designs of record live in two docs — read those, not this summary, before
+building:**
+
+- **[`docs/design/STORAGE_5TB_PLAN.md`](design/STORAGE_5TB_PLAN.md)** — the storage plan of
+  record for 5–50 TB encrypted corpora, reconciling the original A→B→C sketch with the
+  internet-connected research report saved VERBATIM at
+  [`docs/research/storage/STORAGE_5TB_RESEARCH_2026-07-12.md`](research/storage/STORAGE_5TB_RESEARCH_2026-07-12.md)
+  and with the tree (S2.6's `5TB_ARCHITECTURE_REVIEW.md`, S3.4's `DB10_RETENTION_VACUUM_MEMO.md`).
+  Headlines: the corpus/index ATTACH split is DEAD (WAL forfeits cross-file atomicity — the
+  durable file stays ONE file; only disposable/immutable pieces split out); the split-out FTS
+  index must be CONTENTLESS-DELETE (external-content cannot cross ATTACH; verified snippet-safe
+  for the article index); text offload (Phase C) is MANDATORY (~17.5 TB default-page ceiling)
+  and re-primitived as a PACKED (~8–16 MB containers), KEYED-addressed (HMAC under a
+  passphrase-derived key — the confirmation-attack fix), OOENC2-encrypted, per-source-zstd
+  (versioned encrypted dictionary registry) content store with blob-first writes + mark-and-sweep
+  GC; FTS HASH-SHARDING is CORE design (time-neutral, honors cross-time recall), prototyped at
+  50–100 M synthetic docs BEFORE commitment; a documented KDF hierarchy derives every crypto
+  domain from the ONE passphrase. Empirical overrides recorded: DuckDB's "native encryption"
+  stays refuted-for-writes per our P2.4 test (the httpfs gate stays); OOENC2 replaces age for
+  packs (age = fallback). Watch list: sqlite3mc (ChaCha20, no-AES-NI laptops — benchmark-only),
+  libSQL (wait for stable), wangfenjin/simple as an FTS CJK tokenizer. Six maintainer rulings
+  tabled in the plan §8.
+- **[`docs/design/PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md`](design/PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md)**
+  — everything else, each section a design of record: §1 the multi-keyword **Conjunction Lens**
+  (corpus algebra over N keywords feeding the analysis window + conditional trends / vocabulary
+  contrasts / silence lens / lead-lag, three cost tiers); §2 **Leads 2.0** (evidence chips,
+  transparent lexicographic ordering + user sort, user-owned major-lead floors — default n≥50 ∧
+  ≥5 sources, lifecycle deltas, story clustering, a Settings → Leads subtab); §3 **keyword
+  fingerprints** (the same-keyword-SKELETON echo tier: stored exact fingerprint + MinHash over
+  keyword-ids + ordered skeletons via first_offset, a skeleton_echo card, ring-bridged
+  cross-language phase 2); §4 **search-at-scale instrumentation FIRST** (per-search timing
+  breakdown before any optimization — "the logs will tell you the honest truth"); §5 **Tor
+  throughput** (token-bucket bandwidth ladder — ordering never exclusion; segmented HTTP-Range
+  over isolated circuits; measured mirrors); §6 the **three-tier UI verification model + the
+  AppVM recursive improvement environment** (maintainer: "we should go for it") with its four
+  BINDING safety lines (synthetic-encrypted corpus only; the REAL corpus never enters an agent
+  session; app stopped across branch switches; airplane default) and the fork-3 amendment
+  ("Gecko-verified (VM) · awaiting human UX pass"); §7 **power profiles** (Low/Optimized/Max,
+  user-activated, a published transparent knob table, suggest-never-silently-switch); §8 the
+  **LLM keyword triage** design (head-first ~100–200 K keywords, constrained echo-validated
+  verdicts, JSONL export-only — never the trusted index, canaries, the
+  ai-proposed·claude-verified·maintainer-merged provenance chain) + the **SEVEN-model bench**
+  (frozen stratified ~400–500-keyword batch, ~50 maintainer-graded anchors, Ollama timing
+  fields passed through verbatim, the ETA formula, tag+digest verification — the bench refuses
+  uninstalled tags, the translategemma ring-translation side-bench); §9 the recommended
+  adoption sequence.
+
+Workflow rulings recorded the same day: all coding via Claude Code CLI (Opus 4.8, max effort);
+the web Fable-5 instance does planning/design and writes the briefs/kickoff prompts. Everything
+above is gated behind the S1–S6 program's completion and the STALENESS GUARD (verify against
+the tree before building).

@@ -74,3 +74,15 @@ statistics, data-viz)”** in [`docs/FUTURE_DEVELOPMENTS.md`](../FUTURE_DEVELOPM
   sub-Saharan Africa, Central Asia, MENA, S/SE Asia), every row `enabled: false` for
   operator review, in managed languages only. This is the **de-US-centring / source
   diversity** thread, distinct from the statistics threads above.
+
+### `storage/`
+- `STORAGE_5TB_RESEARCH_2026-07-12.md` — the **>5 TB encrypted local-corpus storage** research
+  & critical review (internet-connected session, prompt authored by the 2026-07-12 planning
+  session; stored verbatim). Primary-sourced findings: WAL forfeits cross-file ATTACH
+  atomicity; FTS5 external-content cannot cross ATTACH; the ~17.5 TB default-page ceiling;
+  FTS5 beyond ~15 M docs is undocumented territory; the packed/keyed content-store pattern
+  (restic/Perkeep/Borg) + the plaintext-hash confirmation-attack fix; the sqlite3mc/libSQL/
+  DuckDB steelman; the negative result (no project satisfies {local-first, multi-TB,
+  encrypted, FTS} at once). **Verify-before-trust applies** — this repo's reconciliation,
+  including where OUR empirical record OVERRIDES the report (DuckDB encryption, P2.4), is
+  `docs/design/STORAGE_5TB_PLAN.md`; act on the plan, not the report.
