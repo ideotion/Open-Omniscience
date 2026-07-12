@@ -2520,6 +2520,158 @@ def supply_chain_ripple(session) -> list[Card]:
     return cards
 
 
+# --------------------------------------------------------------------------- #
+#  S6.4 — the two attention producers the board was missing.
+# --------------------------------------------------------------------------- #
+def on_the_horizon(session, *, today: "date | None" = None, events=None) -> list[Card]:
+    """Upcoming agenda dates that touch a topic currently MOVING in the corpus — a heads-up,
+    never a forecast. An agenda event (scheduled or deduced) whose title/tags contain a
+    currently-trending keyword. Counts only, no score; the link is lexical (the keyword
+    appears in the event), never causal. Bucket ``watch`` — NEVER an urgent alert.
+
+    ``today`` / ``events`` are injectable for deterministic tests; by default it reads the
+    real agenda catalog for today."""
+    from datetime import date, timedelta
+
+    from src.analytics import queries as q
+    from src.events import catalog
+
+    today = today or date.today()
+    horizon = (today + timedelta(days=45)).isoformat()
+    all_events = catalog.agenda(today=today) if events is None else events
+    events = [
+        e
+        for e in all_events
+        if e.get("next_occurrence") and e["next_occurrence"] <= horizon
+    ]
+    if not events:
+        return []
+    terms = {
+        t["term"].lower(): t
+        for t in q.trending(session, limit=30).get("terms", [])
+        if len(t.get("term", "")) >= 4
+    }
+    if not terms:
+        return []
+    cards: list[Card] = []
+    seen: set[str] = set()
+    for e in events:
+        hay = ((e.get("title") or "") + " " + " ".join(e.get("tags") or [])).lower()
+        hit = next((t for term_l, t in terms.items() if term_l in hay), None)
+        if hit is None:
+            continue
+        key = (e.get("title") or "")[:80]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        days = (date.fromisoformat(e["next_occurrence"]) - today).days
+        cards.append(
+            Card(
+                type="on_the_horizon",
+                title=f"On the horizon: {e['title']}",
+                summary=(
+                    f"“{hit['term']}” — moving in your corpus now — has an agenda date on "
+                    f"{e['next_occurrence']} ({days} days away): {e['title']}."
+                ),
+                bucket="watch",
+                signal={
+                    "metric": "days_until",
+                    "value": days,
+                    "term": hit["term"],
+                    "recent": hit.get("recent"),
+                },
+                trigger=_trigger(
+                    "An upcoming date in your agenda touches a topic that is currently moving "
+                    "in the articles you collected — a prompt to prepare, never a prediction "
+                    "that anything will happen.",
+                    [
+                        ("Event date", e["next_occurrence"]),
+                        ("Days away", str(days)),
+                        ("Matched trending term", f"“{hit['term']}”"),
+                    ],
+                ),
+                method=(
+                    "An agenda event whose title/tags contain a currently-trending corpus "
+                    "keyword (a lexical match). Counts only, no score."
+                ),
+                caveat=(
+                    "An agenda date is scheduled or deduced, never a forecast; the link is "
+                    "that the keyword appears in the event, not that one causes the other."
+                ),
+                n=len(events),
+                key=hit.get("normalized") or hit["term"],
+            )
+        )
+        if len(cards) >= 4:
+            break
+    return cards
+
+
+def through_time(session, *, today: "date | None" = None) -> list[Card]:
+    """An anniversary LENS: articles the corpus holds that were published on TODAY's calendar
+    date in earlier years — a way to revisit how a day was covered over time. Counts only, no
+    score; cross-time recall is SACRED, so this is a lens, NEVER a reweighting of the corpus
+    toward the past. A shared calendar date is a coincidence, not a connection. ``today`` is
+    injectable for deterministic tests."""
+    from datetime import date
+
+    from sqlalchemy import func
+
+    today = today or date.today()
+    md = f"{today.month:02d}-{today.day:02d}"
+    # A background-refresh producer (not a hot request path): the month-day match is a
+    # strftime scan. Bounded by the limit; past years only (never the current year).
+    rows = (
+        session.query(Article, Source.name)
+        .outerjoin(Source, Source.id == Article.source_id)
+        .filter(Article.published_at.isnot(None))
+        .filter(func.strftime("%m-%d", Article.published_at) == md)
+        .filter(func.strftime("%Y", Article.published_at) < str(today.year))
+        .order_by(Article.published_at.desc())
+        .limit(40)
+        .all()
+    )
+    if len(rows) < 3:  # honest floor — too few for an anniversary lens
+        return []
+    years = sorted({a.published_at.year for a, _ in rows}, reverse=True)
+    ids = [a.id for a, _ in rows]
+    return [
+        Card(
+            type="through_time",
+            title="Through time: this day in past years",
+            summary=(
+                f"{len(rows)} articles in your corpus were published on {today.strftime('%B')} "
+                f"{today.day} in earlier years ({years[-1]}–{years[0]})."
+            ),
+            bucket="context",
+            signal={"metric": "articles_on_this_day", "value": len(rows), "years": years},
+            article_ids=ids,
+            trigger=_trigger(
+                "Articles you collected that were published on today's calendar date in "
+                "earlier years — a way to revisit how a day was covered. A calendar "
+                "coincidence, never a claim the stories are related.",
+                [
+                    ("Today", today.isoformat()),
+                    ("Matching articles", str(len(rows))),
+                    ("Years spanned", f"{years[-1]}–{years[0]}"),
+                ],
+            ),
+            method=(
+                "Articles whose publication date falls on today's month-and-day in a prior "
+                "year. Counts only, no score."
+            ),
+            caveat=(
+                "Publication dates can be imprecise or missing, and a shared calendar date is "
+                "a coincidence, not a connection. Cross-time recall is sacred: this is a lens, "
+                "never a reweighting."
+            ),
+            n=len(rows),
+            key=md,
+            evidence=_evidence_from_articles(rows),
+        )
+    ]
+
+
 _DEFAULT_PRODUCERS = (
     ("rising_now", rising_now),
     ("framing_split", framing_split),
@@ -2555,6 +2707,10 @@ _DEFAULT_PRODUCERS = (
     ("disputed_chronology", disputed_chronology),
     ("story_propagation", story_propagation),
     ("supply_chain_ripple", supply_chain_ripple),
+    # S6.4 — attention producers (registered last, fail-safe): a heads-up + an anniversary
+    # lens. Buckets watch/context; NEVER promoted into an urgent alert (the ruled boundary).
+    ("on_the_horizon", on_the_horizon),
+    ("through_time", through_time),
 )
 
 
