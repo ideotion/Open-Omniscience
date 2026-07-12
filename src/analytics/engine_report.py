@@ -251,6 +251,87 @@ def _lemma_preview(rows: list[tuple]) -> dict:
     }
 
 
+def _generic_terms(session: Session, *, top_per_lang: int = 15, cap: int = 40000) -> dict:
+    """OPEN-CLASS garbage surfacing — the in-app analog of ``scripts/analyze_keyword_log.py
+    --generic-terms``: high-document-frequency single-word TERMS that survive the current
+    stoplist (ubiquitous adjectives / common nouns / generic verbs — system, global, foto,
+    nieuws — that no function-word list catches).
+
+    POS-free, so DOCUMENT FREQUENCY is the only honest signal: a word in a large share of a
+    language's articles is EITHER boilerplate OR a genuinely dominant topic (health/policy are
+    real topics; system/global are not). With no POS tagger we CANNOT tell them apart, so every
+    row is a REVIEW CANDIDATE the human dispositions — never a verdict, NEVER auto-applied (the
+    no-blanket-rule discipline; the innocent 'a dominant topic looks identical' explanation
+    rides with it). Folding it into the routine diagnostics export hands the maintainer the
+    open-class stoplist worklist automatically. Excludes entities/acronyms, ring members, and
+    already-stoplisted words (weekdays are already in the stoplist); a word carrying a baseline
+    TAG is FLAGGED (a known topic, so almost certainly not garbage). ``df_ratio`` = the term's
+    article spread vs the most-ubiquitous term in its language (self-normalising; ~1.0 = as
+    common as the commonest word). Bounded, read-only, no score."""
+    from src.analytics.equivalence import is_ring_term
+    from src.analytics.extract import global_stopwords
+
+    stop = global_stopwords()
+    rows = (
+        session.query(
+            Keyword.id, Keyword.normalized_term, Keyword.term,
+            Keyword.language, Keyword.article_count, Keyword.mention_count,
+        )
+        .filter(
+            Keyword.is_entity.is_(False),
+            Keyword.is_ngram.is_(False),
+            Keyword.article_count > 1,
+        )
+        .order_by(Keyword.article_count.desc())
+        .limit(cap)
+        .all()
+    )
+    by_lang: dict[str, list[dict]] = {}
+    ids: list[int] = []
+    for kid, norm, term, lang, arts, ments in rows:
+        n = norm or ""
+        if not n or " " in n:  # single words only (n-gram boilerplate is a separate class)
+            continue
+        if n in stop or is_ring_term(n) or _is_acronym(n) or _is_acronym(term or ""):
+            continue  # already caught / a ring concept / an acronym — not open-class garbage
+        by_lang.setdefault((lang or "?"), []).append(
+            {"id": int(kid), "term": term or n, "normalized": n,
+             "articles": int(arts or 0), "mentions": int(ments or 0)}
+        )
+        ids.append(int(kid))
+
+    tagged: set[int] = set()
+    for i in range(0, len(ids), 900):  # bounded IN() (SQLite variable limit)
+        chunk = ids[i : i + 900]
+        tagged.update(
+            int(t) for (t,) in session.query(KeywordTag.keyword_id)
+            .filter(KeywordTag.keyword_id.in_(chunk)).distinct()
+        )
+
+    out: dict[str, list[dict]] = {}
+    total = 0
+    for lg, items in by_lang.items():
+        lang_max = max((it["articles"] for it in items), default=1) or 1
+        for it in items:
+            it["df_ratio"] = round(it["articles"] / lang_max, 3)
+            it["tagged"] = it.pop("id") in tagged  # a baseline tag => a known topic, likely NOT garbage
+        items.sort(key=lambda x: -x["articles"])
+        out[lg] = items[: max(top_per_lang, 0)]
+        total += len(out[lg])
+    return {
+        "method": (
+            "High-document-frequency single-word TERMS surviving the stoplist, per language, "
+            "ranked by article spread (df_ratio, self-normalised). REVIEW candidates for the "
+            "open-class stoplist — a dual-use call the human makes (health/policy stay; "
+            "system/global go); never auto-applied, never a verdict. A tagged term is a known "
+            "topic (flagged). No score."
+        ),
+        "top_per_language": top_per_lang,
+        "candidate_terms": total,
+        "by_language": out,
+    }
+
+
 def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles: int = 25) -> dict:
     """Compute the efficacy + performance report (bounded, read-only, no score)."""
     from src.analytics.equivalence import is_ring_term, load_rings
@@ -344,6 +425,7 @@ def keyword_engine_report(session: Session, *, top_n: int = 500, sample_articles
             "languages": languages,
         },
         "extraction_noise": _extraction_noise(session),
+        "generic_terms": _generic_terms(session),
         "curation": {
             "rings": rings_total,
             "family_overrides": int(session.query(func.count(KeywordFamilyOverride.id)).scalar() or 0),
