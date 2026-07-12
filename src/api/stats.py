@@ -271,6 +271,21 @@ def figures(
         )
 
 
+@router.get("/minerals-supply")
+def minerals_supply() -> dict:
+    """USGS Mineral Commodity Summaries SUPPLY data grouped by commodity → measure.
+
+    The honest surface for minerals with no free spot-price source (rare earths, B12):
+    production / reserves / net-import-reliance, NEVER prices. Empty until the operator
+    runs the USGS MCS fetch — the response says so loudly (``available: false`` + reason).
+    """
+    from src.database.session import session_scope
+    from src.stats.store import minerals_supply_summary
+
+    with session_scope() as db:
+        return minerals_supply_summary(db)
+
+
 @router.get("/figures/vintages")
 def figure_vintages(
     agency: str = Query(...), series_id: str = Query(...),

@@ -114,6 +114,18 @@ artifacts:
     freshness: {max_age_months: 24}
     last_verified: "2026-07-10"
 
+  - id: subjectivity-lexicons
+    title: Subjectivity / loaded-language seed lexicons
+    kind: dated-data
+    description: Vendored per-language loaded/subjective-marker SEED lexicons (configs/subjectivity/*.txt) feeding the rule-based subjectivity engine (S5.2). Modest seeds across three scripts (en Latin / ru Cyrillic / ar Arabic), flagged for native review — NOT a lexicon of record. A language with no lexicon is declared unmeasured (honest gap), never scored at 0.
+    upstream: none — hand-authored seeds; the vetted license-clean lexicon of record is an operator sourcing/vetting step (per-language native review)
+    check_upstream: "operator sources + vets license-clean subjectivity/loaded-language lexicons per language"
+    license: CC0-1.0 (original hand-authored seeds)
+    pin: {file: src/analytics/subjectivity.py, const: SUBJECTIVITY_AS_OF}
+    refresh: "replace/expand configs/subjectivity/<lang>.txt with the vetted lists; bump SUBJECTIVITY_AS_OF"
+    freshness: {max_age_months: 24}
+    last_verified: "2026-07-12"
+
   - id: stats-api-shapes
     title: Official-statistics API shapes
     kind: dated-data

@@ -5031,3 +5031,86 @@ def test_guided_wizard_sources_by_theme_step():
     assert "on.length === 0 || on.length === all.length" in ap and "? [] :" in ap
     # the ONLY network path stays the finish step's consented go-online (unchanged)
     assert "toggleNetwork()" in app
+
+
+def test_usgs_minerals_supply_surface_is_supply_not_prices():
+    """S5.1: the USGS Mineral Commodity Summaries SUPPLY surface (rare-earths ruling B12).
+    'supply, never prices' is enforced by construction (a price/unit-value/currency-unit row
+    is refused in the parser), the agency + endpoint + a conservative Markets panel exist, and
+    the panel degrades LOUDLY when no data is stored yet (the operator-fetch empty state)."""
+    usgs = (_SRC / "stats" / "usgs.py").read_text(encoding="utf-8")
+    assert "def parse_mcs_csv(" in usgs and 'AGENCY = "us-usgs"' in usgs
+    assert "_SUPPLY_MEASURES" in usgs and "_is_price_text" in usgs, "the price-refusal guards"
+    assert "import requests" not in usgs and "import httpx" not in usgs and "import socket" not in usgs, (
+        "the parser must be network-free"
+    )
+    agencies = (_SRC / "stats" / "agencies.py").read_text(encoding="utf-8")
+    assert '"us-usgs"' in agencies and "USGS" in agencies
+    store = (_SRC / "stats" / "store.py").read_text(encoding="utf-8")
+    assert "def minerals_supply_summary(" in store and '"available"' in store
+    api = (_SRC / "api" / "stats.py").read_text(encoding="utf-8")
+    assert '"/minerals-supply"' in api
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    ms = app[app.index("async function loadMineralsSupply(") : app.index("async function loadMineralsSupply(") + 1400]
+    assert "/api/stats/minerals-supply" in ms and "d.available" in ms and "d.reason" in ms
+    assert "supply data, not prices" in ms.lower()
+
+
+def test_subjectivity_engine_is_multilingual_deduced_and_no_score():
+    """S5.2: the rule-based subjectivity/loaded-language engine — multilingual via vendored
+    lexicon FILES (dated + registered), descriptive components + spans (never a composite
+    score), an HONEST per-language gap (available:false, never a fabricated 0). It FEEDS the
+    manipulation card (secondary annotation, never a standalone Lead) and a DEDUCED per-article
+    surface (three-class provenance). VADER (valence) is deliberately NOT reused."""
+    sub = (_SRC / "analytics" / "subjectivity.py").read_text(encoding="utf-8")
+    assert "def load_lexicon(" in sub and "def subjectivity(" in sub
+    assert "SUBJECTIVITY_AS_OF" in sub, "dated (registered in external_artifacts.yml)"
+    assert '"available": False' in sub and '"spans"' in sub, "honest gap + spans, no score"
+    assert "import vader" not in sub.lower(), "VADER valence is not subjectivity; not reused"
+    # seed lexicons across three scripts exist
+    base = _SRC.parent / "configs" / "subjectivity"
+    assert (base / "en.txt").is_file() and (base / "ru.txt").is_file() and (base / "ar.txt").is_file()
+    # registered (the *_AS_OF protocol guard)
+    reg = (_SRC.parent / "configs" / "external_artifacts.yml").read_text(encoding="utf-8")
+    assert "subjectivity-lexicons" in reg and "SUBJECTIVITY_AS_OF" in reg
+    # feeds the manipulation card (secondary annotation)
+    hb = (_SRC / "analytics" / "headline_body.py").read_text(encoding="utf-8")
+    assert "import subjectivity" in hb and '"subjectivity": subjectivity(' in hb
+    # the DEDUCED per-article surface
+    ins = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert '"/subjectivity"' in ins and '"provenance": "deduced"' in ins
+
+
+def test_ir_gold_set_builder_writes_validated_gold_and_closes_the_loop():
+    """S5.3: the IR gold-set BUILDER makes the maintainer's gold set trivial to produce —
+    samples REAL corpus queries (top keywords; search history is not stored, so nothing is
+    invented), grades 0/1/2 with keyboard speed, and writes the EXACT ir_eval gold-set JSON
+    VALIDATED by round-trip (an invalid set never lands). Closes the measure-before-trust loop
+    for OO_FAMILY_LEMMA + the BM25F default (the run endpoint already exists)."""
+    gb = (_SRC / "analytics" / "gold_builder.py").read_text(encoding="utf-8")
+    assert "def sample_queries(" in gb and "def build_and_save_gold_set(" in gb and "def coverage(" in gb
+    assert "load_gold_set" in gb and "os.replace(" in gb, "validated round-trip + atomic swap"
+    assert "top_terms" in gb and "search history is not stored" in gb, "real queries, never invented"
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '"/gold-builder/sample"' in diag and '"/gold-builder/save"' in diag
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function goldBuilderLoad(" in app and "function goldBuilderSave(" in app
+    assert "/api/diagnostics/gold-builder/sample" in app and "/api/diagnostics/gold-builder/save" in app
+    assert "function goldBuilderKey(" in app and 'ev.key === "0"' in app, "keyboard-speed grading"
+    assert "_gbUpdateCoverage(" in app, "the coverage meter"
+
+
+def test_lemma_preview_is_surfaced_in_the_diagnostics_panel():
+    """S5.4: the lemma-conflation preview (what OO_FAMILY_LEMMA would merge) is now VISIBLE in
+    the Diagnostics panel next to the gold-set builder — it was only reachable by downloading
+    the engine-report JSON. A focused endpoint + a render showing candidate groups + would-merge
+    counts + the _MISLEMMA_DENYLIST affordance. The default STAYS off (reviews, never flips)."""
+    er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
+    assert "def lemma_preview_report(" in er, "the focused (no full-report) preview function"
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '"/lemma-preview"' in diag
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    lp = app[app.index("async function loadLemmaPreview(") : app.index("async function loadLemmaPreview(") + 1600]
+    assert "/api/diagnostics/lemma-preview" in lp and "_MISLEMMA_DENYLIST" in lp
+    assert "candidate_groups" in lp and "keywords_that_would_merge" in lp
+    assert 'id="lemma-preview-body"' in (_SRC / "static" / "index.html").read_text(encoding="utf-8")

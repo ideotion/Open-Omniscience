@@ -251,6 +251,30 @@ def _lemma_preview(rows: list[tuple]) -> dict:
     }
 
 
+def lemma_preview_report(session: Session, *, top_n: int = 500) -> dict:
+    """The lemma-conflation preview ALONE (S5.4) — the focused review instrument the
+    Diagnostics panel surfaces next to the gold-set builder, WITHOUT running the full engine
+    report (no timings / self-test). Reads the top-N keywords and returns what OO_FAMILY_LEMMA
+    (default OFF) WOULD merge, so a wrong merge can be noted for ``_MISLEMMA_DENYLIST`` before
+    the flip. Read-only, bounded, no score; honest ``available: false`` when simplemma is absent.
+    """
+    rows = (
+        session.query(
+            Keyword.id,
+            Keyword.normalized_term,
+            Keyword.language,
+            Keyword.is_entity,
+            func.coalesce(func.sum(KeywordMention.count), 0).label("m"),
+        )
+        .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+        .group_by(Keyword.id)
+        .order_by(func.coalesce(func.sum(KeywordMention.count), 0).desc())
+        .limit(max(1, top_n))
+        .all()
+    )
+    return _lemma_preview([(r[1], r[2], r[3]) for r in rows])
+
+
 def _generic_terms(session: Session, *, top_per_lang: int = 15, cap: int = 40000) -> dict:
     """OPEN-CLASS garbage surfacing — the in-app analog of ``scripts/analyze_keyword_log.py
     --generic-terms``: high-document-frequency single-word TERMS that survive the current

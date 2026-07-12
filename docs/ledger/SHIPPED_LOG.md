@@ -3324,3 +3324,36 @@ interleaves the retirable part (`#ins-term` search bar) with a NON-searchable ov
 and back). A blind removal browser-unverified is the interleaved-shared-helper hazard (passes
 `node --check`, breaks at runtime) → gate the hide on a browser-verified untangle, recorded as a
 carry-over.
+
+---
+
+**S5 — TIER-4 DECIDED RULINGS + MEASUREMENT INSTRUMENTS (2026-07-12, branch `claude/s5-rulings-builds`,
+7 commits onto `origin/0.2` base 6a904c2d):** turn the decided rulings into code + build the instruments
+that unblock the measure-gated ones. S5.1 USGS minerals SUPPLY parser (rare-earths B12, never prices).
+S5.2 the rule-based subjectivity/loaded-language engine (sentiment pivot). S5.3 the IR gold-set builder
+(closes the measure-before-trust loop). S5.4 lemma-preview surfaced in the Diagnostics panel. S5.5 S&P
+verify + `int`-country curation. Two adversarial-skeptic workflows (negative-space mandatory) found real
+defects on S5.1/S5.2/S5.3, fixed pre-push. Three reusable lessons (also in the Session-rituals Lessons
+subsection):
+
+**A MULTILINGUAL LEXICON MEASURE MUST VERIFY THE TEXT'S SCRIPT — else a mislabelled language yields a
+FABRICATED NEUTRAL, not an honest gap (S5.2):** a rule-based subjectivity scorer's honesty rests on
+"density 0.0 is a real measurement, distinct from the unmeasured gap." That collapses when it trusts the
+source-asserted language (unreliable) and scans a Cyrillic body against the English lexicon: 0 matches →
+`density:0.0` reads as "measured, clean" when it's "wrong lexicon, unmeasurable" (same for unsegmented
+CJK vs a Latin list). Fix = a cheap script guard (text dominant-script vs lexicon script; mismatch →
+gap). The negative-space lens surfaces it; a positive-only suite passes right over it.
+
+**A SUPPLY/PHYSICAL PARSER'S "NEVER A PRICE" MUST BE AN ALLOWLIST GUARANTEE, AND GROUPED THOUSANDS ARE A
+FABRICATION TRAP (S5.1):** "never emits a price" can't rest on a unit-string check (misses €/£/¥/cents/
+non-USD codes; trade measures are monetary) — narrow the MEASURE allowlist to always-physical measures.
+Two negative-space traps: `float("350,000")` raises → a real figure becomes a fabricated `value=None` GAP
+(strip US grouping first); a substring currency check false-POSITIVES ("euro"⊂"europium" drops legit
+Europium supply) → match codes/words on a WORD BOUNDARY, symbols anywhere.
+
+**"A SINGLE DOWNSTREAM VALIDATOR" IS A LIE IF THE BUILDER PRE-COERCES (S5.3):** a write-then-validate
+file builder claiming `load_X` is the one loud validator is wrong when the build step coerces/drops
+first: `int(2.9)==2` / `int(True)==1` land a fat-fingered grade as clean-valid, and a silent
+`except: continue` drops a human's judgement. Validate strictly at the build layer (reject
+float/bool/non-numeric loudly), detect a `str()`-key duplicate collision, and clean the `.tmp` on an
+`os.replace` failure.

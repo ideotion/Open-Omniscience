@@ -748,6 +748,11 @@
       <div id="mkt-viewtoggle" class="mkt-viewrow" style="margin-top:6px"></div>
       <div id="mkt-dashboard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:12px"></div>
       <div id="mkt-chart" style="margin-top:12px"></div>
+      <!-- S5.1: USGS minerals SUPPLY (production / reserves / net-import-reliance) — the
+           honest home for rare earths, which have no free spot-price source. Supply data,
+           never prices. Populated by the operator's USGS MCS fetch; honest empty state
+           until then. -->
+      <div id="mkt-minerals-supply" style="margin-top:18px"></div>
     </section>
 
     <section class="panel">
@@ -1695,6 +1700,25 @@
         <input id="discover-cc" type="text" style="width:150px" placeholder="countries e.g. ke,ng,br">
         <button onclick="discoverSources(this)" title="DISCOVER new sources (news orgs / institutions with an official website) from Wikidata for the countries you list, and add them DISABLED for review — nothing is scraped until you enable it in Settings → Sources. Goes ONLINE through the guarded transport (consent-gated, airplane-refused). Tip: pick under-represented countries to keep coverage balanced.">Discover new sources (Wikidata) ↗</button>
       </div>
+      <!-- S5.3: IR gold-set BUILDER — grade real corpus queries 0/1/2 (keyboard 0/1/2 on a
+           focused result) and write the exact ir_eval gold-set file the run below consumes.
+           Closes the measure-before-trust loop for lemmatization + the BM25F default. Un-keyed
+           English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <div class="row" style="margin-top:10px">
+        <button class="secondary" onclick="goldBuilderLoad(this)" title="Sample your top corpus keywords + their live search results, then grade each result 0/1/2 (0 irrelevant · 1 relevant · 2 highly relevant; press 0/1/2 on a focused row). Nothing is invented — search history is not stored. Save writes the exact ir_eval gold set the run below scores.">Build an IR gold set (grade queries 0/1/2)</button>
+        <input id="gold-builder-path" type="text" style="min-width:260px" placeholder="save path e.g. /home/you/oo_gold_set.json">
+        <button class="secondary" onclick="goldBuilderSave(this)" title="Write the graded queries as the exact ir_eval gold-set JSON to this server-side path (validated on save). Then point the IR-eval run below at it.">Save gold set</button>
+      </div>
+      <div id="gold-builder-cov" class="hint muted"></div>
+      <div id="gold-builder-body"></div>
+      <!-- S5.4: lemma-conflation PREVIEW — visible review instrument next to the gold-set
+           builder (both feed the OO_FAMILY_LEMMA decision). Shows what lemmatization WOULD
+           merge among the top keywords + would-merge counts; a wrong merge is a note for the
+           _MISLEMMA_DENYLIST. The default STAYS off — this reviews, it does not flip. -->
+      <div class="row" style="margin-top:8px">
+        <button class="secondary" onclick="loadLemmaPreview(this)" title="Preview what OPT-IN lemmatization (OO_FAMILY_LEMMA, default OFF) WOULD merge among your top keywords (study/studied -> study). Review the candidate groups for precision BEFORE enabling it; a wrong merge is a _MISLEMMA_DENYLIST note. Read-only, no score.">Preview lemmatization merges</button>
+      </div>
+      <div id="lemma-preview-body"></div>
       <div class="row" style="margin-top:6px">
         <input id="ir-eval-path" type="text" style="min-width:280px" placeholder="gold-set file path (see configs/ir_eval/gold_set.example.json)">
         <input id="ir-eval-wa" type="text" style="width:120px" placeholder="weights A e.g. 4,1">

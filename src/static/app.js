@@ -7318,7 +7318,43 @@
       finally { btn.disabled = false; }
     }
 
-    async function loadMarkets() { loadDashboard(); }
+    async function loadMarkets() { loadDashboard(); loadMineralsSupply(); }
+
+    // S5.1: the USGS Mineral Commodity Summaries SUPPLY surface — production / reserves /
+    // net-import-reliance for minerals (rare earths) that have NO free spot-price source.
+    // Supply data, NEVER prices (stated in the caveat). Reads /api/stats/minerals-supply;
+    // honest empty state (available:false → the operator-fetch reason) so an empty board
+    // reads as "not fetched yet", never "no supply". Counts only, no score.
+    async function loadMineralsSupply() {
+      const host = $("mkt-minerals-supply"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let d;
+      try { d = await api("/api/stats/minerals-supply"); }
+      catch { host.innerHTML = ""; return; }   // best-effort; never break the board
+      const head = `<h2 style="font-size:14px;margin:0 0 4px">${esc(t("Minerals supply"))} `
+        + `<span class="muted" style="font-weight:400">${esc(t("(USGS — supply data, not prices)"))}</span></h2>`
+        + `<div class="hint muted" style="margin-bottom:8px">${esc(d.caveat || "")}</div>`;
+      if (!d.available) {
+        host.innerHTML = head
+          + `<div class="muted">${esc(d.reason || t("No USGS supply figures stored yet."))}</div>`;
+        return;
+      }
+      const blocks = (d.commodities || []).map((c) => {
+        const measures = Object.keys(c.measures || {}).sort().map((m) => {
+          const rows = (c.measures[m] || []).slice(0, 12).map((r) =>
+            `<tr><td>${esc(r.ref_area)}</td>`
+            + `<td class="muted">${esc(r.time_period)}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${r.value === null || r.value === undefined ? "—" : (typeof fmtNum === "function" ? fmtNum(r.value) : r.value)}</td>`
+            + `<td class="muted">${esc(r.unit || "")}</td></tr>`).join("");
+          return `<div class="vsect" style="margin-top:6px">${esc(m.replace(/_/g, " "))}</div>`
+            + `<table class="data"><thead><tr><th>${esc(t("Area"))}</th><th>${esc(t("Year"))}</th>`
+            + `<th style="text-align:right">${esc(t("Value"))}</th><th>${esc(t("Unit"))}</th></tr></thead>`
+            + `<tbody>${rows}</tbody></table>`;
+        }).join("");
+        return `<div class="an-panel" style="margin-top:10px"><h3 style="font-size:13px;margin:0 0 2px">${esc(c.commodity.replace(/-/g, " "))}</h3>${measures}</div>`;
+      }).join("");
+      host.innerHTML = head + blocks;
+    }
 
     async function fetchPrices(symbol) {
       if (MKT_PRICES[symbol]) return MKT_PRICES[symbol];
@@ -9814,6 +9850,109 @@
       const p = new URLSearchParams({gold_path: path});
       if (wa && wb) { p.set("weights_a", wa); p.set("weights_b", wb); }
       window.open("/api/diagnostics/ir-eval?" + p.toString(), "_blank");
+    }
+
+    // S5.4: surface the lemma-conflation PREVIEW visibly in the Diagnostics panel (it was
+    // only reachable by downloading the engine-report JSON). Shows what OO_FAMILY_LEMMA
+    // (default OFF) would merge among the top keywords + the would-merge counts, with the
+    // _MISLEMMA_DENYLIST affordance. Reviews the decision, never flips it. Un-keyed English
+    // (matches the diagnostics panel); browser-unverified per fork-3.
+    async function loadLemmaPreview(btn) {
+      const host = $("lemma-preview-body"); if (!host) return;
+      if (btn) btn.disabled = true;
+      host.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const d = await api("/api/diagnostics/lemma-preview");
+        if (!d.available) {
+          host.innerHTML = `<div class="hint muted">${esc(d.method || "Lemmatization preview unavailable (simplemma not installed).")}</div>`;
+        } else {
+          const rows = (d.examples || []).map((c) =>
+            `<tr><td><b>${esc(c.lemma)}</b> <span class="muted">${esc(c.language || "?")}</span></td>`
+            + `<td>${(c.members || []).map(esc).join(", ")}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${c.n}</td></tr>`).join("");
+          const state = d.enabled ? "ON" : "OFF (default)";
+          host.innerHTML =
+            `<div class="hint muted" style="margin-top:4px">OO_FAMILY_LEMMA is currently <b>${esc(state)}</b>. `
+            + `Scanned top ${d.scanned_top_n} keywords → <b>${d.candidate_groups}</b> candidate merge groups, `
+            + `<b>${d.keywords_that_would_merge}</b> keywords would merge. Review for precision before enabling; `
+            + `a WRONG merge is a note for the _MISLEMMA_DENYLIST. ${esc(d.method || "")}</div>`
+            + (rows
+              ? `<table class="data" style="margin-top:6px"><thead><tr><th>Lemma</th><th>Would merge</th><th style="text-align:right">n</th></tr></thead><tbody>${rows}</tbody></table>`
+              : `<div class="muted" style="margin-top:6px">No candidate merges among the top keywords.</div>`);
+        }
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      if (btn) btn.disabled = false;
+    }
+
+    // S5.3: the IR gold-set BUILDER. Samples real corpus queries (top keywords; search
+    // history is not stored, so nothing is invented), lets the maintainer grade each live
+    // result 0/1/2 with keyboard speed, and writes the EXACT ir_eval gold-set file the run
+    // above scores — closing the measure-before-trust loop for OO_FAMILY_LEMMA + BM25F.
+    // Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3.
+    let _gbQueries = null;
+    async function goldBuilderLoad(btn) {
+      const body = $("gold-builder-body"); if (!body) return;
+      if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+      try {
+        const d = await api("/api/diagnostics/gold-builder/sample?n_queries=15&per_query=10");
+        _gbQueries = (d.queries || []).map((q) => ({ ...q, relevances: {} }));
+        _gbRenderBuilder(d.note, d.grading);
+      } catch (e) { body.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      if (btn) { btn.disabled = false; btn.textContent = "Build an IR gold set (grade queries 0/1/2)"; }
+    }
+    function _gbRenderBuilder(note, grading) {
+      const body = $("gold-builder-body"); if (!body) return;
+      const blocks = (_gbQueries || []).map((q, qi) => {
+        const rows = (q.results || []).map((r) => {
+          const cur = q.relevances[r.article_id];
+          const btns = [0, 1, 2].map((g) =>
+            `<button class="tiny${cur === g ? " active" : ""}" data-g="${g}" onclick="goldBuilderGrade(${qi},${r.article_id},${g})">${g}</button>`).join("");
+          return `<div class="gb-row" tabindex="0" data-q="${qi}" data-a="${r.article_id}" onkeydown="goldBuilderKey(event,${qi},${r.article_id})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
+            + `<span style="min-width:70px">${btns}</span>`
+            + `<a href="/api/articles/${r.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${esc(r.title || ("#" + r.article_id))}</a>`
+            + `<span class="muted" style="font-size:11px">${esc(r.source || "")}${r.language ? " · " + esc(r.language) : ""}</span></div>`;
+        }).join("");
+        return `<div class="an-panel" style="margin-top:8px"><b>${esc(q.query)}</b> `
+          + `<span class="muted">(${esc(q.language)} · ${esc(q.axis)})</span>`
+          + (rows || `<div class="muted">No results in your corpus for this query.</div>`) + `</div>`;
+      }).join("");
+      body.innerHTML = `<div class="hint muted">${esc(note || "")} ${esc(grading || "")}</div>` + blocks;
+      _gbUpdateCoverage();
+    }
+    function goldBuilderGrade(qi, aid, g) {
+      const q = _gbQueries && _gbQueries[qi]; if (!q) return;
+      q.relevances[aid] = g;   // grade IN PLACE (never re-render — keeps keyboard focus)
+      const row = document.querySelector(`.gb-row[data-q="${qi}"][data-a="${aid}"]`);
+      if (row) row.querySelectorAll("button").forEach((b) => b.classList.toggle("active", +b.dataset.g === g));
+      _gbUpdateCoverage();
+    }
+    function goldBuilderKey(ev, qi, aid) {
+      if (ev.key === "0" || ev.key === "1" || ev.key === "2") { ev.preventDefault(); goldBuilderGrade(qi, aid, +ev.key); }
+    }
+    function _gbUpdateCoverage() {
+      const el = $("gold-builder-cov"); if (!el) return;
+      let graded = 0, total = 0; const langs = {};
+      (_gbQueries || []).forEach((q) => {
+        const n = Object.keys(q.relevances).length; total += n;
+        if (n) { graded++; langs[q.language] = (langs[q.language] || 0) + 1; }
+      });
+      const langStr = Object.keys(langs).length ? " · by language " + JSON.stringify(langs) : "";
+      el.textContent = `Coverage: ${graded}/${(_gbQueries || []).length} queries graded · ${total} judgements${langStr}`;
+    }
+    async function goldBuilderSave(btn) {
+      const path = (($("gold-builder-path") && $("gold-builder-path").value) || "").trim();
+      if (!path) { if (typeof toast === "function") toast("Enter a save path first.", "err"); return; }
+      if (!_gbQueries || !_gbQueries.length) { if (typeof toast === "function") toast("Load + grade queries first.", "err"); return; }
+      const queries = _gbQueries.map((q) => ({ id: q.id, query: q.query, language: q.language, axis: q.axis, relevances: q.relevances }));
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/diagnostics/gold-builder/save", { method: "POST", body: JSON.stringify({ path, queries }) });
+        const c = r.coverage || {};
+        if (typeof toast === "function") toast(`Saved · ${c.graded_queries || 0} graded queries · ${c.total_judgements || 0} judgements`);
+        const el = $("gold-builder-cov");
+        if (el) el.textContent = `Saved to ${r.saved} — ${c.total_judgements || 0} judgements across ${JSON.stringify(c.by_language || {})}. Point the IR-eval run below at this path.`;
+      } catch (e) { if (typeof toast === "function") toast("Save failed: " + e.message, "err"); }
+      if (btn) btn.disabled = false;
     }
     // Diagnostics: the Tier-2 poll-transparency CHECKLIST (/api/insights/poll-transparency).
     // B3 (field-test F2): the per-field form is the primary input; the raw-JSON box (a

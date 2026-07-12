@@ -1,0 +1,35 @@
+# Subjectivity / loaded-language SEED lexicon — Russian / Cyrillic (SUBJECTIVITY_AS_OF 2026-07).
+# A MODEST STARTER proving the engine on a Cyrillic script — NOT a lexicon of record;
+# FLAGGED FOR NATIVE REVIEW. The vetted list is an operator sourcing step. One SINGLE-TOKEN term per line (a multi-word/hyphenated entry cannot match the tokenizer).
+#
+# --- loaded / charged framing ---
+скандал
+скандальный
+возмутительно
+возмутительный
+шокирующий
+шок
+позор
+позорный
+катастрофа
+катастрофический
+кошмар
+ужас
+ужасный
+разоблачение
+предательство
+предатель
+коррумпированный
+хаос
+провал
+# --- intensifiers ---
+крайне
+чрезвычайно
+абсолютно
+совершенно
+невероятно
+# --- subjectivity / hedging markers ---
+якобы
+предположительно
+очевидно
+безусловно

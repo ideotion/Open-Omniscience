@@ -219,7 +219,7 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Content-provenance class** — ✅ found SHIPPED end-to-end (ingestion stamps `source_type` + backfill; `insights_source_types` facet; reading-diet-by-channel in `concentration.py`) — S6 verify-marks against the design doc's acceptance. 
 - **Secondary-source `cited` provenance class — remaining slices** (background job at scale, denormalize `citing_source_id`, surface the citing trail, wire dormant `external_sources`). 🚧 partial
 - **DuckDuckGo query discovery channel** (off-by-default, per-query logging, budgeted) + Wikidata generator as a scheduled refresh. 🎨
-- **Expand commodity feeds** (oil, gas, LNG, sand, cereals, sugar) — needs clearnet-verified robots-permitting sources. 🛠 · **Rare earths: DECIDED (B12) = USGS Mineral Commodity Summaries SUPPLY data** (production/reserves/net-import-reliance, explicitly not spot prices — no free spot source exists); the stats-agency + annual-supply parser is the build (→ S5.1). ⬜ · S&P500-is-an-index reclassification — ✅ found done (`idx_sp500` + the commodities board excludes `index` symbols per the recorded ruling in `markets.py`).
+- **Expand commodity feeds** (oil, gas, LNG, sand, cereals, sugar) — needs clearnet-verified robots-permitting sources. 🛠 · **Rare earths: DECIDED (B12) = USGS Mineral Commodity Summaries SUPPLY data** (production/reserves/net-import-reliance, explicitly not spot prices — no free spot source exists); the stats-agency + annual-supply parser is the build — ✅ **BUILT (S5.1)** (`us-usgs` + `parse_mcs_csv` + `/api/stats/minerals-supply`; supply-not-prices by construction; real fetch = operator). · S&P500-is-an-index reclassification — ✅ found done (`idx_sp500` + the commodities board excludes `index` symbols per the recorded ruling in `markets.py`).
 
 ### Manipulation cards & the civic vertical
 - **FLOOD/BURY cards — remaining quality** — both cards exist; BURY gained same-language cohort scoping (B3 ⏳ #620). Remaining: the FLOOD open-class filler (the measured stoplist sweep, §"Keyword engine") + the full same-language *denominator* rescoping with ring-translation bridging (labelled follow-up). 🚧
@@ -292,18 +292,18 @@ anchoring), Node 0 = the maintainer's own machine. **User corpora never touch th
 **Executed by the wave:**
 1. **zh/ja/th segmenter + stoplists** — ✅ **EXECUTED (B1)**: jieba/janome/pythainlp via the `[segmentation]` pip extra + ko/vi/mr (and more) stoplists vendored. 🛠 remaining: live-corpus re-index + measured junk reduction.
 5. **Keyword hover-stats** — ✅ **RESOLVED (B9)**: found already shipped with exactly the recommended counts-only set.
-8. **`global`/`transnational` region value** — ✅ **BUILT (B12** ⏳ #621): `int`/`eu` → "Global"; follow-up = curate `int` onto the International sources.
+8. **`global`/`transnational` region value** — ✅ **BUILT (B12** ⏳ #621): `int`/`eu` → "Global"; follow-up ✅ **DONE (S5.5)**: 22 unambiguous transnational bodies (UN/IGO/EU institutions) hand-verified + tagged `int`/`eu` in the catalog (G7/G20-News dropped — `g7uk.com` is national); reviewable record in `docs/ledger/int_country_curation_2026-07-12.md`.
 
-**Decided, build pending:**
-3. **Rare-earths** — **USGS Mineral Commodity Summaries supply data** (not spot prices). Parser/agency build ⬜.
-9. **Multilingual sentiment** — model path **deferred** (no-torch/onnx constraint); pivot to a rule-based subjectivity/loaded-language lexicon. Lexicon sourcing ⬜.
+**Decided → BUILT-AWAITING-DATA (S5):**
+3. **Rare-earths** — ✅ **BUILT (S5.1)**: USGS Mineral Commodity Summaries SUPPLY parser (production/reserves/net-import-reliance, explicitly NOT prices; enforced by construction, skeptic-hardened) + `us-usgs` agency + `/api/stats/minerals-supply` + a Markets panel. ⏳ the REAL MCS data fetch is a networked **operator** step.
+9. **Multilingual sentiment** — ✅ **BUILT (S5.2)**: the rule-based subjectivity/loaded-language engine (per-language lexicon files, descriptive components + spans, honest gaps, script-mismatch guard) feeding the manipulation card + a deduced per-article surface; seed lexicons ×3 scripts. ⏳ the REAL vetted license-clean lexicons are an **operator** sourcing/vetting step (VADER investigated + NOT reused — valence ≠ subjectivity).
 
 **Attempted, honestly blocked:**
 2. **httpfs crypto-extension bundling** — the fetch hit the network egress allowlist (403 on `extensions.duckdb.org`); **no checksum fabricated**, in-memory fallback stays. Needs a networked machine or an allowlist entry. 🛠 (see DB-3)
 
 **Still with the maintainer:**
 4. **`v0.2.0` tag** — HELD until the P0 live-corpus validation (all four P0 engines now shipped; the live run is the last gate). 🛠
-6. **Lemmatization default-on** — measure-gated on the maintainer-made gold set. 🛠
+6. **Lemmatization default-on** — measure-gated on the maintainer-made gold set. ✅ **S5.3/S5.4 make the measurement one click away**: the IR gold-set BUILDER (grade real corpus queries 0/1/2 → the exact ir_eval file) + the lemma-conflation preview are both in the Diagnostics panel; the flip still waits on the maintainer GRADING the set. 🛠
 7. **Retention / eviction posture** — decide after the storage-footprint numbers from the next field export are in. 🔒
 
 ---
