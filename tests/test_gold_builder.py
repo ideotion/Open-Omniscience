@@ -88,3 +88,37 @@ def test_slug_is_stable_and_bounded():
     assert GB._slug("Rio Tinto") == "rio_tinto"
     assert GB._slug("  Élection 2027!! ") == "lection_2027"  # non-ascii/punct collapse
     assert len(GB._slug("x" * 200)) <= 40
+
+
+def test_non_numeric_grade_raises_not_silently_dropped(tmp_path):
+    # skeptic #6: a maintainer's judgement must never vanish silently.
+    with pytest.raises(ValueError):
+        GB.build_and_save_gold_set(
+            str(tmp_path / "g.json"),
+            [{"id": "q", "query": "x", "relevances": {"1": "relevant", "2": 2}}],
+        )
+    assert not (tmp_path / "g.json").is_file()
+
+
+def test_float_and_bool_grades_are_rejected_not_coerced(tmp_path):
+    # skeptic #7: int(2.9)==2 / int(True)==1 must NOT land as a clean valid grade.
+    for bad in (2.9, True, 0.9):
+        with pytest.raises(ValueError):
+            GB.build_and_save_gold_set(
+                str(tmp_path / "g.json"), [{"id": "q", "query": "x", "relevances": {"1": bad}}]
+            )
+
+
+def test_string_digit_grade_is_accepted(tmp_path):
+    dest = tmp_path / "g.json"
+    GB.build_and_save_gold_set(str(dest), [{"id": "q", "query": "x", "relevances": {"1": "2"}}])
+    assert load_gold_set(dest)[0].relevances == {"1": 2}
+
+
+def test_conflicting_duplicate_docid_is_rejected(tmp_path):
+    # skeptic #8: int 2 and str "2" for the same doc with different grades must not clobber.
+    with pytest.raises(ValueError):
+        GB.build_and_save_gold_set(
+            str(tmp_path / "g.json"),
+            [{"id": "q", "query": "x", "relevances": {2: 2, "2": 0}}],
+        )

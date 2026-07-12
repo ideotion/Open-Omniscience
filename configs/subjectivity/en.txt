@@ -2,7 +2,7 @@
 # A MODEST STARTER, not a lexicon of record. Illustrative loaded/subjective markers that
 # feed the loaded-language density annotation; a reader always sees WHICH terms matched, so
 # a sparse/imperfect seed is transparent. The vetted lexicon of record is an operator
-# sourcing/vetting step (license-clean, native review). One lowercased term per line.
+# sourcing/vetting step (license-clean, native review). One SINGLE-TOKEN lowercased term per line (a multi-word/hyphenated entry cannot match the tokenizer).
 #
 # --- loaded / charged framing (from the outrage heuristic) ---
 outrage

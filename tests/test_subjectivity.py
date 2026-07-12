@@ -86,3 +86,34 @@ def test_engine_does_not_import_or_reuse_vader():
     src = (S.__file__)
     text = open(src, encoding="utf-8").read()
     assert "import vader" not in text.lower() and "sentimentintensity" not in text.lower()
+
+
+def test_script_mismatch_is_a_gap_not_a_fabricated_zero():
+    # Russian text mislabelled 'en' (source-asserted language is unreliable) must NOT read as
+    # a measured clean 0.0 — it is unmeasurable by the Latin lexicon -> an honest gap (#1/#3).
+    d = S.subjectivity("Правительство объявило шокирующий скандал.", "en")
+    assert d["available"] is False and "script" in d["reason"]
+    assert "n_loaded" not in d  # a gap carries NO measurement, never a density 0.0
+    # the SAME text under its true language IS measured
+    ru = S.subjectivity("Правительство объявило шокирующий скандал.", "ru")
+    assert ru["available"] is True and ru["n_loaded"] >= 1
+
+
+def test_cjk_under_a_latin_lexicon_is_a_gap_not_zero():
+    d = S.subjectivity("这是一个非常震撼的丑闻报道", "en")
+    assert d["available"] is False and "n_loaded" not in d
+
+
+def test_replaced_lexicon_is_picked_up_without_restart(tmp_path, monkeypatch):
+    import os
+    import time
+
+    monkeypatch.setattr(S, "_BASE", tmp_path)
+    S._CACHE.clear()
+    (tmp_path / "xx.txt").write_text("scandal\noutrage\n", encoding="utf-8")
+    assert S.load_lexicon("xx") == frozenset({"scandal", "outrage"})
+    # overwrite + bump mtime -> the mtime-aware cache reloads (never serves the stale set)
+    (tmp_path / "xx.txt").write_text("fury\n", encoding="utf-8")
+    os.utime(tmp_path / "xx.txt", (time.time() + 5, time.time() + 5))
+    assert S.load_lexicon("xx") == frozenset({"fury"})
+    S._CACHE.clear()

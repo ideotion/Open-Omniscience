@@ -1,6 +1,6 @@
 # Subjectivity / loaded-language SEED lexicon — Arabic / RTL (SUBJECTIVITY_AS_OF 2026-07).
 # A MODEST STARTER proving the engine on an Arabic (RTL, uncased) script — NOT a lexicon of
-# record; FLAGGED FOR NATIVE REVIEW. The vetted list is an operator sourcing step. One term per line.
+# record; FLAGGED FOR NATIVE REVIEW. The vetted list is an operator sourcing step. One SINGLE-TOKEN term per line (a multi-word/hyphenated entry cannot match the tokenizer).
 #
 # --- loaded / charged framing ---
 فضيحة

@@ -25,6 +25,20 @@ from typing import Any
 _SLUG = re.compile(r"[^a-z0-9]+")
 
 
+def _parse_grade(grade: Any) -> int:
+    """A judgement is an int 0/1/2 (or the string "0"/"1"/"2"). A float (2.9), a bool (True),
+    or a non-numeric value ("relevant") is REJECTED LOUDLY — never silently coerced
+    (``int(2.9)==2``, ``int(True)==1``) into a clean-but-wrong grade, and never silently
+    dropped (which would lose a judgement the maintainer made). Skeptic #6/#7."""
+    if isinstance(grade, bool):
+        raise ValueError(f"grade {grade!r} is a bool, not 0/1/2")
+    if isinstance(grade, int):
+        return grade  # load_gold_set validates the 0/1/2 range and raises loudly
+    if isinstance(grade, str) and grade.strip() in ("0", "1", "2"):
+        return int(grade.strip())
+    raise ValueError(f"grade {grade!r} must be an integer 0, 1 or 2")
+
+
 def _slug(term: str) -> str:
     s = _SLUG.sub("_", (term or "").lower()).strip("_")
     return s[:40] or "q"
@@ -135,12 +149,15 @@ def build_and_save_gold_set(path: str, queries: list[dict]) -> dict:
     for q in queries or []:
         rel: dict[str, int] = {}
         for doc, grade in (q.get("relevances") or {}).items():
-            try:
-                # keep the value as-is; load_gold_set is the SINGLE validator and raises
-                # LOUDLY on a grade outside {0,1,2} (never silently drop a bad judgement).
-                rel[str(doc)] = int(grade)
-            except (TypeError, ValueError):
-                continue  # a non-numeric grade is not a judgement — skip it
+            g = _parse_grade(grade)  # raises LOUDLY on float/bool/non-numeric — never coerces/drops
+            key = str(doc)
+            if key in rel and rel[key] != g:
+                # a duplicate doc-id (e.g. int 2 and str "2") with a DIFFERENT grade would
+                # silently clobber via the str() key — refuse it (skeptic #8).
+                raise ValueError(
+                    f"query {str(q.get('id') or '')!r}: conflicting grades for doc {key}"
+                )
+            rel[key] = g
         payload["queries"].append(
             {
                 "id": str(q.get("id") or "").strip(),
@@ -168,5 +185,9 @@ def build_and_save_gold_set(path: str, queries: list[dict]) -> dict:
         raise
     import os
 
-    os.replace(tmp, p)  # atomic swap
+    try:
+        os.replace(tmp, p)  # atomic swap
+    except OSError:
+        tmp.unlink(missing_ok=True)  # never orphan the validated temp (skeptic #9)
+        raise
     return {"saved": str(p), "coverage": coverage(loaded)}

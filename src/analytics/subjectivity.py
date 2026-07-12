@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import pathlib
 import re
-from functools import lru_cache
+from collections import Counter
 
 # Registered in configs/external_artifacts.yml (the *_AS_OF protocol guard). Bump when the
 # seed lexicons are refreshed / replaced with the vetted operator-sourced lists.
@@ -71,37 +71,76 @@ _CAVEAT = (
 )
 
 
-@lru_cache(maxsize=None)
-def load_lexicon(language: str | None) -> frozenset[str] | None:
-    """The loaded/subjective lexicon for a language, or ``None`` when there is no lexicon.
+def _char_script(cp: int) -> str:
+    """The writing system of a codepoint, coarse but enough to tell a lexicon apart from a
+    mismatched text (Latin vs Cyrillic vs Arabic vs other)."""
+    if 0x0400 <= cp <= 0x04FF or 0x0500 <= cp <= 0x052F:
+        return "cyrillic"
+    if 0x0600 <= cp <= 0x06FF or 0x0750 <= cp <= 0x077F or 0x08A0 <= cp <= 0x08FF:
+        return "arabic"
+    if (0x41 <= cp <= 0x5A) or (0x61 <= cp <= 0x7A) or (0xC0 <= cp <= 0x24F):
+        return "latin"
+    return "other"  # CJK / Hangul / Thai / Devanagari / etc.
 
-    Network-free. ``configs/subjectivity/<lang>.txt`` — one lowercased term per line, ``#``
-    comment lines and blanks ignored. An absent file OR an empty file → ``None`` (the honest
-    "no lexicon" gap; never an empty match set masquerading as "measured, found nothing").
-    """
+
+def _dominant_script(text: str) -> str | None:
+    """The majority writing system among the LETTERS of ``text``, or None if it has none."""
+    c: Counter = Counter()
+    for ch in text:
+        if ch.isalpha():
+            c[_char_script(ord(ch))] += 1
+    return c.most_common(1)[0][0] if c else None
+
+
+# mtime-aware lexicon cache: lang -> (mtime, frozenset, script). Keyed on the file's mtime so
+# a long-running process (the app boots once) picks up a REPLACED lexicon — the vetted
+# operator-sourced list the registry names — WITHOUT a restart, instead of serving a stale set.
+_CACHE: dict[str, tuple[float, frozenset[str], str]] = {}
+
+
+def _load(language: str | None) -> tuple[float, frozenset[str], str] | None:
     lang = (language or "").strip().lower()
     if not lang:
         return None
     f = _BASE / f"{lang}.txt"
-    if not f.is_file():
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:  # absent file
+        _CACHE.pop(lang, None)
         return None
+    cached = _CACHE.get(lang)
+    if cached is not None and cached[0] == mtime:
+        return cached
     words = frozenset(
         line.strip().lower()
         for line in f.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     )
-    return words or None
+    if not words:  # an empty file is "no lexicon", never a masquerading empty match set
+        _CACHE.pop(lang, None)
+        return None
+    script = _dominant_script(" ".join(words)) or "other"
+    entry = (mtime, words, script)
+    _CACHE[lang] = entry
+    return entry
+
+
+def load_lexicon(language: str | None) -> frozenset[str] | None:
+    """The loaded/subjective lexicon for a language, or ``None`` when there is no lexicon.
+
+    Network-free. ``configs/subjectivity/<lang>.txt`` — one SINGLE-TOKEN lowercased term per
+    line (a multi-word/hyphenated entry cannot match the tokenizer), ``#`` comments + blanks
+    ignored. Absent / empty file → ``None`` (the honest "no lexicon" gap). mtime-cached, so a
+    replaced lexicon is picked up without a restart."""
+    e = _load(language)
+    return e[1] if e else None
 
 
 def available_languages() -> set[str]:
     """The languages with a non-empty lexicon (what the engine can actually measure)."""
     if not _BASE.is_dir():
         return set()
-    out: set[str] = set()
-    for f in _BASE.glob("*.txt"):
-        if load_lexicon(f.stem):
-            out.add(f.stem.lower())
-    return out
+    return {f.stem.lower() for f in _BASE.glob("*.txt") if _load(f.stem)}
 
 
 def _gap(reason: str, language: str | None) -> dict:
@@ -130,12 +169,25 @@ def subjectivity(text: str | None, language: str | None = None) -> dict:
     lang = (language or "").strip().lower()
     if not lang:
         return _gap("language unknown", None)  # never assume a text is English
-    lex = load_lexicon(lang)
-    if lex is None:
+    entry = _load(lang)
+    if entry is None:
         return _gap("no lexicon for this language", lang)
+    _mtime, lex, lex_script = entry
     body = text or ""
     if not body.strip():
         return _gap("empty", lang)
+    # SCRIPT GUARD (skeptic #1/#3): a text whose dominant script does not match the lexicon's
+    # is NOT measurable by that lexicon (a mislabelled language, or unsegmented CJK scanned
+    # against a Latin list). Return an honest GAP, never a fabricated density:0.0 that reads as
+    # "measured, clean". `language` is the SOURCE-ASSERTED value, which the project treats as
+    # unreliable — so this is a real production path, not a corner case.
+    text_script = _dominant_script(body)
+    if text_script and text_script != lex_script:
+        return _gap(
+            f"text script ({text_script}) does not match the {lang} lexicon ({lex_script}) "
+            f"— likely a mislabelled language; not measured",
+            lang,
+        )
     spans: list[dict] = []
     n_tokens = 0
     for m in _WORD.finditer(body):
