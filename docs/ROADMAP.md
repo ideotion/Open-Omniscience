@@ -103,7 +103,7 @@ instrumentation into one report with a per-check verdict. The live RUN and the
 | **P1.4** | `/insights/latest` (40 s @ 268 K → near-dup bounded) | ✅ shipped — re-measure on next field export |
 | **P1.5** | Storage-composition diagnostic | ✅ shipped (dbstat-limited on encrypted store) + the itemized all-stores footprint (A12b/B14 ⏳ #625) |
 | **P1.6** | Corpus-epoch mechanism | ✅ shipped — **now incl. the restore-merge wiring** (A7) |
-| **P1.7** | 5 TB architecture verify-before-trust review | 🎨 design-only (the A14 if-time item — not reached) |
+| **P1.7** | 5 TB architecture verify-before-trust review | ✅ **shipped (S2.6, 2026-07-12): [`docs/design/5TB_ARCHITECTURE_REVIEW.md`](design/5TB_ARCHITECTURE_REVIEW.md)** — measured/arithmetic/extrapolation-tagged review of single-file SQLCipher at 5 TB (page cache + codec, the auto_vacuum/page_size CREATE-time seams, VACUUM infeasibility, the GF(2⁸) 128 GB parity ceiling with **adaptive volume sizing** `max(512 MiB, ⌈corpus/200⌉)` keeping N≈200 at every scale, the backup gate window, the derived-layer/D1 hand-off, cross-time-recall invariants, a GAMMA slope-measurement plan + a real 960 MB-encrypted sandbox point) — **S3's input** (8 ordered recommendations, each tagged buildable-now / operator-gated / ruling-needed). |
 | **P1.8** | Collector-path write batching (writer gate: 847,351 s cumulative wait / 22% of worker-time / max 438 s) | ✅ shipped |
 | **P1.9** | Job-ify the diagnostics `/all` export (was 36+ min blocking the loop) | ✅ complete — backend (#600 D2) + the UI job button (B6, #622) |
 | **P1.10** | trending-windows cold path (467 s/call; 62 calls / 3,286 s) — stale-but-disclosed serve + change-gated refresh | ✅ shipped — D1 persisted store still pending (see DB-3) |
