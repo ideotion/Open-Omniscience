@@ -5164,6 +5164,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (T1 shipped) → network toggle+consent → task manager+download arbitration →
   reader tabs + corpora system → agenda content batch → continuous-collection
   ordering+onboarding → convergence flagship.
+- **PLANNING SESSION 2026-07-12 — the OPTIMIZATION PROGRAM designs-of-record + the STORAGE
+  5 TB PLAN (maintainer↔Fable-5 planning-only dialogue, held while S1–S6 ran; DESIGN-ONLY, no
+  code from it yet):** full detail in **`docs/design/STORAGE_5TB_PLAN.md`** (the reconciled
+  successor of the never-committed A→B→C storage sketch — corrected by the internet research
+  saved verbatim at `docs/research/storage/STORAGE_5TB_RESEARCH_2026-07-12.md` and re-grounded
+  on S2.6's `5TB_ARCHITECTURE_REVIEW.md` + S3.4's `DB10_RETENTION_VACUUM_MEMO.md`) and
+  **`docs/design/PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md`** (Conjunction Lens · Leads 2.0 ·
+  keyword fingerprints · search-instrumentation-first · Tor ladder · three-tier UI verification
+  + the AppVM recursive environment · power profiles · LLM keyword triage + the 7-model bench).
+  RULINGS RECORDED (maintainer, 2026-07-12): (a) WORKFLOW — all coding via Claude Code CLI
+  (Opus 4.8, max effort); the web Fable-5 instance does planning/design only; (b) the AppVM
+  RECURSIVE ENVIRONMENT is approved ("we should go for it") under four BINDING safety lines —
+  synthetic ENCRYPTED corpus only, the REAL corpus NEVER enters an agent session (diagnostics
+  exports stay the safe channel), app stopped across branch switches, airplane default;
+  (c) POWER PROFILES — Low/Optimized/Max, USER-activated, transparent published knob table,
+  suggest-never-silently-switch; (d) LLM KEYWORD TRIAGE — 3 M keywords cannot be hand-curated;
+  a temporary in-app button batches keywords to a local Ollama model, JSONL EXPORT-ONLY (never
+  the trusted index), Claude verifies samples → deterministic artifacts as reviewed PRs
+  (provenance ai-proposed·claude-verified·maintainer-merged); logs carry TIMESTAMPS/Ollama
+  timing so the strategy's cost is COMPUTED; a SEPARATED bench first — 7 models
+  (gemma4:e4b·mistral:7b·granite4.1·qwen3.5:4b·translategemma:4b·nemotron-3-nano:4b·
+  ministral-3:3b) over a frozen stratified ~400–500-keyword batch with ~50 maintainer-graded
+  anchors; TAGS VERIFIED against `ollama list` before any run (never substitute a close tag);
+  (e) keyword analytics keeps BOTH the corpus-algebra sets AND the lens, over N keywords (not
+  just two); (f) the CARD SYSTEM gets evidence-weight elaboration + its OWN Settings subtab
+  with good defaults. STORAGE HEADLINES (accepted from the research, hand-verified): the
+  corpus/index ATTACH split is DEAD (WAL forfeits cross-file atomicity — ONE durable file;
+  only disposable/immutable pieces split out); the split-out FTS index must be
+  CONTENTLESS-DELETE (verified snippet-safe; sqlcipher3 SQLite≥3.43 still to verify); Phase C
+  text-offload is MANDATORY (~17.5 TB ceiling) and becomes a PACKED + HMAC-KEYED-addressed
+  (confirmation-attack fix) + OOENC2-encrypted + per-source-zstd store (versioned encrypted
+  dictionary registry; blob-first writes + mark-and-sweep GC; dedup ON pending ruling); FTS
+  HASH-SHARDING is CORE (time-neutral ⇒ honors cross-time recall), PROTOTYPED at 50–100 M
+  synthetic docs before commitment; a documented KDF hierarchy derives every crypto domain
+  from the ONE passphrase. EMPIRICAL OVERRIDES kept against the report: DuckDB encryption
+  stays refuted-for-writes (P2.4 — the httpfs gate stays; re-probe per version bump); OOENC2
+  over age for packs (age = recorded fallback). PENDING MAINTAINER RULINGS (table in the plan
+  §8): auto_vacuum=INCREMENTAL for new corpora (DB-10 §1a rec: YES) · page_size
+  (measure-gated) · dedup ON · OOENC2-vs-age · keyed addressing · the sqlite3mc benchmark
+  trial. Fork-3 amendment queued for the first VM session: verified surfaces graduate to
+  "Gecko-verified (VM) · awaiting human UX pass". Everything gated on S1–S6 completing + the
+  staleness guard.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
