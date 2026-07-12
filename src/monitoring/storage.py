@@ -83,10 +83,21 @@ def storage_composition(session: Session) -> dict[str, Any]:
     out["page_size"] = page_size
     out["page_count"] = page_count
     out["freelist_pages"] = freelist
+    # DB-10 instrument: is the freelist even RECLAIMABLE without a full VACUUM? auto_vacuum
+    # (0 none / 1 full / 2 incremental) is a CREATE-time seam — a corpus created with 'none'
+    # can only reclaim via a full VACUUM (rewrites the whole file), infeasible at scale.
+    av = _pragma(session, "auto_vacuum")
+    out["auto_vacuum"] = {0: "none", 1: "full", 2: "incremental"}.get(av) if av is not None else None
     if page_size and page_count is not None:
         out["db_bytes"] = page_size * page_count
     if page_size and freelist is not None:
         out["free_bytes"] = page_size * freelist  # reclaimable only via (in)cremental vacuum
+        if out.get("auto_vacuum") == "none":
+            out["free_bytes_note"] = (
+                "auto_vacuum=none: these freelist bytes are reclaimable ONLY by a full VACUUM "
+                "(rewrites the whole file, ~2x disk, exclusive writer) — infeasible at scale. See "
+                "docs/design/DB10_RETENTION_VACUUM_MEMO.md (the irreversible CREATE-time seam ruling)."
+            )
 
     # name -> (type, parent table) so indexes/shadow btrees group under their table.
     try:
