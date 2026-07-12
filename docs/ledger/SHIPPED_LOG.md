@@ -3285,3 +3285,42 @@ raises; it must be in the `config=` dict at connect. And `enable_external_access
 file ATTACH (Permission Error) — the persisted path uses a config WITHOUT it (network safety =
 autoload-off + absolute-path LOAD + the airplane guard). Both verified empirically before writing
 the loader.
+
+---
+
+**S4 — TIER-3 PRODUCT QUALITY (2026-07-12, branch `claude/s4-product-quality`, 7 commits onto
+`origin/0.2` base b85bc124):** the reader-facing quality tail. S4.1 CJK-numeral date recall PROBE
+(context-only, measures the gap, never asserts a date — extraction deferred). S4.2 ring-translation
+per-language `language_breakdown` on the Trends/Home #oo-tip hover. S4.3 the synthesized-Leads Home
+carousel (LOCAL synthesis never LLM, WCAG-pausable, caveat on every rotated face). S4.4 ported the
+`/api/insights/context` snippet concordance into #an (the last Insights-bar capability). S4.5 the
+composite-string i18n engine + translatable card titles. S4.6 the in-app `generic_terms` detector.
+S4.7 the guided-wizard sources-by-theme step. Three reusable lessons (also in the Session-rituals
+Lessons subsection):
+
+**A VALUE-BEARING STRING IS ONLY TRANSLATABLE IF ITS KEY IS A FIXED TEMPLATE (S4.5):** a flat `t()`
+lookup can never translate "3 of 10 articles" (the numbers vary → never matches a static key). The
+fix is a COMPOSITE lookup `OOI18N.tf(template, vars)` whose KEY is a fixed `"{done} of {total}
+articles"` template (keyable ×12) and whose VALUES are DATA interpolated after translation — the
+frame translates, the data does not. Server-emitted titles ride the same seam (`Card.title_i18n` +
+`title_vars`, English `title` the additive fallback). A `{placeholder}` with no var renders a literal
+`{x}` → validate at construction (fail loud). Adding a new template key to `en.json` ALONE reddens
+`--min 100` (en.json is the canonical key set; every locale must carry every key) → add to all 12.
+
+**AN ONBOARDING THEME/COUNTRY PICKER MUST DEFAULT TO EVERYTHING, AND EMPHASIS ≠ EXCLUSION (S4.7):**
+the cover-everything ruling forbids a first-launch picker silently narrowing the corpus. `select_tags`
+is a FILTER, so DEFAULT all-selected and map all-or-none → `[]` (no filter); a partial pick is the
+user's EXPLICIT, reversible focus, stated in the UI. For a country/language EMPHASIS use the
+order-never-exclude levers (`country_priority` sort key, `language_equilibrium` cadence), NOT
+`select_languages` (a filter). Before a settings-write from a "never posts the network" surface,
+verify the endpoint has no egress side effect (`PUT /config` = `save_settings` only; `exclude_unset`
+touches only the sent fields).
+
+**ABSORB-THEN-HIDE, BUT AN INTERLEAVED SHARED COMPONENT BLOCKS THE BLIND HIDE (S4.4):** the Desk
+lesson says retire a surface only once its replacement absorbs every capability. Port the missing
+piece + add a REGRESSION GUARD on the absorption — but the HIDE can still be unsafe when the surface
+interleaves the retirable part (`#ins-term` search bar) with a NON-searchable overview
+(`#ins-landscape`, stays) AND a RELOCATABLE shared component (`#mm-kit`, moved into the corpus window
+and back). A blind removal browser-unverified is the interleaved-shared-helper hazard (passes
+`node --check`, breaks at runtime) → gate the hide on a browser-verified untangle, recorded as a
+carry-over.
