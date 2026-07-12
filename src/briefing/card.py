@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -130,6 +131,14 @@ class Card:
     bucket: str
     method: str
     caveat: str
+    # Optional TRANSLATABLE title (S4.5): a fixed keyable TEMPLATE with {named}
+    # placeholders whose values are language-neutral DATA (the keyword term, a count,
+    # a place) left untranslated. The English ``title`` above stays the fallback (a
+    # card without ``title_i18n``, or a browser without OOI18N.tf, shows it), so this
+    # is purely additive. The frame translates ×12, the data does not — the same rule
+    # that lets ``trigger.plain`` translate. Both are validated in ``__post_init__``.
+    title_i18n: str = ""
+    title_vars: dict = field(default_factory=dict)
     signal: dict = field(default_factory=dict)
     evidence: list[dict] = field(default_factory=list)
     # The FULL article set the card is built from (set-based cards only — convergence,
@@ -152,11 +161,39 @@ class Card:
             raise ValueError(f"unknown bucket {self.bucket!r}; use one of {BUCKETS}")
         if self.recipe is not None:
             self._validate_recipe(self.recipe)
+        if self.title_i18n:
+            self._validate_title_i18n(self.title_i18n, self.title_vars)
         if not self.created_at:
             self.created_at = datetime.now(UTC).isoformat()
         if not self.id:
             basis = f"{self.type}|{self.key or self.title}".encode()
             self.id = hashlib.sha256(basis).hexdigest()[:16]
+
+    @staticmethod
+    def _validate_title_i18n(template: str, variables: dict) -> None:
+        """A translatable title is a fixed TEMPLATE + language-neutral scalar VARS.
+
+        Every ``{name}`` placeholder in the template MUST have a matching var (else the
+        UI would render a literal ``{name}`` — a broken frame, never acceptable), and
+        every var value must be a JSON scalar (the data the frame carries; a dict/list
+        could smuggle structure the translator can't see). Fails loudly — the same
+        honesty-by-construction bar as ``_validate_recipe``."""
+        if not isinstance(template, str):
+            raise CardSchemaError("title_i18n must be a string template")
+        if not isinstance(variables, dict):
+            raise CardSchemaError("title_vars must be a dict")
+        for k, v in variables.items():
+            if v is not None and not isinstance(v, (str, int, float, bool)):
+                raise CardSchemaError(
+                    f"title_vars[{k!r}] must be a JSON scalar (got {type(v).__name__})"
+                )
+        placeholders = set(re.findall(r"\{(\w+)\}", template))
+        missing = placeholders - set(variables)
+        if missing:
+            raise CardSchemaError(
+                f"title_i18n template has placeholders with no matching title_vars: "
+                f"{sorted(missing)}"
+            )
 
     @staticmethod
     def _validate_recipe(recipe: dict) -> None:
@@ -189,6 +226,11 @@ class Card:
             "id": self.id,
             "type": self.type,
             "title": self.title,
+            # Optional translatable title (S4.5): the fixed template + its data vars.
+            # The UI renders OOI18N.tf(title_i18n, title_vars) when present, else the
+            # English ``title`` above (additive; absent for cards without one).
+            "title_i18n": self.title_i18n,
+            "title_vars": self.title_vars,
             "summary": self.summary,
             "bucket": self.bucket,
             "signal": self.signal,

@@ -225,6 +225,10 @@ def rising_now(session) -> list[Card]:
             Card(
                 type="rising",
                 title=f"“{term['term']}” is rising",
+                # S4.5 reference producer: a TRANSLATABLE title — the frame is a fixed
+                # keyable template ×12, the keyword term stays DATA (never translated).
+                title_i18n="“{term}” is rising",
+                title_vars={"term": term["term"]},
                 summary=(
                     f"Mentions of “{term['term']}” are running ~{term['growth']}× the "
                     f"prior-period rate ({term['recent']} recent vs {term['prior']} before)."

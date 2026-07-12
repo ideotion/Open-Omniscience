@@ -4965,3 +4965,34 @@ def test_omnibar_analysis_window_absorbs_the_insights_bar_capabilities():
     # the port renders snippets, never a score (counts/snippets only)
     ch = app[app.index("function anContextHtml(") : app.index("function anContextHtml(") + 1200]
     assert "score" not in ch.lower(), "the context concordance carries no score"
+
+
+def test_i18n_composite_strings_and_translatable_card_titles():
+    """S4.5: the i18n engine supports COMPOSITE strings — a fixed keyable TEMPLATE with
+    {named} placeholders whose values are DATA left untranslated (OOI18N.tf). This is what
+    makes a value-bearing string translatable: the frame translates ×12, the data does not.
+    A card can carry a translatable title (title_i18n template + title_vars data), rendered
+    via tf; the English `title` stays the fallback. The `rising` reference producer emits one,
+    and the template key exists in ALL 12 locales (so --min 100 stays green)."""
+    i18n = (_SRC / "static" / "i18n.js").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # (a) the engine exposes tf(): template lookup + {named} interpolation, exported
+    assert "function tf(s, vars)" in i18n
+    assert "map[s] == null ? s : map[s]" in i18n and "replace(/\\{(\\w+)\\}/g" in i18n
+    assert "t, tf," in i18n, "tf must be exported on OOI18N"
+    # (b) the UI renders a card's title via cardTitle -> OOI18N.tf, English title as fallback
+    ct = app[app.index("function cardTitle(") : app.index("function cardTitle(") + 400]
+    assert "c.title_i18n" in ct and "OOI18N.tf(" in ct and "c.title" in ct
+    assert "esc(cardTitle(c))" in app, "the card front + carousel must render cardTitle(c)"
+    # (c) the Card schema emits the translatable-title fields; the reference producer sets them
+    card = (_SRC / "briefing" / "card.py").read_text(encoding="utf-8")
+    assert '"title_i18n": self.title_i18n' in card and '"title_vars": self.title_vars' in card
+    prod = (_SRC / "briefing" / "producers.py").read_text(encoding="utf-8")
+    assert 'title_i18n="“{term}” is rising"' in prod and 'title_vars={"term":' in prod
+    # (d) the template KEY is present in every one of the 12 locale files (gate stays 100%)
+    import json as _json
+    loc = _SRC / "static" / "locales"
+    for lf in sorted(loc.glob("*.json")):
+        d = _json.loads(lf.read_text(encoding="utf-8"))
+        assert "“{term}” is rising" in d, f"{lf.name} missing the rising title template key"
+        assert "{term}" in d["“{term}” is rising"], f"{lf.name}: translation must keep {{term}}"

@@ -28,6 +28,7 @@ from src.briefing.card import (
     _BANNED_FIELD_FRAGMENTS,
     BUCKETS,
     Card,
+    CardSchemaError,
     assert_no_score_fields,
 )
 from src.database.models import Article, Base, Source
@@ -102,6 +103,55 @@ def _assert_card_shape(card: object, producer_name: str) -> None:
 def test_card_dataclass_has_no_score_field():
     """The import-time honesty guard still holds for the live Card dataclass."""
     assert_no_score_fields(Card)  # raises CardSchemaError if a score field is added
+
+
+def _mk(**kw):
+    base = dict(
+        type="rising", title="x", summary="s", bucket="rising", method="m", caveat="c"
+    )
+    base.update(kw)
+    return Card(**base)
+
+
+def test_translatable_title_template_and_vars_roundtrip():
+    """S4.5: a card may carry a TRANSLATABLE title = a fixed template + language-neutral
+    data vars; both survive to_dict for the UI's OOI18N.tf(). The English `title` stays
+    the fallback (additive)."""
+    c = _mk(title="“inflation” is rising", title_i18n="“{term}” is rising",
+            title_vars={"term": "inflation"})
+    d = c.to_dict()
+    assert d["title"] == "“inflation” is rising"          # English fallback preserved
+    assert d["title_i18n"] == "“{term}” is rising"        # keyable frame
+    assert d["title_vars"] == {"term": "inflation"}       # untranslated data
+    # a card WITHOUT a template is byte-compatible (empty defaults, no crash)
+    plain = _mk().to_dict()
+    assert plain["title_i18n"] == "" and plain["title_vars"] == {}
+
+
+def test_translatable_title_placeholder_must_have_a_var():
+    """A {name} in the template with no matching var would render a literal “{name}” —
+    a broken frame. It must fail loudly, never ship."""
+    with pytest.raises(CardSchemaError):
+        _mk(title_i18n="“{term}” near {place}", title_vars={"term": "x"})
+
+
+def test_translatable_title_vars_must_be_scalars():
+    """title_vars carry DATA the frame interpolates — JSON scalars only, never a dict/list
+    that could smuggle structure past the translator."""
+    with pytest.raises(CardSchemaError):
+        _mk(title_i18n="“{term}” is rising", title_vars={"term": ["not", "scalar"]})
+
+
+def test_rising_producer_emits_a_translatable_title(corpus):
+    """S4.5 reference producer: `rising_now` cards carry title_i18n/title_vars whose
+    template interpolates back to the English title, with the keyword term left as data."""
+    cards = P.rising_now(corpus) or []
+    if not cards:  # the corpus fixture may not fire `rising_now`
+        pytest.skip("rising_now did not fire on this corpus fixture")
+    for c in cards:
+        assert c.title_i18n == "“{term}” is rising"
+        term = c.title_vars.get("term")
+        assert term and c.title_i18n.replace("{term}", term) == c.title
 
 
 def test_every_producer_emits_schema_valid_cards(corpus):

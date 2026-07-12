@@ -2224,7 +2224,7 @@
       const caveat = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
       face.innerHTML =
         `<div class="carousel-card bk-${esc(c.bucket)}" role="group" aria-label="${esc(t("Lead"))} ${_carIdx + 1} / ${n}">`
-        + `<h4>${esc(c.title)}</h4>`
+        + `<h4>${esc(cardTitle(c))}</h4>`
         + (c.summary ? `<p class="sum">${esc(c.summary)}</p>` : "")
         + caveat
         + `<div><button class="tiny" onclick="${action}">${esc(t("Open corpus"))} ↗</button></div>`
@@ -2303,6 +2303,15 @@
       if (m && m[1].trim()) return m[1].trim();
       if (c.key && String(c.key).trim()) return String(c.key).trim();
       return (c.title || "").replace(/[“”"]/g, "").trim();
+    }
+    // S4.5: a card's DISPLAY title. When the producer emits a translatable title
+    // (title_i18n = a fixed keyable template + title_vars = language-neutral data),
+    // render OOI18N.tf(template, vars) — the frame translates ×12, the keyword term
+    // stays data. Otherwise the English `title` (additive fallback; cards without a
+    // template, or a browser without tf, are byte-identical to before).
+    function cardTitle(c) {
+      if (c && c.title_i18n && window.OOI18N && OOI18N.tf) return OOI18N.tf(c.title_i18n, c.title_vars || {});
+      return (c && c.title) || "";
     }
     // Click a Lead card to FLIP it (front <-> back). Inner controls (buttons/links/
     // inputs) are not flip triggers. Keyboard: Enter/Space flips when focused.
@@ -2426,11 +2435,12 @@
         ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
         : "";
       const chip = `<span class="chip">${esc(c.type.replace(/_/g, " "))}</span>`;
-      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" tabindex="0" role="button" aria-label="${esc(c.title)}" onclick="leadFlip(this,event)" onkeydown="leadFlipKey(this,event)">
+      const _title = cardTitle(c);
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" tabindex="0" role="button" aria-label="${esc(_title)}" onclick="leadFlip(this,event)" onkeydown="leadFlipKey(this,event)">
         <div class="card-inner">
           <div class="card-face card-front">
             ${chip}
-            <h4>${esc(c.title)}</h4>
+            <h4>${esc(_title)}</h4>
             <p class="sum">${esc(c.summary)}</p>
             ${sigLine}
             <span class="lead-flip-hint">${esc(t("Details & corpus"))} ⟲</span>
