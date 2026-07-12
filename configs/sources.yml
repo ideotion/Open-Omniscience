@@ -1872,6 +1872,7 @@ sources:
   - technology
   priority: 2
 - name: ASEAN News
+  country: int
   domain: asean.org
   rss_url: https://asean.org/feed/
   region: asia
@@ -1882,6 +1883,7 @@ sources:
   - geopolitical
   priority: 2
 - name: African Union News
+  country: int
   domain: au.int
   rss_url: https://au.int/en/rss
   region: africa
@@ -1892,6 +1894,7 @@ sources:
   - geopolitical
   priority: 2
 - name: Organization of American States (OAS) News
+  country: int
   domain: oas.org
   rss_url: https://www.oas.org/feed
   region: americas
@@ -1923,6 +1926,7 @@ sources:
   - geopolitical
   priority: 2
 - name: Shanghai Cooperation Organisation (SCO) News
+  country: int
   domain: sectsco.org
   rss_url: https://eng.sectsco.org/feed
   region: asia
@@ -1943,6 +1947,7 @@ sources:
   - cybersecurity
   priority: 2
 - name: IAEA News
+  country: int
   domain: iaea.org
   rss_url: https://www.iaea.org/news/feed
   rate_limit_ms: 2000
@@ -1953,6 +1958,7 @@ sources:
   - energy
   priority: 2
 - name: WTO News
+  country: int
   domain: wto.org
   rss_url: https://www.wto.org/english/news_e/news_e.rss
   rate_limit_ms: 2000
@@ -1974,6 +1980,7 @@ sources:
   - sanctions
   priority: 2
 - name: EU Sanctions Map
+  country: eu
   domain: sanctionsmap.eu
   rss_url: https://www.sanctionsmap.eu/feed
   rate_limit_ms: 2000
@@ -1985,6 +1992,7 @@ sources:
   - sanctions
   priority: 2
 - name: European Court of Human Rights (ECtHR) News
+  country: int
   domain: echr.coe.int
   rss_url: https://www.echr.coe.int/rss
   region: europe
@@ -5336,6 +5344,7 @@ sources:
   - financial
   priority: 2
 - name: World Bank Data Blog
+  country: int
   domain: blogs.worldbank.org
   rss_url: https://blogs.worldbank.org/opendata/feed
   language: en
@@ -5438,6 +5447,7 @@ sources:
   - policy
   priority: 2
 - name: European Commission Press Corner
+  country: eu
   domain: ec.europa.eu
   rss_url: https://ec.europa.eu/commission/presscorner/home/en/rss
   language: en
@@ -5596,6 +5606,7 @@ sources:
   priority: 2
   country: kr
 - name: FAO News
+  country: int
   domain: fao.org
   rss_url: https://www.fao.org/news/rss
   language: en
@@ -5606,6 +5617,7 @@ sources:
   - agriculture
   priority: 1
 - name: World Bank - Agriculture
+  country: int
   domain: worldbank.org
   rss_url: https://www.worldbank.org/en/topic/agriculture/feed
   language: en
@@ -5636,6 +5648,7 @@ sources:
   - agriculture
   priority: 1
 - name: World Food Programme (WFP) News
+  country: int
   domain: wfp.org
   rss_url: https://www.wfp.org/news/rss
   language: en
@@ -6397,6 +6410,7 @@ sources:
   - climate
   priority: 2
 - name: UNFCCC News
+  country: int
   domain: unfccc.int
   rss_url: https://unfccc.int/news/feed
   language: en
@@ -6417,6 +6431,7 @@ sources:
   - climate
   priority: 2
 - name: World Meteorological Organization (WMO) News
+  country: int
   domain: public.wmo.int
   rss_url: https://public.wmo.int/en/media/news/feed
   language: en
@@ -6839,6 +6854,7 @@ sources:
   - ai
   priority: 2
 - name: UNESCO - Ethics of AI
+  country: int
   domain: unesco.org
   rss_url: https://www.unesco.org/en/artificial-intelligence/recommendation-ethics/feed
   language: en
@@ -7471,6 +7487,7 @@ sources:
   - quantum
   priority: 2
 - name: UN-Water
+  country: int
   domain: unwater.org
   rss_url: https://www.unwater.org/news/feed
   language: en
@@ -7781,6 +7798,7 @@ sources:
   - water
   priority: 2
 - name: UNICEF Water Scarcity
+  country: int
   domain: unicef.org
   rss_url: https://www.unicef.org/wash/water-scarcity/feed
   language: en
@@ -8444,6 +8462,7 @@ sources:
   - energy
   priority: 2
 - name: OPEC News
+  country: int
   domain: opec.org
   rss_url: https://www.opec.org/en/news/feed
   language: en
@@ -14727,6 +14746,7 @@ sources:
   - fake-news
   priority: 2
 - name: UNESCO - Lucha contra la Desinformación (en Español)
+  country: int
   domain: es.unesco.org
   rss_url: https://es.unesco.org/fight-disinfodemic/feed
   language: es
@@ -29239,6 +29259,7 @@ sources:
   - environment
   priority: 2
 - name: IMF Blog
+  country: int
   domain: imf.org
   rss_url: https://www.imf.org/en/Blogs/rss
   language: en
@@ -31382,6 +31403,7 @@ sources:
   - water
   priority: 2
 - name: UNEP Water Scarcity
+  country: int
   domain: unep.org
   rss_url: ''
   language: en
