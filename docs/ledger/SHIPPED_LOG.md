@@ -3239,3 +3239,49 @@ data-aware cached browse COUNT(*). **S2.6** the 5 TB architecture review doc (S3
   admission cap + single-flight additionally stop the death-spiral. The omnibar is the exception
   — it must never blank, so its guard DEGRADES (an honest empty-with-note payload) instead of a
   429/503.
+
+
+## S3 (2026-07-12) — Tier-2: database & scale architecture (local branch claude/s3-db-architecture)
+
+D1/D2/D3 persisted-columnar machinery (gated behind `secure_crypto_available()`), DB-9 adaptive
+backup-volume sizing, the DB-10 retention/vacuum decision memo + the cross-time-recall invariant.
+Reusable lessons:
+
+**A PERSISTED DuckDB STORE OPENED VIA `ATTACH` REJECTS A SECOND IN-PROCESS HANDLE TO THE SAME FILE
+(2026-07-12, S3.2):** `duckdb.connect(config).execute("ATTACH '<file>' AS oo")` on a second
+connection while the first still has it attached raises `Binder Error: Unique file handle
+conflict`. (Two plain `duckdb.connect(file)` handles DO share the in-process instance — but the
+columnar store uses ATTACH.) So the in-memory rollup-serve model — build a fresh connection, swap
+it in, close the old — CANNOT apply to a persisted file: use ONE held connection refreshed IN
+PLACE under the serve lock (incremental via `refresh_keyword_daily`; full rebuild only on an
+epoch change). Verify the file-handle semantics empirically (an unencrypted duckdb file has the
+same locking, so the serve concurrency/incremental/durability logic is testable without the
+encryption, which is CI/operator-only) before designing the persisted serve.
+
+**ADAPTIVE BACKUP-VOLUME SIZING MUST COUNT PER-MEMBER SLICES, NOT ceil(total/size) (2026-07-12,
+S3.3; an adversarial skeptic caught this pre-commit):** the streaming backup slices EACH member
+independently (`_emit_member`: `ceil(size_m / vsize)` per member), so the real data-volume count
+is the SUM of per-member ceils + the members emitted AFTER sizing (the manifest.json member, a
+residual WAL member) — NOT `ceil(total/vsize)`, which undercounts by up to one volume per member.
+Sizing against the single-division form let a high `parity_fraction`, a high
+`OO_BACKUP_TARGET_VOLUMES`, or many side members push the REAL N+M over the GF(2⁸) 255 ceiling →
+`write_parity` aborts the whole backup (not data-loss — the crash-safe finalize keeps the previous
+backup — but it defeats the fix at exactly the target scale). The mandatory skeptic pass (fed the
+diff + surrounding facts INLINE so it never opened the 1382-line file → no context overflow) found
+it; the fix sizes against the real per-member sum + a reserve, regression-tested end-to-end.
+LESSON: when the sizer's cost model diverges from the engine's actual emit loop, the guard is a
+fiction — model N exactly the way the code emits it.
+
+**CI-INSTALLS-THE-EXTENSION IS THE HONEST TRUST PATH FOR AN OFFLINE-VERIFIED BINARY (2026-07-12,
+S3.1):** the D1 loader verifies a bundled httpfs binary against a SHA-256 pin BEFORE `LOAD`, but
+the real binary can't be fetched in the sandbox (egress-blocked) and its sha256 must NEVER be
+fabricated. So (a) the verify MECHANISM is proven against a FIXTURE binary whose sha256 is injected
+in the test (no real binary, no network); (b) the shipped registry pins stay BLANK
+(empty-pin-stays-in-memory is a pinned test); (c) a CI lane installs the real httpfs, computes its
+sha256 IN-LANE, and runs the real encrypted round trip — that in-lane checksum is NEVER promoted
+into `external_artifacts.yml`. The registry stays honest (blank) while CI still exercises the real
+path. COROLLARY (DuckDB startup-only settings): `SET allow_unsigned_extensions=true` after connect
+raises; it must be in the `config=` dict at connect. And `enable_external_access=False` blocks a
+file ATTACH (Permission Error) — the persisted path uses a config WITHOUT it (network safety =
+autoload-off + absolute-path LOAD + the airplane guard). Both verified empirically before writing
+the loader.

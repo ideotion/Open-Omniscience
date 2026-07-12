@@ -4870,3 +4870,33 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     # the endpoints + the opt-in Settings button + candidate count
     assert '@router.post("/detect-language")' in api and '@router.get("/detect-language/candidates")' in api
     assert "runLangDetect" in ui and 'id="langdetect-btn"' in ui and "loadLangDetectCount" in ui
+
+
+def test_cross_time_recall_is_sacred_no_time_partitioned_corpus_tables():
+    """5 TB review §F (docs/design/5TB_ARCHITECTURE_REVIEW.md): cross-time recall is SACRED — no
+    design may make old data second-class. The concrete forbidden thing is a TIME-PARTITIONED /
+    year-sharded / archive TWIN of a corpus-scaled table (e.g. keyword_mentions_2026 + _archive),
+    which a full-corpus query would fan out to and could silently default AWAY from. A WINDOWED
+    rollup is fine — the window is the user's QUERY, not a storage boundary (keyword_daily stays).
+    This guard keeps 5 TB storage pressure from quietly regressing the principle (the same
+    'enforce the principle in a test' discipline the UI invariants use). S3.4 / DB-10 §F."""
+    import re
+
+    models = (_SRC / "database" / "models.py").read_text(encoding="utf-8")
+    tablenames = re.findall(r'__tablename__\s*=\s*["\']([^"\']+)["\']', models)
+    assert tablenames, "no ORM tablenames found — the guard itself needs updating"
+    # a corpus-scaled table must not have a year / archive / shard twin (time-partitioning)
+    forbidden = re.compile(r"(_(?:19|20)\d{2}$|_archive$|_shard\d*$)")
+    bad = [t for t in tablenames if forbidden.search(t)]
+    assert not bad, (
+        f"time-partitioned/archived corpus table(s): {bad} — cross-time recall is sacred (§F). "
+        "Use a windowed rollup (the window is the user's query, not a storage boundary), never a "
+        "second physical table split by time. See docs/design/5TB_ARCHITECTURE_REVIEW.md §F."
+    )
+    # the canonical windowed serve DEFAULTS to the WHOLE corpus (open bounds), never a baked-in
+    # recency cutoff on the hot read path (a rollup window is the user's query, not a default).
+    columnar = (_SRC / "analytics" / "columnar.py").read_text(encoding="utf-8")
+    assert "start_day=None, end_day=None" in columnar, (
+        "windowed_term_counts must keep open (whole-corpus) default bounds — no recency default "
+        "on the hot read path (§F cross-time recall)."
+    )

@@ -201,6 +201,44 @@ jobs:
         run: python -m pytest -q tests/test_custody_signing.py tests/test_annotations.py
 
   # ----------------------------------------------------------------------- #
+  # Columnar derived store (DuckDB): the [columnar] extra is NOT in the main
+  # test lane, so the D2/D3 rollup + D1 loader tests skip there (duckdb absent).
+  # This lane installs [columnar] so they run for real (in-memory + fixture
+  # verify), then exercises the D1 persisted-ENCRYPTED round trip under a
+  # CI-ONLY trust path: it INSTALLs the real httpfs over the network, checksums
+  # it IN-LANE, and NEVER promotes that checksum into external_artifacts.yml
+  # (the shipped pins stay blank until the operator's audited build).
+  # ----------------------------------------------------------------------- #
+  columnar:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    name: Columnar store (DuckDB rollup + D1 persisted-httpfs)
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Install (core + analysis + dev + columnar)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[analysis,dev,columnar]"
+
+      - name: Columnar rollup + D1 loader (in-memory + fixture verify)
+        run: |
+          python -m pytest -q \
+            tests/test_columnar_engine.py tests/test_columnar_readmodel.py \
+            tests/test_keyword_daily_rollup.py tests/test_source_coverage_rollup.py \
+            tests/test_rollup_serve.py tests/test_columnar_httpfs_loader.py
+
+      - name: D1 persisted-encrypted round trip (CI-only httpfs trust path)
+        env:
+          OO_CI_INSTALL_HTTPFS: "1"
+        run: python -m pytest -q tests/test_columnar_httpfs_loader.py -k ci_encrypted_persisted_round_trip
+
+  # ----------------------------------------------------------------------- #
   # UNIVERSAL PORTABILITY (maintainer-ruled 2026-06-11): the 3-OS matrix IS
   # the definition of "supported". The Windows/macOS lanes start as
   # OBSERVATION lanes (continue-on-error) while platform-specific failures

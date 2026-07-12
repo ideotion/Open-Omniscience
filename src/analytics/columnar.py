@@ -53,6 +53,18 @@ httpfs binaries are bundled (operational/packaging, networked machine). Separate
 1.5.x ``enable_external_access=False`` in :func:`_offline_config` also blocks a FILE attach
 outright — a second reason the persisted file path is unavailable under the strict offline
 config; both are moot while httpfs is the gating blocker.
+
+OFFLINE LOADER (S3.1 / D1, docs/design/PERSISTED_DUCKDB_HTTPFS.md): when a per-OS/arch
+static-OpenSSL ``httpfs`` binary is bundled under ``src/analytics/duckdb_ext/`` AND matches
+its SHA-256 pin in ``configs/external_artifacts.yml`` (the ``duckdb-httpfs-extension``
+entry), the engine LOADs it BY ABSOLUTE PATH -- autoload/autoinstall OFF,
+``allow_unsigned_extensions`` set in the CONNECT config (a startup-only setting), and the
+persisted path uses :func:`_persisted_config` (external file access ON so the ATTACH works;
+the network is closed by autoload-off + the airplane socket guard, NOT by
+``enable_external_access``). No pin / missing file / SHA-256 mismatch / wrong version ->
+stay in-memory (never load an unverified binary, never a network autoload). The pin table
+ships EMPTY, so ``secure_crypto_available()`` stays False until the maintainer's networked
+build lands the binaries + their real sha256 (never fabricated).
 """
 
 from __future__ import annotations
@@ -90,6 +102,27 @@ def _offline_config() -> dict:
     }
 
 
+def _persisted_config() -> dict:
+    """DuckDB config for the PERSISTED encrypted store path (D1).
+
+    Extension autoload/autoinstall stay OFF (httpfs is LOADed from the verified local binary
+    by ABSOLUTE PATH -- never fetched over the network), and ``allow_unsigned_extensions`` is
+    set HERE, in the connect config, because it is a startup-only setting (a post-connect
+    ``SET`` raises: "Cannot change allow_unsigned_extensions setting while database is
+    running"). Our bundled build is unsigned-by-us; the SHA-256 pin (not DuckDB's signature)
+    is the trust anchor. ``enable_external_access`` is NOT disabled here -- a file ATTACH
+    needs filesystem access (empirically, ``enable_external_access=False`` raises a Permission
+    Error on ATTACH). The offline guarantee for this path is (a) autoload OFF so no extension
+    is ever fetched, (b) the absolute-path LOAD, and (c) the process-wide airplane socket
+    guard beneath -- not the external-access flag. The in-memory path keeps the stricter
+    :func:`_offline_config` (it never touches a file)."""
+    return {
+        "autoinstall_known_extensions": False,
+        "autoload_known_extensions": False,
+        "allow_unsigned_extensions": True,
+    }
+
+
 def _derive_key(passphrase: str) -> str:
     """A DuckDB ENCRYPTION_KEY derived from the ONE corpus passphrase.
 
@@ -101,23 +134,142 @@ def _derive_key(passphrase: str) -> str:
     return hashlib.sha256(("oo-columnar-v1:" + passphrase).encode("utf-8")).hexdigest()
 
 
+# --------------------------------------------------------------------------- #
+# D1 -- the offline bundled-httpfs loader (verify-before-LOAD).
+# docs/design/PERSISTED_DUCKDB_HTTPFS.md. The stock duckdb wheel would autoload httpfs over
+# the network (forbidden). To enable a PERSISTED encrypted store OFFLINE we bundle a per-OS/
+# arch static-OpenSSL httpfs binary under ``_ext_dir()`` and LOAD it BY ABSOLUTE PATH after
+# verifying its SHA-256 against the registry pin. No pin / missing file / mismatch -> stay
+# in-memory. Ships EMPTY + flagged: the binaries + their real sha256 are the maintainer's
+# networked build step, so ``secure_crypto_available()`` stays False here until they land.
+
+
+def _ext_dir() -> Path:
+    """Directory holding the bundled per-OS httpfs extension binaries.
+    ``OO_COLUMNAR_EXT_DIR`` overrides it (tests point it at a fixture dir)."""
+    override = os.getenv("OO_COLUMNAR_EXT_DIR")
+    return Path(override) if override else Path(__file__).parent / "duckdb_ext"
+
+
+def _duckdb_minor() -> str | None:
+    """The installed DuckDB ``major.minor`` (the extension version MUST couple to it)."""
+    try:
+        import duckdb
+
+        return ".".join(str(duckdb.__version__).split(".")[:2])
+    except Exception:  # noqa: BLE001 - optional extra
+        return None
+
+
+def _platform_arch() -> str | None:
+    """The registry platform key for THIS machine, or None if unsupported. Mirrors the
+    ``duckdb-httpfs-extension`` ``binaries`` keys: ``linux_amd64`` / ``linux_arm64`` /
+    ``osx_amd64`` / ``osx_arm64`` / ``windows_amd64``."""
+    import platform
+    import sys
+
+    arch = {"x86_64": "amd64", "amd64": "amd64", "aarch64": "arm64",
+            "arm64": "arm64"}.get(platform.machine().lower())
+    if arch is None:
+        return None
+    if sys.platform.startswith("linux"):
+        return f"linux_{arch}"
+    if sys.platform == "darwin":
+        return f"osx_{arch}"
+    if sys.platform.startswith("win"):
+        return "windows_amd64" if arch == "amd64" else None
+    return None
+
+
+def _httpfs_pins() -> dict:
+    """Per-platform bundled-httpfs pins from the registry (network-free):
+    ``{platform: {"version", "sha256", "file"}}``. EMPTY when unbundled (the loader then
+    stays in-memory). Any read failure -> ``{}`` (safe: no unverified load)."""
+    try:
+        from src.maintenance.registry import load_registry
+
+        for a in load_registry():
+            if a.get("id") == "duckdb-httpfs-extension":
+                return {k: v for k, v in (a.get("binaries") or {}).items()
+                        if isinstance(v, dict)}
+    except Exception:  # noqa: BLE001 - registry unreadable -> treat as unbundled
+        pass
+    return {}
+
+
+def _verified_httpfs_path() -> str | None:
+    """Absolute path to the bundled httpfs extension for THIS platform, ONLY if it exists,
+    its SHA-256 matches the registry pin, and the pinned version couples to the installed
+    DuckDB minor. None otherwise (missing / blank pin / mismatch / wrong version) -> the
+    caller stays in-memory. NEVER loads an unverified binary; NEVER a network autoload."""
+    plat = _platform_arch()
+    minor = _duckdb_minor()
+    if not plat or not minor:
+        return None
+    pin = _httpfs_pins().get(plat) or {}
+    want_sha = str(pin.get("sha256") or "").strip().lower()
+    want_ver = str(pin.get("version") or "").strip()
+    if not want_sha or not want_ver:
+        return None  # unbundled / blank pin -> stay in-memory (safe to ship pre-binaries)
+    # Version coupling: the bundled httpfs minor MUST equal the installed DuckDB minor
+    # (an httpfs built for 1.4.x must never load into 1.5.x).
+    if ".".join(want_ver.lstrip("v").split(".")[:2]) != minor:
+        _LOG.warning("bundled httpfs version %s != duckdb %s; refusing (in-memory)",
+                     want_ver, minor)
+        return None
+    fname = (str(pin.get("file") or "").strip()
+             or f"httpfs-{plat}-v{want_ver.lstrip('v')}.duckdb_extension")
+    # Defense-in-depth (the ZETA traversal discipline): the extension file must be a plain
+    # basename inside _ext_dir() -- never an absolute path or a '..' escape, even from the
+    # (trusted) registry (pathlib silently discards the left side when joined with an
+    # absolute path).
+    if fname in ("", ".", "..") or fname != Path(fname).name:
+        _LOG.warning("bundled httpfs 'file' is not a plain basename (%r) -- refusing", fname)
+        return None
+    path = _ext_dir() / fname
+    if not path.exists() or not path.is_file():
+        return None  # pin present but the binary is not bundled -> in-memory
+    got = hashlib.sha256(path.read_bytes()).hexdigest()
+    if got != want_sha:
+        _LOG.warning("bundled httpfs sha256 mismatch for %s -- refusing to load (in-memory)",
+                     path.name)
+        return None
+    return str(path.resolve())
+
+
+def _persisted_connection():
+    """A DuckDB connection with the VERIFIED bundled httpfs LOADed by absolute path (the
+    secure OpenSSL crypto backend), using :func:`_persisted_config`. Raises if no verified
+    binary is bundled -- the caller falls back to the in-memory store. Network-free by
+    construction (autoload OFF + absolute-path LOAD)."""
+    import duckdb
+
+    ext = _verified_httpfs_path()
+    if ext is None:
+        raise RuntimeError("no verified bundled httpfs extension (persisted store unavailable)")
+    con = duckdb.connect(config=_persisted_config())
+    con.execute("LOAD '" + ext.replace("'", "''") + "'")
+    return con
+
+
 def secure_crypto_available() -> bool:
-    """True ONLY if a SECURE crypto backend (OpenSSL via ``httpfs``) can be loaded
-    OFFLINE. DuckDB's built-in mbedtls is "NOT securely encrypted" and is never trusted
-    for the derived store. When this is False the engine runs in-memory (no plaintext
-    file is ever written). Pure check; opens and closes a throwaway in-memory connection.
+    """True ONLY if a SECURE crypto backend (OpenSSL via ``httpfs``) can be loaded OFFLINE
+    from a VERIFIED bundled binary. DuckDB's built-in mbedtls is "NOT securely encrypted"
+    and is never trusted for the derived store; DuckDB's own network autoload is forbidden.
+    So this is True only when a per-OS ``httpfs`` binary is bundled under ``_ext_dir()`` AND
+    matches its registry SHA-256 pin AND actually LOADs by absolute path. When False the
+    engine runs in-memory (no plaintext file is ever written). The pin table ships EMPTY, so
+    this stays False until the maintainer's networked build lands the binaries (never a
+    fabricated checksum). Pure check; opens and closes a throwaway connection.
     """
     if not duckdb_available() or os.getenv("OO_COLUMNAR") == "0":
         return False
-    import duckdb
-
+    if _verified_httpfs_path() is None:
+        return False  # no verified bundled binary -> never a network autoload -> in-memory
     try:
-        con = duckdb.connect(config=_offline_config())
-        try:
-            con.execute("LOAD httpfs")  # OpenSSL crypto; autoload is OFF so this is local-only
-            return True
-        finally:
-            con.close()
+        con = _persisted_connection()  # LOADs the verified httpfs by absolute path
+        con.close()
+        return True
     except Exception:  # noqa: BLE001 - not loadable offline -> not available
         return False
 
@@ -133,14 +285,13 @@ def encryption_gate(path: str | Path, passphrase: str) -> bool:
     """
     if not duckdb_available():
         return False
-    import duckdb
 
     p = Path(path)
     key = _derive_key(passphrase)
     try:
         if p.exists():
             p.unlink()
-        con = duckdb.connect(config=_offline_config())
+        con = _persisted_connection()  # verified httpfs LOADed (encrypted ATTACH needs it)
         try:
             con.execute(f"ATTACH '{p.as_posix()}' AS g (ENCRYPTION_KEY '{key}')")
             con.execute("CREATE TABLE g.probe (s VARCHAR)")
@@ -151,9 +302,10 @@ def encryption_gate(path: str | Path, passphrase: str) -> bool:
         # (a) sentinel must NOT appear in the raw bytes
         if _SENTINEL.encode("utf-8") in p.read_bytes():
             return False
-        # (b) opening without the key must FAIL
+        # (b) opening without the key must FAIL (httpfs loaded, so the failure is no-KEY,
+        #     not no-crypto -- a meaningful encryption proof)
         try:
-            c2 = duckdb.connect(config=_offline_config())
+            c2 = _persisted_connection()
             c2.execute(f"ATTACH '{p.as_posix()}' AS x")
             c2.execute("SELECT * FROM x.probe").fetchall()
             c2.close()
@@ -161,7 +313,7 @@ def encryption_gate(path: str | Path, passphrase: str) -> bool:
         except Exception:  # noqa: BLE001 - expected: encrypted store rejects no-key open
             pass
         # (c) opening with the key must return the sentinel
-        c3 = duckdb.connect(config=_offline_config())
+        c3 = _persisted_connection()
         try:
             c3.execute(f"ATTACH '{p.as_posix()}' AS y (ENCRYPTION_KEY '{key}')")
             got = c3.execute("SELECT s FROM y.probe").fetchone()
@@ -265,11 +417,11 @@ def connect(passphrase: str | None = None):
 
 
 def _attach_persisted(path, passphrase):
-    """Open a persisted encrypted DuckDB store with the secure backend loaded."""
-    import duckdb
-
-    con = duckdb.connect(config=_offline_config())
-    con.execute("LOAD httpfs")  # the OpenSSL crypto backend (offline; autoload is off)
+    """Open a persisted encrypted DuckDB store with the VERIFIED secure backend loaded (the
+    absolute-path httpfs LOAD via :func:`_persisted_connection`), then ATTACH the encrypted
+    file under the passphrase-derived key with the default authenticated GCM cipher (NEVER a
+    CTR downgrade)."""
+    con = _persisted_connection()  # verified httpfs LOADed; _persisted_config (file access on)
     con.execute(f"ATTACH '{path.as_posix()}' AS oo (ENCRYPTION_KEY '{_derive_key(passphrase)}')")
     con.execute("USE oo")
     return con

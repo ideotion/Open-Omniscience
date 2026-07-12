@@ -65,6 +65,20 @@ version, per platform+arch**. On a DuckDB bump:
 5. [ ] Update `pyproject.toml` `duckdb>=` **and** the registry `duckdb-crypto-extension`
    `{floor, verified}` **together** (the test `test_duckdb_floor_matches_pyproject`
    enforces they match) + bump `columnar.STORE_SCHEMA_VERSION` if the table shapes changed.
+6. [ ] Re-bundle the **D1 persisted-store** `httpfs` binaries (S3.1): build each per-OS/arch
+   binary with statically-linked OpenSSL at the new DuckDB version, place them in
+   `src/analytics/duckdb_ext/`, and fill the `duckdb-httpfs-extension` registry entry's
+   per-platform `{version, sha256, file}` with the **real measured** sha256 (never a
+   placeholder) + `{floor, verified}`. The loader (`columnar._verified_httpfs_path`) refuses
+   any binary whose sha256 or version-minor does not match, so a stale/wrong binary silently
+   falls back to in-memory rather than loading. See `src/analytics/duckdb_ext/README.md`.
+
+**D1 CI trust path.** `tests/test_columnar_httpfs_loader.py` proves the verify MECHANISM
+against a fixture binary (no real httpfs / no network needed). The `columnar` CI job
+additionally runs `test_ci_encrypted_persisted_round_trip` with `OO_CI_INSTALL_HTTPFS=1`,
+which installs the real `httpfs` over the network, checksums it **in-lane**, and exercises
+the encrypted round trip — that in-lane checksum is **never** written back into the registry
+(the shipped pins stay blank until the operator's audited build fills them).
 
 ### Other couplings to remember
 - **IP-geo DB** (`ip-geo-country`) — monthly upstream; refresh with
