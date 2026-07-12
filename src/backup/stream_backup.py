@@ -756,6 +756,74 @@ def cleanup_cancelled_build(dest: Path | str) -> int:
 
 
 # --------------------------------------------------------------------------- #
+#  DB-9: adaptive volume sizing (the parity ceiling)
+# --------------------------------------------------------------------------- #
+# The Reed-Solomon erasure parity is over GF(2^8) (src/backup/parity.py), so a set holds at
+# most 255 data+parity volumes; at a FIXED 512 MiB that caps the corpus at ~128 GB — under
+# the 5 TB mandate. Instead of fixing the SIZE, bound the COUNT: choose the volume size so the
+# data-volume count N stays ~TARGET, keeping N+M comfortably under the ceiling at ANY scale
+# while parity RAM stays band-bounded (independent of volume size). Below ~100 GB the 512 MiB
+# floor wins, so the size — and every emitted volume — is BYTE-IDENTICAL to today.
+TARGET_VOLUME_COUNT = 200        # data volumes to aim for; env OO_BACKUP_TARGET_VOLUMES
+_NM_SAFETY_MARGIN = 240          # grow the size until N+M <= this (headroom under the 255 ceiling)
+
+
+def _target_volume_count() -> int:
+    try:
+        return max(1, int(os.getenv("OO_BACKUP_TARGET_VOLUMES", str(TARGET_VOLUME_COUNT))))
+    except ValueError:
+        return TARGET_VOLUME_COUNT
+
+
+def _adaptive_volume_size(
+    member_sizes: list[int], parity_fraction: float, *, reserve_members: int = 2
+) -> int:
+    """Volume size that keeps the Reed-Solomon data+parity volume count (N+M) under the
+    GF(2^8) 255-volume ceiling at ANY corpus size.
+
+    The engine slices EACH member independently (``_emit_member``: ceil(size_m / vsize) per
+    member), so the real data-volume count is the SUM of per-member ceils, NOT
+    ceil(total/size) — a single division undercounts by up to one volume per member.
+    ``member_sizes`` is every member known at sizing time (the corpus file + each side file);
+    ``reserve_members`` covers members emitted AFTER sizing that are not in the list (the
+    manifest.json member, a possible residual WAL member). M = max(1, ceil(parity_fraction *
+    N)) mirrors write_parity (which always emits >= 1 parity volume).
+
+    Start at max(512 MiB floor, ceil(total/TARGET)) so N is ~TARGET, then grow the size
+    (shrinking every member's slice count) until N+M <= the safety margin. Below ~100 GB the
+    floor wins -> byte-identical to the fixed 512 MiB behaviour. Terminates: the size only
+    grows, capped at total (every member -> 1 slice; if the member COUNT alone exceeds the
+    margin — hundreds of members — no size can help, and write_parity's own N+M<256 guard +
+    the crash-safe finalize catch it without touching the previous backup)."""
+    sizes = [s for s in member_sizes if s > 0]
+    total = sum(sizes)
+    if total <= 0:
+        return VOLUME_SIZE_DEFAULT
+    target = _target_volume_count()
+    frac = max(0.0, parity_fraction)
+    reserve = max(0, reserve_members)
+    vsize = max(VOLUME_SIZE_DEFAULT, math.ceil(total / target))
+    while True:
+        n = sum(max(1, math.ceil(s / vsize)) for s in sizes) + reserve
+        m = max(1, math.ceil(frac * n))
+        if n + m <= _NM_SAFETY_MARGIN or vsize >= total:
+            return vsize
+        vsize = int(vsize * 1.1) + 1  # grow ~10% to shrink each member's slice count
+
+
+def _previous_volume_size(dest: Path) -> int | None:
+    """The volume_size recorded by the previous COMPLETE manifest at ``dest`` (for the
+    tier-crossing note), or None when there is no readable prior set."""
+    p = dest / MANIFEST_NAME
+    if not p.exists():
+        return None
+    try:
+        return int(json.loads(p.read_text(encoding="utf-8"))["volume_size"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+# --------------------------------------------------------------------------- #
 #  Write
 # --------------------------------------------------------------------------- #
 def write_stream_backup(
@@ -777,6 +845,7 @@ def write_stream_backup(
     Returns a measured summary (volumes reused/emitted, gate-held seconds, wall)."""
     if not passphrase:
         raise VolumeError("the volume backup is always encrypted: a passphrase is required")
+    explicit_vsize = volume_size is not None  # an explicit size is honoured; else DB-9 adapts
     vsize = volume_size or VOLUME_SIZE_DEFAULT
     if vsize < 1024:
         raise VolumeError("volume size too small")
@@ -815,7 +884,32 @@ def write_stream_backup(
                 else _live_corpus_source(tmp_dir, include_newsletters, notes)
             )
             corpus_bytes = src.path.stat().st_size
-            side_bytes = sum(m.path.stat().st_size for m in side)
+            side_sizes = [m.path.stat().st_size for m in side]
+            side_bytes = sum(side_sizes)
+            if not explicit_vsize:
+                # DB-9: size volumes so N+M stays under the GF(2^8) parity ceiling at any scale
+                # (byte-identical below ~100 GB where the 512 MiB floor wins). Size against the
+                # REAL per-member volume count (each member slices independently), NOT
+                # ceil(total/size), which undercounts by up to one volume per member. Update
+                # BOTH vsize (recorded in the manifest) and st.volume_size (drives the slicing)
+                # BEFORE the first _emit_member, so a torn manifest can never mislabel the size.
+                adaptive = _adaptive_volume_size([*side_sizes, corpus_bytes], parity_fraction)
+                if adaptive != vsize:
+                    prev_vsize = _previous_volume_size(dest)
+                    vsize = st.volume_size = adaptive
+                    notes.append(
+                        f"adaptive volume sizing: {adaptive // (1024 * 1024)} MiB volumes so the "
+                        f"Reed-Solomon N+M stays under the GF(2^8) 255-volume ceiling at "
+                        f"{(corpus_bytes + side_bytes) / (1024 ** 3):.1f} GiB "
+                        f"(target ~{_target_volume_count()} data volumes)"
+                    )
+                    if prev_vsize is not None and prev_vsize != adaptive:
+                        notes.append(
+                            f"volume size changed {prev_vsize // (1024 * 1024)} -> "
+                            f"{adaptive // (1024 * 1024)} MiB (the corpus crossed a size tier): "
+                            "this run re-emits all volumes; the previous complete backup is "
+                            "replaced atomically only on success (never orphaned mid-run)"
+                        )
             _preflight_dest(
                 dest, corpus_bytes, side_bytes, parity_fraction, reuse_possible=bool(pool)
             )
