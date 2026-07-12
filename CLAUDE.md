@@ -794,6 +794,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     display:none/removal browser-unverified is the interleaved-shared-helper hazard (passes `node --check`,
     breaks at runtime). So: port the missing piece, guard the absorption, and GATE the actual hide on a
     browser-verified untangle — recorded as a carry-over, not shipped on faith.
+  - **A MULTILINGUAL LEXICON MEASURE MUST VERIFY THE TEXT'S SCRIPT — else a mislabelled language yields a
+    FABRICATED NEUTRAL, not an honest gap (2026-07-12, S5.2 skeptic):** the whole honesty of a rule-based
+    subjectivity/loaded-language scorer rests on "density 0.0 is a REAL measurement (no loaded terms),
+    DISTINCT from the unmeasured gap of an unsupported language." That distinction SILENTLY COLLAPSES when
+    the scorer trusts the source-asserted `language` (which the project itself treats as unreliable) and
+    scans, say, a Cyrillic body against the English lexicon: 0 matches → `density:0.0` reads as "measured,
+    clean" when the truth is "wrong lexicon, unmeasurable." Same for unsegmented CJK against a Latin list
+    (one giant token, 0 matches). FIX = a cheap SCRIPT GUARD: compute the text's dominant script and the
+    lexicon's script; on a mismatch return an honest GAP, never a fabricated 0. The negative-space lens
+    (should-be-a-gap inputs) is what surfaces this — a positive-only test suite passes right over it.
+  - **A SUPPLY/PHYSICAL PARSER'S "NEVER A PRICE" MUST BE AN ALLOWLIST GUARANTEE, AND GROUPED THOUSANDS ARE A
+    FABRICATION TRAP (2026-07-12, S5.1 skeptic):** "this parser never emits a price" cannot rest on a
+    unit-string check (it misses €/£/¥/cents/non-USD codes, and trade/consumption measures are reported in
+    MONETARY terms) — narrow the MEASURE allowlist to the always-physical measures so a value-denominated
+    figure can't enter at all. Two more traps a negative-space pass caught: (a) `float("350,000")` raises →
+    a REAL published figure silently becomes a fabricated `value=None` GAP (USGS/OWID print thousands
+    separators) — strip US grouping before parsing; (b) a substring currency check false-POSITIVES on
+    physical units ("euro"⊂"europium" drops legit Europium supply) — match currency codes/words on a WORD
+    BOUNDARY, symbols anywhere. A currency in the value cell REFUSES the row (never a fabricated gap).
+  - **"A SINGLE DOWNSTREAM VALIDATOR" IS A LIE IF THE BUILDER PRE-COERCES (2026-07-12, S5.3 skeptic):** a
+    write-then-validate file builder that claims `load_X` is the one loud validator is wrong the moment the
+    build step coerces or drops before the validator sees the value: `int(2.9)==2` and `int(True)==1` land a
+    fat-fingered grade as a clean valid one, and a silent `except: continue` DROPS a judgement the human
+    made (the opposite of the "never silently drop" comment beside it). Validate STRICTLY at the build layer
+    — reject float/bool/non-numeric LOUDLY, detect a duplicate-key collision (`{2:2, "2":0}` clobbers via
+    `str()`), and clean the temp on an `os.replace` failure so a validated `.tmp` is never orphaned.
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -1042,6 +1068,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   follow-up (the probe is intentionally context-only so it can never fabricate a date). (e) **S4.7
   country-emphasis picker** — the `country_priority` order-never-exclude lever exists; a
   continent-grouped onboarding UI is the follow-up. LESSONS in the Session-rituals subsection above.
+- **S5 CLOSEOUT (2026-07-12, Tier-4 decided-but-unbuilt rulings + measurement instruments, branch
+  `claude/s5-rulings-builds`, 7 commits onto `origin/0.2` base `6a904c2d` = 0.2 with S1–S4 merged):**
+  SHIPPED, each honesty-critical slice adversarially skeptic-verified PRE-PUSH (two workflows, distinct
+  lenses incl. the mandatory negative-space lens — real defects found + fixed on S5.1, S5.2, S5.3) and
+  green in a py3.13 venv (the 2 version tests fail only with the known sandbox `PackageNotFoundError` —
+  no setuptools build backend; green in CI). Full detail = the 5 `docs/ledger/shipped.csv` rows.
+  **DOCTRINE = measure-before-trust: make the maintainer's data production effortless, never synthesize
+  it.** **S5.1** USGS Mineral Commodity Summaries SUPPLY parser (rare-earths B12) — production/reserves/
+  net-import-reliance, NEVER prices (enforced by a narrowed MEASURE allowlist, not a unit check);
+  `us-usgs` agency + `minerals_supply_summary` + `/api/stats/minerals-supply` + a Markets panel;
+  skeptic-hardened (grouped-thousands no longer fabricates a gap; Europium survives the currency guard).
+  **S5.2** the rule-based subjectivity/loaded-language engine (the sentiment pivot; model path banned) —
+  per-language lexicon files (`configs/subjectivity/*.txt`, dated + registered), descriptive components +
+  spans, honest per-language gaps, a SCRIPT-MISMATCH guard (a mislabelled language gaps, never a
+  fabricated 0); feeds the headline_body card + a deduced per-article endpoint; VADER investigated + NOT
+  reused (valence ≠ subjectivity). **S5.3** the IR gold-set BUILDER — samples real corpus queries (never
+  invents), grades 0/1/2 keyboard-fast, writes the EXACT `ir_eval` format atomically-validated; closes
+  the measure-before-trust loop for `OO_FAMILY_LEMMA` + the BM25F default. **S5.4** the lemma-conflation
+  preview surfaced visibly in the Diagnostics panel (was download-only). **S5.5** S&P reclassification
+  (verify-only, found done) + `int`/`eu` curation of 22 hand-verified transnational sources (G7/G20-News
+  dropped: `g7uk.com` is national) + retention-instrument verify. **S5.6 SKIPPED** (stretch, gated on a
+  genuinely-done queue; S6.1b carries the guard). **OPERATOR LIST (networked / maintainer-only, read
+  FIRST):** (a) **the USGS MCS data fetch** — build the fetch client through the guarded factory + drop
+  the real MCS release; the parser + agency + surface are ready and the fetch is the only missing piece.
+  (b) **subjectivity lexicon sourcing/vetting** — replace the modest seed lexicons with vetted,
+  license-clean, native-reviewed per-language lists (the mtime cache picks them up without a restart; add
+  `configs/subjectivity/<lang>.txt` + bump `SUBJECTIVITY_AS_OF`); the engine measures any language that
+  has a lexicon and honestly gaps the rest. (c) **GRADE THE GOLD SET** — the builder is one click away
+  (Settings → Diagnostics → "Build an IR gold set"); grading it unblocks the `OO_FAMILY_LEMMA` + BM25F
+  measurement (the lemma preview beside it shows what would merge). **CARRY-OVER for S6:** (d) the S5
+  frontend slices are BROWSER-UNVERIFIED (Markets supply panel · gold-set grading UX + keyboard · lemma
+  preview render) — a click-through is owed (fork-3). (e) a subjectivity reader HIGHLIGHT panel (the
+  spans are emitted; the reader surface isn't built). (f) a future zh/ja subjectivity lexicon needs the
+  segmenter (the script guard handles the mislabel case, not an in-script unsegmented one). (g) the many
+  OTHER individual International sources still lack `int` — an ongoing data-curation step. LESSONS in the
+  Session-rituals subsection above.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL
