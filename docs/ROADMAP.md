@@ -108,7 +108,7 @@ instrumentation into one report with a per-check verdict. The live RUN and the
 | **P1.9** | Job-ify the diagnostics `/all` export (was 36+ min blocking the loop) | ✅ complete — backend (#600 D2) + the UI job button (B6, #622) |
 | **P1.10** | trending-windows cold path (467 s/call; 62 calls / 3,286 s) — stale-but-disclosed serve + change-gated refresh | ✅ shipped — D1 persisted store still pending (see DB-3) |
 | **P1.11** | Flip on the D4 map serve (map GROUP BY was 748 s total / ~150 s per call) | ✅ shipped |
-| **P1.12** | Background maintenance under the job/deadline regime (counter-reconcile 86–104 s/pass; prune 32 s) | ✅ deadline half shipped — **off-peak scheduling remains** (A10, not reached) |
+| **P1.12** | Background maintenance under the job/deadline regime (counter-reconcile 86–104 s/pass; prune 32 s) | ✅ **complete** — deadline+watermark half shipped earlier; **off-peak scheduling shipped S2.2 (A10, 2026-07-12)**: `src/scheduler/maintenance.py:run_idle_maintenance` runs the budgeted reconcile/prune slices in the collector-IDLE window (scheduler-owned `_run_off_peak_maintenance`, holds `_run_lock` so it is never concurrent with a pass, throttled `OO_MAINT_INTERVAL_S`=300 s, skipped under memory pressure, `_stop`-interruptible), DECOUPLED from the pass-tail `warm_cache`; freshness gates + `complete:false` disclosure unchanged; surfaced in scheduler `status().last_maintenance`. |
 
 **Heavy-endpoint sweep status (was the ⬜ list from the 2026-07-08 field test):**
 `signals/alerts`/`flood`/`bury` + `insights/lunar-correlation` + `server-locations` +

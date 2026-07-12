@@ -37,6 +37,21 @@ _LOG = logging.getLogger(__name__)
 # Interruptible (Event.wait), so stop() still returns promptly.
 _CONTINUOUS_GAP_S = 5.0
 
+# A10 off-peak maintenance: the minimum interval between idle-window keyword
+# maintenance runs (counter reconcile + orphan prune + language reconcile), so it
+# does not fire on every 5 s continuous gap. Default 300 s; 0 = every idle window.
+_MAINT_INTERVAL_S_DEFAULT = 300.0
+
+
+def _maint_interval_s() -> float:
+    """Min seconds between off-peak maintenance runs (OO_MAINT_INTERVAL_S)."""
+    import os
+
+    try:
+        return max(0.0, float(os.getenv("OO_MAINT_INTERVAL_S", str(_MAINT_INTERVAL_S_DEFAULT))))
+    except (TypeError, ValueError):
+        return _MAINT_INTERVAL_S_DEFAULT
+
 
 # --------------------------------------------------------------------------- #
 # Pass recycling (P0.3 E2, field event 2026-07-09): ONE continuous crawl pass
@@ -877,6 +892,11 @@ class BackgroundScheduler:
         self._continuous_gap_s = _CONTINUOUS_GAP_S
         # How often a memory pause re-polls the guard (instance attr for tests).
         self._mem_pause_poll_s = 5.0
+        # A10 off-peak maintenance: throttle + last-run monotonic stamp (instance
+        # attrs so tests can drive them). 0.0 = due on the first idle window.
+        self._maint_interval_s = _maint_interval_s()
+        self._last_maint = 0.0
+        self._last_maintenance: dict | None = None
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -928,6 +948,13 @@ class BackgroundScheduler:
             if self._stop.is_set():
                 break
             self._do_run()
+            if self._stop.is_set():
+                break
+            # A10: off-peak keyword maintenance runs HERE, in the idle window right
+            # after a pass — collector-idle, mutually exclusive with any run-now
+            # (holds _run_lock), throttled off-peak, interruptible by stop(). This
+            # replaces the old pass-tail coupling (warm_cache no longer reconciles).
+            self._run_off_peak_maintenance()
             if self._stop.is_set():
                 break
             settings = self._settings_provider()
@@ -1018,6 +1045,56 @@ class BackgroundScheduler:
             from src.scheduler.runlog import record_run
 
             record_run(report)
+            _phase_set(None)
+            self._active = False
+            self._run_lock.release()
+
+    def _run_off_peak_maintenance(self) -> None:
+        """A10: run the budgeted keyword maintenance in the collector-idle window.
+
+        Mutually exclusive with any collect pass — takes ``_run_lock`` NON-BLOCKING
+        so a concurrent run-now is never contended (and, if a run-now owns the lock,
+        maintenance simply yields this window). While it holds the lock it sets
+        ``_active`` + a labelled ``"maintenance"`` phase, so a concurrent
+        :meth:`run_now` HONESTLY returns ``False`` ("busy, retry") instead of a false
+        ``True`` + a silently-dropped pass, and ``status()`` shows the scheduler busy
+        (never idle-while-holding-the-write-gate). The write-gate work is thus never
+        concurrent with collection writes — the A10 point. Throttled to
+        ``_maint_interval_s`` so it does not fire every 5 s gap, skipped under memory
+        pressure, and interruptible (``_stop``). Best-effort; never raises into the loop."""
+        import time as _t
+
+        if self._stop.is_set():
+            return
+        now = _t.monotonic()
+        if self._last_maint and now - self._last_maint < self._maint_interval_s:
+            return  # off-peak throttle: not due yet
+        try:
+            from src.scheduler import memguard
+
+            if memguard.memory_guard.engaged:  # property, not a call
+                return  # under memory pressure — do not add write-gate work now
+        except Exception:  # noqa: BLE001 - guard read must never block maintenance
+            pass
+        if not self._run_lock.acquire(blocking=False):
+            return  # a run-now pass owns the lock — yield this window
+        # Mirror _do_run's busy signal: with the lock held but _active False, a
+        # concurrent run_now would gate on _active, spawn a pass, fail the lock
+        # acquire and silently no-op while replying started:true (skeptic finding).
+        # Setting _active + a labelled phase makes run_now honestly return False and
+        # status() show the scheduler busy for the (bounded) maintenance window.
+        self._active = True
+        _phase_set("maintenance")
+        try:
+            self._last_maint = now
+            from src.scheduler.maintenance import run_idle_maintenance
+
+            result = run_idle_maintenance(should_stop=self._stop.is_set)
+            with self._state_lock:
+                self._last_maintenance = result
+        except Exception:  # noqa: BLE001 - never let maintenance break the loop
+            _LOG.warning("off-peak maintenance failed", exc_info=True)
+        finally:
             _phase_set(None)
             self._active = False
             self._run_lock.release()
@@ -1252,6 +1329,10 @@ class BackgroundScheduler:
                 # RSS memory guard (P0.3 E3): the loud paused-low-memory state
                 # with the real numbers — never a silent stall.
                 "memory_guard": guard_state,
+                # A10 off-peak maintenance: the last idle-window keyword-maintenance
+                # tally (reconcile + cleanup), so its complete:false disclosure is
+                # visible in the scheduler status. None until it first runs.
+                "last_maintenance": self._last_maintenance,
             }
 
     def activity(self, session) -> dict:
