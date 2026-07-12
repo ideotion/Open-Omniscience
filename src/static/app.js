@@ -10385,7 +10385,22 @@
     function kwTransHtml(row) {
       if (!row || !row.translation) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      return ` <span class="kw-trans" title="${esc(t("Verified translation (cross-language concept)."))}">→ ${esc(row.translation)}</span>`;
+      // S4.2: the verified cross-language concept; the per-language COMPOSITION
+      // (de-US-centring in action — a concept's coverage ACROSS languages) rides the #oo-tip
+      // LAYERED hover on demand (invariant #17), never crowding the visible trend/Home row.
+      // language_breakdown = {langCode: count} on the merged ring row (queries.py); absent on a
+      // single-language keyword -> just the base title (defensive).
+      let title = t("Verified translation (cross-language concept).");
+      const lb = row.language_breakdown;
+      if (lb && typeof lb === "object") {
+        const parts = Object.keys(lb)
+          .map((k) => [k, +lb[k] || 0])
+          .filter((p) => p[1] > 0)
+          .sort((a, b) => b[1] - a[1])
+          .map((p) => `${p[0]} ${p[1]}`);
+        if (parts.length) title += " — " + t("Across languages:") + " " + parts.join(" · ");
+      }
+      return ` <span class="kw-trans" title="${esc(title)}">→ ${esc(row.translation)}</span>`;
     }
     // The TENTATIVE LLM translation (Phase 4 fallback): shown ONLY when no verified
     // ring translation exists, with a distinct ≈ marker + an "unreliable" hover — never

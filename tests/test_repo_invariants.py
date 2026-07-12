@@ -4900,3 +4900,16 @@ def test_cross_time_recall_is_sacred_no_time_partitioned_corpus_tables():
         "windowed_term_counts must keep open (whole-corpus) default bounds — no recency default "
         "on the hot read path (§F cross-time recall)."
     )
+
+
+def test_ring_translation_breakdown_rides_the_hover():
+    """S4.2: the per-language COMPOSITION of a merged cross-language keyword (language_breakdown)
+    rides the #oo-tip LAYERED hover (the title attribute) on the Trends/Home rows — visible on
+    demand, never crowding the visible row (invariant #17). kwTransHtml reads
+    row.language_breakdown into its title, never into the row text."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    start = app.index("function kwTransHtml(")
+    kw = app[start : app.index("function kwTentativeHtml(", start)]
+    assert "row.language_breakdown" in kw, "the breakdown must feed kwTransHtml"
+    assert "Across languages:" in kw
+    assert 'title="' in kw  # rides the #oo-tip title (layered), not the visible row text
