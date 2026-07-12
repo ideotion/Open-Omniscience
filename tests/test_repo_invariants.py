@@ -354,6 +354,50 @@ def test_ir_eval_harness_is_wired():
     assert "function runIrEval(" in appjs and "/api/diagnostics/ir-eval?" in appjs
 
 
+def test_p0_validation_kit_is_wired():
+    """S1.2: the push-button v0.2.0 acceptance run — one cancellable job that drives the
+    REAL backup engine against the live corpus, verifies it, probes a STAGED restore + a
+    dry-run merge PREVIEW (never commits), and reads the merged unlock + collector
+    instrumentation into ONE report with a per-check verdict. Measurements only, never a
+    fabricated pass, version/format-stamped."""
+    mod = (_SRC / "monitoring" / "p0_validation.py").read_text(encoding="utf-8")
+    for fn in ("def run_p0_validation(", "def build_p0_report(", "def validate_dest_dir(",
+               "def _check_backup(", "def _check_restore(", "def _check_unlock(",
+               "def _check_collector(", "def last_p0_validation_report(",
+               "def render_p0_validation_text("):
+        assert fn in mod, f"p0_validation must define {fn}"
+    # HONESTY: no composite score; the summary is a conjunction; the restore is a PREVIEW
+    # (commit=False) that never touches the live corpus; the report is version/format-stamped.
+    assert "commit=False" in mod, "the restore probe must be a dry-run PREVIEW (never commit)"
+    assert '"backup_engine_format"' in mod and "def backup_engine_format(" in mod, (
+        "the report must be stamped with the backup-engine format so a stale run is detectable"
+    )
+    assert "NOT a composite" in mod or "no composite score" in mod
+    # it drives the REAL live path (never an injected corpus_source double — the ZETA lesson):
+    # write_volume_backup / verify_stream_backup / read_volume_backup / run_restore, no seam.
+    assert "write_volume_backup(" in mod and "verify_stream_backup(" in mod
+    assert "read_volume_backup(" in mod and "run_restore(" in mod
+    assert "corpus_source" not in mod, "must NOT inject a corpus_source double (ZETA (c) lesson)"
+    # the endpoints trio + download, wired into the debug bundle AND the all-diagnostics zip.
+    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    for route in ('"/p0-validation"', '"/p0-validation/status"', '"/p0-validation/cancel"',
+                  '"/p0-validation/download"'):
+        assert route in api, f"diagnostics must register {route}"
+    assert 'BackgroundJob(\n        "p0-validation"' in api or '"p0-validation",' in api
+    assert '"p0_validation"' in api, "the debug bundle must carry the last P0 validation report"
+    assert '"p0-validation.json"' in api, "the all-diagnostics zip must carry the P0 report member"
+    assert "is_writer=False" in api  # it never commits the live corpus
+    # the Diagnostics-panel control (dest + passphrase -> a click) + the JS handlers.
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id="p0-dest"' in html and 'id="p0-pass"' in html and "runP0Validation(" in html
+    assert "function runP0Validation(" in appjs and "/api/diagnostics/p0-validation" in appjs
+    # the runbook the panel hint points at exists.
+    assert (_SRC.parent / "docs" / "product" / "P0_VALIDATION_RUNBOOK.md").exists(), (
+        "the operator runbook must ship (S1.3)"
+    )
+
+
 def test_bm25f_per_column_ranking_is_wired():
     """Keyword-engine P5.1: FTS ranking is BM25F — bm25() weighted per column (title vs
     body) so a title keyword outranks a body-only mention. The weights are env-tunable and

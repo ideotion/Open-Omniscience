@@ -77,6 +77,14 @@ The deep detail (measured numbers, acceptance criteria, session territories) liv
 
 ### P0 — data safety at scale (the release blockers — attended sessions)
 
+The live-corpus validation of this set is now **push-button**: run the in-app
+**P0 data-safety validation** job (Settings → Diagnostics) and follow
+[`docs/product/P0_VALIDATION_RUNBOOK.md`](product/P0_VALIDATION_RUNBOOK.md). It
+drives the real backup engine, verifies it, probes a staged restore + dry-run
+merge preview (never touches the live corpus), and reads the unlock + collector
+instrumentation into one report with a per-check verdict. The live RUN and the
+`v0.2.0` TAG stay maintainer-only.
+
 | Item | What | Status |
 |---|---|---|
 | **P0.1** | Backup at 100 GB+ — the `oo-volumes-2` streaming engine (no plaintext corpus snapshot, no zip, bounded RAM incl. banded parity, incremental changed-volume re-emit, resumable, verifiable) | 🔧 engine shipped — **awaiting the maintainer's live-corpus validation** (the v0.2.0 gate item) |

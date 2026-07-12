@@ -3130,3 +3130,57 @@ iterative stoplist tail every language has, far better than whole-sentence junk 
 LESSONS folded into the Session-rituals "Lessons" subsection: optional-seam design, `min_len=2` for
 CJK, offset reconstruction via forward-cursor, lightweight importability probe for status checks,
 the Heaps-β corpus-recurrence framing.
+
+---
+
+## 2026-07-12 — S1: the v0.2.0 P0 data-safety validation kit (Tier-0 release kit)
+
+Branch `claude/s1-p0-validation-kit-p4x3px`, one draft PR onto 0.2. Skeptic-verified pre-push
+(4 distinct lenses, all GO; 7 findings applied), full-suite-green (py3.13 .venv, 3400 passed /
+64 skipped).
+
+**S1.1 post-wave health check.** The A+B wave (#614–#631) is clean: full suite 3400 passed on
+the 0.2 tip, ruff (blocking) + i18n --min 100 + mypy 127≤127 all green — no fix-forward. FINDING
+(pre-existing, carry-over): a subset-order pollution — `test_a2_job_endpoints.py`'s heavyweight
+`TestClient(app)` lifespan fixture (real startup/shutdown = engine/airplane-guard/seeding), when it
+runs before `test_diagnostics.py::test_doctor_healthy_returns_zero` in a subset with
+test_repo_invariants/all_diagnostics_job/session_forensics, leaves `run_doctor()`'s DB-count query
+failing → rc 1. Reproduces on clean origin/0.2; green in full-suite order (CI never hits it).
+
+**S1.2 the push-button P0 validation JOB.** `src/monitoring/p0_validation.py` + a diagnostics
+endpoint quintet (`POST /api/diagnostics/p0-validation`, `/status`, `/cancel`, `GET /last`,
+`/download?format=json|txt`) + a Settings→Diagnostics panel (dest + passphrase → a click). One
+cancellable `BackgroundJob` (is_writer=False, cancellable=True) runs the acceptance checks against
+the operator's LIVE corpus: P0.1 backup (drives the real `write_volume_backup`, RSS-sampled via a
+psutil thread; + an incremental refresh pass to show changed-volume re-emit) → `verify_stream_backup`;
+P0.2 a STAGED restore (`read_volume_backup`) + a dry-run merge PREVIEW (`run_restore(commit=False)` —
+never writes the live corpus); P0.4 reads the #596 per-phase unlock timing vs the <2 s bar; P0.3 reads
+the collect_perf RSS curve + memguard state. ONE report: per-check `pass | fail | not-measurable-here`
+against the written SCALE_ROADMAP bars (quoted into the report), measurements only, NO composite score,
+NEVER a fabricated pass, backup-engine-format + app-version stamped. Wired as a debug-bundle +
+all-diagnostics member (read-only — reads the LAST saved report, never runs a backup). Tests drive the
+REAL live path (monkeypatch `live_db_path`, never a `corpus_source` double — ZETA (c)); assert the live
+corpus is byte-unchanged, the passphrase never leaks, staging is cleaned on every path, and a cancel
+leaves no complete-looking backup.
+
+**S1.3** `docs/product/P0_VALIDATION_RUNBOOK.md` — click-by-click operator procedure + a maintainer-only
+TAG-DAY CHECKLIST; linked from the Settings panel hint + the ROADMAP P0 section. **S1.4** the CHANGES.md
+0.2.0 section is release-notes-ready (A+B-wave bullets; the "tag awaits live validation" line kept);
+`release.yml` verified gating correctly (full-suite `test` job + tag==pyproject + SHA256SUMS +
+`--verify-tag`) — no change needed; README/CONTRIBUTING version prose confirmed fine at tag time.
+
+**S1.5 hardening (the 7 skeptic findings applied):** (1) the restore-probe staging is named with the
+janitor-swept `.restore-` prefix + swept at run start — so a hard-kill mid-probe can't orphan an unseen
+PLAINTEXT corpus copy on the external dest drive; (2) the collector climb heuristic dropped the
+ratio-AND gate that hid a large-absolute/modest-ratio leak (a +1.9 GB rise on a 4 GB baseline) and no
+longer asserts "flat" against climbing numbers; (3) a completed-but-unmeasurable backup (sub-2 GB / no
+psutil) reports `not-measurable-here`, never a scale `pass`; (4) `_p0_scrub` is a real recursive
+redaction on `/status`, not a no-op; (5) a malformed unlock record summing to 0 ms is not-measurable,
+never a "0 ms pass"; (6) the "only ever read" phrasing made precise (the backup does a content-preserving
+WAL checkpoint; the RESTORE never writes the live corpus); (7) an incremental-refresh failure is recorded,
+not silently suppressed; plus cleanup_cancelled_build now runs on ANY non-passing backup (not only cancel).
+
+LESSONS folded into the Session-rituals "Lessons" subsection: verdict-maps-to-the-bar-it-tested (+ the
+AND-gate-hides-signal / a-named-scrub-must-enforce / retention-limited-diagnostic corollaries); the
+external-drive-probe-needs-a-swept-prefix at-rest-encryption lesson; the `TestClient(app)`-lifespan
+subset-order-pollution suspect.

@@ -131,3 +131,7 @@ logs/
 
 # Claude Code local agent worktrees (ephemeral)
 .claude/
+
+# Session-local pytest/pip TMPDIR + test-output scratch (S1)
+.pip-tmp/
+.testout/
