@@ -1637,6 +1637,23 @@
         <button class="secondary" onclick="loadSessionForensics(this)" title="Why did the app crash / why was unlock slow / what is filling the disk — the app's own records: the previous session's clean-or-unclean-end verdict, the last unlock's phase timings and -wal size, and the data folder's on-disk inventory with any orphaned backup/restore staging (a leftover decrypted corpus snapshot is flagged). Local only; sizes and app-owned names, never file contents.">Session forensics</button>
         <div id="session-forensics-out" class="small" style="margin-top:6px"></div>
       </div>
+      <!-- P0 DATA-SAFETY VALIDATION (S1.2): the push-button v0.2.0 acceptance run. Drives the
+           REAL backup engine against your live corpus, verifies it, probes a STAGED restore + a
+           dry-run merge PREVIEW (your live corpus is only ever READ, never committed), and reads
+           the merged unlock + collector instrumentation into ONE report with a per-check verdict.
+           Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <div id="p0-validation-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">P0 data-safety validation (v0.2.0 acceptance)</div>
+        <div class="hint">Drives the REAL backup engine against your live corpus, verifies it, probes a staged restore with a dry-run merge preview (your live corpus is never replaced or deleted — the restore preview never writes it, and the backup's only touch is a standard WAL checkpoint), and reads the unlock + collector instrumentation — one report, a verdict per check, no composite score. Choose a SEPARATE empty directory (ideally an external drive) as the destination. Full procedure: docs/product/P0_VALIDATION_RUNBOOK.md.</div>
+        <div class="row" style="margin-top:6px">
+          <input id="p0-dest" type="text" style="min-width:280px" placeholder="backup destination dir (a separate empty folder / drive)">
+          <input id="p0-pass" type="password" style="width:200px" placeholder="backup passphrase (never stored)" autocomplete="new-password">
+          <button id="p0-run-btn" onclick="runP0Validation(this)" title="Run the P0 data-safety acceptance checks against your live corpus: back up (streaming, bounded RAM), verify (signed manifest + volume checksums), probe a staged restore + dry-run merge preview (never touches the live corpus), and read the unlock + collector instrumentation. One report, a verdict per check, no score, never a fabricated pass. This is the run the v0.2.0 tag is gated on.">Run P0 validation</button>
+          <button class="secondary" onclick="cancelP0Validation()" title="Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.">Cancel</button>
+          <span id="p0-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="p0-result" class="small" style="margin-top:6px"></div>
+      </div>
       <div class="row" style="margin-top:6px">
         <button id="all-diag-btn" onclick="runAllDiagnostics(this)" title="Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
         <span id="all-diag-status" class="small" style="margin-left:6px"></span>

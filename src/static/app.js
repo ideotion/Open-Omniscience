@@ -9537,6 +9537,92 @@
       }
     }
 
+    // P0 data-safety validation (S1.2): the push-button v0.2.0 acceptance run. Starts the
+    // background job (POST with dest_dir + backup passphrase), clears the passphrase field the
+    // moment it is handed to the backend, then polls status and renders the per-check verdicts +
+    // the download links. The heavy work runs server-side on the job thread; a 100 GB backup is
+    // slow, so the poll ceiling is generous but bounded (never infinite). No score.
+    async function runP0Validation(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("p0-status"); const out = $("p0-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const dest = (($("p0-dest") && $("p0-dest").value) || "").trim();
+      const pass = ($("p0-pass") && $("p0-pass").value) || "";
+      if (!dest || !pass) { set(t("Enter a destination directory and a backup passphrase first.")); return; }
+      if (btn) btn.disabled = true;
+      if (out) out.innerHTML = "";
+      set(t("Starting…"));
+      try {
+        try {
+          await api("/api/diagnostics/p0-validation", {
+            method: "POST", body: JSON.stringify({ dest_dir: dest, passphrase: pass }),
+          });
+        } catch (e) {
+          set(t("Could not start:") + " " + ((e && e.message) || t("check the destination path.")));
+          return;
+        }
+        // Hand-off done: clear the passphrase from the field (never keep a secret in the DOM).
+        if ($("p0-pass")) $("p0-pass").value = "";
+        let miss = 0;
+        for (let i = 0; i < 5400; i++) {  // ~3 h ceiling at 2 s (a 100 GB backup is slow; bounded)
+          let s;
+          try { s = await api("/api/diagnostics/p0-validation/status"); miss = 0; }
+          catch (e) {
+            miss++;
+            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
+            await sleep(Math.min(2000 * miss, 10000));
+            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
+            continue;
+          }
+          const state = s && s.state;
+          if (state === "done" && s.ready) { set(t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
+          if (state === "error") { set(t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { set(t("Validation cancelled.")); break; }
+          if (state === "done") { set(t("Done — check the task manager for the report.")); break; }
+          const member = s.detail ? " · " + s.detail : "";
+          set(t("Running in the background…") + member);
+          await sleep(2000);
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function renderP0Result(out, rep) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const esc = (typeof escapeHtml === "function") ? escapeHtml : ((s) => String(s == null ? "" : s));
+      const order = [
+        ["p0_1_backup", "P0.1 backup"], ["p0_1_verify", "P0.1 verify"],
+        ["p0_2_restore", "P0.2 restore"], ["p0_4_unlock", "P0.4 unlock"],
+        ["p0_3_collector", "P0.3 collector"],
+      ];
+      const checks = rep.checks || {};
+      let rows = "";
+      order.forEach(([k, label]) => {
+        const c = checks[k]; if (!c) return;
+        const v = c.verdict || "?";
+        const color = v === "pass" ? "var(--ok)" : (v === "fail" ? "var(--err)" : "var(--caveat)");
+        rows += '<div><span style="color:' + color + ';font-weight:600">[' + esc(v.toUpperCase())
+          + ']</span> ' + esc(label) + ' — ' + esc(c.reason || "") + '</div>';
+      });
+      const sum = rep.summary || {};
+      out.innerHTML = rows
+        + '<div style="margin-top:4px">' + esc(sum.pass || 0) + ' pass · ' + esc(sum.fail || 0)
+        + ' fail · ' + esc(sum.not_measurable_here || 0) + ' not-measurable-here</div>'
+        + '<div class="hint">' + esc(sum.note || "") + '</div>'
+        + '<div style="margin-top:4px"><a href="/api/diagnostics/p0-validation/download?format=json" target="_blank">'
+        + t("Download report (.json)") + '</a> · <a href="/api/diagnostics/p0-validation/download?format=txt" target="_blank">'
+        + t("readable (.txt)") + '</a></div>';
+    }
+
+    async function cancelP0Validation() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { await api("/api/diagnostics/p0-validation/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+      const el = $("p0-status"); if (el) el.textContent = t("Cancelling…");
+    }
+
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
     // /api/diagnostics/ir-eval report for a gold-set FILE — score the live search at the
     // current BM25F default, or (both weight boxes filled) A/B two (title,body) weight
