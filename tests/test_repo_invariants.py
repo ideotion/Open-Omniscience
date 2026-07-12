@@ -4933,3 +4933,35 @@ def test_synthesized_leads_carousel_is_local_pausable_and_caveated():
     assert "aria-pressed" in car and "ArrowLeft" in car and "ArrowRight" in car
     # the CAVEAT rides EVERY face + a deep-link on every face (#23 + #8)
     assert "c.caveat" in car and "card-caveat" in car and "openCardCorpus" in car
+
+
+def test_omnibar_analysis_window_absorbs_the_insights_bar_capabilities():
+    """S4.4: the omnibar->#an analysis window ABSORBS every term-exploration capability of the
+    Insights search bar (exploreTerm / #ins-term), so retiring the bar later never loses a tool
+    (the Desk lesson; UI-rethink invariant #5). The four capabilities:
+      - trend        -> /api/insights/trend        (renderAnTrend, #an-trend)
+      - associations -> /api/insights/associations (renderAnTrend, #an-keywords mindmap seed)
+      - mindmap      -> renderAnMindmap             (#an-mindmap, self-contained #an renderer)
+      - context      -> /api/insights/context       (S4.4 PORT: term-in-context concordance,
+                                                      keyed on the analysis query, under the chips)
+    This is a REGRESSION GUARD on the absorption, NOT an assertion that the bar is gone: the bar
+    STAYS for now because #ins-explore INTERLEAVES the search bar with the NON-searchable
+    corpus-landscape AND the RELOCATABLE shared #mm-kit mindmap component, so the actual hide is
+    gated on a browser-verified untangling (recorded as the S4.4 carry-over)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # the #an subtab panels exist for each absorbed lens
+    assert 'id="an-trend"' in html and 'id="an-mindmap"' in html and 'id="an-keywords"' in html
+    # trend + associations flow into #an (renderAnTrend)
+    rt = app[app.index("async function renderAnTrend(") : app.index("async function renderAnRelated(")]
+    assert "/api/insights/trend" in rt and "/api/insights/associations" in rt
+    # mindmap: the self-contained #an renderer (never the Insights-bar renderMindmap/#ins-term)
+    assert "renderAnMindmap(" in app
+    # S4.4 PORT: term-in-context concordance, keyed on the analysis query, snippets only
+    ctx = app[app.index("async function loadAnContext(") : app.index("async function loadAnContext(") + 900]
+    assert "/api/insights/context" in ctx, "context snippets must be ported into #an"
+    assert 'p.get("query")' in ctx and "anQuery()" in ctx, "context is keyed on the analysis query term"
+    assert "anContextHtml(" in app and "In context" in app
+    # the port renders snippets, never a score (counts/snippets only)
+    ch = app[app.index("function anContextHtml(") : app.index("function anContextHtml(") + 1200]
+    assert "score" not in ch.lower(), "the context concordance carries no score"

@@ -10526,7 +10526,41 @@
         : "";
       kw.innerHTML = `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
         + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}${btn}</div>`
-        + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`;
+        + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`
+        + anContextHtml();
+    }
+    // S4.4: term-in-context CONCORDANCE — ported from the retired Insights search bar
+    // (exploreTerm's #ins-context) into the #an Keywords subtab, so the omnibar→#an window
+    // absorbs the LAST Insights-bar capability (trend + associations + mindmap already live in
+    // #an). Keyed on the analysis QUERY term; SKIPPED honestly for an article-id corpus that has
+    // no single term. Snippets/counts only, never a score. Rides on _anKwData so the tentative-
+    // translate re-render (anFillTentative → anRenderKwChips) keeps the snippets shown.
+    function anContextHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const ctx = _anKwData && _anKwData._context;
+      if (!ctx) return "";   // no single-term corpus, or not fetched yet — render nothing
+      const ms = ctx.mentions || [];
+      const body = ms.length
+        ? ms.map((m) => `<div class="note" style="max-width:none;margin-bottom:6px">`
+            + `<div style="font-size:12px" class="muted">${esc(m.source || "")}`
+            + `${m.country ? " · " + esc(ooRegionName(m.country, m.country)) : ""}`
+            + `${m.city ? " · " + esc(m.city) : ""}${m.observed_on ? " · " + esc(m.observed_on) : ""}`
+            + `${m.article_id ? ` · <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(t("open"))}</a>` : ""}`
+            + `${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>`
+            + `<div>${esc(m.snippet || "")}</div></div>`).join("")
+        : `<div class="muted">${esc(t("No context snippets."))}</div>`;
+      return `<h3 style="margin:16px 0 6px;font-size:13px">${esc(t("In context"))}`
+        + `${ctx.term ? ` <span class="muted">— ${esc(ctx.term)}</span>` : ""}</h3>` + body;
+    }
+    async function loadAnContext(p) {
+      if (!_anKwData) return;
+      const term = (p && p.get && p.get("query")) || anQuery() || "";
+      if (!term) { _anKwData._context = null; return; }   // article-id corpus: no single term to concord
+      try {
+        const ctx = await api("/api/insights/context?term=" + encodeURIComponent(term) + "&limit=12");
+        _anKwData._context = { term: (ctx.resolved && ctx.resolved.term) || term, mentions: ctx.mentions || [] };
+      } catch (_e) { _anKwData._context = null; }   // best-effort; never break the Keywords subtab
+      anRenderKwChips();
     }
     async function anFillTentative() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -14313,6 +14347,7 @@
         const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
         _anKwData = d; _anKwHost = kw;   // stash for the tentative-fill action
         anRenderKwChips();
+        loadAnContext(p);   // S4.4: term-in-context concordance under the chips (progressive)
       } catch (e) { kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Mindmap: a deterministic radial keyword-association graph seeded on the
       // TOP keyword of the matched set (KEYWORDS ARE CORPORA). Self-contained
