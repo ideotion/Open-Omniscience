@@ -698,6 +698,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     surfacing only under a non-default subset order). Lesson: when a health check goes red in a SUBSET,
     check clean-base + full-suite order before assuming it's your wave; a lifespan-driven client fixture
     that mutates global state is the first suspect. (Flagged, not fixed — a test-hygiene carry-over.)
+  - **REPRODUCER-FIRST FOR GATE-HOLD RIDERS — a REAL hold is not a reason to fix it (2026-07-12, S2.1):**
+    a write-gate hold being present is not sufficient to fix it. MEASURE the throughput ceiling
+    (GIL-bound Python work gets NO gate-split gain beyond the amortised-fsync overlap — batching already
+    collapses N per-article extractions onto ONE commit, so the writes are the small part of the window;
+    F13's ~13 ms/article extraction-in-gate is real but splitting `index_article` is high-risk + GIL-marginal)
+    and weigh the hot-path risk. And a gate held across a scan can be MANDATORY: the streaming backup's
+    `_corpus_facts` MUST run inside the `freeze()` gate because the tamper-evidence article-hash commitment
+    has to MATCH the streamed at-rest bytes — moving it out breaks correctness, not just risk (and it is a
+    rounding error beside the multi-hour corpus byte stream). F14's autoflush mechanism cannot fire under
+    `SessionLocal(autoflush=False)` (a read never flushes a dirty session → the gate is never acquired
+    across a fetch). Close a DECLINED rider with the reproducer AS the evidence (a test that pins the
+    property or refutes the mechanism), never a hand-wave (tests/test_write_gate_riders.py).
+  - **`async def` IS A WHOLE-SERVER FREEZE; THE FIX IS `def` OR `run_in_threadpool` — AND SLOWAPI WORKS ON
+    SYNC `def` (2026-07-12, S2.5):** a FastAPI `async def` handler runs ON the single event loop, so heavy
+    SYNCHRONOUS DB+SQLCipher-codec work inside it freezes the WHOLE worker for its duration (the
+    unlock/restore/task-manager freeze family — /api/articles was async def, measured p95 25 s). Make the
+    handler a plain `def` (Starlette runs a `def` route in the threadpool) or `run_in_threadpool` the body;
+    `@limiter.limit` (slowapi) DOES work on a sync `def` (verified via the suite: `Depends(get_db)` lifecycle
+    + exception handling intact). For FTS search NEVER materialize the whole match to sort+paginate: resolve
+    the surviving ids (fts ∩ filters) in the FINAL order via an id-only (+ sort-column) query, then load FULL
+    rows for the PAGE only — content is decrypted for ≤limit rows, not the ~20k-match whole set (GAMMA-measured
+    50 ms→11 ms warm at 1,776 matches; the win grows with match count).
+  - **`src/api/insights._cached` IS DICT-ONLY — A SCALAR HANDED TO IT IS A SILENT NO-OP (2026-07-12, S2.5
+    skeptic):** `_cached` persists + returns ONLY dict payloads (a non-dict `out` falls straight through with
+    NO `.set`; a hit is recognised only `if isinstance(hit, dict)`). Handing it a scalar (an int count) makes
+    the cache a SILENT no-op — correctness holds (always live/exact, so a freshness-only test passes green) but
+    the optimisation does NOTHING. Wrap the scalar in a dict (`{"count": n}`) and pin a HIT with a test that
+    asserts the STORE, not just freshness. (Corollary: guarding an endpoint in `guarded_read`/`_deadlined`
+    bounds even a whole-table `.distinct().all()` OOM — the statement deadline's SQLite progress handler
+    interrupts a runaway scan mid-query, so a full Python materialization can never complete past the deadline;
+    the omnibar is the exception — it must never blank, so its guard DEGRADES to an honest empty-with-note
+    payload instead of a 429/503.)
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -850,6 +882,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   CARRY-OVER for S2 (in the closeout PR body): the maintainer's LIVE RUN of the job + the v0.2.0
   TAG (both maintainer-only); the pre-existing test_a2 subset-order pollution; browser click-through
   of the Settings panel (fork-3, no browser here). LESSONS below.
+- **S2 CLOSEOUT (2026-07-12, Tier-1 P1 snappiness board, branch `claude/s2-snappiness-board-okqg27`,
+  draft PR #633 onto 0.2; full detail = the six shipped.csv rows + the S2 SHIPPED_LOG entry):**
+  SHIPPED, each risky slice skeptic-verified pre-push (S2.2: 3 lenses/1 med fixed; S2.5: 2 lenses/1 med
+  fixed). **S2.1** A9 gate-hold riders (F10/F11/F13/F14) closed REPRODUCER-FIRST — all four DECLINED with
+  reproducers/analysis as evidence (F14 refuted by test; F13 real-but-GIL-marginal; F10/F11 backup-path,
+  F11 correctness-constrained); no production code. **S2.2** A10 off-peak maintenance is scheduler-owned +
+  collector-idle (`src/scheduler/maintenance.py:run_idle_maintenance`, idle-gated + throttled + run_now-honest;
+  decoupled from the pass-tail warm_cache; P1.12 complete). **S2.4** guard-coverage sweep — corpus-www/
+  sentiment confirmed guarded, then 8 raw insights endpoints + 6 cards + omni (degrades) + link_analysis
+  OOM materializations now behind the admission cap + deadline. **S2.5+S2.3** /api/articles async→plain
+  def (threadpool, no freeze) + FTS over-fetch bound (id-only resolve → load the PAGE only; GAMMA-measured
+  50 ms→11 ms warm) + a data-aware cached browse COUNT(*) (P1.3 swept). **S2.6** the 5 TB architecture
+  review doc `docs/design/5TB_ARCHITECTURE_REVIEW.md` (S3's INPUT — hand-off explicit below). **S2.7** a
+  per-endpoint p95-vs-500 ms snappy verdict in the latency reservoir (rides /request-latency + the bundle).
+  **CARRY-OVER for S3 (in the closeout PR body):** (a) **`docs/design/5TB_ARCHITECTURE_REVIEW.md` is S3's
+  direct input** — 8 ordered recommendations, headline = adaptive volume sizing (DB-9) + the auto_vacuum/
+  page_size CREATE-time irreversible-seam ruling (decide before more field corpora exist) + D1/D2/D3 gated
+  build; (b) the S2.4 on-demand guard tail (source_io/sources needs a Source counter · framing cap ·
+  monitoring/anomalies + commodity/correlation grouped-SQL); (c) the S2.5 diagnostics residue
+  (diagnostics/keywords pass-collapse/job · debug-bundle read-only+_safe+budget); (d) the reader per-source
+  count needs a maintained Source counter; (e) browser click-through of the newly-guarded surfaces + any
+  429/503 handling (fork-3). LESSONS in the Session-rituals subsection above.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL
