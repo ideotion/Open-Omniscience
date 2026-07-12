@@ -2419,6 +2419,24 @@
           The whole interface switches as you pick. You can change this anytime in Settings.</p>
         <div id="gw-langs" class="gw-langs" role="listbox" aria-label="Choose your language"></div>
       </section>
+      <!-- Step: Sources by theme + language emphasis (S4.7). LOOPBACK reads/writes only
+           (the app's own /api/scheduler/coverage + /config) — NEVER external egress; the
+           finish step's consented go-online is the ONLY path to the network. Themes DEFAULT
+           to all-selected = collect everything (the cover-everything ruling); a partial pick
+           is the user's explicit, reversible FOCUS (a filter, stated). Language emphasis is a
+           cadence preference (collected more often) — it orders, it never excludes. -->
+      <section class="gw-step" data-step="sources" hidden>
+        <h3 style="margin:0 0 6px">Choose what to collect first</h3>
+        <p class="muted" style="margin-top:0">By default your app collects from every source. Focus your first collection on the themes you care about — you can widen or change all of this anytime in Settings → Collect.</p>
+        <div class="vsect" style="margin-top:10px">Themes</div>
+        <div id="gw-themes" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px"><div class="muted">Loading themes…</div></div>
+        <p class="hint muted" id="gw-theme-note" style="margin:6px 0 0"></p>
+        <div class="vsect" style="margin-top:14px">Emphasize languages <span class="muted">(optional)</span></div>
+        <p class="muted" style="margin:2px 0 4px"
+           title="A cadence preference — the emphasized languages are collected more often. It orders the rotation; it never stops the others (ordering, never exclusion).">
+          Collect these more often. Leave all off for an even rotation across languages.</p>
+        <div id="gw-emph-langs" class="gw-langs" role="group" aria-label="Emphasize languages"></div>
+      </section>
       <!-- Step: Finish / start collecting -->
       <section class="gw-step" data-step="finish" hidden>
         <h3 style="margin:0 0 6px">Ready to begin</h3>

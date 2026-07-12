@@ -211,16 +211,16 @@
     // Zero-network on load by construction: it only reads localStorage and reuses
     // the in-memory LANGS_12 list (no fetch).
     const _GUIDE_KEY = "oo_guide_v1";
-    // The visible step order. "encryption" + "sources" are deferred placeholders
-    // (shown but inert) so the next slice slots its real UI straight in.
-    // Language -> Finish. The encryption choice is made in the DB-unlock/install
-    // flow (not a wizard placeholder) and sources auto-seed on boot, so the two
-    // inert "Coming soon" steps were removed (maintainer 2026-06-18).
-    // The first-launch flow now chooses the language FIRST (unlock.html, #420) and
-    // a permanent top-bar switcher (invariant #15) always changes it, so the wizard's
-    // language step is redundant (§2.5, autonomous 2026-06-21). Dropped from the flow;
-    // the #guide-wizard lang DOM + _gwRenderLangs stay unreachable (the Desk lesson).
-    const _GW_STEPS = ["finish"];
+    // The visible step order. The encryption choice is made in the DB-unlock/install
+    // flow (not a wizard placeholder) and sources auto-seed on boot, so those inert
+    // "Coming soon" steps were removed (maintainer 2026-06-18). The first-launch flow
+    // chooses the language FIRST (unlock.html, #420) and a permanent top-bar switcher
+    // (invariant #15) always changes it, so the wizard's language step is redundant
+    // (§2.5, autonomous 2026-06-21) — dropped; the #guide-wizard lang DOM + _gwRenderLangs
+    // stay unreachable (the Desk lesson). S4.7: the real SOURCES-BY-THEME step is now
+    // slotted before Finish (theme picker + language emphasis; loopback reads/writes only,
+    // never external egress — the finish step's consented go-online is the only network path).
+    const _GW_STEPS = ["sources", "finish"];
     let _gwIdx = 0;
     function _guideState() {
       try { return JSON.parse(localStorage.getItem(_GUIDE_KEY)) || {}; } catch { return {}; }
@@ -270,6 +270,78 @@
       if (next) next.hidden = last;
       if (fin) fin.hidden = !last;
       if (step === "lang") _gwRenderLangs();
+      if (step === "sources") _gwRenderSources();
+    }
+    // S4.7 sources-by-theme step. Real catalog tag taxonomy from the app's OWN loopback
+    // /api/scheduler/coverage; the config is applied via a loopback PUT /config on leaving
+    // the step. NEVER external egress (the app runs on loopback; the finish step's consented
+    // go-online is the only path to the network). Themes default to ALL selected = collect
+    // everything (the cover-everything ruling); a partial pick sets select_tags (a filter —
+    // the user's explicit, reversible focus). Language emphasis -> language_equilibrium (a
+    // cadence lever that ORDERS, never excludes).
+    const _gwSrc = { picked: null, emph: {} };
+    async function _gwRenderSources() {
+      const box = $("gw-themes"); if (!box) return;
+      let cov = null, cfg = null;
+      try { cov = await api("/api/scheduler/coverage"); } catch (_e) { cov = null; }
+      try { cfg = await api("/api/scheduler/config"); } catch (_e) { cfg = null; }
+      const curTags = (cfg && cfg.select_tags) || [];
+      const curEmph = (cfg && cfg.language_equilibrium) || {};
+      const covTags = (cov && cov.tags) || [];
+      const byTotal = {}; covTags.forEach((x) => { byTotal[x.tag] = x.total || 0; });
+      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)");
+      tags.sort((a, b) => (byTotal[b] || 0) - (byTotal[a] || 0));   // top themes by source count
+      tags = tags.slice(0, 16);
+      if (!tags.length) {
+        box.innerHTML = `<div class="muted">${esc(_gwT("Themes will appear once your sources are set up. Your app collects from every source by default."))}</div>`;
+      } else {
+        if (_gwSrc.picked === null) {   // first open: default all-checked, unless a prior config narrowed it
+          _gwSrc.picked = {};
+          tags.forEach((tg) => { _gwSrc.picked[tg] = curTags.length ? curTags.indexOf(tg) >= 0 : true; });
+        }
+        box.innerHTML = tags.map((tg) =>
+          `<label class="gw-theme" style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer">`
+          + `<input type="checkbox" data-theme="${esc(tg)}"${_gwSrc.picked[tg] ? " checked" : ""}> `
+          + `<span>${esc(tg)}</span> <span class="muted">${byTotal[tg] || 0}</span></label>`).join("");
+        box.querySelectorAll("input[data-theme]").forEach((cb) => {
+          cb.onchange = () => { _gwSrc.picked[cb.dataset.theme] = cb.checked; _gwUpdateThemeNote(); };
+        });
+      }
+      const emphBox = $("gw-emph-langs");
+      if (emphBox) {
+        if (!Object.keys(_gwSrc.emph).length) { for (const k in curEmph) _gwSrc.emph[k] = true; }
+        emphBox.innerHTML = LANGS_12.map(([code, flag, native]) =>
+          `<button type="button" class="gw-lang" data-emph="${code}" aria-pressed="${_gwSrc.emph[code] ? "true" : "false"}">`
+          + `<span aria-hidden="true">${flag}</span> <span class="gw-native">${esc(native)}</span></button>`).join("");
+        emphBox.querySelectorAll("[data-emph]").forEach((b) => {
+          b.onclick = () => {
+            const c = b.dataset.emph; _gwSrc.emph[c] = !_gwSrc.emph[c];
+            b.setAttribute("aria-pressed", _gwSrc.emph[c] ? "true" : "false");
+          };
+        });
+      }
+      _gwUpdateThemeNote();
+    }
+    function _gwUpdateThemeNote() {
+      const note = $("gw-theme-note"); if (!note || !_gwSrc.picked) return;
+      const all = Object.keys(_gwSrc.picked), on = all.filter((k) => _gwSrc.picked[k]);
+      note.textContent = (on.length === 0 || on.length === all.length)
+        ? _gwT("Collecting from every source (all themes).")
+        : _gwT("Focusing your first collection on the selected themes. You can widen it anytime in Settings → Collect.");
+    }
+    // Apply the picks as scheduler config (a LOOPBACK settings write — never egress, never
+    // starts a collection). All-or-none themes => NO filter (collect everything). Best-effort:
+    // a settings write must never block onboarding.
+    async function _gwApplySourcePrefs() {
+      if (!_gwSrc.picked) return;   // the step was never opened -> change nothing
+      const all = Object.keys(_gwSrc.picked), on = all.filter((k) => _gwSrc.picked[k]);
+      const select_tags = (on.length === 0 || on.length === all.length) ? [] : on;
+      const language_equilibrium = {};
+      for (const k in _gwSrc.emph) if (_gwSrc.emph[k]) language_equilibrium[k] = 1;
+      try {
+        await api("/api/scheduler/config",
+          { method: "PUT", body: JSON.stringify({ select_tags: select_tags, language_equilibrium: language_equilibrium }) });
+      } catch (_e) { /* best-effort local settings write; never block the guide */ }
     }
     function openGuide() {
       const dlg = $("guide-wizard"); if (!dlg) return;
@@ -299,7 +371,10 @@
     (function _wireGuide() {
       const next = $("gw-next"), back = $("gw-back"), fin = $("gw-finish"),
             close = $("gw-close"), go = $("gw-go-online"), stay = $("gw-stay-offline");
-      if (next) next.onclick = () => { if (_gwIdx < _GW_STEPS.length - 1) { _gwIdx++; _gwPaint(); } };
+      if (next) next.onclick = async () => {
+        if (_GW_STEPS[_gwIdx] === "sources") await _gwApplySourcePrefs();  // apply on leaving the step
+        if (_gwIdx < _GW_STEPS.length - 1) { _gwIdx++; _gwPaint(); }
+      };
       if (back) back.onclick = () => { if (_gwIdx > 0) { _gwIdx--; _gwPaint(); } };
       if (fin) fin.onclick = () => closeGuide(true);
       if (close) close.onclick = () => closeGuide(true);   // X also completes the one-time guide
@@ -310,6 +385,7 @@
       if (go) go.onclick = async () => {
         const note = $("gw-finish-note");
         if (note) note.textContent = _gwT("You'll confirm before anything connects.");
+        await _gwApplySourcePrefs();   // persist theme/emphasis picks before collecting (loopback, no egress)
         closeGuide(true);
         // The "corpus is empty" bubble is retired (2026-06-17): going online routes
         // through toggleNetwork() -> ensureOnline (the ONE consent popup, invariant

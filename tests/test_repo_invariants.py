@@ -500,7 +500,10 @@ def test_guided_wizard_language_step_consolidated():
     wizard no longer carries a redundant language step. The lang DOM/helper stay
     (unreachable) per the Desk lesson — nothing silently lost."""
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert 'const _GW_STEPS = ["finish"];' in app, "the wizard lang step must be dropped"
+    # The wizard flow must NOT contain a "lang" step (dropped §2.5). S4.7 later slotted the
+    # real "sources" step, so guard on the ABSENCE of "lang", not an exact array.
+    steps = app[app.index("const _GW_STEPS = [") : app.index("];", app.index("const _GW_STEPS = [")) + 2]
+    assert '"lang"' not in steps, "the wizard lang step must be dropped from the flow"
     # The lang rendering helper is kept (unreachable, not deleted).
     assert "function _gwRenderLangs(" in app, "the lang helper must be preserved (Desk lesson)"
 
@@ -2331,12 +2334,16 @@ def test_first_launch_guide_wizard():
     assert "function openGuide(" in html, "the wizard must be openable (openGuide)"
     for ctrl in ('id="gw-back"', 'id="gw-next"', 'id="gw-finish"', 'id="gw-dots"'):
         assert ctrl in html, f"the wizard shell control is missing: {ctrl}"
-    # the two real steps — Language and Finish (the inert "Coming soon"
-    # encryption/sources placeholders were removed 2026-06-18).
-    for step in ('data-step="lang"', 'data-step="finish"'):
+    # the real steps — the kept-but-unreachable Language DOM (Desk lesson), the S4.7
+    # SOURCES-BY-THEME step, and Finish. The inert "Coming soon" encryption placeholder
+    # was removed 2026-06-18; the sources placeholder became a REAL step in S4.7.
+    for step in ('data-step="lang"', 'data-step="sources"', 'data-step="finish"'):
         assert step in html, f"the wizard step is missing: {step}"
-    for gone in ('data-step="encryption"', 'data-step="sources"'):
-        assert gone not in html, f"the inert placeholder step must be gone: {gone}"
+    assert 'data-step="encryption"' not in html, "the inert encryption placeholder must be gone"
+    # the sources step is REAL (a theme picker + emphasis), not an inert "Coming soon".
+    assert 'id="gw-themes"' in html and 'id="gw-emph-langs"' in html, (
+        "the S4.7 sources step must carry the real theme picker + language-emphasis controls"
+    )
     # 2. Language step uses THE i18n engine via the shared picker (no new list).
     gw = html.split('id="guide-wizard"', 1)[1].split("</dialog>", 1)[0]
     assert 'id="gw-langs"' in gw, "the wizard must carry the Language step's picker"
@@ -4996,3 +5003,31 @@ def test_i18n_composite_strings_and_translatable_card_titles():
         d = _json.loads(lf.read_text(encoding="utf-8"))
         assert "“{term}” is rising" in d, f"{lf.name} missing the rising title template key"
         assert "{term}" in d["“{term}” is rising"], f"{lf.name}: translation must keep {{term}}"
+
+
+def test_guided_wizard_sources_by_theme_step():
+    """S4.7: the first-launch guided wizard gains a SOURCES-BY-THEME step (before Finish) that
+    picks themes from the REAL catalog tag taxonomy + emphasizes languages, applied as scheduler
+    config via LOOPBACK reads/writes only. The wizard NEVER posts the network — the finish step's
+    consented go-online (toggleNetwork -> ensureOnline) stays the ONLY path to egress.
+    HONESTY: themes DEFAULT to all-selected = collect everything (the cover-everything ruling);
+    a partial pick sets select_tags (a filter), all-or-none clears it. Language emphasis maps to
+    language_equilibrium (a cadence lever that ORDERS, never excludes). The language step is
+    already consolidated out (§2.5) — the flow is [sources, finish]."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # the step DOM exists (theme picker + language-emphasis group)
+    assert 'data-step="sources"' in html and 'id="gw-themes"' in html and 'id="gw-emph-langs"' in html
+    # the flow is sources -> finish (language step already dropped)
+    assert '_GW_STEPS = ["sources", "finish"]' in app
+    # themes come from the REAL catalog tag taxonomy (the app's own loopback coverage endpoint)
+    rs = app[app.index("async function _gwRenderSources(") : app.index("function _gwUpdateThemeNote(")]
+    assert "/api/scheduler/coverage" in rs, "themes must come from the real tag taxonomy"
+    # apply = a LOOPBACK scheduler-config write; select_tags + language_equilibrium; never egress
+    ap = app[app.index("async function _gwApplySourcePrefs(") : app.index("async function _gwApplySourcePrefs(") + 900]
+    assert "/api/scheduler/config" in ap and "select_tags" in ap and "language_equilibrium" in ap
+    assert "/api/system/network" not in ap, "the wizard must NEVER post the network"
+    # cover-everything default: all-or-none selected => NO filter (empty select_tags)
+    assert "on.length === 0 || on.length === all.length" in ap and "? [] :" in ap
+    # the ONLY network path stays the finish step's consented go-online (unchanged)
+    assert "toggleNetwork()" in app
