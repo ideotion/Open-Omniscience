@@ -5079,3 +5079,22 @@ def test_subjectivity_engine_is_multilingual_deduced_and_no_score():
     # the DEDUCED per-article surface
     ins = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
     assert '"/subjectivity"' in ins and '"provenance": "deduced"' in ins
+
+
+def test_ir_gold_set_builder_writes_validated_gold_and_closes_the_loop():
+    """S5.3: the IR gold-set BUILDER makes the maintainer's gold set trivial to produce —
+    samples REAL corpus queries (top keywords; search history is not stored, so nothing is
+    invented), grades 0/1/2 with keyboard speed, and writes the EXACT ir_eval gold-set JSON
+    VALIDATED by round-trip (an invalid set never lands). Closes the measure-before-trust loop
+    for OO_FAMILY_LEMMA + the BM25F default (the run endpoint already exists)."""
+    gb = (_SRC / "analytics" / "gold_builder.py").read_text(encoding="utf-8")
+    assert "def sample_queries(" in gb and "def build_and_save_gold_set(" in gb and "def coverage(" in gb
+    assert "load_gold_set" in gb and "os.replace(" in gb, "validated round-trip + atomic swap"
+    assert "top_terms" in gb and "search history is not stored" in gb, "real queries, never invented"
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '"/gold-builder/sample"' in diag and '"/gold-builder/save"' in diag
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function goldBuilderLoad(" in app and "function goldBuilderSave(" in app
+    assert "/api/diagnostics/gold-builder/sample" in app and "/api/diagnostics/gold-builder/save" in app
+    assert "function goldBuilderKey(" in app and 'ev.key === "0"' in app, "keyboard-speed grading"
+    assert "_gbUpdateCoverage(" in app, "the coverage meter"

@@ -1700,6 +1700,17 @@
         <input id="discover-cc" type="text" style="width:150px" placeholder="countries e.g. ke,ng,br">
         <button onclick="discoverSources(this)" title="DISCOVER new sources (news orgs / institutions with an official website) from Wikidata for the countries you list, and add them DISABLED for review — nothing is scraped until you enable it in Settings → Sources. Goes ONLINE through the guarded transport (consent-gated, airplane-refused). Tip: pick under-represented countries to keep coverage balanced.">Discover new sources (Wikidata) ↗</button>
       </div>
+      <!-- S5.3: IR gold-set BUILDER — grade real corpus queries 0/1/2 (keyboard 0/1/2 on a
+           focused result) and write the exact ir_eval gold-set file the run below consumes.
+           Closes the measure-before-trust loop for lemmatization + the BM25F default. Un-keyed
+           English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <div class="row" style="margin-top:10px">
+        <button class="secondary" onclick="goldBuilderLoad(this)" title="Sample your top corpus keywords + their live search results, then grade each result 0/1/2 (0 irrelevant · 1 relevant · 2 highly relevant; press 0/1/2 on a focused row). Nothing is invented — search history is not stored. Save writes the exact ir_eval gold set the run below scores.">Build an IR gold set (grade queries 0/1/2)</button>
+        <input id="gold-builder-path" type="text" style="min-width:260px" placeholder="save path e.g. /home/you/oo_gold_set.json">
+        <button class="secondary" onclick="goldBuilderSave(this)" title="Write the graded queries as the exact ir_eval gold-set JSON to this server-side path (validated on save). Then point the IR-eval run below at it.">Save gold set</button>
+      </div>
+      <div id="gold-builder-cov" class="hint muted"></div>
+      <div id="gold-builder-body"></div>
       <div class="row" style="margin-top:6px">
         <input id="ir-eval-path" type="text" style="min-width:280px" placeholder="gold-set file path (see configs/ir_eval/gold_set.example.json)">
         <input id="ir-eval-wa" type="text" style="width:120px" placeholder="weights A e.g. 4,1">

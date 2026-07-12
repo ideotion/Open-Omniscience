@@ -1046,6 +1046,41 @@ def ir_eval(
     return JSONResponse(payload, headers=headers)
 
 
+@router.get("/gold-builder/sample")
+def gold_builder_sample(
+    n_queries: int = Query(15, ge=1, le=60),
+    per_query: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+) -> dict:
+    """S5.3: sample grading candidates for the IR gold-set BUILDER — the top corpus keywords
+    + their live search results (never invents a query; search history is not stored). The
+    maintainer grades each result 0/1/2 in the panel, then saves via /gold-builder/save."""
+    from src.analytics.gold_builder import sample_queries
+
+    return sample_queries(db, n_queries=n_queries, per_query=per_query)
+
+
+class _GoldBuilderSaveBody(BaseModel):
+    path: str
+    queries: list[dict] = Field(default_factory=list)
+
+
+@router.post("/gold-builder/save")
+def gold_builder_save(body: _GoldBuilderSaveBody) -> dict:
+    """S5.3: write the graded queries as the EXACT ir_eval gold-set JSON to a server-side
+    path, VALIDATED by round-trip through load_gold_set (400 on a structural problem or an
+    empty set — never a silent bad file). Returns the coverage meter (queries graded per
+    language / axis, n). Closes the measure-before-trust loop for OO_FAMILY_LEMMA + the BM25F
+    default: the graded file feeds GET /api/diagnostics/ir-eval."""
+    from src.analytics.gold_builder import build_and_save_gold_set
+    from src.analytics.ir_eval import GoldSetError
+
+    try:
+        return build_and_save_gold_set(body.path, body.queries)
+    except (GoldSetError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/home-cards")
 def home_card_diagnostics(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """Home-card (Lead) CLICK diagnostics (field report 2026-06-22): for every card the

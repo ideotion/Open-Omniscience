@@ -9851,6 +9851,77 @@
       if (wa && wb) { p.set("weights_a", wa); p.set("weights_b", wb); }
       window.open("/api/diagnostics/ir-eval?" + p.toString(), "_blank");
     }
+
+    // S5.3: the IR gold-set BUILDER. Samples real corpus queries (top keywords; search
+    // history is not stored, so nothing is invented), lets the maintainer grade each live
+    // result 0/1/2 with keyboard speed, and writes the EXACT ir_eval gold-set file the run
+    // above scores — closing the measure-before-trust loop for OO_FAMILY_LEMMA + BM25F.
+    // Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3.
+    let _gbQueries = null;
+    async function goldBuilderLoad(btn) {
+      const body = $("gold-builder-body"); if (!body) return;
+      if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+      try {
+        const d = await api("/api/diagnostics/gold-builder/sample?n_queries=15&per_query=10");
+        _gbQueries = (d.queries || []).map((q) => ({ ...q, relevances: {} }));
+        _gbRenderBuilder(d.note, d.grading);
+      } catch (e) { body.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      if (btn) { btn.disabled = false; btn.textContent = "Build an IR gold set (grade queries 0/1/2)"; }
+    }
+    function _gbRenderBuilder(note, grading) {
+      const body = $("gold-builder-body"); if (!body) return;
+      const blocks = (_gbQueries || []).map((q, qi) => {
+        const rows = (q.results || []).map((r) => {
+          const cur = q.relevances[r.article_id];
+          const btns = [0, 1, 2].map((g) =>
+            `<button class="tiny${cur === g ? " active" : ""}" data-g="${g}" onclick="goldBuilderGrade(${qi},${r.article_id},${g})">${g}</button>`).join("");
+          return `<div class="gb-row" tabindex="0" data-q="${qi}" data-a="${r.article_id}" onkeydown="goldBuilderKey(event,${qi},${r.article_id})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
+            + `<span style="min-width:70px">${btns}</span>`
+            + `<a href="/api/articles/${r.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">${esc(r.title || ("#" + r.article_id))}</a>`
+            + `<span class="muted" style="font-size:11px">${esc(r.source || "")}${r.language ? " · " + esc(r.language) : ""}</span></div>`;
+        }).join("");
+        return `<div class="an-panel" style="margin-top:8px"><b>${esc(q.query)}</b> `
+          + `<span class="muted">(${esc(q.language)} · ${esc(q.axis)})</span>`
+          + (rows || `<div class="muted">No results in your corpus for this query.</div>`) + `</div>`;
+      }).join("");
+      body.innerHTML = `<div class="hint muted">${esc(note || "")} ${esc(grading || "")}</div>` + blocks;
+      _gbUpdateCoverage();
+    }
+    function goldBuilderGrade(qi, aid, g) {
+      const q = _gbQueries && _gbQueries[qi]; if (!q) return;
+      q.relevances[aid] = g;   // grade IN PLACE (never re-render — keeps keyboard focus)
+      const row = document.querySelector(`.gb-row[data-q="${qi}"][data-a="${aid}"]`);
+      if (row) row.querySelectorAll("button").forEach((b) => b.classList.toggle("active", +b.dataset.g === g));
+      _gbUpdateCoverage();
+    }
+    function goldBuilderKey(ev, qi, aid) {
+      if (ev.key === "0" || ev.key === "1" || ev.key === "2") { ev.preventDefault(); goldBuilderGrade(qi, aid, +ev.key); }
+    }
+    function _gbUpdateCoverage() {
+      const el = $("gold-builder-cov"); if (!el) return;
+      let graded = 0, total = 0; const langs = {};
+      (_gbQueries || []).forEach((q) => {
+        const n = Object.keys(q.relevances).length; total += n;
+        if (n) { graded++; langs[q.language] = (langs[q.language] || 0) + 1; }
+      });
+      const langStr = Object.keys(langs).length ? " · by language " + JSON.stringify(langs) : "";
+      el.textContent = `Coverage: ${graded}/${(_gbQueries || []).length} queries graded · ${total} judgements${langStr}`;
+    }
+    async function goldBuilderSave(btn) {
+      const path = (($("gold-builder-path") && $("gold-builder-path").value) || "").trim();
+      if (!path) { if (typeof toast === "function") toast("Enter a save path first.", "err"); return; }
+      if (!_gbQueries || !_gbQueries.length) { if (typeof toast === "function") toast("Load + grade queries first.", "err"); return; }
+      const queries = _gbQueries.map((q) => ({ id: q.id, query: q.query, language: q.language, axis: q.axis, relevances: q.relevances }));
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/diagnostics/gold-builder/save", { method: "POST", body: JSON.stringify({ path, queries }) });
+        const c = r.coverage || {};
+        if (typeof toast === "function") toast(`Saved · ${c.graded_queries || 0} graded queries · ${c.total_judgements || 0} judgements`);
+        const el = $("gold-builder-cov");
+        if (el) el.textContent = `Saved to ${r.saved} — ${c.total_judgements || 0} judgements across ${JSON.stringify(c.by_language || {})}. Point the IR-eval run below at this path.`;
+      } catch (e) { if (typeof toast === "function") toast("Save failed: " + e.message, "err"); }
+      if (btn) btn.disabled = false;
+    }
     // Diagnostics: the Tier-2 poll-transparency CHECKLIST (/api/insights/poll-transparency).
     // B3 (field-test F2): the per-field form is the primary input; the raw-JSON box (a
     // collapsed fallback) overrides/extends it for power users (never lose a tool). Renders
