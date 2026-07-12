@@ -992,6 +992,25 @@ def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/perception-eval-selftest")
+def perception_eval_selftest(download: bool = Query(False)) -> JSONResponse:
+    """S6.5: run the LLM-perception (who/where/when) eval-harness self-test — the GATE for the
+    perception track (harness before any extraction feature, the ruled order). Proves the
+    scoring MECHANISM (precision/recall/HALLUCINATION-rate per stratum vs a synthetic gold set;
+    place string vs coordinate scored separately; de-US-centring split) on a hand-computed
+    fixture — deterministic, no model, no network, no score. A real model is measured against
+    the rule-based baseline via evaluate_perception() before it is trusted; this verifies the
+    harness is correct so that measurement can be. ``download=1`` returns a dated attachment."""
+    from src.analytics.perception_eval import run_perception_eval_selftest
+
+    log = run_perception_eval_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-perception-eval-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/ir-eval")
 def ir_eval(
     gold_path: str = Query(..., description="server-side path to a JSON gold set"),

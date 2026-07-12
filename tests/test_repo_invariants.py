@@ -5114,3 +5114,17 @@ def test_lemma_preview_is_surfaced_in_the_diagnostics_panel():
     assert "/api/diagnostics/lemma-preview" in lp and "_MISLEMMA_DENYLIST" in lp
     assert "candidate_groups" in lp and "keywords_that_would_merge" in lp
     assert 'id="lemma-preview-body"' in (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+
+def test_perception_eval_harness_is_wired_and_gate_first():
+    """S6.5: the LLM-perception (who/where/when) eval HARNESS exists BEFORE any extraction
+    feature (the ruled order) — precision/recall/HALLUCINATION per stratum vs a synthetic gold
+    set, place string vs coordinate scored apart, de-US-centring split, no composite. Exposed
+    as a diagnostics self-test; the rule-based baseline adapter is the bar an LLM must clear."""
+    pe = (_SRC / "analytics" / "perception_eval.py").read_text(encoding="utf-8")
+    assert "def evaluate_perception(" in pe and "def run_perception_eval_selftest(" in pe
+    assert "hallucination_rate" in pe and "de_us_centring" in pe and "place_coordinate" in pe
+    assert "def rule_based_perception(" in pe, "the baseline adapter (the bar for an LLM)"
+    assert "PERCEPTION_GOLD" in pe and "needs_native_review" in pe
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '"/perception-eval-selftest"' in diag
