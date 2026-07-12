@@ -75,6 +75,9 @@ MONTH_VOCAB_LANGS: frozenset[str] = frozenset(
 # Probe kinds the extractor is *expected* to resolve (so a miss is actionable);
 # ``bare_year`` is excluded — the extractor skips bare years BY DESIGN (too easily
 # a quantity), so it is reported for context but never counted as a miss.
+# ``cjk_numeral`` is excluded for the same reason: the extractor DELIBERATELY does not
+# parse CJK-numeral dates yet (a deferred fabrication-critical change), so it is surfaced
+# for the operator to quantify but never counted as an actionable vocabulary gap.
 _ACTIONABLE_KINDS: frozenset[str] = frozenset(
     {"month_name", "cjk_date", "numeric", "weekday", "relative"}
 )
@@ -95,6 +98,20 @@ _CJK_RE = re.compile(
     r"|\d{1,4}\s*년\s*\d{1,2}\s*월(?:\s*\d{1,2}\s*일)?"
     r"|\d{1,2}\s*월\s*\d{1,2}\s*일"
 )
+# CJK-NUMERAL dates (formal zh/ja: 二〇二四年六月十一日 — positional CJK numerals with the
+# 年/月/日 markers). NEITHER the extractor NOR the other probes see these today — the
+# extractor's _CJK_D is Arabic/full-width digits only ([0-9０-９]), so measure-first over the
+# battery reports gap=0 for them (both sides blind). This probe makes the class MEASURABLE — a
+# CANDIDATE, never a stored date — so the operator's real date-diagnostics export can quantify
+# it before anyone funds the FABRICATION-CRITICAL extractor change (#590: CJK numerals double as
+# quantities/ordinals — 十一件 = eleven items, 六成 = 60% — so extracting them safely is a whole
+# design, deferred; the S4.1 carry-over). MARKER-ANCHORED so a bare numeral run never matches:
+# a year needs 年+月, a month-day needs 月…日/号 — 十一件 / 六成 / a lone 六月 stay unmatched.
+_CN = r"[〇○零一二三四五六七八九十]"
+_CJK_NUM_RE = re.compile(
+    rf"{_CN}{{1,4}}\s*年\s*{_CN}{{1,3}}\s*月(?:\s*{_CN}{{1,3}}\s*[日号號])?"
+    rf"|{_CN}{{1,3}}\s*月\s*{_CN}{{1,3}}\s*[日号號]"
+)
 _MONTH_RE = re.compile(r"\b(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")\b", re.I)
 _WD_RE = re.compile(
     r"\b(" + "|".join(sorted(_WEEKDAYS, key=len, reverse=True)) + r")\b", re.I
@@ -112,6 +129,10 @@ _REL_RE = re.compile(
 # so a gated family outside its language never counts as a phantom gap.
 _PROBES: tuple[tuple[str, re.Pattern[str], frozenset[str] | None], ...] = (
     ("cjk_date", _CJK_RE, None),
+    # CJK-numeral dates (context-only; zh/ja-gated — the numerals are ordinary words in
+    # other languages). Placed right after cjk_date so an Arabic-numeral CJK date claims its
+    # span first; the two never overlap (distinct numeral scripts).
+    ("cjk_numeral", _CJK_NUM_RE, frozenset({"zh", "ja"})),
     ("numeric", _NUMERIC_RE, None),
     ("month_name", _MONTH_RE, None),
     # Persian Solar-Hijri (Jalali) named dates — the extractor's OWN patterns
