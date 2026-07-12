@@ -968,7 +968,7 @@ def insights_source_types(db: Session = Depends(get_db)) -> dict:
     corpus can be sliced by channel (news/newsletter/wiki/statistics/law/market/
     discovery). An asserted descriptive fact, NO score. The `source_type=` param on
     /api/articles applies the actual filter."""
-    return _cached(_bind_key(db, _ckey("source-types")), lambda: q.source_type_facets(db))
+    return _deadlined(db, _ckey("source-types"), lambda: q.source_type_facets(db))
 
 
 @router.get("/reading-diet-by-type")
@@ -985,7 +985,8 @@ def insights_reading_diet_by_type(
     caveat, NO score; an honest empty state when the window holds no articles."""
     from src.analytics.concentration import reading_diet_by_type
 
-    return reading_diet_by_type(db, days=days)
+    return _deadlined(db, _ckey("reading-diet-by-type", days=days),
+                      lambda: reading_diet_by_type(db, days=days))
 
 
 @router.get("/keyword-stats")
@@ -1091,7 +1092,7 @@ def insights_map_coverage(db: Session = Depends(get_db)) -> dict:
         )
         return data
 
-    return _cached(_bind_key(db, _ckey("map-coverage")), _compute)
+    return _deadlined(db, _ckey("map-coverage"), _compute)
 
 
 @router.get("/server-locations")
@@ -1200,28 +1201,15 @@ def warm_cache(db: Session) -> dict:
     background thread), using the DEFAULT parameter combos the UI actually requests.
     Stores under the exact keys the endpoints use, so a warmed value is a cache HIT.
     """
-    # Bounded background reconcile of the maintained keyword counters (Slice 2): runs
-    # here (off the request path) and is a cheap no-op while the counters are fresh, so
-    # it throttles itself to ~once per freshness window. Repairs the rare cascade-delete
-    # drift and stamps the watermark the honesty envelope reads. Best-effort.
-    try:
-        from src.analytics.store import maybe_reconcile_counters
-
-        maybe_reconcile_counters(db)
-    except Exception:  # noqa: BLE001 - never fatal to a pass
-        _LOG.warning("background counter reconcile failed during warm_cache", exc_info=True)
-
-    # AUTOMATIC keyword cleanup (maintainer 2026-07-02: "Clean up keywords should be
-    # automatic"): the cheap maintenance — prune orphan keywords + reconcile keyword
-    # language — freshness-gated to ~once per 12h, so it is a no-op most passes. A full
-    # re-index stays a manual/post-upgrade action (too heavy to run unprompted). The run
-    # is recorded in a marker the corpus-integrity diagnostic surfaces.
-    try:
-        from src.analytics.store import maybe_cleanup_keywords
-
-        maybe_cleanup_keywords(db)
-    except Exception:  # noqa: BLE001 - never fatal to a pass
-        _LOG.warning("background keyword cleanup failed during warm_cache", exc_info=True)
+    # A10 (2026-07-12): the keyword MAINTENANCE (counter reconcile + orphan prune +
+    # language reconcile) used to run HERE, coupled to the pass tail (warm_cache runs
+    # after every scrape via refresh_briefing). It is now SCHEDULER-OWNED and OFF-PEAK
+    # — the scheduler runs it in the collector-idle window between passes, mutually
+    # exclusive with collection and throttled off-peak (src/scheduler/maintenance.py:
+    # run_idle_maintenance, wired in BackgroundScheduler._run_off_peak_maintenance).
+    # warm_cache keeps ONLY the cache-warming below (which must stay at the pass tail
+    # so the UI is warm right after a pass). The freshness gates + deadline budgets +
+    # complete:false disclosure are unchanged; only WHEN maintenance runs moved.
 
     # Maintain the derived COLUMNAR read-model — ONLY when the store is PERSISTED
     # (Slice 4 D). A no-op when columnar is unavailable / in-memory (an in-memory store
@@ -1321,14 +1309,16 @@ def insights_who(
     mentions). No scores; names are lexical surface forms, deduced never
     confirmed. Optionally windowed (``days``), per-country, or class-filtered.
     """
-    return q.who_aggregate(
+    key = _ckey("who", entity_class=entity_class, days=days, country=country,
+                limit=limit, min_articles=min_articles)
+    return _deadlined(db, key, lambda: q.who_aggregate(
         db,
         entity_class=entity_class,
         days=days,
         country=country,
         limit=limit,
         min_articles=min_articles,
-    )
+    ))
 
 
 @router.get("/where")
@@ -1346,14 +1336,16 @@ def insights_where(
     ``country`` selects places located in that country. Optionally windowed
     (``days``) or kind-filtered (``city`` | ``country``).
     """
-    return q.where_aggregate(
+    key = _ckey("where", kind=kind, days=days, country=country,
+                limit=limit, min_articles=min_articles)
+    return _deadlined(db, key, lambda: q.where_aggregate(
         db,
         kind=kind,
         days=days,
         country=country,
         limit=limit,
         min_articles=min_articles,
-    )
+    ))
 
 
 @router.get("/convergences")
@@ -1379,14 +1371,16 @@ def insights_convergences(
     "never causation … a prompt to read, not proof anything happened" caveat. Totals
     are always disclosed so ``limit`` never silently hides how much qualified.
     """
-    return find_convergences(
+    key = _ckey("convergences", window_days=window_days, lookback_days=lookback_days,
+                min_articles=min_articles, min_sources=min_sources, limit=limit)
+    return _deadlined(db, key, lambda: find_convergences(
         db,
         window_days=window_days,
         lookback_days=lookback_days,
         min_articles=min_articles,
         min_sources=min_sources,
         limit=limit,
-    )
+    ))
 
 
 @router.get("/ring-countries")
@@ -1405,7 +1399,8 @@ def insights_ring_countries(
     keyword with no stored language is excluded; unlocated sources bucket as null."""
     from src.analytics.queries import ring_country_split
 
-    return ring_country_split(db, ring_id=ring_id, days=days, limit=limit)
+    key = _ckey("ring-countries", ring_id=ring_id, days=days, limit=limit)
+    return _deadlined(db, key, lambda: ring_country_split(db, ring_id=ring_id, days=days, limit=limit))
 
 
 @router.get("/source-laundering")
@@ -1422,9 +1417,11 @@ def insights_source_laundering(
     are excluded; the innocent explanation is stated beside the pattern; no score."""
     from src.analytics.laundering import find_source_laundering
 
-    return find_source_laundering(
+    key = _ckey("source-laundering", min_sources=min_sources, min_articles=min_articles,
+                days=days, limit=limit)
+    return _deadlined(db, key, lambda: find_source_laundering(
         db, min_sources=min_sources, min_articles=min_articles, days=days, limit=limit
-    )
+    ))
 
 
 @router.get("/recycled-claims")
@@ -1443,13 +1440,15 @@ def insights_recycled_claims(
     flagged; the innocent explanations are stated beside the pattern."""
     from src.analytics.recycled_claim import find_recycled_claims
 
-    return find_recycled_claims(
+    key = _ckey("recycled-claims", recent_days=recent_days, lookback_days=lookback_days,
+                min_gap_days=min_gap_days, limit=limit)
+    return _deadlined(db, key, lambda: find_recycled_claims(
         db,
         recent_days=recent_days,
         lookback_days=lookback_days,
         min_gap_days=min_gap_days,
         max_clusters=limit,
-    )
+    ))
 
 
 @router.get("/headline-body-mismatch")
@@ -1465,8 +1464,9 @@ def insights_headline_body_mismatch(
     metaphorical headline does this innocently — stated beside the pattern."""
     from src.analytics.headline_body import find_headline_body_mismatch
 
-    return _cached(
-        _bind_key(db, _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit)),
+    return _deadlined(
+        db,
+        _ckey("headline-body-mismatch", recent_days=recent_days, d_min=d_min, limit=limit),
         lambda: find_headline_body_mismatch(
             db, recent_days=recent_days, d_min=d_min, max_items=limit
         ),
@@ -1486,8 +1486,9 @@ def insights_manufactured_emergence(
     and the false-negative caveat is stated. No score."""
     from src.analytics.emergence import find_manufactured_emergence
 
-    return _cached(
-        _bind_key(db, _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit)),
+    return _deadlined(
+        db,
+        _ckey("manufactured-emergence", recent_days=recent_days, min_sources=min_sources, limit=limit),
         lambda: find_manufactured_emergence(
             db, recent_days=recent_days, min_sources=min_sources, max_items=limit
         ),
@@ -1507,8 +1508,9 @@ def insights_flooded_topics(
     score. Reads the denormalised source_id, so it covers re-indexed articles."""
     from src.analytics.concentration import find_flooded_topics
 
-    return _cached(
-        _bind_key(db, _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit)),
+    return _deadlined(
+        db,
+        _ckey("flooded-topics", recent_days=recent_days, z_min=z_min, limit=limit),
         lambda: find_flooded_topics(db, recent_days=recent_days, z_min=z_min, max_items=limit),
     )
 
@@ -1528,8 +1530,9 @@ def insights_copypasta(
     boilerplate) is stated beside the pattern; no score."""
     from src.analytics.copypasta import find_copypasta
 
-    return _cached(
-        _bind_key(db, _ckey("copypasta", recent_days=recent_days, k=k, min_sources=min_sources, limit=limit)),
+    return _deadlined(
+        db,
+        _ckey("copypasta", recent_days=recent_days, k=k, min_sources=min_sources, limit=limit),
         lambda: find_copypasta(
             db, recent_days=recent_days, k=k, min_sources=min_sources, max_items=limit
         ),
@@ -2066,34 +2069,38 @@ def keywords_by_tag(
     from src.database.models import Keyword, KeywordMention, KeywordTag
 
     ax, tg = _norm_tag(axis, tag)
-    rows = (
-        db.query(
-            Keyword.normalized_term,
-            Keyword.term,
-            Keyword.language,
-            KeywordTag.source,
-            func.coalesce(func.sum(KeywordMention.count), 0),
-            func.count(func.distinct(KeywordMention.article_id)),
+
+    def _compute() -> dict:
+        rows = (
+            db.query(
+                Keyword.normalized_term,
+                Keyword.term,
+                Keyword.language,
+                KeywordTag.source,
+                func.coalesce(func.sum(KeywordMention.count), 0),
+                func.count(func.distinct(KeywordMention.article_id)),
+            )
+            .join(KeywordTag, KeywordTag.keyword_id == Keyword.id)
+            .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+            .filter(KeywordTag.axis == ax, KeywordTag.tag == tg)
+            .group_by(Keyword.id, KeywordTag.source)
+            .all()
         )
-        .join(KeywordTag, KeywordTag.keyword_id == Keyword.id)
-        .outerjoin(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-        .filter(KeywordTag.axis == ax, KeywordTag.tag == tg)
-        .group_by(Keyword.id, KeywordTag.source)
-        .all()
-    )
-    items = [
-        {
-            "normalized": norm,
-            "term": term,
-            "language": lang,
-            "source": source,
-            "mentions": int(m or 0),
-            "articles": int(a or 0),
-        }
-        for norm, term, lang, source, m, a in rows
-    ]
-    items.sort(key=lambda x: (-x["articles"], -x["mentions"], x["normalized"]))
-    return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}
+        items = [
+            {
+                "normalized": norm,
+                "term": term,
+                "language": lang,
+                "source": source,
+                "mentions": int(m or 0),
+                "articles": int(a or 0),
+            }
+            for norm, term, lang, source, m, a in rows
+        ]
+        items.sort(key=lambda x: (-x["articles"], -x["mentions"], x["normalized"]))
+        return {"axis": ax, "tag": tg, "total": len(items), "keywords": items[:limit]}
+
+    return _deadlined(db, _ckey("keyword-tags-keywords", axis=ax, tag=tg, limit=limit), _compute)
 
 
 def _backfill_tags_worker(ctx, *, limit: int | None) -> dict:

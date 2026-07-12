@@ -887,6 +887,51 @@ def _python_sort_key(sort_by: str):
     return lambda a: (a.published_at.replace(tzinfo=None) if a.published_at else datetime.min)
 
 
+def _fts_id_sort_key(sort_by: str):
+    """Sort key over ``(id, value)`` rows for the FTS over-fetch bound (S2.5) — mirrors
+    :func:`_python_sort_key`'s casefold / tz-normalise rules but on the FETCHED column
+    value ``r[1]`` instead of a full Article object (so content is never decrypted)."""
+    if sort_by in ("title", "source"):
+        return lambda r: (r[1] or "").casefold()
+    if sort_by == "language":
+        return lambda r: (r[1] or "")
+    return lambda r: (r[1].replace(tzinfo=None) if r[1] else datetime.min)  # date
+
+
+def _load_articles_in_order(session, ids: list[int]) -> list:
+    """Load ONLY these article ids as full rows, returned in the given order. Content is
+    decrypted for these (<= page-size) rows only — the S2.5 over-fetch bound's phase 3."""
+    if not ids:
+        return []
+    by_id = {a.id: a for a in session.query(Article).filter(Article.id.in_(ids)).all()}
+    return [by_id[i] for i in ids if i in by_id]
+
+
+def _browse_total_cached(session) -> int:
+    """The UNFILTERED browse total — the corpus-scaled ``COUNT(*) FROM articles`` (P1.3):
+    served from a DATA-AWARE cache keyed on ``PRAGMA data_version`` (the /status pattern).
+    Repeat browse pages with no intervening write reuse the count (a HIT); a commit by ANY
+    connection bumps ``data_version`` so the count stays EXACT — never a drifting counter.
+    Probe unavailable -> the live count (never a wrong cache hit)."""
+    from src.api.insights import _cached, _data_version
+
+    try:
+        bind = session.get_bind()
+    except Exception:  # noqa: BLE001 - no bind -> live count
+        bind = None
+    dv = _data_version(bind) if bind is not None else None
+    if dv is None:
+        return int(session.query(Article).count())  # no probe -> live, never a wrong hit
+    # _cached persists DICT payloads only, so wrap the scalar in a dict (else it is a
+    # silent no-op that recomputes COUNT(*) every page — the skeptic finding). The value
+    # stays EXACT: data_version invalidates the key on any write.
+    cached = _cached(
+        f"articles-total|{id(bind)}|{dv}",
+        lambda: {"count": int(session.query(Article).count())},
+    )
+    return int(cached["count"])
+
+
 def _query_articles(
     session,
     *,
@@ -939,30 +984,55 @@ def _query_articles(
         # A text query was given. fts_ids is relevance-ordered (best first).
         if not fts_ids:
             return [], 0
-        q = session.query(Article).filter(Article.id.in_(fts_ids))
+        # OVER-FETCH BOUND (S2.5): resolve the surviving ids (fts ∩ filters) in the FINAL
+        # order via an id-only (+ sort-column) query — NEVER load the whole matched set of
+        # FULL Article rows. The old code did `session.query(Article)...all()`, dragging
+        # every match's ~35 KB `content` through the SQLCipher codec (the measured 25 s at a
+        # broad match on the field corpus) only to sort + paginate. Now content is decrypted
+        # for the PAGE only (<= limit rows) — the whole-match work is an index/id-column scan.
+        if sort_by == "source":
+            id_q = session.query(Article.id, Source.name).outerjoin(
+                Source, Article.source_id == Source.id
+            )
+        elif sort_by in _SORT_FIELDS:  # title | language | date
+            _col = {
+                "title": Article.title,
+                "language": Article.language,
+                "date": Article.published_at,
+            }[sort_by]
+            id_q = session.query(Article.id, _col)
+        else:  # relevance | keyword_count -> id only
+            id_q = session.query(Article.id)
+        id_q = id_q.filter(Article.id.in_(fts_ids))
         if filters:
-            q = q.filter(and_(*filters))
-        rows = q.all()
+            id_q = id_q.filter(and_(*filters))
+        id_rows = id_q.all()
+
         if sort_by == _KEYWORD_COUNT_SORT and keyword_id:
-            # Order by the searched keyword's per-article frequency. A mentions-only
-            # lookup over the whole matched set -> sort -> paginate (no decrypt trap).
-            cmap = _keyword_counts(session, keyword_id, [a.id for a in rows])
-            rows.sort(key=lambda a: cmap.get(a.id, 0), reverse=descending)
+            # Order by the searched keyword's per-article frequency (mentions-only lookup).
+            surviving = [r[0] for r in id_rows]
+            cmap = _keyword_counts(session, keyword_id, surviving)
+            surviving.sort(key=lambda i: cmap.get(i, 0), reverse=descending)
+            ordered_ids = surviving
         elif sort_by in _SORT_FIELDS:
-            rows.sort(key=_python_sort_key(sort_by), reverse=descending)
-        else:  # default: relevance order
-            rank = {aid: i for i, aid in enumerate(fts_ids)}
-            rows.sort(key=lambda a: rank.get(a.id, 1 << 30))
-        total = len(rows)
-        if limit is not None:
-            rows = rows[offset : offset + limit]
-        return rows, total
+            ordered_ids = [
+                r[0]
+                for r in sorted(id_rows, key=_fts_id_sort_key(sort_by), reverse=descending)
+            ]
+        else:  # default: relevance order, existing+filtered ids only (fts_ids order)
+            keep = {r[0] for r in id_rows}
+            ordered_ids = [i for i in fts_ids if i in keep]
+        total = len(ordered_ids)
+        page_ids = ordered_ids[offset : offset + limit] if limit is not None else ordered_ids
+        return _load_articles_in_order(session, page_ids), total
 
     # No text query: browse by the chosen metadata order (default recency).
     q = session.query(Article)
     if filters:
         q = q.filter(and_(*filters))
-    total = q.count()
+        total = q.count()  # filtered: bounded by the filter, computed live
+    else:
+        total = _browse_total_cached(session)  # S2.3: data-aware cached corpus COUNT(*)
     if sort_by == "source":
         # COLLATE NOCASE so alphabetical order is case-insensitive AND matches the
         # FTS path's Python casefold (otherwise SQLite's binary collation sorts all
@@ -984,7 +1054,9 @@ def _query_articles(
 # API Endpoints
 @app.get("/api/articles", response_model=dict)
 @limiter.limit("100/hour")
-async def search_articles(
+def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronous DB +
+    # SQLCipher-codec work must NOT run on the event loop, where it froze the single
+    # worker for the whole query (the documented unlock/restore/task-manager freeze family).
     request: Request,
     query: str | None = None,
     source: str | None = None,
@@ -1134,7 +1206,9 @@ async def search_articles(
 
 @app.get("/api/articles/export")
 @limiter.limit("50/hour")
-async def export_articles(
+def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, so it
+    # materializes EVERY matching row; that synchronous codec work must never run on the
+    # event loop (it would freeze the single worker for the whole export).
     request: Request,
     format: str = "csv",
     query: str | None = None,
@@ -1260,7 +1334,10 @@ async def export_articles(
 
 @app.get("/api/articles/{article_id}/view", response_class=HTMLResponse)
 @limiter.limit("300/hour")
-async def view_article(request: Request, article_id: int, db: Session = Depends(get_db)):
+def view_article(request: Request, article_id: int, db: Session = Depends(get_db)):  # plain
+    # def -> threadpool (S2.5): the reader runs per-call corpus aggregations (cited-link
+    # citations, related-in-corpus, near-dup MinHash) + article decrypt; that synchronous
+    # work must not run on the event loop and freeze the single worker during a page view.
     """Render the locally-stored copy of an article as a clean, offline reading page.
 
     Uses the text captured at ingest (no network), so it works fully offline and

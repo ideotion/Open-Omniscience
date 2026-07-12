@@ -49,6 +49,50 @@ def _loop_block_ms() -> float:
         return 250.0
 
 
+# The "snappy" acceptance bar (SCALE_ROADMAP.md / ROADMAP.md): every INTERACTIVE endpoint
+# p95 < ~500 ms. S2.7 renders each route's measured p95 as an explicit pass/fail against it,
+# so the maintainer's next field export SHOWS the bar instead of eyeballing raw ms.
+_SNAPPY_BAR_MS_DEFAULT = 500.0
+_SNAPPY_MIN_N = 20  # min samples in the window before a route gets a pass/fail (else low-n)
+
+# HEAVY / on-demand routes are NOT interactive and are NOT held to the 500 ms bar (they are
+# deliberate exports / jobs / backups / diagnostics, expected to be slow or job-ified). They
+# are reported with their p95 but marked "exempt", never a "fail" — the bar is for the reads
+# a user waits on, per its written definition.
+_EXEMPT_ROUTE_SUBSTRINGS = (
+    "/diagnostics/",
+    "/export",
+    "/backup",
+    "/jobs",
+    "/dump",
+    "/api/llm/",
+    "/geo/",
+    "/p0-validation",
+    "/all",
+    "/import",
+    "/metrics",
+)
+
+
+def _snappy_bar_ms() -> float:
+    """The p95 bar interactive endpoints are judged against (OO_SNAPPY_BAR_MS; 500)."""
+    try:
+        return float(os.environ.get("OO_SNAPPY_BAR_MS", str(_SNAPPY_BAR_MS_DEFAULT)))
+    except ValueError:
+        return _SNAPPY_BAR_MS_DEFAULT
+
+
+def _snappy_verdict(route: str, p95_ms: float, window_n: int, bar_ms: float) -> str:
+    """pass | fail | low-n | exempt — an HONEST mapping of a REAL measured p95 to the
+    written bar (never a fabricated number; low-n when the window is too thin to judge;
+    exempt for the heavy/on-demand routes the interactive bar does not cover)."""
+    if any(sub in route for sub in _EXEMPT_ROUTE_SUBSTRINGS):
+        return "exempt"
+    if window_n < _SNAPPY_MIN_N:
+        return "low-n"
+    return "pass" if p95_ms < bar_ms else "fail"
+
+
 def note_start(req_id: int, route: str) -> None:
     with _LOCK:
         if len(_INFLIGHT) < 4096:
@@ -131,28 +175,65 @@ def start_watchdog() -> None:
     _watchdog_started = True
 
 
+def _reset_for_tests() -> None:
+    """Drop all recorded per-route reservoirs / events (test hook)."""
+    with _LOCK:
+        _ROUTES.clear()
+        _INFLIGHT.clear()
+        _EVENTS.clear()
+
+
 def summary() -> dict[str, Any]:
     """The latency log: per-route p50/p95/p99 over the recent window + the loop-block
     events. Sorted by p99 so the slowest routes surface first."""
+    bar_ms = _snappy_bar_ms()
     with _LOCK:
         routes = []
         for key, r in _ROUTES.items():
             vals = sorted(r["durations"])
+            p95 = _pct(vals, 95)
             routes.append(
                 {
                     "route": key,
                     "count": r["count"],
                     "window_n": len(vals),
                     "p50_ms": _pct(vals, 50),
-                    "p95_ms": _pct(vals, 95),
+                    "p95_ms": p95,
                     "p99_ms": _pct(vals, 99),
                     "max_ms": round(r["max_ms"], 1),
                     "statuses": dict(r["statuses"]),
+                    # S2.7: the p95-vs-500 ms snappy-bar verdict for THIS route.
+                    "snappy": _snappy_verdict(key, p95, len(vals), bar_ms),
                 }
             )
         events = list(_EVENTS)
         in_flight_now = len(_INFLIGHT)
     routes.sort(key=lambda x: x["p99_ms"], reverse=True)
+    # S2.7 top-level roll-up: how the INTERACTIVE routes stand against the bar, so a field
+    # export shows pass/fail directly. `failing` lists the offenders (interactive routes
+    # whose measured p95 breaches the bar) — the maintainer's snappiness worklist.
+    interactive = [r for r in routes if r["snappy"] != "exempt"]
+    passing = [r for r in interactive if r["snappy"] == "pass"]
+    failing = [r for r in interactive if r["snappy"] == "fail"]
+    low_n = [r for r in interactive if r["snappy"] == "low-n"]
+    snappy = {
+        "bar_ms": bar_ms,
+        "interactive_routes": len(interactive),
+        "passing": len(passing),
+        "failing": len(failing),
+        "low_n": len(low_n),
+        "all_interactive_pass": len(failing) == 0 and len(interactive) > 0,
+        "failing_routes": [
+            {"route": r["route"], "p95_ms": r["p95_ms"], "window_n": r["window_n"]}
+            for r in sorted(failing, key=lambda x: -x["p95_ms"])
+        ][:20],
+        "method": (
+            f"Each interactive route's measured p95 vs the {bar_ms:.0f} ms 'snappy' bar "
+            "(ROADMAP/SCALE_ROADMAP): pass | fail | low-n (window < "
+            f"{_SNAPPY_MIN_N}) | exempt (heavy/on-demand routes the bar does not cover). "
+            "Measurements only; no fabricated number, no score."
+        ),
+    }
     return {
         "watchdog": {
             "running": _watchdog_started,
@@ -161,11 +242,12 @@ def summary() -> dict[str, Any]:
             "events_captured": len(events),
         },
         "in_flight_now": in_flight_now,
+        "snappy_bar": snappy,
         "routes": routes[:60],
         "method": (
             "Per-route latency percentiles over a recent-window reservoir + an event-loop "
             "watchdog that flags loop lag (heavy sync work on the async loop — the "
-            "unlock/restore/task-manager freeze family). Route templates only, no bound "
-            "values; read-only; no score."
+            "unlock/restore/task-manager freeze family) + a per-route p95-vs-bar snappy "
+            "verdict. Route templates only, no bound values; read-only; no score."
         ),
     }

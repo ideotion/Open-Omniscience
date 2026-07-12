@@ -3184,3 +3184,58 @@ LESSONS folded into the Session-rituals "Lessons" subsection: verdict-maps-to-th
 AND-gate-hides-signal / a-named-scrub-must-enforce / retention-limited-diagnostic corollaries); the
 external-drive-probe-needs-a-swept-prefix at-rest-encryption lesson; the `TestClient(app)`-lifespan
 subset-order-pollution suspect.
+
+---
+
+## S2 (2026-07-12) — Tier-1: the P1 snappiness board (draft PR #633 onto 0.2)
+
+Session 2 of the six-session program. Finished the P1 snappiness board against the written
+bar. All slices committed to `claude/s2-snappiness-board-okqg27`; each risky slice
+adversarially skeptic-verified BEFORE its push (S2.2: 3 lenses, 1 med fixed; S2.5: 2 lenses,
+1 med fixed). Full per-slice detail = the six `docs/ledger/shipped.csv` rows.
+
+**S2.1** A9 write-gate-hold riders (F10/F11/F13/F14) closed REPRODUCER-FIRST — all four
+DECLINED with reproducers/analysis as evidence (no production code). **S2.2** A10 off-peak
+maintenance is scheduler-owned + collector-idle (decoupled from the pass-tail warm_cache).
+**S2.4** guard-coverage sweep — the previously-raw corpus-scaled reads (8 insights endpoints +
+6 cards + omni + link_analysis OOM materializations) now behind the admission cap + deadline.
+**S2.5+S2.3** /api/articles moved async→plain def (threadpool, no event-loop freeze) + an FTS
+over-fetch bound (id-only resolve → load the PAGE only; GAMMA-measured 50 ms→11 ms warm) + a
+data-aware cached browse COUNT(*). **S2.6** the 5 TB architecture review doc (S3's input).
+**S2.7** a per-endpoint p95-vs-500 ms snappy verdict in the latency reservoir.
+
+**LESSONS folded into the Session-rituals "Lessons" subsection:**
+
+- **Reproducer-first for gate-hold riders — a REAL hold is not a reason to fix it (S2.1):** a
+  write-gate hold being present is not sufficient. MEASURE the throughput ceiling (GIL-bound
+  Python work gets no gate-split gain beyond the amortised-fsync overlap — batching already
+  collapses N extractions onto ONE commit, so writes are the small part of the window) and
+  weigh the hot-path risk. And a gate held across a scan can be MANDATORY: the streaming
+  backup's `_corpus_facts` MUST run inside the `freeze()` gate because the tamper-evidence
+  article-hash commitment has to match the streamed at-rest bytes — moving it out breaks
+  correctness, not just risk (and it is a rounding error beside the multi-hour byte stream).
+  F14's autoflush mechanism cannot fire under `autoflush=False` (a read never flushes a dirty
+  session). Close a DECLINED rider with the reproducer AS the evidence (a test that pins the
+  property or refutes the mechanism), never a hand-wave.
+- **`async def` is a whole-server freeze; the fix is `def` OR `run_in_threadpool` — and slowapi
+  works on sync `def` (S2.5):** a FastAPI `async def` handler runs ON the event loop, so heavy
+  SYNCHRONOUS DB+codec work in it freezes the single worker for its whole duration (the
+  unlock/restore/task-manager freeze family). Make the handler a plain `def` (Starlette runs it
+  in the threadpool) or `run_in_threadpool` the body; `@limiter.limit` (slowapi) DOES work on a
+  sync `def` (verified: `Depends(get_db)` lifecycle + exception handling intact). For FTS
+  search, NEVER materialize the whole match to sort+paginate: resolve the surviving ids
+  (fts ∩ filters) in the FINAL order via an id-only (+ sort-column) query, then load FULL rows
+  for the PAGE only — content is decrypted for ≤limit rows, not the ~20k-match whole set.
+- **`src/api/insights._cached` is DICT-ONLY — a scalar handed to it is a SILENT no-op (S2.5):**
+  `_cached` persists and returns only dict payloads (a non-dict `out` falls straight through
+  with NO `.set`, and a hit is recognised only `if isinstance(hit, dict)`). Handing it a scalar
+  (an int count) makes the cache a silent no-op — correctness holds (always live/exact, so a
+  freshness-only test passes) but the optimisation does NOTHING. Wrap the scalar in a dict
+  (`{"count": n}`) and pin a HIT with a test that asserts the store, not just freshness.
+- **Guarding an endpoint in `guarded_read`/`_deadlined` bounds even a whole-table
+  `.distinct().all()` OOM (S2.4):** the statement deadline uses SQLite's progress handler, so it
+  interrupts a runaway scan mid-query — a full Python materialization can never complete past
+  the deadline. So wrapping (not only query-rewriting) an OOM-risk read is a real fix; the
+  admission cap + single-flight additionally stop the death-spiral. The omnibar is the exception
+  — it must never blank, so its guard DEGRADES (an honest empty-with-note payload) instead of a
+  429/503.

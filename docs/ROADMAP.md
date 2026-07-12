@@ -98,28 +98,44 @@ instrumentation into one report with a per-check verdict. The live RUN and the
 | Item | What | Status |
 |---|---|---|
 | **P1.1** | **Death-spiral fix**: server-side deadlines + client single-flight polling + a concurrency cap (requests stacked without cancellation; one endpoint was in-flight 217 s) | ✅ shipped (the `heavy.py` admission guard + honest 429 client retry); the last uncovered reads — integrity profile/actors/prominence/fixity — are now guarded too (#628) |
-| **P1.2** | Job-ify heavy sync handlers (enrich-source-types 8.5 min · governments 2.9 min · diagnostics `/all` 36 min — all background jobs now; heavy reads guarded) | ✅ largely shipped — residual: audit `corpus-www` (28 s) / `corpus-sentiment` (18 s) for individual guards |
-| **P1.3** | `count(*)` from maintained counters (`SELECT count(*) FROM keyword_mentions` = 724 ms × 172 = 124 s) | 🚧 partial — the `/status` data-aware cache shipped (count stays EXACT); a sweep of the remaining `count(*)` call sites is unverified |
+| **P1.2** | Job-ify heavy sync handlers (enrich-source-types 8.5 min · governments 2.9 min · diagnostics `/all` 36 min — all background jobs now; heavy reads guarded) | ✅ largely shipped — **S2.4 sweep (2026-07-12): `corpus-www`/`corpus-sentiment` CONFIRMED already `_deadlined`**; the sweep then guarded the previously-raw corpus-scaled reads — the 8 raw insights endpoints (who/where/convergences/ring-countries/source-laundering/recycled-claims/reading-diet-by-type/keyword-tags-keywords), the 6 cache-only ones upgraded to `_deadlined` (4 manipulation cards + source-types + map-coverage), the per-keystroke `omni` (degraded-not-429 so the omnibar never blanks), and the link OOM-risk endpoints (stats/top-cited/articles-by-link/citation-graph whole-table materializations, now deadline-bounded). **Carry-over** (on-demand, not polled — lower snappy priority): `source_io/sources` (real fix = a maintained per-Source counter), `framing` (cap only), `monitoring/anomalies` + `commodity/correlation` (grouped-SQL rewrite), `link/corpus`+`shared` (already corpus-bounded via `_resolve_corpus` cap). |
+| **P1.3** | `count(*)` from maintained counters (`SELECT count(*) FROM keyword_mentions` = 724 ms × 172 = 124 s) | ✅ **swept (S2.3, 2026-07-12)** — audit verdict: the maintained keyword counters (`Keyword.mention_count`/`article_count` + `reconcile_keyword_counters` slice-sweep + `counter_envelope`) + the data-version count caches (`/status`, Database/Library stats) are the reference impl and the 3 hottest corpus aggregations already route through counters. The one genuine hot-path residue — the **unfiltered `/api/articles` browse `COUNT(*)`** — is now served from a data-aware `PRAGMA data_version` cache (`_browse_total_cached`, S2.5; stays EXACT, invalidates on any write). **Carry-over:** the reader per-source article count (needs a NEW maintained `Source` counter — a bigger change with its own reconcile+envelope); a corpus-wide `/status` keyword/mention counter is DELIBERATELY gated (needs the basis bound to the corpus epoch, not the reconcile watermark — the queries.status docstring). |
 | **P1.4** | `/insights/latest` (40 s @ 268 K → near-dup bounded) | ✅ shipped — re-measure on next field export |
 | **P1.5** | Storage-composition diagnostic | ✅ shipped (dbstat-limited on encrypted store) + the itemized all-stores footprint (A12b/B14 ⏳ #625) |
 | **P1.6** | Corpus-epoch mechanism | ✅ shipped — **now incl. the restore-merge wiring** (A7) |
-| **P1.7** | 5 TB architecture verify-before-trust review | 🎨 design-only (the A14 if-time item — not reached) |
+| **P1.7** | 5 TB architecture verify-before-trust review | ✅ **shipped (S2.6, 2026-07-12): [`docs/design/5TB_ARCHITECTURE_REVIEW.md`](design/5TB_ARCHITECTURE_REVIEW.md)** — measured/arithmetic/extrapolation-tagged review of single-file SQLCipher at 5 TB (page cache + codec, the auto_vacuum/page_size CREATE-time seams, VACUUM infeasibility, the GF(2⁸) 128 GB parity ceiling with **adaptive volume sizing** `max(512 MiB, ⌈corpus/200⌉)` keeping N≈200 at every scale, the backup gate window, the derived-layer/D1 hand-off, cross-time-recall invariants, a GAMMA slope-measurement plan + a real 960 MB-encrypted sandbox point) — **S3's input** (8 ordered recommendations, each tagged buildable-now / operator-gated / ruling-needed). |
 | **P1.8** | Collector-path write batching (writer gate: 847,351 s cumulative wait / 22% of worker-time / max 438 s) | ✅ shipped |
 | **P1.9** | Job-ify the diagnostics `/all` export (was 36+ min blocking the loop) | ✅ complete — backend (#600 D2) + the UI job button (B6, #622) |
 | **P1.10** | trending-windows cold path (467 s/call; 62 calls / 3,286 s) — stale-but-disclosed serve + change-gated refresh | ✅ shipped — D1 persisted store still pending (see DB-3) |
 | **P1.11** | Flip on the D4 map serve (map GROUP BY was 748 s total / ~150 s per call) | ✅ shipped |
-| **P1.12** | Background maintenance under the job/deadline regime (counter-reconcile 86–104 s/pass; prune 32 s) | ✅ deadline half shipped — **off-peak scheduling remains** (A10, not reached) |
+| **P1.12** | Background maintenance under the job/deadline regime (counter-reconcile 86–104 s/pass; prune 32 s) | ✅ **complete** — deadline+watermark half shipped earlier; **off-peak scheduling shipped S2.2 (A10, 2026-07-12)**: `src/scheduler/maintenance.py:run_idle_maintenance` runs the budgeted reconcile/prune slices in the collector-IDLE window (scheduler-owned `_run_off_peak_maintenance`, holds `_run_lock` so it is never concurrent with a pass, throttled `OO_MAINT_INTERVAL_S`=300 s, skipped under memory pressure, `_stop`-interruptible), DECOUPLED from the pass-tail `warm_cache`; freshness gates + `complete:false` disclosure unchanged; surfaced in scheduler `status().last_maintenance`. |
 
 **Heavy-endpoint sweep status (was the ⬜ list from the 2026-07-08 field test):**
 `signals/alerts`/`flood`/`bury` + `insights/lunar-correlation` + `server-locations` +
 briefing/trending/associations — **guarded** ✅; integrity reads (profile/actors/prominence/
-fixity) — **guarded** ✅ (#628); residual to verify under load: `diagnostics/keywords`
-(100–184 s), `debug-bundle` (69 s), `/api/articles` p95 25 s. 🚧
+fixity) — **guarded** ✅ (#628); the S2.4 sweep guarded the remaining polled/OOM-risk reads
+(insights raw-8 + cards + omni + link_analysis) ✅; **`/api/articles` p95 25 s FIXED (S2.5)** —
+the 3 handlers moved `async def`→plain `def` (Starlette threadpool, no event-loop freeze) + the
+FTS path stopped materializing the whole match (id-only resolve → load the PAGE only; measured
+50 ms→11 ms warm at 1,776 matches) + a data-aware browse-count cache. Carry-over: `diagnostics/
+keywords` (100–184 s) + `debug-bundle` (69 s) → job/degrade; the S2.4 on-demand tail
+(source_io/framing/anomalies/correlation). 🚧
 
-**Perf riders (post-merge audit) — INVESTIGATED & DECLINED by Session A (correcting an
-earlier "not reached" here):** F14 non-reproducible (`SessionLocal` is `autoflush=False` —
-the claimed mechanism cannot fire) · F10/F11 backup-path risk > LOW gain · F13 split-risk
-vs GIL-marginal. Revisit is reproducer-first only (S2 brief). ⬜ closed-unless-reproduced
+**Perf riders (post-merge audit) — INVESTIGATED & DECLINED (Session A), then REPRODUCER-VERIFIED
+& CLOSED (S2.1, 2026-07-12; `tests/test_write_gate_riders.py`):** all four confirmed against the
+tree with probes/measurements. **F14 REFUTED by test** — `SessionLocal` is `autoflush=False`, so a
+read never flushes a dirty session and the markets freshness query cannot hold the gate across a
+feed fetch (`run_rule` also commits every branch); the test pins the property. **F13 REAL hold,
+DECLINED** — the batched collector flush holds the gate across per-article keyword EXTRACTION
+(measured ~13 ms/article GIL-bound CPU, ~105 ms/batch at batch=8), but splitting `index_article`
+(the hottest correctness-critical function) is high-risk and GIL-bounded-marginal (extraction
+serialises on the GIL regardless; the only recoverable gain is the already-amortised fsync overlap);
+reproducer pins the hold. **F10 REAL, DECLINED** — `_drain_wal` takes the gate then a pool
+connection (inverted), but via `engine.connect()` bounded by `pool_timeout` + best-effort (WAL rides
+as a member); never a true deadlock. **F11 REAL, DECLINED** — `_corpus_facts` runs under the backup
+freeze() gate, but it MUST (the tamper-evidence commitment must match the streamed at-rest bytes) and
+it is a rounding error beside the under-gate corpus byte stream (minutes at 100 GB). F10/F11 are P0
+backup-path, untouched per risk>gain. ✅ closed (reproducer-first)
 
 ---
 
@@ -130,7 +146,7 @@ vs GIL-marginal. Revisit is reproducer-first only (S2 brief). ⬜ closed-unless-
 | **App OOM crash under load** | A crash in a disposable VM = **total corpus loss**. Collector fix shipped (pass recycling + RSS memory guard + WAL checkpoints); needs the live-run validation. | 🔧 fix shipped, awaiting validation (P0.3) |
 | **FLOOD card polluted by leaked common words** | `signals/flood` surfaces Dutch filler ("kijk"/"zien") as topics. Deliberately NOT hand-stoplisted (open-class words need the **measured** keyword-log sweep / lemmatization track, per the ledger discipline); the words are flagged for the next keyword-log review. | ⬜ open — the honest lever is `analyze_keyword_log --generic-terms` on a fresh export 🛠 |
 | **Date-extraction recall — the broader tail** | hu/fa relative-day words shipped (B4, #617 — measure-first found the field figures 0%/22% were STALE); the residual `date-like-but-unextracted` classes + CJK dates remain. | 🚧 residual (P2) |
-| **`diagnostics/keywords` + `debug-bundle` under load** | 100–184 s / 69 s in the field export — verify the guard/job coverage catches them at scale. | ⬜ verify next field run |
+| **`diagnostics/keywords` + `debug-bundle` under load** | 100–184 s / 69 s in the field export. S2 assessed both (S2.5): `diagnostics/keywords` already streams on a read-only WAL snapshot + threadpool + is deliberately un-deadlined (the maintainer forbade capping the keyword crunch) — the honest fix is collapsing its 3 keyword_mentions passes / serving totals from counters + optional job-ify; `debug-bundle` wants read-only-db + wider `_safe()` + a per-member budget or the all-diagnostics job template. **Carry-over** (both on-demand, not polled). | ⬜ carry-over (S2 assessed; job/collapse) |
 
 **Fixed by the A+B wave (⏳ = in the open PR chain, done pending merge):**
 disposable-VM durability — opt-in persistent `data_dir` + honest ephemeral-root note (A11) ✅ ·
