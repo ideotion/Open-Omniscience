@@ -116,10 +116,21 @@ briefing/trending/associations — **guarded** ✅; integrity reads (profile/act
 fixity) — **guarded** ✅ (#628); residual to verify under load: `diagnostics/keywords`
 (100–184 s), `debug-bundle` (69 s), `/api/articles` p95 25 s. 🚧
 
-**Perf riders (post-merge audit) — INVESTIGATED & DECLINED by Session A (correcting an
-earlier "not reached" here):** F14 non-reproducible (`SessionLocal` is `autoflush=False` —
-the claimed mechanism cannot fire) · F10/F11 backup-path risk > LOW gain · F13 split-risk
-vs GIL-marginal. Revisit is reproducer-first only (S2 brief). ⬜ closed-unless-reproduced
+**Perf riders (post-merge audit) — INVESTIGATED & DECLINED (Session A), then REPRODUCER-VERIFIED
+& CLOSED (S2.1, 2026-07-12; `tests/test_write_gate_riders.py`):** all four confirmed against the
+tree with probes/measurements. **F14 REFUTED by test** — `SessionLocal` is `autoflush=False`, so a
+read never flushes a dirty session and the markets freshness query cannot hold the gate across a
+feed fetch (`run_rule` also commits every branch); the test pins the property. **F13 REAL hold,
+DECLINED** — the batched collector flush holds the gate across per-article keyword EXTRACTION
+(measured ~13 ms/article GIL-bound CPU, ~105 ms/batch at batch=8), but splitting `index_article`
+(the hottest correctness-critical function) is high-risk and GIL-bounded-marginal (extraction
+serialises on the GIL regardless; the only recoverable gain is the already-amortised fsync overlap);
+reproducer pins the hold. **F10 REAL, DECLINED** — `_drain_wal` takes the gate then a pool
+connection (inverted), but via `engine.connect()` bounded by `pool_timeout` + best-effort (WAL rides
+as a member); never a true deadlock. **F11 REAL, DECLINED** — `_corpus_facts` runs under the backup
+freeze() gate, but it MUST (the tamper-evidence commitment must match the streamed at-rest bytes) and
+it is a rounding error beside the under-gate corpus byte stream (minutes at 100 GB). F10/F11 are P0
+backup-path, untouched per risk>gain. ✅ closed (reproducer-first)
 
 ---
 
