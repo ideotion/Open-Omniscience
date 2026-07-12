@@ -78,7 +78,7 @@ def _reset_serve_state():
             except Exception:  # noqa: BLE001
                 pass
         rollup_serve._STATE.update(
-            {"con": None, "built_at": 0.0, "rows": 0, "bind": None,
+            {"con": None, "built_at": 0.0, "rows": 0, "bind": None, "persisted": False,
              "token": None, "pending": False, "checked_at": 0.0}
         )
 

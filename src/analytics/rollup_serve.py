@@ -60,6 +60,9 @@ _STATE: dict = {
     "built_at": 0.0,
     "rows": 0,
     "bind": None,
+    # D1: whether the current served rollup is the PERSISTED encrypted store (survives
+    # restarts, refreshed incrementally) or the in-memory fallback (rebuilt per process).
+    "persisted": False,
     # P1.10 change gate: the serve_gate.change_token the current build reflects, whether a
     # newer corpus state has been DETECTED (pending -> disclosed as stale), and the last
     # cheap token check (so serves don't re-check on every request).
@@ -105,6 +108,33 @@ def serve_enabled() -> bool:
     return columnar.duckdb_available()
 
 
+def _persist_passphrase() -> str | None:
+    """The corpus passphrase (from the unlocked in-process session) so the served rollup can
+    use the PERSISTED encrypted store (D1); None -> the in-memory serve. Set
+    ``OO_COLUMNAR_SERVE_PERSIST=0`` to force the in-memory serve even when the secure backend
+    + passphrase are available."""
+    if os.getenv("OO_COLUMNAR_SERVE_PERSIST") == "0":
+        return None
+    try:
+        from src.database.connect import get_passphrase
+
+        return get_passphrase()
+    except Exception:  # noqa: BLE001 - any doubt -> in-memory
+        return None
+
+
+def _persisted_serve_active() -> bool:
+    """True when the served rollup should use the PERSISTED encrypted DuckDB store (D1): the
+    secure crypto backend is bundled+verified (``secure_crypto_available``) AND the corpus
+    passphrase is in memory. False -> the in-memory serve (the fallback). The persisted store
+    SURVIVES restarts and refreshes INCREMENTALLY (epoch-gated), so a long-running app never
+    pays a per-boot full rebuild. Today the gate is False until the per-OS httpfs binary is
+    bundled, so this returns False and the serve stays in-memory (byte-unchanged)."""
+    from src.analytics import columnar
+
+    return bool(_persist_passphrase()) and columnar.secure_crypto_available()
+
+
 def status() -> dict:
     """Honest state of the served rollup (for diagnostics). No score."""
     with _LOCK:
@@ -112,9 +142,11 @@ def status() -> dict:
         built_at = _STATE["built_at"]
         rows = _STATE["rows"]
         pending = _STATE["pending"]
+        persisted = _STATE["persisted"]
     return {
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
+        "store": "persisted" if persisted else "memory",  # D1: persisted encrypted vs in-memory
         "built": con is not None,
         "built_at": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
@@ -129,37 +161,102 @@ def status() -> dict:
     }
 
 
-def _build_and_swap() -> None:
-    """Build a FRESH in-memory rollup on its own session/connection, then swap it in."""
-    try:
-        from src.analytics import columnar, serve_gate
-        from src.database.session import session_scope
+def _build_inmemory_and_swap() -> None:
+    """Build a FRESH in-memory rollup on its own session/connection, then swap it in (a serve
+    never touches a half-built store). The in-memory store is rebuilt per process, so a FULL
+    build is used (always correct -- no incremental double-count trap). Raises on error (the
+    dispatcher logs + releases the build lock)."""
+    from src.analytics import columnar, serve_gate
+    from src.database.session import session_scope
 
-        con = columnar.connect(passphrase=None)  # offline -> in-memory (never a file)
-        if con is None:
-            return
+    con = columnar.connect(passphrase=None)  # no passphrase -> in-memory (never a file)
+    if con is None:
+        return
+    with session_scope() as s:
+        # Token BEFORE the build (conservative: rows landing DURING the build make the
+        # recorded token compare "changed" next check -> one extra rebuild, never a
+        # silently-missed one).
+        token = serve_gate.change_token(s)
+        columnar.build_keyword_daily(con, s)
+        rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+        built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
+    with _LOCK:
+        old = _STATE["con"]
+        _STATE["con"] = con
+        _STATE["persisted"] = False
+        _STATE["built_at"] = time.time()
+        _STATE["rows"] = int(rows)
+        _STATE["bind"] = built_bind
+        _STATE["token"] = token
+        _STATE["pending"] = False
+        if old is not None:
+            try:
+                old.close()  # safe: serves hold _LOCK, so none is mid-query here
+            except Exception:  # noqa: BLE001
+                pass
+    _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
+
+
+def _refresh_persisted_build() -> None:
+    """Refresh the PERSISTED encrypted rollup store (D1) and serve from it.
+
+    A SINGLE connection is held for the process -- the columnar store's ATTACH open REJECTS a
+    second in-process handle to the same file ("Unique file handle conflict"), so the in-memory
+    swap model (build a second connection, swap) cannot apply. The store is refreshed EPOCH-
+    GATED INCREMENTALLY via ``refresh_keyword_daily``: a full rebuild only on an epoch change
+    (re-index / prune / restore) or the first build; otherwise only the appended mention tail is
+    merged. Because the persisted FILE survives restarts, a fresh process reopens it and merges
+    just the new tail -- no per-boot full rebuild (the D1 durability win).
+
+    The DuckDB connection is not thread-safe, so the refresh + read + state update run under
+    ``_LOCK`` (serves also hold ``_LOCK`` for their query, so none reads a half-merge). A serve
+    therefore blocks briefly on an incremental merge; a rare FULL rebuild (epoch change) blocks
+    longer -- the honest limit, documented; a temp-file swap to remove even that is the deferred
+    larger design. First build: ``_STATE["con"]`` is set only AFTER the refresh completes, so a
+    serve during the very first build falls back to live (never an empty half-built table)."""
+    from src.analytics import columnar, serve_gate
+    from src.analytics.corpus_epoch import get_corpus_epoch
+    from src.database.session import session_scope
+
+    with _LOCK:
+        con = _STATE["con"] if _STATE["persisted"] else None
+    opened_now = con is None
+    if opened_now:
+        con = columnar.connect(passphrase=_persist_passphrase())  # opens the persisted file
+    if con is None:
+        return  # secure backend / passphrase vanished mid-flight -> in-memory next time
+    try:
         with session_scope() as s:
-            # Token BEFORE the build (conservative: rows landing DURING the build make the
-            # recorded token compare "changed" next check -> one extra rebuild, never a
-            # silently-missed one).
             token = serve_gate.change_token(s)
-            columnar.build_keyword_daily(con, s)
-            rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
-            built_bind = s.get_bind()  # the DB this rollup reflects (the process store)
-        with _LOCK:
-            old = _STATE["con"]
-            _STATE["con"] = con
-            _STATE["built_at"] = time.time()
-            _STATE["rows"] = int(rows)
-            _STATE["bind"] = built_bind
-            _STATE["token"] = token
-            _STATE["pending"] = False
-            if old is not None:
-                try:
-                    old.close()  # safe: serves hold _LOCK, so none is mid-query here
-                except Exception:  # noqa: BLE001
-                    pass
-        _LOG.info("rollup serve: built in-memory keyword_daily (%s rows)", rows)
+            epoch = get_corpus_epoch(s)
+            with _LOCK:
+                columnar.refresh_keyword_daily(con, s, corpus_epoch=epoch)
+                rows = con.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0]
+                _STATE["con"] = con
+                _STATE["persisted"] = True
+                _STATE["built_at"] = time.time()
+                _STATE["rows"] = int(rows)
+                _STATE["bind"] = s.get_bind()
+                _STATE["token"] = token
+                _STATE["pending"] = False
+    except Exception:
+        if opened_now:  # release the file handle so the next attempt can reopen it cleanly
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001
+                pass
+        raise
+    _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
+
+
+def _build_and_swap() -> None:
+    """Background (re)build dispatcher: the PERSISTED store when D1 is active, else the
+    in-memory store. Always releases the build lock; a failure never crashes the app."""
+    try:
+        if _persisted_serve_active():
+            _refresh_persisted_build()
+        else:
+            _build_inmemory_and_swap()
     except Exception:  # noqa: BLE001 - a background accelerator must never crash the app
         _LOG.warning("rollup serve: background build failed", exc_info=True)
     finally:
@@ -333,11 +430,16 @@ def basis(_days: int) -> dict:
     with _LOCK:
         built_at = _STATE["built_at"]
         pending = _STATE["pending"]
+        persisted = _STATE["persisted"]
     age_s = (time.time() - built_at) if built_at else None
     stale = bool(built_at) and (pending or (age_s is not None and age_s > _BACKSTOP_S))
     rebuilding = _BUILD_LOCK.locked()
+    store_desc = (
+        "the persisted encrypted keyword-daily rollup (D1; survives restarts, refreshed "
+        "incrementally)" if persisted else "the in-memory keyword-daily rollup"
+    )
     note = (
-        "Served from the in-memory keyword-daily rollup for speed. Mention counts are "
+        f"Served from {store_desc} for speed. Mention counts are "
         "exact; article counts are an upper bound (equal under the current one-row-per-"
         "keyword-per-article index). Reflects the corpus as of the last rollup build; "
         "new articles appear after the next background rebuild."
@@ -350,6 +452,7 @@ def basis(_days: int) -> dict:
         )
     return {
         "source": "columnar-rollup",
+        "store": "persisted" if persisted else "memory",
         "as_of": (
             time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(built_at)) if built_at else None
         ),
