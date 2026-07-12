@@ -14,6 +14,7 @@ language. The ≈N count is a language-neutral number; the caption is a keyed st
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -30,7 +31,12 @@ def test_reader_loads_the_i18n_engine():
 
 
 def test_reader_computes_a_bounded_near_dup_badge():
-    view = _MAIN.split("async def view_article(", 1)[1].split("\nasync def ", 1)[0]
+    # S2.5 (2026-07-12) made view_article a plain ``def`` (Starlette threadpool, so the
+    # synchronous DB + SQLCipher-codec work no longer freezes the event loop). Slice its
+    # body from the def up to the next TOP-LEVEL def — async or not — so this source anchor
+    # survives that and any further def-conversion instead of silently IndexError-ing.
+    after = _MAIN.split("def view_article(", 1)[1]
+    view = re.split(r"\n(?:async )?def ", after, maxsplit=1)[0]
     assert "near_duplicate_clusters" in view, "the reader badge must use the high-precision clusterer"
     assert "dup_badge" in view and "dup-pill" in view, "the badge markup must be built"
     assert "{dup_badge}" in view, "the badge must be placed into the Read pane"

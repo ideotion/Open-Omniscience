@@ -719,7 +719,12 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     + exception handling intact). For FTS search NEVER materialize the whole match to sort+paginate: resolve
     the surviving ids (fts ∩ filters) in the FINAL order via an id-only (+ sort-column) query, then load FULL
     rows for the PAGE only — content is decrypted for ≤limit rows, not the ~20k-match whole set (GAMMA-measured
-    50 ms→11 ms warm at 1,776 matches; the win grows with match count).
+    50 ms→11 ms warm at 1,776 matches; the win grows with match count). COROLLARY (caught by the S2 full-suite
+    run AFTER push, fixed forward): renaming `async def view_article` → `def view_article` broke a SOURCE-INSPECTING
+    test that sliced the body via the literal anchor `"async def view_article("` (IndexError). Before any
+    `async def`→`def` conversion, grep the TEST tree for the old signature (this is the #283 stale-source-anchor
+    family); the durable fix is an async-agnostic anchor (`re.split(r"\n(?:async )?def ", …)`), never a literal
+    `async def`. And the local full suite is not optional after a push — it caught this before CI reddened.
   - **`src/api/insights._cached` IS DICT-ONLY — A SCALAR HANDED TO IT IS A SILENT NO-OP (2026-07-12, S2.5
     skeptic):** `_cached` persists + returns ONLY dict payloads (a non-dict `out` falls straight through with
     NO `.set`; a hit is recognised only `if isinstance(hit, dict)`). Handing it a scalar (an int count) makes
