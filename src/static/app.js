@@ -2134,6 +2134,7 @@
       if (refreshing) _scheduleBriefRepoll(); else _cancelBriefRepoll();
       const banner = refreshing ? briefProgressHtml(data, t) : "";
       if (!data.buckets || !data.buckets.length) {
+        renderLeadsCarousel([]);  // hide the carousel when there are no Leads (never blank-and-silent)
         if (refreshing) { feed.innerHTML = banner; return; }
         feed.innerHTML = `<div class="card">
           <h4>No Leads yet — that's expected on a young corpus</h4>
@@ -2166,7 +2167,94 @@
         ? `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>` : "") + html;
       // "All" is the default; selecting a family shows only that bucket.
       if (data.buckets.length > 1) ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: "__all"});
+      renderLeadsCarousel(data.buckets.flatMap(b => b.cards || []));
     }
+
+    // -- S4.3: the synthesized-Leads carousel (Home dashboard) --------------------------- //
+    // A rolling rotation of the TOP local-analytic Leads (never LLM — Home is zero-network).
+    // PAUSABLE (WCAG 2.2: pause on hover/focus + a manual toggle); the caveat rides EVERY face
+    // so a timed rotation never hides it (#23); each face DEEP-LINKS (#8) via the SAME action
+    // the full card uses; ordering is the briefing's own (evidence tier + recency + spread —
+    // never a hidden score). Hidden with <2 Leads so Home is never blank-and-silent.
+    let _carTimer = null, _carIdx = 0, _carCards = [], _carPaused = false;
+
+    function renderLeadsCarousel(cards) {
+      const panel = $("home-carousel-panel"), host = $("home-carousel");
+      if (!panel || !host) return;
+      _carStop();
+      _carCards = (cards || []).filter(c => c && c.title).slice(0, 8);
+      if (_carCards.length < 2) { panel.hidden = true; host.innerHTML = ""; return; }
+      panel.hidden = false;
+      _carIdx = 0;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      host.innerHTML =
+        `<div class="carousel" role="region" aria-roledescription="${esc(t("carousel"))}" aria-label="${esc(t("Leads"))}" tabindex="0">`
+        + `<div class="carousel-face" id="carousel-face" aria-live="polite"></div>`
+        + `<div class="carousel-ctl">`
+        +   `<button class="tiny secondary" onclick="carouselStep(-1)" aria-label="${esc(t("Previous Lead"))}">‹</button>`
+        +   `<button class="tiny secondary" id="carousel-pause" onclick="carouselToggle()" aria-pressed="false" aria-label="${esc(t("Pause the carousel"))}">⏸</button>`
+        +   `<button class="tiny secondary" onclick="carouselStep(1)" aria-label="${esc(t("Next Lead"))}">›</button>`
+        +   `<span class="carousel-dots" id="carousel-dots"></span>`
+        + `</div></div>`;
+      const car = host.querySelector(".carousel");
+      // WCAG 2.2: the auto-rotation pauses on hover/focus, plus the explicit pause toggle.
+      car.addEventListener("mouseenter", _carHold);
+      car.addEventListener("mouseleave", _carRelease);
+      car.addEventListener("focusin", _carHold);
+      car.addEventListener("focusout", _carRelease);
+      car.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") { carouselStep(-1); e.preventDefault(); }
+        else if (e.key === "ArrowRight") { carouselStep(1); e.preventDefault(); }
+      });
+      _carPaint();
+      if (!_carPaused) _carStart();
+    }
+
+    function _carPaint() {
+      const face = $("carousel-face"); if (!face || !_carCards.length) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const c = _carCards[_carIdx]; if (!c) return;
+      const n = _carCards.length;
+      const aq = cardAnalyzeQuery(c);
+      const aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
+      const action = aIds
+        ? `openCardCorpus(${esc(JSON.stringify(aIds))}, ${esc(JSON.stringify(aq))})`
+        : `openCardCorpusQuery(${esc(JSON.stringify(aq))})`;
+      // the CAVEAT rides EVERY rotated face — a timed rotation never hides it (#23 + the brief).
+      const caveat = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
+      face.innerHTML =
+        `<div class="carousel-card bk-${esc(c.bucket)}" role="group" aria-label="${esc(t("Lead"))} ${_carIdx + 1} / ${n}">`
+        + `<h4>${esc(c.title)}</h4>`
+        + (c.summary ? `<p class="sum">${esc(c.summary)}</p>` : "")
+        + caveat
+        + `<div><button class="tiny" onclick="${action}">${esc(t("Open corpus"))} ↗</button></div>`
+        + `</div>`;
+      const dots = $("carousel-dots");
+      if (dots) dots.innerHTML = _carCards.map((_, i) =>
+        `<button class="carousel-dot${i === _carIdx ? " on" : ""}" onclick="carouselGo(${i})" aria-label="${esc(t("Lead"))} ${i + 1}"${i === _carIdx ? ' aria-current="true"' : ""}></button>`).join("");
+    }
+
+    function carouselStep(d) {
+      if (!_carCards.length) return;
+      _carIdx = (_carIdx + d + _carCards.length) % _carCards.length;
+      _carPaint();
+    }
+    function carouselGo(i) { _carIdx = i; _carPaint(); }
+    function carouselToggle() {
+      _carPaused = !_carPaused;
+      const b = $("carousel-pause");
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (b) {
+        b.textContent = _carPaused ? "▶" : "⏸";
+        b.setAttribute("aria-pressed", _carPaused ? "true" : "false");
+        b.setAttribute("aria-label", _carPaused ? t("Play the carousel") : t("Pause the carousel"));
+      }
+      if (_carPaused) _carStop(); else _carStart();
+    }
+    function _carStart() { _carStop(); if (_carPaused || _carCards.length < 2) return; _carTimer = setInterval(() => carouselStep(1), 7000); }
+    function _carStop() { if (_carTimer) { clearInterval(_carTimer); _carTimer = null; } }
+    function _carHold() { _carStop(); }                 // hover/focus pause (keeps the user's toggle state)
+    function _carRelease() { if (!_carPaused) _carStart(); }
 
     // The "pleasing progress bar" for a background briefing recompute (remarks 6/7).
     // Determinate once producers report (done/total), indeterminate until then. Honest:

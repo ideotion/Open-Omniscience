@@ -4913,3 +4913,23 @@ def test_ring_translation_breakdown_rides_the_hover():
     assert "row.language_breakdown" in kw, "the breakdown must feed kwTransHtml"
     assert "Across languages:" in kw
     assert 'title="' in kw  # rides the #oo-tip title (layered), not the visible row text
+
+
+def test_synthesized_leads_carousel_is_local_pausable_and_caveated():
+    """S4.3: the Home Leads carousel is LOCAL analytic synthesis (never LLM), PAUSABLE (WCAG 2.2
+    — hover/focus + a manual toggle + keyboard), and a timed rotation NEVER hides a caveat (the
+    caveat rides every rotated face, #23); every face DEEP-LINKS to its real corpus (#8); fed from
+    the SAME briefing cards (evidence-tier order, no hidden score)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id="home-carousel-panel"' in html and 'id="home-carousel"' in html
+    car = app[app.index("function renderLeadsCarousel(") : app.index("function _carRelease(") + 200]
+    # LOCAL: fed from the briefing cards; NO LLM call anywhere in the carousel
+    assert "renderLeadsCarousel(data.buckets.flatMap" in app
+    for llm in ("/api/llm", "synthesize", "bulkLlm"):
+        assert llm not in car, f"carousel must never call the LLM ({llm})"
+    # PAUSABLE (WCAG 2.2): hover/focus pause + a manual toggle + keyboard
+    assert "mouseenter" in car and "focusin" in car and "carouselToggle" in car
+    assert "aria-pressed" in car and "ArrowLeft" in car and "ArrowRight" in car
+    # the CAVEAT rides EVERY face + a deep-link on every face (#23 + #8)
+    assert "c.caveat" in car and "card-caveat" in car and "openCardCorpus" in car

@@ -190,6 +190,20 @@
         <div id="home-alerts"></div>
       </section>
 
+      <!-- Home dashboard: a rolling "Leads carousel" (S4.3) — a simplified rotation of the top
+           LOCAL-analytic Leads (never LLM). User-controlled + keyboard-accessible + PAUSABLE
+           (WCAG 2.2); the timed rotation NEVER hides a caveat (every rotated face carries it,
+           invariant #23). Ordering is the briefing's own (evidence tier + recency + spread —
+           never a hidden score). Every face DEEP-LINKS to its real corpus (redundancy rule #8).
+           Populated by renderLeadsCarousel() from the SAME briefing cards; hidden with <2 Leads
+           so Home is never blank-and-silent (the full feed still renders below). -->
+      <section class="panel" id="home-carousel-panel" hidden>
+        <div class="phead"><h2>Leads to look at</h2><span class="sp"></span>
+          <a href="#home" class="hint" style="margin:0"
+             onclick="var f=document.getElementById('briefing-feed');if(f)f.scrollIntoView({behavior:'smooth'});return false">All Leads below ↓</a></div>
+        <div id="home-carousel"></div>
+      </section>
+
       <!-- Home dashboard: a compact "Trending now" glance (UI rethink, Home →
            helicopter view). REDUNDANT by design — every term deep-links to its
            real tab (the analysis window / Insights → Trends); nothing here is
