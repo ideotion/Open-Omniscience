@@ -736,6 +736,33 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the omnibar is the exception — it must never blank, so its guard DEGRADES to an honest empty-with-note
     payload instead of a 429/503.)
 
+  - **A PERSISTED DuckDB store opened via `ATTACH` REJECTS a second in-process handle to the same
+    file (2026-07-12, S3.2):** `Binder Error: Unique file handle conflict`. So the in-memory
+    rollup-serve model (build a fresh con, swap it in, close the old) CANNOT apply to a persisted
+    file — hold ONE connection refreshed IN PLACE under the serve lock (incremental via
+    `refresh_keyword_daily`; full rebuild only on an epoch change). The concurrency/incremental/
+    durability logic is crypto-independent, so test it with an UNENCRYPTED file-backed duckdb; only
+    the encryption is CI/operator-only. (Two plain `connect(file)` handles DO share the in-process
+    instance — but the store uses ATTACH.)
+  - **Adaptive backup-volume sizing must count PER-MEMBER slices, not `ceil(total/size)`
+    (2026-07-12, S3.3; a pre-push skeptic caught it):** the backup slices EACH member independently
+    (`_emit_member`), so the real volume count is the SUM of per-member ceils + the manifest/WAL
+    members emitted after sizing — `ceil(total/vsize)` undercounts by up to one volume per member
+    and could push the real N+M over the GF(2⁸) 255 ceiling → `write_parity` ABORTS (not data-loss
+    — the crash-safe finalize survives — but the fix is defeated at scale). Model N exactly the way
+    the emit loop emits it. The mandatory skeptic (fed the DIFF + surrounding facts INLINE so it
+    never opened the 1382-line file → no context overflow, unlike the recon agents that choked on
+    this repo's CLAUDE.md) is what found it.
+  - **CI-installs-the-extension is the honest trust path for an offline-verified binary (2026-07-12,
+    S3.1):** verify a bundled binary against a SHA-256 pin before `LOAD`; prove the MECHANISM against
+    a FIXTURE binary (no real binary/network); ship the registry pins BLANK (empty-pin-stays-in-
+    memory, pinned); let a CI lane install the real extension, checksum it IN-LANE, and run the real
+    round trip — NEVER promoting the in-lane checksum into `external_artifacts.yml`. DuckDB gotchas
+    verified empirically before writing the loader: `allow_unsigned_extensions` is a CONNECT-config
+    setting (post-connect `SET` raises); `enable_external_access=False` blocks a file ATTACH
+    (Permission Error), so the persisted path omits it (network safety = autoload-off + absolute-path
+    LOAD + the airplane guard).
+
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
   [`docs/ROADMAP.md`](docs/ROADMAP.md) (DB limitations · performance/scale · known bugs ·
@@ -909,6 +936,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (diagnostics/keywords pass-collapse/job · debug-bundle read-only+_safe+budget); (d) the reader per-source
   count needs a maintained Source counter; (e) browser click-through of the newly-guarded surfaces + any
   429/503 handling (fork-3). LESSONS in the Session-rituals subsection above.
+- **S3 CLOSEOUT (2026-07-12, Tier-2 database & scale architecture, LOCAL branch
+  `claude/s3-db-architecture`, 4 commits stacked onto a fresh `origin/0.2` base 0b15dbd4; NOT
+  pushed — this sandbox has no `gh`/push credentials, so the deliverable is the branch + the exact
+  push/PR commands in the closeout message):** SHIPPED, each slice ruff+mypy-clean and green in a
+  py3.13 venv (sqlcipher3 unavailable → the ENCRYPTED-store paths are CI-only; everything else ran
+  here — duckdb/numpy/cryptography wheels installed). The DB-9 slice was adversarially
+  skeptic-verified PRE-COMMIT (a HIGH member-count-gap bug found + fixed). Full detail = the 4
+  `docs/ledger/shipped.csv` rows + the S3 `SHIPPED_LOG.md` entry. **S3.1 (D1, DB-3):** offline
+  pin-and-verify httpfs LOADER — a bundled per-OS binary LOADs by absolute path only after its
+  SHA-256 matches the BLANK-shipped `duckdb-httpfs-extension` registry pin + version-minor couples
+  to duckdb (+ basename traversal guard); stays in-memory otherwise (never a network autoload,
+  never a fabricated checksum); fixture-tested + a new `columnar` CI lane. **S3.2 (D2/D3):** wired
+  `rollup_serve` to PREFER the persisted store (single held connection, epoch-gated incremental
+  refresh — the ATTACH store rejects a 2nd handle); in-memory stays byte-unchanged; dormant until
+  the binary lands. **S3.3 (DB-9):** adaptive backup-volume sizing (N~200, N+M under the GF(2⁸)
+  ceiling at any scale, byte-identical <100 GB, sizes against the real per-member count);
+  torture-tested incl. an interrupted tier-crossing. **S3.4 (DB-10):** the retention/vacuum decision
+  MEMO + auto_vacuum visibility + the cross-time-recall repo invariant. **CARRY-OVER for S4 (read
+  FIRST):** (a) the **OPERATOR one-time networked step that turns D1 on** — build + sha256-pin the
+  per-OS httpfs binaries and fill the `duckdb-httpfs-extension` registry
+  (`docs/maintenance/EXTERNAL_DEPENDENCIES.md`); until then D1/D2/D3 stay in-memory (correct, no gain
+  over the counters). (b) **DB-9 changed the backup engine the v0.2.0 P0.1 live validation covers** —
+  if the maintainer's live P0.1 run predates this merge, the S1 validation job (engine-version-
+  stamped) must be RE-RUN before tag-day. (c) **DB-10 needs a maintainer RULING** on the irreversible
+  `auto_vacuum=INCREMENTAL` + `page_size` CREATE-time seam BEFORE more 0.2 field corpora exist (memo
+  §1), then the small buildable follow-ups (the incremental-vacuum idle pass wired into S2.2, the
+  full-VACUUM UI size-gate). (d) S3.5 (D5 Roaring co-occurrence bitmaps) was the explicit
+  skip-without-guilt stretch — not built. (e) two `test_repo_invariants` version tests
+  (`test_readme_version_matches_package` / `test_version_single_sourced_from_pyproject`) fail in the
+  sandbox with `PackageNotFoundError` because `pip install -e .` never completed (sqlcipher3 blocked
+  it) — ENVIRONMENTAL, not a regression, green in CI / a proper install. LESSONS in the
+  Session-rituals subsection above.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL
