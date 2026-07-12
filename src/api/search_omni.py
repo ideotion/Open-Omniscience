@@ -277,21 +277,41 @@ def _law_group(db: Session, q: str) -> dict:
 
 @router.get("/omni")
 def omni(q: str = Query(min_length=2, max_length=200), db: Session = Depends(get_db)) -> dict:
-    """Federated first-hits for the omnibar. Index-backed; totals disclosed."""
+    """Federated first-hits for the omnibar. Index-backed; totals disclosed.
+
+    S2.4 guard: the omnibar fires per debounced keystroke and runs 2x full FTS
+    ``search_ids`` (articles + wiki) — on a large corpus a 2-char term matches most
+    of it. ``guarded_read`` collapses identical concurrent keystrokes to ONE compute
+    (single-flight) + a concurrency cap + a statement deadline, so a burst can never
+    pile onto the one SQLCipher connection. Because the omnibar must NEVER blank, a
+    busy/timeout DEGRADES to an honest empty-with-note payload (never a 429/503)."""
     q = " ".join(q.split())
-    groups = []
-    for fn in (_articles_group, _keywords_group, _sources_group, _wiki_group, _law_group):
-        try:
-            groups.append(fn(db, q))
-        except Exception:  # noqa: BLE001 - one group must never blank the omnibar
-            _LOG.warning("omni group %s failed", fn.__name__, exc_info=True)
-    return {
-        "q": q,
-        "per_group": _PER_GROUP,
-        "groups": groups,
-        "method": (
-            "index-backed federation: FTS5 for articles, the normalized-term index "
-            "for keywords, bounded catalog tables for the rest; first "
-            f"{_PER_GROUP} per group with the true totals disclosed"
-        ),
-    }
+    _method = (
+        "index-backed federation: FTS5 for articles, the normalized-term index "
+        "for keywords, bounded catalog tables for the rest; first "
+        f"{_PER_GROUP} per group with the true totals disclosed"
+    )
+
+    def _compute() -> dict:
+        groups = []
+        for fn in (_articles_group, _keywords_group, _sources_group, _wiki_group, _law_group):
+            try:
+                groups.append(fn(db, q))
+            except Exception:  # noqa: BLE001 - one group must never blank the omnibar
+                _LOG.warning("omni group %s failed", fn.__name__, exc_info=True)
+        return {"q": q, "per_group": _PER_GROUP, "groups": groups, "method": _method}
+
+    def _degraded(_exc) -> dict:
+        return {
+            "q": q,
+            "per_group": _PER_GROUP,
+            "groups": [],
+            "method": _method,
+            "degraded": "search is under load — results are momentarily unavailable; try again",
+        }
+
+    from src.api.heavy import guarded_read
+
+    return guarded_read(
+        db, f"omni|{q}", _compute, on_timeout=_degraded, on_busy=_degraded
+    )

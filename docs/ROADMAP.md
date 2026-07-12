@@ -98,7 +98,7 @@ instrumentation into one report with a per-check verdict. The live RUN and the
 | Item | What | Status |
 |---|---|---|
 | **P1.1** | **Death-spiral fix**: server-side deadlines + client single-flight polling + a concurrency cap (requests stacked without cancellation; one endpoint was in-flight 217 s) | ✅ shipped (the `heavy.py` admission guard + honest 429 client retry); the last uncovered reads — integrity profile/actors/prominence/fixity — are now guarded too (#628) |
-| **P1.2** | Job-ify heavy sync handlers (enrich-source-types 8.5 min · governments 2.9 min · diagnostics `/all` 36 min — all background jobs now; heavy reads guarded) | ✅ largely shipped — residual: audit `corpus-www` (28 s) / `corpus-sentiment` (18 s) for individual guards |
+| **P1.2** | Job-ify heavy sync handlers (enrich-source-types 8.5 min · governments 2.9 min · diagnostics `/all` 36 min — all background jobs now; heavy reads guarded) | ✅ largely shipped — **S2.4 sweep (2026-07-12): `corpus-www`/`corpus-sentiment` CONFIRMED already `_deadlined`**; the sweep then guarded the previously-raw corpus-scaled reads — the 8 raw insights endpoints (who/where/convergences/ring-countries/source-laundering/recycled-claims/reading-diet-by-type/keyword-tags-keywords), the 6 cache-only ones upgraded to `_deadlined` (4 manipulation cards + source-types + map-coverage), the per-keystroke `omni` (degraded-not-429 so the omnibar never blanks), and the link OOM-risk endpoints (stats/top-cited/articles-by-link/citation-graph whole-table materializations, now deadline-bounded). **Carry-over** (on-demand, not polled — lower snappy priority): `source_io/sources` (real fix = a maintained per-Source counter), `framing` (cap only), `monitoring/anomalies` + `commodity/correlation` (grouped-SQL rewrite), `link/corpus`+`shared` (already corpus-bounded via `_resolve_corpus` cap). |
 | **P1.3** | `count(*)` from maintained counters (`SELECT count(*) FROM keyword_mentions` = 724 ms × 172 = 124 s) | 🚧 partial — the `/status` data-aware cache shipped (count stays EXACT); a sweep of the remaining `count(*)` call sites is unverified |
 | **P1.4** | `/insights/latest` (40 s @ 268 K → near-dup bounded) | ✅ shipped — re-measure on next field export |
 | **P1.5** | Storage-composition diagnostic | ✅ shipped (dbstat-limited on encrypted store) + the itemized all-stores footprint (A12b/B14 ⏳ #625) |
@@ -113,8 +113,11 @@ instrumentation into one report with a per-check verdict. The live RUN and the
 **Heavy-endpoint sweep status (was the ⬜ list from the 2026-07-08 field test):**
 `signals/alerts`/`flood`/`bury` + `insights/lunar-correlation` + `server-locations` +
 briefing/trending/associations — **guarded** ✅; integrity reads (profile/actors/prominence/
-fixity) — **guarded** ✅ (#628); residual to verify under load: `diagnostics/keywords`
-(100–184 s), `debug-bundle` (69 s), `/api/articles` p95 25 s. 🚧
+fixity) — **guarded** ✅ (#628); the S2.4 sweep guarded the remaining polled/OOM-risk reads
+(insights raw-8 + cards + omni + link_analysis) ✅; residual to verify under load / carry-over:
+`diagnostics/keywords` (100–184 s) + `debug-bundle` (69 s) → S2.5 (job/degrade); `/api/articles`
+p95 25 s → S2.5 (async→threadpool + over-fetch bound); the S2.4 on-demand tail (source_io/framing/
+anomalies/correlation). 🚧
 
 **Perf riders (post-merge audit) — INVESTIGATED & DECLINED (Session A), then REPRODUCER-VERIFIED
 & CLOSED (S2.1, 2026-07-12; `tests/test_write_gate_riders.py`):** all four confirmed against the

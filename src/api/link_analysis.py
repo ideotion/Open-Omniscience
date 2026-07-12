@@ -37,14 +37,20 @@ def _cutoff(days: int | None) -> datetime | None:
 
 @router.get("/stats")
 def stats(db: Session = Depends(get_db)) -> dict:
-    """Corpus-wide link totals (all real COUNT(*) — nothing estimated)."""
-    return {
+    """Corpus-wide link totals (all real COUNT(*) — nothing estimated).
+
+    S2.4 guard: three COUNT/COUNT(DISTINCT) over the whole ArticleLink table — at
+    scale each is a corpus-scaled scan, so it runs under the admission cap +
+    statement deadline (never a frozen worker; a runaway aborts to 503)."""
+    from src.api.heavy import guarded_read
+
+    return guarded_read(db, "links-stats", lambda: {
         "external_links": db.query(func.count(ArticleLink.id)).scalar() or 0,
         "distinct_links": db.query(func.count(func.distinct(ArticleLink.normalized_url))).scalar()
         or 0,
         "articles_with_links": db.query(func.count(func.distinct(ArticleLink.article_id))).scalar()
         or 0,
-    }
+    })
 
 
 @router.get("/top-cited")
@@ -60,57 +66,67 @@ def top_cited(
     "Citations" = number of *distinct articles* in the corpus that link to it — a
     citation-graph trend signal grounded in what reporters actually reference.
     """
-    cutoff = _cutoff(window_days)
+    # S2.4 guard: the by=domain path materializes the WHOLE ArticleLink table into
+    # Python (pairs.distinct().all()) — an OOM risk at scale; the by=url path is a
+    # corpus-scaled GROUP BY. guarded_read caps concurrency + a statement deadline
+    # interrupts a runaway scan (never a full materialization past the deadline).
+    from src.api.heavy import guarded_read
 
-    if by == "url":
-        q = db.query(
-            ArticleLink.normalized_url.label("nu"),
-            func.count(func.distinct(ArticleLink.article_id)).label("citations"),
-            func.max(ArticleLink.url).label("sample_url"),
-            func.max(ArticleLink.link_text).label("sample_text"),
-        )
+    key = f"top-cited|{by}|{window_days}|{min_citations}|{limit}"
+
+    def _compute() -> dict:
+        cutoff = _cutoff(window_days)
+        if by == "url":
+            q = db.query(
+                ArticleLink.normalized_url.label("nu"),
+                func.count(func.distinct(ArticleLink.article_id)).label("citations"),
+                func.max(ArticleLink.url).label("sample_url"),
+                func.max(ArticleLink.link_text).label("sample_text"),
+            )
+            if cutoff is not None:
+                q = q.join(Article, ArticleLink.article_id == Article.id).filter(
+                    func.coalesce(Article.published_at, Article.created_at) >= cutoff
+                )
+            q = (
+                q.group_by(ArticleLink.normalized_url)
+                .having(func.count(func.distinct(ArticleLink.article_id)) >= min_citations)
+                .order_by(desc("citations"))
+                .limit(limit)
+            )
+            items = [
+                {
+                    "normalized_url": r.nu,
+                    "sample_url": r.sample_url,
+                    "link_text": r.sample_text,
+                    "domain": registrable_domain(r.nu),
+                    "citations": r.citations,
+                }
+                for r in q.all()
+            ]
+            return {"by": "url", "window_days": window_days, "items": items}
+
+        # by == "domain": parse the registrable domain in Python (portable across SQLite).
+        pairs = db.query(ArticleLink.normalized_url, ArticleLink.article_id)
         if cutoff is not None:
-            q = q.join(Article, ArticleLink.article_id == Article.id).filter(
+            pairs = pairs.join(Article, ArticleLink.article_id == Article.id).filter(
                 func.coalesce(Article.published_at, Article.created_at) >= cutoff
             )
-        q = (
-            q.group_by(ArticleLink.normalized_url)
-            .having(func.count(func.distinct(ArticleLink.article_id)) >= min_citations)
-            .order_by(desc("citations"))
-            .limit(limit)
-        )
-        items = [
-            {
-                "normalized_url": r.nu,
-                "sample_url": r.sample_url,
-                "link_text": r.sample_text,
-                "domain": registrable_domain(r.nu),
-                "citations": r.citations,
-            }
-            for r in q.all()
-        ]
-        return {"by": "url", "window_days": window_days, "items": items}
+        by_domain: dict[str, set[int]] = defaultdict(set)
+        for nu, aid in pairs.distinct().all():
+            dom = registrable_domain(nu)
+            if dom:
+                by_domain[dom].add(aid)
+        items = sorted(
+            (
+                {"domain": d, "citations": len(ids)}
+                for d, ids in by_domain.items()
+                if len(ids) >= min_citations
+            ),
+            key=lambda x: -x["citations"],
+        )[:limit]
+        return {"by": "domain", "window_days": window_days, "items": items}
 
-    # by == "domain": parse the registrable domain in Python (portable across SQLite).
-    pairs = db.query(ArticleLink.normalized_url, ArticleLink.article_id)
-    if cutoff is not None:
-        pairs = pairs.join(Article, ArticleLink.article_id == Article.id).filter(
-            func.coalesce(Article.published_at, Article.created_at) >= cutoff
-        )
-    by_domain: dict[str, set[int]] = defaultdict(set)
-    for nu, aid in pairs.distinct().all():
-        dom = registrable_domain(nu)
-        if dom:
-            by_domain[dom].add(aid)
-    items = sorted(
-        (
-            {"domain": d, "citations": len(ids)}
-            for d, ids in by_domain.items()
-            if len(ids) >= min_citations
-        ),
-        key=lambda x: -x["citations"],
-    )[:limit]
-    return {"by": "domain", "window_days": window_days, "items": items}
+    return guarded_read(db, key, _compute)
 
 
 @router.get("/corpus")
@@ -198,61 +214,71 @@ def articles_by_link(
     if not url and not domain:
         raise HTTPException(status_code=400, detail="Provide ?url= or ?domain=")
 
-    if url:
-        try:
-            from src.services.link_analyzer import LinkExtractor
+    # S2.4 guard: the domain path materializes ArticleLink rows matching a LIKE
+    # scan into Python (an OOM risk at scale). guarded_read's statement deadline
+    # interrupts a runaway scan + the cap stops concurrent calls stacking.
+    from src.api.heavy import guarded_read
 
-            norm = LinkExtractor().normalize_url(url)
-        except Exception:  # noqa: BLE001 - normalisation is best-effort
-            norm = url
-        match = {"url": url, "normalized_url": norm}
-        ids = [
-            a
-            for (a,) in db.query(ArticleLink.article_id)
-            .filter(
-                (ArticleLink.normalized_url == norm)
-                | (ArticleLink.normalized_url == url)
-                | (ArticleLink.url == url)
-            )
-            .distinct()
-            .all()
-        ]
-    else:
-        dom = domain.strip().lower()
-        match = {"domain": dom}
-        # LIKE pre-filter, then exact registrable-domain check (avoids false hits).
-        ids = sorted(
-            {
-                aid
-                for (aid, nu) in db.query(ArticleLink.article_id, ArticleLink.normalized_url)
-                .filter(ArticleLink.normalized_url.like(f"%{dom}%"))
+    key = f"articles-by-link|{url or ''}|{domain or ''}|{limit}"
+
+    def _compute() -> dict:
+        if url:
+            try:
+                from src.services.link_analyzer import LinkExtractor
+
+                norm = LinkExtractor().normalize_url(url)
+            except Exception:  # noqa: BLE001 - normalisation is best-effort
+                norm = url
+            match = {"url": url, "normalized_url": norm}
+            ids = [
+                a
+                for (a,) in db.query(ArticleLink.article_id)
+                .filter(
+                    (ArticleLink.normalized_url == norm)
+                    | (ArticleLink.normalized_url == url)
+                    | (ArticleLink.url == url)
+                )
+                .distinct()
                 .all()
-                if registrable_domain(nu) == dom
-            }
-        )
-
-    total = len(ids)
-    articles = []
-    if ids:
-        rows = (
-            db.query(Article, Source.name)
-            .outerjoin(Source, Article.source_id == Source.id)
-            .filter(Article.id.in_(ids[:limit]))
-            .order_by(desc(func.coalesce(Article.published_at, Article.created_at)))
-            .all()
-        )
-        for art, source_name in rows:
-            articles.append(
+            ]
+        else:
+            dom = domain.strip().lower()
+            match = {"domain": dom}
+            # LIKE pre-filter, then exact registrable-domain check (avoids false hits).
+            ids = sorted(
                 {
-                    "id": art.id,
-                    "title": art.title,
-                    "url": art.url,
-                    "source": source_name,
-                    "language": art.language,
-                    "published_at": art.published_at.isoformat() if art.published_at else None,
+                    aid
+                    for (aid, nu) in db.query(ArticleLink.article_id, ArticleLink.normalized_url)
+                    .filter(ArticleLink.normalized_url.like(f"%{dom}%"))
+                    .all()
+                    if registrable_domain(nu) == dom
                 }
             )
-    return {"match": match, "count": total, "articles": articles}
+
+        total = len(ids)
+        articles = []
+        if ids:
+            rows = (
+                db.query(Article, Source.name)
+                .outerjoin(Source, Article.source_id == Source.id)
+                .filter(Article.id.in_(ids[:limit]))
+                .order_by(desc(func.coalesce(Article.published_at, Article.created_at)))
+                .all()
+            )
+            for art, source_name in rows:
+                articles.append(
+                    {
+                        "id": art.id,
+                        "title": art.title,
+                        "url": art.url,
+                        "source": source_name,
+                        "language": art.language,
+                        "published_at": art.published_at.isoformat() if art.published_at else None,
+                    }
+                )
+        return {"match": match, "count": total, "articles": articles}
+
+    return guarded_read(db, key, _compute)
 
 
 # --------------------------------------------------------------------------- #
@@ -266,7 +292,21 @@ _GRAPH_CAVEAT = (
 
 
 def _citation_graph(db, *, min_citations: int = 1, max_nodes: int = 2000) -> dict:
-    """Build the article->domain citation graph from stored links (counts only)."""
+    """Build the article->domain citation graph from stored links (counts only).
+
+    S2.4 guard: the first line materializes the WHOLE ArticleLink table into Python
+    (``.distinct().all()``) — an OOM risk at scale. guarded_read's statement deadline
+    interrupts a runaway scan mid-query (never a full materialization past the
+    deadline), and the cap/single-flight stops concurrent exports from stacking."""
+    from src.api.heavy import guarded_read
+
+    key = f"citation-graph|{min_citations}|{max_nodes}"
+    return guarded_read(db, key, lambda: _citation_graph_compute(
+        db, min_citations=min_citations, max_nodes=max_nodes
+    ))
+
+
+def _citation_graph_compute(db, *, min_citations: int = 1, max_nodes: int = 2000) -> dict:
     pairs = db.query(ArticleLink.normalized_url, ArticleLink.article_id).distinct().all()
     by_domain: dict[str, set[int]] = defaultdict(set)
     for nu, aid in pairs:
