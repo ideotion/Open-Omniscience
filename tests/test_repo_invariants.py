@@ -500,7 +500,10 @@ def test_guided_wizard_language_step_consolidated():
     wizard no longer carries a redundant language step. The lang DOM/helper stay
     (unreachable) per the Desk lesson — nothing silently lost."""
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert 'const _GW_STEPS = ["finish"];' in app, "the wizard lang step must be dropped"
+    # The wizard flow must NOT contain a "lang" step (dropped §2.5). S4.7 later slotted the
+    # real "sources" step, so guard on the ABSENCE of "lang", not an exact array.
+    steps = app[app.index("const _GW_STEPS = [") : app.index("];", app.index("const _GW_STEPS = [")) + 2]
+    assert '"lang"' not in steps, "the wizard lang step must be dropped from the flow"
     # The lang rendering helper is kept (unreachable, not deleted).
     assert "function _gwRenderLangs(" in app, "the lang helper must be preserved (Desk lesson)"
 
@@ -2331,12 +2334,16 @@ def test_first_launch_guide_wizard():
     assert "function openGuide(" in html, "the wizard must be openable (openGuide)"
     for ctrl in ('id="gw-back"', 'id="gw-next"', 'id="gw-finish"', 'id="gw-dots"'):
         assert ctrl in html, f"the wizard shell control is missing: {ctrl}"
-    # the two real steps — Language and Finish (the inert "Coming soon"
-    # encryption/sources placeholders were removed 2026-06-18).
-    for step in ('data-step="lang"', 'data-step="finish"'):
+    # the real steps — the kept-but-unreachable Language DOM (Desk lesson), the S4.7
+    # SOURCES-BY-THEME step, and Finish. The inert "Coming soon" encryption placeholder
+    # was removed 2026-06-18; the sources placeholder became a REAL step in S4.7.
+    for step in ('data-step="lang"', 'data-step="sources"', 'data-step="finish"'):
         assert step in html, f"the wizard step is missing: {step}"
-    for gone in ('data-step="encryption"', 'data-step="sources"'):
-        assert gone not in html, f"the inert placeholder step must be gone: {gone}"
+    assert 'data-step="encryption"' not in html, "the inert encryption placeholder must be gone"
+    # the sources step is REAL (a theme picker + emphasis), not an inert "Coming soon".
+    assert 'id="gw-themes"' in html and 'id="gw-emph-langs"' in html, (
+        "the S4.7 sources step must carry the real theme picker + language-emphasis controls"
+    )
     # 2. Language step uses THE i18n engine via the shared picker (no new list).
     gw = html.split('id="guide-wizard"', 1)[1].split("</dialog>", 1)[0]
     assert 'id="gw-langs"' in gw, "the wizard must carry the Language step's picker"
@@ -4900,3 +4907,127 @@ def test_cross_time_recall_is_sacred_no_time_partitioned_corpus_tables():
         "windowed_term_counts must keep open (whole-corpus) default bounds — no recency default "
         "on the hot read path (§F cross-time recall)."
     )
+
+
+def test_ring_translation_breakdown_rides_the_hover():
+    """S4.2: the per-language COMPOSITION of a merged cross-language keyword (language_breakdown)
+    rides the #oo-tip LAYERED hover (the title attribute) on the Trends/Home rows — visible on
+    demand, never crowding the visible row (invariant #17). kwTransHtml reads
+    row.language_breakdown into its title, never into the row text."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    start = app.index("function kwTransHtml(")
+    kw = app[start : app.index("function kwTentativeHtml(", start)]
+    assert "row.language_breakdown" in kw, "the breakdown must feed kwTransHtml"
+    assert "Across languages:" in kw
+    assert 'title="' in kw  # rides the #oo-tip title (layered), not the visible row text
+
+
+def test_synthesized_leads_carousel_is_local_pausable_and_caveated():
+    """S4.3: the Home Leads carousel is LOCAL analytic synthesis (never LLM), PAUSABLE (WCAG 2.2
+    — hover/focus + a manual toggle + keyboard), and a timed rotation NEVER hides a caveat (the
+    caveat rides every rotated face, #23); every face DEEP-LINKS to its real corpus (#8); fed from
+    the SAME briefing cards (evidence-tier order, no hidden score)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id="home-carousel-panel"' in html and 'id="home-carousel"' in html
+    car = app[app.index("function renderLeadsCarousel(") : app.index("function _carRelease(") + 200]
+    # LOCAL: fed from the briefing cards; NO LLM call anywhere in the carousel
+    assert "renderLeadsCarousel(data.buckets.flatMap" in app
+    for llm in ("/api/llm", "synthesize", "bulkLlm"):
+        assert llm not in car, f"carousel must never call the LLM ({llm})"
+    # PAUSABLE (WCAG 2.2): hover/focus pause + a manual toggle + keyboard
+    assert "mouseenter" in car and "focusin" in car and "carouselToggle" in car
+    assert "aria-pressed" in car and "ArrowLeft" in car and "ArrowRight" in car
+    # the CAVEAT rides EVERY face + a deep-link on every face (#23 + #8)
+    assert "c.caveat" in car and "card-caveat" in car and "openCardCorpus" in car
+
+
+def test_omnibar_analysis_window_absorbs_the_insights_bar_capabilities():
+    """S4.4: the omnibar->#an analysis window ABSORBS every term-exploration capability of the
+    Insights search bar (exploreTerm / #ins-term), so retiring the bar later never loses a tool
+    (the Desk lesson; UI-rethink invariant #5). The four capabilities:
+      - trend        -> /api/insights/trend        (renderAnTrend, #an-trend)
+      - associations -> /api/insights/associations (renderAnTrend, #an-keywords mindmap seed)
+      - mindmap      -> renderAnMindmap             (#an-mindmap, self-contained #an renderer)
+      - context      -> /api/insights/context       (S4.4 PORT: term-in-context concordance,
+                                                      keyed on the analysis query, under the chips)
+    This is a REGRESSION GUARD on the absorption, NOT an assertion that the bar is gone: the bar
+    STAYS for now because #ins-explore INTERLEAVES the search bar with the NON-searchable
+    corpus-landscape AND the RELOCATABLE shared #mm-kit mindmap component, so the actual hide is
+    gated on a browser-verified untangling (recorded as the S4.4 carry-over)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # the #an subtab panels exist for each absorbed lens
+    assert 'id="an-trend"' in html and 'id="an-mindmap"' in html and 'id="an-keywords"' in html
+    # trend + associations flow into #an (renderAnTrend)
+    rt = app[app.index("async function renderAnTrend(") : app.index("async function renderAnRelated(")]
+    assert "/api/insights/trend" in rt and "/api/insights/associations" in rt
+    # mindmap: the self-contained #an renderer (never the Insights-bar renderMindmap/#ins-term)
+    assert "renderAnMindmap(" in app
+    # S4.4 PORT: term-in-context concordance, keyed on the analysis query, snippets only
+    ctx = app[app.index("async function loadAnContext(") : app.index("async function loadAnContext(") + 900]
+    assert "/api/insights/context" in ctx, "context snippets must be ported into #an"
+    assert 'p.get("query")' in ctx and "anQuery()" in ctx, "context is keyed on the analysis query term"
+    assert "anContextHtml(" in app and "In context" in app
+    # the port renders snippets, never a score (counts/snippets only)
+    ch = app[app.index("function anContextHtml(") : app.index("function anContextHtml(") + 1200]
+    assert "score" not in ch.lower(), "the context concordance carries no score"
+
+
+def test_i18n_composite_strings_and_translatable_card_titles():
+    """S4.5: the i18n engine supports COMPOSITE strings — a fixed keyable TEMPLATE with
+    {named} placeholders whose values are DATA left untranslated (OOI18N.tf). This is what
+    makes a value-bearing string translatable: the frame translates ×12, the data does not.
+    A card can carry a translatable title (title_i18n template + title_vars data), rendered
+    via tf; the English `title` stays the fallback. The `rising` reference producer emits one,
+    and the template key exists in ALL 12 locales (so --min 100 stays green)."""
+    i18n = (_SRC / "static" / "i18n.js").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # (a) the engine exposes tf(): template lookup + {named} interpolation, exported
+    assert "function tf(s, vars)" in i18n
+    assert "map[s] == null ? s : map[s]" in i18n and "replace(/\\{(\\w+)\\}/g" in i18n
+    assert "t, tf," in i18n, "tf must be exported on OOI18N"
+    # (b) the UI renders a card's title via cardTitle -> OOI18N.tf, English title as fallback
+    ct = app[app.index("function cardTitle(") : app.index("function cardTitle(") + 400]
+    assert "c.title_i18n" in ct and "OOI18N.tf(" in ct and "c.title" in ct
+    assert "esc(cardTitle(c))" in app, "the card front + carousel must render cardTitle(c)"
+    # (c) the Card schema emits the translatable-title fields; the reference producer sets them
+    card = (_SRC / "briefing" / "card.py").read_text(encoding="utf-8")
+    assert '"title_i18n": self.title_i18n' in card and '"title_vars": self.title_vars' in card
+    prod = (_SRC / "briefing" / "producers.py").read_text(encoding="utf-8")
+    assert 'title_i18n="“{term}” is rising"' in prod and 'title_vars={"term":' in prod
+    # (d) the template KEY is present in every one of the 12 locale files (gate stays 100%)
+    import json as _json
+    loc = _SRC / "static" / "locales"
+    for lf in sorted(loc.glob("*.json")):
+        d = _json.loads(lf.read_text(encoding="utf-8"))
+        assert "“{term}” is rising" in d, f"{lf.name} missing the rising title template key"
+        assert "{term}" in d["“{term}” is rising"], f"{lf.name}: translation must keep {{term}}"
+
+
+def test_guided_wizard_sources_by_theme_step():
+    """S4.7: the first-launch guided wizard gains a SOURCES-BY-THEME step (before Finish) that
+    picks themes from the REAL catalog tag taxonomy + emphasizes languages, applied as scheduler
+    config via LOOPBACK reads/writes only. The wizard NEVER posts the network — the finish step's
+    consented go-online (toggleNetwork -> ensureOnline) stays the ONLY path to egress.
+    HONESTY: themes DEFAULT to all-selected = collect everything (the cover-everything ruling);
+    a partial pick sets select_tags (a filter), all-or-none clears it. Language emphasis maps to
+    language_equilibrium (a cadence lever that ORDERS, never excludes). The language step is
+    already consolidated out (§2.5) — the flow is [sources, finish]."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    # the step DOM exists (theme picker + language-emphasis group)
+    assert 'data-step="sources"' in html and 'id="gw-themes"' in html and 'id="gw-emph-langs"' in html
+    # the flow is sources -> finish (language step already dropped)
+    assert '_GW_STEPS = ["sources", "finish"]' in app
+    # themes come from the REAL catalog tag taxonomy (the app's own loopback coverage endpoint)
+    rs = app[app.index("async function _gwRenderSources(") : app.index("function _gwUpdateThemeNote(")]
+    assert "/api/scheduler/coverage" in rs, "themes must come from the real tag taxonomy"
+    # apply = a LOOPBACK scheduler-config write; select_tags + language_equilibrium; never egress
+    ap = app[app.index("async function _gwApplySourcePrefs(") : app.index("async function _gwApplySourcePrefs(") + 900]
+    assert "/api/scheduler/config" in ap and "select_tags" in ap and "language_equilibrium" in ap
+    assert "/api/system/network" not in ap, "the wizard must NEVER post the network"
+    # cover-everything default: all-or-none selected => NO filter (empty select_tags)
+    assert "on.length === 0 || on.length === all.length" in ap and "? [] :" in ap
+    # the ONLY network path stays the finish step's consented go-online (unchanged)
+    assert "toggleNetwork()" in app

@@ -211,16 +211,16 @@
     // Zero-network on load by construction: it only reads localStorage and reuses
     // the in-memory LANGS_12 list (no fetch).
     const _GUIDE_KEY = "oo_guide_v1";
-    // The visible step order. "encryption" + "sources" are deferred placeholders
-    // (shown but inert) so the next slice slots its real UI straight in.
-    // Language -> Finish. The encryption choice is made in the DB-unlock/install
-    // flow (not a wizard placeholder) and sources auto-seed on boot, so the two
-    // inert "Coming soon" steps were removed (maintainer 2026-06-18).
-    // The first-launch flow now chooses the language FIRST (unlock.html, #420) and
-    // a permanent top-bar switcher (invariant #15) always changes it, so the wizard's
-    // language step is redundant (§2.5, autonomous 2026-06-21). Dropped from the flow;
-    // the #guide-wizard lang DOM + _gwRenderLangs stay unreachable (the Desk lesson).
-    const _GW_STEPS = ["finish"];
+    // The visible step order. The encryption choice is made in the DB-unlock/install
+    // flow (not a wizard placeholder) and sources auto-seed on boot, so those inert
+    // "Coming soon" steps were removed (maintainer 2026-06-18). The first-launch flow
+    // chooses the language FIRST (unlock.html, #420) and a permanent top-bar switcher
+    // (invariant #15) always changes it, so the wizard's language step is redundant
+    // (§2.5, autonomous 2026-06-21) — dropped; the #guide-wizard lang DOM + _gwRenderLangs
+    // stay unreachable (the Desk lesson). S4.7: the real SOURCES-BY-THEME step is now
+    // slotted before Finish (theme picker + language emphasis; loopback reads/writes only,
+    // never external egress — the finish step's consented go-online is the only network path).
+    const _GW_STEPS = ["sources", "finish"];
     let _gwIdx = 0;
     function _guideState() {
       try { return JSON.parse(localStorage.getItem(_GUIDE_KEY)) || {}; } catch { return {}; }
@@ -270,6 +270,78 @@
       if (next) next.hidden = last;
       if (fin) fin.hidden = !last;
       if (step === "lang") _gwRenderLangs();
+      if (step === "sources") _gwRenderSources();
+    }
+    // S4.7 sources-by-theme step. Real catalog tag taxonomy from the app's OWN loopback
+    // /api/scheduler/coverage; the config is applied via a loopback PUT /config on leaving
+    // the step. NEVER external egress (the app runs on loopback; the finish step's consented
+    // go-online is the only path to the network). Themes default to ALL selected = collect
+    // everything (the cover-everything ruling); a partial pick sets select_tags (a filter —
+    // the user's explicit, reversible focus). Language emphasis -> language_equilibrium (a
+    // cadence lever that ORDERS, never excludes).
+    const _gwSrc = { picked: null, emph: {} };
+    async function _gwRenderSources() {
+      const box = $("gw-themes"); if (!box) return;
+      let cov = null, cfg = null;
+      try { cov = await api("/api/scheduler/coverage"); } catch (_e) { cov = null; }
+      try { cfg = await api("/api/scheduler/config"); } catch (_e) { cfg = null; }
+      const curTags = (cfg && cfg.select_tags) || [];
+      const curEmph = (cfg && cfg.language_equilibrium) || {};
+      const covTags = (cov && cov.tags) || [];
+      const byTotal = {}; covTags.forEach((x) => { byTotal[x.tag] = x.total || 0; });
+      let tags = covTags.map((x) => x.tag).filter((x) => x && x !== "(untagged)");
+      tags.sort((a, b) => (byTotal[b] || 0) - (byTotal[a] || 0));   // top themes by source count
+      tags = tags.slice(0, 16);
+      if (!tags.length) {
+        box.innerHTML = `<div class="muted">${esc(_gwT("Themes will appear once your sources are set up. Your app collects from every source by default."))}</div>`;
+      } else {
+        if (_gwSrc.picked === null) {   // first open: default all-checked, unless a prior config narrowed it
+          _gwSrc.picked = {};
+          tags.forEach((tg) => { _gwSrc.picked[tg] = curTags.length ? curTags.indexOf(tg) >= 0 : true; });
+        }
+        box.innerHTML = tags.map((tg) =>
+          `<label class="gw-theme" style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:8px;padding:4px 9px;cursor:pointer">`
+          + `<input type="checkbox" data-theme="${esc(tg)}"${_gwSrc.picked[tg] ? " checked" : ""}> `
+          + `<span>${esc(tg)}</span> <span class="muted">${byTotal[tg] || 0}</span></label>`).join("");
+        box.querySelectorAll("input[data-theme]").forEach((cb) => {
+          cb.onchange = () => { _gwSrc.picked[cb.dataset.theme] = cb.checked; _gwUpdateThemeNote(); };
+        });
+      }
+      const emphBox = $("gw-emph-langs");
+      if (emphBox) {
+        if (!Object.keys(_gwSrc.emph).length) { for (const k in curEmph) _gwSrc.emph[k] = true; }
+        emphBox.innerHTML = LANGS_12.map(([code, flag, native]) =>
+          `<button type="button" class="gw-lang" data-emph="${code}" aria-pressed="${_gwSrc.emph[code] ? "true" : "false"}">`
+          + `<span aria-hidden="true">${flag}</span> <span class="gw-native">${esc(native)}</span></button>`).join("");
+        emphBox.querySelectorAll("[data-emph]").forEach((b) => {
+          b.onclick = () => {
+            const c = b.dataset.emph; _gwSrc.emph[c] = !_gwSrc.emph[c];
+            b.setAttribute("aria-pressed", _gwSrc.emph[c] ? "true" : "false");
+          };
+        });
+      }
+      _gwUpdateThemeNote();
+    }
+    function _gwUpdateThemeNote() {
+      const note = $("gw-theme-note"); if (!note || !_gwSrc.picked) return;
+      const all = Object.keys(_gwSrc.picked), on = all.filter((k) => _gwSrc.picked[k]);
+      note.textContent = (on.length === 0 || on.length === all.length)
+        ? _gwT("Collecting from every source (all themes).")
+        : _gwT("Focusing your first collection on the selected themes. You can widen it anytime in Settings → Collect.");
+    }
+    // Apply the picks as scheduler config (a LOOPBACK settings write — never egress, never
+    // starts a collection). All-or-none themes => NO filter (collect everything). Best-effort:
+    // a settings write must never block onboarding.
+    async function _gwApplySourcePrefs() {
+      if (!_gwSrc.picked) return;   // the step was never opened -> change nothing
+      const all = Object.keys(_gwSrc.picked), on = all.filter((k) => _gwSrc.picked[k]);
+      const select_tags = (on.length === 0 || on.length === all.length) ? [] : on;
+      const language_equilibrium = {};
+      for (const k in _gwSrc.emph) if (_gwSrc.emph[k]) language_equilibrium[k] = 1;
+      try {
+        await api("/api/scheduler/config",
+          { method: "PUT", body: JSON.stringify({ select_tags: select_tags, language_equilibrium: language_equilibrium }) });
+      } catch (_e) { /* best-effort local settings write; never block the guide */ }
     }
     function openGuide() {
       const dlg = $("guide-wizard"); if (!dlg) return;
@@ -299,7 +371,10 @@
     (function _wireGuide() {
       const next = $("gw-next"), back = $("gw-back"), fin = $("gw-finish"),
             close = $("gw-close"), go = $("gw-go-online"), stay = $("gw-stay-offline");
-      if (next) next.onclick = () => { if (_gwIdx < _GW_STEPS.length - 1) { _gwIdx++; _gwPaint(); } };
+      if (next) next.onclick = async () => {
+        if (_GW_STEPS[_gwIdx] === "sources") await _gwApplySourcePrefs();  // apply on leaving the step
+        if (_gwIdx < _GW_STEPS.length - 1) { _gwIdx++; _gwPaint(); }
+      };
       if (back) back.onclick = () => { if (_gwIdx > 0) { _gwIdx--; _gwPaint(); } };
       if (fin) fin.onclick = () => closeGuide(true);
       if (close) close.onclick = () => closeGuide(true);   // X also completes the one-time guide
@@ -310,6 +385,7 @@
       if (go) go.onclick = async () => {
         const note = $("gw-finish-note");
         if (note) note.textContent = _gwT("You'll confirm before anything connects.");
+        await _gwApplySourcePrefs();   // persist theme/emphasis picks before collecting (loopback, no egress)
         closeGuide(true);
         // The "corpus is empty" bubble is retired (2026-06-17): going online routes
         // through toggleNetwork() -> ensureOnline (the ONE consent popup, invariant
@@ -2134,6 +2210,7 @@
       if (refreshing) _scheduleBriefRepoll(); else _cancelBriefRepoll();
       const banner = refreshing ? briefProgressHtml(data, t) : "";
       if (!data.buckets || !data.buckets.length) {
+        renderLeadsCarousel([]);  // hide the carousel when there are no Leads (never blank-and-silent)
         if (refreshing) { feed.innerHTML = banner; return; }
         feed.innerHTML = `<div class="card">
           <h4>No Leads yet — that's expected on a young corpus</h4>
@@ -2166,7 +2243,94 @@
         ? `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>` : "") + html;
       // "All" is the default; selecting a family shows only that bucket.
       if (data.buckets.length > 1) ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: "__all"});
+      renderLeadsCarousel(data.buckets.flatMap(b => b.cards || []));
     }
+
+    // -- S4.3: the synthesized-Leads carousel (Home dashboard) --------------------------- //
+    // A rolling rotation of the TOP local-analytic Leads (never LLM — Home is zero-network).
+    // PAUSABLE (WCAG 2.2: pause on hover/focus + a manual toggle); the caveat rides EVERY face
+    // so a timed rotation never hides it (#23); each face DEEP-LINKS (#8) via the SAME action
+    // the full card uses; ordering is the briefing's own (evidence tier + recency + spread —
+    // never a hidden score). Hidden with <2 Leads so Home is never blank-and-silent.
+    let _carTimer = null, _carIdx = 0, _carCards = [], _carPaused = false;
+
+    function renderLeadsCarousel(cards) {
+      const panel = $("home-carousel-panel"), host = $("home-carousel");
+      if (!panel || !host) return;
+      _carStop();
+      _carCards = (cards || []).filter(c => c && c.title).slice(0, 8);
+      if (_carCards.length < 2) { panel.hidden = true; host.innerHTML = ""; return; }
+      panel.hidden = false;
+      _carIdx = 0;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      host.innerHTML =
+        `<div class="carousel" role="region" aria-roledescription="${esc(t("carousel"))}" aria-label="${esc(t("Leads"))}" tabindex="0">`
+        + `<div class="carousel-face" id="carousel-face" aria-live="polite"></div>`
+        + `<div class="carousel-ctl">`
+        +   `<button class="tiny secondary" onclick="carouselStep(-1)" aria-label="${esc(t("Previous Lead"))}">‹</button>`
+        +   `<button class="tiny secondary" id="carousel-pause" onclick="carouselToggle()" aria-pressed="false" aria-label="${esc(t("Pause the carousel"))}">⏸</button>`
+        +   `<button class="tiny secondary" onclick="carouselStep(1)" aria-label="${esc(t("Next Lead"))}">›</button>`
+        +   `<span class="carousel-dots" id="carousel-dots"></span>`
+        + `</div></div>`;
+      const car = host.querySelector(".carousel");
+      // WCAG 2.2: the auto-rotation pauses on hover/focus, plus the explicit pause toggle.
+      car.addEventListener("mouseenter", _carHold);
+      car.addEventListener("mouseleave", _carRelease);
+      car.addEventListener("focusin", _carHold);
+      car.addEventListener("focusout", _carRelease);
+      car.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") { carouselStep(-1); e.preventDefault(); }
+        else if (e.key === "ArrowRight") { carouselStep(1); e.preventDefault(); }
+      });
+      _carPaint();
+      if (!_carPaused) _carStart();
+    }
+
+    function _carPaint() {
+      const face = $("carousel-face"); if (!face || !_carCards.length) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const c = _carCards[_carIdx]; if (!c) return;
+      const n = _carCards.length;
+      const aq = cardAnalyzeQuery(c);
+      const aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
+      const action = aIds
+        ? `openCardCorpus(${esc(JSON.stringify(aIds))}, ${esc(JSON.stringify(aq))})`
+        : `openCardCorpusQuery(${esc(JSON.stringify(aq))})`;
+      // the CAVEAT rides EVERY rotated face — a timed rotation never hides it (#23 + the brief).
+      const caveat = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
+      face.innerHTML =
+        `<div class="carousel-card bk-${esc(c.bucket)}" role="group" aria-label="${esc(t("Lead"))} ${_carIdx + 1} / ${n}">`
+        + `<h4>${esc(cardTitle(c))}</h4>`
+        + (c.summary ? `<p class="sum">${esc(c.summary)}</p>` : "")
+        + caveat
+        + `<div><button class="tiny" onclick="${action}">${esc(t("Open corpus"))} ↗</button></div>`
+        + `</div>`;
+      const dots = $("carousel-dots");
+      if (dots) dots.innerHTML = _carCards.map((_, i) =>
+        `<button class="carousel-dot${i === _carIdx ? " on" : ""}" onclick="carouselGo(${i})" aria-label="${esc(t("Lead"))} ${i + 1}"${i === _carIdx ? ' aria-current="true"' : ""}></button>`).join("");
+    }
+
+    function carouselStep(d) {
+      if (!_carCards.length) return;
+      _carIdx = (_carIdx + d + _carCards.length) % _carCards.length;
+      _carPaint();
+    }
+    function carouselGo(i) { _carIdx = i; _carPaint(); }
+    function carouselToggle() {
+      _carPaused = !_carPaused;
+      const b = $("carousel-pause");
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (b) {
+        b.textContent = _carPaused ? "▶" : "⏸";
+        b.setAttribute("aria-pressed", _carPaused ? "true" : "false");
+        b.setAttribute("aria-label", _carPaused ? t("Play the carousel") : t("Pause the carousel"));
+      }
+      if (_carPaused) _carStop(); else _carStart();
+    }
+    function _carStart() { _carStop(); if (_carPaused || _carCards.length < 2) return; _carTimer = setInterval(() => carouselStep(1), 7000); }
+    function _carStop() { if (_carTimer) { clearInterval(_carTimer); _carTimer = null; } }
+    function _carHold() { _carStop(); }                 // hover/focus pause (keeps the user's toggle state)
+    function _carRelease() { if (!_carPaused) _carStart(); }
 
     // The "pleasing progress bar" for a background briefing recompute (remarks 6/7).
     // Determinate once producers report (done/total), indeterminate until then. Honest:
@@ -2215,6 +2379,15 @@
       if (m && m[1].trim()) return m[1].trim();
       if (c.key && String(c.key).trim()) return String(c.key).trim();
       return (c.title || "").replace(/[“”"]/g, "").trim();
+    }
+    // S4.5: a card's DISPLAY title. When the producer emits a translatable title
+    // (title_i18n = a fixed keyable template + title_vars = language-neutral data),
+    // render OOI18N.tf(template, vars) — the frame translates ×12, the keyword term
+    // stays data. Otherwise the English `title` (additive fallback; cards without a
+    // template, or a browser without tf, are byte-identical to before).
+    function cardTitle(c) {
+      if (c && c.title_i18n && window.OOI18N && OOI18N.tf) return OOI18N.tf(c.title_i18n, c.title_vars || {});
+      return (c && c.title) || "";
     }
     // Click a Lead card to FLIP it (front <-> back). Inner controls (buttons/links/
     // inputs) are not flip triggers. Keyboard: Enter/Space flips when focused.
@@ -2338,11 +2511,12 @@
         ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
         : "";
       const chip = `<span class="chip">${esc(c.type.replace(/_/g, " "))}</span>`;
-      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" tabindex="0" role="button" aria-label="${esc(c.title)}" onclick="leadFlip(this,event)" onkeydown="leadFlipKey(this,event)">
+      const _title = cardTitle(c);
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" tabindex="0" role="button" aria-label="${esc(_title)}" onclick="leadFlip(this,event)" onkeydown="leadFlipKey(this,event)">
         <div class="card-inner">
           <div class="card-face card-front">
             ${chip}
-            <h4>${esc(c.title)}</h4>
+            <h4>${esc(_title)}</h4>
             <p class="sum">${esc(c.summary)}</p>
             ${sigLine}
             <span class="lead-flip-hint">${esc(t("Details & corpus"))} ⟲</span>
@@ -10385,7 +10559,22 @@
     function kwTransHtml(row) {
       if (!row || !row.translation) return "";
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      return ` <span class="kw-trans" title="${esc(t("Verified translation (cross-language concept)."))}">→ ${esc(row.translation)}</span>`;
+      // S4.2: the verified cross-language concept; the per-language COMPOSITION
+      // (de-US-centring in action — a concept's coverage ACROSS languages) rides the #oo-tip
+      // LAYERED hover on demand (invariant #17), never crowding the visible trend/Home row.
+      // language_breakdown = {langCode: count} on the merged ring row (queries.py); absent on a
+      // single-language keyword -> just the base title (defensive).
+      let title = t("Verified translation (cross-language concept).");
+      const lb = row.language_breakdown;
+      if (lb && typeof lb === "object") {
+        const parts = Object.keys(lb)
+          .map((k) => [k, +lb[k] || 0])
+          .filter((p) => p[1] > 0)
+          .sort((a, b) => b[1] - a[1])
+          .map((p) => `${p[0]} ${p[1]}`);
+        if (parts.length) title += " — " + t("Across languages:") + " " + parts.join(" · ");
+      }
+      return ` <span class="kw-trans" title="${esc(title)}">→ ${esc(row.translation)}</span>`;
     }
     // The TENTATIVE LLM translation (Phase 4 fallback): shown ONLY when no verified
     // ring translation exists, with a distinct ≈ marker + an "unreliable" hover — never
@@ -10423,7 +10612,41 @@
         : "";
       kw.innerHTML = `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
         + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}${btn}</div>`
-        + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`;
+        + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`
+        + anContextHtml();
+    }
+    // S4.4: term-in-context CONCORDANCE — ported from the retired Insights search bar
+    // (exploreTerm's #ins-context) into the #an Keywords subtab, so the omnibar→#an window
+    // absorbs the LAST Insights-bar capability (trend + associations + mindmap already live in
+    // #an). Keyed on the analysis QUERY term; SKIPPED honestly for an article-id corpus that has
+    // no single term. Snippets/counts only, never a score. Rides on _anKwData so the tentative-
+    // translate re-render (anFillTentative → anRenderKwChips) keeps the snippets shown.
+    function anContextHtml() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const ctx = _anKwData && _anKwData._context;
+      if (!ctx) return "";   // no single-term corpus, or not fetched yet — render nothing
+      const ms = ctx.mentions || [];
+      const body = ms.length
+        ? ms.map((m) => `<div class="note" style="max-width:none;margin-bottom:6px">`
+            + `<div style="font-size:12px" class="muted">${esc(m.source || "")}`
+            + `${m.country ? " · " + esc(ooRegionName(m.country, m.country)) : ""}`
+            + `${m.city ? " · " + esc(m.city) : ""}${m.observed_on ? " · " + esc(m.observed_on) : ""}`
+            + `${m.article_id ? ` · <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(t("open"))}</a>` : ""}`
+            + `${m.url ? " · " + extLink(m.url, t("source ↗"), "muted") : ""}</div>`
+            + `<div>${esc(m.snippet || "")}</div></div>`).join("")
+        : `<div class="muted">${esc(t("No context snippets."))}</div>`;
+      return `<h3 style="margin:16px 0 6px;font-size:13px">${esc(t("In context"))}`
+        + `${ctx.term ? ` <span class="muted">— ${esc(ctx.term)}</span>` : ""}</h3>` + body;
+    }
+    async function loadAnContext(p) {
+      if (!_anKwData) return;
+      const term = (p && p.get && p.get("query")) || anQuery() || "";
+      if (!term) { _anKwData._context = null; return; }   // article-id corpus: no single term to concord
+      try {
+        const ctx = await api("/api/insights/context?term=" + encodeURIComponent(term) + "&limit=12");
+        _anKwData._context = { term: (ctx.resolved && ctx.resolved.term) || term, mentions: ctx.mentions || [] };
+      } catch (_e) { _anKwData._context = null; }   // best-effort; never break the Keywords subtab
+      anRenderKwChips();
     }
     async function anFillTentative() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -14210,6 +14433,7 @@
         const d = await api("/api/insights/corpus-keywords?" + p.toString() + tgtLangParam());
         _anKwData = d; _anKwHost = kw;   // stash for the tentative-fill action
         anRenderKwChips();
+        loadAnContext(p);   // S4.4: term-in-context concordance under the chips (progressive)
       } catch (e) { kw.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       // Mindmap: a deterministic radial keyword-association graph seeded on the
       // TOP keyword of the matched set (KEYWORDS ARE CORPORA). Self-contained

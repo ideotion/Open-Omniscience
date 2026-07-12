@@ -762,6 +762,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     setting (post-connect `SET` raises); `enable_external_access=False` blocks a file ATTACH
     (Permission Error), so the persisted path omits it (network safety = autoload-off + absolute-path
     LOAD + the airplane guard).
+  - **A VALUE-BEARING STRING IS ONLY TRANSLATABLE IF ITS KEY IS A FIXED TEMPLATE (2026-07-12, S4.5):**
+    a flat `t()` lookup can never translate "3 of 10 articles" — the numbers vary, so it never matches
+    a static key. The fix is a COMPOSITE lookup (`OOI18N.tf(template, vars)`): the KEY is a fixed
+    `"{done} of {total} articles"` template (keyable ×12), the VALUES are DATA interpolated after
+    translation — so the FRAME translates and the DATA does not (the same discipline as translating
+    chrome but never data). Server-emitted titles ride the same seam: `Card.title_i18n` (template) +
+    `title_vars` (JSON-scalar data), with the English `title` kept as the additive fallback. TWO gotchas:
+    (a) a `{placeholder}` with no matching var renders a literal `{x}` — VALIDATE at construction (fail
+    loud), never ship a broken frame; (b) adding a new template key to `en.json` ALONE reddens
+    `--min 100` (en.json is the canonical 2020-key set; every locale must carry every key) — add the key
+    to ALL 12 locale files (translations keep `{term}` verbatim). `t()`-with-an-English-string still needs
+    no key (it falls back), but a `tf()` template you WANT translated must exist in the maps.
+  - **AN ONBOARDING "PICK YOUR THEMES/COUNTRIES" MUST DEFAULT TO EVERYTHING, AND EMPHASIS ≠ EXCLUSION
+    (2026-07-12, S4.7):** the cover-everything ruling ("scraping must cover EACH AND EVERY source;
+    ordering ≠ exclusion") means a first-launch theme picker can NOT silently narrow the corpus. Two
+    honesty rules: (a) `select_tags` is a FILTER (`Source.tags ILIKE`), so DEFAULT all-selected and treat
+    all-or-none as `[]` (no filter = everything); a partial pick is the user's EXPLICIT, reversible focus,
+    stated in the UI — never an app-chosen narrowing. (b) for a country/language EMPHASIS use the levers
+    that ORDER, never exclude — `country_priority` (a `sort` key in the runner, explicitly "orders first,
+    never excludes") and `language_equilibrium` (a cadence weight), NOT `select_languages` (which filters).
+    And before calling a settings-write endpoint from a surface that promises "never posts the network,"
+    VERIFY the handler has no egress side effect: `PUT /api/scheduler/config` is `save_settings` only (no
+    kill-switch clear, no `run_now`), and `exclude_unset=True` means only the fields you send are touched.
+  - **ABSORB-THEN-HIDE, BUT AN INTERLEAVED SHARED COMPONENT BLOCKS THE BLIND HIDE (2026-07-12, S4.4):**
+    the Desk lesson ("never lose a tool") says retire a surface only once its replacement absorbs every
+    capability. When a capability is genuinely missing, PORT it first + add a REGRESSION GUARD on the
+    absorption — but the HIDE can still be unsafe: `#ins-explore` interleaves the search bar (retirable)
+    with a NON-searchable overview (`#ins-landscape`, must stay) AND a RELOCATABLE shared component
+    (`#mm-kit`, moved into the corpus window and back — writing to `#ins-term`/`pickTerm`). A blind
+    display:none/removal browser-unverified is the interleaved-shared-helper hazard (passes `node --check`,
+    breaks at runtime). So: port the missing piece, guard the absorption, and GATE the actual hide on a
+    browser-verified untangle — recorded as a carry-over, not shipped on faith.
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -968,6 +1000,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   sandbox with `PackageNotFoundError` because `pip install -e .` never completed (sqlcipher3 blocked
   it) — ENVIRONMENTAL, not a regression, green in CI / a proper install. LESSONS in the
   Session-rituals subsection above.
+- **S4 CLOSEOUT (2026-07-12, Tier-3 product quality — the reader-facing quality tail, branch
+  `claude/s4-product-quality`, 7 commits stacked onto `origin/0.2` base `b85bc124` = 0.2 with
+  S1–S3 merged):** SHIPPED, each slice node --check + invariant-guarded (frontend slices
+  browser-unverified per fork-3) and green in a py3.13 venv (166 repo-invariants + the targeted
+  suites; the 2 version tests fail with the same known `PackageNotFoundError` as S3(e) —
+  environmental, green in CI). Full detail = the 7 `docs/ledger/shipped.csv` rows. **STALENESS
+  GUARD PAID OFF** (the program-wide rule): S4.7's language-step consolidation was ALREADY DONE
+  (`_GW_STEPS` was `["finish"]`, §2.5) → not rebuilt, just extended. **S4.1** CJK-numeral date
+  recall PROBE in datediag (context-only, NOT actionable — measures the recall gap, never asserts
+  a fabricated date; #590 negative-space + datediag-lockstep; extraction deferred to a segmenter
+  pass). **S4.2** ring-translation per-language `language_breakdown` on the Trends/Home #oo-tip
+  LAYERED hover (invariant #17, counts only). **S4.3** the synthesized-Leads Home carousel (LOCAL
+  synthesis never LLM; WCAG-pausable; caveat rides every rotated face #23; every face deep-links #8).
+  **S4.4** ported the `/api/insights/context` snippet concordance into the #an Keywords subtab so
+  the omnibar→#an window ABSORBS the last Insights-bar capability (trend+associations+mindmap were
+  already there); the bar is NOT hidden — `#ins-explore` interleaves the search bar with the
+  non-searchable corpus-landscape AND the relocatable shared `#mm-kit`, so the hide is browser-verify
+  gated. **S4.5** the composite-string i18n engine (`OOI18N.tf` = fixed keyable TEMPLATE with
+  `{named}` placeholders + interpolated language-neutral DATA — the frame translates ×12, the data
+  does not) + translatable Home-card titles (`Card.title_i18n`/`title_vars`, validated, `to_dict`;
+  `rising_now` is the first reference producer; the template key in ALL 12 locales). **S4.6** the
+  in-app `generic_terms` DF-ubiquity detector block in `engine_report` (review-worklist, POS-free,
+  never auto-applied, no score by field-NAME). **S4.7** the guided-wizard sources-by-theme step
+  (real tag taxonomy via loopback `/api/scheduler/coverage`; themes DEFAULT all = collect everything
+  per the cover-everything ruling; `select_tags` filter only on an explicit reversible narrowing;
+  language emphasis → `language_equilibrium` which orders-never-excludes; loopback config PUT only,
+  wizard still NEVER posts the network). **CARRY-OVER for S5 (read FIRST):** (a) **the frontend
+  slices are BROWSER-UNVERIFIED (no headless harness here) — a human CLICK-THROUGH is owed** across
+  themes/breakpoints (per-surface list in the PR body): the Home carousel (pause/keyboard/caveat),
+  the Trends/Home ring-breakdown hover, the #an Keywords **In context** concordance (query-seeded vs
+  article-id corpus), a translated card title in a non-en locale (the `rising` Lead), and the wizard
+  sources step (theme default-all, language emphasis, config actually applied). (b) **S4.4 hide of
+  the Insights search bar is DEFERRED** — port done + absorption regression-guarded, but removing the
+  bar needs a browser-verified untangle of `#ins-explore` (the search bar vs the non-searchable
+  corpus-landscape + the relocatable shared `#mm-kit`); a blind removal is the interleaved-shared-
+  component hazard. (c) **S4.5 composite-string mechanism is the reusable unblock** — extend
+  translatable titles to the other producers + key more dynamic JS rows (`loadWatches` etc.) via `tf`
+  (each new key needs all 12 locales or `--min 100` reddens). (d) **S4.1 extraction is deferred** —
+  the probe quantifies the CJK date tail; actually EXTRACTING those dates is a segmenter-dependent
+  follow-up (the probe is intentionally context-only so it can never fabricate a date). (e) **S4.7
+  country-emphasis picker** — the `country_priority` order-never-exclude lever exists; a
+  continent-grouped onboarding UI is the follow-up. LESSONS in the Session-rituals subsection above.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL

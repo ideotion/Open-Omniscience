@@ -912,3 +912,16 @@
        + dashed, with a ≈ marker, so it never reads as a verified fact (Phase 4). */
     .kw-trans.kw-tentative { color: var(--muted); border-bottom-style: dashed;
       border-bottom-color: var(--muted); font-style: italic; }
+
+    /* S4.3: the synthesized-Leads carousel (Home dashboard). The caveat rides every face
+       (.card-caveat, reused); the controls stay a constant footprint; dots mark position. */
+    #home-carousel .carousel { outline-offset: 2px; }
+    .carousel-face { min-height: 92px; }
+    .carousel-card { border-left: 3px solid var(--accent); padding: 8px 10px;
+      border-radius: 8px; background: var(--panel); }
+    .carousel-card h4 { margin: 0 0 4px; }
+    .carousel-ctl { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+    .carousel-dots { display: inline-flex; gap: 4px; margin-left: 6px; }
+    .carousel-dot { width: 8px; height: 8px; padding: 0; border-radius: 50%;
+      border: 1px solid var(--line); background: transparent; cursor: pointer; }
+    .carousel-dot.on { background: var(--accent); border-color: var(--accent); }

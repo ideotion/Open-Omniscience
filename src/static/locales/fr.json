@@ -2024,5 +2024,6 @@
   "Corrupt/missing:": "Corrompu/manquant :",
   "Parity:": "Parité :",
   "can still lose": "peut encore perdre",
-  "Method:": "Méthode :"
+  "Method:": "Méthode :",
+  "“{term}” is rising": "« {term} » est en hausse"
 }

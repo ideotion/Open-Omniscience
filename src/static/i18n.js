@@ -122,7 +122,27 @@
   // the DOM observer cannot reach. Same fallback rule: unknown -> English.
   function t(s) { return map[s] == null ? s : map[s]; }
 
-  window.OOI18N = { setLang, apply, current, init, t, get meta() { return meta; } };
+  // tf(): COMPOSITE / interpolated lookup. The KEY is a fixed TEMPLATE with
+  // {named} placeholders (a keyable string), and the VALUES are DATA (counts,
+  // terms, dates) left untranslated. This is what makes a dynamic, value-bearing
+  // string translatable at all: a row like "3 of 10 articles" can never match a
+  // static key, but the fixed template "{done} of {total} articles" can be keyed
+  // ×12 and the numbers substituted after translation. So the FRAME translates and
+  // the DATA does not (the same discipline as translating chrome but never data).
+  // Unknown template -> the English template (fallback). A placeholder with no
+  // matching var is LEFT VERBATIM (never blanked) so a template/vars mismatch is
+  // visible, not silently dropped. Used by JS-built rows and by server-emitted card
+  // titles ({title_i18n, title_vars}) whose data (the keyword term) must not translate.
+  function tf(s, vars) {
+    if (s == null) return s;
+    let out = map[s] == null ? s : map[s];
+    if (vars) out = out.replace(/\{(\w+)\}/g, function (m, k) {
+      return (vars[k] === undefined || vars[k] === null) ? m : String(vars[k]);
+    });
+    return out;
+  }
+
+  window.OOI18N = { setLang, apply, current, init, t, tf, get meta() { return meta; } };
   if (document.readyState !== "loading") init();
   else document.addEventListener("DOMContentLoaded", init);
 })();
