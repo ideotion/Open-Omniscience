@@ -72,6 +72,7 @@ def find_headline_body_mismatch(
     from src.analytics.extract import BaselineExtractor
     from src.analytics.outrage import outrage_intensity
     from src.analytics.sentiment import score_article
+    from src.analytics.subjectivity import subjectivity
     from src.database.models import Article, Source
 
     now = datetime.now(UTC)
@@ -144,6 +145,11 @@ def find_headline_body_mismatch(
                 # COMPONENT (English-only; a stated gap otherwise), never a score, with its own
                 # innocent-twin caveat. It DECORATES this card, it is not a standalone Lead.
                 "outrage": outrage_intensity(body[:body_max_chars], lang),
+                # S5.2: the MULTILINGUAL rule-based subjectivity engine — same secondary-only
+                # discipline, but it measures every language with a lexicon (so a ru/ar article,
+                # where the English-only outrage annotation is a gap, still gets components +
+                # spans); an unsupported language is an honest gap, never a fabricated 0.
+                "subjectivity": subjectivity(body[:body_max_chars], lang),
                 "headline_terms": sorted(head),
                 "absent_terms": absent,
                 "when": when.date().isoformat() if when else None,

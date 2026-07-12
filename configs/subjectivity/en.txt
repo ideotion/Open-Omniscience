@@ -1,0 +1,93 @@
+# Subjectivity / loaded-language SEED lexicon — English (SUBJECTIVITY_AS_OF 2026-07).
+# A MODEST STARTER, not a lexicon of record. Illustrative loaded/subjective markers that
+# feed the loaded-language density annotation; a reader always sees WHICH terms matched, so
+# a sparse/imperfect seed is transparent. The vetted lexicon of record is an operator
+# sourcing/vetting step (license-clean, native review). One lowercased term per line.
+#
+# --- loaded / charged framing (from the outrage heuristic) ---
+outrage
+outrageous
+slam
+slammed
+slams
+blast
+blasted
+blasts
+shocking
+shock
+shocked
+disgrace
+disgraceful
+scandal
+scandalous
+fury
+furious
+rage
+enraged
+explosive
+bombshell
+damning
+devastating
+catastrophic
+chaos
+meltdown
+backlash
+uproar
+firestorm
+crisis
+disaster
+horror
+betrayal
+traitor
+corrupt
+crooked
+evil
+monstrous
+destroy
+destroyed
+annihilate
+obliterate
+humiliate
+humiliated
+ripped
+torched
+eviscerate
+panic
+terror
+nightmare
+carnage
+savage
+brutal
+vicious
+# --- intensifiers ---
+very
+extremely
+incredibly
+utterly
+totally
+completely
+absolutely
+literally
+insanely
+unbelievably
+wildly
+massively
+hugely
+outrageously
+shockingly
+terribly
+horribly
+desperately
+furiously
+# --- subjectivity / hedging markers (attribution & uncertainty) ---
+allegedly
+reportedly
+supposedly
+purported
+purportedly
+apparently
+seemingly
+arguably
+undoubtedly
+clearly
+obviously

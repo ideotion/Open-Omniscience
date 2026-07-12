@@ -5054,3 +5054,28 @@ def test_usgs_minerals_supply_surface_is_supply_not_prices():
     ms = app[app.index("async function loadMineralsSupply(") : app.index("async function loadMineralsSupply(") + 1400]
     assert "/api/stats/minerals-supply" in ms and "d.available" in ms and "d.reason" in ms
     assert "supply data, not prices" in ms.lower()
+
+
+def test_subjectivity_engine_is_multilingual_deduced_and_no_score():
+    """S5.2: the rule-based subjectivity/loaded-language engine — multilingual via vendored
+    lexicon FILES (dated + registered), descriptive components + spans (never a composite
+    score), an HONEST per-language gap (available:false, never a fabricated 0). It FEEDS the
+    manipulation card (secondary annotation, never a standalone Lead) and a DEDUCED per-article
+    surface (three-class provenance). VADER (valence) is deliberately NOT reused."""
+    sub = (_SRC / "analytics" / "subjectivity.py").read_text(encoding="utf-8")
+    assert "def load_lexicon(" in sub and "def subjectivity(" in sub
+    assert "SUBJECTIVITY_AS_OF" in sub, "dated (registered in external_artifacts.yml)"
+    assert '"available": False' in sub and '"spans"' in sub, "honest gap + spans, no score"
+    assert "import vader" not in sub.lower(), "VADER valence is not subjectivity; not reused"
+    # seed lexicons across three scripts exist
+    base = _SRC.parent / "configs" / "subjectivity"
+    assert (base / "en.txt").is_file() and (base / "ru.txt").is_file() and (base / "ar.txt").is_file()
+    # registered (the *_AS_OF protocol guard)
+    reg = (_SRC.parent / "configs" / "external_artifacts.yml").read_text(encoding="utf-8")
+    assert "subjectivity-lexicons" in reg and "SUBJECTIVITY_AS_OF" in reg
+    # feeds the manipulation card (secondary annotation)
+    hb = (_SRC / "analytics" / "headline_body.py").read_text(encoding="utf-8")
+    assert "import subjectivity" in hb and '"subjectivity": subjectivity(' in hb
+    # the DEDUCED per-article surface
+    ins = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert '"/subjectivity"' in ins and '"provenance": "deduced"' in ins

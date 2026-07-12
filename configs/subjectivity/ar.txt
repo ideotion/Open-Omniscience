@@ -1,0 +1,32 @@
+# Subjectivity / loaded-language SEED lexicon — Arabic / RTL (SUBJECTIVITY_AS_OF 2026-07).
+# A MODEST STARTER proving the engine on an Arabic (RTL, uncased) script — NOT a lexicon of
+# record; FLAGGED FOR NATIVE REVIEW. The vetted list is an operator sourcing step. One term per line.
+#
+# --- loaded / charged framing ---
+فضيحة
+فضائح
+صادم
+صدمة
+كارثة
+كارثي
+عار
+مروع
+فساد
+فاسد
+خيانة
+خائن
+فوضى
+رعب
+مأساة
+مأساوي
+غضب
+# --- intensifiers ---
+للغاية
+جدا
+تماما
+بشدة
+# --- subjectivity / hedging markers ---
+مزعوم
+يزعم
+بحسب
+ظاهريا

@@ -1023,6 +1023,27 @@ def insights_context(
     return q.context(db, term, limit=limit)
 
 
+@router.get("/subjectivity")
+def insights_subjectivity(
+    article_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """S5.2: the loaded-language / subjectivity annotation for ONE article — a DEDUCED
+    (rule-based, never AI, never asserted) surface. Returns the descriptive components +
+    spans for a highlight, or an honest gap when the article's language has no lexicon.
+    Labelled with its provenance class so it is never blended with the source-asserted or
+    AI-derived layers. Counts only, no score. 404 if the article is absent."""
+    from src.analytics.subjectivity import subjectivity
+    from src.database.models import Article
+
+    art = db.get(Article, article_id)
+    if art is None:
+        raise HTTPException(status_code=404, detail="article not found")
+    result = subjectivity(art.get_content() or "", art.language)
+    # Three-class provenance discipline: this is DEDUCED from the text, never confirmed.
+    return {"article_id": article_id, "provenance": "deduced", **result}
+
+
 @router.get("/map")
 def insights_map(
     days: int | None = Query(30, ge=1, le=3650),
