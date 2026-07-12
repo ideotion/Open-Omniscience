@@ -662,6 +662,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     `language_status()` call triggers jieba's prefix-dict build. The corpus-level win is that real words
     RECUR across articles (Heaps β drops from ~0.95), which is what makes aggregations meaningful — the
     per-article count is a red herring. Full entry in SHIPPED_LOG 2026-07-10.
+  - **A VERDICT MUST MAP TO THE BAR IT ACTUALLY TESTED — a "pass" on a proxy is a fabricated pass
+    (2026-07-12, S1 P0-validation kit):** the honesty non-negotiable "never a fabricated pass" applies
+    to the VERDICT MAPPING, not only to fabricated numbers. The P0.1 bar IS bounded-RAM-at-scale, so a
+    backup that merely COMPLETES at sub-2 GB (where bounded-RAM can't be measured) must report
+    `not-measurable-here`, NEVER `pass` — a completion-pass over-reads as "the scale bar was met." Three
+    corollaries from the same kit: (a) **AND-gating two thresholds can HIDE a real signal** — a collector
+    climb heuristic `ratio>1.5 AND abs>512 MB` misses the OOM signature at a HIGH baseline (a +1.9 GB
+    climb on a 4 GB base is only 1.48× → not flagged, and the reason literally said "stayed flat" while
+    the numbers rose); use the absolute-rise signal that holds at any baseline and never assert "flat"
+    against climbing numbers. (b) **a "scrub"/guard named for a safety property must ENFORCE it** — a
+    pass-through `_scrub` no-op gives false assurance; make it a real recursive redaction so the
+    endpoint's secret-safety is a PROPERTY, not a convention every future report author must remember.
+    (c) **a read-only diagnostic is only as good as its retention** — reading `recent_samples()` over a
+    ~2 h-trimmed log can't see a multi-day leak; state the window limit honestly and point at the durable
+    signal (memory-guard state + a clean previous-session end), never let the how-to promise more than
+    the mechanism delivers. Full entry in SHIPPED_LOG 2026-07-12.
+  - **A BACKUP-PATH PROBE THAT STAGES ON THE OPERATOR'S EXTERNAL DRIVE ESCAPES THE data_dir JANITOR —
+    give it a swept prefix (2026-07-12, S1 P0.2 restore probe):** a staged-restore probe needs the disk
+    room a 100 GB plaintext conversion + working copy demands, so it stages under the operator's DEST
+    drive, NOT `data_dir()`. But the boot janitor (`sweep_stale_backup_temps(data_dir)`) and the forensic
+    inventory only scan `data_dir`, so on a hard-kill mid-probe the leftover — which for an ENCRYPTED live
+    corpus contains a PLAINTEXT staged copy (an at-rest-encryption concern) — is orphaned, unseen, on the
+    external drive. Fix: name the probe dir with the engine's swept `.restore-` prefix (so a subsequent
+    `write_stream_backup(dest)`'s own sweep reclaims it after the 24 h age guard) + sweep the dest at run
+    start + document the manual `.restore-*`-delete recovery. Verify a diagnostic's temp against BOTH
+    reclaim paths (janitor scope AND drive), not just its own finally. Full entry in SHIPPED_LOG 2026-07-12.
+  - **THE `TestClient(app)` LIFESPAN IS A HEAVYWEIGHT, GLOBAL-STATE FIXTURE — a suspect in subset-order
+    pollution (2026-07-12, S1.1 health check):** `with TestClient(app)` runs the app's REAL startup+shutdown
+    (engine init/dispose, the airplane socket guard, source seeding), all process-global. A pre-existing
+    latent order-dependency exists on 0.2: running `test_a2_job_endpoints.py` before
+    `test_diagnostics.py::test_doctor_healthy_returns_zero` (in a subset with a few others) leaves
+    `run_doctor()`'s `session_scope().query().count()` failing → rc 1; it REPRODUCES on clean origin/0.2
+    and is GREEN in full-suite order, so per-PR CI and the full run never hit it (the #577 family, but
+    surfacing only under a non-default subset order). Lesson: when a health check goes red in a SUBSET,
+    check clean-base + full-suite order before assuming it's your wave; a lifespan-driven client fixture
+    that mutates global state is the first suspect. (Flagged, not fixed — a test-hygiene carry-over.)
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -781,6 +817,39 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   session's closeout CARRY-OVERs. NETWORKED work is excluded program-wide (each brief carries
   the operator list). Skeptics-complete-before-push + the negative-space lens are program
   gates; every session ends with a closeout ledger row + carry-over PR section.
+- **S1 CLOSEOUT (2026-07-12, Tier-0 release kit, branch `claude/s1-p0-validation-kit-p4x3px`, one
+  draft PR onto 0.2; full detail = the shipped.csv row):** SHIPPED, skeptic-verified pre-push
+  (4 distinct lenses: data-loss · honesty/no-fabrication · secret-leak/traversal · concurrency/
+  correctness — all GO, 7 findings applied) + full-suite-green (py3.13 .venv, 3400 passed).
+  **S1.1** post-wave health check: the A+B wave (#614–#631) is CLEAN — full suite 3400 passed / 64
+  skipped on the 0.2 tip, ruff blocking + i18n 100% + mypy 127≤127 all green; NO fix-forward
+  needed. FINDING (pre-existing, NOT fixed — a carry-over): a subset-order test-pollution exists —
+  running `test_a2_job_endpoints.py` (its heavyweight `TestClient(app)` lifespan fixture: real
+  startup/shutdown = engine/airplane-guard/seeding) before `test_diagnostics.py::test_doctor_
+  healthy_returns_zero` in a subset with test_repo_invariants/all_diagnostics_job/session_forensics
+  makes `run_doctor()`'s `session_scope().query(Source).count()` fail → rc 1; REPRODUCES ON CLEAN
+  origin/0.2 (so not this session's regression) and is GREEN in full-suite order (so CI never hits
+  it). Flagged for a future test-hygiene pass. **S1.2** the push-button P0 live-validation JOB
+  (`src/monitoring/p0_validation.py` + `POST /api/diagnostics/p0-validation{,/status,/cancel,/last,
+  /download}` + a Settings→Diagnostics panel): one cancellable `BackgroundJob` (is_writer=False)
+  drives the REAL backup engine against the operator's live corpus (RSS-sampled), verifies it,
+  probes a STAGED restore + a dry-run merge PREVIEW (`commit=False` — the live corpus is only ever
+  read; the backup's one write is the engine's standard WAL checkpoint, content-preserving), and
+  reads the merged #596 unlock + collect_perf/memguard instrumentation into ONE report with a
+  per-check verdict (pass|fail|not-measurable-here) against the WRITTEN SCALE_ROADMAP bars —
+  measurements only, NO composite score, NEVER a fabricated pass, backup-engine-format+version
+  stamped; wired as a debug-bundle + all-diagnostics member (read-only, never runs a backup). Tests
+  drive the REAL live path (monkeypatch `live_db_path`, never a `corpus_source` double — ZETA (c))
+  + assert the live corpus is byte-unchanged + no passphrase leak + staging cleaned + a cancel
+  leaves no complete-looking backup. **S1.3** `docs/product/P0_VALIDATION_RUNBOOK.md` (click-by-
+  click + a maintainer-only TAG-DAY CHECKLIST), linked from the panel + ROADMAP. **S1.4** the
+  CHANGES.md 0.2.0 section is now release-notes-ready (A+B-wave bullets, tag-held line kept);
+  release.yml VERIFIED gating correctly (full-suite `test` job + tag==pyproject + SHA256SUMS +
+  `--verify-tag`) — no change needed; README/CONTRIBUTING version prose confirmed needs no change
+  at tag time. **S1.5** hardening = the 4 skeptic lenses; 7 findings applied (below). REMAINING /
+  CARRY-OVER for S2 (in the closeout PR body): the maintainer's LIVE RUN of the job + the v0.2.0
+  TAG (both maintainer-only); the pre-existing test_a2 subset-order pollution; browser click-through
+  of the Settings panel (fork-3, no browser here). LESSONS below.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL

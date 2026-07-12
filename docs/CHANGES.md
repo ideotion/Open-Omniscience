@@ -14,6 +14,53 @@ live-corpus validation** of the P0 scale set — the P0 engines are shipped, awa
 run (see [`docs/product/SCALE_ROADMAP.md`](product/SCALE_ROADMAP.md)); the version is set in
 pyproject but 0.2 is not yet a tagged release.
 
+- **Backup at scale, rebuilt (`oo-volumes-2`).** The large-corpus backup no longer
+  materialises the whole corpus twice (a plaintext snapshot + a zip) before writing a
+  volume — the OOM-on-the-save-path a 100 GB field run hit. It streams each member
+  directly into independently-authenticated encrypted volumes with bounded RAM end to
+  end (including banded Reed–Solomon parity), never decrypts the corpus at backup time,
+  re-emits only changed volumes on a refresh, resumes an interrupted run, and verifies
+  the signed manifest + every volume checksum. Restore streams member-by-member,
+  disk-preflights staging, and hands the artifact to the unchanged additive-only merge.
+- **The collector out-of-memory fix.** A 21.6-hour continuous crawl pass grew RSS past
+  the VM's RAM and was OOM-killed. Passes now recycle on a time budget, an RSS memory
+  guard pauses collection (never kills it) under measured memory pressure, and the WAL
+  is checkpoint-truncated between passes — flat RSS across recycled passes, soak-verified.
+- **Unlock at scale, root-caused.** Boot ran the FTS5 `'rebuild'` — a corpus-scaled
+  encrypted-page re-read — unconditionally on *every* unlock; the sync triggers already
+  maintain the index, so it now rebuilds only when needed. Measured on a 112k-article /
+  2.7 GB encrypted synthetic corpus: 28.6 s → 0.002 s per boot. Per-phase unlock timing
+  is instrumented so any long phase is visible and honest.
+- **Snappiness under load.** The heavy read endpoints gained bounded concurrency, request
+  single-flighting and server-side deadlines so a burst of polls can no longer spiral into
+  a freeze; the keyword-daily rollup now serves windowed trends by default and rebuilds on
+  corpus change instead of scanning the mentions table live.
+- **A synthetic-corpus scale harness + storage forensics.** A generator + benchmark runner
+  reproduces the scale behaviours in-dev (GAMMA), and session forensics + an itemised
+  storage-footprint report name what the on-disk gigabytes actually are (database triple,
+  wiki dumps, OSM regions, staging, and the external Ollama model store).
+- **Push-button P0 data-safety validation.** The live-corpus acceptance run is now one
+  in-app job (Settings → Diagnostics): it drives the real backup engine against your
+  corpus, verifies it, probes a staged restore + a dry-run merge preview (your live corpus
+  is never replaced or deleted — the restore preview never writes it), and reads the unlock + collector instrumentation into
+  one report with a per-check verdict — measurements only, no score, never a fabricated
+  pass. Procedure: [`docs/product/P0_VALIDATION_RUNBOOK.md`](product/P0_VALIDATION_RUNBOOK.md).
+- **Offline word segmentation for zh/ja/th.** An optional `[segmentation]` extra
+  (jieba/janome/pythainlp, pure-local, dictionaries in-wheel) turns whole-sentence CJK/Thai
+  keyword junk into real recurring words; a core install stays byte-identical (graceful
+  degrade). Korean + Marathi join the managed languages with vendored stoplists.
+- **Backup & diagnostics UX truth-telling.** Backup UI reads job state as truth (honest
+  paused-state label, verify/pause-resume wiring); the "all diagnostics" export runs as a
+  cancellable background job instead of freezing the app on a large corpus.
+- **De-US-centring + honesty riders.** Transnational bodies get an honest "Global" region;
+  discovery filters CDN/analytics/boilerplate + social noise from candidate sources; opt-in
+  local-LLM language detection is surfaced as a third, clearly labelled "AI-derived ·
+  unreliable" provenance class that never overwrites an asserted language.
+- **Housekeeping.** The FRED OECD share-price index ids were corrected to 2-letter ISO
+  (the indices board was empty on most continents), Hungarian + Persian relative-day words
+  and robots-dead default calendar feeds were fixed, the roadmap was consolidated to one
+  board, and spent session briefs / release plans were archived.
+
 ## 0.1.0 — deeper sense-making (the 0.09 cycle, released 2026-07-02)
 
 The `0.09` cycle delivered its slate (the `0.08` cycle below shipped in full):
