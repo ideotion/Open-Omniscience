@@ -5031,3 +5031,26 @@ def test_guided_wizard_sources_by_theme_step():
     assert "on.length === 0 || on.length === all.length" in ap and "? [] :" in ap
     # the ONLY network path stays the finish step's consented go-online (unchanged)
     assert "toggleNetwork()" in app
+
+
+def test_usgs_minerals_supply_surface_is_supply_not_prices():
+    """S5.1: the USGS Mineral Commodity Summaries SUPPLY surface (rare-earths ruling B12).
+    'supply, never prices' is enforced by construction (a price/unit-value/currency-unit row
+    is refused in the parser), the agency + endpoint + a conservative Markets panel exist, and
+    the panel degrades LOUDLY when no data is stored yet (the operator-fetch empty state)."""
+    usgs = (_SRC / "stats" / "usgs.py").read_text(encoding="utf-8")
+    assert "def parse_mcs_csv(" in usgs and 'AGENCY = "us-usgs"' in usgs
+    assert "_SUPPLY_MEASURES" in usgs and "_CURRENCY_MARKERS" in usgs, "the price-refusal guards"
+    assert "import requests" not in usgs and "import httpx" not in usgs and "import socket" not in usgs, (
+        "the parser must be network-free"
+    )
+    agencies = (_SRC / "stats" / "agencies.py").read_text(encoding="utf-8")
+    assert '"us-usgs"' in agencies and "USGS" in agencies
+    store = (_SRC / "stats" / "store.py").read_text(encoding="utf-8")
+    assert "def minerals_supply_summary(" in store and '"available"' in store
+    api = (_SRC / "api" / "stats.py").read_text(encoding="utf-8")
+    assert '"/minerals-supply"' in api
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    ms = app[app.index("async function loadMineralsSupply(") : app.index("async function loadMineralsSupply(") + 1400]
+    assert "/api/stats/minerals-supply" in ms and "d.available" in ms and "d.reason" in ms
+    assert "supply data, not prices" in ms.lower()

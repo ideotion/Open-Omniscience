@@ -7318,7 +7318,43 @@
       finally { btn.disabled = false; }
     }
 
-    async function loadMarkets() { loadDashboard(); }
+    async function loadMarkets() { loadDashboard(); loadMineralsSupply(); }
+
+    // S5.1: the USGS Mineral Commodity Summaries SUPPLY surface — production / reserves /
+    // net-import-reliance for minerals (rare earths) that have NO free spot-price source.
+    // Supply data, NEVER prices (stated in the caveat). Reads /api/stats/minerals-supply;
+    // honest empty state (available:false → the operator-fetch reason) so an empty board
+    // reads as "not fetched yet", never "no supply". Counts only, no score.
+    async function loadMineralsSupply() {
+      const host = $("mkt-minerals-supply"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let d;
+      try { d = await api("/api/stats/minerals-supply"); }
+      catch { host.innerHTML = ""; return; }   // best-effort; never break the board
+      const head = `<h2 style="font-size:14px;margin:0 0 4px">${esc(t("Minerals supply"))} `
+        + `<span class="muted" style="font-weight:400">${esc(t("(USGS — supply data, not prices)"))}</span></h2>`
+        + `<div class="hint muted" style="margin-bottom:8px">${esc(d.caveat || "")}</div>`;
+      if (!d.available) {
+        host.innerHTML = head
+          + `<div class="muted">${esc(d.reason || t("No USGS supply figures stored yet."))}</div>`;
+        return;
+      }
+      const blocks = (d.commodities || []).map((c) => {
+        const measures = Object.keys(c.measures || {}).sort().map((m) => {
+          const rows = (c.measures[m] || []).slice(0, 12).map((r) =>
+            `<tr><td>${esc(r.ref_area)}</td>`
+            + `<td class="muted">${esc(r.time_period)}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${r.value === null || r.value === undefined ? "—" : (typeof fmtNum === "function" ? fmtNum(r.value) : r.value)}</td>`
+            + `<td class="muted">${esc(r.unit || "")}</td></tr>`).join("");
+          return `<div class="vsect" style="margin-top:6px">${esc(m.replace(/_/g, " "))}</div>`
+            + `<table class="data"><thead><tr><th>${esc(t("Area"))}</th><th>${esc(t("Year"))}</th>`
+            + `<th style="text-align:right">${esc(t("Value"))}</th><th>${esc(t("Unit"))}</th></tr></thead>`
+            + `<tbody>${rows}</tbody></table>`;
+        }).join("");
+        return `<div class="an-panel" style="margin-top:10px"><h3 style="font-size:13px;margin:0 0 2px">${esc(c.commodity.replace(/-/g, " "))}</h3>${measures}</div>`;
+      }).join("");
+      host.innerHTML = head + blocks;
+    }
 
     async function fetchPrices(symbol) {
       if (MKT_PRICES[symbol]) return MKT_PRICES[symbol];

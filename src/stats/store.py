@@ -155,6 +155,55 @@ def list_figures(
     }
 
 
+def minerals_supply_summary(session: Session, *, limit: int = 4000) -> dict:
+    """USGS Mineral Commodity Summaries SUPPLY figures grouped by commodity → measure.
+
+    The honest home for rare earths and other minerals that have NO free spot-price source
+    (the B12 ruling): SUPPLY data — mine production, reserves, net-import-reliance — never
+    market prices. Reads the ``us-usgs`` figures (latest vintage per observation) and groups
+    them for a board; a ``None`` value is a published gap, kept. Degrades LOUDLY when no
+    figures are stored yet (``available: false`` + a reason pointing at the operator fetch),
+    so an empty board never looks like "no supply" — it looks like "not fetched yet". No
+    score, producers never averaged.
+    """
+    data = list_figures(
+        session, agency="us-usgs", latest_vintage_only=True, limit=limit
+    )
+    commodities: dict[str, dict] = {}
+    for f in data["figures"]:
+        commodity, _, measure = str(f["series_id"]).partition(":")
+        c = commodities.setdefault(
+            commodity, {"commodity": commodity, "measures": {}}
+        )
+        c["measures"].setdefault(measure, []).append(
+            {
+                "ref_area": f["ref_area"],
+                "time_period": f["time_period"],
+                "value": f["value"],
+                "unit": f["unit"],
+            }
+        )
+    out = sorted(commodities.values(), key=lambda x: x["commodity"])
+    return {
+        "available": bool(out),
+        "commodities": out,
+        "method": (
+            "USGS Mineral Commodity Summaries — annual supply statistics, latest vintage "
+            "per observation, grouped by commodity and measure."
+        ),
+        "caveat": (
+            "SUPPLY data — production, reserves, net-import-reliance. NOT market prices: "
+            "no free rare-earth spot-price source exists and none is fabricated here. A "
+            "None value is a published gap. Producers are shown, never averaged."
+        ),
+        "reason": (
+            None
+            if out
+            else "No USGS supply figures stored yet — run the USGS MCS fetch (operator step)."
+        ),
+    }
+
+
 def vintages_for(
     session: Session, *, agency: str, series_id: str, ref_area: str, time_period: str
 ) -> dict:
