@@ -31,15 +31,22 @@ from __future__ import annotations
 
 import csv
 import io
+import re
+from typing import Any
 
-from src.stats.sdmx import StatFigure, _as_float, _as_str, _clean_opt
+from src.stats.sdmx import StatFigure, _as_str, _clean_opt
 
 # The stable agency code (matches the ``us-usgs`` entry in agencies.py).
 AGENCY = "us-usgs"
 
-# The SUPPLY measures MCS publishes that we accept, mapped to a canonical form. A row
-# with ANY OTHER measure — notably a price / "unit value" — is REFUSED (never emitted):
-# this parser produces supply figures ONLY. The allowlist IS the "never a price" guard.
+# The SUPPLY measures we accept, mapped to a canonical form. DELIBERATELY LIMITED to the
+# measures that are ALWAYS physical (tonnage) or a percent — production, reserves,
+# net-import-reliance — so "supply, never a price" holds BY CONSTRUCTION regardless of the
+# unit string. Trade/consumption measures (imports/exports/apparent-consumption) are
+# EXCLUDED on purpose: MCS can report them in MONETARY terms, so accepting them would let a
+# value-denominated (price-like) figure through. A row with any measure not in this map —
+# notably a price / "unit value" — is REFUSED (never emitted). Adding a trade measure later
+# is a deliberate decision with an explicit monetary-vs-physical guard (recorded, S5.1).
 _SUPPLY_MEASURES: dict[str, str] = {
     "production": "production",
     "mine_production": "mine_production",
@@ -48,18 +55,56 @@ _SUPPLY_MEASURES: dict[str, str] = {
     "net_import_reliance": "net_import_reliance",
     "net import reliance": "net_import_reliance",
     "nir": "net_import_reliance",
-    "imports": "imports",
-    "exports": "exports",
-    "consumption": "consumption",
-    "apparent_consumption": "consumption",
-    "apparent consumption": "consumption",
 }
 
-# Belt-and-braces (the allowlist above already excludes price MEASURES): a supply-measure
-# row that carries a CURRENCY unit is a price-contaminated row and is refused too. Only
-# unambiguous currency names/symbols — a physical unit ("metric tons REO", "percent",
-# "thousand metric tons") never contains these.
-_CURRENCY_MARKERS: tuple[str, ...] = ("$", "usd", "eur", "gbp", "dollar", "euro")
+# A PRICE / currency detector for the unit AND value cells. Belt-and-braces beside the
+# measure allowlist. Currency SYMBOLS ($ € £ ¥ ₹) match anywhere; currency CODES + price
+# WORDS match on a WORD BOUNDARY so a physical unit that merely CONTAINS a currency
+# substring is NOT refused — critically "europium" contains "euro"/"eur", and Europium is a
+# real REE whose supply unit is tonnes of europium(-oxide): ``\beuro\b`` does not match it.
+_CURRENCY_SYMBOLS: tuple[str, ...] = ("$", "€", "£", "¥", "₹")
+_CURRENCY_WORDS = re.compile(
+    r"\b(usd|eur|gbp|jpy|cny|inr|chf|cad|aud|rub|krw|dollars?|euros?|cents?|price|prices|"
+    r"pence|penny)\b"
+)
+# Value cells that are a published GAP (kept as None), incl. the USGS withheld/NA symbols.
+_NULLISH_VALUES: frozenset[str] = frozenset(
+    {"", "na", "n/a", "nan", "null", ":", "—", "–", "-", "nd", "w", "(w)", "xx"}
+)
+
+
+def _is_price_text(text: str) -> bool:
+    """True if ``text`` reads like a price/currency (a symbol anywhere, or a currency
+    code / price word on a word boundary). Word-boundary matching is what keeps a physical
+    unit like "metric tons Europium oxide" from being mistaken for a price."""
+    if any(sym in text for sym in _CURRENCY_SYMBOLS):
+        return True
+    return bool(_CURRENCY_WORDS.search(text.lower()))
+
+
+def _supply_value(raw: Any) -> tuple[float | None, bool]:
+    """Parse a supply value cell → ``(value, refuse)``.
+
+    Handles US-convention grouped thousands ("350,000" / "44,000,000" / "1 200") so a real
+    published figure is NEVER silently turned into a gap (the #5 skeptic fix). A blank / NA /
+    USGS-withheld cell → ``(None, False)`` (an honest published gap). A PRICE-shaped value
+    (a currency symbol/code in the cell) → ``(None, True)`` = REFUSE the whole row (a
+    price-contaminated row is dropped, never emitted even as a gap). An otherwise
+    unparseable cell → ``(None, False)`` (a gap, never fabricated)."""
+    if raw is None:
+        return (None, False)
+    s = str(raw).strip()
+    if s == "" or s.lower() in _NULLISH_VALUES:
+        return (None, False)
+    if _is_price_text(s):
+        return (None, True)  # a currency in the value cell → refuse the row (never a price)
+    cleaned = s.replace(",", "")  # US thousands grouping
+    cleaned = re.sub(r"(?<=\d)\s+(?=\d)", "", cleaned)  # space grouping between digits
+    try:
+        return (float(cleaned), False)
+    except ValueError:
+        return (None, False)  # unparseable → a gap, never a fabricated number
+
 
 MCS_METHODOLOGY_REF = (
     "USGS Mineral Commodity Summaries — annual supply statistics (mine production / "
@@ -97,6 +142,12 @@ def parse_mcs_csv(
     except StopIteration:
         return []
     header = [h.lstrip("\ufeff").strip().lower() for h in header]
+    # A duplicate column we READ would silently resolve last-wins (e.g. a price 'value'
+    # column shadowing a physical one) — raise LOUDLY instead of reading the wrong one.
+    _read_cols = set(_REQUIRED_COLS) | {"unit", "area_code", "commodity"}
+    dup = sorted(c for c in _read_cols if header.count(c) > 1)
+    if dup:
+        raise ValueError(f"USGS MCS CSV has duplicate column(s): {dup}")
     idx = {name: i for i, name in enumerate(header)}
     missing = [c for c in _REQUIRED_COLS if c not in idx]
     if missing:
@@ -121,8 +172,11 @@ def parse_mcs_csv(
         unit = (
             _clean_opt(row[i_unit]) if i_unit is not None and i_unit < len(row) else None
         )
-        if unit and any(m in unit.lower() for m in _CURRENCY_MARKERS):
+        if unit and _is_price_text(unit):
             continue  # a currency/price unit on a supply row — refuse (never a price)
+        value, refuse = _supply_value(row[i_value])
+        if refuse:
+            continue  # a price-shaped value cell — refuse the row (never a price)
         code = _as_str(row[i_code]) if i_code is not None and i_code < len(row) else ""
         out.append(
             StatFigure(
@@ -130,7 +184,7 @@ def parse_mcs_csv(
                 series_id=f"{cid}:{measure}",
                 ref_area=code or area,
                 time_period=year,
-                value=_as_float(row[i_value]),
+                value=value,
                 unit=unit,
                 methodology_ref=MCS_METHODOLOGY_REF,
                 adjustment=None,

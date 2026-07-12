@@ -16,24 +16,29 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Base
 from src.stats import store
-from src.stats.usgs import AGENCY, parse_mcs_csv
+from src.stats.usgs import AGENCY, _is_price_text, parse_mcs_csv
 
 # --- HAND-BUILT FIXTURE (mirrors the USGS MCS salient-statistics long CSV) ----------- #
-# NOT real data. Includes: three supply measures, a published GAP (blank value), a
-# PRICE row + a unit-value row + a currency-unit supply row (all must be REFUSED), and a
-# malformed row (no area/year, must be skipped).
-_FIXTURE = """commodity,commodity_id,area,area_code,year,measure,value,unit
-Rare earths,rare-earths,World,WLD,2023,production,350000,metric tons REO
+# NOT real data. Exercises: three supply measures, a published GAP (blank value), GROUPED
+# THOUSANDS ("350,000" quoted — must PARSE, not fabricate a gap), a Europium supply row
+# whose unit contains "euro" as a substring (must SURVIVE — the word-boundary guard), a
+# PRICE measure + a unit-value measure + a currency-unit supply row + a €-symbol unit + a
+# currency-in-the-VALUE-cell row (all must be REFUSED), and a malformed row (no area/year).
+_FIXTURE = '''commodity,commodity_id,area,area_code,year,measure,value,unit
+Rare earths,rare-earths,World,WLD,2023,production,"350,000",metric tons REO
 Rare earths,rare-earths,China,CN,2023,production,240000,metric tons REO
 Rare earths,rare-earths,United States,US,2023,production,43000,metric tons REO
-Rare earths,rare-earths,World,WLD,2023,reserves,110000000,metric tons REO
+Rare earths,rare-earths,World,WLD,2023,reserves,"110,000,000",metric tons REO
 Rare earths,rare-earths,United States,US,2023,net_import_reliance,,percent
+Europium,europium,China,CN,2023,production,340,metric tons Europium oxide
 Rare earths,rare-earths,United States,US,2023,price,180,USD per kg
 Rare earths,rare-earths,World,WLD,2023,unit value,95,dollars/kg
 Lithium,lithium,World,WLD,2023,production,180000,metric tons Li content
 Lithium,lithium,World,WLD,2023,production,999,USD/ton
+Nickel,nickel,World,WLD,2023,production,3600000,€/t
+Cobalt,cobalt,World,WLD,2023,production,180 USD,metric tons
 Rare earths,rare-earths,,,2023,production,1,metric tons REO
-"""
+'''
 
 
 @pytest.fixture()
@@ -104,11 +109,49 @@ def test_a_supply_row_with_a_currency_unit_is_refused():
     assert all("usd" not in (f.unit or "").lower() and "$" not in (f.unit or "") for f in figs)
 
 
-def test_no_figure_carries_a_currency_unit_at_all():
+def test_no_figure_carries_a_price_unit_at_all():
+    # the REAL guard (_is_price_text, word-boundary) — NOT a naive substring, so a legit
+    # "metric tons Europium oxide" unit (contains "euro") is correctly not a price.
     figs = _figs()
     for f in figs:
-        u = (f.unit or "").lower()
-        assert not any(m in u for m in ("$", "usd", "eur", "dollar", "euro"))
+        assert not _is_price_text(f.unit or ""), f"a price unit leaked: {f.unit!r}"
+
+
+def test_grouped_thousands_parse_never_a_fabricated_gap():
+    # "350,000" and "110,000,000" (quoted thousands) are REAL figures, not gaps (#5 skeptic).
+    figs = _figs()
+    prod_world = next(
+        f for f in figs if f.series_id == "rare-earths:production" and f.ref_area == "WLD"
+    )
+    assert prod_world.value == 350000.0
+    reserves = next(f for f in figs if f.series_id == "rare-earths:reserves")
+    assert reserves.value == 110000000.0
+
+
+def test_europium_supply_survives_the_currency_substring_guard():
+    # "euro"/"eur" are substrings of "Europium" — the word-boundary guard must NOT drop it.
+    figs = _figs()
+    eu = [f for f in figs if f.series_id == "europium:production"]
+    assert len(eu) == 1 and eu[0].value == 340.0
+    assert "europium" in (eu[0].unit or "").lower()
+
+
+def test_euro_symbol_and_currency_value_rows_are_refused():
+    # nickel unit "€/t" (symbol) and cobalt value "180 USD" (currency IN the value cell) —
+    # both refused, never emitted even as a gap (#1/#2/#7 skeptic).
+    figs = _figs()
+    assert not [f for f in figs if f.series_id == "nickel:production"]
+    assert not [f for f in figs if f.series_id == "cobalt:production"]
+
+
+def test_duplicate_read_column_raises_loudly():
+    # two 'value' columns would silently last-wins (a price col shadowing a physical one).
+    dupe = (
+        "commodity_id,area,year,measure,value,unit,value\n"
+        "rare-earths,World,2023,production,350000,metric tons,999\n"
+    )
+    with pytest.raises(ValueError):
+        parse_mcs_csv(dupe, extracted_at="t")
 
 
 def test_malformed_row_without_area_or_year_is_skipped():

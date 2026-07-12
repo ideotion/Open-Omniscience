@@ -5040,7 +5040,7 @@ def test_usgs_minerals_supply_surface_is_supply_not_prices():
     the panel degrades LOUDLY when no data is stored yet (the operator-fetch empty state)."""
     usgs = (_SRC / "stats" / "usgs.py").read_text(encoding="utf-8")
     assert "def parse_mcs_csv(" in usgs and 'AGENCY = "us-usgs"' in usgs
-    assert "_SUPPLY_MEASURES" in usgs and "_CURRENCY_MARKERS" in usgs, "the price-refusal guards"
+    assert "_SUPPLY_MEASURES" in usgs and "_is_price_text" in usgs, "the price-refusal guards"
     assert "import requests" not in usgs and "import httpx" not in usgs and "import socket" not in usgs, (
         "the parser must be network-free"
     )
