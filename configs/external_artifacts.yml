@@ -203,6 +203,40 @@ artifacts:
       - "the on-disk store format is version-bound; on mismatch the disposable store is rebuilt"
     last_verified: "2026-06-19"
 
+  - id: duckdb-httpfs-extension
+    title: DuckDB httpfs extension binaries (persisted-store crypto backend, D1)
+    kind: vendored-binary
+    description: >
+      Per-OS/arch static-OpenSSL ``httpfs`` extension binaries that let the columnar store's
+      PERSISTED encrypted DuckDB file open OFFLINE (D1). Bundled under
+      src/analytics/duckdb_ext/ and LOADed BY ABSOLUTE PATH after a SHA-256 verify
+      (src/analytics/columnar.py:_verified_httpfs_path); DuckDB's own network autoload is
+      disabled. Ships EMPTY: the binaries + their real sha256 are the maintainer's networked
+      build (docs/maintenance/EXTERNAL_DEPENDENCIES.md). Until they land,
+      secure_crypto_available() stays False and the engine runs in-memory (never a plaintext
+      file, never a fabricated checksum).
+    upstream: https://github.com/duckdb/duckdb (httpfs built with statically-linked OpenSSL via vcpkg)
+    check_upstream: "rebuild per platform on any duckdb minor bump (the version couples)"
+    license: MIT (DuckDB)
+    pin: {floor: "1.4", verified: "1.5.4"}   # tracks the installed duckdb minor, like duckdb-crypto-extension
+    binaries:                                # per-platform pins; version+sha256 BLANK until the networked build (NEVER fabricated)
+      linux_amd64:   {version: "", sha256: "", file: ""}
+      linux_arm64:   {version: "", sha256: "", file: ""}
+      osx_amd64:     {version: "", sha256: "", file: ""}
+      osx_arm64:     {version: "", sha256: "", file: ""}
+      windows_amd64: {version: "", sha256: "", file: ""}
+    refresh: >
+      On a DuckDB bump or first bundling: build httpfs with statically-linked OpenSSL for
+      EACH platform at the pinned duckdb version, record each binary's real sha256, place it
+      in src/analytics/duckdb_ext/, fill {version, sha256, file} here, then re-run the
+      encryption gate per platform (the CI httpfs lane). See EXTERNAL_DEPENDENCIES.md.
+    freshness: {policy: track-duckdb-version}
+    couplings:
+      - "each bundled binaries[*].version minor MUST equal the installed duckdb minor (loader + test-enforced)"
+      - "an EMPTY pin keeps columnar.secure_crypto_available() False (test-enforced)"
+      - "the sha256 pins are NEVER computed/promoted in CI — only the operator's audited build fills them"
+    last_verified: "2026-07-12"
+
   # --- CI / supply-chain pins (Dependabot territory; recorded so they are not forgotten) --
   - id: ci-action-and-tool-pins
     title: CI action SHAs + pinned QA tools
