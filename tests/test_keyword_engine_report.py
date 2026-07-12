@@ -13,7 +13,12 @@ from datetime import date
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.analytics.engine_report import _is_acronym, _lang_status, keyword_engine_report
+from src.analytics.engine_report import (
+    _is_acronym,
+    _lang_status,
+    keyword_engine_report,
+    lemma_preview_report,
+)
 from src.database.models import Article, Base, Keyword, KeywordMention, KeywordTag, Source
 
 
@@ -144,6 +149,34 @@ def test_lemma_preview_surfaces_candidate_conflations():
     assert lp["available"] is True and "enabled" in lp
     member_sets = {tuple(g["members"]) for g in lp["examples"]}  # members are sorted
     assert ("studied", "study") in member_sets  # the verb form a plural rule would miss
+
+
+def test_focused_lemma_preview_report_matches_the_full_report(monkeypatch):
+    """S5.4: the FOCUSED lemma_preview_report (surfaced standalone in the Diagnostics panel)
+    returns the same candidate conflations as the full report's lemma_preview block, WITHOUT
+    running the heavy report. Counts only, no score; honest available:false without simplemma."""
+    from src.analytics.families import _simplemma
+
+    s = _sess()
+    s.add(Source(name="Src", domain="s.test"))
+    s.flush()
+    a = Article(
+        url="https://s.test/3", canonical_url="https://s.test/3", source_id=1,
+        title="t", content="A study. They studied.", hash="h3",
+    )
+    s.add(a)
+    s.flush()
+    for k in (_kw(s, "study", "study"), _kw(s, "studied", "studied")):
+        s.add(KeywordMention(keyword_id=k.id, article_id=a.id, count=3, observed_on=date.today()))
+    s.commit()
+
+    lp = lemma_preview_report(s, top_n=50)
+    assert "score" not in lp
+    if _simplemma is None:
+        assert lp["available"] is False
+        return
+    assert lp["available"] is True
+    assert ("studied", "study") in {tuple(g["members"]) for g in lp["examples"]}
     # the denylist holds: media/medium never appear as a would-merge candidate
     assert all("media" not in g["members"] and "medium" not in g["members"] for g in lp["examples"])
 

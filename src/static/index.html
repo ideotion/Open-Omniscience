@@ -1711,6 +1711,14 @@
       </div>
       <div id="gold-builder-cov" class="hint muted"></div>
       <div id="gold-builder-body"></div>
+      <!-- S5.4: lemma-conflation PREVIEW — visible review instrument next to the gold-set
+           builder (both feed the OO_FAMILY_LEMMA decision). Shows what lemmatization WOULD
+           merge among the top keywords + would-merge counts; a wrong merge is a note for the
+           _MISLEMMA_DENYLIST. The default STAYS off — this reviews, it does not flip. -->
+      <div class="row" style="margin-top:8px">
+        <button class="secondary" onclick="loadLemmaPreview(this)" title="Preview what OPT-IN lemmatization (OO_FAMILY_LEMMA, default OFF) WOULD merge among your top keywords (study/studied -> study). Review the candidate groups for precision BEFORE enabling it; a wrong merge is a _MISLEMMA_DENYLIST note. Read-only, no score.">Preview lemmatization merges</button>
+      </div>
+      <div id="lemma-preview-body"></div>
       <div class="row" style="margin-top:6px">
         <input id="ir-eval-path" type="text" style="min-width:280px" placeholder="gold-set file path (see configs/ir_eval/gold_set.example.json)">
         <input id="ir-eval-wa" type="text" style="width:120px" placeholder="weights A e.g. 4,1">

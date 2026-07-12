@@ -1081,6 +1081,21 @@ def gold_builder_save(body: _GoldBuilderSaveBody) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/lemma-preview")
+def lemma_preview(
+    top_n: int = Query(500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """S5.4: what OPT-IN lemmatization (OO_FAMILY_LEMMA, default OFF) WOULD merge among the
+    top keywords — the precision-review instrument surfaced in the Diagnostics panel so the
+    maintainer eyeballs the candidate conflations (and notes a wrong one for the
+    _MISLEMMA_DENYLIST) BEFORE flipping the default. Read-only, no score; honest
+    'unavailable' when the optional simplemma is absent."""
+    from src.analytics.engine_report import lemma_preview_report
+
+    return lemma_preview_report(db, top_n=top_n)
+
+
 @router.get("/home-cards")
 def home_card_diagnostics(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """Home-card (Lead) CLICK diagnostics (field report 2026-06-22): for every card the

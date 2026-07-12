@@ -5098,3 +5098,19 @@ def test_ir_gold_set_builder_writes_validated_gold_and_closes_the_loop():
     assert "/api/diagnostics/gold-builder/sample" in app and "/api/diagnostics/gold-builder/save" in app
     assert "function goldBuilderKey(" in app and 'ev.key === "0"' in app, "keyboard-speed grading"
     assert "_gbUpdateCoverage(" in app, "the coverage meter"
+
+
+def test_lemma_preview_is_surfaced_in_the_diagnostics_panel():
+    """S5.4: the lemma-conflation preview (what OO_FAMILY_LEMMA would merge) is now VISIBLE in
+    the Diagnostics panel next to the gold-set builder — it was only reachable by downloading
+    the engine-report JSON. A focused endpoint + a render showing candidate groups + would-merge
+    counts + the _MISLEMMA_DENYLIST affordance. The default STAYS off (reviews, never flips)."""
+    er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
+    assert "def lemma_preview_report(" in er, "the focused (no full-report) preview function"
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '"/lemma-preview"' in diag
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    lp = app[app.index("async function loadLemmaPreview(") : app.index("async function loadLemmaPreview(") + 1600]
+    assert "/api/diagnostics/lemma-preview" in lp and "_MISLEMMA_DENYLIST" in lp
+    assert "candidate_groups" in lp and "keywords_that_would_merge" in lp
+    assert 'id="lemma-preview-body"' in (_SRC / "static" / "index.html").read_text(encoding="utf-8")

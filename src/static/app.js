@@ -9852,6 +9852,38 @@
       window.open("/api/diagnostics/ir-eval?" + p.toString(), "_blank");
     }
 
+    // S5.4: surface the lemma-conflation PREVIEW visibly in the Diagnostics panel (it was
+    // only reachable by downloading the engine-report JSON). Shows what OO_FAMILY_LEMMA
+    // (default OFF) would merge among the top keywords + the would-merge counts, with the
+    // _MISLEMMA_DENYLIST affordance. Reviews the decision, never flips it. Un-keyed English
+    // (matches the diagnostics panel); browser-unverified per fork-3.
+    async function loadLemmaPreview(btn) {
+      const host = $("lemma-preview-body"); if (!host) return;
+      if (btn) btn.disabled = true;
+      host.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const d = await api("/api/diagnostics/lemma-preview");
+        if (!d.available) {
+          host.innerHTML = `<div class="hint muted">${esc(d.method || "Lemmatization preview unavailable (simplemma not installed).")}</div>`;
+        } else {
+          const rows = (d.examples || []).map((c) =>
+            `<tr><td><b>${esc(c.lemma)}</b> <span class="muted">${esc(c.language || "?")}</span></td>`
+            + `<td>${(c.members || []).map(esc).join(", ")}</td>`
+            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${c.n}</td></tr>`).join("");
+          const state = d.enabled ? "ON" : "OFF (default)";
+          host.innerHTML =
+            `<div class="hint muted" style="margin-top:4px">OO_FAMILY_LEMMA is currently <b>${esc(state)}</b>. `
+            + `Scanned top ${d.scanned_top_n} keywords → <b>${d.candidate_groups}</b> candidate merge groups, `
+            + `<b>${d.keywords_that_would_merge}</b> keywords would merge. Review for precision before enabling; `
+            + `a WRONG merge is a note for the _MISLEMMA_DENYLIST. ${esc(d.method || "")}</div>`
+            + (rows
+              ? `<table class="data" style="margin-top:6px"><thead><tr><th>Lemma</th><th>Would merge</th><th style="text-align:right">n</th></tr></thead><tbody>${rows}</tbody></table>`
+              : `<div class="muted" style="margin-top:6px">No candidate merges among the top keywords.</div>`);
+        }
+      } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+      if (btn) btn.disabled = false;
+    }
+
     // S5.3: the IR gold-set BUILDER. Samples real corpus queries (top keywords; search
     // history is not stored, so nothing is invented), lets the maintainer grade each live
     // result 0/1/2 with keyboard speed, and writes the EXACT ir_eval gold-set file the run
