@@ -5402,6 +5402,36 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   trial. Fork-3 amendment queued for the first VM session: verified surfaces graduate to
   "Gecko-verified (VM) · awaiting human UX pass". Everything gated on S1–S6 completing + the
   staleness guard.
+- **OPTIMIZATION-PROGRAM EXECUTION — CYCLE 1 (2026-07-13, the two maintainer-flagged topics first;
+  stacked draft PRs onto 0.2, staleness-verified against origin/0.2 @13223498):** the first execution
+  cycle of the 2026-07-12 optimization program (the Fable-5 planning designs-of-record above), run
+  under full autonomy / draft-PR-only (nothing auto-merges — the PR review is the gate). Delivered:
+  (i) **PR #643 the per-phase ACTION PLAN** (`docs/design/OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13.md`
+  — every phase §1–§8 tagged BUILDABLE-NOW / OPERATOR-GATED / BROWSER-GATED / DESIGN-ONLY /
+  VERIFIED-PRESENT + a shared-foundations REUSE MAP [minhash_signature(set[int]) for §2/§3 · the
+  head-by-article-spread SELECT for §6/§8 · `_forensic_timer`/`_append_jsonl` for §4/§8 ·
+  `_all_diagnostics_members` for §6] + a revised §9 sequencing; a read-only scout+critic agent fan-out
+  found ZERO staleness errors). (ii) **PR #644 §8 LLM keyword triage** — the measure-first core
+  (`src/ai_layer/triage.py`): EXPORT-ONLY JSONL that NEVER writes the trusted index, an EXACT-first
+  echo-back parser (a mangled/hallucinated term rejected never guessed), canaries, the Ollama
+  timing-passthrough JSONL schema + VALID-verdicts/sec ETA, head-scope selection
+  (`Keyword.article_count` DESC, counter-only), the bench (`verify_roster` REFUSES an uninstalled tag,
+  metrics each ALONE no composite), `run_triage_selftest` → `/api/diagnostics/keyword-triage-selftest`;
+  42 tests; an adversarial skeptic fan-out found+fixed a normalized-collision echo-back misattribution
+  (a real keyword proposed for deletion), an export append-anywhere hazard, and metric/self-test gaps,
+  each regression-pinned. (iii) **PR #645 §6 recursive improvement** — the recursive-loop diagnostics
+  SELF-INVENTORY (`src/monitoring/recursive_loop.py` + `/api/diagnostics/recursive-loop`: imports+runs
+  the loop's mechanism-proof gates, reports importable/passed/error) + article-length/keyword-growth
+  wired into the all-diagnostics bundle + a membership CONTRACT test; the AppVM RUNBOOK
+  (`docs/design/RECURSIVE_IMPROVEMENT_RUNBOOK_2026-07-13.md`: the four binding safety lines + the
+  "Gecko-verified (VM)" convention amendment). (iv) this closeout (the 3 shipped.csv rows + this note).
+  **OPERATOR-GATED remainder (honest board):** the real §8 triage batch + the 7-model bench + the
+  ~50-keyword anchor grading (needs the Ollama rig — this box had Ollama installed but server-down /
+  0 models / no GPU, exactly §8.3's prediction); §6 `ui_walk` + the AppVM runner (headless browser +
+  the VM). **NEXT per the plan's §9:** §4 search-timing instrument + §7 power-profile knob table
+  (both BUILDABLE-NOW), then the §1 Conjunction-Lens set-algebra core + §2 Leads 2.0
+  ordering/floor/clustering cores; §3 fingerprints AFTER §8's triage cleans the junk; §5 Tor ladder +
+  segmented-download cores. Each its own session-sized brief.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
