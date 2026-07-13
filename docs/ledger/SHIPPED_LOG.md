@@ -3357,3 +3357,54 @@ first: `int(2.9)==2` / `int(True)==1` land a fat-fingered grade as clean-valid, 
 `except: continue` drops a human's judgement. Validate strictly at the build layer (reject
 float/bool/non-numeric loudly), detect a `str()`-key duplicate collision, and clean the `.tmp` on an
 `os.replace` failure.
+
+## 2026-07-13 — Columnar D1: canonical-basename httpfs LOAD (fixes the columnar CI-red root cause)
+
+Branch `claude/columnar-duckdb-extension-init-j8rx67`, draft PR onto 0.2. `src/analytics/columnar.py`
++ `src/analytics/duckdb_ext/README.md` + `tests/test_columnar_httpfs_loader.py`.
+
+ROOT CAUSE. The "Columnar store" CI lane's real-httpfs round-trip
+(`test_ci_encrypted_persisted_round_trip`) was RED. DuckDB derives an extension's C init symbol
+`<name>_init` from the LOADed file's BASENAME **split on the first dot** (`FileSystem::ExtractBaseName`
+= basename split on `.`, take `[0]`). The D1 loader LOADed the bundled binary under its descriptive,
+SHA-pinned name `httpfs-<plat>-v1.5.4.duckdb_extension`, so DuckDB derived `httpfs-<plat>-v1` and looked
+for a nonexistent `httpfs-<plat>-v1_init` symbol → the LOAD failed → `secure_crypto_available()` returned
+False → the persisted-ENCRYPTED store silently degraded to in-memory → the round-trip assertion
+`secure_crypto_available() is True` failed.
+
+FIX. `_persisted_connection()` now LOADs the already-SHA-verified bytes through a per-process temp COPY
+whose basename is the canonical `httpfs.duckdb_extension` (`_canonical_httpfs_path`), so DuckDB derives
+`httpfs` → `httpfs_init`. The bundled binary keeps its descriptive version-dotted name on disk (for
+auditability); the SHA-256 pin + DuckDB version coupling + traversal guard are UNCHANGED and still run on
+the REAL bundled file (`_verified_httpfs`, refactored to return `(path, sha256)`) BEFORE the copy.
+
+SKEPTIC-HARDENED (adversarial negative-space pass — one MED finding, fixed). A first cut cached the copy
+keyed on the source PATH and verified only the SOURCE on each call, so the "verify-before-LOAD on every
+call / stale copy never served" claim was FALSE for the actually-LOADed artifact in two cases: (1a) an
+in-place tamper/corruption of the private temp copy, and (1b) a re-pin to different verified bytes at the
+SAME source path within one process. Resolution: key the cache on the verified DIGEST (1b invalidates
+because the sha differs) AND re-hash the cached COPY against that digest before every reuse (1a is caught
+→ re-copy from the just-verified source). Verify-before-LOAD now covers the loaded artifact on every call,
+not just the source proxy. Thread-locked; the temp dir is removed on invalidation and at interpreter exit
+(a single `atexit`); blank pins remain a pure no-op (zero temp copies ever in the shipped default).
+
+HONESTY / SCOPE (no over-claim). The real-httpfs round-trip is CI-ONLY: `extensions.duckdb.org` is not in
+the sandbox egress allowlist (curl 403), so the fix could not be run here against a real binary — the
+"Columnar store" CI lane (which installs httpfs over the network + checksums it in-lane) is the
+confirmation, and the fix is correct-by-construction against DuckDB's documented `ExtractBaseName`
+(replicated in the regression test). The fix removes ONLY the symbol-mangling blocker: production D1/D2/D3
+persisted-store is still gated on the operator bundling + pinning the per-OS binaries (the registry pins
+ship BLANK); `secure_crypto_available()` stays False by default and returns True only once a verified
+binary is present (which the CI lane proves the round-trip then works).
+
+LESSON (also copied into the CLAUDE.md Session-rituals Lessons): DuckDB derives an extension's init symbol
+from the LOADed file basename split on the first dot — LOAD a version-dotted extension under a canonical
+`<name>.duckdb_extension` basename. And a cache that re-verifies the SOURCE but hands `LOAD` an
+un-re-checked cached COPY makes "verify-before-LOAD every call" false for the loaded artifact — key on the
+verified digest and re-hash the copy.
+
+Tests: `tests/test_columnar_httpfs_loader.py` +3 (canonical-basename LOAD derives `httpfs` while the
+dotted name mangles + `_persisted_connection` LOADs the canonical path not the dotted one; unbundled →
+no copy; tampered-copy + re-pin → re-copy the verified bytes). ruff F/B + mypy clean on the changed file;
+23 loader/engine tests pass locally (2 CI-only round-trip skips). README `duckdb_ext/` gained a
+"Canonical-basename LOAD" section.

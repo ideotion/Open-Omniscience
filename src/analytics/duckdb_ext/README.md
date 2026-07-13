@@ -20,11 +20,23 @@ runs **in-memory** (never a plaintext file on disk, never a fabricated checksum)
 3. refuses unless the pinned `version` **minor equals the installed DuckDB minor** (an httpfs
    built for 1.4.x must never load into 1.5.x);
 4. reads the bundled file and refuses unless its SHA-256 **equals the pinned `sha256`**;
-5. only then does `columnar.py` `LOAD '<absolute path>'` — autoload/autoinstall **OFF**,
+5. only then does `columnar.py` `LOAD` the verified bytes — autoload/autoinstall **OFF**,
    `allow_unsigned_extensions` set in the **connect config** (a startup-only setting).
 
 Any missing pin / missing file / SHA-256 mismatch / wrong version ⇒ **stay in-memory**.
 DuckDB's own network autoload is disabled, so a missing binary can never be silently fetched.
+
+### Canonical-basename `LOAD` (why the descriptive filename is safe)
+
+DuckDB derives an extension's C init symbol `<name>_init` from the LOADed file's **basename up
+to the first dot** (`FileSystem::ExtractBaseName` = basename split on `.`, take `[0]`). LOADing
+`httpfs-<platform>-v1.5.4.duckdb_extension` directly would make DuckDB derive
+`httpfs-<platform>-v1` and look for a nonexistent `httpfs-<platform>-v1_init` symbol → the LOAD
+fails and the persisted store silently degrades to in-memory. So `columnar.py:_canonical_httpfs_path()`
+copies the already-SHA-verified bytes into a private per-process temp dir under the **canonical**
+basename `httpfs.duckdb_extension` and LOADs **that**, so DuckDB derives `httpfs` → `httpfs_init`.
+The descriptive, version-dotted on-disk name (below) is kept for auditability; the SHA pin /
+version coupling / traversal guard all run on the real bundled file **before** the copy.
 
 ## To bundle the binaries (maintainer, networked machine)
 

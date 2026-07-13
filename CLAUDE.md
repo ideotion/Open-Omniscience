@@ -762,6 +762,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     setting (post-connect `SET` raises); `enable_external_access=False` blocks a file ATTACH
     (Permission Error), so the persisted path omits it (network safety = autoload-off + absolute-path
     LOAD + the airplane guard).
+  - **DuckDB derives an extension's INIT SYMBOL from the LOADed file BASENAME split on the FIRST DOT
+    (2026-07-13, columnar CI-red fix):** `LOAD '<path>'` computes the C init symbol `<name>_init` where
+    `<name>` = `FileSystem::ExtractBaseName(path)` = the basename split on `.` taking `[0]`. So the
+    version-dotted bundled name `httpfs-<plat>-v1.5.4.duckdb_extension` derives the BOGUS
+    `httpfs-<plat>-v1` -> DuckDB looks for a nonexistent `httpfs-<plat>-v1_init` -> the LOAD fails and
+    the persisted-ENCRYPTED store SILENTLY degrades to in-memory (was the "Columnar store" CI lane's red
+    on the real-httpfs round-trip `test_ci_encrypted_persisted_round_trip`). FIX = LOAD the already-SHA-
+    verified bytes through a per-process temp COPY whose basename is the canonical `httpfs.duckdb_extension`
+    (`_canonical_httpfs_path`), so DuckDB derives `httpfs` -> `httpfs_init`. Keep the SHA pin + version
+    coupling + traversal guard ON THE REAL FILE (`_verified_httpfs`) BEFORE the copy. SKEPTIC LESSON: a
+    cache that verifies the SOURCE each call but hands `LOAD` an un-re-checked cached COPY makes the
+    "verify-before-LOAD every call" claim FALSE for the loaded artifact — so key the cache on the verified
+    DIGEST (a re-pin to different bytes at the same path invalidates) AND re-hash the COPY against that
+    digest before reuse (an in-place tamper is caught, the stale copy never served). Real round-trip is
+    CI-ONLY (`extensions.duckdb.org` is egress-blocked in the sandbox), so the "Columnar store" lane is the
+    confirmation; the fix removes only the symbol-mangling blocker — D1/D2/D3 persisted-store still need the
+    operator to bundle + pin the per-OS binaries (the registry pins ship blank).
   - **A VALUE-BEARING STRING IS ONLY TRANSLATABLE IF ITS KEY IS A FIXED TEMPLATE (2026-07-12, S4.5):**
     a flat `t()` lookup can never translate "3 of 10 articles" — the numbers vary, so it never matches
     a static key. The fix is a COMPOSITE lookup (`OOI18N.tf(template, vars)`): the KEY is a fixed
