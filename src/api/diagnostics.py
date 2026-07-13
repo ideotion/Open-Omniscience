@@ -1192,6 +1192,41 @@ def keyword_engine(download: bool = Query(False), db: Session = Depends(get_db))
     return JSONResponse(report, headers=headers)
 
 
+@router.get("/power-profile")
+def power_profile(
+    profile: str = Query("optimized"), download: bool = Query(False)
+) -> JSONResponse:
+    """§7: the published power-profile knob table + the effective values for ``profile`` (Low /
+    Optimized / Max). Read-only, no score. A profile changes RESOURCE SPEND only — never data
+    visibility or a caveat; Optimized IS the current default (selecting it changes nothing), and
+    Low/Max are PROVISIONAL until measured on the GAMMA harness. Degrades loudly on a bad profile
+    name. ``download=1`` returns a dated attachment. (The active-profile CHIP + suggest-a-lower-
+    level proposal are browser-gated; this endpoint is the inspectable table.)"""
+    from src.config.power_profiles import power_profile_report
+
+    report = power_profile_report(active_profile=profile)
+    headers = {}
+    if download:
+        fname = f"oo-power-profile-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
+@router.get("/power-profile-selftest")
+def power_profile_selftest(download: bool = Query(False)) -> JSONResponse:
+    """§7: prove the power-profile mechanism — Optimized is byte-identical to the current defaults,
+    an explicit override wins, an unknown profile fails loud, no score leaks. Deterministic, no
+    env/DB/network. ``download=1`` returns a dated attachment."""
+    from src.config.power_profiles import run_power_profile_selftest
+
+    log = run_power_profile_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-power-profile-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/article-length")
 def article_length(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """Article-length + cited-source DISTRIBUTIONS, per content type and language

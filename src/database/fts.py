@@ -380,8 +380,13 @@ def optimize_after_bulk(session: Session) -> dict:
         session.rollback()
         _LOG.warning("FTS5 optimize failed", exc_info=True)
     try:
+        from src.config.power_profiles import fts_analysis_limit
+
+        _analysis_limit = fts_analysis_limit()  # §7 knob: OO_FTS_ANALYSIS_LIMIT, clamped int.
         with write_lock():
-            session.execute(text("PRAGMA analysis_limit=1000"))
+            # nosec B608 - _analysis_limit is a clamped int from power_profiles, never user input;
+            # PRAGMA does not accept a bound parameter.
+            session.execute(text(f"PRAGMA analysis_limit={_analysis_limit}"))  # noqa: S608
             session.execute(text("PRAGMA optimize"))
             session.commit()
         out["planner"] = True
