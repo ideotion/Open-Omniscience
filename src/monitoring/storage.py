@@ -24,6 +24,7 @@ HONESTY + SAFETY:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
@@ -88,6 +89,29 @@ def storage_composition(session: Session) -> dict[str, Any]:
     # can only reclaim via a full VACUUM (rewrites the whole file), infeasible at scale.
     av = _pragma(session, "auto_vacuum")
     out["auto_vacuum"] = {0: "none", 1: "full", 2: "incremental"}.get(av) if av is not None else None
+    # WAL VISIBILITY (STORAGE_5TB_PLAN §3 Phase-A: "surface WAL size … so an unbounded -wal is
+    # VISIBLE"). journal_size_limit is the resting ceiling we set (session.py); wal_bytes is the
+    # -wal file's ACTUAL size right now (a -wal much larger than the limit ⇒ a checkpoint is not
+    # completing — the classic reader-starvation hazard, now diagnosable). Both degrade to None.
+    jsl = _pragma(session, "journal_size_limit")
+    out["journal_size_limit"] = jsl if (jsl is not None and jsl >= 0) else None
+    try:
+        main_db = None
+        for row in _rows(session, "PRAGMA database_list"):
+            if len(row) >= 3 and str(row[1]) == "main" and row[2]:
+                main_db = str(row[2])
+                break
+        if main_db:
+            wal = Path(main_db + "-wal")
+            out["wal_bytes"] = wal.stat().st_size if wal.exists() else 0
+            if out.get("journal_size_limit") and out["wal_bytes"] > 4 * out["journal_size_limit"]:
+                out["wal_note"] = (
+                    "the -wal is much larger than journal_size_limit — a checkpoint may be "
+                    "starved (a long-lived reader blocks it), the workload's known WAL-growth "
+                    "hazard. The inter-pass TRUNCATE checkpoint should reclaim it when writers idle."
+                )
+    except Exception:  # noqa: BLE001 - WAL visibility is best-effort; never break the diagnostic
+        pass
     if page_size and page_count is not None:
         out["db_bytes"] = page_size * page_count
     if page_size and freelist is not None:
