@@ -926,7 +926,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   ("AI-derived · unreliable" convention); a garbage/unvalidatable model answer stores NOTHING.
 - **SIX CONSECUTIVE AUTONOMOUS SESSIONS S1–S6 — MAINTAINER RULED 2026-07-11 (answers "1 yes ·
   2 yes · 3 excluded · 4 yes · 5 yes" to the five pre-clearance questions; conventions =
-  `docs/design/SESSIONS_2026-07-11_CONVENTIONS.md`, briefs = `AUTONOMOUS_SESSION_BRIEF_
+  `docs/archive/session-briefs/SESSIONS_2026-07-11_CONVENTIONS.md`, briefs = `AUTONOMOUS_SESSION_BRIEF_
   2026-07-11_S{1..6}_*.md`):** one session per reconciled-ROADMAP tier, run CONSECUTIVELY —
   the maintainer MERGES each session's PRs before launching the next (that cadence is the
   conflict-free guarantee; branch prefix `claude/s<N>-*`). (1) S1 = the Tier-0 RELEASE KIT:
@@ -5474,6 +5474,31 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   ARE NOW ALL SHIPPED** (§1–§8) — what remains is operator/browser-gated + the §8/§6 hardware runs.
   `~/.oo_push_token` remains live on disk (used for these pushes); revoke + rm it when this cycle's review
   is done.
+- **ACTION PLAN 2026-07-13 — self-curating sources · maps/OSM · planned-but-partial remediation +
+  a doc-cleanup pass (Fable-5 planning session, docs-only):** full plan of record =
+  **`docs/design/ACTION_PLAN_2026-07-13_SOURCES_MAPS_GAPS.md`** (companion to the optimization-program
+  + storage plans; do NOT duplicate them). CONSOLIDATES the 2026-07-13 planning dialogue: (1) the
+  self-curating-sources SPINE — Phase 0 quality DIAGNOSTIC ✅ SHIPPED (#655–#657, `source_quality.py`
+  + `/api/diagnostics/source-quality`, the 3-selector zip incl. the newsletter text-gate; awaits the
+  operator run + analyst loop), Phase 1 standing AUDITOR (audit EXTRACTION-VALIDITY not editorial
+  merit; corpus-relative per-language; precision-biased auto-demote only on extraction-failure;
+  diversity-aware; transparent criteria; idle-maintenance), Phase 2 auto-DISCOVERY funnel (Wikipedia
+  references across all 12 editions as the flagship channel + complete cited_sources + DDG; trial →
+  Phase-1 quality gate → graduate; diversity-weighted; audit view + undo). (2) OSM/maps — the
+  DATA-SOURCE path (finer boundaries + sub-national admin-1 + gazetteer, fits no-WebGL) vs live-detail
+  (ceilinged by the ruling); the missing offline preprocessing BRIDGE; border-honesty; map
+  change-tracking later. (3) the planned-but-partial REMEDIATION from the 2026-07-13 four-verifier gap
+  sweep (Tier 3A surface-the-built-backend trio: AI keyword lens · subjectivity engine · El Niño — all
+  backend-shipped, zero UI; 3B `external_sources` wire-or-delete; 3C the gold-set grading linchpin
+  unblocking lemma+BM25F+embeddings; 3D dead-code+inline-handler AppVM cleanup; 3E re-decide the 3D
+  keyword explorer). OPEN RULINGS surfaced (Part-2 no-WebGL firm? / Phase-1 auto-demote trigger /
+  Phase-2 automaticity / external_sources / 3D explorer). DOC-CLEANUP (maintainer ruling 4a,
+  non-lossy `git mv`, links retargeted, ~0 refs in the sacred docs): archived the completed S1–S6 +
+  2026-07-10 A/B briefs + conventions → `docs/archive/session-briefs/`, the pre-0.2 audit working set
+  (00–05 + logs + action-plans + findings.csv + raw/ + diagrams/) → `docs/archive/audits/`,
+  `source_enrichment/` → `docs/archive/`, and the two `SOLO_SESSION_*` docs → `docs/archive/`;
+  `docs/audit/` now holds only the 3 records of record; `docs/design/` 26→18 top-level. Archive READMEs
+  updated with the old→new maps.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

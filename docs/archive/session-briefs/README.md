@@ -5,9 +5,9 @@ and to trace why a feature was built the way it was; **none of these describe pe
 work** — the binding ledger is [`../../../CLAUDE.md`](../../../CLAUDE.md) and the
 forward board is [`../../ROADMAP.md`](../../ROADMAP.md).
 
-Moved here in the 2026-07-10 doc-archival pass (maintainer ruling 4a, non-lossy `git mv`).
-The two **live** 2026-07-10 A/B session briefs stay at
-[`../../design/`](../../design/) until their sessions complete.
+Moved here across two non-lossy `git mv` archival passes (maintainer ruling 4a):
+the first batch on 2026-07-10, and the 2026-07-11 A/B + S1–S6 program briefs + their
+conventions on 2026-07-13, once every one of those sessions had completed and merged.
 
 | file | was at |
 | --- | --- |
@@ -19,6 +19,15 @@ The two **live** 2026-07-10 A/B session briefs stay at
 | `AUTONOMOUS_SESSION_BRIEF_2026-06-24.md` | `docs/design/` |
 | `AUTONOMOUS_SESSION_BRIEF_2026-06-26.md` | `docs/design/` |
 | `AUTONOMOUS_SESSION_BRIEF_KEYWORD_ENGINE.md` | `docs/design/` |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-10_A_SCALE_BACKEND.md` | `docs/design/` |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-10_B_PRODUCT_UX.md` | `docs/design/` |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-11_S1_RELEASE_KIT.md` | `docs/design/` |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-11_S2_SNAPPINESS.md` | `docs/design/` |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-11_S3_DB_ARCHITECTURE.md` | `docs/design/` |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-11_S4_PRODUCT_QUALITY.md` | `docs/design/` |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-11_S5_RULINGS_BUILDS.md` | `docs/design/` |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-11_S6_BACKLOG.md` | `docs/design/` |
+| `SESSIONS_2026-07-11_CONVENTIONS.md` | `docs/design/` |
 
 Older prose in `CLAUDE.md` and `docs/ledger/SHIPPED_LOG.md` may still cite the original
 `docs/design/…` paths as historical records; this table is the old→new map.

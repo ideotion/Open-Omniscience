@@ -7,8 +7,8 @@ single `news` tag most of them have today.
 Companion artifacts shipped with this doc:
 - `scripts/make_enrichment_batches.py` — generate parallel-session worklists.
 - `scripts/merge_enrichment_results.py` — fold session results back in, additively.
-- `docs/design/source_enrichment/PROMPT_TEMPLATE.md` — the session prompt.
-- `docs/design/source_enrichment/README.md` — the operator runbook.
+- `docs/archive/source_enrichment/PROMPT_TEMPLATE.md` — the session prompt.
+- `docs/archive/source_enrichment/README.md` — the operator runbook.
 
 ---
 
@@ -209,7 +209,7 @@ model's parametric knowledge for the (many) well-known outlets.
    python scripts/make_enrichment_batches.py            # batches of 50, by language
    python scripts/make_enrichment_batches.py --max-tags 0 --languages en,fr
    ```
-   Writes `docs/design/source_enrichment/batches/prompt_<lang>-NNN.md` (each = the
+   Writes `docs/archive/source_enrichment/batches/prompt_<lang>-NNN.md` (each = the
    template with that batch's compact input inlined) + a `MANIFEST.txt`. Default run
    = **113 batches** (en: 43, es/fr: 4 each, then the long multilingual tail). The
    bulk is gitignored; `prompt_en-001.md` is committed as a worked example.
@@ -250,7 +250,7 @@ Verified 2026-06-27: **web search works from inside this environment**, so the
 classification can run *in-session* via subagents rather than only via external chat
 sessions. Two delivered execution paths (same output rows, same merge):
 
-- **Workflow** (`docs/design/source_enrichment/enrich_sources.workflow.js`): pass the
+- **Workflow** (`docs/archive/source_enrichment/enrich_sources.workflow.js`): pass the
   under-enriched rows as `args`; it chunks them (default 40/batch), spawns one
   web-enabled subagent per batch with **schema-validated** structured output (no YAML
   parsing, the model retries on mismatch), and returns the merged row array. Honors
@@ -270,7 +270,7 @@ wire-agency/cooperative; RT → state-media; Fox → corporate/lean-right; ABC A
 from parametric knowledge (**0 tool calls** on this well-known slice), spending
 search budget only where genuinely uncertain — confirming the per-agent-budget
 economics. The long tail of obscure outlets will trigger more searches; that is
-exactly the work fan-out distributes. See `docs/design/source_enrichment/README.md`.
+exactly the work fan-out distributes. See `docs/archive/source_enrichment/README.md`.
 
 **Taxonomy edge found in the pilot:** a few `sources.yml` entries are not
 journalistic at all (e.g. `new.abb.com` = ABB Robotics' corporate vendor page).
