@@ -182,9 +182,20 @@ surfacing, super-groups/ring-country UI. A periodic reconciliation should mark t
    sub-national boundaries; change-tracking later.
 6. **Gated tiers (3F) + operator tiers (3G)** proceed on their own ruling/field-data cadence.
 
-## Open maintainer rulings this plan surfaces
-- Phase-1 auto-demote trigger set (rec: extraction-failure + sustained low yield only).
-- Phase-2 promotion automaticity (rec: auto-trial + quality-gated graduation, diversity-weighted).
-- `external_sources`: wire (into Phase 2) vs delete.
-- Maps: no-WebGL firm? data-source vs live-detail ambition?
-- The 3D keyword explorer: still wanted as ruled, or formally deprioritized?
+## Open maintainer rulings this plan surfaces — ✅ ANSWERED 2026-07-13 (omnibus session)
+- **Phase-1 auto-demote trigger set** — ✅ extraction-failure + sustained low yield ONLY; build the
+  machinery DEFAULT-OFF, activation gated on Phase-0 zip calibration. FLAG-ONLY this session.
+- **Phase-2 promotion automaticity** — ✅ full funnel (candidate→trial→graduated); trial auto-enable
+  DEFAULT-OFF (enabling passes the ONE consent); diversity-weighted; quality-gated by Phase 1.
+- **`external_sources`** — ✅ WIRE it (becomes the discovery funnel's resolution table). Dormancy ends.
+- **Maps** — ✅ no-WebGL firm; data-source path (OSM→offline boundary/gazetteer artifacts for all
+  maps). BUILD DEFERRED to its own session (ROADMAP row added); NOT built here.
+- **3D keyword explorer** — ✅ formally DEPRIORITIZED (supersedes the 2026-06-16 "do NOT defer");
+  the 3-level mind-map stays. Do NOT build.
+
+## Omnibus execution status (2026-07-13)
+- Part-3H stale-ledger reconciliation — ✅ done (rulings commit).
+- Part-1 Phase 1 standing auditor — the session's verifiable-backend priority (flag-only, auto-demote
+  default-off). See the closeout for the shipped slice + carry-over.
+- Part-3A surfacing / Part-3B funnel / Leads-UI / small tails — Q6a caps frontend at
+  browser-unverified; status per the session closeout + carry-over.

@@ -5516,6 +5516,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `source_enrichment/` → `docs/archive/`, and the two `SOLO_SESSION_*` docs → `docs/archive/`;
   `docs/audit/` now holds only the 3 records of record; `docs/design/` 26→18 top-level. Archive READMEs
   updated with the old→new maps.
+- **OMNIBUS SESSION RULINGS (maintainer, 2026-07-13) — executing
+  `docs/design/ACTION_PLAN_2026-07-13_SOURCES_MAPS_GAPS.md`, full autonomy, DRAFT-PR-only (nothing
+  auto-merges — the review is the gate):** the six open rulings that plan surfaced are ANSWERED:
+  (1) **MAPS [Q1a]** — the data-source path is ruled (OSM preprocessed OFFLINE into boundary/gazetteer
+  artifacts feeding ALL thematic maps; no-WebGL stands; live street-level detail out of scope). The
+  BUILD is DEFERRED to its own dedicated session — recorded + a ROADMAP row; NOT built this session.
+  (2) **PHASE-1 AUDITOR [Q2a]** — FLAG-ONLY this session; build the auto-demote machinery but ship it
+  DEFAULT-OFF behind an explicit setting, activation gated on the operator's Phase-0 zip calibration;
+  auto-demote (when later enabled) triggers ONLY on extraction-failure signatures + sustained low
+  yield, NEVER structural style. (3) **PHASE-2 DISCOVERY [Q3a]** — build the FULL funnel (candidate →
+  trial → graduated) with trial auto-enable behind a DEFAULT-OFF setting; enabling it is a maintainer
+  action passing the ONE network-consent popup; candidates register DISABLED as today. (4)
+  **EXTERNAL_SOURCES [Q4a]** — WIRE IT (it becomes the discovery funnel's resolution table:
+  cited/discovered domains resolve to external-source rows with provenance; its dormancy ends);
+  additive-migration discipline; backup-merge already carries it. (5) **3D EXPLORER [Q5a]** — formally
+  DEPRIORITIZED (supersedes the 2026-06-16 "do NOT defer the 3D" ruling; re-decided 2026-07-13); the
+  3-level mind-map stays as-is; do NOT build. (6) **ENVIRONMENT [Q6a]** — no browser here; all frontend
+  ships CONSERVATIVE + FLAGGED ("browser-unverified, needs click-through": node --check + invariant
+  guards + defensive empty states); browser-gated items (dead-code deletion #3D, inline-handler
+  retirement) go to the operator/AppVM list, not this queue. STALE-LEDGER RECONCILIATION (Part-3H):
+  the following were verified SINCE-SHIPPED and are no longer "remaining" — deduced-events-in-agenda
+  (`mapDeducedToAgenda`), sentiment-at-ingest (`sentiment.score_article`), LLM langdetect
+  (`src/ai_layer/langdetect_llm.py`); full-text dump search / weather signal-keywords /
+  ring-translation fallback / super-groups+ring-country UI carry their own prior shipped-log entries.
+  EXECUTION NOTE: this session prioritized the fully-VERIFIABLE backend spine (Part-1 Phase-1 auditor,
+  which the board's own sequencing calls the linchpin — "Phase 1 IS the quality gate that makes Phase 2
+  safe") + the mandated ledger/rulings, over the browser-UNVERIFIED frontend surfacing (Part-3A / Leads
+  UI / small tails), which Q6a caps at conservative-flagged; the frontend + discovery-funnel remainder
+  is parked as an honest carry-over in the session closeout.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
