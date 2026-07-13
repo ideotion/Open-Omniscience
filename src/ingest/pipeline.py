@@ -73,6 +73,7 @@ from src.ingest import (
 )
 from src.ingest.extract import extract_article
 from src.ingest.fetch_verdict import classify_fetch_failure, fetch_reason_key
+from src.ingest.non_article import classify_non_article, skip_non_articles_enabled
 from src.utils.url_utils import canonicalize_url, generate_content_hash
 
 
@@ -83,6 +84,9 @@ class IngestResult(str, Enum):
     ROBOTS_UNAVAILABLE = "robots_unavailable"
     FETCH_FAILED = "fetch_failed"
     EXTRACT_FAILED = "extract_failed"
+    # Skipped by the non-article filter (nav/index/tag/tool/wall page) — a distinct, counted
+    # outcome (never a silent drop), reversible via OO_SKIP_NON_ARTICLES. See ingest/non_article.py.
+    NON_ARTICLE = "non_article"
     # P1.8 collector write batching: buffered for the next batched commit —
     # a TRANSIENT state, never a final tally line (the batch's flush resolves
     # it to stored/duplicate/errors, which the caller merges).
@@ -151,6 +155,25 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
         return IngestOutcome(
             fetched.requested_url, IngestResult.EXTRACT_FAILED, detail="no article body extracted"
         )
+
+    # Stop non-articles (nav / index / tag / tool / consent-wall pages) at the door — the
+    # source-quality recall-gap fix. High-precision + reversible (OO_SKIP_NON_ARTICLES=0 disables);
+    # a skip is a distinct COUNTED outcome + a log line, never a silent drop. Runs before dedup/
+    # stage so it applies to both the batch and the direct path.
+    if skip_non_articles_enabled():
+        verdict = classify_non_article(
+            fetched.final_url, title=doc.title, text=doc.text, word_count=len(doc.text.split())
+        )
+        if verdict is not None:
+            import logging
+
+            logging.getLogger(__name__).info(
+                "skipping non-article (%s) from %s: %s",
+                verdict.signal, source.domain, fetched.final_url,
+            )
+            return IngestOutcome(
+                fetched.requested_url, IngestResult.NON_ARTICLE, detail=verdict.reason
+            )
 
     content_hash = generate_content_hash(doc.text)
     # In-batch dedup FIRST, on the actual unique column (the email-import
