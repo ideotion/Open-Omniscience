@@ -687,6 +687,27 @@ def insights_corpus_facet_articles(
     }
 
 
+@router.get("/corpus-algebra")
+def insights_corpus_algebra(
+    terms: str = Query(..., description="comma-separated keywords for the N-keyword set algebra"),
+    op: str = Query("intersection", description="intersection | union | difference"),
+    cap: int = Query(4000, ge=1, le=20000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """§1 Conjunction Lens: set algebra over N keywords — the combined article-id set that seeds
+    the analysis window. ``intersection`` = articles mentioning ALL terms, ``union`` = ANY,
+    ``difference`` = the first term minus the rest. The set expression IS the transparent corpus
+    label. 400 on an unknown op. Co-occurrence in your corpus, never causation; counts only, no
+    score; per-term set bounded at ``cap`` (disclosed)."""
+    from src.analytics.conjunction import corpus_algebra
+
+    term_list = [t.strip() for t in terms.split(",") if t.strip()]
+    try:
+        return corpus_algebra(db, term_list, op=op, cap=cap)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/corpus-sentiment")
 def insights_corpus_sentiment(
     query: str | None = None,
