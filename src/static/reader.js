@@ -176,6 +176,8 @@
     keywords: "/api/insights/corpus-keywords?limit=40&article_ids=",
     sentiment: "/api/insights/corpus-sentiment?article_ids=",
     mindmap: "/api/insights/graph?article_ids=",
+    // subjectivity is per-article (article_id, singular) — a DEDUCED rule-based lens, not a corpus roll-up.
+    subjectivity: "/api/insights/subjectivity?article_id=",
   };
 
   function lazyLoad(key, pane) {
@@ -197,7 +199,10 @@
     var base = ENDPOINTS[key];
     if (!base) return;
     pane.innerHTML = '<p class="r-muted">Loading…</p>';
-    var render = key === "keywords" ? renderKeywords : key === "sentiment" ? renderSentiment : renderMindmap;
+    var render = key === "keywords" ? renderKeywords
+      : key === "sentiment" ? renderSentiment
+      : key === "subjectivity" ? renderSubjectivity
+      : renderMindmap;
     fetch(base + encodeURIComponent(aid), { headers: { Accept: "application/json" } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (d) { render(pane, d); })
@@ -264,6 +269,34 @@
       + english
       + '<p class="r-method">' + esc(d.method || "") + "</p>"
       + caveat;
+  }
+
+  // The loaded-language / subjectivity lens (S5.2): DEDUCED, rule-based (never AI, never asserted),
+  // per-language. Shows the loaded-term density (n_loaded / n_tokens, both shown) + the matched terms,
+  // or an HONEST GAP when the article's language has no lexicon / is a script mismatch — never a
+  // fabricated 0. Conservative render: a term list + density, NOT an inline highlight over the body
+  // (char-offset spans over rendered HTML drift; a highlight surface is a later browser-verified slice).
+  function renderSubjectivity(pane, d) {
+    var method = '<p class="r-method">' + esc((d && d.method) || "") + "</p>";
+    var caveat = '<p class="r-caveat">' + esc((d && d.caveat) || "") + "</p>";
+    if (!d || d.available === false) {
+      var reason = (d && d.reason) || "not available";
+      pane.innerHTML = '<h2 class="r-h2">Loaded language</h2>'
+        + '<p class="r-muted">Not measured for this article — ' + esc(reason) + ".</p>"
+        + method + caveat;
+      return;
+    }
+    var terms = d.terms || [];
+    var chips = terms.map(function (t) { return '<span class="r-chip">' + esc(t) + "</span>"; }).join(" ");
+    pane.innerHTML =
+      '<h2 class="r-h2">Loaded language</h2>'
+      + '<p class="r-muted">Deduced from the text (rule-based, never AI) — a prompt to read closely, never a verdict.</p>'
+      + '<p class="r-score">Loaded-term density: <b>' + esc(d.density) + "</b> "
+      + '<span class="r-muted">(' + num(d.n_loaded || 0) + " of " + num(d.n_tokens || 0) + " words)</span></p>"
+      + (chips
+          ? '<p class="r-muted">Loaded terms found:</p><p>' + chips + "</p>"
+          : '<p class="r-muted">No loaded terms found — a real measurement, not a gap.</p>')
+      + method + caveat;
   }
 
   // A deterministic RADIAL keyword map (centre → arms → always OUTWARD — the
