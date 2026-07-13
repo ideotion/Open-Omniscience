@@ -65,13 +65,30 @@ the network is closed by autoload-off + the airplane socket guard, NOT by
 stay in-memory (never load an unverified binary, never a network autoload). The pin table
 ships EMPTY, so ``secure_crypto_available()`` stays False until the maintainer's networked
 build lands the binaries + their real sha256 (never fabricated).
+
+CANONICAL-BASENAME LOAD (fixes the columnar CI lane): DuckDB derives an extension's C init
+symbol (``<name>_init``) from the LOADed file's BASENAME up to the FIRST dot
+(``FileSystem::ExtractBaseName`` splits the filename on ``.`` and takes ``[0]``). Our bundled
+binary is named ``httpfs-<plat>-v<major>.<minor>.<patch>.duckdb_extension``, so LOADing it
+directly makes DuckDB derive ``httpfs-<plat>-v<major>`` and look for a nonexistent
+``httpfs-<plat>-v<major>_init`` symbol -> the LOAD fails and the persisted store silently
+degrades to in-memory (the real-httpfs round-trip CI lane's red). So the loader keeps the
+descriptive, SHA-pinned bundled name on disk but presents the already-VERIFIED bytes to
+``LOAD`` under the canonical basename ``httpfs.duckdb_extension`` (a per-process temp copy;
+:func:`_canonical_httpfs_path`), so DuckDB derives ``httpfs`` and resolves the real
+``httpfs_init``. The SHA-256 pin / version coupling / traversal guard are unchanged — they
+run on the REAL bundled file (:func:`_verified_httpfs_path`) before the canonical copy.
 """
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import logging
 import os
+import shutil
+import tempfile
+import threading
 from pathlib import Path
 
 _LOG = logging.getLogger(__name__)
@@ -203,11 +220,12 @@ def _httpfs_pins() -> dict:
     return {}
 
 
-def _verified_httpfs_path() -> str | None:
-    """Absolute path to the bundled httpfs extension for THIS platform, ONLY if it exists,
-    its SHA-256 matches the registry pin, and the pinned version couples to the installed
-    DuckDB minor. None otherwise (missing / blank pin / mismatch / wrong version) -> the
-    caller stays in-memory. NEVER loads an unverified binary; NEVER a network autoload."""
+def _verified_httpfs() -> tuple[str, str] | None:
+    """``(absolute_path, sha256_hexdigest)`` of the bundled httpfs extension for THIS platform,
+    ONLY if it exists, its SHA-256 matches the registry pin, and the pinned version couples to
+    the installed DuckDB minor. None otherwise (missing / blank pin / mismatch / wrong version)
+    -> the caller stays in-memory. NEVER returns an unverified binary; NEVER a network autoload.
+    The verified digest is returned so the canonical-copy loader can key + re-verify on it."""
     plat = _platform_arch()
     minor = _duckdb_minor()
     if not plat or not minor:
@@ -240,17 +258,95 @@ def _verified_httpfs_path() -> str | None:
         _LOG.warning("bundled httpfs sha256 mismatch for %s -- refusing to load (in-memory)",
                      path.name)
         return None
-    return str(path.resolve())
+    return str(path.resolve()), got
+
+
+def _verified_httpfs_path() -> str | None:
+    """Absolute path to the verified bundled httpfs for THIS platform, or None (see
+    :func:`_verified_httpfs`). The gate used by ``secure_crypto_available``/``secure_crypto_reason``."""
+    v = _verified_httpfs()
+    return v[0] if v is not None else None
+
+
+# DuckDB derives an extension's C init symbol (``<name>_init``) from the LOADed file's
+# BASENAME up to the FIRST dot (``FileSystem::ExtractBaseName`` splits on ``.``, takes [0]).
+# The bundled binary carries a descriptive, version-dotted name, so LOADing it directly would
+# make DuckDB look for a bogus ``httpfs-<plat>-v<major>_init`` symbol. We therefore present the
+# already-verified bytes to LOAD under this canonical basename so DuckDB derives ``httpfs`` and
+# resolves the real ``httpfs_init``.
+_CANONICAL_HTTPFS_BASENAME = "httpfs.duckdb_extension"
+# (verified_sha256, canonical_temp_path, temp_dir): keyed on the VERIFIED digest (NOT the source
+# path) so a re-pin to different bytes at the same path invalidates the cache; the copy is
+# re-hashed against this digest on every hand-out so the actually-LOADed artifact -- not just the
+# source proxy -- is verified before every LOAD.
+_canonical_httpfs_cache: tuple[str, str, str] | None = None
+_canonical_httpfs_lock = threading.Lock()
+
+
+def _discard_canonical_copy_locked() -> None:
+    """Drop the cached canonical copy and best-effort remove its temp dir (caller holds the lock;
+    ``ignore_errors`` so a copy still mmap'd by a live connection on Windows is simply left)."""
+    global _canonical_httpfs_cache
+    old = _canonical_httpfs_cache
+    _canonical_httpfs_cache = None
+    if old is not None:
+        shutil.rmtree(old[2], ignore_errors=True)
+
+
+@atexit.register
+def _cleanup_canonical_copy() -> None:
+    """Remove the single live canonical-copy temp dir at interpreter exit (registered once)."""
+    with _canonical_httpfs_lock:
+        _discard_canonical_copy_locked()
+
+
+def _canonical_httpfs_path() -> str | None:
+    """Present the VERIFIED bundled httpfs binary to ``LOAD`` under the canonical basename
+    ``httpfs.duckdb_extension`` so DuckDB derives the correct ``httpfs`` extension name (and
+    its real ``httpfs_init`` symbol) from the filename.
+
+    All the trust work — the SHA-256 registry pin, the DuckDB version coupling, and the
+    traversal guard — is done on the REAL bundled file by :func:`_verified_httpfs`. This function
+    copies those already-verified bytes into a private per-process temp dir under the canonical
+    name (the descriptive ``httpfs-<plat>-v<ver>.duckdb_extension`` name, which DuckDB would
+    truncate at the first version dot into a bogus init symbol, stays on disk). VERIFY-BEFORE-LOAD
+    holds for the ACTUALLY-LOADED artifact on EVERY call, not just the source proxy: the cache is
+    keyed on the verified digest (so a re-pin to different bytes at the same path re-copies) AND
+    the cached copy is re-hashed against that digest before reuse (so an in-place tamper /
+    corruption of the temp copy is caught and the stale copy is never served). One copy per
+    verified binary; the temp dir is removed on invalidation and at interpreter exit. Returns None
+    when no verified binary is bundled -- the caller stays in-memory; never a plaintext store,
+    never a network autoload."""
+    global _canonical_httpfs_cache
+    verified = _verified_httpfs()  # (path, sha256): SHA pin + version couple + traversal guard
+    if verified is None:
+        return None
+    src, sha = verified
+    with _canonical_httpfs_lock:
+        cache = _canonical_httpfs_cache
+        if (cache is not None and cache[0] == sha and Path(cache[1]).exists()
+                and hashlib.sha256(Path(cache[1]).read_bytes()).hexdigest() == sha):
+            return cache[1]  # the LOADed artifact still matches the pin -> reuse the copy
+        _discard_canonical_copy_locked()  # miss / re-pin / corrupt copy -> re-make from source
+        tmp_dir = tempfile.mkdtemp(prefix="oo-duckdb-httpfs-")
+        canon_path = str(Path(tmp_dir) / _CANONICAL_HTTPFS_BASENAME)
+        shutil.copyfile(src, canon_path)  # a faithful byte copy of the just-verified binary
+        _canonical_httpfs_cache = (sha, canon_path, tmp_dir)
+        return canon_path
 
 
 def _persisted_connection():
     """A DuckDB connection with the VERIFIED bundled httpfs LOADed by absolute path (the
     secure OpenSSL crypto backend), using :func:`_persisted_config`. Raises if no verified
     binary is bundled -- the caller falls back to the in-memory store. Network-free by
-    construction (autoload OFF + absolute-path LOAD)."""
+    construction (autoload OFF + absolute-path LOAD).
+
+    The LOAD path is the canonical-basename copy (:func:`_canonical_httpfs_path`), NOT the
+    descriptive bundled filename, so DuckDB derives the ``httpfs`` extension name (and its real
+    ``httpfs_init`` symbol) instead of mangling the version-dotted name."""
     import duckdb
 
-    ext = _verified_httpfs_path()
+    ext = _canonical_httpfs_path()  # verified bytes presented under 'httpfs.duckdb_extension'
     if ext is None:
         raise RuntimeError("no verified bundled httpfs extension (persisted store unavailable)")
     con = duckdb.connect(config=_persisted_config())
