@@ -1104,6 +1104,66 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   segmenter (the script guard handles the mislabel case, not an in-script unsegmented one). (g) the many
   OTHER individual International sources still lack `int` — an ongoing data-curation step. LESSONS in the
   Session-rituals subsection above.
+- **S6 CLOSEOUT + PROGRAM SUMMARY (2026-07-12, Tier-5 feature backlog — the FINAL session, branch
+  `claude/s6-backlog`, onto `origin/0.2` base `1f2d6d21` = S1–S5 merged):** the mission was the
+  highest-value CODEABLE subset of a months-deep backlog, staleness-guard FIRST. **SHIPPED (new):**
+  **S6.4** the two missing attention producers — `on_the_horizon` (an upcoming agenda date within 45 days
+  whose title/tags contain a currently-TRENDING keyword — a heads-up, lexical not causal; bucket `watch`)
+  + `through_time` (an anniversary LENS: articles published on today's date in earlier years; bucket
+  `context`; cross-time recall stays sacred — a lens, never a reweighting); neither touches the ruled
+  alert boundary (urgent = provider-declared hazard ONLY). **S6.5** the LLM-perception (who/where/when)
+  EVAL HARNESS — the ruled gate BEFORE any extraction: per-stratum precision/recall/HALLUCINATION vs a
+  synthetic ×12-lang gold set, place-string vs coordinate scored apart, de-US-centring split, no
+  composite; `run_perception_eval_selftest` + `/api/diagnostics/perception-eval-selftest`; extraction
+  itself NOT shipped (waits for a model to clear the harness). Both adversarial-skeptic-clean +
+  test-verified (the S5.1/S5.2/S5.3 skeptic passes had already hardened the honesty-critical patterns).
+  **VERIFIED-ALREADY-SHIPPED (the staleness guard paid off again):** S6.1 content-provenance is end-to-end
+  (source_type per channel + facet + reading-diet + the additive-restore carries it, merge.py:360-363);
+  S6.3 write-batching is P1.8 (batch.py + a 10-test no-loss battery); **S6.2's CRITICAL half is met** —
+  `read_artifact` (D7) accepts legacy formats FOREVER and is wired into restore (backup_v2.py:118), so no
+  old backup is ever stranded; S6.6 deduced-events are already agenda-first-class (`mapDeducedToAgenda`)
+  and the RULE-recurrence (fixed + weekday/week + origin_year) is in `catalog.py`. **CONSCIOUSLY PARKED →
+  next cycle (the honest board is the deliverable):** (1) **S6.2 file-members-in-the-signed-VOLUME-artifact
+  manifest** — a real feature (one portable artifact carries the wiki/OSM/model blobs), but data-safety-
+  CRITICAL, needs the full skeptic matrix + the ZETA traversal-guard on every new manifest field, and is
+  NOT a data-loss risk unbuilt (folder_backup already carries these blobs; the legacy reader survives) —
+  building it rushed at a marathon's tail would violate the "entirely reliable or it doesn't ship" backup
+  bar; design = reuse `folder_backup.collect_items`/`restore_folder_backup` (checksum dedup, never-
+  overwrite, skip non-done) + a `file_members` manifest block + guards. (2) **S6.1b cited-provenance
+  remaining slices** — the background citing-resolve job at corpus scale, denormalize `citing_source_id`,
+  surface the citing trail ("the sources' sources"), wire the dormant `external_sources` (the model +
+  slice-1 exist; the scale job + surface don't). (3) **S6.6 remainder** — RRULE recurrence expansion of
+  IMPORTED VEVENTs, month-span banners ("Dry January"), `since:`-origin display, saved-filter smart
+  calendars. (4) **S6.7–S6.9 comfort** — temporal linear/log toggle + mention-layer event-places +
+  owner-measured OSM rate/ETA; the onboarding tour; the silent-disasters / law-takes-effect scenario cards.
+  ---
+  **THE PROGRAM (six consecutive autonomous sessions S1→S6, 2026-07-12, all merged to 0.2):** S1 Tier-0
+  release kit (push-button P0 live-validation job + runbook; run/tag stay maintainer-only) · S2 Tier-1
+  snappiness board (A9 riders reproducer-first, off-peak maintenance, guard-coverage sweep, /articles
+  threadpool + FTS over-fetch bound, the 5 TB review = S3's input) · S3 Tier-2 DB architecture (D1/D2/D3
+  persisted-columnar built GATED behind the httpfs binary; adaptive backup-volume sizing DB-9; DB-10
+  memo) · S4 Tier-3 product quality (CJK date probe, ring-breakdown hover, Leads carousel, Insights-bar
+  context absorption, composite-string i18n + translatable card titles, generic_terms detector, wizard
+  sources-by-theme step) · S5 Tier-4 decided-rulings + instruments (USGS supply parser, subjectivity
+  engine, IR gold-set builder, lemma preview, int-country curation) · S6 Tier-5 backlog subset (this
+  session). Every session: skeptics-before-push (negative-space lens mandatory for parsers), the staleness
+  guard (which repeatedly found "open" items already shipped → verify-and-mark, never rebuild), full-suite
+  green, a closeout ledger row + carry-over. **CONSOLIDATED OPERATOR LIST (networked / maintainer-only —
+  the whole program's outstanding human steps):** (a) **run the S1 push-button P0 live validation on the
+  real corpus, then TAG v0.2.0** (the version reads 0.2.0 but 0.2 is not yet a tagged release; the tag is
+  the gate the whole 0.2 cycle waits on; RE-RUN the validation if the live run predates the S3 DB-9 engine
+  change). (b) **the networked FETCHES / bundles:** the per-OS httpfs crypto binaries (turns D1/D2/D3 on),
+  the USGS MCS data, subjectivity lexicon sourcing/vetting, the Wikidata ring gap run — none fabricated,
+  all gated on egress. (c) **GRADE THE GOLD SETS:** the IR gold set (Settings → Diagnostics, one click)
+  unblocks lemmatization + the BM25F default; a graded who/where/when perception set (+ a model that
+  clears the harness) unblocks LLM extraction. (d) **the keyword-log export** (the open-class stoplist
+  review loop). (e) **browser CLICK-THROUGHS** of every conservative+flagged frontend slice (fork-3; no
+  headless harness in-session). **RECOMMENDED NEXT CYCLE — TOP THREE:** (1) **close the v0.2.0 tag** (the
+  live P0 run + tag — everything else is downstream of the release actually shipping); (2) **the S6.2
+  file-members-in-volume backup completeness** (data-safety, full skeptic matrix — the top parked item);
+  (3) **the versioned-sources revamp** (Wikipedia + laws as first-class Articles) — EXCLUDED all program
+  (ruling #3, P0-gated), the single largest designed capability still unbuilt. Full parked-items detail:
+  the S6 brief §"Explicitly NOT yours" + each session's carry-over above.
 - **VERSIONED SOURCES AS FIRST-CLASS ARTICLES — WIKIPEDIA + LAWS (maintainer-directed 2026-07-10;
   MARK FOR THE FUTURE VERSION — do NOT build now; full design in `docs/FUTURE_DEVELOPMENTS.md` →
   "Versioned sources as first-class Articles"):** the maintainer wants ALL Wikipedia articles of ALL
