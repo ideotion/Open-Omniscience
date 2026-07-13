@@ -1011,6 +1011,25 @@ def perception_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/keyword-triage-selftest")
+def keyword_triage_selftest(download: bool = Query(False)) -> JSONResponse:
+    """§8: run the LLM keyword-triage self-test — the measure-before-trust GATE before any real
+    triage run. Proves the MECHANISM (the constrained-verdict parser · echo-back validation ·
+    canaries · Ollama-timing pass-through · the bench metrics reported ALONE) on a deterministic
+    STUB — no model, no network, no score, and NEVER the trusted keyword index (triage is
+    EXPORT-ONLY JSONL). The real batch + the 7-model bench are operator-run on the Ollama rig
+    (§8.3: a CPU-only box understates the real rig); this verifies the harness is correct so
+    that measurement can be trusted. ``download=1`` returns a dated attachment."""
+    from src.ai_layer.triage import run_triage_selftest
+
+    log = run_triage_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-keyword-triage-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/ir-eval")
 def ir_eval(
     gold_path: str = Query(..., description="server-side path to a JSON gold set"),
