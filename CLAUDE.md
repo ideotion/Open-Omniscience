@@ -5432,6 +5432,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (both BUILDABLE-NOW), then the §1 Conjunction-Lens set-algebra core + §2 Leads 2.0
   ordering/floor/clustering cores; §3 fingerprints AFTER §8's triage cleans the junk; §5 Tor ladder +
   segmented-download cores. Each its own session-sized brief.
+- **OPTIMIZATION-PROGRAM EXECUTION — CYCLE 2 (2026-07-13, the remaining BUILDABLE-NOW §9 cores;
+  6 stacked draft PRs onto 0.2, staleness-verified against origin/0.2 @2f645c03; maintainer said
+  "proceed with the rest"):** the second execution cycle of the 2026-07-12 optimization program,
+  finishing every buildable-now core the plan (`OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13.md` §9)
+  had queued after cycle 1's §6/§8. Full autonomy / draft-PR-only (nothing auto-merges — the review
+  is the gate); skeptics-before-push with the mandatory negative-space lens on the parser/data-safety
+  surfaces. Delivered (each a measure-first pure/testable core, honesty-clean [no composite score,
+  walk-verified], ruff + mypy clean on new files, operator/browser-gated remainder documented):
+  (i) **PR #648 §4 search-instrumentation** — the per-search phase-timing aggregate (`search_timing.py`:
+  SearchPhaseTimer injected-clock timer + a pure `aggregate_phases` naming the dominant phase by
+  measured p95 + bounded JSONL + `instrument_search` seam; `GET /api/diagnostics/search-timing{,-selftest}`
+  + the all-diagnostics bundle). (ii) **PR #649 §7 power-profiles** — `src/config/power_profiles.py`:
+  the PUBLISHED_KNOBS table over 8 real knobs + `resolve_effective`; Optimized == the current default
+  (test-pinned), Low/Max flagged PROVISIONAL (GAMMA-gated); the one concrete wiring
+  `fts_analysis_limit()` (OO_FTS_ANALYSIS_LIMIT) replacing the `PRAGMA analysis_limit=1000` literal.
+  (iii) **PR #650 §1 Conjunction Lens** — `conjunction.py`: `corpus_algebra` (N-keyword intersection/
+  union/difference) + per_article_intensity + conditional_trend + pure vocabulary_contrast + pure NEAR
+  emission; `GET /api/insights/corpus-algebra`. (iv) **PR #651 §2 Leads 2.0** — `briefing/leads.py`:
+  the disclosed `order_key`/explain_order (a tuple of facts, never a score) + is_major floor + exact-Jaccard
+  story clustering + the new/strengthened/weakened/mixed/gone lifecycle diff. (v) **PR #652 §3 keyword
+  fingerprints** — `analytics/skeleton.py`: skeleton_fingerprint + MinHash skeleton_clusters + the LCS-ratio
+  ordered comparator + the skeleton_echo producer assembly (>=3 sources, refuses a text near-dup). (vi)
+  **PR #653 §5 Tor throughput** — `ingest/tor_throughput.py`: the KindLadder + segmented plan/reassemble +
+  mirror ranker. **ADVERSARIAL SKEPTIC EARNED ITS KEEP TWICE** (negative-space + data-integrity lenses,
+  hand-re-verified before fixing): on §1 it found a HIGH — intersection/difference computed over
+  INDEPENDENTLY-capped per-term sets could drop a true member or include a false one (a wrong article_ids
+  set silently seeding the analysis window) — fixed to ONE consistent per-article scan so a bounded result
+  is always a true SUBSET (never a fabricated member), + a LOW (per-term n now exact/uncapped); on §5 it
+  found 3 — a CRITICAL opt-in `reassemble` integrity check (a content-swap/truncation passed silently
+  without a checksum → integrity now MANDATORY, content-swap/missing-checksum refused), a HIGH ladder
+  STARVATION (the token-bucket + floor-debt zeroed an equal-weight peer, a=0 b=2000 → replaced with a
+  provably starvation-free STRIDE scheduler), and a MED (the floor delivered no volume → weight=max(rate,
+  floor)). Each defect regression-pinned. **OPERATOR-GATED remainder (honest board):** §4 the real per-phase
+  ms on the live corpus (wire `instrument_search` into the search endpoint); §7 the measured Low/Max numbers
+  (GAMMA harness) + live cache_size re-application; §1 the N-keyword picker UI (browser) + 974k-keyword/5 TB
+  perf; §2 the Settings→Leads subtab/evidence-chip UI (browser) + major-floor tuning; §3 fingerprint
+  persistence (schema+migration+backfill) + the live producer wiring (lands AFTER §8's triage cleanup); §5
+  the real multi-circuit Tor GET + mirror probing. Plus the standing cycle-1 operator gates (the §8 triage
+  batch + 7-model bench on the Ollama rig; §6 ui_walk + AppVM runner). **THE PROGRAM'S BUILDABLE-NOW CORES
+  ARE NOW ALL SHIPPED** (§1–§8) — what remains is operator/browser-gated + the §8/§6 hardware runs.
+  `~/.oo_push_token` remains live on disk (used for these pushes); revoke + rm it when this cycle's review
+  is done.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
