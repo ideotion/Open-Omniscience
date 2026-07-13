@@ -48,6 +48,41 @@ def test_empty_pin_table_stays_in_memory():
     assert columnar.secure_crypto_available() is False
 
 
+# --- audit BUG-1: the reason is SURFACED, never swallowed into a silent False ------------- #
+
+def test_secure_crypto_reason_names_the_missing_binary():
+    assert columnar.secure_crypto_available() is False
+    reason = columnar.secure_crypto_reason()
+    assert reason and "no verified bundled httpfs" in reason  # inspectable, not a silent False
+
+
+def test_secure_crypto_reason_disabled_env(monkeypatch):
+    monkeypatch.setenv("OO_COLUMNAR", "0")
+    assert columnar.secure_crypto_available() is False
+    assert "OO_COLUMNAR=0" in (columnar.secure_crypto_reason() or "")
+
+
+def test_secure_crypto_reason_surfaces_a_swallowed_load_error(monkeypatch, tmp_path, caplog):
+    # the core BUG-1 regression: all gates pass but the httpfs LOAD raises -> the cause is
+    # SURFACED (reported + logged), never swallowed. This is exactly the CI-red diagnosability
+    # hole the audit flagged (the bare `except Exception: return False`).
+    import logging
+
+    f, _sha = _fixture_ext(tmp_path)
+    monkeypatch.setattr(columnar, "_verified_httpfs_path", lambda: f)  # earlier gates pass
+
+    def _boom(*a, **k):
+        raise RuntimeError("httpfs LOAD blew up (simulated CI failure)")
+
+    monkeypatch.setattr(columnar, "_persisted_connection", _boom)
+    with caplog.at_level(logging.WARNING, logger="src.analytics.columnar"):
+        assert columnar.secure_crypto_available() is False  # still degrades to in-memory
+    reason = columnar.secure_crypto_reason()
+    assert reason and "httpfs LOAD blew up" in reason  # the cause is reported, not hidden
+    assert columnar._LAST_CRYPTO_ERROR and "RuntimeError" in columnar._LAST_CRYPTO_ERROR
+    assert any("did not LOAD offline" in r.getMessage() for r in caplog.records)  # + logged
+
+
 def test_shipped_registry_httpfs_entry_is_blank_and_flagged():
     pins = columnar._httpfs_pins()  # reads the shipped registry entry
     assert set(pins) >= {"linux_amd64", "linux_arm64", "osx_amd64", "osx_arm64", "windows_amd64"}

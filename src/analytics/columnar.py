@@ -76,6 +76,12 @@ from pathlib import Path
 
 _LOG = logging.getLogger(__name__)
 
+# The last exception secure_crypto_available() caught while trying to LOAD the verified
+# httpfs offline — surfaced (audit BUG-1) instead of being swallowed by a bare except, so a
+# red CI lane / an operator can SEE why the persisted encrypted store fell back to in-memory
+# instead of a silent False. None = last check succeeded or the earlier gates returned first.
+_LAST_CRYPTO_ERROR: str | None = None
+
 # A unique token written into a probe store to PROVE the file is encrypted (the gate).
 _SENTINEL = "OO_COLUMNAR_ENC_SENTINEL_b7f3"
 _STORE_FILENAME = "analytics.duckdb"
@@ -266,12 +272,46 @@ def secure_crypto_available() -> bool:
         return False
     if _verified_httpfs_path() is None:
         return False  # no verified bundled binary -> never a network autoload -> in-memory
+    global _LAST_CRYPTO_ERROR
     try:
         con = _persisted_connection()  # LOADs the verified httpfs by absolute path
         con.close()
+        _LAST_CRYPTO_ERROR = None
         return True
-    except Exception:  # noqa: BLE001 - not loadable offline -> not available
+    except Exception as exc:  # noqa: BLE001 - not loadable offline -> not available
+        # SURFACE the cause (audit BUG-1) — never swallow it silently. The persisted store
+        # still degrades to in-memory (behaviour unchanged); but now a red CI lane / an
+        # operator can see WHY via the WARNING log + secure_crypto_reason().
+        _LAST_CRYPTO_ERROR = f"{type(exc).__name__}: {exc}"
+        _LOG.warning(
+            "secure_crypto_available: the verified httpfs did not LOAD offline "
+            "(persisted store -> in-memory): %s", exc
+        )
         return False
+
+
+def secure_crypto_reason() -> str | None:
+    """Why :func:`secure_crypto_available` is False — or ``None`` when it is True.
+
+    A read-only diagnostic that reports the FIRST failing gate (no duckdb / ``OO_COLUMNAR=0`` /
+    no verified bundled binary) or, if all gates passed but the LOAD raised, the captured
+    exception (``_LAST_CRYPTO_ERROR``). This is the audit BUG-1 fix: the cause the bare
+    ``except`` used to hide is now inspectable — the columnar CI lane's failure shows WHY
+    instead of a silent False, and the operator can diagnose a bundled-binary problem without
+    reading logs. Never fabricates; ``None`` means "secure crypto is available (or not yet
+    checked, in which case call secure_crypto_available() first)"."""
+    if not duckdb_available():
+        return "duckdb is not installed (the [columnar] extra)"
+    if os.getenv("OO_COLUMNAR") == "0":
+        return "OO_COLUMNAR=0 (columnar disabled by environment)"
+    if _verified_httpfs_path() is None:
+        return (
+            "no verified bundled httpfs binary under the extension dir "
+            "(the registry pin ships blank, or the on-disk binary's sha256 does not match "
+            "the pin) -> stays in-memory, never a network autoload"
+        )
+    # all gates pass: the outcome depends on whether the LOAD raised the last time it ran.
+    return _LAST_CRYPTO_ERROR
 
 
 def encryption_gate(path: str | Path, passphrase: str) -> bool:
