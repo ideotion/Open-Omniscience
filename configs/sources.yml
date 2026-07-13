@@ -7662,7 +7662,7 @@ sources:
   rss_url: https://www.deswater.com/feed
   language: en
   rate_limit_ms: 2000
-  enabled: true
+  enabled: false  # source-quality diagnostic 2026-07-13: an academic-journal index — every scraped page is masthead/volume nav, ~no article bodies (96% furniture pathology)
   verified: false
   tags:
   - water
@@ -35468,7 +35468,7 @@ sources:
   rss_url: ''
   language: es
   rate_limit_ms: 2000
-  enabled: true
+  enabled: false  # source-quality diagnostic 2026-07-13: a WHOIS domain-lookup TOOL, not a content source — pages are the lookup UI, not articles
   verified: false
   tags:
   - fake-news
