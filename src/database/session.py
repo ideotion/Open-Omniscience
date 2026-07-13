@@ -119,6 +119,20 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
             cache_mb = 64
         cursor.execute(f"PRAGMA cache_size=-{cache_mb * 1024}")  # negative = KiB
         cursor.execute("PRAGMA temp_store=MEMORY")
+        # WAL RESTING CEILING (STORAGE_5TB_PLAN §3 Phase-A: "journal_size_limit is set
+        # NOWHERE"). journal_mode=WAL grows the -wal to its high-water mark and, by default
+        # (limit -1), NEVER truncates it back after a checkpoint — so on our workload
+        # (continuous ingest + always-on UI polls) the -wal sits at its peak between the
+        # inter-pass TRUNCATE checkpoints, wasting disk. This caps the size the -wal is
+        # truncated to on an automatic checkpoint, giving it a resting ceiling; it does NOT
+        # bound growth DURING a long transaction/reader-starvation (that is measured, not
+        # tuned — see the storage diagnostic's wal_bytes). OO_WAL_SIZE_LIMIT_MB overrides;
+        # <=0 restores SQLite's default (no limit). Bytes.
+        try:
+            wal_mb = int(os.getenv("OO_WAL_SIZE_LIMIT_MB", "64"))
+        except ValueError:
+            wal_mb = 64
+        cursor.execute(f"PRAGMA journal_size_limit={wal_mb * 1024 * 1024 if wal_mb > 0 else -1}")
         # mmap for PLAINTEXT stores only: SQLCipher pages cannot be memory-
         # mapped through the codec (every page passes the decrypt), so mmap
         # there would be a fabricated speed-up. For plaintext files it lets
