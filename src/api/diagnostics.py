@@ -1030,6 +1030,27 @@ def keyword_triage_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/recursive-loop")
+def recursive_loop(download: bool = Query(False)) -> JSONResponse:
+    """§6: the recursive-improvement loop SELF-INVENTORY — imports + runs each of the loop's own
+    mechanism-proof GATES (the keyword / IR-eval / perception / keyword-triage self-tests) and
+    reports per-gate importable/passed/error, so the recursive-improvement agent (or the
+    maintainer) knows the MEASUREMENT INSTRUMENTS themselves are trustworthy before acting on any
+    diagnostic number ("the instruments improve, which improves the loop"). Read-only,
+    deterministic, no DB / no network, no score; degrades loudly (an un-importable or raising gate
+    is reported with its error, never a fabricated green). ``download=1`` returns a dated
+    attachment. NOTE: §6's ui_walk (screenshot/console walk) + the AppVM runner are browser/VM-
+    gated and are not part of this in-process check."""
+    from src.monitoring.recursive_loop import recursive_loop_report
+
+    log = recursive_loop_report()
+    headers = {}
+    if download:
+        fname = f"oo-recursive-loop-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/ir-eval")
 def ir_eval(
     gold_path: str = Query(..., description="server-side path to a JSON gold set"),
@@ -2195,6 +2216,12 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("storage-composition.json", lambda: storage_composition_report(download=False, db=db)),
         # S1.2: the last P0 data-safety validation report (read-only; never runs a backup).
         ("p0-validation.json", lambda: _p0_validation_last()),
+        # §6 recursive-improvement loop instruments: the two cheap, decrypt-light DATA reports
+        # that were missing from the bundle, plus the loop SELF-INVENTORY (are the loop's own
+        # mechanism-proof gates green?). Kept last so a heavy corpus never delays them.
+        ("article-length.json", lambda: article_length(download=False, db=db)),
+        ("keyword-growth.json", lambda: keyword_growth(download=False, db=db)),
+        ("recursive-loop.json", lambda: recursive_loop(download=False)),
     ]
 
 
