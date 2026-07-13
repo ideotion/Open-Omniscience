@@ -12,7 +12,7 @@ The technical companion to the User Manual: the database/configuration, the HTTP
 
 ## Database Configuration for Open Omniscience
 
-> **Status (verified in the v0.0.7 audit, `docs/audit/00_BASELINE.md`):** the database layer
+> **Status (verified in the v0.0.7 audit, `docs/archive/audits/00_BASELINE.md`):** the database layer
 > **works and is tested** — the server boots, creates/uses the SQLite store, applies Alembic
 > migrations, and the full test suite (800+) passes against it. The old "early concept —
 > not functional" banner that used to sit here described a pre-rebuild state and was long

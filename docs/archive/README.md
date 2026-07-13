@@ -12,6 +12,20 @@ Records kept for accountability; nothing here describes the current system.
 - `findings.{csv,json}`, `security_findings.{csv,json}` — the kept indexes of those scans.
 - `PRESENTATION_PUBLIC.md` — the public pitch narrative; archived because it is marketing
   material, not technical documentation. Still accurate as a narrative.
+- `SOLO_SESSION_DECISIONS.md`, `SOLO_SESSION_PR_PLAN.md` — a completed solo session's
+  decision log + PR plan (was `docs/`).
 
-The **current** audit cycle's reports live in [`docs/audit/`](../audit/), with
-`docs/audit/findings.csv` as the live findings register.
+## Subfolders
+
+- [`session-briefs/`](session-briefs/) — spent autonomous-session operating manuals
+  (through the 2026-07-11 S1–S6 program). See its README for the old→new map.
+- [`audits/`](audits/) — the pre-0.2 audit cycles' working files (phase docs, logs,
+  action plans, `findings.csv`, `raw/` tool dumps, `diagrams/`). See its README.
+- [`source_enrichment/`](source_enrichment/) — the completed source-metadata-enrichment
+  session's prompts + fan-out workflow (was `docs/design/source_enrichment/`).
+- [`roadmaps/`](roadmaps/), [`field-tests/`](field-tests/), [`releases/`](releases/) —
+  earlier archival passes.
+
+The audit **records of record** stay live in [`docs/audit/`](../audit/)
+(`06_FULL_AUDIT_0_0_9.md`, `07_TRANSVERSAL_AUDIT_V01.md`, and the current
+`CUMULATIVE_INTEGRITY_AUDIT_2026-07-13.md`).

@@ -2490,7 +2490,7 @@
   / next" matching the RC gate 🔶 (the shipped halves stay accurately ✅).
 - **SOLO SESSION 2026-06-15 (autonomous; maintainer away) — audit + honesty
   bug-fix stack (draft PRs onto 0.09; full audit + every Class-B/C call in
-  `docs/SOLO_SESSION_DECISIONS.md` + `docs/audit/*_2026-06-15_solo.md`):**
+  `docs/archive/SOLO_SESSION_DECISIONS.md` + `docs/archive/audits/*_2026-06-15_solo.md`):**
   - **Item V SHIPPED — airplane-mode PAUSED status (status-honesty bug):** the
     activity chip painted green "Collecting…" while airplane mode had tripped the
     kill switch (the pass really stops) = a FABRICATED status. Now `_paintNetwork`
@@ -2617,8 +2617,8 @@
   rollout to commodity-card enlarge/indices board; the map's mention layer also
   consuming EVENT-places; calendar-picker + typo-tolerant did-you-mean for date
   search (the range control is the begin/end half).
-- **AUDIT REMEDIATION PASS (2026-06-15, acts on `docs/audit/AUDIT_LOG_2026-06-14.md`;
-  plan + per-finding status in `docs/audit/ACTION_PLAN_2026-06-14.md`; ONE PR onto
+- **AUDIT REMEDIATION PASS (2026-06-15, acts on `docs/archive/audits/AUDIT_LOG_2026-06-14.md`;
+  plan + per-finding status in `docs/archive/audits/ACTION_PLAN_2026-06-14.md`; ONE PR onto
   0.09):** every finding re-verified at HEAD first (the audit was pinned at ba61162;
   #158 had already closed README count/restore + the ETHICS "becomes functional"
   line + the ARCHITECTURE Postgres section). SHIPPED+verified (full suite green,

@@ -36,7 +36,7 @@
 > the whole product-roadmap push (trust hardening, the investigation-recipe cards and
 > `/investigate` dashboards, the typed ORM, all 29 audit findings closed — the `0.07`
 > audit fixed 20 and deferred 9 with rationale; the 9 were closed in `0.0.8`
-> ([`findings.csv`](docs/audit/findings.csv) reads 29/29 FIXED) — the methods
+> ([`findings.csv`](docs/archive/audits/findings.csv) reads 29/29 FIXED) — the methods
 > appendix and provenance-preserving exports, corpus LLM synthesis, offline source
 > discovery), then the live-test hardening batches (temporal map + agenda, themes and
 > bundled fonts, entity/location/date extractors, network-mode switch, field-test

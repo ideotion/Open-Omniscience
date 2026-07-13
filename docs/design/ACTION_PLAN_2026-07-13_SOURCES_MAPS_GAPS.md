@@ -1,0 +1,190 @@
+# Action plan — self-curating sources · maps/OSM · planned-but-partial remediation (2026-07-13)
+
+**Status:** DESIGN / PLAN OF RECORD. Consolidates the 2026-07-13 planning dialogue
+(source-quality → auto-audit → auto-discovery; OSM/maps leverage; the planned-but-partial
+gap sweep). Companion to the two existing forward docs — do NOT duplicate them:
+- `docs/design/PLANNING_2026-07-12_OPTIMIZATION_PROGRAM.md` + its `..._ACTION_PLAN_2026-07-13.md`
+  (Conjunction Lens · Leads 2.0 · fingerprints · search · Tor · power · triage · AppVM) —
+  **most of that program has since SHIPPED** (#648–#653: search-timing, power-profiles,
+  conjunction-lens, leads-cores, keyword-fingerprints, tor-throughput; verify per the audit
+  discipline, don't re-plan).
+- `docs/design/STORAGE_5TB_PLAN.md` (storage at 5 TB).
+
+**Binding honesty rails for everything below** (the project's spec): no composite scores; every
+signal carries method + baseline + n; caveats visible by default; three provenance classes never
+blended; degrade loudly; read-only/EXPORT-ONLY unless a network action passes the ONE consent;
+the de-US-centring/source-diversity investment must be *protected*, never eroded.
+
+---
+
+## PART 1 — The self-curating sources system (the spine)
+
+One loop: **discovery grows the source list; auditing prunes it.** Three phases; Phase 0 shipped.
+
+### Phase 0 — Source & article quality DIAGNOSTIC — ✅ SHIPPED (#655–#657)
+`src/analytics/source_quality.py` + `GET /api/diagnostics/source-quality` (a TEMPORARY/removable
+button) produces the one ZIP: per-article keyword-stat outliers · a text sample from THREE labeled
+selectors (`random_per_source` control + `keyword_outlier` + `source_fingerprint`) · per-source
+keyword fingerprints · per-language health · newsletter text-gate
+(`OO_QUALITY_INCLUDE_NEWSLETTER_TEXT`, default off). Matches the spec exactly.
+**REMAINING (operator + analyst loop):** the maintainer runs it → sends the zip → analysis reads
+`per_source_keywords` first (fastest triage), establishes the base rate from the random control,
+checks the outlier detector's recall gap, and rolls up a per-source **exclude / optimize-extractor
+/ keep** list. That list is the calibration input for Phase 1.
+
+### Phase 1 — Standing automatic source AUDITOR (the quality gate) — NEXT, design-ready
+The one-shot diagnostic generalized into a continuous, in-app auditor. **The reframe that keeps it
+honest is load-bearing: it audits EXTRACTION VALIDITY / content-vs-non-content, NEVER editorial
+merit.** "Disqualify" = *this source's scrapes are systematically not usable articles* (paywall
+stubs, nav/index pages, consent walls, wrong-DOM extraction) — never "terse/unfamiliar prose," which
+is legitimate variety and is exactly what a naive length/structure auditor would wrongly cut.
+- **Criteria panel (all descriptive, corpus-relative per-language cohort, robust stats, n shown,
+  NO absolute magic thresholds, NO blended score):** the four keyword ratios + top-keyword furniture
+  share (reuse `source_quality.py` + `engine_report` `generic_terms` DF-ubiquity); article length
+  (`article_length.py`, script-aware); sentence + paragraph structure (degenerate = nav/stub); link
+  density; boilerplate signatures; within-source near-dup rate (`near_dup.py`); language consistency
+  (`langdetect` vs asserted `Source.language`); scrape yield (storable-article vs paywall/error).
+- **Status not verdict:** per-source status (healthy/watch/degraded/failing) with the *failing
+  criteria + values*. **Precision-biased auto-action, recall-biased flag:** auto-DEMOTE
+  (`enabled=false`, reversible, reason recorded) ONLY on high-confidence *extraction-failure*
+  signatures + sustained low yield; everything softer is a human-review FLAG.
+- **Guardrails:** maintainer allowlist (a trusted atypical source is never auto-cut); the
+  auto-demote flag distribution surfaced BY REGION as a self-audit (never disproportionately cut an
+  under-represented bucket); criteria + thresholds VISIBLE + configurable in Settings ("agreed"
+  policy the human owns).
+- **Runs** in the S2.2 idle-maintenance regime; count-based whole-corpus + bounded text sampling for
+  the sentence/paragraph metrics; a rollup at 5 TB.
+- **Sequence:** prove the criteria on the Phase-0 diagnostic results FIRST → ship the auditor
+  flag-only (no auto-action) → add narrow auto-demote last, once the false-positive rate is measured.
+
+### Phase 2 — Automatic source DISCOVERY funnel — design-ready; foundation partly built
+Grow the source list from evidence the corpus already holds (citations beat search: self-curating,
+primary-leaning). Three channels → one funnel → the Phase-1 quality gate.
+- **Channels:** (a) article-citations — `src/discovery/cited_sources.py` ships: harvest cited
+  domains, rank by INDEPENDENT citing sources (r-not-n), register DISABLED. (b) **Wikipedia
+  references** — the flagship NEW channel: parse `References`/`{{cite web|url=}}` from the
+  already-stored wiki text (zero-network), **across ALL 12 editions** (built-in geographic/language
+  de-biasing — French Wikipedia cites French sources, etc.). (c) DDG topic discovery — the existing
+  gated, off-by-default channel.
+- **The promotion frontier (the "automatic + discreet" part, as a bounded funnel):** candidate
+  (disabled, provenance) → **trial** (clears an independence threshold + robots + valid kind →
+  auto-enable at LOW cadence) → **quality gate** (Phase-1 auditor: real articles → graduate; junk →
+  auto-demote) → graduated. Humans set thresholds + audit; they don't hand-approve each domain.
+- **Guardrails:** DIVERSITY-WEIGHTED promotion (a candidate filling an under-represented region/
+  language promotes on a lower threshold; never worsen the balance); every scrape of a new source is
+  a network action under the ONE consent + the bandwidth ladder (trial cadence bounds growth + the
+  5 TB trajectory); a "discovered sources" AUDIT VIEW (provenance `discovered_via` · first-cited-by ·
+  date · trial/graduated) + UNDO — discreet means low-friction, never hidden.
+- **Border/citation-bias honesty:** any citation graph (Wikipedia's included) over-represents
+  established/Western sources; the multi-edition harvest helps, but the diversity weighting is the
+  enforcement.
+- **The composition:** Phase 1 IS the quality gate that makes Phase 2 safe. Build Phase 1 first.
+
+---
+
+## PART 2 — OSM / maps leverage
+
+**Verified current state:** OSM is *partly* leveraged, not unbuilt — `src/static/osmpbf.js` (a
+node-tested pure-JS `.osm.pbf` parser) is wired into ooMap as an opt-in **bounded preview** overlay
+(national rings that upgrade the coarse 110m polygons + microstates). But every map still draws its
+base from bundled **Natural Earth**; OSM is an overlay on one map, not the base for all; and map
+change-tracking is NOT built. Two very different ambitions, and the no-WebGL ruling decides which:
+- **OSM as a better DATA SOURCE (recommended, tractable, fits no-WebGL):** preprocess OSM extracts
+  OFFLINE into compact simplified geometry — finer admin-0 boundaries, **sub-national admin-1**
+  polygons (the missing piece for region-level choropleth), a richer place gazetteer — and feed
+  EVERY map surface. Fixes concrete Natural-Earth gaps (the ~75 microstate centroid-fallbacks, coarse
+  borders, no sub-national). **The missing bridge:** an offline preprocessing job (OSM → boundaries/
+  admin/places → simplified artifacts → replace/augment NE), run like the download-manager jobs.
+- **OSM as LIVE street-level detail (ceilinged by the no-WebGL ruling):** the bounded preview is
+  about as far as pure-JS goes; full detail wants vector tiles + GPU. Honest verdict: expensive, and
+  arguably not what a journalism tool needs.
+- **Border-honesty constraint (on-mission):** borders are political; OSM has conventions + disputed
+  territories. Any OSM-boundary use must disclose "reflects OSM's convention as of `<date>`" and
+  surface disputed borders as CONTESTED (multiple claims), never silently pick one. This is
+  "name the shape, never prescribe" applied to cartography — and the seam into change-tracking.
+- **Map change-tracking over time (later, depends on the bridge):** on-mission (reliable-memory /
+  borders get redrawn / "history written by winners"); OSM is fully versioned (dated extracts), so
+  dated boundary snapshots are feasible — the geographic analog of the Wikipedia/law versioning
+  (a boundary is an Article; its OSM history is the linked audit layer).
+- **OPEN RULING (maintainer):** (1) is the no-WebGL ruling firm? (it forecloses live detail, not the
+  data-source path). (2) which ambition — data-source (recommended) vs live-detail? ROI note: this
+  sits BEHIND P0 scale + the sources system; the highest-value achievable slice is the data-source
+  path's sub-national boundaries + gazetteer.
+
+---
+
+## PART 3 — Planned-but-partial remediation (from the 2026-07-13 gap sweep)
+
+Four tree-verified verifier sweeps found the "OSM pattern" (substrate shipped, leverage stalled) in
+several places. Full evidence: the four agent reports (2026-07-13). Actionable tiers:
+
+### 3A — Quick wins: surface an already-built backend (the highest ROI)
+- **AI-derived keyword read-only lens** — table + endpoints ship; no reader UI (only a count tile).
+  Render the labelled "AI-derived · unreliable" lens beside the trusted keywords. **S.**
+- **Subjectivity / loaded-language engine** — `subjectivity.py` + endpoint + seed lexicons ship;
+  ZERO frontend consumer. Render it on the manipulation cards. (Real license-clean lexicons =
+  operator sourcing.) **M.**
+- **El Niño / climate dataset** — bundled data + `/api/events/climate` ship; verification-pending +
+  ZERO frontend consumer. Surface it (agenda banners) + operator clearnet verification. **M.**
+
+### 3B — A decision, not a build
+- **`external_sources` table** — model + migration + backup-carry ship; **0 rows, never written**;
+  the citation consumer went another route. Decide: WIRE it (into the Phase-2 discovery funnel — its
+  natural consumer) or DELETE it. Recommendation: fold into Phase 2, else remove the dead weight. **M.**
+
+### 3C — The measure-gate linchpin (one operator action unblocks three)
+Grade the IR gold set (~10 min): it unblocks **lemmatization** (`OO_FAMILY_LEMMA`, built, never
+measured), the **BM25F default** (A/B harness built, no chosen weights), and the **static-embedding
+pilot**. Highest leverage-per-effort in the whole tree. **Operator.**
+
+### 3D — Dead-code + growing debt → an AppVM Gecko-verified cleanup pass
+- Retired **temporal-map** cluster (~250 lines interleaved with LIVE shared helpers — the dangerous
+  cut), dead **`#corpus-win`** modal DOM + boot listener, orphaned **`loadIndicesData`/
+  `loadMarketData`**, orphaned **`#onboard`** i18n keys. All gated on browser verification → the
+  AppVM is the venue. **M.**
+- **Inline `on*=` handler retirement** — planned ~295, now ~500 (accreting); a11y/CSP. **L.**
+- **i18n audit-chrome → 0** — ~170+ untranslatable static strings remain. **M.**
+
+### 3E — Re-decide, don't let drift: the 3D keyword explorer (flagship)
+Ruled "BUILD IT, do NOT defer the 3D," yet still the 3 toggled levels the plan said to REPLACE, and
+"Enlarge" is a CSS toggle not `requestFullscreen`. Needs a conscious maintainer "still want the
+flagship?" rather than silent drift. **L.**
+
+### 3F — Consciously gated (inventory only — correctly parked, not problems)
+D1/D2/D3 columnar (httpfs binaries) · storage Phase B/C · the LLM-expansion bundle (deep-model tier /
+whole-corpus cited synthesis / corpus Q&A / per-surface lenses) · Wikipedia dumps→corpus +
+whole-edition tracking (P0-gated) · Leads 2.0 Settings subtab · segmented Tor downloads / mirror
+selection · entity→QID · eclipse canon + bundled religious calendars · sub-national boundaries (= the
+Part-2 data-source path) · evidence-tier what's-missing/BH-FDR · clickable-keywords stats hover.
+
+### 3G — Operator/networked (a run, not code)
+Segmenter LIVE re-index over the existing corpus · DB-5 (name the ~120 GB, field export) · USGS
+fetch · subjectivity lexicon sourcing · gold-set grading · El Niño verification.
+
+### 3H — Stale-ledger drift (mark done; a reconciliation, not a build)
+The ledger still lists as REMAINING several items that SINCE-SHIPPED: full-text dump search, weather
+signal-keywords, deduced-events-in-agenda, ring-translation fallback, LLM langdetect, sentiment
+surfacing, super-groups/ring-country UI. A periodic reconciliation should mark these.
+
+---
+
+## Consolidated sequencing (recommendation)
+
+1. **Operator, now:** run the Phase-0 quality diagnostic → send the zip (calibrates Phase 1); grade
+   the IR gold set (3C — unblocks three retrieval wins).
+2. **Cheap high-value builds:** 3A surface-the-backend trio (AI lens · subjectivity · El Niño);
+   3B `external_sources` decision.
+3. **The sources spine:** Phase 1 standing auditor (flag-only first) → then Phase 2 discovery funnel
+   (Wikipedia-references channel first, zero-network) → then narrow auto-action, gated on the
+   measured false-positive rate.
+4. **AppVM cleanup pass:** 3D dead-code + inline-handler + i18n tail (Gecko-verified deletions).
+5. **Maps:** decide the Part-2 ruling; if data-source path → the offline preprocessing bridge +
+   sub-national boundaries; change-tracking later.
+6. **Gated tiers (3F) + operator tiers (3G)** proceed on their own ruling/field-data cadence.
+
+## Open maintainer rulings this plan surfaces
+- Phase-1 auto-demote trigger set (rec: extraction-failure + sustained low yield only).
+- Phase-2 promotion automaticity (rec: auto-trial + quality-gated graduation, diversity-weighted).
+- `external_sources`: wire (into Phase 2) vs delete.
+- Maps: no-WebGL firm? data-source vs live-detail ambition?
+- The 3D keyword explorer: still wanted as ruled, or formally deprioritized?

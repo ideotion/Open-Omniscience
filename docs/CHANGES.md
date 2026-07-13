@@ -1327,7 +1327,7 @@ delivered) and closed **every remaining audit finding — the register reads 29/
 
 A six-phase, evidence-driven audit of the whole repository (baseline → architecture →
 quality → stabilize → optimize → docs; reports in [`docs/audit/`](audit/), findings in
-[`docs/audit/findings.csv`](audit/findings.csv)). 29 findings: 20 fixed, 9 deferred with
+[`docs/archive/audits/findings.csv`](archive/audits/findings.csv)). 29 findings: 20 fixed, 9 deferred with
 rationale. Highlights:
 
 - **Ethics invariant restored (ETH-01, the audit's one real invariant breach):** RSS-feed
