@@ -196,6 +196,8 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Hand-rolled offline vector-map renderer** — canvas 2.5D / CSS-3D, no WebGL/Three.js/tiles. 🎨
 - **Temporal-map remainder** — linear/log time-scale toggle + feed the mention layer with **event-places** (the temporal map itself is retired into `ooMap`). ⬜
 - **OSM download-manager remainder** — per-job rate/ETA/bandwidth-cap controls, country sub-extracts, one consented exact-size refresh. 🚧 partial
+- **OSM as a DATA SOURCE for all maps** (ruled 2026-07-13, Q1a; build DEFERRED to its own session) — an OFFLINE preprocessing job turns OSM extracts into compact simplified geometry (finer admin-0, **sub-national admin-1** for region choropleth, a richer place gazetteer) that replaces/augments Natural Earth on every map surface, fixing the ~75 microstate centroid-fallbacks + coarse borders. Border-honesty: disclose "OSM convention as of `<date>`", surface disputed borders as CONTESTED. no-WebGL stands (live street-level detail is out of scope). Sits behind P0 scale + the sources system. ⬜
+- **3D keyword explorer** — formally **DEPRIORITIZED** (ruled 2026-07-13, Q5a; supersedes the 2026-06-16 "do NOT defer the 3D"). The 3-level mind-map (Keywords/Families/Super-groups) stays as-is. ⬜
 
 ### Agenda & calendars
 - **Eclipse canon** from a bundled public table (moons + seasons already shipped). 🎨
