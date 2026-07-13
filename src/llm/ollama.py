@@ -148,6 +148,14 @@ class GenerationResult:
     text: str
     prompt_eval_count: int | None = None
     eval_count: int | None = None
+    # Ollama's OWN measured timing (nanoseconds), passed through VERBATIM when present —
+    # the raw material for the keyword-triage cost/ETA computation (planning §8) and any
+    # honest throughput measurement. Absent (older Ollama / a non-timing response) = None,
+    # never a fabricated 0. Additive: every existing GenerationResult(...) call omits these.
+    total_duration: int | None = None
+    load_duration: int | None = None
+    prompt_eval_duration: int | None = None
+    eval_duration: int | None = None
 
 
 class OllamaClient:
@@ -277,6 +285,10 @@ class OllamaClient:
             text=(data.get("response") or "").strip(),
             prompt_eval_count=data.get("prompt_eval_count"),
             eval_count=data.get("eval_count"),
+            total_duration=data.get("total_duration"),
+            load_duration=data.get("load_duration"),
+            prompt_eval_duration=data.get("prompt_eval_duration"),
+            eval_duration=data.get("eval_duration"),
         )
 
     def pull(self, model: str):
