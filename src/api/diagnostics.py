@@ -1051,6 +1051,42 @@ def recursive_loop(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/search-timing")
+def search_timing(download: bool = Query(False)) -> JSONResponse:
+    """§4: the per-search intra-request timing aggregate — per-phase (FTS MATCH · content fetch ·
+    serialization) percentiles over a bounded recent-window of instrumented searches, and the
+    MEASURED dominant phase (highest p95 wall-clock = the §4 optimization target chosen by
+    evidence, not theory). Read-only; degrades to an honest empty report before any search is
+    instrumented (wiring instrument_search into the search endpoint on the operator's live
+    encrypted corpus is the §4 CI/operator step — see search_timing.py). No composite score.
+    ``download=1`` returns a dated attachment."""
+    from src.monitoring.search_timing import search_timing_report
+
+    log = search_timing_report()
+    headers = {}
+    if download:
+        fname = f"oo-search-timing-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
+@router.get("/search-timing-selftest")
+def search_timing_selftest(download: bool = Query(False)) -> JSONResponse:
+    """§4: prove the search-timing MECHANISM on a deterministic injected clock — the per-phase
+    wall-clock timer, the percentile aggregate, and (the point of the instrument) that the
+    dominant phase is chosen by MEASURED p95, not by insertion order. No browser, no network, no
+    DB, no live corpus, no score; a regression reddens both this endpoint and CI. ``download=1``
+    returns a dated attachment."""
+    from src.monitoring.search_timing import run_search_timing_selftest
+
+    log = run_search_timing_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-search-timing-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/ir-eval")
 def ir_eval(
     gold_path: str = Query(..., description="server-side path to a JSON gold set"),
@@ -2222,6 +2258,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("article-length.json", lambda: article_length(download=False, db=db)),
         ("keyword-growth.json", lambda: keyword_growth(download=False, db=db)),
         ("recursive-loop.json", lambda: recursive_loop(download=False)),
+        # §4 search-instrumentation: the per-search phase-timing aggregate (empty-honest until
+        # instrument_search is wired into the search endpoint on the operator's rig).
+        ("search-timing.json", lambda: search_timing(download=False)),
     ]
 
 
