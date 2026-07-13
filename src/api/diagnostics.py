@@ -1304,6 +1304,55 @@ def keyword_growth(download: bool = Query(False), db: Session = Depends(get_db))
     return JSONResponse(curve, headers=headers)
 
 
+# --------------------------------------------------------------------------- #
+# TEMPORARY / REMOVABLE diagnostic — Source & article quality triage bundle.
+# THROWAWAY: delete this endpoint + its Settings→Diagnostics button once the
+# external analyst has used the export to decide, per source, exclude/optimise/keep.
+# --------------------------------------------------------------------------- #
+@router.get("/source-quality")
+def source_quality(
+    download: bool = Query(True),
+    seed: int = Query(20260713),
+    db: Session = Depends(get_db),
+) -> Response:
+    """TEMPORARY diagnostic: ONE ZIP with everything an analyst needs to decide, per source,
+    whether to EXCLUDE it (bad source) / OPTIMIZE the extractor (a mangled real article) / KEEP it
+    (a genuine edge). Detects non-articles THREE independent ways (per-article keyword-stat
+    outliers · a text sample from three selectors · per-source keyword fingerprints).
+
+    READ-ONLY, EXPORT-ONLY (no writes to any table), no network, NO composite score — every flag is
+    a deduced candidate with its raw value + cohort baseline + n. Plain ``def`` → runs in the
+    threadpool (off the event loop); COUNT-ONLY over the whole corpus (the codec decrypts each
+    article page once, the documented diagnostic cost); Article.content is decrypted ONLY for the
+    bounded text heads of the SAMPLED subset. Private newsletter/mailbox bodies are gated behind
+    ``OO_QUALITY_INCLUDE_NEWSLETTER_TEXT`` (default off → counts+metadata only). ``seed`` fixes the
+    random-per-source control for reproducibility."""
+    import io
+    import zipfile
+
+    from src.analytics.source_quality import build_quality_report_files
+
+    include_nl = os.getenv("OO_QUALITY_INCLUDE_NEWSLETTER_TEXT", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    files = build_quality_report_files(
+        db,
+        generated_at=datetime.now().isoformat(timespec="seconds"),
+        seed=seed,
+        include_newsletter_text=include_nl,
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    fname = f"oo-source-quality-{datetime.now().strftime('%Y%m%d-%H%M')}.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @router.get("/dates")
 def date_extraction_log(
     db: Session = Depends(get_db),
