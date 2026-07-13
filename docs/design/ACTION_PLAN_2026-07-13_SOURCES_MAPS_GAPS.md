@@ -193,9 +193,44 @@ surfacing, super-groups/ring-country UI. A periodic reconciliation should mark t
 - **3D keyword explorer** — ✅ formally DEPRIORITIZED (supersedes the 2026-06-16 "do NOT defer");
   the 3-level mind-map stays. Do NOT build.
 
-## Omnibus execution status (2026-07-13)
-- Part-3H stale-ledger reconciliation — ✅ done (rulings commit).
-- Part-1 Phase 1 standing auditor — the session's verifiable-backend priority (flag-only, auto-demote
-  default-off). See the closeout for the shipped slice + carry-over.
-- Part-3A surfacing / Part-3B funnel / Leads-UI / small tails — Q6a caps frontend at
-  browser-unverified; status per the session closeout + carry-over.
+## Omnibus execution status (2026-07-13, closeout)
+Executed under full autonomy, DRAFT-PR-only (nothing auto-merges — the review is the gate). The
+session prioritised the fully-VERIFIABLE backend spine + the mandated ledger work at full quality,
+and parked the browser-UNVERIFIED frontend + the large Phase-2 backend HONESTLY (never a fabricated
+pass). What shipped, what's parked:
+
+**SHIPPED (draft PRs onto 0.2):**
+- **Item 0 / Part-3H — ledger reconciliation + the 6 rulings** — ✅ MERGED (#662).
+- **Item 2 / Part-1 Phase 1 — the standing source AUDITOR** — ✅ #663 (the board's own linchpin:
+  "Phase 1 IS the quality gate that makes Phase 2 safe"). `src/analytics/source_audit.py` +
+  `/api/diagnostics/source-audit{,-selftest}` + Settings buttons. FLAG-ONLY (Q2a): auto-demote
+  machinery built but DEFAULT-OFF. Reuses the source_quality collectors (count-only, no content
+  decrypt); status is the categorical rollup of a criteria LIST, never a score; soft/style-ambiguous
+  signals never exceed `watch` (the reframe); a per-region self-audit + allowlist cap. Adversarial
+  skeptic pre-push found + fixed a HIGH (the nearest-rank p90 tail trap — the worst nav sources
+  escaped `failing` once EF sources were ≳10% of a cohort; fixed with an absolute EF-only floor,
+  regression-pinned) + L3 sort. 18 tests, ruff/mypy/i18n clean.
+- **Item 1 / Part-3A surfacings** — #664. (a) AI-keyword lens: VERIFIED ALREADY SHIPPED
+  (`view_article` renders `ai_keyword` inline — the board's "zero UI" was stale; staleness-guard
+  win). (b) subjectivity: SHIPPED a "Loaded language" reader tab (density + terms + honest gap),
+  conservative + flagged, browser-unverified per Q6a. (c) El Niño banners: PARKED (below).
+
+**PARKED — honest carry-over (precise specs in the closeout PR body + below):**
+- **Item 1(c) El Niño agenda banners** — the bundled climate dataset is `verification_status=flagged`
+  (pending the NOAA CPC ONI clearnet check), episodes are historical multi-month SPANS that don't fit
+  the forward agenda, and span-banners aren't supported — prominently surfacing unverified data
+  browser-unverified would breach "nothing presented as verified before it is." Build after the ONI
+  check + span-banner support.
+- **Item 3 / Part-3B + Phase 2 — the discovery funnel** — a large, dedicated-session backend build
+  (additive funnel-state migration + the zero-network Wikipedia-references channel + external_sources
+  wiring Q4a + the audit view). NOT started — half-building a data-migration is worse than an honest
+  park. RECOMMENDED next-session start: the zero-network wiki-refs channel is the most self-contained,
+  verifiable slice and builds directly on the now-merged Phase-1 auditor (the graduation quality gate).
+- **Item 4 / Leads 2.0 + Conjunction Lens UI · Item 5 / small tails** — browser-UNVERIFIED frontend
+  (Q6a). Parked with the cores already shipped (§1/§2 of the optimization program); each needs a
+  browser-verified UI pass.
+- **Item 6 / fingerprint persistence (§3 stretch)** — the skip-without-guilt dormant stretch; not built.
+
+**MAINTAINER-VERIFY (could not confirm in-session):** the columnar "Columnar store" CI lane green at
+the #661 tip (Part-3H asked to verify it; the real-httpfs round-trip is egress-blocked in-sandbox and
+there is no `gh` here — check the lane on origin/0.2).
