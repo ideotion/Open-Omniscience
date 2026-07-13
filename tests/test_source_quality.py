@@ -44,11 +44,12 @@ def test_metrics_and_unsegmented_not_applicable():
     normal = compute_metrics(word_count=500, total_mentions=80, distinct_keywords=50,
                              max_single_kw=5, unsegmented=False)
     assert normal["mention_density"] == 0.16 and normal["type_token"] == 0.625
-    # unsegmented: the word_count metrics become None (not a fabricated 0); the others survive
+    # v2: for an unsegmented language ALL FOUR metrics are None (keyword extraction is degenerate
+    # without a segmenter, so type_token/single_kw_dominance are unreliable too — not just the
+    # word_count ones). A fabricated 0 or a false comparison is never emitted.
     unseg = compute_metrics(word_count=500, total_mentions=80, distinct_keywords=50,
                             max_single_kw=5, unsegmented=True)
-    assert unseg["mention_density"] is None and unseg["vocab_sparsity"] is None
-    assert unseg["type_token"] == 0.625 and unseg["single_kw_dominance"] == 0.0625
+    assert all(v is None for v in unseg.values())
     # zero denominators degrade to None, never a crash
     z = compute_metrics(word_count=0, total_mentions=0, distinct_keywords=0, max_single_kw=0, unsegmented=False)
     assert all(v is None for v in z.values())
@@ -129,20 +130,19 @@ def test_small_cohort_gets_no_baseline_said_honestly():
     assert flag_outliers(stats, baselines, floor=30) == []
 
 
-def test_unsegmented_word_count_metrics_are_not_applicable_not_flagged():
-    # a big zh cohort so a baseline exists; density/sparsity must be N/A (the language flag), and
-    # the article must NOT be flagged on those dimensions.
-    stats = [_stat(i, 1, "zh", {"mention_density": None, "type_token": 0.5 + i * 0.001,
-                                "vocab_sparsity": None, "single_kw_dominance": 0.5}, unseg=True)
-             for i in range(40)]
-    # add one zh article with an extreme type_token (a real, segmentation-independent signal)
-    stats.append(_stat(999, 1, "zh", {"mention_density": None, "type_token": 0.01,
-                                      "vocab_sparsity": None, "single_kw_dominance": 0.5}, unseg=True))
-    records = flag_outliers(stats, build_baselines(stats, floor=3), floor=3)
-    r999 = next(r for r in records if r["article_id"] == 999)
-    assert "mention_density" in r999["not_applicable"] and "vocab_sparsity" in r999["not_applicable"]
-    assert all(f["dimension"] not in ("mention_density", "vocab_sparsity")
-               for f in r999["flagged_dimensions"])
+def test_unsegmented_cohort_is_not_assessed_and_flags_nothing():
+    # v2 regression (the two defects the live run exposed): an UNSEGMENTED language is NOT ASSESSED.
+    # compute_metrics returns all-None, so flag_outliers emits ZERO records for the cohort — it is
+    # never counted as flagged (v1 emitted an N/A-marker record per article, inflating zh/ja/th to
+    # 100% flagged), and it never fires a false flag on type_token/single_kw_dominance.
+    stats = []
+    for i in range(40):
+        m = compute_metrics(word_count=200 + i, total_mentions=50, distinct_keywords=48,
+                            max_single_kw=40, unsegmented=True)  # all None
+        stats.append(ArticleStat(article_id=i, source_id=1, language="zh", word_count=200 + i,
+                                 total_mentions=50, distinct_keywords=48, max_single_kw=40,
+                                 unsegmented=True, metrics=m))
+    assert flag_outliers(stats, build_baselines(stats, floor=3), floor=3) == []
 
 
 # --------------------------------------------------------------------------- #
@@ -219,6 +219,7 @@ def _corpus() -> Session:
         "furniture": Source(name="Furniture", domain="furni.example", source_type="news", language="en", enabled=True),
         "news_letter": Source(name="NL", domain="newsletters.import.local", source_type="newsletter", language="en", enabled=True),
         "empty": Source(name="Empty", domain="empty.example", source_type="news", language="en", enabled=True),
+        "cjk": Source(name="CJK", domain="cjk.example", source_type="news", language="zh", enabled=True),
     }
     for src in sources.values():
         s.add(src)
@@ -259,6 +260,10 @@ def _corpus() -> Session:
     # newsletter source: one article (will be the random-per-source pick) — body must be gated
     add_article(sources["news_letter"], content="PRIVATE newsletter body that must not leak by default.",
                 word_count=200, lang="en", mentions={"election": 3, "policy": 2})
+    # an UNSEGMENTED (zh) source: v2 must mark it NOT ASSESSED and flag none of its articles
+    for _ in range(5):
+        add_article(sources["cjk"], content="中文文章内容示例。", word_count=100, lang="zh",
+                    mentions={"election": 30, "policy": 1})  # would be a "pathology" IF assessed
     s.commit()
     return s
 
@@ -271,7 +276,14 @@ def test_build_report_end_to_end_and_newsletter_text_gate():
                           "README.md"}
     manifest = json.loads(files["manifest.json"])
     assert manifest["schema"] == sq.SCHEMA and manifest["temporary"] is True
-    assert manifest["corpus_totals"]["articles"] == 11
+    assert manifest["corpus_totals"]["articles"] == 16  # 11 en/newsletter + 5 zh
+
+    # v2: the unsegmented (zh) language is NOT ASSESSED — pct_flagged null, and NONE of its articles
+    # are flagged (the live-run defect where zh/ja/th read 100% flagged is gone).
+    plh = json.loads(files["per_language_health.json"])
+    assert plh["zh"]["assessed"] is False and plh["zh"]["pct_flagged"] is None
+    outliers = [json.loads(ln) for ln in files["keyword_outliers.jsonl"].decode().splitlines() if ln]
+    assert all(o["language"] != "zh" for o in outliers)  # no zh article flagged
 
     # per-source keyword fingerprints parse and carry cross_source_df, no score
     psk = [json.loads(ln) for ln in files["per_source_keywords.jsonl"].decode().splitlines() if ln]

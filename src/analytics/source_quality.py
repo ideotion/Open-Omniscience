@@ -46,7 +46,7 @@ from src.analytics.managed import UNSEGMENTED
 from src.database.models import Article, ArticleLink, KeywordMention, Source
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS
 
-SCHEMA = "oo-source-quality-1"
+SCHEMA = "oo-source-quality-2"  # v2: unsegmented languages are NOT-ASSESSED (all 4 metrics N/A)
 
 # --- Tunables (all disclosed in the manifest; propose, never auto-apply) ------------------- #
 DEFAULT_SEED = 20260713          # fixed so the random-per-source control is reproducible
@@ -70,8 +70,6 @@ FURNITURE_SHARE_THRESHOLD = 0.34  # a source is flagged if >= this share of its 
 # The 4 count-only dimensions and which tail is the suspicious one (for the "Share Now" pathology).
 # high mention_density + low type_token + high single_kw_dominance TOGETHER = furniture repetition.
 _METRICS = ("mention_density", "type_token", "vocab_sparsity", "single_kw_dominance")
-# metrics that use word_count (meaningless for unsegmented languages -> not-applicable there)
-_WORD_COUNT_METRICS = ("mention_density", "vocab_sparsity")
 
 # Cheap boilerplate phrases for the heuristic PRE-LABEL (a hint for the analyst, never a verdict).
 _BOILERPLATE_PHRASES = (
@@ -112,20 +110,26 @@ def compute_metrics(
     *, word_count: int | None, total_mentions: int, distinct_keywords: int, max_single_kw: int,
     unsegmented: bool,
 ) -> dict[str, float | None]:
-    """The 4 count-only ratios. ``None`` where a denominator is 0, or (for the word_count-based
-    ratios) where the language is UNSEGMENTED (``word_count = len(text.split())`` is meaningless
-    for zh/ja/th) — an honest not-applicable, never a fabricated 0."""
+    """The 4 count-only ratios, or ``None`` where they cannot be trusted — never a fabricated 0.
+
+    For an UNSEGMENTED language (zh/ja/th) ALL FOUR are ``None``: word_count is meaningless
+    (``len(text.split())``), AND — the v2 correction — keyword extraction itself is degenerate
+    without a segmenter (few/giant tokens), so type_token and single_kw_dominance are unreliable
+    too. So an unsegmented article has no assessable metric and is never an outlier; its LANGUAGE
+    is flagged as not-assessed instead. (v1 marked only the two word_count metrics N/A, which let
+    the whole unsegmented cohort read as 100% flagged.)"""
+    if unsegmented:
+        return dict.fromkeys(_METRICS, None)
 
     def _ratio(num: float, den: float | None) -> float | None:
         if den is None or den <= 0:
             return None
         return round(num / den, 5)
 
-    wc: int | None = None if unsegmented else word_count
     return {
-        "mention_density": _ratio(total_mentions, wc),          # mentions per word (furniture ↑)
-        "type_token": _ratio(distinct_keywords, total_mentions),  # distinct/total (repetition ↓)
-        "vocab_sparsity": _ratio(distinct_keywords, wc),         # distinct per word
+        "mention_density": _ratio(total_mentions, word_count),      # mentions per word (furniture ↑)
+        "type_token": _ratio(distinct_keywords, total_mentions),    # distinct/total (repetition ↓)
+        "vocab_sparsity": _ratio(distinct_keywords, word_count),    # distinct per word
         "single_kw_dominance": _ratio(max_single_kw, total_mentions),  # one keyword's share (↑)
     }
 
@@ -221,23 +225,24 @@ def build_baselines(stats: list[ArticleStat], *, floor: int = COHORT_FLOOR) -> d
 def flag_outliers(
     stats: list[ArticleStat], baselines: dict, *, floor: int = COHORT_FLOOR,
 ) -> list[dict]:
-    """One record per flagged article: the dimension(s) whose value sits in its cohort's tail,
-    each with value + baseline (median/p10/p90/p99/mad) + n + direction. SCRIPT-AWARE: for an
-    UNSEGMENTED language the word_count metrics are not-applicable (recorded, the LANGUAGE flagged,
-    never the article on those dims). The "Share Now ×30" pathology (high mention_density + low
-    type_token + high single_kw_dominance) is labelled when all three fire together. No score."""
+    """One record per REALLY-flagged article: the dimension(s) whose value sits in its cohort's
+    tail, each with value + baseline (median/p10/p90/p99/mad) + n + direction. An article is
+    emitted ONLY when it has a real flagged dimension — an article whose metrics are all
+    not-applicable (an unsegmented-language article, all four None) produces NO record, so it is
+    never counted as "flagged" (the v1 defect: N/A-only records were counted as flags, inflating
+    every unsegmented cohort to 100%). The not-applicable status is reported at the LANGUAGE level
+    (per_language_health), not per article. The "Share Now ×30" pathology (high mention_density +
+    low type_token + high single_kw_dominance) is labelled when all three fire together. No score."""
     records: list[dict] = []
     for s in stats:
         base = baselines.get(s.language)
+        if base is None:
+            continue
         flagged: list[dict] = []
-        na: list[str] = []
         dirs: dict[str, str] = {}
         for m in _METRICS:
-            if s.unsegmented and m in _WORD_COUNT_METRICS:
-                na.append(m)
-                continue
             v = s.metrics.get(m)
-            if v is None or base is None:
+            if v is None:  # not assessable (0-denominator, or an unsegmented language -> all None)
                 continue
             bl = base[m]
             if bl["insufficient"] or bl["p90"] is None:
@@ -256,7 +261,7 @@ def flag_outliers(
                     "baseline": {"median": bl["median"], "p10": bl["p10"], "p90": bl["p90"],
                                  "p99": bl["p99"], "mad": bl["mad"], "n": bl["n"]},
                 })
-        if not flagged and not na:
+        if not flagged:
             continue
         pathology = (
             dirs.get("mention_density") == "high"
@@ -266,7 +271,7 @@ def flag_outliers(
         records.append({
             "article_id": s.article_id, "source_id": s.source_id, "language": s.language,
             "unsegmented": s.unsegmented, "flagged_dimensions": flagged,
-            "not_applicable": na, "pathology_furniture_repetition": bool(pathology),
+            "pathology_furniture_repetition": bool(pathology),
         })
     return records
 
@@ -480,9 +485,11 @@ def _readme() -> bytes:
         "## Files\n"
         "- `manifest.json` — generated_at, corpus totals, sources sampled vs skipped, config flags, "
         "method per metric, provenance (deduced · not a verdict).\n"
-        "- `per_language_health.json` — per language: n, the 4 metric distributions, % flagged, the "
-        "unsegmented flag + 'density unreliable here' note. Doubles as keyword-engine QA (which "
-        "languages have broken stats / stoplist gaps).\n"
+        "- `per_language_health.json` — per language: n, the 4 metric distributions, % flagged, and "
+        "whether the language was `assessed`. UNSEGMENTED languages (zh/ja/th) are NOT ASSESSED "
+        "(`pct_flagged: null`) — all four keyword-stat metrics are unreliable without a segmenter, "
+        "so no article there is flagged (never read that as 'clean'). Doubles as keyword-engine QA "
+        "(which languages have broken stats / stoplist gaps).\n"
         "- `per_source_keywords.jsonl` — READ THIS FIRST. Per source: top-12 keywords (the "
         "fingerprint — 'share now / read more / subscribe / cookies' = broken; 'election / "
         "inflation / court' = healthy), source-level stat distributions, furniture share, flagged?\n"
@@ -508,8 +515,9 @@ def _readme() -> bytes:
         "word_count; type_token = distinct_keywords / total_mentions; vocab_sparsity = "
         "distinct_keywords / word_count; single_kw_dominance = max_single_keyword_mentions / "
         "total_mentions. The 'Share Now ×30' pathology = HIGH mention_density + LOW type_token + "
-        "HIGH single_kw_dominance together. word_count (hence density/sparsity) is not-applicable "
-        "for unsegmented languages (zh/ja/th) — those flag the LANGUAGE, never the article.\n"
+        "HIGH single_kw_dominance together. For unsegmented languages (zh/ja/th) ALL FOUR metrics "
+        "are not-applicable (word_count is meaningless AND keyword extraction is degenerate without "
+        "a segmenter), so those articles are never flagged — the LANGUAGE is marked not-assessed.\n"
     ).encode()
 
 
@@ -639,10 +647,16 @@ def build_quality_report_files(
         per_language_health[lang] = {
             "n": n,
             "unsegmented": unseg,
-            "pct_flagged": round(100.0 * flagged_here / n, 2) if n else 0.0,
+            "assessed": not unseg,
+            # NOT-ASSESSED for an unsegmented language: pct_flagged is null (not 0% and not 100%) —
+            # all four keyword-stat metrics are unreliable without a segmenter, so no article here
+            # is flagged. This is honest "we can't measure it", never "it's clean" or "it's broken".
+            "pct_flagged": None if unseg else (round(100.0 * flagged_here / n, 2) if n else 0.0),
             "metric_distributions": baselines.get(lang, {}),
-            "note": ("density/sparsity unreliable here — word_count is meaningless for an "
-                     "unsegmented language; those metrics are not-applicable." if unseg else None),
+            "note": ("NOT ASSESSED — all four keyword-stat metrics are unreliable for an "
+                     "unsegmented language (word_count is meaningless AND keyword extraction is "
+                     "degenerate without a segmenter). Flags are suppressed here; use a segmenter "
+                     "to assess zh/ja/th." if unseg else None),
         }
 
     manifest = {
