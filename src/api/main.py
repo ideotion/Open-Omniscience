@@ -1837,6 +1837,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     <button class="rtab" data-rtab="keywords" role="tab" aria-selected="false" tabindex="-1">Keywords</button>
     <button class="rtab" data-rtab="mindmap" role="tab" aria-selected="false" tabindex="-1">Mindmap</button>
     <button class="rtab" data-rtab="sentiment" role="tab" aria-selected="false" tabindex="-1">Sentiment</button>
+    <button class="rtab" data-rtab="subjectivity" role="tab" aria-selected="false" tabindex="-1">Loaded language</button>
     <button class="rtab" data-rtab="related" role="tab" aria-selected="false" tabindex="-1">Related</button>
     <button class="rtab" data-rtab="source" role="tab" aria-selected="false" tabindex="-1">Source</button>
     <button class="rtab" data-rtab="links" role="tab" aria-selected="false" tabindex="-1">Links</button>
@@ -1852,6 +1853,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
   <section class="rpane" id="rp-keywords" role="tabpanel" aria-label="Keywords" data-lazy="keywords" hidden></section>
   <section class="rpane" id="rp-mindmap" role="tabpanel" aria-label="Mindmap" data-lazy="mindmap" hidden></section>
   <section class="rpane" id="rp-sentiment" role="tabpanel" aria-label="Sentiment" data-lazy="sentiment" hidden></section>
+  <section class="rpane" id="rp-subjectivity" role="tabpanel" aria-label="Loaded language" data-lazy="subjectivity" hidden></section>
   <section class="rpane" id="rp-related" role="tabpanel" aria-label="Related" hidden>{related_block}</section>
   <section class="rpane" id="rp-source" role="tabpanel" aria-label="Source" hidden>{source_block}</section>
   <section class="rpane" id="rp-links" role="tabpanel" aria-label="Links" hidden>{links_block}</section>
