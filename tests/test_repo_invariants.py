@@ -2393,9 +2393,18 @@ def test_collect_tab_moved_into_settings():
     assert 'id="set-collect"' in html and '<button data-tab="collect">' in html, (
         "Collect must exist as a Settings subtab (#set-collect + its nav button)"
     )
-    # absorption: the moved controls must all still exist (nothing lost in the move)
+    # absorption: the moved controls must all still exist (nothing lost in the move —
+    # the schedule/manual/batch knobs are demoted into "Advanced (legacy)" <details>,
+    # NOT deleted; the full removal is a browser-verified follow-up per Q6a)
     for ctrl in ('id="sched-status"', "saveScheduler(", 'id="ing-url"', 'id="bi-search"'):
         assert ctrl in html, f"moved Collect control missing after the move: {ctrl}"
+    # Simplification (2026-07-14): collection is one on/off toggle, no schedule to program.
+    assert 'id="collect-toggle"' in html and "function collectToggle(" in html, (
+        "Collection must present a single on/off toggle (collect-toggle + collectToggle)"
+    )
+    assert 'class="adv-collect"' in html, (
+        "the schedule/manual/batch knobs must be demoted into the Advanced (legacy) details"
+    )
     # the redirect keeps every showTab('ingest') reference working
     assert 'if (name === "ingest")' in html and '_setSubtabs.select("collect")' in html, (
         "showTab('ingest') must redirect to Settings → Collect"

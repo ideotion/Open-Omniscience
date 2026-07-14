@@ -1814,8 +1814,14 @@
 
     <div class="set-view" id="set-collect" style="display:none">
     <section class="panel">
-      <h2>Automatic ingestion (scheduler)</h2>
-      <div id="sched-status" class="hint">Loading scheduler status…</div>
+      <h2>Collection</h2>
+      <p class="hint">Scraping, source aggregation and crawling run <strong>continuously and automatically</strong> whenever collection is on and you are online — RSS feeds, recursive crawl, markets, laws and Wikipedia, every source. There is nothing to schedule or program; just switch it on. (It pauses itself if the machine runs low on memory and resumes on its own.)</p>
+      <div id="sched-status" class="hint" style="margin-top:6px">Loading scheduler status…</div>
+      <div class="row" style="margin-top:10px">
+        <button id="collect-toggle" onclick="collectToggle()" aria-pressed="false" title="Turn continuous background collection on or off">Collection</button>
+      </div>
+      <details class="adv-collect" style="margin-top:14px">
+      <summary class="muted" style="cursor:pointer">Advanced (legacy) — collection is automatic; these are rarely needed</summary>
       <div class="row" style="margin-top:8px">
         <button onclick="schedulerStart()">Start</button>
         <button class="secondary" onclick="schedulerStop()">Stop</button>
@@ -1877,8 +1883,10 @@
         (fail-closed), is rate-limited, and is bounded by the depth / page caps above — it discovers
         articles, it does not mirror sites.</div>
       <div id="sched-last" class="hint" style="margin-top:8px"></div>
+      </details>
     </section>
 
+    <details class="adv-collect"><summary class="muted" style="cursor:pointer">Legacy: manual ingest (collection is automatic — you shouldn't need this)</summary>
     <section class="panel">
       <h2>Manual ingest</h2>
       <div class="row">
@@ -1898,7 +1906,9 @@
       <div class="hint">Fetching is ethical: robots.txt is respected (fail-closed) and rate-limited.</div>
       <div id="ingest-result" class="hint"></div>
     </section>
+    </details>
 
+    <details class="adv-collect"><summary class="muted" style="cursor:pointer">Legacy: batch ingest (collection is automatic — you shouldn't need this)</summary>
     <section class="panel">
       <h2>Batch ingest — pick sources</h2>
       <p class="hint" style="margin-top:0">Select several sources and fetch all their feeds in one run. Filter by
@@ -1927,6 +1937,7 @@
       </div>
       <div id="bi-results" style="margin-top:8px"></div>
     </section>
+    </details>
     </div>
 
     <!-- ===================== SOURCE MANAGEMENT ====================== -->
