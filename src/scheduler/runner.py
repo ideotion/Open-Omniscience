@@ -53,6 +53,17 @@ def _maint_interval_s() -> float:
         return _MAINT_INTERVAL_S_DEFAULT
 
 
+def _mem_reclaim_interval_s() -> float:
+    """Min seconds between active memory reclaims WHILE collection is paused low on
+    memory (OO_MEM_PAUSE_RECLAIM_S, default 30; 0 = reclaim on every poll)."""
+    import os
+
+    try:
+        return max(0.0, float(os.getenv("OO_MEM_PAUSE_RECLAIM_S", "") or 30.0))
+    except (TypeError, ValueError):
+        return 30.0
+
+
 # --------------------------------------------------------------------------- #
 # Pass recycling (P0.3 E2, field event 2026-07-09): ONE continuous crawl pass
 # ran 21.6 hours and accumulated per-pass memory until the kernel OOM-killer
@@ -892,6 +903,10 @@ class BackgroundScheduler:
         self._continuous_gap_s = _CONTINUOUS_GAP_S
         # How often a memory pause re-polls the guard (instance attr for tests).
         self._mem_pause_poll_s = 5.0
+        # How often, WHILE paused, to actively reclaim memory (gc + malloc_trim +
+        # library caches) so a pause caused by allocator retention resumes instead
+        # of sticking until restart (instance attr for tests). 0 = every poll.
+        self._mem_reclaim_interval_s = _mem_reclaim_interval_s()
         # A10 off-peak maintenance: throttle + last-run monotonic stamp (instance
         # attrs so tests can drive them). 0.0 = due on the first idle window.
         self._maint_interval_s = _maint_interval_s()
@@ -980,9 +995,12 @@ class BackgroundScheduler:
         (rides the collect job + scheduler status). Returns immediately when
         the guard is disabled or healthy.
         """
+        import time as _t
+
         from src.scheduler import memguard
 
         waited = False
+        last_reclaim = _t.monotonic()  # the pass boundary just reclaimed; next at +interval
         while not self._stop.is_set() and memguard.memory_guard.poll():
             if not waited:
                 waited = True
@@ -999,6 +1017,24 @@ class BackgroundScheduler:
             # pass clears the phase in its finally, which would otherwise
             # leave an hours-long pause looking like idle (skeptic finding).
             _phase_set("paused-low-memory")
+            # ACTIVE reclaim while paused (P0.3 follow-up, field 2026-07-09: "scraping
+            # stops after a few hours"). The pause otherwise just spins re-polling —
+            # so a pause caused by allocator retention (glibc arenas holding freed
+            # pages, library caches) NEVER recovers and collection sticks until
+            # restart. Periodically hand freed/freeable memory back to the OS so the
+            # next poll sees the drop and the guard RESUMES. Holds no lock / session /
+            # gate here (deadlock-free), throttled, best-effort. A genuine leak
+            # (retained references) still can't be freed — the guard correctly stays
+            # engaged, and the diagnostics/perf export pinpoints the growth.
+            now = _t.monotonic()
+            if now - last_reclaim >= self._mem_reclaim_interval_s:
+                last_reclaim = now
+                try:
+                    from src.scheduler.hygiene import release_pass_state
+
+                    release_pass_state()
+                except Exception:  # noqa: BLE001 - reclaim is best-effort, never blocks resume
+                    pass
             self._stop.wait(max(0.01, self._mem_pause_poll_s))
         if waited and current_phase() == "paused-low-memory":
             # Guarded clear: never wipe a phase a just-started pass owns.
