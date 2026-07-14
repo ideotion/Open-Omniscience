@@ -221,11 +221,16 @@ pass). What shipped, what's parked:
   the forward agenda, and span-banners aren't supported — prominently surfacing unverified data
   browser-unverified would breach "nothing presented as verified before it is." Build after the ONI
   check + span-banner support.
-- **Item 3 / Part-3B + Phase 2 — the discovery funnel** — a large, dedicated-session backend build
-  (additive funnel-state migration + the zero-network Wikipedia-references channel + external_sources
-  wiring Q4a + the audit view). NOT started — half-building a data-migration is worse than an honest
-  park. RECOMMENDED next-session start: the zero-network wiki-refs channel is the most self-contained,
-  verifiable slice and builds directly on the now-merged Phase-1 auditor (the graduation quality gate).
+- **Item 3 / Part-3B + Phase 2 — the discovery funnel** — ✅ **TWO SLICES SHIPPED (2026-07-14, #667):**
+  (1) the flagship **zero-network Wikipedia-references channel** (Q3a — parses the watched-page wikitext
+  references across editions → DISABLED `SourceCandidate`s, editions = the diversity signal; negative-space
+  lens pinned) + (2) **`external_sources` WIRED** (Q4a — `discovered_via` provenance, idempotent resolve on
+  every discovery, dormancy ended; additive migration + self-heal, `test_no_model_drift` green). **REMAINING
+  (the dedicated Phase-2 slice, parked honestly):** the **promotion frontier** (candidate → trial → graduated,
+  trial auto-enable DEFAULT-OFF per Q3a, diversity-weighted, the Phase-1 auditor as the graduation gate — needs
+  its own additive `SourceCandidate` state columns + the consent-gated trial-enable scheduler wiring) + a
+  browser-verified **audit view + undo** + the citing-trail surface (S6.1b). A migration-heavy state machine
+  whose trial-enable is a NETWORK action = a clean dedicated slice, not a rushed one.
 - **Item 4 / Leads 2.0 + Conjunction Lens UI · Item 5 / small tails** — browser-UNVERIFIED frontend
   (Q6a). Parked with the cores already shipped (§1/§2 of the optimization program); each needs a
   browser-verified UI pass.

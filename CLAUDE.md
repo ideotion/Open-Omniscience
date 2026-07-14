@@ -860,6 +860,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     absolute short/outlier floor would flag legitimate terse/atypical prose, breaking the extraction-validity
     reframe). And TEST THE MALIGN DIRECTION: a zero-spread/flat-cohort test only proves the benign side; add
     a "genuinely-worst source in a degraded/absent cohort still flags" assertion or the escape ships unseen.
+  - **A HAND-PICKED ALEMBIC REVISION ID COLLIDES SILENTLY AND SURFACES AS "CYCLE DETECTED", AND THE SCRIPT
+    HEAD IS NOT WHAT A REGEX SCAN SAYS (2026-07-14, omnibus discovery Q4a migration):** the repo's formulaic
+    revision ids (`a1b2c3d4e5f6` / `b1c2d3e4f5a6` / …) are effectively EXHAUSTED, so a hand-picked "next"
+    id very likely DUPLICATES an existing revision. Alembic then reports a confusing **`Cycle is detected in
+    revisions (…)`** (NOT "duplicate id"), and `test_no_model_drift` (which runs `alembic upgrade head`) goes
+    red. Two rules: (a) pick a genuinely-RANDOM 12-hex revision id and `grep` the versions dir to confirm it's
+    free before writing the file; (b) get the real head from **`python3 -m alembic heads`** (the CLI), NEVER a
+    regex scan of `migrations/versions/` — a `revision: str = "…"` typed form + `ScriptDirectory.get_heads()`
+    returning the DB STAMP (`5ea842778603`) rather than the script head fooled a manual scan into naming the
+    wrong head. The model-column + migration + boot self-heal trio is still the pattern; `test_no_model_drift`
+    is the gate that catches a mismatch (run it locally — alembic works in the sandbox even when the full ORM
+    doesn't).
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -5587,6 +5599,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the columnar "Columnar store" CI lane green at the #661 tip (Part-3H asked to confirm it; the real-httpfs
   round-trip is egress-blocked in-sandbox + no `gh` here, so it could NOT be confirmed in-session — check origin/0.2).
   The `~/.oo_push_token` used for these pushes should be REVOKED + removed once this session's PRs are reviewed.
+  **OMNIBUS CONTINUATION CLOSEOUT (2026-07-14, "continue with all remaining items" after #662–#665 merged):**
+  **Item 3 / Part-3B + Phase 2 discovery funnel — STARTED + two slices SHIPPED** (draft PR #667 onto 0.2):
+  **(1)** the flagship **Wikipedia-references channel** (ruling Q3a) — zero-network, parses the external
+  references of the already-stored watched-page wikitext across all editions, registers domains cited by
+  ≥N distinct pages as DISABLED `SourceCandidate`s (`channel wikipedia`, editions = the diversity signal),
+  wired into `run_discovery`; negative-space lens pinned as tests. **(2)** the **external_sources wiring**
+  (ruling Q4a) — `discovered_via` provenance column + `resolve_external_source` idempotent upsert wired into
+  `_add_candidate`, ending the table's dormancy (never writes the legacy credibility_score); additive
+  migration + boot self-heal, `test_no_model_drift` green. CARRY-OVER (the dedicated Phase-2 remainder,
+  spec in the #667 body): **the promotion frontier** (candidate → **trial** → **graduated**, trial
+  auto-enable DEFAULT-OFF per Q3a, diversity-weighted, the Phase-1 auditor as the graduation gate) — needs
+  its own additive `SourceCandidate` state columns + the impure scheduler wiring (trial-enable is a NETWORK
+  action, consent-gated) + a browser-verified audit view + undo; a migration-heavy state machine = a clean
+  dedicated slice. **Items 4/5/6 remain PARKED** and were re-confirmed as browser-verify-gated: Item 4's
+  Leads-2.0 `sort_leads` is a genuine unwired backend core BUT wiring it REORDERS the flagship Home feed (a
+  visible UX change), and the Conjunction-Lens `/api/insights/corpus-algebra` needs an N-keyword picker UI —
+  both browser-unverified (Q6a); Item 6 fingerprint persistence stays the dormant stretch gated on the §8
+  triage cleanup. RATIONALE (honest): the session delivered the fully-VERIFIABLE discovery-funnel backend
+  spine (channel + Q4a) at full quality rather than half-building the migration-heavy promotion state
+  machine or spraying browser-unverified frontend I cannot confirm — "never fabricate a pass; park the rest
+  honestly." NEW LESSON recorded above (the alembic revision-id-collision / `alembic heads` CLI pitfall).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
