@@ -118,11 +118,17 @@ def run_write_with_retry[T](
     Re-raises immediately on any non-lock error and re-raises the last lock error
     if every attempt is exhausted. ``work`` MUST be idempotent (see module docs).
     """
-    last_exc: OperationalError | None = None
+    last_exc: BaseException | None = None
     for attempt in range(attempts):
         try:
             return work()
-        except OperationalError as exc:
+        # NB: catch broadly, then let is_locked_error be the PRECISE discriminator. On an
+        # encrypted (sqlcipher3) store a locked write can surface as a RAW driver error that is
+        # NOT a sqlalchemy.exc.OperationalError, so a narrow `except OperationalError` would let
+        # it escape the retry entirely (the same data loss is_locked_error was just fixed for).
+        # A non-lock error is re-raised immediately below, so behaviour for every other exception
+        # is unchanged (it still propagates to the caller).
+        except Exception as exc:  # noqa: BLE001 - is_locked_error gates it; non-locks re-raise
             if not is_locked_error(exc):
                 raise
             last_exc = exc
