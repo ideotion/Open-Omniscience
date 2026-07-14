@@ -153,6 +153,33 @@ def _is_caps_run_word(w: str) -> bool:
     return len(w) >= 2 and w.isupper() and any(c.isalpha() for c in w)
 
 
+# Field 2026-07-14: an all-caps word carrying an ACCENTED LATIN letter (DÉCOUVREZ, ABONNÉ) is a
+# shouted Latin word, not an acronym -- but Greek (ΕΕ) / Cyrillic (СССР) acronyms are legitimate,
+# so we only exclude ACCENTED LATIN, never all non-ASCII.
+_ACCENTED_LATIN_RE = re.compile(r"[À-ɏ]")
+# ASCII all-caps CALL-TO-ACTION strings (share/subscribe buttons) that the acronym rule (#283)
+# otherwise mis-tags as ENTITIES. Applied in the entity path only (casefolded), so a match merely
+# DEMOTES the word to a plain term -- it never removes a keyword. Evidence-driven + tunable
+# (stoplist-architecture rule); a real acronym homograph is not among these.
+_CTA_STOP: frozenset[str] = frozenset(
+    {
+        "share", "shares", "subscribe", "subscribed", "follow", "followers", "signup", "login",
+        "partagez", "partager", "abonner", "abonnez", "sabonner", "abonnezvous", "suivez",
+        "teilen", "abonnieren", "compartir", "suscribir", "suscribete", "seguir", "condividi",
+    }
+)
+# Field 2026-07-14: tracker/analytics URLs bleeding into the token stream mint junk keywords
+# (utm_source / mc_eid / path fragments; ~889k `tracking` mentions). A URL is not prose -- strip
+# the whole http(s)/www span BEFORE tokenizing so its residue never becomes a keyword or an entity.
+# Prose keywords come from the article body, not from a link, so this loses no real content.
+_URL_STRIP_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+
+
+def _strip_urls(text: str) -> str:
+    """Remove http(s)/www URL spans so their query-param / path residue is never tokenized."""
+    return _URL_STRIP_RE.sub(" ", text)
+
+
 # --------------------------------------------------------------------------- #
 # Digit-heavy "code" tokens (field diagnostics 2026-06-23)
 # --------------------------------------------------------------------------- #
@@ -707,6 +734,10 @@ class BaselineExtractor:
                 continue
             if surface.casefold() in _ACRONYM_STOP:
                 continue
+            # An accented-Latin all-caps word (DÉCOUVREZ) or a known CTA button word (PARTAGEZ,
+            # SUBSCRIBE) is a shouted term, NOT an acronym entity — demote it to a plain term.
+            if _ACCENTED_LATIN_RE.search(surface) or surface.casefold() in _CTA_STOP:
+                continue
             if _is_code_token(surface):
                 # A-10C-style multi-segment code, not a real acronym entity (G7 /
                 # COVID-19 are one transition and survive; H1N1 is allowlisted).
@@ -792,6 +823,10 @@ class BaselineExtractor:
                     for w in words
                 ):
                     continue
+                # Drop a repeated-token n-gram ("share share", "now now now") — a chrome/CTA
+                # artifact of duplicated button/label text, never a real phrase (field 2026-07-14).
+                if len(set(words)) == 1:
+                    continue
                 phrase = " ".join(words)
                 # Drop a phrase whose JOINED form is itself a stopword ENTRY. The vendored
                 # scoped lists carry many MULTI-WORD stopword phrases — 379 of 645 in vi.txt
@@ -818,6 +853,7 @@ class BaselineExtractor:
         if not text or not text.strip():
             return []
         text = strip_markup(text)  # never mint div/span/max-width/font-size keywords
+        text = _strip_urls(text)   # never mint utm_source/mc_eid/path-fragment keywords from links
         entities = self._entities(text)
         ent_norms = {e.normalized for e in entities}
         # Topical terms. A term whose normalized form is in the gazetteer is promoted
@@ -876,6 +912,7 @@ class SpacyExtractor:
         if not text or not text.strip():
             return []
         text = strip_markup(text)  # never mint div/span/max-width/font-size keywords
+        text = _strip_urls(text)   # never mint utm_source/mc_eid/path-fragment keywords from links
         doc = self._nlp(text[:1_000_000])  # spaCy default max length guard
         ents: dict[str, ExtractedTerm] = {}
         for ent in doc.ents:
