@@ -16,9 +16,11 @@ gate, ``{importable, passed, error}`` — a counts-only snapshot the recursive-i
 any diagnostic number. Degrade LOUDLY: an un-importable module or a raising self-test is reported
 with its error, never a fabricated green. No score.
 
-The GATES here are the cheap, deterministic, no-DB / no-network mechanism proofs (keyword
-self-test, IR-eval, perception-eval, keyword-triage) — running them all is fast, so this can ride
-the all-diagnostics bundle. It is DISTINCT from the aggregator (``diagnostics._all_diagnostics_
+The GATES here are the cheap, deterministic, no-DB / no-network mechanism proofs — the
+``run_*_selftest`` harness that ships beside each measurement instrument (keyword, IR-eval,
+perception-eval, keyword-triage, conjunction, leads, non-article, power-profile, search-timing,
+skeleton, source-audit, tor-throughput). Running them all is fast, so this can ride the
+all-diagnostics bundle. It is DISTINCT from the aggregator (``diagnostics._all_diagnostics_
 members``), which bundles the heavier data reports; this meta-gate answers "are the loop's own
 correctness checks green?".
 """
@@ -29,12 +31,23 @@ import importlib
 
 # The recursive-improvement loop's mechanism-proof GATES: (name, module, callable). Each callable
 # runs a deterministic self-test (no DB, no network) and returns a log dict. Add a gate here the
-# moment a new measurement harness ships, so the loop's self-inventory covers it.
+# moment a new measurement harness ships, so the loop's self-inventory covers it — and
+# ``tests/test_recursive_loop.py`` ENFORCES that (it discovers every ``run_*_selftest`` in the tree
+# and fails if one is unregistered), so this list can never silently lapse again (R5, 2026-07-14:
+# it had lapsed 8 times).
 LOOP_SELFTESTS: tuple[tuple[str, str, str], ...] = (
     ("keyword-selftest", "src.analytics.selftest", "run_keyword_selftest"),
     ("ir-eval-selftest", "src.analytics.ir_eval", "run_ir_eval_selftest"),
     ("perception-eval-selftest", "src.analytics.perception_eval", "run_perception_eval_selftest"),
     ("keyword-triage-selftest", "src.ai_layer.triage", "run_triage_selftest"),
+    ("conjunction-selftest", "src.analytics.conjunction", "run_conjunction_selftest"),
+    ("leads-selftest", "src.briefing.leads", "run_leads_selftest"),
+    ("non-article-selftest", "src.ingest.non_article", "run_non_article_selftest"),
+    ("power-profile-selftest", "src.config.power_profiles", "run_power_profile_selftest"),
+    ("search-timing-selftest", "src.monitoring.search_timing", "run_search_timing_selftest"),
+    ("skeleton-selftest", "src.analytics.skeleton", "run_skeleton_selftest"),
+    ("source-audit-selftest", "src.analytics.source_audit", "run_source_audit_selftest"),
+    ("tor-throughput-selftest", "src.ingest.tor_throughput", "run_tor_throughput_selftest"),
 )
 
 

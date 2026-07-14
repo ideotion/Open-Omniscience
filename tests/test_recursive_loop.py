@@ -27,6 +27,42 @@ def test_all_loop_gates_are_green_on_this_tree():
     assert "keyword-triage-selftest" in names
 
 
+def _discover_selftest_harnesses() -> dict[str, str]:
+    """Every module-level ``run_*_selftest`` defined under src/ (fn_name -> file). The TREE is
+    the source of truth for the registry — a hand-list would be the same lapse one level up."""
+    import re
+
+    found: dict[str, str] = {}
+    for path in Path("src").rglob("*.py"):
+        for m in re.finditer(r"^def (run_[a-z0-9_]+_selftest)\b", path.read_text(encoding="utf-8"), re.M):
+            found[m.group(1)] = str(path)
+    return found
+
+
+def test_every_selftest_harness_in_the_tree_is_registered():
+    """R5 ENFORCEMENT (2026-07-14): the registry had silently lapsed 8 times. Discover every
+    ``run_*_selftest`` in the tree and assert each is a LOOP_SELFTESTS gate — so a new
+    measurement harness can never ship un-inventoried again. (Prove-it-fails check: add a dummy
+    ``def run_x_selftest`` to any src file and this test goes red until it is registered.)"""
+    registered = {fn for _n, _m, fn in LOOP_SELFTESTS}
+    found = _discover_selftest_harnesses()
+    unregistered = {fn: file for fn, file in found.items() if fn not in registered}
+    assert not unregistered, f"run_*_selftest harnesses NOT registered in LOOP_SELFTESTS: {unregistered}"
+    # and no dead registration: every registered gate has a real harness in the tree.
+    dead = registered - set(found)
+    assert not dead, f"LOOP_SELFTESTS gates with no run_*_selftest in the tree: {dead}"
+
+
+def test_registry_module_paths_import_and_expose_their_callable():
+    """Each (module, fn) in the registry must actually resolve — a typo'd path would degrade the
+    gate to importable:false forever without this."""
+    import importlib
+
+    for name, module_path, fn_name in LOOP_SELFTESTS:
+        mod = importlib.import_module(module_path)
+        assert callable(getattr(mod, fn_name)), f"{name}: {module_path}.{fn_name} is not callable"
+
+
 def test_report_degrades_loudly_on_a_broken_or_raising_gate():
     # non-vacuous: an un-importable module and an importable-but-raising callable must be
     # reported with their error, never a fabricated pass.
