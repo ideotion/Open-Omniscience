@@ -572,6 +572,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "wiki_pages": frozenset(_WIKI_PAGE_COLUMNS),
     "wiki_revisions": frozenset(_WIKI_REVISION_COLUMNS),
     "keyword_supergroup_members": frozenset(_SUPERGROUP_MEMBER_COLUMNS),
+    "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
 }
 
 

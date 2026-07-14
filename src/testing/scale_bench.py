@@ -229,6 +229,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_article_detected_language_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
+        ensure_external_source_discovery_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
         ensure_keyword_counter_columns,
@@ -255,6 +256,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_keyword_extractor_column(engine)
     ensure_wiki_text_columns(engine)
     ensure_supergroup_ring_column(engine)
+    ensure_external_source_discovery_columns(engine)
     analyze = optimize_at_boot(engine)
     return {"hot_indexes_created": created, "analyze": analyze}
 
