@@ -207,20 +207,81 @@ ensure_python() {
     esac
 }
 
+# Best-effort Tails detection -- only tailors guidance, so a miss just yields the
+# generic (still correct) message. Tails is amnesic Debian: sudo needs an
+# administration password set at the Welcome Screen, apt runs over Tor, and any apt
+# package is lost on reboot unless added to Persistent Storage -> Additional Software.
+is_tails() {
+    { [ -e /etc/amnesia/version ] || [ -d /etc/amnesia ]; } && return 0
+    grep -qiE '^(ID|NAME|PRETTY_NAME)=.*tails|^TAILS_' /etc/os-release 2>/dev/null
+}
+
+# Install the apt package that provides the stdlib venv/ensurepip for $PY, so a
+# fresh Debian/Ubuntu/Tails box installs seamlessly instead of stopping at the
+# cryptic CPython "ensurepip is not available" error. Returns 0 only when ensurepip
+# is importable afterwards. Seamless by default; opt out with OO_NO_APT=1. Never
+# blocks on a sudo password prompt that nothing can answer (CI / --unattended / no TTY).
+try_apt_install_venv() {
+    local pkg="$1" sudo=""
+    [ "${OO_NO_APT:-0}" = "1" ] && return 1
+    command -v apt-get >/dev/null 2>&1 || return 1
+    if [ "$(id -u)" -ne 0 ]; then
+        command -v sudo >/dev/null 2>&1 || return 1
+        # Passwordless sudo -> run apt with `sudo -n` (never prompts). Otherwise a
+        # password prompt is only acceptable when a human is at the terminal (an
+        # interactive, non-scripted session; sudo reads /dev/tty, fine under
+        # `curl | bash`). Everywhere else (CI / --unattended / no TTY) keep `sudo -n`
+        # so apt FAILS FAST instead of blocking on a prompt nothing can answer.
+        if sudo -n true 2>/dev/null; then
+            sudo="sudo -n"
+        elif [ "$INTERACTIVE" = "1" ] && [ "$UNATTENDED" != "1" ]; then
+            sudo="sudo"
+        else
+            return 1
+        fi
+    fi
+    step "Installing the missing venv package: $pkg (needs administrator rights)"
+    if is_tails; then
+        say "  ${DIM}On Tails this needs an administration password (set at the Welcome"
+        say "  Screen -- it is off by default) and a Tor connection; apt downloads over Tor.${RST}"
+    fi
+    # DEBIAN_FRONTEND=noninteractive (via `env`, so it survives sudo's env reset) means a
+    # debconf prompt can never hang a tty-less run. A flaky `apt-get update` -- a partial
+    # mirror, common on Tails over Tor -- must NOT fail an otherwise-installable package,
+    # so it is best-effort; only the install gates success.
+    $sudo env DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null 2>&1 || true
+    $sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" || return 1
+    "$PY" -c 'import ensurepip' >/dev/null 2>&1
+}
+
 create_venv() {
     cd "$SRC_DIR"
     if [ ! -d .venv ]; then
-        # Preflight: on Debian/Ubuntu the stdlib venv/ensurepip module ships in a
-        # SEPARATE apt package. Check now and give actionable guidance instead of
-        # leaking the cryptic CPython "ensurepip is not available" error.
+        # On Debian/Ubuntu/Tails the stdlib venv/ensurepip module ships in a SEPARATE
+        # apt package. If it is missing, install it AUTOMATICALLY (seamless on Tails),
+        # and only fall back to manual guidance when that can't be done here -- never
+        # leak the cryptic CPython "ensurepip is not available" error.
         if ! "$PY" -c 'import ensurepip' >/dev/null 2>&1; then
             venv_pkg="python3-venv"
             case "$PY" in *3.13*) venv_pkg="python3.13-venv";; esac
-            die "Python's venv module is missing (no ensurepip).
-    Install it, then re-run ./install.sh:
+            if try_apt_install_venv "$venv_pkg"; then
+                ok "Installed $venv_pkg"
+            else
+                tails_note=""
+                if is_tails; then
+                    tails_note="
+    On Tails: set an administration password at the Welcome Screen (it is off by
+    default) and connect to Tor, then re-run ./install.sh. Tails is amnesic, so to
+    keep $venv_pkg across reboots add it via Persistent Storage -> Additional
+    Software. (Tails ships Python 3.11; a versioned package for a separately
+    installed Python may not be in the default repositories.)"
+                fi
+                die "Python's venv module is missing (no ensurepip) and it could not be
+    installed automatically. Install it, then re-run ./install.sh:
         sudo apt update && sudo apt install -y $venv_pkg
     On Qubes, install it in the TemplateVM (then reboot the AppVM) so DispVMs and
-    AppVMs inherit it -- packages installed in an AppVM/DispVM do not persist."
+    AppVMs inherit it -- packages installed in an AppVM/DispVM do not persist.${tails_note}"
+            fi
         fi
         step "Creating virtual environment (.venv)"
         "$PY" -m venv .venv

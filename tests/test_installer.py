@@ -420,6 +420,119 @@ def test_bootstrap_divergence_recovery_mechanism_works(tmp_path):
     assert (clone / "f.txt").read_text(encoding="utf-8") == "v2", "snapped to the rewritten upstream"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="POSIX shell function test; needs bash",
+)
+def test_missing_venv_is_auto_installed_via_apt():
+    """Field report 2026-07 (Tails): `python3 -m venv` fails there because the venv/
+    ensurepip module ships in a separate apt package that isn't installed by default.
+    Instead of dying with manual instructions, the installer must install it
+    AUTOMATICALLY (seamless on Tails) — while never hanging on a sudo password prompt
+    nothing can answer, honestly refusing to claim success if ensurepip is still
+    missing afterwards, and respecting the OO_NO_APT=1 opt-out.
+
+    We extract try_apt_install_venv() and drive it in an isolated bash harness with
+    apt-get/sudo/id/$PY all stubbed, so nothing touches the real system."""
+    import os
+    import re
+    import subprocess
+
+    src = (REPO / "install.sh").read_text(encoding="utf-8")
+    m = re.search(r"\ntry_apt_install_venv\(\) \{.*?\n\}\n", src, re.S)
+    assert m, "try_apt_install_venv not found in install.sh"
+    fn = m.group(0)
+
+    # Base stubs: quiet UI, no real Tails, force non-root so the sudo branch is
+    # deterministic regardless of whether CI runs as root. `sudo` honours a leading
+    # `-n` (the passwordless probe returns $SUDO_NP_RC; the real elevated call passes
+    # through). `env` strips leading VAR=val so DEBIAN_FRONTEND is transparent. `apt-get`
+    # records its args and returns $APT_RC (and can fail `update` specifically).
+    base = (
+        'INTERACTIVE=0; UNATTENDED=0; DIM=""; RST=""\n'
+        "step(){ echo \"STEP $*\"; }; say(){ :; }; ok(){ :; }; warn(){ :; }\n"
+        "is_tails(){ return 1; }\n"
+        "id(){ echo 1000; }\n"  # force non-root
+        'env(){ while [ "$#" -gt 0 ]; do case "$1" in *=*) shift;; *) break;; esac; done; "$@"; }\n'
+        'sudo(){ if [ "$1" = "-n" ]; then shift; '
+        'if [ "$1" = "true" ] && [ "$#" -eq 1 ]; then return ${SUDO_NP_RC:-0}; fi; fi; "$@"; }\n'
+        'apt-get(){ echo APT_CALLED "$@"; '
+        'case "$1" in update) return ${APT_UPDATE_RC:-0};; *) return ${APT_RC:-0};; esac; }\n'
+    )
+
+    def run(stubs="", env=None, call="try_apt_install_venv python3-venv", base_stubs=base):
+        harness = base_stubs + stubs + fn + f"\n{call}; echo RC=$?\n"
+        return subprocess.run(
+            ["bash", "-c", harness], capture_output=True, text=True,
+            env={"PATH": "/usr/bin:/bin", **(env or {})},
+        )
+
+    # 1) OO_NO_APT=1 opt-out: no apt call at all, refuses (falls back to guidance).
+    a = run(env={"OO_NO_APT": "1", "SUDO_NP_RC": "0"})
+    assert "APT_CALLED" not in a.stdout and "RC=1" in a.stdout, a.stdout
+
+    # 2) Non-interactive + sudo needs a password: never reaches apt (no hang in CI).
+    b = run(env={"SUDO_NP_RC": "1"})  # passwordless probe fails, INTERACTIVE=0
+    assert "APT_CALLED" not in b.stdout and "RC=1" in b.stdout, b.stdout
+
+    # 3) Seamless success: passwordless sudo + apt install + ensurepip now importable.
+    #    The real apt calls go through `sudo -n` (never a prompt).
+    c = run(env={"SUDO_NP_RC": "0", "APT_RC": "0", "PY": "true"})
+    # (apt-get update is best-effort + silenced; the install is what gates + shows.)
+    assert "APT_CALLED install -y python3-venv" in c.stdout, c.stdout
+    assert "RC=0" in c.stdout, c.stdout
+
+    # 4) Honesty: apt "succeeds" but ensurepip is STILL missing -> refuse (RC!=0),
+    #    so the caller shows guidance instead of a false "installed" claim.
+    d = run(env={"SUDO_NP_RC": "0", "APT_RC": "0", "PY": "false"})
+    assert "APT_CALLED" in d.stdout and "RC=1" in d.stdout, d.stdout
+
+    # 5) F2: a flaky `apt-get update` (partial mirror over Tor) must NOT abort an
+    #    otherwise-installable package -- update is best-effort, only install gates.
+    f = run(env={"SUDO_NP_RC": "0", "APT_UPDATE_RC": "1", "APT_RC": "0", "PY": "true"})
+    assert "APT_CALLED install -y python3-venv" in f.stdout and "RC=0" in f.stdout, f.stdout
+
+    # 6) Interactive human without passwordless sudo: the password prompt is
+    #    answerable at the terminal, so it PROCEEDS (does not skip).
+    g = run(
+        'INTERACTIVE=1\n',
+        env={"SUDO_NP_RC": "1", "APT_RC": "0", "PY": "true"},
+    )
+    assert "APT_CALLED install -y python3-venv" in g.stdout and "RC=0" in g.stdout, g.stdout
+
+    # 7) As root: no sudo prefix, apt is called directly (the versioned package name
+    #    is honoured for a 3.13 interpreter).
+    root_base = base.replace("id(){ echo 1000; }\n", "id(){ echo 0; }\n")
+    e = run(
+        env={"APT_RC": "0", "PY": "true"},
+        call="try_apt_install_venv python3.13-venv", base_stubs=root_base,
+    )
+    assert "APT_CALLED install -y python3.13-venv" in e.stdout and "RC=0" in e.stdout, e.stdout
+
+
+def test_create_venv_wires_auto_install_and_tails_aware_fallback():
+    """create_venv must attempt the automatic install and, when it can't, fall back to
+    guidance that is honest about Tails (admin password, amnesia/Persistent Storage,
+    Python 3.11). The OO_NO_APT opt-out and the seamless-on-Tails intent stay documented."""
+    sh = (REPO / "install.sh").read_text(encoding="utf-8")
+    # create_venv attempts the auto-install instead of dying immediately.
+    assert "if try_apt_install_venv " in sh, "create_venv must try the automatic apt install"
+    # The opt-out exists.
+    assert "OO_NO_APT" in sh, "there must be an opt-out for the automatic apt install"
+    # Honest Tails guidance on the fallback path (only claims the facts support).
+    assert "Persistent Storage -> Additional Software" in sh, "must explain Tails amnesia/persistence"
+    assert "administration password at the Welcome Screen" in sh, "must explain the Tails admin password"
+    assert "Tails ships Python 3.11" in sh, "must be honest that 3.13 isn't in Tails' default repos"
+    # Never hang on an unanswerable sudo prompt (CI / --unattended / no TTY): the real
+    # apt calls run under `sudo -n` unless a human is at an interactive terminal, and
+    # DEBIAN_FRONTEND=noninteractive stops a debconf prompt from blocking either.
+    assert "sudo -n true" in sh, "must probe passwordless sudo before risking a prompt"
+    assert 'sudo="sudo -n"' in sh, "the elevated apt calls must use sudo -n (fail fast, no prompt)"
+    assert "DEBIAN_FRONTEND=noninteractive" in sh, "apt must run non-interactively (no debconf hang)"
+    # A flaky `apt-get update` must not fail an installable package (best-effort update).
+    assert "apt-get update >/dev/null 2>&1 || true" in sh, "apt-get update must be best-effort"
+
+
 def test_pip_install_handles_out_of_disk_and_redirects_tmpdir():
     """Field test 2026-06-23 (Qubes disposable VM): pip hit 'No space left on device'
     unpacking big wheels because /tmp is a small RAM-backed tmpfs, even though the home

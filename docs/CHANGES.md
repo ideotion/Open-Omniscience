@@ -56,6 +56,14 @@ pyproject but 0.2 is not yet a tagged release.
   discovery filters CDN/analytics/boilerplate + social noise from candidate sources; opt-in
   local-LLM language detection is surfaced as a third, clearly labelled "AI-derived ·
   unreliable" provenance class that never overwrites an asserted language.
+- **Seamless install on Debian/Ubuntu/Tails.** When the stdlib `venv`/`ensurepip` module is
+  missing (it ships in a separate apt package that Tails and minimal Debian don't preinstall),
+  the installer now installs it **automatically** instead of stopping with a manual command —
+  seamless on Tails, where it explains that this needs an administration password and a Tor
+  connection, and is honest that Tails ships Python 3.11 and that apt packages are amnesic
+  unless persisted (Persistent Storage → Additional Software). It never hangs on an
+  unanswerable sudo prompt (CI / `--unattended` / no TTY), refuses to claim success if
+  `ensurepip` is still missing afterwards, and can be opted out with `OO_NO_APT=1`.
 - **Housekeeping.** The FRED OECD share-price index ids were corrected to 2-letter ISO
   (the indices board was empty on most continents), Hungarian + Persian relative-day words
   and robots-dead default calendar feeds were fixed, the roadmap was consolidated to one
