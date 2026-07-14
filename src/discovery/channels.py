@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 
 _LOG = logging.getLogger(__name__)
@@ -264,6 +265,104 @@ def catalog_channel(session, *, cap: int, thin_threshold: int = 3) -> list[str]:
     return created
 
 
+# --------------------------------------------------------------------------- #
+# Channel (b): Wikipedia REFERENCES — the flagship, ZERO-NETWORK channel (Q3a).
+# Parse the external references cited in the already-stored watched-page WIKITEXT
+# (cite templates / <ref> / bare external links), across ALL editions. A citation
+# graph over-represents established/Western sources, so the multi-edition harvest is
+# a built-in de-biasing (fr.wikipedia cites French sources, etc.) but is NOT enough on
+# its own — the diversity weighting in the promotion frontier is the enforcement.
+# --------------------------------------------------------------------------- #
+_WIKI_MIN_PAGES = 2  # a domain cited by >= this many DISTINCT watched pages becomes a candidate
+_URL_RE = re.compile(r"""https?://[^\s\]|}<>"'()]+""", re.IGNORECASE)
+# Wikimedia's own hosts are never a "discovered source" (self-reference / interwiki / asset host).
+_WIKI_SELF = (
+    "wikipedia.org", "wikimedia.org", "wikidata.org", "wiktionary.org", "wikisource.org",
+    "wikivoyage.org", "wikibooks.org", "wikinews.org", "wikiquote.org", "wikiversity.org",
+    "mediawiki.org", "wikimediafoundation.org", "wmflabs.org", "toolforge.org", "wmcloud.org",
+    "dbpedia.org",
+)
+# Inline-image URLs are assets, not references — skip by extension (a .pdf CAN be a real report, so keep it).
+_ASSET_EXT = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".ico", ".bmp", ".tiff")
+
+
+def extract_reference_domains(wikitext: str | None) -> Counter:
+    """Registrable domains of the EXTERNAL references cited in ``wikitext`` — PURE, zero-network.
+    Finds every external http(s) URL (which in a wiki article are overwhelmingly citations: cite
+    templates, ``<ref>`` tags, bare external links), takes its registrable domain, and EXCLUDES
+    Wikimedia's own hosts, inline-image assets, and the commerce/social/infrastructure noise hosts
+    (a footer/asset/interwiki link is not a source). Returns a ``Counter {domain: n_urls}``; a text
+    with no external references (empty, or only ``[[internal]]`` links / Wikimedia hosts) returns an
+    EMPTY counter — never a fabricated candidate."""
+    from src.catalog.normalize import is_social, registrable_domain
+
+    counts: Counter = Counter()
+    if not wikitext:
+        return counts
+    for m in _URL_RE.finditer(wikitext):
+        url = m.group(0).rstrip(".,;:!?")  # trailing sentence punctuation is not part of the URL
+        low_url = url.lower()
+        if any(low_url.split("?", 1)[0].endswith(ext) for ext in _ASSET_EXT):
+            continue  # an inline image, not a reference
+        dom = registrable_domain(url)
+        if not dom:
+            continue
+        dl = dom.lower()
+        if any(dl == w or dl.endswith("." + w) for w in _WIKI_SELF):
+            continue
+        if is_commerce_domain(dl) or is_social(dl) or is_infrastructure_domain(dl):
+            continue
+        counts[dl] += 1
+    return counts
+
+
+def wikipedia_reference_channel(session, *, cap: int, min_pages: int = _WIKI_MIN_PAGES) -> list[str]:
+    """Discover source domains from the REFERENCES of the already-stored watched Wikipedia pages,
+    across ALL editions (ZERO-NETWORK — reuses the compressed wikitext the tracker already holds).
+    A domain cited by >= ``min_pages`` DISTINCT watched pages becomes a candidate (registered
+    DISABLED via ``SourceCandidate``, channel ``wikipedia``); the citing editions ride in the
+    evidence as the diversity signal. Never auto-scraped; promotion stays consented + audited."""
+    from src.database.models import WikiPage
+    from src.wiki.corpus import _page_text
+
+    known = _existing_domains(session)
+    by_domain_pages: dict[str, set[int]] = defaultdict(set)
+    by_domain_editions: dict[str, set[str]] = defaultdict(set)
+    for page in session.query(WikiPage).filter(WikiPage.watched.is_(True)):
+        text, _revid = _page_text(page)
+        if not text:
+            continue
+        for dom in extract_reference_domains(text):
+            by_domain_pages[dom].add(page.id)
+            by_domain_editions[dom].add(page.wiki)
+
+    created: list[str] = []
+    # rank by breadth of citing pages (the independence proxy at the page level), then domain
+    for dom, pageids in sorted(by_domain_pages.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        if len(created) >= cap:
+            break
+        if len(pageids) < min_pages or dom in known:
+            continue
+        editions = sorted(by_domain_editions[dom])
+        _add_candidate(
+            session,
+            domain=dom,
+            name=None,
+            channel="wikipedia",
+            evidence={
+                "reason": "cited in the references of your watched Wikipedia pages",
+                "distinct_citing_pages": len(pageids),
+                "editions": editions,  # the multi-edition de-biasing signal (never a score)
+                "sample_page_ids": sorted(pageids)[:5],
+            },
+        )
+        created.append(dom)
+        known.add(dom)  # never propose the same domain twice in one batch (UNIQUE guard)
+    if created:
+        session.flush()  # autoflush is off app-wide; make the rows visible to callers
+    return created
+
+
 def prune_noise_candidates(session) -> int:
     """Delete already-staged PENDING candidates the noise filters now reject (commerce /
     social / infrastructure). Discovery filtering is forward-only, so a candidate staged
@@ -300,9 +399,12 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
     try:
         with session.begin_nested():
             pruned = prune_noise_candidates(session)  # self-clean earlier noise
-            half = max(1, per_run // 2)
-            cited = citation_channel(session, cap=half)
+            # three channels share the per-run budget: citations, Wikipedia references, catalog.
+            third = max(1, per_run // 3)
+            cited = citation_channel(session, cap=third)
             remaining = per_run - len(cited)
+            wiki = wikipedia_reference_channel(session, cap=max(1, remaining // 2)) if remaining > 0 else []
+            remaining -= len(wiki)
             catalogd = catalog_channel(session, cap=remaining) if remaining > 0 else []
             session.flush()
     except Exception:  # noqa: BLE001 - discovery must never break the scrape
@@ -314,8 +416,9 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
     return {
         "enabled": True,
         "budget": per_run,
-        "created": len(cited) + len(catalogd),
+        "created": len(cited) + len(wiki) + len(catalogd),
         "pruned_noise": pruned,
         "citation": cited,
+        "wikipedia": wiki,
         "catalog": catalogd,
     }
