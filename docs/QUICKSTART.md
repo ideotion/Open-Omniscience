@@ -109,6 +109,24 @@ open-omniscience                   # serve at http://127.0.0.1:8000
 Useful env vars: `OO_DATA_DIR` (where the SQLite DB + data live), `OO_HOST`/`OO_PORT`,
 `OO_FETCH_MIN_INTERVAL` (per-host politeness delay, seconds).
 
+### On Tails
+
+Debian/Ubuntu/Tails ship the stdlib `venv`/`ensurepip` in a **separate apt package**, so
+`python3 -m venv` fails until it is installed. `install.sh` now installs it
+**automatically** — on Tails that needs an **administration password** (set it at the
+Welcome Screen; it is off by default) and a working **Tor connection** (apt downloads over
+Tor). Opt out with `OO_NO_APT=1` if you prefer to run apt yourself.
+
+Two honest caveats specific to Tails:
+
+- **Python version.** Tails is Debian 12 → **Python 3.11**, but the app targets **3.13**.
+  You must have a 3.13 interpreter available and point the installer at it
+  (`OO_PYTHON=python3.13 ./install.sh`); 3.13 and its `python3.13-venv` package are **not**
+  in Tails' default repositories.
+- **Amnesia.** Anything apt-installed — and the whole `.venv` — is **lost on reboot** unless
+  it lives on Persistent Storage: add the venv package via **Persistent Storage → Additional
+  Software**, and keep the checkout + `OO_DATA_DIR` on the persistent volume.
+
 ### Upgrading an existing database
 
 Fresh installs build the schema automatically (`init_db()`), and the database is
