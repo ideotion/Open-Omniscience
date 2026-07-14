@@ -79,6 +79,11 @@ class FetchResult:
     # ``server_ip`` is None with a stated ``server_ip_reason`` -- never a guess.
     server_ip: str | None = None
     server_ip_reason: str | None = None  # why server_ip is None (honest, when unavailable)
+    # The UNDECODED response bytes, attached ONLY when the caller passes
+    # ``keep_bytes=True`` (default None ⇒ zero memory cost on the scrape hot path).
+    # Needed for binary bodies (e.g. a PDF law) whose bytes are destroyed by the
+    # text-decode path; already bounded by ``max_bytes``.
+    raw_content: bytes | None = None
 
 
 class FetchError(Exception):
@@ -364,6 +369,7 @@ class EthicalFetcher:
         *,
         require_html: bool = True,
         extra_headers: dict[str, str] | None = None,
+        keep_bytes: bool = False,
     ) -> FetchResult:
         """Fetch ``url`` ethically. Raises a ``FetchError`` subclass on any refusal.
 
@@ -375,6 +381,11 @@ class EthicalFetcher:
         answers ``304 Not Modified`` the returned ``FetchResult`` has
         ``status_code == 304`` and empty content — a valid, non-error result, so
         the caller can skip re-parsing an unchanged feed.
+
+        ``keep_bytes`` additionally attaches the UNDECODED response bytes on
+        ``FetchResult.raw_content`` (default off ⇒ byte-identical + no extra
+        memory for every existing caller). Needed for a binary body (e.g. a PDF
+        law) whose bytes the text-decode path would otherwise destroy.
         """
         if _KILL.is_set():
             raise FetchFailed("network kill switch is active -- collection stopped by operator")
@@ -405,10 +416,12 @@ class EthicalFetcher:
                 require_html=require_html,
                 extra_headers=extra_headers,
                 iso_proxies=iso_proxies,
+                keep_bytes=keep_bytes,
             )
 
     def _fetch_locked(
-        self, url, *, host_key, parsed, require_html, extra_headers, iso_proxies
+        self, url, *, host_key, parsed, require_html, extra_headers, iso_proxies,
+        keep_bytes=False,
     ) -> FetchResult:
         """The per-host-serialised fetch body (caller holds the host lock)."""
         # robots.txt is checked once (not per retry): a disallow/unavailable is a
@@ -487,7 +500,9 @@ class EthicalFetcher:
             if require_html and "html" not in content_type.lower():
                 raise FetchFailed(f"non-HTML content ({content_type!r}) for {url}")
 
-            content = self._read_body(response, url, token=fetch_token)
+            content, raw_body = self._read_body(
+                response, url, token=fetch_token, keep_bytes=keep_bytes
+            )
 
             return FetchResult(
                 requested_url=url,
@@ -500,6 +515,7 @@ class EthicalFetcher:
                 last_modified=last_modified,
                 server_ip=server_ip,
                 server_ip_reason=server_ip_reason,
+                raw_content=raw_body,
             )
         finally:
             activity_monitor.fetch_finished(fetch_token)
@@ -651,12 +667,18 @@ class EthicalFetcher:
             return resp, str(getattr(resp, "url", current) or current)
         raise FetchFailed(f"too many redirects for {url}")
 
-    def _read_body(self, response, url: str, *, token: int | None = None) -> str:
+    def _read_body(
+        self, response, url: str, *, token: int | None = None, keep_bytes: bool = False
+    ) -> tuple[str, bytes | None]:
         """Decode the body, enforcing ``max_bytes`` *before* materialising it (DoS).
 
         A declared Content-Length over the cap is rejected up front; for the real
         (streamed) session the body is read incrementally and aborted once the
         decompressed size exceeds the cap (defeats gzip/decompression bombs).
+
+        Returns ``(decoded_text, raw_bytes_or_None)`` — ``raw_bytes`` is the
+        undecoded body when ``keep_bytes`` is set (already bounded by
+        ``max_bytes``), else None so no extra memory is held.
         """
         cl = response.headers.get("Content-Length") if hasattr(response, "headers") else None
         if cl and str(cl).isdigit() and int(cl) > self.max_bytes:
@@ -692,15 +714,16 @@ class EthicalFetcher:
                 except Exception:  # noqa: BLE001 - detection is best-effort
                     pass
                 encoding = encoding or "utf-8"
+            kept = raw if keep_bytes else None
             try:
-                return raw.decode(encoding, errors="replace")
+                return raw.decode(encoding, errors="replace"), kept
             except (LookupError, TypeError):
-                return raw.decode("utf-8", errors="replace")
+                return raw.decode("utf-8", errors="replace"), kept
         # Injected (test) session: not streamed; check the already-materialised body.
         if response.content and len(response.content) > self.max_bytes:
             raise FetchFailed(f"response exceeds {self.max_bytes} bytes for {url}")
         activity_monitor.fetch_bytes(len(response.content or b""), token)
-        return response.text
+        return response.text, (response.content if keep_bytes else None)
 
     # -- robots ------------------------------------------------------------ #
 

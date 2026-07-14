@@ -44,7 +44,7 @@ class StubFetcher:
     def __init__(self):
         self.page = ""
 
-    def fetch(self, url: str, *, require_html: bool = True) -> FetchResult:
+    def fetch(self, url: str, *, require_html: bool = True, **_kw) -> FetchResult:
         return FetchResult(
             requested_url=url,
             final_url=url,
@@ -195,7 +195,7 @@ def test_track_watched_tally_and_fetch_error(db):
     db.commit()
 
     class BadFetcher:
-        def fetch(self, url, *, require_html=True):
+        def fetch(self, url, *, require_html=True, **_kw):
             from src.ingest import FetchFailed
 
             raise FetchFailed("boom")

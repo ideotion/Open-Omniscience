@@ -295,6 +295,100 @@ def remove_imported_newsletters(
 
 
 # --------------------------------------------------------------------------- #
+# Local PDF-document import (mirrors the .eml importer): bring your own PDFs into
+# the corpus as Articles. ZERO network — each file is extracted + stored locally.
+# A scanned / encrypted / mis-decoded PDF is SKIPPED with an honest reason and
+# stores NOTHING (never a fabricated body). Dedup by content hash ⇒ idempotent.
+# --------------------------------------------------------------------------- #
+_MAX_PDF_UPLOAD_FILES = 2000
+_MAX_PDF_BYTES = 200 * 1024 * 1024  # per-file bound so one huge upload can't OOM the worker
+
+
+@router.post("/documents/pdf/upload")
+async def upload_pdfs(request: Request, db: Session = Depends(get_db)) -> dict:
+    """Import local PDF files into the unified corpus. ZERO network: each PDF is
+    parsed and its text extracted locally (nothing is ever fetched). A scanned /
+    encrypted / mis-decoded PDF is SKIPPED with an honest reason and stores NOTHING.
+    Dedup is by content hash, so re-importing the same document is idempotent."""
+    from starlette.concurrency import run_in_threadpool
+    from starlette.datastructures import UploadFile
+
+    from src.ingest.pdf import looks_like_pdf
+    from src.ingest.pdf_import import ingest_pdf_blobs
+
+    try:
+        form = await request.form(
+            max_files=_MAX_PDF_UPLOAD_FILES, max_fields=_MAX_PDF_UPLOAD_FILES + 100
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Too many files in one upload (cap {_MAX_PDF_UPLOAD_FILES}). For a very "
+                f"large set, import from a folder instead. ({exc})"
+            ),
+        ) from exc
+    blobs: list[tuple[str, bytes]] = []
+    skipped_non_pdf = 0
+    for f in form.getlist("files"):
+        if not isinstance(f, UploadFile):
+            continue
+        name = f.filename or ""
+        try:
+            # Bounded read (cap+1): a file over the cap materialises only cap+1 bytes,
+            # then is skipped — one huge upload can't balloon RAM on the single worker.
+            data = await f.read(_MAX_PDF_BYTES + 1)
+        except Exception:
+            skipped_non_pdf += 1
+            continue
+        if len(data) > _MAX_PDF_BYTES:
+            skipped_non_pdf += 1  # oversize — honest skip, never a crash
+            continue
+        if not name.lower().endswith(".pdf") and not looks_like_pdf(data):
+            skipped_non_pdf += 1
+            continue
+        blobs.append((name, data))
+    # Heavy sync work (extract + index_article per file) runs OFF the event loop so a
+    # multi-PDF import never freezes the single-worker server.
+    tally = await run_in_threadpool(ingest_pdf_blobs, db, blobs)
+    tally["skipped_non_pdf"] = skipped_non_pdf
+    return {"received": len(blobs) + skipped_non_pdf, "tally": tally}
+
+
+@router.get("/documents/pdf/imported-count")
+def imported_pdfs_count(db: Session = Depends(get_db)) -> dict:
+    """How many imported-PDF articles the corpus holds (drives the UI)."""
+    from src.ingest.pdf_import import count_imported_pdfs
+
+    return {"count": count_imported_pdfs(db)}
+
+
+class PdfFolderBody(BaseModel):
+    folder: str
+
+
+@router.post("/documents/pdf/import-folder")
+async def import_pdf_folder(body: PdfFolderBody, db: Session = Depends(get_db)) -> dict:
+    """Import every PDF under a server-side folder path (bounded, best-effort).
+
+    ZERO network (local disk read). Heavy work runs off the event loop. 400 on a
+    folder that does not exist. A very large tree is the future folder-import JOB's
+    job (pausable + task-manager-visible, the .eml pattern) — this bounded pass
+    handles an operator-chosen directory now."""
+    import os
+
+    from starlette.concurrency import run_in_threadpool
+
+    from src.ingest.pdf_import import ingest_pdf_directory
+
+    folder = (body.folder or "").strip()
+    if not folder or not os.path.isdir(folder):
+        raise HTTPException(status_code=400, detail=f"Not a folder: {folder!r}")
+    tally = await run_in_threadpool(ingest_pdf_directory, db, folder)
+    return {"folder": folder, "tally": tally}
+
+
+# --------------------------------------------------------------------------- #
 # Server-side .eml FOLDER import as a pausable, task-manager-visible job (§2.B):
 # the 20 GB+ case the small-file upload can't handle. Zero network (local disk).
 # --------------------------------------------------------------------------- #

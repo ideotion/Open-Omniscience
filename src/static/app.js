@@ -4743,6 +4743,59 @@
       } finally { btn.disabled = false; }
     }
 
+    // -- Local PDF-document import (mirrors the .eml importer; zero network) ----- //
+    function _pdfTallyHtml(tl) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const n = (x) => (x || 0).toLocaleString();
+      let html = `<b>${n(tl.imported)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
+        `${n(tl.skipped)} ${esc(t("skipped"))}`;
+      if (tl.skipped_non_pdf) html += ` · ${n(tl.skipped_non_pdf)} ${esc(t("not PDF"))}`;
+      // Surface WHY files were skipped (scanned / encrypted / mis-decoded) — honest, never hidden.
+      const reasons = (tl.results || []).filter((r) => r.status === "skipped" && r.reason);
+      if (reasons.length) {
+        html += `<div class="muted" style="margin-top:5px">` +
+          reasons.slice(0, 8).map((r) => `${esc(r.filename || "")}: ${esc(r.reason)}`).join("<br>") + `</div>`;
+      }
+      return html;
+    }
+    async function importPdfs(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const input = $("pdf-files");
+      if (!input || !input.files || !input.files.length) {
+        toast(t("Choose one or more PDF files first."), "warn"); return;
+      }
+      btn.disabled = true;
+      $("pdf-result").textContent = t("Importing…");
+      const fd = new FormData();
+      for (const f of input.files) fd.append("files", f);
+      try {
+        // Loopback POST — the endpoint opens ZERO external sockets (local import),
+        // so this works in airplane mode and never needs the network-consent gate.
+        const r = await fetch("/api/documents/pdf/upload", { method: "POST", body: fd });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const d = await r.json();
+        $("pdf-result").innerHTML = _pdfTallyHtml(d.tally || {});
+        input.value = "";
+        toast(t("PDFs imported."), "ok");
+      } catch (e) {
+        $("pdf-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+      } finally { btn.disabled = false; }
+    }
+    async function importPdfFolder(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const folder = ($("pdf-folder").value || "").trim();
+      if (!folder) { toast(t("Enter a folder path on this machine."), "warn"); return; }
+      btn.disabled = true;
+      $("pdf-folder-result").textContent = t("Importing…");
+      try {
+        const d = await api("/api/documents/pdf/import-folder", { method: "POST", body: JSON.stringify({ folder }) });
+        $("pdf-folder-result").innerHTML = _pdfTallyHtml(d.tally || {});
+        toast(t("PDFs imported."), "ok");
+      } catch (e) {
+        $("pdf-folder-result").innerHTML = `<span class="note err">${esc(t("Import failed"))}: ${esc(e.message)}</span>`;
+      } finally { btn.disabled = false; }
+    }
+
     // -- Remove imported newsletters (the "replace the faulty ones" loop) ------ //
     // -- Server-side .eml FOLDER import as a pausable job (§2.B; 20 GB+ sets) ---- //
     let _nlImportPoll = null;

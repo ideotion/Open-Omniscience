@@ -74,15 +74,17 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install (core + analysis + dev + segmentation)
+      - name: Install (core + analysis + dev + segmentation + pdf)
         run: |
           python -m pip install --upgrade pip
           # [segmentation] adds the offline zh/ja/th word segmenters (jieba/janome/
           # pythainlp) so the segmentation tests + the zh/ja/th self-test cases run
-          # for real here. The Core-only job below (no [segmentation]) proves the
+          # for real here. [pdf] adds pypdf so the PDF-extraction + PDF-import tests
+          # run for real. The Core-only job below (no [segmentation]/[pdf]) proves the
           # graceful-degrade path (segmenter absent -> byte-identical whitespace
-          # tokenizer, zh/ja/th stay 'unsegmented').
-          python -m pip install -e ".[analysis,dev,segmentation]"
+          # tokenizer, zh/ja/th stay 'unsegmented'; pypdf absent -> a PDF is honestly
+          # "no usable text", never a crash).
+          python -m pip install -e ".[analysis,dev,segmentation,pdf]"
 
       # BLOCKING correctness lint (audit PR D): F (pyflakes — undefined names,
       # used-before-assignment, unused imports/vars) + B (bugbear — likely bugs).
