@@ -131,6 +131,22 @@ pdf = [
     "pypdf>=4.0",
 ]
 
+# Optional OCR fallback for SCANNED / image-only PDFs (no text layer). The
+# born-digital text layer ([pdf]) is always tried first — this only runs on scans.
+# pytesseract (Apache-2.0) shells out to the **tesseract** SYSTEM binary, which is
+# NOT pip-installable (install it separately: e.g. `apt install tesseract-ocr`, and
+# `tesseract-ocr-<lang>` for extra languages); pypdfium2 (Apache-2.0/BSD, bundled
+# binary, no system dep) renders pages to images; Pillow handles the image. A core
+# install (or a machine without the tesseract binary) simply skips OCR — a scanned
+# PDF is recorded honestly as "no usable text", never a crash. HONESTY: OCR is a
+# LOWER-TRUST class (can mis-read / mis-order columns), tagged as such and gated by
+# a confidence floor — the original PDF stays the source of truth.
+ocr = [
+    "pytesseract>=0.3.10",
+    "pypdfium2>=4",
+    "Pillow>=10",
+]
+
 # Optional word segmentation for the space-less scripts (zh/ja/th) the whitespace
 # tokenizer cannot split — without it a whole Chinese/Japanese sentence became ONE
 # junk "keyword" and Thai shattered at its marks (field test 2026-07-08). All three

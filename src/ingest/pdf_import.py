@@ -82,13 +82,17 @@ def ingest_pdf_bytes(
     """
     from src.ingest.pdf import extract_pdf_text
 
-    text, reason = extract_pdf_text(data)
+    # OCR-fallback ON: a born-digital PDF uses its exact text layer; a SCANNED one
+    # falls back to OCR when the [ocr] extra + tesseract are present (else an honest
+    # skip). reason == "ocr" flags the LOWER-TRUST, OCR-derived provenance.
+    text, reason = extract_pdf_text(data, ocr=True)
     if not text or len(text) < _MIN_TEXT:
         return {
             "status": "skipped",
             "filename": filename,
             "reason": reason if reason != "ok" else "no usable text",
         }
+    method = "ocr" if reason == "ocr" else "text"
 
     content_hash = hashlib.sha256(text.encode()).hexdigest()
     # Dedup by content hash (Article.hash is unique) — re-importing is idempotent.
@@ -135,6 +139,7 @@ def ingest_pdf_bytes(
         "status": "imported",
         "filename": filename,
         "article_id": art.id,
+        "method": method,  # "text" (exact layer) or "ocr" (lower-trust, may mis-read)
         "mentions": tally.get("mentions", 0),
     }
 
@@ -143,10 +148,18 @@ def _empty_tally() -> dict:
     return {
         "received": 0,
         "imported": 0,
+        "ocr": 0,  # of the imported, how many came via OCR (lower-trust, may mis-read)
         "duplicate": 0,
         "skipped": 0,
         "results": [],
     }
+
+
+def _tally_one(tally: dict, res: dict) -> None:
+    tally[res["status"]] = tally.get(res["status"], 0) + 1
+    if res.get("method") == "ocr":
+        tally["ocr"] = tally.get("ocr", 0) + 1
+    tally["results"].append(res)
 
 
 def ingest_pdf_blobs(session: Session, blobs, *, extractor=None, source=None) -> dict:
@@ -169,8 +182,7 @@ def ingest_pdf_blobs(session: Session, blobs, *, extractor=None, source=None) ->
             session.rollback()
             _LOG.warning("pdf import failed for %s", filename, exc_info=True)
             res = {"status": "skipped", "filename": filename, "reason": f"error: {exc}"}
-        tally[res["status"]] = tally.get(res["status"], 0) + 1
-        tally["results"].append(res)
+        _tally_one(tally, res)
     return tally
 
 
@@ -196,8 +208,7 @@ def ingest_pdf_files(session: Session, paths, *, extractor=None, source=None) ->
             session.rollback()
             _LOG.warning("pdf import failed reading %s", path, exc_info=True)
             res = {"status": "skipped", "filename": filename, "reason": f"read error: {exc}"}
-        tally[res["status"]] = tally.get(res["status"], 0) + 1
-        tally["results"].append(res)
+        _tally_one(tally, res)
     return tally
 
 
