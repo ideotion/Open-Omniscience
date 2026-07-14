@@ -5673,6 +5673,70 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   claim would be fabricated. **fork-3:** the Slice-0 backup gate is source-guard/backend-contract tested but
   BROWSER-UNVERIFIED — a click-through of the Export/Import flow is owed.
 
+- **V1 PATHWAY — PLANNING SESSION 2026-07-14 (maintainer-directed, docs-only; plan of record =
+  [`docs/design/V1_PATHWAY_2026-07-14.md`](docs/design/V1_PATHWAY_2026-07-14.md); draft PR onto 0.2,
+  branch `claude/app-roadmap-v1-u8q111`):** the maintainer restated the MISSION (a free, local-first
+  360°-view instrument over the open internet for citizens/journalists — worldwide languages, honest
+  AI enhancement, cross-language keyword analytics over news/laws/Wikipedia/OSM + track-changes; "our
+  gift to citizens of the world") and asked for (a) a **RECURSIVE SELF-IMPROVEMENT STRATEGY** as the
+  main deliverable and (b) an AMBITIOUS pathway to v1.0 (~1 year acceptable) incl. NEW VERTICALS —
+  IP/patents, PubMed/medical, climate/environment, war/defense, elections. THE PLAN (composes with,
+  never duplicates, ROADMAP/SCALE_ROADMAP/STORAGE_5TB/OPTIMIZATION_PROGRAM/ACTION_PLAN-2026-07-13):
+  **§2 the recursive improvement loop** — SENSE→COMPARE→PLAN→BUILD→VERIFY→MERGE+RECORD, a
+  human-supervised flywheel with AI leverage at every stage, explicitly NOT autonomous
+  self-modification (draft-PR-only; the ethics/non-negotiables layer is constitutionally OUT of the
+  loop's optimization reach); the K1–K14 KPI board (each metric stands alone, NO composite — unlock,
+  p95, backup-bounded-RAM, crash-free run, keyword noise, translation coverage, date recall, source
+  health+diversity, IR/perception eval, i18n, browser-verified %, vertical freshness, dev health);
+  new instruments **R1** (`/api/diagnostics/kpi` machine-readable snapshot) **R2** (stdlib
+  `kpi_diff.py` — improved/regressed/unchanged/not-measurable, never blended) **R3** (the AppVM
+  runner + `ui_walk` = the browser burn-down engine, named the HIGHEST-LEVERAGE single build)
+  **R4** (`docs/process/IMPROVEMENT_CYCLE.md` standing protocol) **R6** (the gold-set grading
+  flywheel: 15 min of grading per cycle instead of one heroic never-happening session); LLM-in-the-
+  loop stays propose-never-auto-apply (triage/ring-candidates/extraction-candidates/audit-assist).
+  **§3 the version train** 0.2→1.0 (gate-driven, ~4 quarters): 0.3 measured-&-verified (loop v1 +
+  AppVM burn-down + operator unblocks) · 0.4 living sources (LAWS first → ONE small wiki edition →
+  editions behind storage milestones; P0-gated as ruled) · 0.5 investigator's desk (claim workspace
+  A1 + entity spine + dossier seed) · 0.6 elections+climate · 0.7 patents+medical · 0.8 conflict +
+  the 360° dossier · 0.9 hardening RC (the RELEASE_1.0_RC_GATE built from §8) · 1.0. **§4 the five
+  verticals**, each riding the MANDATORY vertical pattern (dated catalog → guarded fetch → pure
+  parser w/ negative-space skeptic → vintaged store → the 3 rails Article/StatFigure/Agenda →
+  distinct provenance class → surface w/ visible caveats → per-vertical freshness diagnostics →
+  ledger) with web-verified source tables (per-row verification status ✅fetched/🔎search-verified/
+  ❓unverified-lead; fabrication-banned research; GDELT-firehose/BigQuery-only/bundled-keys
+  de-prioritized in §4.6). **§7 the 9 open rulings** (V1-1..V1-9: train approval · user-supplied-
+  API-keys policy · restrictive-license policy (ACLED-class) · PubMed bulk-vs-API · win/mac at 1.0 ·
+  KPI bars · the storage-§8 rulings (urgent, CREATE-time-irreversible) · elections-required-for-1.0 ·
+  the 1.0 Wikipedia edition-count bar).
+  **§8 the V1 acceptance checklist.** NOTHING CODED this session; next concrete builds = R1/R2/R4
+  (buildable-now) + R3 (VM-gated) once the maintainer approves the train.
+  **ADDENDUM — ELECTIONS COVERAGE FLOOR + PROJECTED-DATE HONESTY (maintainer ruled 2026-07-14,
+  same session; recorded in V1_PATHWAY §4.5):** (1) elections must cover AT LEAST every country
+  whose official/major language is among the 12 UI languages (a dated, sourced language→country
+  mapping — never guessed; becomes the elections component of the K13 bar). (2) recurrence-
+  PROJECTED dates are a THIRD, explicitly-UNRELIABLE confidence tier — `scheduled` (official
+  date, sourced) · `window` (legal window, the France-2027 `confirmed:false` pattern) ·
+  `projected` (sourced rule + last-held; an every-N-years pattern may NOT hold — war,
+  dissolution, death, coup, court ruling, snap election); the caveat is VISIBLE by default ×12,
+  a projection is a prompt-to-check never an assertion, a passed projected date is marked
+  "status unknown — check the official source" (itself an investigative lead) and NEVER silently
+  re-projected, and no sourced rule+last-held ⇒ NO projected entry (a gap, never a guess).
+  (3) acquisition = a PARALLEL INTERNET-CONNECTED session (the Wikidata-generator precedent)
+  researching per-country recurrence rules + official electoral-authority sources → a dated
+  sourced snapshot (config + `*_AS_OF` + registry + freshness test), layered with the Wikidata
+  CC0 snapshot + per-user ElectionGuide freshness where terms allow. Strengthens V1-8
+  (elections at 1.0), which formally stays the maintainer's ruling.
+  **ADDENDUM 2 — PUBMED STANDING (maintainer ruled 2026-07-14, same session; recorded in
+  V1_PATHWAY §4.2):** PubMed is NOT a privileged source — no elevated trust/weighting; its
+  "evidence-based" character is a descriptive stance-claim per the stats-agencies precedent
+  (the user judges; retractions prove the exception) — BUT its content database is
+  ARCHITECTURALLY separate (~38M records; the managed-dataset/wiki-dump pattern: own storage
+  posture on the storage-plan milestones, own diagnostics, own filterable provenance class,
+  never blended into the news corpus by default; papers surface BESIDE news with provenance
+  visible — the separation is size/shape, never a trust statement). Ingest = metadata + ABSTRACTS
+  (the always-available layer); full text only where OA (PMC subset); a paywalled full text is
+  an HONEST GAP — link out, never scraped around.
+
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

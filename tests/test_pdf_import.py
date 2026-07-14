@@ -101,7 +101,7 @@ def test_reimport_same_pdf_is_deduped(db):
 def test_batch_tally_and_directory(db, tmp_path):
     (tmp_path / "one.pdf").write_bytes(_TEXT_PDF)
     (tmp_path / "scan.pdf").write_bytes(_IMAGE_PDF)  # scanned → skipped
-    (tmp_path / "note.txt").write_text("not a pdf")  # ignored (not *.pdf)
+    (tmp_path / "note.txt").write_text("not a pdf", encoding="utf-8")  # ignored (not *.pdf)
     out = ingest_pdf_directory(db, str(tmp_path))
     assert out["received"] == 2  # only the two *.pdf files
     assert out["imported"] == 1 and out["skipped"] == 1
@@ -125,8 +125,8 @@ def test_pdf_import_ui_is_wired():
     """Conservative frontend guard (browser-unverified per Q6a): the Settings panel
     + handlers + endpoint URL are present, so a rename can't silently orphan the UI."""
     root = Path(__file__).resolve().parents[1] / "src" / "static"
-    html = (root / "index.html").read_text()
-    js = (root / "app.js").read_text()
+    html = (root / "index.html").read_text(encoding="utf-8")
+    js = (root / "app.js").read_text(encoding="utf-8")
     assert 'id="pdf-files"' in html and 'onclick="importPdfs(this)"' in html
     assert 'onclick="importPdfFolder(this)"' in html
     assert "function importPdfs(" in js and "function importPdfFolder(" in js

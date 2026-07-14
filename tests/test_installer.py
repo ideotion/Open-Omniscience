@@ -434,7 +434,6 @@ def test_missing_venv_is_auto_installed_via_apt():
 
     We extract try_apt_install_venv() and drive it in an isolated bash harness with
     apt-get/sudo/id/$PY all stubbed, so nothing touches the real system."""
-    import os
     import re
     import subprocess
 

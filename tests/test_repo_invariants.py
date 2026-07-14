@@ -1256,7 +1256,10 @@ def test_no_hardcoded_secrets_in_live_src():
 
 
 def test_quarantine_not_imported_by_live_code():
-    pattern = re.compile(r"\b(from|import)\s+quarantine\b|\bquarantine\.")
+    # NB `\bquarantine\.\w` (attribute access), not `\bquarantine\.` — the bare form
+    # false-positived on a docstring SENTENCE ending in "... a reversible quarantine."
+    # (2026-07-14, the #674 docstring turned this guard red repo-wide).
+    pattern = re.compile(r"\b(from|import)\s+quarantine\b|\bquarantine\.\w")
     offenders = [
         str(p.relative_to(_ROOT))
         for p in _live_py_files()
