@@ -152,8 +152,11 @@ def test_ocr_available_is_off_without_the_binary_or_env(monkeypatch):
     assert ocr_available() is False
 
 
+@needs_pypdf
 def test_scanned_pdf_degrades_honestly_when_ocr_unavailable(monkeypatch):
     # ocr requested but unavailable -> the honest scan skip, never a crash.
+    # (@needs_pypdf: without the [pdf] extra the extractor refuses BEFORE the scanned
+    # path, with reason "pdf extractor not installed" — the Core-only lane proved it.)
     monkeypatch.setattr("src.ingest.pdf.ocr_available", lambda: False)
     text, reason = extract_pdf_text(_IMAGE_PDF.read_bytes(), ocr=True)
     assert text is None and "scanned" in reason
