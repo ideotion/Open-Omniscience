@@ -1875,6 +1875,11 @@ class LawDocument(Base):
     watched: Mapped[bool | None] = mapped_column(Boolean, default=True)
     baseline_text: Mapped[str | None] = mapped_column(CompressedText)  # one full snapshot; later = baseline + diffs
     baseline_hash: Mapped[str | None] = mapped_column(String(64))
+    # The materialised NEWEST text (mirrors WikiPage.latest_text) so the CURRENT law is shown
+    # without replaying diffs; latest_text_revid points at the LawRevision it corresponds to.
+    # Versioned-sources ruling: a law is an Article + a linked revision/audit trail. Additive.
+    latest_text: Mapped[str | None] = mapped_column(CompressedText)
+    latest_text_revid: Mapped[int | None] = mapped_column(Integer)
     last_hash: Mapped[str | None] = mapped_column(String(64))  # content hash at last successful fetch
     last_size: Mapped[int | None] = mapped_column(Integer)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -1912,6 +1917,9 @@ class LawRevision(Base):
     size: Mapped[int | None] = mapped_column(Integer)
     delta_bytes: Mapped[int | None] = mapped_column(Integer)  # size - previous size (signed)
     diff: Mapped[str | None] = mapped_column(CompressedText)  # added/removed text for this change
+    # The FULL text at this revision (mirrors WikiRevision.full_text) so ANY past version is
+    # reconstructable locally, not just from a lossy capped diff. Additive, nullable.
+    full_text: Mapped[str | None] = mapped_column(CompressedText)
     flagged: Mapped[bool | None] = mapped_column(Boolean, default=False)
     flag_reasons: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
