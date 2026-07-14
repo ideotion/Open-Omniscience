@@ -151,6 +151,38 @@ def test_scanned_pdf_is_skipped_stores_nothing(db):
     assert db.query(Article).count() == 0
 
 
+@needs_pypdf
+def test_scanned_pdf_imported_via_ocr_is_tagged(db, monkeypatch):
+    """When OCR is available, a scanned PDF imports with method 'ocr' (lower-trust)
+    and is counted in the ocr tally — so the UI can flag OCR-derived documents.
+    (pypdfium2 renders the real fixture; the tesseract call is stubbed.)"""
+    import importlib.util
+
+    if importlib.util.find_spec("pypdfium2") is None:
+        pytest.skip("pypdfium2 ([ocr] extra) not installed")
+    import pytesseract
+
+    scanned = (Path(__file__).parent / "fixtures" / "pdf" / "scanned_text.pdf").read_bytes()
+    para = ("AN ACT to protect liberty and security of the person . Section one every "
+            "person shall have the right to liberty and security under the law . Section "
+            "two no one shall be deprived of liberty save in accordance with a procedure "
+            "established by law across the whole realm and its territories now .")
+    words = para.split()
+    monkeypatch.setattr("src.ingest.pdf.ocr_available", lambda: True)
+    monkeypatch.setattr(
+        pytesseract, "image_to_data",
+        lambda image, lang=None, output_type=None, **kw: {
+            "block_num": [1] * len(words), "par_num": [1] * len(words),
+            "line_num": [i // 8 + 1 for i in range(len(words))],
+            "conf": [90] * len(words), "text": words,
+        },
+    )
+    out = ingest_pdf_blobs(db, [("scan.pdf", scanned)])
+    assert out["imported"] == 1 and out["ocr"] == 1
+    assert out["results"][0]["method"] == "ocr"
+    assert db.query(Article).filter(Article.content.contains("liberty")).count() == 1
+
+
 def test_blobs_batch_never_aborts_on_one_bad_file(db):
     # A mix: a non-PDF (skipped) + a corrupt PDF (skipped) — neither crashes the batch,
     # and nothing is stored (all runs without pypdf too: no valid text is produced).

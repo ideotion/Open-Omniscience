@@ -2051,7 +2051,7 @@
     <section class="panel">
       <h2>Import documents (PDF)</h2>
       <p class="hint">Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source ("Imported PDFs") so it never blurs with the web.</p>
-      <p class="hint" style="margin-top:5px">Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A scanned, image-only or encrypted PDF has no readable text, so it is skipped with an honest reason and stores nothing — never a garbage body. Re-importing the same document is skipped (deduplicated).</p>
+      <p class="hint" style="margin-top:5px">Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the <code>[ocr]</code> extra + the Tesseract binary) it is read via OCR and clearly marked <em>OCR-derived</em> (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).</p>
       <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
         <input type="file" id="pdf-files" accept=".pdf,application/pdf" multiple aria-label="Choose PDF files to import">
         <button class="secondary" id="pdf-import-btn" onclick="importPdfs(this)">Import PDFs</button>

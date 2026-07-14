@@ -25,16 +25,29 @@ import pytest
 
 from src.ingest.pdf import (
     _looks_like_real_text,
+    _reconstruct_ocr_text,
     extract_pdf_text,
     looks_like_pdf,
+    ocr_available,
+    ocr_pdf,
     pdf_available,
 )
 
 _FIX = Path(__file__).parent / "fixtures" / "pdf"
 _TEXT_PDF = _FIX / "text_statute.pdf"
 _IMAGE_PDF = _FIX / "scanned_image.pdf"
+_SCANNED_TEXT_PDF = _FIX / "scanned_text.pdf"  # a picture of text (no text layer)
+
+
+def _has_render() -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec("pypdfium2") is not None and pdf_available()
+
 
 needs_pypdf = pytest.mark.skipif(not pdf_available(), reason="pypdf ([pdf] extra) not installed")
+needs_render = pytest.mark.skipif(not _has_render(), reason="pypdfium2 ([ocr] extra) not installed")
+needs_ocr = pytest.mark.skipif(not ocr_available(), reason="OCR ([ocr] extra + tesseract) unavailable")
 
 
 # --------------------------------------------------------------------------- #
@@ -96,3 +109,111 @@ def test_mis_extraction_guard_rejects_symbol_garbage():
     assert _looks_like_real_text("1234567 89.0 %$#@ " * 30) is False  # digits/symbols, not prose
     assert _looks_like_real_text("short") is False  # below the min-chars floor
     assert _looks_like_real_text("the law of the land shall be enforced " * 20) is True
+
+
+# --------------------------------------------------------------------------- #
+#  OCR fallback — column handling, degrade, confidence floor (mostly stubbed)
+# --------------------------------------------------------------------------- #
+def _tsv(blocks):
+    """Build a tesseract image_to_data DICT from [(block,par,line,word,conf), ...]."""
+    keys = ("block_num", "par_num", "line_num", "text", "conf")
+    cols = list(zip(*blocks, strict=True)) if blocks else ([],) * 5
+    return dict(zip(keys, cols, strict=True))
+
+
+def test_reconstruct_respects_columns_and_never_fuses_them():
+    """The multi-column concern: tesseract segments columns into separate BLOCKS;
+    reconstruction must keep each column CONTIGUOUS, never interleave left+right on
+    a shared line. Here block 1 = left column, block 2 = right — same line numbers."""
+    data = _tsv([
+        (1, 1, 1, "Left", 95), (1, 1, 1, "one", 95),
+        (1, 1, 2, "Left", 95), (1, 1, 2, "two", 95),
+        (2, 1, 1, "Right", 95), (2, 1, 1, "one", 95),
+        (2, 1, 2, "Right", 95), (2, 1, 2, "two", 95),
+    ])
+    text, conf = _reconstruct_ocr_text(data)
+    assert "Left one\nLeft two" in text and "Right one\nRight two" in text
+    assert text.index("Left") < text.index("Right")  # left column before right
+    assert "Right" not in text.split("Left two")[0]  # never fused onto a shared line
+    assert conf == 95.0
+
+
+def test_reconstruct_three_columns_stay_ordered():
+    data = _tsv([
+        (1, 1, 1, "colA", 90), (2, 1, 1, "colB", 90), (3, 1, 1, "colC", 90),
+    ])
+    text, _ = _reconstruct_ocr_text(data)
+    assert text.index("colA") < text.index("colB") < text.index("colC")
+    assert text == "colA\n\ncolB\n\ncolC"  # each column its own block, in order
+
+
+def test_ocr_available_is_off_without_the_binary_or_env(monkeypatch):
+    monkeypatch.setenv("OO_PDF_OCR", "0")
+    assert ocr_available() is False
+
+
+def test_scanned_pdf_degrades_honestly_when_ocr_unavailable(monkeypatch):
+    # ocr requested but unavailable -> the honest scan skip, never a crash.
+    monkeypatch.setattr("src.ingest.pdf.ocr_available", lambda: False)
+    text, reason = extract_pdf_text(_IMAGE_PDF.read_bytes(), ocr=True)
+    assert text is None and "scanned" in reason
+
+
+@needs_render
+def test_ocr_pipeline_end_to_end_stubbed(monkeypatch):
+    """Render the real scanned fixture (pypdfium2) but STUB the tesseract call, so the
+    whole pipeline (render -> reconstruct -> guard) runs without the binary."""
+    import pytesseract
+
+    para = ("AN ACT to protect the liberty and security of the person . Section one "
+            "Every person shall have the right to liberty and security . Section two "
+            "No one shall be deprived of liberty save in accordance with law .")
+    words = para.split()
+    monkeypatch.setattr("src.ingest.pdf.ocr_available", lambda: True)
+    monkeypatch.setattr(
+        pytesseract, "image_to_data",
+        lambda image, lang=None, output_type=None, **kw: _tsv(
+            [(1, 1, i // 8 + 1, w, 90) for i, w in enumerate(words)]
+        ),
+    )
+    text, reason = extract_pdf_text(_SCANNED_TEXT_PDF.read_bytes(), ocr=True)
+    assert reason == "ocr"  # lower-trust provenance, not "ok"
+    assert text and "liberty and security" in text
+
+
+@needs_render
+def test_low_confidence_ocr_is_rejected(monkeypatch):
+    """A poor/complex scan (low mean confidence) is rejected, not stored as a
+    confident-looking wrong body — the honesty floor."""
+    import pytesseract
+
+    para = ("garbled text that tesseract was unsure about across the whole page line "
+            "after line of low confidence recognition from a bad scan repeated here so "
+            "the page is long enough to pass the prose length floor and reach the "
+            "confidence gate which should then reject this poor scan honestly now .")
+    words = para.split()
+    monkeypatch.setattr("src.ingest.pdf.ocr_available", lambda: True)
+    monkeypatch.setattr(
+        pytesseract, "image_to_data",
+        lambda image, lang=None, output_type=None, **kw: _tsv(
+            [(1, 1, i // 8 + 1, w, 20) for i, w in enumerate(words)]  # conf 20 = poor
+        ),
+    )
+    text, reason = ocr_pdf(_SCANNED_TEXT_PDF.read_bytes())
+    assert text is None and "low-confidence" in reason
+
+
+@needs_pypdf
+def test_born_digital_pdf_never_ocrs_even_when_ocr_on():
+    # A PDF with a real text layer uses it exactly — OCR never runs (reason "ok").
+    text, reason = extract_pdf_text(_TEXT_PDF.read_bytes(), ocr=True)
+    assert reason == "ok" and text and "liberty and security" in text
+
+
+@needs_ocr
+def test_real_tesseract_reads_a_scanned_pdf():
+    """CI only (needs the tesseract binary): the real OCR round-trip on the scanned
+    fixture returns lower-trust text."""
+    text, reason = extract_pdf_text(_SCANNED_TEXT_PDF.read_bytes(), ocr=True)
+    assert reason == "ocr"
+    assert text and "liberty" in text.lower()

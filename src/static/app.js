@@ -4750,6 +4750,8 @@
       let html = `<b>${n(tl.imported)}</b> ${esc(t("imported"))} · ${n(tl.duplicate)} ${esc(t("duplicates skipped"))} · ` +
         `${n(tl.skipped)} ${esc(t("skipped"))}`;
       if (tl.skipped_non_pdf) html += ` · ${n(tl.skipped_non_pdf)} ${esc(t("not PDF"))}`;
+      // OCR-derived documents are LOWER-TRUST (a scan Tesseract read) — flag them, never hide it.
+      if (tl.ocr) html += `<div class="muted" style="margin-top:5px">${n(tl.ocr)} ${esc(t("read from a scan via OCR — may contain recognition errors; the original PDF is the source of truth"))}</div>`;
       // Surface WHY files were skipped (scanned / encrypted / mis-decoded) — honest, never hidden.
       const reasons = (tl.results || []).filter((r) => r.status === "skipped" && r.reason);
       if (reasons.length) {
