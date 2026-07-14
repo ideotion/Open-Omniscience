@@ -48,6 +48,7 @@ LOOP_SELFTESTS: tuple[tuple[str, str, str], ...] = (
     ("skeleton-selftest", "src.analytics.skeleton", "run_skeleton_selftest"),
     ("source-audit-selftest", "src.analytics.source_audit", "run_source_audit_selftest"),
     ("tor-throughput-selftest", "src.ingest.tor_throughput", "run_tor_throughput_selftest"),
+    ("kpi-selftest", "src.monitoring.kpi", "run_kpi_selftest"),
 )
 
 
