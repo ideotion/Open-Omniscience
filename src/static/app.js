@@ -5058,7 +5058,14 @@
     // "failed". On a start error we consult /status: if the job is actually live we fall
     // through to the poll; only a genuine reject (no job / idle, or /status also unreachable)
     // re-throws so a real 400/409 still surfaces.
-    async function _uxStartThenPoll(startCall, statusUrl, kind, ui) {
+    // Path equality tolerant of a trailing slash (the backend stores str(Path(dest)), the UI holds
+    // the raw input) — used to prove a masked/live job belongs to THIS destination, not another drive.
+    function _uxSamePath(a, b) {
+      const norm = (p) => String(p == null ? "" : p).replace(/[\\/]+$/, "");
+      return norm(a) === norm(b);
+    }
+
+    async function _uxStartThenPoll(startCall, statusUrl, kind, ui, expect) {
       try {
         await startCall();
       } catch (e) {
@@ -5069,7 +5076,13 @@
         // lost response. NOT "done": a just-started job cannot be instantly done, so a "done"
         // here is a STALE state from a prior run and must not mask a failed start as complete.
         if (!(s === "running" || s === "paused")) throw e;
-        // else: the job is live despite the lost start response → poll it
+        // …and the live job must be OURS. All volume ops share one manager + one /status, so a
+        // 409 from an UNRELATED job (a Verify, a restore, or a backup to a DIFFERENT drive) would
+        // otherwise be adopted here and its "done" reported as our corpus backup (data-safety bug:
+        // the corpus for THIS dest is never written). Re-throw when mode/dest don't match ours.
+        if (expect && expect.mode && st.mode && st.mode !== expect.mode) throw e;
+        if (expect && expect.dest && st.dest && !_uxSamePath(st.dest, expect.dest)) throw e;
+        // else: the job is live AND ours despite the lost start response → poll it
       }
       return _uxPoll(statusUrl, kind, ui);
     }
@@ -5093,13 +5106,22 @@
         _uxPhase = "volumes";
         const s1 = await _uxStartThenPoll(
           () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) }),
-          "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") });
+          "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") },
+          { mode: "backup", dest });
         if (s1 && s1.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
+        // DATA-SAFETY GATE (field 2026-07-14): the large-data (blob) phase is unreachable, and
+        // "Backup complete" is never shown, unless the volumes phase PROVABLY completed as a
+        // `backup` of the corpus into THIS dest. Without this a lost/masked start that adopted an
+        // unrelated live job's "done" would skip the corpus yet print success.
+        if (!s1 || s1.state !== "done" || s1.mode !== "backup" || (s1.dest && !_uxSamePath(s1.dest, dest))) {
+          throw new Error(t("The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete."));
+        }
         if (blobs.length) {
           _uxPhase = "folder";
           const s2 = await _uxStartThenPoll(
             () => api("/api/backup/folder/start", { method: "POST", body: JSON.stringify({ dest, categories: blobs }) }),
-            "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
+            "/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") },
+            { dest });
           if (s2 && s2.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
         }
         _uxPhase = null;
