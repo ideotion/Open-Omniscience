@@ -25,6 +25,23 @@
   soft criteria), and TEST the malign direction (a worst source in a degraded/absent cohort still flags), not just
   the benign zero-spread side. Found by an adversarial `code-reviewer` skeptic (negative-space lens), hand-verified,
   fixed + regression-pinned before push.
+- **OMNIBUS CONTINUATION — DISCOVERY FUNNEL (2026-07-14, "continue with all remaining items"; draft PR #667 onto
+  0.2):** Item 3 / Part-3B + Phase 2 STARTED, two verified backend slices. **(1)** the flagship
+  **Wikipedia-references channel** (ruling Q3a): `extract_reference_domains` (PURE, zero-network — every external
+  http(s) URL in the already-stored watched-page wikitext → registrable domain, EXCLUDING Wikimedia self/interwiki/
+  asset hosts + inline images + commerce/social/infra noise; empty inputs → empty, never a fabricated candidate) +
+  `wikipedia_reference_channel` (aggregates the references of every WATCHED page across editions, registers a domain
+  cited by ≥N distinct pages as a DISABLED `SourceCandidate`, editions carried as the diversity signal), wired into
+  `run_discovery` inside the existing rollback savepoint. Negative-space lens pinned as tests (9). **(2)** **wire the
+  dormant external_sources** (ruling Q4a): `discovered_via` provenance column + `resolve_external_source` idempotent
+  first-writer-wins upsert wired into `_add_candidate` (never writes the legacy credibility_score) — the funnel's
+  resolution table, dormancy ended; additive migration + boot self-heal, `test_no_model_drift` green (5 tests).
+  PARKED (the dedicated Phase-2 slice): the promotion frontier (candidate→trial→graduated, trial auto-enable
+  DEFAULT-OFF, diversity-weighted, the auditor as the graduation gate) + the browser-verified audit view + undo +
+  the citing-trail surface. Items 4/5/6 stay parked (browser-verify-gated frontend / dormant stretch). LESSON (also
+  in Session-rituals): a hand-picked alembic revision id COLLIDES with the exhausted formulaic ids and surfaces as a
+  confusing "Cycle detected", caught by `test_no_model_drift`; get the real head from `alembic heads` (CLI), not a
+  regex scan, and pick a random id. ruff/mypy clean; 101 tests green across migrations + discovery + the auditor.
 - **OLLAMA BINARY INSTALLER — Settings → AI (2026-06-30, branch claude/ai-ollama-installer-zun7pb; backend
   VERIFIED py3.13, frontend BROWSER-UNVERIFIED per fork-3):** the genuinely-unbuilt half of model management
   (maintainer field test 2026-06-20 "can't find the AI installer"; maintainer Q7=B 2026-06-16). The blocker
