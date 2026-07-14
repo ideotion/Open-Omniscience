@@ -344,6 +344,28 @@ _CASES: tuple[Challenge, ...] = (
         term=("elections", "layout", "govdelivery"),
         absent=("gd_combo_table", "newsletter"),
     ),
+    Challenge(
+        "url_residue_not_tokenised",
+        "tracker-URL residue (utm_source/mc_eid/path fragments) never becomes a keyword (2026-07-14)",
+        "Read the full report at https://example.com/page?utm_source=newsletter&mc_eid=abc123def "
+        "about the election and the economy.",
+        term=("election", "economy"),
+        absent=("utm_source", "mc_eid", "abc123def", "https"),
+    ),
+    Challenge(
+        "accented_and_cta_caps_are_not_entities",
+        "an accented-Latin all-caps shout (DÉCOUVREZ) and a CTA button word (PARTAGEZ) are terms, "
+        "not acronym entities; a real ASCII acronym (NASA) still is (2026-07-14)",
+        "DÉCOUVREZ our story and PARTAGEZ it now. The NASA mission continued over France.",
+        entity=("NASA",),
+        not_entity=("découvrez", "partagez"),
+    ),
+    Challenge(
+        "repeated_token_ngram_dropped",
+        "a repeated-token n-gram ('share share') is a chrome/CTA artifact, never a phrase (2026-07-14)",
+        "Please share share share this article about the government budget and the new policy.",
+        absent=("share share",),
+    ),
 )
 
 
