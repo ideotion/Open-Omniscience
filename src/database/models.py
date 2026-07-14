@@ -955,6 +955,12 @@ class ExternalSource(Base):
     alexa_rank: Mapped[int | None] = mapped_column(Integer)
     social_media_followers: Mapped[int | None] = mapped_column(Integer)
     is_verified: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    # Discovery provenance (Q4a): which offline channel first RESOLVED this domain into the
+    # registry -- "citation" | "wikipedia" | "catalog". This ends the table's dormancy: cited/
+    # discovered domains now resolve to external_source rows WITH provenance (the funnel's
+    # resolution table). Descriptive, never a score; first-writer-wins (a later channel never
+    # overwrites the first provenance). NULL for a pre-existing row.
+    discovered_via: Mapped[str | None] = mapped_column(String(60))
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime | None] = mapped_column(

@@ -139,6 +139,29 @@ def _existing_domains(session) -> set[str]:
     return src | cand
 
 
+def resolve_external_source(session, *, domain: str, name: str | None, discovered_via: str) -> None:
+    """Q4a: resolve a discovered/cited domain into the ``external_sources`` REGISTRY with provenance
+    -- the dormancy-ending wiring. Idempotent upsert keyed on the unique domain: a NEW domain is
+    inserted with ``discovered_via`` (the channel) + ``source_type='unknown'`` (never a credibility
+    score -- that legacy column stays NULL); an EXISTING row keeps its FIRST provenance
+    (first-writer-wins) and only fills a missing ``discovered_via``/``name``. Descriptive only."""
+    from src.database.models import ExternalSource
+
+    dom = domain.lower()
+    row = session.query(ExternalSource).filter_by(domain=dom).first()
+    if row is None:
+        session.add(ExternalSource(
+            domain=dom, name=name or dom, source_type="unknown", discovered_via=discovered_via,
+        ))
+        return
+    # first-writer-wins on provenance; only backfill what is missing (never overwrite)
+    if not row.discovered_via:
+        row.discovered_via = discovered_via
+    # upgrade a domain-placeholder name to a real one, but never overwrite a real existing name
+    if name and (not row.name or row.name == row.domain):
+        row.name = name
+
+
 def _add_candidate(session, *, domain: str, name: str | None, channel: str, evidence: dict):
     from src.database.models import SourceCandidate
 
@@ -153,6 +176,8 @@ def _add_candidate(session, *, domain: str, name: str | None, channel: str, evid
             last_seen=datetime.now(UTC).replace(tzinfo=None),
         )
     )
+    # Q4a: the same discovered domain resolves into the external_sources registry with provenance.
+    resolve_external_source(session, domain=domain, name=name, discovered_via=channel)
 
 
 def citation_channel(session, *, cap: int, min_citations: int = _CITATION_MIN) -> list[str]:
