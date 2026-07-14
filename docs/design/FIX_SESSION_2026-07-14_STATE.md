@@ -57,3 +57,27 @@ specs below (a future CLI session picks them up; verify each against the tip fir
   the TEST tree for the old `async def <name>(` before converting (the #283 stale-anchor family).
 - **Slice 4d — segmenter** — OPERATOR, not code: `pip install -e ".[segmentation]"` on the field box
   (the `None`-fallback seam is already safe).
+
+## UPDATE (2026-07-14, continuation) — 3 more slices addressed
+- **Slice 4b — keyword extraction junk** — ✅ SHIPPED (**#673**). Three sub-fixes in `extract.py`,
+  each landed in the keyword self-test: (i) `_strip_urls` removes tracker-URL residue before
+  tokenising (both extractors); (ii) repeated-token n-grams dropped; (iii) accented-Latin shouts +
+  a `_CTA_STOP` demoted from ENTITY to term — **deliberately narrow** (Latin-accent-only, so Greek
+  ΕΕ / Cyrillic СССР acronyms survive; NASA/WHO stay entities). 3 self-test cases + 7 negative-space
+  tests.
+- **Slice 4a — retroactive non-article scan (review half)** — ✅ SHIPPED (**#674**).
+  `scan_non_article_candidates` + `GET /api/diagnostics/non-article-scan` — COUNT-ONLY (url +
+  word_count, no content decrypt), per-reason counts + bounded id sample; a conservative undercount
+  that never flags a real article. **Remaining: the quarantine ACTION** (a `quarantined` column +
+  migration + self-heal + the `SELF_HEALED_COLUMNS`/scale-bench guard registrations + a reversible
+  de-index/restore job + an operator-review UI).
+- **Slice 4c — async diagnostics freeze** — ✅ VERIFIED-PRESENT (no fix needed). The only 2
+  `async def` in `diagnostics.py` are nested stream-drain helpers, not route handlers; every
+  diagnostic route is a plain `def` (threadpool). S2's work held — nothing to convert.
+- **Slice 4d — segmenter** — operator step (`pip install -e ".[segmentation]"`); the `None`-fallback
+  seam is already safe.
+
+**STILL REMAINING (the two large features):** Slice 2 (first-launch external-drive data-location
+chooser — a pre-DB endpoint that writes `oo.env` + re-points `data_dir()` mid-boot, plus an
+`unlock.html` step; delicate, bounded) and Slice 3 (the law vertical — laws as first-class Articles
++ `LawRevision` audit layer; explicitly multi-PR). Both warrant a dedicated session; specs above.
