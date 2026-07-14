@@ -60,14 +60,61 @@ def _diff(baseline: str, new: str) -> str:
     return "\n".join(changed[:_MAX_DIFF_LINES])
 
 
-def track_document(session, fetcher, doc: LawDocument) -> dict:
-    """Fetch one tracked legal document and record a baseline or a change. Honest status."""
+def _document_text(result) -> tuple[str | None, str]:
+    """The document's normalised visible text + an honest status.
+
+    A PDF body (detected by the ``%PDF`` magic bytes or the content-type) is
+    routed to the optional PDF extractor, which returns ``(None, reason)`` for a
+    scanned / encrypted / mis-decoded file — degrade LOUDLY, never a fabricated
+    body. Everything else is treated as HTML/text and reduced by ``page_text``.
+    """
+    raw = getattr(result, "raw_content", None)
+    content_type = getattr(result, "content_type", "") or ""
+    from src.ingest.pdf import looks_like_pdf
+
+    if looks_like_pdf(raw, content_type=content_type):
+        from src.ingest.pdf import extract_pdf_text
+
+        return extract_pdf_text(raw)
+    return page_text(result.content), "ok"
+
+
+def _ingest_to_corpus(session, doc: LawDocument, extractor) -> None:
+    """Ingest the document's newest text into the corpus (laws are Articles too).
+
+    Best-effort by construction: the text + revision are ALREADY committed before
+    this runs, so a corpus-sync failure must NEVER block or roll back tracking —
+    it is rolled back locally and logged (the wiki-corpus pattern).
+    """
+    try:
+        from src.law.corpus import sync_law_to_corpus
+
+        sync_law_to_corpus(session, doc, extractor=extractor)
+    except Exception:  # noqa: BLE001 - corpus ingest is best-effort, never blocks tracking
+        session.rollback()
+        _LOG.warning("law corpus ingest failed for doc %s", doc.id, exc_info=True)
+
+
+def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dict:
+    """Fetch one tracked legal document and record a baseline or a change. Honest status.
+
+    On a successful baseline / change / revert (and a first-time backfill on an
+    unchanged poll) the document's NEWEST text is materialised on the document
+    (``latest_text`` / ``latest_text_revid``) and, for a new version, stored in
+    full on the :class:`LawRevision` (``full_text``) — the versioned-sources
+    model (a law = an Article + a linked revision/audit trail). The text is then
+    ingested into the corpus through the one ``index_article`` hook.
+    """
     from src.ingest import FetchError
 
     now = datetime.now(UTC)
     doc.last_checked_at = now
     try:
-        result = fetcher.fetch(doc.url)
+        # require_html=False so an official-gazette PDF is not rejected up front;
+        # keep_bytes so the PDF extractor sees the real bytes (the text decode
+        # destroys them). Both are additive — a fetcher double without keep_bytes
+        # simply won't set raw_content, and the HTML path is unchanged.
+        result = fetcher.fetch(doc.url, require_html=False, keep_bytes=True)
     except FetchError as exc:
         doc.last_status = f"fetch error: {exc}"
         session.commit()
@@ -77,11 +124,13 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
         session.commit()
         return {"document_id": doc.id, "status": "error", "detail": str(exc)}
 
-    text = page_text(result.content)
-    if len(text) < _MIN_TEXT:
-        doc.last_status = "no usable text extracted"
+    text, reason = _document_text(result)
+    if not text or len(text) < _MIN_TEXT:
+        # Degrade loudly: a scanned/encrypted/mis-decoded PDF (or too-short HTML)
+        # records WHY and stores NO body — never a fabricated one.
+        doc.last_status = reason if reason != "ok" else "no usable text extracted"
         session.commit()
-        return {"document_id": doc.id, "status": "empty"}
+        return {"document_id": doc.id, "status": "empty", "detail": doc.last_status}
 
     h = hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -92,17 +141,20 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
         doc.last_hash = h
         doc.last_size = len(text)
         doc.last_status = "baseline captured"
-        session.add(
-            LawRevision(
-                document_id=doc.id,
-                observed_at=now,
-                content_hash=h,
-                size=len(text),
-                delta_bytes=0,
-                flagged=False,
-            )
+        doc.latest_text = text  # the CURRENT text, shown without replaying diffs
+        rev = LawRevision(
+            document_id=doc.id,
+            observed_at=now,
+            content_hash=h,
+            size=len(text),
+            delta_bytes=0,
+            full_text=text,  # the exact baseline text, locally reconstructable
+            flagged=False,
         )
+        session.add(rev)
         try:
+            session.flush()  # materialise rev.id so latest_text_revid can anchor it
+            doc.latest_text_revid = rev.id
             session.commit()
         except IntegrityError:
             # This (document_id, content_hash) baseline revision already exists (a
@@ -116,13 +168,38 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
             doc.last_hash = h
             doc.last_size = len(text)
             doc.last_status = "baseline already recorded"
+            doc.latest_text = text
+            existing = (
+                session.query(LawRevision)
+                .filter_by(document_id=doc.id, content_hash=h)
+                .first()
+            )
+            if existing:  # keep any prior anchor rather than nulling it on a miss
+                doc.latest_text_revid = existing.id
             session.commit()
+            _ingest_to_corpus(session, doc, extractor)
             return {"document_id": doc.id, "status": "duplicate"}
+        _ingest_to_corpus(session, doc, extractor)
         return {"document_id": doc.id, "status": "baseline", "size": len(text)}
 
     if h == doc.last_hash:
         doc.last_status = "unchanged"
+        # Backfill the materialised text for a document baselined before this
+        # feature shipped, then ingest it once (idempotent: an unchanged corpus
+        # hash re-index is skipped, so a steady-state poll adds no work).
+        backfilled = doc.latest_text is None
+        if backfilled:
+            doc.latest_text = text
+            doc.latest_text_revid = doc.latest_text_revid or (
+                session.query(LawRevision.id)
+                .filter_by(document_id=doc.id, content_hash=h)
+                .order_by(LawRevision.id.asc())
+                .limit(1)
+                .scalar()
+            )
         session.commit()
+        if backfilled:
+            _ingest_to_corpus(session, doc, extractor)
         return {"document_id": doc.id, "status": "unchanged"}
 
     # A revision with this exact text was seen before → a revert to a known version.
@@ -131,7 +208,10 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
         doc.last_hash = h
         doc.last_size = len(text)
         doc.last_status = "reverted to a previously-seen version"
+        doc.latest_text = text
+        doc.latest_text_revid = seen.id
         session.commit()
+        _ingest_to_corpus(session, doc, extractor)
         return {"document_id": doc.id, "status": "reverted"}
 
     # A genuine new version: record the change vs the immutable baseline.
@@ -144,6 +224,7 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
         size=len(text),
         delta_bytes=delta,
         diff=_diff(doc.baseline_text or "", text),
+        full_text=text,  # the exact new version, locally reconstructable
         flagged=flag.flagged,
         flag_reasons=flag.reasons_csv() if flag.flagged else None,
     )
@@ -151,7 +232,10 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
     doc.last_hash = h
     doc.last_size = len(text)
     doc.last_status = f"changed ({delta:+d} bytes vs baseline)"
+    doc.latest_text = text
     try:
+        session.flush()  # materialise rev.id so latest_text_revid can anchor it
+        doc.latest_text_revid = rev.id
         session.commit()
     except IntegrityError:
         # This (document_id, content_hash) revision already exists — a concurrent pass or
@@ -162,8 +246,18 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
         doc.last_hash = h
         doc.last_size = len(text)
         doc.last_status = "version already recorded"
+        doc.latest_text = text
+        existing = (
+            session.query(LawRevision)
+            .filter_by(document_id=doc.id, content_hash=h)
+            .first()
+        )
+        if existing:  # keep any prior anchor rather than nulling it on a miss
+            doc.latest_text_revid = existing.id
         session.commit()
+        _ingest_to_corpus(session, doc, extractor)
         return {"document_id": doc.id, "status": "duplicate"}
+    _ingest_to_corpus(session, doc, extractor)
     return {
         "document_id": doc.id,
         "status": "changed",
@@ -173,10 +267,20 @@ def track_document(session, fetcher, doc: LawDocument) -> dict:
     }
 
 
-def track_watched(session, fetcher, *, limit_documents: int = 50) -> dict:
+def _batch_extractor(extractor):
+    """Build the keyword extractor ONCE per batch (laws index like any article)."""
+    if extractor is not None:
+        return extractor
+    from src.analytics.extract import BaselineExtractor
+
+    return BaselineExtractor()
+
+
+def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None) -> dict:
     """Track all watched legal documents, returning an aggregate tally."""
     from src.database.query import capped
 
+    extractor = _batch_extractor(extractor)
     docs = capped(
         session.query(LawDocument).filter_by(watched=True).order_by(LawDocument.id.asc()),
         limit_documents,  # 0 = every watched document (no cap)
@@ -191,7 +295,7 @@ def track_watched(session, fetcher, *, limit_documents: int = 50) -> dict:
     }
     for doc in docs:
         try:
-            res = track_document(session, fetcher, doc)
+            res = track_document(session, fetcher, doc, extractor=extractor)
         except Exception:  # noqa: BLE001 - one bad document must not abort the batch
             _LOG.warning("law tracking: document %s failed", doc.id, exc_info=True)
             session.rollback()  # clear a poisoned transaction so it can't roll back the batch
@@ -212,7 +316,9 @@ def track_watched(session, fetcher, *, limit_documents: int = 50) -> dict:
     return tally
 
 
-def auto_track_due(session, fetcher, *, batch: int = 5, min_interval_hours: float = 24.0) -> dict:
+def auto_track_due(
+    session, fetcher, *, batch: int = 5, min_interval_hours: float = 24.0, extractor=None
+) -> dict:
     """Track a BOUNDED, freshness-gated batch of watched legal documents per collect pass
     (field test 2026-06-22, #18: the World-law tab was empty because law is only tracked
     in mode=="law", never in the default rss pass).
@@ -226,6 +332,7 @@ def auto_track_due(session, fetcher, *, batch: int = 5, min_interval_hours: floa
     same tally shape as track_watched plus ``due`` (how many were eligible)."""
     from datetime import timedelta
 
+    extractor = _batch_extractor(extractor)
     cutoff = datetime.now(UTC) - timedelta(hours=min_interval_hours)
     q = session.query(LawDocument).filter_by(watched=True).filter(
         # never-checked (NULL) OR stale beyond the interval
@@ -243,7 +350,7 @@ def auto_track_due(session, fetcher, *, batch: int = 5, min_interval_hours: floa
              "errors": 0, "unchanged": 0, "due": due_total}
     for doc in docs:
         try:
-            res = track_document(session, fetcher, doc)
+            res = track_document(session, fetcher, doc, extractor=extractor)
         except Exception:  # noqa: BLE001 - one bad document must not abort the batch
             _LOG.warning("law auto-track: document %s failed", doc.id, exc_info=True)
             session.rollback()  # clear a poisoned txn so one dup can't roll back the WHOLE pass

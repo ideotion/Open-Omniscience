@@ -28,6 +28,12 @@ from src.law.catalog import (
     register_documents,
     seed_legal_sources,
 )
+from src.law.corpus import (
+    ensure_law_source,
+    sync_law_to_corpus,
+    sync_watched_laws,
+    upsert_law_corpus_article,
+)
 from src.law.track import track_document, track_watched
 
 __all__ = [
@@ -36,4 +42,8 @@ __all__ = [
     "register_documents",
     "track_document",
     "track_watched",
+    "ensure_law_source",
+    "upsert_law_corpus_article",
+    "sync_law_to_corpus",
+    "sync_watched_laws",
 ]

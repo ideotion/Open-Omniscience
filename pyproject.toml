@@ -120,6 +120,17 @@ nlp = [
     "spacy>=3.7",
 ]
 
+# Optional PDF text extraction. Used by the world-law tracker (many official
+# gazettes publish legislation as PDFs) AND the local PDF-document importer. pypdf
+# (pure-Python, BSD, no native build, no network) reads the text. A core install has
+# no extractor, so a PDF is recorded honestly as "no usable text" rather than
+# crashing (src/ingest/pdf.py degrades loudly) — and a scanned/image or mis-decoded
+# PDF is NEVER stored as a garbage body even when pypdf IS present (the
+# mis-extraction guard).
+pdf = [
+    "pypdf>=4.0",
+]
+
 # Optional word segmentation for the space-less scripts (zh/ja/th) the whitespace
 # tokenizer cannot split — without it a whole Chinese/Japanese sentence became ONE
 # junk "keyword" and Thai shattered at its marks (field test 2026-07-08). All three

@@ -1,0 +1,328 @@
+"""
+Slice 3 (the law-vertical BODY) — laws become first-class corpus Articles.
+
+The versioned-sources ruling: a law is an Article + a linked revision/audit trail.
+This pins that (3.2) the tracker materialises the full fetched text onto the
+document (``latest_text``/``latest_text_revid``) and the revision (``full_text``),
+and (3.3) that text is ingested into the corpus through the ONE ``index_article``
+hook as a filterable per-jurisdiction provenance class — mirroring wiki/corpus.py.
+
+Includes the mandatory negative-space lens: a fail-to-extract document stores NO
+body and NO corpus row; a re-fetch of unchanged text never duplicates the Article;
+a corpus-sync failure never blocks or corrupts tracking.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from src.database.models import (
+    Article,
+    Base,
+    KeywordMention,
+    LawDocument,
+    LawRevision,
+    Source,
+)
+from src.ingest import FetchResult
+from src.ingest.pdf import pdf_available
+from src.law.corpus import ensure_law_source, law_canonical_url, sync_watched_laws
+from src.law.track import track_document
+
+_PDF_FIX = Path(__file__).parent / "fixtures" / "pdf"
+needs_pypdf = pytest.mark.skipif(not pdf_available(), reason="pypdf ([pdf] extra) not installed")
+
+# A realistic full text (well over the 200-char extraction floor).
+_BODY = " ".join(
+    f"Section {i}: every person shall have the right to liberty and security of person."
+    for i in range(40)
+)
+_BIGGER = _BODY + " " + " ".join(
+    f"Amendment {i}: this provision is hereby substituted and extended across the realm."
+    for i in range(60)
+)
+
+
+def _html(body: str) -> str:
+    return f"<html><head><title>Act</title></head><body><main>{body}</main></body></html>"
+
+
+class StubFetcher:
+    """A deterministic fetcher: serves a programmable HTML page per URL (no network)."""
+
+    def __init__(self):
+        self.page = ""
+
+    def fetch(self, url: str, *, require_html: bool = True, **_kw) -> FetchResult:
+        return FetchResult(
+            requested_url=url,
+            final_url=url,
+            status_code=200,
+            content=self.page,
+            content_type="text/html",
+            fetched_at=datetime.now(UTC),
+        )
+
+
+@pytest.fixture()
+def db():
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine, future=True)()
+
+
+def _doc(db, **kw) -> LawDocument:
+    doc = LawDocument(jurisdiction="uk", title="Test Act", url="https://law.example/act", **kw)
+    db.add(doc)
+    db.commit()
+    return doc
+
+
+# --------------------------------------------------------------------------- #
+#  3.2 — the tracker materialises the full text (document + revision)
+# --------------------------------------------------------------------------- #
+def test_baseline_stores_latest_text_and_revision_full_text(db):
+    doc = _doc(db)
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+
+    assert track_document(db, fetcher, doc)["status"] == "baseline"
+    db.refresh(doc)
+    # The materialised NEWEST text lives on the document, anchored to its revision.
+    assert doc.latest_text is not None and "liberty and security" in doc.latest_text
+    rev = db.query(LawRevision).filter_by(document_id=doc.id).one()
+    assert doc.latest_text_revid == rev.id
+    # The FULL baseline text is stored on the revision (not just a lossy diff).
+    assert rev.full_text == doc.latest_text == doc.baseline_text
+
+
+def test_change_stores_new_full_text_and_advances_latest(db):
+    doc = _doc(db)
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)  # baseline
+
+    fetcher.page = _html(_BIGGER)
+    assert track_document(db, fetcher, doc)["status"] == "changed"
+    db.refresh(doc)
+    revs = db.query(LawRevision).filter_by(document_id=doc.id).order_by(LawRevision.id).all()
+    assert len(revs) == 2  # baseline + the change
+    change = revs[-1]
+    # The new version's FULL text is stored + is the document's newest text.
+    assert "Amendment 5" in change.full_text
+    assert doc.latest_text == change.full_text
+    assert doc.latest_text_revid == change.id
+
+
+def test_revert_points_latest_at_the_seen_revision(db):
+    doc = _doc(db)
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)  # baseline (rev A)
+    baseline_rev_id = db.query(LawRevision).filter_by(document_id=doc.id).one().id
+
+    fetcher.page = _html(_BIGGER)
+    track_document(db, fetcher, doc)  # change (rev B) — latest now B
+
+    fetcher.page = _html(_BODY)  # back to the baseline text
+    assert track_document(db, fetcher, doc)["status"] == "reverted"
+    db.refresh(doc)
+    # latest_text reflects the reverted (baseline) text, anchored to the seen revision.
+    assert doc.latest_text == doc.baseline_text
+    assert doc.latest_text_revid == baseline_rev_id
+    assert db.query(LawRevision).filter_by(document_id=doc.id).count() == 2  # no new rev
+
+
+# --------------------------------------------------------------------------- #
+#  3.3 — laws ingest into the corpus through the one index_article hook
+# --------------------------------------------------------------------------- #
+def test_baseline_creates_a_corpus_article_under_a_law_source(db):
+    doc = LawDocument(
+        jurisdiction="uk",
+        title="Human Rights Act",
+        url="https://law.example/act",
+        official_url="https://www.legislation.gov.uk/ukpga/1998/42",
+    )
+    db.add(doc)
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)
+
+    # The corpus article is keyed on the OFFICIAL (canonical) url.
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert art.title == "Human Rights Act"
+    assert "liberty and security" in art.content
+    assert art.language is None  # a jurisdiction is not a language — never guessed
+    # Its source is the synthetic, filterable per-jurisdiction law provenance class.
+    src = db.get(Source, art.source_id)
+    assert src.domain == "law.uk.local"
+    assert src.name == "Law (UK)"
+    assert src.source_type == "legal"
+    # It flowed through the ONE index_article hook: keyword mentions exist.
+    assert db.query(KeywordMention).filter_by(article_id=art.id).count() > 0
+
+
+def test_unchanged_refetch_does_not_duplicate_the_article(db):
+    doc = _doc(db)
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)  # baseline → 1 article
+    assert track_document(db, fetcher, doc)["status"] == "unchanged"  # same text again
+    assert db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).count() == 1
+
+
+def test_change_updates_the_same_article_in_place(db):
+    doc = _doc(db)
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)
+    art_id = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one().id
+
+    fetcher.page = _html(_BIGGER)
+    track_document(db, fetcher, doc)
+    arts = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).all()
+    assert len(arts) == 1 and arts[0].id == art_id  # same row, updated in place
+    assert "Amendment 5" in arts[0].content
+
+
+def test_ensure_law_source_is_idempotent_and_never_collides_with_a_scraped_source(db):
+    # A real scraped source with an ordinary domain must stay separate.
+    db.add(Source(name="Legislation.gov.uk", domain="legislation.gov.uk", source_type="legal"))
+    db.commit()
+    a = ensure_law_source(db, "uk")
+    b = ensure_law_source(db, "uk")
+    assert a.id == b.id  # idempotent
+    assert a.domain == "law.uk.local"  # synthetic, never the scraped portal domain
+    assert db.query(Source).filter_by(domain="legislation.gov.uk").count() == 1
+
+
+def test_sync_watched_laws_backfills_existing_documents(db):
+    # A document that already holds baseline text but was never ingested.
+    doc = _doc(db, baseline_text=_BODY, latest_text=_BODY, last_hash="x", watched=True)
+    out = sync_watched_laws(db)
+    assert out["created"] == 1
+    assert db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).count() == 1
+    # Idempotent second pass — no duplicate.
+    assert sync_watched_laws(db)["unchanged"] == 1
+    assert db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).count() == 1
+
+
+# --------------------------------------------------------------------------- #
+#  Negative space — degrade loudly, never fabricate, never block tracking
+# --------------------------------------------------------------------------- #
+def test_failed_extraction_stores_no_body_and_no_corpus_row(db):
+    doc = _doc(db)
+    fetcher = StubFetcher()
+    fetcher.page = _html("Too short.")  # below the 200-char extraction floor
+    res = track_document(db, fetcher, doc)
+    assert res["status"] == "empty"
+    db.refresh(doc)
+    assert doc.baseline_text is None and doc.latest_text is None  # nothing fabricated
+    assert db.query(Article).count() == 0
+    assert db.query(LawRevision).count() == 0
+
+
+def test_corpus_sync_failure_never_blocks_tracking(db, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("index_article exploded")
+
+    monkeypatch.setattr("src.law.corpus.sync_law_to_corpus", boom)
+    doc = _doc(db)
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    # Tracking still succeeds and its data persists even though ingest blew up.
+    assert track_document(db, fetcher, doc)["status"] == "baseline"
+    db.refresh(doc)
+    assert doc.latest_text is not None
+    assert db.query(LawRevision).filter_by(document_id=doc.id).count() == 1
+    # And the session is usable for a further write (not poisoned).
+    db.add(LawDocument(jurisdiction="fr", title="Loi", url="https://law.example/loi"))
+    db.commit()
+    assert db.query(LawDocument).count() == 2
+
+
+def test_identical_text_in_two_laws_dedups_not_errors(db):
+    """Model legislation copied across jurisdictions extracts to IDENTICAL text →
+    the globally-unique Article.hash collides. It must DEDUP honestly, never raise
+    (a raise would be swallowed as a silent log-only corpus-ingest failure) — and
+    tracking of BOTH documents must survive. (Reviewer HIGH finding, pinned.)"""
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    a = LawDocument(jurisdiction="uk", title="Model Act (UK)", url="https://uk.example/x",
+                    official_url="https://uk.example/x")
+    b = LawDocument(jurisdiction="us", title="Model Act (US)", url="https://us.example/y",
+                    official_url="https://us.example/y")
+    db.add_all([a, b])
+    db.commit()
+    assert track_document(db, fetcher, a)["status"] == "baseline"
+    assert track_document(db, fetcher, b)["status"] == "baseline"  # tracked, did not raise
+    db.refresh(a)
+    db.refresh(b)
+    assert a.latest_text is not None and b.latest_text is not None  # both fully tracked
+    # ONE deduped corpus article for the shared text; each doc keeps its own revision.
+    assert db.query(Article).count() == 1
+    assert db.query(LawRevision).count() == 2
+    # Session not poisoned — a further unrelated write commits cleanly.
+    db.add(LawDocument(jurisdiction="fr", title="Loi", url="https://fr.example/z"))
+    db.commit()
+    assert db.query(LawDocument).count() == 3
+
+
+# --------------------------------------------------------------------------- #
+#  PDF laws — the tracker extracts a gazette PDF, and a scan stores nothing
+# --------------------------------------------------------------------------- #
+class _PdfFetcher:
+    """A fetcher double returning a PDF body: raw_content carries the real bytes,
+    content is the (mangled) text-decode the real fetcher would produce."""
+
+    def __init__(self, pdf_bytes: bytes):
+        self._bytes = pdf_bytes
+
+    def fetch(self, url: str, *, require_html: bool = True, keep_bytes: bool = False, **_kw):
+        return FetchResult(
+            requested_url=url,
+            final_url=url,
+            status_code=200,
+            content=self._bytes.decode("latin-1", "replace"),  # what a text decode yields
+            content_type="application/pdf",
+            fetched_at=datetime.now(UTC),
+            raw_content=self._bytes if keep_bytes else None,
+        )
+
+
+@needs_pypdf
+def test_track_document_ingests_a_pdf_law(db):
+    doc = LawDocument(jurisdiction="uk", title="PDF Act", url="https://gazette.example/act.pdf")
+    db.add(doc)
+    db.commit()
+    res = track_document(db, _PdfFetcher((_PDF_FIX / "text_statute.pdf").read_bytes()), doc)
+    assert res["status"] == "baseline"
+    db.refresh(doc)
+    assert doc.latest_text and "liberty and security" in doc.latest_text
+    # The PDF law became a first-class corpus article.
+    assert db.query(Article).filter_by(canonical_url=doc.url).count() == 1
+
+
+@needs_pypdf
+def test_track_document_scanned_pdf_stores_no_body_no_corpus_row(db):
+    # The negative-space case: a scanned/image PDF must not fabricate a law body.
+    doc = LawDocument(jurisdiction="uk", title="Scan", url="https://gazette.example/scan.pdf")
+    db.add(doc)
+    db.commit()
+    res = track_document(db, _PdfFetcher((_PDF_FIX / "scanned_image.pdf").read_bytes()), doc)
+    assert res["status"] == "empty"
+    assert "scanned" in res["detail"] or "no extractable text" in res["detail"]
+    db.refresh(doc)
+    assert doc.baseline_text is None and doc.latest_text is None
+    assert db.query(Article).count() == 0

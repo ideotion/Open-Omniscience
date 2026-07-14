@@ -2038,6 +2038,26 @@
       </div>
     </section>
     <section class="panel">
+      <h2>Import documents (PDF)</h2>
+      <p class="hint">Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source ("Imported PDFs") so it never blurs with the web.</p>
+      <p class="hint" style="margin-top:5px">Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A scanned, image-only or encrypted PDF has no readable text, so it is skipped with an honest reason and stores nothing — never a garbage body. Re-importing the same document is skipped (deduplicated).</p>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <input type="file" id="pdf-files" accept=".pdf,application/pdf" multiple aria-label="Choose PDF files to import">
+        <button class="secondary" id="pdf-import-btn" onclick="importPdfs(this)">Import PDFs</button>
+      </div>
+      <div id="pdf-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+      <hr>
+      <h3 style="margin-bottom:6px">Import a whole folder</h3>
+      <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:2"><label for="pdf-folder">Folder path (on this machine)</label>
+          <input id="pdf-folder" placeholder="/home/you/pdfs" size="30"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('pdf-folder', false)">Browse…</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="importPdfFolder(this)">Import folder</button></div>
+      </div>
+      <div id="pdf-folder-result" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
+    </section>
+    <section class="panel">
       <h2>Pull from a mailbox (IMAP/POP3)</h2>
       <p class="hint">Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes
         through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message
