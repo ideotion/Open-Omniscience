@@ -70,6 +70,70 @@ a genuine code path that fails with duckdb present.
 
 ---
 
+## ORCHESTRATION & CONTEXT DISCIPLINE (binding — the main context is the scarce resource)
+
+This session WILL outlive its context window. Run the main agent as a thin ORCHESTRATOR
+whose context holds only plans, verdicts, and diffs-in-review — never raw file contents —
+and push everything durable into files/git immediately. Concretely:
+
+**1. The main agent never reads big files.** `src/static/app.js` is ~14k lines; this repo's
+`CLAUDE.md` alone has overflowed recon agents before (recorded lesson, S3.3). All recon,
+verification, and code-reading goes through subagents (Explore/general-purpose) with a hard
+RETURN CONTRACT: verdict first, ≤40 lines, `file:line` evidence, NO file dumps. An agent
+that needs context gets it fed INLINE in its prompt (the exact snippet + surrounding facts)
+— never "go read CLAUDE.md" or "open app.js".
+
+**2. Phase 0 = one parallel staleness fan-out (before any build).** Launch ONE read-only
+agent PER SLICE (0, 1, 2, 3, 4a–4d) concurrently, each given the slice's exact grep/`file:line`
+anchors from this doc, returning `LIVE | SHIPPED | CHANGED (new evidence)` + a ≤10-line
+justification. The orchestrator only integrates verdicts. Do not sequentially re-derive what
+the fan-out already established.
+
+**3. Durable session state, compression-proof.** Immediately create a state file at a fixed
+path (`docs/ledger/.fix-session-2026-07-14-state.md` in the working tree, or the session
+scratchpad — pick ONE and never move it) holding, per slice: verdict, branch name, PR #,
+tests status, NEXT ACTION — under 80 lines total, updated the moment anything changes.
+**After any context compaction, re-read this file FIRST and trust it over recollection.**
+Git is the other half of durable memory: commit early and per-logical-step on each slice
+branch, push as soon as a slice is reviewable, write the `shipped.csv` row in the same PR —
+so nothing load-bearing lives only in context.
+
+**4. Parallel builds in isolated worktrees (the slices are file-disjoint by design).**
+Slice 0 (`app.js` + a JS test), Slice 1 (`write.py`/`batch.py` tests), Slice 2
+(`unlock.html` + a small endpoint + `install.sh` seam), Slice 3 (`src/law/` + models +
+migration), and Slice 4b (`extract.py`/selftest) touch disjoint files. After Phase 0, launch
+their implementation agents IN PARALLEL, each with `isolation: worktree`, each prompt
+carrying: the full slice text from this doc, the honesty rules that bind it, and the return
+contract (branch name + `git diff --numstat` + test names added + a ≤30-line summary).
+Exceptions to parallelism:
+- **Shared append-targets stay sequential in the orchestrator**: `docs/ledger/shipped.csv`,
+  CLAUDE.md-adjacent ledger edits, and `tests/test_repo_invariants.py` if two slices touch
+  it — additive merges only, orchestrator applies them one at a time.
+- **Full-suite runs are serialized.** Worktree agents run TARGETED tests only; the
+  orchestrator runs the FULL `pytest -q` once per branch, one branch at a time, in the
+  primary checkout (never switch branches while a suite is running — recorded lesson,
+  2026-07-09).
+- Slice 4a (quarantine) depends on the #659 classifier — build it after Phase 0 confirms
+  the classifier's tip-state, not in the first wave.
+
+**5. Skeptics: parallel, lens-diverse, inline-fed.** For Slices 0, 1, 3 (honesty/data-safety
+critical) launch the skeptic panel CONCURRENTLY (distinct lenses: data-loss ·
+negative-space/should-be-empty · concurrency · regression), each fed the DIFF INLINE plus
+only the facts it needs. Skeptics must COMPLETE before push (the #542→#544 rule). Their
+verdicts go into the state file, not just the conversation.
+
+**6. Orchestrator review discipline.** The main agent reviews each slice as: the agent's
+summary + `git diff --numstat` + reading ONLY the hunks it needs to judge (via targeted
+`git diff` on specific files). It hand-re-verifies any skeptic HIGH before accepting a fix
+(the 06-audit false-positive lesson). It never pulls a whole changed file into context.
+
+**7. When context compression hits mid-slice** (it will): the state file + the slice branch's
+commit log ARE the resume point. Re-read the state file, `git log --oneline` the active
+branch, and continue — do not re-run Phase 0 for slices already marked, and do not rebuild
+anything a pushed commit already contains.
+
+---
+
 ## SLICE 0 — DATA-SAFETY, TOP PRIORITY: the "large data" backup silently skips the corpus
 
 **Field report (verbatim intent):** the maintainer ran the unified Export with *everything*
@@ -355,3 +419,6 @@ Re-verify each against the tip before building; note VERIFIED-PRESENT/SHIPPED ho
   row, and a carry-over note for anything deferred (browser click-throughs per fork-3; the law
   catalog growth; the retroactive quarantine review is operator-run).
 - Nothing auto-merges. The maintainer's PR review is the gate.
+- The session state file (§Orchestration item 3) is deleted (or left in the scratchpad) at
+  closeout — its content must by then be fully reflected in the PRs + `shipped.csv`; it is
+  working memory, not a record.
