@@ -15,6 +15,7 @@ see the 2026-07-10/11 rows in the ledger).
 > | **Design intent / rationale** (the *why* behind big features) | **`docs/FUTURE_DEVELOPMENTS.md`** |
 > | **Deep scale/stability detail** (P0/P1 acceptance, session territories) | **`docs/product/SCALE_ROADMAP.md`** |
 > | **Per-feature design-of-record specs** | **`docs/design/*.md`** |
+> | **The long-horizon V1 pathway** (version train 0.2→1.0 · the recursive self-improvement strategy · the new verticals) | [`docs/design/V1_PATHWAY_2026-07-14.md`](design/V1_PATHWAY_2026-07-14.md) |
 > | **What already shipped** (index + verbatim log with lessons) | **`docs/ledger/shipped.csv`** + **`docs/ledger/SHIPPED_LOG.md`** |
 > | **Release notes / history** | **`docs/CHANGES.md`** (changelog) · **`docs/HISTORY.md`** (narrative history) |
 >
