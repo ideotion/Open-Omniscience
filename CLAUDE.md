@@ -872,6 +872,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     wrong head. The model-column + migration + boot self-heal trio is still the pattern; `test_no_model_drift`
     is the gate that catches a mismatch (run it locally — alembic works in the sandbox even when the full ORM
     doesn't).
+  - **A SEAMLESS-ON-TAILS/DEBIAN AUTO-INSTALL IS AUTO-INSTALL-THEN-HONEST-FALLBACK, NEVER A BLIND `sudo apt`
+    (2026-07-14, #677 venv fix):** the stdlib `venv`/`ensurepip` ships in a SEPARATE apt package Tails and
+    minimal Debian don't preinstall, so `python3 -m venv` fails. The seamless fix installs it automatically —
+    but three properties are load-bearing and easy to get wrong: (a) NEVER hang on an unanswerable prompt —
+    probe passwordless `sudo -n true` FIRST and only allow a password prompt in an interactive, non-scripted
+    session (`--appvm`/`--unattended` both set `UNATTENDED=1`; CI has no TTY), else fall back; (b) REFUSE to
+    claim success unless the capability is actually present afterwards (`"$PY" -c 'import ensurepip'` as the
+    function's return, so an apt-ran-but-still-missing case falls back, never a false "installed"); (c)
+    provide an opt-out (`OO_NO_APT=1`) and degrade to honest guidance when apt is absent (macOS) or elevation
+    fails. `set -e` note: call the installer function from an `if` CONDITION so set -e is suspended inside it
+    (intermediate `apt`/`sudo` failures return cleanly instead of aborting the whole installer). TEST IT with
+    the extract-the-function bash harness (stub `apt-get`/`sudo`/`id`/`$PY`) — the same pattern as
+    `test_ollama_store_access_guards_are_noops`. TAILS GROUND-TRUTH (web-verified, never fabricate a Tails
+    claim): Tails 6.x = Debian 12 = **Python 3.11** (so a 3.13 interpreter + `python3.13-venv` are NOT in the
+    default repos — a versioned-Python install closes the package gap, not the interpreter gap); `sudo`/apt
+    need an **administration password** set at the Welcome Screen (OFF by default); apt runs over **Tor**; apt
+    packages are **amnesic** unless added via Persistent Storage → Additional Software.
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -5620,6 +5637,41 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   spine (channel + Q4a) at full quality rather than half-building the migration-heavy promotion state
   machine or spraying browser-unverified frontend I cannot confirm — "never fabricate a pass; park the rest
   honestly." NEW LESSON recorded above (the alembic revision-id-collision / `alembic heads` CLI pitfall).
+- **FIX SESSION 2026-07-14 — data-safety + field-diagnostic + law + Tails (plan of record =
+  [`docs/design/FIX_SESSION_PROMPT_2026-07-14.md`](docs/design/FIX_SESSION_PROMPT_2026-07-14.md), #666,
+  which also carries the reusable parallel-agent ORCHESTRATION/context-discipline section):** written by the
+  Fable-5 planning instance, executed by the Claude Code CLI. SHIPPED + MERGED (per the 2026-07-14
+  `docs/ledger/shipped.csv` rows): **Slice 0 corpus-backup gate (#670, DATA-SAFETY)** — the unified "large
+  data" Export silently skipped the CORPUS (maintainer hit it: ~350K articles + blobs selected, drive got
+  blobs only, UI said "Backup complete"); root cause was a frontend regression from `2a10cd3` where
+  `_uxStartThenPoll` masked a 409 by attaching to an UNRELATED live volume job (verify/restore/other-dest)
+  that reached `done`, so `_uxRun` ran the folder phase on a corpus that was never written — fixed by gating
+  the folder phase on a confirmed corpus `done`+`mode==="backup"`+dest-match and re-throwing on a mode
+  mismatch (`app.js:5083`); **Slice 1 is_locked_error/sqlcipher3 (#671, data-integrity)** — the "database is
+  locked" retry net was dead on encrypted stores (`is_locked_error` required a `sqlalchemy OperationalError`,
+  but sqlcipher3 raises an unwrapped error → 297 field articles left unindexed); now matches the message
+  across the sqlcipher3 error class too; **Slice 3 law schema foundation (#676)** — `LawDocument.latest_text`
+  / `LawRevision.full_text` columns; **Slice 4a review-half (#674)** count-only non-article SCAN, **Slice 4b
+  (#673)** three keyword-extraction junk sources killed at the extractor, **4c verified-present, 4d = the
+  `[segmentation]` operator step**; PLUS the **Tails venv auto-install (#677)** (its own shipped.csv row).
+  **CARRY-OVER — pending dedicated-session FEATURES (specs live in the #666 prompt doc; do NOT lose these —
+  they are maintainer requests, not merely nice-to-haves):** (a) **Slice 2 — first-launch external-drive
+  DATA-LOCATION chooser** (maintainer-asked 2026-07-14): default = the app data folder, or "choose a folder"
+  in which an **"OOS data"** subfolder is created; decided at first launch AFTER language + legal acceptance,
+  before the passphrase; reuse the shipped A11 `OO_DATA_DIR`/`oo.env` persistence seam + honest
+  writable/free-disk/tmpfs preflight. NOT built. (b) **Slice 3 remaining — laws as FIRST-CLASS corpus
+  Articles** (maintainer report 2026-07-14: laws aren't scraped/keyworded/searchable/tracked like Wikipedia;
+  today `src/law/track.py` is a thin capped-HTML-diff watcher, no `index_article`, tiny static catalog):
+  schema (#676) is in; REMAINING = store the FULL text per revision, ingest via `index_article` mirroring
+  `src/wiki/corpus.py`, `search_omni` content match, a reader tracked-changes view, and PDF handling
+  (pypdf). This is the law half of the standing **"Versioned sources as first-class Articles"** ruling and is
+  NOT P0-scale-gated (tens–hundreds of docs, not millions). (c) **Slice 4a remaining — reversible retroactive
+  non-article QUARANTINE** (only the count-only scan shipped; the quarantine action stays to build). **Tails
+  KNOWN LIMITATION (recorded, honest, not a bug):** the #677 fix closes the venv-PACKAGE gap, but a stock
+  Tails is Debian 12 = **Python 3.11**, so a 3.13 interpreter must already be present (`OO_PYTHON`) and
+  `python3.13`/`python3.13-venv` are NOT in Tails' default repos — stated in QUICKSTART; a Tails "just works"
+  claim would be fabricated. **fork-3:** the Slice-0 backup gate is source-guard/backend-contract tested but
+  BROWSER-UNVERIFIED — a click-through of the Export/Import flow is owed.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
