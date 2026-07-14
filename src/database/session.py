@@ -197,6 +197,7 @@ def init_db() -> None:
         ensure_article_detected_language_column,
         ensure_article_identity_columns,
         ensure_article_ip_columns,
+        ensure_external_source_discovery_columns,
         ensure_feed_backoff_columns,
         ensure_hot_indexes,
         ensure_keyword_counter_columns,
@@ -241,6 +242,10 @@ def init_db() -> None:
     ensure_keyword_extractor_column(engine)
     ensure_wiki_text_columns(engine)
     ensure_supergroup_ring_column(engine)
+
+    # Q4a: external_sources.discovered_via provenance (self-heal, no backfill; populates forward
+    # as the discovery funnel resolves domains into the registry).
+    ensure_external_source_discovery_columns(engine)
 
     # DB-8: the self-heals above bring an OLD store's schema to head WITHOUT touching the
     # alembic stamp, leaving a "lying stamp" (behind head while the schema is ahead) that

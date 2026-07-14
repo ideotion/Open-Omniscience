@@ -287,6 +287,34 @@ def ensure_article_detected_language_column(engine: Engine) -> list[str]:
     return added
 
 
+# Q4a: the discovery funnel's resolution-table provenance. Additive, NO backfill -- it populates
+# forward as discovery resolves a domain (a pre-existing row stays NULL until re-resolved).
+_EXTERNAL_SOURCE_DISCOVERY_COLUMNS: dict[str, str] = {
+    "discovered_via": "ALTER TABLE external_sources ADD COLUMN discovered_via VARCHAR(60)",
+}
+
+
+def ensure_external_source_discovery_columns(engine: Engine) -> list[str]:
+    """Self-heal the ``external_sources.discovered_via`` provenance column (idempotent, additive)."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='external_sources'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(external_sources)")).fetchall()}
+        for name, ddl in _EXTERNAL_SOURCE_DISCOVERY_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added external_sources discovery column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
     """Self-heal the denormalised ``keyword_mentions.source_id`` column + its index.
 
@@ -544,6 +572,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "wiki_pages": frozenset(_WIKI_PAGE_COLUMNS),
     "wiki_revisions": frozenset(_WIKI_REVISION_COLUMNS),
     "keyword_supergroup_members": frozenset(_SUPERGROUP_MEMBER_COLUMNS),
+    "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
 }
 
 
