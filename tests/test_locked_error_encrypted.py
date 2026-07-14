@@ -78,3 +78,40 @@ def test_raw_sqlcipher3_locked_matches():
     assert is_locked_error(err) is True
     # and a non-lock sqlcipher3 error is still NOT locked
     assert is_locked_error(sqlcipher3.dbapi2.OperationalError("disk I/O error")) is False
+
+
+# --- run_write_with_retry must ACTUALLY reach the retry for a RAW (unwrapped) lock ------------
+# (is_locked_error alone is moot in this caller if the narrow `except` never catches the raw error)
+
+class _FakeSession:
+    def rollback(self) -> None:
+        pass
+
+
+def test_run_write_with_retry_retries_a_raw_unwrapped_lock():
+    from src.database.write import run_write_with_retry
+
+    calls = {"n": 0}
+
+    def work() -> str:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise sqlite3.OperationalError("database is locked")  # RAW, not sqlalchemy-wrapped
+        return "ok"
+
+    out = run_write_with_retry(work, session=_FakeSession(), attempts=5, base_delay_s=0.0)
+    assert out == "ok" and calls["n"] == 3  # the raw lock was caught + retried to success
+
+
+def test_run_write_with_retry_reraises_a_non_lock_immediately():
+    from src.database.write import run_write_with_retry
+
+    calls = {"n": 0}
+
+    def work() -> str:
+        calls["n"] += 1
+        raise sqlite3.OperationalError("no such table: x")  # permanent -> must NOT loop
+
+    with pytest.raises(sqlite3.OperationalError):
+        run_write_with_retry(work, session=_FakeSession(), attempts=5, base_delay_s=0.0)
+    assert calls["n"] == 1  # re-raised on the first attempt, no backoff loop
