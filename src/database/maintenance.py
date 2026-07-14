@@ -315,6 +315,47 @@ def ensure_external_source_discovery_columns(engine: Engine) -> list[str]:
     return added
 
 
+# Law versioned-text columns (the versioned-sources ruling): the materialised latest + per-revision
+# full text so the current law shows without replaying diffs and any past version reconstructs.
+# Additive, no backfill (populates forward as the tracker stores full text).
+_LAW_DOCUMENT_TEXT_COLUMNS: dict[str, str] = {
+    "latest_text": "ALTER TABLE law_documents ADD COLUMN latest_text BLOB",
+    "latest_text_revid": "ALTER TABLE law_documents ADD COLUMN latest_text_revid INTEGER",
+}
+_LAW_REVISION_TEXT_COLUMNS: dict[str, str] = {
+    "full_text": "ALTER TABLE law_revisions ADD COLUMN full_text BLOB",
+}
+
+
+def ensure_law_text_columns(engine: Engine) -> list[str]:
+    """Self-heal the law versioned-text columns (law_documents.latest_text/_revid,
+    law_revisions.full_text) — idempotent, additive. Literal-string SQL (no f-string) so bandit
+    B608 stays clean; table names are fixed constants either way."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        if conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='law_documents'")
+        ).fetchone():
+            existing = {r[1] for r in conn.execute(text("PRAGMA table_info(law_documents)")).fetchall()}
+            for name, ddl in _LAW_DOCUMENT_TEXT_COLUMNS.items():
+                if name not in existing:
+                    conn.execute(text(ddl))
+                    added.append(f"law_documents.{name}")
+        if conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='law_revisions'")
+        ).fetchone():
+            existing = {r[1] for r in conn.execute(text("PRAGMA table_info(law_revisions)")).fetchall()}
+            for name, ddl in _LAW_REVISION_TEXT_COLUMNS.items():
+                if name not in existing:
+                    conn.execute(text(ddl))
+                    added.append(f"law_revisions.{name}")
+    if added:
+        _LOG.info(f"added law versioned-text column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
     """Self-heal the denormalised ``keyword_mentions.source_id`` column + its index.
 
@@ -573,6 +614,8 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "wiki_revisions": frozenset(_WIKI_REVISION_COLUMNS),
     "keyword_supergroup_members": frozenset(_SUPERGROUP_MEMBER_COLUMNS),
     "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
+    "law_documents": frozenset(_LAW_DOCUMENT_TEXT_COLUMNS),
+    "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS),
 }
 
 

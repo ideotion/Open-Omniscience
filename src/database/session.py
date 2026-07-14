@@ -203,6 +203,7 @@ def init_db() -> None:
         ensure_keyword_counter_columns,
         ensure_keyword_extractor_column,
         ensure_keyword_mention_source_column,
+        ensure_law_text_columns,
         ensure_supergroup_ring_column,
         ensure_wiki_text_columns,
     )
@@ -246,6 +247,10 @@ def init_db() -> None:
     # Q4a: external_sources.discovered_via provenance (self-heal, no backfill; populates forward
     # as the discovery funnel resolves domains into the registry).
     ensure_external_source_discovery_columns(engine)
+
+    # Law versioned-text columns (the versioned-sources ruling): materialised latest + per-revision
+    # full text (self-heal, no backfill; populates forward as the law tracker stores full text).
+    ensure_law_text_columns(engine)
 
     # DB-8: the self-heals above bring an OLD store's schema to head WITHOUT touching the
     # alembic stamp, leaving a "lying stamp" (behind head while the schema is ahead) that
