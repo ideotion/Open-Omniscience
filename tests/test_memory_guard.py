@@ -267,6 +267,49 @@ def test_scheduler_loop_waits_while_engaged_and_resumes_on_recovery(monkeypatch)
         sched.stop()
 
 
+def test_active_reclaim_runs_while_paused_and_can_resume(monkeypatch):
+    """The "scraping stops after a few hours" fix: while paused low on memory the
+    loop ACTIVELY reclaims (gc + malloc_trim + library caches) so a pause caused by
+    allocator retention resumes instead of sticking until restart. A genuine leak
+    still can't be freed, but freeable memory is handed back and collection resumes."""
+    readings = {"v": _OVER}
+    fake = MemoryGuard(rss_pct=85.0, avail_floor_mb=256.0, trip_after=1,
+                       resume_after=1, readings_fn=lambda: readings["v"])
+    fake.poll()
+    assert fake.engaged
+    monkeypatch.setattr(memguard, "memory_guard", fake)
+
+    reclaims = {"n": 0}
+
+    def _spy_reclaim():
+        reclaims["n"] += 1
+        # Simulate the reclaim actually returning memory to the OS: after it runs,
+        # the readings become healthy, so the NEXT poll releases the guard.
+        readings["v"] = _HEALTHY
+        return {"freed_mb": 100.0}
+
+    monkeypatch.setattr("src.scheduler.hygiene.release_pass_state", _spy_reclaim)
+
+    runs = {"n": 0}
+    sched = runner.BackgroundScheduler(
+        run_once_fn=lambda: runs.__setitem__("n", runs["n"] + 1) or {"ok": True},
+        settings_provider=lambda: SchedulerSettings(continuous=True),
+    )
+    sched._continuous_gap_s = 0.01
+    sched._mem_pause_poll_s = 0.02
+    sched._mem_reclaim_interval_s = 0.0  # reclaim on every poll (test-fast)
+    assert sched.start()
+    try:
+        deadline = time.monotonic() + 5.0
+        while runs["n"] == 0 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert reclaims["n"] >= 1  # active reclaim fired during the pause
+        assert runs["n"] >= 1  # and collection RESUMED instead of sticking
+        assert sched.status()["memory_guard"]["engaged"] is False
+    finally:
+        sched.stop()
+
+
 def test_memory_guard_resume_endpoint_is_wired_and_releases(monkeypatch):
     """The user-action resume: the route is composed on the scheduler ROUTER
     (immutable source — never the shared app singleton's .routes) and the

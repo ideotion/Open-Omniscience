@@ -6927,13 +6927,31 @@
     const _csv = id => $(id).value.split(",").map(x => x.trim()).filter(Boolean);
 
     async function loadScheduler() {
-      try { renderSchedStatus(await api("/api/scheduler/status")); }
+      try { const s = await api("/api/scheduler/status"); renderSchedStatus(s); _paintCollectToggle(!!(s && s.running)); }
       catch (e) { $("sched-status").textContent = "Scheduler status unavailable: " + e.message; }
       try { applySchedConfig(await api("/api/scheduler/config")); }
       catch (e) { /* config panel stays at defaults */ }
       previewTargets();
       loadBatchPicker();
       startSchedRatePoll();
+    }
+
+    // The single primary Collection control: on/off. The schedule / mode / manual /
+    // batch knobs are demoted to the "Advanced (legacy)" sections — collection is
+    // continuous & automatic; this just switches it on or off.
+    function _paintCollectToggle(running) {
+      const btn = $("collect-toggle");
+      if (!btn) return;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      btn.textContent = running ? t9("Collection is ON — click to turn off")
+                                : t9("Collection is OFF — click to turn on");
+      btn.setAttribute("aria-pressed", running ? "true" : "false");
+    }
+    async function collectToggle() {
+      let running = false;
+      try { running = !!(await api("/api/scheduler/status")).running; } catch (e) {}
+      if (running) { await schedulerStop(); } else { await schedulerStart(); }
+      loadScheduler();
     }
 
     async function previewTargets() {
