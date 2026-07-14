@@ -1353,6 +1353,58 @@ def source_quality(
     )
 
 
+@router.get("/source-audit")
+def source_audit(
+    download: bool = Query(False),
+    with_furniture: bool = Query(True),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Part-1 Phase-1 STANDING source auditor (FLAG-ONLY this session, ruling Q2a). Per-source
+    extraction-VALIDITY status (healthy/watch/degraded/failing) = the categorical rollup of a LIST of
+    cohort-relative criteria, each carrying its value + the same-language cohort baseline + n — NEVER
+    a blended score. Audits whether a source's scrapes are usable ARTICLES (vs nav/stub/paywall/
+    wrong-DOM pages), NEVER editorial merit: terse or atypical prose is legitimate variety and can
+    never reach degraded/failing for it (only the furniture-repetition extraction-failure signature,
+    corroborated, can).
+
+    READ-ONLY, COUNT-ONLY — reuses the source_quality collectors, so Article.content is never
+    decrypted (``with_furniture`` adds a bounded, seeded per-source keyword query). Plain ``def`` →
+    threadpool (off the event loop). The ``auto_demote_candidate`` field is computed with the
+    auto-demote machinery DEFAULT-OFF (so it is always False here) — this session FLAGS only; enabling
+    auto-demote is a later maintainer action gated on the Phase-0 calibration, and even then fires
+    only on the extraction-failure signature, never on structural style, never on an allowlisted
+    source. A per-region flag-distribution self-audit rides along (the de-US-centring guardrail).
+    ``OO_SOURCE_AUDIT_ALLOWLIST`` (comma-separated domains) caps a trusted atypical source at 'watch'.
+    ``download=1`` returns a dated attachment."""
+    from src.analytics.source_audit import audit_sources
+
+    allow = {d.strip() for d in os.getenv("OO_SOURCE_AUDIT_ALLOWLIST", "").split(",") if d.strip()}
+    report = audit_sources(db, allowlist=allow, with_furniture=with_furniture)
+    headers = {}
+    if download:
+        fname = f"oo-source-audit-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
+@router.get("/source-audit-selftest")
+def source_audit_selftest(download: bool = Query(False)) -> JSONResponse:
+    """Prove the auditor's PURE mechanism (flag_criteria / derive_status / should_auto_demote /
+    region self-audit) — no DB, no network, no score. The load-bearing checks: the extraction-failure
+    source is failing; an atypical-but-valid (terse-prose) source is NOT (never worse than watch);
+    auto-demote is default-off and never fires on an allowlisted source; a small cohort gets no
+    baseline. A regression reddens both this endpoint and CI. ``download=1`` returns a dated
+    attachment."""
+    from src.analytics.source_audit import run_source_audit_selftest
+
+    log = run_source_audit_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-source-audit-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/dates")
 def date_extraction_log(
     db: Session = Depends(get_db),
