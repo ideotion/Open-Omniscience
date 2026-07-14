@@ -5736,6 +5736,17 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   visible — the separation is size/shape, never a trust statement). Ingest = metadata + ABSTRACTS
   (the always-available layer); full text only where OA (PMC subset); a paywalled full text is
   an HONEST GAP — link out, never scraped around.
+  **ADDENDUM 3 — OPTIMIZATION-TAIL SESSION BRIEF (maintainer-asked 2026-07-14, same session):**
+  the operating manual for one autonomous CLI session closing every CODEABLE-NOW optimization
+  left open = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-14_OPTIMIZATION_TAIL.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-14_OPTIMIZATION_TAIL.md)
+  — 13 ordered slices: R5 LOOP_SELFTESTS backfill+enforcement (12 harnesses vs 4 registered) ·
+  R1 KPI snapshot · R2 kpi_diff · R4 IMPROVEMENT_CYCLE.md · instrument_search live wiring ·
+  the maintained per-Source article counter (unblocks source_io + the reader count) ·
+  diagnostics/keywords pass-collapse (efficiency NEVER truncation — capping the keyword crunch
+  stays forbidden) · debug-bundle hardening · anomalies/correlation grouped-SQL · framing cap ·
+  power-profile live application · Leads-2.0 surfacing + Conjunction-Lens picker (both
+  conservative+flagged per Q6a, defaults preserving today's behaviour). Exclusions stay
+  operator/VM/ruling-gated (R3/R6/triage bench/GAMMA/V1-7/fingerprints/Tor-live).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
