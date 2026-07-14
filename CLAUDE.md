@@ -837,6 +837,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     made (the opposite of the "never silently drop" comment beside it). Validate STRICTLY at the build layer
     — reject float/bool/non-numeric LOUDLY, detect a duplicate-key collision (`{2:2, "2":0}` clobbers via
     `str()`), and clean the temp on an `os.replace` failure so a validated `.tmp` is never orphaned.
+  - **A CATEGORICAL STATUS THAT CONTAINS A BANNED SCORE-SUBSTRING TRIPS THE NO-SCORE KEY-WALKERS — KEEP IT A
+    VALUE, NEVER A KEY (2026-07-13, omnibus source auditor):** the project's recursive no-score guards ban
+    `score`/`ranking`/`rating`/`grade` as SUBSTRINGS of dict KEYS (`tests/test_source_quality.py:333`,
+    `test_conjunction.py:181`, `test_scale_bench.py:46`), and the status value **`"degraded"` contains
+    `"grade"`**. So a `status_counts={"degraded": n}` or a per-region `{...,"degraded":n}` map fails the
+    walker even though a categorical status is not a score. Fix: never make such a status a KEY — represent
+    per-status tallies as `[{"status": s, "n": n}]` objects (status as a VALUE, safe). NB the CANONICAL
+    `assert_no_score_fields` (`src/briefing/card.py`) matches dataclass FIELD names against a specific
+    fragment list that does NOT include `grade`, so it wouldn't catch this — but the per-module test-walkers
+    DO, so align new diagnostic output to the stricter substring convention (walk your own payload before
+    pushing).
+  - **A COHORT-RELATIVE `value > p90` TAIL GOES BLIND WHEN MANY MEMBERS ARE BAD — GIVE THE HIGH-CONFIDENCE
+    SIGNAL AN ABSOLUTE FLOOR (2026-07-13, omnibus source-auditor skeptic, a HIGH found + hand-verified):**
+    `source_quality.robust_stats` p90 is NEAREST-RANK, so with a cohort of 8 where 2 members are bad, p90
+    lands at index `round(0.9·7)=6` = a BAD value → `v > p90` is false for the bad members → they escape
+    flagging entirely. A cohort-relative auditor therefore reads `healthy` PRECISELY when a whole cohort
+    degrades (a scraper regression hitting many same-language sources, or a tiny non-EN cohort mostly of
+    consent-walls) — an inversion of its own headline property. Fix: give the HIGH-CONFIDENCE
+    extraction-failure signal (an absolute, article-level pathology rate) an ABSOLUTE floor that fires
+    independent of the source cohort — but ONLY that signal, NEVER the style-ambiguous soft criteria (an
+    absolute short/outlier floor would flag legitimate terse/atypical prose, breaking the extraction-validity
+    reframe). And TEST THE MALIGN DIRECTION: a zero-spread/flat-cohort test only proves the benign side; add
+    a "genuinely-worst source in a degraded/absent cohort still flags" assertion or the escape ships unseen.
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -5545,6 +5568,25 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   safe") + the mandated ledger/rulings, over the browser-UNVERIFIED frontend surfacing (Part-3A / Leads
   UI / small tails), which Q6a caps at conservative-flagged; the frontend + discovery-funnel remainder
   is parked as an honest carry-over in the session closeout.
+  **OMNIBUS CLOSEOUT (2026-07-13):** SHIPPED (draft PRs onto 0.2, nothing auto-merged) — **Item 0** ledger+rulings
+  (merged #662); **Item 2** the standing source AUDITOR (#663, the linchpin; flag-only Q2a; a skeptic HIGH — the
+  nearest-rank-p90 tail trap — found+fixed with an absolute EF-only floor + regression-pinned; 18 tests, clean);
+  **Item 1 / Part-3A** (#664) — (a) AI-keyword lens VERIFIED already surfaced (staleness win, not rebuilt), (b) a
+  subjectivity "Loaded language" reader tab (conservative, browser-unverified per Q6a), (c) El Niño banners PARKED.
+  CARRY-OVER (parked HONESTLY, precise specs in the #664 body + the board's "Omnibus execution status" §):
+  **(i) Item 1(c) El Niño agenda banners** — the climate dataset is `verification_status=flagged` (pending the NOAA
+  CPC ONI clearnet check) + episodes are historical multi-month SPANS that don't fit the forward agenda + span-banners
+  aren't supported → build after the ONI check + span support (surfacing unverified data prominently would breach
+  "nothing presented as verified before it is"). **(ii) Item 3 / Part-3B + Phase 2 discovery funnel** — a
+  dedicated-session backend build (additive funnel-state migration + the zero-network Wikipedia-references channel +
+  external_sources wiring Q4a + audit view + undo); NOT started (half-building a data-migration is worse than a park);
+  the zero-network wiki-refs channel is the recommended first, most-verifiable slice, building on the now-merged
+  Phase-1 auditor (the graduation gate). **(iii) Items 4/5** (Leads 2.0 + Conjunction-Lens UI · small tails) — the
+  §1/§2 cores shipped; the UIs are browser-UNVERIFIED frontend (Q6a) awaiting a click-through. **(iv) Item 6**
+  fingerprint persistence (§3 skeleton) — the skip-without-guilt dormant stretch; not built. **MAINTAINER-VERIFY:**
+  the columnar "Columnar store" CI lane green at the #661 tip (Part-3H asked to confirm it; the real-httpfs
+  round-trip is egress-blocked in-sandbox + no `gh` here, so it could NOT be confirmed in-session — check origin/0.2).
+  The `~/.oo_push_token` used for these pushes should be REVOKED + removed once this session's PRs are reviewed.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

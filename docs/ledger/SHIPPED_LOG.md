@@ -3,6 +3,28 @@
 > The full, verbatim shipped-work entries that used to live under `CLAUDE.md` → '## Shipped batch log'. Moved here to keep CLAUDE.md readable (maintainer-asked). The terse, sortable tracking index is [`shipped.csv`](shipped.csv); the load-bearing LESSONS are curated into CLAUDE.md's Session-rituals 'Lessons' subsection. Full detail of any item is also in git history + its PR + the named design docs. APPEND new shipped work as a `shipped.csv` row (+ a verbatim entry here if it carries a reusable lesson), NOT as a CLAUDE.md bullet.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **OMNIBUS SESSION — STANDING SOURCE AUDITOR + Part-3A surfacing (2026-07-13, executing
+  `docs/design/ACTION_PLAN_2026-07-13_SOURCES_MAPS_GAPS.md`; DRAFT-PR-only, nothing auto-merges):** Item 0
+  (ledger + the 6 rulings) merged #662; **Item 2** = the standing source AUDITOR (`src/analytics/source_audit.py`,
+  draft PR #663) — the one-shot source-quality diagnostic generalised into a continuous quality GATE, the board's
+  own linchpin. FLAG-ONLY (ruling Q2a): auto-demote machinery built but DEFAULT-OFF. Per-source
+  extraction-VALIDITY status (healthy/watch/degraded/failing) = the categorical rollup of a cohort-relative
+  criteria LIST (value+baseline+n each), never a score; audits usable-article-vs-nav/stub, NEVER editorial merit
+  (soft style-ambiguous signals never exceed `watch`); reuses the source_quality collectors count-only (no content
+  decrypt); a per-region self-audit + allowlist cap; read-only `/api/diagnostics/source-audit{,-selftest}` + Settings
+  buttons. 18 tests, ruff/mypy/i18n clean. **Item 1** (draft PR #664): (a) AI-keyword lens VERIFIED already surfaced
+  (`view_article`, the #388 work — staleness win, not rebuilt); (b) a subjectivity "Loaded language" reader tab
+  (conservative, browser-unverified per Q6a); (c) El Niño banners PARKED (flagged-unverified data + span-banners
+  unsupported). Items 3 (discovery funnel) / 4 / 5 / 6-stretch parked with specs (a dedicated-session backend +
+  browser-unverified frontend). TWO REUSABLE LESSONS (curated into CLAUDE.md Session-rituals): **(1)** a categorical
+  status containing a banned score-substring (`"degraded"` ⊃ `"grade"`) trips the recursive no-score KEY-walkers —
+  keep per-status tallies as `{status,n}` VALUE objects, never status-as-key (the canonical `assert_no_score_fields`
+  wouldn't catch it, but the per-module test-walkers do). **(2)** a cohort-relative `v>p90` tail goes BLIND when
+  many members are bad (nearest-rank p90 lands on a bad value) — the auditor reads `healthy` exactly when a whole
+  cohort degrades; give the HIGH-CONFIDENCE extraction-failure signal an ABSOLUTE floor (never the style-ambiguous
+  soft criteria), and TEST the malign direction (a worst source in a degraded/absent cohort still flags), not just
+  the benign zero-spread side. Found by an adversarial `code-reviewer` skeptic (negative-space lens), hand-verified,
+  fixed + regression-pinned before push.
 - **OLLAMA BINARY INSTALLER — Settings → AI (2026-06-30, branch claude/ai-ollama-installer-zun7pb; backend
   VERIFIED py3.13, frontend BROWSER-UNVERIFIED per fork-3):** the genuinely-unbuilt half of model management
   (maintainer field test 2026-06-20 "can't find the AI installer"; maintainer Q7=B 2026-06-16). The blocker
