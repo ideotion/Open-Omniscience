@@ -1283,6 +1283,27 @@ def article_length(download: bool = Query(False), db: Session = Depends(get_db))
     return JSONResponse(report, headers=headers)
 
 
+@router.get("/non-article-scan")
+def non_article_scan(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
+    """Retroactive NON-ARTICLE scan (Slice 4a review half): per-reason counts + a bounded id sample
+    of the already-stored URL-shaped non-articles (nav/index/tag/tool/section/homepage pages the
+    #659 ingest filter now stops going forward). The operator's REVIEW data before a reversible
+    quarantine.
+
+    READ-ONLY, COUNT-ONLY — classifies each article on its stored url + word_count via the #659
+    classifier (text=None → URL-shape rules only; Article.content is NEVER decrypted). A conservative
+    UNDERCOUNT (the boilerplate-wall rule needs the body) that never flags a real article. Plain
+    ``def`` → threadpool. ``download=1`` returns a dated attachment."""
+    from src.analytics.non_article_scan import scan_non_article_candidates
+
+    report = scan_non_article_candidates(db)
+    headers = {}
+    if download:
+        fname = f"oo-non-article-scan-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
 @router.get("/keyword-growth")
 def keyword_growth(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """The vocabulary-growth curve: cumulative distinct keywords vs cumulative words
