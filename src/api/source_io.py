@@ -98,8 +98,8 @@ def list_sources(
     def _vals(raw: str | None) -> list[str]:
         return [v.strip() for v in (raw or "").split(",") if v.strip()]
 
-    art_count = func.count(Article.id).label("articles")
-    base = db.query(Source, art_count).outerjoin(Article, Article.source_id == Source.id)
+    # S6: read the MAINTAINED per-source counter instead of an O(articles) join.
+    base = db.query(Source)
 
     filters = []
     if q:
@@ -136,10 +136,44 @@ def list_sources(
         total = total.filter(f)
     total_n = total.scalar() or 0
 
+    from datetime import UTC, datetime, timedelta
+
     sort_key = sort if sort in _SORTABLE else "name"
-    col = art_count if sort_key == "articles" else getattr(Source, sort_key)
-    base = base.group_by(Source.id).order_by(col.desc() if order == "desc" else col.asc())
-    rows = base.limit(limit).offset(offset).all()
+    # Sort on the maintained counter for "articles". COALESCE NULL->0 so a not-yet-reconciled
+    # source never sorts as SQLite's lowest value while its row shows a live count (the boot
+    # self-heal backfill makes NULLs rare; count_basis discloses any that remain). No join.
+    col = func.coalesce(Source.article_count, 0) if sort_key == "articles" else getattr(Source, sort_key)
+    base = base.order_by(col.desc() if order == "desc" else col.asc(), Source.id)
+    sources = base.limit(limit).offset(offset).all()
+
+    # Batched live fallback for any source whose counter is NULL (never reconciled) — ONE
+    # grouped query for the whole page, so the endpoint never does a per-source COUNT. After a
+    # reconcile/self-heal there are no NULLs, so this is skipped entirely (the perf win).
+    null_ids = [s.id for s in sources if s.article_count is None]
+    live: dict = {}
+    if null_ids:
+        live = dict(
+            db.query(Article.source_id, func.count(Article.id))
+            .filter(Article.source_id.in_(null_ids))
+            .group_by(Article.source_id)
+            .all()
+        )
+
+    def _count(s) -> int:
+        return int(s.article_count) if s.article_count is not None else int(live.get(s.id, 0))
+
+    _now = datetime.now(UTC)
+
+    def _basis(s) -> str:
+        # Honesty envelope: "live" = counted now (NULL counter); "exact" = maintained + fresh;
+        # "estimated" = maintained but STALE (never presented as exact — the skeptic's finding).
+        if s.article_count is None:
+            return "live"
+        ra = s.counter_reconciled_at
+        if ra is None:
+            return "estimated"
+        aware = ra if ra.tzinfo is not None else ra.replace(tzinfo=UTC)
+        return "exact" if (_now - aware) < timedelta(hours=24) else "estimated"
 
     return {
         "total": int(total_n),
@@ -159,10 +193,11 @@ def list_sources(
                 "country": s.country,
                 "country_name": _display_name(s.country),
                 "language": s.language,
-                "article_count": int(n),
+                "article_count": _count(s),
+                "count_basis": _basis(s),  # exact (fresh) | estimated (stale) | live (NULL)
                 "tags": [t.strip() for t in (s.tags or "").split(",") if t.strip()],
             }
-            for s, n in rows
+            for s in sources
         ],
     }
 

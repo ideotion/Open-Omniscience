@@ -204,6 +204,7 @@ def init_db() -> None:
         ensure_keyword_extractor_column,
         ensure_keyword_mention_source_column,
         ensure_law_text_columns,
+        ensure_source_counter_columns,
         ensure_supergroup_ring_column,
         ensure_wiki_text_columns,
     )
@@ -251,6 +252,10 @@ def init_db() -> None:
     # Law versioned-text columns (the versioned-sources ruling): materialised latest + per-revision
     # full text (self-heal, no backfill; populates forward as the law tracker stores full text).
     ensure_law_text_columns(engine)
+
+    # S6: maintained per-source article counter (self-heal, no backfill; reconcile populates
+    # forward + stamps freshness, a NULL count reads live).
+    ensure_source_counter_columns(engine)
 
     # DB-8: the self-heals above bring an OLD store's schema to head WITHOUT touching the
     # alembic stamp, leaving a "lying stamp" (behind head while the schema is ahead) that

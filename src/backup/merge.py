@@ -1475,6 +1475,13 @@ def run_restore(
 
         with session_scope() as _epoch_sess:
             report["corpus_epoch"] = bump_corpus_epoch(_epoch_sess, reason="restore_merge")
+            # S6: the additive merge inserted articles onto existing sources (mapped by
+            # domain) WITHOUT touching Source.article_count, so it is now stale-low and, being
+            # non-NULL, the read fallback would never fire -> a wrong count shown as exact
+            # (skeptic finding). Reconcile it authoritatively (cheap; sources are few).
+            from src.analytics.store import reconcile_source_counters
+
+            reconcile_source_counters(_epoch_sess)
     except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
         _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
 
