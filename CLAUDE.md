@@ -5785,6 +5785,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the maintained counters would break byte-parity and cannot supply first/last-seen). Every
   conservative frontend slice (S12 subtab, S13 picker) is node-checked + invariant-guarded but
   BROWSER-UNVERIFIED — a human click-through across themes/breakpoints is owed.
+  **CI FIX-FORWARD (2026-07-15, commit `8248e90f`):** the #685 `test` lane went RED (the 0.2 base
+  `fa5858d0` is GREEN, so it was a real regression, not the merged≠green base-red). Root cause =
+  S11 retired rollup_serve's `_MIN_REBUILD_S` MODULE CONSTANT (→ the per-serve `rollup_serve_ttl_s()`)
+  and updated the src use-sites but MISSED `tests/test_serve_change_gate.py`, which
+  `monkeypatch.setattr`'d `rollup_serve._MIN_REBUILD_S` at two sites → `AttributeError` erroring
+  every test in the file. Fixed: the shared fixture loops over BOTH rollup_serve (constant retired
+  → set `OO_COLUMNAR_SERVE_TTL_S=0`) AND `map_serve` (its own `_MIN_REBUILD_S` constant KEPT →
+  `setattr` guarded by `hasattr`); the churn-bound test sets the rollup env to 900. Confirmed via a
+  full local suite run (installed scipy/pandas/sklearn so the `[analysis]` block wires; the remaining
+  failures are all sandbox-environmental — PermissionError sockets, PackageNotFoundError metadata,
+  sqlcipher3-absent, backup helper-failed, httpfs egress-blocked — all GREEN in CI, plus a
+  pre-existing `test_osm_downloads` subset-order flake unrelated to any changed code). **TWO PROCESS
+  LESSONS:** (a) removing a module constant/attribute must grep the TEST tree for it in the SAME
+  change (the stale-anchor family — the src use-sites are not the only referents); (b) do NOT revoke
+  the push token at "closeout" until CI is confirmed GREEN — a red lane needs a fix-forward push, and
+  the token was already rm'd (this fix `8248e90f` is committed but had to be pushed by the maintainer).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
