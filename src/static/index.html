@@ -1086,6 +1086,7 @@
         <button data-tab="shortcuts">Shortcuts</button>
         <button data-tab="models">AI</button>
         <button data-tab="keywords">Keywords</button>
+        <button data-tab="leads">Leads</button>
         <button data-tab="collect">Collect</button>
         <button data-tab="sources">Sources</button>
         <button data-tab="newsletters">Newsletters</button>
@@ -1809,6 +1810,28 @@
       </div>
       <div id="kx-facets" style="margin-top:10px"><div class="muted">Loading…</div></div>
       <div id="kx-keywords" style="margin-top:8px"></div>
+    </section>
+    </div>
+
+    <div class="set-view" id="set-leads" style="display:none">
+    <section class="panel">
+      <h2 style="margin-top:0;font-size:13px">Leads <span class="muted">— evidence &amp; ordering</span></h2>
+      <p class="hint" style="margin-top:0">The same leads Home surfaces, each shown with its REAL evidence as
+        chips (n · distinct independent sources · freshest-evidence age) and a DISCLOSED order — never a
+        composite score. This is a preview; Home keeps its current order until you graduate a mode here
+        (browser-unverified — needs a click-through).</p>
+      <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:8px;align-items:end">
+        <label><input type="checkbox" id="leads-prominence" style="width:auto" onchange="leadsPrefsChanged()"> Order by prominence (sources → magnitude → recency; else as Home)</label>
+        <label>Major floor · min n
+          <input id="leads-min-n" type="number" min="0" step="1" value="50" style="width:80px" onchange="leadsPrefsChanged()">
+        </label>
+        <label>min sources
+          <input id="leads-min-sources" type="number" min="0" step="1" value="5" style="width:70px" onchange="leadsPrefsChanged()">
+        </label>
+        <label><input type="checkbox" id="leads-cluster" style="width:auto" onchange="leadsPrefsChanged()"> Stack overlapping stories</label>
+        <button class="secondary" onclick="loadLeadsView()">Preview</button>
+      </div>
+      <div id="leads-preview" style="margin-top:10px"><div class="muted">Loading…</div></div>
     </section>
     </div>
 

@@ -517,13 +517,22 @@ def keyword_log(
             # real counts, never auto-hidden; the operator decides.
             dom_lang: dict[int, str] = {}
             suspects: list[dict] = []
+            # S7: the per-keyword totals a SECOND full GROUP BY scan used to recompute now come
+            # from the ONE scan below (byte-identical), keyed kid -> (mentions, articles,
+            # first_seen, last_seen).
+            totals: dict[int, tuple[int, int, str | None, str | None]] = {}
             _cur_kid: int | None = None
             _counts: dict[str, int] = {}
             _srcs: dict[int, int] = {}
+            _m = 0
+            _a = 0
+            _first: str | None = None
+            _last: str | None = None
 
-            def _finalize(kid: int | None, counts: dict[str, int], srcs: dict[int, int]) -> None:
+            def _finalize(kid, counts, srcs, m, a, first, last) -> None:
                 if kid is None or not counts:
                     return
+                totals[kid] = (m, a, first, last)
                 dom_lang[kid] = min(counts, key=lambda lg: (-counts[lg], lg))
                 n_articles = sum(srcs.values())
                 if n_articles >= 10:
@@ -542,18 +551,33 @@ def keyword_log(
                             }
                         )
 
-            for kid, aid in db.execute(
-                text("SELECT keyword_id, article_id FROM keyword_mentions ORDER BY keyword_id")
+            for kid, aid, cnt, obs in db.execute(
+                text(
+                    "SELECT keyword_id, article_id, count, observed_on"
+                    " FROM keyword_mentions ORDER BY keyword_id"
+                )
             ):
                 if kid != _cur_kid:
-                    _finalize(_cur_kid, _counts, _srcs)
+                    _finalize(_cur_kid, _counts, _srcs, _m, _a, _first, _last)
                     _cur_kid, _counts, _srcs = kid, {}, {}
+                    _m, _a, _first, _last = 0, 0, None, None
                 lg = art_lang.get(aid, "?")
                 _counts[lg] = _counts.get(lg, 0) + 1
                 sid = art_src.get(aid)
                 if sid is not None:
                     _srcs[sid] = _srcs.get(sid, 0) + 1
-            _finalize(_cur_kid, _counts, _srcs)
+                # S7: the per-keyword totals (mentions / distinct articles / first-last
+                # observed) accumulate in THIS pass. A row is unique per (keyword, article)
+                # under the covering index, so a per-keyword row count == COUNT(DISTINCT
+                # article_id); MIN/MAX(observed_on) ignore NULL exactly as SQL does.
+                _m += cnt or 0
+                _a += 1
+                if obs is not None:
+                    if _first is None or obs < _first:
+                        _first = obs
+                    if _last is None or obs > _last:
+                        _last = obs
+            _finalize(_cur_kid, _counts, _srcs, _m, _a, _first, _last)
 
             # The DETECTION is unbounded: every keyword × source pair in the
             # corpus is evaluated (inside the same full mention scan). Only the
@@ -572,8 +596,8 @@ def keyword_log(
                 db.execute(text("SELECT id, language FROM keywords")).fetchall()
             )
 
-            # Totals, mentions-desc — an index-only scan of ix_mention_covering,
-            # iterated as tuples; the quota decides survivors ON THE FLY, so the
+            # Totals, mentions-desc — from the ONE mention scan above (no second
+            # GROUP BY scan); the quota decides survivors ON THE FLY, so the
             # 228k-keyword aggregation never materialises as ORM objects.
             # Page-aware per-language quota. The JSON path keeps the classic top-
             # _MAX_KEYWORDS_PER_LANG cap (lo=0); the ZIP path can raise per_lang and
@@ -588,14 +612,12 @@ def keyword_log(
             capped_langs: set[str] = set()
             survivors: list[tuple[int, int, int, str | None, str | None]] = []
             seen: set[int] = set()
-            totals_sql = text(
-                "SELECT keyword_id, COALESCE(SUM(count), 0) AS m,"
-                " COUNT(DISTINCT article_id) AS a,"
-                " MIN(observed_on) AS first_seen, MAX(observed_on) AS last_seen"
-                " FROM keyword_mentions GROUP BY keyword_id"
-                " ORDER BY m DESC, keyword_id ASC"
-            )
-            for kid, m, a, first, last in db.execute(totals_sql):
+            # S7: iterate the totals gathered by the ONE scan above, sorted mentions-desc
+            # then keyword_id-asc — byte-identical to the retired
+            # ``GROUP BY keyword_id ORDER BY m DESC, keyword_id ASC`` second full scan.
+            for kid, (m, a, first, last) in sorted(
+                totals.items(), key=lambda kv: (-kv[1][0], kv[0])
+            ):
                 seen.add(kid)
                 dom = dom_lang.get(kid) or stored_lang.get(kid) or "?"
                 idx = per_lang_seen.get(dom, 0)
@@ -2187,8 +2209,26 @@ def corpus_integrity_report(
     return _integrity(db, sample=sample, full=bool(full))
 
 
+def _debug_bundle_member_budget_s() -> float:
+    """Per-member wall-clock budget for the debug bundle (OO_DEBUG_BUNDLE_MEMBER_BUDGET_S,
+    default 20s). A member exceeding it is recorded ``{skipped: budget}`` and abandoned, so
+    one slow/hung member never stalls the whole bundle. Non-positive/non-finite/invalid ->
+    20s; CAPPED to 1 h so a fat-fingered huge value can never overflow ``Thread.join()``'s
+    timeout (an OverflowError there would escape the per-member guard and 500 the whole
+    bundle) nor emit a non-finite, JSON-invalid ``budget_s``."""
+    import math
+
+    try:
+        v = float(os.environ.get("OO_DEBUG_BUNDLE_MEMBER_BUDGET_S", "20"))
+    except ValueError:
+        return 20.0
+    if not math.isfinite(v) or v <= 0:
+        return 20.0
+    return min(v, 3600.0)
+
+
 @router.get("/debug-bundle")
-def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
+def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
     """ONE downloadable bundle with everything a developer needs to diagnose a
     live install remotely (maintainer-ruled 2026-06-10: "I'll click every
     download/scrape/refresh button and send you the log"). Sections:
@@ -2197,11 +2237,23 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     verdict (sources / market feeds / calendars) · per-click import outcomes ·
     law + wiki tracking states · the rolling WARNING+ error log. Verbatim
     records, no inference; generated only on click.
+
+    HARDENED (S8): the DB is opened READ-ONLY (a ``query_only`` WAL snapshot, so the
+    bundle can never take the write gate); EVERY member is individually guarded (a
+    raising member records ``{error}``, never aborts the bundle). NON-DB members (which can
+    block on a loopback socket or a file read but never touch the DB) run under a per-member
+    wall-clock BUDGET on a daemon thread — a member that hangs records ``{skipped: budget}``
+    instead of stalling the whole export (the 100 GB field corpus made single members slow
+    enough to matter). DB members run INLINE (never on a worker thread — a shared SQLite
+    connection is unsafe to touch concurrently), bounded by a statement deadline inside the
+    thunk so a runaway query is aborted rather than scanned to the end.
     """
     import json as _json
     import platform
     import sys as _sys
+    import threading
 
+    from src.database.maintenance import statement_deadline
     from src.events.feeds import load_imports, load_verdicts
     from src.monitoring import feed_preflight
     from src.monitoring.collect_perf import recent_samples as _collect_perf_samples
@@ -2219,11 +2271,59 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
     from src.scheduler.runlog import recent_runs
     from src.scheduler.runner import get_scheduler
 
-    def _safe(fn):
+    budget = _debug_bundle_member_budget_s()
+
+    def _err_str(exc) -> str:
         try:
+            return str(exc)[:300]
+        except Exception:  # noqa: BLE001 - even a broken __str__ must still yield a marker
+            return f"<{type(exc).__name__}: unrenderable>"
+
+    def _bounded(fn):
+        """Run a DB thunk under a statement deadline (SQL opcode interrupt) so a runaway
+        query on the shared connection is aborted instead of scanning a 100 GB table to the
+        end. Only for members that do NOT already open their own deadline (avoids nesting —
+        an inner deadline's ``finally`` would clear this one's progress handler)."""
+        with statement_deadline(db, budget):
             return fn()
-        except Exception as exc:  # noqa: BLE001 - one failing log must not abort the bundle
-            return {"error": str(exc)[:300]}
+
+    def _member(name: str, thunk, *, threaded: bool = True):
+        """Guard ONE bundle member so a failing/slow member never aborts or stalls the whole
+        bundle. A raising member records ``{error}`` (even if its exception ``__str__`` is
+        itself broken) either way.
+
+        NON-DB members (``threaded=True``, the default) run in a daemon thread with a
+        wall-clock BUDGET: they can block on I/O (a loopback socket, a file read) and never
+        touch the shared DB connection, so abandoning one past budget as ``{skipped: budget}``
+        is safe. DB members (``threaded=False``) run INLINE, because a shared SQLite
+        connection can NOT be touched from a lingering worker thread — pysqlite serialises
+        statements (a second thread BLOCKS, it does not error) and a SQLAlchemy Session is
+        not thread-safe, and ``statement_deadline`` bounds only SQL opcodes, never the Python
+        materialisation around them, so a DB worker could not be cleanly abandoned mid-query.
+        DB members are instead bounded INSIDE the thunk (``_bounded`` or the member's own
+        internal deadline), so they can never hang the bundle and never leave a stray
+        progress handler on the connection for the next member."""
+        if not threaded:
+            try:
+                return thunk()
+            except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
+                return {"error": _err_str(exc)}
+        box: dict = {}
+
+        def _run() -> None:
+            try:
+                box["value"] = thunk()
+            except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
+                box["error"] = _err_str(exc)
+
+        t = threading.Thread(target=_run, name=f"dbg:{name}", daemon=True)
+        t.start()
+        t.join(budget)
+        if t.is_alive():
+            return {"skipped": "budget", "budget_s": budget}
+        if "error" in box:
+            return {"error": box["error"]}
+        return box.get("value")
 
     # -- runtime ----------------------------------------------------------- #
     def _has(mod: str) -> bool:
@@ -2231,139 +2331,181 @@ def debug_bundle(db: Session = Depends(get_db)) -> JSONResponse:
 
         return importlib.util.find_spec(mod) is not None
 
-    try:
-        from sqlalchemy import text as _text
-
-        schema_rev = db.execute(_text("SELECT version_num FROM alembic_version")).scalar()
-    except Exception:  # noqa: BLE001
-        schema_rev = None
-    llm: dict = {"available": False}
-    try:
-        from src.llm.ollama import OllamaClient
-
-        client = OllamaClient()
-        if client.is_available():
-            llm = {"available": True, "models": client.list_installed()}
-    except Exception as exc:  # noqa: BLE001 - loopback-only, best-effort
-        llm = {"available": False, "error": str(exc)[:200]}
+    from src.database.models import CommodityPrice, LawDocument, WikiPage
     from src.ingest import kill_switch_active
 
-    db_file = _data_dir() / "open_omniscience.db"
-    runtime = {
-        "python": _sys.version.split()[0],
-        "platform": platform.platform(),
-        "schema_revision": schema_rev,
-        "extras": {m: _has(m) for m in ("numpy", "scipy", "pandas", "zstandard", "lz4")},
-        "llm": llm,
-        "db_bytes": db_file.stat().st_size if db_file.exists() else None,
-        "kill_switch": kill_switch_active(),
-    }
+    # Each member is a thunk run through _member (individual guard + budget). The DB-bound
+    # ones read the shared read-only snapshot; the rest read in-memory/file state.
+    # A trivial single-row read, computed INLINE + bounded (never hangs) so the threaded
+    # runtime member never touches the shared DB connection from a worker thread.
+    def _read_schema_rev():
+        from sqlalchemy import text as _text
 
-    # -- corpus shape ------------------------------------------------------ #
-    from src.database.models import CommodityPrice, LawDocument, WikiPage
+        try:
+            return _bounded(
+                lambda: db.execute(_text("SELECT version_num FROM alembic_version")).scalar()
+            )
+        except Exception:  # noqa: BLE001
+            return None
 
-    corpus = {
-        "articles": int(db.query(func.count(Article.id)).scalar() or 0),
-        "sources": int(db.query(func.count(Source.id)).scalar() or 0),
-        "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
-        "price_points": int(db.query(func.count(CommodityPrice.id)).scalar() or 0),
-    }
+    schema_rev = _read_schema_rev()
 
-    # -- per-surface tracking states (real columns, verbatim) --------------- #
-    law_docs = [
-        {
-            "title": d.title,
-            "jurisdiction": d.jurisdiction,
-            "url": d.url,
-            "last_status": d.last_status,
-            "last_checked_at": d.last_checked_at.isoformat() if d.last_checked_at else None,
+    def _runtime() -> dict:
+        llm: dict = {"available": False}
+        try:
+            from src.llm.ollama import OllamaClient
+
+            client = OllamaClient()
+            if client.is_available():
+                llm = {"available": True, "models": client.list_installed()}
+        except Exception as exc:  # noqa: BLE001 - loopback-only, best-effort
+            llm = {"available": False, "error": str(exc)[:200]}
+        db_file = _data_dir() / "open_omniscience.db"
+        return {
+            "python": _sys.version.split()[0],
+            "platform": platform.platform(),
+            "schema_revision": schema_rev,
+            "extras": {m: _has(m) for m in ("numpy", "scipy", "pandas", "zstandard", "lz4")},
+            "llm": llm,
+            "db_bytes": db_file.stat().st_size if db_file.exists() else None,
+            "kill_switch": kill_switch_active(),
         }
-        for d in db.query(LawDocument).order_by(LawDocument.jurisdiction, LawDocument.title).all()
-    ]
-    wiki_pages = [
-        {
-            "wiki": p.wiki,
-            "title": p.title,
-            "missing": p.missing,
-            "baseline": p.baseline_revid is not None,
-            "last_checked_at": p.last_checked_at.isoformat() if p.last_checked_at else None,
+
+    def _corpus() -> dict:
+        return {
+            "articles": int(db.query(func.count(Article.id)).scalar() or 0),
+            "sources": int(db.query(func.count(Source.id)).scalar() or 0),
+            "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
+            "price_points": int(db.query(func.count(CommodityPrice.id)).scalar() or 0),
         }
-        for p in db.query(WikiPage).order_by(WikiPage.wiki, WikiPage.title).all()
-    ]
 
-    # -- per-click import outcomes ----------------------------------------- #
-    imports_path = _data_dir() / "import_results.jsonl"
-    import_results = []
-    if imports_path.exists():
-        for ln in imports_path.read_text(encoding="utf-8").splitlines()[-50:]:
-            try:
-                import_results.append(_json.loads(ln))
-            except ValueError:
-                continue
+    def _law_docs() -> list:
+        return [
+            {
+                "title": d.title,
+                "jurisdiction": d.jurisdiction,
+                "url": d.url,
+                "last_status": d.last_status,
+                "last_checked_at": d.last_checked_at.isoformat() if d.last_checked_at else None,
+            }
+            for d in db.query(LawDocument)
+            .order_by(LawDocument.jurisdiction, LawDocument.title)
+            .all()
+        ]
 
-    _recent_errors = recent_errors(300)
+    def _wiki_pages() -> list:
+        return [
+            {
+                "wiki": p.wiki,
+                "title": p.title,
+                "missing": p.missing,
+                "baseline": p.baseline_revid is not None,
+                "last_checked_at": p.last_checked_at.isoformat() if p.last_checked_at else None,
+            }
+            for p in db.query(WikiPage).order_by(WikiPage.wiki, WikiPage.title).all()
+        ]
+
+    def _import_results() -> list:
+        imports_path = _data_dir() / "import_results.jsonl"
+        out: list = []
+        if imports_path.exists():
+            for ln in imports_path.read_text(encoding="utf-8").splitlines()[-50:]:
+                try:
+                    out.append(_json.loads(ln))
+                except ValueError:
+                    continue
+        return out
+
+    # The error window drives the envelope count; guarded like every other member, and the
+    # count degrades to 0 if the member itself failed/skipped (never a crash on len()).
+    errors_val = _member("errors", lambda: recent_errors(300))
+    count = len(errors_val) if isinstance(errors_val, list) else 0
+
+    # DB members run INLINE (threaded=False — the shared connection is unsafe on a worker
+    # thread); the non-self-bounding ones are wrapped in _bounded (a statement deadline).
+    # corpus_integrity/storage_composition/slow_queries open their OWN deadline internally,
+    # so they are NOT wrapped (nesting would let the inner finally clear the outer handler).
     payload = {
-        "runtime": runtime,
-        "corpus": corpus,
-        "scheduler": {"status": get_scheduler().status(), "recent_runs": recent_runs(30)},
-        "network": {
-            "sources": source_results(),
-            "feeds": feed_preflight.recent_results(),
-            "calendar_verdicts": load_verdicts(),
-        },
-        "imports": import_results,
-        "calendar_imports": {
-            k: {"events": len(v.get("events", {})), "imported_at": v.get("imported_at")}
-            for k, v in load_imports().items()
-        },
-        "law_documents": law_docs,
-        "wiki_pages": wiki_pages,
+        "runtime": _member("runtime", _runtime),
+        "corpus": _member("corpus", lambda: _bounded(_corpus), threaded=False),
+        "scheduler": _member(
+            "scheduler",
+            lambda: {"status": get_scheduler().status(), "recent_runs": recent_runs(30)},
+        ),
+        "network": _member(
+            "network",
+            lambda: {
+                "sources": source_results(),
+                "feeds": feed_preflight.recent_results(),
+                "calendar_verdicts": load_verdicts(),
+            },
+        ),
+        "imports": _member("imports", _import_results),
+        "calendar_imports": _member(
+            "calendar_imports",
+            lambda: {
+                k: {"events": len(v.get("events", {})), "imported_at": v.get("imported_at")}
+                for k, v in load_imports().items()
+            },
+        ),
+        "law_documents": _member("law_documents", lambda: _bounded(_law_docs), threaded=False),
+        "wiki_pages": _member("wiki_pages", lambda: _bounded(_wiki_pages), threaded=False),
         # Collection-performance timeline + end-of-pass bottleneck classification
         # (download rate, in-flight fetches, writer-gate contention, CPU/memory).
         # The bandwidth governor's own log — what to read when collection is slow.
-        "collect_perf": _collect_perf_samples(),
+        "collect_perf": _member("collect_perf", _collect_perf_samples),
         # TEMPORARY (0.0.8 live-test cycle): automated field-test outcomes —
         # see src/monitoring/field_test.py for purpose + the OO_FIELD_TEST=0
         # opt-out. Will be removed when the cycle ends.
-        "field_test": _field_test_results(),
-        "errors": _recent_errors,
+        "field_test": _member("field_test", _field_test_results),
+        "errors": errors_val,
         # Honest metadata so a reader can tell whether the error window is CURRENT
         # (the rolling file survives reinstalls, so old-session errors can look
         # live). "*_this_session" counts are since the latest boot marker, so a
         # clean current run reads zero — the direct answer to "is the data-loss
         # happening now?" (P0-5; field test 2026-06-22).
-        "error_log": error_log_summary(),
+        "error_log": _member("error_log", error_log_summary),
         # Recursive-augmentation logs #2-#5 (maintainer 2026-07-02): so the bundle the
         # operator sends carries the diagnostics that catch bugs automatically — the
         # loop-block/latency log, the slow-query log, live schema drift, and the
-        # corpus-integrity/counter-drift sweep. Each is best-effort (a failing log
-        # records its own error, never aborts the bundle).
-        "request_latency": _safe(lambda: _latency_summary()),
-        "slow_queries": _safe(lambda: _slowquery_summary(db)),
-        "schema_drift": _safe(lambda: _schema_drift(db)),
-        "corpus_integrity": _safe(lambda: _corpus_integrity(db)),
+        # corpus-integrity/counter-drift sweep. Each is individually guarded (a failing
+        # member records its own error, never aborts the bundle); the DB ones are bounded
+        # by a statement deadline, request_latency by the wall-clock budget.
+        "request_latency": _member("request_latency", _latency_summary),
+        "slow_queries": _member(
+            "slow_queries", lambda: _slowquery_summary(db), threaded=False
+        ),
+        "schema_drift": _member(
+            "schema_drift", lambda: _bounded(lambda: _schema_drift(db)), threaded=False
+        ),
+        "corpus_integrity": _member(
+            "corpus_integrity", lambda: _corpus_integrity(db), threaded=False
+        ),
         # Session forensics (2026-07-09 field event): data-dir inventory (what IS the
         # disk usage — orphaned PLAINTEXT backup staging detected loudly), the previous
         # session's clean/unclean-end verdict (+ the collector's last RSS sample = the
         # OOM-inference flight recorder), and the last unlock's own phase timings with
         # the -wal size before open. Automates the three questions the 2026-07-09
         # root-cause needed the maintainer's terminal for.
-        "session_forensics": _safe(_session_forensics),
+        "session_forensics": _member("session_forensics", _session_forensics),
         # Storage composition (P1.5): per-table/per-index bytes via dbstat — names what
         # the on-disk GB actually IS (the 130-GB-in-days field event). Deadline-bounded;
         # degrades to {available:false, reason} where dbstat is not compiled in.
-        "storage_composition": _safe(lambda: _storage_composition(db)),
+        "storage_composition": _member(
+            "storage_composition", lambda: _storage_composition(db), threaded=False
+        ),
         # P0 data-safety validation (S1.2): the LAST saved report from the push-button
         # backup/restore/unlock/collector acceptance run (read-only here — never runs a
         # backup; {available:false} until the operator runs it explicitly).
-        "p0_validation": _safe(_p0_validation_last),
+        "p0_validation": _member("p0_validation", _p0_validation_last),
         "method": (
             "Verbatim runtime facts, tracking states, network verdicts, per-click "
             "import outcomes and the rolling WARNING+ error log. Nothing inferred; "
-            "exported only on the operator's click."
+            "exported only on the operator's click. Each member is individually guarded; "
+            "a failed member shows {error}, a slow non-DB member {skipped: budget}."
         ),
     }
-    body = envelope(kind="debug-bundle", query={}, count=len(_recent_errors), payload=payload)
+    body = envelope(kind="debug-bundle", query={}, count=count, payload=payload)
     fname = f"oo-debug-bundle-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
     return JSONResponse(
         body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}

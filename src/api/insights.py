@@ -708,6 +708,37 @@ def insights_corpus_algebra(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/leads-view")
+def insights_leads_view(
+    sort: str = Query("default", description="default (as Home) | prominence"),
+    min_n: int = Query(50, ge=0, le=1_000_000),
+    min_sources: int = Query(5, ge=0, le=100_000),
+    cluster: bool = Query(False, description="stack leads built from overlapping article sets"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """§2 Leads 2.0 surfacing (browser-gated UI): the SAME cached briefing leads Home shows, plus
+    per-lead EVIDENCE CHIPS (n · distinct independent sources · freshest-evidence age), a disclosed
+    order-explanation, and a major-lead threshold FACT. ``sort=default`` is byte-identical to Home's
+    order; ``sort=prominence`` reorders by the disclosed ``order_key``. Reads the cached briefing
+    (never recomputes on this thread). 400 on a bad sort; no score."""
+    from src.briefing.leads import assemble_leads_view
+    from src.briefing.service import get_briefing
+
+    try:
+        brief = get_briefing(db, background=True)
+        view = assemble_leads_view(
+            list(brief.get("cards") or []),
+            now=datetime.now(UTC),
+            sort=sort,
+            floors={"min_n": min_n, "min_sources": min_sources},
+            cluster=cluster,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    view["generated_at"] = brief.get("generated_at")
+    return view
+
+
 @router.get("/corpus-sentiment")
 def insights_corpus_sentiment(
     query: str | None = None,

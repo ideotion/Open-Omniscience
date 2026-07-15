@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics.baseline import baseline_tags
 from src.analytics.extract import ExtractedTerm
-from src.database.models import Article, Keyword, KeywordMention, KeywordTag
+from src.database.models import Article, Keyword, KeywordMention, KeywordTag, Source
 
 _LOG = logging.getLogger(__name__)
 
@@ -898,6 +898,77 @@ def reconcile_keyword_counters(
         "cursor_id": 0 if complete else after_id,
         "budget_s": budget,
     }
+
+
+def reconcile_source_counters(session: Session, *, now=None) -> dict:
+    """Recompute ``Source.article_count`` EXACTLY from articles (one ``GROUP BY source_id``)
+    and stamp ``counter_reconciled_at`` (S6). The authoritative repair + initial population
+    for the maintained per-source counter that ``source_io/sources`` + the reader read instead
+    of a live per-source ``COUNT(*)``.
+
+    CHEAP by design: sources are few (hundreds–thousands, not the 3 M keywords), so this is one
+    grouped scan + a bulk update — no cursor/budget needed. NEVER a ``keyword_mentions ->
+    articles`` join (the codec column-order trap): it counts on the indexed
+    ``Article.source_id`` only. Counts only, no score. Returns ``{sources, drift_repaired}``.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func
+
+    stamp = now or datetime.now(UTC)
+    live: dict[int, int] = {
+        sid: cnt
+        for sid, cnt in session.query(Article.source_id, func.count(Article.id))
+        .group_by(Article.source_id)
+        .all()
+    }
+    drift = 0
+    sources = session.query(Source).all()
+    for src in sources:
+        want = int(live.get(src.id, 0))
+        if src.article_count != want:  # includes NULL -> a first population counts as drift
+            drift += 1
+        src.article_count = want
+        src.counter_reconciled_at = stamp
+    session.commit()
+    return {
+        "sources": len(sources),
+        "drift_repaired": drift,
+        "reconciled_at": stamp.isoformat(),
+    }
+
+
+def source_counter_envelope(session: Session, source, *, fresh_within_hours: float = 24.0) -> dict:
+    """The honesty envelope ``{value, basis, as_of, n, method}`` for ONE source's article count.
+
+    Reads the maintained counter; a NULL counter (never reconciled) FALLS BACK to a live
+    ``COUNT(*)`` on the indexed ``Article.source_id`` (``basis: "live"`` — never wrong, just
+    computed now). A populated counter is ``exact`` within the freshness window, else
+    ``estimated`` (stale but disclosed with its ``as_of``). No score.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import func
+
+    if source.article_count is None:
+        n = int(
+            session.query(func.count(Article.id))
+            .filter(Article.source_id == source.id)
+            .scalar()
+            or 0
+        )
+        return {"value": n, "basis": "live", "as_of": None, "n": n,
+                "method": "live COUNT(*) on Article.source_id (counter not yet reconciled)"}
+    ra = source.counter_reconciled_at
+    fresh = False
+    as_of = None
+    if ra is not None:
+        aware = ra if ra.tzinfo is not None else ra.replace(tzinfo=UTC)
+        as_of = aware.isoformat()
+        fresh = (datetime.now(UTC) - aware) < timedelta(hours=fresh_within_hours)
+    val = int(source.article_count)
+    return {"value": val, "basis": "exact" if fresh else "estimated", "as_of": as_of, "n": val,
+            "method": "maintained per-source article counter (reconciled from Article.source_id)"}
 
 
 def reconcile_keyword_language(

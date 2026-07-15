@@ -130,7 +130,12 @@ def _serve_state(monkeypatch):
             {"con": None, "built_at": 0.0, "rows": 0, "bind": None,
              "token": None, "pending": False, "checked_at": 0.0}
         )
-        monkeypatch.setattr(mod, "_MIN_REBUILD_S", 0)
+        # S11: rollup_serve's churn bound is now read per-serve via rollup_serve_ttl_s()
+        # (OO_COLUMNAR_SERVE_TTL_S / the active profile) — the _MIN_REBUILD_S CONSTANT was retired
+        # there. map_serve still carries its own _MIN_REBUILD_S constant. Zero both (no bound).
+        monkeypatch.setenv("OO_COLUMNAR_SERVE_TTL_S", "0")
+        if hasattr(mod, "_MIN_REBUILD_S"):  # map_serve only; rollup_serve reads the env above
+            monkeypatch.setattr(mod, "_MIN_REBUILD_S", 0)
         monkeypatch.setattr(mod, "_CHECK_EVERY_S", 0.0)
         monkeypatch.setattr(mod, "_BACKSTOP_S", 10_000_000)
     monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
@@ -246,7 +251,7 @@ def test_min_rebuild_interval_bounds_churn_under_continuous_change(
     Sess = _mk_sessionmaker(tmp_path, "e.db")
     _seed(Sess)
     _build_keyword_rollup(Sess)
-    monkeypatch.setattr(rollup_serve, "_MIN_REBUILD_S", 900)  # freshly built -> inside window
+    monkeypatch.setenv("OO_COLUMNAR_SERVE_TTL_S", "900")  # S11: freshly built -> inside window
     _add_article(Sess, 2)  # the corpus DID change
 
     s = Sess()

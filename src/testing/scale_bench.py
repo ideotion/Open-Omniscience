@@ -236,6 +236,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
         ensure_keyword_extractor_column,
         ensure_keyword_mention_source_column,
         ensure_law_text_columns,
+        ensure_source_counter_columns,
         ensure_supergroup_ring_column,
         ensure_wiki_text_columns,
         optimize_at_boot,
@@ -259,6 +260,7 @@ def _run_init_sequence(engine: Any) -> dict[str, Any]:
     ensure_supergroup_ring_column(engine)
     ensure_external_source_discovery_columns(engine)
     ensure_law_text_columns(engine)
+    ensure_source_counter_columns(engine)
     analyze = optimize_at_boot(engine)
     return {"hot_indexes_created": created, "analyze": analyze}
 
@@ -282,7 +284,9 @@ def _bench_engine(db_path: Path, passphrase: str | None) -> Any:
         # 64 MiB page cache + in-memory temp trees are what make (or don't make) the
         # index build fast under the SQLCipher codec. mmap is plaintext-only (codec
         # pages can't be mapped), exactly like the app.
-        cache_mb = int(os.getenv("OO_SQLITE_CACHE_MB", "64"))
+        from src.config.power_profiles import sqlite_cache_mb
+
+        cache_mb = sqlite_cache_mb()  # OO_SQLITE_CACHE_MB / active profile (Optimized = 64)
         cur = dbapi_conn.cursor()
         try:
             cur.execute("PRAGMA journal_mode=WAL")

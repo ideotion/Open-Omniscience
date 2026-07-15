@@ -60,6 +60,15 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
             except Exception:  # noqa: BLE001 - a background safety net must never break
                 _LOG.warning("off-peak counter reconcile failed", exc_info=True)
                 out["reconcile"] = {"skipped": "error"}
+            # S6: the per-source article counter (cheap whole-table GROUP BY; keeps
+            # source_io/sources + the reader off a live per-source COUNT).
+            try:
+                from src.analytics.store import reconcile_source_counters
+
+                out["source_counters"] = reconcile_source_counters(session)
+            except Exception:  # noqa: BLE001
+                _LOG.warning("off-peak source counter reconcile failed", exc_info=True)
+                out["source_counters"] = {"skipped": "error"}
             if stop():
                 out["cleanup"] = {"skipped": "stopping"}
                 return out

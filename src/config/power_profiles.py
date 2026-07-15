@@ -16,10 +16,16 @@ properties, both test-pinned:
     synthetic harness before shipping; until then they are directional placeholders flagged
     ``provisional`` and to-be-replaced-by-measurement (the §8 sanity-envelope discipline).
 
-The ONE concrete wiring this cycle is ``fts_analysis_limit()`` — it replaces the hard-coded
-``PRAGMA analysis_limit=1000`` literal so that knob is real, not just published. The active-profile
-CHIP + the suggest-a-lower-level proposal are BROWSER-GATED (frontend, browser-unverified per
-fork-3); live re-application of a changed cache_size to a running engine is OPERATOR-GATED.
+The SERVER-SIDE knobs are now wired to the active profile (``OO_POWER_PROFILE``, default
+``optimized`` → byte-identical to today): each consumer reads a resolver — ``sqlite_cache_mb()``
+(per connection), ``pass_budget_minutes()`` (per pass, LIVE), ``rollup_serve_ttl_s()`` (per serve,
+LIVE), ``dump_concurrency()`` (per manager), ``fts_analysis_limit()`` (per optimize, LIVE) — that
+returns its ``OO_*`` override if set, else the active profile's value. The two SETTING-backed knobs
+(``collect_parallelism``, ``llm_keep_alive``) are applied via the settings-write path, not the read
+site (the stored value is the user's explicit choice); ``poll_cadence_s`` is frontend-only
+(browser-gated). The active-profile CHIP + the suggest-a-lower-level proposal are BROWSER-GATED
+(fork-3); re-applying a changed cache_size to the RUNNING engine's open connections is
+OPERATOR-GATED (a restart picks it up).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -158,12 +164,76 @@ def _clamp_int(raw: str | None, default: int, lo: int, hi: int) -> int:
         return default
 
 
+def _active_profile() -> str:
+    """The active power profile, from ``OO_POWER_PROFILE`` (default 'optimized'). An unknown
+    value falls back to 'optimized' — never a fabricated profile. This is the SERVER-SIDE
+    source; the AppSettings-backed UI selector + the active-profile chip are browser-gated
+    (fork-3). When unset (the default) every knob resolves to its Optimized value, so the app's
+    behaviour is byte-identical to today until an operator explicitly selects a profile."""
+    p = (os.getenv("OO_POWER_PROFILE") or "optimized").strip().lower()
+    return p if p in PROFILE_NAMES else "optimized"
+
+
+def _resolve_env_int(name: str, *, lo: int, hi: int) -> int:
+    """Effective int value of an env-backed knob: its ``OO_*`` override (clamped) if set, else
+    the ACTIVE profile's value. Byte-identical to the prior hard-coded default when the profile
+    is Optimized and no env override is set (Optimized == the shipping default). Never raises —
+    a fat-fingered env value clamps to the profile value, so a consumer can't crash on it."""
+    knob = _knob_by_name()[name]
+    prof_val = int(_value_for(knob, _active_profile()))
+    raw = os.getenv(knob.env_var) if knob.env_var else None
+    return prof_val if raw is None else _clamp_int(raw, prof_val, lo, hi)
+
+
+# --------------------------------------------------------------------------- #
+#  Consumer-facing resolvers (§7 live wiring). Each read site calls one of these instead of
+#  its raw ``os.getenv(..., <literal default>)``, so a profile change is honoured without a
+#  code edit. Liveness is per-knob (documented on each): a knob read per-operation is LIVE; a
+#  knob read at connection/manager construction applies to the NEXT one (the boot singleton is
+#  next-restart). NONE of these changes what data is visible or any caveat — resource spend only.
+# --------------------------------------------------------------------------- #
+def sqlite_cache_mb() -> int:
+    """SQLite page-cache MiB (``OO_SQLITE_CACHE_MB`` or the active profile). Read per CONNECTION,
+    so a profile switch applies to NEW connections; re-applying to the running main-engine pool
+    is OPERATOR-GATED (needs a restart)."""
+    return _resolve_env_int("sqlite_cache_mb", lo=2, hi=1_000_000)
+
+
+def pass_budget_minutes() -> float:
+    """Per-pass wall-clock budget in MINUTES (``OO_PASS_BUDGET_MINUTES`` or the active profile).
+    Read per PASS, so a profile switch takes effect on the next pass (LIVE). ``0`` disables
+    recycling; a negative/invalid env value falls back to the profile value."""
+    knob = _knob_by_name()["pass_budget_minutes"]
+    prof_val = float(_value_for(knob, _active_profile()))
+    raw = os.getenv(knob.env_var)
+    if raw is None:
+        return prof_val
+    try:
+        v = float(raw)
+        return v if v >= 0 else prof_val
+    except (TypeError, ValueError):
+        return prof_val
+
+
+def rollup_serve_ttl_s() -> int:
+    """Windowed-rollup churn bound in SECONDS (``OO_COLUMNAR_SERVE_TTL_S`` or the active
+    profile). Read per SERVE-CHECK, so a profile switch is LIVE. The rollup numbers stay CORRECT
+    at any TTL — a basis/as-of disclosure rides the served result."""
+    return _resolve_env_int("rollup_serve_ttl_s", lo=0, hi=10_000_000)
+
+
+def dump_concurrency() -> int:
+    """Concurrent dump downloads (``OO_DUMP_CONCURRENCY`` or the active profile). Read when a
+    download manager is CONSTRUCTED, so a profile switch applies to a new manager (the boot
+    singleton is next-restart). Per-host politeness is unaffected (it lives in the host lock)."""
+    return _resolve_env_int("dump_concurrency", lo=1, hi=64)
+
+
 def fts_analysis_limit() -> int:
-    """The concrete §7 wiring: the ``PRAGMA optimize`` analysis bound, replacing the hard-coded
-    ``1000`` literal in fts.py. Env ``OO_FTS_ANALYSIS_LIMIT`` (default = the published Optimized
-    value), clamped to a sane range so a bad value can never break a bulk-load optimize."""
-    knob = _knob_by_name()["fts_analysis_limit"]
-    return _clamp_int(os.getenv(knob.env_var), int(knob.optimized), lo=0, hi=1_000_000)
+    """The ``PRAGMA optimize`` analysis bound (``OO_FTS_ANALYSIS_LIMIT`` or the active profile),
+    replacing the hard-coded ``1000`` literal in fts.py. Read per bulk-load optimize, so a
+    profile switch is LIVE. Clamped so a bad value can never break a bulk-load optimize."""
+    return _resolve_env_int("fts_analysis_limit", lo=0, hi=1_000_000)
 
 
 def power_profile_report(
@@ -262,10 +332,12 @@ def run_power_profile_selftest() -> dict:
 
     check(
         "fts_analysis_limit_defaults_to_optimized",
-        fts_analysis_limit() == int(_knob_by_name()["fts_analysis_limit"].optimized)
+        fts_analysis_limit()
+        == int(_value_for(_knob_by_name()["fts_analysis_limit"], _active_profile()))
         if os.getenv("OO_FTS_ANALYSIS_LIMIT") is None
         else True,
-        "With no env override, the wired value equals the published Optimized default.",
+        "With no env override, the wired value equals the ACTIVE profile's value "
+        "(Optimized by default, so byte-identical to today).",
     )
 
     banned = ("score", "ranking", "rating", "grade")

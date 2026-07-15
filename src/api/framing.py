@@ -11,6 +11,7 @@ Honest, sourced signals only (see src/awareness/framing.py). Requires the
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from src.awareness.framing import compare_framing
@@ -66,9 +67,17 @@ def framing(
                         "framing": [],
                         "shared_terms": [],
                         "caveat": "",
+                        "analyzed_n": 0,
+                        "total_n": 0,
+                        "capped": False,
                     }
+                total_n = len(ids)  # the FULL match count (ids is non-empty here)
                 articles = q.filter(Article.id.in_(ids)).limit(limit).all()
             else:
+                # The no-query path compares the most recent ``limit`` articles; total_n is
+                # the whole-corpus count (an index-only aggregate, deadline-bounded) so the
+                # slice is DISCLOSED, never presented as the whole corpus.
+                total_n = int(db.query(func.count(Article.id)).scalar() or 0)
                 articles = q.order_by(Article.id.desc()).limit(limit).all()
 
             by_source: dict[str, list[dict]] = {}
@@ -83,7 +92,19 @@ def framing(
                     }
                 )
 
+            analyzed_n = len(articles)
             result = compare_framing(by_source)
-            return {"query": query, **result}
+            # S10: disclose the admission cap — never a silent truncation. When the match
+            # exceeds ``limit`` only ``analyzed_n`` of ``total_n`` articles are compared (the
+            # most recent by id for the no-query path); the 8000-char per-article cap still
+            # bounds each one's text. Under the cap analyzed_n == total_n and capped is False,
+            # so the existing framing/shared_terms/caveat output is unchanged.
+            return {
+                "query": query,
+                **result,
+                "analyzed_n": analyzed_n,
+                "total_n": total_n,
+                "capped": total_n > analyzed_n,
+            }
     except StatementTimeout as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

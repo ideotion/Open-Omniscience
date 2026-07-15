@@ -1620,12 +1620,76 @@
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
+      if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
+    }
+
+    // S12 Leads 2.0 — an ISOLATED preview surface (Settings → Leads). It NEVER touches Home /
+    // renderBriefing, so the flagship feed stays byte-identical; the new ordering/chips activate
+    // only here, by user choice, until a browser click-through graduates them onto Home.
+    function leadsPrefs() {
+      return {
+        sort: localStorage.getItem("oo.leads.sort") || "default",
+        min_n: localStorage.getItem("oo.leads.min_n") || "50",
+        min_sources: localStorage.getItem("oo.leads.min_sources") || "5",
+        cluster: localStorage.getItem("oo.leads.cluster") === "1",
+      };
+    }
+    function leadsPrefsChanged() {
+      localStorage.setItem("oo.leads.sort", ($("leads-prominence") || {}).checked ? "prominence" : "default");
+      localStorage.setItem("oo.leads.min_n", String(($("leads-min-n") || {}).value || "50"));
+      localStorage.setItem("oo.leads.min_sources", String(($("leads-min-sources") || {}).value || "5"));
+      localStorage.setItem("oo.leads.cluster", ($("leads-cluster") || {}).checked ? "1" : "0");
+      loadLeadsView();
+    }
+    function leadsChipHtml(ld) {
+      const c = ld.evidence_chips || {}, maj = ld.major || {};
+      const age = (c.newest_age_days == null) ? "no dated evidence" : (c.newest_age_days + "d old");
+      const major = maj.major
+        ? `<span class="chip" title="${esc(maj.method || "")}">major</span>` : "";
+      // REAL facts only, each with its #17 hover method — never a composite score.
+      return `<span class="chip" title="sample size (n)">n=${esc(String(c.n))}</span>`
+        + `<span class="chip" title="distinct independent sources — three articles from one outlet is one voice, not three">${esc(String(c.distinct_sources))} source(s)</span>`
+        + `<span class="chip" title="age of the freshest dated evidence">${esc(age)}</span>`
+        + major
+        + `<span class="chip" title="${esc(maj.method || "")}">${esc(maj.fact || "")}</span>`;
+    }
+    function leadsViewHtml(data) {
+      const leads = (data && data.leads) || [];
+      if (!leads.length) return `<div class="muted">No leads yet.</div>`;
+      const rows = leads.map(ld =>
+        `<div style="padding:6px 0;border-bottom:1px solid var(--line)">
+           <div title="${esc(ld.order_explain || "")}">${esc(ld.title || ld.key || ld.type || "")}</div>
+           <div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">${leadsChipHtml(ld)}</div>
+         </div>`).join("");
+      const cl = (data.clusters && data.clusters.n_clusters)
+        ? `<div class="hint" style="margin-top:8px" title="${esc(data.clusters.method || "")}">${esc(String(data.clusters.n_clusters))} story cluster(s) — leads over overlapping articles, stacked (a shape, not a merge).</div>`
+        : "";
+      const caveat = data.caveat
+        ? `<div class="card-caveat" title="${esc(data.method || "")}">${esc(data.caveat)}</div>` : "";
+      return `<div>${rows}</div>${cl}${caveat}`;
+    }
+    async function loadLeadsView() {
+      const host = $("leads-preview");
+      if (!host) return;
+      const p = leadsPrefs();  // restore the controls from storage (persist across sessions)
+      if ($("leads-prominence")) $("leads-prominence").checked = (p.sort === "prominence");
+      if ($("leads-min-n")) $("leads-min-n").value = p.min_n;
+      if ($("leads-min-sources")) $("leads-min-sources").value = p.min_sources;
+      if ($("leads-cluster")) $("leads-cluster").checked = p.cluster;
+      host.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const qs = `sort=${encodeURIComponent(p.sort)}&min_n=${encodeURIComponent(p.min_n)}`
+          + `&min_sources=${encodeURIComponent(p.min_sources)}&cluster=${p.cluster ? 1 : 0}`;
+        host.innerHTML = leadsViewHtml(await api("/api/insights/leads-view?" + qs));
+      } catch (e) {
+        host.innerHTML = `<div class="muted">No leads to preview yet.</div>`;
+      }
     }
     function buildDrawer() {
       const ui = getUi();
@@ -10823,12 +10887,70 @@
     function _anKwNeedsTentative(tm) {
       return !tm.translation && !tm.tentative && (tm.language || "").toLowerCase() !== uiLangCode();
     }
+    let _anConjLast = null;   // S13: the last /corpus-algebra result, for the Open-as-corpus action
+
+    // S13 Conjunction Lens — an N-keyword set-algebra picker hosted in the analysis window's
+    // Keywords subtab. It calls the live /api/insights/corpus-algebra (∩ all / ∪ any / ∖ first-
+    // only), shows the set EXPRESSION as the corpus label + each term's exact n + the combined n,
+    // and opens the exact result set as its own corpus via openAnalysisForIds. Counts only, never
+    // a score; the bounded flag + method/caveat are surfaced. Browser-unverified per fork-3.
+    function anConjunctionHtml() {
+      return `<div style="margin-bottom:10px;padding:8px;border:1px solid var(--line);border-radius:6px">`
+        + `<div class="hint" style="margin-top:0"><b>Combine keywords</b> — set algebra over N keywords. `
+        + `The set expression is the corpus label; counts only, never a score.</div>`
+        + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">`
+        + `<input id="an-conj-terms" placeholder="keyword, keyword, keyword…" style="flex:1;min-width:180px" `
+        + `onkeydown="if(event.key==='Enter')anCombine('intersection')">`
+        + `<button class="secondary" onclick="anCombine('intersection')" title="articles mentioning ALL terms">∩ All</button>`
+        + `<button class="secondary" onclick="anCombine('union')" title="articles mentioning ANY term">∪ Any</button>`
+        + `<button class="secondary" onclick="anCombine('difference')" title="the first term and none of the rest">∖ First-only</button>`
+        + `</div><div id="an-conj-result" style="margin-top:8px"></div></div>`;
+    }
+    function _anConjSep(op) { return op === "difference" ? " ∖ " : (op === "union" ? " ∪ " : " ∩ "); }
+    function anCombineHtml(d) {
+      const terms = (d && d.terms) || [];
+      if (!terms.length) return `<div class="muted">${esc((d && d.method) || "No resolvable keyword given.")}</div>`;
+      const expr = terms.map((x) => esc(x.normalized || x.term)).join(_anConjSep(d.op));
+      const perTerm = terms.map((x) =>
+        `<span class="chip" title="exact corpus-wide article count for this term">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
+      const bounded = d.result_bounded
+        ? `<div class="card-caveat" title="the set scan reached its cap">Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one.</div>` : "";
+      const open = (d.n_combined > 0)
+        ? `<button class="secondary" onclick="anOpenCombined()">Open ${esc(String(d.n_combined))} article(s) as a corpus →</button>`
+        : `<div class="muted">Empty set — no articles match this combination.</div>`;
+      return `<div class="hint" style="margin-top:0"><b>${esc(expr)}</b> · <b>${esc(String(d.n_combined))}</b> article(s)</div>`
+        + `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${perTerm}</div>`
+        + `<div style="margin-top:6px">${open}</div>${bounded}`
+        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(d.caveat || "")}</div>`;
+    }
+    async function anCombine(op) {
+      const inp = $("an-conj-terms"), out = $("an-conj-result");
+      if (!inp || !out) return;
+      const terms = (inp.value || "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (!terms.length) { out.innerHTML = `<div class="muted">Enter at least one keyword to combine.</div>`; return; }
+      out.innerHTML = `<div class="muted">Combining…</div>`;
+      try {
+        const d = await api("/api/insights/corpus-algebra?terms=" + encodeURIComponent(terms.join(","))
+          + "&op=" + encodeURIComponent(op));
+        _anConjLast = d;
+        out.innerHTML = anCombineHtml(d);
+      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    function anOpenCombined() {
+      const d = _anConjLast;
+      if (!d || !d.article_ids || !d.article_ids.length) return;
+      const expr = ((d.terms) || []).map((x) => x.normalized || x.term).join(_anConjSep(d.op));
+      openAnalysisForIds(d.article_ids, expr);   // the exact-set precedent — a fresh corpus tab
+    }
     function anRenderKwChips() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const d = _anKwData, kw = _anKwHost;
       if (!kw) return;
       if (!d || !d.terms || !d.terms.length) {
-        kw.innerHTML = `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
+        // The Combine picker works over the WHOLE-corpus keyword index, so it stays useful even
+        // when this window's matched set has no indexed keywords.
+        kw.innerHTML = anConjunctionHtml()
+          + `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
         return;
       }
       const chips = d.terms.map((term) =>
@@ -10844,7 +10966,8 @@
       const btn = d.terms.some(_anKwNeedsTentative)
         ? ` <button class="ghost tiny" onclick="anFillTentative()" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">✦ ${esc(t("Translate the rest (AI, tentative)"))}</button>`
         : "";
-      kw.innerHTML = `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
+      kw.innerHTML = anConjunctionHtml()
+        + `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
         + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}${btn}</div>`
         + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`
         + anContextHtml();

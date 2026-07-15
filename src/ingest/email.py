@@ -627,7 +627,10 @@ def delete_imported_newsletters(session: Session) -> dict:
 
     # The bulk delete didn't go through index_article, so the denormalised
     # Keyword.mention_count / article_count are now stale — repair them authoritatively.
-    from src.analytics.store import backfill_keyword_counters
+    from src.analytics.store import backfill_keyword_counters, reconcile_source_counters
 
     backfill_keyword_counters(session)
+    # S6: the per-source article counter is stale too (a bulk delete removed articles) —
+    # reconcile it so source_io/sources reads a correct count immediately.
+    reconcile_source_counters(session)
     return {"removed_articles": len(art_ids), "domains": list(NEWSLETTER_SOURCE_DOMAINS)}

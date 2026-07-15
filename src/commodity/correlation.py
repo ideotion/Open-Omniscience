@@ -21,6 +21,7 @@ inventing a number.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -82,12 +83,35 @@ def correlate_price_with_news(
 
     ``price_points`` is [(date, price), ...]; ``article_dates`` is the publish date
     of each relevant article (duplicates = higher volume that day).
+
+    Thin list-input wrapper: it groups ``article_dates`` into per-day counts and delegates
+    to :func:`correlate_price_with_counts`. A caller that can GROUP BY in SQL should build
+    the ``{date: count}`` map directly and call that entry point instead of materialising
+    one row per article.
+    """
+    return correlate_price_with_counts(
+        price_points, Counter(article_dates), method=method, alpha=alpha
+    )
+
+
+def correlate_price_with_counts(
+    price_points: list[tuple[date, float]],
+    article_counts: Mapping[date, int],
+    *,
+    method: str = "pearson",
+    alpha: float = 0.05,
+) -> CorrelationResult:
+    """Correlate daily price *change* with a per-day article COUNT map over shared dates.
+
+    Byte-identical to :func:`correlate_price_with_news` (which is ``… (Counter(list))``) but
+    takes the counts already grouped by day (``{date: count}``), so the caller can aggregate
+    in SQL (``GROUP BY day``) instead of pulling one row per article through the codec.
     """
     if method not in ("pearson", "spearman"):
         raise ValueError("method must be 'pearson' or 'spearman'")
 
     changes = _daily_price_changes(price_points)
-    counts = Counter(article_dates)
+    counts = article_counts
 
     shared = sorted(set(changes) & set(counts))
     n = len(shared)

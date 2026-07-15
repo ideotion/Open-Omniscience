@@ -425,6 +425,16 @@ class Source(Base):
     source_type: Mapped[str | None] = mapped_column(String(50), default="news")  # news, financial, scientific, etc.
     update_frequency: Mapped[int | None] = mapped_column(Integer, default=60)  # minutes
     cacheability: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    # Maintained per-source article counter (S6, 2026-07-14). Nullable: NULL = "never
+    # reconciled" -> read surfaces fall back to a live COUNT(*) on the indexed
+    # Article.source_id (idx_article_source_id), so the count is never WRONG, only
+    # sometimes computed live. reconcile_source_counters() recomputes it (a whole-table
+    # GROUP BY -- cheap, sources are few) and stamps counter_reconciled_at so the honesty
+    # envelope discloses exact (fresh) vs estimated (stale). NOT maintained in
+    # index_article (which RE-indexes existing articles -> incrementing there would
+    # double-count); membership changes on create/delete/reconcile only.
+    article_count: Mapped[int | None] = mapped_column(Integer)
+    counter_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")

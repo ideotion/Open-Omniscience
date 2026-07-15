@@ -15,13 +15,14 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from src.commodity.correlation import correlate_price_with_news
+from src.commodity.correlation import correlate_price_with_counts
 from src.commodity.csv_import import parse_price_csv
 from src.commodity.units import UnitError, convert_price
 from src.database.fts import SearchQueryError, search_ids
-from src.database.models import Article, CommodityPrice
+from src.database.models import CommodityPrice
 from src.database.session import get_db
 
 router = APIRouter(prefix="/api/commodities", tags=["commodities"])
@@ -156,19 +157,37 @@ def correlation(
         raise HTTPException(status_code=404, detail=f"No prices stored for {symbol!r}.")
     price_points = [(r.observed_on, r.price) for r in price_rows]
 
-    q = db.query(Article.published_at).filter(Article.published_at.isnot(None))
+    # Grouped in SQL (S9): the per-day article COUNT via an index-only scan of
+    # idx_article_published_at, fed straight into the count-input correlation entry point —
+    # O(days) rows instead of materialising one published_at per matching article.
+    # substr(published_at, 1, 10) == Python datetime.date() on the stored ISO string, so the
+    # counts (and every coefficient/p-value) are byte-identical to the prior per-row loop.
+    base = (
+        "SELECT substr(published_at, 1, 10) AS d, COUNT(*) AS c FROM articles"
+        " WHERE published_at IS NOT NULL"
+    )
     if query:
         try:
             ids = search_ids(db, query)
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
         if not ids:
-            article_dates = []
+            article_counts: dict[date, int] = {}
         else:
-            rows = q.filter(Article.id.in_(ids)).all()
-            article_dates = [r[0].date() for r in rows]
+            marks = ",".join(str(int(i)) for i in ids)
+            article_counts = {
+                date.fromisoformat(d): int(c)
+                for d, c in db.execute(
+                    text(  # nosec B608 - marks is a joined list of int()-cast ids from search_ids, never input
+                        f"{base} AND id IN ({marks}) GROUP BY substr(published_at, 1, 10)"
+                    )
+                )
+            }
     else:
-        article_dates = [r[0].date() for r in q.all()]
+        article_counts = {
+            date.fromisoformat(d): int(c)
+            for d, c in db.execute(text(f"{base} GROUP BY substr(published_at, 1, 10)"))
+        }
 
-    result = correlate_price_with_news(price_points, article_dates, method=method)
+    result = correlate_price_with_counts(price_points, article_counts, method=method)
     return {"symbol": symbol, "query": query, **result.to_dict()}

@@ -20,7 +20,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import os
 import re
 import threading
 from dataclasses import asdict, dataclass
@@ -33,8 +32,9 @@ _CHUNK = 1024 * 1024  # 1 MiB
 # rides its own circuit (per-stream SOCKS isolation) so aggregate throughput
 # multiplies. Bounded + conservative because dumps share ONE host
 # (dumps.wikimedia.org) and per-host politeness is never traded for speed; a
-# few parallel streams is normal for a bulk dump mirror. Operator-tunable.
-_DEFAULT_DUMP_CONCURRENCY = max(1, int(os.getenv("OO_DUMP_CONCURRENCY", "3")))
+# few parallel streams is normal for a bulk dump mirror. Operator-tunable via the
+# power-profile knob ``dump_concurrency()`` (OO_DUMP_CONCURRENCY override, else the active
+# profile; Optimized = 3, byte-identical to today), read when a manager is constructed.
 # "pages-articles-multistream" is the DEFAULT for new downloads (T14): its
 # companion index makes pages readable OFFLINE by direct seek — the plain
 # single-stream dump is kept for legacy files but cannot be random-accessed.
@@ -131,8 +131,10 @@ class DumpDownloadManager:
         # excess becomes a REAL, reorderable queue (the T9 fr-before-en
         # acceptance case still holds) -- parallelism adds speed without losing
         # prioritisation. Persisted with the entries.
+        from src.config.power_profiles import dump_concurrency
+
         self.max_concurrent = (
-            max_concurrent if max_concurrent and max_concurrent > 0 else _DEFAULT_DUMP_CONCURRENCY
+            max_concurrent if max_concurrent and max_concurrent > 0 else dump_concurrency()
         )
         self._order: list[str] = []
         self._load()

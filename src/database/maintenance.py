@@ -387,6 +387,53 @@ def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
     return added
 
 
+_SOURCE_COUNTER_COLUMNS: dict[str, str] = {
+    # S6 (2026-07-14). Nullable, NO backfill: NULL = "never reconciled" -> the read falls
+    # back to a live COUNT(*) (never wrong), and reconcile_source_counters() populates it
+    # forward + stamps the freshness watermark. Same additive self-heal pattern as the
+    # keyword-source / law-text columns; idempotent (PRAGMA-checked).
+    "article_count": "ALTER TABLE sources ADD COLUMN article_count INTEGER",
+    "counter_reconciled_at": "ALTER TABLE sources ADD COLUMN counter_reconciled_at DATETIME",
+}
+
+
+# Populate the per-source counter from the live article rows in one pass, stamping the
+# freshness watermark, so there is NO NULL window after boot (a NULL counter would make the
+# "articles" sort order on NULL while the row displays a live count — the skeptic's finding).
+# Cheap: one correlated COUNT over the indexed articles.source_id per source (sources are few).
+_SOURCE_COUNTER_BACKFILL = (
+    "UPDATE sources SET "
+    "article_count = COALESCE("
+    "(SELECT COUNT(*) FROM articles WHERE articles.source_id = sources.id), 0), "
+    "counter_reconciled_at = CURRENT_TIMESTAMP"
+)
+
+
+def ensure_source_counter_columns(engine: Engine) -> list[str]:
+    """Self-heal ``sources.article_count`` + ``sources.counter_reconciled_at`` (S6) on a store
+    created before they existed, then BACKFILL from the live articles so there is no NULL window
+    (a NULL counter would make the 'articles' sort disagree with the displayed live-fallback
+    count). Additive, idempotent; the backfill runs ONLY when the count column was just added."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        if not conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='sources'")
+        ).fetchone():
+            return []
+        cols = {r[1] for r in conn.execute(text("PRAGMA table_info(sources)")).fetchall()}
+        for name, ddl in _SOURCE_COUNTER_COLUMNS.items():
+            if name not in cols:
+                conn.execute(text(ddl))
+                added.append(f"sources.{name}")
+        if "sources.article_count" in added:  # just created -> make it true at once
+            conn.execute(text(_SOURCE_COUNTER_BACKFILL))
+    if added:
+        _LOG.info(f"added source counter column(s): {', '.join(added)}")
+    return added
+
+
 # Denormalised corpus-wide keyword counters (perf workstream 2026-06-18) for stores
 # created before these columns existed. create_all builds them on a fresh DB but never
 # ALTERs an existing table, and not every install runs alembic — so an existing corpus

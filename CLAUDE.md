@@ -5747,6 +5747,60 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   power-profile live application · Leads-2.0 surfacing + Conjunction-Lens picker (both
   conservative+flagged per Q6a, defaults preserving today's behaviour). Exclusions stay
   operator/VM/ruling-gated (R3/R6/triage bench/GAMMA/V1-7/fingerprints/Tor-live).
+- **OPTIMIZATION-TAIL CLOSEOUT (2026-07-15, branch `claude/opt-tail-r5`; S1–S5 merged via #684,
+  S6–S13 stacked on draft PR #685 onto 0.2; full detail = the per-slice `docs/ledger/shipped.csv`
+  rows):** all 13 slices SHIPPED, each ⚠ slice adversarially skeptic-verified pre-push (S7: 2
+  lenses + a 20k-seed byte-parity fuzz; S8: 3 skeptic rounds — the first cut NO-GO'd and was
+  rewritten; S12: 1 honesty/isolation lens), every slice test-pinned + green in a py3.13 venv (the
+  2 version tests fail only on the known sandbox `PackageNotFoundError`; scipy/sqlcipher3/[analysis]-
+  gated paths are CI-only). **S6** maintained Source counter · **S7** /keywords 2-scan→1 collapse
+  (byte-identical, anti-capping) · **S8** debug-bundle read-only + per-member guard + wall-clock
+  budget · **S9** anomalies/correlation grouped-SQL (O(articles)→O(days)) · **S10** framing
+  {analyzed_n,total_n,capped} disclosure · **S11** power-profile knobs live-wired (Optimized==today)
+  · **S12** isolated Settings→Leads preview (Home byte-identical) · **S13** Conjunction-Lens picker.
+  **TWO REUSABLE LESSONS (harvested; also in the Session-rituals Lessons list):** (1) **a per-member
+  WALL-CLOCK budget must NOT thread a member that touches a shared DB connection (S8):**
+  `statement_deadline` bounds only SQLite VM opcodes, NOT the Python row-materialisation around them;
+  concurrent use of one pysqlite/sqlcipher connection BLOCKS (it does not error); a SQLAlchemy
+  `Session` is not thread-safe; and a self-deadlining callee's inner `finally` clears an outer
+  progress handler. So thread ONLY non-DB (socket/file/in-memory) members for a wall-clock
+  `{skipped: budget}`; run DB members INLINE bounded by a statement deadline (never abandon a
+  worker mid-query on a shared connection). Also: `Thread.join(inf)` raises `OverflowError` OUTSIDE
+  the thunk's try/except → clamp any operator-set budget finite/≤ceiling, and a broken `__str__`
+  in the error path must still set the error key or a failed member is silently lost as `None`.
+  (2) **the byte-safe way to GROUP BY publish-day (S9):** `substr(published_at,1,10)` == Python
+  `datetime.date()` on the naive stored ISO string — SQLAlchemy stores even a tz-AWARE UTC datetime
+  as a NAIVE string, so `date()`/`substr` never diverge; prefer `substr(...,1,10)` (byte-literal, no
+  `date()` tz-interpretation) and write the golden against the Python-loop reference FIRST, then
+  EXPLAIN-QUERY-PLAN-check for a `USING [COVERING] INDEX` (a bare `SCAN <table>` is the only smell).
+  **CARRY-OVER (browser-verify-gated per fork-3, + one deferred):** (a) **S12** — grade the Leads-2.0
+  preview modes ONTO Home itself (evidence chips on Home cards, a Home sort control wired to
+  `sort_leads` with the `explain_order` hover, lifecycle deltas which need a persisted
+  previous-snapshot) — all VISIBLY change the flagship feed, so a click-through gates them; the
+  isolated Settings→Leads preview + the `/api/insights/leads-view` backend are shipped. (b) **S13** —
+  the deeper Conjunction lens views (conditional trend · vocabulary contrast · per-article intensity ·
+  lead/lag) — the §1 core computes them via separate helpers, but `corpus_algebra`'s own payload does
+  not carry them, so surfacing them needs a payload extension + a click-through. (c) **S7** — the
+  OPTIONAL background-job variant of the /keywords export (deferred: serving per-keyword totals from
+  the maintained counters would break byte-parity and cannot supply first/last-seen). Every
+  conservative frontend slice (S12 subtab, S13 picker) is node-checked + invariant-guarded but
+  BROWSER-UNVERIFIED — a human click-through across themes/breakpoints is owed.
+  **CI FIX-FORWARD (2026-07-15, commit `8248e90f`):** the #685 `test` lane went RED (the 0.2 base
+  `fa5858d0` is GREEN, so it was a real regression, not the merged≠green base-red). Root cause =
+  S11 retired rollup_serve's `_MIN_REBUILD_S` MODULE CONSTANT (→ the per-serve `rollup_serve_ttl_s()`)
+  and updated the src use-sites but MISSED `tests/test_serve_change_gate.py`, which
+  `monkeypatch.setattr`'d `rollup_serve._MIN_REBUILD_S` at two sites → `AttributeError` erroring
+  every test in the file. Fixed: the shared fixture loops over BOTH rollup_serve (constant retired
+  → set `OO_COLUMNAR_SERVE_TTL_S=0`) AND `map_serve` (its own `_MIN_REBUILD_S` constant KEPT →
+  `setattr` guarded by `hasattr`); the churn-bound test sets the rollup env to 900. Confirmed via a
+  full local suite run (installed scipy/pandas/sklearn so the `[analysis]` block wires; the remaining
+  failures are all sandbox-environmental — PermissionError sockets, PackageNotFoundError metadata,
+  sqlcipher3-absent, backup helper-failed, httpfs egress-blocked — all GREEN in CI, plus a
+  pre-existing `test_osm_downloads` subset-order flake unrelated to any changed code). **TWO PROCESS
+  LESSONS:** (a) removing a module constant/attribute must grep the TEST tree for it in the SAME
+  change (the stale-anchor family — the src use-sites are not the only referents); (b) do NOT revoke
+  the push token at "closeout" until CI is confirmed GREEN — a red lane needs a fix-forward push, and
+  the token was already rm'd (this fix `8248e90f` is committed but had to be pushed by the maintainer).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

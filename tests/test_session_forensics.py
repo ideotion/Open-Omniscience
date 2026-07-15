@@ -161,7 +161,8 @@ def test_endpoint_and_bundle_are_wired():
 
     src = Path("src/api/diagnostics.py").read_text(encoding="utf-8")
     assert '@router.get("/session-forensics")' in src
-    assert '"session_forensics": _safe(_session_forensics)' in src
+    # S8: every debug-bundle member is now individually guarded + budgeted via _member.
+    assert '"session_forensics": _member("session_forensics", _session_forensics)' in src
     assert '("session-forensics.json", lambda: session_forensics_report())' in src
     main = Path("src/api/main.py").read_text(encoding="utf-8")
     assert "record_session_start" in main and "record_clean_shutdown" in main
