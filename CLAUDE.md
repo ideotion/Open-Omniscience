@@ -5801,6 +5801,50 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   change (the stale-anchor family — the src use-sites are not the only referents); (b) do NOT revoke
   the push token at "closeout" until CI is confirmed GREEN — a red lane needs a fix-forward push, and
   the token was already rm'd (this fix `8248e90f` is committed but had to be pushed by the maintainer).
+- **SOURCE-AGGREGATOR PROPOSAL → WORLD-DISCOVERY JOB (maintainer message 2026-07-15; branch
+  `claude/source-aggregator-integration-5axvxl`, draft PR onto 0.2):** the maintainer drafted a
+  single-file "source aggregator" script (aiohttp: Wikidata SPARQL + a GDELT API + a government
+  domain list → DNS/HTTPS/robots/SSL validation → append to configs/sources.yml) and asked whether
+  it can be adapted so the app automatically integrates a source scraper. **RULING RECORDED:
+  ~3,000 catalog sources is a MINIMAL start — the source count must be SIGNIFICANTLY increased**
+  (aligns with the standing `configs/catalog_query.yml` ~50k ambition). **ASSESSMENT (the
+  staleness guard paid off — do NOT import the script wholesale):** its INTENT is already built in
+  rules-compliant form — the networked-machine bulk generator `scripts/build_world_news_catalog.py`
+  (Wikidata per-country, verified QIDs in `configs/catalog_query.yml`; `--merge-csv` is the
+  sanctioned GDELT/Media-Cloud path) → `configs/world_news_sources.yml` auto-seeded once generated;
+  the in-app consented guarded discovery `src/catalog/discover.py` (DISABLED rows +
+  `via:wikidata-discovery` provenance); validation = `src/monitoring/preflight.py` (robots/homepage
+  through the fetcher's session, transport-aware) + the #663 extraction-validity auditor as the
+  real quality gate; noise filters = is_commerce/is_social/is_infrastructure (boundary-based). The
+  script AS-WRITTEN breaches non-negotiables and must not land: raw aiohttp sessions (bypass
+  EthicalFetcher + kill switch, silently downgrade transport off Tor, trip the socket-importer
+  ratchet), robots fail-OPEN with a naive substring parse (policy is fail-CLOSED), whole-file
+  yaml.dump onto the curated `sources.yml` (wrong shape — would corrupt the catalog), auto-import
+  (violates review-before-enable), a substring keyword blocklist ("sex" blocks Middlesex — the
+  is_commerce substring-trap lesson), status==200-required validation (mass false-rejects over
+  Tor), and an UNVERIFIED `api.gdeltproject.org/v2/sources` endpoint (egress-blocked here, could
+  not be confirmed to exist — the fabricated-endpoint burn; never wire it unverified). **SHIPPED
+  (the one genuine gap): the WORLD-DISCOVERY BACKGROUND JOB** — the bounded sync endpoint
+  (12 countries/call) could never honestly cover ~250 countries, so
+  `src/catalog/discover_job.py:run_world_discovery` walks EVERY country through the existing
+  `discover_sources` as a cancellable `BackgroundJob` (kind `discover-world-sources`, task-manager
+  cancel for free): one country per session (writer gate never held across a fetch), a PERSISTED
+  per-country cursor (`data_dir()/world_discovery.json`, atomic writes) so cancel/airplane/crash
+  RESUME instead of re-querying the world, a clean airplane PAUSE (a user choice is never an
+  "error"), an all-specs-failed country retried never marked done, and a 5-consecutive-failures
+  breaker (total network loss must not spin through 200 doomed queries). Endpoints `POST
+  /api/diagnostics/discover-world{,/cancel}` + `GET …/status` (409 under airplane; ISO-2
+  validation; restart=1 ignores the cursor); a Diagnostics-panel button (`discoverWorld`,
+  ensureOnline-gated #14, live status line, un-keyed-diagnostics-strings convention,
+  BROWSER-UNVERIFIED per fork-3/Q6a). tests/test_world_discovery_job.py (7 behaviour + the
+  composed-route wiring guard per the 1c lesson; a real bug caught pre-push: `discover_sources`
+  SPREADS generate_catalog's stats top-level, so the failed-country detector read a nested key
+  that never exists). REMAINING/OPERATOR: actually RUN it (Wikidata is egress-blocked in the
+  sandbox — both paths need a networked machine): the job populates ONE install; a
+  `build_world_news_catalog.py` run commits `world_news_sources.yml` for EVERY install — the two
+  are complementary, do both. PENDING (not built, needs a ruling if wanted): a scheduler
+  ride-along that auto-advances world discovery a few countries per online pass (default-off
+  toggle) — the job button covers the ask meanwhile.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
