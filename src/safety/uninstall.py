@@ -62,11 +62,26 @@ for _ in range(240):                        # wait <=120s for the server to exit
     time.sleep(0.5)
 log = []
 def rec(m): log.append(datetime.datetime.now().isoformat(timespec="seconds") + "  " + m)
-def overwrite(p):
+# Crypto-erase, stdlib-only + inline (this detached process cannot import src, the venv
+# is gone). SQLCipher keeps its 16-byte salt in page 1 of the encrypted DB: destroy that
+# page and the key is underivable, so the (possibly multi-GB) ciphertext body is noise
+# and is never rewritten. Everything else under the data dir is small and fully
+# overwritten. The old code capped EVERY file at the first 4 MiB, so most of a large
+# corpus survived (audit OO-02).
+PAGE1 = 4096; CHUNK = 8 * 1024 * 1024
+_ENC = ("open_omniscience.db", "custody_log.db", "analytics.duckdb", ".oo_columnar_probe.duckdb")
+_SIDE = ("-wal", "-shm", "-journal")
+def header_only(name):
+    return name in _ENC or any(name == b + s for b in _ENC for s in _SIDE)
+def overwrite(p, head_only):
     try:
         n = os.path.getsize(p)
+        limit = min(n, PAGE1) if head_only else n
         with open(p, "r+b", buffering=0) as f:
-            f.write(os.urandom(min(n, 4 * 1024 * 1024))); f.flush(); os.fsync(f.fileno())
+            w = 0
+            while w < limit:
+                c = os.urandom(min(CHUNK, limit - w)); f.write(c); w += len(c)
+            f.flush(); os.fsync(f.fileno())
     except OSError: pass
 rec("uninstall watcher start (pid %d)" % pid)
 for f in plan.get("files", []):
@@ -81,11 +96,42 @@ if wd and os.path.isdir(wd):
     seen = wiped = 0
     for root, _d, names in os.walk(wd):
         for nm in names:
-            seen += 1; fp = os.path.join(root, nm); overwrite(fp)
+            seen += 1; fp = os.path.join(root, nm); overwrite(fp, header_only(nm))
             try: os.remove(fp); wiped += 1
             except OSError: pass
+    scrubbed = 0                              # optional defence-in-depth free-space scrub
+    passes = plan.get("passes")
+    if passes in (1, 3, 8):
+        try: os.makedirs(wd, exist_ok=True)
+        except OSError: pass
+        for i in range(passes):
+            fp = os.path.join(wd, ".oo_scrub_%d.bin" % i)
+            try:
+                with open(fp, "wb", buffering=0) as f:
+                    while True:
+                        try: f.write(os.urandom(CHUNK))
+                        except OSError: break
+                        scrubbed += CHUNK
+                    try: f.flush(); os.fsync(f.fileno())
+                    except OSError: pass
+            except OSError: pass
+            try: os.remove(fp)
+            except OSError: pass
     shutil.rmtree(wd, ignore_errors=True)
-    rec("wiped data %s (%d/%d files, best-effort overwrite then delete)" % (wd, wiped, seen))
+    rec("wiped data %s (%d/%d files, crypto-erase: DB salt pages destroyed; %d scrub bytes)" % (wd, wiped, seen, scrubbed))
+# DuckDB analytics cache can live outside the data dir (OO_COLUMNAR_DIR). Only present in
+# the plan when it actually differs from wd -- head-wipe the two known files there (never
+# rmtree an externally-configured directory we don't otherwise own).
+sd = plan.get("wipe_store_dir")
+if sd and os.path.isdir(sd):
+    sd_wiped = 0
+    for nm in ("analytics.duckdb", ".oo_columnar_probe.duckdb"):
+        fp = os.path.join(sd, nm)
+        if os.path.exists(fp):
+            overwrite(fp, True)
+            try: os.remove(fp); sd_wiped += 1
+            except OSError: pass
+    rec("wiped columnar store %s (%d files, header-only)" % (sd, sd_wiped))
 af = plan.get("app_folder")
 if af and os.path.isdir(af):
     shutil.rmtree(af, ignore_errors=True)
@@ -159,9 +205,22 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
         data_exists = Path(data).is_dir()
     except Exception:  # pragma: no cover - paths always importable in practice
         data, data_exists = None, False
+    # The DuckDB analytics cache can live outside the data dir (``OO_COLUMNAR_DIR``).
+    # crypto_erase.quick_crypto_erase() head-wipes it there independently of the data-dir
+    # walk; the watcher must do the same or a secure uninstall silently misses it when the
+    # override is set (audit follow-up on OO-02). Only reported when it actually differs.
+    store: str | None = None
+    try:
+        from src.analytics.columnar import _store_dir as _columnar_store_dir
+        s = str(_columnar_store_dir())
+        if s != data:
+            store = s
+    except Exception:  # pragma: no cover - columnar extra may be absent
+        store = None
     install_script = root / "install.sh"
     app_folder = str(root) if remove_folder else None
     wipe_data_dir = data if (wipe_data and data and data_exists) else None
+    wipe_store_dir = store if (wipe_data and store and Path(store).is_dir()) else None
     removable = bool(
         venv.exists() or launchers or (remove_folder and root.exists()) or wipe_data_dir
     )
@@ -176,6 +235,7 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
         "app_folder": app_folder,               # the folder removed in full/secure
         "wipe_data": wipe_data,
         "wipe_data_dir": wipe_data_dir,         # the data dir wiped in secure
+        "wipe_store_dir": wipe_store_dir,       # OO_COLUMNAR_DIR override, wiped in secure
         "audit_log": str(AUDIT_LOG),
         "removable": removable,
     }
@@ -196,6 +256,8 @@ def _default_spawn(plan: dict, server_pid: int) -> None:
         "venv": plan["venv"],
         "app_folder": plan.get("app_folder"),
         "wipe_data_dir": plan.get("wipe_data_dir"),
+        "wipe_store_dir": plan.get("wipe_store_dir"),  # OO_COLUMNAR_DIR override, if set
+        "passes": plan.get("passes"),  # optional defence-in-depth free-space scrub (1/3/8)
         "audit_log": plan.get("audit_log"),
     }
     subprocess.Popen(
@@ -229,18 +291,22 @@ def _default_arm_shutdown(delay: float = 2.0) -> None:
 
 
 def request_uninstall(*, confirm: bool, remove_folder: bool = False, wipe_data: bool = False,
-                      src_dir: Path | None = None,
+                      src_dir: Path | None = None, passes: int | None = None,
                       _spawn=_default_spawn, _arm_shutdown=_default_arm_shutdown) -> dict:
     """Schedule removal per the chosen mode, then stop the server.
 
     Requires ``confirm=True``. ``remove_folder``/``wipe_data`` select the mode
-    (minimal/full/secure/custom — see the module docstring). The actual deletion happens
-    in a detached watcher *after* this process exits. ``_spawn``/``_arm_shutdown`` are
-    injected in tests so nothing is ever deleted there.
+    (minimal/full/secure/custom — see the module docstring). ``passes`` (1/3/8, only
+    meaningful when data is wiped) adds an optional defence-in-depth free-space scrub in
+    the watcher on top of the crypto-erase. The actual deletion happens in a detached
+    watcher *after* this process exits. ``_spawn``/``_arm_shutdown`` are injected in tests
+    so nothing is ever deleted there.
     """
     if not confirm:
         raise PermissionError("request_uninstall requires confirm=True")
     plan = plan_uninstall(src_dir, remove_folder=remove_folder, wipe_data=wipe_data)
+    if passes is not None:
+        plan["passes"] = passes  # honored by the watcher only when data is wiped
     if not plan["removable"]:
         return {**plan, "scheduled": False,
                 "note": "Nothing to remove (no virtualenv or launchers found). "

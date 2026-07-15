@@ -2025,5 +2025,12 @@
   "Parity:": "Parité :",
   "can still lose": "peut encore perdre",
   "Method:": "Méthode :",
-  "“{term}” is rising": "« {term} » est en hausse"
+  "“{term}” is rising": "« {term} » est en hausse",
+  "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.": "La clé du corpus est détruite — le stockage chiffré est désormais définitivement irrécupérable.",
+  "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.": "Pour une protection renforcée contre la récupération forensique, vous pouvez aussi écraser l’espace disque libéré. C’est facultatif — le corpus est déjà cryptographiquement irrécupérable.",
+  "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.": "Votre stockage n’était pas chiffré ; un écrasement complet du disque est donc recommandé avant d’arrêter.",
+  "Single pass": "Une passe",
+  "Triple pass": "Triple passe",
+  "Octuple pass": "Octuple passe",
+  "This may take several minutes on a large disk. Restart the app when you are done.": "Cela peut prendre plusieurs minutes sur un grand disque. Redémarrez l’application une fois terminé."
 }

@@ -8,9 +8,13 @@ Every meaningful action on an item (ingest, access, export, redact, ...) is
 recorded as a custody entry that is:
 
 * **chained** -- each entry stores the hash of the previous entry, so removing,
-  reordering, or editing any historical entry is detectable;
-* **signed** -- each entry is signed with the hybrid signer (Ed25519 + ML-DSA),
-  so entries cannot be forged or altered without the signing key;
+  reordering, or editing any *interior* entry is detectable; detecting truncation
+  of the most recent entries additionally requires an external anchor
+  (OpenTimestamps, below) -- a hash chain alone cannot prove nothing was dropped
+  from its tail;
+* **signed** -- each entry is signed with Ed25519 (plus post-quantum ML-DSA when
+  the optional ``[pqc]`` extra is installed and enabled), so entries cannot be
+  forged or altered without the signing key;
 * **timestamped** -- each entry carries a timestamp proof (self-asserted local by
   default; optionally an independent OpenTimestamps anchor).
 

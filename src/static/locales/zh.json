@@ -2025,5 +2025,12 @@
   "Parity:": "校验：",
   "can still lose": "还可丢失",
   "Method:": "方法：",
-  "“{term}” is rising": "“{term}”正在上升"
+  "“{term}” is rising": "“{term}”正在上升",
+  "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.": "语料库密钥已销毁——加密存储现已永久无法恢复。",
+  "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.": "为进一步防范取证恢复，你还可以覆盖已释放的磁盘空间。这是可选的——语料库在密码学上已无法恢复。",
+  "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.": "你的存储未加密，因此建议在停止前对整个磁盘进行覆盖。",
+  "Single pass": "单次覆盖",
+  "Triple pass": "三次覆盖",
+  "Octuple pass": "八次覆盖",
+  "This may take several minutes on a large disk. Restart the app when you are done.": "在大容量磁盘上这可能需要几分钟。完成后请重启应用。"
 }

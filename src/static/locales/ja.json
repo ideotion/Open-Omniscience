@@ -2025,5 +2025,12 @@
   "Parity:": "パリティ:",
   "can still lose": "あと失っても可",
   "Method:": "方法:",
-  "“{term}” is rising": "「{term}」が急上昇"
+  "“{term}” is rising": "「{term}」が急上昇",
+  "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.": "コーパスの鍵は破棄されました——暗号化ストアは永久に復元不可能になりました。",
+  "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.": "フォレンジック復元に対する多層防御として、解放されたディスク領域を上書きすることもできます。これは任意です——コーパスは暗号学的にすでに復元不可能です。",
+  "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.": "ストアは暗号化されていなかったため、停止する前にディスク全体の上書きを推奨します。",
+  "Single pass": "1回上書き",
+  "Triple pass": "3回上書き",
+  "Octuple pass": "8回上書き",
+  "This may take several minutes on a large disk. Restart the app when you are done.": "大容量ディスクでは数分かかる場合があります。完了したらアプリを再起動してください。"
 }

@@ -329,3 +329,30 @@ jobs:
           except sqlite3.DatabaseError:
               pass
           print("sqlcipher3 OK on", sys.platform, "| cipher:", ver[0])
+
+  # A pinned lock file must resolve INSTALLABLE from a clean environment against
+  # public PyPI -- not just "the developer's existing venv still works" (audit
+  # finding OO-03: numpy==2.5.0 was pinned while unresolvable, and the lock had
+  # drifted out of sync with pyproject). This lane catches that class of drift
+  # automatically, before a new contributor's clean install is the one to hit it.
+  lockfile-resolve:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    name: Lock file resolves clean (requirements.lock)
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      # setup-python gives a clean interpreter with only pip installed. --dry-run
+      # installs nothing; --require-hashes proves every pin (numpy included) is
+      # published AND its hash matches -- exactly the clean-room `pip install
+      # -r requirements.lock` a new contributor runs. Robust against new releases
+      # appearing on the index (it validates the committed pins, never re-resolves).
+      - name: Clean-room resolve of the lock file (hash-checked, no install)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --dry-run --require-hashes -r requirements.lock

@@ -64,11 +64,14 @@ spine. See **[docs/QUICKSTART.md](docs/QUICKSTART.md)** to run it.
   parentheses with correct precedence — fully parameterized.
 - ✅ CSV/JSON export; a dependency-free, offline web UI at `127.0.0.1:8000`.
 - ✅ **Honest chain of custody**: append-only, hash-chained, **signed** custody log
-  (hybrid Ed25519 + post-quantum ML-DSA), timestamping (self-asserted local, or
+  (Ed25519 by default; hybrid Ed25519 + post-quantum ML-DSA when the optional `[pqc]`
+  extra is installed and enabled), timestamping (self-asserted local, or
   Bitcoin-anchored **OpenTimestamps**), and offline verification — all toggleable
   from a **Chain of custody** UI panel, with the effective state always shown
   honestly (see [docs/USER_MANUAL.md](docs/USER_MANUAL.md)).
-- ✅ Single `pyproject.toml`, Python 3.13, clean install, full test suite green.
+- ✅ Single `pyproject.toml`, Python 3.13; clean install, with the full pytest suite
+  green on Linux CI, a type-check ratchet, and advisory cross-OS/style lanes — all
+  tracked in CI (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 - ✅ **Web UI** — a **flat sidebar** of data tabs: Home · Insights · World map ·
   Governments · Agenda · Indices · Commodities · Library. There is no **Analysis**
   sidebar tab: an analysis **spawns as its own window** from the omnibar (or the
