@@ -10887,12 +10887,70 @@
     function _anKwNeedsTentative(tm) {
       return !tm.translation && !tm.tentative && (tm.language || "").toLowerCase() !== uiLangCode();
     }
+    let _anConjLast = null;   // S13: the last /corpus-algebra result, for the Open-as-corpus action
+
+    // S13 Conjunction Lens — an N-keyword set-algebra picker hosted in the analysis window's
+    // Keywords subtab. It calls the live /api/insights/corpus-algebra (∩ all / ∪ any / ∖ first-
+    // only), shows the set EXPRESSION as the corpus label + each term's exact n + the combined n,
+    // and opens the exact result set as its own corpus via openAnalysisForIds. Counts only, never
+    // a score; the bounded flag + method/caveat are surfaced. Browser-unverified per fork-3.
+    function anConjunctionHtml() {
+      return `<div style="margin-bottom:10px;padding:8px;border:1px solid var(--line);border-radius:6px">`
+        + `<div class="hint" style="margin-top:0"><b>Combine keywords</b> — set algebra over N keywords. `
+        + `The set expression is the corpus label; counts only, never a score.</div>`
+        + `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px">`
+        + `<input id="an-conj-terms" placeholder="keyword, keyword, keyword…" style="flex:1;min-width:180px" `
+        + `onkeydown="if(event.key==='Enter')anCombine('intersection')">`
+        + `<button class="secondary" onclick="anCombine('intersection')" title="articles mentioning ALL terms">∩ All</button>`
+        + `<button class="secondary" onclick="anCombine('union')" title="articles mentioning ANY term">∪ Any</button>`
+        + `<button class="secondary" onclick="anCombine('difference')" title="the first term and none of the rest">∖ First-only</button>`
+        + `</div><div id="an-conj-result" style="margin-top:8px"></div></div>`;
+    }
+    function _anConjSep(op) { return op === "difference" ? " ∖ " : (op === "union" ? " ∪ " : " ∩ "); }
+    function anCombineHtml(d) {
+      const terms = (d && d.terms) || [];
+      if (!terms.length) return `<div class="muted">${esc((d && d.method) || "No resolvable keyword given.")}</div>`;
+      const expr = terms.map((x) => esc(x.normalized || x.term)).join(_anConjSep(d.op));
+      const perTerm = terms.map((x) =>
+        `<span class="chip" title="exact corpus-wide article count for this term">${esc(x.term)} <span class="muted">${esc(String(x.n))}</span></span>`).join(" ");
+      const bounded = d.result_bounded
+        ? `<div class="card-caveat" title="the set scan reached its cap">Result bounded — a true SUBSET of the answer (it may miss members), never a fabricated one.</div>` : "";
+      const open = (d.n_combined > 0)
+        ? `<button class="secondary" onclick="anOpenCombined()">Open ${esc(String(d.n_combined))} article(s) as a corpus →</button>`
+        : `<div class="muted">Empty set — no articles match this combination.</div>`;
+      return `<div class="hint" style="margin-top:0"><b>${esc(expr)}</b> · <b>${esc(String(d.n_combined))}</b> article(s)</div>`
+        + `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${perTerm}</div>`
+        + `<div style="margin-top:6px">${open}</div>${bounded}`
+        + `<div class="card-caveat" title="${esc(d.method || "")}">${esc(d.caveat || "")}</div>`;
+    }
+    async function anCombine(op) {
+      const inp = $("an-conj-terms"), out = $("an-conj-result");
+      if (!inp || !out) return;
+      const terms = (inp.value || "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (!terms.length) { out.innerHTML = `<div class="muted">Enter at least one keyword to combine.</div>`; return; }
+      out.innerHTML = `<div class="muted">Combining…</div>`;
+      try {
+        const d = await api("/api/insights/corpus-algebra?terms=" + encodeURIComponent(terms.join(","))
+          + "&op=" + encodeURIComponent(op));
+        _anConjLast = d;
+        out.innerHTML = anCombineHtml(d);
+      } catch (e) { out.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    function anOpenCombined() {
+      const d = _anConjLast;
+      if (!d || !d.article_ids || !d.article_ids.length) return;
+      const expr = ((d.terms) || []).map((x) => x.normalized || x.term).join(_anConjSep(d.op));
+      openAnalysisForIds(d.article_ids, expr);   // the exact-set precedent — a fresh corpus tab
+    }
     function anRenderKwChips() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const d = _anKwData, kw = _anKwHost;
       if (!kw) return;
       if (!d || !d.terms || !d.terms.length) {
-        kw.innerHTML = `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
+        // The Combine picker works over the WHOLE-corpus keyword index, so it stays useful even
+        // when this window's matched set has no indexed keywords.
+        kw.innerHTML = anConjunctionHtml()
+          + `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
         return;
       }
       const chips = d.terms.map((term) =>
@@ -10908,7 +10966,8 @@
       const btn = d.terms.some(_anKwNeedsTentative)
         ? ` <button class="ghost tiny" onclick="anFillTentative()" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">✦ ${esc(t("Translate the rest (AI, tentative)"))}</button>`
         : "";
-      kw.innerHTML = `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
+      kw.innerHTML = anConjunctionHtml()
+        + `<div class="hint"><b>${d.terms.length}</b> ${esc(t("Keywords"))}`
         + ` · <span class="muted">${esc(d.caveat || "")}</span>${cjkNote}${btn}</div>`
         + `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${chips}</div>`
         + anContextHtml();
