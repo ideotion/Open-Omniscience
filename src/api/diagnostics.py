@@ -517,13 +517,22 @@ def keyword_log(
             # real counts, never auto-hidden; the operator decides.
             dom_lang: dict[int, str] = {}
             suspects: list[dict] = []
+            # S7: the per-keyword totals a SECOND full GROUP BY scan used to recompute now come
+            # from the ONE scan below (byte-identical), keyed kid -> (mentions, articles,
+            # first_seen, last_seen).
+            totals: dict[int, tuple[int, int, str | None, str | None]] = {}
             _cur_kid: int | None = None
             _counts: dict[str, int] = {}
             _srcs: dict[int, int] = {}
+            _m = 0
+            _a = 0
+            _first: str | None = None
+            _last: str | None = None
 
-            def _finalize(kid: int | None, counts: dict[str, int], srcs: dict[int, int]) -> None:
+            def _finalize(kid, counts, srcs, m, a, first, last) -> None:
                 if kid is None or not counts:
                     return
+                totals[kid] = (m, a, first, last)
                 dom_lang[kid] = min(counts, key=lambda lg: (-counts[lg], lg))
                 n_articles = sum(srcs.values())
                 if n_articles >= 10:
@@ -542,18 +551,33 @@ def keyword_log(
                             }
                         )
 
-            for kid, aid in db.execute(
-                text("SELECT keyword_id, article_id FROM keyword_mentions ORDER BY keyword_id")
+            for kid, aid, cnt, obs in db.execute(
+                text(
+                    "SELECT keyword_id, article_id, count, observed_on"
+                    " FROM keyword_mentions ORDER BY keyword_id"
+                )
             ):
                 if kid != _cur_kid:
-                    _finalize(_cur_kid, _counts, _srcs)
+                    _finalize(_cur_kid, _counts, _srcs, _m, _a, _first, _last)
                     _cur_kid, _counts, _srcs = kid, {}, {}
+                    _m, _a, _first, _last = 0, 0, None, None
                 lg = art_lang.get(aid, "?")
                 _counts[lg] = _counts.get(lg, 0) + 1
                 sid = art_src.get(aid)
                 if sid is not None:
                     _srcs[sid] = _srcs.get(sid, 0) + 1
-            _finalize(_cur_kid, _counts, _srcs)
+                # S7: the per-keyword totals (mentions / distinct articles / first-last
+                # observed) accumulate in THIS pass. A row is unique per (keyword, article)
+                # under the covering index, so a per-keyword row count == COUNT(DISTINCT
+                # article_id); MIN/MAX(observed_on) ignore NULL exactly as SQL does.
+                _m += cnt or 0
+                _a += 1
+                if obs is not None:
+                    if _first is None or obs < _first:
+                        _first = obs
+                    if _last is None or obs > _last:
+                        _last = obs
+            _finalize(_cur_kid, _counts, _srcs, _m, _a, _first, _last)
 
             # The DETECTION is unbounded: every keyword × source pair in the
             # corpus is evaluated (inside the same full mention scan). Only the
@@ -572,8 +596,8 @@ def keyword_log(
                 db.execute(text("SELECT id, language FROM keywords")).fetchall()
             )
 
-            # Totals, mentions-desc — an index-only scan of ix_mention_covering,
-            # iterated as tuples; the quota decides survivors ON THE FLY, so the
+            # Totals, mentions-desc — from the ONE mention scan above (no second
+            # GROUP BY scan); the quota decides survivors ON THE FLY, so the
             # 228k-keyword aggregation never materialises as ORM objects.
             # Page-aware per-language quota. The JSON path keeps the classic top-
             # _MAX_KEYWORDS_PER_LANG cap (lo=0); the ZIP path can raise per_lang and
@@ -588,14 +612,12 @@ def keyword_log(
             capped_langs: set[str] = set()
             survivors: list[tuple[int, int, int, str | None, str | None]] = []
             seen: set[int] = set()
-            totals_sql = text(
-                "SELECT keyword_id, COALESCE(SUM(count), 0) AS m,"
-                " COUNT(DISTINCT article_id) AS a,"
-                " MIN(observed_on) AS first_seen, MAX(observed_on) AS last_seen"
-                " FROM keyword_mentions GROUP BY keyword_id"
-                " ORDER BY m DESC, keyword_id ASC"
-            )
-            for kid, m, a, first, last in db.execute(totals_sql):
+            # S7: iterate the totals gathered by the ONE scan above, sorted mentions-desc
+            # then keyword_id-asc — byte-identical to the retired
+            # ``GROUP BY keyword_id ORDER BY m DESC, keyword_id ASC`` second full scan.
+            for kid, (m, a, first, last) in sorted(
+                totals.items(), key=lambda kv: (-kv[1][0], kv[0])
+            ):
                 seen.add(kid)
                 dom = dom_lang.get(kid) or stored_lang.get(kid) or "?"
                 idx = per_lang_seen.get(dom, 0)
