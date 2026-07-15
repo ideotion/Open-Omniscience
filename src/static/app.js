@@ -5990,8 +5990,10 @@
       } catch (e) { toast("Full overwrite failed: " + e.message, "err"); }
     }
 
-    // Resolve {mode, remove_folder, wipe_data} from the picker. Data is removed only in
-    // 'secure' or an explicit 'custom' opt-in — never minimal/full (maintainer-ruled).
+    // Resolve {mode, remove_folder, wipe_data, passes} from the picker. Data is removed
+    // only in 'secure' or an explicit 'custom' opt-in — never minimal/full (maintainer-
+    // ruled). passes (1/3/8, or null for crypto-erase only) mirrors the post-panic
+    // optional full-overwrite offer — parity between the two data-destroying flows.
     function _uninstallSel() {
       const mode = (($("uninstall-mode") || {}).value) || "minimal";
       const remove_folder = mode === "custom"
@@ -6000,7 +6002,9 @@
       const wipe_data = mode === "custom"
         ? !!(($("uninstall-data") || {}).checked)
         : (mode === "secure");
-      return {mode, remove_folder, wipe_data};
+      const passesRaw = (($("uninstall-passes-select") || {}).value) || "";
+      const passes = (wipe_data && passesRaw) ? parseInt(passesRaw, 10) : null;
+      return {mode, remove_folder, wipe_data, passes};
     }
 
     // Show the Customize checkboxes + a live preview of the EXACT paths a mode removes
@@ -6008,6 +6012,7 @@
     async function onUninstallMode() {
       const sel = _uninstallSel();
       const cust = $("uninstall-custom"); if (cust) cust.style.display = sel.mode === "custom" ? "" : "none";
+      const pdiv = $("uninstall-passes"); if (pdiv) pdiv.style.display = sel.wipe_data ? "" : "none";
       const box = $("uninstall-preview"); if (!box) return;
       try {
         const qs = `mode=${encodeURIComponent(sel.mode)}&remove_folder=${sel.remove_folder}&wipe_data=${sel.wipe_data}`;
@@ -6066,7 +6071,7 @@
       try {
         const r = await api("/api/safety/uninstall", {method: "POST",
           body: JSON.stringify({confirm: true, mode: sel.mode,
-            remove_folder: sel.remove_folder, wipe_data: sel.wipe_data})});
+            remove_folder: sel.remove_folder, wipe_data: sel.wipe_data, passes: sel.passes})});
         if (!r.scheduled) { $("uninstall-result").textContent = r.note || "Nothing to remove."; return; }
         $("uninstall-result").innerHTML =
           `<span class="pill warn">uninstalling</span> ${esc(r.note || "")}`;
