@@ -932,6 +932,30 @@ def _browse_total_cached(session) -> int:
     return int(cached["count"])
 
 
+def _new_search_timer(query: str | None):
+    """S5: a per-phase timer for a TEXT search (None for a browse). Best-effort — a timing
+    fault must never change what /api/articles returns (the instrument_search discipline)."""
+    if not query:
+        return None
+    try:
+        from src.monitoring.search_timing import SearchPhaseTimer
+
+        return SearchPhaseTimer()
+    except Exception:  # noqa: BLE001 - instrumentation is optional, never blocks a search
+        return None
+
+
+def _record_search_timing(timer) -> None:
+    if timer is None:
+        return
+    try:
+        from src.monitoring.search_timing import append_search_timing
+
+        append_search_timing(timer.finish())
+    except Exception:  # noqa: BLE001 - best-effort; a record fault never affects the result
+        pass
+
+
 def _query_articles(
     session,
     *,
@@ -974,15 +998,19 @@ def _query_articles(
     descending = (sort_dir or "desc").lower() != "asc"
 
     fts_ids: list | None = None
+    _timer = _new_search_timer(query)  # S5: per-phase search timing (best-effort, near-zero)
     if query:
         try:
             fts_ids = search_ids(session, query)
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid search query: {exc}") from exc
+        if _timer is not None:
+            _timer.phase("fts")
 
     if fts_ids is not None:
         # A text query was given. fts_ids is relevance-ordered (best first).
         if not fts_ids:
+            _record_search_timing(_timer)
             return [], 0
         # OVER-FETCH BOUND (S2.5): resolve the surviving ids (fts ∩ filters) in the FINAL
         # order via an id-only (+ sort-column) query — NEVER load the whole matched set of
@@ -1007,6 +1035,8 @@ def _query_articles(
         if filters:
             id_q = id_q.filter(and_(*filters))
         id_rows = id_q.all()
+        if _timer is not None:
+            _timer.phase("resolve")
 
         if sort_by == _KEYWORD_COUNT_SORT and keyword_id:
             # Order by the searched keyword's per-article frequency (mentions-only lookup).
@@ -1024,7 +1054,11 @@ def _query_articles(
             ordered_ids = [i for i in fts_ids if i in keep]
         total = len(ordered_ids)
         page_ids = ordered_ids[offset : offset + limit] if limit is not None else ordered_ids
-        return _load_articles_in_order(session, page_ids), total
+        result = _load_articles_in_order(session, page_ids), total
+        if _timer is not None:
+            _timer.phase("load")
+        _record_search_timing(_timer)
+        return result
 
     # No text query: browse by the chosen metadata order (default recency).
     q = session.query(Article)
