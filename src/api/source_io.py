@@ -152,12 +152,13 @@ def list_sources(
     null_ids = [s.id for s in sources if s.article_count is None]
     live: dict = {}
     if null_ids:
-        live = dict(
-            db.query(Article.source_id, func.count(Article.id))
+        live = {
+            sid: cnt
+            for sid, cnt in db.query(Article.source_id, func.count(Article.id))
             .filter(Article.source_id.in_(null_ids))
             .group_by(Article.source_id)
             .all()
-        )
+        }
 
     def _count(s) -> int:
         return int(s.article_count) if s.article_count is not None else int(live.get(s.id, 0))

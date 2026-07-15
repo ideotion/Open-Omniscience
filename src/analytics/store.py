@@ -916,11 +916,12 @@ def reconcile_source_counters(session: Session, *, now=None) -> dict:
     from sqlalchemy import func
 
     stamp = now or datetime.now(UTC)
-    live = dict(
-        session.query(Article.source_id, func.count(Article.id))
+    live: dict[int, int] = {
+        sid: cnt
+        for sid, cnt in session.query(Article.source_id, func.count(Article.id))
         .group_by(Article.source_id)
         .all()
-    )
+    }
     drift = 0
     sources = session.query(Source).all()
     for src in sources:
