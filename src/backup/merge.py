@@ -59,6 +59,46 @@ class MergeError(RuntimeError):
     """Raised when a merge cannot proceed safely. The live DB is untouched."""
 
 
+def classify_restore_error(action: str, exc: Exception) -> str:
+    """Classify an unexpected restore failure into an HONEST detail (P0-2).
+
+    Shared by both restore entry points: the single-shot ``/api/backup/v2/restore``
+    endpoint (via ``_restore_error``, which wraps this in an HTTPException) and the
+    background ``volume-restore`` job (``volume_job.py``, which stores the plain
+    string as the job's ``error``) -- the classification must not depend on which
+    surface a restore failure came through (field bug 2026-07-15: the volume-restore
+    job stored the bare ``str(exc)``, e.g. an unqualified "UNIQUE constraint
+    failed:", instead of this same honest classification).
+
+    The old wording blamed an "incompatible version" for EVERY non-MergeError, so a
+    plain database constraint clash (the merge UNIQUE collision the maintainer hit on
+    their own backup) read as a version mismatch. Distinguish the real causes:
+      * a constraint/integrity clash = a MERGE data conflict (a duplicate row), not a
+        version problem;
+      * a missing table/column = an actual schema/version gap (keep that wording);
+      * anything else = an honest, non-speculative "could not <action>"."""
+    msg = str(exc)
+    low = msg.lower()
+    # A real version/schema gap: a staged migration failed, or the corpus uses a
+    # table/column this build doesn't know. "incompatible version" is accurate here.
+    is_version = (
+        "migration" in low
+        or "incompatible" in low
+        or "no such table" in low
+        or "no such column" in low
+        or "schema" in low
+    )
+    if isinstance(exc, sqlite3.IntegrityError):
+        return (
+            f"the backup's data conflicts with your corpus on a database constraint "
+            f"(e.g. a duplicate row) while merging — this is a data-merge issue, not a "
+            f"version mismatch: {msg}"
+        )
+    if is_version:
+        return f"could not {action} this backup (it may be from an incompatible version): {msg}"
+    return f"could not {action} this backup: {msg}"
+
+
 @dataclass
 class DomainResult:
     new: int = 0

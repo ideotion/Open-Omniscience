@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import secrets
-import sqlite3
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -30,38 +29,12 @@ _LOG = logging.getLogger("api.backup_v2")
 
 
 def _restore_error(action: str, exc: Exception) -> HTTPException:
-    """Classify an unexpected restore failure into an HONEST 500 detail (P0-2).
+    """Wrap ``classify_restore_error``'s honest detail (P0-2) in a 500.
 
-    The old wording blamed an "incompatible version" for EVERY non-MergeError, so a
-    plain database constraint clash (the merge UNIQUE collision the maintainer hit on
-    their own backup) read as a version mismatch. Distinguish the real causes:
-      * a constraint/integrity clash = a MERGE data conflict (a duplicate row), not a
-        version problem;
-      * a missing table/column = an actual schema/version gap (keep that wording);
-      * anything else = an honest, non-speculative "could not <action>".
     Always JSON {detail} (the SPA reads res.json(); never a plain-text 500)."""
-    msg = str(exc)
-    low = msg.lower()
-    # A real version/schema gap: a staged migration failed, or the corpus uses a
-    # table/column this build doesn't know. "incompatible version" is accurate here.
-    is_version = (
-        "migration" in low
-        or "incompatible" in low
-        or "no such table" in low
-        or "no such column" in low
-        or "schema" in low
-    )
-    if isinstance(exc, sqlite3.IntegrityError):
-        detail = (
-            f"the backup's data conflicts with your corpus on a database constraint "
-            f"(e.g. a duplicate row) while merging — this is a data-merge issue, not a "
-            f"version mismatch: {msg}"
-        )
-    elif is_version:
-        detail = f"could not {action} this backup (it may be from an incompatible version): {msg}"
-    else:
-        detail = f"could not {action} this backup: {msg}"
-    return HTTPException(status_code=500, detail=detail)
+    from src.backup.merge import classify_restore_error
+
+    return HTTPException(status_code=500, detail=classify_restore_error(action, exc))
 
 
 router = APIRouter(prefix="/api/backup", tags=["backup-v2"])

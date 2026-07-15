@@ -108,6 +108,49 @@ def test_restore_runs_to_done(tmp_path):
     assert st["state"] == "done" and st["summary"]["report"]["ok"] is True
 
 
+def test_restore_failure_gets_the_honest_classified_detail(tmp_path):
+    """Field bug (2026-07-15): a real data-merge conflict (a UNIQUE constraint hit
+    merging a large backup) used to surface as the bare str(exc) -- e.g. an
+    unqualified "UNIQUE constraint failed:" -- instead of the same honest
+    classification /api/backup/v2/restore's single-shot path already applies
+    (_restore_error / classify_restore_error, P0-2). The job's error must go
+    through the same classifier regardless of which restore surface hit it."""
+    import sqlite3
+
+    src = tmp_path / "src"
+    src.mkdir()
+
+    def fake_restore(s, pw):
+        raise sqlite3.IntegrityError("UNIQUE constraint failed: law_revisions.document_id, law_revisions.content_hash")
+
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw", _restore_fn=fake_restore)
+    st = _wait(mgr)
+    assert st["state"] == "error"
+    # The classified, honest detail -- not the bare exception string.
+    assert "data-merge issue, not a version mismatch" in st["error"]
+    assert "UNIQUE constraint failed" in st["error"]  # the original detail is kept, not lost
+
+
+def test_restore_merge_error_keeps_its_own_message(tmp_path):
+    """A MergeError is an intentional, well-formed refusal (the live DB stays
+    untouched) -- it must surface as-is, not run through the generic classifier
+    (which would misdescribe a deliberate refusal as a data conflict)."""
+    from src.backup.merge import MergeError
+
+    src = tmp_path / "src"
+    src.mkdir()
+
+    def fake_restore(s, pw):
+        raise MergeError("refusing: an unverified backup requires allow_unverified")
+
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw", _restore_fn=fake_restore)
+    st = _wait(mgr)
+    assert st["state"] == "error"
+    assert st["error"] == "refusing: an unverified backup requires allow_unverified"
+
+
 def test_sequential_restores_do_not_collide(tmp_path):
     # Field report 2026-07-02: importing several archives one after another hit "A
     # volume backup/restore is already running". Each restore is awaited to "done"
