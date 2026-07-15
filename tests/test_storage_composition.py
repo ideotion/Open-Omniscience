@@ -227,4 +227,7 @@ def test_rides_the_debug_bundle_and_the_all_diagnostics_zip(db):
     assert "storage-composition.json" in names
 
     src_text = Path(diag.__file__).read_text(encoding="utf-8")
-    assert '"storage_composition": _safe(lambda: _storage_composition(db))' in src_text
+    # S8: the bundle member is individually guarded + budgeted via _member (db_bound so a
+    # runaway dbstat scan is deadline-interrupted, never stalls the bundle).
+    assert '"storage_composition": _member(' in src_text
+    assert "lambda: _storage_composition(db)" in src_text
