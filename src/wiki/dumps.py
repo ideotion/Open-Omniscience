@@ -20,7 +20,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import os
 import re
 import threading
 from dataclasses import asdict, dataclass
