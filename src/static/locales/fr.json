@@ -2032,5 +2032,6 @@
   "Single pass": "Une passe",
   "Triple pass": "Triple passe",
   "Octuple pass": "Octuple passe",
-  "This may take several minutes on a large disk. Restart the app when you are done.": "Cela peut prendre plusieurs minutes sur un grand disque. Redémarrez l’application une fois terminé."
+  "This may take several minutes on a large disk. Restart the app when you are done.": "Cela peut prendre plusieurs minutes sur un grand disque. Redémarrez l’application une fois terminé.",
+  "None (crypto-erase only)": "Aucun (destruction de la clé uniquement)"
 }

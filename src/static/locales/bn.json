@@ -2032,5 +2032,6 @@
   "Single pass": "একক পাস",
   "Triple pass": "ত্রিগুণ পাস",
   "Octuple pass": "আটগুণ পাস",
-  "This may take several minutes on a large disk. Restart the app when you are done.": "বড় ডিস্কে এটি কয়েক মিনিট সময় নিতে পারে। শেষ হলে অ্যাপটি পুনরায় চালু করুন।"
+  "This may take several minutes on a large disk. Restart the app when you are done.": "বড় ডিস্কে এটি কয়েক মিনিট সময় নিতে পারে। শেষ হলে অ্যাপটি পুনরায় চালু করুন।",
+  "None (crypto-erase only)": "কোনোটি নয় (শুধু কী ধ্বংস)"
 }

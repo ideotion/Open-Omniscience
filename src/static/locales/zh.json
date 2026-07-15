@@ -2032,5 +2032,6 @@
   "Single pass": "单次覆盖",
   "Triple pass": "三次覆盖",
   "Octuple pass": "八次覆盖",
-  "This may take several minutes on a large disk. Restart the app when you are done.": "在大容量磁盘上这可能需要几分钟。完成后请重启应用。"
+  "This may take several minutes on a large disk. Restart the app when you are done.": "在大容量磁盘上这可能需要几分钟。完成后请重启应用。",
+  "None (crypto-erase only)": "无（仅销毁密钥）"
 }
