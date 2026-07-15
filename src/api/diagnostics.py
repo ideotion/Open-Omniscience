@@ -1051,6 +1051,25 @@ def recursive_loop(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/kpi")
+def kpi(download: bool = Query(False)) -> JSONResponse:
+    """R1 (V1_PATHWAY §2.3): the read-only K1–K14 KPI SNAPSHOT — the V1 definition made
+    mechanical so the KPI differ (scripts/kpi_diff.py) can classify improved/regressed between
+    two cycles. Every metric carries a declared direction-of-goodness + target + an honest
+    verdict (green / red / not-measurable-here — NEVER a fabricated pass). NO composite. This GET
+    reads ONLY the cheap in-process instruments (the latency reservoir K2, the locale files K11);
+    every expensive or operator/gold-set/CI-gated metric reports not-measurable-here rather than
+    triggering a heavy crunch. Plain def (threadpool). ``download=1`` returns a dated attachment."""
+    from src.monitoring.kpi import kpi_snapshot
+
+    log = kpi_snapshot()
+    headers = {}
+    if download:
+        fname = f"oo-kpi-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/search-timing")
 def search_timing(download: bool = Query(False)) -> JSONResponse:
     """§4: the per-search intra-request timing aggregate — per-phase (FTS MATCH · content fetch ·
@@ -2415,6 +2434,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("article-length.json", lambda: article_length(download=False, db=db)),
         ("keyword-growth.json", lambda: keyword_growth(download=False, db=db)),
         ("recursive-loop.json", lambda: recursive_loop(download=False)),
+        ("kpi.json", lambda: kpi(download=False)),
         # §4 search-instrumentation: the per-search phase-timing aggregate (empty-honest until
         # instrument_search is wired into the search endpoint on the operator's rig).
         ("search-timing.json", lambda: search_timing(download=False)),
