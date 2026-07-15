@@ -98,19 +98,26 @@ def run_world_discovery(
     countries: Iterable[str] | None = None,
     per_spec_limit: int | None = None,
     restart: bool = False,
+    max_countries: int | None = None,
     run_query=None,
     session_factory=None,
     state_path: Path | None = None,
+    world_codes: list[str] | None = None,
     sleep_s: float = 1.0,
 ) -> dict:
     """Walk the requested countries (default: the whole world) through
     :func:`discover_sources`, persisting a resume cursor per country.
 
     ``ctx`` is the :class:`src.jobs.background.JobContext` (cooperative stop +
-    progress). ``run_query`` / ``session_factory`` / ``state_path`` / ``sleep_s``
-    are test seams; production uses the guarded WDQS transport, the app's
-    ``session_scope`` and ``data_dir()``. Returns an honest summary — ``complete``
-    is True only when every requested country is done; a pause names its reason.
+    progress). ``max_countries`` bounds ONE call (the scheduler ride-along's
+    per-pass budget) — a bounded call ends cleanly with ``complete: False`` and
+    the cursor advanced. ``run_query`` / ``session_factory`` / ``state_path`` /
+    ``world_codes`` / ``sleep_s`` are test seams; production uses the guarded
+    WDQS transport, the app's ``session_scope`` and ``data_dir()``. Returns an
+    honest summary — ``complete`` is True only when every requested country is
+    done; a pause names its reason. The persisted ``completed_at`` stamp is set
+    only when the WHOLE WORLD is done (a subset run must never mark the world
+    complete — the ride-along reads that stamp to know when to stop).
     """
     from src.catalog.discover import discover_sources
     from src.ingest import kill_switch_active
@@ -133,6 +140,7 @@ def run_world_discovery(
     total = len(codes)
     done_in_run = sum(1 for c in codes if c in done)
     added_this_run = 0
+    processed = 0  # countries attempted THIS call (the max_countries budget)
     paused_reason: str | None = None
     consecutive_failures = 0
 
@@ -141,6 +149,9 @@ def run_world_discovery(
     for cc in codes:
         if cc in done:
             continue
+        if max_countries is not None and processed >= max_countries:
+            break  # the per-pass budget is spent — a clean bounded end, not a pause
+        processed += 1
         if ctx.stopping:
             paused_reason = "cancelled — progress is saved; start again to resume"
             break
@@ -215,7 +226,11 @@ def run_world_discovery(
             time.sleep(sleep_s)  # politeness between countries (specs already ran serially)
 
     complete = all(c in done for c in codes)
-    if complete:
+    # The persisted stamp means THE WORLD is done — never a requested subset (a
+    # subset job run must not stop the background ride-along for the other ~240
+    # countries). world_codes is the test seam for this computation only.
+    world = world_codes or all_country_codes()
+    if all(c in done for c in world):
         state["completed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
     state.update(
         {
@@ -244,3 +259,66 @@ def run_world_discovery(
     if paused_reason:
         summary["paused_reason"] = paused_reason
     return summary
+
+
+class _NullCtx:
+    """A no-op JobContext for the scheduler ride-along (no stop event, no display)."""
+
+    stopping = False
+
+    def set_progress(self, **_kw) -> None:  # noqa: D401 - interface parity
+        return None
+
+
+def advance_world_discovery(
+    *,
+    per_pass: int,
+    run_query=None,
+    session_factory=None,
+    state_path: Path | None = None,
+    world_codes: list[str] | None = None,
+    sleep_s: float = 1.0,
+) -> dict:
+    """The scheduler RIDE-ALONG (maintainer ruled 2026-07-15: source scraping/discovery
+    should be "background and automated"): advance the persisted world-discovery cursor
+    a bounded number of countries per online collection pass, through the same guarded
+    transport the pass itself uses. AUTOMATION COVERS DISCOVERY, NEVER ENABLING — every
+    find stays a DISABLED source for review (the standing review-before-enable ruling).
+
+    Skips honestly (each skip named in the returned dict) when: the budget is 0 (the
+    off switch, ``world_discovery_per_pass=0``), airplane mode is engaged, the MANUAL
+    world-discovery job is running (never two writers on the same cursor), or the world
+    is already complete (the ``completed_at`` stamp; ``restart=1`` on the manual
+    endpoint re-runs). Best-effort by contract — the caller wraps it so a failure never
+    breaks a scrape.
+    """
+    if per_pass <= 0:
+        return {"enabled": False}
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        return {"enabled": True, "skipped": "airplane mode engaged"}
+    from src.jobs.background import get_job
+
+    job = get_job("discover-world-sources")
+    if job is not None and job.status().get("running"):
+        return {"enabled": True, "skipped": "the manual world-discovery job is running"}
+    state = load_state(state_path)
+    if state.get("completed_at"):
+        return {
+            "enabled": True,
+            "skipped": "world discovery already complete",
+            "added_total": state.get("added_total", 0),
+        }
+    return {
+        "enabled": True,
+        **run_world_discovery(
+            _NullCtx(),
+            max_countries=per_pass,
+            run_query=run_query,
+            session_factory=session_factory,
+            state_path=state_path,
+            world_codes=world_codes,
+            sleep_s=sleep_s,
+        ),
+    }

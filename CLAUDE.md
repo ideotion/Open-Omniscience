@@ -5842,9 +5842,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   that never exists). REMAINING/OPERATOR: actually RUN it (Wikidata is egress-blocked in the
   sandbox — both paths need a networked machine): the job populates ONE install; a
   `build_world_news_catalog.py` run commits `world_news_sources.yml` for EVERY install — the two
-  are complementary, do both. PENDING (not built, needs a ruling if wanted): a scheduler
-  ride-along that auto-advances world discovery a few countries per online pass (default-off
-  toggle) — the job button covers the ask meanwhile.
+  are complementary, do both. **RIDE-ALONG RULED + SHIPPED same day (maintainer, verbatim "I'd
+  prefer everything to be background and automated (concerning the scrapping)"):** the pending
+  scheduler ride-along is now BUILT and DEFAULT-ON —
+  `discover_job.advance_world_discovery(per_pass)` advances the SAME persisted cursor a bounded
+  `world_discovery_per_pass` countries (scheduler setting, default 2, 0=off, ranged 0..12,
+  exposed on PUT /api/scheduler/config) per online collection pass, wired into the runner's
+  post-pass housekeeping beside `run_discovery` (best-effort, own per-country sessions, never
+  breaks a scrape); it skips HONESTLY (named skip) under airplane / while the manual job runs
+  (never two writers on one cursor) / once the world is complete. Riding the pass keeps it
+  inside the one consent envelope (the stats-vintage auto-refresh precedent, ruling #12).
+  HAZARD FIXED with a regression pin: `completed_at` is now stamped only when the WHOLE world
+  is done — a manual SUBSET job run must never stop the ride-along for the other ~240 countries.
+  BOUNDARY KEPT (recorded, not changed): automation covers DISCOVERY — every find stays a
+  DISABLED source for review; auto-ENABLING is the Phase-2 promotion frontier
+  (candidate→trial→graduated, ruling Q3a, still the parked dedicated-session build) with the
+  #663 auditor as its gate; this ruling strengthens the case for trial auto-enable when that
+  frontier is built, but review-before-enable was not flipped unilaterally here.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

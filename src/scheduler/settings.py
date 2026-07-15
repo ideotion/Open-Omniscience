@@ -83,6 +83,14 @@ class SchedulerSettings:
     # discovery entirely. Network channels do not exist here by design.
     discovery_per_run: int = 10
 
+    # WORLD source-discovery ride-along (maintainer ruled 2026-07-15: source
+    # discovery should be "background and automated"): how many COUNTRIES the
+    # persisted world-discovery cursor advances per online collection pass,
+    # through the same guarded transport as the pass itself. Every find stays a
+    # DISABLED source for review (automation covers discovery, never enabling).
+    # 0 disables the ride-along; the manual Diagnostics job remains either way.
+    world_discovery_per_pass: int = 2
+
     # Optional per-language cadence lever (default OFF). ``language_equilibrium``
     # is a {lang: weight} TARGET the operator opts into; when set, over-
     # represented languages are re-checked LESS often (never excluded — a hard
@@ -253,6 +261,9 @@ def load_settings() -> SchedulerSettings:
         select_source_types=_coerce_list(raw.get("select_source_types")),
         export_dir=str(raw.get("export_dir") or "").strip(),
         discovery_per_run=_coerce_int(raw.get("discovery_per_run"), d.discovery_per_run, 0, 100),
+        world_discovery_per_pass=_coerce_int(
+            raw.get("world_discovery_per_pass"), d.world_discovery_per_pass, 0, 12
+        ),
         language_equilibrium=_coerce_target(raw.get("language_equilibrium")),
         equilibrium_floor=_coerce_float(raw.get("equilibrium_floor"), d.equilibrium_floor, 0.0, 1.0),
         # Reuses _coerce_target: a {iso2: weight} map cleaned to {lowercased-key: float>0},
@@ -303,6 +314,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
         current.export_dir = str(updates["export_dir"]).strip()
 
     _ranged("discovery_per_run", 0, 100, "discovery_per_run")
+    _ranged("world_discovery_per_pass", 0, 12, "world_discovery_per_pass")
     _ranged("collect_parallelism", 1, _MAX_PARALLELISM, "collect_parallelism")
     _ranged("collect_target_kbps", _MIN_TARGET_KBPS, _MAX_TARGET_KBPS, "collect_target_kbps")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")

@@ -1275,6 +1275,22 @@ class BackgroundScheduler:
                 )
             except Exception:  # noqa: BLE001 - never fail the scrape on discovery
                 _LOG.warning("offline source discovery failed", exc_info=True)
+            # WORLD source-discovery ride-along (maintainer ruled 2026-07-15: source
+            # discovery should be "background and automated"): advance the persisted
+            # world-discovery cursor a few countries per online pass, through the
+            # same guarded transport as the pass. Every find stays a DISABLED source
+            # for review — automation covers DISCOVERY, never enabling. It opens its
+            # OWN per-country sessions (never this pass's), skips honestly when the
+            # budget is 0 / the manual job runs / the world is complete, and is
+            # best-effort: a failure never breaks a scrape.
+            try:
+                from src.catalog.discover_job import advance_world_discovery
+
+                _wd = advance_world_discovery(per_pass=settings.world_discovery_per_pass)
+                if _wd.get("enabled"):
+                    result["world_discovery"] = _wd
+            except Exception:  # noqa: BLE001 - never fail the scrape on discovery
+                _LOG.warning("world source-discovery ride-along failed", exc_info=True)
             # AUTO-ON-INGEST (opt-in): run every enabled, run_on_ingest custom AI
             # extractor over the most recent articles. Best-effort + bounded; with no
             # auto prompts (the default) it is one empty query, so zero cost. NEVER
