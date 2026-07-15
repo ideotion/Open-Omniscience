@@ -2025,5 +2025,12 @@
   "Parity:": "التكافؤ:",
   "can still lose": "يمكن أن تفقد أيضًا",
   "Method:": "الطريقة:",
-  "“{term}” is rising": "«{term}» في تصاعد"
+  "“{term}” is rising": "«{term}» في تصاعد",
+  "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.": "تم إتلاف مفتاح المجموعة — أصبح المخزن المشفَّر الآن غير قابل للاسترداد نهائيًا.",
+  "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.": "لدفاع متعمّق ضد الاسترداد الجنائي، يمكنك أيضًا الكتابة فوق مساحة القرص المحرَّرة. هذا اختياري — فالمجموعة غير قابلة للاسترداد تشفيريًا بالفعل.",
+  "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.": "لم يكن مخزنك مشفَّرًا، لذا يُنصَح بالكتابة الكاملة فوق القرص قبل التوقف.",
+  "Single pass": "تمريرة واحدة",
+  "Triple pass": "ثلاث تمريرات",
+  "Octuple pass": "ثماني تمريرات",
+  "This may take several minutes on a large disk. Restart the app when you are done.": "قد يستغرق هذا عدة دقائق على قرص كبير. أعد تشغيل التطبيق عند الانتهاء."
 }

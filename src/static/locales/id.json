@@ -2025,5 +2025,12 @@
   "Parity:": "Paritas:",
   "can still lose": "masih dapat kehilangan",
   "Method:": "Metode:",
-  "“{term}” is rising": "“{term}” sedang meningkat"
+  "“{term}” is rising": "“{term}” sedang meningkat",
+  "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.": "Kunci korpus telah dihancurkan — penyimpanan terenkripsi kini tidak dapat dipulihkan secara permanen.",
+  "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.": "Untuk pertahanan berlapis terhadap pemulihan forensik, Anda juga dapat menimpa ruang disk yang telah dibebaskan. Ini opsional — korpus sudah tidak dapat dipulihkan secara kriptografis.",
+  "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.": "Penyimpanan Anda tidak terenkripsi, jadi menimpa seluruh disk disarankan sebelum Anda berhenti.",
+  "Single pass": "Satu lintasan",
+  "Triple pass": "Tiga lintasan",
+  "Octuple pass": "Delapan lintasan",
+  "This may take several minutes on a large disk. Restart the app when you are done.": "Ini bisa memakan waktu beberapa menit pada disk besar. Mulai ulang aplikasi setelah selesai."
 }

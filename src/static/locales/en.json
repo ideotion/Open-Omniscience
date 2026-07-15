@@ -2025,5 +2025,12 @@
   "Parity:": "Parity:",
   "can still lose": "can still lose",
   "Method:": "Method:",
-  "“{term}” is rising": "“{term}” is rising"
+  "“{term}” is rising": "“{term}” is rising",
+  "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.": "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.",
+  "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.": "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.",
+  "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.": "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.",
+  "Single pass": "Single pass",
+  "Triple pass": "Triple pass",
+  "Octuple pass": "Octuple pass",
+  "This may take several minutes on a large disk. Restart the app when you are done.": "This may take several minutes on a large disk. Restart the app when you are done."
 }

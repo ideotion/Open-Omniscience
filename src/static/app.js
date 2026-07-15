@@ -5952,12 +5952,42 @@
       if (prompt(t("To confirm, type WIPE in capitals:")) !== "WIPE") {
         toast(t("Panic wipe cancelled."), "err"); return; }
       try {
+        // Phase 1 — instant crypto-erase (destroys the SQLCipher salt; fast at any size).
         const r = await api("/api/safety/panic", {method: "POST", body: JSON.stringify({confirm: true})});
+        const plaintext = r.encrypted_corpus === false;
+        // Phase 2 — OPTIONAL full free-space overwrite, offered honestly per store state.
+        const rec = plaintext
+          ? t("Your store was not encrypted, so a full disk-overwrite is recommended before you stop.")
+          : t("For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.");
         $("panic-result").innerHTML =
-          `<span class="pill warn">wiped</span> ${r.files_wiped}/${r.files_seen} files. ` +
-          `Restart the app. <span class="muted">${esc(r.limit)}</span>`;
-        toast("Local data wiped. Restart the app.", "warn");
+          `<span class="pill warn">crypto-erased</span> ${r.files_wiped}/${r.files_seen} files. ` +
+          `${esc(t("The corpus key is destroyed — the encrypted store is now permanently unrecoverable."))} ` +
+          `<span class="muted">${esc(r.limit)}</span>` +
+          `<div class="hint" style="margin-top:8px">${esc(rec)}` +
+          `<div class="row" style="gap:6px;margin-top:6px">` +
+          `<button class="danger" onclick="secureErase(1)">${esc(t("Single pass"))}</button>` +
+          `<button class="danger" onclick="secureErase(3)">${esc(t("Triple pass"))}</button>` +
+          `<button class="danger" onclick="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
+          `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`;
+        toast("Local data crypto-erased. Restart the app.", "warn");
       } catch (e) { toast("Panic wipe failed: " + e.message, "err"); }
+    }
+
+    // Phase 2 of the panic flow: an optional full free-space overwrite (defence-in-depth
+    // on top of the crypto-erase). passes is 1 / 3 / 8 (Single / Triple / Octuple).
+    async function secureErase(passes) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("panic-result");
+      try {
+        toast("Running full overwrite… this can take a while.", "warn");
+        const r = await api("/api/safety/secure-erase",
+          {method: "POST", body: JSON.stringify({confirm: true, passes})});
+        const mib = Math.round((r.bytes_written || 0) / 1048576);
+        if (box) box.innerHTML +=
+          `<div class="hint" style="margin-top:6px"><span class="pill warn">overwritten</span> ` +
+          `${r.passes}× — ${mib} MiB. <span class="muted">${esc(r.limit)}</span></div>`;
+        toast("Full overwrite complete. Restart the app.", "warn");
+      } catch (e) { toast("Full overwrite failed: " + e.message, "err"); }
     }
 
     // Resolve {mode, remove_folder, wipe_data} from the picker. Data is removed only in

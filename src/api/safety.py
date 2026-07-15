@@ -45,6 +45,13 @@ class PanicBody(BaseModel):
     confirm: bool = False
 
 
+class SecureEraseBody(BaseModel):
+    confirm: bool = False
+    # Optional full free-space overwrite AFTER the panic crypto-erase (Single/Triple/
+    # Octuple pass). Defence-in-depth only — the corpus is already unrecoverable.
+    passes: int = 1
+
+
 class UninstallBody(BaseModel):
     confirm: bool = False
     # minimal (venv+launchers) | full (+app folder) | secure (+wipe data&keys) | custom.
@@ -116,15 +123,38 @@ def encrypted_backup(body: PassphraseBody) -> StreamingResponse:
 
 @router.post("/panic")
 def panic(body: PanicBody) -> dict:
-    """Irreversibly wipe the local data dir (DB, keys, caches). Requires confirm=true.
+    """Irreversibly crypto-erase the local data dir (DB, keys, caches). Requires
+    confirm=true.
 
-    The app must be restarted afterwards. See the honest limit in the response.
+    Phase 1 of the two-phase wipe (audit OO-02): destroys the SQLCipher salt page so the
+    encrypted corpus is permanently unrecoverable at any size, then removes the data dir —
+    fast enough to complete even under seizure. The response reports whether the corpus
+    was encrypted (``encrypted_corpus``); if not, the caller should recommend the optional
+    full pass below. The app must be restarted afterwards. See the honest limit in the
+    response.
     """
     if not body.confirm:
         raise HTTPException(status_code=400, detail="set confirm=true to wipe (irreversible)")
     from src.safety import panic_wipe
 
     return panic_wipe(confirm=True)
+
+
+@router.post("/secure-erase")
+def secure_erase(body: SecureEraseBody) -> dict:
+    """Optional phase 2: a full free-space overwrite of the corpus volume after /panic.
+
+    Defence-in-depth ONLY — the panic crypto-erase already made the corpus unrecoverable;
+    this scrubs the freed ciphertext blocks ``passes`` times (1/3/8). Requires confirm=true.
+    Honest limit: byte-overwrite does not guarantee erasure on SSD/flash/CoW media."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="set confirm=true to run the full overwrite")
+    from src.safety.crypto_erase import full_secure_erase
+
+    try:
+        return full_secure_erase(body.passes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/uninstall/plan")

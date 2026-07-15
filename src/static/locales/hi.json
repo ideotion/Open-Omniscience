@@ -2025,5 +2025,12 @@
   "Parity:": "पैरिटी:",
   "can still lose": "अभी भी खो सकते हैं",
   "Method:": "विधि:",
-  "“{term}” is rising": "“{term}” बढ़ रहा है"
+  "“{term}” is rising": "“{term}” बढ़ रहा है",
+  "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.": "कॉर्पस कुंजी नष्ट कर दी गई है — एन्क्रिप्टेड स्टोर अब स्थायी रूप से अपुनर्प्राप्य है।",
+  "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.": "फ़ोरेंसिक पुनर्प्राप्ति के विरुद्ध अतिरिक्त सुरक्षा के लिए, आप मुक्त की गई डिस्क जगह को भी अधिलेखित कर सकते हैं। यह वैकल्पिक है — कॉर्पस पहले से ही क्रिप्टोग्राफ़िक रूप से अपुनर्प्राप्य है।",
+  "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.": "आपका स्टोर एन्क्रिप्टेड नहीं था, इसलिए रोकने से पहले पूरी डिस्क को अधिलेखित करने की अनुशंसा की जाती है।",
+  "Single pass": "एकल पास",
+  "Triple pass": "तिहरा पास",
+  "Octuple pass": "आठ पास",
+  "This may take several minutes on a large disk. Restart the app when you are done.": "बड़ी डिस्क पर इसमें कई मिनट लग सकते हैं। पूरा होने पर ऐप को पुनः आरंभ करें।"
 }

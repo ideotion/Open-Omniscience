@@ -5,64 +5,30 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 For a journalist who must remove the corpus, keys and caches *now* (e.g. an imminent
-seizure). It best-effort overwrites file contents before unlinking, but is **honest about
-the limit**: on SSDs and copy-on-write filesystems, overwrite-in-place does not guarantee
-the old blocks are gone — only full-disk encryption (LUKS / Qubes / Tails) makes a wipe
-truly unrecoverable. Refuses to run without an explicit confirmation.
+seizure). It delegates to the two-phase secure wipe in ``crypto_erase`` (audit OO-02):
+the quick pass destroys the SQLCipher salt page, so the encrypted corpus is
+permanently unrecoverable at ANY size (the old implementation overwrote only the first
+4 MiB of each file, leaving most of a multi-GB corpus intact). It stays **honest about
+the limit**: a byte-overwrite does not guarantee old blocks are gone on SSD/flash/CoW
+media — the guarantee is the destroyed key. An optional full free-space scrub
+(``crypto_erase.full_secure_erase``) is the defence-in-depth layer on top. Refuses to
+run without an explicit confirmation.
 """
 
 from __future__ import annotations
 
-import contextlib
-import logging
-import os
-import shutil
 from pathlib import Path
 
-_LOG = logging.getLogger(__name__)
-
-_LIMIT_NOTE = (
-    "Overwrite-in-place does NOT guarantee unrecoverability on SSD/flash or copy-on-write "
-    "filesystems (wear-levelling/snapshots may retain old blocks). For a guaranteed wipe, "
-    "use full-disk encryption (LUKS/Qubes/Tails) and destroy the key."
-)
-
-
-def _overwrite(path: Path) -> None:
-    try:
-        size = path.stat().st_size
-        with open(path, "r+b", buffering=0) as f:
-            f.write(os.urandom(min(size, 4 * 1024 * 1024)))
-            f.flush()
-            os.fsync(f.fileno())
-    except OSError:
-        pass  # best-effort; deletion below still happens
+# Re-exported for callers/tests that referenced the honest-limit note here.
+from src.safety.crypto_erase import _LIMIT_NOTE  # noqa: F401
 
 
 def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
-    """Best-effort overwrite then delete everything under the data dir. Requires ``confirm``."""
+    """Instantly crypto-erase, then delete everything under the data dir. Requires
+    ``confirm``. Returns the ``quick_crypto_erase`` summary (``files_seen`` /
+    ``files_wiped`` / ``data_dir`` / ``limit`` preserved for existing callers)."""
     if not confirm:
         raise PermissionError("panic_wipe requires confirm=True (this is irreversible)")
-    from src.paths import data_dir as _default_dir
+    from src.safety.crypto_erase import quick_crypto_erase
 
-    target = Path(data_dir) if data_dir else _default_dir()
-    files = wiped = 0
-    for root, _dirs, names in os.walk(target):
-        for name in names:
-            files += 1
-            p = Path(root) / name
-            _overwrite(p)
-            try:
-                p.unlink()
-                wiped += 1
-            except OSError:
-                _LOG.warning("panic: could not unlink %s", p)
-    with contextlib.suppress(OSError):
-        shutil.rmtree(target, ignore_errors=True)
-    _LOG.warning("PANIC WIPE executed on %s (%d/%d files)", target, wiped, files)
-    return {
-        "data_dir": str(target),
-        "files_seen": files,
-        "files_wiped": wiped,
-        "limit": _LIMIT_NOTE,
-    }
+    return quick_crypto_erase(confirm=True, data_dir=data_dir)

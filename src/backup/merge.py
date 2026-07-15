@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -130,6 +131,21 @@ def _q(con: sqlite3.Connection, sql: str, params: tuple = ()) -> list:
 
 def _count(con: sqlite3.Connection, sql: str, params: tuple = ()) -> int:
     return con.execute(sql, params).fetchone()[0]
+
+
+#: A legitimate SQLite table identifier as carried in a restore artifact. Names
+#: failing this are REPORTED under ``_rejected_tables`` and never interpolated
+#: into SQL (audit OO-01). Modelled on stream_backup.py's ``_SAFE_VOL_NAME``,
+#: tightened to a plain SQL identifier (the app's own schema uses only these).
+_SAFE_TABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _ident(name: str) -> str:
+    """Quote a SQLite identifier: wrap in ``""`` and double any embedded ``"``
+    (mirrors ``src/database/fts.py``'s ``_quote``). This is the primary defence
+    for any identifier that must be interpolated; ``_SAFE_TABLE_NAME`` is the
+    defence-in-depth allowlist layered on top of it."""
+    return '"' + name.replace('"', '""') + '"'
 
 
 def _insert_tracked(
@@ -227,10 +243,14 @@ def merge_corpus(
                 except Exception:  # noqa: BLE001 - progress reporting must never break a merge
                     pass
 
-        counts = {k: v.as_dict() for k, v in results.items()}
-        unmerged = _unmerged_tables(con)
+        counts: dict[str, object] = {k: v.as_dict() for k, v in results.items()}
+        unmerged, rejected = _unmerged_tables(con)
         if unmerged:
             counts["_unmerged_tables"] = unmerged  # stated, never silent
+        if rejected:
+            # Incoming table names that are not plain SQL identifiers: surfaced
+            # (never silently dropped) and never interpolated/counted (OO-01).
+            counts["_rejected_tables"] = rejected
 
         con.execute(
             "UPDATE merge_batches SET counts_json = ? WHERE id = ?",
@@ -283,10 +303,18 @@ _MERGE_HANDLED = {
 _MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state", "event_imports"}
 
 
-def _unmerged_tables(con: sqlite3.Connection) -> dict[str, int]:
-    """Tables present in the incoming corpus that no handler covered -- reported
-    with their row counts so nothing is ever dropped silently."""
+def _unmerged_tables(con: sqlite3.Connection) -> tuple[dict[str, int], list[str]]:
+    """Tables present in the incoming corpus that no handler covered.
+
+    Returns ``(unmerged, rejected)``. ``unmerged`` maps each such table to its
+    row count so nothing is ever dropped silently. ``rejected`` lists incoming
+    table names that fail the ``_SAFE_TABLE_NAME`` allowlist -- those are NOT a
+    legitimate artifact (the app's own schema uses only plain identifiers), so
+    they are surfaced (never silently dropped) but never interpolated into SQL
+    or counted (audit OO-01: the incoming name is untrusted input, not our own
+    fixed schema)."""
     out: dict[str, int] = {}
+    rejected: list[str] = []
     for (name,) in _q(
         con,
         "SELECT name FROM inc.sqlite_master WHERE type='table' "
@@ -294,10 +322,15 @@ def _unmerged_tables(con: sqlite3.Connection) -> dict[str, int]:
     ):
         if name in _MERGE_HANDLED or name in _MERGE_IGNORED:
             continue
-        n = _count(con, f'SELECT COUNT(*) FROM inc."{name}"')  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        if not _SAFE_TABLE_NAME.match(name):
+            rejected.append(name)
+            continue
+        # The identifier is now allowlist-validated AND quoted -- two independent
+        # defences against a hostile table name breaking out of the SQL string.
+        n = _count(con, f"SELECT COUNT(*) FROM inc.{_ident(name)}")  # noqa: S608  # nosec B608 - identifier is allowlist-validated (_SAFE_TABLE_NAME) AND quoted (_ident); see audit OO-01
         if n:
             out[name] = n
-    return out
+    return out, rejected
 
 
 def _merge_keyword_categories(con, batch_id, results) -> None:

@@ -2025,5 +2025,12 @@
   "Parity:": "Чётность:",
   "can still lose": "можно потерять ещё",
   "Method:": "Метод:",
-  "“{term}” is rising": "«{term}» набирает обороты"
+  "“{term}” is rising": "«{term}» набирает обороты",
+  "The corpus key is destroyed — the encrypted store is now permanently unrecoverable.": "Ключ корпуса уничтожен — зашифрованное хранилище теперь безвозвратно недоступно для восстановления.",
+  "For defence-in-depth against forensic recovery, you can also overwrite the freed disk space. This is optional — the corpus is already cryptographically unrecoverable.": "Для дополнительной защиты от криминалистического восстановления вы также можете перезаписать освобождённое дисковое пространство. Это необязательно — корпус уже криптографически невосстановим.",
+  "Your store was not encrypted, so a full disk-overwrite is recommended before you stop.": "Ваше хранилище не было зашифровано, поэтому перед остановкой рекомендуется полная перезапись диска.",
+  "Single pass": "Один проход",
+  "Triple pass": "Тройной проход",
+  "Octuple pass": "Восьмикратный проход",
+  "This may take several minutes on a large disk. Restart the app when you are done.": "На большом диске это может занять несколько минут. Перезапустите приложение по завершении."
 }
