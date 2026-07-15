@@ -69,15 +69,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   present. Every consent/caveat string ships ×12 locales. Applies to every
   surface built or reworked from now on (T9+); the network consent popup
   (invariant #14) and the restore preview (T6) are the reference patterns.
-- **The current cycle is `0.2` (version `0.2.0`), the data-safety-at-scale cycle.** This
-  flip PR bumps pyproject `0.1.0 → 0.2.0`; the maintainer renames the default branch
-  `0.1 → 0.2` right after it merges (mirrors #547 — `0.1` was itself renamed from `0.09`
-  at the 2026-07-02 alpha flip). Cut/rebase branches from `origin/0.2` (or `origin/0.1`
-  until the rename lands) and open PRs onto the current cycle branch; `git fetch` the tip
-  first. Version single-sourced from pyproject (`0.2.0`). Historical `0.0.8`/`0.08`/`0.09`/`0.1`
-  tags + "draft PR onto 0.09"/"onto 0.1" shipped-log entries are RECORDS of when those were
-  the branch, not the current version/branch. The `v0.2.0` release TAG is still gated on the
-  P0 live-corpus scale validation (Open-queue 0.2 ruling + `docs/product/SCALE_ROADMAP.md`) —
+- **The current cycle branch is `main` (version `0.2.0`), the data-safety-at-scale cycle.**
+  The maintainer renamed the default branch `0.2 → main` on 2026-07-15 (mirrors
+  `0.09 → 0.1 → 0.2` before it — see the 2026-07-10 flip-PR record below for that
+  rename's own template). Cut/rebase branches from `origin/main` and open PRs onto
+  `main`; `git fetch` the tip first. Version single-sourced from pyproject (`0.2.0`) —
+  the branch name and the version number are independent; the `main` rename does NOT
+  itself imply a version bump. Historical `0.0.8`/`0.08`/`0.09`/`0.1`/`0.2` tags +
+  "draft PR onto 0.09"/"onto 0.1"/"onto 0.2" shipped-log entries are RECORDS of when
+  those were the branch, not the current one. The `v0.2.0` release TAG is still gated
+  on the P0 live-corpus scale validation (Open-queue 0.2 ruling + `docs/product/SCALE_ROADMAP.md`) —
   the version reads 0.2.0 but 0.2 is not yet a tagged release.
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit). Model catalog
   stays date-stamped (`CATALOG_AS_OF` + freshness test); clearnet is a stated
@@ -399,11 +400,12 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `freshness_issue.py` (ONE rolling `freshness`-labelled issue, opened/updated/closed
   idempotently). Add `upstream_check:{github,type}` to a registry entry to watch it.
 - Maintainer merges PRs fast: after `git push`, if the output says
-  "[new branch]", the previous PR was merged — open a NEW PR onto `0.2` (the
-  current cycle branch; was `0.1` before the 2026-07-10 rename, `0.09` before that).
-  COROLLARY (near-miss 2026-06-15): local `origin/0.2` goes STALE within
-  minutes given the fast merges — ALWAYS `git fetch origin 0.2` immediately
-  before `git checkout -B <branch> origin/0.2`, or a doc/ledger branch can be
+  "[new branch]", the previous PR was merged — open a NEW PR onto `main` (the
+  current cycle branch; was `0.2` before the 2026-07-15 rename, `0.1` before the
+  2026-07-10 rename, `0.09` before that).
+  COROLLARY (near-miss 2026-06-15): local `origin/main` goes STALE within
+  minutes given the fast merges — ALWAYS `git fetch origin main` immediately
+  before `git checkout -B <branch> origin/main`, or a doc/ledger branch can be
   cut from a pre-merge base and a 3-way merge could drop a just-merged ledger
   edit on the same lines. (Caught when a finding-F ledger update branched from a
   stale base and the entry was missing; re-cut from a freshly-fetched tip. This
