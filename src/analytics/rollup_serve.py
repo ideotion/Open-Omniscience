@@ -47,6 +47,8 @@ import time
 
 from sqlalchemy.orm import Session
 
+from src.config.power_profiles import rollup_serve_ttl_s
+
 _LOG = logging.getLogger(__name__)
 
 # Guards the SHARED served connection (DuckDB connections are not thread-safe for
@@ -72,9 +74,9 @@ _STATE: dict = {
 }
 
 # P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
-# corpus changes continuously during collection — same env var, same default, so a tuned
-# deployment keeps its cadence bound). Rebuilds inside the window wait for it to elapse.
-_MIN_REBUILD_S = int(os.getenv("OO_COLUMNAR_SERVE_TTL_S", "900"))  # 15 min default
+# corpus changes continuously during collection). S11: it is read PER SERVE-CHECK via the
+# power-profile knob ``rollup_serve_ttl_s()`` (OO_COLUMNAR_SERVE_TTL_S override, else the active
+# profile; Optimized = 900, byte-identical to today), so a profile switch is LIVE.
 # The LONG backstop: rebuild even with an unchanged token after this long — the honest
 # bound on change classes the cheap token cannot see (cascade deletes, in-place backfills).
 _BACKSTOP_S = int(os.getenv("OO_COLUMNAR_SERVE_BACKSTOP_S", "3600"))  # 1 h default
@@ -156,7 +158,7 @@ def status() -> dict:
         # P1.10 change gate: rebuild on CHANGE (epoch / mention tail), not on a timer.
         "refresh": "change-gated",
         "change_pending": pending,
-        "min_rebuild_s": _MIN_REBUILD_S,
+        "min_rebuild_s": rollup_serve_ttl_s(),
         "backstop_s": _BACKSTOP_S,
     }
 
@@ -293,7 +295,7 @@ def _maybe_refresh(session: Session, *, force_check: bool = False) -> None:
             _STATE["pending"] = True
         _trigger_build_async()
         return
-    if age < _MIN_REBUILD_S:
+    if age < rollup_serve_ttl_s():
         return  # churn bound: never rebuild more often than this, however busy ingest is
     if not force_check and now - checked_at < _CHECK_EVERY_S:
         return  # token checked recently -> nothing new to learn yet

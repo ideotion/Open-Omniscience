@@ -86,8 +86,12 @@ def _env_pass_float(name: str, default: float) -> float:
 
 
 def _pass_budget_s() -> float:
-    """The per-pass wall-clock budget in seconds (0 disables recycling)."""
-    return _env_pass_float("OO_PASS_BUDGET_MINUTES", 60.0) * 60.0
+    """The per-pass wall-clock budget in seconds (0 disables recycling). Resolved via the
+    power-profile knob (OO_PASS_BUDGET_MINUTES override, else the active profile; Optimized =
+    60, byte-identical to today). Read PER PASS, so a profile switch is LIVE on the next pass."""
+    from src.config.power_profiles import pass_budget_minutes
+
+    return pass_budget_minutes() * 60.0
 
 
 def _pass_max_sources() -> int:

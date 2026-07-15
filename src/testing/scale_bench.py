@@ -284,7 +284,9 @@ def _bench_engine(db_path: Path, passphrase: str | None) -> Any:
         # 64 MiB page cache + in-memory temp trees are what make (or don't make) the
         # index build fast under the SQLCipher codec. mmap is plaintext-only (codec
         # pages can't be mapped), exactly like the app.
-        cache_mb = int(os.getenv("OO_SQLITE_CACHE_MB", "64"))
+        from src.config.power_profiles import sqlite_cache_mb
+
+        cache_mb = sqlite_cache_mb()  # OO_SQLITE_CACHE_MB / active profile (Optimized = 64)
         cur = dbapi_conn.cursor()
         try:
             cur.execute("PRAGMA journal_mode=WAL")

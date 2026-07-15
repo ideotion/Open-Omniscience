@@ -113,10 +113,12 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         # + max_overflow) connections held warm. The default stays 64 MiB (the
         # aggregation speed-up is real), but OO_SQLITE_CACHE_MB lets a memory-
         # constrained operator turn it down (e.g. 16) without code changes.
-        try:
-            cache_mb = max(2, int(os.getenv("OO_SQLITE_CACHE_MB", "64")))
-        except ValueError:
-            cache_mb = 64
+        # Resolved via the power-profile knob (OO_SQLITE_CACHE_MB override, else the active
+        # profile; Optimized = 64, byte-identical to today). Read PER CONNECTION, so a profile
+        # switch applies to new connections; never raises (clamped ≥ 2).
+        from src.config.power_profiles import sqlite_cache_mb
+
+        cache_mb = sqlite_cache_mb()
         cursor.execute(f"PRAGMA cache_size=-{cache_mb * 1024}")  # negative = KiB
         cursor.execute("PRAGMA temp_store=MEMORY")
         # WAL RESTING CEILING (STORAGE_5TB_PLAN §3 Phase-A: "journal_size_limit is set
