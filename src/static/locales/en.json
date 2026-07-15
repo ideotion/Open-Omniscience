@@ -2032,5 +2032,6 @@
   "Single pass": "Single pass",
   "Triple pass": "Triple pass",
   "Octuple pass": "Octuple pass",
-  "This may take several minutes on a large disk. Restart the app when you are done.": "This may take several minutes on a large disk. Restart the app when you are done."
+  "This may take several minutes on a large disk. Restart the app when you are done.": "This may take several minutes on a large disk. Restart the app when you are done.",
+  "None (crypto-erase only)": "None (crypto-erase only)"
 }

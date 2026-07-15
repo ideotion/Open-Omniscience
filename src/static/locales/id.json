@@ -2032,5 +2032,6 @@
   "Single pass": "Satu lintasan",
   "Triple pass": "Tiga lintasan",
   "Octuple pass": "Delapan lintasan",
-  "This may take several minutes on a large disk. Restart the app when you are done.": "Ini bisa memakan waktu beberapa menit pada disk besar. Mulai ulang aplikasi setelah selesai."
+  "This may take several minutes on a large disk. Restart the app when you are done.": "Ini bisa memakan waktu beberapa menit pada disk besar. Mulai ulang aplikasi setelah selesai.",
+  "None (crypto-erase only)": "Tidak ada (hanya penghancuran kunci)"
 }

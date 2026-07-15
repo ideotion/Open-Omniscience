@@ -2032,5 +2032,6 @@
   "Single pass": "1回上書き",
   "Triple pass": "3回上書き",
   "Octuple pass": "8回上書き",
-  "This may take several minutes on a large disk. Restart the app when you are done.": "大容量ディスクでは数分かかる場合があります。完了したらアプリを再起動してください。"
+  "This may take several minutes on a large disk. Restart the app when you are done.": "大容量ディスクでは数分かかる場合があります。完了したらアプリを再起動してください。",
+  "None (crypto-erase only)": "なし（鍵の破棄のみ）"
 }

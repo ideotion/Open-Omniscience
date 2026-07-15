@@ -59,6 +59,12 @@ class UninstallBody(BaseModel):
     # Only consulted when mode == "custom"; each off by default (data dies only on opt-in).
     remove_folder: bool = False
     wipe_data: bool = False
+    # Optional defence-in-depth free-space scrub (Single/Triple/Octuple pass), on top of
+    # the crypto-erase, run by the watcher AFTER the data dir is wiped. Only meaningful
+    # when data is actually wiped (secure/custom+wipe_data); ignored otherwise. Parity
+    # with /api/safety/secure-erase's post-panic offer -- a Secure uninstall should get
+    # the same optional pass count, not just Panic wipe.
+    passes: int | None = None
 
 
 def _uninstall_flags(body: UninstallBody) -> tuple[bool, bool]:
@@ -176,12 +182,17 @@ def uninstall(body: UninstallBody) -> dict:
     """Uninstall per the chosen mode, then stop the server. Requires confirm=true.
 
     Modes (data dies only in 'secure'/'custom' opt-in): minimal = venv + launchers;
-    full = + the app folder; secure = + wipe data & keys (best-effort overwrite, honest
-    limit). Deletion happens in a detached watcher after the server exits — so the
-    response returns first and the app shuts down cleanly."""
+    full = + the app folder; secure = + wipe data & keys via the same crypto-erase as
+    /api/safety/panic (destroys the SQLCipher salt page + keys, unrecoverable at any
+    size). ``passes`` (1/3/8) optionally adds the same defence-in-depth free-space
+    scrub /api/safety/secure-erase offers after a panic wipe. Deletion happens in a
+    detached watcher after the server exits — so the response returns first and the
+    app shuts down cleanly."""
     if not body.confirm:
         raise HTTPException(status_code=400, detail="set confirm=true to uninstall")
+    if body.passes is not None and body.passes not in (1, 3, 8):
+        raise HTTPException(status_code=400, detail="passes must be one of (1, 3, 8)")
     rf, wd = _uninstall_flags(body)
     from src.safety.uninstall import request_uninstall
 
-    return request_uninstall(confirm=True, remove_folder=rf, wipe_data=wd)
+    return request_uninstall(confirm=True, remove_folder=rf, wipe_data=wd, passes=body.passes)

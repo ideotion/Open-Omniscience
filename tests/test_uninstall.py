@@ -265,3 +265,38 @@ def test_api_uninstall_unknown_mode_rejected():
     with TestClient(app) as c:
         assert c.post("/api/safety/uninstall",
                       json={"confirm": True, "mode": "bogus"}).status_code == 400
+
+
+def test_api_uninstall_rejects_invalid_passes():
+    """Secure uninstall's optional full-overwrite pass count must be validated
+    server-side, the same as /api/safety/secure-erase -- parity, not just UI-side
+    trust."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        for bad in (0, 2, 4, 100):
+            r = c.post("/api/safety/uninstall",
+                       json={"confirm": True, "mode": "secure", "passes": bad})
+            assert r.status_code == 400
+
+
+def test_api_uninstall_passes_through_to_request_uninstall(monkeypatch):
+    """The chosen pass count actually reaches request_uninstall (and hence the
+    watcher's optional free-space scrub) -- Secure uninstall gets the same
+    defence-in-depth choice Panic wipe already offers."""
+    captured = {}
+    monkeypatch.setattr(
+        "src.safety.uninstall.request_uninstall",
+        lambda **kw: captured.update(kw) or {"scheduled": True, "data_kept": False},
+    )
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    with TestClient(app) as c:
+        r = c.post("/api/safety/uninstall",
+                  json={"confirm": True, "mode": "secure", "passes": 3})
+        assert r.status_code == 200
+        assert captured["passes"] == 3
