@@ -322,7 +322,7 @@ def _unmerged_tables(con: sqlite3.Connection) -> tuple[dict[str, int], list[str]
     ):
         if name in _MERGE_HANDLED or name in _MERGE_IGNORED:
             continue
-        if not _SAFE_TABLE_NAME.match(name):
+        if not _SAFE_TABLE_NAME.fullmatch(name):
             rejected.append(name)
             continue
         # The identifier is now allowlist-validated AND quoted -- two independent

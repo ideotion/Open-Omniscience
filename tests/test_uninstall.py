@@ -136,6 +136,60 @@ def test_plan_modes_carry_folder_and_data_targets(tmp_path, monkeypatch):
     assert ("wipe_data_dir" in secure) and ("audit_log" in secure)
 
 
+def test_plan_reports_columnar_store_override_only_when_it_differs(tmp_path, monkeypatch):
+    """The DuckDB analytics cache can live outside the data dir (OO_COLUMNAR_DIR); a
+    secure-mode plan must report it separately so the watcher can wipe it too (audit
+    OO-02 follow-up: the watcher previously only ever wiped the data dir itself)."""
+    app = _fake_install(tmp_path, monkeypatch)
+    data = tmp_path / "data"; data.mkdir()
+    monkeypatch.setattr("src.paths.data_dir", lambda: data)
+
+    # Same location as the data dir -> not reported (nothing extra to wipe).
+    monkeypatch.setattr("src.analytics.columnar._store_dir", lambda: data)
+    same = U.plan_uninstall(app, wipe_data=True)
+    assert same["wipe_store_dir"] is None
+
+    # A distinct OO_COLUMNAR_DIR override -> reported, and only when it exists on disk.
+    store = tmp_path / "columnar-cache"
+    monkeypatch.setattr("src.analytics.columnar._store_dir", lambda: store)
+    missing = U.plan_uninstall(app, wipe_data=True)
+    assert missing["wipe_store_dir"] is None  # doesn't exist yet
+    store.mkdir()
+    present = U.plan_uninstall(app, wipe_data=True)
+    assert present["wipe_store_dir"] == str(store)
+
+    # Never reported outside wipe_data mode (nothing is being destroyed).
+    not_wiping = U.plan_uninstall(app, wipe_data=False)
+    assert not_wiping["wipe_store_dir"] is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="watcher uses POSIX detach + shells")
+def test_watcher_wipes_columnar_store_override(tmp_path):
+    """The watcher must head-wipe the DuckDB cache files under a store_dir override
+    without rmtree-ing that externally-configured directory (it may not be ours alone)."""
+    import json
+    import subprocess
+
+    data = tmp_path / "data"; data.mkdir()
+    (data / "open_omniscience.db").write_bytes(b"S" * 8192)
+    store = tmp_path / "columnar-cache"; store.mkdir()
+    (store / "analytics.duckdb").write_bytes(b"D" * 8192)
+    (store / "other_unrelated_file.txt").write_text("keep me", encoding="utf-8")
+    audit = tmp_path / "audit.log"
+    payload = {
+        "files": [], "venv": None, "app_folder": None,
+        "wipe_data_dir": str(data), "wipe_store_dir": str(store), "audit_log": str(audit),
+    }
+    dead = subprocess.Popen([sys.executable, "-c", "pass"]); dead.wait()
+    subprocess.run([sys.executable, "-c", U._WATCHER_SRC, str(dead.pid), json.dumps(payload)],
+                   timeout=30, check=True)
+    assert not data.exists()
+    assert store.exists(), "an externally-configured store dir must not be rmtree'd wholesale"
+    assert not (store / "analytics.duckdb").exists()
+    assert (store / "other_unrelated_file.txt").exists(), "unrelated files must survive"
+    assert "columnar store" in audit.read_text(encoding="utf-8")
+
+
 def test_secure_request_reports_data_not_kept(tmp_path, monkeypatch):
     app = _fake_install(tmp_path, monkeypatch)
     # give the plan a real data dir to wipe

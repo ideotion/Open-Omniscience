@@ -69,12 +69,15 @@ _LIMIT_NOTE = (
 )
 
 
-def _overwrite(path: Path, *, head_bytes: int | None = None) -> None:
+def _overwrite(path: Path, *, head_bytes: int | None = None) -> bool:
     """Overwrite ``path`` in place with random data, then fsync. When ``head_bytes``
     is given only that prefix is overwritten (the crypto-erase salt-page case);
     otherwise the whole file is overwritten in bounded chunks (small files only —
-    the big encrypted corpus is handled by its header, never rewritten). Best-effort:
-    a failure never blocks the unlink below."""
+    the big encrypted corpus is handled by its header, never rewritten). Returns
+    whether every byte was actually written and fsynced -- callers must NOT report
+    a destructive overwrite as done just because no exception reached them; a
+    silent False here with the outcome still reported as success is exactly the
+    false-confidence bug audit OO-02 exists to eliminate."""
     try:
         size = path.stat().st_size
         limit = size if head_bytes is None else min(size, head_bytes)
@@ -86,25 +89,31 @@ def _overwrite(path: Path, *, head_bytes: int | None = None) -> None:
                 written += len(chunk)
             f.flush()
             os.fsync(f.fileno())
+        return True
     except OSError:
-        pass
+        _LOG.warning("crypto-erase: overwrite failed for %s (NOT destroyed)", path)
+        return False
 
 
-def _shred(path: Path, *, head_bytes: int | None = None) -> tuple[bool, bool]:
-    """Overwrite then unlink ``path``. Returns ``(seen, wiped)``: ``seen`` is whether
-    the file existed, ``wiped`` whether the unlink succeeded."""
+def _shred(path: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
+    """Overwrite then unlink ``path``. Returns ``(seen, overwritten, unlinked)``:
+    ``seen`` is whether the file existed, ``overwritten`` whether the destructive
+    write actually completed, ``unlinked`` whether the directory entry was removed.
+    These are reported separately -- a failed overwrite followed by a successful
+    unlink is NOT destruction, it's just deletion, and callers must not conflate
+    the two when claiming a salt page or key file was destroyed."""
     try:
         if not path.exists():
-            return (False, False)
+            return (False, False, False)
     except OSError:
-        return (False, False)
-    _overwrite(path, head_bytes=head_bytes)
+        return (False, False, False)
+    overwritten = _overwrite(path, head_bytes=head_bytes)
     try:
         path.unlink()
-        return (True, True)
+        return (True, overwritten, True)
     except OSError:
         _LOG.warning("crypto-erase: could not unlink %s", path)
-        return (True, False)
+        return (True, overwritten, False)
 
 
 def _resolve(data_dir: Path | None) -> dict:
@@ -157,6 +166,17 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     seen = wiped = 0
     headers: list[str] = []
     keys_destroyed: list[str] = []
+    # Files that existed but whose destructive overwrite itself failed (e.g. ENOSPC on a
+    # CoW filesystem mid-write) -- unlink may still have succeeded, but that is deletion,
+    # not destruction. Reported honestly rather than folded into "headers_destroyed" /
+    # "keys_destroyed", which must only ever mean the overwrite actually completed.
+    overwrite_failures: list[str] = []
+
+    def _track(p: Path, *, head_bytes: int | None = None) -> tuple[bool, bool, bool]:
+        s, overwritten, w = _shred(p, head_bytes=head_bytes)
+        if s and not overwritten:
+            overwrite_failures.append(str(p))
+        return s, overwritten, w
 
     # Was the corpus actually encrypted? Determines whether crypto-erase is the real
     # guarantee (encrypted) or degrades to header-overwrite (plaintext store -> the
@@ -171,33 +191,35 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
             continue
         for suffix in ("", *_DB_SIDECARS):
             p = db if suffix == "" else db.with_name(db.name + suffix)
-            s, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1)
+            s, overwritten, w = _shred(p, head_bytes=_SQLCIPHER_PAGE1)
             seen += s
             wiped += w
-            if s and suffix == "":
+            if s and not overwritten:
+                overwrite_failures.append(str(p))
+            if s and overwritten and suffix == "":
                 headers.append(db.name)
 
     # 2) Destroy on-disk key material (the scrypt wrap-salt lives inside these files).
     keys_dir: Path = paths["keys_dir"]
     for name in _KEY_FILES:
-        s, w = _shred(keys_dir / name)
+        s, overwritten, w = _track(keys_dir / name)
         seen += s
         wiped += w
-        if s:
+        if s and overwritten:
             keys_destroyed.append(name)
 
     # 3) DuckDB cache header (its key has no per-file salt -> defence-in-depth; the real
     #    protection is clearing the passphrase in step 5 + the free-space scrub).
     store_dir: Path = paths["store_dir"]
     for name in _DUCK_FILES:
-        s, w = _shred(store_dir / name, head_bytes=_SQLCIPHER_PAGE1)
-        seen += s
-        wiped += w
+        _s, _overwritten, _w = _track(store_dir / name, head_bytes=_SQLCIPHER_PAGE1)
+        seen += _s
+        wiped += _w
 
     # 4) Plaintext anchors.db is NOT encrypted -> full overwrite (it is small).
-    anchors_seen, _ = _shred(paths["anchors_db"])
+    anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"])
     seen += anchors_seen
-    wiped += anchors_seen
+    wiped += anchors_wiped
 
     # 5) Clear the in-memory passphrase (never persisted) so the app holds no key. Only
     #    for the real default store — an explicit override dir must not mutate process
@@ -215,15 +237,21 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
     if base.exists():
         for root, _dirs, names in os.walk(base):
             for name in names:
-                s, w = _shred(Path(root) / name)
-                seen += s
-                wiped += w
+                _s, _overwritten, _w = _track(Path(root) / name)
+                seen += _s
+                wiped += _w
     with contextlib.suppress(OSError):
         shutil.rmtree(base, ignore_errors=True)
 
+    if overwrite_failures:
+        _LOG.error(
+            "CRYPTO-ERASE: %d file(s) could NOT be overwritten (only unlinked, if that): %s",
+            len(overwrite_failures), overwrite_failures,
+        )
     _LOG.warning(
-        "CRYPTO-ERASE executed on %s (encrypted=%s, %d/%d files, %d headers, %d keys)",
-        base, encrypted, wiped, seen, len(headers), len(keys_destroyed),
+        "CRYPTO-ERASE executed on %s (encrypted=%s, %d/%d files, %d headers, %d keys, "
+        "%d overwrite failures)",
+        base, encrypted, wiped, seen, len(headers), len(keys_destroyed), len(overwrite_failures),
     )
     return {
         "phase": "crypto-erase",
@@ -232,6 +260,7 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         "files_wiped": wiped,
         "headers_destroyed": headers,
         "keys_destroyed": keys_destroyed,
+        "overwrite_failures": overwrite_failures,
         "passphrase_cleared": passphrase_cleared,
         "encrypted_corpus": encrypted,
         "removed": not base.exists(),

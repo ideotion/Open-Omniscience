@@ -119,6 +119,19 @@ if wd and os.path.isdir(wd):
             except OSError: pass
     shutil.rmtree(wd, ignore_errors=True)
     rec("wiped data %s (%d/%d files, crypto-erase: DB salt pages destroyed; %d scrub bytes)" % (wd, wiped, seen, scrubbed))
+# DuckDB analytics cache can live outside the data dir (OO_COLUMNAR_DIR). Only present in
+# the plan when it actually differs from wd -- head-wipe the two known files there (never
+# rmtree an externally-configured directory we don't otherwise own).
+sd = plan.get("wipe_store_dir")
+if sd and os.path.isdir(sd):
+    sd_wiped = 0
+    for nm in ("analytics.duckdb", ".oo_columnar_probe.duckdb"):
+        fp = os.path.join(sd, nm)
+        if os.path.exists(fp):
+            overwrite(fp, True)
+            try: os.remove(fp); sd_wiped += 1
+            except OSError: pass
+    rec("wiped columnar store %s (%d files, header-only)" % (sd, sd_wiped))
 af = plan.get("app_folder")
 if af and os.path.isdir(af):
     shutil.rmtree(af, ignore_errors=True)
@@ -192,9 +205,22 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
         data_exists = Path(data).is_dir()
     except Exception:  # pragma: no cover - paths always importable in practice
         data, data_exists = None, False
+    # The DuckDB analytics cache can live outside the data dir (``OO_COLUMNAR_DIR``).
+    # crypto_erase.quick_crypto_erase() head-wipes it there independently of the data-dir
+    # walk; the watcher must do the same or a secure uninstall silently misses it when the
+    # override is set (audit follow-up on OO-02). Only reported when it actually differs.
+    store: str | None = None
+    try:
+        from src.analytics.columnar import _store_dir as _columnar_store_dir
+        s = str(_columnar_store_dir())
+        if s != data:
+            store = s
+    except Exception:  # pragma: no cover - columnar extra may be absent
+        store = None
     install_script = root / "install.sh"
     app_folder = str(root) if remove_folder else None
     wipe_data_dir = data if (wipe_data and data and data_exists) else None
+    wipe_store_dir = store if (wipe_data and store and Path(store).is_dir()) else None
     removable = bool(
         venv.exists() or launchers or (remove_folder and root.exists()) or wipe_data_dir
     )
@@ -209,6 +235,7 @@ def plan_uninstall(src_dir: Path | None = None, *, remove_folder: bool = False,
         "app_folder": app_folder,               # the folder removed in full/secure
         "wipe_data": wipe_data,
         "wipe_data_dir": wipe_data_dir,         # the data dir wiped in secure
+        "wipe_store_dir": wipe_store_dir,       # OO_COLUMNAR_DIR override, wiped in secure
         "audit_log": str(AUDIT_LOG),
         "removable": removable,
     }
@@ -229,6 +256,7 @@ def _default_spawn(plan: dict, server_pid: int) -> None:
         "venv": plan["venv"],
         "app_folder": plan.get("app_folder"),
         "wipe_data_dir": plan.get("wipe_data_dir"),
+        "wipe_store_dir": plan.get("wipe_store_dir"),  # OO_COLUMNAR_DIR override, if set
         "passes": plan.get("passes"),  # optional defence-in-depth free-space scrub (1/3/8)
         "audit_log": plan.get("audit_log"),
     }

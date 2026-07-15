@@ -81,11 +81,31 @@ def test_full_overwrite_covers_entire_file_not_just_4mib(tmp_path):
 def test_shred_overwrites_then_unlinks(tmp_path):
     f = tmp_path / "anchors.db"
     f.write_bytes(b"SECRET" * 1000)
-    seen, wiped = crypto_erase._shred(f)
-    assert seen and wiped
+    seen, overwritten, unlinked = crypto_erase._shred(f)
+    assert seen and overwritten and unlinked
     assert not f.exists()
-    # A missing file is neither seen nor wiped.
-    assert crypto_erase._shred(tmp_path / "gone.db") == (False, False)
+    # A missing file is neither seen, overwritten, nor unlinked.
+    assert crypto_erase._shred(tmp_path / "gone.db") == (False, False, False)
+
+
+def test_shred_does_not_report_overwrite_success_when_write_fails(tmp_path, monkeypatch):
+    """Regression: a failed overwrite (e.g. ENOSPC mid-write on a CoW filesystem) must
+    never be reported as destroyed just because the subsequent unlink succeeded --
+    that would be exactly the false-confidence bug OO-02 exists to eliminate."""
+    f = tmp_path / "corpus.db"
+    f.write_bytes(b"SECRET" * 1000)
+
+    def _boom(fd):
+        raise OSError("ENOSPC (simulated)")
+
+    monkeypatch.setattr(crypto_erase.os, "fsync", _boom)
+    seen, overwritten, unlinked = crypto_erase._shred(f)
+    # The unlink still succeeds (directory-entry removal needs no new block), but the
+    # overwrite must be reported as failed -- not folded into "destroyed".
+    assert seen is True
+    assert overwritten is False
+    assert unlinked is True
+    assert not f.exists()
 
 
 # --------------------------------------------------------------------------- #
