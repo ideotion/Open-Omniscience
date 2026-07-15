@@ -1620,12 +1620,76 @@
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
       if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
+      if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
+    }
+
+    // S12 Leads 2.0 — an ISOLATED preview surface (Settings → Leads). It NEVER touches Home /
+    // renderBriefing, so the flagship feed stays byte-identical; the new ordering/chips activate
+    // only here, by user choice, until a browser click-through graduates them onto Home.
+    function leadsPrefs() {
+      return {
+        sort: localStorage.getItem("oo.leads.sort") || "default",
+        min_n: localStorage.getItem("oo.leads.min_n") || "50",
+        min_sources: localStorage.getItem("oo.leads.min_sources") || "5",
+        cluster: localStorage.getItem("oo.leads.cluster") === "1",
+      };
+    }
+    function leadsPrefsChanged() {
+      localStorage.setItem("oo.leads.sort", ($("leads-prominence") || {}).checked ? "prominence" : "default");
+      localStorage.setItem("oo.leads.min_n", String(($("leads-min-n") || {}).value || "50"));
+      localStorage.setItem("oo.leads.min_sources", String(($("leads-min-sources") || {}).value || "5"));
+      localStorage.setItem("oo.leads.cluster", ($("leads-cluster") || {}).checked ? "1" : "0");
+      loadLeadsView();
+    }
+    function leadsChipHtml(ld) {
+      const c = ld.evidence_chips || {}, maj = ld.major || {};
+      const age = (c.newest_age_days == null) ? "no dated evidence" : (c.newest_age_days + "d old");
+      const major = maj.major
+        ? `<span class="chip" title="${esc(maj.method || "")}">major</span>` : "";
+      // REAL facts only, each with its #17 hover method — never a composite score.
+      return `<span class="chip" title="sample size (n)">n=${esc(String(c.n))}</span>`
+        + `<span class="chip" title="distinct independent sources — three articles from one outlet is one voice, not three">${esc(String(c.distinct_sources))} source(s)</span>`
+        + `<span class="chip" title="age of the freshest dated evidence">${esc(age)}</span>`
+        + major
+        + `<span class="chip" title="${esc(maj.method || "")}">${esc(maj.fact || "")}</span>`;
+    }
+    function leadsViewHtml(data) {
+      const leads = (data && data.leads) || [];
+      if (!leads.length) return `<div class="muted">No leads yet.</div>`;
+      const rows = leads.map(ld =>
+        `<div style="padding:6px 0;border-bottom:1px solid var(--line)">
+           <div title="${esc(ld.order_explain || "")}">${esc(ld.title || ld.key || ld.type || "")}</div>
+           <div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">${leadsChipHtml(ld)}</div>
+         </div>`).join("");
+      const cl = (data.clusters && data.clusters.n_clusters)
+        ? `<div class="hint" style="margin-top:8px" title="${esc(data.clusters.method || "")}">${esc(String(data.clusters.n_clusters))} story cluster(s) — leads over overlapping articles, stacked (a shape, not a merge).</div>`
+        : "";
+      const caveat = data.caveat
+        ? `<div class="card-caveat" title="${esc(data.method || "")}">${esc(data.caveat)}</div>` : "";
+      return `<div>${rows}</div>${cl}${caveat}`;
+    }
+    async function loadLeadsView() {
+      const host = $("leads-preview");
+      if (!host) return;
+      const p = leadsPrefs();  // restore the controls from storage (persist across sessions)
+      if ($("leads-prominence")) $("leads-prominence").checked = (p.sort === "prominence");
+      if ($("leads-min-n")) $("leads-min-n").value = p.min_n;
+      if ($("leads-min-sources")) $("leads-min-sources").value = p.min_sources;
+      if ($("leads-cluster")) $("leads-cluster").checked = p.cluster;
+      host.innerHTML = `<div class="muted">Loading…</div>`;
+      try {
+        const qs = `sort=${encodeURIComponent(p.sort)}&min_n=${encodeURIComponent(p.min_n)}`
+          + `&min_sources=${encodeURIComponent(p.min_sources)}&cluster=${p.cluster ? 1 : 0}`;
+        host.innerHTML = leadsViewHtml(await api("/api/insights/leads-view?" + qs));
+      } catch (e) {
+        host.innerHTML = `<div class="muted">No leads to preview yet.</div>`;
+      }
     }
     function buildDrawer() {
       const ui = getUi();

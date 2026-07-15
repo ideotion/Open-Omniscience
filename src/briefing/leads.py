@@ -214,6 +214,85 @@ def card_deltas(prev_cards: list[Card], new_cards: list[Card]) -> dict:
     }
 
 
+def _wrap_dict(d: dict) -> Any:
+    """Duck-type a briefing card DICT (from ``Card.to_dict()`` / the cached briefing) as the
+    object the cores read — they only touch ``evidence``/``n``/``article_ids``/``type``/``key``/
+    ``id``, so no full ``Card`` reconstruction is needed."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        evidence=d.get("evidence") or [],
+        n=d.get("n"),
+        article_ids=d.get("article_ids") or [],
+        type=d.get("type"),
+        key=d.get("key"),
+        id=d.get("id"),
+    )
+
+
+def assemble_leads_view(
+    card_dicts: list[dict],
+    *,
+    now: datetime,
+    sort: str = "default",
+    floors: dict[str, int] | None = None,
+    cluster: bool = False,
+) -> dict:
+    """Assemble the §2 Leads-2.0 VIEW over briefing card DICTS (the cached Home cards): per-lead
+    EVIDENCE CHIPS (n · distinct independent sources · freshest-evidence age — real facts), a
+    disclosed ORDER-explanation, and a major-lead threshold FACT, in the chosen order. PURE — no
+    DB, no network, no score.
+
+    ``sort='default'`` preserves the INPUT order EXACTLY (byte-identical to Home); ``'prominence'``
+    reorders by the disclosed ``order_key`` (independent sources → magnitude tier → recency).
+    ``cluster`` stacks leads built from overlapping article sets. Raises ``ValueError`` on a bad
+    ``sort`` (fail loud)."""
+    if sort not in ("default", "prominence"):
+        raise ValueError("sort must be 'default' or 'prominence'")
+    eff_floors = {**DEFAULT_MAJOR_FLOORS, **(floors or {})}
+    pairs = [(d, _wrap_dict(d)) for d in card_dicts]
+    if sort == "prominence":
+        pairs = sorted(pairs, key=lambda p: order_key(p[1], now=now), reverse=True)
+    leads = []
+    for d, w in pairs:
+        age = newest_evidence_age(w, now=now)
+        leads.append(
+            {
+                "type": d.get("type"),
+                "key": d.get("key"),
+                "id": d.get("id"),
+                "title": d.get("title"),
+                "evidence_chips": {
+                    "n": w.n or 0,
+                    "distinct_sources": _distinct_sources(w),
+                    "newest_age_days": round(age, 2) if age is not None else None,
+                },
+                "order_explain": explain_order(w, now=now),
+                "major": is_major(w, floors=eff_floors),
+            }
+        )
+    out: dict = {
+        "schema": "oo-leads-view-1",
+        "sort": sort,
+        "floors": eff_floors,
+        "count": len(leads),
+        "leads": leads,
+        "method": (
+            "The cached briefing leads + disclosed chips (n · distinct independent sources · "
+            "freshest-evidence age) / order-explanation / major-floor fact over each lead's real "
+            "evidence. sort=default is byte-identical to Home; sort=prominence uses the disclosed "
+            "order_key (sources → magnitude → recency), never a score."
+        ),
+        "caveat": (
+            "Chips and ordering are disclosed facts you read — never a composite importance "
+            "score. A sort changes ORDER + adds disclosure, never the data or a caveat."
+        ),
+    }
+    if cluster:
+        out["clusters"] = cluster_by_article_ids([w for _d, w in pairs])
+    return out
+
+
 def _walk_no_score(obj: Any) -> None:
     banned = ("score", "ranking", "rating", "grade")
     if isinstance(obj, dict):
