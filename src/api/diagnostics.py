@@ -994,6 +994,95 @@ def discover_sources_endpoint(
     return JSONResponse({"mode": "discovery", **result})
 
 
+def _world_discovery_worker(ctx, *, countries=None, per_spec_limit=None, restart=False):
+    from src.catalog.discover_job import run_world_discovery
+
+    return run_world_discovery(
+        ctx, countries=countries, per_spec_limit=per_spec_limit, restart=restart
+    )
+
+
+_WORLD_DISCOVERY_JOB = register_job(
+    BackgroundJob(
+        "discover-world-sources",
+        "Discovering worldwide sources (Wikidata)",
+        _world_discovery_worker,
+        is_writer=True,
+        cancellable=True,  # the worker checks ctx.stopping between countries
+    )
+)
+
+
+@router.post("/discover-world")
+def discover_world_sources(
+    countries: str | None = Query(
+        None, description="optional comma-separated ISO-2 codes; omit for ALL countries"
+    ),
+    per_spec_limit: int | None = Query(None, ge=1, le=5000),
+    restart: bool = Query(False, description="ignore the saved cursor and re-run everything"),
+) -> JSONResponse:
+    """Discover new sources from Wikidata for EVERY country (or the listed ones) as a
+    BACKGROUND JOB — the whole-world automation of ``/discover-sources`` (which stays
+    bounded to 12 countries per synchronous call). One country at a time through the
+    guarded transport; every insert is a DISABLED row for review (never auto-scraped);
+    progress persists per country, so cancel / airplane / crash all RESUME instead of
+    re-querying the world. Cancellable from the task manager; 409 under airplane mode."""
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+    codes = None
+    if countries:
+        from src.catalog.countries import ISO_3166_1_ALPHA2
+
+        codes = [c.strip().lower() for c in countries.split(",") if c.strip()]
+        bad = [c for c in codes if c not in ISO_3166_1_ALPHA2]
+        if not codes or bad:
+            raise HTTPException(
+                status_code=400,
+                detail=f"countries must be ISO-2 codes, e.g. ke,ng,br (unrecognised: {bad})",
+            )
+    try:
+        return JSONResponse(
+            {
+                "started": True,
+                "job": _WORLD_DISCOVERY_JOB.start(
+                    countries=codes, per_spec_limit=per_spec_limit, restart=restart
+                ),
+            }
+        )
+    except RuntimeError:
+        return JSONResponse({"started": False, "job": _WORLD_DISCOVERY_JOB.status()})
+
+
+@router.get("/discover-world/status")
+def discover_world_status() -> JSONResponse:
+    """Live status of the world discovery job + the persisted cursor (countries done /
+    added totals survive restarts, so the panel can show resume state while idle)."""
+    from src.catalog.discover_job import load_state
+
+    st = load_state()
+    return JSONResponse(
+        {
+            **_WORLD_DISCOVERY_JOB.status(),
+            "cursor": {
+                "countries_done": len(st.get("done", [])),
+                "added_total": st.get("added_total", 0),
+                "completed_at": st.get("completed_at"),
+                "updated_at": st.get("updated_at"),
+            },
+        }
+    )
+
+
+@router.post("/discover-world/cancel")
+def discover_world_cancel() -> JSONResponse:
+    """Ask the world discovery job to stop at the next country boundary (progress is
+    saved — starting it again resumes). Also reachable via the task manager's cancel."""
+    _WORLD_DISCOVERY_JOB.cancel()
+    return JSONResponse(_WORLD_DISCOVERY_JOB.status())
+
+
 @router.get("/ir-eval-selftest")
 def ir_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     """Run the IR retrieval-eval harness self-test (keyword-engine Phase 3).

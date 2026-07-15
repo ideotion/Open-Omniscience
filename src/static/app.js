@@ -9834,6 +9834,53 @@
       setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 6000);
     }
 
+    // WORLD discovery (maintainer-asked 2026-07-15): the same Wikidata discovery over
+    // EVERY country, as a background, cancellable, RESUMABLE job (persisted per-country
+    // cursor — a cancel / airplane pause / restart continues where it stopped). Every
+    // insert stays a DISABLED source for review. Networked -> the one consent popup;
+    // cancel lives in the task manager (kind "discover-world-sources").
+    async function discoverWorld(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = document.getElementById("discover-world-status");
+      const say = (msg) => { if (out) out.textContent = msg; };
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Discover sources worldwide from Wikidata — a long background job over every country (egresses to Wikidata over your transport)"))) return;
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = t("Discovering worldwide…");
+      try {
+        const d = await api("/api/diagnostics/discover-world", { method: "POST" });
+        if (d && d.started === false && d.job && d.job.state === "running") {
+          say(t("Already running — see the task manager."));
+        }
+        // Long job: poll with a live status line; give up WATCHING (not the job) after
+        // 30 min — it keeps running server-side and stays visible in the task manager.
+        const st = await pollJobStatus("/api/diagnostics/discover-world/status", {
+          intervalMs: 4000,
+          onProgress: (s) => {
+            if (!s) return;
+            const p = s.progress ? ` ${s.done}/${s.total}` : "";
+            say((s.detail || t("Working…")) + p);
+          },
+        });
+        if (st && st.state === "error") {
+          say(t("World discovery failed — see console"));
+          console.error("discoverWorld", st.error);
+        } else if (_jobStillRunning(st)) {
+          say(t("Still running in the background — see the task manager."));
+        } else if (st && st.result) {
+          const r = st.result;
+          say(`${r.countries_done}/${r.countries_requested} countries · +${r.added_this_run} new disabled sources (${r.added_total} total)`
+            + (r.paused_reason ? ` — ${r.paused_reason}` : ""));
+        }
+      } catch (e) {
+        say(t("World discovery failed — see console"));
+        console.error("discoverWorld", e);
+      }
+      btn.textContent = old;
+      btn.disabled = false;
+    }
+
     async function viewKeywordGrowth(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn) btn.disabled = true;
