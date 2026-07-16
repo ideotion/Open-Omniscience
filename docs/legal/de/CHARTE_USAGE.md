@@ -12,8 +12,8 @@
 > Die in eckigen Klammern stehenden Hinweise **[À COMPLÉTER: …]** kennzeichnen noch zu
 > ergänzende Angaben.
 
-**Version:** [À COMPLÉTER]
-**Datum des Inkrafttretens:** [À COMPLÉTER]
+**Version:** 1.0-draft
+**Datum des Inkrafttretens:** 2026-07-16
 **Kontakt:** open-omniscience@ideotion.com
 
 ---

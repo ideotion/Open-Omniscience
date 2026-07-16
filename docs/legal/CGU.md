@@ -8,8 +8,8 @@
 > **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]** signalent les informations restant à
 > fournir ou à confirmer.
 
-**Version :** [À COMPLÉTER]
-**Date d'entrée en vigueur :** [À COMPLÉTER]
+**Version :** 1.0-draft
+**Date d'entrée en vigueur :** 2026-07-16
 **Contact :** open-omniscience@ideotion.com
 
 ---
@@ -229,9 +229,12 @@ ci-dessus s'appliquent **dans les seules limites permises par la loi** et **ne s
   à la **conformité des contenus et services numériques**).
 
 Lorsque l'Utilisateur agit en qualité de **consommateur**, aucune stipulation des
-présentes ne le prive des **droits impératifs** que lui garantit la loi.
-[À VÉRIFIER : articuler avec les dispositions précises du Code de la consommation
-applicables à la fourniture, le cas échéant à titre gratuit, d'un contenu numérique.]
+présentes ne le prive des **droits impératifs** que lui garantit la loi, notamment les
+**articles L.224-25-1 à L.224-25-32 du Code de la consommation** (garantie de conformité
+des contenus et services numériques, transposant la directive (UE) 2019/770 — la garantie
+de conformité proprement dite figurant aux articles L.224-25-12 à L.224-25-26), qui
+s'appliquent y compris lorsque le contenu ou le service numérique est fourni **sans
+contrepartie de prix**.
 
 ## Article 10 — Indemnisation
 
@@ -308,9 +311,12 @@ commun.
 qualité de **consommateur**, les présentes stipulations **ne le privent pas** de la
 possibilité de saisir la **juridiction de son lieu de domicile** ni des **règles
 impératives de compétence et de protection** prévues en sa faveur, notamment par le **Code
-de la consommation** et par le **règlement (UE) n° 1215/2012 (« Bruxelles I bis »)**. Aucune
-clause des présentes ne saurait déroger à ces règles impératives.
-[À VÉRIFIER : références d'articles précises.]
+de la consommation** et par les **articles 17 à 19 du règlement (UE) n° 1215/2012 («
+Bruxelles I bis »)** (section consacrée aux contrats conclus par les consommateurs),
+et en particulier l'**article 18**, qui permet au consommateur d'agir devant la
+juridiction de son propre domicile et restreint réciproquement le professionnel à ne
+pouvoir agir contre lui que devant cette même juridiction. Aucune clause des présentes ne
+saurait déroger à ces règles impératives.
 
 ## Article 16 — Divers
 

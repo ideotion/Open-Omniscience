@@ -11,8 +11,8 @@
 > mentions **[À COMPLÉTER: …]** and **[À VÉRIFIER: …]** flag information still to be
 > provided or confirmed.
 
-**Version:** [À COMPLÉTER]
-**Effective date:** [À COMPLÉTER]
+**Version:** 1.0-draft
+**Effective date:** 2026-07-16
 **Contact:** open-omniscience@ideotion.com
 
 ---

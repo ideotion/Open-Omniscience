@@ -11,8 +11,8 @@
 > entre parênteses retos **[À COMPLÉTER: …]** e **[À VÉRIFIER: …]** assinalam informações
 > ainda a fornecer ou a confirmar.
 
-**Versão:** [À COMPLÉTER]
-**Data de entrada em vigor:** [À COMPLÉTER]
+**Versão:** 1.0-draft
+**Data de entrada em vigor:** 2026-07-16
 **Contacto:** open-omniscience@ideotion.com
 
 ---

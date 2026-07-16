@@ -7,8 +7,8 @@
 > publication. Les mentions entre crochets **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]**
 > signalent les informations restant à fournir ou à confirmer.
 
-**Version :** [À COMPLÉTER]
-**Date d'entrée en vigueur :** [À COMPLÉTER]
+**Version :** 1.0-draft
+**Date d'entrée en vigueur :** 2026-07-16
 **Contact :** open-omniscience@ideotion.com
 
 ---
@@ -45,8 +45,9 @@ La conception du Logiciel garantit, **par construction** :
 > *Note de cohérence :* ces affirmations reflètent l'état documenté du Logiciel (voir le
 > `README`, [`../SECURITY.md`](../SECURITY.md) et [`../ETHICS.md`](../ETHICS.md)). Toute
 > évolution future qui introduirait une quelconque transmission de données devrait être
-> documentée ici **avant** mise en service. [À VÉRIFIER : confirmer l'absence de
-> télémétrie à chaque version publiée.]
+> documentée ici **avant** mise en service. **Point de vigilance permanent (à re-vérifier à
+> chaque version, avant toute mise à jour du champ « Version » ci-dessus) : reconfirmer
+> l'absence de télémétrie dans le code effectivement publié.**
 
 ## 3. Données techniques traitées localement par le Logiciel
 
@@ -103,8 +104,12 @@ d'information**, l'Utilisateur peut, sous conditions, bénéficier d'**aménagem
 par l'**article 85 du RGPD** et par les dispositions correspondantes de la **Loi
 Informatique et Libertés**. Cette exception **ne dispense pas** du respect des principes
 essentiels et **doit être appréciée au cas par cas** ; elle relève de l'**appréciation et de
-la responsabilité de l'Utilisateur**. [À VÉRIFIER : références précises des dispositions
-nationales de transposition de l'article 85.]
+la responsabilité de l'Utilisateur**. La transposition nationale figure à l'**article 80 de
+la loi n° 78-17 du 6 janvier 1978** (dans sa rédaction issue de l'ordonnance du 12 décembre
+2018), qui écarte, à titre dérogatoire et dans la mesure nécessaire à la conciliation entre
+protection des données et liberté d'expression et d'information, l'application de certaines
+dispositions du RGPD aux traitements mis en œuvre notamment aux fins d'exercice, à titre
+professionnel, de l'activité de journaliste.
 
 ## 5. Sorties produites par l'IA et données personnelles
 

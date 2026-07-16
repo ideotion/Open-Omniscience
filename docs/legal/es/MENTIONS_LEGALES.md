@@ -12,8 +12,8 @@
 > corchetes **[À COMPLÉTER: …]** y **[À VÉRIFIER: …]** señalan información aún por
 > aportar o confirmar.
 
-**Versión:** [À COMPLÉTER]
-**Fecha de entrada en vigor:** [À COMPLÉTER]
+**Versión:** 1.0-draft
+**Fecha de entrada en vigor:** 2026-07-16
 
 ---
 

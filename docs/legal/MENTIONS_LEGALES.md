@@ -7,8 +7,8 @@
 > publication. Les mentions entre crochets **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]**
 > signalent les informations restant à fournir ou à confirmer.
 
-**Version :** [À COMPLÉTER]
-**Date d'entrée en vigueur :** [À COMPLÉTER]
+**Version :** 1.0-draft
+**Date d'entrée en vigueur :** 2026-07-16
 
 ---
 
@@ -31,12 +31,20 @@ la [Politique de confidentialité](POLITIQUE_DE_CONFIDENTIALITE.md)).
   professionnel. [À COMPLÉTER : le cas échéant, statut, n° SIREN/SIRET, TVA — uniquement
   si l'Éditeur publie à titre professionnel.]
 
-> **Anonymat de l'éditeur non professionnel.** La LCEN permet à un éditeur **non
-> professionnel** de **ne pas divulguer publiquement** son identité civile, à condition
-> d'avoir communiqué celle-ci à son hébergeur, qui peut la transmettre sur réquisition de
-> l'autorité judiciaire. L'Éditeur se prévaut de cette faculté et se présente sous le
-> pseudonyme « Ideotion ». [À VÉRIFIER : référence exacte de l'article applicable de la
-> LCEN.]
+> **Anonymat de l'éditeur non professionnel.** L'**article 1-1, II de la LCEN** (dans sa
+> rédaction issue de la loi n° 2024-449 du 21 mai 2024, dite « SREN » — l'ancien article
+> 6-III est abrogé depuis le 23 mai 2024) permet à un éditeur **non professionnel** de **ne
+> pas divulguer publiquement** son identité civile, **à la condition d'avoir préalablement
+> communiqué celle-ci à son hébergeur**, qui peut la transmettre sur réquisition de
+> l'autorité judiciaire.
+>
+> **⚠️ Condition non encore remplie à ce jour.** Cette communication préalable à
+> l'hébergeur (GitHub) **n'a pas encore été effectuée** au moment de la rédaction de ce
+> document. Tant qu'elle ne l'est pas, l'Éditeur **ne peut pas légitimement se prévaloir**
+> de cette faculté d'anonymat. **Action requise avant toute publication :** transmettre
+> l'identité civile réelle à GitHub par les canaux qu'il prévoit à cet effet (ou consulter
+> un juriste si un doute subsiste sur les modalités). Une fois cette communication
+> effectuée, l'Éditeur se présente sous le pseudonyme « Ideotion ».
 
 ## 3. Directeur de la publication
 
@@ -49,8 +57,10 @@ Le **code source** du Logiciel est mis à disposition publiquement via une plate
 d'hébergement de dépôts tierce :
 
 - **Hébergeur :** **GitHub, Inc.**
-- **Adresse :** [À VÉRIFIER : 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107,
-  États-Unis.]
+- **Adresse :** 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, États-Unis
+  (adresse auto-déclarée par GitHub dans sa Privacy Statement / son Data Protection
+  Agreement ; GitHub reste une entité distincte, filiale à 100 % de Microsoft depuis 2018,
+  et n'a pas substitué une adresse Microsoft à cette adresse).
 - **Site :** https://github.com/ideotion/Open-Omniscience
 
 > **Important.** GitHub héberge le **dépôt de code source**, et non un service applicatif

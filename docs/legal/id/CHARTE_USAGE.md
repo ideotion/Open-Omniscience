@@ -10,8 +10,8 @@
 > profesional yang berkualifikasi** sebelum publikasi apa pun. Keterangan dalam tanda
 > kurung siku **[À COMPLÉTER: …]** menandai informasi yang masih harus diberikan.
 
-**Versi:** [À COMPLÉTER]
-**Tanggal berlaku:** [À COMPLÉTER]
+**Versi:** 1.0-draft
+**Tanggal berlaku:** 2026-07-16
 **Kontak:** open-omniscience@ideotion.com
 
 ---

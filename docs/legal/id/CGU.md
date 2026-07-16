@@ -11,8 +11,8 @@
 > pun. Keterangan dalam tanda kurung siku **[À COMPLÉTER: …]** dan **[À VÉRIFIER: …]**
 > menandai informasi yang masih harus diberikan atau dikonfirmasi.
 
-**Versi:** [À COMPLÉTER]
-**Tanggal berlaku:** [À COMPLÉTER]
+**Versi:** 1.0-draft
+**Tanggal berlaku:** 2026-07-16
 **Kontak:** open-omniscience@ideotion.com
 
 ---

@@ -7,8 +7,8 @@
 > publication. Les mentions entre crochets **[À COMPLÉTER : …]** signalent les
 > informations restant à fournir.
 
-**Version :** [À COMPLÉTER]
-**Date d'entrée en vigueur :** [À COMPLÉTER]
+**Version :** 1.0-draft
+**Date d'entrée en vigueur :** 2026-07-16
 **Contact :** open-omniscience@ideotion.com
 
 ---

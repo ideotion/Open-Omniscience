@@ -10,8 +10,8 @@
 > qualificado** antes de qualquer publicação. As menções entre parênteses retos
 > **[À COMPLÉTER: …]** assinalam informações ainda a fornecer.
 
-**Versão:** [À COMPLÉTER]
-**Data de entrada em vigor:** [À COMPLÉTER]
+**Versão:** 1.0-draft
+**Data de entrada em vigor:** 2026-07-16
 **Contacto:** open-omniscience@ideotion.com
 
 ---

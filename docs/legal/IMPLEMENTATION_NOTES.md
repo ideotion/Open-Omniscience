@@ -125,13 +125,23 @@ the web entrypoint could strand a desktop-launcher or `curl | bash` user with no
 
 ## Finalizing for release
 
-1. Replace `Version : [À COMPLÉTER]` / `Date d'entrée en vigueur : [À COMPLÉTER]` in the
-   four documents with real values.
-2. Set `CONSENT_DOC_VERSION` in `src/legal/consent.py` to that same version string
-   (e.g. `"1.0"`).
-3. Have a qualified professional review the documents (they are drafts — see the banner on
-   each).
-4. Land the web-modal PR above.
+1. ✅ **Done (2026-07-16).** `Version : 1.0-draft` / `Date d'entrée en vigueur :
+   2026-07-16` are now set in all four documents (French originals + all 11 translated
+   copies), matching `CONSENT_DOC_VERSION` in `src/legal/consent.py`. The `-draft` suffix
+   is intentional — it stays until step 3 below is done; bump to a plain `"1.0"` (in
+   the docs **and** `CONSENT_DOC_VERSION` together) once a qualified professional has
+   signed off.
+2. ✅ **Done.** `CONSENT_DOC_VERSION` already reads `"1.0-draft"`, matching step 1.
+3. ⬜ **Still open.** Have a qualified professional review the documents (they remain
+   drafts — see the banner on each). Two known open items for that review, both flagged
+   inline: (a) `MENTIONS_LEGALES.md` §2's LCEN-anonymity clause — the précondition
+   ("identity communicated to the host") is **not yet actually done**; either complete it
+   with GitHub before relying on the pseudonymous-publisher clause, or have the reviewer
+   soften/remove the claim; (b) the handful of remaining `[À VÉRIFIER: …]` legal-citation
+   placeholders (exact LCEN article, Code de la consommation articles, Bruxelles I bis
+   articles, GDPR Art. 85 French-transposition article) — best-effort citations were
+   filled in from research, flagged for professional confirmation, not guaranteed correct.
+4. ⬜ **Still open.** Land the web-modal PR above.
 
 ## Tests
 
