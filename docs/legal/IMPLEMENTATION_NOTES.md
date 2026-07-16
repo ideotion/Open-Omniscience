@@ -134,13 +134,18 @@ the web entrypoint could strand a desktop-launcher or `curl | bash` user with no
 2. ✅ **Done.** `CONSENT_DOC_VERSION` already reads `"1.0-draft"`, matching step 1.
 3. ⬜ **Still open.** Have a qualified professional review the documents (they remain
    drafts — see the banner on each). Two known open items for that review, both flagged
-   inline: (a) `MENTIONS_LEGALES.md` §2's LCEN-anonymity clause — the précondition
-   ("identity communicated to the host") is **not yet actually done**; either complete it
-   with GitHub before relying on the pseudonymous-publisher clause, or have the reviewer
-   soften/remove the claim; (b) the handful of remaining `[À VÉRIFIER: …]` legal-citation
-   placeholders (exact LCEN article, Code de la consommation articles, Bruxelles I bis
-   articles, GDPR Art. 85 French-transposition article) — best-effort citations were
-   filled in from research, flagged for professional confirmation, not guaranteed correct.
+   inline: (a) `MENTIONS_LEGALES.md` §2 — the Éditeur has **deliberately chosen not to**
+   disclose their real identity to GitHub (the LCEN Art. 1-1, II anonymity precondition),
+   so the clause was rewritten (2026-07-16) around a different, **untested "outside LCEN
+   scope" argument** instead (local software, no live public service operated by the
+   Éditeur) — this position is explicitly flagged as unconfirmed by counsel and carries a
+   residual risk (a possible LCEN penal sanction for incomplete mentions légales if a court
+   ever disagreed with the scope argument); a lawyer should assess whether to keep this
+   position, harden its wording, or accept the residual risk as-is; (b) the handful of
+   remaining `[À VÉRIFIER: …]` legal-citation placeholders (Code de la consommation
+   articles, Bruxelles I bis articles, GDPR Art. 85 French-transposition article) —
+   best-effort citations were filled in from research, flagged for professional
+   confirmation, not guaranteed correct.
 4. ⬜ **Still open.** Land the web-modal PR above.
 
 ## Tests

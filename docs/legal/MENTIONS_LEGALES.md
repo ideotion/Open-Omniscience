@@ -31,20 +31,35 @@ la [Politique de confidentialité](POLITIQUE_DE_CONFIDENTIALITE.md)).
   professionnel. [À COMPLÉTER : le cas échéant, statut, n° SIREN/SIRET, TVA — uniquement
   si l'Éditeur publie à titre professionnel.]
 
-> **Anonymat de l'éditeur non professionnel.** L'**article 1-1, II de la LCEN** (dans sa
-> rédaction issue de la loi n° 2024-449 du 21 mai 2024, dite « SREN » — l'ancien article
-> 6-III est abrogé depuis le 23 mai 2024) permet à un éditeur **non professionnel** de **ne
-> pas divulguer publiquement** son identité civile, **à la condition d'avoir préalablement
-> communiqué celle-ci à son hébergeur**, qui peut la transmettre sur réquisition de
-> l'autorité judiciaire.
+> **Anonymat pseudonymique — fondement retenu.** Comme indiqué au §1, le Logiciel est un
+> **logiciel local** : le dépôt hébergé par GitHub documente et distribue le **code
+> source**, il ne fait fonctionner **aucun service applicatif accessible au public** que
+> l'Éditeur exploiterait. Sur cette base, l'Éditeur considère que le régime
+> d'identification de l'**article 1-1 de la LCEN** — qui vise les « services de
+> communication au public en ligne » — **ne s'applique pas, en tant que tel, à ce projet**.
+> Il s'agit d'une **position de champ d'application non tranchée par la jurisprudence à ce
+> jour** (aucun précédent identifié, en sens contraire ou favorable, pour un dépôt de code
+> comparable), retenue au vu de l'absence de tout précédent connu appliquant ce régime à des
+> projets libres hébergés de façon similaire.
 >
-> **⚠️ Condition non encore remplie à ce jour.** Cette communication préalable à
-> l'hébergeur (GitHub) **n'a pas encore été effectuée** au moment de la rédaction de ce
-> document. Tant qu'elle ne l'est pas, l'Éditeur **ne peut pas légitimement se prévaloir**
-> de cette faculté d'anonymat. **Action requise avant toute publication :** transmettre
-> l'identité civile réelle à GitHub par les canaux qu'il prévoit à cet effet (ou consulter
-> un juriste si un doute subsiste sur les modalités). Une fois cette communication
-> effectuée, l'Éditeur se présente sous le pseudonyme « Ideotion ».
+> **En conséquence, l'Éditeur ne revendique pas** le bénéfice de la faculté d'anonymat
+> prévue à l'article 1-1, II de la LCEN — laquelle suppose, comme **condition préalable**,
+> la communication de l'identité civile réelle à l'hébergeur, communication que l'Éditeur a
+> **délibérément choisi de ne pas effectuer**. La publication sous le pseudonyme «
+> Ideotion » repose donc **uniquement** sur la position de champ d'application ci-dessus,
+> à titre de transparence volontaire, et **non** sur l'exercice d'un droit statutaire à
+> l'anonymat.
+>
+> **⚠️ Réserve — risque résiduel non éliminé.** Cette position **n'a pas été validée par un
+> professionnel du droit** et n'offre **aucune garantie**. Si un tribunal devait juger que
+> ce projet relève malgré tout du régime de l'article 1-1 de la LCEN, la publication sous
+> pseudonyme sans avoir satisfait à la condition préalable ci-dessus pourrait exposer
+> l'Éditeur à une sanction prévue par la LCEN pour absence de mentions légales complètes
+> (sanction pénale ; référence d'article à confirmer par un juriste — la récente
+> renumérotation de la LCEN par la loi SREN du 21 mai 2024 rend une citation non vérifiée
+> peu fiable). **Cette réserve doit être examinée par un juriste** avant toute publication
+> à grande échelle si l'Éditeur souhaite réduire ce risque résiduel plutôt que l'accepter
+> en connaissance de cause.
 
 ## 3. Directeur de la publication
 
