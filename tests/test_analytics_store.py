@@ -68,6 +68,51 @@ def test_index_article_writes_mentions_with_facets(db):
     assert m.count >= 1 and m.first_offset is not None
 
 
+def test_www_pass_flush_failure_does_not_poison_the_session(db, monkeypatch):
+    """Field bug (2026-07-15): a UNIQUE-constraint flush failure deep in the
+    dates/places/entities pass (there: an unrelated law-tracking revision racing
+    a large corpus import; here: reproduced faithfully with a genuine duplicate
+    Article.hash flush) used to leave the session's transaction "needs
+    rollback" even though index_article's except caught the Python exception --
+    every later use of the SAME session then raised a cascading
+    PendingRollbackError / "Can't operate on closed transaction", burying the
+    real cause. The WWW pass must be isolated in its own savepoint so a failure
+    there rolls back on its own, and the keyword mentions already added in this
+    same call must survive."""
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    art = _article(db, "h-poison", "Trade policy dominated the summit and trade policy talks continued.")
+
+    from src.timemap import whostore
+
+    def _boom(session, article):
+        # A genuine flush-triggered IntegrityError (not a mocked exception) --
+        # the same class of failure a real UNIQUE collision produces.
+        dup = Article(
+            url="https://x.test/dup", canonical_url="https://x.test/dup", source_id=1,
+            title="dup", content="dup", hash=art.hash,  # duplicate of art's own hash
+            country="fr", language="en",
+            published_at=art.published_at, created_at=art.created_at,
+        )
+        session.add(dup)
+        session.flush()
+        return 0
+
+    monkeypatch.setattr(whostore, "store_places_for_article", _boom)
+
+    res = index_article(db, art, extractor=BaselineExtractor(), country="fr")
+    assert res["places"] == 0  # the WWW pass failed and rolled back, honestly zero
+
+    # The keyword mentions from THIS SAME call must have survived the WWW-pass
+    # failure -- the whole point of isolating it in its own savepoint.
+    assert db.query(KeywordMention).filter_by(article_id=art.id).count() > 0
+
+    # The session must still be USABLE afterward -- the actual regression: a
+    # plain query on the same session must not raise PendingRollbackError.
+    assert db.query(Article).filter_by(id=art.id).one().id == art.id
+    db.commit()  # and a subsequent commit must succeed cleanly
+
+
 def test_reindex_is_idempotent(db):
     db.add(Source(name="S", domain="x.test", country="fr"))
     db.commit()

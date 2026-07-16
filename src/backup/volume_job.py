@@ -206,8 +206,18 @@ class VolumeBackupManager:
                 cleanup_staging(staged)
         except Exception as exc:  # noqa: BLE001
             _LOG.exception("volume restore failed")
+            from src.backup.merge import MergeError, classify_restore_error
+
+            # A MergeError is an intentional, well-formed refusal (the live DB stays
+            # untouched) -- its own message is already the honest detail. Anything
+            # else (e.g. a genuine UNIQUE-constraint data conflict) gets the same
+            # classification the single-shot /api/backup/v2/restore endpoint applies
+            # (P0-2, _restore_error) -- this job used to store the bare str(exc)
+            # instead, so a data-merge conflict read as an unqualified, unhelpful
+            # "UNIQUE constraint failed:" in the UI (field bug 2026-07-15).
+            detail = str(exc) if isinstance(exc, MergeError) else classify_restore_error("restore", exc)
             with self._lock:
-                self._state, self._error = "error", str(exc)
+                self._state, self._error = "error", detail
 
     # -- verify -------------------------------------------------------------- #
     def start_verify(

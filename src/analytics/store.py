@@ -313,6 +313,14 @@ def index_article(
     # that indexes (live ingest, re-index, backfill) anchors them. Lexical
     # and bounded; failures must never abort the keyword indexing.
     www = {"dates": 0, "places": 0, "entities_stored": 0}
+    # Capture BEFORE the try block: a flush failure inside it expires every ORM
+    # object in the session (SQLAlchemy's default post-rollback behaviour), so
+    # re-touching `article.id` from the except handler below would itself need a
+    # fresh query against a transaction that may no longer be usable -- exactly
+    # the "Can't operate on closed transaction" cascade from the field report
+    # below. `article.id` is safe to read now: it was already resolved earlier
+    # in this same call (the keyword-mention inserts above reference it).
+    article_id = article.id
     try:
         if scope != "keywords":  # keyword-only cleanup skips the when/where/who passes
             from src.timemap.datestore import store_for_article as _store_dates
@@ -323,9 +331,21 @@ def index_article(
                 store_places_for_article as _store_places,
             )
 
-            www["dates"] = _store_dates(session, article)
-            www["places"] = _store_places(session, article)
-            www["entities_stored"] = _store_ents(session, article)
+            # Isolated in its OWN savepoint (field bug 2026-07-15): a flush failure
+            # here -- e.g. an unrelated pending row elsewhere in the session
+            # autoflushing into a UNIQUE collision (seen with a law-tracking
+            # revision racing a large corpus import) -- used to leave the
+            # session's transaction marked "needs rollback" even though this
+            # function's except below caught the Python exception. Every later
+            # operation on the SAME session then raised a cascading
+            # PendingRollbackError, burying the real cause under confusing
+            # secondary tracebacks. A savepoint lets a WWW-pass failure roll back
+            # on its own without touching the keyword mentions already added
+            # above in this same transaction.
+            with session.begin_nested():
+                www["dates"] = _store_dates(session, article)
+                www["places"] = _store_places(session, article)
+                www["entities_stored"] = _store_ents(session, article)
     except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
         # A transient 'database is locked' here must NOT be swallowed: doing so
         # leaves the session in a failed-flush state, so the line-below commit
@@ -334,12 +354,14 @@ def index_article(
         # (field log 2026-06-17 scheduler rollback). Re-raise lock errors so the
         # caller's run_write_with_retry rolls back and re-runs this idempotent
         # index instead of dropping data. Genuine extraction bugs stay swallowed
-        # (a bad date parse must never cost the article its keywords).
+        # (a bad date parse must never cost the article its keywords) -- the
+        # savepoint above already rolled itself back, so the session is healthy
+        # again by the time we get here.
         from src.database.write import is_locked_error
 
         if is_locked_error(exc):
             raise
-        _LOG.warning("when/where/who persistence failed for %s", article.id, exc_info=True)
+        _LOG.warning("when/where/who persistence failed for %s", article_id, exc_info=True)
     if commit:
         session.commit()
     return {
