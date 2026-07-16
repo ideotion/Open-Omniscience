@@ -33,6 +33,7 @@ spliced into the local chain.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import os
@@ -57,6 +58,31 @@ _SNAPSHOT_KEEP = 3
 
 class MergeError(RuntimeError):
     """Raised when a merge cannot proceed safely. The live DB is untouched."""
+
+
+@functools.lru_cache(maxsize=1)
+def _db_integrity_error_types() -> tuple[type, ...]:
+    """The IntegrityError classes a UNIQUE/FK/NOT-NULL violation can surface as.
+
+    ``sqlite3`` is stdlib (always present); ``sqlcipher3`` is the ENCRYPTED store's
+    driver (the default) and defines its OWN ``IntegrityError`` class -- NOT a
+    subclass of ``sqlite3.IntegrityError`` -- the exact cross-driver class
+    divergence ``src/database/write.py``'s ``is_locked_error`` already had to fix
+    for ``OperationalError`` (field log 2026-07-14, "297 fetched articles left
+    unindexed"). Without this, ``isinstance(exc, sqlite3.IntegrityError)`` silently
+    never fires for the encrypted store merge_corpus runs against, so a genuine
+    data-merge collision falls through to the generic "could not restore this
+    backup: ..." wording instead of the honest, more informative classification
+    below (field bug 2026-07-16). Guarded: sqlcipher3 may be absent in a core
+    install; cached since the imports are resolved once."""
+    types: list[type] = [sqlite3.IntegrityError]
+    try:
+        from sqlcipher3.dbapi2 import IntegrityError as _SqlcipherIntegrityError
+
+        types.append(_SqlcipherIntegrityError)
+    except Exception:  # noqa: BLE001 - sqlcipher3 absent in a core install -> stdlib path only
+        pass
+    return tuple(types)
 
 
 def classify_restore_error(action: str, exc: Exception) -> str:
@@ -88,7 +114,7 @@ def classify_restore_error(action: str, exc: Exception) -> str:
         or "no such column" in low
         or "schema" in low
     )
-    if isinstance(exc, sqlite3.IntegrityError):
+    if isinstance(exc, _db_integrity_error_types()):
         return (
             f"the backup's data conflicts with your corpus on a database constraint "
             f"(e.g. a duplicate row) while merging — this is a data-merge issue, not a "
@@ -551,6 +577,20 @@ def _merge_keywords(con, batch_id, results) -> None:
         con,
         f"SELECT COUNT(*) FROM inc.keywords i WHERE EXISTS (SELECT 1 FROM keywords m WHERE {key})",  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     )
+    # `keywords` carries NO unique constraint on (normalized_term, language) --
+    # deliberately, so near-duplicate rows are reconciled later at the family/ring
+    # layer, never at the schema layer. So an incoming corpus can genuinely hold TWO
+    # rows for the same term+language (a historical gap, e.g. a race predating the
+    # single-writer gate). The plain `NOT EXISTS` guard above only dedupes against
+    # the TARGET; it does nothing to collapse duplicates WITHIN the incoming batch
+    # itself, so both would insert as two SEPARATE new target rows -- defeating the
+    # whole point of this function's natural-key matching and (worse) perpetuating
+    # the same collapsible-duplicate shape into the target on every restore (field
+    # bug 2026-07-16, the keyword_mentions crash this fixes downstream in
+    # _merge_keyword_mentions/_merge_article_keyword_links). The `rep` join keeps
+    # only ONE representative incoming row per (normalized_term, language) group --
+    # deterministically the lowest incoming id, the SAME tie-break map_keywords
+    # below already uses for the target side.
     r.new = _insert_tracked(
         con, batch_id, "keywords",
         "INSERT INTO keywords (term, normalized_term, language, frequency, category_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -560,6 +600,10 @@ def _merge_keywords(con, batch_id, results) -> None:
         " i.is_ngram, i.ngram_size, i.is_entity, i.entity_type, i.relevance_score,"
         " i.extractor, i.created_at, i.updated_at"
         " FROM inc.keywords i LEFT JOIN temp.map_kwcat mc ON mc.old = i.category_id"
+        " JOIN (SELECT normalized_term, COALESCE(language,'en') AS lang, MIN(id) AS rep_id"
+        "       FROM inc.keywords GROUP BY normalized_term, COALESCE(language,'en')) rep"
+        "  ON rep.normalized_term = i.normalized_term"
+        "  AND rep.lang = COALESCE(i.language,'en') AND rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM keywords m WHERE {key})",
     )
     _build_map(
@@ -578,9 +622,22 @@ def _merge_article_keyword_links(con, batch_id, results) -> None:
         ("article_keywords", "frequency, first_position, last_position, relevance_score, created_at"),
     ):
         icols = ", ".join("i." + c.strip() for c in cols.split(","))
+        # INSERT OR IGNORE (field bug 2026-07-16, same class as the article_mentioned_dates
+        # fix below): `keywords` has NO unique constraint on (normalized_term, language) --
+        # deliberately, so near-duplicate keyword rows can be reconciled later at the
+        # family/ring layer instead of the schema layer. So `map_keywords` (built by
+        # `_merge_keywords`, matched on normalized_term+language) can be a COLLAPSING map:
+        # two DISTINCT incoming keyword ids landing on the SAME local keyword id. If both
+        # of those incoming ids have a link row for the same article, both candidate rows
+        # here target the identical (article_id, keyword_id) pair -- the plain NOT EXISTS
+        # guard only checks the pre-statement state of the target table, so it does not
+        # stop a second candidate colliding with the first candidate's OWN insert within
+        # this same statement, and the real PRIMARY KEY on (article_id, keyword_id) aborts
+        # the whole merge. OR IGNORE keeps one, silently drops the other (an arbitrary but
+        # harmless tie-break -- the two incoming rows describe the same article+concept).
         r.new += _insert_tracked(
             con, batch_id, table,
-            f"INSERT INTO {table} (article_id, keyword_id, {cols})"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+            f"INSERT OR IGNORE INTO {table} (article_id, keyword_id, {cols})"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
             f" SELECT ma.new, mk.new, {icols} FROM inc.{table} i"
             " JOIN temp.map_articles ma ON ma.old = i.article_id"
             " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
@@ -616,9 +673,24 @@ def _merge_keyword_mentions(con, batch_id, results) -> None:
         " JOIN keyword_mentions t ON t.article_id = ma.new AND t.keyword_id = mk.new"
         " WHERE t.count <> i.count",
     )
+    # INSERT OR IGNORE (field bug 2026-07-16: an 18 GB restore failed after hours of
+    # merging with "UNIQUE constraint failed: keyword_mentions.keyword_id,
+    # keyword_mentions.article_id"). Root cause is the same collapsing-map hazard as
+    # _merge_article_keyword_links above: `keywords` carries no unique constraint on
+    # (normalized_term, language) by design, so a large/old corpus can genuinely contain
+    # two keyword rows for the same term+language (a known historical gap this project's
+    # own family/ring reconciliation layer exists to paper over, never to delete). When
+    # such a corpus is the SOURCE of a restore, `map_keywords` collapses both incoming ids
+    # onto the one local keyword, and if both had a mention on the same article the two
+    # candidate rows target the identical (keyword_id, article_id) pair -- the real unique
+    # index (ix_mention_keyword_article) then aborts the whole restore on the second one,
+    # since the NOT EXISTS guard only sees the target table's pre-statement state, not a
+    # sibling candidate row inserted moments earlier by this SAME statement. Reproduced
+    # directly against sqlite3 (not mocked) before this fix; confirmed to raise the exact
+    # field error without OR IGNORE.
     r.new = _insert_tracked(
         con, batch_id, "keyword_mentions",
-        "INSERT INTO keyword_mentions (keyword_id, article_id, count, first_offset,"
+        "INSERT OR IGNORE INTO keyword_mentions (keyword_id, article_id, count, first_offset,"
         " observed_on, country, city, extractor, created_at)"
         " SELECT mk.new, ma.new, i.count, i.first_offset, i.observed_on, i.country,"
         " i.city, i.extractor, i.created_at"
