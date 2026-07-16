@@ -52,7 +52,7 @@ artifacts:
     freshness: {max_age_months: 6}
     couplings: ["src/geo/data/dbip_country_lite.csv.gz must exist + be parseable"]
     upstream_check: {github: "sapics/ip-location-db", type: path_commit, path: "dbip-country/dbip-country-ipv4.csv", compare: as_of}
-    last_verified: "2026-06-19"
+    last_verified: "2026-07-16"
 
   - id: llm-model-catalog
     title: Ollama model catalog
@@ -174,7 +174,11 @@ artifacts:
     refresh: "re-vendor the pinned version; update the sha256 + the gallery checksum constant"
     freshness: {policy: on-security}
     upstream_check: {github: "alpinejs/alpine", type: release, current: "v3.14.1"}
-    last_verified: "2026-06-17"
+    # Checked 2026-07-16 (freshness issue #440 flagged v3.15.12 upstream): no GitHub
+    # Security Advisory exists for alpinejs/alpine, and none of the v3.14.2-v3.15.12
+    # release notes mention a CVE/vulnerability/XSS fix -- policy is on-security, so
+    # correctly NOT re-vendored. Re-check next time the issue flags a newer upstream.
+    last_verified: "2026-07-16"
 
   - id: natural-earth-geometry
     title: Natural Earth coastline + country polygons
