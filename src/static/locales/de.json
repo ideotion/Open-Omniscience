@@ -2033,5 +2033,6 @@
   "Triple pass": "Dreifacher Durchgang",
   "Octuple pass": "Achtfacher Durchgang",
   "This may take several minutes on a large disk. Restart the app when you are done.": "Dies kann auf einer großen Festplatte mehrere Minuten dauern. Starten Sie die App neu, wenn Sie fertig sind.",
-  "None (crypto-erase only)": "Keine (nur Krypto-Löschung)"
+  "None (crypto-erase only)": "Keine (nur Krypto-Löschung)",
+  "last completed import": "letzter abgeschlossener Import"
 }

@@ -5322,6 +5322,48 @@
       document.getElementById("ux-imp-run").disabled = true;
       _uxImFound = null; _uxImSrc = "";
       document.getElementById("ux-import").showModal();
+      _uxShowLastCompletedSummary();  // best-effort; never blocks opening the dialog
+    }
+
+    // Field report 2026-07-16: "after a successful import/merge, the interface doesn't
+    // show the amounts of deduplicated and other import statistics." Root cause: a large
+    // restore runs for hours as a background job (task-manager-visible), so the browser
+    // tab is very likely closed or reloaded before it finishes -- and the SAME JS closure
+    // that would have called _renderImportSummary() is gone with it. openUnifiedImport()
+    // then unconditionally blanked #ux-imp-summary on every reopen, discarding the result
+    // forever even though it was never shown. But each job manager (get_volume_manager(),
+    // get_folder_manager(), the newsletter import job) is a PROCESS-WIDE singleton whose
+    // last completed summary survives any number of page reloads until a NEW job starts --
+    // so recover it here and render it via the same _renderImportSummary the live run uses,
+    // labelled as the last completed run (never confused with a fresh one).
+    async function _uxShowLastCompletedSummary() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const label = (title) => `${title} (${t("last completed import")})`;
+      const summaries = [];
+      try {
+        const s = await api("/api/backup/v2/volumes/status");
+        if (s && s.state === "done" && s.mode === "restore" && s.summary && s.summary.report) {
+          summaries.push({ title: label(t("Corpus backup")), plan: s.summary.report.plan || {} });
+        }
+      } catch (e) { /* best-effort: one endpoint failing must not hide the others */ }
+      try {
+        const s = await api("/api/backup/folder/status");
+        if (s && s.state === "done" && s.mode === "restore") {
+          const p = s.progress || {};
+          summaries.push({ title: label(t("Large data")), tally: { restored: p.restored || 0, skipped: p.skipped || 0 }, lines: [
+            `${p.restored || 0} ${t("restored")}`, `${p.skipped || 0} ${t("skipped")}`] });
+        }
+      } catch (e) { /* best-effort */ }
+      try {
+        const s = await api("/api/newsletters/import-folder/status");
+        if (s && s.state === "done") {
+          const tl = s.tally || {};
+          summaries.push({ title: label(t("Newsletters")), tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 }, lines: [
+            `${tl.stored || 0} ${t("stored")}`, `${tl.duplicate || 0} ${t("already present")}`,
+            `${tl.empty || 0} ${t("empty")}`, `${tl.errors || 0} ${t("errors")}`] });
+        }
+      } catch (e) { /* best-effort */ }
+      if (summaries.length) _renderImportSummary(document.getElementById("ux-imp-summary"), summaries);
     }
 
     // VERIFY a backup at the source folder without restoring (field-test Item 9). Runs the

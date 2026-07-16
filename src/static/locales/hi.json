@@ -2033,5 +2033,6 @@
   "Triple pass": "तिहरा पास",
   "Octuple pass": "आठ पास",
   "This may take several minutes on a large disk. Restart the app when you are done.": "बड़ी डिस्क पर इसमें कई मिनट लग सकते हैं। पूरा होने पर ऐप को पुनः आरंभ करें।",
-  "None (crypto-erase only)": "कोई नहीं (केवल कुंजी विनाश)"
+  "None (crypto-erase only)": "कोई नहीं (केवल कुंजी विनाश)",
+  "last completed import": "अंतिम पूर्ण किया गया आयात"
 }
