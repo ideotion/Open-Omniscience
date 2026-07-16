@@ -4,16 +4,18 @@
 > ([`../MENTIONS_LEGALES.md`](../MENTIONS_LEGALES.md)) adalah teks yang sah secara
 > hukum.**
 
-> ⚠️ **Pemberitahuan penting — draf kerja, bukan nasihat hukum.** Dokumen ini adalah
-> **draf kerja (templat)** yang disediakan untuk informasi. Dokumen ini **bukan nasihat
-> hukum atau konsultasi hukum** dan belum divalidasi oleh profesional hukum yang
-> berkualifikasi. Dokumen ini harus **ditinjau, dilengkapi, dan divalidasi oleh
-> profesional yang berkualifikasi** sebelum publikasi apa pun. Keterangan dalam tanda
-> kurung siku **[À COMPLÉTER: …]** dan **[À VÉRIFIER: …]** menandai informasi yang masih
-> harus diberikan atau dikonfirmasi.
+> ⚠️ **Pemberitahuan penting — dokumen ditulis tanpa validasi hukum profesional, secara
+> permanen.** Dokumen ini adalah **dokumen kerja** yang ditulis untuk tujuan informasi
+> oleh Penerbit sendiri. **Dokumen ini bukan nasihat atau konsultasi hukum.** **Open
+> Omniscience adalah proyek bebas, gratis, dan tanpa tujuan komersial, yang dikerjakan
+> tanpa anggaran**: dokumen ini **tidak akan ditinjau maupun divalidasi oleh profesional
+> hukum** — ini adalah pilihan yang disadari, bukan sekadar tahap yang ditunda.
+> Keterangan dalam tanda kurung siku **[À COMPLÉTER: …]** dan **[À VÉRIFIER: …]**
+> menandai informasi yang sengaja dibiarkan apa adanya, atau yang belum diverifikasi
+> secara independen oleh seorang profesional.
 
-**Versi:** [À COMPLÉTER]
-**Tanggal berlaku:** [À COMPLÉTER]
+**Versi:** 1.0
+**Tanggal berlaku:** 2026-07-16
 
 ---
 
@@ -37,11 +39,21 @@ sendiri. Penerbit **tidak mengoperasikan server apa pun** yang dapat diakses pub
   nonprofesional. [À COMPLÉTER: jika berlaku, status, nomor SIREN/SIRET, PPN — hanya jika
   Penerbit menerbitkan dalam kapasitas profesional.]
 
-> **Anonimitas penerbit nonprofesional.** LCEN mengizinkan penerbit **nonprofesional**
-> untuk **tidak mengungkapkan secara publik** identitas sipilnya, asalkan ia telah
-> menyampaikannya kepada penyedia hosting-nya, yang dapat meneruskannya atas permintaan
-> otoritas peradilan. Penerbit menggunakan opsi ini dan mengidentifikasi diri dengan nama
-> samaran "Ideotion". [À VÉRIFIER: rujukan pasti pasal LCEN yang berlaku.]
+> **Anonimitas dengan nama samaran — dasar yang digunakan.** Sebagaimana disebutkan pada
+> §1, Perangkat Lunak adalah **perangkat lunak lokal**: repositori yang di-host oleh
+> GitHub mendokumentasikan dan mendistribusikan **kode sumber**, dan tidak menjalankan
+> **layanan aplikasi apa pun yang dapat diakses publik** yang dioperasikan oleh Penerbit.
+> Atas dasar ini, Penerbit berpendapat bahwa rezim identifikasi pada **article 1-1 de la
+> LCEN** — yang menyasar "layanan komunikasi kepada publik secara daring" — **tidak
+> berlaku, dengan demikian, terhadap proyek ini**.
+>
+> **Sebagai konsekuensinya, Penerbit tidak mengklaim** manfaat dari fasilitas anonimitas
+> yang diatur dalam article 1-1, II de la LCEN — yang mensyaratkan, sebagai
+> **prasyarat**, penyampaian identitas sipil yang sebenarnya kepada penyedia hosting,
+> penyampaian yang **secara sengaja dipilih untuk tidak dilakukan** oleh Penerbit.
+> Publikasi dengan nama samaran "Ideotion" karenanya didasarkan **semata-mata** pada
+> posisi ruang lingkup berlaku di atas, sebagai bentuk transparansi sukarela, dan
+> **bukan** pada pelaksanaan suatu hak berdasarkan undang-undang atas anonimitas.
 
 ## 3. Direktur publikasi
 
@@ -54,8 +66,11 @@ sendiri. Penerbit **tidak mengoperasikan server apa pun** yang dapat diakses pub
 repositori pihak ketiga:
 
 - **Penyedia hosting:** **GitHub, Inc.**
-- **Alamat:** [À VÉRIFIER: 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, Amerika
-  Serikat.]
+- **Alamat:** 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, Amerika Serikat
+  (alamat yang dinyatakan sendiri oleh GitHub dalam Privacy Statement / Data Protection
+  Agreement miliknya; GitHub tetap merupakan entitas tersendiri, anak perusahaan yang
+  dimiliki 100% oleh Microsoft sejak 2018, dan tidak menggantikan alamat ini dengan alamat
+  Microsoft).
 - **Situs:** https://github.com/ideotion/Open-Omniscience
 
 > **Penting.** GitHub meng-host **repositori kode sumber**, bukan layanan aplikasi yang

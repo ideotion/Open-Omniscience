@@ -3,16 +3,18 @@
 > **Tradução automática (rascunho) — pendente de revisão nativa. A versão francesa
 > ([`../CGU.md`](../CGU.md)) é o texto juridicamente autêntico.**
 
-> ⚠️ **Aviso importante — rascunho de trabalho, não é aconselhamento jurídico.** Este
-> documento é um **rascunho de trabalho (modelo)** fornecido a título informativo. **Não
-> constitui aconselhamento nem consulta jurídica** e não foi validado por um profissional
-> do direito qualificado. Deve ser **revisto, completado, adaptado e validado por um
-> profissional qualificado** antes de qualquer publicação ou uso contratual. As menções
-> entre parênteses retos **[À COMPLÉTER: …]** e **[À VÉRIFIER: …]** assinalam informações
-> ainda a fornecer ou a confirmar.
+> ⚠️ **Aviso importante — documento redigido sem validação jurídica profissional, de
+> forma permanente.** Este documento é um **documento de trabalho** redigido a título
+> informativo pelo próprio Editor. **Não constitui aconselhamento nem consulta
+> jurídica**, incluindo para uso com fins contratuais. **Open Omniscience é um projeto
+> livre, gratuito e sem fins comerciais, realizado sem orçamento**: este documento **não
+> será revisto, adaptado nem validado por um profissional do direito** — trata-se de uma
+> escolha assumida, e não de uma etapa simplesmente adiada. As menções entre parênteses
+> retos **[À COMPLÉTER: …]** e **[À VÉRIFIER: …]** assinalam informações voluntariamente
+> deixadas tal como estão, ou não verificadas de forma independente por um profissional.
 
-**Versão:** [À COMPLÉTER]
-**Data de entrada em vigor:** [À COMPLÉTER]
+**Versão:** 1.0
+**Data de entrada em vigor:** 2026-07-16
 **Contacto:** open-omniscience@ideotion.com
 
 ---
@@ -233,9 +235,11 @@ afastar** o que não pode ser licitamente afastado, em particular:
   conteúdos e serviços digitais**).
 
 Quando o Utilizador atue como **consumidor**, nenhuma disposição das presentes o priva dos
-**direitos imperativos** que a lei lhe garante.
-[À VÉRIFIER: articular com as disposições precisas do direito do consumo aplicáveis ao
-fornecimento, se for o caso gratuito, de conteúdos digitais.]
+**direitos imperativos** que a lei lhe garante, nomeadamente os **artigos L.224-25-1 a
+L.224-25-32 do Code de la consommation** (garantia de conformidade dos conteúdos e serviços
+digitais, que transpõe a Diretiva (UE) 2019/770 — a garantia de conformidade propriamente
+dita constando dos artigos L.224-25-12 a L.224-25-26), os quais se aplicam mesmo quando o
+conteúdo ou o serviço digital seja fornecido **sem contrapartida de preço**.
 
 ## Artigo 10.º — Indemnização
 
@@ -308,13 +312,15 @@ União Europeia** como quadro supranacional aplicável.
 falta, o litígio será submetido aos tribunais competentes em conformidade com as regras do
 direito comum.
 
-15.3. **Proteção dos consumidores — regra imperativa.** Quando o Utilizador atue como
-**consumidor**, estas disposições **não o privam** da possibilidade de recorrer ao
+15.3. **Proteção do consumidor — regra imperativa.** Quando o Utilizador atue como
+**consumidor**, as presentes estipulações **não o privam** da possibilidade de recorrer ao
 **tribunal do seu local de domicílio**, nem das **regras imperativas de competência e de
-proteção** previstas a seu favor, em particular pelo direito do consumo e pelo **règlement
-(UE) n° 1215/2012 («Bruxelas I-A»)**. Nenhuma cláusula das presentes pode derrogar essas
-regras imperativas.
-[À VÉRIFIER: referências precisas dos artigos.]
+proteção** previstas a seu favor, nomeadamente pelo **Code de la consommation** e pelos
+**artigos 17.º a 19.º do règlement (UE) n° 1215/2012 («Bruxelas I bis»)** (secção
+consagrada aos contratos celebrados por consumidores), e em particular o **artigo 18.º**,
+que permite ao consumidor agir perante o tribunal do seu próprio domicílio e restringe
+reciprocamente o profissional a só poder agir contra ele perante esse mesmo tribunal.
+Nenhuma cláusula das presentes pode derrogar estas regras imperativas.
 
 ## Artigo 16.º — Disposições diversas
 

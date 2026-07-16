@@ -1,15 +1,17 @@
 # Conditions Générales d'Utilisation (CGU)
 
-> ⚠️ **Avis important — modèle de travail, non un avis juridique.** Ce document est un
-> **modèle (template) de travail** rédigé à titre informatif. Il **ne constitue pas un
-> avis ou une consultation juridique** et n'a pas été validé par un professionnel du
-> droit. Il doit être **relu, complété, adapté et validé par un juriste qualifié** avant
-> toute publication ou utilisation à des fins contractuelles. Les mentions entre crochets
-> **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]** signalent les informations restant à
-> fournir ou à confirmer.
+> ⚠️ **Avis important — document rédigé sans validation juridique professionnelle, de
+> façon permanente.** Ce document est un **document de travail** rédigé à titre
+> informatif par l'Éditeur lui-même. **Il ne constitue pas un avis ou une consultation
+> juridique**, y compris pour un usage à des fins contractuelles. **Open Omniscience est
+> un projet libre, gratuit et sans but commercial, réalisé sans budget** : ce document
+> **ne sera pas relu, adapté ni validé par un professionnel du droit** — il s'agit d'un
+> choix assumé, et non d'une étape simplement différée. Les mentions entre crochets
+> **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]** signalent des informations volontairement
+> laissées en l'état, ou non vérifiées de manière indépendante par un professionnel.
 
-**Version :** [À COMPLÉTER]
-**Date d'entrée en vigueur :** [À COMPLÉTER]
+**Version :** 1.0
+**Date d'entrée en vigueur :** 2026-07-16
 **Contact :** open-omniscience@ideotion.com
 
 ---
@@ -229,9 +231,12 @@ ci-dessus s'appliquent **dans les seules limites permises par la loi** et **ne s
   à la **conformité des contenus et services numériques**).
 
 Lorsque l'Utilisateur agit en qualité de **consommateur**, aucune stipulation des
-présentes ne le prive des **droits impératifs** que lui garantit la loi.
-[À VÉRIFIER : articuler avec les dispositions précises du Code de la consommation
-applicables à la fourniture, le cas échéant à titre gratuit, d'un contenu numérique.]
+présentes ne le prive des **droits impératifs** que lui garantit la loi, notamment les
+**articles L.224-25-1 à L.224-25-32 du Code de la consommation** (garantie de conformité
+des contenus et services numériques, transposant la directive (UE) 2019/770 — la garantie
+de conformité proprement dite figurant aux articles L.224-25-12 à L.224-25-26), qui
+s'appliquent y compris lorsque le contenu ou le service numérique est fourni **sans
+contrepartie de prix**.
 
 ## Article 10 — Indemnisation
 
@@ -308,9 +313,12 @@ commun.
 qualité de **consommateur**, les présentes stipulations **ne le privent pas** de la
 possibilité de saisir la **juridiction de son lieu de domicile** ni des **règles
 impératives de compétence et de protection** prévues en sa faveur, notamment par le **Code
-de la consommation** et par le **règlement (UE) n° 1215/2012 (« Bruxelles I bis »)**. Aucune
-clause des présentes ne saurait déroger à ces règles impératives.
-[À VÉRIFIER : références d'articles précises.]
+de la consommation** et par les **articles 17 à 19 du règlement (UE) n° 1215/2012 («
+Bruxelles I bis »)** (section consacrée aux contrats conclus par les consommateurs),
+et en particulier l'**article 18**, qui permet au consommateur d'agir devant la
+juridiction de son propre domicile et restreint réciproquement le professionnel à ne
+pouvoir agir contre lui que devant cette même juridiction. Aucune clause des présentes ne
+saurait déroger à ces règles impératives.
 
 ## Article 16 — Divers
 

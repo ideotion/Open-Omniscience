@@ -4,16 +4,18 @@
 > ([`../POLITIQUE_DE_CONFIDENTIALITE.md`](../POLITIQUE_DE_CONFIDENTIALITE.md)) adalah teks
 > yang sah secara hukum.**
 
-> ⚠️ **Pemberitahuan penting — draf kerja, bukan nasihat hukum.** Dokumen ini adalah
-> **draf kerja (templat)** yang disediakan untuk informasi. Dokumen ini **bukan nasihat
-> hukum atau konsultasi hukum** dan belum divalidasi oleh profesional hukum yang
-> berkualifikasi. Dokumen ini harus **ditinjau, dilengkapi, dan divalidasi oleh
-> profesional yang berkualifikasi** sebelum publikasi apa pun. Keterangan dalam tanda
-> kurung siku **[À COMPLÉTER: …]** dan **[À VÉRIFIER: …]** menandai informasi yang masih
-> harus diberikan atau dikonfirmasi.
+> ⚠️ **Pemberitahuan penting — dokumen ditulis tanpa validasi hukum profesional, secara
+> permanen.** Dokumen ini adalah **dokumen kerja** yang ditulis untuk tujuan informasi
+> oleh Penerbit sendiri. **Dokumen ini bukan nasihat atau konsultasi hukum.** **Open
+> Omniscience adalah proyek bebas, gratis, dan tanpa tujuan komersial, yang dikerjakan
+> tanpa anggaran**: dokumen ini **tidak akan ditinjau maupun divalidasi oleh profesional
+> hukum** — ini adalah pilihan yang disadari, bukan sekadar tahap yang ditunda.
+> Keterangan dalam tanda kurung siku **[À COMPLÉTER: …]** dan **[À VÉRIFIER: …]**
+> menandai informasi yang sengaja dibiarkan apa adanya, atau yang belum diverifikasi
+> secara independen oleh seorang profesional.
 
-**Versi:** [À COMPLÉTER]
-**Tanggal berlaku:** [À COMPLÉTER]
+**Versi:** 1.0
+**Tanggal berlaku:** 2026-07-16
 **Kontak:** open-omniscience@ideotion.com
 
 ---
@@ -48,9 +50,11 @@ Desain Perangkat Lunak menjamin, **secara konstruksi**:
 
 > *Catatan konsistensi:* pernyataan ini mencerminkan keadaan Perangkat Lunak yang
 > terdokumentasi (lihat `README`, [`../../SECURITY.md`](../../SECURITY.md), dan
-> [`../../ETHICS.md`](../../ETHICS.md)). Setiap perubahan di masa mendatang yang
-> memperkenalkan transmisi data harus didokumentasikan di sini **sebelum** dioperasikan.
-> [À VÉRIFIER: konfirmasi ketiadaan telemetri pada setiap versi yang diterbitkan.]
+> [`../../ETHICS.md`](../../ETHICS.md)). Setiap perkembangan di masa mendatang yang
+> memperkenalkan transmisi data apa pun harus didokumentasikan di sini **sebelum**
+> dioperasikan. **Titik kewaspadaan permanen (harus diverifikasi ulang pada setiap versi,
+> sebelum pembaruan apa pun terhadap kolom "Versi" di atas): mengonfirmasi ulang
+> ketiadaan telemetri dalam kode yang benar-benar diterbitkan.**
 
 ## 3. Data teknis yang diproses secara lokal oleh Perangkat Lunak
 
@@ -106,8 +110,12 @@ Pengguna dapat, dengan syarat tertentu, memperoleh **penyesuaian** yang diatur d
 **article 85 du RGPD** dan dalam ketentuan terkait **Loi Informatique et Libertés**.
 Pengecualian ini **tidak membebaskan** dari kepatuhan terhadap prinsip-prinsip esensial dan
 **harus dinilai kasus per kasus**; hal ini termasuk dalam **penilaian dan tanggung jawab
-Pengguna**. [À VÉRIFIER: rujukan pasti ketentuan nasional yang mentranskripsikan article
-85.]
+Pengguna**. Transposisi nasionalnya tercantum pada **article 80 de la loi n° 78-17 du 6
+janvier 1978** (sebagaimana diubah oleh ordonnance tanggal 12 Desember 2018), yang
+mengesampingkan, secara pengecualian dan sejauh diperlukan untuk mendamaikan perlindungan
+data dengan kebebasan berekspresi dan informasi, penerapan ketentuan-ketentuan tertentu
+RGPD terhadap pemrosesan yang dilaksanakan khususnya untuk tujuan pelaksanaan, secara
+profesional, kegiatan sebagai jurnalis.
 
 ## 5. Hasil yang dihasilkan AI dan data pribadi
 

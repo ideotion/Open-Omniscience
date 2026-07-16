@@ -4,16 +4,18 @@
 > ([`../POLITIQUE_DE_CONFIDENTIALITE.md`](../POLITIQUE_DE_CONFIDENTIALITE.md)) is the
 > legally authoritative text.**
 
-> ⚠️ **Important notice — working draft, not legal advice.** This document is a
-> **working draft (template)** provided for information. It **does not constitute
-> legal advice or a legal consultation** and has not been validated by a qualified
-> legal professional. It must be **reviewed, completed and validated by a qualified
-> professional** before any publication. The bracketed mentions
-> **[À COMPLÉTER: …]** and **[À VÉRIFIER: …]** flag information still to be provided
-> or confirmed.
+> ⚠️ **Important notice — this document is written without professional legal
+> review, permanently.** This document is a **working draft** written for
+> information by the Publisher directly. **It does not constitute legal advice or
+> a legal consultation.** **Open Omniscience is a free, non-commercial project run
+> with no budget**: this document **will not be reviewed or validated by a legal
+> professional** — this is a deliberate choice, not a step that has merely been
+> postponed. The bracketed mentions **[À COMPLÉTER: …]** and **[À VÉRIFIER: …]**
+> flag information deliberately left as-is, or not independently verified by a
+> professional.
 
-**Version:** [À COMPLÉTER]
-**Effective date:** [À COMPLÉTER]
+**Version:** 1.0
+**Effective date:** 2026-07-16
 **Contact:** open-omniscience@ideotion.com
 
 ---
@@ -50,7 +52,9 @@ The design of the Software guarantees, **by construction**:
 > (see the `README`, [`../../SECURITY.md`](../../SECURITY.md) and
 > [`../../ETHICS.md`](../../ETHICS.md)). Any future change that introduced any
 > transmission of data should be documented here **before** going into service.
-> [À VÉRIFIER: confirm the absence of telemetry at each published version.]
+> **Standing vigilance point (to be re-checked at every version, before any update to
+> the "Version" field above): reconfirm the absence of telemetry in the code actually
+> published.**
 
 ## 3. Technical data processed locally by the Software
 
@@ -105,10 +109,15 @@ from their local corpus.
 Where the processing is carried out for **journalistic purposes** or for **expression
 and information**, the User may, under conditions, benefit from **adjustments**
 provided by **article 85 of the RGPD** and by the corresponding provisions of the
-**Loi Informatique et Libertés**. This exemption **does not relieve** from compliance
-with the essential principles and **must be assessed case by case**; it falls within
-the **assessment and responsibility of the User**. [À VÉRIFIER: precise references of
-the national provisions transposing article 85.]
+**Loi Informatique et Libertés**. This exception **does not relieve** the User from
+compliance with the essential principles and **must be assessed on a case-by-case
+basis**; it falls within the **assessment and responsibility of the User**. The
+national transposition is found in **article 80 of loi n° 78-17 du 6 janvier 1978**
+(as amended by the ordonnance of 12 December 2018), which sets aside, on a derogating
+basis and to the extent necessary to reconcile data protection with freedom of
+expression and information, the application of certain provisions of the RGPD to
+processing carried out in particular for the purposes of the professional exercise of
+the activity of journalist.
 
 ## 5. AI-produced outputs and personal data
 

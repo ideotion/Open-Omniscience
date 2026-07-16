@@ -1,14 +1,16 @@
 # Charte d'usage (charte éthique / *acceptable use*)
 
-> ⚠️ **Avis important — modèle de travail, non un avis juridique.** Ce document est un
-> **modèle (template) de travail** rédigé à titre informatif. Il **ne constitue pas un
-> avis ou une consultation juridique** et n'a pas été validé par un professionnel du
-> droit. Il doit être **relu, complété et validé par un juriste qualifié** avant toute
-> publication. Les mentions entre crochets **[À COMPLÉTER : …]** signalent les
-> informations restant à fournir.
+> ⚠️ **Avis important — document rédigé sans validation juridique professionnelle, de
+> façon permanente.** Ce document est un **document de travail** rédigé à titre
+> informatif par l'Éditeur lui-même. **Il ne constitue pas un avis ou une consultation
+> juridique.** **Open Omniscience est un projet libre, gratuit et sans but commercial,
+> réalisé sans budget** : ce document **ne sera pas relu ni validé par un professionnel
+> du droit** — il s'agit d'un choix assumé, et non d'une étape simplement différée. Les
+> mentions entre crochets **[À COMPLÉTER : …]** signalent des informations volontairement
+> laissées en l'état.
 
-**Version :** [À COMPLÉTER]
-**Date d'entrée en vigueur :** [À COMPLÉTER]
+**Version :** 1.0
+**Date d'entrée en vigueur :** 2026-07-16
 **Contact :** open-omniscience@ideotion.com
 
 ---

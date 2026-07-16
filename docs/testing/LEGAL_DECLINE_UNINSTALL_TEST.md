@@ -4,7 +4,9 @@ The first launch shows the legal documents (between the language step and the
 passphrase). **Accepting** records consent and continues to the passphrase.
 **Declining** triggers a **SECURE uninstall**: it removes the virtualenv, the
 desktop launchers, the app folder, **and wipes the data dir and signing keys**
-(best-effort overwrite, then delete).
+via crypto-erase (destroys the SQLCipher salt/header + on-disk key material,
+then deletes — see `src/safety/crypto_erase.py`), optionally followed by a
+full free-space overwrite pass.
 
 > ⚠️ **This is irreversible and destructive.** Test it ONLY in a throwaway VM or
 > container — **never** against a machine that holds a real corpus or keys.

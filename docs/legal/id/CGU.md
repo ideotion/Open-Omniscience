@@ -3,16 +3,19 @@
 > **Terjemahan mesin (draf) — menunggu peninjauan oleh penutur asli. Versi Prancis
 > ([`../CGU.md`](../CGU.md)) adalah teks yang sah secara hukum.**
 
-> ⚠️ **Pemberitahuan penting — draf kerja, bukan nasihat hukum.** Dokumen ini adalah
-> **draf kerja (templat)** yang disediakan untuk informasi. Dokumen ini **bukan nasihat
-> hukum atau konsultasi hukum** dan belum divalidasi oleh profesional hukum yang
-> berkualifikasi. Dokumen ini harus **ditinjau, dilengkapi, disesuaikan, dan divalidasi
-> oleh profesional yang berkualifikasi** sebelum publikasi atau penggunaan kontraktual apa
-> pun. Keterangan dalam tanda kurung siku **[À COMPLÉTER: …]** dan **[À VÉRIFIER: …]**
-> menandai informasi yang masih harus diberikan atau dikonfirmasi.
+> ⚠️ **Pemberitahuan penting — dokumen ditulis tanpa validasi hukum profesional, secara
+> permanen.** Dokumen ini adalah **dokumen kerja** yang ditulis untuk tujuan informasi
+> oleh Penerbit sendiri. **Dokumen ini bukan nasihat atau konsultasi hukum**, termasuk
+> untuk penggunaan demi tujuan kontraktual. **Open Omniscience adalah proyek bebas,
+> gratis, dan tanpa tujuan komersial, yang dikerjakan tanpa anggaran**: dokumen ini
+> **tidak akan ditinjau, disesuaikan, maupun divalidasi oleh profesional hukum** — ini
+> adalah pilihan yang disadari, bukan sekadar tahap yang ditunda. Keterangan dalam tanda
+> kurung siku **[À COMPLÉTER: …]** dan **[À VÉRIFIER: …]** menandai informasi yang
+> sengaja dibiarkan apa adanya, atau yang belum diverifikasi secara independen oleh
+> seorang profesional.
 
-**Versi:** [À COMPLÉTER]
-**Tanggal berlaku:** [À COMPLÉTER]
+**Versi:** 1.0
+**Tanggal berlaku:** 2026-07-16
 **Kontak:** open-omniscience@ideotion.com
 
 ---
@@ -233,9 +236,12 @@ mengesampingkan** apa yang tidak dapat dikesampingkan secara sah, khususnya:
   layanan digital**).
 
 Apabila Pengguna bertindak sebagai **konsumen**, tidak ada ketentuan di sini yang mencabut
-**hak-hak yang bersifat memaksa** yang dijamin baginya oleh hukum.
-[À VÉRIFIER: selaraskan dengan ketentuan pasti hukum konsumen yang berlaku untuk penyediaan
-konten digital, yang mungkin gratis.]
+**hak-hak yang bersifat memaksa** yang dijamin baginya oleh hukum, khususnya
+**pasal-pasal L.224-25-1 hingga L.224-25-32 Code de la consommation** (Kitab
+Undang-Undang Konsumen Prancis) (jaminan kesesuaian konten dan layanan digital, yang
+mentransposisikan Directive (UE) 2019/770 — jaminan kesesuaian itu sendiri tercantum pada
+pasal-pasal L.224-25-12 hingga L.224-25-26), yang berlaku bahkan ketika konten atau
+layanan digital tersebut disediakan **tanpa kontraprestasi berupa harga**.
 
 ## Pasal 10 — Ganti rugi
 
@@ -311,9 +317,13 @@ umum.
 sebagai **konsumen**, ketentuan ini **tidak mencabut** kemungkinannya untuk mengajukan
 perkara ke **pengadilan di tempat domisilinya**, maupun **aturan yurisdiksi dan
 perlindungan yang bersifat memaksa** yang ditetapkan untuk kepentingannya, khususnya oleh
-hukum konsumen dan oleh **règlement (UE) n° 1215/2012 ("Brussels I bis")**. Tidak ada
-klausul di sini yang dapat menyimpang dari aturan yang bersifat memaksa tersebut.
-[À VÉRIFIER: rujukan pasti pasal-pasalnya.]
+**Code de la consommation** (Kitab Undang-Undang Konsumen Prancis) dan oleh
+**pasal-pasal 17 hingga 19 règlement (UE) n° 1215/2012 ("Brussels I bis")** (bagian yang
+dikhususkan untuk kontrak yang dibuat oleh konsumen), dan khususnya **pasal 18**, yang
+memungkinkan konsumen mengajukan perkara di pengadilan tempat domisilinya sendiri dan,
+secara timbal balik, membatasi pelaku usaha untuk hanya dapat mengajukan perkara terhadap
+konsumen tersebut di pengadilan yang sama. Tidak ada klausul di sini yang dapat menyimpang
+dari aturan yang bersifat memaksa tersebut.
 
 ## Pasal 16 — Lain-lain
 

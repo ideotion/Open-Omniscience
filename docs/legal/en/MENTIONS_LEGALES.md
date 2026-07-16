@@ -4,16 +4,18 @@
 > ([`../MENTIONS_LEGALES.md`](../MENTIONS_LEGALES.md)) is the legally authoritative
 > text.**
 
-> ⚠️ **Important notice — working draft, not legal advice.** This document is a
-> **working draft (template)** provided for information. It **does not constitute
-> legal advice or a legal consultation** and has not been validated by a qualified
-> legal professional. It must be **reviewed, completed and validated by a qualified
-> professional** before any publication. The bracketed mentions
-> **[À COMPLÉTER: …]** and **[À VÉRIFIER: …]** flag information still to be provided
-> or confirmed.
+> ⚠️ **Important notice — this document is written without professional legal
+> review, permanently.** This document is a **working draft** written for
+> information by the Publisher directly. **It does not constitute legal advice or
+> a legal consultation.** **Open Omniscience is a free, non-commercial project run
+> with no budget**: this document **will not be reviewed or validated by a legal
+> professional** — this is a deliberate choice, not a step that has merely been
+> postponed. The bracketed mentions **[À COMPLÉTER: …]** and **[À VÉRIFIER: …]**
+> flag information deliberately left as-is, or not independently verified by a
+> professional.
 
-**Version:** [À COMPLÉTER]
-**Effective date:** [À COMPLÉTER]
+**Version:** 1.0
+**Effective date:** 2026-07-16
 
 ---
 
@@ -36,12 +38,20 @@ data (see the [Privacy Policy](POLITIQUE_DE_CONFIDENTIALITE.md)).
   non-professional capacity. [À COMPLÉTER: where applicable, status, SIREN/SIRET
   number, VAT — only if the Publisher publishes in a professional capacity.]
 
-> **Anonymity of a non-professional publisher.** The LCEN allows a
-> **non-professional** publisher **not to publicly disclose** their civil identity,
-> provided they have communicated it to their host, who may transmit it upon request
-> of the judicial authority. The Publisher relies on this option and identifies
-> itself under the pseudonym "Ideotion". [À VÉRIFIER: exact reference of the
-> applicable LCEN article.]
+> **Pseudonymous anonymity — basis relied upon.** As indicated in §1, the Software is a
+> **local piece of software**: the repository hosted by GitHub documents and distributes
+> the **source code**; it does not run **any application service accessible to the
+> public** that the Publisher would operate. On this basis, the Publisher considers that
+> the identification regime of **article 1-1 of the LCEN** — which targets "online public
+> communication services" — **does not apply, as such, to this project**.
+>
+> **Accordingly, the Publisher does not claim** the benefit of the anonymity option
+> provided for in article 1-1, II of the LCEN — which presupposes, as a **prerequisite
+> condition**, the communication of one's real civil identity to the host, a
+> communication the Publisher has **deliberately chosen not to make**. Publication under
+> the pseudonym "Ideotion" therefore rests **solely** on the scope-of-application position
+> above, as a matter of voluntary transparency, and **not** on the exercise of a statutory
+> right to anonymity.
 
 ## 3. Publication director
 
@@ -54,8 +64,10 @@ The **source code** of the Software is made publicly available through a third-p
 repository-hosting platform:
 
 - **Host:** **GitHub, Inc.**
-- **Address:** [À VÉRIFIER: 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107,
-  United States.]
+- **Address:** 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, United States
+  (address self-declared by GitHub in its Privacy Statement / Data Protection
+  Agreement; GitHub remains a separate entity, a wholly-owned subsidiary of Microsoft
+  since 2018, and has not substituted a Microsoft address for this one).
 - **Site:** https://github.com/ideotion/Open-Omniscience
 
 > **Important.** GitHub hosts the **source-code repository**, not a running

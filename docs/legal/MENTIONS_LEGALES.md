@@ -1,14 +1,17 @@
 # Mentions légales
 
-> ⚠️ **Avis important — modèle de travail, non un avis juridique.** Ce document est un
-> **modèle (template) de travail** rédigé à titre informatif. Il **ne constitue pas un
-> avis ou une consultation juridique** et n'a pas été validé par un professionnel du
-> droit. Il doit être **relu, complété et validé par un juriste qualifié** avant toute
-> publication. Les mentions entre crochets **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]**
-> signalent les informations restant à fournir ou à confirmer.
+> ⚠️ **Avis important — document rédigé sans validation juridique professionnelle, de
+> façon permanente.** Ce document est un **document de travail** rédigé à titre
+> informatif par l'Éditeur lui-même. **Il ne constitue pas un avis ou une consultation
+> juridique.** **Open Omniscience est un projet libre, gratuit et sans but commercial,
+> réalisé sans budget** : ce document **ne sera pas relu ni validé par un professionnel
+> du droit** — il s'agit d'un choix assumé, et non d'une étape simplement différée. Les
+> mentions entre crochets **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]** signalent des
+> informations volontairement laissées en l'état, ou non vérifiées de manière
+> indépendante par un professionnel.
 
-**Version :** [À COMPLÉTER]
-**Date d'entrée en vigueur :** [À COMPLÉTER]
+**Version :** 1.0
+**Date d'entrée en vigueur :** 2026-07-16
 
 ---
 
@@ -31,12 +34,20 @@ la [Politique de confidentialité](POLITIQUE_DE_CONFIDENTIALITE.md)).
   professionnel. [À COMPLÉTER : le cas échéant, statut, n° SIREN/SIRET, TVA — uniquement
   si l'Éditeur publie à titre professionnel.]
 
-> **Anonymat de l'éditeur non professionnel.** La LCEN permet à un éditeur **non
-> professionnel** de **ne pas divulguer publiquement** son identité civile, à condition
-> d'avoir communiqué celle-ci à son hébergeur, qui peut la transmettre sur réquisition de
-> l'autorité judiciaire. L'Éditeur se prévaut de cette faculté et se présente sous le
-> pseudonyme « Ideotion ». [À VÉRIFIER : référence exacte de l'article applicable de la
-> LCEN.]
+> **Anonymat pseudonymique — fondement retenu.** Comme indiqué au §1, le Logiciel est un
+> **logiciel local** : le dépôt hébergé par GitHub documente et distribue le **code
+> source**, il ne fait fonctionner **aucun service applicatif accessible au public** que
+> l'Éditeur exploiterait. Sur cette base, l'Éditeur considère que le régime
+> d'identification de l'**article 1-1 de la LCEN** — qui vise les « services de
+> communication au public en ligne » — **ne s'applique pas, en tant que tel, à ce projet**.
+>
+> **En conséquence, l'Éditeur ne revendique pas** le bénéfice de la faculté d'anonymat
+> prévue à l'article 1-1, II de la LCEN — laquelle suppose, comme **condition préalable**,
+> la communication de l'identité civile réelle à l'hébergeur, communication que l'Éditeur a
+> **délibérément choisi de ne pas effectuer**. La publication sous le pseudonyme «
+> Ideotion » repose donc **uniquement** sur la position de champ d'application ci-dessus,
+> à titre de transparence volontaire, et **non** sur l'exercice d'un droit statutaire à
+> l'anonymat.
 
 ## 3. Directeur de la publication
 
@@ -49,8 +60,10 @@ Le **code source** du Logiciel est mis à disposition publiquement via une plate
 d'hébergement de dépôts tierce :
 
 - **Hébergeur :** **GitHub, Inc.**
-- **Adresse :** [À VÉRIFIER : 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107,
-  États-Unis.]
+- **Adresse :** 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, États-Unis
+  (adresse auto-déclarée par GitHub dans sa Privacy Statement / son Data Protection
+  Agreement ; GitHub reste une entité distincte, filiale à 100 % de Microsoft depuis 2018,
+  et n'a pas substitué une adresse Microsoft à cette adresse).
 - **Site :** https://github.com/ideotion/Open-Omniscience
 
 > **Important.** GitHub héberge le **dépôt de code source**, et non un service applicatif

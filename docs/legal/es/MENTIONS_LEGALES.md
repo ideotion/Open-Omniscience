@@ -4,16 +4,19 @@
 > francesa ([`../MENTIONS_LEGALES.md`](../MENTIONS_LEGALES.md)) es el texto
 > jurídicamente auténtico.**
 
-> ⚠️ **Aviso importante — borrador de trabajo, no asesoramiento jurídico.** Este
-> documento es un **borrador de trabajo (plantilla)** facilitado a título informativo.
-> **No constituye asesoramiento ni consulta jurídica** y no ha sido validado por un
-> profesional del derecho cualificado. Debe ser **revisado, completado y validado por
-> un profesional cualificado** antes de cualquier publicación. Las menciones entre
-> corchetes **[À COMPLÉTER: …]** y **[À VÉRIFIER: …]** señalan información aún por
-> aportar o confirmar.
+> ⚠️ **Aviso importante — documento redactado sin validación jurídica profesional, de
+> forma permanente.** Este documento es un **documento de trabajo** redactado a título
+> informativo por el propio Editor. **No constituye un asesoramiento ni una consulta
+> jurídica.** **Open Omniscience es un proyecto libre, gratuito y sin fines
+> comerciales, realizado sin presupuesto**: este documento **no será revisado ni
+> validado por un profesional del derecho** — se trata de una decisión asumida, y no
+> de una etapa simplemente aplazada. Las menciones entre corchetes
+> **[À COMPLÉTER: …]** y **[À VÉRIFIER: …]** señalan información dejada
+> voluntariamente sin completar, o no verificada de forma independiente por un
+> profesional.
 
-**Versión:** [À COMPLÉTER]
-**Fecha de entrada en vigor:** [À COMPLÉTER]
+**Versión:** 1.0
+**Fecha de entrada en vigor:** 2026-07-16
 
 ---
 
@@ -37,11 +40,21 @@ dato alguno de los usuarios (véase la
   profesional. [À COMPLÉTER: en su caso, estatuto, número SIREN/SIRET, IVA — solo si
   el Editor publica a título profesional.]
 
-> **Anonimato de un editor no profesional.** La LCEN permite a un editor **no
-> profesional** **no divulgar públicamente** su identidad civil, siempre que la haya
-> comunicado a su alojador, quien puede transmitirla a requerimiento de la autoridad
-> judicial. El Editor se acoge a esta opción y se identifica con el seudónimo
-> «Ideotion». [À VÉRIFIER: referencia exacta del artículo de la LCEN aplicable.]
+> **Anonimato seudonímico — fundamento adoptado.** Como se indica en el §1, el Software
+> es un **software local**: el repositorio alojado por GitHub documenta y distribuye el
+> **código fuente**, y no hace funcionar **ningún servicio de aplicación accesible al
+> público** que el Editor explotara. Sobre esta base, el Editor considera que el
+> régimen de identificación del **artículo 1-1 de la LCEN** —que se refiere a los
+> «servicios de comunicación pública en línea»— **no se aplica, como tal, a este
+> proyecto**.
+>
+> **En consecuencia, el Editor no reivindica** el beneficio de la facultad de anonimato
+> prevista en el artículo 1-1, II de la LCEN —la cual supone, como **condición
+> previa**, la comunicación de la identidad civil real al alojador, comunicación que el
+> Editor ha **decidido deliberadamente no efectuar**. La publicación bajo el seudónimo
+> «Ideotion» se basa por tanto **únicamente** en la posición sobre el ámbito de
+> aplicación expuesta más arriba, a título de transparencia voluntaria, y **no** en el
+> ejercicio de un derecho legal al anonimato.
 
 ## 3. Director de la publicación
 
@@ -54,8 +67,10 @@ El **código fuente** del Software se pone a disposición del público mediante 
 plataforma de alojamiento de repositorios de terceros:
 
 - **Alojador:** **GitHub, Inc.**
-- **Dirección:** [À VÉRIFIER: 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107,
-  Estados Unidos.]
+- **Dirección:** 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, Estados Unidos
+  (dirección autodeclarada por GitHub en su Privacy Statement / su Data Protection
+  Agreement; GitHub sigue siendo una entidad distinta, filial al 100 % de Microsoft
+  desde 2018, y no ha sustituido esta dirección por una dirección de Microsoft).
 - **Sitio:** https://github.com/ideotion/Open-Omniscience
 
 > **Importante.** GitHub aloja el **repositorio del código fuente**, no un servicio de

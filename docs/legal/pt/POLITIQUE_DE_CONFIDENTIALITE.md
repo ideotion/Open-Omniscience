@@ -4,16 +4,18 @@
 > ([`../POLITIQUE_DE_CONFIDENTIALITE.md`](../POLITIQUE_DE_CONFIDENTIALITE.md)) é o texto
 > juridicamente autêntico.**
 
-> ⚠️ **Aviso importante — rascunho de trabalho, não é aconselhamento jurídico.** Este
-> documento é um **rascunho de trabalho (modelo)** fornecido a título informativo. **Não
-> constitui aconselhamento nem consulta jurídica** e não foi validado por um profissional
-> do direito qualificado. Deve ser **revisto, completado e validado por um profissional
-> qualificado** antes de qualquer publicação. As menções entre parênteses retos
-> **[À COMPLÉTER: …]** e **[À VÉRIFIER: …]** assinalam informações ainda a fornecer ou a
-> confirmar.
+> ⚠️ **Aviso importante — documento redigido sem validação jurídica profissional, de
+> forma permanente.** Este documento é um **documento de trabalho** redigido a título
+> informativo pelo próprio Editor. **Não constitui aconselhamento nem consulta
+> jurídica.** **Open Omniscience é um projeto livre, gratuito e sem fins comerciais,
+> realizado sem orçamento**: este documento **não será revisto nem validado por um
+> profissional do direito** — trata-se de uma escolha assumida, e não de uma etapa
+> simplesmente adiada. As menções entre parênteses retos **[À COMPLÉTER: …]** e
+> **[À VÉRIFIER: …]** assinalam informações voluntariamente deixadas tal como estão, ou
+> não verificadas de forma independente por um profissional.
 
-**Versão:** [À COMPLÉTER]
-**Data de entrada em vigor:** [À COMPLÉTER]
+**Versão:** 1.0
+**Data de entrada em vigor:** 2026-07-16
 **Contacto:** open-omniscience@ideotion.com
 
 ---
@@ -49,9 +51,10 @@ A conceção do Software garante, **por construção**:
 
 > *Nota de coerência:* estas afirmações refletem o estado documentado do Software (ver o
 > `README`, [`../../SECURITY.md`](../../SECURITY.md) e [`../../ETHICS.md`](../../ETHICS.md)).
-> Qualquer alteração futura que introduzisse uma transmissão de dados deveria ser
-> documentada aqui **antes** da sua entrada em serviço. [À VÉRIFIER: confirmar a ausência
-> de telemetria em cada versão publicada.]
+> Qualquer alteração futura que introduzisse uma qualquer transmissão de dados deveria ser
+> documentada aqui **antes** da sua entrada em serviço. **Ponto de vigilância permanente (a
+> reconfirmar em cada versão, antes de qualquer atualização do campo «Versão» acima):
+> reconfirmar a ausência de telemetria no código efetivamente publicado.**
 
 ## 3. Dados técnicos tratados localmente pelo Software
 
@@ -106,8 +109,12 @@ informação**, o Utilizador pode, em determinadas condições, beneficiar das *
 previstas no **article 85 du RGPD** e nas disposições correspondentes da **Loi Informatique
 et Libertés**. Esta isenção **não dispensa** do cumprimento dos princípios essenciais e
 **deve ser apreciada caso a caso**; insere-se na **apreciação e na responsabilidade do
-Utilizador**. [À VÉRIFIER: referências precisas das disposições nacionais que transpõem o
-article 85.]
+Utilizador**. A transposição nacional consta do **article 80 de la loi n° 78-17 du 6
+janvier 1978** (na redação resultante da *ordonnance* de 12 de dezembro de 2018), que
+afasta, a título derrogatório e na medida necessária à conciliação entre a proteção de
+dados e a liberdade de expressão e de informação, a aplicação de certas disposições do
+RGPD aos tratamentos efetuados, nomeadamente, para efeitos do exercício, a título
+profissional, da atividade de jornalista.
 
 ## 5. Resultados produzidos por IA e dados pessoais
 

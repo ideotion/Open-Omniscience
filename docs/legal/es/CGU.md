@@ -3,16 +3,19 @@
 > **Traducción automática (borrador) — pendiente de revisión nativa. La versión
 > francesa ([`../CGU.md`](../CGU.md)) es el texto jurídicamente auténtico.**
 
-> ⚠️ **Aviso importante — borrador de trabajo, no asesoramiento jurídico.** Este
-> documento es un **borrador de trabajo (plantilla)** facilitado a título informativo.
-> **No constituye asesoramiento ni consulta jurídica** y no ha sido validado por un
-> profesional del derecho cualificado. Debe ser **revisado, completado, adaptado y
-> validado por un profesional cualificado** antes de cualquier publicación o uso
-> contractual. Las menciones entre corchetes **[À COMPLÉTER: …]** y **[À VÉRIFIER: …]**
-> señalan información aún por aportar o confirmar.
+> ⚠️ **Aviso importante — documento redactado sin validación jurídica profesional, de
+> forma permanente.** Este documento es un **documento de trabajo** redactado a título
+> informativo por el propio Editor. **No constituye un asesoramiento ni una consulta
+> jurídica**, tampoco para un uso con fines contractuales. **Open Omniscience es un
+> proyecto libre, gratuito y sin fines comerciales, realizado sin presupuesto**: este
+> documento **no será revisado, adaptado ni validado por un profesional del derecho**
+> — se trata de una decisión asumida, y no de una etapa simplemente aplazada. Las
+> menciones entre corchetes **[À COMPLÉTER: …]** y **[À VÉRIFIER: …]** señalan
+> información dejada voluntariamente sin completar, o no verificada de forma
+> independiente por un profesional.
 
-**Versión:** [À COMPLÉTER]
-**Fecha de entrada en vigor:** [À COMPLÉTER]
+**Versión:** 1.0
+**Fecha de entrada en vigor:** 2026-07-16
 **Contacto:** open-omniscience@ideotion.com
 
 ---
@@ -238,10 +241,13 @@ ley** y **no pueden excluir** lo que no puede excluirse lícitamente, en particu
   y por el Derecho de la Unión Europea (incluidas, en su caso, las normas sobre
   **conformidad de los contenidos y servicios digitales**).
 
-Cuando el Usuario actúe como **consumidor**, ninguna disposición de las presentes le
-priva de los **derechos imperativos** que la ley le garantiza.
-[À VÉRIFIER: articular con las disposiciones precisas del Derecho de consumo aplicables
-al suministro, en su caso gratuito, de contenidos digitales.]
+Cuando el Usuario actúe como **consumidor**, ninguna estipulación de las presentes le
+priva de los **derechos imperativos** que la ley le garantiza, en particular los
+**artículos L.224-25-1 a L.224-25-32 del Code de la consommation** (Código de Consumo
+francés; garantía de conformidad de los contenidos y servicios digitales, que transpone
+la Directiva (UE) 2019/770 —la garantía de conformidad propiamente dicha figura en los
+artículos L.224-25-12 a L.224-25-26—), que se aplican incluso cuando el contenido o el
+servicio digital se suministra **sin contraprestación de precio**.
 
 ## Artículo 10 — Indemnización
 
@@ -317,12 +323,15 @@ su defecto, el litigio se someterá a los órganos jurisdiccionales competentes 
 las reglas del Derecho común.
 
 15.3. **Protección de los consumidores — norma imperativa.** Cuando el Usuario actúe
-como **consumidor**, estas disposiciones **no le privan** de la posibilidad de acudir al
-**tribunal de su lugar de domicilio**, ni de las **reglas imperativas de competencia y
-de protección** previstas en su favor, en particular por el Derecho de consumo y por el
-**règlement (UE) n° 1215/2012 («Bruselas I bis»)**. Ninguna cláusula de las presentes
-podrá derogar dichas reglas imperativas.
-[À VÉRIFIER: referencias precisas de los artículos.]
+como **consumidor**, las presentes estipulaciones **no le privan** de la posibilidad de
+acudir a la **jurisdicción de su lugar de domicilio** ni de las **reglas imperativas de
+competencia y de protección** previstas en su favor, en particular por el **Code de la
+consommation** (Código de Consumo francés) y por los **artículos 17 a 19 del règlement
+(UE) n° 1215/2012 («Bruselas I bis»)** (sección dedicada a los contratos celebrados por
+los consumidores), y en particular el **artículo 18**, que permite al consumidor actuar
+ante la jurisdicción de su propio domicilio y restringe recíprocamente al profesional a
+no poder actuar contra él más que ante esa misma jurisdicción. Ninguna cláusula de las
+presentes podrá derogar dichas reglas imperativas.
 
 ## Artículo 16 — Disposiciones diversas
 

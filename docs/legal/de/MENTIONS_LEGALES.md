@@ -4,16 +4,20 @@
 > Prüfung. Die französische Fassung ([`../MENTIONS_LEGALES.md`](../MENTIONS_LEGALES.md))
 > ist der rechtlich maßgebliche Text.**
 
-> ⚠️ **Wichtiger Hinweis — Arbeitsentwurf, keine Rechtsberatung.** Dieses Dokument ist
-> ein **Arbeitsentwurf (Vorlage)**, der zu Informationszwecken bereitgestellt wird. Es
-> **stellt keine Rechtsberatung und keine rechtliche Auskunft dar** und wurde nicht von
-> einer qualifizierten Person des Rechts geprüft. Es muss vor jeder Veröffentlichung von
-> **einer qualifizierten Fachperson geprüft, vervollständigt und freigegeben** werden.
-> Die in eckigen Klammern stehenden Hinweise **[À COMPLÉTER: …]** und **[À VÉRIFIER: …]**
-> kennzeichnen noch zu ergänzende oder zu bestätigende Angaben.
+> ⚠️ **Wichtiger Hinweis — Dokument dauerhaft ohne professionelle rechtliche
+> Prüfung verfasst.** Dieses Dokument ist ein **Arbeitsentwurf**, der vom
+> Herausgeber selbst zu Informationszwecken verfasst wurde. **Es stellt keine
+> Rechtsberatung und keine rechtliche Auskunft dar.** **Open Omniscience ist
+> ein freies, kostenloses und nichtkommerzielles Projekt ohne Budget**: Dieses
+> Dokument **wird nicht von einer Fachperson des Rechts geprüft oder
+> freigegeben** — dies ist eine bewusste Entscheidung und keine lediglich
+> aufgeschobene Etappe. Die in eckigen Klammern stehenden Hinweise
+> **[À COMPLÉTER: …]** und **[À VÉRIFIER: …]** kennzeichnen Angaben, die
+> bewusst unvollständig gelassen wurden, oder die nicht unabhängig von einer
+> Fachperson überprüft wurden.
 
-**Version:** [À COMPLÉTER]
-**Datum des Inkrafttretens:** [À COMPLÉTER]
+**Version:** 1.0
+**Datum des Inkrafttretens:** 2026-07-16
 
 ---
 
@@ -37,12 +41,21 @@ zugänglichen Server und **erhebt keine** Nutzerdaten (siehe die
   nichtgewerblich. [À COMPLÉTER: gegebenenfalls Status, SIREN/SIRET-Nummer, USt-IdNr. —
   nur wenn der Herausgeber gewerblich veröffentlicht.]
 
-> **Anonymität eines nichtgewerblichen Herausgebers.** Die LCEN erlaubt einem
-> **nichtgewerblichen** Herausgeber, seine zivile Identität **nicht öffentlich
-> preiszugeben**, sofern er sie seinem Hoster mitgeteilt hat, der sie auf Verlangen der
-> Justizbehörde übermitteln kann. Der Herausgeber nimmt diese Möglichkeit in Anspruch und
-> tritt unter dem Pseudonym „Ideotion" auf. [À VÉRIFIER: genaue Fundstelle des
-> einschlägigen LCEN-Artikels.]
+> **Pseudonyme Anonymität — gewählte Grundlage.** Wie in §1 dargelegt, handelt es sich bei
+> der Software um **lokal ausgeführte Software**: Das von GitHub gehostete Repository
+> dokumentiert und verbreitet den **Quellcode**, es betreibt jedoch **keinen öffentlich
+> zugänglichen Anwendungsdienst**, den der Herausgeber betreiben würde. Auf dieser
+> Grundlage geht der Herausgeber davon aus, dass das Identifizierungsregime des
+> **Artikels 1-1 der LCEN** — der sich auf **öffentliche Online-Kommunikationsdienste**
+> bezieht — **auf dieses Projekt als solches keine Anwendung findet**.
+>
+> **Der Herausgeber nimmt daher nicht** die in Artikel 1-1, II der LCEN vorgesehene
+> Möglichkeit der Anonymität in Anspruch — diese setzt als **Vorbedingung** voraus, dass
+> die tatsächliche zivile Identität dem Hoster mitgeteilt wird, was der Herausgeber
+> **bewusst unterlassen hat**. Die Veröffentlichung unter dem Pseudonym „Ideotion" beruht
+> somit **ausschließlich** auf der vorstehenden Position zum Anwendungsbereich, als
+> Ausdruck freiwilliger Transparenz, und **nicht** auf der Ausübung eines gesetzlichen
+> Anspruchs auf Anonymität.
 
 ## 3. Verantwortlich für die Veröffentlichung
 
@@ -55,8 +68,11 @@ Der **Quellcode** der Software wird der Öffentlichkeit über eine
 Drittanbieter-Plattform für die Verwaltung von Code-Repositorys zugänglich gemacht:
 
 - **Hoster:** **GitHub, Inc.**
-- **Anschrift:** [À VÉRIFIER: 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107,
-  Vereinigte Staaten.]
+- **Anschrift:** 88 Colin P. Kelly Jr. Street, San Francisco, CA 94107, Vereinigte Staaten
+  (von GitHub selbst angegebene Anschrift gemäß dessen Privacy Statement / Data Protection
+  Agreement; GitHub bleibt eine eigenständige Rechtspersönlichkeit, seit 2018 eine
+  hundertprozentige Tochtergesellschaft von Microsoft, und hat diese Anschrift nicht durch
+  eine Microsoft-Anschrift ersetzt).
 - **Website:** https://github.com/ideotion/Open-Omniscience
 
 > **Wichtig.** GitHub hostet das **Quellcode-Repository**, nicht einen laufenden

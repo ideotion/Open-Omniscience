@@ -4,17 +4,21 @@
 > Prüfung. Die französische Fassung ([`../CGU.md`](../CGU.md)) ist der rechtlich
 > maßgebliche Text.**
 
-> ⚠️ **Wichtiger Hinweis — Arbeitsentwurf, keine Rechtsberatung.** Dieses Dokument ist
-> ein **Arbeitsentwurf (Vorlage)**, der zu Informationszwecken bereitgestellt wird. Es
-> **stellt keine Rechtsberatung und keine rechtliche Auskunft dar** und wurde nicht von
-> einer qualifizierten Person des Rechts geprüft. Es muss vor jeder Veröffentlichung oder
-> vertraglichen Verwendung von **einer qualifizierten Fachperson geprüft, vervollständigt,
-> angepasst und freigegeben** werden. Die in eckigen Klammern stehenden Hinweise
-> **[À COMPLÉTER: …]** und **[À VÉRIFIER: …]** kennzeichnen noch zu ergänzende oder zu
-> bestätigende Angaben.
+> ⚠️ **Wichtiger Hinweis — Dokument dauerhaft ohne professionelle rechtliche
+> Prüfung verfasst.** Dieses Dokument ist ein **Arbeitsentwurf**, der vom
+> Herausgeber selbst zu Informationszwecken verfasst wurde. **Es stellt keine
+> Rechtsberatung und keine rechtliche Auskunft dar**, auch nicht für eine
+> vertragliche Verwendung. **Open Omniscience ist ein freies, kostenloses und
+> nichtkommerzielles Projekt ohne Budget**: Dieses Dokument **wird nicht von
+> einer Fachperson des Rechts geprüft, angepasst oder freigegeben** — dies ist
+> eine bewusste Entscheidung und keine lediglich aufgeschobene Etappe. Die in
+> eckigen Klammern stehenden Hinweise **[À COMPLÉTER: …]** und
+> **[À VÉRIFIER: …]** kennzeichnen Angaben, die bewusst unvollständig
+> gelassen wurden, oder die nicht unabhängig von einer Fachperson überprüft
+> wurden.
 
-**Version:** [À COMPLÉTER]
-**Datum des Inkrafttretens:** [À COMPLÉTER]
+**Version:** 1.0
+**Datum des Inkrafttretens:** 2026-07-16
 **Kontakt:** open-omniscience@ideotion.com
 
 ---
@@ -251,9 +255,12 @@ nicht ausschließen**, was nicht rechtmäßig ausgeschlossen werden kann, insbes
 
 Handelt die Nutzerin bzw. der Nutzer als **Verbraucher(in)**, so nimmt keine Bestimmung der
 vorliegenden Bedingungen ihr bzw. ihm die **zwingenden Rechte**, die ihr bzw. ihm das
-Gesetz garantiert.
-[À VÉRIFIER: Abstimmung mit den genauen Vorschriften des Verbraucherrechts, die für die
-gegebenenfalls unentgeltliche Bereitstellung digitaler Inhalte gelten.]
+Gesetz garantiert, insbesondere die **Artikel L.224-25-1 bis L.224-25-32 des Code de la
+consommation** (Gewährleistung der Vertragsmäßigkeit digitaler Inhalte und
+Dienstleistungen, zur Umsetzung der Richtlinie (EU) 2019/770 — die eigentliche
+Vertragsmäßigkeitsgewährleistung findet sich in den Artikeln L.224-25-12 bis
+L.224-25-26), die auch dann gelten, wenn der digitale Inhalt oder Dienst **ohne Zahlung
+eines Preises** bereitgestellt wird.
 
 ## Artikel 10 — Freistellung
 
@@ -337,10 +344,13 @@ die zuständigen Gerichte gebracht.
 als **Verbraucher(in)**, so nehmen diese Bestimmungen ihr bzw. ihm **nicht** die
 Möglichkeit, das **Gericht ihres bzw. seines Wohnsitzes** anzurufen, noch die zu ihren bzw.
 seinen Gunsten vorgesehenen **zwingenden Zuständigkeits- und Schutzvorschriften**,
-insbesondere nach dem Verbraucherrecht und nach der **règlement (UE) n° 1215/2012 („Brüssel
-Ia")**. Keine Klausel der vorliegenden Bedingungen darf von diesen zwingenden Vorschriften
-abweichen.
-[À VÉRIFIER: genaue Fundstellen der Artikel.]
+insbesondere nach dem Verbraucherrecht und nach den **Artikeln 17 bis 19 der Verordnung
+(EU) Nr. 1215/2012 („Brüssel-Ia-Verordnung")** (dem Abschnitt über Verbraucherverträge),
+und insbesondere nach **Artikel 18**, der es der Verbraucherin bzw. dem Verbraucher
+gestattet, vor dem Gericht ihres bzw. seines eigenen Wohnsitzes zu klagen, und der
+umgekehrt die gewerbliche Partei darauf beschränkt, gegen sie bzw. ihn nur vor eben diesem
+Gericht vorzugehen. Keine Klausel der vorliegenden Bedingungen darf von diesen zwingenden
+Vorschriften abweichen.
 
 ## Artikel 16 — Verschiedenes
 
