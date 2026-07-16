@@ -53,7 +53,7 @@ _LOG = logging.getLogger(__name__)
 # When the bundled COUNTRY table was last refreshed. "unbundled" until the maintainer
 # runs scripts/build_ip_geo.py on a networked machine (the freshness test then asserts a
 # real YYYY-MM within a sane window). DB-IP refreshes monthly.
-IP_GEO_AS_OF = "2026-06"
+IP_GEO_AS_OF = "2026-07"
 
 # Mandatory CC BY 4.0 attribution for the bundled country table.
 ATTRIBUTION = "IP geolocation by DB-IP (https://db-ip.com) — CC BY 4.0"
