@@ -125,28 +125,28 @@ the web entrypoint could strand a desktop-launcher or `curl | bash` user with no
 
 ## Finalizing for release
 
-1. ✅ **Done (2026-07-16).** `Version : 1.0-draft` / `Date d'entrée en vigueur :
-   2026-07-16` are now set in all four documents (French originals + all 11 translated
-   copies), matching `CONSENT_DOC_VERSION` in `src/legal/consent.py`. The `-draft` suffix
-   is intentional — it stays until step 3 below is done; bump to a plain `"1.0"` (in
-   the docs **and** `CONSENT_DOC_VERSION` together) once a qualified professional has
-   signed off.
-2. ✅ **Done.** `CONSENT_DOC_VERSION` already reads `"1.0-draft"`, matching step 1.
-3. ⬜ **Still open.** Have a qualified professional review the documents (they remain
-   drafts — see the banner on each). Two known open items for that review, both flagged
-   inline: (a) `MENTIONS_LEGALES.md` §2 — the Éditeur has **deliberately chosen not to**
-   disclose their real identity to GitHub (the LCEN Art. 1-1, II anonymity precondition),
-   so the clause was rewritten (2026-07-16) around a different, **untested "outside LCEN
-   scope" argument** instead (local software, no live public service operated by the
-   Éditeur) — this position is explicitly flagged as unconfirmed by counsel and carries a
-   residual risk (a possible LCEN penal sanction for incomplete mentions légales if a court
-   ever disagreed with the scope argument); a lawyer should assess whether to keep this
-   position, harden its wording, or accept the residual risk as-is; (b) the handful of
-   remaining `[À VÉRIFIER: …]` legal-citation placeholders (Code de la consommation
-   articles, Bruxelles I bis articles, GDPR Art. 85 French-transposition article) —
-   best-effort citations were filled in from research, flagged for professional
-   confirmation, not guaranteed correct.
-4. ⬜ **Still open.** Land the web-modal PR above.
+1. ✅ **Done (2026-07-16).** `Version : 1.0` / `Date d'entrée en vigueur : 2026-07-16` are
+   set in all four documents (French originals + all 11 translated copies), matching
+   `CONSENT_DOC_VERSION` in `src/legal/consent.py`.
+2. ✅ **Done.** `CONSENT_DOC_VERSION` reads `"1.0"`, matching step 1.
+3. ✅ **DECIDED, permanently (2026-07-16): no professional legal review — this is not a
+   gate being waited on.** Open Omniscience is a free, non-commercial hobby project with
+   no budget, so a lawyer will never review this document set; the top banner of every
+   document says so explicitly, as a standing fact rather than a "pending" placeholder.
+   This is a conscious trade-off, not an oversight — recorded here for anyone who later
+   wonders why the banner doesn't say "awaiting review": (a) `MENTIONS_LEGALES.md` §2 —
+   the Éditeur has **deliberately chosen not to** disclose their real identity to GitHub
+   (the LCEN Art. 1-1, II anonymity precondition), so the clause instead argues a
+   different, **best-effort, professionally-unconfirmed "outside LCEN scope" position**
+   (local software, no live public service operated by the Éditeur) — accepted as-is,
+   with its residual risk (a possible LCEN penal sanction for incomplete mentions légales
+   if a court ever disagreed) knowingly carried rather than mitigated by counsel; (b) the
+   handful of `[À VÉRIFIER: …]` legal-citation placeholders that remain (Code de la
+   consommation articles, Bruxelles I bis articles, GDPR Art. 85 French-transposition
+   article) are best-effort citations from research, not professionally verified, and
+   will stay that way.
+4. ⬜ **Still open.** Land the web-modal PR above (an unrelated engineering task, not
+   gated on anything above).
 
 ## Tests
 

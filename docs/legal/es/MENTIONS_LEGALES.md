@@ -4,15 +4,18 @@
 > francesa ([`../MENTIONS_LEGALES.md`](../MENTIONS_LEGALES.md)) es el texto
 > jurídicamente auténtico.**
 
-> ⚠️ **Aviso importante — borrador de trabajo, no asesoramiento jurídico.** Este
-> documento es un **borrador de trabajo (plantilla)** facilitado a título informativo.
-> **No constituye asesoramiento ni consulta jurídica** y no ha sido validado por un
-> profesional del derecho cualificado. Debe ser **revisado, completado y validado por
-> un profesional cualificado** antes de cualquier publicación. Las menciones entre
-> corchetes **[À COMPLÉTER: …]** y **[À VÉRIFIER: …]** señalan información aún por
-> aportar o confirmar.
+> ⚠️ **Aviso importante — documento redactado sin validación jurídica profesional, de
+> forma permanente.** Este documento es un **documento de trabajo** redactado a título
+> informativo por el propio Editor. **No constituye un asesoramiento ni una consulta
+> jurídica.** **Open Omniscience es un proyecto libre, gratuito y sin fines
+> comerciales, realizado sin presupuesto**: este documento **no será revisado ni
+> validado por un profesional del derecho** — se trata de una decisión asumida, y no
+> de una etapa simplemente aplazada. Las menciones entre corchetes
+> **[À COMPLÉTER: …]** y **[À VÉRIFIER: …]** señalan información dejada
+> voluntariamente sin completar, o no verificada de forma independiente por un
+> profesional.
 
-**Versión:** 1.0-draft
+**Versión:** 1.0
 **Fecha de entrada en vigor:** 2026-07-16
 
 ---

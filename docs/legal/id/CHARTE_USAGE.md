@@ -3,14 +3,16 @@
 > **Terjemahan mesin (draf) — menunggu peninjauan oleh penutur asli. Versi Prancis
 > ([`../CHARTE_USAGE.md`](../CHARTE_USAGE.md)) adalah teks yang sah secara hukum.**
 
-> ⚠️ **Pemberitahuan penting — draf kerja, bukan nasihat hukum.** Dokumen ini adalah
-> **draf kerja (templat)** yang disediakan untuk informasi. Dokumen ini **bukan nasihat
-> hukum atau konsultasi hukum** dan belum divalidasi oleh profesional hukum yang
-> berkualifikasi. Dokumen ini harus **ditinjau, dilengkapi, dan divalidasi oleh
-> profesional yang berkualifikasi** sebelum publikasi apa pun. Keterangan dalam tanda
-> kurung siku **[À COMPLÉTER: …]** menandai informasi yang masih harus diberikan.
+> ⚠️ **Pemberitahuan penting — dokumen ditulis tanpa validasi hukum profesional, secara
+> permanen.** Dokumen ini adalah **dokumen kerja** yang ditulis untuk tujuan informasi
+> oleh Penerbit sendiri. **Dokumen ini bukan nasihat atau konsultasi hukum.** **Open
+> Omniscience adalah proyek bebas, gratis, dan tanpa tujuan komersial, yang dikerjakan
+> tanpa anggaran**: dokumen ini **tidak akan ditinjau maupun divalidasi oleh profesional
+> hukum** — ini adalah pilihan yang disadari, bukan sekadar tahap yang ditunda.
+> Keterangan dalam tanda kurung siku **[À COMPLÉTER: …]** menandai informasi yang
+> sengaja dibiarkan apa adanya.
 
-**Versi:** 1.0-draft
+**Versi:** 1.0
 **Tanggal berlaku:** 2026-07-16
 **Kontak:** open-omniscience@ideotion.com
 

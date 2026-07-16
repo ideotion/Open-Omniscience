@@ -3,15 +3,17 @@
 > **Machine-drafted translation — pending native review. The French version
 > ([`../CGU.md`](../CGU.md)) is the legally authoritative text.**
 
-> ⚠️ **Important notice — working draft, not legal advice.** This document is a
-> **working draft (template)** provided for information. It **does not constitute
-> legal advice or a legal consultation** and has not been validated by a qualified
-> legal professional. It must be **reviewed, completed, adapted and validated by a
-> qualified professional** before any publication or contractual use. The bracketed
-> mentions **[À COMPLÉTER: …]** and **[À VÉRIFIER: …]** flag information still to be
-> provided or confirmed.
+> ⚠️ **Important notice — this document is written without professional legal
+> review, permanently.** This document is a **working draft** written for
+> information by the Publisher directly. **It does not constitute legal advice or
+> a legal consultation**, including for contractual use. **Open Omniscience is a
+> free, non-commercial project run with no budget**: this document **will not be
+> reviewed, adapted or validated by a legal professional** — this is a deliberate
+> choice, not a step that has merely been postponed. The bracketed mentions
+> **[À COMPLÉTER: …]** and **[À VÉRIFIER: …]** flag information deliberately left
+> as-is, or not independently verified by a professional.
 
-**Version:** 1.0-draft
+**Version:** 1.0
 **Effective date:** 2026-07-16
 **Contact:** open-omniscience@ideotion.com
 

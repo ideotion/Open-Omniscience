@@ -1,12 +1,14 @@
 # Documents juridiques & de gouvernance — Open Omniscience
 
-> ⚠️ **Avis important — modèles de travail, pas un avis juridique.** Les documents
-> de ce dossier sont des **modèles (templates) de travail** fournis à titre informatif.
-> Ils **ne constituent pas un avis ou une consultation juridique** et n'ont pas été
-> validés par un professionnel du droit. Ils doivent être **relus, complétés, adaptés et
-> validés par un juriste qualifié** avant toute publication. Les mentions entre crochets
-> **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]** signalent les informations restant à
-> fournir ou à confirmer.
+> ⚠️ **Avis important — documents rédigés sans validation juridique professionnelle, de
+> façon permanente.** Les documents de ce dossier sont des **documents de travail**
+> rédigés à titre informatif par l'Éditeur lui-même. **Ils ne constituent pas un avis ou
+> une consultation juridique.** **Open Omniscience est un projet libre, gratuit et sans
+> but commercial, réalisé sans budget** : ces documents **ne seront pas relus, adaptés ni
+> validés par un professionnel du droit** — il s'agit d'un choix assumé, et non d'une
+> étape simplement différée. Les mentions entre crochets **[À COMPLÉTER : …]** et
+> **[À VÉRIFIER : …]** signalent des informations volontairement laissées en l'état, ou
+> non vérifiées de manière indépendante par un professionnel.
 
 Ce dossier rassemble le cadre juridique et éthique d'**Open Omniscience** (« le
 Logiciel »), un **logiciel libre** publié par **Ideotion** (« l'Éditeur ») sous licence

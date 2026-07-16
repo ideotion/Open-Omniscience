@@ -3,15 +3,17 @@
 > **Tradução automática (rascunho) — pendente de revisão nativa. A versão francesa
 > ([`../CGU.md`](../CGU.md)) é o texto juridicamente autêntico.**
 
-> ⚠️ **Aviso importante — rascunho de trabalho, não é aconselhamento jurídico.** Este
-> documento é um **rascunho de trabalho (modelo)** fornecido a título informativo. **Não
-> constitui aconselhamento nem consulta jurídica** e não foi validado por um profissional
-> do direito qualificado. Deve ser **revisto, completado, adaptado e validado por um
-> profissional qualificado** antes de qualquer publicação ou uso contratual. As menções
-> entre parênteses retos **[À COMPLÉTER: …]** e **[À VÉRIFIER: …]** assinalam informações
-> ainda a fornecer ou a confirmar.
+> ⚠️ **Aviso importante — documento redigido sem validação jurídica profissional, de
+> forma permanente.** Este documento é um **documento de trabalho** redigido a título
+> informativo pelo próprio Editor. **Não constitui aconselhamento nem consulta
+> jurídica**, incluindo para uso com fins contratuais. **Open Omniscience é um projeto
+> livre, gratuito e sem fins comerciais, realizado sem orçamento**: este documento **não
+> será revisto, adaptado nem validado por um profissional do direito** — trata-se de uma
+> escolha assumida, e não de uma etapa simplesmente adiada. As menções entre parênteses
+> retos **[À COMPLÉTER: …]** e **[À VÉRIFIER: …]** assinalam informações voluntariamente
+> deixadas tal como estão, ou não verificadas de forma independente por um profissional.
 
-**Versão:** 1.0-draft
+**Versão:** 1.0
 **Data de entrada em vigor:** 2026-07-16
 **Contacto:** open-omniscience@ideotion.com
 

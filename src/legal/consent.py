@@ -36,11 +36,11 @@ CONSENT_SCHEMA = "oo-legal-consent-1"
 # sync with the "Version" field of the documents in ``docs/legal/`` and bumped
 # whenever they change substantially, so the gate asks the user to accept again.
 #
-# NOTE: this is the v1 document set with the first-launch acceptance gate. The
-# documents themselves still carry "Version : [À COMPLÉTER]" pending professional
-# review; set their displayed version to match this (e.g. "1.0") at finalization,
-# and bump this string whenever the documents change so users are re-prompted.
-CONSENT_DOC_VERSION = "1.0-draft"
+# NOTE: this is the v1 document set with the first-launch acceptance gate. Open
+# Omniscience is a free, non-commercial, unfunded hobby project, so these documents
+# are NOT reviewed by a lawyer, permanently (see the banner in each doc) — bump this
+# string whenever the documents change substantially so users are re-prompted.
+CONSENT_DOC_VERSION = "1.0"
 
 # The documents the user accepts, for display by the CLI / web GUI. Paths are
 # relative to the repository root; the canonical online copies live in the repo.

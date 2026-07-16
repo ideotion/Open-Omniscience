@@ -5,15 +5,19 @@
 > ([`../POLITIQUE_DE_CONFIDENTIALITE.md`](../POLITIQUE_DE_CONFIDENTIALITE.md)) ist der
 > rechtlich maßgebliche Text.**
 
-> ⚠️ **Wichtiger Hinweis — Arbeitsentwurf, keine Rechtsberatung.** Dieses Dokument ist
-> ein **Arbeitsentwurf (Vorlage)**, der zu Informationszwecken bereitgestellt wird. Es
-> **stellt keine Rechtsberatung und keine rechtliche Auskunft dar** und wurde nicht von
-> einer qualifizierten Person des Rechts geprüft. Es muss vor jeder Veröffentlichung von
-> **einer qualifizierten Fachperson geprüft, vervollständigt und freigegeben** werden.
-> Die in eckigen Klammern stehenden Hinweise **[À COMPLÉTER: …]** und **[À VÉRIFIER: …]**
-> kennzeichnen noch zu ergänzende oder zu bestätigende Angaben.
+> ⚠️ **Wichtiger Hinweis — Dokument dauerhaft ohne professionelle rechtliche
+> Prüfung verfasst.** Dieses Dokument ist ein **Arbeitsentwurf**, der vom
+> Herausgeber selbst zu Informationszwecken verfasst wurde. **Es stellt keine
+> Rechtsberatung und keine rechtliche Auskunft dar.** **Open Omniscience ist
+> ein freies, kostenloses und nichtkommerzielles Projekt ohne Budget**: Dieses
+> Dokument **wird nicht von einer Fachperson des Rechts geprüft oder
+> freigegeben** — dies ist eine bewusste Entscheidung und keine lediglich
+> aufgeschobene Etappe. Die in eckigen Klammern stehenden Hinweise
+> **[À COMPLÉTER: …]** und **[À VÉRIFIER: …]** kennzeichnen Angaben, die
+> bewusst unvollständig gelassen wurden, oder die nicht unabhängig von einer
+> Fachperson überprüft wurden.
 
-**Version:** 1.0-draft
+**Version:** 1.0
 **Datum des Inkrafttretens:** 2026-07-16
 **Kontakt:** open-omniscience@ideotion.com
 
