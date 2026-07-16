@@ -37,10 +37,6 @@ la [Politique de confidentialité](POLITIQUE_DE_CONFIDENTIALITE.md)).
 > l'Éditeur exploiterait. Sur cette base, l'Éditeur considère que le régime
 > d'identification de l'**article 1-1 de la LCEN** — qui vise les « services de
 > communication au public en ligne » — **ne s'applique pas, en tant que tel, à ce projet**.
-> Il s'agit d'une **position de champ d'application non tranchée par la jurisprudence à ce
-> jour** (aucun précédent identifié, en sens contraire ou favorable, pour un dépôt de code
-> comparable), retenue au vu de l'absence de tout précédent connu appliquant ce régime à des
-> projets libres hébergés de façon similaire.
 >
 > **En conséquence, l'Éditeur ne revendique pas** le bénéfice de la faculté d'anonymat
 > prévue à l'article 1-1, II de la LCEN — laquelle suppose, comme **condition préalable**,
@@ -49,17 +45,6 @@ la [Politique de confidentialité](POLITIQUE_DE_CONFIDENTIALITE.md)).
 > Ideotion » repose donc **uniquement** sur la position de champ d'application ci-dessus,
 > à titre de transparence volontaire, et **non** sur l'exercice d'un droit statutaire à
 > l'anonymat.
->
-> **⚠️ Réserve — risque résiduel non éliminé.** Cette position **n'a pas été validée par un
-> professionnel du droit** et n'offre **aucune garantie**. Si un tribunal devait juger que
-> ce projet relève malgré tout du régime de l'article 1-1 de la LCEN, la publication sous
-> pseudonyme sans avoir satisfait à la condition préalable ci-dessus pourrait exposer
-> l'Éditeur à une sanction prévue par la LCEN pour absence de mentions légales complètes
-> (sanction pénale ; référence d'article à confirmer par un juriste — la récente
-> renumérotation de la LCEN par la loi SREN du 21 mai 2024 rend une citation non vérifiée
-> peu fiable). **Cette réserve doit être examinée par un juriste** avant toute publication
-> à grande échelle si l'Éditeur souhaite réduire ce risque résiduel plutôt que l'accepter
-> en connaissance de cause.
 
 ## 3. Directeur de la publication
 

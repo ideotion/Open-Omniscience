@@ -226,9 +226,11 @@ cannot lawfully be set aside, in particular:
   digital content and services**).
 
 Where the User acts as a **consumer**, no provision herein deprives them of the
-**mandatory rights** guaranteed to them by law.
-[À VÉRIFIER: articulate with the precise provisions of the Code de la consommation
-applicable to the supply, where applicable free of charge, of digital content.]
+**mandatory rights** guaranteed to them by law, in particular **articles L.224-25-1 to
+L.224-25-32 of the Code de la consommation** (the conformity guarantee for digital
+content and services, transposing Directive (EU) 2019/770 — the conformity guarantee
+proper being set out in articles L.224-25-12 to L.224-25-26), which apply even where
+the digital content or service is supplied **free of charge**.
 
 ## Article 10 — Indemnification
 
@@ -303,9 +305,12 @@ with the rules of ordinary law.
 these provisions **do not deprive them** of the possibility of bringing the matter
 before the **court of their place of domicile**, nor of the **mandatory rules of
 jurisdiction and protection** provided in their favour, in particular by the **Code de
-la consommation** and by **règlement (UE) n° 1215/2012 ("Brussels I bis")**. No clause
-herein may derogate from these mandatory rules.
-[À VÉRIFIER: precise article references.]
+la consommation** and by **articles 17 to 19 of règlement (UE) n° 1215/2012 ("Brussels
+I bis")** (the section devoted to contracts concluded by consumers), and in particular
+**article 18**, which allows the consumer to bring proceedings before the court of
+their own domicile and, reciprocally, restricts the trader to bringing proceedings
+against the consumer only before that same court. No clause herein may derogate from
+these mandatory rules.
 
 ## Article 16 — Miscellaneous
 

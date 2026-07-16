@@ -233,9 +233,12 @@ mengesampingkan** apa yang tidak dapat dikesampingkan secara sah, khususnya:
   layanan digital**).
 
 Apabila Pengguna bertindak sebagai **konsumen**, tidak ada ketentuan di sini yang mencabut
-**hak-hak yang bersifat memaksa** yang dijamin baginya oleh hukum.
-[À VÉRIFIER: selaraskan dengan ketentuan pasti hukum konsumen yang berlaku untuk penyediaan
-konten digital, yang mungkin gratis.]
+**hak-hak yang bersifat memaksa** yang dijamin baginya oleh hukum, khususnya
+**pasal-pasal L.224-25-1 hingga L.224-25-32 Code de la consommation** (Kitab
+Undang-Undang Konsumen Prancis) (jaminan kesesuaian konten dan layanan digital, yang
+mentransposisikan Directive (UE) 2019/770 — jaminan kesesuaian itu sendiri tercantum pada
+pasal-pasal L.224-25-12 hingga L.224-25-26), yang berlaku bahkan ketika konten atau
+layanan digital tersebut disediakan **tanpa kontraprestasi berupa harga**.
 
 ## Pasal 10 — Ganti rugi
 
@@ -311,9 +314,13 @@ umum.
 sebagai **konsumen**, ketentuan ini **tidak mencabut** kemungkinannya untuk mengajukan
 perkara ke **pengadilan di tempat domisilinya**, maupun **aturan yurisdiksi dan
 perlindungan yang bersifat memaksa** yang ditetapkan untuk kepentingannya, khususnya oleh
-hukum konsumen dan oleh **règlement (UE) n° 1215/2012 ("Brussels I bis")**. Tidak ada
-klausul di sini yang dapat menyimpang dari aturan yang bersifat memaksa tersebut.
-[À VÉRIFIER: rujukan pasti pasal-pasalnya.]
+**Code de la consommation** (Kitab Undang-Undang Konsumen Prancis) dan oleh
+**pasal-pasal 17 hingga 19 règlement (UE) n° 1215/2012 ("Brussels I bis")** (bagian yang
+dikhususkan untuk kontrak yang dibuat oleh konsumen), dan khususnya **pasal 18**, yang
+memungkinkan konsumen mengajukan perkara di pengadilan tempat domisilinya sendiri dan,
+secara timbal balik, membatasi pelaku usaha untuk hanya dapat mengajukan perkara terhadap
+konsumen tersebut di pengadilan yang sama. Tidak ada klausul di sini yang dapat menyimpang
+dari aturan yang bersifat memaksa tersebut.
 
 ## Pasal 16 — Lain-lain
 

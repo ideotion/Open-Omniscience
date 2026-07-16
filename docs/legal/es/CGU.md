@@ -238,10 +238,13 @@ ley** y **no pueden excluir** lo que no puede excluirse lícitamente, en particu
   y por el Derecho de la Unión Europea (incluidas, en su caso, las normas sobre
   **conformidad de los contenidos y servicios digitales**).
 
-Cuando el Usuario actúe como **consumidor**, ninguna disposición de las presentes le
-priva de los **derechos imperativos** que la ley le garantiza.
-[À VÉRIFIER: articular con las disposiciones precisas del Derecho de consumo aplicables
-al suministro, en su caso gratuito, de contenidos digitales.]
+Cuando el Usuario actúe como **consumidor**, ninguna estipulación de las presentes le
+priva de los **derechos imperativos** que la ley le garantiza, en particular los
+**artículos L.224-25-1 a L.224-25-32 del Code de la consommation** (Código de Consumo
+francés; garantía de conformidad de los contenidos y servicios digitales, que transpone
+la Directiva (UE) 2019/770 —la garantía de conformidad propiamente dicha figura en los
+artículos L.224-25-12 a L.224-25-26—), que se aplican incluso cuando el contenido o el
+servicio digital se suministra **sin contraprestación de precio**.
 
 ## Artículo 10 — Indemnización
 
@@ -317,12 +320,15 @@ su defecto, el litigio se someterá a los órganos jurisdiccionales competentes 
 las reglas del Derecho común.
 
 15.3. **Protección de los consumidores — norma imperativa.** Cuando el Usuario actúe
-como **consumidor**, estas disposiciones **no le privan** de la posibilidad de acudir al
-**tribunal de su lugar de domicilio**, ni de las **reglas imperativas de competencia y
-de protección** previstas en su favor, en particular por el Derecho de consumo y por el
-**règlement (UE) n° 1215/2012 («Bruselas I bis»)**. Ninguna cláusula de las presentes
-podrá derogar dichas reglas imperativas.
-[À VÉRIFIER: referencias precisas de los artículos.]
+como **consumidor**, las presentes estipulaciones **no le privan** de la posibilidad de
+acudir a la **jurisdicción de su lugar de domicilio** ni de las **reglas imperativas de
+competencia y de protección** previstas en su favor, en particular por el **Code de la
+consommation** (Código de Consumo francés) y por los **artículos 17 a 19 del règlement
+(UE) n° 1215/2012 («Bruselas I bis»)** (sección dedicada a los contratos celebrados por
+los consumidores), y en particular el **artículo 18**, que permite al consumidor actuar
+ante la jurisdicción de su propio domicilio y restringe recíprocamente al profesional a
+no poder actuar contra él más que ante esa misma jurisdicción. Ninguna cláusula de las
+presentes podrá derogar dichas reglas imperativas.
 
 ## Artículo 16 — Disposiciones diversas
 

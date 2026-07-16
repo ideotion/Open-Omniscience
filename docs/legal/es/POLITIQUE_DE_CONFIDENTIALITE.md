@@ -50,9 +50,11 @@ El diseño del Software garantiza, **por construcción**:
 
 > *Nota de coherencia:* estas afirmaciones reflejan el estado documentado del Software
 > (véanse el `README`, [`../../SECURITY.md`](../../SECURITY.md) y
-> [`../../ETHICS.md`](../../ETHICS.md)). Cualquier cambio futuro que introdujera una
-> transmisión de datos debería documentarse aquí **antes** de su puesta en servicio.
-> [À VÉRIFIER: confirmar la ausencia de telemetría en cada versión publicada.]
+> [`../../ETHICS.md`](../../ETHICS.md)). Cualquier evolución futura que introdujera una
+> transmisión de datos, de la índole que fuere, debería documentarse aquí **antes** de su
+> puesta en servicio. **Punto de vigilancia permanente (a reverificar en cada versión,
+> antes de cualquier actualización del campo «Versión» indicado más arriba): reconfirmar
+> la ausencia de telemetría en el código efectivamente publicado.**
 
 ## 3. Datos técnicos tratados localmente por el Software
 
@@ -108,8 +110,13 @@ información**, el Usuario podrá, en determinadas condiciones, acogerse a las
 **adaptaciones** previstas en el **article 85 du RGPD** y en las disposiciones
 correspondientes de la **Loi Informatique et Libertés**. Esta exención **no exime** del
 cumplimiento de los principios esenciales y **debe evaluarse caso por caso**; corresponde
-a la **apreciación y a la responsabilidad del Usuario**. [À VÉRIFIER: referencias
-precisas de las disposiciones nacionales que transponen el article 85.]
+a la **apreciación y a la responsabilidad del Usuario**. La transposición nacional figura
+en el **artículo 80 de la loi n° 78-17 du 6 janvier 1978** (en su redacción dada por la
+ordonnance del 12 de diciembre de 2018), que excluye, con carácter derogatorio y en la
+medida necesaria para conciliar la protección de datos con la libertad de expresión e
+información, la aplicación de determinadas disposiciones del RGPD a los tratamientos
+realizados, en particular, a efectos del ejercicio, con carácter profesional, de la
+actividad de periodista.
 
 ## 5. Resultados producidos por IA y datos personales
 

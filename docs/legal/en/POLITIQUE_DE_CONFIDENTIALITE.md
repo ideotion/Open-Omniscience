@@ -50,7 +50,9 @@ The design of the Software guarantees, **by construction**:
 > (see the `README`, [`../../SECURITY.md`](../../SECURITY.md) and
 > [`../../ETHICS.md`](../../ETHICS.md)). Any future change that introduced any
 > transmission of data should be documented here **before** going into service.
-> [À VÉRIFIER: confirm the absence of telemetry at each published version.]
+> **Standing vigilance point (to be re-checked at every version, before any update to
+> the "Version" field above): reconfirm the absence of telemetry in the code actually
+> published.**
 
 ## 3. Technical data processed locally by the Software
 
@@ -105,10 +107,15 @@ from their local corpus.
 Where the processing is carried out for **journalistic purposes** or for **expression
 and information**, the User may, under conditions, benefit from **adjustments**
 provided by **article 85 of the RGPD** and by the corresponding provisions of the
-**Loi Informatique et Libertés**. This exemption **does not relieve** from compliance
-with the essential principles and **must be assessed case by case**; it falls within
-the **assessment and responsibility of the User**. [À VÉRIFIER: precise references of
-the national provisions transposing article 85.]
+**Loi Informatique et Libertés**. This exception **does not relieve** the User from
+compliance with the essential principles and **must be assessed on a case-by-case
+basis**; it falls within the **assessment and responsibility of the User**. The
+national transposition is found in **article 80 of loi n° 78-17 du 6 janvier 1978**
+(as amended by the ordonnance of 12 December 2018), which sets aside, on a derogating
+basis and to the extent necessary to reconcile data protection with freedom of
+expression and information, the application of certain provisions of the RGPD to
+processing carried out in particular for the purposes of the professional exercise of
+the activity of journalist.
 
 ## 5. AI-produced outputs and personal data
 

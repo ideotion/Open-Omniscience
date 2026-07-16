@@ -48,9 +48,11 @@ Desain Perangkat Lunak menjamin, **secara konstruksi**:
 
 > *Catatan konsistensi:* pernyataan ini mencerminkan keadaan Perangkat Lunak yang
 > terdokumentasi (lihat `README`, [`../../SECURITY.md`](../../SECURITY.md), dan
-> [`../../ETHICS.md`](../../ETHICS.md)). Setiap perubahan di masa mendatang yang
-> memperkenalkan transmisi data harus didokumentasikan di sini **sebelum** dioperasikan.
-> [À VÉRIFIER: konfirmasi ketiadaan telemetri pada setiap versi yang diterbitkan.]
+> [`../../ETHICS.md`](../../ETHICS.md)). Setiap perkembangan di masa mendatang yang
+> memperkenalkan transmisi data apa pun harus didokumentasikan di sini **sebelum**
+> dioperasikan. **Titik kewaspadaan permanen (harus diverifikasi ulang pada setiap versi,
+> sebelum pembaruan apa pun terhadap kolom "Versi" di atas): mengonfirmasi ulang
+> ketiadaan telemetri dalam kode yang benar-benar diterbitkan.**
 
 ## 3. Data teknis yang diproses secara lokal oleh Perangkat Lunak
 
@@ -106,8 +108,12 @@ Pengguna dapat, dengan syarat tertentu, memperoleh **penyesuaian** yang diatur d
 **article 85 du RGPD** dan dalam ketentuan terkait **Loi Informatique et Libertés**.
 Pengecualian ini **tidak membebaskan** dari kepatuhan terhadap prinsip-prinsip esensial dan
 **harus dinilai kasus per kasus**; hal ini termasuk dalam **penilaian dan tanggung jawab
-Pengguna**. [À VÉRIFIER: rujukan pasti ketentuan nasional yang mentranskripsikan article
-85.]
+Pengguna**. Transposisi nasionalnya tercantum pada **article 80 de la loi n° 78-17 du 6
+janvier 1978** (sebagaimana diubah oleh ordonnance tanggal 12 Desember 2018), yang
+mengesampingkan, secara pengecualian dan sejauh diperlukan untuk mendamaikan perlindungan
+data dengan kebebasan berekspresi dan informasi, penerapan ketentuan-ketentuan tertentu
+RGPD terhadap pemrosesan yang dilaksanakan khususnya untuk tujuan pelaksanaan, secara
+profesional, kegiatan sebagai jurnalis.
 
 ## 5. Hasil yang dihasilkan AI dan data pribadi
 

@@ -49,9 +49,10 @@ A conceção do Software garante, **por construção**:
 
 > *Nota de coerência:* estas afirmações refletem o estado documentado do Software (ver o
 > `README`, [`../../SECURITY.md`](../../SECURITY.md) e [`../../ETHICS.md`](../../ETHICS.md)).
-> Qualquer alteração futura que introduzisse uma transmissão de dados deveria ser
-> documentada aqui **antes** da sua entrada em serviço. [À VÉRIFIER: confirmar a ausência
-> de telemetria em cada versão publicada.]
+> Qualquer alteração futura que introduzisse uma qualquer transmissão de dados deveria ser
+> documentada aqui **antes** da sua entrada em serviço. **Ponto de vigilância permanente (a
+> reconfirmar em cada versão, antes de qualquer atualização do campo «Versão» acima):
+> reconfirmar a ausência de telemetria no código efetivamente publicado.**
 
 ## 3. Dados técnicos tratados localmente pelo Software
 
@@ -106,8 +107,12 @@ informação**, o Utilizador pode, em determinadas condições, beneficiar das *
 previstas no **article 85 du RGPD** e nas disposições correspondentes da **Loi Informatique
 et Libertés**. Esta isenção **não dispensa** do cumprimento dos princípios essenciais e
 **deve ser apreciada caso a caso**; insere-se na **apreciação e na responsabilidade do
-Utilizador**. [À VÉRIFIER: referências precisas das disposições nacionais que transpõem o
-article 85.]
+Utilizador**. A transposição nacional consta do **article 80 de la loi n° 78-17 du 6
+janvier 1978** (na redação resultante da *ordonnance* de 12 de dezembro de 2018), que
+afasta, a título derrogatório e na medida necessária à conciliação entre a proteção de
+dados e a liberdade de expressão e de informação, a aplicação de certas disposições do
+RGPD aos tratamentos efetuados, nomeadamente, para efeitos do exercício, a título
+profissional, da atividade de jornalista.
 
 ## 5. Resultados produzidos por IA e dados pessoais
 

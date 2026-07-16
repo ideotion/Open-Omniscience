@@ -53,9 +53,11 @@ Die Konzeption der Software garantiert **konstruktionsbedingt**:
 
 > *Hinweis zur Kohärenz:* Diese Aussagen geben den dokumentierten Stand der Software wieder
 > (siehe die `README`, [`../../SECURITY.md`](../../SECURITY.md) und
-> [`../../ETHICS.md`](../../ETHICS.md)). Jede künftige Änderung, die eine Übermittlung von
-> Daten einführte, müsste hier **vor** der Inbetriebnahme dokumentiert werden.
-> [À VÉRIFIER: das Fehlen von Telemetrie bei jeder veröffentlichten Version bestätigen.]
+> [`../../ETHICS.md`](../../ETHICS.md)). Jede künftige Weiterentwicklung, die irgendeine
+> Übermittlung von Daten einführen würde, müsste hier **vor** ihrer Inbetriebnahme
+> dokumentiert werden. **Dauerhafter Prüfpunkt (bei jeder Version erneut zu überprüfen,
+> vor jeder Aktualisierung des oben stehenden Felds „Version"): das Fehlen von Telemetrie
+> im tatsächlich veröffentlichten Code erneut bestätigen.**
 
 ## 3. Technische Daten, die lokal von der Software verarbeitet werden
 
@@ -117,8 +119,12 @@ Information**, so kann die Nutzerin bzw. der Nutzer unter bestimmten Voraussetzu
 Libertés** vorgesehenen **Anpassungen** in Anspruch nehmen. Diese Ausnahme **entbindet
 nicht** von der Einhaltung der wesentlichen Grundsätze und **ist im Einzelfall zu
 beurteilen**; sie fällt in die **Beurteilung und Verantwortung der Nutzerin bzw. des
-Nutzers**. [À VÉRIFIER: genaue Fundstellen der nationalen Vorschriften zur Umsetzung von
-article 85.]
+Nutzers**. Die nationale Umsetzung findet sich in **Artikel 80 der loi n° 78-17 du 6
+janvier 1978** (in der durch die Ordonnance vom 12. Dezember 2018 geänderten Fassung), der
+es — ausnahmsweise und in dem zur Vereinbarkeit von Datenschutz und der Freiheit der
+Meinungsäußerung und Information erforderlichen Umfang — ausschließt, bestimmte
+Vorschriften der DSGVO auf Verarbeitungen anzuwenden, die insbesondere zur berufsmäßigen
+Ausübung der journalistischen Tätigkeit vorgenommen werden.
 
 ## 5. Durch KI erzeugte Ergebnisse und personenbezogene Daten
 
