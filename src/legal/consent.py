@@ -133,9 +133,9 @@ def notice_text(version: str = CONSENT_DOC_VERSION) -> str:
         "",
         "── Open Omniscience — conditions d'utilisation / terms of use ──",
         "En utilisant ce logiciel, vous acceptez les documents suivants",
-        "(modèles de travail, à relire — voir docs/legal/) :",
+        "(modèles de travail, non révisés par un professionnel — voir docs/legal/) :",
         "By using this software you accept the following documents",
-        "(working drafts — see docs/legal/):",
+        "(working drafts, not reviewed by a legal professional — see docs/legal/):",
     ]
     for d in LEGAL_DOCUMENTS:
         lines.append(f"  • {d['title']} — {d['path']}")

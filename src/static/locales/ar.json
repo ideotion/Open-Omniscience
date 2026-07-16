@@ -2033,5 +2033,6 @@
   "Triple pass": "ثلاث تمريرات",
   "Octuple pass": "ثماني تمريرات",
   "This may take several minutes on a large disk. Restart the app when you are done.": "قد يستغرق هذا عدة دقائق على قرص كبير. أعد تشغيل التطبيق عند الانتهاء.",
-  "None (crypto-erase only)": "بدون (تدمير المفتاح فقط)"
+  "None (crypto-erase only)": "بدون (تدمير المفتاح فقط)",
+  "last completed import": "آخر استيراد مكتمل"
 }

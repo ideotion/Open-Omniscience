@@ -140,11 +140,13 @@ the web entrypoint could strand a desktop-launcher or `curl | bash` user with no
    different, **best-effort, professionally-unconfirmed "outside LCEN scope" position**
    (local software, no live public service operated by the Éditeur) — accepted as-is,
    with its residual risk (a possible LCEN penal sanction for incomplete mentions légales
-   if a court ever disagreed) knowingly carried rather than mitigated by counsel; (b) the
-   handful of `[À VÉRIFIER: …]` legal-citation placeholders that remain (Code de la
-   consommation articles, Bruxelles I bis articles, GDPR Art. 85 French-transposition
-   article) are best-effort citations from research, not professionally verified, and
-   will stay that way.
+   if a court ever disagreed) knowingly carried rather than mitigated by counsel; (b) a
+   handful of legal citations (Code de la consommation Art. L.224-25-1 to L.224-25-32,
+   Bruxelles I bis Art. 17-19, GDPR Art. 85 / loi n° 78-17 Art. 80) were resolved to
+   specific article numbers via research and no longer carry the `[À VÉRIFIER: …]`
+   bracket in the documents — but they remain **best-effort, not professionally
+   verified**, and will stay that way (a different, honest claim from "still bracketed
+   as TBD" — the bracket is gone, the lawyer-verification gap is not, and won't close).
 4. ⬜ **Still open.** Land the web-modal PR above (an unrelated engineering task, not
    gated on anything above).
 

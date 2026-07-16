@@ -810,6 +810,14 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE EXISTS (SELECT 1 FROM article_links t WHERE {link_key})",
     )
+    # `article_links` carries NO unique constraint at all (a URL can legitimately
+    # repeat at different positions in the same article, so a hard schema
+    # constraint isn't the right fix here -- unlike keywords/commodity_prices,
+    # there is no single "real" identity to enforce). The merge's own dedup key
+    # above IS the intended identity for restore purposes though, so an incoming
+    # corpus carrying two rows for the exact same (article, url, position) would
+    # otherwise insert both (audit 2026-07-16, following the keyword_mentions
+    # collapse fix). The `rep` join keeps only the lowest incoming id per group.
     li.new = _insert_tracked(
         con, batch_id, "article_links",
         "INSERT INTO article_links (article_id, url, normalized_url, link_text, position,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -823,6 +831,11 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.external_source_id"
         " LEFT JOIN temp.map_srcart msa ON msa.old = i.source_article_id"
+        " JOIN (SELECT article_id, url, COALESCE(position,-1) AS pos, MIN(id) AS rep_id"
+        "       FROM inc.article_links"
+        "       GROUP BY article_id, url, COALESCE(position,-1)) rep"
+        "  ON rep.article_id = i.article_id AND rep.url = i.url"
+        "  AND rep.pos = COALESCE(i.position,-1) AND rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_links t WHERE {link_key})",
     )
     results["article_links"] = li
@@ -839,6 +852,8 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " LEFT JOIN temp.map_ext me ON me.old = i.source_id"
         f" WHERE EXISTS (SELECT 1 FROM article_source_relationships t WHERE {rel_key})",
     )
+    # Same rationale as article_links above: no schema-level uniqueness, so collapse
+    # incoming-internal duplicates on the merge's own identity key before inserting.
     rel.new = _insert_tracked(
         con, batch_id, "article_source_relationships",
         "INSERT INTO article_source_relationships (article_id, source_id, source_article_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -850,6 +865,12 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.source_id"
         " LEFT JOIN temp.map_srcart msa ON msa.old = i.source_article_id"
+        " JOIN (SELECT article_id, COALESCE(source_id,-1) AS sid,"
+        "       COALESCE(relationship_type,'') AS rtype, MIN(id) AS rep_id"
+        "       FROM inc.article_source_relationships"
+        "       GROUP BY article_id, COALESCE(source_id,-1), COALESCE(relationship_type,''))"
+        "  rep ON rep.article_id = i.article_id AND rep.sid = COALESCE(i.source_id,-1)"
+        "  AND rep.rtype = COALESCE(i.relationship_type,'') AND rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_source_relationships t WHERE {rel_key})",
     )
     results["article_source_relationships"] = rel
@@ -1039,12 +1060,30 @@ def _merge_markets(con, batch_id, results) -> None:
         r.conflicts.append(
             {"symbol": row[0], "observed_on": row[1], "incoming": row[2], "local": row[3]}
         )
+    # `commodity_prices` carries NO unique constraint at the schema level (unlike
+    # `keywords`, this is not a deliberate design choice -- just never added). The
+    # merge's OWN dedup key above already treats (symbol, market, observed_on,
+    # source, currency, unit) as the identity of one observation (a mismatched
+    # price at the same key is reported as a CONFLICT, never silently accepted) --
+    # so an INCOMING corpus carrying two rows for that same identity (audit
+    # 2026-07-16, following the keyword_mentions collapse fix) would insert BOTH
+    # as separate new rows instead of collapsing them, quietly perpetuating a
+    # duplicate-looking observation. The `rep` join keeps only the lowest incoming
+    # id per identity group, same tie-break convention as `_merge_keywords`.
     r.new = _insert_tracked(
         con, batch_id, "commodity_prices",
         "INSERT INTO commodity_prices (symbol, market, observed_on, price, currency, unit,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         " source, created_at)"
         " SELECT i.symbol, i.market, i.observed_on, i.price, i.currency, i.unit, i.source,"
         " i.created_at FROM inc.commodity_prices i"
+        " JOIN (SELECT symbol, COALESCE(market,'') AS mkt, observed_on,"
+        "       COALESCE(source,'') AS src, currency, unit, MIN(id) AS rep_id"
+        "       FROM inc.commodity_prices"
+        "       GROUP BY symbol, COALESCE(market,''), observed_on, COALESCE(source,''),"
+        "                currency, unit) rep"
+        "  ON rep.symbol = i.symbol AND rep.mkt = COALESCE(i.market,'')"
+        "  AND rep.observed_on = i.observed_on AND rep.src = COALESCE(i.source,'')"
+        "  AND rep.currency = i.currency AND rep.unit = i.unit AND rep.rep_id = i.id"
         f" WHERE NOT EXISTS (SELECT 1 FROM commodity_prices t WHERE {key})",
     )
     results["commodity_prices"] = r

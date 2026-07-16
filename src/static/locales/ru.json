@@ -2033,5 +2033,6 @@
   "Triple pass": "Тройной проход",
   "Octuple pass": "Восьмикратный проход",
   "This may take several minutes on a large disk. Restart the app when you are done.": "На большом диске это может занять несколько минут. Перезапустите приложение по завершении.",
-  "None (crypto-erase only)": "Нет (только уничтожение ключа)"
+  "None (crypto-erase only)": "Нет (только уничтожение ключа)",
+  "last completed import": "последний завершённый импорт"
 }
