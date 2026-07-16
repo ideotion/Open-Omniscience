@@ -328,7 +328,7 @@ The docs are consolidated into a small set of complete guides
 - **[SECURITY](docs/SECURITY.md)** — threat model, local-first posture, the security audit.
 - **[CONTRIBUTING](docs/CONTRIBUTING.md)** — how to contribute + the versioning policy.
 - **[CODE OF CONDUCT](docs/CODE_OF_CONDUCT.md)** — Contributor Covenant 2.1.
-- **[Legal & governance](docs/legal/README.md)** — legal notice, CGU, privacy (RGPD) and acceptable-use charter (French review drafts).
+- **[Legal & governance](docs/legal/README.md)** — legal notice, CGU, privacy (RGPD) and acceptable-use charter (French-authoritative working drafts, permanently not reviewed by a lawyer).
 - **[CHANGES](docs/CHANGES.md)** — changelog · **[HISTORY](docs/HISTORY.md)** — audits & quality archive.
 
 ## 🔒 Security model
@@ -368,7 +368,9 @@ running software and its AI-derived outputs — areas the GPLv3 does not address
 - [Charte d'usage](docs/legal/CHARTE_USAGE.md) — acceptable-use charter
 - [Index](docs/legal/README.md)
 
-> These documents are **review-ready drafts**, not legal advice.
+> These documents are **working drafts written without professional legal review,
+> permanently** (a free, unfunded hobby project — no lawyer will ever review them),
+> not legal advice.
 
 ---
 

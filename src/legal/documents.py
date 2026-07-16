@@ -41,7 +41,7 @@ UI_LANGS = ("en", "fr", "es", "de", "zh", "hi", "ar", "bn", "ru", "pt", "id", "j
 LEGAL_UI_EN: dict[str, str] = {
     "heading": "Legal documents",
     "intro": "Before you start, please read and accept these documents. They govern how you use this software and its AI-generated results. They add no restriction to the GNU GPL v3 (the code licence); the French version is authoritative.",
-    "draft_note": "Working drafts — not legal advice; to be reviewed by a qualified professional.",
+    "draft_note": "Working drafts — not legal advice; will not be reviewed by a legal professional (a deliberate, permanent choice).",
     "translation_note": "Machine translation — the French version is the authoritative text.",
     "open": "Open",
     "accept_label": "I have read and accept these documents.",
@@ -58,7 +58,7 @@ LEGAL_UI_EN: dict[str, str] = {
 LEGAL_UI_FR: dict[str, str] = {
     "heading": "Documents juridiques",
     "intro": "Avant de commencer, veuillez lire et accepter ces documents. Ils encadrent votre utilisation du logiciel et de ses résultats produits par l'IA. Ils n'ajoutent aucune restriction à la licence GNU GPL v3 (la licence du code) ; la version française fait foi.",
-    "draft_note": "Modèles de travail — pas un avis juridique ; à faire valider par un professionnel qualifié.",
+    "draft_note": "Modèles de travail — pas un avis juridique ; ne seront pas relus par un professionnel du droit (choix délibéré et permanent).",
     "translation_note": "Traduction automatique — la version française est le texte qui fait foi.",
     "open": "Ouvrir",
     "accept_label": "J'ai lu et j'accepte ces documents.",

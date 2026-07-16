@@ -93,6 +93,41 @@ def test_legal_endpoints_are_reachable_while_locked():
     assert "/api/legal/" in ALLOWED_WHILE_LOCKED
 
 
+def test_draft_note_is_consistent_with_the_permanent_no_review_framing():
+    """Field report 2026-07-16: the consent-gate screen showed a genuine inconsistency
+    -- the document banner said "will not be reviewed by a legal professional,
+    permanently, a deliberate choice" while the SEPARATE chrome caption right above it
+    (``LEGAL_UI_*['draft_note']`` in src/legal/documents.py, or its per-language
+    docs/legal/<lang>/ui.json override) still said "to be reviewed by a qualified
+    professional" -- a stale leftover from BEFORE the permanent no-lawyer-review
+    decision, in a code path the earlier docs/legal/*.md sync never touched. Pin every
+    UI language's draft_note as NOT reverting to that pending-review framing (the
+    specific stale substring that was actually removed, one per language)."""
+    from src.legal.documents import UI_LANGS, documents_payload
+
+    stale_substrings = {
+        "en": "to be reviewed by a qualified professional",
+        "fr": "à faire valider par un professionnel qualifié",
+        "de": "von einer qualifizierten Fachperson zu prüfen",
+        "es": "deben ser revisados por un profesional cualificado",
+        "zh": "须由合格的专业人士审阅",
+        "ar": "يجب مراجعتها من مختصٍّ مؤهَّل",
+        "bn": "একজন যোগ্য পেশাজীবী দ্বারা পর্যালোচিত হওয়া উচিত",
+        "ru": "подлежат проверке квалифицированным специалистом",
+        "pt": "devem ser revistos por um profissional qualificado",
+        "id": "harus ditinjau oleh profesional yang berkualifikasi",
+        "ja": "有資格の専門家による検討が必要です",
+        "hi": "किसी योग्य पेशेवर द्वारा समीक्षित किए जाने हेतु",
+    }
+    assert set(stale_substrings) == set(UI_LANGS), "every UI language must be covered"
+    for lang, stale in stale_substrings.items():
+        note = documents_payload(lang)["ui"]["draft_note"]
+        assert stale not in note, f"{lang}: draft_note reverted to the stale pending-review wording"
+        # And it must still be present (not silently emptied) with the honest,
+        # permanent framing -- never reviewed, by deliberate choice.
+        assert note.strip()
+
+
 def test_unlock_first_launch_inserts_legal_step_before_passphrase():
     """The first-launch flow goes language -> ACCEPT LEGAL -> passphrase; decline needs
     a typed confirmation and uninstalls. Browser-unverified; this pins the wiring."""
