@@ -382,6 +382,27 @@ def test_associations_no_cap_omits_bounded_fields():
     s.close()
 
 
+def test_associations_with_no_explicit_cap_still_has_a_sqlite_safety_net(monkeypatch):
+    """Audit finding 2026-07-17: GET /api/insights/associations (which "powers the
+    mind-map") and the top_terms/trending cooccur enrichment both call associations()
+    with NO article_cap at all -- so a term co-occurring in more articles than SQLite's
+    historical ~999 bound-variable ceiling made the .in_(target_articles) query raise
+    "OperationalError: too many SQL variables" instead of returning an honest, bounded
+    result. The fix gives the query an effective safety-net cap (GRAPH_ARTICLE_CAP) even
+    when the caller passes none, WITH a visible disclosure the moment it actually fires
+    -- never a silent truncation."""
+    monkeypatch.setattr(q, "GRAPH_ARTICLE_CAP", 3, raising=True)
+    s = _session()
+    hub = _seed_dense(s, core=6, block=10)  # hub is in 10 articles > the patched cap of 3
+
+    out = q.associations(s, hub, group=True, min_cooccur=1)  # no article_cap passed
+    assert out["articles_bounded"] is True
+    assert out["articles_sampled"] == 3
+    assert out["n_articles_with_term"] == 10  # the TRUE population, never hidden
+    assert "sample" in out["caveat"].lower()  # visible disclosure, not silent
+    s.close()
+
+
 # --------------------------------------------------------------------------- #
 #  The endpoint (CI — src.api.main needs the crypto extra)
 # --------------------------------------------------------------------------- #

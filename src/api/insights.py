@@ -219,6 +219,23 @@ def _graph_degraded(exc, *, level, term=None, n_articles=None):
     return out
 
 
+# Audit finding 2026-07-17: several downstream analytics functions (corpus_keywords,
+# corpus_www, corpus_sentiment, corpus_sources, corpus_facet_article_ids, who_aggregate,
+# where_aggregate — src/analytics/queries.py) filter with an UNCHUNKED
+# ``X.article_id.in_(article_ids)``. The corpus-* endpoints accept ``cap`` up to 5000
+# (Query(..., le=5000)) — well past SQLite's historical 999 bound-variable ceiling, the
+# same repo-wide invariant already respected elsewhere (latest.py:_SQL_IN_CHUNK=900, the
+# per-module *_IN_CHUNK helpers, GRAPH_ARTICLE_CAP=900). A card/agenda event carrying more
+# than this many explicit article_ids (now a real path: diet_self_audit/capacity_implausible
+# can carry up to 2000) or a plain search with a high ``cap`` would raise
+# "OperationalError: too many SQL variables" instead of an honest result. Clamped HERE,
+# at the one shared resolver every corpus-* endpoint funnels through, rather than adding
+# per-function chunk+merge logic to each of the ~10 call sites (safer: one bound, not ten
+# subtly-different re-aggregations to get right). The existing ``total > len(ids)``
+# "capped" disclosure already reports this honestly regardless of why len(ids) < total.
+_SQLITE_SAFE_IN_CAP = 900
+
+
 def _resolve_corpus(
     db: Session,
     article_ids: str | None,
@@ -239,7 +256,11 @@ def _resolve_corpus(
     honest. Otherwise the article SEARCH runs (the omnibar path), byte-for-byte
     unchanged. This is the substrate for exact-corpus card seeding (maintainer-ruled
     2026-06-16: a card opens the analysis window over the EXACT articles it identified).
+
+    ``cap`` is additionally clamped to ``_SQLITE_SAFE_IN_CAP`` so the returned ids can
+    always be safely used in a single ``.in_(...)`` filter downstream.
     """
+    cap = min(cap, _SQLITE_SAFE_IN_CAP)
     if article_ids:
         seen: set[int] = set()
         ids: list[int] = []
