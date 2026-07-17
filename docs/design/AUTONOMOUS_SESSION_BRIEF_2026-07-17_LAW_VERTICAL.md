@@ -119,6 +119,17 @@ takes the MANAGED-DATASET posture (the wiki-dump/PubMed architectural-separation
 bulk ingest as task-manager download jobs, own storage accounting, own freshness diagnostics —
 never 76,000 individual page fetches).
 
+**SOURCE ACQUISITION AT WORLD SCALE (maintainer-ruled 2026-07-17):** the catalog grows through
+PARALLEL INTERNET-CONNECTED research sessions producing a digestible enrichment file — the
+contract, region-batch session prompt, offline validator, and the curated-wins intake seam are
+in [`LAW_SOURCES_ACQUISITION_2026-07-17.md`](LAW_SOURCES_ACQUISITION_2026-07-17.md) (**intake +
+validator ALREADY SHIPPED**: `load_legal_catalog` merges `configs/legal_sources_generated.yml`
+when present; `scripts/validate_legal_catalog.py` lints it). The executing session CONSUMES that
+file's metadata: `enumeration_url`/`official_count` → the S5 coverage denominators;
+`structured:` (api/bulk/formats) → the S6 adapter-priority worklist; `languages` → S4b below
+(legal language ≠ the country's majority language — Cambodian codes have official French
+versions).
+
 ---
 
 ## §3 The slices (ordered; commit per slice)
@@ -158,6 +169,18 @@ Add `LAW` to `PROVENANCE_CLASSES` + map `source_type in ("legal","ip")` → `LAW
 additive-restore merge carries it (source_type already travels; this is display-classification
 only). Extend the provenance tests. **Acceptance: law articles filter as their own class
 everywhere provenance classes appear.**
+
+### S4b — Thread the legal LANGUAGE through to the corpus (P1, the Cambodia fix) — size S
+The catalog carries per-source/per-document `language`, but registration DROPS it —
+`LawDocument` has no language/country columns and `upsert_law_corpus_article` ingests law
+Articles with `language=None`, so a French-language Cambodian code gets no French stoplist,
+wrong keyword treatment, and no language facet. Fix: additive `language` + `country` columns on
+`LawDocument` (migration + boot self-heal, the established pattern), populated from the catalog
+at registration; `upsert_law_corpus_article` sets `Article.language` from the document; the next
+track pass updates existing law Articles in place (idempotent re-ingest). Negative space: a
+document with NO stated language stays `None` honestly — never guessed from the country.
+**Acceptance: a tracked French-language document produces a corpus Article with
+`language="fr"` and French keyword extraction; existing docs heal on their next track.**
 
 ### S5 — The law coverage/freshness diagnostic (P1) — size S
 `GET /api/diagnostics/law-coverage`: per-jurisdiction doc counts, baseline coverage %,

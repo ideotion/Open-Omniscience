@@ -6030,6 +6030,24 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   scale-critical, to be ruled BEFORE the first whole-country ingest). The Légifrance page 403s in
   the sandbox — the executing session re-verifies the 76 count live. PENDING: the brief's
   execution.
+  **ACQUISITION CHANNEL RULED + INTAKE SHIPPED same day (maintainer: "a parallel, autonomous,
+  internet connected session that would produce a digestible file that would enrich the current
+  law internet endpoints to scrap, with all proper metadata associated (Cambodian law is in
+  French, for example)"):** the world-scale catalog growth runs through PARALLEL internet
+  research sessions per region batch → `configs/legal_sources_generated.yml` — contract +
+  ready-to-paste prompt + vetting protocol in
+  [`docs/design/LAW_SOURCES_ACQUISITION_2026-07-17.md`](docs/design/LAW_SOURCES_ACQUISITION_2026-07-17.md)
+  (the Wikidata-rings/world-news-catalog pattern). Metadata carries languages-OF-THE-LAW (≠ the
+  country's spoken languages), legal_system family, enumeration_url + DATED official_count (the
+  S5 coverage denominators, only ever read off the official page), structured api/bulk/formats
+  (the adapter worklist), per-row verification status (fetched/search-verified/lead — a lead
+  ships for maintainer decision, never as verified). SHIPPED with the ruling: the CURATED-WINS
+  intake seam (`load_legal_catalog` merges the generated file; no file = byte-identical) +
+  `scripts/validate_legal_catalog.py` (offline lint: schema/ISO/https/dedup-vs-curated/undated-
+  count refusal/lead listing) + tests (spec-load past the py3.11 PEP-695 import wall). FOUND +
+  routed into the brief as S4b: registration DROPS the catalog's language (LawDocument has no
+  language/country columns; law corpus Articles ingest language=None) — the Cambodia-in-French
+  case gets wrong keyword treatment until S4b threads catalog→LawDocument→Article.language.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

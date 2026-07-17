@@ -22,11 +22,16 @@ from sqlalchemy.orm import Session
 from src.database.models import LawDocument
 
 LEGAL_CATALOG_PATH = Path(__file__).resolve().parents[2] / "configs" / "legal_sources.yml"
+# The parallel-internet-session enrichment file (maintainer-ruled 2026-07-17; contract +
+# session prompt in docs/design/LAW_SOURCES_ACQUISITION_2026-07-17.md). Vetted before commit
+# (scripts/validate_legal_catalog.py + PR review); merged CURATED-WINS below, so a generated
+# row can extend the catalog but never override a hand-curated entry.
+GENERATED_CATALOG_PATH = (
+    Path(__file__).resolve().parents[2] / "configs" / "legal_sources_generated.yml"
+)
 
 
-def load_legal_catalog(path: Path | None = None) -> dict:
-    """Return ``{"sources": [...], "documents": [...]}`` from the catalog YAML."""
-    path = path or LEGAL_CATALOG_PATH
+def _read_catalog_yaml(path: Path) -> dict:
     if not path.exists():
         return {"sources": [], "documents": []}
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -42,6 +47,26 @@ def load_legal_catalog(path: Path | None = None) -> dict:
             if isinstance(d, dict) and d.get("url") and d.get("jurisdiction")
         ],
     }
+
+
+def load_legal_catalog(path: Path | None = None, generated_path: Path | None = None) -> dict:
+    """Return ``{"sources": [...], "documents": [...]}`` — the curated catalog merged with
+    the (optional) generated enrichment file, CURATED WINS on a source ``domain`` or a
+    document ``(jurisdiction, url)`` collision. No generated file → byte-identical to the
+    curated-only behavior. Extra metadata fields on generated entries (languages,
+    enumeration_url, official_count, structured, verification…) ride along untouched for
+    downstream consumers (adapters, the coverage diagnostic)."""
+    merged = _read_catalog_yaml(path or LEGAL_CATALOG_PATH)
+    gen = _read_catalog_yaml(generated_path or GENERATED_CATALOG_PATH)
+    if gen["sources"]:
+        seen = {s["domain"] for s in merged["sources"]}
+        merged["sources"] += [s for s in gen["sources"] if s["domain"] not in seen]
+    if gen["documents"]:
+        seen_docs = {(d["jurisdiction"], d["url"]) for d in merged["documents"]}
+        merged["documents"] += [
+            d for d in gen["documents"] if (d["jurisdiction"], d["url"]) not in seen_docs
+        ]
+    return merged
 
 
 def seed_legal_sources(session: Session, path: Path | None = None) -> dict[str, int]:

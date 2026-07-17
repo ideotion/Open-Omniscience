@@ -1,0 +1,157 @@
+"""
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later (full notice in sibling tests).
+
+---
+
+The parallel-session law-catalog enrichment channel (maintainer-ruled 2026-07-17;
+docs/design/LAW_SOURCES_ACQUISITION_2026-07-17.md): the generated file merges into
+the live catalog CURATED-WINS, rich metadata rides along untouched, absence is a
+byte-identical no-op, and the offline validator catches the fabrication-shaped
+mistakes (undated counts, non-https URLs, duplicate/overriding rows, missing
+verification) while LISTING unverified leads for the maintainer instead of
+silently accepting them.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import validate_legal_catalog as vlc  # noqa: E402
+
+# Load catalog.py directly (not via the src.law package __init__, whose corpus import
+# pulls src.database.write — PEP-695 syntax that py3.11 sandboxes cannot parse). The
+# module under test only needs yaml + models; the spec-load exercises the same code CI runs.
+import importlib.util  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location(
+    "law_catalog_standalone", Path(__file__).resolve().parents[1] / "src" / "law" / "catalog.py"
+)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+load_legal_catalog = _mod.load_legal_catalog
+
+CURATED = {
+    "sources": [
+        {"name": "Légifrance (France)", "domain": "legifrance.gouv.fr", "country": "fr",
+         "language": "fr", "source_type": "legal"},
+    ],
+    "documents": [
+        {"jurisdiction": "fr", "title": "DDHC", "url": "https://ex.fr/ddhc",
+         "official_url": "https://ex.fr/ddhc"},
+    ],
+}
+
+
+def _gen_entry(**over) -> dict:
+    base = {
+        "name": "Cambodia — Ministry of Justice consolidated laws",
+        "domain": "moj.gov.kh",
+        "country": "kh",
+        "languages": ["km", "fr"],
+        "legal_language_note": "Major codes have official French versions.",
+        "legal_system": "civil_law",
+        "source_type": "legal",
+        "kind": "consolidated_portal",
+        "enumeration_url": "https://moj.gov.kh/codes",
+        "official_count": {"value": 12, "unit": "codes", "as_of": "2026-07-18",
+                           "source_url": "https://moj.gov.kh/codes"},
+        "verification": {"status": "fetched", "retrieved_at": "2026-07-18",
+                         "evidence": "loaded the enumeration page"},
+        "confidence": "high",
+    }
+    base.update(over)
+    return base
+
+
+def _write(tmp_path, name, payload) -> Path:
+    p = tmp_path / name
+    p.write_text(yaml.safe_dump(payload, allow_unicode=True), encoding="utf-8")
+    return p
+
+
+def test_generated_merges_curated_wins_and_metadata_rides_along(tmp_path):
+    curated_p = _write(tmp_path, "curated.yml", CURATED)
+    generated_p = _write(tmp_path, "gen.yml", {
+        "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+        "sources": [
+            _gen_entry(),
+            # collides with curated on domain -> must be DROPPED (curated wins)
+            _gen_entry(name="Legifrance override attempt", domain="legifrance.gouv.fr",
+                       country="fr", languages=["fr"]),
+        ],
+        "documents": [
+            {"jurisdiction": "fr", "title": "DDHC dup", "url": "https://ex.fr/ddhc",
+             "verification": {"status": "fetched", "retrieved_at": "2026-07-18"}},
+            {"jurisdiction": "kh", "title": "Cambodian Civil Code (fr)",
+             "url": "https://moj.gov.kh/civil-code-fr",
+             "verification": {"status": "fetched", "retrieved_at": "2026-07-18"}},
+        ],
+    })
+    cat = load_legal_catalog(curated_p, generated_path=generated_p)
+    domains = [s["domain"] for s in cat["sources"]]
+    assert domains == ["legifrance.gouv.fr", "moj.gov.kh"], "curated wins; new row appended"
+    assert cat["sources"][0]["name"] == "Légifrance (France)", "curated entry untouched"
+    kh = cat["sources"][1]
+    assert kh["languages"] == ["km", "fr"] and kh["enumeration_url"], "metadata rides along"
+    assert kh["official_count"]["value"] == 12
+    doc_keys = [(d["jurisdiction"], d["url"]) for d in cat["documents"]]
+    assert doc_keys == [("fr", "https://ex.fr/ddhc"), ("kh", "https://moj.gov.kh/civil-code-fr")]
+
+
+def test_no_generated_file_is_a_byte_identical_noop(tmp_path):
+    curated_p = _write(tmp_path, "curated.yml", CURATED)
+    absent = tmp_path / "absent.yml"
+    assert load_legal_catalog(curated_p, generated_path=absent) == load_legal_catalog(
+        curated_p, generated_path=absent
+    )
+    cat = load_legal_catalog(curated_p, generated_path=absent)
+    assert len(cat["sources"]) == 1 and len(cat["documents"]) == 1
+
+
+def test_validator_passes_a_clean_batch_and_tallies_verification():
+    report = vlc.validate(
+        {"schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+         "sources": [_gen_entry()], "documents": []},
+        CURATED,
+    )
+    assert report["errors"] == []
+    assert report["tally"]["fetched"] == 1 and report["leads"] == []
+
+
+def test_validator_lists_leads_without_failing_them():
+    entry = _gen_entry(verification={"status": "lead"})
+    report = vlc.validate(
+        {"schema": "oo-legal-catalog-gen-1", "as_of": "2026-07", "sources": [entry]},
+        CURATED,
+    )
+    assert report["errors"] == [], "a lead is a maintainer decision, not a structural error"
+    assert len(report["leads"]) == 1 and report["tally"]["lead"] == 1
+
+
+def test_validator_catches_the_fabrication_shaped_mistakes():
+    bad = {
+        "schema": "wrong-schema", "as_of": "someday",
+        "sources": [
+            _gen_entry(country="france"),                              # not ISO-2
+            _gen_entry(domain="dup.example"),
+            _gen_entry(domain="dup.example"),                          # in-file dup
+            _gen_entry(domain="legifrance.gouv.fr"),                   # overrides curated
+            _gen_entry(enumeration_url="http://insecure.example"),     # not https
+            _gen_entry(official_count={"value": 76, "unit": "codes"}), # undated count
+            _gen_entry(verification={"status": "trust-me"}),           # bad status
+            {"name": "No verification", "domain": "x.example", "country": "xx",
+             "languages": ["xx"], "source_type": "legal"},             # missing verification
+        ],
+        "documents": [],
+    }
+    report = vlc.validate(bad, CURATED)
+    text = "\n".join(report["errors"])
+    for needle in ("schema must be", "as_of must be", "ISO-2", "duplicate domain",
+                   "CURATED catalog", "https://", "never estimated",
+                   "verification.status", "missing required field 'verification'"):
+        assert needle in text, f"validator missed: {needle}\n{text}"
