@@ -5986,6 +5986,37 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `test_repo_invariants.py::test_all_diagnostics_bundle_covers_every_get_diagnostic` — every GET
   route on the diagnostics router must be a bundle member or an exemption-with-reason, so the
   bundle can never silently fall behind again.
+- **LAW VERTICAL — INVESTIGATION + SESSION BRIEF (maintainer-asked 2026-07-17: "a proper,
+  intelligent, adapted and performant strategy to scrap each country's legal articles … ingested
+  the same way articles are … track their changes. Currently I don't see anything working despite
+  my previous attempts"; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-17_LAW_VERTICAL.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-17_LAW_VERTICAL.md)):**
+  INVESTIGATION VERDICT (tree-anchored, `main`@af30b39): the vertical is NOT missing — it is 6
+  days old and substantially built (models+catalog ~47 portals/~17 tracked docs boot-seeded ·
+  `auto_track_due` on EVERY online pass since the 2026-06-22 field fix · laws-as-corpus-Articles
+  via `index_article` since `fc75aa0` 2026-07-14 · API+reader+omnibar group+`law_change`/
+  `model_legislation` cards). WHY IT LOOKED DEAD (ranked): (1) a cross-driver IntegrityError
+  (sqlcipher3's unwrapped class missed by the `except IntegrityError`) SILENTLY POISONED the
+  tracking pass on the encrypted default store — fixed only `38c0502` (2026-07-17, the 4th
+  recurrence of the #691/#696 family), exactly spanning the maintainer's attempts; (2) the
+  sidebar tab is labelled "Governments" and opens on Countries — the Law subtab is 2 clicks deep;
+  (3) `/api/law/changes` defaults `flagged_only=True` → a working tracker renders "no changes"
+  indefinitely on consolidated statutes; (4) baselines need sustained ONLINE passes (5/pass,
+  24 h gate); (5) robots fail-closed verdicts hidden in a table column; (6) `[pdf]` optional.
+  REAL GAPS: ~17 curated docs ≠ per-country corpora (no adapters/enumeration); no
+  add-document-by-URL; `law` missing from PROVENANCE_CLASSES (buckets as `web`); no per-vertical
+  coverage/freshness diagnostic. THE BRIEF (one CLI session, open egress, staleness guard
+  emphatic — the vertical changed 4× in its 6 days): S1 PROVE it end-to-end live (the trust
+  reset) → S2 truth-in-UI (changes default all-changes, per-doc verdicts loud, discoverability
+  pointer) → S3 add-by-URL → S4 provenance class LAW → S5 law-coverage diagnostic (bundle member
+  per the new ratchet) → S6 the ADAPTER seam + 2-3 LIVE-VERIFIED structured-source adapters
+  (bulk/API-before-scraping, the SDMX precedent: legislation.gov.uk XML · gesetze-im-internet XML
+  · EUR-Lex ELI; Légifrance = key-gated API vs LARGE DILA bulk job, deferred choice) → S7
+  gazettes-as-streams (verified RSS → the normal pipeline as source_type legal) → S8 docs.
+  Granularity RULING pending (act-level default vs per-legal-article split); `[pdf]`-in-default
+  + coverage priorities + cadence = §4 maintainer decisions. Never fabricate a source: every
+  committed endpoint must be fetched by the executing session (✅/🔎/❓ statuses; ❓ ships
+  disabled). PENDING: the brief's execution.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
