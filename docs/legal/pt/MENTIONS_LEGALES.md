@@ -10,9 +10,7 @@
 > jurídica.** **Open Omniscience é um projeto livre, gratuito e sem fins comerciais,
 > realizado sem orçamento**: este documento **não será revisto nem validado por um
 > profissional do direito** — trata-se de uma escolha assumida, e não de uma etapa
-> simplesmente adiada. As menções entre parênteses retos **[À COMPLÉTER: …]** e
-> **[À VÉRIFIER: …]** assinalam informações voluntariamente deixadas tal como estão, ou
-> não verificadas de forma independente por um profissional.
+> simplesmente adiada.
 
 **Versão:** 1.0
 **Data de entrada em vigor:** 2026-07-16
@@ -36,8 +34,6 @@ quaisquer dados dos utilizadores (ver a
 - **Qualidade:** pessoa singular, **editor não profissional de software livre**.
 - **Contacto:** **open-omniscience@ideotion.com**
 - **Forma jurídica / registo:** não aplicável — o Editor atua a título não profissional.
-  [À COMPLÉTER: se for o caso, estatuto, número SIREN/SIRET, IVA — apenas se o Editor
-  publicar a título profissional.]
 
 > **Anonimato pseudonímico — fundamento adotado.** Conforme indicado no §1, o Software é
 > um **software local**: o repositório alojado pelo GitHub documenta e distribui o

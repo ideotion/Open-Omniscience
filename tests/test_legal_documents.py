@@ -128,6 +128,37 @@ def test_draft_note_is_consistent_with_the_permanent_no_review_framing():
         assert note.strip()
 
 
+def test_no_document_carries_an_unresolved_completer_verifier_bracket():
+    """Field report 2026-07-17: the legal review/acceptance screen still showed
+    "[À COMPLÉTER]" / "[À VÉRIFIER]" bracket markers -- both the META-EXPLANATORY
+    sentence in every document's intro ("the bracketed mentions [À COMPLÉTER: ...]
+    and [À VÉRIFIER: ...] flag information deliberately left as-is...", present in
+    ALL 12 languages) and a genuinely dangling placeholder in MENTIONS_LEGALES.md
+    about SIREN/SIRET/VAT registration (also in all 12 languages) that the
+    maintainer wants removed outright, since the preceding sentence ("not
+    applicable -- the Publisher acts in a non-professional capacity") already
+    states the complete, current legal reality with nothing left open.
+
+    Pins the fix across every UI language via documents_payload (the same access
+    path the app itself uses) -- so a future translation update or new document
+    can never silently reintroduce this convention. IMPLEMENTATION_NOTES.md (a
+    maintainer-facing historical record, never served to a user) is deliberately
+    NOT covered here -- it correctly documents that a DIFFERENT bracket type
+    [À VÉRIFIER: article numbers] was resolved in the past, which is accurate
+    history, not a live placeholder."""
+    from src.legal.documents import UI_LANGS, documents_payload
+
+    for lang in (*UI_LANGS, "fr"):
+        p = documents_payload(lang)
+        for doc in p["documents"]:
+            assert "À COMPLÉTER" not in doc["markdown"], (
+                f"{lang}/{doc['title']}: an unresolved [À COMPLÉTER] bracket remains"
+            )
+            assert "À VÉRIFIER" not in doc["markdown"], (
+                f"{lang}/{doc['title']}: an unresolved [À VÉRIFIER] bracket remains"
+            )
+
+
 def test_unlock_first_launch_inserts_legal_step_before_passphrase():
     """The first-launch flow goes language -> ACCEPT LEGAL -> passphrase; decline needs
     a typed confirmation and uninstalls. Browser-unverified; this pins the wiring."""

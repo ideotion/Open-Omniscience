@@ -10,9 +10,6 @@
 > Omniscience adalah proyek bebas, gratis, dan tanpa tujuan komersial, yang dikerjakan
 > tanpa anggaran**: dokumen ini **tidak akan ditinjau maupun divalidasi oleh profesional
 > hukum** — ini adalah pilihan yang disadari, bukan sekadar tahap yang ditunda.
-> Keterangan dalam tanda kurung siku **[À COMPLÉTER: …]** dan **[À VÉRIFIER: …]**
-> menandai informasi yang sengaja dibiarkan apa adanya, atau yang belum diverifikasi
-> secara independen oleh seorang profesional.
 
 **Versi:** 1.0
 **Tanggal berlaku:** 2026-07-16
@@ -36,8 +33,7 @@ sendiri. Penerbit **tidak mengoperasikan server apa pun** yang dapat diakses pub
 - **Kapasitas:** orang perseorangan, **penerbit nonprofesional perangkat lunak bebas**.
 - **Kontak:** **open-omniscience@ideotion.com**
 - **Bentuk hukum / pendaftaran:** tidak berlaku — Penerbit bertindak dalam kapasitas
-  nonprofesional. [À COMPLÉTER: jika berlaku, status, nomor SIREN/SIRET, PPN — hanya jika
-  Penerbit menerbitkan dalam kapasitas profesional.]
+  nonprofesional.
 
 > **Anonimitas dengan nama samaran — dasar yang digunakan.** Sebagaimana disebutkan pada
 > §1, Perangkat Lunak adalah **perangkat lunak lokal**: repositori yang di-host oleh

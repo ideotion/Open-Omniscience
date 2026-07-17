@@ -6,9 +6,7 @@
 > une consultation juridique.** **Open Omniscience est un projet libre, gratuit et sans
 > but commercial, réalisé sans budget** : ces documents **ne seront pas relus, adaptés ni
 > validés par un professionnel du droit** — il s'agit d'un choix assumé, et non d'une
-> étape simplement différée. Les mentions entre crochets **[À COMPLÉTER : …]** et
-> **[À VÉRIFIER : …]** signalent des informations volontairement laissées en l'état, ou
-> non vérifiées de manière indépendante par un professionnel.
+> étape simplement différée.
 
 Ce dossier rassemble le cadre juridique et éthique d'**Open Omniscience** (« le
 Logiciel »), un **logiciel libre** publié par **Ideotion** (« l'Éditeur ») sous licence
