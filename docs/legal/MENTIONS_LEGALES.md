@@ -5,10 +5,7 @@
 > informatif par l'Éditeur lui-même. **Il ne constitue pas un avis ou une consultation
 > juridique.** **Open Omniscience est un projet libre, gratuit et sans but commercial,
 > réalisé sans budget** : ce document **ne sera pas relu ni validé par un professionnel
-> du droit** — il s'agit d'un choix assumé, et non d'une étape simplement différée. Les
-> mentions entre crochets **[À COMPLÉTER : …]** et **[À VÉRIFIER : …]** signalent des
-> informations volontairement laissées en l'état, ou non vérifiées de manière
-> indépendante par un professionnel.
+> du droit** — il s'agit d'un choix assumé, et non d'une étape simplement différée.
 
 **Version :** 1.0
 **Date d'entrée en vigueur :** 2026-07-16
@@ -31,8 +28,7 @@ la [Politique de confidentialité](POLITIQUE_DE_CONFIDENTIALITE.md)).
 - **Qualité :** personne physique, **éditeur non professionnel de logiciel libre**.
 - **Contact :** **open-omniscience@ideotion.com**
 - **Forme juridique / immatriculation :** sans objet — l'Éditeur agit à titre non
-  professionnel. [À COMPLÉTER : le cas échéant, statut, n° SIREN/SIRET, TVA — uniquement
-  si l'Éditeur publie à titre professionnel.]
+  professionnel.
 
 > **Anonymat pseudonymique — fondement retenu.** Comme indiqué au §1, le Logiciel est un
 > **logiciel local** : le dépôt hébergé par GitHub documente et distribue le **code

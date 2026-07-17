@@ -5,9 +5,7 @@
 > informatif par l'Éditeur lui-même. **Il ne constitue pas un avis ou une consultation
 > juridique.** **Open Omniscience est un projet libre, gratuit et sans but commercial,
 > réalisé sans budget** : ce document **ne sera pas relu ni validé par un professionnel
-> du droit** — il s'agit d'un choix assumé, et non d'une étape simplement différée. Les
-> mentions entre crochets **[À COMPLÉTER : …]** signalent des informations volontairement
-> laissées en l'état.
+> du droit** — il s'agit d'un choix assumé, et non d'une étape simplement différée.
 
 **Version :** 1.0
 **Date d'entrée en vigueur :** 2026-07-16

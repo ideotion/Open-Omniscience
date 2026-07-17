@@ -11,9 +11,7 @@
 > ein freies, kostenloses und nichtkommerzielles Projekt ohne Budget**: Dieses
 > Dokument **wird nicht von einer Fachperson des Rechts geprüft oder
 > freigegeben** — dies ist eine bewusste Entscheidung und keine lediglich
-> aufgeschobene Etappe. Die in eckigen Klammern stehenden Hinweise
-> **[À COMPLÉTER: …]** kennzeichnen Angaben, die bewusst unvollständig
-> gelassen wurden.
+> aufgeschobene Etappe.
 
 **Version:** 1.0
 **Datum des Inkrafttretens:** 2026-07-16

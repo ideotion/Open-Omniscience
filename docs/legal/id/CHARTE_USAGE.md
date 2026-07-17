@@ -9,8 +9,6 @@
 > Omniscience adalah proyek bebas, gratis, dan tanpa tujuan komersial, yang dikerjakan
 > tanpa anggaran**: dokumen ini **tidak akan ditinjau maupun divalidasi oleh profesional
 > hukum** — ini adalah pilihan yang disadari, bukan sekadar tahap yang ditunda.
-> Keterangan dalam tanda kurung siku **[À COMPLÉTER: …]** menandai informasi yang
-> sengaja dibiarkan apa adanya.
 
 **Versi:** 1.0
 **Tanggal berlaku:** 2026-07-16

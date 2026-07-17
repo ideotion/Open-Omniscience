@@ -9,9 +9,7 @@
 > a legal consultation**, including for contractual use. **Open Omniscience is a
 > free, non-commercial project run with no budget**: this document **will not be
 > reviewed, adapted or validated by a legal professional** — this is a deliberate
-> choice, not a step that has merely been postponed. The bracketed mentions
-> **[À COMPLÉTER: …]** and **[À VÉRIFIER: …]** flag information deliberately left
-> as-is, or not independently verified by a professional.
+> choice, not a step that has merely been postponed.
 
 **Version:** 1.0
 **Effective date:** 2026-07-16

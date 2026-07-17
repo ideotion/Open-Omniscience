@@ -11,10 +11,7 @@
 > ein freies, kostenloses und nichtkommerzielles Projekt ohne Budget**: Dieses
 > Dokument **wird nicht von einer Fachperson des Rechts geprüft oder
 > freigegeben** — dies ist eine bewusste Entscheidung und keine lediglich
-> aufgeschobene Etappe. Die in eckigen Klammern stehenden Hinweise
-> **[À COMPLÉTER: …]** und **[À VÉRIFIER: …]** kennzeichnen Angaben, die
-> bewusst unvollständig gelassen wurden, oder die nicht unabhängig von einer
-> Fachperson überprüft wurden.
+> aufgeschobene Etappe.
 
 **Version:** 1.0
 **Datum des Inkrafttretens:** 2026-07-16
@@ -38,8 +35,7 @@ zugänglichen Server und **erhebt keine** Nutzerdaten (siehe die
 - **Eigenschaft:** natürliche Person, **nichtgewerblicher Herausgeber freier Software**.
 - **Kontakt:** **open-omniscience@ideotion.com**
 - **Rechtsform / Registereintrag:** nicht anwendbar — der Herausgeber handelt
-  nichtgewerblich. [À COMPLÉTER: gegebenenfalls Status, SIREN/SIRET-Nummer, USt-IdNr. —
-  nur wenn der Herausgeber gewerblich veröffentlicht.]
+  nichtgewerblich.
 
 > **Pseudonyme Anonymität — gewählte Grundlage.** Wie in §1 dargelegt, handelt es sich bei
 > der Software um **lokal ausgeführte Software**: Das von GitHub gehostete Repository

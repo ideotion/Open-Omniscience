@@ -9,8 +9,7 @@
 > jurídica.** **Open Omniscience é um projeto livre, gratuito e sem fins comerciais,
 > realizado sem orçamento**: este documento **não será revisto nem validado por um
 > profissional do direito** — trata-se de uma escolha assumida, e não de uma etapa
-> simplesmente adiada. As menções entre parênteses retos **[À COMPLÉTER: …]** assinalam
-> informações voluntariamente deixadas tal como estão.
+> simplesmente adiada.
 
 **Versão:** 1.0
 **Data de entrada em vigor:** 2026-07-16
