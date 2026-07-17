@@ -461,12 +461,12 @@ def price_narrative(session) -> list[Card]:
         kw = resolve_keyword(session, label) or resolve_keyword(session, symbol)
         if kw is None:
             continue
-        article_dates = [
-            d
-            for (d,) in session.query(KeywordMention.observed_on)
+        mentions = (
+            session.query(KeywordMention.article_id, KeywordMention.observed_on)
             .filter(KeywordMention.keyword_id == kw.id, KeywordMention.observed_on.isnot(None))
             .all()
-        ]
+        )
+        article_dates = [d for _, d in mentions]
         result = correlate_price_with_news(points, article_dates)
         if result.insufficient_data or result.coefficient is None:
             continue
@@ -510,8 +510,14 @@ def price_narrative(session) -> list[Card]:
                         "source": (rule.market if rule and rule.market else None),
                     }
                 ],
+                # The actual analyzed set: the articles carrying the RESOLVED keyword
+                # (kw.normalized_term may differ from the raw commodity symbol/ticker --
+                # e.g. "crude oil" vs "CL=F" -- so the key must be the term that was
+                # really searched, never the ticker, or a click re-runs a search for a
+                # string the keyword index never indexed and finds nothing).
+                article_ids=sorted({a for a, _ in mentions})[:2000],
                 n=result.n,
-                key=symbol,
+                key=kw.normalized_term,
             )
         )
     return cards
