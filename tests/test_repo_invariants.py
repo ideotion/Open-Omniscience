@@ -416,6 +416,22 @@ def test_render_p0_result_does_not_shadow_the_real_html_escaper():
     assert body.count("esc(") >= 5
 
 
+def test_render_pagesize_result_does_not_shadow_the_real_html_escaper():
+    """Audit finding 2026-07-17 (M7 recurrence): renderPagesizeResult (the page-size
+    A/B bench result renderer, DB-10 §1b) was written with the EXACT SAME shadowing
+    bug as renderP0Result -- a local `esc` falling back to the non-existent global
+    `escapeHtml`, silently defeating every esc() call (incl. s.error, an operator/
+    exception-reflected string) that feeds out.innerHTML. Same fix, same regression
+    guard shape."""
+    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    start = appjs.index("async function renderPagesizeResult(")
+    end = appjs.index("\n    }\n", start)
+    body = appjs[start:end]
+    assert "typeof escapeHtml" not in body, "must not fall back to the non-existent global escapeHtml"
+    assert "const esc" not in body, "must not shadow the real module-level esc()"
+    assert body.count("esc(") >= 5
+
+
 def test_dump_and_osm_pollers_clear_before_set():
     """Audit finding 2026-07-17 (L5): startDump's inline dump-progress poller and
     _osmPoll each created a fresh setInterval with NO shared timer variable to clear

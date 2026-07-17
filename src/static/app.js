@@ -10220,7 +10220,11 @@
     async function renderPagesizeResult(out) {
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const esc = (typeof escapeHtml === "function") ? escapeHtml : ((s) => String(s == null ? "" : s));
+      // Audit finding 2026-07-17 (M7, recurrence): same shadowing bug as
+      // renderP0Result -- a local esc() falling back to the non-existent global
+      // escapeHtml, which never exists, so every esc() call below (incl. s.error,
+      // an operator/exception-reflected string) fed out.innerHTML unescaped. Use
+      // the real module-level esc().
       let rep = null;
       try { rep = await api("/api/diagnostics/pagesize-bench/last"); } catch (e) { /* link below still works */ }
       let rows = "";
