@@ -11,13 +11,27 @@ generated batch:
     python3 scripts/validate_legal_catalog.py [generated.yml] [--curated legal_sources.yml]
 
 Checks: schema tag · required fields · ISO-2-shaped country codes (+ eu/int) ·
-language-code shape · https URLs · in-file and vs-curated dedup · the mandatory
+language-code shape · URL shape · in-file and vs-curated dedup · the mandatory
 ``verification`` block with a valid status · dated ``official_count`` (a count
 without ``as_of``+``source_url`` is treated as estimated → ERROR: counts are only
 ever read off the official page). Reports per-row errors + a verification-status
 tally, and LISTS every ``lead`` (unverified) row for the maintainer's explicit
 decision. Exit 0 = clean (leads may still be present — they are listed, not
 auto-failed; the maintainer decides). Exit 1 = structural errors.
+
+Calibrated against the first 8 real batches (2026-07-17):
+- ``structured.api`` / ``structured.bulk`` accept a URL OR a short descriptive
+  phrase — they are adapter-planning metadata, not fetch targets.
+- an ``http://`` URL in a fetch-target field is a WARNING, not an error: an
+  http-only official portal is a real thing in some jurisdictions, and silently
+  rewriting it to https:// would fabricate a capability. It is listed for the
+  maintainer; the fetcher never silently upgrades or downgrades.
+- ``domain`` may be omitted ONLY on a ``lead`` row — the honest-gap record for a
+  jurisdiction with no working portal (e.g. Yemen). The app-side loader already
+  skips domain-less rows, so a gap record can never become a Source.
+- the in-file dedup key is ``(domain, kind)``: one host legitimately carries two
+  roles (a consolidated codes portal AND the gazette) as two rows. Registration
+  must later collapse them onto the one Source row (Source.domain is unique).
 
 Never edits anything — it proposes; the human vets (the house review gate).
 """
@@ -51,18 +65,39 @@ def _err(errors: list[str], where: str, msg: str) -> None:
     errors.append(f"{where}: {msg}")
 
 
-def _check_url(errors: list[str], where: str, field: str, value) -> None:
+def _check_url(
+    errors: list[str],
+    warnings: list[str],
+    where: str,
+    field: str,
+    value,
+    *,
+    allow_text: bool = False,
+) -> None:
     if value in (None, "", "none"):
         return
-    if not isinstance(value, str) or not value.startswith("https://"):
-        _err(errors, where, f"{field} must be an https:// URL (got {value!r})")
+    if not isinstance(value, str):
+        _err(errors, where, f"{field} must be a string (got {value!r})")
+        return
+    if value.startswith("https://"):
+        return
+    if value.startswith("http://"):
+        warnings.append(
+            f"{where}: {field} is http-only ({value!r}) — kept as recorded; confirm "
+            "https is genuinely unavailable before any fetch (never silently upgraded)"
+        )
+        return
+    if allow_text:
+        return  # descriptive adapter-planning metadata, not a fetch target
+    _err(errors, where, f"{field} must be an https:// URL (got {value!r})")
 
 
 def validate(generated: dict, curated: dict) -> dict:
-    """Pure validation. Returns {errors: [...], leads: [...], tally: {...}, sources: n}."""
+    """Pure validation. Returns {errors, warnings, leads, tally, sources, documents}."""
     errors: list[str] = []
+    warnings: list[str] = []
     leads: list[str] = []
-    tally = {s: 0 for s in VERIFICATION_STATUSES}
+    tally = dict.fromkeys(VERIFICATION_STATUSES, 0)
 
     if generated.get("schema") != SCHEMA:
         _err(errors, "top-level", f"schema must be {SCHEMA!r} (got {generated.get('schema')!r})")
@@ -75,9 +110,15 @@ def validate(generated: dict, curated: dict) -> dict:
     }
     seen_domains: set[str] = set()
 
+    seen_domain_kinds: set[tuple] = set()
     for i, s in enumerate(generated.get("sources", []) or []):
-        where = f"sources[{i}] ({s.get('domain', '?')})"
-        for field in ("name", "domain", "country", "languages", "source_type", "verification"):
+        where = f"sources[{i}] ({s.get('domain') or s.get('name', '?')})"
+        ver = s.get("verification") or {}
+        status = ver.get("status")
+        required = ["name", "country", "languages", "source_type", "verification"]
+        if status != "lead":
+            required.append("domain")  # a domain-less row is only ever an honest-gap lead
+        for field in required:
             if not s.get(field):
                 _err(errors, where, f"missing required field {field!r}")
         country = s.get("country", "")
@@ -92,10 +133,11 @@ def validate(generated: dict, curated: dict) -> dict:
         if ls and not LEGAL_SYSTEMS_RE.match(str(ls)):
             _err(errors, where, f"legal_system {ls!r} is not in the vocabulary")
         for field in ("enumeration_url", "gazette_feed"):
-            _check_url(errors, where, field, s.get(field))
+            _check_url(errors, warnings, where, field, s.get(field))
         st = s.get("structured") or {}
         for field in ("api", "bulk"):
-            _check_url(errors, where, f"structured.{field}", st.get(field))
+            _check_url(errors, warnings, where, f"structured.{field}", st.get(field),
+                       allow_text=True)
         oc = s.get("official_count")
         if oc is not None:
             if not isinstance(oc, dict) or not isinstance(oc.get("value"), int):
@@ -104,9 +146,8 @@ def validate(generated: dict, curated: dict) -> dict:
                 if not DATE_RE.match(str(oc.get("as_of", ""))):
                     _err(errors, where, "official_count.as_of missing/undated — a count is only "
                                         "ever READ OFF the official page, never estimated")
-                _check_url(errors, where, "official_count.source_url", oc.get("source_url"))
-        ver = s.get("verification") or {}
-        status = ver.get("status")
+                _check_url(errors, warnings, where, "official_count.source_url",
+                           oc.get("source_url"))
         if status not in VERIFICATION_STATUSES:
             _err(errors, where, f"verification.status must be one of {VERIFICATION_STATUSES}")
         else:
@@ -116,12 +157,17 @@ def validate(generated: dict, curated: dict) -> dict:
         if status in ("fetched", "search-verified") and not ver.get("retrieved_at"):
             _err(errors, where, "a verified row must carry verification.retrieved_at")
         dom = s.get("domain")
-        if dom in seen_domains:
-            _err(errors, where, "duplicate domain within the generated file")
-        seen_domains.add(dom)
-        if dom in curated_domains:
-            _err(errors, where, "domain already in the CURATED catalog (curated wins — remove "
-                                "this row, or move a correction INTO the curated file)")
+        if dom:
+            key = (dom, s.get("kind"))
+            if key in seen_domain_kinds:
+                _err(errors, where, "duplicate (domain, kind) within the generated file "
+                                    "(one host may carry two ROLES — codes portal + gazette — "
+                                    "as two rows, never two rows of the same role)")
+            seen_domain_kinds.add(key)
+            seen_domains.add(dom)
+            if dom in curated_domains:
+                _err(errors, where, "domain already in the CURATED catalog (curated wins — "
+                                    "remove this row, or move a correction INTO the curated file)")
 
     seen_docs: set[tuple] = set()
     for i, d in enumerate(generated.get("documents", []) or []):
@@ -129,7 +175,7 @@ def validate(generated: dict, curated: dict) -> dict:
         for field in ("jurisdiction", "title", "url", "verification"):
             if not d.get(field):
                 _err(errors, where, f"missing required field {field!r}")
-        _check_url(errors, where, "url", d.get("url"))
+        _check_url(errors, warnings, where, "url", d.get("url"))
         status = (d.get("verification") or {}).get("status")
         if status not in VERIFICATION_STATUSES:
             _err(errors, where, f"verification.status must be one of {VERIFICATION_STATUSES}")
@@ -144,6 +190,7 @@ def validate(generated: dict, curated: dict) -> dict:
 
     return {
         "errors": errors,
+        "warnings": warnings,
         "leads": leads,
         "tally": tally,
         "sources": len(generated.get("sources", []) or []),
@@ -169,6 +216,10 @@ def main(argv: list[str]) -> int:
               f"(a lead was never loaded by the research session):")
         for line in report["leads"]:
             print(f"  ? {line}")
+    if report["warnings"]:
+        print(f"\nWARNINGS ({len(report['warnings'])}) — recorded as found, review before fetch:")
+        for line in report["warnings"]:
+            print(f"  ! {line}")
     if report["errors"]:
         print(f"\nERRORS ({len(report['errors'])}):")
         for line in report["errors"]:

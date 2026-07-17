@@ -116,6 +116,29 @@ South America, supranational (EU/AU/OAS/ASEAN/GCC/UN treaty bodies). Every UN me
 exactly one batch. The 12-UI-language-country floor is already largely covered by the curated
 file — batches extend OUTWARD from it.
 
+**Batch status (2026-07-17 — first 8 received + merged, 163 sources / 7 documents):**
+africa-west ✅ · africa-east ✅ · africa-central-south ✅ · mena ✅ ·
+europe-central-baltics-microstates ✅ · europe-east-caucasus ✅ · south-central-america ✅ ·
+southeast-asia ✅. **Still to run:** Europe-West/North (mostly curated-covered — a gap-fill
+pass), Central+South Asia, East Asia, Oceania+Pacific, North America+Caribbean, supranational.
+
+**Contract calibrations from the first 8 real batches (binding for future sessions and the
+validator alike):**
+- `structured.api` / `structured.bulk` accept a URL **or a short descriptive phrase** — every
+  session converged on descriptive use ("per-act PDF", "Laws.Africa Content API v2, …"); they
+  are adapter-planning metadata, not fetch targets.
+- An **http-only** official portal is recorded exactly as found (`http://…`); the validator
+  lists it as a WARNING for the maintainer — never silently rewritten to https (that would
+  fabricate a capability the site may not have).
+- A jurisdiction with **no working portal at all** (e.g. Yemen) is recorded as a domain-less
+  `lead` row — the honest-gap record. The app-side loader skips domain-less rows by
+  construction, so a gap can never become a Source.
+- One host carrying **two roles** (consolidated codes portal AND the gazette) is two rows with
+  distinct `kind`; the in-file dedup key is `(domain, kind)`. Registration must later collapse
+  them onto one Source row (`Source.domain` is unique) — the S6 adapter session owns that.
+- `documents` rows use `jurisdiction:` (a session that writes `country:` gets mechanically
+  renamed at intake); a document without a `verification` block defaults to `lead`.
+
 ## §3 Intake (shipped with this doc — the file works the moment it lands)
 
 - `src/law/catalog.py` now merges `configs/legal_sources_generated.yml` (when present) into the

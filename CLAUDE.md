@@ -6048,6 +6048,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   routed into the brief as S4b: registration DROPS the catalog's language (LawDocument has no
   language/country columns; law corpus Articles ingest language=None) — the Cambodia-in-French
   case gets wrong keyword treatment until S4b threads catalog→LawDocument→Article.language.
+  **FIRST 8 BATCHES RECEIVED + MERGED same day (maintainer's parallel sessions delivered:
+  africa-west · africa-east · africa-central-south · mena · europe-central-baltics-microstates ·
+  europe-east-caucasus · south-central-america · southeast-asia):**
+  `configs/legal_sources_generated.yml` now carries **163 sources + 7 documents** (verification:
+  55 fetched · 100 search-verified · 8 leads), mechanically merged (documents `country:`→
+  `jurisdiction:` renamed; missing verification → `lead`) and validator-clean. The validator was
+  CALIBRATED against the real data (contract amendments recorded in the acquisition doc §2, so
+  future sessions + intake agree): `structured.api/bulk` = URL OR descriptive phrase (adapter
+  metadata, not fetch targets); **http-only portals = a listed WARNING, never silently rewritten
+  to https** (7 such: liberlii.org · ulrc.go.ug · minjustice.gov.cm · gacetaoficialdebolivia.gob.bo
+  · laoofficialgazette.gov.la ×2 + the Mauritania count source); a domain-less row allowed ONLY as
+  the honest-gap `lead` (Yemen: no working portal — the loader skips domain-less rows by
+  construction); in-file dedup key = `(domain, kind)` — one host may carry codes-portal AND
+  gazette as two rows (10 such hosts), REGISTRATION must collapse them (Source.domain unique, S6's
+  job). MAINTAINER-VETTING BOARD (in the PR body): 9 leads to decide; ~20 domains flagged
+  robots-blocked/bot-walled by the sessions (they cannot be scraped fail-closed — adapter/API
+  paths or honest gaps; incl. zakon.rada.gov.ua, suin-juriscol.gov.co [datos.gov.co mirror
+  suggested], sinalevi.go.cr [domain migration ~2026-07-20], congresonacional.hn, amategeko.gov.bi);
+  27 dated official_counts landed = real S5 denominators (AM 208,987 acts · CO 87,392 normas ·
+  CV 76,947 · MG 40,000 · BY/GE 26 codes · UY 13 codes …); the Mauritania 30,000 count is
+  press-release-sourced (self-disclosed in-row as approximate — kept with the disclosure).
+  REMAINING batches: Europe-West/North gap-fill · Central+South Asia · East Asia · Oceania ·
+  North America+Caribbean · supranational.
   **TAGS + PROVENANCE SHIPPED same day (maintainer: "make sure that there's a proper article tag
   dedicated to laws, as well as proper dedicated tags for wikipedia articles, and so forth. Tags
   should also be deduced from source type, and source tags"):** `LAW` joined PROVENANCE_CLASSES

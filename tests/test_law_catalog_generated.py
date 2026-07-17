@@ -21,12 +21,12 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-import validate_legal_catalog as vlc  # noqa: E402
-
 # Load catalog.py directly (not via the src.law package __init__, whose corpus import
 # pulls src.database.write — PEP-695 syntax that py3.11 sandboxes cannot parse). The
 # module under test only needs yaml + models; the spec-load exercises the same code CI runs.
 import importlib.util  # noqa: E402
+
+import validate_legal_catalog as vlc  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location(
     "law_catalog_standalone", Path(__file__).resolve().parents[1] / "src" / "law" / "catalog.py"
@@ -139,9 +139,9 @@ def test_validator_catches_the_fabrication_shaped_mistakes():
         "sources": [
             _gen_entry(country="france"),                              # not ISO-2
             _gen_entry(domain="dup.example"),
-            _gen_entry(domain="dup.example"),                          # in-file dup
+            _gen_entry(domain="dup.example"),                          # in-file dup (same role)
             _gen_entry(domain="legifrance.gouv.fr"),                   # overrides curated
-            _gen_entry(enumeration_url="http://insecure.example"),     # not https
+            _gen_entry(enumeration_url="not-a-url"),                   # not a URL at all
             _gen_entry(official_count={"value": 76, "unit": "codes"}), # undated count
             _gen_entry(verification={"status": "trust-me"}),           # bad status
             {"name": "No verification", "domain": "x.example", "country": "xx",
@@ -151,7 +151,45 @@ def test_validator_catches_the_fabrication_shaped_mistakes():
     }
     report = vlc.validate(bad, CURATED)
     text = "\n".join(report["errors"])
-    for needle in ("schema must be", "as_of must be", "ISO-2", "duplicate domain",
+    for needle in ("schema must be", "as_of must be", "ISO-2", "duplicate (domain, kind)",
                    "CURATED catalog", "https://", "never estimated",
                    "verification.status", "missing required field 'verification'"):
         assert needle in text, f"validator missed: {needle}\n{text}"
+
+
+def test_validator_batch_calibrations_from_the_first_real_batches():
+    """The 2026-07-17 first-8-batches calibration: descriptive structured fields,
+    http-only warnings, two roles on one host, and the honest-gap domain-less lead."""
+    doc = {
+        "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+        "sources": [
+            # structured.api/bulk are adapter-planning metadata: free text is fine
+            _gen_entry(domain="freetext.example",
+                       structured={"api": "Laws.Africa Content API v2, read-only",
+                                   "bulk": "per-act PDF", "formats": ["pdf"]}),
+            # an http-only official portal is recorded as found -> WARNING, never an error
+            _gen_entry(domain="httponly.example",
+                       enumeration_url="http://httponly.example/laws"),
+            # one host, two ROLES (codes portal + gazette) = two rows, allowed
+            _gen_entry(domain="tworoles.example", kind="consolidated_portal"),
+            _gen_entry(domain="tworoles.example", kind="gazette"),
+            # the honest-gap record: no working portal exists -> domain-less LEAD
+            {"name": "Nowhere — no confirmed working portal", "country": "ye",
+             "languages": ["ar"], "source_type": "gazette",
+             "verification": {"status": "lead"}},
+        ],
+        "documents": [],
+    }
+    report = vlc.validate(doc, CURATED)
+    assert report["errors"] == [], report["errors"]
+    assert any("http-only" in w for w in report["warnings"])
+    assert len(report["leads"]) == 1
+
+    # ... but a domain-less row that CLAIMS verification is still an error
+    gapless = dict(doc, sources=[{
+        "name": "No domain but claims fetched", "country": "ye", "languages": ["ar"],
+        "source_type": "gazette",
+        "verification": {"status": "fetched", "retrieved_at": "2026-07-17"},
+    }])
+    report2 = vlc.validate(gapless, CURATED)
+    assert any("missing required field 'domain'" in e for e in report2["errors"])
