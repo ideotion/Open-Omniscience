@@ -784,6 +784,11 @@ _SORT_FIELDS = {"date", "source", "title", "language"}
 # "keyword_count" is a separate sort (it needs the resolved-keyword count map, below),
 # only meaningful when the query resolves to a stored keyword.
 _KEYWORD_COUNT_SORT = "keyword_count"
+# Chunk size for the fts_ids IN(...) resolve query in _query_articles (audit finding
+# 2026-07-17) -- stay under SQLite's historical ~999 bound-variable ceiling, the same
+# repo-wide invariant as src/analytics/queries.py's _IN_CHUNK/GRAPH_ARTICLE_CAP and
+# src/api/search_omni.py's inline 900-chunk loop.
+_FTS_ID_CHUNK = 900
 
 
 def _resolve_count_keyword(session, query: str | None) -> tuple[int | None, str | None]:
@@ -1031,10 +1036,25 @@ def _query_articles(
             id_q = session.query(Article.id, _col)
         else:  # relevance | keyword_count -> id only
             id_q = session.query(Article.id)
-        id_q = id_q.filter(Article.id.in_(fts_ids))
-        if filters:
-            id_q = id_q.filter(and_(*filters))
-        id_rows = id_q.all()
+        # Audit finding 2026-07-17: fts_ids can carry up to search_ids's own
+        # _MAX_CANDIDATES (20000, src/database/fts.py) -- well past SQLite's
+        # historical ~999 bound-variable ceiling used everywhere else in this
+        # codebase (see src/analytics/queries.py's _IN_CHUNK/GRAPH_ARTICLE_CAP,
+        # src/api/search_omni.py's inline 900-chunk loop). This is the CORE
+        # article search/browse endpoint (GET /api/articles), so an unchunked
+        # .in_(fts_ids) here is a direct "OperationalError: too many SQL
+        # variables" 500 on any query matching more than a few hundred
+        # articles -- entirely plausible on the multi-hundred-thousand-article
+        # corpora this app targets. Chunked below, merging rows across chunks
+        # (the base id_q carries only the column selection at this point, so
+        # each chunk's filtered query is independent and safe to concatenate).
+        id_rows = []
+        for _i in range(0, len(fts_ids), _FTS_ID_CHUNK):
+            chunk = fts_ids[_i : _i + _FTS_ID_CHUNK]
+            cq = id_q.filter(Article.id.in_(chunk))
+            if filters:
+                cq = cq.filter(and_(*filters))
+            id_rows.extend(cq.all())
         if _timer is not None:
             _timer.phase("resolve")
 

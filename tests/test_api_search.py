@@ -110,6 +110,25 @@ def test_boolean_search_and(client):
     assert data["results"][0]["title"] == "Market jitters"
 
 
+def test_fts_id_resolve_is_chunked_and_byte_identical(client, monkeypatch):
+    """Audit finding 2026-07-17: _query_articles's fts_ids -> Article.id.in_(fts_ids)
+    resolve query was unchunked, but search_ids's own cap (_MAX_CANDIDATES=20000,
+    src/database/fts.py) is far past SQLite's historical ~999 bound-variable
+    ceiling used everywhere else in this codebase. This is the core GET
+    /api/articles search/browse endpoint. Forces chunking with a tiny
+    _FTS_ID_CHUNK (2 matches needing 2 chunks of 1) and asserts the result is
+    BYTE-IDENTICAL to the unchunked default -- chunking must be a pure
+    implementation detail, never change the answer or its order."""
+    import src.api.main as main_mod
+
+    unchunked = client.get("/api/articles", params={"query": "quantum"}).json()
+    assert unchunked["total"] == 2  # both quantum articles match -- a non-vacuous test
+
+    monkeypatch.setattr(main_mod, "_FTS_ID_CHUNK", 1, raising=True)
+    chunked = client.get("/api/articles", params={"query": "quantum"}).json()
+    assert chunked == unchunked
+
+
 def test_boolean_search_or(client):
     r = client.get("/api/articles", params={"query": "breakthrough OR merger"})
     titles = {row["title"] for row in r.json()["results"]}
