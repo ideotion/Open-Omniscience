@@ -5041,21 +5041,30 @@
     async function _uxShowLastCompletedExportSummary() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const prog = document.getElementById("ux-progress");
-      let shown = null;
+      const bar = document.getElementById("ux-bar");
+      const pauseBtn = document.getElementById("ux-pause");
+      let shown = null, phase = null;
       try {
         const s = await api("/api/backup/v2/volumes/status");
-        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) shown = s;
+        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) { shown = s; phase = "volumes"; }
       } catch (e) { /* best-effort: one endpoint failing must not hide the other */ }
       try {
         // The folder (large-data) phase runs AFTER volumes in a full export -- if it
         // also completed/paused, it is the more recent state to show.
         const s = await api("/api/backup/folder/status");
-        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) shown = s;
+        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) { shown = s; phase = "folder"; }
       } catch (e) { /* best-effort */ }
       if (!shown) return;
       const dest = shown.dest || (document.getElementById("ux-dest").value || "").trim();
       if (shown.state === "paused") {
-        prog.innerHTML = `<b>${esc(t("Backup paused."))}</b> ${esc(t("Resume to continue where it left off."))} (${esc(t("last run"))})`;
+        // Audit finding 2026-07-17 (M8): a reopened dialog used to print "paused" text
+        // with NO way to resume -- _uxPhase (which endpoint a resume must target) stayed
+        // null from page load, and the actual #ux-pause button (default display:none)
+        // was never unhidden/relabelled, only this status text. _uxShowPaused is the
+        // SAME helper _uxRun already uses for a mid-run pause -- reuse it here so the
+        // reopened dialog gets a real, correctly-targeted Resume button.
+        _uxPhase = phase;
+        _uxShowPaused(prog, bar, pauseBtn, t);
       } else {
         prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)} (${esc(t("last completed export"))})`;
       }

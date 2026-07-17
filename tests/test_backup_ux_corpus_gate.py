@@ -61,3 +61,32 @@ def test_stream_backup_always_emits_the_corpus_member():
     assert '_emit_member(st, MemberFile(src.member_name, "corpus", src.path))' in _STREAM, (
         "the unconditional corpus-member emission was moved/removed — the done⇒corpus invariant broke"
     )
+
+
+def test_ux_show_last_completed_export_summary_restores_the_resume_control():
+    """Audit finding 2026-07-17 (M8): a reopened Export dialog on a PAUSED background job
+    printed "Backup paused. Resume to continue..." as plain status text, but never restored
+    the two things a click on Resume actually needs: _uxPhase (which endpoint a resume must
+    target) and the real #ux-pause button (default display:none) unhidden + relabelled into
+    resume mode. So the reopened dialog claimed a paused job existed but offered no control
+    to act on it. Fix: reuse _uxShowPaused — the SAME helper _uxRun already calls on a
+    mid-run pause — and track which status endpoint (volumes vs folder) produced the shown
+    paused state so _uxPhase targets the right one."""
+    fn = _fn_body(_APP_JS, "async function _uxShowLastCompletedExportSummary(")
+    assert "_uxShowPaused(prog, bar, pauseBtn, t)" in fn, (
+        "a paused reopen must reuse the same _uxShowPaused helper _uxRun uses mid-run"
+    )
+    assert "_uxPhase = phase" in fn, (
+        "a paused reopen must restore _uxPhase so a Resume click targets the right endpoint"
+    )
+    # phase is tracked per endpoint so folder (which runs after volumes in a full export)
+    # wins when BOTH are paused — matching the existing docstring: "the more recent state".
+    assert 'phase = "volumes"' in fn and 'phase = "folder"' in fn
+
+
+def test_ux_show_paused_is_the_single_source_of_the_resume_button_state():
+    """The helper the M8 fix reuses must actually do the unhide+relabel — pin its contract
+    so a future refactor of _uxShowPaused can't silently regress the reopen fix above."""
+    fn = _fn_body(_APP_JS, "function _uxShowPaused(")
+    assert 'pauseBtn.style.display = ""' in fn
+    assert 'pauseBtn.dataset.mode = "resume"' in fn
