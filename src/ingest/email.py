@@ -29,11 +29,10 @@ from email.utils import getaddresses, parsedate_to_datetime
 from html import unescape
 from pathlib import Path
 
-from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
-from src.database.write import run_write_with_retry
+from src.database.write import is_locked_error, run_write_with_retry
 from src.privacy.link_sanitizer import SanitizeStats, sanitize_text
 from src.utils.url_utils import generate_content_hash
 
@@ -400,6 +399,36 @@ def _email_article(source: Source, parsed: ParsedEmail, content_hash: str, canon
     )
 
 
+def _is_integrity_error(exc: BaseException) -> bool:
+    """True iff ``exc`` (or a wrapped cause/context) is a UNIQUE/FK/NOT-NULL violation.
+
+    Audit finding 2026-07-17: on the ENCRYPTED (sqlcipher3) store a unique-constraint
+    collision can surface as a RAW ``sqlcipher3``/``sqlite3`` ``IntegrityError`` that
+    SQLAlchemy does NOT wrap as ``sqlalchemy.exc.IntegrityError`` -- the exact
+    cross-driver class divergence ``src/database/write.py``'s ``is_locked_error`` and
+    ``src/backup/merge.py``'s ``_db_integrity_error_types`` already had to fix
+    (field log 2026-07-14 "297 fetched articles left unindexed"; field bug
+    2026-07-16). A narrow ``except IntegrityError`` here silently never matches on
+    the encrypted default store, letting a genuine (and expected -- a benign
+    same-hash duplicate) collision escape as an unhandled exception that aborts
+    the WHOLE import batch instead of being counted as a duplicate.
+    """
+    import sqlalchemy.exc
+    import sqlite3
+
+    types: list[type] = [sqlalchemy.exc.IntegrityError, sqlite3.IntegrityError]
+    try:
+        from sqlcipher3.dbapi2 import IntegrityError as _SqlcipherIntegrityError
+
+        types.append(_SqlcipherIntegrityError)
+    except Exception:  # noqa: BLE001 - sqlcipher3 absent in a core install -> stdlib path only
+        pass
+    for e in (exc, exc.__cause__, exc.__context__):
+        if e is not None and isinstance(e, tuple(types)):
+            return True
+    return False
+
+
 def ingest_emails(
     session: Session, source: Source, raw_messages: list[bytes], *, commit_batch: int | None = None
 ) -> dict[str, int]:
@@ -474,13 +503,18 @@ def ingest_emails(
         try:
             run_write_with_retry(_work, session=session, label="newsletter import")
             tally["stored"] += 1
-        except IntegrityError:
+        except Exception as exc:  # noqa: BLE001 - is_locked_error/_is_integrity_error are the
+            # precise, cross-driver-aware discriminators (see _is_integrity_error's docstring);
+            # anything neither of them recognises is a genuinely unexpected failure and must
+            # still surface loudly, never be silently swallowed as a miscounted duplicate.
             session.rollback()
-            tally["duplicate"] += 1
-        except OperationalError:
-            session.rollback()
-            tally["errors"] += 1
-            _LOG.warning("newsletter import: a message could not be stored (db locked); skipped")
+            if is_locked_error(exc):
+                tally["errors"] += 1
+                _LOG.warning("newsletter import: a message could not be stored (db locked); skipped")
+            elif _is_integrity_error(exc):
+                tally["duplicate"] += 1
+            else:
+                raise
 
     def _flush() -> None:
         if not pending:
@@ -488,7 +522,10 @@ def ingest_emails(
         try:
             session.commit()
             tally["stored"] += len(pending)
-        except (IntegrityError, OperationalError):
+        except Exception as exc:  # noqa: BLE001 - same discriminated dispatch as _commit_one
+            if not (is_locked_error(exc) or _is_integrity_error(exc)):
+                session.rollback()
+                raise
             # A unique-index collision the in-batch/DB dedup didn't catch, or a transient
             # lock: redo this batch one message at a time so a single collision/lock never
             # drops its batch-mates and never escapes as an unhandled error.

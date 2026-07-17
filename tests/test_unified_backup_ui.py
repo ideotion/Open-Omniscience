@@ -169,6 +169,32 @@ def test_reopening_the_import_dialog_recovers_the_last_completed_summary():
     assert "_uxShowLastCompletedSummary()" in opener
 
 
+def test_reopening_the_export_dialog_recovers_the_last_completed_backup():
+    """Audit finding 2026-07-17: the same field report 2026-07-16 root cause the
+    Import dialog was fixed for ("after a successful run, the interface doesn't
+    show the result") applies to the EXPORT dialog too. A large export can run for
+    hours as a background job, so the tab is very likely closed/reloaded before it
+    finishes -- and openUnifiedExport() unconditionally blanked #ux-progress on
+    every reopen, discarding the "Backup complete" result forever. Each job
+    manager is a process-wide singleton whose last completed state survives any
+    number of page reloads, so the dialog-open handler must recover and render it
+    -- never just wipe it."""
+    assert "_uxShowLastCompletedExportSummary" in _APP
+    fn = _APP[_APP.index("async function _uxShowLastCompletedExportSummary("):]
+    fn = fn[: fn.index("\n    }\n")]
+    # checks the same two job kinds the live export run itself populates a status from
+    for ep in ("/api/backup/v2/volumes/status", "/api/backup/folder/status"):
+        assert ep in fn, ep
+    # filtered to a BACKUP job (never showing a restore's or verify's status in the
+    # export dialog), and a paused run is shown as paused, never as complete.
+    assert 's.mode === "backup"' in fn
+    assert '"paused"' in fn and '"done"' in fn
+    # openUnifiedExport() must actually call it (wiring, not just a dangling helper)
+    opener = _APP[_APP.index("async function openUnifiedExport("):]
+    opener = opener[: opener.index("\n    }\n")]
+    assert "_uxShowLastCompletedExportSummary()" in opener
+
+
 def test_llm_models_are_integrated_not_a_separate_panel():
     # the separate .oomodels panel + its handlers are gone
     assert "<h2>Local LLM models (separate backup)</h2>" not in _HTML

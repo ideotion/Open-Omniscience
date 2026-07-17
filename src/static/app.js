@@ -3405,8 +3405,16 @@
     }
     function agPickDate(y, m, d) { AGV.y = y; AGV.m = m; AGV.day = d; renderAgenda(); }
     function agMonthShift(d) {
-      let m = AGV.m + d, y = AGV.y;
-      if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+      // Audit fix 2026-07-17: the old single-step wraparound (`if (m<1){m=12;y--}
+      // if (m>12){m=1;y++}`) only ever handled a +-1 shift correctly -- it hardcoded
+      // month 12 / month 1 regardless of how far m had actually gone, so Trimester
+      // (+-3) and Semester (+-6) nav landed on the WRONG month across a year
+      // boundary (e.g. Feb 2026 - 3 months gave "December 2025" instead of the
+      // correct "November 2025"). True modular arithmetic over a 0-based total
+      // month count handles any shift correctly, including the plain +-1 case.
+      const total = AGV.y * 12 + (AGV.m - 1) + d;
+      const y = Math.floor(total / 12);
+      const m = ((total % 12) + 12) % 12 + 1;
       AGV.y = y; AGV.m = m; AGV.day = null; renderAgenda();
     }
     function agWeekShift(d) {
@@ -5016,6 +5024,41 @@
       document.getElementById("ux-run").disabled = false;
       dlg.showModal();
       await _uxLoadInventory();
+      _uxShowLastCompletedExportSummary();  // best-effort; never blocks opening the dialog
+    }
+
+    // Mirrors _uxShowLastCompletedSummary() for the Import dialog (audit finding
+    // 2026-07-17 -- the same field report 2026-07-16 root cause applies here too): a
+    // large export can run for hours as a background job (task-manager-visible), so
+    // the tab is very likely closed/reloaded before it finishes, and this function's
+    // own closure -- the one that would have written "Backup complete" into
+    // #ux-progress -- is gone with it. openUnifiedExport() unconditionally blanked
+    // #ux-progress on every reopen, discarding that result forever. Each job manager
+    // (get_volume_manager(), get_folder_manager()) is a PROCESS-WIDE singleton whose
+    // last completed state survives any number of page reloads until a NEW job
+    // starts -- so recover it here, filtered to mode==="backup" (never show a
+    // restore's or verify's status in the EXPORT dialog).
+    async function _uxShowLastCompletedExportSummary() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prog = document.getElementById("ux-progress");
+      let shown = null;
+      try {
+        const s = await api("/api/backup/v2/volumes/status");
+        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) shown = s;
+      } catch (e) { /* best-effort: one endpoint failing must not hide the other */ }
+      try {
+        // The folder (large-data) phase runs AFTER volumes in a full export -- if it
+        // also completed/paused, it is the more recent state to show.
+        const s = await api("/api/backup/folder/status");
+        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) shown = s;
+      } catch (e) { /* best-effort */ }
+      if (!shown) return;
+      const dest = shown.dest || (document.getElementById("ux-dest").value || "").trim();
+      if (shown.state === "paused") {
+        prog.innerHTML = `<b>${esc(t("Backup paused."))}</b> ${esc(t("Resume to continue where it left off."))} (${esc(t("last run"))})`;
+      } else {
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)} (${esc(t("last completed export"))})`;
+      }
     }
 
     async function _uxLoadInventory() {

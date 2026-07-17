@@ -96,3 +96,47 @@ def test_sanitize_text_preserves_trailing_punctuation():
     assert "https://ok.example/p" in out
     assert out.rstrip().endswith(").")
     assert "utm_source" not in out
+
+
+def test_malformed_embedded_destination_does_not_crash():
+    """Field bug 2026-07-16: a redirect wrapper whose recovered destination looks
+    like a malformed IPv6-literal URL (a plausible real-world sender encoding bug,
+    not just adversarial input) made ``urlsplit`` raise ``ValueError`` inside the
+    recursive unwrap call -- crashing the whole ``sanitize_text`` call and, one
+    layer up, the caller's entire batch (``ingest_emails`` loses every already-
+    parsed message in the current uncommitted batch on a single bad link).
+    Reproduced directly against this exact input before the fix; must not raise,
+    and must not silently drop the rest of the text either."""
+    bad_dest = "http://[bad-ipv6-not-closed/x"
+    wrapper = "https://tracker.example.com/click?url=" + quote(bad_dest, safe="")
+    text = f"Check this out: {wrapper} for more info."
+
+    # The public single-URL entry point must not raise either.
+    s = sanitize_url(wrapper)
+    assert s.url  # some string came back, whatever it is -- never an exception
+
+    out, stats = sanitize_text(text)
+    assert "for more info." in out  # the rest of the message survives
+    assert stats.links_seen == 1
+
+
+def test_a_second_legitimate_link_in_the_same_text_still_sanitises_after_a_bad_one():
+    """The malformed link must not poison sibling links processed in the same
+    ``sanitize_text`` call (a realistic shape: one bad link + one good one in the
+    same email body)."""
+    bad_dest = "http://[bad-ipv6-not-closed/x"
+    wrapper = "https://tracker.example.com/click?url=" + quote(bad_dest, safe="")
+    good = "https://publisher.example/story?mc_eid=SECRET&p=1"
+    out, stats = sanitize_text(f"Bad: {wrapper} Good: {good}")
+    assert stats.links_seen == 2
+    assert "mc_eid" not in out  # the legitimate link was still sanitised
+    assert "publisher.example/story" in out
+
+
+def test_embedded_in_path_variant_of_the_same_malformed_destination():
+    """The path-embedded recovery route (``_embedded_in_path``, distinct code path
+    from the query-parameter route) must be equally hardened."""
+    bad_dest = "http://[bad-ipv6-not-closed/x"
+    wrapper = "https://tracker.example.com/redirect/" + quote(bad_dest, safe="")
+    s = sanitize_url(wrapper)
+    assert s.url  # never raises

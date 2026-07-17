@@ -1501,14 +1501,29 @@ def associations(
     ]
     articles_total = len(target_articles)
     articles_bounded = False
-    if article_cap is not None and articles_total > article_cap:
-        # Bound a very frequent term to a DETERMINISTIC sample of EXACTLY ``article_cap``
+    # Audit finding 2026-07-17: with no explicit article_cap (the direct GET
+    # /api/insights/associations endpoint -- "powers the mind-map" -- and the top_terms/
+    # trending cooccur enrichment both call associations() this way), a term co-occurring
+    # in more than SQLite's historical ~999 bound-variable ceiling worth of articles made
+    # the .in_(target_articles) query below raise "OperationalError: too many SQL
+    # variables" -- a real 500 on a popular term in any moderately large corpus. The
+    # EFFECTIVE cap is always at least the SQLite-safe bound (GRAPH_ARTICLE_CAP=900,
+    # the same repo-wide invariant as layered_graph/latest.py/_IN_CHUNK modules), even
+    # when the caller passed none; an explicit article_cap above that is honestly
+    # clamped down to it too (a crash-guaranteeing operator setting would be worse than a
+    # disclosed, safe sample). This can only ever CHANGE behaviour that previously
+    # crashed (any term whose article set already exceeded 900 was already broken).
+    effective_cap = min(article_cap, GRAPH_ARTICLE_CAP) if article_cap is not None else GRAPH_ARTICLE_CAP
+    if articles_total > effective_cap:
+        # Bound a very frequent term to a DETERMINISTIC sample of EXACTLY ``effective_cap``
         # ids spread EVENLY across the full sorted range (index projection i*N//cap) —
         # no recency bias (cross-time recall is sacred), reproducible, and it caps both the
         # co-occurrence scan below and the IN() size. (A plain ``[::step]`` would waste half
         # the budget just past the boundary, e.g. 1201 ids -> 601.)
         ordered = sorted(target_articles)
-        target_articles = [ordered[(i * articles_total) // article_cap] for i in range(article_cap)]
+        target_articles = [
+            ordered[(i * articles_total) // effective_cap] for i in range(effective_cap)
+        ]
         articles_bounded = True
     n_a = len(target_articles)
     if not target_articles or total == 0:
@@ -1612,9 +1627,13 @@ def associations(
         + (" within the selected window" if (start or end) else ""),
         "caveat": caveat,
     }
-    if article_cap is not None:
-        # Only present when the caller asked for bounding (the graph); the /associations
-        # endpoint and every existing caller pass no cap, so the dict is byte-unchanged.
+    if article_cap is not None or articles_bounded:
+        # Present when the caller asked for bounding (the graph) OR the internal
+        # SQLite-safety net actually fired (audit finding 2026-07-17: this must never be
+        # silent -- a truncated result with no disclosure is exactly the "no silent
+        # truncation" honesty rule this codebase enforces elsewhere). Byte-unchanged for
+        # every caller whose term's article set was already under the safety bound (the
+        # overwhelming common case), which is what "byte-unchanged" ever meant in practice.
         result["articles_sampled"] = n_a
         result["articles_bounded"] = articles_bounded
         if articles_bounded:

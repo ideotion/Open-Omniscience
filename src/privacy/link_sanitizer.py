@@ -168,13 +168,37 @@ def _embedded_in_path(path: str) -> str | None:
     return m.group(0) if m else None
 
 
+def _is_parseable_url(s: str) -> bool:
+    """True iff ``urlsplit`` accepts ``s`` without raising.
+
+    A recovered/embedded destination is an UNQUOTED, attacker- or
+    sender-encoding-bug-controlled string -- it can contain a malformed
+    IPv6-literal-looking bracket sequence (``[bad-ipv6-not-closed/x``) that
+    ``urlsplit`` raises ``ValueError`` on. That must never propagate: a single
+    malformed embedded link would otherwise crash the whole ``sanitize_text``
+    call, and by extension the caller's whole message batch (field bug
+    2026-07-16, reproduced directly against this module -- a percent-encoded
+    ``?url=http://[bad-ipv6-not-closed/x`` redirect-wrapper param crashed
+    ``ingest_emails`` for the entire uncommitted batch, not just this one
+    message). Only a recovered candidate that ``urlsplit`` genuinely accepts is
+    ever treated as a destination; anything else is honestly "not a valid
+    embedded URL", not a crash.
+    """
+    try:
+        urlsplit(s)
+    except ValueError:
+        return False
+    return True
+
+
 def _recover_destination(parts) -> str | None:
     for key, val in parse_qsl(parts.query, keep_blank_values=False):
         if key.lower() in _EMBED_PARAMS and val:
             cand = _as_http_url(val)
-            if cand:
+            if cand and _is_parseable_url(cand):
                 return cand
-    return _embedded_in_path(parts.path)
+    embedded = _embedded_in_path(parts.path)
+    return embedded if embedded and _is_parseable_url(embedded) else None
 
 
 def _host_of(parts) -> str:
@@ -189,7 +213,23 @@ def _is_opaque_tracker(host: str, path: str) -> bool:
 
 
 def sanitize_url(url: str, text: str | None = None, _depth: int = 0) -> SanitizedLink:
-    """Sanitise a single URL. Pure; never touches the network."""
+    """Sanitise a single URL. Pure; never touches the network.
+
+    Belt-and-braces (field bug 2026-07-16): ``_recover_destination`` already
+    validates a recovered/embedded destination before it reaches here, but this
+    function is also a public entry point callable directly with untrusted
+    input. Any unanticipated ``urlsplit``/``urlunsplit`` failure on a malformed
+    URL degrades to "leave this one link unsanitised" rather than crashing the
+    caller's whole batch -- a single bad link must never cost every other
+    message in an import its data.
+    """
+    try:
+        return _sanitize_url_inner(url, text, _depth)
+    except ValueError:
+        return SanitizedLink(original=url, url=url, text=text)
+
+
+def _sanitize_url_inner(url: str, text: str | None, _depth: int) -> SanitizedLink:
     raw = url
     parts = urlsplit(url.strip())
     if parts.scheme not in ("http", "https"):

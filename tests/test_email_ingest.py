@@ -318,6 +318,124 @@ def test_batched_commit_falls_back_per_message_on_collision():
     assert s.query(Article).count() == 1
 
 
+def test_is_integrity_error_recognizes_a_sqlcipher3_style_unwrapped_exception(monkeypatch):
+    """Audit finding 2026-07-17: on the ENCRYPTED store a unique-constraint collision
+    can surface as a RAW ``sqlcipher3``/``sqlite3`` ``IntegrityError`` that SQLAlchemy
+    does NOT wrap as ``sqlalchemy.exc.IntegrityError`` -- the same cross-driver class
+    divergence ``src/database/write.py``'s ``is_locked_error`` and
+    ``src/backup/merge.py``'s ``_db_integrity_error_types`` already had to fix. A
+    narrow ``except IntegrityError`` (the sqlalchemy.exc one) would silently never
+    catch this, letting a benign duplicate escape as an unhandled exception that
+    aborts the whole import batch."""
+    import sys
+    import types
+
+    from src.ingest.email import _is_integrity_error
+
+    class _FakeSqlcipherIntegrityError(Exception):
+        pass
+
+    import sqlite3
+    assert not issubclass(_FakeSqlcipherIntegrityError, sqlite3.IntegrityError), (
+        "the fixture must be a genuinely UNRELATED class -- the whole point of the bug"
+    )
+
+    fake_dbapi2 = types.SimpleNamespace(IntegrityError=_FakeSqlcipherIntegrityError)
+    fake_pkg = types.SimpleNamespace(dbapi2=fake_dbapi2)
+    monkeypatch.setitem(sys.modules, "sqlcipher3", fake_pkg)
+    monkeypatch.setitem(sys.modules, "sqlcipher3.dbapi2", fake_dbapi2)
+
+    exc = _FakeSqlcipherIntegrityError("UNIQUE constraint failed: articles.hash")
+    assert _is_integrity_error(exc) is True
+    assert _is_integrity_error(RuntimeError("disk full")) is False
+
+
+def test_commit_one_classifies_a_sqlcipher3_style_collision_as_a_duplicate_not_a_crash(monkeypatch):
+    """End-to-end via the real _flush() -> _commit_one redo path: force _flush()'s
+    primary session.commit() to fail once (entering its per-message redo loop), then
+    have run_write_with_retry (what _commit_one actually calls) raise the driver's
+    OWN (sqlcipher3-style) IntegrityError instance -- never sqlalchemy's wrapped one
+    -- proving the real code path, not just the _is_integrity_error unit, handles the
+    cross-driver case without crashing the batch."""
+    import sys
+    import types
+
+    import src.ingest.email as email_mod
+
+    class _FakeSqlcipherIntegrityError(Exception):
+        pass
+
+    fake_dbapi2 = types.SimpleNamespace(IntegrityError=_FakeSqlcipherIntegrityError)
+    fake_pkg = types.SimpleNamespace(dbapi2=fake_dbapi2)
+    monkeypatch.setitem(sys.modules, "sqlcipher3", fake_pkg)
+    monkeypatch.setitem(sys.modules, "sqlcipher3.dbapi2", fake_dbapi2)
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    src = Source(name="N", domain="nl.test")
+    s.add(src)
+    s.commit()
+
+    # _flush()'s own primary commit fails ONCE with the fake sqlcipher3-style
+    # exception, forcing the per-message redo loop; run_write_with_retry (what
+    # _commit_one calls for each pending message) is then mocked the same way, so
+    # every classification decision below flows through the real dispatch code.
+    real_commit = s.commit
+    calls = {"n": 0}
+
+    def _commit_once_then_real(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _FakeSqlcipherIntegrityError("UNIQUE constraint failed: articles.hash")
+        return real_commit(*a, **kw)
+
+    monkeypatch.setattr(s, "commit", _commit_once_then_real)
+
+    def _boom(work, *, session, label):  # noqa: ARG001
+        raise _FakeSqlcipherIntegrityError("UNIQUE constraint failed: articles.hash")
+
+    monkeypatch.setattr(email_mod, "run_write_with_retry", _boom)
+
+    tally = email_mod.ingest_emails(s, src, [_eml("A", "some body text", "m1")])
+    assert tally["duplicate"] == 1  # routed through _commit_one's redo path, not a crash
+    assert tally["stored"] == 0
+    assert tally["errors"] == 0  # never miscounted as a lock/db error either
+
+
+def test_commit_one_reraises_a_genuinely_unexpected_exception(monkeypatch):
+    """A failure that is neither a lock nor an integrity violation must still surface
+    loudly -- never be silently swallowed and miscounted as a duplicate."""
+    import src.ingest.email as email_mod
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    src = Source(name="N", domain="nl.test")
+    s.add(src)
+    s.commit()
+
+    real_commit = s.commit
+    calls = {"n": 0}
+
+    def _commit_once_then_real(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("disk full")
+        return real_commit(*a, **kw)
+
+    monkeypatch.setattr(s, "commit", _commit_once_then_real)
+
+    def _boom(work, *, session, label):  # noqa: ARG001
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(email_mod, "run_write_with_retry", _boom)
+
+    import pytest
+    with pytest.raises(RuntimeError, match="disk full"):
+        email_mod.ingest_emails(s, src, [_eml("A", "some body text", "m1")])
+
+
 def test_same_body_different_message_id_dedups_on_hash():
     # Field test 2026-06-24: a 5 GB folder of repeated newsletters failed the WHOLE import
     # with "UNIQUE constraint failed: articles.hash". `articles.hash` is the ONLY unique

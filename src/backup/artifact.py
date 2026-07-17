@@ -560,6 +560,8 @@ def read_artifact(
     Returns a StagedArtifact; raises ArtifactError/EncryptionError on anything
     that cannot be staged safely. Nothing outside the staging dir is touched.
     """
+    import shutil
+
     if not blob:
         raise ArtifactError("empty upload")
 
@@ -580,30 +582,39 @@ def read_artifact(
     staging = root / f".restore-{secrets.token_hex(8)}"
     staging.mkdir(parents=True, exist_ok=False)
 
-    if blob[:16] == _SQLITE_MAGIC:
-        corpus = staging / "corpus.db"
-        corpus.write_bytes(blob)
-        return StagedArtifact(
-            kind="legacy-ooenc" if was_encrypted else "legacy-db",
-            staging_dir=staging,
-            corpus_path=corpus,
-            custody_path=None,
-            manifest=None,
-            signature_state="unsigned",
-            origin_fingerprint="unsigned",
-            members=[{"name": "corpus.db", "role": "corpus"}],
-            encrypted=was_encrypted,
-        )
+    # Anything below this point that raises (a malformed zip, a missing member, a
+    # signature/hash mismatch in _finalize_staged...) must not leave the extracted
+    # -- potentially plaintext -- corpus copy behind on disk indefinitely. Sibling
+    # restore paths (read_volume_backup, read_stream_backup) already clean up on
+    # failure; this path did not (audit finding 2026-07-17).
+    try:
+        if blob[:16] == _SQLITE_MAGIC:
+            corpus = staging / "corpus.db"
+            corpus.write_bytes(blob)
+            return StagedArtifact(
+                kind="legacy-ooenc" if was_encrypted else "legacy-db",
+                staging_dir=staging,
+                corpus_path=corpus,
+                custody_path=None,
+                manifest=None,
+                signature_state="unsigned",
+                origin_fingerprint="unsigned",
+                members=[{"name": "corpus.db", "role": "corpus"}],
+                encrypted=was_encrypted,
+            )
 
-    if blob[:4] != _ZIP_MAGIC:
-        raise ArtifactError("not an Open Omniscience backup (unknown format)")
+        if blob[:4] != _ZIP_MAGIC:
+            raise ArtifactError("not an Open Omniscience backup (unknown format)")
 
-    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
-        names = set(zf.namelist())
-        if "manifest.json" not in names or "corpus.db" not in names:
-            raise ArtifactError("zip is not an oo-backup-2 artifact (missing manifest/corpus)")
-        _safe_extract(zf, staging)
-    return _finalize_staged(staging, was_encrypted)
+        with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+            names = set(zf.namelist())
+            if "manifest.json" not in names or "corpus.db" not in names:
+                raise ArtifactError("zip is not an oo-backup-2 artifact (missing manifest/corpus)")
+            _safe_extract(zf, staging)
+        return _finalize_staged(staging, was_encrypted)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
 
 def _finalize_staged(
