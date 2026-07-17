@@ -5944,6 +5944,24 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   from docs), and the op must state its cost + app-stopped/gate-held posture honestly. DOCS
   FOLLOW-UP (fold into the docs-review plan execution): the USER_MANUAL backup chapter should
   present the folder-copy path as prominently as the in-app tools, with the three safety details.
+- **DB-10 §1a RULED 2026-07-17 (maintainer, verbatim "I agree with your proposal to change the
+  auto_vacuum to incremental"): `auto_vacuum=INCREMENTAL` ON CREATE for NEW corpora — YES.**
+  Buildable-now for the next code session: the fresh-file PRAGMA in `connect.py` (the
+  `not p.exists() or size==0` branch ~line 86, before the first table / `PRAGMA key`) + the DB-10
+  §3 bounded idle `incremental_vacuum(N)` pass in `run_idle_maintenance` (a documented no-op on
+  pre-seam corpora, so safe to wire immediately) + the §2 full-VACUUM-button size gate.
+  **§1b `page_size` stays MEASURE-GATED — now with a maintainer-endorsed measurement path: an
+  AUTOMATED 4K-vs-16K A/B bench run over the maintainer's REAL BACKUPS of different sizes.**
+  Design facts verified 2026-07-17: `scale_bench` copies a corpus and benches it
+  (unlock/WAL/endpoint p50-p95/RSS) but a FILE COPY preserves page structure, so it CANNOT A/B
+  page sizes today — the missing slice is a rebuild-at-pragmas step (restore/`sqlcipher_export`
+  the same backup into fresh 4K and 16K targets, then run the IDENTICAL workload on both,
+  reporting per-size p50/p95 SIDE BY SIDE, never a composite). Run it at SEVERAL backup sizes to
+  measure the TREND — the slope toward 5 TB is the decision signal, not any single point.
+  EMPIRICAL correction to the memo's §1b cache concern: the app's `cache_size` is
+  KiB-DENOMINATED (`session.py:122`, negative form), so cache BYTES are constant across page
+  sizes — the real trade-off to measure is codec granularity (a 16K page decrypts 4× the bytes
+  per point lookup) vs fewer codec calls per range-scan byte.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
