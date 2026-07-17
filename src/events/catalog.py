@@ -204,7 +204,15 @@ def _next_occurrence(
         try:
             d = nth_weekday(year, int(month), weekday, week) if floating else date(year, int(month), int(day))
         except (ValueError, TypeError):
-            return None
+            # Audit finding 2026-07-17: a fixed-date event whose day doesn't exist in
+            # THIS particular year (e.g. a Feb 29 "leap day" entry, in a non-leap
+            # year) used to abandon the WHOLE scan here instead of trying the next
+            # candidate year — so a genuine recurring event could report "no next
+            # occurrence" 3 years out of 4, even when a later year in the scanned
+            # range has a perfectly valid answer. `continue`, matching the floating-
+            # date branch's own "doesn't exist this year -> try the next" handling
+            # two lines below.
+            continue
         if d is None:  # this year's Nth-weekday doesn't exist — try the next year
             continue
         if d >= today:
@@ -227,7 +235,10 @@ def _span_for(e: dict, today: date) -> dict | None:
         try:
             start = date(year, int(e["month"]), int(e["day"]))
         except (ValueError, TypeError):
-            return None
+            # Audit finding 2026-07-17: same fix as _next_occurrence -- a start date
+            # that doesn't exist in THIS particular year (e.g. a Feb 29 start) must
+            # not abandon the whole 3-year scan; try the other candidate years.
+            continue
         end = _span_end_date(start, e["end_month"], e["end_day"])
         if end is None:
             return None
