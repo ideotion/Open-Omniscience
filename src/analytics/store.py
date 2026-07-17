@@ -416,6 +416,8 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
         from src.analytics.corpus_epoch import bump_corpus_epoch
 
         bump_corpus_epoch(session, reason="reindex_articles")
+    from src.database.write import run_write_with_retry
+
     reindexed = 0
     failed = 0
     for aid in article_ids:
@@ -423,9 +425,21 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
         if art is None:
             continue
         try:
-            index_article(session, art, extractor=extractor, country=art.country)
+            # Audit finding 2026-07-17: index_article's own contract explicitly
+            # re-raises a transient lock so a caller's run_write_with_retry can
+            # roll back and redo it (see index_article's docstring + the
+            # ingest-path reference implementation, src/ingest/pipeline.py::
+            # _maybe_index_keywords) -- this caller never honoured that contract,
+            # so a lock hit while re-indexing after a restore permanently marked
+            # the article "failed" instead of retrying (idempotent re-index
+            # reproduces the full result on redo, so nothing is lost by retrying).
+            run_write_with_retry(
+                lambda: index_article(session, art, extractor=extractor, country=art.country),
+                session=session,
+                label=f"reindex_articles[{aid}]",
+            )
             reindexed += 1
-        except Exception:  # noqa: BLE001 - one bad article must not abort the batch
+        except Exception:  # noqa: BLE001 - one bad/exhausted-retry article must not abort the batch
             session.rollback()
             failed += 1
             _LOG.warning("re-index of imported article %s failed", aid, exc_info=True)
@@ -483,6 +497,8 @@ def reindex_all_batch(
 
         bump_corpus_epoch(session, reason="reindex_all_batch")
 
+    from src.database.write import run_write_with_retry
+
     def _reindex_one(aid: int, *, commit: bool) -> bool:
         """Index one article: True if re-indexed, False if it was missing (deleted
         mid-run). ``commit=False`` lets a failure PROPAGATE so the batch handler can roll
@@ -493,14 +509,33 @@ def reindex_all_batch(
         index_article(session, art, extractor=extractor, country=art.country, scope=scope, commit=commit)
         return True
 
+    def _reindex_one_committed_with_retry(aid: int) -> bool:
+        """Like ``_reindex_one(aid, commit=True)``, but retries a transient lock
+        (audit finding 2026-07-17): index_article's own contract explicitly
+        re-raises a lock so a caller's run_write_with_retry can roll back and redo
+        it (see the ingest-path reference implementation, src/ingest/pipeline.py::
+        _maybe_index_keywords) -- the per-article and redo-after-batch-rollback
+        paths below never honoured that contract, so a lock hit during a
+        (commonly long-running, interleaved-with-a-live-scrape) re-index
+        permanently marked the article "failed" instead of retrying (idempotent
+        re-index reproduces the full result, so nothing is lost by retrying)."""
+        missing = {"v": False}
+
+        def _work() -> None:
+            if not _reindex_one(aid, commit=True):
+                missing["v"] = True
+
+        run_write_with_retry(_work, session=session, label=f"reindex_all_batch[{aid}]")
+        return not missing["v"]
+
     def _redo_committed(aids: list[int]) -> None:
         """Re-index each article one-at-a-time, COMMITTED — the no-loss fallback after a
-        batch rollback. A bad/locked article is isolated (rollback + failed++), never
-        dropping its batch-mates (idempotent re-index reproduces the full result)."""
+        batch rollback. A bad/exhausted-retry article is isolated (rollback + failed++),
+        never dropping its batch-mates (idempotent re-index reproduces the full result)."""
         nonlocal reindexed, failed
         for baid in aids:
             try:
-                if _reindex_one(baid, commit=True):
+                if _reindex_one_committed_with_retry(baid):
                     reindexed += 1
             except Exception:  # noqa: BLE001 - isolate one bad/locked article
                 session.rollback()
@@ -511,9 +546,9 @@ def reindex_all_batch(
         for aid in ids:
             last_id = aid
             try:
-                if _reindex_one(aid, commit=True):
+                if _reindex_one_committed_with_retry(aid):
                     reindexed += 1
-            except Exception:  # noqa: BLE001 - one bad article must not abort the batch
+            except Exception:  # noqa: BLE001 - one bad/exhausted-retry article must not abort the batch
                 session.rollback()
                 failed += 1
                 _LOG.warning("re-index of article %s failed", aid, exc_info=True)
