@@ -47,12 +47,43 @@ class _F:
         self.timeout = 5
         self.user_agent = "OpenOmniscienceBot/test"
 
+    # Test doubles for the guarded-fetch methods preflight now routes through
+    # (audit fix 2026-07-17, SSRF/CWE-918): a stub session performs no real
+    # network I/O, so there is nothing to guard -- mirrors
+    # EthicalFetcher._guard_target's own real behaviour for an injected
+    # non-real session (a no-op).
+    def _guard_target(self, host):
+        return None
+
+    def _guarded_redirect_get(self, url, **kw):
+        return self.session.get(url, timeout=self.timeout, allow_redirects=False), url
+
 
 def _mk(session, domain):
     s = Source(name=domain, domain=domain, language="en", enabled=True)
     session.add(s)
     session.flush()
     return s
+
+
+def test_check_one_refuses_a_private_ip_target_without_any_network_call():
+    """Audit finding 2026-07-17 (SSRF, CWE-918): _check_one used to call
+    ``fetcher.session.get(url, allow_redirects=True)`` directly on the raw
+    requests.Session, bypassing EthicalFetcher's own SSRF guard entirely. A
+    REAL EthicalFetcher (a real requests.Session, so _guard_target's checks
+    are live) targeting a private-address domain must be refused BEFORE any
+    HTTP request is attempted -- IP-literal targets need no DNS resolution,
+    so this is a hermetic, network-free test of the real guard."""
+    from src.ingest import EthicalFetcher
+    from src.monitoring.preflight import _check_one
+
+    fetcher = EthicalFetcher()  # a real requests.Session -- never actually used, the guard fires first
+    source = Source(name="internal", domain="127.0.0.1", language="en", enabled=True)
+
+    rec = _check_one(fetcher, source)
+    assert rec["verdict"] == "unreachable"
+    assert rec["reachable"] is False
+    assert "non-public" in rec["robots_error"].lower()
 
 
 def test_preflight_verdicts_metadata_and_log(tmp_path, monkeypatch):

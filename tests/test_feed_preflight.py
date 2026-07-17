@@ -47,10 +47,36 @@ class _Fetcher:
     def fetch(self, url, *, require_html=True):
         return _Fetch(content="BEGIN:VCALENDAR\nEND:VCALENDAR" if ".ics" in url else "date,value\n2026-01-01,1\n")
 
+    # Test doubles for the guarded-fetch methods feed_preflight now routes
+    # through (audit fix 2026-07-17, SSRF/CWE-918): a stub session performs no
+    # real network I/O, so there is nothing to guard -- mirrors
+    # EthicalFetcher._guard_target's own real behaviour for an injected
+    # non-real session (a no-op).
+    def _guard_target(self, host):
+        return None
+
+    def _guarded_redirect_get(self, url, **kw):
+        return self.session.get(url, timeout=self.timeout, allow_redirects=False), url
+
 
 @pytest.fixture(autouse=True)
 def _isolated(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+
+
+def test_check_host_robots_refuses_a_private_ip_target_without_any_network_call():
+    """Audit finding 2026-07-17 (SSRF, CWE-918): _check_host_robots used to call
+    fetcher.session.get(url, allow_redirects=True) directly, bypassing
+    EthicalFetcher's SSRF guard. A REAL EthicalFetcher (a real requests.Session)
+    targeting a private-address host must be refused BEFORE any HTTP request
+    is attempted -- IP-literal targets need no DNS resolution, so this is a
+    hermetic, network-free test of the real guard."""
+    from src.ingest import EthicalFetcher
+
+    fetcher = EthicalFetcher()  # a real requests.Session -- never actually used, the guard fires first
+    rec = fpf._check_host_robots(fetcher, "127.0.0.1")
+    assert rec["robots"] == "unreachable"
+    assert "non-public" in rec["error"].lower()
 
 
 def test_feed_preflight_writes_verdict_log():
