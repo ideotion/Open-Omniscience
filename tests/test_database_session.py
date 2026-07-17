@@ -39,11 +39,17 @@ def _fresh_engine(tmp_path):
     return engine
 
 
-def test_import_has_no_side_effects():
+def test_import_has_no_side_effects(tmp_path):
     """Importing models must not create a DB file or spawn a monitoring thread."""
+    # Audit finding 2026-07-17: the temp dir used to be created INSIDE the subprocess
+    # via tempfile.mkdtemp() -- its path never left the subprocess, so neither it nor
+    # the parent test could ever clean it up (a leak per test run). Create it in the
+    # PARENT via pytest's own tmp_path fixture (auto-cleaned on pytest's retention
+    # policy) and pass the path INTO the subprocess instead.
+    data_dir = str(tmp_path)
     code = (
-        "import os, threading, sys, tempfile;"
-        "os.environ['OO_DATA_DIR'] = tempfile.mkdtemp();"
+        "import os, threading, sys;"
+        f"os.environ['OO_DATA_DIR'] = {data_dir!r};"
         "n0 = threading.active_count();"
         "import src.database.models as m;"
         "n1 = threading.active_count();"

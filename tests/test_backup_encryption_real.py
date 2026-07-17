@@ -66,44 +66,42 @@ def test_decrypt_round_trips_exactly_and_wrong_passphrase_is_loud():
         decrypt_bytes(blob, "wrong-pass")  # GCM tag mismatch -> loud, never garbage
 
 
-def test_end_to_end_encrypted_backup_is_ciphertext_and_plaintext_is_not():
+def test_end_to_end_encrypted_backup_is_ciphertext_and_plaintext_is_not(tmp_path):
     """The real backup builder: an encrypted artifact is high-entropy OOENC1 ciphertext
     that decrypts to a valid zip; a plaintext artifact is a bare zip (no OOENC1)."""
     from src.api.main import app
 
     with TestClient(app):  # triggers init_db so the corpus DB exists to snapshot
-        import tempfile
-        from pathlib import Path
-
         from src.backup.artifact import read_artifact, write_backup_v2
 
-        d = Path(tempfile.mkdtemp())
-        enc = d / "enc.oobak.ooenc"
-        plain = d / "plain.oobak"
-        try:
-            write_backup_v2(enc, passphrase="proof-pw-123")
-            write_backup_v2(plain, passphrase=None)
+        # Audit finding 2026-07-17: this used to be a hand-rolled tempfile.mkdtemp()
+        # whose finally-block only unlinked the two known files inside it, never the
+        # directory itself (or any other file write_backup_v2 might leave behind) --
+        # a leaked directory per test run. pytest's own tmp_path fixture is a real
+        # per-test directory it cleans up on its own retention policy, so no manual
+        # cleanup is needed at all.
+        enc = tmp_path / "enc.oobak.ooenc"
+        plain = tmp_path / "plain.oobak"
+        write_backup_v2(enc, passphrase="proof-pw-123")
+        write_backup_v2(plain, passphrase=None)
 
-            enc_blob = enc.read_bytes()
-            plain_blob = plain.read_bytes()
+        enc_blob = enc.read_bytes()
+        plain_blob = plain.read_bytes()
 
-            # Encrypted artifact: OOENC1 + high-entropy body that decrypts to a zip.
-            assert enc_blob[:8] == b"OOENC1\x00\x00"
-            assert _shannon_bits_per_byte(enc_blob[64:65000]) > 7.5
-            inner = decrypt_bytes(enc_blob, "proof-pw-123")
-            assert inner[:4] == b"PK\x03\x04", "encrypted artifact did not decrypt to a zip"
-            assert zipfile.is_zipfile(__import__("io").BytesIO(inner))
+        # Encrypted artifact: OOENC1 + high-entropy body that decrypts to a zip.
+        assert enc_blob[:8] == b"OOENC1\x00\x00"
+        assert _shannon_bits_per_byte(enc_blob[64:65000]) > 7.5
+        inner = decrypt_bytes(enc_blob, "proof-pw-123")
+        assert inner[:4] == b"PK\x03\x04", "encrypted artifact did not decrypt to a zip"
+        assert zipfile.is_zipfile(__import__("io").BytesIO(inner))
 
-            # Plaintext artifact: a bare zip, never OOENC1.
-            assert plain_blob[:8] != b"OOENC1\x00\x00"
-            assert plain_blob[:4] == b"PK\x03\x04"
+        # Plaintext artifact: a bare zip, never OOENC1.
+        assert plain_blob[:8] != b"OOENC1\x00\x00"
+        assert plain_blob[:4] == b"PK\x03\x04"
 
-            # The honest verdict the preview surfaces.
-            assert read_artifact(enc_blob, passphrase="proof-pw-123").encrypted is True
-            assert read_artifact(plain_blob).encrypted is False
-        finally:
-            enc.unlink(missing_ok=True)
-            plain.unlink(missing_ok=True)
+        # The honest verdict the preview surfaces.
+        assert read_artifact(enc_blob, passphrase="proof-pw-123").encrypted is True
+        assert read_artifact(plain_blob).encrypted is False
 
 
 def test_restore_preview_reports_encrypted_verdict():
