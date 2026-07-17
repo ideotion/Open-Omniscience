@@ -651,6 +651,15 @@ _SYNTHESIS_SYSTEM = (
 _SYNTHESIS_MAX_ARTICLES = 20
 # Total prompt budget across all excerpts (keeps a small CPU model's context safe).
 _SYNTHESIS_BUDGET_CHARS = 24_000
+# Chunk size for id IN(...) queries in bulk_llm (audit finding 2026-07-17): the
+# 2026-06-20 ruling deliberately removed bulk_llm's old article-count cap so it can
+# process the WHOLE matched set uncapped -- which also removed the incidental
+# protection that cap gave against SQLite's historical ~999 bound-variable
+# ceiling. A card/search selection can legitimately carry thousands of ids (a
+# Home card's article_ids can run to 2000; a broad search's matched set can run
+# to tens of thousands), so both id IN(...) queries below must chunk. Matches the
+# repo-wide _IN_CHUNK/GRAPH_ARTICLE_CAP/_FTS_ID_CHUNK convention.
+_BULK_ID_CHUNK = 900
 
 
 class SynthesizeRequest(BaseModel):
@@ -877,7 +886,10 @@ def bulk_llm(
                 ordered.append(v)
         ids = ordered if cap is None else ordered[:cap]
         requested = len(ids)
-        by_id = {a.id: a for a in db.query(Article).filter(Article.id.in_(ids)).all()}
+        by_id: dict[int, Article] = {}
+        for _i in range(0, len(ids), _BULK_ID_CHUNK):
+            chunk = ids[_i : _i + _BULK_ID_CHUNK]
+            by_id.update({a.id: a for a in db.query(Article).filter(Article.id.in_(chunk)).all()})
         articles = [by_id[i] for i in ids if i in by_id]
     elif any([req.query, req.source, req.language, req.start_date, req.end_date]):
         from src.api.main import _query_articles
@@ -919,13 +931,16 @@ def bulk_llm(
     # delete or replace — we just avoid recomputing what is already stored.
     already: set[int] = set()
     if req.skip_existing:
-        ex = db.query(ArticleAnalysis.article_id).filter(
-            ArticleAnalysis.article_id.in_([w[0] for w in work]),
-            ArticleAnalysis.kind == kind,
-        )
-        if op == "translate":
-            ex = ex.filter(ArticleAnalysis.prompt_version == prompt_version)
-        already = {r[0] for r in ex.all()}
+        work_ids = [w[0] for w in work]
+        for _i in range(0, len(work_ids), _BULK_ID_CHUNK):
+            chunk = work_ids[_i : _i + _BULK_ID_CHUNK]
+            ex = db.query(ArticleAnalysis.article_id).filter(
+                ArticleAnalysis.article_id.in_(chunk),
+                ArticleAnalysis.kind == kind,
+            )
+            if op == "translate":
+                ex = ex.filter(ArticleAnalysis.prompt_version == prompt_version)
+            already.update(r[0] for r in ex.all())
 
     # A translate run NEVER translates an article already in the target language
     # (maintainer 2026-06-20) — unconditional, independent of skip_existing.
