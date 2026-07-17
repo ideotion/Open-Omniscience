@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from typing import Callable
+from typing import Any, Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -38,6 +38,15 @@ Matcher = Callable[[Session, str], "list[int] | None"]
 
 # Keep the stored "already reported" set bounded (one busy window's worth is plenty).
 _MAX_SEEN = 500
+# Chunk size for the Article.id IN(...) date lookup in _recent_matching (audit finding
+# 2026-07-17): the default matcher (_fts_matcher -> search_ids) can return up to its own
+# _MAX_CANDIDATES (20000, src/database/fts.py) -- well past SQLite's historical ~999
+# bound-variable ceiling used everywhere else in this codebase (_IN_CHUNK/
+# GRAPH_ARTICLE_CAP/_FTS_ID_CHUNK/_BULK_ID_CHUNK). A broad watch query would otherwise
+# raise "too many SQL variables" on EVERY scrape pass, silently swallowed by
+# evaluate_watches's per-watch try/except -- so the watch would simply never fire again,
+# with no visible error to the user.
+_IN_CHUNK = 900
 
 
 def _fts_matcher(session: Session, query: str) -> list[int] | None:
@@ -165,10 +174,15 @@ def _recent_matching(
         return []
     cutoff = datetime.now(UTC) - timedelta(days=window_days)
     cutoff_naive = cutoff.replace(tzinfo=None)  # stored datetimes are naive UTC
-    rows = session.execute(
-        select(Article.id, Article.published_at, Article.created_at)
-        .where(Article.id.in_(ids))
-    ).all()
+    rows: list[Any] = []
+    for i in range(0, len(ids), _IN_CHUNK):
+        chunk = ids[i : i + _IN_CHUNK]
+        rows.extend(
+            session.execute(
+                select(Article.id, Article.published_at, Article.created_at)
+                .where(Article.id.in_(chunk))
+            ).all()
+        )
     recent = []
     for aid, pub, created in rows:
         when = pub or created
