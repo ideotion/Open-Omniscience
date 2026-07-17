@@ -85,18 +85,22 @@ else derives from it:
 
 ### The maturity ladder (where we are, where we're going)
 
-The software is young and still being proven, so it sits **below `0.1`**:
+The software is young and still being proven, so it stays **below `1.0`**:
 
 ```
-0.0.x  pre-alpha   ← we are here (0.0.9). Things work and are tested, but the surface
-                     is still moving; not yet inviting public commentary.
-0.1.x  alpha       a public, working, honestly-labelled alpha — open to feedback.
-0.x    beta        once things consolidate.
+0.0.x  pre-alpha    the first, un-public pre-alpha iterations (0.0.4 .. 0.0.9).
+0.x    alpha        ← we are here (0.2.0). Public, working, honestly-labelled — open
+                     to feedback, but not yet consolidated (each cycle is still a
+                     "0.2.0 is honest about every limit, not finished" release, per
+                     the README header — see it for the current cycle's exact status).
+0.x    beta         once things consolidate (a deliberate, later maintainer call —
+                     not implied by any particular `0.x` number crossing over from alpha).
 1.0    release      an official, stable release.
 ```
 
-We will **not** jump to `0.4`/`0.7`-style numbers that imply more maturity than exists.
-`0.0.9` is the ninth small iteration of the pre-alpha series — nothing more is claimed.
+We will **not** jump to a version number that implies more maturity than exists (e.g.
+`0.2` is not "20% done" or "beta-adjacent" — it is the honest count of alpha cycles so
+far). Each cycle is a small, real iteration — nothing more is claimed.
 
 ### Cycle ↔ version mapping
 
@@ -112,10 +116,12 @@ leading zeros elided for brevity:
 | `0.08` | `0.0.8` |
 | `0.09` | `0.0.9` |
 | `0.1`  | `0.1.0` |  (the `0.09` cycle branch was renamed `0.09 → 0.1` at the alpha flip)
-| `0.2`  | `0.2.0` |  (the `0.1` cycle branch is renamed `0.1 → 0.2` at the 0.2 flip; the tag awaits the live-corpus scale validation)
+| `0.2`  | `0.2.0` |  (the `0.1` cycle branch was renamed `0.1 → 0.2` at the 0.2 flip)
+| `main` | `0.2.0` |  (the `0.2` cycle branch was renamed `0.2 → main` on 2026-07-15 — the current default branch; the `v0.2.0` **tag** still awaits the live-corpus scale validation, see [docs/product/SCALE_ROADMAP.md](docs/product/SCALE_ROADMAP.md))
 
 So "the `0.06` intelligence layer" means "the work that ships in `0.0.6`". When you read a
-cycle shorthand like `0.05` in the docs, read it as `0.0.5`.
+cycle shorthand like `0.05` in the docs, read it as `0.0.5`. PRs land on `main`, the current
+cycle branch — not on any of the retired numbered branch names above.
 
 ### Why this matters (the values link)
 
