@@ -148,6 +148,30 @@ def test_edit_war_burst_fires_on_a_revision_burst(db):
     assert mine[0].recipe["params"]["page_id"] == page.id
 
 
+def test_edit_war_burst_never_fabricates_a_prior_rate_when_there_is_none(db):
+    """Audit finding 2026-07-17: a page with ZERO revisions in the prior 28-day
+    baseline used to get a FABRICATED ``weekly_prior = 0.25`` placeholder (``or 0.25``
+    on a genuine zero), then surfaced a made-up ratio + "prior_weekly_rate": 0.25 to
+    the user as if it were measured. The card must still fire (a dormant-to-active
+    page is a real signal) but must report the true zero baseline and an honestly
+    undefined ratio -- never an invented number."""
+    page = WikiPage(wiki="en", title=f"Dormant page {uuid.uuid4().hex[:6]}", watched=True)
+    db.add(page)
+    db.flush()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    for i in range(8):  # 8 revisions in the last week, none in the prior 4 weeks
+        db.add(WikiRevision(page_id=page.id, revid=3000 + i,
+                            timestamp=now - timedelta(days=1, hours=i)))
+    db.flush()
+    cards = [c for c in edit_war_burst(db) if page.title in c.title]
+    assert cards, "a dormant-to-active page must still fire"
+    card = cards[0]
+    assert card.signal["prior_weekly_rate"] == 0.0  # the true measured baseline, not 0.25
+    assert card.signal["value"] is None  # no fabricated ratio when there is nothing to divide by
+    assert "no revisions at all in the prior 4 weeks" in card.summary
+    assert "0.25" not in str(card.signal) and "0.25" not in card.summary
+
+
 def test_edit_war_burst_quiet_on_steady_editing(db):
     page = WikiPage(wiki="en", title=f"Steady page {uuid.uuid4().hex[:6]}", watched=True)
     db.add(page)

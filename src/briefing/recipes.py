@@ -172,25 +172,39 @@ def edit_war_burst(session) -> list[Card]:
     for page_id, n_recent in sorted(recent.items(), key=lambda kv: -kv[1]):
         if n_recent < _BURST_MIN_RECENT:
             continue
-        weekly_prior = (prior.get(page_id, 0) / 4.0) or 0.25  # floor avoids div-by-zero
-        ratio = n_recent / weekly_prior
-        if ratio < _BURST_MIN_RATIO:
-            continue
+        prior_n = prior.get(page_id, 0)
+        weekly_prior = prior_n / 4.0
+        if prior_n == 0:
+            # No prior revisions at all in the 28-day baseline -- there is no real rate to
+            # divide by. The old `or 0.25` floor FABRICATED a baseline that was never
+            # measured (a made-up number surfaced to the user as "prior_weekly_rate").
+            # A page dormant for 4+ weeks then getting >=_BURST_MIN_RECENT edits in a
+            # week is itself the strongest honest signal available -- surface it
+            # directly, with an honestly undefined ratio, rather than invent one.
+            ratio = None
+        else:
+            ratio = n_recent / weekly_prior
+            if ratio < _BURST_MIN_RATIO:
+                continue
         page = session.query(WikiPage).filter_by(id=page_id).first()
         if page is None:
             continue
+        if ratio is None:
+            rate_desc = "no revisions at all in the prior 4 weeks"
+        else:
+            rate_desc = f"about {ratio:.0f}× its prior weekly rate"
         cards.append(
             Card(
                 type="recipe_edit_war",
                 title=f"Edit burst on “{page.title}”",
                 summary=(
-                    f"{n_recent} revisions in 7 days on {page.wiki}:{page.title} — about "
-                    f"{ratio:.0f}× its prior weekly rate. Its public record is in motion."
+                    f"{n_recent} revisions in 7 days on {page.wiki}:{page.title} — "
+                    f"{rate_desc}. Its public record is in motion."
                 ),
                 bucket="investigate",
                 signal={
                     "metric": "weekly_revision_ratio",
-                    "value": round(ratio, 1),
+                    "value": round(ratio, 1) if ratio is not None else None,
                     "recent_7d": n_recent,
                     "prior_weekly_rate": round(weekly_prior, 2),
                 },

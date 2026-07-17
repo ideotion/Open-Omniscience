@@ -2197,6 +2197,7 @@ def buried_topic(session) -> list[Card]:
                 },
                 method=found.get("method", ""),
                 caveat=BURY_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
                 n=it["source_total"],
                 key=f"bury:{it['source_id']}:{it['term']}",
                 trigger=_trigger(

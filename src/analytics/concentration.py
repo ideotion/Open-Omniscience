@@ -390,6 +390,20 @@ def find_buried_topics(
             continue
         src = session.get(Source, t["sid"])
         adj_q = fdr.adjusted[tests.index(t)] if t in tests else None
+        # The exact analyzed set for a click-through: the widely-covered topic's own
+        # corpus-wide articles in this window -- the "elsewhere" this source is under-
+        # covering (the source's own on-topic set, t["a_s"], is often near-empty by
+        # construction, which is the whole point of the finding and not useful to open).
+        article_ids = sorted(
+            r[0]
+            for r in session.query(KeywordMention.article_id)
+            .filter(
+                KeywordMention.keyword_id == t["kid"],
+                KeywordMention.observed_on >= cutoff,
+                KeywordMention.observed_on < hi,
+            )
+            .distinct()
+        )
         items.append(
             {
                 "term": kw.normalized_term,
@@ -404,6 +418,7 @@ def find_buried_topics(
                 "corpus_articles_on_topic": t["a_t"],
                 "cohort_language": keyword_lang.get(t["kid"]),
                 "fdr_qvalue": round(adj_q, 5) if adj_q is not None else None,
+                "article_ids": article_ids,
             }
         )
 

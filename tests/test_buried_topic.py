@@ -170,3 +170,34 @@ def test_bury_producer_emits_a_valid_no_score_card(db):
     assert c.method and c.caveat and c.trigger
     # No score-shaped key anywhere in the signal.
     assert not any(k in ("score", "rating", "rank") for k in c.signal)
+
+
+def test_bury_card_and_finding_carry_the_exact_analyzed_article_set():
+    """Audit finding 2026-07-17: buried_topic's Card never set ``article_ids``, unlike
+    its sibling flooded_topic -- so clicking the card fell back to a synthetic
+    search-seed key (``f"bury:{source_id}:{term}"``) that re-runs a DIFFERENT query on
+    click instead of opening the exact set the finding was actually computed over (the
+    "Home cards lose their corpus on click" bug class). The under-covering source's OWN
+    on-topic set is typically near-empty by construction (that IS the finding) so the
+    useful, honest analyzed set to open is the widely-covered topic's OWN corpus-wide
+    articles in the window -- the "elsewhere" the source is missing."""
+    from src.briefing.producers import buried_topic
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine, future=True)()
+    _seed_bury(db)
+
+    out = find_buried_topics(db)
+    hit = next(i for i in out["items"] if i["source"] == "target")
+    assert hit["article_ids"], "the finding must carry the exact analyzed article set"
+    # It is the big topic's corpus-wide window articles (6 sources * 20 = 120), never a
+    # synthetic placeholder and never the source's own (near-)empty on-topic set.
+    assert len(hit["article_ids"]) == 120
+    assert len(set(hit["article_ids"])) == len(hit["article_ids"])  # distinct ids
+
+    cards = buried_topic(db)
+    c = next(c for c in cards if "target" in c.title)
+    assert c.article_ids == hit["article_ids"]
