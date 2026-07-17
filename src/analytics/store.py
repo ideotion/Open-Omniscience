@@ -1072,6 +1072,73 @@ def reconcile_keyword_language(
     }
 
 
+def reconcile_keyword_entity_status(session: Session) -> dict:
+    """Downgrade a keyword's stale ``is_entity`` flag when it can no longer be a
+    valid acronym under the CURRENT extraction rule (audit finding 2026-07-17).
+
+    ``_get_or_create_keyword`` only ever UPGRADES a keyword (term -> entity, when a
+    later mention is recognised as one); there was no corresponding downgrade, so a
+    ``Keyword`` row created under the PRE-2026-06-16 rule (any Title-Case word) --
+    or one whose ``normalized_term`` simply no longer matches the acronym shape --
+    stays flagged an entity FOREVER, even across a full re-index (the same
+    ``_get_or_create_keyword`` chokepoint every re-index path calls). This mirrors
+    :func:`reconcile_keyword_language`: a background pass, off the request path,
+    counts only, no score.
+
+    SCOPE (deliberately conservative): only ``entity_type == "entity"`` rows -- the
+    GENERIC acronym bucket ``_entities()`` assigns when a term is NOT a gazetteer
+    match (see extract.py's ``kind=self.gazetteer.get(norm.casefold(), "entity")``).
+    A gazetteer-matched named entity (``entity_type`` "person"/"org"/"location") is
+    a DIFFERENT, still-valid signal (gazetteer membership, never governed by the
+    Title-Case/acronym rule this fix targets) and is intentionally left untouched.
+
+    HONEST LIMITATION: the acronym rule's "not adjacent to another all-caps word"
+    check is CONTEXT-dependent (it needs the surrounding article text, which would
+    mean re-decrypting content through the SQLCipher codec for every candidate --
+    the exact perf trap this codebase avoids elsewhere). This pass only re-checks
+    the SHAPE-only, context-free part of the rule (an all-caps token of length >= 2,
+    not a known non-acronym/CTA/accented-Latin/multi-transition-code false
+    positive) against the keyword's own stored ``normalized_term`` -- a keyword that
+    fails even that shape check can NEVER be a valid acronym under ANY context, so
+    downgrading it is always correct. It does NOT attempt to re-derive the
+    headline-adjacency exclusion (which could, in principle, also downgrade a
+    genuinely valid acronym that only failed because of its original sentence
+    position) -- that half of the rule is left to a full re-index, which already
+    re-runs the whole extractor over the real text.
+    """
+    from src.analytics.extract import (
+        _ACCENTED_LATIN_RE,
+        _ACRONYM_STOP,
+        _CTA_STOP,
+        _is_caps_run_word,
+        _is_code_token,
+    )
+
+    def _fails_the_shape_check(term: str) -> bool:
+        if not _is_caps_run_word(term):
+            return True
+        cf = term.casefold()
+        if cf in _ACRONYM_STOP or cf in _CTA_STOP:
+            return True
+        if _ACCENTED_LATIN_RE.search(term) or _is_code_token(term):
+            return True
+        return False
+
+    checked = downgraded = 0
+    updates: list[dict] = []
+    for kid, term in session.query(Keyword.id, Keyword.normalized_term).filter(
+        Keyword.is_entity.is_(True), Keyword.entity_type == "entity"
+    ):
+        checked += 1
+        if _fails_the_shape_check(term):
+            updates.append({"id": int(kid), "is_entity": False, "entity_type": None})
+            downgraded += 1
+    if updates:
+        session.bulk_update_mappings(Keyword, updates)
+        session.commit()
+    return {"checked": checked, "downgraded": downgraded}
+
+
 def _keyword_majority_language(
     langs: dict[str, int] | None, *, min_keywords: int
 ) -> str | None:
@@ -1377,6 +1444,7 @@ def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:
             _LOG.warning("automatic orphan-keyword prune resume failed", exc_info=True)
             tally["prune"] = {"skipped": "error"}
         tally["language"] = {"skipped": "ran this cycle"}
+        tally["entity_status"] = {"skipped": "ran this cycle"}
     else:
         marker_run = tally["at"]
         try:
@@ -1391,6 +1459,12 @@ def maybe_cleanup_keywords(session: Session, *, now=None) -> dict:
             session.rollback()
             _LOG.warning("automatic keyword-language reconcile failed", exc_info=True)
             tally["language"] = {"skipped": "error"}
+        try:
+            tally["entity_status"] = reconcile_keyword_entity_status(session)
+        except Exception:  # noqa: BLE001 - a background safety net must never break the pass
+            session.rollback()
+            _LOG.warning("automatic keyword-entity-status reconcile failed", exc_info=True)
+            tally["entity_status"] = {"skipped": "error"}
 
     # Record the marker (freshness + the diagnostics log). Best-effort.
     try:

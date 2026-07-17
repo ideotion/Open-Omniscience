@@ -196,6 +196,7 @@ class ReindexJobManager:
             from src.analytics.store import (
                 prune_orphan_keywords,
                 reconcile_article_language,
+                reconcile_keyword_entity_status,
                 reconcile_keyword_language,
                 reindex_all_batch,
             )
@@ -255,6 +256,15 @@ class ReindexJobManager:
                     rl = reconcile_keyword_language(session)
                     with self._lock:
                         self._tally["relanguaged"] = int(rl.get("relanguaged", 0))
+                        self._save()
+                if completed:
+                    # Audit finding 2026-07-17: _get_or_create_keyword only ever UPGRADES
+                    # a keyword to an entity, never downgrades -- so a cleanup also
+                    # reconciles any stale is_entity flag that can no longer be a valid
+                    # acronym under the current (2026-06-16) rule.
+                    re_ = reconcile_keyword_entity_status(session)
+                    with self._lock:
+                        self._tally["entity_downgraded"] = int(re_.get("downgraded", 0))
                         self._save()
                 if completed:
                     # Unknown-language articles: deduce a language (text detector first,
