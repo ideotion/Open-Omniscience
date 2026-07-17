@@ -611,6 +611,18 @@ def diet_self_audit(session) -> list[Card]:
 
     top3_count = round(result.top_share * total)
     ci = wilson_interval(top3_count, total)
+    # The exact analyzed set for a click-through: every article the concentration stat
+    # was computed over (bounded, most-recent-first -- a whole-corpus aggregate has no
+    # single narrower topic, so this IS the honest set, never a synthetic "diet" text
+    # search that would re-run an unrelated literal-word query on click).
+    article_ids = [
+        r[0]
+        for r in session.query(Article.id)
+        .filter(Article.created_at >= cutoff)
+        .order_by(Article.created_at.desc())
+        .limit(2000)
+        .all()
+    ]
     math_rows = [
         (f"Articles collected in the last {_DIET_DAYS} days", str(total)),
         ("Of which, from your top 3 sources", str(top3_count)),
@@ -653,6 +665,7 @@ def diet_self_audit(session) -> list[Card]:
             evidence=[
                 {"title": "Sources — manage your coverage", "url": "/#sources", "source": None}
             ],
+            article_ids=article_ids,
             n=result.n,
             key="diet",
         )
@@ -840,7 +853,7 @@ def capacity_implausible(session) -> list[Card]:
     a verdict of automation (a wire agency or big newsroom can be legitimately prolific)."""
     cutoff = datetime.now(UTC) - timedelta(days=_CAPACITY_DAYS)
     rows = (
-        session.query(Source.name, func.count(Article.id))
+        session.query(Source.id, Source.name, func.count(Article.id))
         .join(Article, Article.source_id == Source.id)
         .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
         .group_by(Source.id)
@@ -848,7 +861,8 @@ def capacity_implausible(session) -> list[Card]:
     )
     if len(rows) < 3:
         return []
-    rates = {name or "(unknown)": c / _CAPACITY_DAYS for name, c in rows}
+    id_by_name = {(name or "(unknown)"): sid for sid, name, _ in rows}
+    rates = {(name or "(unknown)"): c / _CAPACITY_DAYS for _, name, c in rows}
     ordered = sorted(rates.values())
     median = ordered[len(ordered) // 2]
     flagged = [
@@ -859,6 +873,24 @@ def capacity_implausible(session) -> list[Card]:
     if not flagged:
         return []
     top = flagged[0]
+    # The exact analyzed set for a click-through: the flagged (fastest) source's own
+    # articles in the window -- the actual subject of the headline, never a synthetic
+    # "capacity" text search that would re-run an unrelated literal-word query on click.
+    top_source_id = id_by_name.get(top["source"])
+    article_ids = (
+        [
+            r[0]
+            for r in session.query(Article.id)
+            .filter(
+                Article.source_id == top_source_id,
+                func.coalesce(Article.published_at, Article.created_at) >= cutoff,
+            )
+            .limit(2000)
+            .all()
+        ]
+        if top_source_id is not None
+        else []
+    )
     math_rows = [
         (f"Fastest source: articles per day (last {_CAPACITY_DAYS} days)", str(top["per_day"])),
         ("Typical source in your corpus (median per day)", str(round(median, 2))),
@@ -898,6 +930,7 @@ def capacity_implausible(session) -> list[Card]:
                 "is a capacity *question* for a human, never a determination that a source is automated."
             ),
             evidence=[{"title": "Sources — review output", "url": "/#sources", "source": None}],
+            article_ids=article_ids,
             n=len(flagged),
             key="capacity",
         )
