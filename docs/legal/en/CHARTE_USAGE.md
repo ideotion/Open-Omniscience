@@ -109,4 +109,4 @@ For any question regarding this Charter: **open-omniscience@ideotion.com**.
 
 ---
 
-*Related documents: [Terms of Use](CGU.md) · [Legal Notice](MENTIONS_LEGALES.md) · [Privacy Policy](POLITIQUE_DE_CONFIDENTIALITE.md) · [Index](README.md). See also [`../../ETHICS.md`](../../ETHICS.md) and [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Related documents: [Terms of Use](CGU.md) · [Legal Notice](MENTIONS_LEGALES.md) · [Privacy Policy](POLITIQUE_DE_CONFIDENTIALITE.md) · [Index](../README.md). See also [`../../ETHICS.md`](../../ETHICS.md) and [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

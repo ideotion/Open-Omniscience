@@ -94,4 +94,4 @@ v3** للمستخدم في ما يخص **الشيفرة** (التشغيل، وا
 
 ---
 
-*وثائق ذات صلة: [شروط الاستخدام](CGU.md) · [إشعار قانوني](MENTIONS_LEGALES.md) · [سياسة الخصوصية](POLITIQUE_DE_CONFIDENTIALITE.md) · [الفهرس](README.md). انظر أيضًا [`../../ETHICS.md`](../../ETHICS.md) و[`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*وثائق ذات صلة: [شروط الاستخدام](CGU.md) · [إشعار قانوني](MENTIONS_LEGALES.md) · [سياسة الخصوصية](POLITIQUE_DE_CONFIDENTIALITE.md) · [الفهرس](../README.md). انظر أيضًا [`../../ETHICS.md`](../../ETHICS.md) و[`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

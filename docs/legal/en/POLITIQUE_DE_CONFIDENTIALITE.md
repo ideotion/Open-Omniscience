@@ -149,4 +149,4 @@ document**: **open-omniscience@ideotion.com**.
 
 ---
 
-*Related documents: [Terms of Use](CGU.md) · [Legal Notice](MENTIONS_LEGALES.md) · [Acceptable-Use Charter](CHARTE_USAGE.md) · [Index](README.md). See also [`../../SECURITY.md`](../../SECURITY.md) and [`../../ETHICS.md`](../../ETHICS.md).*
+*Related documents: [Terms of Use](CGU.md) · [Legal Notice](MENTIONS_LEGALES.md) · [Acceptable-Use Charter](CHARTE_USAGE.md) · [Index](../README.md). See also [`../../SECURITY.md`](../../SECURITY.md) and [`../../ETHICS.md`](../../ETHICS.md).*

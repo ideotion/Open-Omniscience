@@ -118,4 +118,4 @@ Bei Fragen zur vorliegenden Charta: **open-omniscience@ideotion.com**.
 
 ---
 
-*Zugehörige Dokumente: [Nutzungsbedingungen](CGU.md) · [Impressum](MENTIONS_LEGALES.md) · [Datenschutzerklärung](POLITIQUE_DE_CONFIDENTIALITE.md) · [Index](README.md). Siehe auch [`../../ETHICS.md`](../../ETHICS.md) und [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Zugehörige Dokumente: [Nutzungsbedingungen](CGU.md) · [Impressum](MENTIONS_LEGALES.md) · [Datenschutzerklärung](POLITIQUE_DE_CONFIDENTIALITE.md) · [Index](../README.md). Siehe auch [`../../ETHICS.md`](../../ETHICS.md) und [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

@@ -55,7 +55,13 @@ and **Accept**. Consent is recorded (`CONSENT_DOC_VERSION`) and the flow advance
 to the create-passphrase step — the app installs normally, nothing is removed.
 
 ## Outstanding (not blocking the test)
-- The legal docs still carry `Version:` / `Date: [À COMPLÉTER]`; finalize them and
-  bump `CONSENT_DOC_VERSION` so accept records the real version.
+- Versions are finalized (`Version : 1.0` / `Date d'entrée en vigueur : 2026-07-16` in
+  every document, French + all 11 translations), matching `CONSENT_DOC_VERSION` in
+  `src/legal/consent.py`. No remaining `[À COMPLÉTER]`/`[À VÉRIFIER]` bracket markers —
+  the meta-explanatory sentence about that bracket convention, and a dangling
+  SIREN/SIRET/VAT placeholder in `MENTIONS_LEGALES.md`, were both removed outright
+  (2026-07-17, maintainer decision) rather than kept as a "deliberately left as-is"
+  note. The only live follow-through is bumping `CONSENT_DOC_VERSION` (and the
+  `Version`/`Date` fields) whenever the documents next change substantially.
 - The 11 non-French translations are AI-drafted and flagged for native review
   (the French text is authoritative).

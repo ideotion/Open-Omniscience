@@ -95,4 +95,4 @@
 
 ---
 
-*関連文書: [利用規約](CGU.md) · [法的通知](MENTIONS_LEGALES.md) · [プライバシーポリシー](POLITIQUE_DE_CONFIDENTIALITE.md) · [目次](README.md)。[`../../ETHICS.md`](../../ETHICS.md) および [`../../GOVERNANCE.md`](../../GOVERNANCE.md) も参照。*
+*関連文書: [利用規約](CGU.md) · [法的通知](MENTIONS_LEGALES.md) · [プライバシーポリシー](POLITIQUE_DE_CONFIDENTIALITE.md) · [目次](../README.md)。[`../../ETHICS.md`](../../ETHICS.md) および [`../../GOVERNANCE.md`](../../GOVERNANCE.md) も参照。*

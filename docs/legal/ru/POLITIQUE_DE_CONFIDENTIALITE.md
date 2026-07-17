@@ -149,4 +149,4 @@ et des libertés (CNIL)**. Пользователь в своём качеств
 
 ---
 
-*Связанные документы: [Условия использования](CGU.md) · [Правовые сведения](MENTIONS_LEGALES.md) · [Хартия приемлемого использования](CHARTE_USAGE.md) · [Указатель](README.md). См. также [`../../SECURITY.md`](../../SECURITY.md) и [`../../ETHICS.md`](../../ETHICS.md).*
+*Связанные документы: [Условия использования](CGU.md) · [Правовые сведения](MENTIONS_LEGALES.md) · [Хартия приемлемого использования](CHARTE_USAGE.md) · [Указатель](../README.md). См. также [`../../SECURITY.md`](../../SECURITY.md) и [`../../ETHICS.md`](../../ETHICS.md).*

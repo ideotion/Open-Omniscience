@@ -58,7 +58,7 @@ primeiro arranque**: apresenta os presentes documentos e **regista localmente** 
 máquina do Utilizador) a **versão aceite** e a **data e hora** (em formato ISO 8601) da
 aceitação. Este registo permanece na máquina do Utilizador e **nunca é transmitido** ao
 Editor. Os pormenores técnicos são descritos nas
-[Notas de Implementação](IMPLEMENTATION_NOTES.md).
+[Notas de Implementação](../IMPLEMENTATION_NOTES.md).
 
 2.3. **Nova versão.** Em caso de alteração substancial, pode ser solicitada uma **nova
 aceitação** num arranque posterior (ver o
@@ -333,4 +333,4 @@ Para qualquer questão relativa às presentes Condições: **open-omniscience@id
 
 ---
 
-*Documentos relacionados: [Menções Legais](MENTIONS_LEGALES.md) · [Política de Privacidade](POLITIQUE_DE_CONFIDENTIALITE.md) · [Carta de Utilização Aceitável](CHARTE_USAGE.md) · [Notas de Implementação](IMPLEMENTATION_NOTES.md) · [Índice](README.md). Ver também [`../../ETHICS.md`](../../ETHICS.md) e [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Documentos relacionados: [Menções Legais](MENTIONS_LEGALES.md) · [Política de Privacidade](POLITIQUE_DE_CONFIDENTIALITE.md) · [Carta de Utilização Aceitável](CHARTE_USAGE.md) · [Notas de Implementação](../IMPLEMENTATION_NOTES.md) · [Índice](../README.md). Ver também [`../../ETHICS.md`](../../ETHICS.md) e [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

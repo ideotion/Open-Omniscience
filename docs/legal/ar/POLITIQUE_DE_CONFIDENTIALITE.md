@@ -128,4 +128,4 @@ l'informatique, aux fichiers et aux libertés («Loi Informatique et Libertés»
 
 ---
 
-*وثائق ذات صلة: [شروط الاستخدام](CGU.md) · [إشعار قانوني](MENTIONS_LEGALES.md) · [ميثاق الاستخدام المقبول](CHARTE_USAGE.md) · [الفهرس](README.md). انظر أيضًا [`../../SECURITY.md`](../../SECURITY.md) و[`../../ETHICS.md`](../../ETHICS.md).*
+*وثائق ذات صلة: [شروط الاستخدام](CGU.md) · [إشعار قانوني](MENTIONS_LEGALES.md) · [ميثاق الاستخدام المقبول](CHARTE_USAGE.md) · [الفهرس](../README.md). انظر أيضًا [`../../SECURITY.md`](../../SECURITY.md) و[`../../ETHICS.md`](../../ETHICS.md).*

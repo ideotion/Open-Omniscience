@@ -84,4 +84,4 @@
 
 ---
 
-*相关文件：[使用条款](CGU.md) · [法律声明](MENTIONS_LEGALES.md) · [隐私政策](POLITIQUE_DE_CONFIDENTIALITE.md) · [索引](README.md)。另见 [`../../ETHICS.md`](../../ETHICS.md) 与 [`../../GOVERNANCE.md`](../../GOVERNANCE.md)。*
+*相关文件：[使用条款](CGU.md) · [法律声明](MENTIONS_LEGALES.md) · [隐私政策](POLITIQUE_DE_CONFIDENTIALITE.md) · [索引](../README.md)。另见 [`../../ETHICS.md`](../../ETHICS.md) 与 [`../../GOVERNANCE.md`](../../GOVERNANCE.md)。*

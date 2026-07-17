@@ -113,4 +113,4 @@
 
 ---
 
-*相关文件：[使用条款](CGU.md) · [法律声明](MENTIONS_LEGALES.md) · [可接受使用章程](CHARTE_USAGE.md) · [索引](README.md)。另见 [`../../SECURITY.md`](../../SECURITY.md) 与 [`../../ETHICS.md`](../../ETHICS.md)。*
+*相关文件：[使用条款](CGU.md) · [法律声明](MENTIONS_LEGALES.md) · [可接受使用章程](CHARTE_USAGE.md) · [索引](../README.md)。另见 [`../../SECURITY.md`](../../SECURITY.md) 与 [`../../ETHICS.md`](../../ETHICS.md)。*

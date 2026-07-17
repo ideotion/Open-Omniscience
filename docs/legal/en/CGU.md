@@ -57,7 +57,7 @@ mechanism: it presents these documents and **records locally** (on the User's
 machine) the **accepted version** and the **timestamp** (in ISO 8601 format) of
 acceptance. This record stays on the User's machine and is **never transmitted** to
 the Publisher. The technical details are described in the
-[Implementation Notes](IMPLEMENTATION_NOTES.md).
+[Implementation Notes](../IMPLEMENTATION_NOTES.md).
 
 2.3. **New version.** In the event of a substantial change, a **new acceptance** may
 be requested at a later launch (see
@@ -325,4 +325,4 @@ For any question regarding these Terms: **open-omniscience@ideotion.com**.
 
 ---
 
-*Related documents: [Legal Notice](MENTIONS_LEGALES.md) · [Privacy Policy](POLITIQUE_DE_CONFIDENTIALITE.md) · [Acceptable-Use Charter](CHARTE_USAGE.md) · [Implementation Notes](IMPLEMENTATION_NOTES.md) · [Index](README.md). See also [`../../ETHICS.md`](../../ETHICS.md) and [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Related documents: [Legal Notice](MENTIONS_LEGALES.md) · [Privacy Policy](POLITIQUE_DE_CONFIDENTIALITE.md) · [Acceptable-Use Charter](CHARTE_USAGE.md) · [Implementation Notes](../IMPLEMENTATION_NOTES.md) · [Index](../README.md). See also [`../../ETHICS.md`](../../ETHICS.md) and [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

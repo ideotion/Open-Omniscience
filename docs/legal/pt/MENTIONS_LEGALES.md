@@ -77,7 +77,7 @@ alojamento de repositórios de terceiros:
 ## 5. Propriedade intelectual e licença
 
 - O Software é distribuído sob a licença **GNU GPL v3** (ver o ficheiro
-  [`LICENSE`](../../LICENSE) na raiz do repositório). Os termos dessa licença aplicam-se
+  [`LICENSE`](../../../LICENSE) na raiz do repositório). Os termos dessa licença aplicam-se
   ao **código**.
 - «Ideotion» é utilizado como **pseudónimo de autor**.
 - O Editor **não reivindica qualquer direito** sobre o conteúdo que o Utilizador recolhe,
@@ -101,4 +101,4 @@ Para qualquer questão relativa a estas menções legais:
 
 ---
 
-*Documentos relacionados: [Condições de Utilização](CGU.md) · [Política de Privacidade](POLITIQUE_DE_CONFIDENTIALITE.md) · [Carta de Utilização Aceitável](CHARTE_USAGE.md) · [Índice](README.md).*
+*Documentos relacionados: [Condições de Utilização](CGU.md) · [Política de Privacidade](POLITIQUE_DE_CONFIDENTIALITE.md) · [Carta de Utilização Aceitável](CHARTE_USAGE.md) · [Índice](../README.md).*

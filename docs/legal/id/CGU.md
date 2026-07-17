@@ -59,7 +59,7 @@ peluncuran pertama**: ia menampilkan dokumen-dokumen ini dan **mencatat secara l
 mesin Pengguna) **versi yang diterima** dan **stempel waktu** (dalam format ISO 8601)
 penerimaan. Catatan ini tetap berada di mesin Pengguna dan **tidak pernah dikirim** ke
 Penerbit. Rincian teknis dijelaskan dalam
-[Catatan Implementasi](IMPLEMENTATION_NOTES.md).
+[Catatan Implementasi](../IMPLEMENTATION_NOTES.md).
 
 2.3. **Versi baru.** Dalam hal terjadi perubahan substansial, **penerimaan baru** dapat
 diminta pada peluncuran berikutnya (lihat
@@ -335,4 +335,4 @@ Untuk pertanyaan apa pun mengenai Ketentuan ini: **open-omniscience@ideotion.com
 
 ---
 
-*Dokumen terkait: [Pemberitahuan Hukum](MENTIONS_LEGALES.md) · [Kebijakan Privasi](POLITIQUE_DE_CONFIDENTIALITE.md) · [Piagam Penggunaan yang Dapat Diterima](CHARTE_USAGE.md) · [Catatan Implementasi](IMPLEMENTATION_NOTES.md) · [Indeks](README.md). Lihat juga [`../../ETHICS.md`](../../ETHICS.md) dan [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Dokumen terkait: [Pemberitahuan Hukum](MENTIONS_LEGALES.md) · [Kebijakan Privasi](POLITIQUE_DE_CONFIDENTIALITE.md) · [Piagam Penggunaan yang Dapat Diterima](CHARTE_USAGE.md) · [Catatan Implementasi](../IMPLEMENTATION_NOTES.md) · [Indeks](../README.md). Lihat juga [`../../ETHICS.md`](../../ETHICS.md) dan [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

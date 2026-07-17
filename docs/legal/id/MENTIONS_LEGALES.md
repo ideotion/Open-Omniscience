@@ -79,7 +79,7 @@ repositori pihak ketiga:
 ## 5. Kekayaan intelektual dan lisensi
 
 - Perangkat Lunak didistribusikan di bawah lisensi **GNU GPL v3** (lihat berkas
-  [`LICENSE`](../../LICENSE) di akar repositori). Ketentuan lisensi tersebut berlaku untuk
+  [`LICENSE`](../../../LICENSE) di akar repositori). Ketentuan lisensi tersebut berlaku untuk
   **kode**.
 - "Ideotion" digunakan sebagai **nama samaran penulis**.
 - Penerbit **tidak mengklaim hak apa pun** atas konten yang dikumpulkan, diimpor, atau
@@ -104,4 +104,4 @@ Untuk pertanyaan apa pun mengenai pemberitahuan hukum ini:
 
 ---
 
-*Dokumen terkait: [Ketentuan Penggunaan](CGU.md) · [Kebijakan Privasi](POLITIQUE_DE_CONFIDENTIALITE.md) · [Piagam Penggunaan yang Dapat Diterima](CHARTE_USAGE.md) · [Indeks](README.md).*
+*Dokumen terkait: [Ketentuan Penggunaan](CGU.md) · [Kebijakan Privasi](POLITIQUE_DE_CONFIDENTIALITE.md) · [Piagam Penggunaan yang Dapat Diterima](CHARTE_USAGE.md) · [Indeks](../README.md).*

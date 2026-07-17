@@ -146,4 +146,4 @@ mengenai dokumen ini**: **open-omniscience@ideotion.com**.
 
 ---
 
-*Dokumen terkait: [Ketentuan Penggunaan](CGU.md) · [Pemberitahuan Hukum](MENTIONS_LEGALES.md) · [Piagam Penggunaan yang Dapat Diterima](CHARTE_USAGE.md) · [Indeks](README.md). Lihat juga [`../../SECURITY.md`](../../SECURITY.md) dan [`../../ETHICS.md`](../../ETHICS.md).*
+*Dokumen terkait: [Ketentuan Penggunaan](CGU.md) · [Pemberitahuan Hukum](MENTIONS_LEGALES.md) · [Piagam Penggunaan yang Dapat Diterima](CHARTE_USAGE.md) · [Indeks](../README.md). Lihat juga [`../../SECURITY.md`](../../SECURITY.md) dan [`../../ETHICS.md`](../../ETHICS.md).*

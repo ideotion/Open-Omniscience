@@ -58,7 +58,7 @@ numérique (LCEN)** 所确立的透明精神提供，尽管 **Open Omniscience**
 
 ## 5. 知识产权与许可
 
-- 本软件依据 **GNU GPL v3** 许可证分发（参见仓库根目录下的 [`LICENSE`](../../LICENSE)
+- 本软件依据 **GNU GPL v3** 许可证分发（参见仓库根目录下的 [`LICENSE`](../../../LICENSE)
   文件）。该许可证的条款适用于**代码**。
 - “Ideotion”用作**作者笔名**。
 - 对于用户借助本软件收集、导入或分析的内容，发布者**不主张任何权利**。尊重与该等内容相关的
@@ -80,4 +80,4 @@ numérique (LCEN)** 所确立的透明精神提供，尽管 **Open Omniscience**
 
 ---
 
-*相关文件：[使用条款](CGU.md) · [隐私政策](POLITIQUE_DE_CONFIDENTIALITE.md) · [可接受使用章程](CHARTE_USAGE.md) · [索引](README.md)。*
+*相关文件：[使用条款](CGU.md) · [隐私政策](POLITIQUE_DE_CONFIDENTIALITE.md) · [可接受使用章程](CHARTE_USAGE.md) · [索引](../README.md)。*

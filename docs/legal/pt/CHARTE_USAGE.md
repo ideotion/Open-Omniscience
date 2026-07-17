@@ -111,4 +111,4 @@ Para qualquer questão relativa à presente Carta: **open-omniscience@ideotion.c
 
 ---
 
-*Documentos relacionados: [Condições de Utilização](CGU.md) · [Menções Legais](MENTIONS_LEGALES.md) · [Política de Privacidade](POLITIQUE_DE_CONFIDENTIALITE.md) · [Índice](README.md). Ver também [`../../ETHICS.md`](../../ETHICS.md) e [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Documentos relacionados: [Condições de Utilização](CGU.md) · [Menções Legais](MENTIONS_LEGALES.md) · [Política de Privacidade](POLITIQUE_DE_CONFIDENTIALITE.md) · [Índice](../README.md). Ver também [`../../ETHICS.md`](../../ETHICS.md) e [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
