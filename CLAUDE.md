@@ -5954,14 +5954,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   AUTOMATED 4K-vs-16K A/B bench run over the maintainer's REAL BACKUPS of different sizes.**
   Design facts verified 2026-07-17: `scale_bench` copies a corpus and benches it
   (unlock/WAL/endpoint p50-p95/RSS) but a FILE COPY preserves page structure, so it CANNOT A/B
-  page sizes today — the missing slice is a rebuild-at-pragmas step (restore/`sqlcipher_export`
-  the same backup into fresh 4K and 16K targets, then run the IDENTICAL workload on both,
-  reporting per-size p50/p95 SIDE BY SIDE, never a composite). Run it at SEVERAL backup sizes to
-  measure the TREND — the slope toward 5 TB is the decision signal, not any single point.
-  EMPIRICAL correction to the memo's §1b cache concern: the app's `cache_size` is
+  page sizes today — the missing slice is a rebuild-at-pragmas step. Run it at SEVERAL backup
+  sizes to measure the TREND — the slope toward 5 TB is the decision signal, not any single
+  point. EMPIRICAL correction to the memo's §1b cache concern: the app's `cache_size` is
   KiB-DENOMINATED (`session.py:122`, negative form), so cache BYTES are constant across page
   sizes — the real trade-off to measure is codec granularity (a 16K page decrypts 4× the bytes
-  per point lookup) vs fewer codec calls per range-scan byte.
+  per point lookup) vs fewer codec calls per range-scan byte. **THE BENCH SHIPPED same day
+  (maintainer-asked "add a diagnostic tool to test that idea"; shipped.csv row):**
+  `src/monitoring/pagesize_bench.py` + the `pagesize-bench` BackgroundJob +
+  `POST/GET /api/diagnostics/pagesize-bench{,/status,/cancel,/last,/download}` + a Settings →
+  Diagnostics panel — rebuild the live corpus per candidate size (plaintext `VACUUM INTO`,
+  encrypted `sqlcipher_export` into an ATTACHed target keyed with the SAME passphrase so the
+  codec stays in the measurement), SELF-VERIFY every target (pragmas read back + article count,
+  refuse mismatch — the verify-before-build probe made permanent), identical deterministic
+  workload (point lookups · 30-day covering-index window · sequential content bands, first-pass
+  vs warm), sequential staging under a swept `.pagesize-bench-` prefix + disk preflight; numbers
+  side by side, NEVER a winner; the report's `rebuild.seconds` doubles as the measured migration
+  cost at that corpus size. EMPIRICALLY PROVEN in-sandbox for plaintext (`VACUUM INTO` inherits
+  page_size+auto_vacuum — pinned as a test); the encrypted path is covered by the same runtime
+  self-verify. OPERATOR: run it on a SMALL and a LARGE corpus and send both logs (it rides the
+  all-diagnostics bundle as `pagesize-bench.json`, last-report read-only).
+- **"ALL DIAGNOSTICS" MUST COMPRISE ALL DIAGNOSTICS (maintainer flagged 2026-07-17 "it seems not
+  while it should" — CONFIRMED + FIXED same day; shipped.csv row):** the bundle had drifted 12
+  members behind the router since the #645 membership pass. Added the missing read-only reports
+  (source-audit · non-article-scan · lemma-preview · power-profile · data-dir-persistence) + the
+  cheap deterministic selftests (ir-eval · perception · triage · search-timing · power-profile ·
+  source-audit) + the pagesize-bench last-report; deliberate exclusions are now DOCUMENTED in the
+  manifest's `excluded` block with reasons (the full keyword dump · the source-quality
+  whole-corpus-decrypt ZIP · the two heavy operator benches · ir-eval's gold-set input · the
+  interactive gold-builder · job-control endpoints) instead of silent. RATCHET:
+  `test_repo_invariants.py::test_all_diagnostics_bundle_covers_every_get_diagnostic` — every GET
+  route on the diagnostics router must be a bundle member or an exemption-with-reason, so the
+  bundle can never silently fall behind again.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

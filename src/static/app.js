@@ -10159,6 +10159,84 @@
       const el = $("p0-status"); if (el) el.textContent = t("Cancelling…");
     }
 
+    // Page-size A/B bench (DB-10 §1b, 2026-07-17): start the background job, poll status,
+    // render the per-size numbers SIDE BY SIDE (no winner — the operator compares logs
+    // across corpus sizes; the TREND is the decision signal). Mirrors runP0Validation.
+    async function runPagesizeBench(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("psb-status"); const out = $("psb-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const wd = (($("psb-workdir") && $("psb-workdir").value) || "").trim();
+      if (btn) btn.disabled = true;
+      if (out) out.innerHTML = "";
+      set(t("Starting…"));
+      try {
+        try {
+          await api("/api/diagnostics/pagesize-bench", {
+            method: "POST", body: JSON.stringify(wd ? { work_dir: wd } : {}),
+          });
+        } catch (e) {
+          set(t("Could not start:") + " " + ((e && e.message) || t("check the staging directory.")));
+          return;
+        }
+        let miss = 0;
+        for (let i = 0; i < 5400; i++) {  // generous bounded ceiling: a big corpus rebuilds for hours
+          let s;
+          try { s = await api("/api/diagnostics/pagesize-bench/status"); miss = 0; }
+          catch (e) {
+            miss++;
+            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
+            await sleep(Math.min(2000 * miss, 10000));
+            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
+            continue;
+          }
+          const state = s && s.state;
+          if (state === "done" && s.ready) { set(t("Done.")); renderPagesizeResult(out); break; }
+          if (state === "error") { set(t("Bench failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { set(t("Bench cancelled.")); renderPagesizeResult(out); break; }
+          if (state === "done") { set(t("Done — check the task manager for the report.")); break; }
+          const member = s.detail ? " · " + s.detail : "";
+          set(t("Running in the background…") + member);
+          await sleep(2000);
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function renderPagesizeResult(out) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const esc = (typeof escapeHtml === "function") ? escapeHtml : ((s) => String(s == null ? "" : s));
+      let rep = null;
+      try { rep = await api("/api/diagnostics/pagesize-bench/last"); } catch (e) { /* link below still works */ }
+      let rows = "";
+      const fmt = (st) => st && st.p50_ms != null ? esc(st.p50_ms) + "/" + esc(st.p95_ms) + "ms" : "—";
+      ((rep && rep.sizes) || []).forEach((s) => {
+        if (s.error) {
+          rows += "<div>" + esc(s.page_size) + ": <span style=\"color:var(--err)\">" + esc(s.error) + "</span></div>";
+          return;
+        }
+        const w = (s.workload && s.workload.second_pass_warm) || {};
+        rows += "<div><b>" + esc(s.page_size) + "</b> — " + t("rebuild") + " "
+          + esc(s.rebuild && s.rebuild.seconds) + "s · " + t("point (p50/p95)") + " " + fmt(w.point_lookup)
+          + " · " + t("index window") + " " + fmt(w.index_window)
+          + " · " + t("content band") + " " + fmt(w.content_band) + " <span class=\"hint\">("
+          + t("warm pass; first-pass numbers in the report") + ")</span></div>";
+      });
+      out.innerHTML = rows
+        + '<div style="margin-top:4px"><a href="/api/diagnostics/pagesize-bench/download" target="_blank">'
+        + t("Download report (.json)") + "</a> · "
+        + esc(t("no winner is declared — compare logs across corpus sizes")) + "</div>";
+    }
+
+    async function cancelPagesizeBench() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { await api("/api/diagnostics/pagesize-bench/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+      const el = $("psb-status"); if (el) el.textContent = t("Cancelling…");
+    }
+
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
     // /api/diagnostics/ir-eval report for a gold-set FILE — score the live search at the
     // current BM25F default, or (both weight boxes filled) A/B two (title,body) weight
