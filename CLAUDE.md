@@ -5895,6 +5895,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `Mapped[]` migration DONE (448 uses, 0 legacy), core-only CI job DONE (ci.yml:164), PERF-02 FTS
   bound LIKELY-DONE via S2.5 (verify), MAINT-04 print→logger STILL OPEN (68 live calls), mypy still
   the ratchet — annotate statuses in place, non-lossy, ROADMAP §4 stays the one live board.
+  **EXTENDED same day (maintainer "yes" after the design-folder + FUTURE_DEVELOPMENTS deep dive —
+  4 parallel readers, verdicts tree-anchored): + T8** `docs/design/` archival sweep — 7 verified-SPENT
+  docs move to `docs/archive/{design,session-briefs}/` (DB_RELIABILITY_01/02, COLLECTOR_WRITER_BATCHING,
+  KEYWORD_BASELINE_AND_MANAGEMENT, OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13, the OPTIMIZATION_TAIL
+  brief [all 13 slices verified shipped], UNIFIED_IMPORT_EXPORT after its cleanup line lifts), GATED on
+  T8.0 lifting the ONLY-HERE carry-overs to ROADMAP first (fix-session Slice 2 data-location chooser +
+  Slice 4a quarantine ACTION + the unified-import browser-gated JS cleanup) and T8.1 reconciling
+  FIX_SESSION_STATE's drift (Slice 3 laws-as-Articles is DONE — `src/law/corpus.py` shipped; the #691
+  law_revisions-collision field bug corroborates); the fix-session pair itself STAYS live until Slice
+  2/4a build; hand-re-verify every agent verdict before moving (06-audit lesson). **+ T9**
+  FUTURE_DEVELOPMENTS reality-check — the ≥2026-06-15 cohort has 9 verified-STALE "designed-only"
+  sections whose code shipped (clickable keywords, poll analysis, ~7/9 manipulation cards, Home Latest,
+  content-provenance, the 2026-07-12 program section) + 4 embedded historical ledgers to archive + the
+  §1/§22 Wikipedia and §35/§43 statistics duplicate pairs (banner-don't-merge default; NEVER drop a
+  recorded ruling — §22 holds the superseding auto-track ruling) + the bare SCALE_ROADMAP.md link fix.
+  **+ T10** two storage-doc one-liners (STORAGE_5TB_PLAN's stale "journal_size_limit set NOWHERE" — now
+  set at session.py:137; a rec-status header on 5TB_ARCHITECTURE_REVIEW). LIVE designs-of-record
+  confirmed KEEP: V1_PATHWAY · PLANNING_2026-07-12 · ACTION_PLAN_2026-07-13 · RECURSIVE_IMPROVEMENT_RUNBOOK ·
+  DATA_ARCHITECTURE_SKELETON · STORAGE_5TB_PLAN · DB10 memo (its auto_vacuum/page_size CREATE-time ruling
+  is the one time-sensitive OPEN decision) · SOURCE_DIVERSIFICATION_BRIEF · SOURCE_METADATA_ENRICHMENT ·
+  KEYWORD_ENGINE_OPTIMIZATION_STRATEGY (sole spec for P5.2 embeddings/P6 entities + the P2.4 guardrail) ·
+  PERSISTED_DUCKDB_HTTPFS + SCALING_DERIVED_LAYER (alive until the httpfs binaries land).
   PENDING: the plan's execution (a CLI session per its §0 working mode).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)

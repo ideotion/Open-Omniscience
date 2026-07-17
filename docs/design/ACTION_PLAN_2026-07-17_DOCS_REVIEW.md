@@ -261,6 +261,103 @@ exists ONLY in PARKED.md if it belongs on the roadmap; nothing deleted.
 
 ---
 
+## T8 — `docs/design/` archival sweep (deep-dive follow-up, maintainer-approved 2026-07-17) — P2, size M
+
+**Source:** the 2026-07-17 four-reader deep dive over all 23 design docs (verdicts anchored in
+the tree). The folder is due its next archival pass (the 2026-07-13 cleanup precedent, 26→18).
+**Binding rule:** the deep-dive verdicts were agent-produced — **hand-re-verify each doc's
+"no unique pending items" claim against its named anchors before moving it** (the 06-audit
+false-positive lesson). All moves are non-lossy `git mv` with inbound links retargeted and the
+archive README maps updated. Coordinate with T1 (the index) — do T8 after T1 or update both.
+
+**T8.0 — lift the unique carry-overs to a live board FIRST (blocking):**
+1. **Fix-session Slice 2 — first-launch data-location chooser** (maintainer-asked 2026-07-14):
+   add a `docs/ROADMAP.md` §4 row pointing at the spec in `FIX_SESSION_PROMPT_2026-07-14.md`.
+2. **Fix-session Slice 4a — reversible non-article QUARANTINE action** (only the count-only
+   scan shipped): same treatment, ROADMAP §4 row + spec pointer.
+3. **UNIFIED_IMPORT_EXPORT's browser-gated cleanup line** (delete the orphaned volume/folder JS
+   handlers + the capped single-file-create backend endpoint after a click-through): move onto
+   the browser-verify/AppVM burn-down list (ROADMAP §4 or the runbook's first-VM-session queue).
+
+**T8.1 — reconcile `FIX_SESSION_2026-07-14_STATE.md` drift (before any archival decision):**
+mark Slice 3 (laws as first-class Articles) **DONE** with evidence — `src/law/corpus.py` exists,
+`LawDocument.latest_text`/`LawRevision.full_text` are in `models.py` (independently corroborated:
+the #691 field bug was a `law_revisions` UNIQUE collision *inside* `index_article`, only possible
+with law ingestion live) — and fix its reference to the non-existent base doc
+`FIX_SESSION_2026-07-14.md` (the PROMPT is the base).
+
+**T8.2 — the moves (after T8.0 + T8.1 + per-doc re-verify):**
+| Doc | Destination | Condition |
+|---|---|---|
+| `DB_RELIABILITY_01_GAP_ANALYSIS.md` | `docs/archive/design/` (new subfolder + README) | executed; the defective restore path it catalogs was removed outright |
+| `DB_RELIABILITY_02_DESIGN.md` | `docs/archive/design/` | executed (merge engine, SQLCipher factory, torture suite all verified) |
+| `COLLECTOR_WRITER_BATCHING.md` | `docs/archive/design/` | executed (`index_article(commit=)`, `OO_COLLECT_COMMIT_BATCH`, tests) |
+| `KEYWORD_BASELINE_AND_MANAGEMENT.md` | `docs/archive/design/` | executed (all 4 slices in tree); its one residual overlaps keyword-engine P6.2 |
+| `OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13.md` | `docs/archive/session-briefs/` | spent bridge; operator tails duplicated in the PLANNING doc |
+| `AUTONOMOUS_SESSION_BRIEF_2026-07-14_OPTIMIZATION_TAIL.md` | `docs/archive/session-briefs/` | all 13 slices verified shipped |
+| `UNIFIED_IMPORT_EXPORT.md` | `docs/archive/design/` | ONLY after T8.0 item 3 |
+| `FIX_SESSION_PROMPT_2026-07-14.md` + `_STATE.md` | **stay in `docs/design/`** | PARTIALLY-SPENT — they hold the Slice-2/4a specs until those build (the "live briefs stay until their sessions complete" convention); T8.0 rows make the pending work board-visible |
+
+**Explicitly NOT archived (live designs-of-record):** V1_PATHWAY · PLANNING_2026-07-12 ·
+ACTION_PLAN_2026-07-13_SOURCES_MAPS_GAPS · RECURSIVE_IMPROVEMENT_RUNBOOK · DATA_ARCHITECTURE_SKELETON ·
+STORAGE_5TB_PLAN · DB10_RETENTION_VACUUM_MEMO · SOURCE_DIVERSIFICATION_BRIEF ·
+SOURCE_METADATA_ENRICHMENT_STRATEGY · KEYWORD_ENGINE_OPTIMIZATION_STRATEGY (sole spec for
+P5.2/P6 + the P2.4 guardrail) · PERSISTED_DUCKDB_HTTPFS + SCALING_DERIVED_LAYER_1000X (alive
+until the httpfs binaries land) · this plan.
+
+**Acceptance:** every moved doc re-verified spent; no unique pending item exists only in an
+archived file; `docs/README.md` + archive READMEs consistent; all inbound links resolve.
+
+---
+
+## T9 — FUTURE_DEVELOPMENTS.md reality-check pass — P2, size M-L
+
+**Problem (deep-dive verified):** the doc's own preamble discipline ("shipped material is
+REMOVED, never carried as stale status notes") broke down for the ≥2026-06-15 cohort — of 19
+sections spot-checked, 9 are STALE (marked designed-only while the code ships), 4 partially
+stale. Worst offenders, each verified by file existence: clickable in-article keywords
+(`reader.js` `?tab=keywords`), poll analysis (`poll_transparency.py`), manipulation/scenario
+cards (~7 of 9 producers exist), Home "Latest" (`analytics/latest.py` + `/api/insights/latest`),
+content-provenance (`catalog/provenance.py`), and the 2026-07-12 planning section
+(`conjunction.py`/`skeleton.py`/`tor_throughput.py` all live despite its "gated" banner).
+
+**Steps (re-verify each claim by grep before marking — never on the deep-dive's word alone):**
+1. **Re-status the ≥2026-06-15 cohort:** per section, apply the doc's own rule — remove/condense
+   shipped material to a one-line pointer (shipped.csv / the module path), keep the design
+   rationale + open questions for the unbuilt remainder. Where a section mixes shipped and
+   unbuilt, use the §43 "Statistical-data ingestion" inline **BUILD STATUS** block as the model.
+2. **Split the four embedded historical ledgers to `docs/archive/`** (non-lossy): §3 FIELD-TEST
+   REMARKS 2026-06-24 · §4 CONSOLIDATED TO-DO 2026-06-24 · §5 the 0.0.9 sequencing · §47 field
+   diagnostics 2026-06-27. Before moving, verify their unresolved items are tracked in the
+   CLAUDE.md queue or ROADMAP (the doc itself admits §4 duplicates the authoritative ledger).
+3. **De-duplicate conservatively:** the two Wikipedia sections (§1 2026-07-10 vs §22 2026-06-12)
+   and the two statistics sections (§35 vs §43). Default = banner + cross-reference (mark the
+   older as the historical precursor of the newer); a true merge only where content is verbatim
+   duplicative — **never drop a recorded ruling** (§22 carries the load-bearing superseding
+   auto-track ruling; it must survive verbatim wherever it lands).
+4. **Fix the internal contradiction:** §41's "designed-only" header vs its own TO-DO marking
+   copypasta + outrage DONE.
+5. **Fix the broken relative link:** bare `SCALE_ROADMAP.md` → `product/SCALE_ROADMAP.md`.
+
+**Acceptance:** no section dated ≥2026-06-15 claims design-only for a thing that exists in
+`src/` (spot-check re-run comes back 0 STALE); every ruling recorded in a moved/merged section
+survives verbatim; links resolve; the preamble's discipline statement is true again.
+
+---
+
+## T10 — two one-line drift fixes in the storage docs — P3, size XS
+
+1. **`STORAGE_5TB_PLAN.md` §3 (Phase A):** the claim "`journal_size_limit` is set NOWHERE
+   (grep-verified 2026-07-12)" is stale — it is now set at `src/database/session.py:137`, whose
+   comment cites this very plan. Tick that Phase-A delta as shipped (the plan's own staleness
+   guard anticipates exactly this update).
+2. **`5TB_ARCHITECTURE_REVIEW.md`:** add a short header status note — Recs 1/4/8 shipped
+   (adaptive volume sizing in `stream_backup.py`, D2/D3 columnar, the cross-time-recall
+   invariant test), Rec 3 (`auto_vacuum`) still pending the DB-10 ruling — rather than rewriting
+   the body (it is a dated review; the note keeps it honest without editing history).
+
+---
+
 ## Sequencing, sizing, closeout
 
 | Order | Task | Priority | Size | Commit |
@@ -271,11 +368,17 @@ exists ONLY in PARKED.md if it belongs on the roadmap; nothing deleted.
 | 4 | T5 USER_MANUAL historical + nav verify | P2 | M | 4 |
 | 5 | T6 QUICKSTART framing (+ fr) | P2 | S | 5 |
 | 6 | T7 PARKED reconciliation | P3 | M | 6 |
-| 7 | Ledger closeout (shipped.csv rows + Open-queue tick) | — | XS | 7 (or folded per-commit) |
+| 7 | T10 storage-doc one-liners | P3 | XS | 7 |
+| 8 | T8 design-folder archival sweep (T8.0 lift → T8.1 reconcile → T8.2 moves) | P2 | M | 8 |
+| 9 | T9 FUTURE_DEVELOPMENTS reality-check | P2 | M-L | 9 |
+| 10 | Ledger closeout (shipped.csv rows + Open-queue tick) | — | XS | folded per-commit |
 
-Estimated one focused CLI session. Highest value first: T1–T3 fix *discoverability and
-record integrity* (what a new reader or auditor hits); T4–T6 fix *stale claims in live
-guides*; T7 is *record hygiene*.
+Estimated one to two focused CLI sessions (T1–T7 + T10 fit one; T8–T9 may be a second).
+Highest value first: T1–T3 fix *discoverability and record integrity* (what a new reader or
+auditor hits); T4–T6 fix *stale claims in live guides*; T7/T10 are *record hygiene*; T8–T9
+(added 2026-07-17 after the design-folder + FUTURE_DEVELOPMENTS deep dive, maintainer-approved)
+restore the *forward-planning layer's* accuracy. T8/T9 touch shared ledger surfaces
+(ROADMAP, archive READMEs) — additive merges only, never revert a sibling session's lines.
 
 **PR body must list:** per-task before/after, the T2 test red→green proof, any
 found-already-fixed items (staleness-guard results), and anything deferred with reason
