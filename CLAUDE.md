@@ -738,6 +738,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the omnibar is the exception — it must never blank, so its guard DEGRADES to an honest empty-with-note
     payload instead of a 429/503.)
 
+  - **A STORE HELPER THAT COMMITS INTERNALLY BREAKS ANY CALLER-OWNED SAVEPOINT (2026-07-17, the
+    #691 fix-forward):** #691 wrapped index_article's when/where/who pass in `session.begin_nested()`,
+    but `datestore.store_for_article`'s tail `db.commit()` CLOSES the caller's nested-transaction
+    context — the NEXT statement raises "Can't operate on closed transaction inside context manager",
+    which the pass swallows BY DESIGN → every article WITH a newly-extracted date silently lost its
+    places/entities (main red since #691; only ONE suite test has a dated fixture = the misleading
+    1-failed/3967-passed signature; a re-index restores the lost field rows). RULE: before wrapping an
+    existing helper in `begin_nested`, grep it (and everything it calls) for commit/rollback; a store
+    helper must be savepoint-aware (`db.in_nested_transaction()` → flush, else commit) or never own
+    the commit at all. COROLLARY: a swallowed-exception design hides exactly this class of failure —
+    the standalone repro calling index_article DIRECTLY (tests/test_article_dates.py savepoint test +
+    the scratchpad repro) is what surfaced the real exception the production path eats.
   - **A PERSISTED DuckDB store opened via `ATTACH` REJECTS a second in-process handle to the same
     file (2026-07-12, S3.2):** `Binder Error: Unique file handle conflict`. So the in-memory
     rollup-serve model (build a fresh con, swap it in, close the old) CANNOT apply to a persisted
@@ -5861,6 +5873,51 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (candidate→trial→graduated, ruling Q3a, still the parked dedicated-session build) with the
   #663 auditor as its gate; this ruling strengthens the case for trial auto-enable when that
   frontier is built, but review-before-enable was not flipped unilaterally here.
+
+- **DOCUMENTATION REVIEW — SURVEY + ACTION PLAN (maintainer-asked 2026-07-17, docs-only; plan of
+  record = [`docs/design/ACTION_PLAN_2026-07-17_DOCS_REVIEW.md`](docs/design/ACTION_PLAN_2026-07-17_DOCS_REVIEW.md),
+  branch `claude/project-documentation-review-02fjca`, draft PR onto `main`):** a full survey of the
+  documentation tree at `786a5c1` found the CONTENT healthy (live set all touched ≤1 week; the
+  2026-07-15 external-audit doc findings already remediated) but the META layer drifted. The plan
+  hands a CLI session 7 verified-anchor tasks: **T1** `docs/README.md` index reconciliation (misses
+  the first-launch-gating `docs/legal/` tree, GOVERNANCE, CODE_OF_CONDUCT, QUARANTINE_ARCHIVE,
+  `docs/audit/` incl. both 2026-07 audits, root AUDIT_TRAIL/PARKED, process/IMPROVEMENT_CYCLE,
+  USE_CASES, maintenance/testing/research/i18n) + **T2** a `test_docs_index_covers_live_docs`
+  repo-invariant guard; **T3** AUDIT_TRAIL.md backfill (append-only ledger stops at 2026-06-18 —
+  missing the 2026-07-13 cumulative-integrity + 2026-07-15 external audits); **T4** the stale
+  "Version: [À COMPLÉTER]" Outstanding note in `docs/testing/LEGAL_DECLINE_UNINSTALL_TEST.md`
+  (legal docs finalized v1.0 2026-07-16; remaining bracketed markers are the PERMANENT no-lawyer-
+  review choice per `docs/legal/README.md` — never "fix" those); **T5** USER_MANUAL: banner the
+  embedded historical `# What shipped in 0.0.8` section (line ~2269) + re-verify nav claims vs
+  `src/static/index.html` (the twice-bitten stale-nav precedent); **T6** QUICKSTART: retire the
+  legacy "Phases 2–5" heading vocabulary (§D content verified CURRENT — only the framing is stale)
+  + mirror to `docs/i18n/fr/`; **T7** PARKED.md reconciliation — SPOT-VERIFIED 2026-07-17: MAINT-03
+  `Mapped[]` migration DONE (448 uses, 0 legacy), core-only CI job DONE (ci.yml:164), PERF-02 FTS
+  bound LIKELY-DONE via S2.5 (verify), MAINT-04 print→logger STILL OPEN (68 live calls), mypy still
+  the ratchet — annotate statuses in place, non-lossy, ROADMAP §4 stays the one live board.
+  **EXTENDED same day (maintainer "yes" after the design-folder + FUTURE_DEVELOPMENTS deep dive —
+  4 parallel readers, verdicts tree-anchored): + T8** `docs/design/` archival sweep — 7 verified-SPENT
+  docs move to `docs/archive/{design,session-briefs}/` (DB_RELIABILITY_01/02, COLLECTOR_WRITER_BATCHING,
+  KEYWORD_BASELINE_AND_MANAGEMENT, OPTIMIZATION_PROGRAM_ACTION_PLAN_2026-07-13, the OPTIMIZATION_TAIL
+  brief [all 13 slices verified shipped], UNIFIED_IMPORT_EXPORT after its cleanup line lifts), GATED on
+  T8.0 lifting the ONLY-HERE carry-overs to ROADMAP first (fix-session Slice 2 data-location chooser +
+  Slice 4a quarantine ACTION + the unified-import browser-gated JS cleanup) and T8.1 reconciling
+  FIX_SESSION_STATE's drift (Slice 3 laws-as-Articles is DONE — `src/law/corpus.py` shipped; the #691
+  law_revisions-collision field bug corroborates); the fix-session pair itself STAYS live until Slice
+  2/4a build; hand-re-verify every agent verdict before moving (06-audit lesson). **+ T9**
+  FUTURE_DEVELOPMENTS reality-check — the ≥2026-06-15 cohort has 9 verified-STALE "designed-only"
+  sections whose code shipped (clickable keywords, poll analysis, ~7/9 manipulation cards, Home Latest,
+  content-provenance, the 2026-07-12 program section) + 4 embedded historical ledgers to archive + the
+  §1/§22 Wikipedia and §35/§43 statistics duplicate pairs (banner-don't-merge default; NEVER drop a
+  recorded ruling — §22 holds the superseding auto-track ruling) + the bare SCALE_ROADMAP.md link fix.
+  **+ T10** two storage-doc one-liners (STORAGE_5TB_PLAN's stale "journal_size_limit set NOWHERE" — now
+  set at session.py:137; a rec-status header on 5TB_ARCHITECTURE_REVIEW). LIVE designs-of-record
+  confirmed KEEP: V1_PATHWAY · PLANNING_2026-07-12 · ACTION_PLAN_2026-07-13 · RECURSIVE_IMPROVEMENT_RUNBOOK ·
+  DATA_ARCHITECTURE_SKELETON · STORAGE_5TB_PLAN · DB10 memo (its auto_vacuum/page_size CREATE-time ruling
+  is the one time-sensitive OPEN decision) · SOURCE_DIVERSIFICATION_BRIEF · SOURCE_METADATA_ENRICHMENT ·
+  KEYWORD_ENGINE_OPTIMIZATION_STRATEGY (sole spec for P5.2 embeddings/P6 entities + the P2.4 guardrail) ·
+  PERSISTED_DUCKDB_HTTPFS + SCALING_DERIVED_LAYER (alive until the httpfs binaries land).
+  PENDING: the plan's execution (a CLI session per its §0 working mode).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

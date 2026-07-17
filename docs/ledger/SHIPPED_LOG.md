@@ -3447,3 +3447,30 @@ dotted name mangles + `_persisted_connection` LOADs the canonical path not the d
 no copy; tampered-copy + re-pin → re-copy the verified bytes). ruff F/B + mypy clean on the changed file;
 23 loader/engine tests pass locally (2 CI-only round-trip skips). README `duckdb_ext/` gained a
 "Canonical-basename LOAD" section.
+
+## 2026-07-17 — fix-forward: WWW-pass savepoint vs datestore's internal commit (the #691 regression)
+
+CI went red on `main` from the first completed run after #691 (`716d698`): every lane failed the
+single test `test_wherewho_ingest.py::test_index_article_persists_when_where_who` with `places == 0`.
+Root cause: #691 isolated `index_article`'s when/where/who pass in `session.begin_nested()`, but
+`datestore.store_for_article` ends with an internal `db.commit()`. Inside the caller's savepoint that
+commit CLOSES the nested-transaction context, so the very next statement (the whostore places delete)
+raises `InvalidRequestError: Can't operate on closed transaction inside context manager` — which the
+WWW pass swallows BY DESIGN ("deductions are a bonus, never a blocker"). Net field effect: since
+2026-07-15 evening, every ingested/re-indexed article WITH a newly-extracted date silently stored NO
+places/entities (dates themselves survived — the inner commit persisted them first). Articles without
+new dates were unaffected, which is why exactly one suite test (the only dated fixture) failed out of
+~3,968. The lost rows are recoverable: a re-index re-runs the idempotent extractors.
+
+FIX (savepoint-aware, behavior-preserving): `store_for_article`'s tail becomes
+`db.flush() if db.in_nested_transaction() else db.commit()` — inside a caller-owned savepoint the
+rows join it and the CALLER commits; the two standalone callers (`POST /api/dates/article/{id}`,
+`index_recent`) keep their exact commit semantics. Pinned by
+`tests/test_article_dates.py::test_store_inside_caller_savepoint_keeps_transaction_usable` (pure ORM,
+runs even on py3.11) + the existing CI test.
+
+LESSON (copied to Session-rituals): a store helper that commits internally breaks ANY caller-owned
+SAVEPOINT — before wrapping an existing helper in `begin_nested`, grep it and everything it calls for
+commit/rollback. And a swallowed-exception design hides exactly this failure class: the standalone
+repro calling `index_article` directly is what surfaced the real exception (bonus: on py3.11 the
+swallow path itself failed to import — PEP-695 in `write.py` — which is what exposed the traceback).

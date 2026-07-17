@@ -72,6 +72,31 @@ def test_store_extract_and_idempotent(tmp_path):
         assert datestore.store_for_article(db, db.get(Article, 2), today=TODAY) == 0
 
 
+def test_store_inside_caller_savepoint_keeps_transaction_usable(tmp_path):
+    """Regression (CI red 2026-07-17, the #691 follow-up): index_article's
+    when/where/who pass wraps this store in session.begin_nested(). The store's
+    internal commit used to CLOSE that caller's savepoint context, so the very
+    next statement raised "Can't operate on closed transaction inside context
+    manager" — swallowed upstream by design, silently costing every article
+    with a newly-extracted date its places/entities. Inside a caller-owned
+    savepoint the store must flush (never commit) and the caller's transaction
+    must stay usable; the rows persist with the caller's own commit."""
+    Sess = _session(tmp_path)
+    with Sess() as db:
+        art = db.get(Article, 1)
+        with db.begin_nested():
+            added = datestore.store_for_article(db, art, today=TODAY)
+            assert added == 2
+            # The caller's transaction must remain usable for further statements
+            # (the WWW pass stores places/entities right after this call).
+            assert db.query(Article).count() == 2
+        db.commit()
+    # The flushed rows joined the caller's transaction and survived its commit.
+    with Sess() as db:
+        tags = datestore.for_article(db, 1)
+        assert {t["date"] for t in tags} == {"2001-09-11", "2003-03-01"}
+
+
 def test_store_uses_article_anchor_and_language(tmp_path):
     """Ingest-time storage must feed the extractor the article's OWN date + language.
 
