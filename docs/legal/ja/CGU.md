@@ -51,7 +51,7 @@
 2.2. **承諾の仕組み。** 本ソフトウェアには**初回起動時の同意**の仕組みが含まれます。すなわち、
 本書類を表示し、**承諾されたバージョン**および承諾の**タイムスタンプ**（ISO 8601 形式）を
 （利用者のマシン上に）**ローカルに記録**します。この記録は利用者のマシンに留まり、発行者に
-**送信されることは決してありません**。技術的詳細は[実装ノート](IMPLEMENTATION_NOTES.md)に記載
+**送信されることは決してありません**。技術的詳細は[実装ノート](../IMPLEMENTATION_NOTES.md)に記載
 されています。
 
 2.3. **新バージョン。** 重大な変更があった場合、その後の起動時に**新たな承諾**が求められること
@@ -286,4 +286,4 @@
 
 ---
 
-*関連文書: [法的通知](MENTIONS_LEGALES.md) · [プライバシーポリシー](POLITIQUE_DE_CONFIDENTIALITE.md) · [許容利用憲章](CHARTE_USAGE.md) · [実装ノート](IMPLEMENTATION_NOTES.md) · [目次](README.md)。[`../../ETHICS.md`](../../ETHICS.md) および [`../../GOVERNANCE.md`](../../GOVERNANCE.md) も参照。*
+*関連文書: [法的通知](MENTIONS_LEGALES.md) · [プライバシーポリシー](POLITIQUE_DE_CONFIDENTIALITE.md) · [許容利用憲章](CHARTE_USAGE.md) · [実装ノート](../IMPLEMENTATION_NOTES.md) · [目次](../README.md)。[`../../ETHICS.md`](../../ETHICS.md) および [`../../GOVERNANCE.md`](../../GOVERNANCE.md) も参照。*

@@ -102,4 +102,4 @@
 
 ---
 
-*संबंधित दस्तावेज़: [उपयोग की शर्तें](CGU.md) · [कानूनी सूचना](MENTIONS_LEGALES.md) · [गोपनीयता नीति](POLITIQUE_DE_CONFIDENTIALITE.md) · [अनुक्रमणिका](README.md)। यह भी देखें [`../../ETHICS.md`](../../ETHICS.md) और [`../../GOVERNANCE.md`](../../GOVERNANCE.md)।*
+*संबंधित दस्तावेज़: [उपयोग की शर्तें](CGU.md) · [कानूनी सूचना](MENTIONS_LEGALES.md) · [गोपनीयता नीति](POLITIQUE_DE_CONFIDENTIALITE.md) · [अनुक्रमणिका](../README.md)। यह भी देखें [`../../ETHICS.md`](../../ETHICS.md) और [`../../GOVERNANCE.md`](../../GOVERNANCE.md)।*

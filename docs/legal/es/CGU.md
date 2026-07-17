@@ -60,7 +60,7 @@ al primer arranque**: presenta los presentes documentos y **registra localmente*
 la máquina del Usuario) la **versión aceptada** y la **fecha y hora** (en formato
 ISO 8601) de la aceptación. Este registro permanece en la máquina del Usuario y **nunca
 se transmite** al Editor. Los detalles técnicos se describen en las
-[Notas de Implementación](IMPLEMENTATION_NOTES.md).
+[Notas de Implementación](../IMPLEMENTATION_NOTES.md).
 
 2.3. **Nueva versión.** En caso de modificación sustancial, podrá solicitarse una
 **nueva aceptación** en un arranque posterior (véase el
@@ -344,4 +344,4 @@ Para cualquier consulta relativa a las presentes Condiciones:
 
 ---
 
-*Documentos relacionados: [Aviso Legal](MENTIONS_LEGALES.md) · [Política de Privacidad](POLITIQUE_DE_CONFIDENTIALITE.md) · [Carta de Uso Aceptable](CHARTE_USAGE.md) · [Notas de Implementación](IMPLEMENTATION_NOTES.md) · [Índice](README.md). Véanse también [`../../ETHICS.md`](../../ETHICS.md) y [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Documentos relacionados: [Aviso Legal](MENTIONS_LEGALES.md) · [Política de Privacidad](POLITIQUE_DE_CONFIDENTIALITE.md) · [Carta de Uso Aceptable](CHARTE_USAGE.md) · [Notas de Implementación](../IMPLEMENTATION_NOTES.md) · [Índice](../README.md). Véanse también [`../../ETHICS.md`](../../ETHICS.md) y [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

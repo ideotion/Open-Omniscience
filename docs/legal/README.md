@@ -23,7 +23,7 @@ moral :
 | [`CGU.md`](CGU.md) | **Conditions Générales d'Utilisation** — le document central : objet, acceptation, articulation avec la GPL v3, nature « en l'état » du Logiciel, responsabilités de l'Utilisateur, **transparence sur les sorties produites par l'IA**, exclusion de garantie, limitation de responsabilité, indemnisation, composants tiers, droit applicable. |
 | [`POLITIQUE_DE_CONFIDENTIALITE.md`](POLITIQUE_DE_CONFIDENTIALITE.md) | **Politique de confidentialité (RGPD)** — l'Éditeur ne traite aucune donnée personnelle d'utilisateur et n'exploite aucun serveur ; l'Utilisateur est le **seul responsable de traitement** des données présentes dans les contenus qu'il collecte. |
 | [`CHARTE_USAGE.md`](CHARTE_USAGE.md) | **Charte d'usage** (éthique / *acceptable use*) — finalité visée, **liste des usages interdits**, et engagements explicites de l'Utilisateur. Acceptée explicitement, en cohérence avec [`../ETHICS.md`](../ETHICS.md) et [`../GOVERNANCE.md`](../GOVERNANCE.md). |
-| [`IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) | **Notes techniques** — comment le **mécanisme d'acceptation explicite** (consentement au premier lancement) est implémenté et comment finaliser son intégration (interface web + CLI). |
+| [`IMPLEMENTATION_NOTES.md`](IMPLEMENTATION_NOTES.md) | **Notes techniques** — comment le **mécanisme d'acceptation explicite** (consentement au premier lancement, interface web + CLI) est implémenté. |
 
 ## La distinction essentielle : licence du **code** vs. conditions d'**usage**
 

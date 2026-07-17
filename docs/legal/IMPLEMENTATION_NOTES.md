@@ -5,8 +5,7 @@
 > ce fichier décrit le **mécanisme d'acceptation** et ce qui reste à câbler.
 
 This note documents the **explicit first-run acceptance mechanism** for the legal
-document set (`docs/legal/`), what is **already wired**, and the **remaining TODOs** —
-chiefly the web-GUI modal, which cannot be browser-verified in this environment.
+document set (`docs/legal/`), what is **already wired**, and the **remaining TODOs**.
 
 ## What "acceptance" records
 
@@ -21,7 +20,7 @@ A small, local, network-free record (same pattern as `src.config.app_settings`):
   ```json
   {
     "schema": "oo-legal-consent-1",
-    "version": "0.draft",
+    "version": "1.0",
     "accepted_at": "2026-06-20T12:34:56.789012+00:00",
     "actor": "web",
     "documents": ["mentions_legales", "cgu", "confidentialite", "charte_usage"]
@@ -63,46 +62,32 @@ A small, local, network-free record (same pattern as `src.config.app_settings`):
    - `POST /api/legal/consent` body `{"version": "<current>"}` → records acceptance;
      returns the new status. A version mismatch returns **400** (a stale acceptance can
      never be recorded as current).
-
-## TODO — web GUI blocking modal (browser-unverified)
-
-The backend is ready; the SPA needs a small first-load modal. It was **not** injected
-into `index.html` here because it touches the boot path and **cannot be browser-verified**
-in this environment (project rule: browser-unverifiable UI ships flagged, not on faith).
-
-**Recommended wiring** (add to the SPA boot, after the app shell mounts):
-
-```js
-// First-run legal consent gate. Blocks the UI until the user accepts.
-async function ensureLegalConsent() {
-  const r = await fetch('/api/legal/consent');
-  const s = await r.json();
-  if (!s.required) return;            // already accepted this version
-  // Build a blocking modal (re-use the app's <dialog> + focus-trap conventions):
-  //  - title + the "draft, not legal advice" line
-  //  - links to each s.documents[i] (label = .title, href = .url or a local route)
-  //  - a single REQUIRED checkbox "J'ai lu et j'accepte ces documents"
-  //  - an "Accepter" button, disabled until the checkbox is ticked
-  // On accept:
-  await fetch('/api/legal/consent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ version: s.current_version }),
-  });
-  // then remove the modal and let the app proceed.
-}
-```
-
-Checklist for that PR:
-- [ ] Re-use the existing `<dialog>` + `_trapTab` focus-trap + Esc conventions (a consent
-      modal should trap focus and be keyboard-accessible).
-- [ ] Serve the documents to the modal — either link to the GitHub URLs from
-      `consent_status().documents[].url`, or add a tiny local route that renders the
-      `docs/legal/*.md` files (preferred for offline-first; the app already renders Help
-      docs locally).
-- [ ] i18n: the modal **chrome** strings go through the app's i18n engine; the legal
-      **documents themselves stay French** (they are the legal text).
-- [ ] Click-through across themes/breakpoints (no headless harness here).
+   - `GET /api/legal/documents?lang=` → the per-language document payload
+     ([`src/legal/documents.py`](../../src/legal/documents.py): French canonical, falls
+     back per-document when a translation is missing), `GET /api/legal/download` (a
+     `.zip` of the four documents), `POST /api/legal/decline` (typed-confirmation
+     `UNINSTALL` → the SECURE uninstall path).
+4. **Web GUI first-launch gate (shipped 2026-06-21, commit `5aefbc01`; browser-
+   unverified — code-verified + flagged, per the project's convention for UI that
+   cannot be click-through tested in this environment):** [`src/static/unlock.html`](../../src/static/unlock.html)
+   inserts a full-page **legal step** into the first-launch flow — language → **accept
+   the legal documents** → passphrase (`showLegalStep(code)` → `view-legal`, gated in
+   before the DB even exists via `/api/legal/` joining `ALLOWED_WHILE_LOCKED` in
+   [`src/api/unlock.py`](../../src/api/unlock.py)). It reads the documents in the
+   user's chosen UI language (French fallback), offers a Download (`.zip`), and gates
+   on either **Accept** (records consent, advances to `legalToPassphrase()`) or
+   **Decline** (a required typed-`UNINSTALL` confirmation panel, never a bare click) →
+   the same SECURE uninstall as Settings → Safety → Uninstall. Chrome strings come
+   from the `/api/legal/documents` payload itself (not the app's global i18n engine —
+   deliberate, since this page runs before the SPA/i18n bundle loads); the legal
+   documents themselves are served in the user's language via `docs/legal/<lang>/`.
+   This supersedes the "recommended wiring" sketch that used to live in this section —
+   the real implementation is a dedicated pre-app page, not an in-SPA `<dialog>`
+   modal, which blocks *harder* (nothing of the app is reachable first) than a
+   dismissable overlay would. `tests/test_legal_documents.py::
+   test_unlock_first_launch_inserts_legal_step_before_passphrase` pins the wiring.
+   **Still owed:** a human click-through across themes/breakpoints (no headless
+   browser harness in this environment).
 
 ## TODO — optional hard block of the server (opt-in)
 
@@ -147,11 +132,18 @@ the web entrypoint could strand a desktop-launcher or `curl | bash` user with no
    bracket in the documents — but they remain **best-effort, not professionally
    verified**, and will stay that way (a different, honest claim from "still bracketed
    as TBD" — the bracket is gone, the lawyer-verification gap is not, and won't close).
-4. ⬜ **Still open.** Land the web-modal PR above (an unrelated engineering task, not
-   gated on anything above).
+4. ✅ **Done (2026-06-21, commit `5aefbc01`).** The web-GUI first-launch gate landed as
+   `src/static/unlock.html`'s `view-legal` step (see item 4 under "What is already
+   wired" above) — code-verified + flagged, a human click-through across
+   themes/breakpoints is still owed (no headless browser harness here).
 
 ## Tests
 
 - [`tests/test_legal_consent.py`](../../tests/test_legal_consent.py) covers the core
   (record/load/needs-acceptance/version bump, ISO-8601 timestamp, status) and the HTTP
   endpoints (status, accept, version-mismatch 400) via `TestClient` — no browser needed.
+- [`tests/test_legal_documents.py`](../../tests/test_legal_documents.py) covers the
+  per-language document payload, download `.zip`, decline→uninstall (stubbed, no real
+  uninstall), the locked-state allowlist, the unlock-flow wiring (language → legal step
+  → passphrase), and — added 2026-07-17 — that no document in any of the 12 UI
+  languages still carries an unresolved `[À COMPLÉTER]`/`[À VÉRIFIER]` bracket.

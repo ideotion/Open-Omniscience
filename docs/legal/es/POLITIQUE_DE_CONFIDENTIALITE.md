@@ -152,4 +152,4 @@ Para cualquier **consulta relativa a este documento**: **open-omniscience@ideoti
 
 ---
 
-*Documentos relacionados: [Condiciones de Uso](CGU.md) · [Aviso Legal](MENTIONS_LEGALES.md) · [Carta de Uso Aceptable](CHARTE_USAGE.md) · [Índice](README.md). Véanse también [`../../SECURITY.md`](../../SECURITY.md) y [`../../ETHICS.md`](../../ETHICS.md).*
+*Documentos relacionados: [Condiciones de Uso](CGU.md) · [Aviso Legal](MENTIONS_LEGALES.md) · [Carta de Uso Aceptable](CHARTE_USAGE.md) · [Índice](../README.md). Véanse también [`../../SECURITY.md`](../../SECURITY.md) y [`../../ETHICS.md`](../../ETHICS.md).*

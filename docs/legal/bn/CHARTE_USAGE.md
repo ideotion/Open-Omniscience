@@ -98,4 +98,4 @@
 
 ---
 
-*সম্পর্কিত নথি: [ব্যবহারের শর্তাবলী](CGU.md) · [আইনি বিজ্ঞপ্তি](MENTIONS_LEGALES.md) · [গোপনীয়তা নীতি](POLITIQUE_DE_CONFIDENTIALITE.md) · [সূচি](README.md)। আরও দেখুন [`../../ETHICS.md`](../../ETHICS.md) ও [`../../GOVERNANCE.md`](../../GOVERNANCE.md)।*
+*সম্পর্কিত নথি: [ব্যবহারের শর্তাবলী](CGU.md) · [আইনি বিজ্ঞপ্তি](MENTIONS_LEGALES.md) · [গোপনীয়তা নীতি](POLITIQUE_DE_CONFIDENTIALITE.md) · [সূচি](../README.md)। আরও দেখুন [`../../ETHICS.md`](../../ETHICS.md) ও [`../../GOVERNANCE.md`](../../GOVERNANCE.md)।*

@@ -76,7 +76,7 @@ repository-hosting platform:
 ## 5. Intellectual property and licence
 
 - The Software is distributed under the **GNU GPL v3** licence (see the
-  [`LICENSE`](../../LICENSE) file at the repository root). The terms of that licence
+  [`LICENSE`](../../../LICENSE) file at the repository root). The terms of that licence
   apply to the **code**.
 - "Ideotion" is used as an **author pseudonym**.
 - The Publisher **claims no rights** over the content the User collects, imports or
@@ -101,4 +101,4 @@ For any question regarding this legal notice:
 
 ---
 
-*Related documents: [Terms of Use](CGU.md) · [Privacy Policy](POLITIQUE_DE_CONFIDENTIALITE.md) · [Acceptable-Use Charter](CHARTE_USAGE.md) · [Index](README.md).*
+*Related documents: [Terms of Use](CGU.md) · [Privacy Policy](POLITIQUE_DE_CONFIDENTIALITE.md) · [Acceptable-Use Charter](CHARTE_USAGE.md) · [Index](../README.md).*

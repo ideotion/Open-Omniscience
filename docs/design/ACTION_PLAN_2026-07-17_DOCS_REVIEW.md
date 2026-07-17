@@ -163,6 +163,23 @@ legal docs *"still carry `Version:` / `Date: [À COMPLÉTER]`; finalize them and
 **Acceptance:** the doc's Outstanding section states only things that are actually
 outstanding; no claim contradicts `docs/legal/README.md`.
 
+**EXECUTED 2026-07-17, overtaken by a live maintainer decision (record, don't re-plan):**
+the "66 markers … a stated permanent choice" premise above was overruled the same day —
+the maintainer, hitting the brackets live in the legal review/acceptance screen, asked
+for them to be **removed outright** (PR #702: the meta-explanatory sentence about the
+`[À COMPLÉTER]`/`[À VÉRIFIER]` convention, present in every document's intro across all
+12 languages, and a genuinely dangling SIREN/SIRET/VAT placeholder in
+`MENTIONS_LEGALES.md`, also all 12 languages). Zero bracket markers remain
+(`tests/test_legal_documents.py::test_no_document_carries_an_unresolved_completer_verifier_bracket`).
+`docs/testing/LEGAL_DECLINE_UNINSTALL_TEST.md`'s Outstanding section was rewritten to
+match. A follow-up sweep the same day also fixed a real, unrelated bug the T4 audit
+missed: every translated copy's relative links to `LICENSE`, `README.md`, and
+`IMPLEMENTATION_NOTES.md` were broken by one directory level (the translations live one
+level deeper than the French originals, at `docs/legal/<lang>/`, but kept the shallower
+originals' relative paths verbatim) — fixed across all 11 languages, plus a stale claim
+in `IMPLEMENTATION_NOTES.md` that the web-GUI consent gate was still unbuilt (it shipped
+2026-06-21, commit `5aefbc01`, as `src/static/unlock.html`'s `view-legal` step).
+
 ---
 
 ## T5 — USER_MANUAL: mark the historical section + re-verify nav ground truth — P2, size M

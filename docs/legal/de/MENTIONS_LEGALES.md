@@ -81,7 +81,7 @@ Drittanbieter-Plattform für die Verwaltung von Code-Repositorys zugänglich gem
 ## 5. Geistiges Eigentum und Lizenz
 
 - Die Software wird unter der Lizenz **GNU GPL v3** verbreitet (siehe die Datei
-  [`LICENSE`](../../LICENSE) im Wurzelverzeichnis des Repositorys). Die Bedingungen dieser
+  [`LICENSE`](../../../LICENSE) im Wurzelverzeichnis des Repositorys). Die Bedingungen dieser
   Lizenz gelten für den **Code**.
 - „Ideotion" wird als **Autorenpseudonym** verwendet.
 - Der Herausgeber **erhebt keinerlei Rechte** an den Inhalten, die die Nutzerin bzw. der
@@ -108,4 +108,4 @@ Bei Fragen zu diesem Impressum:
 
 ---
 
-*Zugehörige Dokumente: [Nutzungsbedingungen](CGU.md) · [Datenschutzerklärung](POLITIQUE_DE_CONFIDENTIALITE.md) · [Charta der akzeptablen Nutzung](CHARTE_USAGE.md) · [Index](README.md).*
+*Zugehörige Dokumente: [Nutzungsbedingungen](CGU.md) · [Datenschutzerklärung](POLITIQUE_DE_CONFIDENTIALITE.md) · [Charta der akzeptablen Nutzung](CHARTE_USAGE.md) · [Index](../README.md).*

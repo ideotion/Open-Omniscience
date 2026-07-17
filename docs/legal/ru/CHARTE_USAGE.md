@@ -108,4 +108,4 @@
 
 ---
 
-*Связанные документы: [Условия использования](CGU.md) · [Правовые сведения](MENTIONS_LEGALES.md) · [Политика конфиденциальности](POLITIQUE_DE_CONFIDENTIALITE.md) · [Указатель](README.md). См. также [`../../ETHICS.md`](../../ETHICS.md) и [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Связанные документы: [Условия использования](CGU.md) · [Правовые сведения](MENTIONS_LEGALES.md) · [Политика конфиденциальности](POLITIQUE_DE_CONFIDENTIALITE.md) · [Указатель](../README.md). См. также [`../../ETHICS.md`](../../ETHICS.md) и [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

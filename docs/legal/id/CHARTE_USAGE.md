@@ -108,4 +108,4 @@ Untuk pertanyaan apa pun mengenai Piagam ini: **open-omniscience@ideotion.com**.
 
 ---
 
-*Dokumen terkait: [Ketentuan Penggunaan](CGU.md) · [Pemberitahuan Hukum](MENTIONS_LEGALES.md) · [Kebijakan Privasi](POLITIQUE_DE_CONFIDENTIALITE.md) · [Indeks](README.md). Lihat juga [`../../ETHICS.md`](../../ETHICS.md) dan [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Dokumen terkait: [Ketentuan Penggunaan](CGU.md) · [Pemberitahuan Hukum](MENTIONS_LEGALES.md) · [Kebijakan Privasi](POLITIQUE_DE_CONFIDENTIALITE.md) · [Indeks](../README.md). Lihat juga [`../../ETHICS.md`](../../ETHICS.md) dan [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

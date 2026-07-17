@@ -159,6 +159,37 @@ def test_no_document_carries_an_unresolved_completer_verifier_bracket():
             )
 
 
+def test_every_relative_link_in_the_legal_docs_resolves_to_a_real_file():
+    """Field report 2026-07-17: a follow-up sweep after the bracket fix above found
+    every translated document's relative links to ``LICENSE``, ``README.md`` and
+    ``IMPLEMENTATION_NOTES.md`` were broken by one directory level -- the 11
+    translations live one level deeper (``docs/legal/<lang>/``) than the French
+    originals (``docs/legal/``), but were translated with the shallower originals'
+    relative paths verbatim, so e.g. ``[LICENSE](../../LICENSE)`` resolved to the
+    nonexistent ``docs/LICENSE`` instead of the real repository-root ``LICENSE``, and
+    the bare ``README.md`` / ``IMPLEMENTATION_NOTES.md`` links (which only exist
+    alongside the French originals, never translated per-language) resolved to
+    nonexistent same-directory files. Walks every ``docs/legal/**/*.md`` file and
+    resolves every non-anchor, non-URL relative link against the filesystem."""
+    import re
+
+    legal_root = _ROOT / "docs" / "legal"
+    link_re = re.compile(r"\]\(([^)]+)\)")
+    broken: list[str] = []
+    for md_path in legal_root.rglob("*.md"):
+        text = md_path.read_text(encoding="utf-8")
+        for link in link_re.findall(text):
+            if link.startswith(("http://", "https://", "mailto:", "#")):
+                continue
+            file_part = link.split("#", 1)[0]
+            if not file_part:
+                continue
+            target = (md_path.parent / file_part).resolve()
+            if not target.exists():
+                broken.append(f"{md_path.relative_to(_ROOT)} -> {link} (resolved: {target})")
+    assert not broken, "broken relative link(s) in docs/legal/:\n" + "\n".join(broken)
+
+
 def test_unlock_first_launch_inserts_legal_step_before_passphrase():
     """The first-launch flow goes language -> ACCEPT LEGAL -> passphrase; decline needs
     a typed confirmation and uninstalls. Browser-unverified; this pins the wiring."""

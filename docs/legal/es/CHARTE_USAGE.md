@@ -114,4 +114,4 @@ Para cualquier consulta relativa a la presente Carta: **open-omniscience@ideotio
 
 ---
 
-*Documentos relacionados: [Condiciones de Uso](CGU.md) · [Aviso Legal](MENTIONS_LEGALES.md) · [Política de Privacidad](POLITIQUE_DE_CONFIDENTIALITE.md) · [Índice](README.md). Véanse también [`../../ETHICS.md`](../../ETHICS.md) y [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Documentos relacionados: [Condiciones de Uso](CGU.md) · [Aviso Legal](MENTIONS_LEGALES.md) · [Política de Privacidad](POLITIQUE_DE_CONFIDENTIALITE.md) · [Índice](../README.md). Véanse también [`../../ETHICS.md`](../../ETHICS.md) y [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*

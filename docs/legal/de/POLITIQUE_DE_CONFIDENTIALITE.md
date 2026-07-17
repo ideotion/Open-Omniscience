@@ -162,4 +162,4 @@ Daten), kann kein Antrag auf Ausübung von Rechten vom Herausgeber erfüllt werd
 
 ---
 
-*Zugehörige Dokumente: [Nutzungsbedingungen](CGU.md) · [Impressum](MENTIONS_LEGALES.md) · [Charta der akzeptablen Nutzung](CHARTE_USAGE.md) · [Index](README.md). Siehe auch [`../../SECURITY.md`](../../SECURITY.md) und [`../../ETHICS.md`](../../ETHICS.md).*
+*Zugehörige Dokumente: [Nutzungsbedingungen](CGU.md) · [Impressum](MENTIONS_LEGALES.md) · [Charta der akzeptablen Nutzung](CHARTE_USAGE.md) · [Index](../README.md). Siehe auch [`../../SECURITY.md`](../../SECURITY.md) und [`../../ETHICS.md`](../../ETHICS.md).*

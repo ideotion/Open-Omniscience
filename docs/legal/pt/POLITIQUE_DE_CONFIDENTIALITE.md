@@ -147,4 +147,4 @@ qualquer **questão relativa a este documento**: **open-omniscience@ideotion.com
 
 ---
 
-*Documentos relacionados: [Condições de Utilização](CGU.md) · [Menções Legais](MENTIONS_LEGALES.md) · [Carta de Utilização Aceitável](CHARTE_USAGE.md) · [Índice](README.md). Ver também [`../../SECURITY.md`](../../SECURITY.md) e [`../../ETHICS.md`](../../ETHICS.md).*
+*Documentos relacionados: [Condições de Utilização](CGU.md) · [Menções Legais](MENTIONS_LEGALES.md) · [Carta de Utilização Aceitável](CHARTE_USAGE.md) · [Índice](../README.md). Ver também [`../../SECURITY.md`](../../SECURITY.md) e [`../../ETHICS.md`](../../ETHICS.md).*

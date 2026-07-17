@@ -61,7 +61,7 @@ beim ersten Start**: Sie zeigt die vorliegenden Dokumente an und **speichert lok
 dem Rechner der Nutzerin bzw. des Nutzers) die **angenommene Version** und den
 **Zeitstempel** (im Format ISO 8601) der Annahme. Diese Aufzeichnung verbleibt auf dem
 Rechner der Nutzerin bzw. des Nutzers und wird **niemals** an den Herausgeber übermittelt.
-Die technischen Einzelheiten sind in den [Implementierungshinweisen](IMPLEMENTATION_NOTES.md)
+Die technischen Einzelheiten sind in den [Implementierungshinweisen](../IMPLEMENTATION_NOTES.md)
 beschrieben.
 
 2.3. **Neue Version.** Im Falle einer wesentlichen Änderung kann bei einem späteren Start
@@ -361,4 +361,4 @@ Bei Fragen zu den vorliegenden Bedingungen: **open-omniscience@ideotion.com**.
 
 ---
 
-*Zugehörige Dokumente: [Impressum](MENTIONS_LEGALES.md) · [Datenschutzerklärung](POLITIQUE_DE_CONFIDENTIALITE.md) · [Charta der akzeptablen Nutzung](CHARTE_USAGE.md) · [Implementierungshinweise](IMPLEMENTATION_NOTES.md) · [Index](README.md). Siehe auch [`../../ETHICS.md`](../../ETHICS.md) und [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
+*Zugehörige Dokumente: [Impressum](MENTIONS_LEGALES.md) · [Datenschutzerklärung](POLITIQUE_DE_CONFIDENTIALITE.md) · [Charta der akzeptablen Nutzung](CHARTE_USAGE.md) · [Implementierungshinweise](../IMPLEMENTATION_NOTES.md) · [Index](../README.md). Siehe auch [`../../ETHICS.md`](../../ETHICS.md) und [`../../GOVERNANCE.md`](../../GOVERNANCE.md).*
