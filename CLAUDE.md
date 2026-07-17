@@ -6016,7 +6016,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   Granularity RULING pending (act-level default vs per-legal-article split); `[pdf]`-in-default
   + coverage priorities + cadence = §4 maintainer decisions. Never fabricate a source: every
   committed endpoint must be fetched by the executing session (✅/🔎/❓ statuses; ❓ ships
-  disabled). PENDING: the brief's execution.
+  disabled). **AMENDED same day (maintainer: "47 portals don't seem legitimate at all — France
+  alone has 76 different codes", citing the live Légifrance code list): THE COMPLETENESS
+  PRINCIPLE is now the coverage bar** — a portal is an entry point, never a coverage claim;
+  covering a jurisdiction = covering its OWN official enumeration (France: 76 codes en vigueur +
+  non-codified statutes; DE: gesetze-im-internet's thousands; UK: every ukpga/uksi). Threaded
+  into the brief: adapters must enumerate collections COMPLETELY (never a sample presented as
+  coverage); the S5 diagnostic reports tracked-vs-enumerated with the DENOMINATOR from the
+  source's own list ("France: 12/76 codes"), else "no enumeration adapter — coverage unknown";
+  whole-country corpora take the MANAGED-DATASET posture (bulk jobs like wiki dumps — France's
+  DILA/LEGI full-base+daily-deltas IS the law-world instance of the ruled dump-as-baseline+delta
+  architecture; ~10⁵ legal articles in force for France makes the §4 granularity ruling
+  scale-critical, to be ruled BEFORE the first whole-country ingest). The Légifrance page 403s in
+  the sandbox — the executing session re-verifies the 76 count live. PENDING: the brief's
+  execution.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

@@ -102,6 +102,23 @@ official journals) are a THIRD stream: many have RSS and flow through the EXISTI
 as `source_type: legal` sources. Coverage grows catalog-first (a dated, registry-tracked file),
 floor = the 12-UI-language countries (the elections coverage-floor precedent), then outward.
 
+**THE COMPLETENESS PRINCIPLE (maintainer clarified 2026-07-17 — this is the coverage bar):**
+a portal entry is an ENTRY POINT, never a coverage claim. "Covering a country" means covering
+the jurisdiction's OWN official enumeration of its corpus — **France alone has 76 codes en
+vigueur** (Légifrance's code list, maintainer-verified live 2026-07-17; the sandbox 403s the
+page — the executing session re-verifies the count at
+`https://www.legifrance.gouv.fr/liste/code?etatTexte=VIGUEUR`) plus the non-codified
+consolidated statutes behind them; Germany's gesetze-im-internet indexes thousands of
+laws/regulations; the UK's legislation.gov.uk holds every ukpga/uksi. The ~47 catalog portals
+and ~17 tracked documents are seeds, not the destination. Consequences threaded through the
+slices below: an adapter's `list_documents()` must enumerate the official collection COMPLETELY
+(never a hand-picked sample presented as coverage); the S5 diagnostic measures coverage AGAINST
+the official enumeration (the denominator comes from the source's own list — "France: 76/76
+codes tracked", never "we track what we track"); and at that scale a whole-country legal corpus
+takes the MANAGED-DATASET posture (the wiki-dump/PubMed architectural-separation precedent:
+bulk ingest as task-manager download jobs, own storage accounting, own freshness diagnostics —
+never 76,000 individual page fetches).
+
 ---
 
 ## §3 The slices (ordered; commit per slice)
@@ -145,7 +162,10 @@ everywhere provenance classes appear.**
 ### S5 — The law coverage/freshness diagnostic (P1) — size S
 `GET /api/diagnostics/law-coverage`: per-jurisdiction doc counts, baseline coverage %,
 last-checked ages, per-doc verdict tallies (robots-blocked named), adapter/catalog `*_AS_OF`
-freshness — counts + method, no score. Bundle member + the membership-ratchet classification
+freshness — counts + method, no score. **Denominators come from the official enumeration**
+(the completeness principle, §2): where an adapter exists, report tracked-vs-enumerated
+("France: 12/76 codes"), and where none exists yet, say so honestly ("no enumeration adapter —
+coverage unknown") rather than presenting the tracked count as coverage. Bundle member + the membership-ratchet classification
 (the 2026-07-17 ratchet WILL redden the build until this is classified — that is by design).
 **Acceptance: the maintainer's next "is law working?" is answered by one JSON.**
 
@@ -165,7 +185,12 @@ fetches them — never commit a ❓ as enabled):
 - 🇪🇺 EUR-Lex — ELI URIs / Cellar; consolidated versions carry CELEX-dated revisions.
 - 🇫🇷 Légifrance — the PISTE API is KEY-GATED (defer; operator decision); the DILA **bulk
   open-data dumps** (LEGI) are the honest no-key path but are LARGE → a task-manager download
-  job, gated like wiki dumps. Do not attempt both in one session.
+  job, gated like wiki dumps. Do not attempt both in one session. NOTE the architectural
+  symmetry: LEGI publishes a full base + INCREMENTAL DELTAS — this is the law-world instance of
+  the ruled Wikipedia "dump-as-baseline + delta" plan of record, and the ONLY honest way to the
+  completeness bar (76 codes ≈ on the order of 10⁵ legal articles in force; scraping that
+  page-by-page is neither polite nor performant). Verify the current DILA distribution
+  point/format live before designing the job.
 - 🇪🇸 BOE — documented open API (`boe.es/datosabiertos`); 🇺🇸 `uscode.house.gov` XML releases +
   govinfo bulk — later sessions.
 Granularity inside an adapter: **the tracked/corpus unit stays the ACT (consolidated document)**;
@@ -195,8 +220,13 @@ carry-over list (untouched: per-article granularity ruling, Légifrance bulk job
 1. **`[pdf]` extra in the default install set?** Gazette PDFs need pypdf. *Recommend YES* (it is
    pure-Python); until ruled, S7 prefers HTML/XML feeds.
 2. **Per-legal-article granularity** (one corpus Article per article of a code) vs act-level
-   (current): storage/count implications (~2,800 rows for one French code) vs finer tracking.
-   *Default: act-level; revisit after the first adapters run at real volume.*
+   (current): storage/count implications (~2,800 rows for the Code civil alone; ~10⁵ legal
+   articles in force across France's 76 codes, so a COMPLETE France at per-article granularity
+   rivals a mid-size news corpus by row count) vs finer tracking and more precise change
+   attribution. This ruling becomes SCALE-CRITICAL once the completeness principle (§2) is
+   pursued — the answer likely differs per tier (act-level for HTML-tracked documents;
+   per-article where a structured source gives stable per-article IDs like LEGIARTI).
+   *Default: act-level; rule before the first whole-country bulk ingest, not after.*
 3. **Coverage priority beyond the floor** (which countries next) + whether the Légifrance
    key-gated API is worth an operator key vs the DILA bulk path.
 4. **Cadence** per category (gazette daily / consolidated weekly?) — current: 24 h gate,
