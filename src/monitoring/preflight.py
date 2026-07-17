@@ -24,6 +24,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
 _LOG = logging.getLogger(__name__)
@@ -44,18 +45,45 @@ def has_run_before() -> bool:
 def _check_one(fetcher, source) -> dict:
     """One source's verdict. Uses the EthicalFetcher's session (same UA/proxy
     posture as real scraping) but reads robots DIRECTLY so we can report the
-    status distinctly rather than just refusing."""
+    status distinctly rather than just refusing.
+
+    Audit finding 2026-07-17 (SSRF, CWE-918): this used to call
+    ``fetcher.session.get(url, allow_redirects=True)`` directly on the raw
+    ``requests.Session``, bypassing BOTH ``EthicalFetcher._guard_target``
+    (which refuses private/loopback/link-local targets) and the manual
+    per-hop redirect revalidation ``EthicalFetcher._guarded_redirect_get``
+    already does for every other fetch path in this codebase -- the exact
+    "robots used allow_redirects=True and so let its redirect chain bypass
+    the guard" bug already found and fixed once inside ``EthicalFetcher``
+    itself (see ``_guarded_redirect_get``'s own docstring). A source whose
+    domain (user-addable via discovery/custom sources) later 30x-redirects
+    to ``127.0.0.1``/a link-local address/a DNS-rebinding hostname would be
+    fetched here with no guard at all. Fixed by guarding the INITIAL target
+    explicitly (mirroring what ``EthicalFetcher.fetch()`` does before every
+    real fetch) and routing both GETs through ``_guarded_redirect_get``,
+    which re-validates every redirect hop the same way the real scrape path
+    does.
+    """
     base = f"https://{source.domain}"
     rec: dict = {
         "source_id": source.id,
         "domain": source.domain,
         "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
+    try:
+        fetcher._guard_target(urlparse(base).hostname)
+    except Exception as exc:  # noqa: BLE001 - a refused/unresolvable target must not stop the sweep
+        rec["robots"] = "unreachable"
+        rec["robots_error"] = str(exc)[:200]
+        rec["reachable"] = False
+        rec["homepage_error"] = str(exc)[:200]
+        rec["verdict"] = "unreachable"
+        return rec
+
     # robots.txt -- the contract that governs everything else
     crawl_delay = None
     try:
-        resp = fetcher.session.get(f"{base}/robots.txt", timeout=fetcher.timeout,
-                                   allow_redirects=True)
+        resp, _final = fetcher._guarded_redirect_get(f"{base}/robots.txt")
         code = resp.status_code
         if code == 200:
             rp = RobotFileParser()
@@ -79,9 +107,9 @@ def _check_one(fetcher, source) -> dict:
     if crawl_delay:
         rec["crawl_delay_s"] = float(crawl_delay)
 
-    # homepage ping (reachability + status), through the same session
+    # homepage ping (reachability + status), through the same guarded path
     try:
-        resp = fetcher.session.get(base + "/", timeout=fetcher.timeout, allow_redirects=True)
+        resp, _final = fetcher._guarded_redirect_get(base + "/")
         rec["homepage_status"] = resp.status_code
         rec["reachable"] = 200 <= resp.status_code < 400
     except Exception as exc:  # noqa: BLE001

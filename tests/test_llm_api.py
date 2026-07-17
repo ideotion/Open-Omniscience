@@ -369,6 +369,46 @@ def test_bulk_summarize_streams_and_stores_each(tmp_path, monkeypatch):
         assert len(rows) == 1 and rows[0]["prompt_text"]
 
 
+def test_bulk_llm_id_resolve_is_chunked_and_byte_identical(tmp_path, monkeypatch):
+    """Audit finding 2026-07-17: bulk_llm's two id IN(...) queries (resolving the
+    explicit article_ids selection, and the skip_existing "already done" lookup)
+    were unchunked -- and the 2026-06-20 ruling deliberately removed bulk_llm's
+    old article-count cap so it processes the WHOLE matched set uncapped, which
+    also removed the incidental protection that cap gave against SQLite's
+    historical ~999 bound-variable ceiling. A card/search selection can carry
+    thousands of ids (a Home card's article_ids can run to 2000). Forces
+    chunking with a tiny src.api.llm._BULK_ID_CHUNK (3 articles needing 3
+    separate chunk queries of 1) across BOTH sites (first run stores summaries;
+    second run with skip_existing exercises the "already" lookup) and asserts
+    the outcome is BYTE-IDENTICAL to the unchunked default."""
+    import src.api.llm as llm_mod
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    monkeypatch.setattr(llm_mod, "_BULK_ID_CHUNK", 1, raising=True)
+    _override(_FakeOllama())
+    ids = [_seed_article() for _ in range(3)]
+    with TestClient(app) as client:
+        r1 = client.post("/api/llm/bulk", json={"op": "summarize", "article_ids": ids})
+        assert r1.status_code == 200
+        events1 = _ndjson(r1.text)
+        assert events1[0]["event"] == "start" and events1[0]["total"] == 3
+        items1 = [e for e in events1 if e["event"] == "item"]
+        assert len(items1) == 3 and all(i["status"] == "stored" for i in items1)
+        assert events1[-1]["stored"] == 3
+
+        # Second run: skip_existing must top up NOTHING (the "already" chunked
+        # lookup must correctly find all 3, spread across 3 separate id chunks).
+        r2 = client.post(
+            "/api/llm/bulk",
+            json={"op": "summarize", "article_ids": ids, "skip_existing": True},
+        )
+        done2 = _ndjson(r2.text)[-1]
+        assert done2["skipped"] == 3 and done2["stored"] == 0
+    for aid in ids:
+        assert len(_stored(aid, "summary")) == 1  # never duplicated
+
+
 def test_bulk_skip_existing_tops_up_only_missing(tmp_path, monkeypatch):
     import src.config.app_settings as aps
 

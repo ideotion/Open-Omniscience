@@ -398,6 +398,81 @@ def test_p0_validation_kit_is_wired():
     )
 
 
+def test_render_p0_result_does_not_shadow_the_real_html_escaper():
+    """Audit finding 2026-07-17 (M7): renderP0Result declared a LOCAL `esc` that
+    fell back to a non-existent global `escapeHtml` -- since that global is never
+    defined anywhere in app.js, the ternary always evaluated to a no-op passthrough,
+    silently defeating all 5 esc() calls in the function (which feed out.innerHTML,
+    an XSS sink: verdict labels, reasons, and the summary note). Regression guard:
+    the function must rely on the real module-level esc() (top of file) instead of
+    redeclaring/shadowing one."""
+    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    start = appjs.index("function renderP0Result(")
+    end = appjs.index("\n    }\n", start)
+    body = appjs[start:end]
+    assert "typeof escapeHtml" not in body, "must not fall back to the non-existent global escapeHtml"
+    assert "const esc" not in body, "must not shadow the real module-level esc()"
+    # esc() is still used (the fix removes the shadow, not the escaping calls).
+    assert body.count("esc(") >= 5
+
+
+def test_render_pagesize_result_does_not_shadow_the_real_html_escaper():
+    """Audit finding 2026-07-17 (M7 recurrence): renderPagesizeResult (the page-size
+    A/B bench result renderer, DB-10 §1b) was written with the EXACT SAME shadowing
+    bug as renderP0Result -- a local `esc` falling back to the non-existent global
+    `escapeHtml`, silently defeating every esc() call (incl. s.error, an operator/
+    exception-reflected string) that feeds out.innerHTML. Same fix, same regression
+    guard shape."""
+    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    start = appjs.index("async function renderPagesizeResult(")
+    end = appjs.index("\n    }\n", start)
+    body = appjs[start:end]
+    assert "typeof escapeHtml" not in body, "must not fall back to the non-existent global escapeHtml"
+    assert "const esc" not in body, "must not shadow the real module-level esc()"
+    assert body.count("esc(") >= 5
+
+
+def test_dump_and_osm_pollers_clear_before_set():
+    """Audit finding 2026-07-17 (L5): startDump's inline dump-progress poller and
+    _osmPoll each created a fresh setInterval with NO shared timer variable to clear
+    first -- unlike the established _llmPullStartPoll/_volStartPoll/_fbStartPoll
+    pattern elsewhere in this file. Starting several dump editions (the multi-pick
+    loop calls startDump once per edition) or clicking Download on several OSM
+    regions in quick succession (a real action the merged region-list UI invites)
+    stacked one independent 3s poller per start/click -- a polling-storm repeat of
+    the 2026-06-27/07-01 item-F5 family. Regression guard: both pollers must
+    clear-before-set, matching the three known-good pollers' shape exactly."""
+    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    def _fn_body(marker: str) -> str:
+        start = appjs.index(marker)
+        end = appjs.index("\n    }\n", start)
+        return appjs[start:end]
+
+    dump_poll = _fn_body("function _dumpStartPoll(")
+    assert "if (_dumpPollTimer) clearInterval(_dumpPollTimer);" in dump_poll
+    assert "_dumpStartPoll();" in _fn_body("async function startDump("), (
+        "startDump must call the shared, clearing poller, not an inline setInterval"
+    )
+
+    osm_poll = _fn_body("function _osmPoll(")
+    assert "if (_osmPollTimer) clearInterval(_osmPollTimer);" in osm_poll
+
+    # The three already-fixed pollers this fix mirrors must still clear-before-set
+    # (a regression guard on the PATTERN this fix relies on, not just the two new
+    # sites) -- each declares its own module-level timer + a `if (TIMER) clearInterval`
+    # guard before assigning a new one.
+    for timer, fn_marker in (
+        ("_llmPullPoll", "function _llmPullStartPoll("),
+        ("_volPollTimer", "function _volStartPoll("),
+        ("_fbPoll", "function _fbStartPoll("),
+    ):
+        body = _fn_body(fn_marker)
+        assert f"if ({timer}) clearInterval({timer});" in body, (
+            f"{fn_marker} lost its clear-before-set guard"
+        )
+
+
 def test_bm25f_per_column_ranking_is_wired():
     """Keyword-engine P5.1: FTS ranking is BM25F — bm25() weighted per column (title vs
     body) so a title keyword outranks a body-only mention. The weights are env-tunable and

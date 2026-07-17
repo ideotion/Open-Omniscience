@@ -279,6 +279,82 @@ def test_identical_text_in_two_laws_dedups_not_errors(db):
     assert db.query(LawDocument).count() == 3
 
 
+def test_upsert_absorbs_a_sqlcipher3_style_hash_collision(db, monkeypatch):
+    """Audit finding 2026-07-17: upsert_law_corpus_article's duplicate-content
+    dedup caught only sqlalchemy.exc.IntegrityError, but on the ENCRYPTED
+    (sqlcipher3) store a UNIQUE Article.hash collision surfaces as the driver's
+    OWN unwrapped exception class -- the same cross-driver divergence already
+    fixed for is_locked_error/classify_restore_error/src/law/track.py. Simulates
+    that exact exception (mirroring tests/test_classify_restore_error_sqlcipher.py's
+    fixture technique) to prove the real is_integrity_error-based dispatch handles
+    it, rather than letting a genuine (benign) hash collision escape uncaught."""
+    import sys
+    import types
+
+    from src.database import write as write_mod
+    from src.law.corpus import upsert_law_corpus_article
+
+    class _FakeSqlcipherIntegrityError(Exception):
+        pass
+
+    import sqlite3
+
+    assert not issubclass(_FakeSqlcipherIntegrityError, sqlite3.IntegrityError), (
+        "the fixture must be a genuinely UNRELATED class -- the whole point of the bug"
+    )
+    fake_dbapi2 = types.SimpleNamespace(IntegrityError=_FakeSqlcipherIntegrityError)
+    fake_pkg = types.SimpleNamespace(dbapi2=fake_dbapi2)
+    monkeypatch.setitem(sys.modules, "sqlcipher3", fake_pkg)
+    monkeypatch.setitem(sys.modules, "sqlcipher3.dbapi2", fake_dbapi2)
+    write_mod._db_integrity_error_types.cache_clear()
+
+    a = LawDocument(jurisdiction="uk", title="Model Act (UK)", url="https://uk.example/x2",
+                    official_url="https://uk.example/x2", latest_text=_BODY)
+    b = LawDocument(jurisdiction="us", title="Model Act (US)", url="https://us.example/y2",
+                    official_url="https://us.example/y2", latest_text=_BODY)
+    db.add_all([a, b])
+    db.commit()
+
+    assert upsert_law_corpus_article(db, doc=a)["status"] == "created"
+    real_commit = db.commit
+
+    def _commit_raise_when_article_pending(*args, **kwargs):
+        if any(isinstance(o, Article) for o in db.new):
+            raise _FakeSqlcipherIntegrityError("UNIQUE constraint failed: articles.hash")
+        return real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(db, "commit", _commit_raise_when_article_pending)
+    try:
+        res = upsert_law_corpus_article(db, doc=b)  # same latest_text => same hash => would collide
+    finally:
+        write_mod._db_integrity_error_types.cache_clear()  # never leak the fake into other tests
+
+    assert res["status"] == "duplicate-content"  # absorbed via is_integrity_error, not raised
+    assert db.query(Article).count() == 1  # deduped onto the one existing Article
+
+
+def test_upsert_reraises_a_genuinely_unexpected_exception(db, monkeypatch):
+    """A failure that is neither a lock nor an integrity violation must still surface
+    loudly -- never be silently swallowed as a duplicate."""
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = LawDocument(jurisdiction="uk", title="Boom Act", url="https://law.example/boom",
+                      official_url="https://law.example/boom", latest_text=_BODY)
+    db.add(doc)
+    db.commit()
+
+    real_commit = db.commit
+
+    def _commit_raise_when_article_pending(*args, **kwargs):
+        if any(isinstance(o, Article) for o in db.new):
+            raise RuntimeError("disk full")
+        return real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(db, "commit", _commit_raise_when_article_pending)
+    with pytest.raises(RuntimeError, match="disk full"):
+        upsert_law_corpus_article(db, doc=doc)
+
+
 # --------------------------------------------------------------------------- #
 #  PDF laws — the tracker extracts a gazette PDF, and a scan stores nothing
 # --------------------------------------------------------------------------- #

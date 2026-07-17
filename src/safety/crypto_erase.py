@@ -15,8 +15,10 @@ phases:
      in the first database page. Destroy that page and the key can NEVER be
      re-derived: the ciphertext body (however many GB) becomes permanent noise
      without touching it. Instant at any size, safe if interrupted. It also
-     destroys the on-disk signing keys, the plaintext ``anchors.db``, clears the
-     in-memory passphrase, and removes the data dir.
+     destroys the on-disk signing keys, ``anchors.db`` (encrypted or plaintext,
+     matching the corpus since audit finding L1, 2026-07-17 -- either way a full
+     overwrite destroys it), clears the in-memory passphrase, and removes the
+     data dir.
 
   2. ``full_secure_erase`` — an OPTIONAL defence-in-depth pass. Because the quick
      pass already unlinked the files, this scrubs the freed ciphertext blocks by
@@ -216,7 +218,10 @@ def quick_crypto_erase(confirm: bool = False, *, data_dir: Path | None = None) -
         seen += _s
         wiped += _w
 
-    # 4) Plaintext anchors.db is NOT encrypted -> full overwrite (it is small).
+    # 4) anchors.db now inherits the corpus's own encryption state (audit finding
+    #    L1, 2026-07-17 -- it used to be always-plaintext regardless of the corpus).
+    #    A full overwrite destroys it either way (it is small, so this is cheap
+    #    even though a head-only pass would already crypto-erase it if encrypted).
     anchors_seen, _anchors_overwritten, anchors_wiped = _track(paths["anchors_db"])
     seen += anchors_seen
     wiped += anchors_wiped

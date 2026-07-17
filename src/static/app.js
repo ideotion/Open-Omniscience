@@ -5041,21 +5041,30 @@
     async function _uxShowLastCompletedExportSummary() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const prog = document.getElementById("ux-progress");
-      let shown = null;
+      const bar = document.getElementById("ux-bar");
+      const pauseBtn = document.getElementById("ux-pause");
+      let shown = null, phase = null;
       try {
         const s = await api("/api/backup/v2/volumes/status");
-        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) shown = s;
+        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) { shown = s; phase = "volumes"; }
       } catch (e) { /* best-effort: one endpoint failing must not hide the other */ }
       try {
         // The folder (large-data) phase runs AFTER volumes in a full export -- if it
         // also completed/paused, it is the more recent state to show.
         const s = await api("/api/backup/folder/status");
-        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) shown = s;
+        if (s && s.mode === "backup" && (s.state === "done" || s.state === "paused")) { shown = s; phase = "folder"; }
       } catch (e) { /* best-effort */ }
       if (!shown) return;
       const dest = shown.dest || (document.getElementById("ux-dest").value || "").trim();
       if (shown.state === "paused") {
-        prog.innerHTML = `<b>${esc(t("Backup paused."))}</b> ${esc(t("Resume to continue where it left off."))} (${esc(t("last run"))})`;
+        // Audit finding 2026-07-17 (M8): a reopened dialog used to print "paused" text
+        // with NO way to resume -- _uxPhase (which endpoint a resume must target) stayed
+        // null from page load, and the actual #ux-pause button (default display:none)
+        // was never unhidden/relabelled, only this status text. _uxShowPaused is the
+        // SAME helper _uxRun already uses for a mid-run pause -- reuse it here so the
+        // reopened dialog gets a real, correctly-targeted Resume button.
+        _uxPhase = phase;
+        _uxShowPaused(prog, bar, pauseBtn, t);
       } else {
         prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)} (${esc(t("last completed export"))})`;
       }
@@ -10128,7 +10137,10 @@
     function renderP0Result(out, rep) {
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const esc = (typeof escapeHtml === "function") ? escapeHtml : ((s) => String(s == null ? "" : s));
+      // Audit finding 2026-07-17 (M7): this used to shadow the real module-level esc()
+      // (top of file) with a fallback to a non-existent global `escapeHtml`, which never
+      // exists -- so every esc() call below silently ran as a no-op passthrough into
+      // out.innerHTML (an XSS sink). Use the real escaper.
       const order = [
         ["p0_1_backup", "P0.1 backup"], ["p0_1_verify", "P0.1 verify"],
         ["p0_2_restore", "P0.2 restore"], ["p0_4_unlock", "P0.4 unlock"],
@@ -10208,7 +10220,11 @@
     async function renderPagesizeResult(out) {
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const esc = (typeof escapeHtml === "function") ? escapeHtml : ((s) => String(s == null ? "" : s));
+      // Audit finding 2026-07-17 (M7, recurrence): same shadowing bug as
+      // renderP0Result -- a local esc() falling back to the non-existent global
+      // escapeHtml, which never exists, so every esc() call below (incl. s.error,
+      // an operator/exception-reflected string) fed out.innerHTML unescaped. Use
+      // the real module-level esc().
       let rep = null;
       try { rep = await api("/api/diagnostics/pagesize-bench/last"); } catch (e) { /* link below still works */ }
       let rows = "";
@@ -13272,6 +13288,21 @@
       } catch (e) { $("dump-estimate").textContent = "size check failed"; }
     }
 
+    // Audit finding 2026-07-17 (L5): a shared, clear-before-set poll timer -- mirrors
+    // the established _llmPullStartPoll/_volStartPoll/_fbStartPoll pattern. Without
+    // this, starting several dump downloads in quick succession (the multi-edition
+    // picker loop just below calls startDump once per edition, sequentially awaited
+    // but each spawning its OWN fire-and-forget poller) stacked one independent 3s
+    // poller per start -- a polling-storm repeat of the 2026-06-27/07-01 item-F5 family.
+    let _dumpPollTimer = null;
+    function _dumpStartPoll() {
+      if (_dumpPollTimer) clearInterval(_dumpPollTimer);
+      let n = 0;
+      _dumpPollTimer = setInterval(() => {
+        loadWikiDumps();
+        if (++n > 40) { clearInterval(_dumpPollTimer); _dumpPollTimer = null; }
+      }, 3000);
+    }
     async function startDump(wiki) {
       // Several selected editions download sequentially (one polite queue).
       const picks = wiki ? [wiki] : dumpSelected();
@@ -13284,8 +13315,7 @@
       if (!await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Download a Wikipedia dump"))) return;
       try { await api("/api/wiki/dumps/start", {method:"POST", body: JSON.stringify({wiki: w})});
         toast("Download started."); loadWikiDumps();
-        // refresh progress a few times
-        let n=0; const poll=setInterval(()=>{ loadWikiDumps(); if(++n>40) clearInterval(poll); }, 3000);
+        _dumpStartPoll();  // refresh progress a few times
       } catch (e) { toast("Start failed: " + e.message, "err"); }
     }
     async function pauseDump(key) {
@@ -13382,9 +13412,21 @@
       list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
     }
 
+    // Audit finding 2026-07-17 (L5): a shared, clear-before-set poll timer -- mirrors
+    // the established _llmPullStartPoll/_volStartPoll/_fbStartPoll pattern. Without
+    // this, clicking Download on several regions in quick succession (a real user
+    // action the merged region-list UI invites -- each click calls startOsmDownload,
+    // which calls _osmPoll) stacked one independent 3s poller per click -- a
+    // polling-storm repeat of the 2026-06-27/07-01 item-F5 family.
+    let _osmPollTimer = null;
     function _osmPoll() {
+      if (_osmPollTimer) clearInterval(_osmPollTimer);
       loadOsmMap();
-      let n = 0; const poll = setInterval(() => { loadOsmMap(); if (++n > 40) clearInterval(poll); }, 3000);
+      let n = 0;
+      _osmPollTimer = setInterval(() => {
+        loadOsmMap();
+        if (++n > 40) { clearInterval(_osmPollTimer); _osmPollTimer = null; }
+      }, 3000);
     }
     async function startOsmDownload(code, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);

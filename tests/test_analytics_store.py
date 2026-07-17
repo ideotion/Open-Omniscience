@@ -342,6 +342,54 @@ def test_reconcile_keyword_language_sets_signature_majority(db):
     assert db.get(Keyword, k4.id).language == "en"  # already matches -> unchanged
 
 
+def test_reconcile_keyword_entity_status_downgrades_stale_title_case_entities(db):
+    """Audit finding 2026-07-17: _get_or_create_keyword only ever UPGRADES a keyword
+    to an entity, never downgrades -- so a Keyword row created under the
+    pre-2026-06-16 rule (any Title-Case word was an entity) stayed flagged an
+    entity forever, even though the current rule only recognises stand-alone
+    ALL-CAPS acronyms. reconcile_keyword_entity_status must downgrade a stale
+    Title-Case "entity" and a stoplisted acronym-stop-word, keep a genuinely
+    valid acronym untouched, and NEVER touch a gazetteer-matched named entity
+    (a different, still-valid signal -- out of this fix's scope)."""
+    from src.analytics.store import reconcile_keyword_entity_status
+
+    # Stale: Title-Case, created under the pre-2026-06-16 rule -- fails the
+    # all-caps shape check outright.
+    stale = Keyword(term="World", normalized_term="World", is_entity=True, entity_type="entity")
+    # Stale: in the acronym stoplist (a false-positive the rule explicitly excludes).
+    stoplisted = Keyword(term="OK", normalized_term="OK", is_entity=True, entity_type="entity")
+    # Genuinely valid: a real stand-alone all-caps acronym -- must survive untouched.
+    valid = Keyword(term="WHO", normalized_term="WHO", is_entity=True, entity_type="entity")
+    # A gazetteer-matched NAMED entity (kind="location", not the generic "entity"
+    # bucket) -- a different signal entirely, must be left alone regardless of shape.
+    gazetteer_named = Keyword(
+        term="Paris", normalized_term="Paris", is_entity=True, entity_type="location"
+    )
+    # A plain term (never flagged an entity) -- must be left alone, never scanned.
+    plain_term = Keyword(term="climate", normalized_term="climate", is_entity=False)
+    db.add_all([stale, stoplisted, valid, gazetteer_named, plain_term])
+    db.commit()
+
+    out = reconcile_keyword_entity_status(db)
+    assert out["checked"] == 3  # stale + stoplisted + valid (entity_type == "entity" only)
+    assert out["downgraded"] == 2  # stale + stoplisted
+
+    db.expire_all()
+    assert db.get(Keyword, stale.id).is_entity is False
+    assert db.get(Keyword, stale.id).entity_type is None
+    assert db.get(Keyword, stoplisted.id).is_entity is False
+    assert db.get(Keyword, stoplisted.id).entity_type is None
+    assert db.get(Keyword, valid.id).is_entity is True  # untouched -- still a real acronym
+    assert db.get(Keyword, valid.id).entity_type == "entity"
+    assert db.get(Keyword, gazetteer_named.id).is_entity is True  # untouched -- out of scope
+    assert db.get(Keyword, gazetteer_named.id).entity_type == "location"
+    assert db.get(Keyword, plain_term.id).is_entity is False  # untouched -- never scanned
+
+    # Idempotent: a second run finds nothing left to downgrade.
+    out2 = reconcile_keyword_entity_status(db)
+    assert out2["checked"] == 1 and out2["downgraded"] == 0  # only "WHO" remains entity_type="entity"
+
+
 def test_reconcile_keyword_language_no_majority_is_left_alone(db):
     """A 1-fr / 1-en split has no clear majority (not > half) -> not flipped."""
     from src.analytics.store import reconcile_keyword_language

@@ -43,6 +43,64 @@ def test_local_anchor_verify_unknown_root_fails(tmp_path):
     p.close()
 
 
+def test_local_anchor_book_stays_plaintext_when_the_corpus_is(tmp_path):
+    """Regression pin for the fix below: with no process passphrase set (the
+    default test environment, OO_DB_PLAINTEXT=1), a fresh anchor book is still
+    plaintext -- unchanged behaviour for the common/test case."""
+    from src.database.connect import is_encrypted_file
+
+    db_path = tmp_path / "anchors.db"
+    p = LocalAnchorProvider(db_path=str(db_path))
+    p.anchor(ROOT)
+    p.close()
+    assert is_encrypted_file(db_path) is False
+
+
+def test_local_anchor_book_encrypts_under_the_corpus_passphrase(tmp_path, monkeypatch):
+    """Audit finding 2026-07-17 (L1): LocalAnchorProvider used a raw sqlite3.connect(),
+    so the anchor book was ALWAYS written unencrypted regardless of the main corpus's
+    own encryption setting -- even though it carries caller-supplied custody metadata.
+    Fixed to use the ONE connection factory (mirroring CustodyLog's identical
+    precedent for its sibling custody_log.db): with a process passphrase set (the
+    unlocked-encrypted-corpus state), a FRESH anchor book must be created encrypted
+    under that SAME passphrase, genuinely unreadable without it."""
+    from src.database.connect import (
+        DatabaseLockedError,
+        WrongPassphraseError,
+        connect,
+        is_encrypted_file,
+        set_passphrase,
+    )
+
+    # The suite-wide default is OO_DB_PLAINTEXT=1 (tests/conftest.py); a fresh file's
+    # ambient plaintext opt-out outranks the process passphrase (connect.py's own
+    # documented precedence), so this test opts back IN to encrypted-by-default —
+    # the same technique test_sqlcipher.py already uses for the identical reason.
+    monkeypatch.delenv("OO_DB_PLAINTEXT", raising=False)
+    db_path = tmp_path / "anchors.db"
+    set_passphrase("anchor-test-secret")
+    try:
+        p = LocalAnchorProvider(db_path=str(db_path))
+        receipt = p.anchor(ROOT, {"case": "X"})
+        p.close()
+        assert is_encrypted_file(db_path) is True
+        # Round-trips correctly with the SAME key.
+        p2 = LocalAnchorProvider(db_path=str(db_path))
+        ok, _ = p2.verify(receipt)
+        assert ok
+        p2.close()
+        # Genuinely encrypted, not just superficially: the wrong key raises loudly
+        # (connect()'s own HMAC readability check) rather than silently opening.
+        with pytest.raises(WrongPassphraseError):
+            connect(db_path, key="wrong-secret")
+    finally:
+        set_passphrase(None)
+    # And a LOCKED corpus (passphrase cleared, but the file already exists encrypted)
+    # must fail loudly rather than silently falling back to plaintext.
+    with pytest.raises(DatabaseLockedError):
+        LocalAnchorProvider(db_path=str(db_path))
+
+
 def test_public_chain_providers_refuse_honestly():
     for name in ("ethereum", "ipfs", "arweave"):
         prov = get_provider(name)

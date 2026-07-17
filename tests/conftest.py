@@ -18,11 +18,21 @@ for the JSON-file state that is read at runtime.
 
 from __future__ import annotations
 
+import atexit
 import importlib.util
 import os
+import shutil
 import tempfile
 
 _ISOLATED = tempfile.mkdtemp(prefix="oo-tests-")
+# Audit finding 2026-07-17: this directory backs SQLite DBs, keys, caches, and
+# custody logs for the WHOLE test session and was never cleaned up -- every pytest
+# invocation left a fresh oo-tests-* directory behind (accumulating in the OS temp
+# dir across CI runs / local dev). atexit fires at interpreter shutdown regardless
+# of which pytest hooks ran, so this cleans up even if the suite is interrupted.
+# ignore_errors=True: a stray open handle (e.g. a not-yet-closed sqlite3 connection
+# at shutdown) must never turn cleanup into a crash on the way out.
+atexit.register(shutil.rmtree, _ISOLATED, ignore_errors=True)
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")

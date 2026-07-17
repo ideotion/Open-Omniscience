@@ -190,6 +190,97 @@ def test_track_document_is_idempotent_on_duplicate_revision(db):
     assert db.query(LawDocument).count() == 2
 
 
+def test_track_document_absorbs_a_sqlcipher3_style_duplicate_revision(db, monkeypatch):
+    """Audit finding 2026-07-17: track_document's duplicate-revision recovery caught
+    only sqlalchemy.exc.IntegrityError, but on the ENCRYPTED (sqlcipher3) store a
+    unique-constraint collision surfaces as the driver's OWN unwrapped exception
+    class -- the same cross-driver divergence already fixed for
+    is_locked_error/classify_restore_error/src/ingest/email.py. Simulates that exact
+    exception (a distinct class, unrelated to sqlite3's, injected the same way
+    tests/test_classify_restore_error_sqlcipher.py does) to prove the real
+    is_integrity_error-based dispatch handles it without crashing the pass."""
+    import sys
+    import types
+
+    from src.database import write as write_mod
+
+    class _FakeSqlcipherIntegrityError(Exception):
+        pass
+
+    import sqlite3
+
+    assert not issubclass(_FakeSqlcipherIntegrityError, sqlite3.IntegrityError), (
+        "the fixture must be a genuinely UNRELATED class -- the whole point of the bug"
+    )
+    fake_dbapi2 = types.SimpleNamespace(IntegrityError=_FakeSqlcipherIntegrityError)
+    fake_pkg = types.SimpleNamespace(dbapi2=fake_dbapi2)
+    monkeypatch.setitem(sys.modules, "sqlcipher3", fake_pkg)
+    monkeypatch.setitem(sys.modules, "sqlcipher3.dbapi2", fake_dbapi2)
+    write_mod._db_integrity_error_types.cache_clear()
+
+    doc = LawDocument(jurisdiction="xx", title="Dup Act", url="https://law.test/dup2", watched=True)
+    db.add(doc)
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    assert track_document(db, fetcher, doc)["status"] == "baseline"
+
+    # Force the collision condition (same setup as test_track_document_is_idempotent_
+    # on_duplicate_revision): the doc "forgot" its baseline so the baseline path
+    # re-runs against an already-present (document_id, content_hash) revision.
+    doc.baseline_text = None
+    doc.baseline_hash = None
+    doc.last_hash = None
+    db.commit()
+
+    # The real UNIQUE-constraint violation raises at session.flush() (where the
+    # actual INSERT is issued), not at the later session.commit() -- match that.
+    # Trigger ONLY when a LawRevision is actually pending (i.e. the flush track_
+    # document itself issues right after `session.add(rev)`) -- an earlier,
+    # UNRELATED autoflush fires first here (SQLAlchemy reloads `doc`'s expired
+    # attributes -- expire_on_commit -- the moment track_document's second call
+    # reads `doc.url`), so a naive "raise on the first flush call" trigger would
+    # hit the wrong flush and never reach the code path under test.
+    real_flush = db.flush
+
+    def _flush_raise_when_revision_pending(*a, **kw):
+        if any(isinstance(o, LawRevision) for o in db.new):
+            raise _FakeSqlcipherIntegrityError(
+                "UNIQUE constraint failed: law_revisions.document_id, law_revisions.content_hash"
+            )
+        return real_flush(*a, **kw)
+
+    monkeypatch.setattr(db, "flush", _flush_raise_when_revision_pending)
+    try:
+        res = track_document(db, fetcher, doc)  # same page => same content_hash => would collide
+    finally:
+        write_mod._db_integrity_error_types.cache_clear()  # never leak the fake into other tests
+
+    assert res["status"] == "duplicate"  # absorbed via is_integrity_error, not raised
+    assert db.query(LawRevision).filter_by(document_id=doc.id).count() == 1  # no duplicate row
+
+
+def test_track_document_reraises_a_genuinely_unexpected_exception(db, monkeypatch):
+    """A failure that is neither a lock nor an integrity violation must still surface
+    loudly -- never be silently swallowed as a duplicate."""
+    doc = LawDocument(jurisdiction="xx", title="Boom Act", url="https://law.test/boom", watched=True)
+    db.add(doc)
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+
+    real_flush = db.flush
+
+    def _flush_raise_when_revision_pending(*a, **kw):
+        if any(isinstance(o, LawRevision) for o in db.new):
+            raise RuntimeError("disk full")
+        return real_flush(*a, **kw)
+
+    monkeypatch.setattr(db, "flush", _flush_raise_when_revision_pending)
+    with pytest.raises(RuntimeError, match="disk full"):
+        track_document(db, fetcher, doc)
+
+
 def test_track_watched_tally_and_fetch_error(db):
     db.add(LawDocument(jurisdiction="uk", title="A", url="https://ex.test/a"))
     db.commit()

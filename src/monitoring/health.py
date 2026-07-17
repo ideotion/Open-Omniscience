@@ -92,3 +92,22 @@ def check_source(source, *, fetcher: EthicalFetcher) -> SourceHealth:
             now,
             detail=str(exc),
         )
+    except Exception as exc:  # noqa: BLE001 - audit finding 2026-07-17 (L3): the caller
+        # (api/monitoring.py's sources_health) runs this in a plain list comprehension
+        # over every probed source with NO per-source try/except, so ANY exception type
+        # this function doesn't explicitly catch aborts the WHOLE health-check batch --
+        # every other source's result is lost too. Today every foreseeable I/O failure
+        # path in EthicalFetcher.fetch() already wraps into a FetchError subclass, but
+        # that is an IMPLICIT contract this function silently depends on; a genuinely
+        # unforeseen exception (a library bug, a malformed response) must degrade this
+        # ONE source's result honestly rather than take the whole batch down with it.
+        latency = (time.monotonic() - started) * 1000.0
+        return SourceHealth(
+            getattr(source, "id", None),
+            source.name,
+            url,
+            HealthStatus.UNKNOWN,
+            round(latency, 1),
+            now,
+            detail=f"unexpected error: {exc}",
+        )

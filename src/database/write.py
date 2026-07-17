@@ -103,6 +103,47 @@ def is_locked_error(exc: BaseException) -> bool:
     return False
 
 
+@functools.lru_cache(maxsize=1)
+def _db_integrity_error_types() -> tuple[type, ...]:
+    """The IntegrityError classes a UNIQUE/FK/NOT-NULL violation can surface as.
+
+    Same cross-driver divergence as :func:`is_locked_error`: ``sqlcipher3`` (the
+    ENCRYPTED store's driver -- the default) defines its OWN ``IntegrityError``
+    class, not a subclass of stdlib ``sqlite3.IntegrityError`` or
+    ``sqlalchemy.exc.IntegrityError``, so a narrow
+    ``except sqlalchemy.exc.IntegrityError`` silently never matches on the
+    encrypted store. This recurred independently in ``src/backup/merge.py``
+    (``_db_integrity_error_types``, field bug 2026-07-16) and
+    ``src/ingest/email.py`` (``_is_integrity_error``, 2026-07-17) before this
+    shared, importable version was added — new call sites should use THIS one
+    rather than writing a fifth copy. Guarded: sqlcipher3 may be absent in a
+    core install; cached since the imports are resolved once.
+    """
+    import sqlite3
+
+    from sqlalchemy.exc import IntegrityError
+
+    types: list[type] = [IntegrityError, sqlite3.IntegrityError]
+    try:
+        from sqlcipher3.dbapi2 import IntegrityError as _SqlcipherIntegrityError
+
+        types.append(_SqlcipherIntegrityError)
+    except Exception:  # noqa: BLE001 - sqlcipher3 absent in a core install -> stdlib path only
+        pass
+    return tuple(types)
+
+
+def is_integrity_error(exc: BaseException) -> bool:
+    """True iff ``exc`` (or a wrapped cause/context) is a UNIQUE/FK/NOT-NULL/CHECK
+    constraint violation, across the sqlalchemy/sqlite3/sqlcipher3 cross-driver
+    divergence (see :func:`_db_integrity_error_types`). Unlike :func:`is_locked_error`
+    no message substring check is needed: every member of this type tuple IS,
+    by construction, a constraint violation.
+    """
+    types = _db_integrity_error_types()
+    return any(isinstance(e, types) for e in _exc_chain(exc))
+
+
 def run_write_with_retry[T](
     work: Callable[[], T],
     *,

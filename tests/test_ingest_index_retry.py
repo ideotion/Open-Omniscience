@@ -90,6 +90,115 @@ def test_keyword_indexing_retries_a_transient_lock_and_loses_no_data(monkeypatch
     assert n > 0, "keywords were dropped despite the retry -- the field-log loss is back"
 
 
+def test_reindex_articles_retries_a_transient_lock_and_loses_no_data(monkeypatch):
+    """Audit finding 2026-07-17: reindex_articles (the post-restore re-index path)
+    never honoured index_article's own "re-raise a lock so the caller retries"
+    contract -- a transient lock permanently marked the article "failed" instead
+    of retrying. Same fixture/shape as the ingest-path test above, applied to the
+    batch re-index caller."""
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import reindex_articles
+
+    init_db()
+    source_id, article_id = _seed_article(
+        "The election commission met. Inflation rose. The election result is contested."
+    )
+
+    real_index = store_mod.index_article
+    calls = {"n": 0}
+
+    def flaky_index(session, article, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _locked()  # transient lock on the first try
+        return real_index(session, article, **kw)
+
+    monkeypatch.setattr(store_mod, "index_article", flaky_index)
+
+    with session_scope() as s:
+        out = reindex_articles(s, extractor=get_extractor("baseline"), article_ids=[article_id])
+
+    assert calls["n"] >= 2, "the transient lock was not retried"
+    assert out["reindexed"] == 1 and out["failed"] == 0
+    with session_scope() as s:
+        n = s.query(KeywordMention).filter_by(article_id=article_id).count()
+    assert n > 0, "keywords were dropped despite the retry"
+
+
+def test_reindex_all_batch_per_article_path_retries_a_transient_lock(monkeypatch):
+    """Same fix, exercising reindex_all_batch's commit_batch<=1 (per-article) path."""
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import reindex_all_batch
+
+    init_db()
+    _source_id, article_id = _seed_article(
+        "The election commission met. Inflation rose. The election result is contested."
+    )
+
+    real_index = store_mod.index_article
+    calls = {"n": 0}
+
+    def flaky_index(session, article, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _locked()
+        return real_index(session, article, **kw)
+
+    monkeypatch.setattr(store_mod, "index_article", flaky_index)
+
+    with session_scope() as s:
+        out = reindex_all_batch(
+            s, extractor=get_extractor("baseline"), after_id=article_id - 1, limit=1, commit_batch=1
+        )
+
+    assert calls["n"] >= 2, "the transient lock was not retried"
+    assert out["reindexed"] == 1 and out["failed"] == 0
+    with session_scope() as s:
+        n = s.query(KeywordMention).filter_by(article_id=article_id).count()
+    assert n > 0, "keywords were dropped despite the retry"
+
+
+def test_reindex_all_batch_redo_after_batch_rollback_retries_a_transient_lock(monkeypatch):
+    """Exercises reindex_all_batch's commit_batch>1 path: a batch commit failure
+    falls back to _redo_committed (one article at a time), which must ALSO retry a
+    transient lock rather than immediately marking the article failed.
+
+    Mocks session.commit() (not index_article) so the per-article commit=False
+    accumulation step succeeds normally, and only the actual commit calls fail --
+    call 1 is the batch's own session.commit() inside _flush() (forces the
+    rollback-then-redo fallback), call 2 is the redo's own FIRST commit attempt
+    (proving the redo path's own retry -- not just the outer batch-fallback --
+    is what recovers this article), call 3 (the redo's retry) succeeds."""
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import reindex_all_batch
+
+    init_db()
+    _source_id, article_id = _seed_article(
+        "The election commission met. Inflation rose. The election result is contested."
+    )
+
+    with session_scope() as s:
+        real_commit = s.commit
+        calls = {"n": 0}
+
+        def flaky_commit(*a, **kw):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise _locked()
+            return real_commit(*a, **kw)
+
+        monkeypatch.setattr(s, "commit", flaky_commit)
+        out = reindex_all_batch(
+            s, extractor=get_extractor("baseline"), after_id=article_id - 1, limit=1, commit_batch=5
+        )
+
+    assert calls["n"] >= 3, "the redo-after-rollback path did not retry the transient lock"
+    assert out["reindexed"] == 1 and out["failed"] == 0
+    with session_scope() as s:
+        n = s.query(KeywordMention).filter_by(article_id=article_id).count()
+    assert n > 0, "keywords were dropped despite the retry"
+
+
 def test_exhausted_lock_degrades_gracefully_without_breaking_ingestion(monkeypatch):
     """If every retry still locks, indexing logs + gives up -- ingestion is never
     broken (the best-effort contract). The article survives; only its index is

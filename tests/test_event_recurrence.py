@@ -51,6 +51,27 @@ def test_next_occurrence_respects_origin_year():
     assert catalog._next_occurrence(None, None, today) is None
 
 
+def test_next_occurrence_leap_day_skips_a_non_leap_year_instead_of_aborting():
+    """Audit finding 2026-07-17: a fixed-date event whose day doesn't exist in a
+    PARTICULAR scanned year (a Feb 29 "leap day" entry, in a non-leap year) used
+    to abort the WHOLE scan (`return None`) instead of trying the next candidate
+    year -- so a genuine recurring leap-day event reported "no next occurrence"
+    in any non-leap starting year, even though a later year in the very same
+    scanned window has a perfectly valid answer. 2027 is not a leap year; 2028
+    is -- the old code returned None here, the fix correctly finds 2028-02-29."""
+    today = date(2027, 3, 1)  # scan range is [2027 (non-leap), 2028 (leap)]
+    assert catalog._next_occurrence(2, 29, today) == "2028-02-29"
+
+
+def test_span_for_leap_day_start_skips_a_non_leap_year_instead_of_aborting():
+    """Same fix, for _span_for's 3-year scan window."""
+    e = {"month": 2, "day": 29, "end_month": 3, "end_day": 1}
+    # 2027 (today.year - 1) and 2027's neighbours -- only 2028 is a leap year.
+    s = catalog._span_for(e, date(2028, 1, 15))
+    assert s is not None
+    assert s["start"] == "2028-02-29"
+
+
 def test_span_for_active_and_upcoming():
     # "Dry January": Jan 1 -> Jan 31. Mid-January today => active.
     e = {"month": 1, "day": 1, "end_month": 1, "end_day": 31}

@@ -40,10 +40,10 @@ import hashlib
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, LawDocument, Source
+from src.database.write import is_integrity_error
 
 _LOG = logging.getLogger(__name__)
 
@@ -130,7 +130,13 @@ def upsert_law_corpus_article(
             art.published_at = doc.last_checked_at
     try:
         session.commit()
-    except IntegrityError:
+    except Exception as exc:  # noqa: BLE001 - is_integrity_error is the precise discriminator
+        # Audit finding 2026-07-17: `except IntegrityError` (sqlalchemy.exc) never
+        # matched on the encrypted (sqlcipher3) store, whose driver raises its OWN
+        # unwrapped exception class -- the same cross-driver divergence already
+        # fixed for is_locked_error/classify_restore_error/src/law/track.py.
+        if not is_integrity_error(exc):
+            raise
         # Article.hash is GLOBALLY unique, so identical text already in the corpus
         # (model legislation copied across jurisdictions, or a law whose text matches
         # a wiki page) collides. Dedup honestly — never store the same text twice, and

@@ -81,6 +81,28 @@ def test_fires_on_threshold_with_new_evidence(db):
     assert lst["last_matched_at"] is not None and len(lst["history"]) == 1
 
 
+def test_recent_matching_is_chunked_and_byte_identical(db, monkeypatch):
+    """Audit finding 2026-07-17: _recent_matching's Article.id.in_(ids) date lookup
+    was unchunked, but the default matcher (_fts_matcher -> search_ids) can return
+    up to its own _MAX_CANDIDATES (20000) -- well past SQLite's historical ~999
+    bound-variable ceiling. A broad watch would raise "too many SQL variables" on
+    EVERY scrape pass, silently swallowed by evaluate_watches's per-watch
+    try/except -- so the watch would simply never fire again, with no visible
+    error. Forces chunking with a tiny W._IN_CHUNK (5 matched articles needing 5
+    separate chunk queries of 1) and asserts the result is BYTE-IDENTICAL to the
+    unchunked default -- chunking must be a pure implementation detail."""
+    arts = [_art(db, f"c{i}") for i in range(5)]
+    ids = [a.id for a in arts]
+    W.create_watch(db, name="W", query="flood", threshold=1, window_days=7)
+    db.commit()
+
+    monkeypatch.setattr(W, "_IN_CHUNK", 1, raising=True)
+    chunked = W._recent_matching(db, "flood", 7, lambda s, q: list(ids))
+    monkeypatch.setattr(W, "_IN_CHUNK", 900, raising=True)
+    unchunked = W._recent_matching(db, "flood", 7, lambda s, q: list(ids))
+    assert sorted(chunked) == sorted(unchunked) == sorted(ids)
+
+
 def test_does_not_refire_on_same_articles_but_fires_on_new(db):
     a1, a2, a3 = _art(db, "a1"), _art(db, "a2"), _art(db, "a3")
     w = W.create_watch(db, name="W", query="flood", threshold=3, window_days=7)

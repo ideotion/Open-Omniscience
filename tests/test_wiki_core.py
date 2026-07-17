@@ -134,3 +134,14 @@ def test_ores_damaging_flagged():
 def test_burst_flagged():
     r = flag_revision(delta_bytes=100, tags=[], burst_count=6)
     assert r.flagged and "burst" in r.reasons
+
+
+def test_burst_flagged_even_if_small_and_minor():
+    """Audit finding 2026-07-17 (L2): burst_count is computed server-side from the
+    fetched revision batch, NOT self-declared like `minor` -- so a burst must stand
+    even when every edit in it is small and self-tagged "minor" (the same principle
+    test_revert_tag_flagged_even_if_small already pins for revert tags). Before the
+    fix this silently evaporated: a bad-faith burst of tiny "minor"-tagged edits
+    could reach any burst_count and never be flagged."""
+    r = flag_revision(delta_bytes=50, tags=[], minor=True, burst_count=6)
+    assert r.flagged and "burst" in r.reasons

@@ -32,6 +32,20 @@ from src.database.models import (
 )
 
 
+# Chunk size for id IN(...) queries -- stay under SQLite's historical ~999
+# bound-variable ceiling, the same repo-wide invariant as latest.py:_SQL_IN_CHUNK
+# and the per-module *_IN_CHUNK helpers (corroboration.py/story_propagation.py/
+# convergence.py/disputed_chronology.py/source_quality.py) and this module's own
+# GRAPH_ARTICLE_CAP. Used where a derived id list (e.g. distinct co-occurring
+# keyword ids) has no independent bound of its own (audit finding 2026-07-17).
+_IN_CHUNK = 900
+
+
+def _chunked(ids: list[int], size: int = _IN_CHUNK):
+    for i in range(0, len(ids), size):
+        yield ids[i : i + size]
+
+
 def kind_of(kw: Keyword) -> str:
     if not kw.is_entity:
         return "term"
@@ -1558,26 +1572,36 @@ def associations(
     #     ``article_count`` counter (BYTE-IDENTICAL: it IS COUNT(DISTINCT article_id), kept
     #     exact by store.py + reconciled), so ZERO query; when a window is set the counters
     #     don't apply, so n_b comes from ONE grouped query over the co-keyword ids.
+    # Audit finding 2026-07-17: `kids` is the set of DISTINCT co-occurring keyword
+    # ids across `target_articles` (already bounded to GRAPH_ARTICLE_CAP articles),
+    # but the number of DISTINCT KEYWORDS mentioned across those articles has no
+    # independent bound of its own -- easily >900 in a large, multilingual,
+    # many-source corpus even at min_cooccur's default of 2. Chunked below (the
+    # same `.in_()` overflow class the neighbouring article_cap fix was written
+    # for, on the query one step downstream of it).
     kids = [kid for kid, _ in co_rows]
-    k2_by_id = (
-        {k.id: k for k in session.query(Keyword).filter(Keyword.id.in_(kids))} if kids else {}
-    )
+    k2_by_id: dict[int, Any] = {}
+    for chunk in _chunked(kids):
+        k2_by_id.update({k.id: k for k in session.query(Keyword).filter(Keyword.id.in_(chunk))})
     nb_by_id: dict[int, int] = {}
     if kids and (start or end):
-        nb_by_id = {
-            int(kid): int(c)
-            for kid, c in _window_filter(
-                session.query(
-                    KeywordMention.keyword_id,
-                    func.count(func.distinct(KeywordMention.article_id)),
-                ),
-                start,
-                end,
+        for chunk in _chunked(kids):
+            nb_by_id.update(
+                {
+                    int(kid): int(c)
+                    for kid, c in _window_filter(
+                        session.query(
+                            KeywordMention.keyword_id,
+                            func.count(func.distinct(KeywordMention.article_id)),
+                        ),
+                        start,
+                        end,
+                    )
+                    .filter(KeywordMention.keyword_id.in_(chunk))
+                    .group_by(KeywordMention.keyword_id)
+                    .all()
+                }
             )
-            .filter(KeywordMention.keyword_id.in_(kids))
-            .group_by(KeywordMention.keyword_id)
-            .all()
-        }
     pairs = []
     stored_lang: dict[str, str | None] = {}
     for kid, co in co_rows:

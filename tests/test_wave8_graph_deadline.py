@@ -382,6 +382,27 @@ def test_associations_no_cap_omits_bounded_fields():
     s.close()
 
 
+def test_associations_kids_lookup_is_chunked_and_byte_identical(monkeypatch):
+    """Audit finding 2026-07-17: `kids` (the distinct co-occurring keyword ids
+    derived from co_rows) fed an UNCHUNKED Keyword.id.in_(kids) /
+    KeywordMention.keyword_id.in_(kids), with no bound of its own even though
+    target_articles is capped -- a term co-occurring with more than SQLite's
+    ~999-variable ceiling worth of DISTINCT keywords would crash. Forces
+    chunking with a small q._IN_CHUNK (10 co-occurring keywords needing 2-id
+    chunks) and asserts the result is BYTE-IDENTICAL to the unchunked default
+    -- chunking must be a pure implementation detail, never change the answer."""
+    monkeypatch.setattr(q, "_IN_CHUNK", 2, raising=True)
+    s = _session()
+    hub = _seed_dense(s, core=10, sats=3, block=5)  # 10 distinct co-occurring keywords
+
+    chunked = q.associations(s, hub, group=False, min_cooccur=1)
+    monkeypatch.setattr(q, "_IN_CHUNK", 900, raising=True)
+    unchunked = q.associations(s, hub, group=False, min_cooccur=1)
+    assert chunked["pairs"] == unchunked["pairs"]
+    assert len(chunked["pairs"]) >= 10  # actually exercised multiple chunks, not a vacuous pass
+    s.close()
+
+
 def test_associations_with_no_explicit_cap_still_has_a_sqlite_safety_net(monkeypatch):
     """Audit finding 2026-07-17: GET /api/insights/associations (which "powers the
     mind-map") and the top_terms/trending cooccur enrichment both call associations()

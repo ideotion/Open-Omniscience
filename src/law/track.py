@@ -22,9 +22,8 @@ import logging
 import re
 from datetime import UTC, datetime
 
-from sqlalchemy.exc import IntegrityError
-
 from src.database.models import LawDocument, LawRevision
+from src.database.write import is_integrity_error
 from src.wiki.flagging import flag_revision
 
 _LOG = logging.getLogger(__name__)
@@ -156,7 +155,14 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
             session.flush()  # materialise rev.id so latest_text_revid can anchor it
             doc.latest_text_revid = rev.id
             session.commit()
-        except IntegrityError:
+        except Exception as exc:  # noqa: BLE001 - is_integrity_error is the precise discriminator
+            # Audit finding 2026-07-17: `except IntegrityError` (sqlalchemy.exc) never
+            # matched on the encrypted (sqlcipher3) store, whose driver raises its OWN
+            # unwrapped exception class -- the same cross-driver divergence already
+            # fixed for is_locked_error/classify_restore_error/_is_integrity_error.
+            # A genuinely unexpected failure must still surface, never be swallowed.
+            if not is_integrity_error(exc):
+                raise
             # This (document_id, content_hash) baseline revision already exists (a
             # concurrent pass or a re-process). IDEMPOTENT: roll back the poisoned
             # transaction so it can NEVER roll back the whole scrape pass, then cache
@@ -237,7 +243,11 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         session.flush()  # materialise rev.id so latest_text_revid can anchor it
         doc.latest_text_revid = rev.id
         session.commit()
-    except IntegrityError:
+    except Exception as exc:  # noqa: BLE001 - is_integrity_error is the precise discriminator
+        # Audit finding 2026-07-17: same cross-driver fix as the baseline-capture
+        # branch above -- see its comment.
+        if not is_integrity_error(exc):
+            raise
         # This (document_id, content_hash) revision already exists — a concurrent pass or
         # a re-process. IDEMPOTENT: roll back so a duplicate can never poison and roll back
         # the whole scrape pass, then just advance the doc's last-seen state.

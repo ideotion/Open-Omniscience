@@ -67,16 +67,24 @@ def recent_results(limit: int = 1000) -> list[dict]:
 
 
 def _check_host_robots(fetcher, host: str) -> dict:
-    """One host's robots verdict (the same honest taxonomy as the source preflight)."""
+    """One host's robots verdict (the same honest taxonomy as the source preflight).
+
+    Audit finding 2026-07-17 (SSRF, CWE-918): same fix as
+    ``src/monitoring/preflight.py::_check_one`` -- a raw
+    ``fetcher.session.get(url, allow_redirects=True)`` bypasses
+    ``EthicalFetcher``'s SSRF guard and per-hop redirect revalidation. Guard
+    the initial target explicitly, then route through
+    ``EthicalFetcher._guarded_redirect_get`` (the same guarded path every
+    real fetch uses) instead of the raw session.
+    """
     rec: dict = {
         "kind": "robots",
         "host": host,
         "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     try:
-        resp = fetcher.session.get(
-            f"https://{host}/robots.txt", timeout=fetcher.timeout, allow_redirects=True
-        )
+        fetcher._guard_target(urlparse(f"https://{host}").hostname)
+        resp, _final = fetcher._guarded_redirect_get(f"https://{host}/robots.txt")
         code = resp.status_code
         if code == 200:
             rp = RobotFileParser()

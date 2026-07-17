@@ -318,7 +318,15 @@ def save_settings(updates: dict) -> SchedulerSettings:
     _ranged("collect_parallelism", 1, _MAX_PARALLELISM, "collect_parallelism")
     _ranged("collect_target_kbps", _MIN_TARGET_KBPS, _MAX_TARGET_KBPS, "collect_target_kbps")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")
-    _ranged("max_sources_per_run", 1, 1000, "max_sources_per_run")
+    # Audit finding 2026-07-17: this was `1, 1000` -- but max_sources_per_run is
+    # documented + tested (tests/test_no_source_cap.py) as "0 = UNBOUNDED (cover
+    # every source) -- the default. Any cap silently SELECTS which sources to
+    # skip, which cannot be justified (maintainer 2026-06-13)", and load_settings
+    # (above) already coerces it with bounds (0, 1_000_000). The stale 1..1000
+    # range here meant a client could never explicitly PUT {"max_sources_per_
+    # run": 0} to reset the cap to unbounded, and could never set a cap above
+    # 1000 either -- a real regression relative to the maintainer's own ruling.
+    _ranged("max_sources_per_run", 0, 1_000_000, "max_sources_per_run")
     _ranged("crawl_max_depth", 0, 6, "crawl_max_depth")
     _ranged("crawl_max_pages", 1, 500, "crawl_max_pages")
 

@@ -28,7 +28,6 @@ naively (a funded wallet, a logged RPC endpoint), can deanonymise a source.
 from __future__ import annotations
 
 import json
-import sqlite3
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -99,7 +98,24 @@ class LocalAnchorProvider(AnchorProvider):
 
             db_path = str(data_dir() / "anchors.db")
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path)
+        # Audit finding 2026-07-17 (L1): a raw sqlite3.connect() always created the
+        # anchor book UNENCRYPTED regardless of the main corpus's own encryption
+        # setting -- even though it carries caller-supplied custody metadata. Use
+        # the ONE connection factory instead, mirroring CustodyLog's exact
+        # precedent (src/custody/log.py) for its sibling custody_log.db: opens
+        # encrypted under THE SAME passphrase when the corpus is encrypted +
+        # unlocked; a FRESH anchor book follows the main store's own at-rest
+        # state, so a plaintext-opt-out setup never hits a lock on first use.
+        from src.database.connect import connect as _db_connect
+        from src.database.connect import get_passphrase, is_encrypted_file
+
+        create_enc: bool | None = None
+        if get_passphrase() is None:
+            from src.paths import data_dir as _dd
+
+            if is_encrypted_file(_dd() / "open_omniscience.db") is False:
+                create_enc = False
+        self.conn = _db_connect(db_path, create_encrypted=create_enc)
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS anchors (
