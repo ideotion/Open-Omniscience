@@ -949,8 +949,15 @@ class BackgroundScheduler:
         Returns False if a run (scheduled or manual) is already in progress, so
         runs never overlap and stampede a source.
         """
-        if self._active:
-            return False
+        # Audit finding 2026-07-17 (L4): read under _state_lock, matching every OTHER
+        # instance field it protects -- the real overlap guarantee is _run_lock (a
+        # real threading.Lock acquired non-blocking in _do_run), so this quick check
+        # was already safe in practice (a bare bool read/write is GIL-atomic and a
+        # stale read here at worst spawns a thread that immediately no-ops on the
+        # lock), but consistent locking removes the reliance on that implicit fact.
+        with self._state_lock:
+            if self._active:
+                return False
         threading.Thread(target=self._do_run, name="oo-scrape-now", daemon=True).start()
         return True
 
@@ -1048,7 +1055,8 @@ class BackgroundScheduler:
         # Skip if another run holds the lock (manual + scheduled racing).
         if not self._run_lock.acquire(blocking=False):
             return
-        self._active = True
+        with self._state_lock:
+            self._active = True
         started = datetime.now(UTC)
         report: dict = {"started_at": started.isoformat(timespec="seconds")}
         try:
@@ -1086,7 +1094,8 @@ class BackgroundScheduler:
 
             record_run(report)
             _phase_set(None)
-            self._active = False
+            with self._state_lock:
+                self._active = False
             self._run_lock.release()
 
     def _run_off_peak_maintenance(self) -> None:
@@ -1123,7 +1132,8 @@ class BackgroundScheduler:
         # acquire and silently no-op while replying started:true (skeptic finding).
         # Setting _active + a labelled phase makes run_now honestly return False and
         # status() show the scheduler busy for the (bounded) maintenance window.
-        self._active = True
+        with self._state_lock:
+            self._active = True
         _phase_set("maintenance")
         try:
             self._last_maint = now
@@ -1136,7 +1146,8 @@ class BackgroundScheduler:
             _LOG.warning("off-peak maintenance failed", exc_info=True)
         finally:
             _phase_set(None)
-            self._active = False
+            with self._state_lock:
+                self._active = False
             self._run_lock.release()
 
     def _default_run_once(self) -> dict:
