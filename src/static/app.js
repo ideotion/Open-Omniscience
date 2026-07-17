@@ -271,6 +271,24 @@
       if (fin) fin.hidden = !last;
       if (step === "lang") _gwRenderLangs();
       if (step === "sources") _gwRenderSources();
+      if (step === "finish") _gwRenderFinish();
+    }
+    // The finish step's own informed-consent disclosure (product feedback 2026-07-17:
+    // the SAME local-interface-IP info used to appear only in the SEPARATE #net-consent
+    // dialog AFTER clicking "Go online" here -- two consecutive screens asking the same
+    // thing). Reads-only (GET /api/system/interfaces, no state change) so this is safe to
+    // fetch as soon as the step is shown, before the user has decided anything.
+    async function _gwRenderFinish() {
+      const box = $("gw-ifaces"); if (!box) return;
+      box.textContent = "…";
+      const t = _gwT;
+      try {
+        const d = await api("/api/system/interfaces");
+        const rows = (d.interfaces || []).map((i) => `${i.interface}: ${i.addresses.join(", ")}`);
+        box.textContent = rows.length ? rows.join("\n") : t("No non-loopback network interfaces were found.");
+      } catch (e) {
+        box.textContent = t("No non-loopback network interfaces were found.");
+      }
     }
     // S4.7 sources-by-theme step. Real catalog tag taxonomy from the app's OWN loopback
     // /api/scheduler/coverage; the config is applied via a loopback PUT /config on leaving
@@ -349,6 +367,14 @@
       if (typeof dlg.showModal === "function" && !dlg.open) dlg.showModal();
       else dlg.setAttribute("open", "");
       if (window.OOI18N && OOI18N.apply) OOI18N.apply(dlg);  // translate freshly-shown chrome
+      // Product feedback 2026-07-17: the network-status poll that decides whether to
+      // show the airplane-mode coachmark runs independently of (and typically resolves
+      // before) this wizard opening, so the coach could already be showing when the
+      // wizard's own finish step arrives with the SAME "go online" invitation. Hide it
+      // NON-permanently (never sets the "dismissed forever" flag) -- the wizard covers
+      // the teaching purpose for this session; a future session where the user is still
+      // offline (and the one-time guide won't reopen) can still show it normally.
+      if (typeof dismissNetCoach === "function") dismissNetCoach(false);
     }
     // Closing the wizard for good marks the one-time state done (the user-visible
     // Settings toggle can flip it back on for the next load). It NEVER touches the
@@ -379,19 +405,28 @@
       if (fin) fin.onclick = () => closeGuide(true);
       if (close) close.onclick = () => closeGuide(true);   // X also completes the one-time guide
       if (stay) stay.onclick = () => closeGuide(true);
-      // The ONLY path to the network from the wizard: close, then run the existing
-      // first-run flow — which itself calls ensureOnline (the ONE consent popup).
-      // The wizard never POSTs /api/system/network; the finish note states this.
+      // Product feedback 2026-07-17: this step's OWN screen now carries the informed-
+      // consent disclosure (local interface IPs, _gwRenderFinish) that used to only
+      // appear in a SEPARATE #net-consent dialog opened right after this click -- two
+      // consecutive screens confirming the same decision. ensureOnline(reason,
+      // {skipDialog:true}) still performs the ONLY POST /api/system/network in the
+      // whole app (invariant #14: it stays the ONE canonical consent-enforcing
+      // function) — it just skips re-opening its OWN dialog for a caller that has
+      // already shown the equivalent disclosure with its own confirming click.
       if (go) go.onclick = async () => {
-        const note = $("gw-finish-note");
-        if (note) note.textContent = _gwT("You'll confirm before anything connects.");
+        const t = _gwT;
+        go.disabled = true;
         await _gwApplySourcePrefs();   // persist theme/emphasis picks before collecting (loopback, no egress)
+        const online = await ensureOnline(t("Go online & start collecting"), { skipDialog: true });
+        if (!online) {
+          go.disabled = false;
+          return;   // let the user retry or choose "Stay offline" instead of closing on failure
+        }
+        if (typeof _flashNet === "function") _flashNet(true);
+        toast(t("Back online — network requests allowed again."), "ok");
+        // Once online the background collector runs continuously on its own (only
+        // airplane mode stops it) — no manual seed/ingest step or progress card needed.
         closeGuide(true);
-        // The "corpus is empty" bubble is retired (2026-06-17): going online routes
-        // through toggleNetwork() -> ensureOnline (the ONE consent popup, invariant
-        // #14); once online the background collector runs continuously on its own
-        // (only airplane mode stops it). No manual seed/ingest step or progress card.
-        if (typeof toggleNetwork === "function") toggleNetwork();
       };
       const dlg = $("guide-wizard");
       if (dlg) dlg.addEventListener("cancel", () => closeGuide(true));   // Esc completes it too
@@ -539,6 +574,14 @@
       const el = $("net-coach"), btn = $("net-toggle"); if (!el || !btn) return;
       const offline = document.body.classList.contains("net-offline") || btn.classList.contains("off");
       if (!offline) return;                              // only invite when actually offline
+      // Product feedback 2026-07-17: on a first-run install the guide wizard's OWN
+      // finish step already invites "Go online & start collecting" -- showing this
+      // bubble AT THE SAME TIME pointed two separate prompts at the same decision.
+      // The wizard covers the same teaching purpose for a first-run user, so skip
+      // the coach while it's open (openGuide() also hides it non-permanently if it
+      // was already showing, for the reverse ordering).
+      const wiz = $("guide-wizard");
+      if (wiz && wiz.open) return;
       const s = _coachState();
       if (s.dismissed || (s.seen || 0) >= 6) return;     // respected + never naggy
       s.seen = (s.seen || 0) + 1; _coachSave(s);
@@ -555,12 +598,34 @@
     // happen + the machine's LOCAL addresses (kernel tables; fetching a
     // public-IP echo pre-consent would itself be a network call, so we never
     // do it — the popup says what the public IP is instead).
-    async function ensureOnline(reason) {
+    //
+    // opts.skipDialog (product feedback 2026-07-17): for a caller that has ALREADY
+    // shown this exact disclosure (interfaces + wording) on its OWN screen with its
+    // own confirming click — today only the first-launch wizard's finish step
+    // (_gwRenderFinish) — skip re-opening #net-consent for the identical decision.
+    // This function REMAINS the only one that ever POSTs /api/system/network: a
+    // skipping caller still goes through the SAME POST + repaint below, just without
+    // a SECOND dialog on top of its own already-shown disclosure. Every other caller
+    // (the airplane toggle, collect start, wiki page add, dump start, market imports…)
+    // is unaffected — they never pass skipDialog and still get the full popup.
+    // The single POST that ever flips the network online — shared by the dialog's
+    // "ok" button AND a skipDialog caller, so there is exactly ONE place in the app
+    // that performs this request (never duplicated inline per-caller).
+    async function _postGoOnline() {
+      try {
+        const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:true})});
+        _paintNetwork(r.online);
+        return r.online;
+      } catch (e) { toast(e.message, "err"); return false; }
+    }
+    async function ensureOnline(reason, opts) {
+      opts = opts || {};
       try {
         const nm = await api("/api/system/network");
         _paintNetwork(nm.online);
         if (nm.online) return true;
       } catch (_e) { /* fall through to consent — flipping online still asks */ }
+      if (opts.skipDialog) return _postGoOnline();
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dlg = document.getElementById("net-consent");
       dlg.querySelector("#net-consent-reason b").textContent = reason;
@@ -575,13 +640,7 @@
         const ok = document.getElementById("net-consent-ok");
         const cancel = document.getElementById("net-consent-cancel");
         const done = (val) => { dlg.close(); ok.onclick = cancel.onclick = dlg.oncancel = null; resolve(val); };
-        ok.onclick = async () => {
-          try {
-            const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:true})});
-            _paintNetwork(r.online);
-            done(true);
-          } catch (e) { toast(e.message, "err"); done(false); }
-        };
+        ok.onclick = async () => done(await _postGoOnline());
         cancel.onclick = () => done(false);
         dlg.oncancel = () => done(false); // Esc = stay offline
         dlg.showModal();

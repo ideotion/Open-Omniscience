@@ -2506,11 +2506,16 @@
   <!-- First-launch guided setup (maintainer-ruled 2026-06-13): a ONE-TIME,
        stepped GUI that walks a new user to a working app. SLICE 1 = the shell +
        the Language step + the Finish/start-collecting step. Encryption and
-       sources-by-theme are placeholder steps for the next slices. The wizard is
-       the INVITATION layer only: "Go online & start collecting" routes through
-       toggleNetwork()/ensureOnline, so the ONE consent popup still fires — the
-       wizard NEVER posts the network itself. Zero-network on load by construction
-       (it only reads localStorage and reuses the existing language list). -->
+       sources-by-theme are placeholder steps for the next slices. The Language
+       step is unreachable dead DOM (dropped 2026-06-21 -- unlock.html already
+       asks first, and a permanent top-bar switcher covers changing it later; see
+       app.js's _GW_STEPS comment). The finish step's own screen carries the
+       informed-consent disclosure (local interface IPs, the same wording
+       #net-consent uses) INLINE, so "Go online & start collecting" flips the
+       network directly instead of re-opening a second identical dialog (product
+       feedback 2026-07-17: two consecutive screens for the same decision).
+       Zero-network on load by construction (only localStorage + the existing
+       language list are read before the user acts). -->
   <dialog id="guide-wizard" style="width:min(560px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)">
       <svg class="mark" viewBox="0 0 32 32" width="22" height="22" fill="none" aria-hidden="true">
@@ -2549,10 +2554,27 @@
           Collect these more often. Leave all off for an even rotation across languages.</p>
         <div id="gw-emph-langs" class="gw-langs" role="group" aria-label="Emphasize languages"></div>
       </section>
-      <!-- Step: Finish / start collecting -->
+      <!-- Step: Finish / start collecting. The consent info (local interface IPs +
+           the same disclosure #net-consent shows) is now INLINE here -- product
+           feedback 2026-07-17: showing this on a SEPARATE dialog after this step's
+           own "Go online" button was a redundant extra screen for the same
+           decision. Reusing the EXACT #net-consent strings verbatim (already keyed
+           ×12) means this needs no new locale entries. "Go online" still routes
+           through ensureOnline (app.js) -- the ONE function that ever POSTs
+           /api/system/network -- but passes skipDialog:true so it does not
+           re-open #net-consent: this screen already carries the same disclosure
+           + the confirming click, so a second identical dialog would only
+           repeat it. -->
       <section class="gw-step" data-step="finish" hidden>
         <h3 style="margin:0 0 6px">Ready to begin</h3>
         <p style="margin-top:0">The app starts offline. Nothing connects until you choose to go online — and you confirm before anything connects.</p>
+        <div class="muted" style="margin-bottom:4px">Your machine presents these local network addresses:</div>
+        <div id="gw-ifaces" style="font-family:var(--mono,monospace);font-size:12.5px;margin-bottom:8px;white-space:pre-line">…</div>
+        <div class="hint" style="margin-bottom:8px">Beyond these local addresses, the internet sees whatever
+          public address your ISP or VPN presents — this app does not check it, because checking would
+          itself be a network call.</div>
+        <div class="hint" style="margin-bottom:8px">Airplane mode here controls only this app's network — it does
+          not switch off your device's network or stop other apps. A userspace app can never equal a hardware switch.</div>
         <div class="row" style="margin-top:12px">
           <button id="gw-go-online">Go online &amp; start collecting</button>
           <button class="secondary" id="gw-stay-offline">Stay offline</button>
