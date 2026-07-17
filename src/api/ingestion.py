@@ -249,7 +249,14 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
             skipped_non_eml += 1
     source = _get_newsletter_source(db)
     try:
-        tally = ingest_emails(db, source, raws)
+        # Heavy sync work (parse + anonymise + index_article per message) runs OFF the
+        # event loop -- this is an async def handler, so without this a multi-thousand-
+        # message import freezes the single-worker server for its whole duration (the
+        # same async-def-doing-sync-work family already fixed for unlock/restore-preview/
+        # /api/articles; the sibling upload_pdfs handler already does this correctly).
+        from starlette.concurrency import run_in_threadpool
+
+        tally = await run_in_threadpool(ingest_emails, db, source, raws)
     except Exception as exc:  # ingest_emails is total; never let storage escape as a raw 500
         db.rollback()
         raise HTTPException(

@@ -4891,6 +4891,24 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     assert "runLangDetect" in ui and 'id="langdetect-btn"' in ui and "loadLangDetectCount" in ui
 
 
+def test_newsletter_eml_upload_runs_off_the_event_loop():
+    """Audit finding 2026-07-17: ``POST /api/newsletters/import`` is an ``async def``
+    handler (it needs ``await request.form(...)`` for the raised ``max_files`` cap), so it
+    runs ON the single event loop -- the same freeze family already fixed for unlock/
+    restore-preview/``/api/articles``/``upload_pdfs``. Parsing thousands of ``.eml`` files
+    through ``ingest_emails`` (anonymise + ``index_article`` per message) is exactly the
+    kind of multi-second synchronous DB work that must never block the whole server. The
+    sibling ``upload_pdfs`` handler in the SAME file already does this correctly -- this
+    pins that ``import_newsletters`` now matches it."""
+    api = (_SRC / "api" / "ingestion.py").read_text(encoding="utf-8")
+    handler = api[api.index("async def import_newsletters(") :]
+    handler = handler[: handler.index("\n\n\nclass RemoveNewslettersBody")]
+    assert "run_in_threadpool" in handler, "the heavy ingest_emails call must run off the loop"
+    assert "await run_in_threadpool(ingest_emails, db, source, raws)" in handler
+    # the sibling stays the reference pattern (regression guard against re-diverging)
+    assert "await run_in_threadpool(ingest_pdf_blobs, db, blobs)" in api
+
+
 def test_cross_time_recall_is_sacred_no_time_partitioned_corpus_tables():
     """5 TB review §F (docs/design/5TB_ARCHITECTURE_REVIEW.md): cross-time recall is SACRED — no
     design may make old data second-class. The concrete forbidden thing is a TIME-PARTITIONED /
