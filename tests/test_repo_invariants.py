@@ -416,6 +416,47 @@ def test_render_p0_result_does_not_shadow_the_real_html_escaper():
     assert body.count("esc(") >= 5
 
 
+def test_dump_and_osm_pollers_clear_before_set():
+    """Audit finding 2026-07-17 (L5): startDump's inline dump-progress poller and
+    _osmPoll each created a fresh setInterval with NO shared timer variable to clear
+    first -- unlike the established _llmPullStartPoll/_volStartPoll/_fbStartPoll
+    pattern elsewhere in this file. Starting several dump editions (the multi-pick
+    loop calls startDump once per edition) or clicking Download on several OSM
+    regions in quick succession (a real action the merged region-list UI invites)
+    stacked one independent 3s poller per start/click -- a polling-storm repeat of
+    the 2026-06-27/07-01 item-F5 family. Regression guard: both pollers must
+    clear-before-set, matching the three known-good pollers' shape exactly."""
+    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    def _fn_body(marker: str) -> str:
+        start = appjs.index(marker)
+        end = appjs.index("\n    }\n", start)
+        return appjs[start:end]
+
+    dump_poll = _fn_body("function _dumpStartPoll(")
+    assert "if (_dumpPollTimer) clearInterval(_dumpPollTimer);" in dump_poll
+    assert "_dumpStartPoll();" in _fn_body("async function startDump("), (
+        "startDump must call the shared, clearing poller, not an inline setInterval"
+    )
+
+    osm_poll = _fn_body("function _osmPoll(")
+    assert "if (_osmPollTimer) clearInterval(_osmPollTimer);" in osm_poll
+
+    # The three already-fixed pollers this fix mirrors must still clear-before-set
+    # (a regression guard on the PATTERN this fix relies on, not just the two new
+    # sites) -- each declares its own module-level timer + a `if (TIMER) clearInterval`
+    # guard before assigning a new one.
+    for timer, fn_marker in (
+        ("_llmPullPoll", "function _llmPullStartPoll("),
+        ("_volPollTimer", "function _volStartPoll("),
+        ("_fbPoll", "function _fbStartPoll("),
+    ):
+        body = _fn_body(fn_marker)
+        assert f"if ({timer}) clearInterval({timer});" in body, (
+            f"{fn_marker} lost its clear-before-set guard"
+        )
+
+
 def test_bm25f_per_column_ranking_is_wired():
     """Keyword-engine P5.1: FTS ranking is BM25F — bm25() weighted per column (title vs
     body) so a title keyword outranks a body-only mention. The weights are env-tunable and

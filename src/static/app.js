@@ -13284,6 +13284,21 @@
       } catch (e) { $("dump-estimate").textContent = "size check failed"; }
     }
 
+    // Audit finding 2026-07-17 (L5): a shared, clear-before-set poll timer -- mirrors
+    // the established _llmPullStartPoll/_volStartPoll/_fbStartPoll pattern. Without
+    // this, starting several dump downloads in quick succession (the multi-edition
+    // picker loop just below calls startDump once per edition, sequentially awaited
+    // but each spawning its OWN fire-and-forget poller) stacked one independent 3s
+    // poller per start -- a polling-storm repeat of the 2026-06-27/07-01 item-F5 family.
+    let _dumpPollTimer = null;
+    function _dumpStartPoll() {
+      if (_dumpPollTimer) clearInterval(_dumpPollTimer);
+      let n = 0;
+      _dumpPollTimer = setInterval(() => {
+        loadWikiDumps();
+        if (++n > 40) { clearInterval(_dumpPollTimer); _dumpPollTimer = null; }
+      }, 3000);
+    }
     async function startDump(wiki) {
       // Several selected editions download sequentially (one polite queue).
       const picks = wiki ? [wiki] : dumpSelected();
@@ -13296,8 +13311,7 @@
       if (!await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Download a Wikipedia dump"))) return;
       try { await api("/api/wiki/dumps/start", {method:"POST", body: JSON.stringify({wiki: w})});
         toast("Download started."); loadWikiDumps();
-        // refresh progress a few times
-        let n=0; const poll=setInterval(()=>{ loadWikiDumps(); if(++n>40) clearInterval(poll); }, 3000);
+        _dumpStartPoll();  // refresh progress a few times
       } catch (e) { toast("Start failed: " + e.message, "err"); }
     }
     async function pauseDump(key) {
@@ -13394,9 +13408,21 @@
       list.innerHTML = rows || `<div class="muted">${esc(t("No regions."))}</div>`;
     }
 
+    // Audit finding 2026-07-17 (L5): a shared, clear-before-set poll timer -- mirrors
+    // the established _llmPullStartPoll/_volStartPoll/_fbStartPoll pattern. Without
+    // this, clicking Download on several regions in quick succession (a real user
+    // action the merged region-list UI invites -- each click calls startOsmDownload,
+    // which calls _osmPoll) stacked one independent 3s poller per click -- a
+    // polling-storm repeat of the 2026-06-27/07-01 item-F5 family.
+    let _osmPollTimer = null;
     function _osmPoll() {
+      if (_osmPollTimer) clearInterval(_osmPollTimer);
       loadOsmMap();
-      let n = 0; const poll = setInterval(() => { loadOsmMap(); if (++n > 40) clearInterval(poll); }, 3000);
+      let n = 0;
+      _osmPollTimer = setInterval(() => {
+        loadOsmMap();
+        if (++n > 40) { clearInterval(_osmPollTimer); _osmPollTimer = null; }
+      }, 3000);
     }
     async function startOsmDownload(code, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
