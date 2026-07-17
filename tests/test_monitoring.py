@@ -92,6 +92,27 @@ def test_health_down_on_network_error():
     assert h.status is HealthStatus.DOWN
 
 
+def test_health_unknown_on_a_genuinely_unforeseen_exception():
+    """Audit finding 2026-07-17 (L3): check_source only explicitly caught
+    RobotsDisallowed/RobotsUnavailable/FetchError -- every FORESEEABLE I/O
+    failure path in EthicalFetcher.fetch() wraps into one of those, but that
+    was an IMPLICIT contract, and sources_health (api/monitoring.py) runs
+    check_source over every probed source in a plain list comprehension with
+    NO per-source try/except -- so a genuinely unexpected exception type
+    would have aborted the WHOLE batch, losing every other source's result
+    too. A RuntimeError is not a requests.RequestException subclass, so
+    EthicalFetcher.fetch() does not wrap it -- it must still degrade to a
+    per-source result, never propagate."""
+    routes = {
+        "https://weird.example/robots.txt": _Resp(404, ""),
+        "https://weird.example": RuntimeError("a genuinely unforeseen failure"),
+    }
+    f, _ = _fetcher(routes)
+    h = check_source(_Src(5, "Weird", "weird.example"), fetcher=f)
+    assert h.status is HealthStatus.UNKNOWN
+    assert "unexpected error" in (h.detail or "")
+
+
 # --------------------------------------------------------------------------- #
 # anomalies
 # --------------------------------------------------------------------------- #
