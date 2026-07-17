@@ -111,14 +111,28 @@ def _table_counts_safe(p: Path, key: str) -> dict:
 
 def encrypt_all(key: str) -> dict:
     """Encrypt the main corpus AND the custody log under THE one passphrase
-    (design D6). The caller disposes the engine before and re-opens after."""
+    (design D6). The caller disposes the engine before and re-opens after.
+
+    Held under the single-writer gate (audit finding 2026-07-17): encrypt_database
+    reads the live file through a RAW sqlcipher3/sqlite3 connection, not the ORM
+    session the gate's flush/commit events watch, so without an EXPLICIT hold a
+    concurrently-committing scraper could write new rows into the plaintext file
+    AFTER the encrypted copy is built but BEFORE the atomic swap -- those rows
+    would be silently discarded when the swap lands. The gate makes every other
+    writer QUEUE (never error) for the duration, exactly its documented purpose;
+    holding it across this one-time, user-consented, non-hot-path operation is
+    the safe tradeoff over risking silent data loss.
+    """
     from src.api.unlock import main_db_path
+    from src.database.writer import write_lock
     from src.paths import data_dir
 
-    reports = {}
     main = main_db_path()
     if main is None:
         raise EncryptToolError("non-SQLite backend: the at-rest layer does not apply")
-    reports["corpus"] = encrypt_database(main, key)
-    reports["custody"] = encrypt_database(data_dir() / "custody_log.db", key)
+    with write_lock():
+        reports = {
+            "corpus": encrypt_database(main, key),
+            "custody": encrypt_database(data_dir() / "custody_log.db", key),
+        }
     return reports
