@@ -6048,6 +6048,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   routed into the brief as S4b: registration DROPS the catalog's language (LawDocument has no
   language/country columns; law corpus Articles ingest language=None) — the Cambodia-in-French
   case gets wrong keyword treatment until S4b threads catalog→LawDocument→Article.language.
+  **TAGS + PROVENANCE SHIPPED same day (maintainer: "make sure that there's a proper article tag
+  dedicated to laws, as well as proper dedicated tags for wikipedia articles, and so forth. Tags
+  should also be deduced from source type, and source tags"):** `LAW` joined PROVENANCE_CLASSES
+  (`provenance_of`: source_type legal/ip AND the synthetic `law.*.local` domains → law; closed-set
+  test extended, 17 green) + the CHANNEL-IMPLIED TAGS system in `src/catalog/provenance.py`:
+  `CLASS_IMPLIED_TAGS` + pure `implied_tags()` (explicit tags kept in order, implied APPENDED only,
+  ip additionally implies `ip`) + idempotent `ensure_channel_tags()` boot heal over a bounded
+  candidate set (wiki editions · law.*.local · legal/ip/statistics/cited source_types · newsletter
+  buckets), wired into BOTH seed sites in main.py; `ensure_law_source`/`ensure_wiki_source` set
+  tags at creation. So tag-based filters (analysis `tags` param, scheduler select_tags, wizard
+  themes) now find law/wikipedia/statistics/newsletter articles. The law brief's S4 is struck
+  SHIPPED (residual: a browser check of the class surfaces, fork-3).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

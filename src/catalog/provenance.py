@@ -31,9 +31,84 @@ STATISTICS = "statistics"
 # ("discovered via citation"), never a quality judgement -- a widely-cited primary
 # source and a laundering hub look identical here; the user judges.
 CITED = "cited"
+# Law/legal channel (maintainer-asked 2026-07-17: "a proper article tag dedicated to
+# laws"): tracked legal documents ingest as corpus Articles under synthetic
+# ``law.<jurisdiction>.local`` sources (source_type "legal"), and the seeded official
+# portals/gazettes carry source_type "legal"/"ip". A channel fact, never a judgement.
+LAW = "law"
 WEB = "web"
 
-PROVENANCE_CLASSES: tuple[str, ...] = (WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED)
+PROVENANCE_CLASSES: tuple[str, ...] = (WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED, LAW)
+
+# Tags IMPLIED by a source's channel class (maintainer-asked 2026-07-17: "tags should
+# also be deduced from source type, and source tags"). These are appended to a source's
+# explicit tags — never replacing them — so tag-based filters (the analysis `tags`
+# param, the scheduler's select_tags, the wizard's theme facets) find law/wikipedia/…
+# articles even where a synthetic source was created without tags. Descriptive only.
+CLASS_IMPLIED_TAGS: dict[str, tuple[str, ...]] = {
+    WIKIPEDIA: ("wikipedia", "encyclopedia"),
+    NEWSLETTER: ("newsletter",),
+    STATISTICS: ("statistics",),
+    CITED: ("cited",),
+    LAW: ("law",),
+    WEB: (),
+}
+
+
+def implied_tags(domain: str | None, source_type: str | None, tags_csv: str | None) -> list[str]:
+    """The source's explicit tags MERGED with its channel-implied tags (pure).
+
+    Existing tags keep their order; missing implied tags are appended; the "ip"
+    source_type additionally implies the ``ip`` tag beside ``law``. Returns a list
+    (callers join with "," for the CSV column)."""
+    existing = [t.strip() for t in (tags_csv or "").split(",") if t.strip()]
+    seen = {t.lower() for t in existing}
+    out = list(existing)
+    cls = provenance_of(domain, source_type)
+    implied = list(CLASS_IMPLIED_TAGS.get(cls, ()))
+    if (source_type or "").strip().lower() == "ip":
+        implied.append("ip")
+    for tag in implied:
+        if tag.lower() not in seen:
+            out.append(tag)
+            seen.add(tag.lower())
+    return out
+
+
+def ensure_channel_tags(session) -> int:
+    """Idempotent boot heal: materialise the channel-implied tags onto the BOUNDED set
+    of sources whose class implies tags (wiki editions, synthetic law sources, legal/ip
+    portals, statistics producers, newsletter buckets, cited discoveries). Existing
+    tags are never removed or reordered — implied tags are only appended. Returns the
+    number of rows updated (0 on an already-healed store). Lazy ORM import so the
+    pure derivation above stays unit-testable without the ORM."""
+    from sqlalchemy import or_
+
+    from src.database.models import Source
+
+    candidates = (
+        session.query(Source)
+        .filter(
+            or_(
+                Source.domain.like("%.wikipedia.org"),
+                Source.domain == "wikipedia.org",
+                Source.domain.like("law.%.local"),
+                Source.domain.in_(sorted(NEWSLETTER_DOMAINS)),
+                Source.source_type.in_(["legal", "ip", "statistics", "cited"]),
+            )
+        )
+        .all()
+    )
+    healed = 0
+    for src in candidates:
+        merged = implied_tags(src.domain, src.source_type, src.tags)
+        csv = ",".join(merged)
+        if csv != (src.tags or "") and len(csv) <= 500:
+            src.tags = csv
+            healed += 1
+    if healed:
+        session.commit()
+    return healed
 
 # Newsletter import buckets (the .eml file import + the live IMAP/POP3 pull). Kept
 # in sync with src/api/ingestion.py (_NEWSLETTER_DOMAIN / _MAILBOX_DOMAIN) and
@@ -57,9 +132,13 @@ def provenance_of(domain: str | None, source_type: str | None = None) -> str:
         return WIKIPEDIA
     if d in NEWSLETTER_DOMAINS:
         return NEWSLETTER
+    if d.startswith("law.") and d.endswith(".local"):
+        return LAW
     st = (source_type or "").strip().lower()
     if st == STATISTICS:
         return STATISTICS
     if st == CITED:
         return CITED
+    if st in ("legal", "ip"):
+        return LAW
     return WEB

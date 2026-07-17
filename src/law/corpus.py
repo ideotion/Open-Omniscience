@@ -77,6 +77,7 @@ def ensure_law_source(session: Session, jurisdiction: str) -> Source:
             domain=domain,
             rss_url=None,
             source_type="legal",
+            tags="law",  # channel-implied (provenance.CLASS_IMPLIED_TAGS); boot heal covers older rows
         )
         session.add(src)
         session.flush()

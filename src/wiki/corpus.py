@@ -88,6 +88,9 @@ def ensure_wiki_source(session: Session, wiki: str) -> Source:
             name=f"Wikipedia ({w})",
             domain=domain,
             rss_url=None,
+            # channel-implied tags (provenance.CLASS_IMPLIED_TAGS) so tag-based
+            # filters find wiki articles; the boot heal covers older rows.
+            tags="wikipedia,encyclopedia",
         )
         session.add(src)
         session.flush()

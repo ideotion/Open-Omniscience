@@ -163,12 +163,17 @@ robots-blocked add is stored but reports its verdict honestly) + a small form in
 Tests incl. the negative space (bad URL, duplicate, robots-blocked). **Acceptance: the
 maintainer can paste any statute URL and see it tracked without touching YAML.**
 
-### S4 — `law` as a first-class provenance class (P1) — size S
-Add `LAW` to `PROVENANCE_CLASSES` + map `source_type in ("legal","ip")` → `LAW` in
-`provenance_of`; verify the reading-diet/facet/Articles-toggle surfaces pick it up and the
-additive-restore merge carries it (source_type already travels; this is display-classification
-only). Extend the provenance tests. **Acceptance: law articles filter as their own class
-everywhere provenance classes appear.**
+### S4 — `law` as a first-class provenance class (P1) — size S — **SHIPPED 2026-07-17**
+**Shipped early in the same PR as this brief (verify + strike, never rebuild — the staleness
+guard):** `LAW` joined `PROVENANCE_CLASSES`; `provenance_of` maps `source_type legal/ip` AND the
+synthetic `law.*.local` domains → `LAW`; **plus the channel-implied TAGS system** (maintainer
+same-day ask): `CLASS_IMPLIED_TAGS` + pure `implied_tags()` + the idempotent append-only
+`ensure_channel_tags()` boot heal (wired into both seed sites) materialize channel tags onto
+sources — `law` (+`ip`), `wikipedia,encyclopedia`, `statistics`, `newsletter`, `cited` — so
+tag-based filters find those articles; `ensure_law_source`/`ensure_wiki_source` set tags at
+creation. Tests extended (`test_provenance_class.py`, 17 green). REMAINING for this session:
+verify the reading-diet/facet/Articles-toggle surfaces render the new class correctly in the
+browser (fork-3) — the backend filter validates against the extended set already.
 
 ### S4b — Thread the legal LANGUAGE through to the corpus (P1, the Cambodia fix) — size S
 The catalog carries per-source/per-document `language`, but registration DROPS it —
