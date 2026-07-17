@@ -418,6 +418,27 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
         bump_corpus_epoch(session, reason="reindex_articles")
     from src.database.write import run_write_with_retry
 
+    # Audit finding 2026-07-17: index_article's own contract explicitly re-raises a
+    # transient lock so a caller's run_write_with_retry can roll back and redo it
+    # (see index_article's docstring + the ingest-path reference implementation,
+    # src/ingest/pipeline.py::_maybe_index_keywords) -- this caller never honoured
+    # that contract, so a lock hit while re-indexing after a restore permanently
+    # marked the article "failed" instead of retrying (idempotent re-index
+    # reproduces the full result on redo, so nothing is lost by retrying).
+    # A named helper taking ``article`` as a PARAMETER (mirroring
+    # _reindex_one_committed_with_retry below) rather than an inline lambda closing
+    # over the loop's own ``art`` -- the lambda would otherwise capture the loop
+    # variable by reference (ruff B023: it is safe here since run_write_with_retry
+    # runs it to completion, incl. retries, before the loop reassigns ``art``, but
+    # the parameter form is the same non-fragile shape already used at the sibling
+    # call site and needs no closure-safety reasoning at all).
+    def _reindex_with_retry(article: Article) -> None:
+        run_write_with_retry(
+            lambda: index_article(session, article, extractor=extractor, country=article.country),
+            session=session,
+            label=f"reindex_articles[{article.id}]",
+        )
+
     reindexed = 0
     failed = 0
     for aid in article_ids:
@@ -425,19 +446,7 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
         if art is None:
             continue
         try:
-            # Audit finding 2026-07-17: index_article's own contract explicitly
-            # re-raises a transient lock so a caller's run_write_with_retry can
-            # roll back and redo it (see index_article's docstring + the
-            # ingest-path reference implementation, src/ingest/pipeline.py::
-            # _maybe_index_keywords) -- this caller never honoured that contract,
-            # so a lock hit while re-indexing after a restore permanently marked
-            # the article "failed" instead of retrying (idempotent re-index
-            # reproduces the full result on redo, so nothing is lost by retrying).
-            run_write_with_retry(
-                lambda: index_article(session, art, extractor=extractor, country=art.country),
-                session=session,
-                label=f"reindex_articles[{aid}]",
-            )
+            _reindex_with_retry(art)
             reindexed += 1
         except Exception:  # noqa: BLE001 - one bad/exhausted-retry article must not abort the batch
             session.rollback()
