@@ -10128,7 +10128,10 @@
     function renderP0Result(out, rep) {
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const esc = (typeof escapeHtml === "function") ? escapeHtml : ((s) => String(s == null ? "" : s));
+      // Audit finding 2026-07-17 (M7): this used to shadow the real module-level esc()
+      // (top of file) with a fallback to a non-existent global `escapeHtml`, which never
+      // exists -- so every esc() call below silently ran as a no-op passthrough into
+      // out.innerHTML (an XSS sink). Use the real escaper.
       const order = [
         ["p0_1_backup", "P0.1 backup"], ["p0_1_verify", "P0.1 verify"],
         ["p0_2_restore", "P0.2 restore"], ["p0_4_unlock", "P0.4 unlock"],

@@ -398,6 +398,24 @@ def test_p0_validation_kit_is_wired():
     )
 
 
+def test_render_p0_result_does_not_shadow_the_real_html_escaper():
+    """Audit finding 2026-07-17 (M7): renderP0Result declared a LOCAL `esc` that
+    fell back to a non-existent global `escapeHtml` -- since that global is never
+    defined anywhere in app.js, the ternary always evaluated to a no-op passthrough,
+    silently defeating all 5 esc() calls in the function (which feed out.innerHTML,
+    an XSS sink: verdict labels, reasons, and the summary note). Regression guard:
+    the function must rely on the real module-level esc() (top of file) instead of
+    redeclaring/shadowing one."""
+    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    start = appjs.index("function renderP0Result(")
+    end = appjs.index("\n    }\n", start)
+    body = appjs[start:end]
+    assert "typeof escapeHtml" not in body, "must not fall back to the non-existent global escapeHtml"
+    assert "const esc" not in body, "must not shadow the real module-level esc()"
+    # esc() is still used (the fix removes the shadow, not the escaping calls).
+    assert body.count("esc(") >= 5
+
+
 def test_bm25f_per_column_ranking_is_wired():
     """Keyword-engine P5.1: FTS ranking is BM25F — bm25() weighted per column (title vs
     body) so a title keyword outranks a body-only mention. The weights are env-tunable and
