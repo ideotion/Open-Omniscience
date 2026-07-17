@@ -6070,7 +6070,17 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   CV 76,947 · MG 40,000 · BY/GE 26 codes · UY 13 codes …); the Mauritania 30,000 count is
   press-release-sourced (self-disclosed in-row as approximate — kept with the disclosure).
   REMAINING batches: Europe-West/North gap-fill · Central+South Asia · East Asia · Oceania ·
-  North America+Caribbean · supranational.
+  North America+Caribbean · supranational. **REGISTRATION POSTURE (CI catch, fixed forward same
+  day):** `seed_legal_sources` consumes `load_legal_catalog` at BOOT, so the merged generated
+  rows were seeding ENABLED (Source.enabled defaults true; the entries carry no `enabled` key) —
+  breaching review-before-enable AND reddening test_preflight (163 extra enabled sources pushed
+  the test's synthetic domains past `recent_results`' 200-row cap; all 3 lanes red at 127f631).
+  FIX: generated rows are marked `_generated` by the loader; `registration_source_rows` (pure)
+  forces `enabled=False` + `via:legal-generated` provenance on them (curated posture untouched),
+  and `registrable_documents` (pure) lets a generated document register as watched ONLY when its
+  session verified it (fetched/search-verified) — an unverified `lead` document never silently
+  becomes a watched LawDocument. Enabling a generated source stays a maintainer action (or the
+  future Phase-2 promotion frontier).
   **TAGS + PROVENANCE SHIPPED same day (maintainer: "make sure that there's a proper article tag
   dedicated to laws, as well as proper dedicated tags for wikipedia articles, and so forth. Tags
   should also be deduced from source type, and source tags"):** `LAW` joined PROVENANCE_CLASSES

@@ -34,6 +34,8 @@ _spec = importlib.util.spec_from_file_location(
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 load_legal_catalog = _mod.load_legal_catalog
+registration_source_rows = _mod.registration_source_rows
+registrable_documents = _mod.registrable_documents
 
 CURATED = {
     "sources": [
@@ -155,6 +157,40 @@ def test_validator_catches_the_fabrication_shaped_mistakes():
                    "CURATED catalog", "https://", "never estimated",
                    "verification.status", "missing required field 'verification'"):
         assert needle in text, f"validator missed: {needle}\n{text}"
+
+
+def test_generated_sources_register_disabled_and_lead_documents_never_register(tmp_path):
+    """The review-before-enable posture (2026-07-17 CI catch): a research-harvested
+    source must NEVER auto-enable at boot (several are robots-blocked), and an
+    unverified lead document must never silently become a watched LawDocument."""
+    curated_p = _write(tmp_path, "curated.yml", CURATED)
+    gen_p = _write(tmp_path, "gen.yml", {
+        "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
+        "sources": [_gen_entry()],
+        "documents": [
+            {"jurisdiction": "tl", "title": "Código Civil",
+             "url": "https://mj.example/cc.pdf",
+             "verification": {"status": "fetched", "retrieved_at": "2026-07-17"}},
+            {"jurisdiction": "ne", "title": "Recueil (lead)",
+             "url": "https://justice.example/recueil.pdf",
+             "verification": {"status": "lead"}},
+        ],
+    })
+    cat = load_legal_catalog(curated_p, generated_path=gen_p)
+
+    rows = {r["domain"]: r for r in registration_source_rows(cat)}
+    gen_row = rows["moj.gov.kh"]
+    assert gen_row["enabled"] is False, "a generated source must seed DISABLED"
+    assert gen_row["_provenance"] == "legal-generated"
+    assert "_generated" not in gen_row, "the marker never leaks into Source kwargs"
+    cur_row = rows["legifrance.gouv.fr"]
+    assert cur_row["_provenance"] == "legal" and "enabled" not in cur_row, \
+        "curated entries keep their catalog-stated posture"
+
+    doc_urls = [d["url"] for d in registrable_documents(cat)]
+    assert "https://mj.example/cc.pdf" in doc_urls, "a fetched generated doc registers"
+    assert "https://justice.example/recueil.pdf" not in doc_urls, "a lead never registers"
+    assert "https://ex.fr/ddhc" in doc_urls, "curated docs register as before"
 
 
 def test_validator_batch_calibrations_from_the_first_real_batches():
