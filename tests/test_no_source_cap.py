@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from src.database.models import Base, Source
 from src.database.query import capped
 from src.scheduler.runner import plan_preview
-from src.scheduler.settings import SchedulerSettings, _coerce_int
+from src.scheduler.settings import SchedulerSettings, _coerce_int, load_settings, save_settings
 
 
 def _db_with_sources(n: int):
@@ -52,6 +52,27 @@ def test_coercion_allows_zero_unbounded():
     # nor cover more than 1000 sources. Now 0 is allowed and the ceiling is high.
     assert _coerce_int(0, 0, 0, 1_000_000) == 0
     assert _coerce_int(50000, 0, 0, 1_000_000) == 50000
+
+
+def test_save_settings_accepts_max_sources_per_run_zero_and_above_1000():
+    """Audit finding 2026-07-17: save_settings's own range validator for
+    max_sources_per_run was still `1, 1000` even though the field is documented
+    + tested (this file) as "0 = UNBOUNDED -- the default", and load_settings
+    (above) already coerces it with bounds (0, 1_000_000). A client could never
+    explicitly PUT {"max_sources_per_run": 0} to reset the cap back to
+    unbounded via the API, and could never set a cap above 1000 either -- a
+    real regression against the maintainer's own no-source-cap ruling."""
+    save_settings({"max_sources_per_run": 5})
+    assert load_settings().max_sources_per_run == 5
+
+    save_settings({"max_sources_per_run": 0})  # must NOT raise -- resets to unbounded
+    assert load_settings().max_sources_per_run == 0
+
+    save_settings({"max_sources_per_run": 50000})  # above the old stale 1000 ceiling
+    assert load_settings().max_sources_per_run == 50000
+
+    save_settings({"max_sources_per_run": 0})  # restore the default for later tests
+    assert load_settings().max_sources_per_run == 0
 
 
 def test_plan_preview_covers_every_source_when_uncapped():

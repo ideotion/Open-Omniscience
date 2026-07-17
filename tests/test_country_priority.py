@@ -101,9 +101,10 @@ def test_targets_will_process_equals_matched_when_uncapped():
     from src.api.scheduler import scheduler_targets
     from src.database.models import Base, Source
 
-    # cap=0 (unbounded) is the DEFAULT and cannot even be set via save_settings (its range
-    # validator is 1..1000), so we rely on the default here — which is exactly the case the
-    # old min(matched, 0) mis-reported as 0.
+    # cap=0 (unbounded) is the DEFAULT (save_settings's range validator now correctly
+    # accepts 0 too, see tests/test_no_source_cap.py -- audit fix 2026-07-17); relying on
+    # the default here still exercises exactly the case the old min(matched, 0)
+    # mis-reported as 0.
     eng = create_engine("sqlite:///:memory:", future=True, connect_args={"check_same_thread": False})
     Base.metadata.create_all(eng)
     db = sessionmaker(bind=eng, future=True)()
