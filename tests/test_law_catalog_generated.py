@@ -149,13 +149,18 @@ def test_validator_catches_the_fabrication_shaped_mistakes():
             {"name": "No verification", "domain": "x.example", "country": "xx",
              "languages": ["xx"], "source_type": "legal"},             # missing verification
         ],
-        "documents": [],
+        "documents": [
+            # collides with the curated DDHC document -> curated wins, row must error
+            {"jurisdiction": "fr", "title": "DDHC override", "url": "https://ex.fr/ddhc",
+             "verification": {"status": "fetched", "retrieved_at": "2026-07-17"}},
+        ],
     }
     report = vlc.validate(bad, CURATED)
     text = "\n".join(report["errors"])
-    for needle in ("schema must be", "as_of must be", "ISO-2", "duplicate (domain, kind)",
+    for needle in ("schema must be", "as_of must be", "ISO-2", "duplicate (domain, kind, country)",
                    "CURATED catalog", "https://", "never estimated",
-                   "verification.status", "missing required field 'verification'"):
+                   "verification.status", "missing required field 'verification'",
+                   "document already in the CURATED catalog"):
         assert needle in text, f"validator missed: {needle}\n{text}"
 
 
@@ -209,6 +214,9 @@ def test_validator_batch_calibrations_from_the_first_real_batches():
             # one host, two ROLES (codes portal + gazette) = two rows, allowed
             _gen_entry(domain="tworoles.example", kind="consolidated_portal"),
             _gen_entry(domain="tworoles.example", kind="gazette"),
+            # a multi-country platform (PacLII): one role, several jurisdictions, allowed
+            _gen_entry(domain="paclii.example", kind="consolidated_portal", country="pg"),
+            _gen_entry(domain="paclii.example", kind="consolidated_portal", country="sb"),
             # the honest-gap record: no working portal exists -> domain-less LEAD
             {"name": "Nowhere — no confirmed working portal", "country": "ye",
              "languages": ["ar"], "source_type": "gazette",

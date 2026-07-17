@@ -29,9 +29,11 @@ Calibrated against the first 8 real batches (2026-07-17):
 - ``domain`` may be omitted ONLY on a ``lead`` row — the honest-gap record for a
   jurisdiction with no working portal (e.g. Yemen). The app-side loader already
   skips domain-less rows, so a gap record can never become a Source.
-- the in-file dedup key is ``(domain, kind)``: one host legitimately carries two
-  roles (a consolidated codes portal AND the gazette) as two rows. Registration
-  must later collapse them onto the one Source row (Source.domain is unique).
+- the in-file dedup key is ``(domain, kind, country)``: one host legitimately
+  carries two roles (a consolidated codes portal AND the gazette), and a
+  multi-country platform (PacLII) carries one role for several jurisdictions.
+  Registration must later collapse them onto the one Source row (Source.domain
+  is unique).
 
 Never edits anything — it proposes; the human vets (the house review gate).
 """
@@ -158,11 +160,12 @@ def validate(generated: dict, curated: dict) -> dict:
             _err(errors, where, "a verified row must carry verification.retrieved_at")
         dom = s.get("domain")
         if dom:
-            key = (dom, s.get("kind"))
+            key = (dom, s.get("kind"), country)
             if key in seen_domain_kinds:
-                _err(errors, where, "duplicate (domain, kind) within the generated file "
-                                    "(one host may carry two ROLES — codes portal + gazette — "
-                                    "as two rows, never two rows of the same role)")
+                _err(errors, where, "duplicate (domain, kind, country) within the generated file "
+                                    "(one host may carry two ROLES — codes portal + gazette — or "
+                                    "one role for SEVERAL jurisdictions — PacLII — but never two "
+                                    "rows of the same role for the same jurisdiction)")
             seen_domain_kinds.add(key)
             seen_domains.add(dom)
             if dom in curated_domains:
@@ -181,11 +184,11 @@ def validate(generated: dict, curated: dict) -> dict:
             _err(errors, where, f"verification.status must be one of {VERIFICATION_STATUSES}")
         elif status == "lead":
             leads.append(where)
-        key = (d.get("jurisdiction"), d.get("url"))
-        if key in seen_docs:
+        dkey = (d.get("jurisdiction"), d.get("url"))
+        if dkey in seen_docs:
             _err(errors, where, "duplicate (jurisdiction, url) within the generated file")
-        seen_docs.add(key)
-        if key in curated_docs:
+        seen_docs.add(dkey)
+        if dkey in curated_docs:
             _err(errors, where, "document already in the CURATED catalog (curated wins)")
 
     return {

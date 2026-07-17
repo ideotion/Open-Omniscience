@@ -116,11 +116,17 @@ South America, supranational (EU/AU/OAS/ASEAN/GCC/UN treaty bodies). Every UN me
 exactly one batch. The 12-UI-language-country floor is already largely covered by the curated
 file — batches extend OUTWARD from it.
 
-**Batch status (2026-07-17 — first 8 received + merged, 163 sources / 7 documents):**
-africa-west ✅ · africa-east ✅ · africa-central-south ✅ · mena ✅ ·
-europe-central-baltics-microstates ✅ · europe-east-caucasus ✅ · south-central-america ✅ ·
-southeast-asia ✅. **Still to run:** Europe-West/North (mostly curated-covered — a gap-fill
-pass), Central+South Asia, East Asia, Oceania+Pacific, North America+Caribbean, supranational.
+**Batch status (2026-07-17 — ALL 12 world batches received + merged, 225 sources /
+7 documents across 162 jurisdictions; verification 91 fetched · 124 search-verified ·
+10 leads):** africa-west ✅ · africa-east ✅ · africa-central-south ✅ · mena ✅ ·
+central-south-asia ✅ · europe-central-baltics-microstates ✅ · europe-east-caucasus ✅ ·
+south-central-america ✅ · southeast-asia ✅ · caribbean ✅ · oceania ✅ · supranational ✅.
+The world sweep is COMPLETE modulo the curated file's own coverage: Europe-West/North and
+the East-Asia majors (jp/kr/cn) are already in `configs/legal_sources.yml` (the
+12-UI-language floor), with mn/tw delivered in the central-south-asia batch; a later
+gap-fill pass over those regions is optional polish, not a missing batch. North Korea is a
+CONFIRMED documented gap (no DPRK public legal portal exists — the kp comment block in the
+generated file carries the evidence; aggregators are fallbacks, never the country's own).
 
 **Contract calibrations from the first 8 real batches (binding for future sessions and the
 validator alike):**
@@ -134,8 +140,10 @@ validator alike):**
   `lead` row — the honest-gap record. The app-side loader skips domain-less rows by
   construction, so a gap can never become a Source.
 - One host carrying **two roles** (consolidated codes portal AND the gazette) is two rows with
-  distinct `kind`; the in-file dedup key is `(domain, kind)`. Registration must later collapse
-  them onto one Source row (`Source.domain` is unique) — the S6 adapter session owns that.
+  distinct `kind`, and a **multi-country platform** (PacLII: pg/sb/ki collections on one host)
+  is one row per jurisdiction; the in-file dedup key is `(domain, kind, country)`. Registration
+  must later collapse them onto one Source row (`Source.domain` is unique) — the S6 adapter
+  session owns that.
 - `documents` rows use `jurisdiction:` (a session that writes `country:` gets mechanically
   renamed at intake); a document without a `verification` block defaults to `lead`.
 

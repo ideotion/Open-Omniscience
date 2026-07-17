@@ -5,8 +5,10 @@
 # scripts/validate_legal_catalog.py. Curated configs/legal_sources.yml WINS on any
 # domain/(jurisdiction,url) collision. Verification statuses are per-row facts from
 # the producing session — a 'lead' was never loaded and needs a maintainer decision.
-# One host may appear twice with distinct `kind` (codes portal + gazette): registration
-# must collapse those onto the one Source row (Source.domain is unique).
+# One host may appear several times with distinct (kind, country) — codes portal +
+# gazette on one domain, or a multi-country platform (PacLII): registration collapses
+# them onto the one Source row (Source.domain is unique) and ALL generated rows seed
+# DISABLED (review-before-enable; see src/law/catalog.py registration_source_rows).
 schema: oo-legal-catalog-gen-1
 as_of: "2026-07-17"
 batches:
@@ -14,10 +16,14 @@ batches:
 - {batch: "africa-east", session_date: "2026-07-17"}
 - {batch: "africa-central-south", session_date: "2026-07-17"}
 - {batch: "mena", session_date: "2026-07-17"}
+- {batch: "central-south-asia", session_date: "2026-07-17"}
 - {batch: "europe-central-baltics-microstates", session_date: "2026-07-17"}
 - {batch: "europe-east-caucasus", session_date: "2026-07-17"}
 - {batch: "south-central-america", session_date: "2026-07-17"}
 - {batch: "southeast-asia", session_date: "2026-07-17"}
+- {batch: "caribbean", session_date: "2026-07-17"}
+- {batch: "oceania", session_date: "2026-07-17"}
+- {batch: "supranational", session_date: "2026-07-17"}
 sources:
 
 # ===================== batch: africa-west =====================
@@ -2778,6 +2784,637 @@ sources:
     broader historical depth (Ottoman/Mandate/Jordanian/Egyptian-era legislation, 23,000+ court judgments)
     — a useful fallback for pre-1994 material, but university-run, not a state body.
 
+# ===================== batch: central-south-asia =====================
+# --- kp (North Korea): CONFIRMED GAP, no source entry fabricated ---
+# No DPRK government body operates a public online legal database, gazette
+# portal, or enumeration page. NYU Globalex's "Overview of the North Korean
+# Legal System," the US Library of Congress Guide to Law Online: North Korea,
+# and 38 North's NK TechLab project (2025-26) all independently confirm this:
+# the only texts that reach researchers arrive via captured devices, print
+# compendia, or third-party/foreign efforts — South Korea's Unification
+# Legislation Database (Ministry of Unification/Justice/Government
+# Legislation), the private "Law and North Korea" translation site, and the
+# WIPO Lex / FAOLEX / NATLEX aggregators. Per the "aggregators are fallbacks,
+# never the country's own" rule, none of these is catalogued as a kp source.
+- name: Adilet Legal Information System (Ministry of Justice of the Republic of Kazakhstan)
+  native_name: Әділет ақпараттық-құқықтық жүйесі / ИПС «Әділет»
+  domain: adilet.zan.kz
+  country: kz
+  languages:
+  - kk
+  - ru
+  legal_language_note: Kazakh and Russian are the two authoritative languages of legislation; the /eng
+    subsection carries unofficial English translations of a partial subset of acts.
+  legal_system: civil_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://adilet.zan.kz/eng
+  official_count:
+    value: 31
+    unit: codes
+    as_of: '2026-07-17'
+    source_url: https://adilet.zan.kz/eng
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Free public access under the USLI user agreement; no open-data/reuse license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - central-asia
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded adilet.zan.kz/eng; its classifier facets show Act-form counts including Code(31);
+      kk/ru confirmed as the source languages via native-portal search results.
+  confidence: medium
+  notes: The 31-code figure is read off the /eng interface's facet, which may reflect only the subset
+    carrying an English-language record rather than the full kk/ru corpus (other sources cite ~30-36 codes)
+    — indicative, not authoritative. New acts are also published in the state newspapers Egemen Qazaqstan
+    (kk) and Kazakhstanskaya Pravda (ru); no dedicated online gazette portal with a parseable feed was
+    found, so no separate gazette entry is given.
+- name: Lex.uz — National Database of Legislation of the Republic of Uzbekistan
+  native_name: LexUZ — Ўзбекистон Республикаси қонунчилигининг миллий маълумотлар базаси
+  domain: lex.uz
+  country: uz
+  languages:
+  - uz
+  - ru
+  legal_language_note: Offered in Cyrillic Uzbek, Latin Uzbek, and Russian; an English toggle carries
+    a smaller unofficial-translation subset.
+  legal_system: civil_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://lex.uz/en/
+  structured:
+    api: unknown
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Free public access. Presidential resolution of 8 Feb 2017 made lex.uz the official source
+    of first publication of normative acts (effective 25 Sep 2017), so it doubles as consolidated database
+    and gazette of record; no open-data license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  - central-asia
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded lex.uz/en/ homepage and search form; confirmed 'Codes' as one of seven Act-form categories
+      (Constitution, Codes, Laws, Presidential acts, Government decisions, ministerial/departmental acts,
+      International acts); exact code count not captured this session.
+  confidence: high
+  notes: Because lex.uz is itself the designated official publication source, no separate gazette entry
+    is listed. No bulk-download or public API endpoint was located; the search UI is the only access path
+    found.
+- name: Centralized Data Bank of Legal Information of the Kyrgyz Republic (Ministry of Justice)
+  native_name: Централизованный банк данных правовой информации Кыргызской Республики (ЦБД)
+  domain: cbd.minjust.gov.kg
+  country: kg
+  languages:
+  - ky
+  - ru
+  legal_system: civil_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: unknown
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Free public access; no open-data license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - central-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: Multiple cbd.minjust.gov.kg act pages (codes, laws, resolutions) returned directly in search
+      results under the ru-ru locale, confirming the domain is live and hosts full-text acts; not directly
+      fetched this session.
+  confidence: medium
+  notes: No enumeration/codes-list page or open API/bulk endpoint identified. No distinct online gazette
+    portal found; the official gazette of record is understood to be the print journals Erkin Too (ky)
+    / Slovo Kyrgyzstana (ru), not independently verified this session.
+- name: National Center of Legislation under the President of the Republic of Tajikistan (light version)
+  native_name: Маркази миллии қонунгузории назди Президенти Ҷумҳурии Тоҷикистон
+  domain: mmk.tj
+  country: tj
+  languages:
+  - tg
+  - ru
+  legal_language_note: Normative acts are issued in Tajik (state language) and Russian.
+  legal_system: civil_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: Free 'light version' via the government center; the fuller, continuously updated database
+    (ADLIA, adlia.tj), run by the same Ministry-of-Justice CBPI, is described by the 2024 US State Dept.
+    Investment Climate Statement as commercial/subscription — treat the free portal as incomplete relative
+    to ADLIA.
+  tags:
+  - law
+  - legislation
+  - official
+  - central-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: US State Dept. 2024 statement and NYU Globalex's Tajikistan guide both identify mmk.tj/ncl.tj/ncz.tj
+      as the National Legislative Center's site and adlia.tj as its commercial companion; ncl.tj pages
+      returned directly in search results with 2025-dated content, confirming the site is currently live.
+  confidence: medium
+  notes: Same institution is reachable at mmk.tj, ncl.tj, and ncz.tj. No enumeration/count page, API,
+    or bulk endpoint found. No independently verified online gazette this session; official publication
+    has historically run through the bulletin Ахбори Маджлиси Оли.
+- name: Ministry of Adalat (Justice) of Turkmenistan — legislation pages
+  native_name: Türkmenistanyň Adalat ministrligi
+  domain: minjust.gov.tm
+  country: tm
+  languages:
+  - tk
+  - ru
+  legal_system: civil_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Unclear; minimal public disclosure is typical of Turkmen state sites.
+  tags:
+  - law
+  - legislation
+  - official
+  - central-asia
+  - thin-coverage
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: NYU Globalex and Wikipedia's 'Ministry of Justice (Turkmenistan)' article both state the
+      Ministry publishes texts of 'some laws' in Turkmen and Russian on its site; no comprehensive corpus,
+      enumeration page, or count is known to exist publicly.
+  confidence: low
+  notes: 'One of the most closed online-legal environments in this batch: no searchable consolidated database,
+    enumeration page, API, or bulk export is known to exist. Official notices are primarily disseminated
+    via the print newspapers Türkmenistan (tk) and Neytralny Turkmenistan (ru), functioning as a de facto
+    gazette; no online gazette portal with a parseable feed was found. Treat as a partial-coverage lead,
+    not a national database.'
+- name: Database of Afghanistan Laws and Decrees (Ministry of Justice)
+  native_name: مجموعه قوانین افغانستان
+  domain: laws.moj.gov.af
+  country: af
+  languages:
+  - prs
+  - ps
+  legal_language_note: Published separately in Dari (Persian) and Pashto; no authoritative English version.
+  legal_system: religious
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: http://laws.moj.gov.af/ShowLawPersian.aspx
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: State-run, free public access; no open-data license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - south-asia
+  - post-2021
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded laws.moj.gov.af homepage; confirmed the site is live under the Islamic Emirate's
+      Ministry of Justice with separate Dari (ShowLawPersian.aspx) and Pashto (ShowLawPashto.aspx) listing
+      pages. The listing pages themselves were not loaded, so no official count is given.
+  confidence: medium
+  notes: legal_system is classified 'religious' (Hanafi Islamic jurisprudence) to reflect the Islamic
+    Emirate's stated legislative basis since 2021 — a change from the mixed civil/religious/customary
+    system of the pre-2021 Islamic Republic; the Ministry states its drafting rests on the Quran, Sunnah,
+    and Hanafi texts. This is a current-affairs classification worth revisiting as the situation develops.
+- name: Official Gazette of Afghanistan (Ministry of Justice)
+  domain: moj.gov.af
+  country: af
+  languages:
+  - prs
+  - ps
+  legal_system: religious
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: Free to view online; a paid annual subscription is offered for the physical edition.
+  tags:
+  - law
+  - gazette
+  - official
+  - south-asia
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded moj.gov.af/en/official-gazette; confirmed monthly (plus special-edition) publication
+      in Dari and Pashto, with the Ministry of Justice named as concessionaire since Gazette No. 1313/2018.
+      A January 2026 Criminal Procedure Regulation publication in this gazette is independently corroborated
+      by Amnesty International and BBC reporting from that month.
+  confidence: high
+  notes: No RSS/Atom feed found or verified. The gazette is confirmed active and publishing current legislative
+    decrees as of early-to-mid 2026.
+- name: The Pakistan Code (Ministry of Law and Justice)
+  domain: pakistancode.gov.pk
+  country: pk
+  languages:
+  - en
+  - ur
+  legal_language_note: English is the authoritative drafting/publication language; an Urdu interface is
+    also offered.
+  legal_system: mixed:common_law_and_islamic_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://pakistancode.gov.pk/english/sHyuRiF.php
+  official_count:
+    value: 702
+    unit: laws
+    as_of: '2026-07-17'
+    source_url: https://pakistancode.gov.pk/english/sHyuRiF.php
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: Free, 'freely available public web site'; no open-data/reuse license stated. Per-document
+    PDF download offered.
+  tags:
+  - law
+  - legislation
+  - official
+  - south-asia
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded pakistancode.gov.pk/english/sHyuRiF.php (chronological Federal Laws index), which
+      shows 23 subject-category counts (Criminal 69, Civil 147, Family 22, Service 25, Labour 41, Police
+      4, Companies 9, Land/Property 18, Islamic/Religious 5, Banking/Financial 27, Evidence 1, Rent 3,
+      International 7, Tenancy 0, Land Reform 2, Minorities 0, Excise/Taxation 14, Military 18, Health/Medical
+      18, Media 3, Election 8, Departmental 126, General 135). 702 is the sum of these page-displayed
+      figures, not an estimate.
+  confidence: high
+  notes: Covers Federal laws only (site states coverage since 1834; provincial codes are out of scope).
+    A 'Document Retrieval System' at drs.molaw.gov.pk is linked from the site for Gazette notifications
+    but wasn't independently verified this session, so no separate gazette entry is given.
+- name: Laws of Bangladesh (Bangladesh Code) — Ministry of Law, Justice and Parliamentary Affairs
+  native_name: বাংলাদেশ কোড
+  domain: bdlaws.minlaw.gov.bd
+  country: bd
+  languages:
+  - en
+  - bn
+  legal_language_note: Bangladesh Code volumes 1-24 are in English (pre-1987 laws), volumes 25-47 in Bengali
+    (later laws); each act appears only in its language of first release.
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: http://bdlaws.minlaw.gov.bd/chro_index.php
+  official_count:
+    value: 47
+    unit: volumes
+    as_of: '2026-07-17'
+    source_url: http://bdlaws.minlaw.gov.bd/chro_index.php
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Free public access; updated roughly quarterly per a Thomson Reuters Practical Law summary;
+    no open-data license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - south-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: Wikipedia's 'Bangladesh Code' article, citing bdlaws.minlaw.gov.bd/chro_index.php directly,
+      gives 47 volumes (24 English + 23 Bengali) covering legislation from 1836 to date; Thomson Reuters
+      Practical Law and an independent open-source mirror project corroborate the domain as the ministry's
+      official site. The enumeration page itself was not loaded this session, so the count is second-hand
+      rather than freshly read.
+  confidence: medium
+  notes: The Bangladesh Gazette (est. 1947/1973), printed by Bangladesh Government Press (dpp.gov.bd/bgpress),
+    is the gazette of record; no dedicated searchable online gazette archive with a parseable feed was
+    identified, so no separate gazette entry is given.
+- name: LawNet — Sri Lanka legal information system (Ministry of Justice)
+  domain: lawnet.gov.lk
+  country: lk
+  languages:
+  - si
+  - ta
+  - en
+  legal_language_note: Sinhala, Tamil, and English are all constitutionally recognised for law; per-act
+    language coverage varies.
+  legal_system: mixed:roman_dutch_common_law_customary_and_islamic_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: unknown
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: Free public access; established as a Ministry of Justice and Judicial Reform project;
+    no open-data license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - south-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: Institute of Advanced Legal Studies (Univ. of London) resource guide describes LawNet as
+      hosting official Sri Lankan statutes 1956-2006 (unofficial statutes to 2006), established by the
+      Ministry of Justice and Judicial Reform; domain not independently loaded this session.
+  confidence: low
+  notes: 'Coverage appears to stop around 2006 per the cited description — currency past that date is
+    uncertain and should be re-checked before treating this as a live, fully current source. Sri Lanka''s
+    system is a textbook ''mixed'' jurisdiction: Roman-Dutch civil-law base, English common law (esp.
+    commercial/criminal procedure), Kandyan and Thesavalamai customary law, and Islamic law for Muslim
+    personal-status matters.'
+- name: The Sri Lanka Gazette (Department of Government Printing)
+  domain: documents.gov.lk
+  country: lk
+  languages:
+  - si
+  - ta
+  - en
+  legal_system: mixed:roman_dutch_common_law_customary_and_islamic_law
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: Free public access; Crown/state-copyright conventions typical of Commonwealth gazettes
+    likely apply, not independently confirmed.
+  tags:
+  - law
+  - gazette
+  - official
+  - south-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: Wikipedia's 'The Sri Lanka Gazette' infobox names documents.gov.lk, published by the Dept.
+      of Government Printing since 1802 in English, Sinhala and Tamil; a Library of Congress guide separately
+      notes the government-printer site carries gazettes from March 2006 onward. Not independently loaded
+      this session.
+  confidence: medium
+  notes: No RSS/Atom feed found or verified.
+- name: Nepal Law Commission
+  native_name: नेपाल कानून आयोग
+  domain: lawcommission.gov.np
+  country: np
+  languages:
+  - ne
+  legal_language_note: Nepali is the sole authoritative language; circulating English versions (including
+    on this site) are explicitly unofficial reference translations.
+  legal_system: mixed:civil_law_and_common_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: Free public access; no open-data license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - south-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: lawcommission.gov.np returned directly in search results with live, current (Nepal Sambat-dated)
+      homepage content; Wikipedia's 'Nepal Law Commission' article and multiple third-party legal apps
+      confirm it hosts Acts, Rules and Ordinances, including the 2017 National Civil/Penal Codes that
+      superseded the historic Muluki Ain. Not independently fetched this session.
+  confidence: medium
+  notes: 'Legal system given as mixed civil/common law: the 2017 codification (Muluki Dewani/Aparadh Sanhita)
+    moved Nepal toward continental-style civil and penal codes layered onto institutions with British-Indian
+    common-law roots. No enumeration/count page identified.'
+- name: Nepal Gazette (Rajpatra) — Department of Printing
+  native_name: नेपाल राजपत्र
+  domain: rajpatra.dop.gov.np
+  country: np
+  languages:
+  - ne
+  legal_system: mixed:civil_law_and_common_law
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: Free public access; state publication.
+  tags:
+  - law
+  - gazette
+  - official
+  - south-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: A Nepali legal-portal disclaimer page cites rajpatra.dop.gov.np as the official Gazette
+      source; Wikipedia's 'Department of Printing (Nepal)' article confirms the Department has published
+      the Gazette since 2008 and put >120,000 historical copies (1951-2014) online from 2016. Domain not
+      independently loaded this session.
+  confidence: medium
+  notes: No RSS/Atom feed found or verified.
+- name: Office of the Attorney General of Bhutan — Acts
+  domain: oag.gov.bt
+  country: bt
+  languages:
+  - dz
+  - en
+  legal_language_note: Dzongkha is the national/authoritative language; most acts since the 2000s are
+    published bilingually in English and Dzongkha.
+  legal_system: mixed:customary_buddhist_and_common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://oag.gov.bt/language/en/resources/acts-2/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: Free public access; no open-data license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - south-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: oag.gov.bt/language/en/resources/acts-2/ returned directly in search results as a curated,
+      alphabetised list of Bhutanese Acts with bilingual English/Dzongkha download links. Domain not independently
+      fetched, and no total-count figure was visible in the retrieved excerpt.
+  confidence: medium
+  notes: 'Bhutan does not publish an official gazette, per the U.S. Library of Congress Guide to Law Online:
+    Bhutan — confirmed explicitly, so no gazette entry is given. The OAG page is a curated list rather
+    than a full-text searchable database; National Council (nationalcouncil.bt) and National Assembly
+    (nab.gov.bt) sites also carry bills/acts but were not evaluated this session.'
+- name: Government Gazette of the Maldives (President's Office)
+  domain: gazette.gov.mv
+  country: mv
+  languages:
+  - dv
+  legal_language_note: Dhivehi is the sole authoritative language; private/unofficial English-translation
+    projects exist (e.g. mvlaw.site) but are not government-run.
+  legal_system: mixed:islamic_law_and_common_law
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: Free public access; run by the President's Office (legalaffairs@po.gov.mv handles gazette
+    submissions).
+  tags:
+  - law
+  - gazette
+  - official
+  - south-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: 'Search results returned live gazette.gov.mv content directly (listing items timestamped
+      in hours); a May-2025 regulation PDF footer lists ''Website: www.gazette.gov.mv'' under the President''s
+      Office; a July 2025 presidency.gov.mv release confirms new acts are ''published in the Government
+      Gazette.'' Domain not independently fetched this session.'
+  confidence: medium
+  notes: No comprehensive, currently-live official CONSOLIDATED-law database distinct from the Gazette
+    was confirmed — an earlier Ministry-run site (old.mvlaw.gov.mv) appears superseded, and the People's
+    Majlis site (majlis.gov.mv) only surfaced its own internal Standing Orders. mvlaw.site is a private,
+    non-government, AI-assisted English mirror and must not be treated as an official source; noted only
+    as a fallback for English-reading researchers. No enumeration page, count, RSS feed, API, or bulk
+    endpoint found.
+- name: Legalinfo.mn — Unified Legal Information System (National Legal Institute / Ministry of Justice
+    and Internal Affairs)
+  native_name: Эрх зүйн мэдээллийн нэгдсэн систем
+  domain: legalinfo.mn
+  country: mn
+  languages:
+  - mn
+  legal_language_note: Mongolian is the sole authoritative language; the site separately hosts unofficial
+    English translations of a subset of laws (186 laws/regulations per the Institute's most recent translation-count
+    announcement), for research use only.
+  legal_system: civil_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: unknown
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Free public access; run by the National Legal Institute (nli.gov.mn) with the Ministry
+    of Justice and Internal Affairs; no open-data license found.
+  tags:
+  - law
+  - legislation
+  - official
+  - east-asia
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded legalinfo.mn/en; confirmed a live site with Laws / Resolutions / Administrative Acts
+      / Mongolian Law Translation Database sections and a Constitution page; an nli.gov.mn announcement
+      states legalinfo.mn hosts unofficial English translations of 186 laws and regulations.
+  confidence: medium
+  notes: 186 counts unofficially English-translated laws only, not the full Mongolian-language corpus,
+    so it is not reported as official_count. No full-corpus enumeration page, API, or bulk endpoint found.
+    No distinct online gazette portal identified; Mongolia's official-publication function appears folded
+    into this same system.
+- name: Laws & Regulations Database of the Republic of China (Ministry of Justice)
+  native_name: 全國法規資料庫
+  domain: law.moj.gov.tw
+  country: tw
+  languages:
+  - zh
+  legal_language_note: Traditional Chinese is the sole authoritative language; an /Eng interface translates
+    many statutes, marked as reference/unofficial per standard practice on this database.
+  legal_system: civil_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: unknown
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Free public access; long-established official Ministry of Justice database; no open-data/reuse
+    license found this session.
+  tags:
+  - law
+  - legislation
+  - official
+  - east-asia
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded law.moj.gov.tw's English search page; confirmed a live site listing dozens of issuing
+      agencies (Ministry of Justice, Economic Affairs, Labor, Health and Welfare, etc.), a working full-text
+      article view (e.g. Code of Civil Procedure), and a bilingual zh/en interface.
+  confidence: high
+  notes: No enumeration/total-count page was loaded this session, so official_count is omitted rather
+    than estimated. New laws are formally promulgated via the Presidential Office Gazette (總統府公報); a URL
+    for that gazette wasn't verified this session, so no separate gazette entry is given.
+
 # ===================== batch: europe-central-baltics-microstates =====================
 - name: e-Sbírka (Czech Collection of Laws and International Treaties)
   native_name: e-Sbírka právních předpisů
@@ -5472,6 +6109,1811 @@ sources:
     but this session's fetch returned opaque binary rather than visibly parsed items, so it's left out
     of gazette_feed as unconfirmed rather than claimed. An older/alternate domain, jornal.gov.tl, is cited
     by Wikidata but wasn't checked this session — treat mj.gov.tl/jornal as primary.
+
+# ===================== batch: caribbean =====================
+- name: Gaceta Oficial de la República de Cuba
+  domain: gacetaoficial.gob.cu
+  country: cu
+  languages:
+  - es
+  legal_system: civil_law
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: unclear — no open-data/reuse license stated; custodied by the Ministry of Justice (MINJUS)
+    Centro de Información Jurídica
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: domain and site structure (Normas Jurídicas, Búsqueda Avanzada, Ediciones del Mes) confirmed
+      via search snippets; direct fetch returned ROBOTS_DISALLOWED
+  confidence: medium
+  notes: 'robots.txt disallows automated access — relevant for a rate-limited/robots-respecting fetcher.
+    Also functions as a de facto searchable norms database (sections Normas Jurídicas, Búsqueda Avanzada,
+    Algunas Legislaciones Cubanas) alongside the gazette; no separate national consolidated-code portal
+    found. MINJUS main site: minjus.gob.cu.'
+- name: Consultoría Jurídica del Poder Ejecutivo — Consulta Externa
+  domain: consultoria.gov.do
+  country: do
+  languages:
+  - es
+  legal_system: civil_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.consultoria.gov.do/consulta/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: unclear — informational-use site, no explicit open-data license found
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded consultoria.gov.do homepage and the /consulta/ search tool, which filters by Leyes,
+      Decretos, Reglamentos, Resoluciones, Varios, and GACETA OFICIAL
+  confidence: high
+  notes: The Gaceta Oficial is published by this same body and is searchable as a document type within
+    the same Consulta Externa tool rather than a separate portal/domain. Results render client-side; no
+    static total count observed.
+- name: Le Moniteur — Presses Nationales d'Haïti
+  domain: pressesnationales.ht
+  country: ht
+  languages:
+  - fr
+  legal_language_note: Haitian Creole is co-official under the 1987 Constitution, but gazette/legal texts
+    located were in French
+  legal_system: civil_law
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: unclear
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: domain corroborated by a business directory and Wikidata's 'official website' claim (2013–);
+      direct fetch returned ROBOTS_DISALLOWED
+  confidence: low
+  notes: Significant domain instability historically — Wikidata records at least two earlier Presses Nationales
+    domains as dead/link-rot. No self-hosted national consolidated-law database was found; the Ministry
+    of Justice and Public Security (mjsp.gouv.ht) is a general ministry site, not a law database. WIPO
+    Lex carries some Haitian codes as a fallback aggregator only. Treat as a genuine coverage gap.
+- name: Laws of Jamaica — Ministry of Justice
+  domain: laws.moj.gov.jm
+  country: jm
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://laws.moj.gov.jm/
+  official_count:
+    value: 29
+    unit: volumes (Revised Statutes)
+    as_of: '2026-07-17'
+    source_url: https://laws.moj.gov.jm/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: informational use only — no legal liability/warranty accepted by GoJ/MoJ per site disclaimer
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded laws.moj.gov.jm homepage, stating the Revised Laws of Jamaica (Statutes) run to 29
+      volumes and Revised Subsidiary Legislation to 18 volumes; also loaded the Acts of Parliament library
+      page
+  confidence: high
+  notes: 18 further volumes of Revised Subsidiary Legislation exist alongside the 29 Statute volumes.
+    Annual revision cutoff is 31 December. Jamaica Gazette (Proclamations, Rules and Regulations) is a
+    library section on this same site, not a separate portal.
+- name: Digital Legislative Library — Law Revision Commission
+  domain: laws.gov.tt
+  country: tt
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://laws.gov.tt/ttdll-web/revision/list
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: unofficial — site states it offers free access to unofficial versions of the law; the
+    printed Law Revision Commission edition remains the only official version
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded laws.gov.tt and the ttdll-web Revised Acts list, showing per-act PDF downloads across
+      multiple revision dates (1925 to 2016 consolidations) plus Legal Notice/Government Notice/Royal
+      Gazette references
+  confidence: high
+  notes: Covers 1838–2025. Legal Notices/Gazette references are integrated into the same digital library
+    rather than a separate gazette portal. The ttdll-web sub-application resolved via http:// internally
+    even though it was reached over https; no single total-count figure found without a full crawl.
+- name: Bahamas Laws On-line — Office of the Attorney General
+  domain: laws.bahamas.gov.bs
+  country: bs
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://laws.bahamas.gov.bs/cms/legislation/acts_only/by-alphabetical-order.html
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: informational use only, per site disclaimer; no liability accepted by GoB
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded the alphabetical Acts listing (letter A), current as of the fetch date (17 July 2026),
+      with per-act PDF links and full amendment-history chains
+  confidence: high
+  notes: Runs on the iLAWS platform (WWT4 Pty Ltd). Official Gazettes (by Year / by Category) are part
+    of the same laws.bahamas.gov.bs site. Mirrored under several ministry sub-sites (oag.gov.bs, gg.gov.bs,
+    mofa.gov.bs) that all point back to this backend. No single total-count figure found without paging
+    through all 26 letters.
+- name: Barbados Parliament — Laws
+  domain: barbadosparliament-laws.com
+  country: bb
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.barbadosparliament-laws.com/en
+  official_count:
+    value: 623
+    unit: consolidated statutes
+    as_of: '2026-07-17'
+    source_url: https://www.barbadosparliament-laws.com/en
+  structured:
+    api: unknown
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: unclear
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: counts (623 Consolidated Statutes, 550 Acts, 681 Subsidiary Legislation, 1936 Statutory
+      Instruments, 1574 Gazettes, plus Hansard/Order Papers/Bills) read from a search-engine cache snippet
+      showing nearby content dated as recent as 15 Jul 2026; direct fetch returned ROBOTS_DISALLOWED
+  confidence: medium
+  notes: Official Gazettes (1574) are counted within this same portal rather than a separate domain. A
+    parallel mirror exists at barbadoslawcourts.gov.bb (Judiciary) under Statutes of Barbados / Consolidated
+    Laws. Domain is .com, not .gov.bb, but is clearly Parliament's own site per barbadosparliament.com
+    cross-links.
+- name: Laws of Grenada
+  domain: laws.gov.gd
+  country: gd
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: informational use only, per site disclaimer; official text remains the printed Government
+    Printery edition
+  tags:
+  - law
+  - legislation
+  - official
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: laws.gov.gd currently returns a static 'Upgrading...' maintenance placeholder rather than
+      the legislation tool; www.laws.gov.gd/index.php/acts returned an HTTP 409 error. Site content (Acts
+      index, informational-use disclaimer) is otherwise known only from an indexed search snippet dated
+      Oct 2024.
+  confidence: low
+  notes: Domain is genuinely the Government of Grenada's own (.gov.gd) but is non-functional as of this
+    session — a fetcher should expect this URL to fail or serve a maintenance page until the site is restored.
+- name: Grenada Government Gazette
+  domain: gazettes.gov.gd
+  country: gd
+  languages:
+  - en
+  legal_system: common_law
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: paid subscription for regular delivery; individual notice submission is fee-based
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded gazettes.gov.gd, describing the Government Printery's history (est. 1885) and current
+      Gazette/Extraordinary Gazette operations plus a Submit-a-Notice workflow
+  confidence: high
+  notes: Published by the Grenada Government Printery, Botanical Gardens, St. George's. Extraordinary
+    Gazettes are issued ad hoc outside the regular Friday schedule.
+- name: Revised Laws of Saint Lucia — Attorney General's Chambers
+  domain: attorneygeneralchambers.com
+  country: lc
+  languages:
+  - en
+  legal_system: mixed:french_civil_code_and_english_common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://attorneygeneralchambers.com/laws-of-saint-lucia
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: unclear — site built/maintained by a RELX-affiliated legal-tech vendor for the AG's Chambers;
+    no explicit reuse license stated
+  tags:
+  - law
+  - legislation
+  - official
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded the Revised Laws of Saint Lucia (2023) alphabetical listing, paginated across at
+      least 8 pages of Act titles
+  confidence: high
+  notes: 'Domain is a .com, not .gov.lc/.govt.lc, but confirmed official: contact addresses are attorneygeneral@gosl.gov.lc
+    / ps.agchambers@govt.lc and the site links to Government of Saint Lucia at govt.lc. Built on Sitefinity
+    CMS with a RELX/LexisNexis-affiliated footer credit. Saint Lucia retains a French-derived Civil Code
+    and Code of Civil Procedure alongside an otherwise English common-law system — a genuine Caribbean
+    mixed jurisdiction.'
+- name: Saint Lucia Government Gazette — National Printing Corporation
+  domain: npc.govt.lc
+  country: lc
+  languages:
+  - en
+  legal_system: mixed:french_civil_code_and_english_common_law
+  source_type: gazette
+  kind: gazette
+  enumeration_url: https://npc.govt.lc/gazettes
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: unclear
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: multiple dated Gazette and Extraordinary Gazette PDFs (2021, 2024, 2025) found under npc.govt.lc/files/documents/gazettes/,
+      and an npc.govt.lc/gazettes index organised by year/month appeared in search results
+  confidence: high
+  notes: National Printing Corporation is a department under the Office of the Prime Minister (renamed
+    from the Government Printing Establishment in 2002).
+- name: Ministry of Legal Affairs and Justice — Gazettes
+  domain: legal.gov.vc
+  country: vc
+  languages:
+  - en
+  legal_system: common_law
+  source_type: gazette
+  kind: gazette
+  enumeration_url: https://legal.gov.vc/legal/index.php/publications
+  gazette_feed: https://legal.gov.vc/legal/index.php/publications?format=feed&type=rss
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: unclear
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded legal.gov.vc's Publications page, listing Gazette archives by year from 2016 through
+      2026; the site's Joomla RSS export returned a 200 response with content-type application/rss+xml
+  confidence: high
+  notes: The 2009 Law Revision Act (No. 9 of 2009) mandated an 'electronic database of all existing laws',
+    and a 2011 launch ceremony for the print Revised Edition was reported, but no live, self-hosted, full-text
+    consolidated-law database was found online for SVG this session — only the Gazette archive. Gazette
+    notices routinely cite the 'Revised Laws of Saint Vincent and the Grenadines, 2009' as the current
+    consolidation.
+- name: The Laws of Antigua and Barbuda
+  domain: laws.gov.ag
+  country: ag
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://laws.gov.ag/laws/alphabetical/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: informational use; current-year legislation withheld from the site and available only
+    via the Government Printery
+  tags:
+  - law
+  - legislation
+  - official
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded the alphabetical listing of Acts and a sample chapter PDF (cap-245.pdf); site states
+      a 2021-started digitisation project is complete and all passed laws are online, aside from the current
+      year
+  confidence: high
+  notes: Managed by the Parliamentary Counsel / Editor of the Official Gazette within the Ministry of
+    Legal Affairs. Also organised by Volume (Revised Edition 1992) and by Year.
+- name: Antigua and Barbuda Official Gazette
+  domain: gazette.laws.gov.ag
+  country: ag
+  languages:
+  - en
+  legal_system: common_law
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: subscription-based for print; PDFs of past issues found freely downloadable in the online
+    archive
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: dated Official Gazette and Supplementary Gazette PDFs found from 2017 through October 2025
+      (e.g. No. 55, 9 October 2025), published every Thursday by the Government Printer; all instances
+      found used http://, not https://
+  confidence: medium
+  notes: Subdomain of laws.gov.ag. Every link found for this subdomain used http:// — verify TLS support
+    before relying on https for this host.
+- name: St. Kitts and Nevis Law Commission
+  domain: lawcommission.gov.kn
+  country: kn
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://lawcommission.gov.kn/annual-laws/annual-laws-of-st-kitts-and-nevis/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: unclear — site consolidated by a third-party vendor (The Regional Law Revision Centre
+    Inc., lawrevision.ai) on behalf of the Government of St. Kitts and Nevis
+  tags:
+  - law
+  - legislation
+  - official
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded the Annual Laws listing, showing per-year folders (2018–2025, e.g. 55 items for 2025)
+      and individual current Act PDFs dated as recent as 8 December 2025, plus separate Revised Acts (as
+      at 31 Dec 2020/2017/2009) and Revised Ordinances of Nevis pages
+  confidence: high
+  notes: Launched March 2020 by the Law Commission (an arm of the Ministry of Justice and Legal Affairs).
+    Nevis has its own parallel stream of Ordinances alongside the federal Acts.
+- name: Official Gazette of St. Christopher and Nevis
+  domain: gazette.gov.kn
+  country: kn
+  languages:
+  - en
+  legal_system: common_law
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: unknown
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: lead
+    retrieved_at: '2026-07-17'
+    evidence: the Official Gazette Bill, 2023 (passed 8 Feb 2023) provided for digitising the Gazette
+      and named gazette.gov.kn as its future home; a Yale Law Library guide separately lists the Gazette
+      as 'not available online'. No direct evidence the site is live was found this session.
+  confidence: low
+  notes: Believed to exist per 2023 legislation and government press releases but not confirmed reachable
+    this session — check directly before relying on it.
+- name: Laws of Dominica
+  domain: dominica.gov.dm
+  country: dm
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://dominica.gov.dm/laws-of-dominica
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: unclear
+  tags:
+  - law
+  - legislation
+  - official
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: loaded dominica.gov.dm/laws-of-dominica, a title/year search tool described on-page as covering
+      the Revised Laws of Dominica 1990 plus Acts and SROs 1991–2009
+  confidence: high
+  notes: On-page text describes coverage only through 2009, but a November 2020 Dominica News Online report
+    states a further consolidated revision covering 1990 through January 2017 was made public on 7 December
+    2020 — unclear whether that later revision is reflected in this search tool.
+- name: Dominica Official Gazette — Government Printery
+  domain: printery.dominica.gov.dm
+  country: dm
+  languages:
+  - en
+  legal_system: common_law
+  source_type: gazette
+  kind: gazette
+  enumeration_url: https://printery.dominica.gov.dm/Gazettes
+  official_count:
+    value: 1404
+    unit: gazette issues/items
+    as_of: '2026-07-17'
+    source_url: https://printery.dominica.gov.dm/Gazettes
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: paid per-document — individual issues/notices are priced and added to a shopping cart;
+    a subscription-plan option also exists
+  tags:
+  - law
+  - legislation
+  - official
+  - gazette
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'loaded printery.dominica.gov.dm/Gazettes, which reads ''Records: 1404'' and lists individually
+      priced Gazette/SRO/Act items with preview and add-to-cart options, current through Gazette No. 21
+      of 2026 (16 April 2026)'
+  confidence: high
+  notes: 'A separate page on dominica.gov.dm still describes the Gazette as mail-subscription-only, which
+    appears to predate this online storefront. ''Records: 706'' was seen on the broader Publications search
+    (mixing Gazettes with other categories); 1404 is specific to the Gazettes filter.'
+
+# ===================== batch: oceania =====================
+- name: Laws of Fiji (Consolidated Laws)
+  domain: laws.gov.fj
+  country: fj
+  languages:
+  - en
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.laws.gov.fj/Home/laws
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Provided free of charge for public benefit by the Office of the Attorney-General; no explicit
+    open-data/reuse license stated.
+  tags:
+  - law
+  - legislation
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded laws.gov.fj/Home/laws directly. Run by the Office of the
+
+      Attorney-General; offers an A-Z browsable list of Principal and
+
+      Subsidiary consolidated laws, plus a separate "Laws as Published"
+
+      (gazetted Acts/Legal Notices) section. No aggregate total is
+
+      displayed on the page, so official_count is omitted rather than
+
+      hand-counted.'
+  confidence: high
+  notes: 'No confirmed dedicated online gazette portal: fiji.gov.fj was
+
+    mid-relaunch ("under maintenance") at retrieval, and
+
+    parliament.gov.fj/gazette carries only Parliament''s own notices, not
+
+    the full state gazette. Fiji has a substantial parallel iTaukei
+
+    customary land/governance system (Native Lands Trust Board, iTaukei
+
+    Land and Fisheries Commission) alongside general common law, hence
+
+    the mixed classification.'
+- name: PacLII - Papua New Guinea Consolidated & Sessional Legislation
+  domain: paclii.org
+  country: pg
+  languages:
+  - en
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.paclii.org/pg/legis/consol_act/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Aggregator content; see PacLII's own Copyright Policy. Underlying indices are credited
+    to the PNG Dept. of Justice & Attorney-General (DJAG) Law Library.
+  tags:
+  - law
+  - legislation
+  - fallback
+  - aggregator
+  - pacific
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: 'Direct fetch of the PacLII consolidated-legislation page was blocked
+
+      by bot detection. Confirmed instead via a University of Melbourne
+
+      library guide (Consolidated Legislation 1905-2014; Sessional
+
+      Legislation 1974-current) and a paclii.org/pg/indices/legis/ search
+
+      snippet showing Acts/Repealed-Acts indices "Prepared by the PNG
+
+      Department of Justice and Attorney General Law Library", updated
+
+      August 2025.'
+  confidence: medium
+  notes: 'No PNG government-run consolidated database found; justice.gov.pg
+
+    (DJAG''s own site, fetched directly) has no legislation section at
+
+    all. PacLII is used here as the fallback per the batch instructions.
+
+    PNG''s Underlying Law Act 2000 formally names customary law and
+
+    English common law as the two co-equal sources of "underlying law"
+
+    (s.3), which is why the mixed classification is used rather than
+
+    plain common_law.'
+- name: PacLII - Solomon Islands Consolidated Legislation & AG Index of Acts
+  domain: paclii.org
+  country: sb
+  languages:
+  - en
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.paclii.org/sb/indices/legis/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Aggregator content; see PacLII's own Copyright Policy. The Index of Acts is credited to
+    the Solomon Islands Attorney-General's Office, which disclaims responsibility for errors or omissions
+    in it.
+  tags:
+  - law
+  - legislation
+  - fallback
+  - aggregator
+  - pacific
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: 'Search snippets confirm paclii.org/sb/indices/legis/ hosts a
+
+      "Solomon Islands Index of Acts (Revised up to 19 May 2023),
+
+      Maintained by the Solomon Islands Attorney General''s Office". Base
+
+      consolidated legislation dates to the 1997 edition, supplemented by
+
+      a consolidated index correct to 2011; a PacLII social-media post
+
+      referenced further Solomon Islands database updates that we did not
+
+      independently date.'
+  confidence: medium
+  notes: 'No national government-run online portal found (checked lands.gov.sb
+
+    and the PM & Cabinet site; neither hosts consolidated legislation).
+
+    PacLII is used here as the fallback per the batch instructions. The
+
+    Solomon Islands Constitution recognises customary law and the country
+
+    operates dedicated Customary Land Appeal Courts alongside the general
+
+    common-law court hierarchy, hence the mixed classification.'
+- name: Vanuatu Consolidated Legislation & Acts of Parliament
+  domain: parliament.gov.vu
+  country: vu
+  languages:
+  - en
+  - fr
+  legal_language_note: Bislama is the national language but is not the language of enacted legislative
+    text; English and French are both official languages of law, reflecting the 1906-1980 Anglo-French
+    Condominium.
+  legal_system: mixed:common_law+civil_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://parliament.gov.vu/index.php/parliamentary-business/acts-of-parliament/acts
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: (c) Parliament of the Republic of Vanuatu; no explicit open-data/reuse license stated.
+  tags:
+  - law
+  - legislation
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded the parliament.gov.vu Acts of Parliament page (2021
+
+      Sessional Legislation list) and the "Vanuatu consolidated
+
+      Legislation of 2006" page directly; the latter is a thin shell
+
+      whose individual Act links redirect out to PacLII copies rather
+
+      than hosting the text itself.'
+  confidence: high
+  notes: 'The Acts-by-year listing does not appear to have been refreshed past
+
+    the 2021 session at retrieval. The Attorney-General-maintained "Table
+
+    of Revised Acts (Consolidated Index)" (updated 24 June 2025) lives on
+
+    paclii.org/vu/indices/legis/ rather than a .gov.vu domain. Constitution
+
+    Art. 95 preserves customary law alongside the joint English/French
+
+    legal inheritance, making Vanuatu one of the few genuinely tripartite
+
+    mixed systems in this batch.'
+- name: Vanuatu Official Gazette / Journal Officiel
+  domain: gov.vu
+  country: vu
+  languages:
+  - en
+  - fr
+  legal_system: mixed:common_law+civil_law+customary
+  source_type: gazette
+  kind: gazette
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: Unclear; individual gazette PDFs are hosted without a visible reuse license.
+  tags:
+  - gazette
+  - official
+  - pacific
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: 'Confirmed individual bilingual EN/FR gazette PDFs hosted under
+
+      gov.vu/images/publications/ and gov.vu/images/news/ (e.g. "Official
+
+      Gazette No. 95 of 2024"). No consolidated listing/index page was
+
+      located, so enumeration_url is omitted.'
+  confidence: medium
+  notes: 'No index/archive page enumerating all issues was found; PDFs appear
+
+    to be linked individually from news/publication posts rather than
+
+    through a browsable gazette archive.'
+- name: Consolidation of Laws of Samoa
+  domain: ag.gov.ws
+  country: ws
+  languages:
+  - en
+  legal_language_note: Samoan and English are both official languages of Samoa, but the consolidated Statutes
+    are authoritative in English; Bills are translated into Samoan for Legislative Assembly debate.
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.ag.gov.ws/consolidation-of-laws-of-samoa/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Unclear; no explicit reuse license found, but the Office of the Attorney-General explicitly
+    states that copies on PacLII and other internet sites are not official versions of Samoa's laws, asserting
+    itself as the sole authoritative source.
+  tags:
+  - law
+  - legislation
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded ag.gov.ws/consolidation-of-laws-of-samoa/ directly: an
+
+      alphabetical list making up the Consolidation of Laws of Samoa
+
+      2023. Our fetch was truncated before reaching the end of the
+
+      alphabet, so no reliable total could be read off the page.'
+  confidence: high
+  notes: 'No dedicated online Samoa Gazette portal was located at retrieval (a
+
+    new "Samoa One Government Portal", mygov.gov.ws, launched in 2026 and
+
+    may eventually consolidate this). The Land and Titles Court and the
+
+    matai chiefly-title system form a substantial parallel customary
+
+    jurisdiction alongside general common law, hence the mixed
+
+    classification.'
+- name: Tongan Legislation (Attorney General's Office / Crown Law)
+  domain: ago.gov.to
+  country: to
+  languages:
+  - en
+  - to
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://ago.gov.to/cms/legislation/current-revised-edition/by-title.html
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: Free to download/print for private use; commercial entities must obtain permission to
+    reuse the data from "the Isle of Man Attorney General's Chambers" per the site's own rights notice
+    - almost certainly a leftover vendor-template artifact (the underlying iLAWS platform is also used
+    by the Isle of Man) rather than a deliberate Tongan policy statement.
+  tags:
+  - law
+  - legislation
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded ago.gov.to/cms and its by-title (letter A) page directly.
+
+      Actively maintained, with Recent Acts/Regulations/Gazettes/Bills
+
+      dated into 2026 (e.g. Public Service (Amendment) Act 2026),
+
+      consolidated to 31 October 2020 as the baseline revised edition,
+
+      with dual English/Tongan PDFs per instrument.'
+  confidence: high
+  notes: 'The by-title index is paginated per starting letter with no
+
+    displayed aggregate total, so official_count is omitted rather than
+
+    estimated by manually counting across all 26 pages.'
+- name: Tonga Government Gazettes
+  domain: ago.gov.to
+  country: to
+  languages:
+  - en
+  - to
+  legal_system: common_law
+  source_type: gazette
+  kind: gazette
+  enumeration_url: https://ago.gov.to/cms/legislation/gazettes/gazettes-by-year.html
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: Same rights notice as the parent Tongan Legislation site (see the consolidated_portal
+    entry for this domain).
+  tags:
+  - gazette
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Confirmed via the ago.gov.to homepage''s "Gazettes by Year" /
+
+      "Gazettes by Type" navigation and "Recent Gazettes" list, current
+
+      through 2026 (e.g. Gazette Supplement Extraordinary No.04 [2026]).'
+  confidence: high
+  notes: 'Integrated into the same iLAWS system as the consolidated
+
+    legislation entry above. No RSS/Atom feed was identified.'
+- name: PacLII - Kiribati Consolidated & Sessional Legislation
+  domain: paclii.org
+  country: ki
+  languages:
+  - en
+  legal_language_note: Gilbertese (te taetae ni Kiribati) is the national language; legislation is published
+    in English.
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.paclii.org/ki/indices/legis/Chrono_Index.html
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Aggregator content; see PacLII's own Copyright Policy.
+  tags:
+  - law
+  - legislation
+  - fallback
+  - aggregator
+  - pacific
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: 'Search snippets confirm paclii.org/ki hosts consolidated
+
+      legislation based on the 1980 revised edition of the Laws of
+
+      Kiribati plus Sessional Legislation from 1980 to the present; the
+
+      chronological/alphabetical Acts index was viewed via a search
+
+      snippet listing Acts from 2016-2019.'
+  confidence: low
+  notes: 'No national government-run portal was found on a .gov.ki domain.
+
+    Base consolidation dates to 1980 (the immediate post-independence
+
+    Laws of Kiribati), making this one of the more dated corpora in the
+
+    batch. Kiribati courts must take customary law into account in
+
+    specified criminal and civil matters, hence the mixed
+
+    classification.'
+- name: Legal Information System of the Federated States of Micronesia (FSM Code)
+  domain: fsmlaw.org
+  country: fm
+  languages:
+  - en
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://fsmlaw.org/fsm/code/index.htm
+  official_count:
+    value: 58
+    unit: titles
+    as_of: '2026-07-17'
+    source_url: https://fsmlaw.org/fsm/code/index.htm
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: Provided as a public service by the LIS Project; disclaims accuracy/currency guarantees;
+    no explicit open-data license.
+  tags:
+  - law
+  - legislation
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded fsmlaw.org and fsmlaw.org/fsm/code/index.htm directly. The
+
+      Code is structured as Titles 1 through 58 (several reserved or
+
+      repealed). The site describes itself as an "unofficial legislative
+
+      version" of the 1997 official Code, updated through Public Law
+
+      12-12 (2001) by the FSM Congress''s Office of Legislative Counsel
+
+      with LIS Project assistance, coordinated by the FSM Supreme Court
+
+      under an Asian Development Bank technical-assistance grant.'
+  confidence: medium
+  notes: 'Domain is not a .fm government domain, but the project is explicitly
+
+    coordinated by the FSM Supreme Court (named as local executing
+
+    agency) and the FSM Congress''s own Legislative Counsel, so it is
+
+    treated here as the country''s de facto official portal rather than a
+
+    pure private aggregator. The site itself directs users to
+
+    cross-check the FSM Congress site (cfsm.gov.fm) Public Law tables for
+
+    amendments after PL 12-12. No dedicated online gazette was
+
+    identified. Pohnpei and Yap retain traditional/customary leadership
+
+    structures with constitutional recognition, hence the mixed
+
+    classification.'
+- name: Nitijela Legislation (Acts of the Republic of the Marshall Islands)
+  domain: rmiparliament.org
+  country: mh
+  languages:
+  - en
+  - mh
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://rmiparliament.org/cms/legislation/acts-of-nitijela/by-alphabetical-order.html
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: Free to download/print for private use; commercial entities must obtain permission to
+    reuse the data from the Marshall Islands Attorney-General's Chambers.
+  tags:
+  - law
+  - legislation
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded rmiparliament.org/cms/legislation.html directly: browsable
+
+      Acts of Nitijela (alphabetical / by year / by title / by tag),
+
+      Bills, Repealed Legislation, Acts Not in Force, and Public Laws by
+
+      Year, each Act shown with dual English/Marshallese short titles and
+
+      a version-history table. Content current to 2024/2025 Acts at
+
+      retrieval.'
+  confidence: high
+  notes: 'No dedicated online gazette section was found on this site (the U.S.
+
+    Law Library of Congress separately notes it does not hold a Marshall
+
+    Islands Government Gazette). RMI''s legal system is explicitly
+
+    described by regional law-library sources as a mixed system of
+
+    US/English common law, customary law, and local statutes, with the
+
+    Council of Iroij (tribal chiefs) as an advisory upper house on
+
+    customary matters.'
+- name: RONLAW - Republic of Nauru Law
+  domain: ronlaw.gov.nr
+  country: nr
+  languages:
+  - en
+  legal_system: common_law
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: Not confirmed; the page is a JS-rendered application and license terms were not directly
+    observed.
+  tags:
+  - law
+  - legislation
+  - gazette
+  - case_law
+  - official
+  - pacific
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: 'ronlaw.gov.nr loads as a JS-rendered single-page app; our direct
+
+      fetch returned no static content beyond the page title. Search
+
+      snippets confirm it is the Government of Nauru''s own database
+
+      ("RONLAW... Nauru''s Online Legal database contains copies of
+
+      Nauruan legislation, court decisions, gazettes and other relevant
+
+      documents", spanning 1850 to the present) with items dated into
+
+      2026 (e.g. National Hosting of Events (XI Micronesian Games)
+
+      Regulations 2026).'
+  confidence: medium
+  notes: 'Built under Nauru''s Consolidation of Legislation Project (Office of
+
+    Parliamentary Counsel + Justice Department, NZ Aid funded).
+
+    Integrates legislation, gazettes, and court decisions in one system
+
+    rather than separate portals, so a single combined entry is used
+
+    here instead of splitting by kind. No enumeration_url could be
+
+    confirmed because the interface is JS-driven and its static HTML
+
+    carries no browsable index.'
+- name: Palau National Code (Code Commission / Palau Legal Information Access)
+  domain: codecommission.pw
+  country: pw
+  languages:
+  - en
+  legal_language_note: Palauan and English are both official languages of Palau; the Palau National Code
+    is compiled and published in English.
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: Not confirmed.
+  tags:
+  - law
+  - legislation
+  - official
+  - pacific
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: 'codecommission.pw confirmed via search snippet as the Palau
+
+      National Code Commission''s own site, an independent commission
+
+      with a statutory duty (1 PNC/PNCA Sec.1002) to compile, revise,
+
+      codify, and publish the Palau National Code Annotated (PNCA). A
+
+      companion public-facing search app at palaulaw.gov.pw ("Palau
+
+      Legal Information Access App") was fetched directly but is a
+
+      client-rendered Softr app that returned no static content beyond
+
+      metadata.'
+  confidence: medium
+  notes: 'Two related .pw government-linked properties exist: codecommission.pw
+
+    (the statutory Code Commission) and palaulaw.gov.pw (its public
+
+    search front-end). No enumeration_url with a confirmed total could
+
+    be verified; the PNCA is organised into numbered Titles (Title 40
+
+    Revenue and Taxation, Title 27 Fishing, and Title 18 Criminal
+
+    Procedure were each individually confirmed) but the highest/complete
+
+    title count was not directly observed this session. Constitution
+
+    Art. V recognises traditional rights, and the Code itself caps
+
+    penalties for offences defined solely by "generally respected native
+
+    custom", hence the mixed classification.'
+- name: Tuvalu On-line Legislation
+  domain: tuvalu-legislation.tv
+  country: tv
+  languages:
+  - en
+  - tvl
+  legal_system: mixed:common_law+customary
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://tuvalu-legislation.tv/cms/legislation/acts_only/by-alphabetical-order.html
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    - html
+    api_key_required: false
+  license_note: (c) Tuvalu Government; free to download/print for private use, commercial entities must
+    obtain permission to reuse the data from the Tuvalu Attorney-General's Chambers.
+  tags:
+  - law
+  - legislation
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded tuvalu-legislation.tv/cms/legislation.html directly:
+
+      consolidated to the 2022 Revised Edition (statute law + subsidiary
+
+      legislation) with an active "Current Laws to 2024" edition, dual
+
+      English/Tuvaluan short titles, a version-history table per
+
+      instrument, and separate Gazettes/Bills/Notices/Cases sections.
+
+      Revision credited to Laws Consolidated Inc. on behalf of the
+
+      Tuvalu Government.'
+  confidence: high
+  notes: 'Runs on the same iLAWS platform (WWT4 Pty Ltd) as Tonga''s and the
+
+    Marshall Islands'' sites. Land tenure follows the customary kaitasi
+
+    (extended-family ownership) system, and the Laws of Tuvalu Act 1987
+
+    formally includes customary law within the law of Tuvalu, hence the
+
+    mixed classification.'
+- name: Tuvalu Government Gazettes
+  domain: tuvalu-legislation.tv
+  country: tv
+  languages:
+  - en
+  - tvl
+  legal_system: mixed:common_law+customary
+  source_type: gazette
+  kind: gazette
+  enumeration_url: https://tuvalu-legislation.tv/cms/legislation/gazettes.html
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - pdf
+    api_key_required: false
+  license_note: Same rights notice as the parent Tuvalu On-line Legislation site (see the consolidated_portal
+    entry for this domain).
+  tags:
+  - gazette
+  - official
+  - pacific
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Confirmed via the tuvalu-legislation.tv main navigation''s dedicated
+
+      "Gazettes" section, part of the same directly-fetched site.'
+  confidence: high
+  notes: 'Integrated into the same iLAWS system as the consolidated
+
+    legislation entry above. No RSS/Atom feed was identified.'
+
+# ===================== batch: supranational =====================
+- name: African Union
+  native_name: ''
+  domain: au.int
+  country: int
+  jurisdiction_note: African Union
+  languages:
+  - en
+  - fr
+  - ar
+  - pt
+  - es
+  - sw
+  legal_language_note: Six languages offered on the AU site's language switcher; treaty texts are consistently
+    published in English and French, less consistently in the others
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://au.int/en/treaties/ratifiedby
+  official_count:
+    value: 80
+    unit: treaties
+    as_of: '2026-07-17'
+    source_url: https://au.int/en/treaties/ratifiedby
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - official
+  - africa
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded the full ''OAU/AU Treaties, Conventions, Protocols & Charters'' table: per-instrument
+      adoption date, entry-into-force date, last-update date, and a per-treaty ''Status List'' (ratifications)
+      link'
+  confidence: medium
+  notes: official_count is a manual tally of the English-language rows in AU's own table (~80); the page
+    states no explicit total, and the table contains at least one apparent duplicate row (two 'Protocol
+    ... on Digital Trade' entries), so treat this as approximate, not authoritative. Each treaty has its
+    own page plus a separate ratification Status List page; no bulk export or API found.
+- name: Organization of American States
+  native_name: ''
+  domain: oas.org
+  country: int
+  jurisdiction_note: Organization of American States
+  languages:
+  - en
+  - es
+  - fr
+  - pt
+  legal_language_note: OAS's four official languages
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.oas.org/en/sla/dil/inter_american_treaties.asp
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - official
+  - americas
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: Search snippets confirm the Department of International Law (DIL) / Secretariat for Legal
+      Affairs (SLA) page describing Inter-American multilateral treaties classified by year and subject,
+      with per-treaty pages under A- (charter/political) and B- (treaty) series codes, e.g. A-41 = OAS
+      Charter, B-58 = Convention against Corruption
+  confidence: low
+  notes: oas.org returned bot-detection errors on every fetch attempt this session (both the current www.oas.org/en/sla/dil/...
+    path and the legacy oas.org/dil/... path), so nothing could be loaded directly. B-series numbering
+    reaches at least B-58 per secondary snippets; no current official total was found. Worth a retry with
+    a different fetch path/session.
+- name: ASEAN
+  native_name: ''
+  domain: asean.org
+  country: int
+  jurisdiction_note: Association of Southeast Asian Nations
+  languages:
+  - en
+  legal_language_note: English is ASEAN's sole official working language; instruments are published in
+    English only
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://asean.org/legal-instruments-database/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - official
+  - asean
+  - southeast-asia
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: Search snippet confirms the ASEAN Main Portal's 'Legal Instruments Database', organized
+      by Community Pillar and grouped by subject (e.g. the TAC and its amending protocols grouped together);
+      direct fetch returned only a 'Javascript is required' bot/JS challenge page
+  confidence: low
+  notes: asean.org sits behind a JS challenge this session's fetch tool cannot pass, so the database itself
+    could not be loaded and no count was obtainable. Worth a retry with a JS-capable fetcher.
+- name: Gulf Cooperation Council
+  native_name: مجلس التعاون لدول الخليج العربية
+  domain: gcc-sg.org
+  country: int
+  jurisdiction_note: Gulf Cooperation Council
+  languages:
+  - ar
+  - en
+  legal_language_note: Arabic is the GCC's working language; some material is mirrored in English
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  structured:
+    api: none
+    bulk: none
+    formats: []
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - gap
+  - gcc
+  verification:
+    status: lead
+    retrieved_at: '2026-07-17'
+    evidence: No dedicated public treaty/instrument enumeration page found; the 'Agreements' URL surfaced
+      by search (gcc-sg.org/en-us/CognitiveSources/Pages/Agreements.aspx) 404s on fetch, and the Secretariat's
+      'Digital Library' (gcc-sg.org/en/MediaCenter/DigitalLibrary/) is a general media/publications repository,
+      not a structured treaty register
+  confidence: low
+  notes: 'Honest gap, not an invented portal: the GCC Secretariat site does not appear to expose a public,
+    structured register of its own agreements comparable to the other bodies in this batch. Individual
+    GCC agreements (e.g. the 1981 Economic Agreement) are documented by third-party treaty trackers (UNCTAD
+    IIA Navigator, EDIT) rather than an official GCC enumeration page. enumeration_url intentionally omitted
+    rather than guessed.'
+- name: Economic Community of West African States
+  native_name: ''
+  domain: documentation.ecowas.int
+  country: int
+  jurisdiction_note: ECOWAS
+  languages:
+  - en
+  - fr
+  - pt
+  legal_language_note: Site offers English, Français and Português versions
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://documentation.ecowas.int/legal-documents/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - official
+  - ecowas
+  - west-africa
+  verification:
+    status: search-verified
+    retrieved_at: '2026-07-17'
+    evidence: Search snippets confirm 'ECOWAS Documentation on-line' at documentation.ecowas.int, with
+      a 'Legal Documents' section listing Treaties, Regulations/Acts, Decisions, Protocols and Publications;
+      individual protocol PDFs are hosted under /download/en/legal_documents/protocols/
+  confidence: medium
+  notes: 'documentation.ecowas.int disallows automated access via robots.txt, so this session''s fetch
+    tool could not load the page (relevant to this project''s own robots.txt-respecting fetcher policy:
+    this source would need a manual check or an explicit allowance, never a bypass). No official total
+    count found. A legacy page also exists at old22.ecowas.int/ecowas-law/treaties/ but wasn''t verified
+    live.'
+- name: East African Community
+  native_name: ''
+  domain: eac.int
+  country: int
+  jurisdiction_note: East African Community
+  languages:
+  - en
+  - sw
+  legal_language_note: English is the EAC Treaty's original official language; Kiswahili has since been
+    adopted as an official/working language
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.eac.int/documents/category/acts-of-the-community
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - gazette
+  - official
+  - eac
+  - east-africa
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded the EAC document hub (eac.int/documents), confirming live categories for 'Acts of
+      the Community', 'EAC Regulations', 'Key Documents' and 'Gazette', with the latest EAC Gazette issue
+      dated 15 July 2026 (Vol. AT 1 - No. 21) - i.e. updated two days before this session
+  confidence: medium
+  notes: EAC publishes an actual dated-PDF 'EAC Gazette' (no RSS/Atom confirmed, so gazette_feed omitted)
+    alongside separate 'Protocols' and 'Acts of the Community' categories; no explicit total instrument
+    count was stated on any hub page. EAC also runs a broader 'EAC Information Repository' (repository.eac.int),
+    an 'EAC Reports Database' (reports.eac.int), an open-data portal (eac.opendataforafrica.org) and an
+    e-Library (elibrary.eac.int) that would reward a dedicated follow-up pass for bulk/open-data access.
+- name: Southern African Development Community
+  native_name: ''
+  domain: sadc.int
+  country: int
+  jurisdiction_note: SADC
+  languages:
+  - en
+  - fr
+  - pt
+  legal_language_note: SADC Treaty languages are English, French and Portuguese; site navigation observed
+    in English
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.sadc.int/pages/sadc-protocols
+  official_count:
+    value: 26
+    unit: protocols
+    as_of: '2026-07-17'
+    source_url: https://www.sadc.int/pages/sadc-protocols
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - official
+  - sadc
+  - southern-africa
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Page states verbatim: ''Currently, SADC has 26 Protocols, including those have not yet
+      entered into force'', followed by a list of individual protocol document pages'
+  confidence: high
+  notes: official_count is quoted directly from the live page; SADC gives no explicit as-of date for the
+    '26' figure itself, so as_of here reflects this session's retrieval date rather than a SADC-stated
+    date. Each protocol links to its own /document/... page; no bulk export or API found.
+- name: Commonwealth of Independent States
+  native_name: Содружество Независимых Государств (СНГ)
+  domain: eccis.org
+  country: int
+  jurisdiction_note: Commonwealth of Independent States
+  languages:
+  - ru
+  legal_language_note: Russian is the CIS's working language for its legal-acts registry
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://eccis.org/reestrv2/
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - official
+  - cis
+  - eurasia
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded e-cis.info/reestr/, the CIS Internet Portal's public document-registry page, which
+      links directly to the CIS Executive Committee's own 'Unified Register of Legal Acts and Other Documents
+      of the CIS' at eccis.org/reestrv2/; the portal's front page carried news dated 17 July 2026, confirming
+      it is live and current
+  confidence: medium
+  notes: The registry tool itself (eccis.org/reestrv2/, mirrored at cis.minsk.by/reestrv2/) is search/interactive
+    rather than a static list, and cis.minsk.by disallows automated fetches via robots.txt, so no document
+    count could be read off any page. e-cis.info (public portal) and eccis.org (Executive Committee site,
+    RU/EN) are companion domains for the same body. A separate, narrower registry of interregional/cross-border
+    cooperation instruments exists at e-cis.info/cooperation/3745/86862/.
+- name: Council of Europe (Treaty Office)
+  native_name: ''
+  domain: coe.int
+  country: int
+  jurisdiction_note: Council of Europe
+  languages:
+  - en
+  - fr
+  legal_language_note: English and French are the Council of Europe's official languages; some treaties
+    have further translations
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://www.coe.int/en/web/conventions/full-list
+  official_count:
+    value: 231
+    unit: treaties
+    as_of: '2025-12-31'
+    source_url: https://en.wikipedia.org/wiki/List_of_Council_of_Europe_treaties
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - official
+  - council-of-europe
+  - europe
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: Loaded the Treaty Office 'Full list' and 'Statistics' pages directly; both are confirmed
+      live and correctly structured (breadcrumbs, filters by CETS number/subject/state group) but render
+      the actual treaty table and counts client-side ('You need to enable JavaScript to run this app'),
+      so no count could be read off the page itself
+  confidence: medium
+  notes: official_count (231, as of December 2025) is sourced from Wikipedia's CETS list, NOT read directly
+    off coe.int, because coe.int's full-list/statistics pages are JavaScript-rendered SPAs this session's
+    fetch tool cannot execute. enumeration_url and domain are still genuinely 'fetched' (confirmed real,
+    current, correctly structured) - only the live count is second-hand; re-verify with a JS-capable fetcher
+    when possible. Individual treaty texts and Treaty-Office guides are hosted on rm.coe.int (e.g. rm.coe.int/16809fce94),
+    likely PDF, not independently opened this session.
+- name: United Nations Treaty Collection
+  native_name: ''
+  domain: treaties.un.org
+  country: int
+  jurisdiction_note: United Nations (Treaty Section, Office of Legal Affairs)
+  languages:
+  - ar
+  - zh
+  - en
+  - fr
+  - ru
+  - es
+  legal_language_note: UN's six official languages; MTDSG treaty titles are maintained in all six
+  legal_system: mixed:international
+  source_type: legal
+  kind: consolidated_portal
+  enumeration_url: https://treaties.un.org/pages/Content.aspx?path=DB/MTDSGStatus/pageIntro_en.xml
+  official_count:
+    value: 560
+    unit: treaties (page states 'over 560', not an exact figure)
+    as_of: '2026-07-17'
+    source_url: https://treaties.un.org/pages/Content.aspx?path=DB/MTDSGStatus/pageIntro_en.xml
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: ''
+  tags:
+  - law
+  - treaty
+  - official
+  - un
+  - global
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Page states verbatim: ''This database provides information on the status of over 560 major
+      multilateral instruments deposited with the Secretary-General ... presently over 560 treaties'',
+      and describes the database as updated daily/intra-daily'
+  confidence: high
+  notes: This count covers only the Multilateral Treaties Deposited with the Secretary-General (MTDSG)
+    sub-database. UNTC's separate United Nations Treaty Series (UNTS, treaties registered under Charter
+    Art. 102) is far larger - secondary sources cite 'more than 158,000' registered treaties - and would
+    need its own enumeration pass if wanted. No public API found; an 'Automated Subscription Service'
+    exists for update notifications but wasn't verified as RSS/Atom, so gazette_feed is omitted.
+- name: International Court of Justice
+  native_name: ''
+  domain: icj-cij.org
+  country: int
+  jurisdiction_note: International Court of Justice
+  languages:
+  - en
+  - fr
+  legal_language_note: The Court's official languages are English and French
+  legal_system: mixed:international
+  source_type: case_law
+  kind: case_law
+  enumeration_url: https://www.icj-cij.org/cases
+  official_count:
+    value: 202
+    unit: cases
+    as_of: '2026-06-26'
+    source_url: https://www.icj-cij.org/cases
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: ''
+  tags:
+  - case_law
+  - official
+  - icj
+  - un
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Page states verbatim: ''Between 22 May 1947 and 26 June 2026, 202 cases were entered in
+      the General List'', with links to List of All Cases, Pending cases, Contentious/Advisory breakdowns,
+      and Judgments/Advisory Opinions/Orders'
+  confidence: high
+  notes: ICJ's site also hosts its founding/basic documents (Statute, Rules of Court, Practice Directions)
+    at /basic-documents - a small fixed instrument set, not an enumerable treaty register, so not separately
+    counted here. Judgment/order PDFs are hosted directly on icj-cij.org.
+- name: International Criminal Court
+  native_name: ''
+  domain: icc-cpi.int
+  country: int
+  jurisdiction_note: International Criminal Court
+  languages:
+  - ar
+  - zh
+  - en
+  - fr
+  - ru
+  - es
+  legal_language_note: ICC's six official languages per the Rome Statute; the Case Law Database is available
+    in English, French and Spanish
+  legal_system: mixed:international
+  source_type: case_law
+  kind: case_law
+  enumeration_url: https://www.icc-cpi.int/cases
+  structured:
+    api: none
+    bulk: none
+    formats:
+    - html
+    - pdf
+    api_key_required: false
+  license_note: ''
+  tags:
+  - case_law
+  - official
+  - icc
+  - international-criminal-law
+  verification:
+    status: fetched
+    retrieved_at: '2026-07-17'
+    evidence: 'Loaded icc-cpi.int/cases directly: a filterable list of cases by defendant with status
+      narratives (e.g. Al Hassan, Abd-Al-Rahman, Al Mahdi); no explicit numeric total is printed on the
+      page itself'
+  confidence: medium
+  notes: No official total case/situation count appears on icc-cpi.int/cases, so official_count is omitted
+    rather than guessed. The Court also runs a dedicated 'Case Law Database' (CLD) at legal-tools.org/cld
+    - ICC-developed, launched 2021, described in ICC news releases as containing 'more than 8,000 legal
+    findings' from 'more than 10,000 ICC judicial decisions' as of a 2023 announcement (likely larger
+    now, not re-verified). The CLD sits inside the much broader multi-tribunal 'Legal Tools Database'
+    (~179,000+ documents covering international criminal jurisdictions since Nuremberg, run jointly with
+    the Case Matrix Network), which is explicitly not ICC-only and reads as an aggregator, so it was not
+    used as the primary source here.
 
 documents:
 

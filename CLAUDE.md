@@ -6070,7 +6070,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   CV 76,947 · MG 40,000 · BY/GE 26 codes · UY 13 codes …); the Mauritania 30,000 count is
   press-release-sourced (self-disclosed in-row as approximate — kept with the disclosure).
   REMAINING batches: Europe-West/North gap-fill · Central+South Asia · East Asia · Oceania ·
-  North America+Caribbean · supranational. **REGISTRATION POSTURE (CI catch, fixed forward same
+  North America+Caribbean · supranational. **FINAL 4 BATCHES RECEIVED same day — THE WORLD SWEEP
+  IS COMPLETE (central-south-asia · caribbean · oceania · supranational): the merged file now
+  carries 225 sources + 7 documents across 162 jurisdictions (91 fetched · 124 search-verified ·
+  10 leads · 10 http-only warnings), validator-clean.** Europe-West/North + jp/kr/cn were already
+  curated (the 12-UI-language floor; mn/tw delivered in central-south-asia) — a gap-fill pass is
+  optional polish, not a missing batch. New calibration: the in-file dedup key widened to
+  `(domain, kind, COUNTRY)` — a multi-country platform (PacLII pg/sb/ki) is one row per
+  jurisdiction. North Korea = a CONFIRMED documented gap (no DPRK public portal; the kp comment
+  block in the generated file carries the evidence, preserved verbatim through the merge).
+  Notable in the final four: two COUNTS not read off the official page, both self-disclosed
+  in-row (Council of Europe 231 via Wikipedia — coe.int is a JS-SPA; AU ~80 = a manual tally
+  with a known duplicate row); Grenada's laws.gov.gd is DOWN ("Upgrading…" placeholder);
+  Vanuatu's parliament portal outsources its consolidated texts to PacLII; St Vincent's
+  legal.gov.vc has a WORKING Joomla RSS gazette feed (2nd confirmed S7 candidate after
+  Vietnam); Turkmenistan/Maldives/Bhutan = thin-coverage or no-gazette realities recorded
+  honestly. **REGISTRATION POSTURE (CI catch, fixed forward same
   day):** `seed_legal_sources` consumes `load_legal_catalog` at BOOT, so the merged generated
   rows were seeding ENABLED (Source.enabled defaults true; the entries carry no `enabled` key) —
   breaching review-before-enable AND reddening test_preflight (163 extra enabled sources pushed
