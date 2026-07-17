@@ -5862,6 +5862,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   #663 auditor as its gate; this ruling strengthens the case for trial auto-enable when that
   frontier is built, but review-before-enable was not flipped unilaterally here.
 
+- **DOCUMENTATION REVIEW — SURVEY + ACTION PLAN (maintainer-asked 2026-07-17, docs-only; plan of
+  record = [`docs/design/ACTION_PLAN_2026-07-17_DOCS_REVIEW.md`](docs/design/ACTION_PLAN_2026-07-17_DOCS_REVIEW.md),
+  branch `claude/project-documentation-review-02fjca`, draft PR onto `main`):** a full survey of the
+  documentation tree at `786a5c1` found the CONTENT healthy (live set all touched ≤1 week; the
+  2026-07-15 external-audit doc findings already remediated) but the META layer drifted. The plan
+  hands a CLI session 7 verified-anchor tasks: **T1** `docs/README.md` index reconciliation (misses
+  the first-launch-gating `docs/legal/` tree, GOVERNANCE, CODE_OF_CONDUCT, QUARANTINE_ARCHIVE,
+  `docs/audit/` incl. both 2026-07 audits, root AUDIT_TRAIL/PARKED, process/IMPROVEMENT_CYCLE,
+  USE_CASES, maintenance/testing/research/i18n) + **T2** a `test_docs_index_covers_live_docs`
+  repo-invariant guard; **T3** AUDIT_TRAIL.md backfill (append-only ledger stops at 2026-06-18 —
+  missing the 2026-07-13 cumulative-integrity + 2026-07-15 external audits); **T4** the stale
+  "Version: [À COMPLÉTER]" Outstanding note in `docs/testing/LEGAL_DECLINE_UNINSTALL_TEST.md`
+  (legal docs finalized v1.0 2026-07-16; remaining bracketed markers are the PERMANENT no-lawyer-
+  review choice per `docs/legal/README.md` — never "fix" those); **T5** USER_MANUAL: banner the
+  embedded historical `# What shipped in 0.0.8` section (line ~2269) + re-verify nav claims vs
+  `src/static/index.html` (the twice-bitten stale-nav precedent); **T6** QUICKSTART: retire the
+  legacy "Phases 2–5" heading vocabulary (§D content verified CURRENT — only the framing is stale)
+  + mirror to `docs/i18n/fr/`; **T7** PARKED.md reconciliation — SPOT-VERIFIED 2026-07-17: MAINT-03
+  `Mapped[]` migration DONE (448 uses, 0 legacy), core-only CI job DONE (ci.yml:164), PERF-02 FTS
+  bound LIKELY-DONE via S2.5 (verify), MAINT-04 print→logger STILL OPEN (68 live calls), mypy still
+  the ratchet — annotate statuses in place, non-lossy, ROADMAP §4 stays the one live board.
+  PENDING: the plan's execution (a CLI session per its §0 working mode).
+
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
