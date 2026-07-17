@@ -164,10 +164,13 @@ def test_validator_catches_the_fabrication_shaped_mistakes():
         assert needle in text, f"validator missed: {needle}\n{text}"
 
 
-def test_generated_sources_register_disabled_and_lead_documents_never_register(tmp_path):
-    """The review-before-enable posture (2026-07-17 CI catch): a research-harvested
-    source must NEVER auto-enable at boot (several are robots-blocked), and an
-    unverified lead document must never silently become a watched LawDocument."""
+def test_generated_sources_enable_by_default_and_lead_documents_never_register(tmp_path):
+    """Maintainer ruling 2026-07-17: the merged catalog is maintainer-vetted (the PR
+    review IS the gate), so generated sources ENABLE by default — the end user never
+    hand-enables anything. Safe by construction: no rss_url → collect passes never
+    fetch them; robots stays fail-closed; the bounded preflight verifies domains
+    automatically. The one exclusion is about unverified fetch TARGETS, not user
+    convenience: a lead document never silently becomes a watched LawDocument."""
     curated_p = _write(tmp_path, "curated.yml", CURATED)
     gen_p = _write(tmp_path, "gen.yml", {
         "schema": "oo-legal-catalog-gen-1", "as_of": "2026-07",
@@ -185,7 +188,8 @@ def test_generated_sources_register_disabled_and_lead_documents_never_register(t
 
     rows = {r["domain"]: r for r in registration_source_rows(cat)}
     gen_row = rows["moj.gov.kh"]
-    assert gen_row["enabled"] is False, "a generated source must seed DISABLED"
+    assert "enabled" not in gen_row, \
+        "a generated source enables by default (the Source model default), never forced off"
     assert gen_row["_provenance"] == "legal-generated"
     assert "_generated" not in gen_row, "the marker never leaks into Source kwargs"
     cur_row = rows["legifrance.gouv.fr"]

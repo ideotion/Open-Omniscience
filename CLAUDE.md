@@ -6095,7 +6095,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   and `registrable_documents` (pure) lets a generated document register as watched ONLY when its
   session verified it (fetched/search-verified) — an unverified `lead` document never silently
   becomes a watched LawDocument. Enabling a generated source stays a maintainer action (or the
-  future Phase-2 promotion frontier).
+  future Phase-2 promotion frontier). **SUPERSEDED same day for the ENABLE half (maintainer ruled
+  2026-07-17, verbatim "regarding disabled sources, nothing has to be manually done by the user.
+  Could you enable everything by default"): generated law-catalog sources now ENABLE BY DEFAULT**
+  — the maintainer's review of the committed catalog file IS the vetting gate (the merged file is
+  vetted data, unlike runtime-DISCOVERED candidates, which still register disabled — the discovery
+  funnel is a different channel and its Q3a posture is unchanged). Network-safe by construction:
+  legal portals carry no rss_url so collect passes never fetch them; robots stays fail-closed
+  (the ~25 robots-blocked domains get honest verdicts, never fetched); the bounded preflight
+  becomes the AUTOMATIC verifier of lead domains. The `via:legal-generated` provenance stays. The
+  lead-DOCUMENT exclusion stays (never fetch an unverified URL — that half is about fetch targets,
+  not user convenience). test_preflight's log assertion now reads `recent_results(limit=2000)`
+  (the log's own retention window, not the 200-row display default) so a large enabled catalog
+  can't crowd out its synthetic domains — asserting LOG membership, not display ranking.
   **TAGS + PROVENANCE SHIPPED same day (maintainer: "make sure that there's a proper article tag
   dedicated to laws, as well as proper dedicated tags for wikipedia articles, and so forth. Tags
   should also be deduced from source type, and source tags"):** `LAW` joined PROVENANCE_CLASSES

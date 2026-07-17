@@ -78,18 +78,22 @@ def load_legal_catalog(path: Path | None = None, generated_path: Path | None = N
 
 
 def registration_source_rows(catalog: dict) -> list[dict]:
-    """Pure: the Source rows a catalog registers, with the enable posture applied.
+    """Pure: the Source rows a catalog registers, with provenance applied.
 
-    Curated entries keep their catalog-stated posture. GENERATED entries (the
-    parallel-research harvest) always seed ``enabled=False`` with their own
-    ``via:legal-generated`` provenance — the review-before-enable ruling: a
-    research-harvested source never auto-enables (several are robots-blocked;
-    enabling is a maintainer action or the future promotion frontier)."""
+    GENERATED entries (the parallel-research harvest) carry their own
+    ``via:legal-generated`` provenance and — maintainer ruling 2026-07-17 —
+    ENABLE BY DEFAULT like curated entries: the maintainer's review of the
+    committed catalog file IS the vetting gate, and the end user never has to
+    hand-enable sources ("everything background and automated"). This is
+    network-safe by construction: legal portals carry no rss_url so collect
+    passes never fetch them, robots stays fail-closed, and the bounded
+    preflight verifies each domain automatically (a dead/robots-blocked lead
+    gets an honest verdict, not a fetch). Runtime-DISCOVERED candidates (the
+    discovery funnel) are a DIFFERENT channel and still register disabled."""
     rows = []
     for s in catalog["sources"]:
         s = dict(s)
         if s.pop("_generated", False):
-            s["enabled"] = False
             s.setdefault("_provenance", "legal-generated")
         else:
             s.setdefault("_provenance", "legal")

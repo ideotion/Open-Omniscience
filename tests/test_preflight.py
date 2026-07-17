@@ -107,8 +107,13 @@ def test_preflight_verdicts_metadata_and_log(tmp_path, monkeypatch):
         ms = db.query(SourceMetadata).filter_by(source_id=delayed.id).one()
         assert ms.robots_allowed is True and ms.crawl_delay == 7.0
         assert delayed.rate_limit_ms >= 7000  # politeness raised to honour robots
-        # the shareable log exists with one verdict per domain
-        rows = recent_results()
+        # The shareable log exists with one verdict per domain. Read it at the log's
+        # own retention window (2000 lines), NOT the 200-row display default: the
+        # shared session store also carries the boot-seeded catalogs (incl. the 225
+        # enabled generated law sources, ruled enabled-by-default 2026-07-17), and
+        # with >200 same-second verdicts the display slice's tie-order is arbitrary —
+        # this test asserts LOG membership, not display ranking.
+        rows = recent_results(limit=2000)
         assert {r["domain"] for r in rows} >= {ok.domain, denied.domain, delayed.domain}
         rec = next(r for r in rows if r["domain"] == denied.domain)
         assert rec["verdict"] == "robots_denied" and rec["robots"] == "disallowed"

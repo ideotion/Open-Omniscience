@@ -78,8 +78,13 @@ category, consolidated, country, language`) + `verification`. Use sparingly — 
 ADAPTERS are the scale path; documents are for jurisdictions with no enumeration where a handful
 of key consolidated instruments is all there honestly is.
 
-**Binding rules:** never fabricate — a URL you did not confirm is `status: lead` and ships
-DISABLED-in-effect (the validator flags it; the maintainer decides); `official_count` only ever
+**Binding rules:** never fabricate — a URL you did not confirm is `status: lead`, listed by the
+validator for the maintainer's review; a lead DOCUMENT never auto-registers as watched (the
+tracker must never fetch an unverified URL), while lead SOURCE rows register like the rest —
+maintainer ruling 2026-07-17: the merged catalog ENABLES by default (the PR review of this file
+IS the vetting gate; the end user never hand-enables anything; safe because portals carry no
+rss_url so collect passes never fetch them, robots stays fail-closed, and the bounded preflight
+verifies each domain automatically); `official_count` only ever
 read off the official page, never estimated; languages = languages OF THE LAW; every entry
 carries `verification`; prefer the jurisdiction's PRIMARY consolidated-law database over
 aggregators (WIPO Lex / World LII are FALLBACK pointers where no national portal exists — mark
