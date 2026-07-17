@@ -224,30 +224,48 @@
         .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
         .replace(/`([^`]+)`/g, "$1")
         .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+      // Our legal docs are hand-wrapped at ~80 columns, so a **bold** span or a
+      // list item routinely continues onto the NEXT physical source line with no
+      // blank line between (markdown's normal soft-wrap). Inline formatting must
+      // run on the whole JOINED logical block, never per raw physical line -- else
+      // a bold span split across the wrap mismatches with a UNRELATED "**" later
+      // in the text, rendering literal asterisks and wrongly-bolded text.
       let html = "", inList = false, inQuote = false;
-      const closeList = () => { if (inList) { html += "</ul>"; inList = false; } };
-      const closeQuote = () => { if (inQuote) { html += "</blockquote>"; inQuote = false; } };
+      let quoteBuf = [], listBuf = [], paraBuf = [];
+      const flushQuote = () => { if (quoteBuf.length) { html += "<div>" + inline(quoteBuf.join(" ")) + "</div>"; quoteBuf = []; } };
+      const flushItem = () => { if (listBuf.length) { html += "<li>" + inline(listBuf.join(" ")) + "</li>"; listBuf = []; } };
+      const flushPara = () => { if (paraBuf.length) { html += "<p>" + inline(paraBuf.join(" ")) + "</p>"; paraBuf = []; } };
+      const closeList = () => { flushItem(); if (inList) { html += "</ul>"; inList = false; } };
+      const closeQuote = () => { flushQuote(); if (inQuote) { html += "</blockquote>"; inQuote = false; } };
       for (const raw of md.split(/\r?\n/)) {
         const line = raw.replace(/\s+$/, "");
         if (/^#{1,6}\s/.test(line)) {
-          closeList(); closeQuote();
+          flushPara(); closeList(); closeQuote();
           const tag = line.match(/^#+/)[0].length <= 2 ? "h2" : "h3";
           html += "<" + tag + ">" + inline(line.replace(/^#+\s*/, "")) + "</" + tag + ">";
         } else if (/^>\s?/.test(line)) {
-          closeList(); if (!inQuote) { html += "<blockquote>"; inQuote = true; }
-          html += "<div>" + inline(line.replace(/^>\s?/, "")) + "</div>";
+          flushPara(); closeList();
+          if (!inQuote) { html += "<blockquote>"; inQuote = true; }
+          const content = line.replace(/^>\s?/, "");
+          if (content.trim() === "") flushQuote(); // a paragraph break WITHIN the quote
+          else quoteBuf.push(content);
         } else if (/^[-*]\s/.test(line)) {
-          closeQuote(); if (!inList) { html += "<ul>"; inList = true; }
-          html += "<li>" + inline(line.replace(/^[-*]\s/, "")) + "</li>";
+          flushPara(); closeQuote(); flushItem();
+          if (!inList) { html += "<ul>"; inList = true; }
+          listBuf.push(line.replace(/^[-*]\s/, ""));
         } else if (/^(---+|\*\*\*+)$/.test(line)) {
-          closeList(); closeQuote(); html += "<hr>";
+          flushPara(); closeList(); closeQuote(); html += "<hr>";
         } else if (line.trim() === "") {
-          closeList(); closeQuote();
+          flushPara(); closeList(); closeQuote();
+        } else if (inList && listBuf.length) {
+          listBuf.push(line.trim()); // lazy continuation of the current list item
+        } else if (inQuote && quoteBuf.length) {
+          quoteBuf.push(line.trim()); // lazy continuation of the current quoted paragraph
         } else {
-          closeQuote(); closeList(); html += "<p>" + inline(line) + "</p>";
+          closeQuote(); closeList(); paraBuf.push(line.trim());
         }
       }
-      closeList(); closeQuote();
+      flushPara(); closeList(); closeQuote();
       return html;
     }
     async function showLegalStep(code) {
