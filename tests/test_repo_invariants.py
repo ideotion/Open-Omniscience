@@ -2429,17 +2429,36 @@ def test_first_launch_guide_wizard():
         "the Language step must switch the whole UI through pickLang()/OOI18N.setLang "
         "(invariant #15) — it must not build a second language list"
     )
-    # 3. INFORMED CONSENT — the wizard NEVER posts the network; "Go online & start
-    #    collecting" routes through the existing firstRun()/toggleNetwork() flow,
-    #    so ensureOnline (the ONE consent popup) always fires (invariant #14).
+    # 3. INFORMED CONSENT — the wizard NEVER posts the network itself; "Go online &
+    #    start collecting" routes through ensureOnline (invariant #14), which stays
+    #    the ONE function in the whole app that ever POSTs /api/system/network.
+    #    (product feedback 2026-07-17: the finish step's own screen now carries the
+    #    SAME disclosure #net-consent shows [_gwRenderFinish, local interface IPs],
+    #    so its call passes skipDialog:true to skip a now-redundant second dialog
+    #    for the identical decision — the actual POST still lives only inside
+    #    ensureOnline, never inlined into the wizard's own onclick body.)
     go_block = html.split('if (go) go.onclick', 1)[1].split("};", 1)[0]
     assert 'api("/api/system/network"' not in go_block, (
         "the wizard must NOT POST the network itself — it is the invitation layer "
         "only; going online must pass ensureOnline (CLAUDE.md #14)"
     )
-    assert ("firstRun(" in go_block) or ("toggleNetwork(" in go_block), (
-        "the wizard's 'Go online' must route through the existing firstRun()/"
-        "toggleNetwork() flow (which calls ensureOnline) (CLAUDE.md #14)"
+    assert "ensureOnline(" in go_block, (
+        "the wizard's 'Go online' must route through ensureOnline (CLAUDE.md #14)"
+    )
+    # The actual go-ONLINE POST is factored into ONE shared helper (_postGoOnline),
+    # used by BOTH ensureOnline's dialog "ok" button and a skipDialog caller — never
+    # a second inlined copy (the SEPARATE go-OFFLINE POST in toggleNetwork, {online:
+    # false}, is a different action and legitimately its own call site).
+    assert html.count('body: JSON.stringify({online:true})') == 1, (
+        "the network-online POST must exist in exactly ONE place (_postGoOnline) — "
+        "a second inlined copy would defeat the single-canonical-gate guarantee"
+    )
+    assert "async function _postGoOnline()" in html, "the shared go-online POST helper must exist"
+    assert "if (opts.skipDialog) return _postGoOnline();" in html, (
+        "ensureOnline's skipDialog path must reuse the shared helper, not a separate POST"
+    )
+    assert "done(await _postGoOnline())" in html, (
+        "the dialog's own 'ok' button must also reuse the shared helper"
     )
     # 4. the wizard REPLACES the #onboard card as the first-run entry: the empty-
     #    corpus check opens the guide (and falls back to the card only afterwards).
@@ -2456,6 +2475,53 @@ def test_first_launch_guide_wizard():
     )
     assert "Re-run the first-launch guide" in html, (
         "the Settings toggle label must exist (and be keyed for i18n)"
+    )
+
+
+def test_guide_finish_step_shows_consent_disclosure_inline():
+    """Product feedback 2026-07-17: the finish step used to be a plain button that,
+    when clicked, closed the wizard and opened a SEPARATE #net-consent dialog
+    showing the local interface IPs + the informed-consent wording -- two
+    consecutive screens for the same "go online" decision. The finish step's OWN
+    screen now shows that SAME disclosure inline (reusing #net-consent's exact,
+    already-×12-keyed strings verbatim, so no new locale work is needed), fetched
+    by _gwRenderFinish as soon as the step is shown."""
+    html = _ui_source()
+    gw = html.split('id="guide-wizard"', 1)[1].split("</dialog>", 1)[0]
+    finish = gw.split('data-step="finish"', 1)[1].split("</section>", 1)[0]
+    assert 'id="gw-ifaces"' in finish, "the finish step must carry an inline interfaces box"
+    for phrase in (
+        "Your machine presents these local network addresses:",
+        "Beyond these local addresses, the internet sees whatever",
+        "Airplane mode here controls only this app's network",
+    ):
+        assert phrase in finish, f"the finish step must show the same disclosure #net-consent uses: {phrase!r}"
+    assert "async function _gwRenderFinish()" in html, "the finish-step interfaces renderer must exist"
+    assert '"/api/system/interfaces"' in html.split("async function _gwRenderFinish(", 1)[1].split("\n    }\n", 1)[0], (
+        "_gwRenderFinish must fetch the real interfaces, not fabricate them"
+    )
+    assert 'if (step === "finish") _gwRenderFinish();' in html, (
+        "_gwPaint must render the disclosure when the finish step is shown"
+    )
+
+
+def test_net_coach_suppressed_while_the_wizard_is_open():
+    """Product feedback 2026-07-17: on a fresh install, the guide wizard's own
+    finish step invites "Go online & start collecting" while the airplane-mode
+    coachmark (#net-coach) COULD ALSO be showing at the same time, pointing at the
+    top-bar toggle with the same invitation — two prompts visible at once for one
+    decision. maybeShowNetCoach now skips while the wizard is open, and openGuide
+    hides the coach (non-permanently -- it must still be able to teach a later,
+    non-wizard session) if it was already showing when the wizard opens."""
+    html = _ui_source()
+    coach_fn = html.split("function maybeShowNetCoach() {", 1)[1].split("\n    }\n", 1)[0]
+    assert '$("guide-wizard")' in coach_fn and "wiz.open" in coach_fn, (
+        "maybeShowNetCoach must not show while the guide wizard is open"
+    )
+    guide_fn = html.split("function openGuide() {", 1)[1].split("\n    }\n", 1)[0]
+    assert "dismissNetCoach(false)" in guide_fn, (
+        "openGuide must hide an already-showing coach NON-permanently (it may still "
+        "teach a later session where the guide won't reopen)"
     )
 
 
