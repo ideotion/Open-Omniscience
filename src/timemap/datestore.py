@@ -78,7 +78,20 @@ def store_for_article(db: Session, article: Article, *, today: date | None = Non
         existing.add(key)
         added += 1
     if added:
-        db.commit()
+        # SAVEPOINT-AWARE (CI red 2026-07-17, root cause of the #691 regression):
+        # index_article's when/where/who pass runs this inside its own
+        # session.begin_nested() savepoint. A commit() here closes that caller's
+        # nested-transaction context, so the very NEXT statement (the places
+        # delete in whostore) raises "Can't operate on closed transaction inside
+        # context manager" — which the WWW pass swallows by design, silently
+        # costing every article WITH an extracted date its places/entities.
+        # Inside a caller-owned savepoint, flush so the rows join it and let the
+        # caller commit; standalone callers (the /api/articles/{id}/dates
+        # endpoint, index_recent) keep the direct commit unchanged.
+        if db.in_nested_transaction():
+            db.flush()
+        else:
+            db.commit()
     return added
 
 

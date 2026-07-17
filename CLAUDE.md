@@ -738,6 +738,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the omnibar is the exception — it must never blank, so its guard DEGRADES to an honest empty-with-note
     payload instead of a 429/503.)
 
+  - **A STORE HELPER THAT COMMITS INTERNALLY BREAKS ANY CALLER-OWNED SAVEPOINT (2026-07-17, the
+    #691 fix-forward):** #691 wrapped index_article's when/where/who pass in `session.begin_nested()`,
+    but `datestore.store_for_article`'s tail `db.commit()` CLOSES the caller's nested-transaction
+    context — the NEXT statement raises "Can't operate on closed transaction inside context manager",
+    which the pass swallows BY DESIGN → every article WITH a newly-extracted date silently lost its
+    places/entities (main red since #691; only ONE suite test has a dated fixture = the misleading
+    1-failed/3967-passed signature; a re-index restores the lost field rows). RULE: before wrapping an
+    existing helper in `begin_nested`, grep it (and everything it calls) for commit/rollback; a store
+    helper must be savepoint-aware (`db.in_nested_transaction()` → flush, else commit) or never own
+    the commit at all. COROLLARY: a swallowed-exception design hides exactly this class of failure —
+    the standalone repro calling index_article DIRECTLY (tests/test_article_dates.py savepoint test +
+    the scratchpad repro) is what surfaced the real exception the production path eats.
   - **A PERSISTED DuckDB store opened via `ATTACH` REJECTS a second in-process handle to the same
     file (2026-07-12, S3.2):** `Binder Error: Unique file handle conflict`. So the in-memory
     rollup-serve model (build a fresh con, swap it in, close the old) CANNOT apply to a persisted
