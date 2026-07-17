@@ -5158,3 +5158,119 @@ def test_perception_eval_harness_is_wired_and_gate_first():
     assert "PERCEPTION_GOLD" in pe and "needs_native_review" in pe
     diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     assert '"/perception-eval-selftest"' in diag
+
+
+def test_all_diagnostics_bundle_covers_every_get_diagnostic():
+    """RATCHET (maintainer 2026-07-17: '"all diagnostics" should comprise ALL
+    diagnostics'): every GET endpoint on the diagnostics router must either
+    contribute to the all-diagnostics bundle (a member file, or its /last report
+    for job kinds) or be EXEMPT with a stated reason — mirrored honestly in the
+    manifest's "excluded" block. A new GET diagnostic reddens this test until it
+    is classified, so the bundle can never silently fall behind again."""
+    import re
+
+    src = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    gets = set(re.findall(r'@router\.get\("([^"]+)"', src))
+
+    # endpoint path -> the bundle member filename that carries its payload
+    covered = {
+        "/keywords": "keyword-log-digest.json",  # digest form; full dump exempt below
+        "/keyword-selftest": "keyword-selftest.json",
+        "/ir-eval-selftest": "ir-eval-selftest.json",
+        "/perception-eval-selftest": "perception-eval-selftest.json",
+        "/keyword-triage-selftest": "keyword-triage-selftest.json",
+        "/recursive-loop": "recursive-loop.json",
+        "/kpi": "kpi.json",
+        "/search-timing": "search-timing.json",
+        "/search-timing-selftest": "search-timing-selftest.json",
+        "/lemma-preview": "lemma-preview.json",
+        "/home-cards": "home-cards.json",
+        "/keyword-engine": "keyword-engine.json",
+        "/power-profile": "power-profile.json",
+        "/power-profile-selftest": "power-profile-selftest.json",
+        "/article-length": "article-length.json",
+        "/non-article-scan": "non-article-scan.json",
+        "/keyword-growth": "keyword-growth.json",
+        "/source-audit": "source-audit.json",
+        "/source-audit-selftest": "source-audit-selftest.json",
+        "/dates": "date-extraction.json",
+        "/performance": "performance.json",
+        "/benchmark": "benchmark.json",
+        "/network": "network.json",
+        "/columnar": "columnar.json",
+        "/freshness": "freshness.json",
+        "/session-forensics": "session-forensics.json",
+        "/data-dir-persistence": "data-dir-persistence.json",
+        "/storage-footprint": "storage-footprint.json",
+        "/storage-composition": "storage-composition.json",
+        "/frontend-errors": "frontend-errors.json",
+        "/request-latency": "request-latency.json",
+        "/slow-queries": "slow-queries.json",
+        "/schema-drift": "schema-drift.json",
+        "/integrity": "corpus-integrity.json",
+        "/debug-bundle": "debug-bundle.json",
+        "/p0-validation/last": "p0-validation.json",
+        "/pagesize-bench/last": "pagesize-bench.json",
+    }
+    exempt = {
+        "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
+        "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
+        "/source-coverage-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
+        "/ir-eval": "needs an operator-graded gold-set file (manifest 'excluded')",
+        "/gold-builder/sample": "interactive grading sampler, not a report (manifest 'excluded')",
+        "/all": "the bundle itself",
+        "/all-job/status": "job control", "/all-job/download": "job control",
+        "/p0-validation/status": "job control", "/p0-validation/download": "job control",
+        "/pagesize-bench/status": "job control", "/pagesize-bench/download": "job control",
+        "/discover-world/status": "job control",
+        "/enrich-source-types/status": "job control",
+    }
+    unclassified = sorted(gets - set(covered) - set(exempt))
+    assert not unclassified, (
+        "new GET diagnostics endpoint(s) are neither in the all-diagnostics bundle "
+        f"nor exempted with a reason: {unclassified} — add a bundle member (and the "
+        "filename to this test's `covered` map) or an exemption here AND in the "
+        "manifest's 'excluded' block"
+    )
+    stale = sorted((set(covered) | set(exempt)) - gets)
+    assert not stale, f"classified paths no longer exist as GET routes: {stale}"
+    members_block = src.split("def _all_diagnostics_members", 1)[1].split("def _", 1)[0]
+    missing_members = sorted(
+        fname for fname in covered.values() if f'"{fname}"' not in members_block
+    )
+    assert not missing_members, (
+        f"bundle member file(s) named in the coverage map are absent from "
+        f"_all_diagnostics_members: {missing_members}"
+    )
+    # The manifest documents its own boundary (honesty: exclusions never silent).
+    assert '"excluded"' in src or '"excluded":' in src.replace(" ", ""), (
+        "_all_diagnostics_manifest must carry the 'excluded' disclosure block"
+    )
+
+
+def test_pagesize_bench_job_is_wired():
+    """DB-10 §1b: the page-size A/B bench is a background job with the full
+    P0-validation-style surface (start/status/cancel/last/download composed under
+    the router prefix), its rebuild SELF-VERIFIES the target pragmas (the ruled
+    verify-before-trust probe), and the frontend panel calls the same composed
+    routes (the 1c composed-route lesson)."""
+    core = (_SRC / "monitoring" / "pagesize_bench.py").read_text(encoding="utf-8")
+    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    for marker in ("BenchVerifyError", "PRAGMA page_size", "PRAGMA tgt.cipher_page_size",
+                   "sqlcipher_export", "VACUUM INTO", "sweep_stale_stages"):
+        assert marker in core, f"pagesize_bench core lost its {marker!r} mechanism"
+    assert 'APIRouter(prefix="/api/diagnostics"' in api
+    for decorator in ('@router.post("/pagesize-bench")',
+                      '@router.get("/pagesize-bench/status")',
+                      '@router.post("/pagesize-bench/cancel")',
+                      '@router.get("/pagesize-bench/last")',
+                      '@router.get("/pagesize-bench/download")'):
+        assert decorator in api, f"missing endpoint {decorator}"
+    assert '"pagesize-bench", "page-size A/B bench (DB-10)"' in api, "job not registered"
+    # The frontend must call the COMPOSED routes (prefix + decorator), never a drifted path.
+    for url in ("/api/diagnostics/pagesize-bench", "/api/diagnostics/pagesize-bench/status",
+                "/api/diagnostics/pagesize-bench/cancel",
+                "/api/diagnostics/pagesize-bench/download"):
+        assert url in js, f"frontend does not call {url}"

@@ -5918,6 +5918,74 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   KEYWORD_ENGINE_OPTIMIZATION_STRATEGY (sole spec for P5.2 embeddings/P6 entities + the P2.4 guardrail) ·
   PERSISTED_DUCKDB_HTTPFS + SCALING_DERIVED_LAYER (alive until the httpfs binaries land).
   PENDING: the plan's execution (a CLI session per its §0 working mode).
+- **BACKUP/RESTORE BAR = PLAIN-FOLDER-COPY PARITY (maintainer ruled 2026-07-17, verbatim intent:
+  "I can always copy the entire folder to an external drive, do a fresh install on a different
+  computer, replace the folder, and have that done in a few hours. Our backup-restore shouldn't be
+  more complicated, difficult, or dangerous/risky to perform."):** the app-stopped filesystem copy
+  of the DATA folder is a FIRST-CLASS, endorsed backup/move path at every scale (it was already the
+  SCALE-MANDATE interim guidance — encrypted at rest, keys travel inside the folder, the passphrase
+  is the only secret; the three safety details are: it is the DATA dir [default
+  `~/.local/share/open-omniscience` or the A11 `OO_DATA_DIR`], NOT the app/code folder; the app must
+  be STOPPED first, or the copy can catch a torn WAL; the Ollama model store lives OUTSIDE it). The
+  in-app backup/restore must NEVER be more complicated, slower-per-byte, or riskier than that cp
+  baseline — its justification is what it ADDS (signed-manifest verification, parity
+  corruption-recovery, additive MERGE of two corpora, selective members, runs attended without
+  stopping the app), and it must never be a gate the user has to pass. **COROLLARY for DB-10
+  (corrects this session's chat over-statement that "the migration window closes as the corpus
+  grows"):** a byte-copy preserves the CREATE-time seam (auto_vacuum/page_size), so cp cannot
+  migrate it — but the honest migration op is NOT the row-level restore-merge either; it is a store
+  REBUILD into a fresh-pragma target (`sqlcipher_export()` to an ATTACHed target created with the
+  new pragmas / `VACUUM INTO` with pragmas set — the same machinery `connect.py` already uses for
+  encrypt/decrypt conversion), which is cp-CLASS cost (hours + one spare drive) at ANY size. So the
+  DB-10 §1a urgency is about NEW-corpus DEFAULTS (every corpus born before the ruling later needs
+  the rebuild), not a closing window — and the DB-10 1a/1b ruling itself is STILL OPEN.
+  VERIFY-BEFORE-BUILD when the migrate op is built: empirically confirm the attached/INTO target
+  honors `auto_vacuum` + `cipher_page_size` under SQLCipher (a P2.4-style probe — never assert it
+  from docs), and the op must state its cost + app-stopped/gate-held posture honestly. DOCS
+  FOLLOW-UP (fold into the docs-review plan execution): the USER_MANUAL backup chapter should
+  present the folder-copy path as prominently as the in-app tools, with the three safety details.
+- **DB-10 §1a RULED 2026-07-17 (maintainer, verbatim "I agree with your proposal to change the
+  auto_vacuum to incremental"): `auto_vacuum=INCREMENTAL` ON CREATE for NEW corpora — YES.**
+  Buildable-now for the next code session: the fresh-file PRAGMA in `connect.py` (the
+  `not p.exists() or size==0` branch ~line 86, before the first table / `PRAGMA key`) + the DB-10
+  §3 bounded idle `incremental_vacuum(N)` pass in `run_idle_maintenance` (a documented no-op on
+  pre-seam corpora, so safe to wire immediately) + the §2 full-VACUUM-button size gate.
+  **§1b `page_size` stays MEASURE-GATED — now with a maintainer-endorsed measurement path: an
+  AUTOMATED 4K-vs-16K A/B bench run over the maintainer's REAL BACKUPS of different sizes.**
+  Design facts verified 2026-07-17: `scale_bench` copies a corpus and benches it
+  (unlock/WAL/endpoint p50-p95/RSS) but a FILE COPY preserves page structure, so it CANNOT A/B
+  page sizes today — the missing slice is a rebuild-at-pragmas step. Run it at SEVERAL backup
+  sizes to measure the TREND — the slope toward 5 TB is the decision signal, not any single
+  point. EMPIRICAL correction to the memo's §1b cache concern: the app's `cache_size` is
+  KiB-DENOMINATED (`session.py:122`, negative form), so cache BYTES are constant across page
+  sizes — the real trade-off to measure is codec granularity (a 16K page decrypts 4× the bytes
+  per point lookup) vs fewer codec calls per range-scan byte. **THE BENCH SHIPPED same day
+  (maintainer-asked "add a diagnostic tool to test that idea"; shipped.csv row):**
+  `src/monitoring/pagesize_bench.py` + the `pagesize-bench` BackgroundJob +
+  `POST/GET /api/diagnostics/pagesize-bench{,/status,/cancel,/last,/download}` + a Settings →
+  Diagnostics panel — rebuild the live corpus per candidate size (plaintext `VACUUM INTO`,
+  encrypted `sqlcipher_export` into an ATTACHed target keyed with the SAME passphrase so the
+  codec stays in the measurement), SELF-VERIFY every target (pragmas read back + article count,
+  refuse mismatch — the verify-before-build probe made permanent), identical deterministic
+  workload (point lookups · 30-day covering-index window · sequential content bands, first-pass
+  vs warm), sequential staging under a swept `.pagesize-bench-` prefix + disk preflight; numbers
+  side by side, NEVER a winner; the report's `rebuild.seconds` doubles as the measured migration
+  cost at that corpus size. EMPIRICALLY PROVEN in-sandbox for plaintext (`VACUUM INTO` inherits
+  page_size+auto_vacuum — pinned as a test); the encrypted path is covered by the same runtime
+  self-verify. OPERATOR: run it on a SMALL and a LARGE corpus and send both logs (it rides the
+  all-diagnostics bundle as `pagesize-bench.json`, last-report read-only).
+- **"ALL DIAGNOSTICS" MUST COMPRISE ALL DIAGNOSTICS (maintainer flagged 2026-07-17 "it seems not
+  while it should" — CONFIRMED + FIXED same day; shipped.csv row):** the bundle had drifted 12
+  members behind the router since the #645 membership pass. Added the missing read-only reports
+  (source-audit · non-article-scan · lemma-preview · power-profile · data-dir-persistence) + the
+  cheap deterministic selftests (ir-eval · perception · triage · search-timing · power-profile ·
+  source-audit) + the pagesize-bench last-report; deliberate exclusions are now DOCUMENTED in the
+  manifest's `excluded` block with reasons (the full keyword dump · the source-quality
+  whole-corpus-decrypt ZIP · the two heavy operator benches · ir-eval's gold-set input · the
+  interactive gold-builder · job-control endpoints) instead of silent. RATCHET:
+  `test_repo_invariants.py::test_all_diagnostics_bundle_covers_every_get_diagnostic` — every GET
+  route on the diagnostics router must be a bundle member or an exemption-with-reason, so the
+  bundle can never silently fall behind again.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

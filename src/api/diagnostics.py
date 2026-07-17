@@ -2669,7 +2669,33 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # §4 search-instrumentation: the per-search phase-timing aggregate (empty-honest until
         # instrument_search is wired into the search endpoint on the operator's rig).
         ("search-timing.json", lambda: search_timing(download=False)),
+        # 2026-07-17 completeness fix (maintainer: "all diagnostics should comprise ALL
+        # diagnostics"): the read-only reports + cheap deterministic selftests that had
+        # accumulated OUTSIDE the bundle since the #645 membership pass. Deliberate
+        # exclusions are now DOCUMENTED in the manifest's "excluded" block instead of
+        # silent, and test_repo_invariants ratchets every future GET endpoint into
+        # either the bundle or that block.
+        ("source-audit.json", lambda: source_audit(download=False, with_furniture=True, db=db)),
+        ("non-article-scan.json", lambda: non_article_scan(download=False, db=db)),
+        ("lemma-preview.json", lambda: lemma_preview(top_n=500, db=db)),
+        ("power-profile.json", lambda: power_profile(profile="optimized", download=False)),
+        ("data-dir-persistence.json", lambda: data_dir_persistence_report()),
+        ("ir-eval-selftest.json", lambda: ir_eval_selftest(download=False)),
+        ("perception-eval-selftest.json", lambda: perception_eval_selftest(download=False)),
+        ("keyword-triage-selftest.json", lambda: keyword_triage_selftest(download=False)),
+        ("search-timing-selftest.json", lambda: search_timing_selftest(download=False)),
+        ("power-profile-selftest.json", lambda: power_profile_selftest(download=False)),
+        ("source-audit-selftest.json", lambda: source_audit_selftest(download=False)),
+        # DB-10 §1b: the last saved page-size A/B bench report (read-only; never RUNS
+        # the bench — that is its own background job, like p0-validation above).
+        ("pagesize-bench.json", lambda: _pagesize_bench_last_member()),
     ]
+
+
+def _pagesize_bench_last_member() -> dict:
+    from src.monitoring.pagesize_bench import last_pagesize_bench_report
+
+    return last_pagesize_bench_report()
 
 
 def _all_diagnostics_manifest(results: list[dict]) -> dict:
@@ -2683,11 +2709,46 @@ def _all_diagnostics_manifest(results: list[dict]) -> dict:
         "python": _sys.version.split()[0],
         "platform": platform.platform(),
         "members": results,
+        # HONESTY (2026-07-17): what is deliberately NOT in this archive, and why —
+        # so "all diagnostics" states its own boundary instead of implying totality.
+        "excluded": [
+            {
+                "endpoint": "/api/diagnostics/keywords",
+                "reason": "the FULL keyword corpus dump has its own sized/paged export; "
+                "the bounded keyword-log DIGEST is included instead",
+            },
+            {
+                "endpoint": "/api/diagnostics/source-quality",
+                "reason": "a whole-corpus decrypt pass producing a bulky per-source "
+                "text-sample ZIP — run it from its own Diagnostics button",
+            },
+            {
+                "endpoint": "/api/diagnostics/rollup-benchmark",
+                "reason": "a heavy live-vs-rollup benchmark over the real corpus — "
+                "operator-run from its own button",
+            },
+            {
+                "endpoint": "/api/diagnostics/source-coverage-benchmark",
+                "reason": "same class: a heavy operator-run benchmark",
+            },
+            {
+                "endpoint": "/api/diagnostics/ir-eval",
+                "reason": "needs an operator-graded gold-set file as input",
+            },
+            {
+                "endpoint": "/api/diagnostics/gold-builder/sample",
+                "reason": "an interactive grading sampler, not a report",
+            },
+            {
+                "endpoint": "job control/status/download endpoints",
+                "reason": "p0-validation and pagesize-bench contribute their LAST saved "
+                "report as members; starting/cancelling jobs is not a report",
+            },
+        ],
         "note": (
             "Every diagnostics log in one archive (the maintainer↔developer channel). "
-            "The full keyword corpus dump is NOT here — it has its own sized/paged "
-            "export ('All keywords'); this carries the bounded keyword-log DIGEST "
-            "instead. Generated only on click; nothing is transmitted by the app."
+            "Deliberate exclusions are listed in 'excluded' with reasons. "
+            "Generated only on click; nothing is transmitted by the app."
         ),
     }
 
@@ -3003,4 +3064,130 @@ def p0_validation_download(fmt: str = Query("json", alias="format")) -> Response
     return FileResponse(
         path, media_type="application/json",
         filename=res.get("filename") or "oo-p0-validation.json",
+    )
+
+
+# ---------------------------------------------------------------------------
+#  Page-size A/B bench (DB-10 §1b, maintainer-asked 2026-07-17): rebuild the
+#  live corpus at candidate page sizes (self-verified pragmas), run the same
+#  bounded workload on each, report side-by-side numbers — never a winner.
+#  Run it on corpora of DIFFERENT sizes and compare the logs: the TREND is the
+#  decision signal. Mirrors the P0-validation job surface exactly.
+# ---------------------------------------------------------------------------
+
+
+class PageSizeBenchBody(BaseModel):
+    work_dir: str | None = Field(
+        None,
+        description=(
+            "optional staging directory for the rebuilds (~1.15x the corpus size is "
+            "needed, one rebuild at a time; defaults under the data dir — pass an "
+            "external drive for a large corpus)"
+        ),
+    )
+    page_sizes: list[int] | None = Field(
+        None, description="candidate page sizes (default [4096, 16384])"
+    )
+
+
+def _pagesize_bench_worker(ctx, **kwargs) -> dict:
+    from src.monitoring.pagesize_bench import pagesize_bench_worker
+
+    return pagesize_bench_worker(ctx, **kwargs)
+
+
+_PAGESIZE_BENCH_JOB = register_job(
+    BackgroundJob(
+        "pagesize-bench", "page-size A/B bench (DB-10)", _pagesize_bench_worker,
+        is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.post("/pagesize-bench")
+def pagesize_bench_start(body: PageSizeBenchBody) -> JSONResponse:
+    """Start the page-size A/B bench as a BACKGROUND job. Rebuilds the live corpus
+    at each candidate page size (plaintext: VACUUM INTO; encrypted: sqlcipher_export
+    with the SAME passphrase, so the codec stays in the measurement), SELF-VERIFIES
+    every rebuilt target's pragmas, benches the identical workload on each, then
+    deletes the rebuilds. Read-only on the live corpus. Poll ``/pagesize-bench/status``;
+    download via ``/pagesize-bench/download``. 409-free: an already-running job
+    returns its status with ``started:false``."""
+    from src.monitoring.pagesize_bench import (
+        BenchRefused,
+        _live_db_path,
+        validate_work_dir,
+    )
+
+    if body.work_dir:
+        try:
+            validate_work_dir(body.work_dir, _live_db_path().stat().st_size)
+        except (BenchRefused, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if body.page_sizes:
+        from src.monitoring.pagesize_bench import _ALLOWED_PAGE_SIZES
+
+        bad = [p for p in body.page_sizes if p not in _ALLOWED_PAGE_SIZES]
+        if bad:
+            raise HTTPException(
+                status_code=400,
+                detail=f"page sizes {bad} are not valid SQLite page sizes {_ALLOWED_PAGE_SIZES}",
+            )
+    try:
+        st = _PAGESIZE_BENCH_JOB.start(
+            work_dir=body.work_dir, page_sizes=body.page_sizes
+        )
+        st["started"] = True
+    except RuntimeError:
+        st = _PAGESIZE_BENCH_JOB.status()
+        st["started"] = False
+    return JSONResponse(st)
+
+
+@router.get("/pagesize-bench/status")
+def pagesize_bench_status() -> JSONResponse:
+    """Live status of the page-size bench job (state, per-phase progress; when done,
+    the ready report filename + the summary in ``result``). No score."""
+    st = _PAGESIZE_BENCH_JOB.status()
+    res = st.get("result") or {}
+    st["ready"] = bool(st.get("state") == "done" and res.get("path"))
+    st["download_filename"] = res.get("filename")
+    return JSONResponse(st)
+
+
+@router.post("/pagesize-bench/cancel")
+def pagesize_bench_cancel() -> JSONResponse:
+    """Ask the running bench to stop at its next safe point (between rebuild/bench
+    phases; the partial report is honestly marked ``cancelled`` and every staged
+    rebuild is deleted). Idempotent."""
+    _PAGESIZE_BENCH_JOB.cancel()
+    return JSONResponse(_PAGESIZE_BENCH_JOB.status())
+
+
+@router.get("/pagesize-bench/last")
+def pagesize_bench_last() -> JSONResponse:
+    """The newest saved page-size bench report (read-only; never runs a bench).
+    ``{available:false}`` honestly when none has been run."""
+    from src.monitoring.pagesize_bench import last_pagesize_bench_report
+
+    return JSONResponse(last_pagesize_bench_report())
+
+
+@router.get("/pagesize-bench/download")
+def pagesize_bench_download() -> Response:
+    """Serve the finished page-size bench report. 404 until a run has completed."""
+    st = _PAGESIZE_BENCH_JOB.status()
+    res = st.get("result") or {}
+    path = res.get("path")
+    if st.get("state") not in ("done", "cancelled") or not path or not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "no page-size bench report is ready — start one with "
+                "POST /api/diagnostics/pagesize-bench"
+            ),
+        )
+    return FileResponse(
+        path, media_type="application/json",
+        filename=res.get("filename") or "oo-pagesize-bench.json",
     )

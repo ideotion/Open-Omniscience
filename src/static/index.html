@@ -1674,6 +1674,22 @@
         </div>
         <div id="p0-result" class="small" style="margin-top:6px"></div>
       </div>
+      <!-- PAGE-SIZE A/B BENCH (DB-10 §1b, 2026-07-17): rebuilds the live corpus at candidate
+           page sizes (self-verified pragmas), runs the identical workload on each, reports the
+           numbers side by side — never a winner. Run it on corpora of DIFFERENT sizes and
+           compare the logs: the TREND is the decision signal. Un-keyed English (matches this
+           diagnostics panel). Browser-unverified per fork-3. -->
+      <div id="pagesize-bench-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Page-size A/B bench (4K vs 16K, DB-10)</div>
+        <div class="hint">Rebuilds your corpus at each candidate page size (encrypted stays encrypted with the same passphrase, so the codec stays in the measurement), self-verifies every rebuilt store's settings, runs the identical workload on each (point lookups · a 30-day index window · sequential content bands, cold-ish and warm), then deletes the rebuilds. Read-only on your live corpus; needs ~1.15× the corpus size free in the staging directory (one rebuild at a time). The rebuild time it reports is also the measured cost of the real store migration at your corpus size. Numbers side by side — no winner is declared; run it on a small and a large corpus and compare the logs.</div>
+        <div class="row" style="margin-top:6px">
+          <input id="psb-workdir" type="text" style="min-width:280px" placeholder="staging dir (optional — default under the data dir; use an external drive for a large corpus)">
+          <button id="psb-run-btn" onclick="runPagesizeBench(this)" title="Start the page-size A/B bench as a background job: rebuild at 4096 then 16384 bytes/page (each with the ruled auto_vacuum=INCREMENTAL), verify, bench, clean up. Cancellable between phases.">Run page-size bench</button>
+          <button class="secondary" onclick="cancelPagesizeBench()" title="Stop at the next safe point (between rebuild/bench phases); staged rebuilds are deleted and the partial report is honestly marked cancelled.">Cancel</button>
+          <span id="psb-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="psb-result" class="small" style="margin-top:6px"></div>
+      </div>
       <div class="row" style="margin-top:6px">
         <button id="all-diag-btn" onclick="runAllDiagnostics(this)" title="Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
         <span id="all-diag-status" class="small" style="margin-left:6px"></span>
