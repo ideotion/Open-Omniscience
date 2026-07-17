@@ -5918,6 +5918,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   KEYWORD_ENGINE_OPTIMIZATION_STRATEGY (sole spec for P5.2 embeddings/P6 entities + the P2.4 guardrail) ·
   PERSISTED_DUCKDB_HTTPFS + SCALING_DERIVED_LAYER (alive until the httpfs binaries land).
   PENDING: the plan's execution (a CLI session per its §0 working mode).
+- **BACKUP/RESTORE BAR = PLAIN-FOLDER-COPY PARITY (maintainer ruled 2026-07-17, verbatim intent:
+  "I can always copy the entire folder to an external drive, do a fresh install on a different
+  computer, replace the folder, and have that done in a few hours. Our backup-restore shouldn't be
+  more complicated, difficult, or dangerous/risky to perform."):** the app-stopped filesystem copy
+  of the DATA folder is a FIRST-CLASS, endorsed backup/move path at every scale (it was already the
+  SCALE-MANDATE interim guidance — encrypted at rest, keys travel inside the folder, the passphrase
+  is the only secret; the three safety details are: it is the DATA dir [default
+  `~/.local/share/open-omniscience` or the A11 `OO_DATA_DIR`], NOT the app/code folder; the app must
+  be STOPPED first, or the copy can catch a torn WAL; the Ollama model store lives OUTSIDE it). The
+  in-app backup/restore must NEVER be more complicated, slower-per-byte, or riskier than that cp
+  baseline — its justification is what it ADDS (signed-manifest verification, parity
+  corruption-recovery, additive MERGE of two corpora, selective members, runs attended without
+  stopping the app), and it must never be a gate the user has to pass. **COROLLARY for DB-10
+  (corrects this session's chat over-statement that "the migration window closes as the corpus
+  grows"):** a byte-copy preserves the CREATE-time seam (auto_vacuum/page_size), so cp cannot
+  migrate it — but the honest migration op is NOT the row-level restore-merge either; it is a store
+  REBUILD into a fresh-pragma target (`sqlcipher_export()` to an ATTACHed target created with the
+  new pragmas / `VACUUM INTO` with pragmas set — the same machinery `connect.py` already uses for
+  encrypt/decrypt conversion), which is cp-CLASS cost (hours + one spare drive) at ANY size. So the
+  DB-10 §1a urgency is about NEW-corpus DEFAULTS (every corpus born before the ruling later needs
+  the rebuild), not a closing window — and the DB-10 1a/1b ruling itself is STILL OPEN.
+  VERIFY-BEFORE-BUILD when the migrate op is built: empirically confirm the attached/INTO target
+  honors `auto_vacuum` + `cipher_page_size` under SQLCipher (a P2.4-style probe — never assert it
+  from docs), and the op must state its cost + app-stopped/gate-held posture honestly. DOCS
+  FOLLOW-UP (fold into the docs-review plan execution): the USER_MANUAL backup chapter should
+  present the folder-copy path as prominently as the in-app tools, with the three safety details.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
