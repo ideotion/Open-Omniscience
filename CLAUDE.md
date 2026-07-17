@@ -6121,6 +6121,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   themes) now find law/wikipedia/statistics/newsletter articles. The law brief's S4 is struck
   SHIPPED (residual: a browser check of the class surfaces, fork-3).
 
+- **CALENDAR/AGENDA — MOON DEDUP + AUTO-IMPORT + EVENT PROVENANCE (maintainer field report +
+  rulings 2026-07-17; SHIPPED same day, frontend browser-unverified per fork-3/Q6a):**
+  (1) **"Three moon states on one day" ROOT-CAUSED + FIXED:** `mapImportedToAgenda`/
+  `mapDeducedToAgenda` filled `month`/`day` — the agenda's ANNUAL-RULE placement keys — from the
+  instance's real date, so every imported dated VEVENT ALSO ghosted into EVERY displayed year
+  (each year's moon phases drift ~11 days → contradictory states on one day; same defect
+  projected movable feasts, e.g. a 2025 Easter, onto later years). Dated instances now place via
+  `next_occurrence` ONLY (`month:null, day:null`); guard test in test_repo_invariants
+  (`test_agenda_dated_instances_place_in_their_own_year_and_show_provenance`). A dated instance
+  projected to another year is FABRICATION for anything movable — the rule going forward.
+  (2) **`monkeyness-moons` (Moons-Seasons ICS) RETIRED as REDUNDANT** via a NEW
+  `_REDUNDANT_DEFAULT_FEEDS` mechanism (distinct from the robots-dead set — this is a design
+  call, not a robots verdict): the computed Meeus layer (full/new ch.49 + seasons ch.27, method +
+  accuracy stated, almanac-verified) is the ONE astronomy authority; the feed duplicated it
+  method-unstated over http. Already-imported ghosts are filtered at READ time in
+  `load_imports` (solely-attributed events dropped, mixed-source events keep live providers;
+  import_feed's next save persists the cleanup). KNOWN ACCEPTED LOSS: the feed's first/last
+  QUARTER phases (the computed layer covers full/new only; computing quarters via the same
+  verified ch.49 method is the clean follow-up if wanted).
+  (3) **"Internet calendars should not be manually enabled" — VERIFIED ALREADY SHIPPED** (the
+  staleness guard): `auto_import_due_feeds` has ridden every online collect pass DEFAULT-ON
+  since the 2026-06-15 "auto-import everything" ruling (8 feeds/pass round-robin by
+  least-recently-imported, 12 h per-feed gate incl. failure backoff, robots-dead hosts skipped)
+  — no change needed; the Calendars panel's per-feed buttons are the manual OVERRIDE, not the
+  path. (4) **EVENT-SOURCE CLARITY SHIPPED:** `agRow` now renders a visible "from <feed>"
+  provenance pill on EVERY imported event — feed name(s) + URL(s) in the #oo-tip hover via a
+  lazy directory map (`_agFeedById`, reuses the Calendars panel's `_feedDir`, one background
+  loopback fetch fallback, family-name fallback meanwhile); curated events already carry
+  `official_url`, deduced/computed events already state provenance/method. (5) **"Add as many
+  online calendars as possible"** — the catalog already bundles ~498 feeds (~242 live after the
+  dead-host filter); EXPANSION beyond it is a NETWORKED acquisition task (the law-batches
+  pattern: parallel sessions verify ICS endpoints, never fabricated) — PENDING operator/next
+  networked session.
+
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

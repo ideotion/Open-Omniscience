@@ -95,14 +95,15 @@ def _isolated_store(monkeypatch, tmp_path):
 
 
 def test_verify_records_honest_verdicts():
-    # Fixtures use WORKING feeds (the dead google/floern feeds are filtered out now).
+    # Fixtures use WORKING feeds (the dead google/floern feeds are filtered out now;
+    # monkeyness-moons is retired as REDUNDANT vs the computed astronomy layer).
     v = F.verify_feed(_StubFetcher(ICS), "wph-hol-fr")
     assert v["status"] == "ok" and v["events"] == 2
-    v2 = F.verify_feed(_StubFetcher("<html></html>"), "monkeyness-moons")
+    v2 = F.verify_feed(_StubFetcher("<html></html>"), "wph-hol-de")
     assert v2["status"] == "not_ical"
     v3 = F.verify_feed(_StubFetcher(RuntimeError("boom")), "ose-calendar")
     assert v3["status"] == "unreachable" and "boom" in v3["error"]
-    assert set(F.load_verdicts()) == {"wph-hol-fr", "monkeyness-moons", "ose-calendar"}
+    assert set(F.load_verdicts()) == {"wph-hol-fr", "wph-hol-de", "ose-calendar"}
 
 
 def test_verify_rejects_a_filtered_dead_feed():
@@ -158,3 +159,27 @@ def test_feed_api_shapes():
         assert c.post("/api/events/feeds/nope/verify").status_code == 404
         r2 = c.get("/api/events/imported")
         assert r2.status_code == 200 and "events" in r2.json()
+
+
+def test_redundant_moons_feed_is_retired_and_its_ghosts_filtered():
+    """Maintainer field report 2026-07-17 (three moon states on one day): the
+    Moons-Seasons ICS duplicated the computed Meeus astronomy layer (method +
+    accuracy stated in-app) with no stated method. Retired as REDUNDANT — out of
+    the directory and the auto-import round-robin — and already-imported events
+    attributed solely to it are filtered at read time (a mixed-source event just
+    loses the retired id, never the event)."""
+    ids = {f["id"] for fam in F.load_families() for f in fam["feeds"]}
+    assert "monkeyness-moons" not in ids
+    assert F.feed_by_id("monkeyness-moons") is None
+
+    F._save_json("calendar_feed_imports.json", {
+        "astral": {"name": "Astronomy", "events": {
+            "fp1": {"title": "Full Moon", "date": "2024-07-21",
+                    "sources": ["monkeyness-moons"]},
+            "fp2": {"title": "March Equinox", "date": "2026-03-20",
+                    "sources": ["monkeyness-moons", "ose-calendar"]},
+        }},
+    })
+    evs = F.load_imports()["astral"]["events"]
+    assert "fp1" not in evs, "a solely-retired-sourced ghost must not surface"
+    assert evs["fp2"]["sources"] == ["ose-calendar"], "mixed-source keeps the live provider"

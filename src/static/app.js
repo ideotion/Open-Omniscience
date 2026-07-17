@@ -3117,8 +3117,15 @@
         title: e.title, category: kind, country: e.country || null, tags: tags,
         confirmed: true,                       // an ICS VEVENT carries a concrete date
         next_occurrence: d,
-        month: d.length >= 7 ? +d.slice(5, 7) : null,
-        day: d.length >= 10 ? +d.slice(8, 10) : null,
+        // month/day stay NULL deliberately (fix 2026-07-17): those fields are the
+        // ANNUAL-RULE placement keys, and an imported VEVENT is evidence for ITS
+        // year only. Filling them ghosted every dated instance into EVERY displayed
+        // year — three contradictory moon phases on one day (each year's phases
+        // drift ~11 days), a 2025 movable feast projected onto 2026, etc. Dated
+        // instances place via next_occurrence alone; projecting a dated instance
+        // to other years would be fabrication for anything movable.
+        month: null,
+        day: null,
         calendar: e.family, family_name: e.family_name, family_names: e.family_names,
         kind: kind, countries: e.countries || (e.country ? [e.country] : []),
         sources: e.sources || [], source_count: e.source_count, family_count: e.family_count,
@@ -3137,8 +3144,11 @@
         category: "deduced", country: null, tags: [],
         confirmed: false,                      // deduced from text — never a confirmed event
         next_occurrence: d,
-        month: d.length >= 7 ? +d.slice(5, 7) : null,
-        day: d.length >= 10 ? +d.slice(8, 10) : null,
+        // NULL like mapImportedToAgenda (fix 2026-07-17): a deduced DATE is
+        // year-specific evidence; month/day are the annual-rule keys and would
+        // ghost it into every displayed year.
+        month: null,
+        day: null,
         calendar: "deduced", deduced: true,
         article_ids: e.article_ids || [], n_articles: e.n_articles, n_sources: e.n_sources,
         note: t("Deduced from {n} articles ({s} sources), never confirmed.")
@@ -3386,6 +3396,29 @@
         ? `<span class="pill ok">${esc(e.next_occurrence)}</span>`
         : `<span class="pill" title="exact date moves each year">${e.month ? esc(_MONTHS[e.month-1]) : esc(e.cadence||"")}</span>`;
     }
+    // Feed id -> {name, url} from the calendar directory, for the visible provenance
+    // pill on imported events (maintainer 2026-07-17: "when clicking on events, the
+    // source should be clear"). Lazy: reuses the Calendars panel's _feedDir when
+    // loaded, else kicks ONE best-effort background load (loopback) and falls back
+    // to the family name meanwhile — agRow never blocks on it.
+    let _agFeedMap = null, _agFeedMapAsked = false;
+    function _agFeedById() {
+      if (_agFeedMap) return _agFeedMap;
+      if (_feedDir) {
+        _agFeedMap = {};
+        for (const fam of (_feedDir.families || [])) {
+          for (const f of (fam.feeds || [])) {
+            if (f && f.id) _agFeedMap[f.id] = { name: f.name || f.id, url: f.url || "" };
+          }
+        }
+        return _agFeedMap;
+      }
+      if (!_agFeedMapAsked) {
+        _agFeedMapAsked = true;
+        api("/api/events/feeds").then(d => { _feedDir = d; _agFeedMap = null; }).catch(() => {});
+      }
+      return null;
+    }
     function agRow(e) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const conf = e.deduced
@@ -3396,6 +3429,20 @@
       const alsoIn = (e.also_in && e.also_in.length) ? ` <span class="pill" title="this event also appears in: ${esc(e.also_in.join(', '))}">also in ${e.also_in.length}</span>` : "";
       const imp = (e.imported && e.source_count > 1)
         ? ` <span class="pill" title="${esc((e.family_names || [e.family_name || ""]).filter(Boolean).join(', '))}">${e.source_count}×</span>` : "";
+      // Visible provenance on every imported event: WHICH feed(s) delivered it —
+      // feed name(s) + URL(s) in the hover (the #oo-tip layering convention), the
+      // first provider named in the pill itself. Falls back to the family name
+      // until the directory map loads.
+      let prov = "";
+      if (e.imported && Array.isArray(e.sources) && e.sources.length) {
+        const fm = _agFeedById();
+        const names = e.sources.map(id => (fm && fm[id] && fm[id].name) || id);
+        const detail = e.sources.map(id => fm && fm[id] ? `${fm[id].name} — ${fm[id].url}` : id).join("\n");
+        const label = names[0] + (names.length > 1 ? ` +${names.length - 1}` : "");
+        prov = ` <span class="pill" title="${esc(T("Calendar feed(s) this event came from:") + "\n" + detail)}">${esc(T("from"))} ${esc(label)}</span>`;
+      } else if (e.imported && e.family_name) {
+        prov = ` <span class="pill" title="${esc(T("Imported calendar folder"))}">${esc(T("from"))} ${esc(e.family_name)}</span>`;
+      }
       const variants = (e.date_variants && e.date_variants.length > 1)
         ? `<div class="hint" style="color:var(--warn)">date varies by source: ${esc(e.date_variants.join(' · '))}</div>` : "";
       const src = e.official_url ? " · " + extLink(e.official_url, "official source ↗") : "";
@@ -3408,7 +3455,7 @@
         : `openAnalysisFor(${esc(JSON.stringify(e.title))})`;
       const titleEl = `<b class="ag-evtitle" style="cursor:pointer" title="Open in analysis — explore this event in your corpus" onclick="event.stopPropagation();${openExpr}">${esc(e.title)}</b>`;
       return `<div class="ag-row"><div class="ag-when">${agWhen(e)}</div>
-        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}${imp}</div>
+        <div class="ag-body"><div>${titleEl} <span class="pill">${esc(e.category)}</span> ${e.country&&e.country!=='INT'?`<span class="pill">${esc(e.country)}</span>`:""} ${conf}${alsoIn}${imp}${prov}</div>
           ${variants}
           <div class="hint">${tags} ${e.note?"· "+esc(e.note):""}${src}</div></div></div>`;
     }

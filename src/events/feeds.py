@@ -62,6 +62,17 @@ _DEAD_DEFAULT_HOSTS: frozenset[str] = frozenset(
 # suspenders — load_families already excludes them, so it is a no-op for defaults).
 _AUTO_IMPORT_SKIP_HOSTS: frozenset[str] = _DEAD_DEFAULT_HOSTS
 
+# Feeds retired from the defaults as REDUNDANT — not dead, not a robots verdict:
+# the in-app Meeus astronomy layer (src/events/astronomy.py) already computes full/new
+# moons (ch.49) and equinoxes/solstices (ch.27) with the method + accuracy STATED and
+# verified against almanac values, while the Moons-Seasons ICS duplicated the same
+# facts with no stated method over plain http — and its imported instances rendered
+# BESIDE the computed layer as apparent contradictions (maintainer field report
+# 2026-07-17: three moon states on one day). One authority, method stated, wins.
+# The bundled YAML keeps the row (dated record, anti-hiding); the directory, the
+# auto-import round-robin, and the imported-events view all skip it.
+_REDUNDANT_DEFAULT_FEEDS: frozenset[str] = frozenset({"monkeyness-moons"})
+
 
 # --------------------------------------------------------------------------- #
 #  Catalog
@@ -83,6 +94,7 @@ def load_families() -> list[dict]:
             if f.get("id")
             and f.get("url")
             and urlparse(str(f["url"])).netloc not in _DEAD_DEFAULT_HOSTS
+            and f["id"] not in _REDUNDANT_DEFAULT_FEEDS
         ]
         # A family left with no working feed (e.g. Google-only, or webcal-only) drops
         # out entirely — it could never have produced an event.
@@ -202,7 +214,29 @@ def load_verdicts() -> dict:
 
 
 def load_imports() -> dict:
-    return _load_json("calendar_feed_imports.json")
+    """The imported-events store, with retired-feed ghosts filtered at READ time.
+
+    An event attributed SOLELY to a retired feed no longer surfaces, and a retired
+    id is stripped from mixed-source events — so already-imported duplicates of the
+    computed astronomy layer disappear immediately. This function never rewrites
+    the file itself, but callers that load-modify-SAVE (import_feed) will persist
+    the cleanup on their next run — intended: the retirement is deliberate."""
+    data = _load_json("calendar_feed_imports.json")
+    if not _REDUNDANT_DEFAULT_FEEDS:
+        return data
+    for bucket in data.values():
+        events = bucket.get("events")
+        if not isinstance(events, dict):
+            continue
+        for fp in list(events):
+            sources = [
+                s for s in (events[fp].get("sources") or []) if s not in _REDUNDANT_DEFAULT_FEEDS
+            ]
+            if sources:
+                events[fp]["sources"] = sources
+            else:
+                del events[fp]
+    return data
 
 
 # --------------------------------------------------------------------------- #
