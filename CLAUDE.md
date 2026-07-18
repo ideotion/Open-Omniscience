@@ -6178,6 +6178,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   honestly; core installs (no simplemma) no-op regardless of the default (the Core-only lane
   proves it); the trusted index is untouched (display layer only, invariant-pinned). The
   BM25F default choice stays SEPARATE (retrieval-side, still wants the graded gold set).
+
+- **ENTITY FAMILIES AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer 2026-07-18, the
+  Insights→Families subtab on the live ~500k corpus; "I'd prefer everything to be automated. Or
+  this should be moved into the settings"; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_FAMILIES_ENTITIES.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_FAMILIES_ENTITIES.md);
+  execution delegated to a CLI session, PENDING):** three problem classes, each anchored:
+  (1) TOP-ENTITY NOISE — caps publishing furniture ranks top-5 (FOTO 4274 · VIDEO 4122 · LIVE ·
+  INFO · PREMIUM · PDF · RSS) + pure Roman numerals (XIV/III): the 2026-06-16 acronym ruling's
+  consciously-accepted "residual emphasis-acronym noise" is now iteration-due (this export IS the
+  promised log); fix = an evidence-based caps-furniture batch in the acronym-DETECTION stoplist
+  (collision-free by construction — lowercase content "foto"/"live" terms untouched) + a strict
+  Roman-numeral exclusion WITH the LIV/DC/CD-class collision allowlist (skeptic-mandated).
+  (2) CROSS-SCRIPT FRAGMENTATION — USA/США/ABD/EUA · FSB/ФСБ · NBA/НБА · NHL/НХЛ all separate
+  top entities: families are per-language by design and rings cover lowercase concept terms only;
+  fix = curated entity-alias ring seed NOW + a case-aware ring seam for UPPERCASE entity norms +
+  the Wikidata generator extended to emit QID-sourced acronym aliases (wbgetentities already
+  fetches them; the RUN stays the operator's networked step). (3) SURFACE DEFECTS — the kind
+  dropdown's "all" returns TWO items (app.js:9078 loadFamilies fetches overall top-80 then
+  filters kind!=="term" CLIENT-side = filter-after-limit; fix server-side non-term aggregation);
+  people/orgs/places return silent EMPTIES (the extractor only ever assigns entity/term — the
+  dropdown offers taxonomy the data doesn't have; options must tell the truth, never fabricate
+  kinds); entity families are single-member BY CONSTRUCTION post-acronym-ruling so the "you
+  decide" list offers nothing to decide + the "Trump = Trump's = Donald Trump" blurb describes
+  the RETIRED model; clicking ✕ on a single member writes a useless override (the maintainer's
+  two accidental `split: USA usa`/`split: ЦСКА цска` are theirs to delete via the existing
+  control — never touched by a session). RULING: curation RELOCATES to Settings (content-first
+  invariant #8, beside the Keywords explorer) showing only rows with a real decision; Insights
+  keeps the data view; automation does the bulk (nothing manual required). Out of scope: real
+  NER kind population (the LLM-perception track), §8 triage, lemmatization (own brief).
 =======
 - **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
   2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
