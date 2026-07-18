@@ -28,10 +28,12 @@ Honesty notes:
     rows are a filterable provenance class forever — like the per-edition wiki
     sources, and following the app's ``*.local`` non-web-provenance convention
     (cf. ``mailbox.import.local``) so it never collides with a scraped source;
-  * language stays NULL: a jurisdiction is NOT a language (uk/us are English, eu
-    is multilingual, many jurisdictions are ambiguous), so we never silently
-    guess it — the deduced-language pass fills ``detected_language`` at index
-    time instead.
+  * language is set from the document's OWN catalog-asserted ``language`` when
+    stated (S4b, the Cambodia fix — a French-language Cambodian code needs the
+    French stoplist) — NEVER guessed from the jurisdiction alone (uk/us are
+    English, eu is multilingual, many jurisdictions are ambiguous). A document
+    the catalog states no language for stays honestly NULL; the deduced-language
+    pass still fills ``detected_language`` at index time as the fallback.
 """
 
 from __future__ import annotations
@@ -115,18 +117,26 @@ def upsert_law_corpus_article(
             source_id=src.id,
             title=doc.title,
             content=text,
-            language=None,  # a jurisdiction is NOT a language — never guess it
+            language=doc.language,  # the catalog's OWN asserted language — never a guess
             hash=content_hash,
             published_at=doc.last_checked_at or datetime.now(UTC),
         )
         session.add(art)
         created = True
     elif art.hash == content_hash:
+        # S4b: heal an existing, unchanged-content article whose language was never
+        # set (or predates the catalog stating one) — a legitimate correction, never
+        # touched when the catalog states no language for this document.
+        if doc.language and art.language != doc.language:
+            art.language = doc.language
+            session.commit()
         return {"document_id": doc.id, "status": "unchanged", "article_id": art.id}
     else:
         art.content = text
         art.hash = content_hash
         art.title = doc.title
+        if doc.language and art.language != doc.language:
+            art.language = doc.language
         if doc.last_checked_at:
             art.published_at = doc.last_checked_at
     try:

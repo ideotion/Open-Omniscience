@@ -163,7 +163,7 @@ def test_baseline_creates_a_corpus_article_under_a_law_source(db):
     art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
     assert art.title == "Human Rights Act"
     assert "liberty and security" in art.content
-    assert art.language is None  # a jurisdiction is not a language — never guessed
+    assert art.language is None  # the document states no language — never guessed from the jurisdiction
     # Its source is the synthetic, filterable per-jurisdiction law provenance class.
     src = db.get(Source, art.source_id)
     assert src.domain == "law.uk.local"
@@ -171,6 +171,69 @@ def test_baseline_creates_a_corpus_article_under_a_law_source(db):
     assert src.source_type == "legal"
     # It flowed through the ONE index_article hook: keyword mentions exist.
     assert db.query(KeywordMention).filter_by(article_id=art.id).count() > 0
+
+
+def test_stated_document_language_threads_onto_the_new_corpus_article(db):
+    """S4b (the Cambodia fix): the catalog's own asserted per-document language
+    (e.g. a French-language Cambodian code) must reach the corpus Article, so
+    the right stoplist/keyword treatment applies — a real, stated fact, not a
+    guess from the jurisdiction."""
+    doc = LawDocument(
+        jurisdiction="kh", title="Code civil (Cambodge)", url="https://law.example/kh-code",
+        language="fr",
+    )
+    db.add(doc)
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert art.language == "fr"
+
+
+def test_no_stated_language_stays_honestly_none_never_guessed_from_country(db):
+    doc = LawDocument(jurisdiction="uk", title="Undated Act", url="https://law.example/undated",
+                      country="gb")  # a country is stated, but NOT a language
+    db.add(doc)
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert art.language is None
+
+
+def test_existing_article_heals_its_language_on_a_re_ingest(db):
+    """S4b acceptance: 'existing docs heal' -- an article created before the
+    document had a stated language must pick it up once the document is later
+    given one (idempotent re-ingest), even when the fetched text is UNCHANGED.
+
+    Self-review finding 2026-07-17: track_document's OWN steady-state
+    "unchanged" fast path skips corpus re-sync entirely once a document
+    already has latest_text (a deliberate perf optimisation -- see
+    src/law/track.py's ``backfilled`` gate), so two track_document() calls in
+    a row do NOT exercise this path. The real healing trigger is
+    ``register_documents`` re-reading the catalog (tested in
+    tests/test_law.py); this test drives ``upsert_law_corpus_article``
+    directly (itself a real, reachable code path -- see the sqlcipher3/
+    reraise tests above using the same direct-call pattern) to pin the
+    function's own idempotent-re-ingest healing behaviour precisely."""
+    from src.law.corpus import upsert_law_corpus_article
+
+    doc = LawDocument(jurisdiction="kh", title="Code civil (Cambodge)", url="https://law.example/kh-code2",
+                      latest_text=_BODY)
+    db.add(doc)
+    db.commit()
+    upsert_law_corpus_article(db, doc=doc)
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert art.language is None
+
+    doc.language = "fr"  # the catalog is later re-read / the document re-registered
+    db.commit()
+    res = upsert_law_corpus_article(db, doc=doc)  # same text -> "unchanged"
+    assert res["status"] == "unchanged"
+    db.refresh(art)
+    assert art.language == "fr"  # healed even though the text itself never changed
 
 
 def test_unchanged_refetch_does_not_duplicate_the_article(db):

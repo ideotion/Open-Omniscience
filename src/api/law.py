@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,32 @@ _CAVEAT = (
 )
 
 
+def _verdict_of(last_status: str | None) -> str:
+    """Classify the free-text ``last_status`` track.py already writes into a
+    small, honest, named set the UI can badge/colour -- never a NEW guess, just
+    a label over the real message (which stays visible verbatim on hover).
+    Order matters: check the more specific substrings before the generic ones.
+    """
+    if not last_status:
+        return "never_checked"
+    s = last_status.lower()
+    if "robots" in s:
+        return "robots_blocked"
+    if s.startswith("fetch error") or s.startswith("error:"):
+        return "error"
+    if "no usable text" in s or "too short" in s or s.startswith("empty") or "scanned" in s:
+        return "empty"
+    if s.startswith("changed ("):
+        return "changed"
+    if "reverted" in s:
+        return "reverted"
+    if "baseline" in s:
+        return "baselined"
+    if s == "unchanged":
+        return "unchanged"
+    return "other"
+
+
 def _doc_dict(doc: LawDocument, *, revisions: int = 0, flagged: int = 0) -> dict:
     return {
         "id": doc.id,
@@ -37,9 +64,14 @@ def _doc_dict(doc: LawDocument, *, revisions: int = 0, flagged: int = 0) -> dict
         "category": doc.category,
         "consolidated": bool(doc.consolidated),
         "watched": bool(doc.watched),
+        # S4b (the Cambodia fix): the catalog's own asserted language/country, when
+        # stated -- never guessed. Absent for most pre-S4b rows (honestly None).
+        "language": doc.language,
+        "country": doc.country,
         "has_baseline": doc.baseline_text is not None,
         "last_checked_at": doc.last_checked_at.isoformat() if doc.last_checked_at else None,
         "last_status": doc.last_status,
+        "verdict": _verdict_of(doc.last_status),
         "revisions": revisions,
         "flagged": flagged,
     }
@@ -53,6 +85,7 @@ def law_status(db: Session = Depends(get_db)) -> dict:
         .group_by(LawDocument.jurisdiction)
         .all()
     )
+    last_checked = db.query(func.max(LawDocument.last_checked_at)).scalar()
     return {
         "documents": db.query(func.count(LawDocument.id)).scalar() or 0,
         "jurisdictions": {k: int(v) for k, v in sorted(by_jur.items())},
@@ -65,6 +98,10 @@ def law_status(db: Session = Depends(get_db)) -> dict:
         .scalar()
         or 0,
         "flagged": db.query(func.count(LawRevision.id)).filter_by(flagged=True).scalar() or 0,
+        # Field report 2026-07-17 (the law-vertical brief, S2): a working tracker with
+        # no *flagged* amendments yet renders a bare "no changes" that reads identically
+        # to a tracker that never ran. Surface the last pass so the two are distinguishable.
+        "last_checked_at": last_checked.isoformat() if last_checked else None,
         "caveat": _CAVEAT,
     }
 
@@ -101,11 +138,18 @@ def law_documents(
 
 @router.get("/changes")
 def law_changes(
-    flagged_only: bool = True,
+    flagged_only: bool = False,
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Recent tracked legal changes (flagged by default), newest first."""
+    """Recent tracked legal changes (ALL real changes by default, newest first).
+
+    Field report 2026-07-17 (the law-vertical brief, S2): consolidated statutes
+    rarely trip the flagging heuristics, so a perfectly-working tracker with
+    real (unflagged) byte-level changes rendered "no changes yet" forever under
+    the old flagged_only=True default. Flagging stays available as an opt-IN
+    toggle (``flagged_only=true``), never the default.
+    """
     q = db.query(LawRevision, LawDocument).join(
         LawDocument, LawDocument.id == LawRevision.document_id
     )
@@ -154,6 +198,85 @@ def law_seed(db: Session = Depends(get_db)) -> dict:
     sources = seed_legal_sources(db)
     documents = register_documents(db)
     return {"sources": sources, "documents": documents}
+
+
+class _AddDocumentBody(BaseModel):
+    """S3 of the law-vertical brief (2026-07-17): add-a-document-by-URL — the
+    missing workflow (editing configs/legal_sources.yml + re-seeding was the only
+    way before this)."""
+
+    jurisdiction: str = Field(..., min_length=1, max_length=8)
+    title: str = Field(..., min_length=1, max_length=512)
+    url: str = Field(..., min_length=1, max_length=1000)
+    official_url: str | None = Field(default=None, max_length=1000)
+    category: str = Field(default="legislation", max_length=40)
+    language: str | None = Field(default=None, max_length=8)
+    country: str | None = Field(default=None, max_length=8)
+
+    @field_validator("url", "official_url")
+    @classmethod
+    def _must_be_http(cls, v: str | None) -> str | None:
+        if v and not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("must be an http(s) URL")
+        return v
+
+
+@router.post("/documents")
+def add_law_document(body: _AddDocumentBody, db: Session = Depends(get_db)) -> dict:
+    """Track a new document by pasting its URL (S3): deduped on
+    ``(jurisdiction, url)`` — a 409 on a duplicate, never a silent second row.
+    Fetched through the ethical fetcher immediately (the SAME path ``/track``
+    uses) so the maintainer sees a real verdict right away; a robots-blocked or
+    unreachable URL is still STORED (so it can be retried later) but its honest
+    ``last_status`` is returned — never silently dropped, never fabricated."""
+    jurisdiction = body.jurisdiction.strip().lower()
+    dup = (
+        db.query(LawDocument)
+        .filter_by(jurisdiction=jurisdiction, url=body.url)
+        .first()
+    )
+    if dup is not None:
+        if dup.watched:
+            raise HTTPException(status_code=409, detail="This document is already tracked.")
+        # Previously unwatched (via DELETE below) -- re-adding the same URL
+        # reactivates it rather than erroring or creating a second row.
+        dup.watched = True
+        db.commit()
+        doc = dup
+    else:
+        doc = LawDocument(
+            jurisdiction=jurisdiction,
+            title=body.title.strip(),
+            url=body.url,
+            official_url=body.official_url,
+            category=body.category,
+            consolidated=False,
+            watched=True,
+            language=body.language,
+            country=body.country,
+        )
+        db.add(doc)
+        db.commit()
+
+    from src.law.track import track_document
+    from src.safety.fetcher import make_fetcher
+
+    result = track_document(db, make_fetcher(), doc)
+    return {**_doc_dict(doc), "track_result": result, "caveat": _CAVEAT}
+
+
+@router.delete("/documents/{document_id}")
+def remove_law_document(document_id: int, db: Session = Depends(get_db)) -> dict:
+    """Stop tracking a document (S3's DELETE/unwatch). NEVER deletes the corpus
+    Article or the already-captured revisions — what was already learned stays
+    searchable; only FUTURE tracking passes skip it. Re-adding the same URL
+    re-activates it (watched=True) rather than a fresh duplicate row."""
+    doc = db.query(LawDocument).filter_by(id=document_id).first()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    doc.watched = False
+    db.commit()
+    return {"id": doc.id, "watched": False}
 
 
 @router.get("/documents/{document_id}")

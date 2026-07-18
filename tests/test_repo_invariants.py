@@ -5353,6 +5353,7 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
         "/debug-bundle": "debug-bundle.json",
         "/p0-validation/last": "p0-validation.json",
         "/pagesize-bench/last": "pagesize-bench.json",
+        "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
     }
     exempt = {
         "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",

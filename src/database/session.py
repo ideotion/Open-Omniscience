@@ -205,6 +205,7 @@ def init_db() -> None:
         ensure_keyword_counter_columns,
         ensure_keyword_extractor_column,
         ensure_keyword_mention_source_column,
+        ensure_law_document_language_columns,
         ensure_law_text_columns,
         ensure_source_counter_columns,
         ensure_supergroup_ring_column,
@@ -254,6 +255,10 @@ def init_db() -> None:
     # Law versioned-text columns (the versioned-sources ruling): materialised latest + per-revision
     # full text (self-heal, no backfill; populates forward as the law tracker stores full text).
     ensure_law_text_columns(engine)
+
+    # S4b: law_documents.language/.country (the Cambodia fix — self-heal, no backfill;
+    # populates forward as documents are re-registered/re-synced from the catalog).
+    ensure_law_document_language_columns(engine)
 
     # S6: maintained per-source article counter (self-heal, no backfill; reconcile populates
     # forward + stamps freshness, a NULL count reads live).

@@ -125,32 +125,96 @@ def seed_legal_sources(session: Session, path: Path | None = None) -> dict[str, 
     return seed_sources(session, registration_source_rows(load_legal_catalog(path)))
 
 
-def register_documents(session: Session, path: Path | None = None) -> dict[str, int]:
+def _doc_language(d: dict) -> str | None:
+    """The document's stated language, defensively: the curated schema uses a
+    singular ``language:`` string; a generated/harvested entry may instead carry
+    a ``languages:`` list (several official-language versions) — take the first
+    as the primary/default. Never fabricated: absent in both -> None."""
+    lang = d.get("language")
+    if lang:
+        return lang
+    langs = d.get("languages")
+    if isinstance(langs, list) and langs:
+        return langs[0]
+    return None
+
+
+def register_documents(
+    session: Session, path: Path | None = None, generated_path: Path | None = None
+) -> dict[str, int]:
     """Register the curated trackable legal documents (idempotent, by jurisdiction+url).
 
     A generated document registers only when its producing session actually verified
     it (verification.status fetched/search-verified) — an unverified ``lead`` is a
-    maintainer decision, never silently watched (see ``registrable_documents``)."""
-    docs = registrable_documents(load_legal_catalog(path))
-    existing = {(j, u) for (j, u) in session.query(LawDocument.jurisdiction, LawDocument.url).all()}
+    maintainer decision, never silently watched (see ``registrable_documents``).
+
+    S4b (the Cambodia fix): a document already registered BEFORE ``language``/
+    ``country`` existed gets them healed here too — filled in ONLY while still
+    NULL on the row, so this never clobbers a value set some other way. The
+    ALREADY-INGESTED corpus Article (``src/law/corpus.py``) is healed in the
+    SAME pass (track_document's own steady-state "unchanged" poll skips corpus
+    re-sync entirely once a document has ``latest_text``, so waiting for "the
+    next track pass" would never actually reach it).
+
+    ``generated_path`` defaults to the real committed harvest file (byte-identical
+    to the pre-S4b behaviour); tests pass an isolated/nonexistent path so a crafted
+    fixture catalog is never silently merged with the real ~225-source harvest."""
+    docs = registrable_documents(load_legal_catalog(path, generated_path))
+    existing_rows = {(row.jurisdiction, row.url): row for row in session.query(LawDocument).all()}
     created = 0
+    healed = 0
     for d in docs:
         key = (d["jurisdiction"], d["url"])
-        if key in existing:
+        row = existing_rows.get(key)
+        if row is not None:
+            changed = False
+            lang = _doc_language(d)
+            if row.language is None and lang:
+                row.language = lang
+                changed = True
+            if row.country is None and d.get("country"):
+                row.country = d["country"]
+                changed = True
+            if changed:
+                healed += 1
+                # Self-review 2026-07-17: track_document's OWN steady-state
+                # "unchanged" fast path skips corpus re-sync entirely once a
+                # document already has latest_text (a deliberate perf
+                # optimisation, src/law/track.py), so waiting for "the next
+                # track pass" to heal the linked Article's language would in
+                # practice never fire for an already-baselined, unchanged
+                # document. Heal the Article directly, here, the moment the
+                # document itself is healed.
+                if row.language:
+                    from src.database.models import Article
+                    from src.law.corpus import law_canonical_url
+
+                    art = (
+                        session.query(Article)
+                        .filter(Article.canonical_url == law_canonical_url(row))
+                        .first()
+                    )
+                    if art is not None and art.language != row.language:
+                        art.language = row.language
             continue
-        existing.add(key)
-        session.add(
-            LawDocument(
-                jurisdiction=d["jurisdiction"],
-                title=d.get("title", d["url"]),
-                url=d["url"],
-                official_url=d.get("official_url"),
-                category=d.get("category", "legislation"),
-                consolidated=bool(d.get("consolidated", False)),
-                watched=True,
-            )
+        row = LawDocument(
+            jurisdiction=d["jurisdiction"],
+            title=d.get("title", d["url"]),
+            url=d["url"],
+            official_url=d.get("official_url"),
+            category=d.get("category", "legislation"),
+            consolidated=bool(d.get("consolidated", False)),
+            watched=True,
+            # The catalog's OWN asserted language/country (never guessed) — e.g. a
+            # French-language Cambodian code, so its corpus Article gets the right
+            # stoplist/keyword treatment. Absent in the catalog -> None, honestly (a
+            # jurisdiction alone is never used to infer a language).
+            language=_doc_language(d),
+            country=d.get("country"),
         )
+        session.add(row)
+        existing_rows[key] = row
         created += 1
-    if created:
+    if created or healed:
         session.commit()
-    return {"created": created, "total": len(docs)}
+    return {"created": created, "total": len(docs), "healed_language": healed}

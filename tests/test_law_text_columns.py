@@ -60,3 +60,39 @@ def test_columns_default_to_null_so_the_change_is_additive():
     s.expire_all()
     assert s.query(LawDocument).one().latest_text is None
     assert s.query(LawRevision).one().full_text is None
+
+
+def test_law_document_language_and_country_round_trip():
+    """S4b (the Cambodia fix): additive columns for the catalog's own asserted
+    per-document language/country."""
+    s = _session()
+    doc = LawDocument(jurisdiction="kh", title="Code civil", url="https://law.example/kh",
+                      language="fr", country="kh")
+    s.add(doc)
+    s.commit()
+    s.expire_all()
+    got = s.query(LawDocument).one()
+    assert got.language == "fr" and got.country == "kh"
+
+
+def test_ensure_law_document_language_columns_self_heals_a_pre_existing_store():
+    """A store created before language/country existed must self-heal at boot
+    (the established additive-column pattern; matches ensure_law_text_columns)."""
+    from sqlalchemy import text
+
+    from src.database.maintenance import ensure_law_document_language_columns
+
+    engine = create_engine("sqlite:///:memory:", future=True)
+    with engine.begin() as conn:
+        # A pre-fix schema: law_documents WITHOUT language/country.
+        conn.execute(text(
+            "CREATE TABLE law_documents (id INTEGER PRIMARY KEY, jurisdiction TEXT, "
+            "title TEXT, url TEXT)"
+        ))
+    added = ensure_law_document_language_columns(engine)
+    assert set(added) == {"law_documents.language", "law_documents.country"}
+    with engine.begin() as conn:
+        cols = {r[1] for r in conn.execute(text("PRAGMA table_info(law_documents)")).fetchall()}
+    assert {"language", "country"} <= cols
+    # Idempotent: a second pass adds nothing.
+    assert ensure_law_document_language_columns(engine) == []
