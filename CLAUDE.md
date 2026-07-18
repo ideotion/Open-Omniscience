@@ -432,7 +432,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   full-suite per-test route watcher); anchor route guards to IMMUTABLE sources
   (each router's own `router.routes` definitions + the `include_router` wiring
   in `src/api/main.py` source). Negative `not in app.routes` checks stay safe (a
-  missing route can't fail them).
+  missing route can't fail them). And THE LEDGER ITSELF can carry a committed merge
+  conflict: the #708 merge landed literal conflict markers on main's CLAUDE.md (the two
+  sibling 2026-07-18 sessions' Open-queue entries; found + union-resolved 2026-07-18,
+  both sides kept per the additive rule) — after merging parallel-session PRs, grep
+  CLAUDE.md for conflict markers before trusting it.
 - **Lessons harvested from the shipped log (the reusable ones; full context in
   `docs/ledger/SHIPPED_LOG.md` + git history):**
   - **GitHub release assets carry an ATTESTED `digest: sha256:…` field:** to verify a
@@ -6296,6 +6300,39 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   "includes future-dated mentions" label on future-extending windows — legitimate deduced dates
   that otherwise read as an error). The producer cards inherit every shared fix; execution
   PENDING with the parent brief.
+
+- **THE OBSERVATORY — THE CORPUS AS A NIGHT SKY, A DEDICATED TAB (maintainer ruled 2026-07-18 —
+  SUPERSEDES Q5a (2026-07-13), which had deprioritized the 3D keyword explorer; revives the
+  2026-06-16 flagship under its own resolution A (hand-rolled canvas 2.5D, NO WebGL/Three.js);
+  design of record = [`docs/design/OBSERVATORY_DESIGN.md`](docs/design/OBSERVATORY_DESIGN.md);
+  DESIGN-ONLY — build NOT started, browser-verify-GATED):** the keyword hierarchy rendered as a
+  deterministic night sky: universe=corpus · galaxy clusters=the scaffold's ~12 domains (needs an
+  additive `domain:` field in keyword_supergroups.yml — today the domains live only in a comment)
+  · galaxies=super-groups (77) · star systems=rings (~540) · stars=keyword families ·
+  planets=per-language ring members (the project's rings render as LITERAL planetary rings,
+  segmented by language share) · nebula=the un-curated long tail as DISCLOSED aggregate density
+  ("N stars shown · M in the nebula" — the anti-capping answer). RULED: a DEDICATED main tab
+  beside the others, whole-corpus v1; name **Observatory** (translates well ×12; "Telescope"
+  reserved for the later per-corpus instrument inside the analysis window — not v1); spiral ARMS
+  carry the Item-AC topic tags — cardinality guarded BY CONSTRUCTION (top-K≤6 arms by member
+  count + a labeled "untagged/other (N)" disc; today's taxonomy is only 8 topic tags, so the
+  fear is growth and the cap answers it). HONESTY SPINE: a self-similar POLAR grammar —
+  ANGLE=category (domain wedge at the universe tier, tag arm at the galaxy tier; within-sector
+  jitter = stable hash, disclosed as meaningless) + RADIUS=ONE measure (default article spread —
+  breadth resists single-source flooding; log scale with LABELED orbit gridlines per #16 / the
+  opts.logY precedent; switchable dimension picker à la ooMap) — NEVER an "importance" blend;
+  size=mentions (sqrt + a reference-star legend); colour=language default, or
+  temperature=windowed trend as a CHOSEN lens (red = a measured decline with method stated;
+  old-but-steady stays white — cross-time sacred); association = DRAWN constellation edges (PMI,
+  n shown), never proximity; novae = trending spikes under the supergroup_rising gates
+  (floors+FDR); deterministic layout → a stable "your sky" where CHANGE is signal. Canvas-2D
+  glow sprites + parallax; depth NAVIGATIONAL only + screen-space marks (perspective never
+  distorts magnitude); STATIC when idle (no animation loops); LOD rides the hierarchy (≤~5k
+  sprites + nebula); sr-list + keyboard, the tabular views stay canonical (#8). ONE new endpoint
+  (`GET /api/insights/observatory`, tiered payload, guarded+deadlined, no score-named fields).
+  PREREQS before build: the super-groups S1 stats core (the Observatory is its 2nd consumer) +
+  the §8 triage / caps-furniture sky-quality cleanups. The maintainer click-through is the ship
+  gate for every frontend slice (this surface is NOT conservative-flaggable).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
