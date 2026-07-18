@@ -1445,8 +1445,9 @@ def test_version_single_sourced_from_pyproject():
     """RC gate (release-eng): the version is single-sourced from pyproject. ``src.__version__``
     must RESOLVE to the installed package metadata, and ``src/__init__.py`` must NOT hardcode a
     version literal that could silently drift (the old ``__version__ = "0.0.9"`` hazard)."""
-    import src
     from importlib.metadata import version as _pkg_version
+
+    import src
 
     assert src.__version__ == _pkg_version("open-omniscience"), (
         "src.__version__ must single-source from importlib.metadata (pyproject), not a literal"
@@ -5415,3 +5416,26 @@ def test_pagesize_bench_job_is_wired():
                 "/api/diagnostics/pagesize-bench/cancel",
                 "/api/diagnostics/pagesize-bench/download"):
         assert url in js, f"frontend does not call {url}"
+
+
+def test_agenda_dated_instances_place_in_their_own_year_and_show_provenance():
+    """Maintainer field report 2026-07-17: three contradictory moon states on one
+    day. Root cause: mapImportedToAgenda/mapDeducedToAgenda filled month/day (the
+    ANNUAL-RULE placement keys) from the instance's real date, ghosting every dated
+    instance into every displayed year (each year's moon phases drift ~11 days; a
+    2025 movable feast projected onto 2026). Dated instances place via
+    next_occurrence ONLY. Plus: imported events must name their feed (visible
+    provenance — "the source should be clear")."""
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+
+    imported = app.split("function mapImportedToAgenda")[1].split("function mapDeducedToAgenda")[0]
+    deduced = app.split("function mapDeducedToAgenda")[1][:1600]  # the mapper body
+    for name, body in (("mapImportedToAgenda", imported), ("mapDeducedToAgenda", deduced)):
+        assert "month: null" in body and "day: null" in body, \
+            f"{name} must not fill the annual-rule month/day keys"
+        assert "+d.slice(5, 7)" not in body and "+d.slice(8, 10)" not in body, \
+            f"{name} must not derive annual placement from the instance date"
+
+    # Visible provenance: the feed-directory resolver + the from-pill in agRow.
+    assert "_agFeedById" in app
+    assert "Calendar feed(s) this event came from:" in app

@@ -173,6 +173,12 @@ def _run_startup_upkeep() -> None:
                 seeded = seed_default_sources(session)
                 seed_legal_sources(session)
                 register_documents(session)
+                # Channel-implied tags (2026-07-17): law/wikipedia/statistics/… sources
+                # carry their class tag so tag-based filters find their articles.
+                # Idempotent append-only heal over a bounded candidate set.
+                from src.catalog.provenance import ensure_channel_tags
+
+                ensure_channel_tags(session)
             if seeded.get("created"):
                 logger.info("Seeded %d catalog sources at startup.", seeded["created"])
         except Exception:  # noqa: BLE001 - seeding must never block startup
@@ -2264,6 +2270,9 @@ def _serve() -> None:
                 # curated set of trackable consolidated-law documents — on by default.
                 seed_legal_sources(session)
                 register_documents(session)
+                from src.catalog.provenance import ensure_channel_tags
+
+                ensure_channel_tags(session)
             if result["created"]:
                 logger.info("Seeded %d starter sources on first run.", result["created"])
         except Exception as exc:  # noqa: BLE001 - never block startup on seeding

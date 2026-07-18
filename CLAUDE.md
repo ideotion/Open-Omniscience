@@ -5986,6 +5986,174 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `test_repo_invariants.py::test_all_diagnostics_bundle_covers_every_get_diagnostic` — every GET
   route on the diagnostics router must be a bundle member or an exemption-with-reason, so the
   bundle can never silently fall behind again.
+- **LAW VERTICAL — INVESTIGATION + SESSION BRIEF (maintainer-asked 2026-07-17: "a proper,
+  intelligent, adapted and performant strategy to scrap each country's legal articles … ingested
+  the same way articles are … track their changes. Currently I don't see anything working despite
+  my previous attempts"; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-17_LAW_VERTICAL.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-17_LAW_VERTICAL.md)):**
+  INVESTIGATION VERDICT (tree-anchored, `main`@af30b39): the vertical is NOT missing — it is 6
+  days old and substantially built (models+catalog ~47 portals/~17 tracked docs boot-seeded ·
+  `auto_track_due` on EVERY online pass since the 2026-06-22 field fix · laws-as-corpus-Articles
+  via `index_article` since `fc75aa0` 2026-07-14 · API+reader+omnibar group+`law_change`/
+  `model_legislation` cards). WHY IT LOOKED DEAD (ranked): (1) a cross-driver IntegrityError
+  (sqlcipher3's unwrapped class missed by the `except IntegrityError`) SILENTLY POISONED the
+  tracking pass on the encrypted default store — fixed only `38c0502` (2026-07-17, the 4th
+  recurrence of the #691/#696 family), exactly spanning the maintainer's attempts; (2) the
+  sidebar tab is labelled "Governments" and opens on Countries — the Law subtab is 2 clicks deep;
+  (3) `/api/law/changes` defaults `flagged_only=True` → a working tracker renders "no changes"
+  indefinitely on consolidated statutes; (4) baselines need sustained ONLINE passes (5/pass,
+  24 h gate); (5) robots fail-closed verdicts hidden in a table column; (6) `[pdf]` optional.
+  REAL GAPS: ~17 curated docs ≠ per-country corpora (no adapters/enumeration); no
+  add-document-by-URL; `law` missing from PROVENANCE_CLASSES (buckets as `web`); no per-vertical
+  coverage/freshness diagnostic. THE BRIEF (one CLI session, open egress, staleness guard
+  emphatic — the vertical changed 4× in its 6 days): S1 PROVE it end-to-end live (the trust
+  reset) → S2 truth-in-UI (changes default all-changes, per-doc verdicts loud, discoverability
+  pointer) → S3 add-by-URL → S4 provenance class LAW → S5 law-coverage diagnostic (bundle member
+  per the new ratchet) → S6 the ADAPTER seam + 2-3 LIVE-VERIFIED structured-source adapters
+  (bulk/API-before-scraping, the SDMX precedent: legislation.gov.uk XML · gesetze-im-internet XML
+  · EUR-Lex ELI; Légifrance = key-gated API vs LARGE DILA bulk job, deferred choice) → S7
+  gazettes-as-streams (verified RSS → the normal pipeline as source_type legal) → S8 docs.
+  Granularity RULING pending (act-level default vs per-legal-article split); `[pdf]`-in-default
+  + coverage priorities + cadence = §4 maintainer decisions. Never fabricate a source: every
+  committed endpoint must be fetched by the executing session (✅/🔎/❓ statuses; ❓ ships
+  disabled). **AMENDED same day (maintainer: "47 portals don't seem legitimate at all — France
+  alone has 76 different codes", citing the live Légifrance code list): THE COMPLETENESS
+  PRINCIPLE is now the coverage bar** — a portal is an entry point, never a coverage claim;
+  covering a jurisdiction = covering its OWN official enumeration (France: 76 codes en vigueur +
+  non-codified statutes; DE: gesetze-im-internet's thousands; UK: every ukpga/uksi). Threaded
+  into the brief: adapters must enumerate collections COMPLETELY (never a sample presented as
+  coverage); the S5 diagnostic reports tracked-vs-enumerated with the DENOMINATOR from the
+  source's own list ("France: 12/76 codes"), else "no enumeration adapter — coverage unknown";
+  whole-country corpora take the MANAGED-DATASET posture (bulk jobs like wiki dumps — France's
+  DILA/LEGI full-base+daily-deltas IS the law-world instance of the ruled dump-as-baseline+delta
+  architecture; ~10⁵ legal articles in force for France makes the §4 granularity ruling
+  scale-critical, to be ruled BEFORE the first whole-country ingest). The Légifrance page 403s in
+  the sandbox — the executing session re-verifies the 76 count live. PENDING: the brief's
+  execution.
+  **ACQUISITION CHANNEL RULED + INTAKE SHIPPED same day (maintainer: "a parallel, autonomous,
+  internet connected session that would produce a digestible file that would enrich the current
+  law internet endpoints to scrap, with all proper metadata associated (Cambodian law is in
+  French, for example)"):** the world-scale catalog growth runs through PARALLEL internet
+  research sessions per region batch → `configs/legal_sources_generated.yml` — contract +
+  ready-to-paste prompt + vetting protocol in
+  [`docs/design/LAW_SOURCES_ACQUISITION_2026-07-17.md`](docs/design/LAW_SOURCES_ACQUISITION_2026-07-17.md)
+  (the Wikidata-rings/world-news-catalog pattern). Metadata carries languages-OF-THE-LAW (≠ the
+  country's spoken languages), legal_system family, enumeration_url + DATED official_count (the
+  S5 coverage denominators, only ever read off the official page), structured api/bulk/formats
+  (the adapter worklist), per-row verification status (fetched/search-verified/lead — a lead
+  ships for maintainer decision, never as verified). SHIPPED with the ruling: the CURATED-WINS
+  intake seam (`load_legal_catalog` merges the generated file; no file = byte-identical) +
+  `scripts/validate_legal_catalog.py` (offline lint: schema/ISO/https/dedup-vs-curated/undated-
+  count refusal/lead listing) + tests (spec-load past the py3.11 PEP-695 import wall). FOUND +
+  routed into the brief as S4b: registration DROPS the catalog's language (LawDocument has no
+  language/country columns; law corpus Articles ingest language=None) — the Cambodia-in-French
+  case gets wrong keyword treatment until S4b threads catalog→LawDocument→Article.language.
+  **FIRST 8 BATCHES RECEIVED + MERGED same day (maintainer's parallel sessions delivered:
+  africa-west · africa-east · africa-central-south · mena · europe-central-baltics-microstates ·
+  europe-east-caucasus · south-central-america · southeast-asia):**
+  `configs/legal_sources_generated.yml` now carries **163 sources + 7 documents** (verification:
+  55 fetched · 100 search-verified · 8 leads), mechanically merged (documents `country:`→
+  `jurisdiction:` renamed; missing verification → `lead`) and validator-clean. The validator was
+  CALIBRATED against the real data (contract amendments recorded in the acquisition doc §2, so
+  future sessions + intake agree): `structured.api/bulk` = URL OR descriptive phrase (adapter
+  metadata, not fetch targets); **http-only portals = a listed WARNING, never silently rewritten
+  to https** (7 such: liberlii.org · ulrc.go.ug · minjustice.gov.cm · gacetaoficialdebolivia.gob.bo
+  · laoofficialgazette.gov.la ×2 + the Mauritania count source); a domain-less row allowed ONLY as
+  the honest-gap `lead` (Yemen: no working portal — the loader skips domain-less rows by
+  construction); in-file dedup key = `(domain, kind)` — one host may carry codes-portal AND
+  gazette as two rows (10 such hosts), REGISTRATION must collapse them (Source.domain unique, S6's
+  job). MAINTAINER-VETTING BOARD (in the PR body): 9 leads to decide; ~20 domains flagged
+  robots-blocked/bot-walled by the sessions (they cannot be scraped fail-closed — adapter/API
+  paths or honest gaps; incl. zakon.rada.gov.ua, suin-juriscol.gov.co [datos.gov.co mirror
+  suggested], sinalevi.go.cr [domain migration ~2026-07-20], congresonacional.hn, amategeko.gov.bi);
+  27 dated official_counts landed = real S5 denominators (AM 208,987 acts · CO 87,392 normas ·
+  CV 76,947 · MG 40,000 · BY/GE 26 codes · UY 13 codes …); the Mauritania 30,000 count is
+  press-release-sourced (self-disclosed in-row as approximate — kept with the disclosure).
+  REMAINING batches: Europe-West/North gap-fill · Central+South Asia · East Asia · Oceania ·
+  North America+Caribbean · supranational. **FINAL 4 BATCHES RECEIVED same day — THE WORLD SWEEP
+  IS COMPLETE (central-south-asia · caribbean · oceania · supranational): the merged file now
+  carries 225 sources + 7 documents across 162 jurisdictions (91 fetched · 124 search-verified ·
+  10 leads · 10 http-only warnings), validator-clean.** Europe-West/North + jp/kr/cn were already
+  curated (the 12-UI-language floor; mn/tw delivered in central-south-asia) — a gap-fill pass is
+  optional polish, not a missing batch. New calibration: the in-file dedup key widened to
+  `(domain, kind, COUNTRY)` — a multi-country platform (PacLII pg/sb/ki) is one row per
+  jurisdiction. North Korea = a CONFIRMED documented gap (no DPRK public portal; the kp comment
+  block in the generated file carries the evidence, preserved verbatim through the merge).
+  Notable in the final four: two COUNTS not read off the official page, both self-disclosed
+  in-row (Council of Europe 231 via Wikipedia — coe.int is a JS-SPA; AU ~80 = a manual tally
+  with a known duplicate row); Grenada's laws.gov.gd is DOWN ("Upgrading…" placeholder);
+  Vanuatu's parliament portal outsources its consolidated texts to PacLII; St Vincent's
+  legal.gov.vc has a WORKING Joomla RSS gazette feed (2nd confirmed S7 candidate after
+  Vietnam); Turkmenistan/Maldives/Bhutan = thin-coverage or no-gazette realities recorded
+  honestly. **REGISTRATION POSTURE (CI catch, fixed forward same
+  day):** `seed_legal_sources` consumes `load_legal_catalog` at BOOT, so the merged generated
+  rows were seeding ENABLED (Source.enabled defaults true; the entries carry no `enabled` key) —
+  breaching review-before-enable AND reddening test_preflight (163 extra enabled sources pushed
+  the test's synthetic domains past `recent_results`' 200-row cap; all 3 lanes red at 127f631).
+  FIX: generated rows are marked `_generated` by the loader; `registration_source_rows` (pure)
+  forces `enabled=False` + `via:legal-generated` provenance on them (curated posture untouched),
+  and `registrable_documents` (pure) lets a generated document register as watched ONLY when its
+  session verified it (fetched/search-verified) — an unverified `lead` document never silently
+  becomes a watched LawDocument. Enabling a generated source stays a maintainer action (or the
+  future Phase-2 promotion frontier). **SUPERSEDED same day for the ENABLE half (maintainer ruled
+  2026-07-17, verbatim "regarding disabled sources, nothing has to be manually done by the user.
+  Could you enable everything by default"): generated law-catalog sources now ENABLE BY DEFAULT**
+  — the maintainer's review of the committed catalog file IS the vetting gate (the merged file is
+  vetted data, unlike runtime-DISCOVERED candidates, which still register disabled — the discovery
+  funnel is a different channel and its Q3a posture is unchanged). Network-safe by construction:
+  legal portals carry no rss_url so collect passes never fetch them; robots stays fail-closed
+  (the ~25 robots-blocked domains get honest verdicts, never fetched); the bounded preflight
+  becomes the AUTOMATIC verifier of lead domains. The `via:legal-generated` provenance stays. The
+  lead-DOCUMENT exclusion stays (never fetch an unverified URL — that half is about fetch targets,
+  not user convenience). test_preflight's log assertion now reads `recent_results(limit=2000)`
+  (the log's own retention window, not the 200-row display default) so a large enabled catalog
+  can't crowd out its synthetic domains — asserting LOG membership, not display ranking.
+  **TAGS + PROVENANCE SHIPPED same day (maintainer: "make sure that there's a proper article tag
+  dedicated to laws, as well as proper dedicated tags for wikipedia articles, and so forth. Tags
+  should also be deduced from source type, and source tags"):** `LAW` joined PROVENANCE_CLASSES
+  (`provenance_of`: source_type legal/ip AND the synthetic `law.*.local` domains → law; closed-set
+  test extended, 17 green) + the CHANNEL-IMPLIED TAGS system in `src/catalog/provenance.py`:
+  `CLASS_IMPLIED_TAGS` + pure `implied_tags()` (explicit tags kept in order, implied APPENDED only,
+  ip additionally implies `ip`) + idempotent `ensure_channel_tags()` boot heal over a bounded
+  candidate set (wiki editions · law.*.local · legal/ip/statistics/cited source_types · newsletter
+  buckets), wired into BOTH seed sites in main.py; `ensure_law_source`/`ensure_wiki_source` set
+  tags at creation. So tag-based filters (analysis `tags` param, scheduler select_tags, wizard
+  themes) now find law/wikipedia/statistics/newsletter articles. The law brief's S4 is struck
+  SHIPPED (residual: a browser check of the class surfaces, fork-3).
+
+- **CALENDAR/AGENDA — MOON DEDUP + AUTO-IMPORT + EVENT PROVENANCE (maintainer field report +
+  rulings 2026-07-17; SHIPPED same day, frontend browser-unverified per fork-3/Q6a):**
+  (1) **"Three moon states on one day" ROOT-CAUSED + FIXED:** `mapImportedToAgenda`/
+  `mapDeducedToAgenda` filled `month`/`day` — the agenda's ANNUAL-RULE placement keys — from the
+  instance's real date, so every imported dated VEVENT ALSO ghosted into EVERY displayed year
+  (each year's moon phases drift ~11 days → contradictory states on one day; same defect
+  projected movable feasts, e.g. a 2025 Easter, onto later years). Dated instances now place via
+  `next_occurrence` ONLY (`month:null, day:null`); guard test in test_repo_invariants
+  (`test_agenda_dated_instances_place_in_their_own_year_and_show_provenance`). A dated instance
+  projected to another year is FABRICATION for anything movable — the rule going forward.
+  (2) **`monkeyness-moons` (Moons-Seasons ICS) RETIRED as REDUNDANT** via a NEW
+  `_REDUNDANT_DEFAULT_FEEDS` mechanism (distinct from the robots-dead set — this is a design
+  call, not a robots verdict): the computed Meeus layer (full/new ch.49 + seasons ch.27, method +
+  accuracy stated, almanac-verified) is the ONE astronomy authority; the feed duplicated it
+  method-unstated over http. Already-imported ghosts are filtered at READ time in
+  `load_imports` (solely-attributed events dropped, mixed-source events keep live providers;
+  import_feed's next save persists the cleanup). KNOWN ACCEPTED LOSS: the feed's first/last
+  QUARTER phases (the computed layer covers full/new only; computing quarters via the same
+  verified ch.49 method is the clean follow-up if wanted).
+  (3) **"Internet calendars should not be manually enabled" — VERIFIED ALREADY SHIPPED** (the
+  staleness guard): `auto_import_due_feeds` has ridden every online collect pass DEFAULT-ON
+  since the 2026-06-15 "auto-import everything" ruling (8 feeds/pass round-robin by
+  least-recently-imported, 12 h per-feed gate incl. failure backoff, robots-dead hosts skipped)
+  — no change needed; the Calendars panel's per-feed buttons are the manual OVERRIDE, not the
+  path. (4) **EVENT-SOURCE CLARITY SHIPPED:** `agRow` now renders a visible "from <feed>"
+  provenance pill on EVERY imported event — feed name(s) + URL(s) in the #oo-tip hover via a
+  lazy directory map (`_agFeedById`, reuses the Calendars panel's `_feedDir`, one background
+  loopback fetch fallback, family-name fallback meanwhile); curated events already carry
+  `official_url`, deduced/computed events already state provenance/method. (5) **"Add as many
+  online calendars as possible"** — the catalog already bundles ~498 feeds (~242 live after the
+  dead-host filter); EXPANSION beyond it is a NETWORKED acquisition task (the law-batches
+  pattern: parallel sessions verify ICS endpoints, never fabricated) — PENDING operator/next
+  networked session.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
