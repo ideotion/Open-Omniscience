@@ -88,6 +88,121 @@ def test_seed_sources_and_register_documents(db):
     assert register_documents(db)["created"] == 0
 
 
+def test_register_documents_populates_language_and_country_from_the_catalog(db, tmp_path):
+    """S4b (the Cambodia fix): a NEW registration must carry the catalog's own
+    stated language/country onto the LawDocument row."""
+    catalog = tmp_path / "cat.yml"
+    no_gen = tmp_path / "no-such-generated.yml"  # isolate from the real ~225-source harvest
+    catalog.write_text(
+        "sources: []\n"
+        "documents:\n"
+        "- {jurisdiction: kh, title: Code civil, url: 'https://law.example/kh', "
+        "language: fr, country: kh}\n",
+        encoding="utf-8",
+    )
+    register_documents(db, path=catalog, generated_path=no_gen)
+    doc = db.query(LawDocument).filter_by(jurisdiction="kh").one()
+    assert doc.language == "fr"
+    assert doc.country == "kh"
+
+
+def test_register_documents_accepts_a_languages_list_shape_too(db, tmp_path):
+    """A harvested/generated catalog entry may state several official-language
+    versions as a ``languages:`` LIST rather than the curated schema's singular
+    ``language:`` string -- take the first, defensively, never crash or drop it."""
+    catalog = tmp_path / "cat.yml"
+    no_gen = tmp_path / "no-such-generated.yml"
+    catalog.write_text(
+        "sources: []\n"
+        "documents:\n"
+        "- {jurisdiction: kh, title: Code civil, url: 'https://law.example/kh', "
+        "languages: [fr, km], country: kh}\n",
+        encoding="utf-8",
+    )
+    register_documents(db, path=catalog, generated_path=no_gen)
+    doc = db.query(LawDocument).filter_by(jurisdiction="kh").one()
+    assert doc.language == "fr"
+
+
+def test_register_documents_heals_an_existing_row_missing_language(db, tmp_path):
+    """A document registered BEFORE language/country existed (both NULL) must
+    heal them in place on the next registration pass -- filled in only while
+    still NULL, so a value set some other way is never clobbered."""
+    doc = LawDocument(jurisdiction="kh", title="Code civil", url="https://law.example/kh")
+    db.add(doc)
+    db.commit()
+    assert doc.language is None
+
+    catalog = tmp_path / "cat.yml"
+    no_gen = tmp_path / "no-such-generated.yml"
+    catalog.write_text(
+        "sources: []\n"
+        "documents:\n"
+        "- {jurisdiction: kh, title: Code civil, url: 'https://law.example/kh', "
+        "language: fr, country: kh}\n",
+        encoding="utf-8",
+    )
+    out = register_documents(db, path=catalog, generated_path=no_gen)
+    assert out["created"] == 0 and out["healed_language"] == 1
+    db.refresh(doc)
+    assert doc.language == "fr" and doc.country == "kh"
+
+
+def test_register_documents_heals_the_linked_articles_language_too(db, tmp_path):
+    """S4b's real end-to-end acceptance ('existing docs heal'): re-registering
+    must heal not just the LawDocument row but the ALREADY-INGESTED corpus
+    Article it is linked to -- track_document's own steady-state "unchanged"
+    poll skips corpus re-sync entirely once a document has latest_text (see
+    src/law/track.py), so register_documents re-reading the catalog is the
+    REAL trigger that must reach the Article, not "wait for the next pass"."""
+    from src.database.models import Article
+    from src.law.corpus import law_canonical_url, upsert_law_corpus_article
+
+    doc = LawDocument(jurisdiction="kh", title="Code civil", url="https://law.example/kh",
+                      latest_text="Article premier. " * 30)
+    db.add(doc)
+    db.commit()
+    upsert_law_corpus_article(db, doc=doc)  # ingest once, BEFORE a language is known
+    art = db.query(Article).filter_by(canonical_url=law_canonical_url(doc)).one()
+    assert art.language is None
+
+    catalog = tmp_path / "cat.yml"
+    no_gen = tmp_path / "no-such-generated.yml"
+    catalog.write_text(
+        "sources: []\n"
+        "documents:\n"
+        "- {jurisdiction: kh, title: Code civil, url: 'https://law.example/kh', "
+        "language: fr, country: kh}\n",
+        encoding="utf-8",
+    )
+    register_documents(db, path=catalog, generated_path=no_gen)
+    db.refresh(doc)
+    db.refresh(art)
+    assert doc.language == "fr"
+    assert art.language == "fr"  # the ALREADY-INGESTED article healed too
+
+    # Idempotent: a second pass finds nothing left to heal.
+    assert register_documents(db, path=catalog, generated_path=no_gen)["healed_language"] == 0
+
+
+def test_register_documents_never_overwrites_an_already_stated_language(db, tmp_path):
+    doc = LawDocument(jurisdiction="kh", title="Code civil", url="https://law.example/kh", language="en")
+    db.add(doc)
+    db.commit()
+    catalog = tmp_path / "cat.yml"
+    no_gen = tmp_path / "no-such-generated.yml"
+    catalog.write_text(
+        "sources: []\n"
+        "documents:\n"
+        "- {jurisdiction: kh, title: Code civil, url: 'https://law.example/kh', "
+        "language: fr, country: kh}\n",
+        encoding="utf-8",
+    )
+    register_documents(db, path=catalog, generated_path=no_gen)
+    db.refresh(doc)
+    assert doc.language == "en"  # NEVER clobbered, even though the catalog now says "fr"
+
+
 def test_auto_track_due_is_freshness_gated_and_bounded(db):
     """#18: a per-pass auto-track that builds baselines over time WITHOUT hammering —
     bounded batch, round-robin by least-recently-checked, freshness-gated."""
@@ -355,6 +470,70 @@ def test_law_change_card(db):
 # --------------------------------------------------------------------------- #
 #  API smoke
 # --------------------------------------------------------------------------- #
+def test_verdict_of_classifies_last_status_honestly():
+    """Field report 2026-07-17 (law-vertical brief, S2b): the per-document status
+    column showed the raw last_status string but nothing surfaced it loudly. The
+    classifier is a LABEL over the real message (never a new guess) -- robots
+    detection must fire whether the message came from RobotsDisallowed or
+    RobotsUnavailable, both of which mention "robots.txt" (src/ingest/__init__.py)."""
+    from src.api.law import _verdict_of
+
+    assert _verdict_of(None) == "never_checked"
+    assert _verdict_of("fetch error: robots.txt disallows https://x.test/a") == "robots_blocked"
+    assert _verdict_of("robots.txt for x.test could not be determined; refusing to fetch") == "robots_blocked"
+    assert _verdict_of("fetch error: timed out") == "error"
+    assert _verdict_of("error: boom") == "error"
+    assert _verdict_of("no usable text extracted") == "empty"
+    assert _verdict_of("changed (+120 bytes vs baseline)") == "changed"
+    assert _verdict_of("reverted to a previously-seen version") == "reverted"
+    assert _verdict_of("baseline captured") == "baselined"
+    assert _verdict_of("baseline already recorded") == "baselined"
+    assert _verdict_of("unchanged") == "unchanged"
+    assert _verdict_of("version already recorded") == "other"
+
+
+def test_law_status_reports_last_checked_at(db):
+    """S2a: the honest empty-state message needs a real "last pass" timestamp to
+    distinguish a working-but-quiet tracker from one that never ran."""
+    from src.api.law import law_status
+
+    assert law_status(db=db)["last_checked_at"] is None
+
+    doc = LawDocument(jurisdiction="uk", title="Test Act", url="https://example.test/act")
+    db.add(doc)
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)
+
+    s = law_status(db=db)
+    assert s["last_checked_at"] is not None
+    assert s["last_checked_at"] == doc.last_checked_at.isoformat()
+
+
+def test_law_changes_defaults_to_all_real_changes_not_flagged_only(db):
+    """S2a: consolidated statutes rarely trip the flag heuristics, so a real,
+    unflagged change must be visible by DEFAULT -- flagged_only is opt-in."""
+    from src.api.law import law_changes
+
+    doc = LawDocument(jurisdiction="uk", title="Test Act", url="https://example.test/act")
+    db.add(doc)
+    db.commit()
+    fetcher = StubFetcher()
+    fetcher.page = _html(_BODY)
+    track_document(db, fetcher, doc)
+    # A small, non-large change: real (delta_bytes != 0) but NOT flagged.
+    fetcher.page = _html(_BODY + " One more clause here.")
+    res = track_document(db, fetcher, doc)
+    assert res["status"] == "changed" and res["flagged"] is False
+
+    default = law_changes(limit=50, db=db)
+    assert len(default["changes"]) == 1  # visible without asking for flagged_only
+
+    flagged_only = law_changes(flagged_only=True, limit=50, db=db)
+    assert len(flagged_only["changes"]) == 0  # the opt-in filter still excludes it
+
+
 def test_law_api(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("OO_NO_SCHEDULER", "1")
@@ -373,3 +552,115 @@ def test_law_api(monkeypatch, tmp_path):
         assert status["documents"] >= 5 and "caveat" in status
         docs = c.get("/api/law/documents").json()
         assert len(docs["documents"]) >= 5
+
+
+# --------------------------------------------------------------------------- #
+#  S3 — add-a-document-by-URL (the missing workflow)
+# --------------------------------------------------------------------------- #
+def _law_test_app(monkeypatch, tmp_path):
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OO_NO_SCHEDULER", "1")
+    monkeypatch.setenv("OO_AUTOSEED", "0")
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+
+    return TestClient(app)
+
+
+class _StubOkFetcher:
+    def fetch(self, url: str, *, require_html: bool = True, **_kw) -> FetchResult:
+        return FetchResult(
+            requested_url=url, final_url=url, status_code=200,
+            content=_html(_BODY), content_type="text/html", fetched_at=datetime.now(UTC),
+        )
+
+
+class _StubRobotsBlockedFetcher:
+    def fetch(self, url: str, *, require_html: bool = True, **_kw):
+        from src.ingest import RobotsDisallowed
+
+        raise RobotsDisallowed(f"robots.txt disallows {url}")
+
+
+def test_add_document_tracks_it_immediately_and_returns_the_verdict(monkeypatch, tmp_path):
+    c = _law_test_app(monkeypatch, tmp_path)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: _StubOkFetcher())
+    with c:
+        r = c.post("/api/law/documents", json={
+            "jurisdiction": "kh", "title": "Code civil", "url": "https://law.example/kh-new",
+            "language": "fr",
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["jurisdiction"] == "kh" and body["language"] == "fr"
+        assert body["track_result"]["status"] == "baseline"
+        assert body["has_baseline"] is True
+
+
+def test_add_document_rejects_a_duplicate_while_watched(monkeypatch, tmp_path):
+    c = _law_test_app(monkeypatch, tmp_path)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: _StubOkFetcher())
+    with c:
+        payload = {"jurisdiction": "fr", "title": "Loi", "url": "https://law.example/fr-dup"}
+        assert c.post("/api/law/documents", json=payload).status_code == 200
+        r2 = c.post("/api/law/documents", json=payload)
+        assert r2.status_code == 409
+
+
+def test_add_document_rejects_a_non_http_url(monkeypatch, tmp_path):
+    c = _law_test_app(monkeypatch, tmp_path)
+    with c:
+        r = c.post("/api/law/documents", json={
+            "jurisdiction": "fr", "title": "x", "url": "javascript:alert(1)",
+        })
+        assert r.status_code == 422  # pydantic validation, never silently accepted
+
+
+def test_add_document_stores_a_robots_blocked_url_honestly(monkeypatch, tmp_path):
+    """S3 negative-space: a robots-blocked add is STORED (so it can be retried
+    later) with its honest verdict -- never silently dropped, never fabricated
+    as if it had been fetched."""
+    c = _law_test_app(monkeypatch, tmp_path)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: _StubRobotsBlockedFetcher())
+    with c:
+        r = c.post("/api/law/documents", json={
+            "jurisdiction": "de", "title": "Gesetz", "url": "https://law.example/de-blocked",
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["track_result"]["status"] == "error"
+        assert "robots" in body["last_status"].lower()
+        assert body["has_baseline"] is False  # nothing fabricated
+
+
+def test_delete_unwatches_never_deletes_the_row_or_history(monkeypatch, tmp_path):
+    c = _law_test_app(monkeypatch, tmp_path)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: _StubOkFetcher())
+    with c:
+        added = c.post("/api/law/documents", json={
+            "jurisdiction": "uk", "title": "Act", "url": "https://law.example/uk-del",
+        }).json()
+        doc_id = added["id"]
+        r = c.delete(f"/api/law/documents/{doc_id}")
+        assert r.status_code == 200 and r.json()["watched"] is False
+        # Still readable — the historical record is never deleted.
+        got = c.get(f"/api/law/documents/{doc_id}")
+        assert got.status_code == 200 and got.json()["watched"] is False
+
+
+def test_readding_after_unwatch_reactivates_instead_of_erroring(monkeypatch, tmp_path):
+    c = _law_test_app(monkeypatch, tmp_path)
+    monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: _StubOkFetcher())
+    with c:
+        added = c.post("/api/law/documents", json={
+            "jurisdiction": "uk", "title": "Act", "url": "https://law.example/uk-readd",
+        }).json()
+        doc_id = added["id"]
+        c.delete(f"/api/law/documents/{doc_id}")
+        r = c.post("/api/law/documents", json={
+            "jurisdiction": "uk", "title": "Act (renamed)", "url": "https://law.example/uk-readd",
+        })
+        assert r.status_code == 200
+        assert r.json()["id"] == doc_id  # SAME row reactivated, not a duplicate
+        assert r.json()["watched"] is True

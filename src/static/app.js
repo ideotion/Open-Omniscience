@@ -3905,6 +3905,7 @@
     // ---- Countries subtab ---- //
     async function loadGovCountries() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      loadLawPointer();
       if (_govCountriesInit) return;
       _govCountriesInit = true;
       const sel = $("gov-country"); if (!sel) return;
@@ -4054,9 +4055,11 @@
       }
     }
 
+    let _lawStatus = null;
     async function loadLaw() {
       try {
         const s = await api("/api/law/status");
+        _lawStatus = s;
         const jur = Object.entries(s.jurisdictions || {});
         $("law-status").innerHTML =
           `<div class="stat"><div class="n">${s.documents}</div><div class="k">laws</div></div>` +
@@ -4064,8 +4067,21 @@
           `<div class="stat"><div class="n">${s.changes}</div><div class="k">changes</div></div>` +
           `<div class="stat"><div class="n">${s.flagged}</div><div class="k">flagged</div></div>` +
           `<div class="stat"><div class="n">${jur.length}</div><div class="k">jurisdictions</div></div>`;
-      } catch (e) { $("law-status").innerHTML = '<div class="muted">Status unavailable.</div>'; }
+      } catch (e) { _lawStatus = null; $("law-status").innerHTML = '<div class="muted">Status unavailable.</div>'; }
       loadLawChanges(); loadLawDocs();
+    }
+    // Field report 2026-07-17 (S2c): the law tracker is 2 clicks deep from the
+    // Governments tab's default (Countries) view -- a small always-visible chip
+    // makes it discoverable without changing the default subtab.
+    async function loadLawPointer() {
+      const host = $("gov-law-pointer"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => v[k]));
+      try {
+        const s = await api("/api/law/status");
+        host.textContent = "⚖ " + tf("Law: {tracked} tracked · {changes} changes", { tracked: s.tracked, changes: s.changes });
+        host.title = t("Open the Law subtab — change tracking for statutes, gazettes and IP records.");
+      } catch (e) { host.textContent = ""; }
     }
     // Colourised unified diff (green added / red removed), bounded for the feed.
     function renderDiff(diff, max = 400) {
@@ -4080,10 +4096,29 @@
 
     async function loadLawChanges() {
       const box = $("law-changes");
-      const fo = $("law-flagged-only") ? $("law-flagged-only").checked : true;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => v[k]));
+      const fo = $("law-flagged-only") ? $("law-flagged-only").checked : false;
       try {
         const d = await api("/api/law/changes?flagged_only=" + fo);
-        if (!d.changes || !d.changes.length) { box.innerHTML = '<div class="muted">No tracked changes yet.</div>'; return; }
+        if (!d.changes || !d.changes.length) {
+          // Field report 2026-07-17 (S2a): distinguish "nothing changed" from
+          // "never ran" -- a working tracker with zero real amendments must NOT
+          // read like a broken/never-started one.
+          const s = _lawStatus;
+          if (s && s.documents) {
+            const scope = fo ? t("no FLAGGED changes") : t("no changes");
+            const when = s.last_checked_at
+              ? tf("last pass {ago}", { ago: fmtAgo(s.last_checked_at) })
+              : t("never checked yet");
+            box.innerHTML = `<div class="muted">` + esc(tf(
+              "{scope} — {documents} documents tracked · {tracked} baselined · {when}.",
+              { scope, documents: s.documents, tracked: s.tracked, when })) + `</div>`;
+          } else {
+            box.innerHTML = `<div class="muted">${esc(t("No documents tracked yet."))}</div>`;
+          }
+          return;
+        }
         box.innerHTML = `<p class="hint">${esc(d.caveat)}</p>` + d.changes.map(ch =>
           `<div class="panel" style="background:var(--panel2); margin-top:8px">
             <b>${esc(ch.jurisdiction.toUpperCase())}</b> · ${esc(ch.title)}
@@ -4096,19 +4131,100 @@
           </div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load changes.</div>'; }
     }
+    // Field report 2026-07-17 (S2b): the per-doc last_status was written to the
+    // table but never surfaced loudly -- classify it (verdict, from the API) into
+    // a small coloured badge, keeping the REAL message on hover (never invented).
+    const _LAW_VERDICT_PILL = {
+      never_checked: "", robots_blocked: "warn", error: "warn", empty: "warn",
+      changed: "ok", reverted: "", baselined: "ok", unchanged: "", other: "",
+    };
+    function lawVerdictBadge(x) {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const labels = {
+        never_checked: tr("not checked yet"), robots_blocked: tr("robots-blocked"),
+        error: tr("fetch error"), empty: tr("no usable text"), changed: tr("changed"),
+        reverted: tr("reverted"), baselined: tr("baselined"), unchanged: tr("unchanged"),
+        other: tr("other"),
+      };
+      const cls = _LAW_VERDICT_PILL[x.verdict] || "";
+      const label = labels[x.verdict] || x.verdict;
+      const hover = x.last_status ? esc(x.last_status) : tr("Never fetched yet.");
+      return `<span class="pill ${cls}" title="${hover}">${esc(label)}</span>`;
+    }
+    let _lawDocsById = {};
     async function loadLawDocs() {
+      const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const d = await api("/api/law/documents");
-        const t = $("law-docs");
-        t.innerHTML = "<thead><tr><th>Jurisdiction</th><th>Title</th><th>Category</th><th>Tracked</th><th>Changes</th><th></th></tr></thead><tbody>" +
+        const tbl = $("law-docs");
+        _lawDocsById = {};
+        d.documents.forEach(x => { _lawDocsById[x.id] = x; });
+        tbl.innerHTML = "<thead><tr><th>Jurisdiction</th><th>Title</th><th>Category</th><th>Status</th><th>Changes</th><th></th></tr></thead><tbody>" +
           d.documents.map(x =>
-            `<tr><td>${esc(x.jurisdiction.toUpperCase())}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
-              <td>${x.has_baseline?'<span class="pill ok">yes</span>':'<span class="pill">no</span>'}</td>
+            `<tr${x.watched?'':' style="opacity:.55"'}><td>${esc(x.jurisdiction.toUpperCase())}</td><td>${esc(x.title)}</td><td>${esc(x.category)}</td>
+              <td>${lawVerdictBadge(x)}${x.watched?'':' <span class="pill">'+esc(tr("not tracked"))+'</span>'}</td>
               <td>${x.revisions}${x.flagged?` (${x.flagged} flagged)`:''}</td>
               <td><a href="/api/law/documents/${x.id}/view" target="_blank" rel="noopener" title="offline stored copy + history">reader</a>
-                · ${extLink(x.official_url||x.url, "official ↗", "muted")}</td></tr>`).join("") +
+                · ${extLink(x.official_url||x.url, "official ↗", "muted")}
+                · <a href="#" onclick="lawSetWatched(${x.id}, ${!x.watched}); return false" title="${x.watched?esc(tr('Stop tracking this document (its history stays).')):esc(tr('Resume tracking this document.'))}">${x.watched?esc(tr('stop')):esc(tr('resume'))}</a></td></tr>`).join("") +
           "</tbody>";
       } catch (e) { /* table optional */ }
+    }
+    async function lawAddDocument(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const msg = $("law-add-msg");
+      const jurisdiction = $("law-add-jur").value.trim();
+      const title = $("law-add-title").value.trim();
+      const url = $("law-add-url").value.trim();
+      const official_url = $("law-add-official").value.trim() || null;
+      if (!jurisdiction || !title || !url) {
+        msg.textContent = t("Jurisdiction, title and URL are all required.");
+        return;
+      }
+      const online = await ensureOnline(t("Track a document now"));
+      if (!online) return;
+      btn.disabled = true;
+      const label = btn.textContent; btn.textContent = t("Adding & tracking…");
+      try {
+        const r = await api("/api/law/documents", {
+          method: "POST",
+          body: JSON.stringify({ jurisdiction, title, url, official_url }),
+        });
+        msg.textContent = `${t("Added.")} ${t("Status:")} ${r.last_status || r.track_result.status}`;
+        $("law-add-jur").value = ""; $("law-add-title").value = "";
+        $("law-add-url").value = ""; $("law-add-official").value = "";
+        loadLaw();
+      } catch (e) {
+        msg.textContent = e.message;
+      } finally {
+        btn.disabled = false; btn.textContent = label;
+      }
+    }
+    async function lawSetWatched(id, watched) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        if (watched) {
+          // Resuming re-adds by URL (the backend reactivates the SAME row rather
+          // than duplicating it) -- a real fetch happens immediately, so gate it
+          // like any other "track now" action.
+          const x = _lawDocsById[id];
+          if (!x) return;
+          const online = await ensureOnline(t("Resume tracking this document"));
+          if (!online) return;
+          await api("/api/law/documents", {
+            method: "POST",
+            body: JSON.stringify({
+              jurisdiction: x.jurisdiction, title: x.title, url: x.url,
+              official_url: x.official_url || null,
+            }),
+          });
+        } else {
+          await api(`/api/law/documents/${id}`, { method: "DELETE" });
+        }
+      } catch (e) {
+        toast(e.message, "err");
+      }
+      loadLaw();
     }
     async function lawTrack(btn) {
       // Long synchronous op (ethical, rate-limited fetch of each watched document):
@@ -7141,6 +7257,18 @@
       if (mins < 60) return `in ~${mins} min`;
       const h = Math.floor(mins / 60), m = mins % 60;
       return `in ~${h} h${m ? ` ${m} min` : ""}`;
+    }
+    // Honest PAST relative time ("2 h ago") -- fmtRelative above is future-oriented
+    // ("in ~X min") and reads wrong applied to a past timestamp.
+    function fmtAgo(iso) {
+      const t = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => v[k]));
+      const d = new Date(iso); if (isNaN(d)) return "";
+      const mins = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+      if (mins < 1) return t("just now", {});
+      if (mins < 60) return t("{n} min ago", { n: mins });
+      const h = Math.floor(mins / 60);
+      if (h < 24) return t("{n} h ago", { n: h });
+      return t("{n} d ago", { n: Math.floor(h / 24) });
     }
     function fmtLocal(iso) {
       return fmtDateTime(iso);   // app language + full month (not the browser locale)

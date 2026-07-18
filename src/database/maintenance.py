@@ -356,6 +356,36 @@ def ensure_law_text_columns(engine: Engine) -> list[str]:
     return added
 
 
+# S4b (the Cambodia fix, law-vertical brief 2026-07-17): law_documents.language/.country
+# thread the catalog's OWN asserted per-document language/country to the corpus Article
+# (src/law/corpus.py). Additive, no backfill: a pre-existing document heals forward the
+# next time register_documents re-reads the catalog (which also heals the ALREADY-
+# INGESTED Article in the same pass), never guessed retroactively.
+_LAW_DOCUMENT_LANGUAGE_COLUMNS: dict[str, str] = {
+    "language": "ALTER TABLE law_documents ADD COLUMN language VARCHAR(8)",
+    "country": "ALTER TABLE law_documents ADD COLUMN country VARCHAR(8)",
+}
+
+
+def ensure_law_document_language_columns(engine: Engine) -> list[str]:
+    """Self-heal ``law_documents.language`` / ``.country`` (idempotent, additive)."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        if conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='law_documents'")
+        ).fetchone():
+            existing = {r[1] for r in conn.execute(text("PRAGMA table_info(law_documents)")).fetchall()}
+            for name, ddl in _LAW_DOCUMENT_LANGUAGE_COLUMNS.items():
+                if name not in existing:
+                    conn.execute(text(ddl))
+                    added.append(f"law_documents.{name}")
+    if added:
+        _LOG.info(f"added law_documents language column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_keyword_mention_source_column(engine: Engine) -> list[str]:
     """Self-heal the denormalised ``keyword_mentions.source_id`` column + its index.
 
@@ -661,7 +691,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "wiki_revisions": frozenset(_WIKI_REVISION_COLUMNS),
     "keyword_supergroup_members": frozenset(_SUPERGROUP_MEMBER_COLUMNS),
     "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
-    "law_documents": frozenset(_LAW_DOCUMENT_TEXT_COLUMNS),
+    "law_documents": frozenset(_LAW_DOCUMENT_TEXT_COLUMNS) | frozenset(_LAW_DOCUMENT_LANGUAGE_COLUMNS),
     "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS),
 }
 
