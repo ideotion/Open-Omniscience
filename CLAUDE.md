@@ -6155,6 +6155,44 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   pattern: parallel sessions verify ICS endpoints, never fabricated) — PENDING operator/next
   networked session.
 
+- **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
+  2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
+  system's current limitations"; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEADS_CALIBRATION.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEADS_CALIBRATION.md)):**
+  VERDICT (assessment delivered + maintainer approved the brief): the HONESTY layer held, the
+  SELECTION layer broke — producers were calibrated at ~2k articles; at 500k the base rates
+  invert. SEVEN defect families, each anchored + exampled from the export (the brief's §0 table
+  = the acceptance cases): (1) BOILERPLATE BLINDNESS — laundering "origins" policies.google.com
+  (fired TWICE)/addtoany.com/creativecommons.org (the discovery `is_infrastructure_domain`
+  filter EXISTS at channels.py:108 but laundering.py:45 only checks social+commerce); flooded
+  topics "vir"(=Slovenian "source")/"lani"(="last year") = publishing furniture; propagation
+  "topics" data/media/social = the #530 generic-term problem (the detector proposes, producers
+  don't consume). (2) STATISTICAL ARTIFACTS — supply_chain_ripple resolves commodity LEAD to the
+  English word "lead" ("significant words of the label", :110) over RAW daily-count series →
+  total-volume confound: everything co-moves at r=.98 (fix = exact-label/symbol match + SHARE
+  normalization); flooded z=5.85 on THREE articles (count floor needed). (3) LANGUAGE BLINDNESS
+  — headline_body lexical_div=1.0 guaranteed on inflected languages (Estonian); ownership_change
+  English verb regex (:1033) matching Romanian election text → per-language capability gates
+  (the S5.2 script-guard precedent). (4) SCALE-BLIND THRESHOLDS — single-source is the NORM at
+  500k (3× GIGAZINE lonely cards); country-level convergence on Iran/US = base rate; diet "leans
+  on a few sources" at top-3=14% of 2117. (5) NO CROSS-CARD DEDUP — same origin twice;
+  Allemagne+Deutschland two weather cards for DE (surface-string keys, not country codes);
+  "Usa" casing. (6) JUNK MEMBERS — homepage/section captures as cluster evidence
+  (non_article_scan exists count-only, not consumed). (7) INTERNAL CHANNELS + NULLS — the .eml
+  import flagged "capacity implausible" (exempt non-web provenance classes); price_narrative
+  cards at p=0.72 (a null is never a Lead; stays in exploration). THE BRIEF: S1 shared noise
+  substrate (wire is_infrastructure + DF-ubiquity gate + provenance exemptions + non-article
+  member exclusion, every exclusion DISCLOSED in the method string) → S2 statistical hygiene →
+  S3 language gates → S4 scale-relative selection (incl. place canonicalization by country
+  code + suppress the self-re-counting severity meta-card) → S5 cross-card dedup + WIRE the
+  shipped-but-unwired leads.py core (sort_leads/is_major/cluster_by_article_ids — visibly
+  reorders Home, conservative+flagged per Q6a, the export IS the mandate) → S6 the measurement
+  loop (a `leads_quality` JSONL diagnostic riding the all-diagnostics bundle + every §0 row
+  pinned as a fixture test, negative-space both directions). Selection discipline applies to
+  LEAD SLOTS only — nothing deleted from exploration; anti-capping + cross-time recall stand.
+  WORKED (don't regress): law-change, through-time, recycled framing, weather concept, and the
+  method disclosures that made the dump diagnosable. PENDING: the brief's execution (CLI session).
+
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
