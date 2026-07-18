@@ -415,7 +415,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
 - Update `docs/product/RELEASE_0.1_RC_GATE.md` rows you close, every session.
 - Lessons that cost a bug: duplicate top-level JS function names silently
   override — grep before declaring. Sizes lie, diffs don't (`git diff
-  --numstat` before fearing loss). Agent findings get hand-re-verified before
+  --numstat` before fearing loss). A ledger merge is NOT resolved until
+  `grep -n '^<<<<<<<\|^=======$\|^>>>>>>>' CLAUDE.md docs/ledger/shipped.csv`
+  returns nothing — the 2026-07-18 b9dcbcc merge committed unresolved conflict
+  markers INTO CLAUDE.md on main because only shipped.csv was verified (fixed
+  same day; both sides were kept additively, as the ledger rule requires). Agent findings get hand-re-verified before
   shipping (the 06-audit false-positive lesson). NEVER switch git branches while
   a background test suite is running (2026-07-09: a checkout mid-run made a
   SUBPROCESS-spawning determinism test import the OLD code from the mutated
@@ -428,7 +432,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   full-suite per-test route watcher); anchor route guards to IMMUTABLE sources
   (each router's own `router.routes` definitions + the `include_router` wiring
   in `src/api/main.py` source). Negative `not in app.routes` checks stay safe (a
-  missing route can't fail them).
+  missing route can't fail them). And THE LEDGER ITSELF can carry a committed merge
+  conflict: the #708 merge landed literal conflict markers on main's CLAUDE.md (the two
+  sibling 2026-07-18 sessions' Open-queue entries; found + union-resolved 2026-07-18,
+  both sides kept per the additive rule) — after merging parallel-session PRs, grep
+  CLAUDE.md for conflict markers before trusting it.
 - **Lessons harvested from the shipped log (the reusable ones; full context in
   `docs/ledger/SHIPPED_LOG.md` + git history):**
   - **GitHub release assets carry an ATTESTED `digest: sha256:…` field:** to verify a
@@ -6155,7 +6163,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   pattern: parallel sessions verify ICS endpoints, never fabricated) — PENDING operator/next
   networked session.
 
-<<<<<<< HEAD
 - **LEMMATIZATION DEFAULT-ON — MAINTAINER RULED 2026-07-18 (the measure-gate is SATISFIED;
   brief of record =
   [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md);
@@ -6233,7 +6240,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   analysis Keywords subtab + search (plural membership = multiple chips); S4 cleanup; S5 curation
   → the SAME Settings home the Families session builds (never a second home). Frontend
   conservative+flagged (Q6a).
-
   **AMENDED same day (maintainer rulings after the ring-country-map review — brief =
   [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_GROUPS_LAYER_AMENDMENT.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_GROUPS_LAYER_AMENDMENT.md),
   same executing session):** (a) **NAMING RULED: keyword → GROUP → SUPER-GROUP** (user-facing,
@@ -6256,7 +6262,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   largest bucket); every ⦾ chip app-wide deep-links to the map; the located-share honesty line
   states that map coverage grows as source countries are filled (the ~49% unlocated share = the
   standing Wikidata source-country generator lever, operator-side).
-=======
+
 - **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
   2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
   system's current limitations"; brief of record =
@@ -6294,7 +6300,61 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   LEAD SLOTS only — nothing deleted from exploration; anti-capping + cross-time recall stand.
   WORKED (don't regress): law-change, through-time, recycled framing, weather concept, and the
   method disclosures that made the dump diagnosable. PENDING: the brief's execution (CLI session).
->>>>>>> origin/main
+  **AMENDED same day (maintainer field export of Insights→Convergence, default 7-day window, on
+  the same ~500k corpus — "Plenty of bugs and optimizations to do"; amendment brief =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_CONVERGENCE_AMENDMENT.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_CONVERGENCE_AMENDMENT.md),
+  executed by the SAME Leads-calibration session — it shares the S4.2 place-canonicalization
+  primitive):** **NEW RULING (maintainer, verbatim intent "I don't like cap counts, I'd prefer
+  having real, reliable data"): REAL, RELIABLE DATA — NEVER CAPPED FIGURES.** A cap may bound
+  which EXAMPLES are listed; it must never bound a displayed NUMBER (extends the standing
+  anti-capping doctrine from computation to display). The export's smoking gun: EVERY cluster
+  showed "⚠ 50 shared-origin links" because `_shared_origin` (`src/analytics/convergence.py:335`)
+  runs `.limit(50)` then returns `len(rows)` — the display cap IS the reported count; fix = an
+  exact COUNT aggregate over the HAVING-filtered subquery (no limit; examples keep a small fetch
+  bound) + a sweep for any other displayed figure that is secretly a cap (C1, do-first). The
+  rest of the amendment: (C2) "United States"/"America"/"Usa" as three separate cluster families
+  → country-code canonicalization via the SHARED S4.2 primitive (city-level stays distinct);
+  (C3) sliding-window fragmentation (Iran ×3 contiguous windows, Washington/New York/France/China
+  ×2) → ONE span entry per canonical place (full extent + peak window + per-step drill); (C4)
+  8,448 clusters ordered scale-blind → baseline-relative ORDERING (deviation from the place's own
+  baseline share) — reorder NEVER gate, full-recall exploration stands; (C5) display honesty
+  (source-COUNTRY spread instead of the alphabetical source prefix; word-boundary truncation; an
+  "includes future-dated mentions" label on future-extending windows — legitimate deduced dates
+  that otherwise read as an error). The producer cards inherit every shared fix; execution
+  PENDING with the parent brief.
+
+- **THE OBSERVATORY — THE CORPUS AS A NIGHT SKY, A DEDICATED TAB (maintainer ruled 2026-07-18 —
+  SUPERSEDES Q5a (2026-07-13), which had deprioritized the 3D keyword explorer; revives the
+  2026-06-16 flagship under its own resolution A (hand-rolled canvas 2.5D, NO WebGL/Three.js);
+  design of record = [`docs/design/OBSERVATORY_DESIGN.md`](docs/design/OBSERVATORY_DESIGN.md);
+  DESIGN-ONLY — build NOT started, browser-verify-GATED):** the keyword hierarchy rendered as a
+  deterministic night sky: universe=corpus · galaxy clusters=the scaffold's ~12 domains (needs an
+  additive `domain:` field in keyword_supergroups.yml — today the domains live only in a comment)
+  · galaxies=super-groups (77) · star systems=rings (~540) · stars=keyword families ·
+  planets=per-language ring members (the project's rings render as LITERAL planetary rings,
+  segmented by language share) · nebula=the un-curated long tail as DISCLOSED aggregate density
+  ("N stars shown · M in the nebula" — the anti-capping answer). RULED: a DEDICATED main tab
+  beside the others, whole-corpus v1; name **Observatory** (translates well ×12; "Telescope"
+  reserved for the later per-corpus instrument inside the analysis window — not v1); spiral ARMS
+  carry the Item-AC topic tags — cardinality guarded BY CONSTRUCTION (top-K≤6 arms by member
+  count + a labeled "untagged/other (N)" disc; today's taxonomy is only 8 topic tags, so the
+  fear is growth and the cap answers it). HONESTY SPINE: a self-similar POLAR grammar —
+  ANGLE=category (domain wedge at the universe tier, tag arm at the galaxy tier; within-sector
+  jitter = stable hash, disclosed as meaningless) + RADIUS=ONE measure (default article spread —
+  breadth resists single-source flooding; log scale with LABELED orbit gridlines per #16 / the
+  opts.logY precedent; switchable dimension picker à la ooMap) — NEVER an "importance" blend;
+  size=mentions (sqrt + a reference-star legend); colour=language default, or
+  temperature=windowed trend as a CHOSEN lens (red = a measured decline with method stated;
+  old-but-steady stays white — cross-time sacred); association = DRAWN constellation edges (PMI,
+  n shown), never proximity; novae = trending spikes under the supergroup_rising gates
+  (floors+FDR); deterministic layout → a stable "your sky" where CHANGE is signal. Canvas-2D
+  glow sprites + parallax; depth NAVIGATIONAL only + screen-space marks (perspective never
+  distorts magnitude); STATIC when idle (no animation loops); LOD rides the hierarchy (≤~5k
+  sprites + nebula); sr-list + keyboard, the tabular views stay canonical (#8). ONE new endpoint
+  (`GET /api/insights/observatory`, tiered payload, guarded+deadlined, no score-named fields).
+  PREREQS before build: the super-groups S1 stats core (the Observatory is its 2nd consumer) +
+  the §8 triage / caps-furniture sky-quality cleanups. The maintainer click-through is the ship
+  gate for every frontend slice (this surface is NOT conservative-flaggable).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
