@@ -6155,6 +6155,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   pattern: parallel sessions verify ICS endpoints, never fabricated) — PENDING operator/next
   networked session.
 
+- **LEMMATIZATION DEFAULT-ON — MAINTAINER RULED 2026-07-18 (the measure-gate is SATISFIED;
+  brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md);
+  execution delegated to a CLI session, PENDING):** the maintainer ran `lemma_preview` on the
+  live ~500k corpus (top 500 → 35 groups / 71 keywords) and REVIEWED the merges — clean
+  (plurals + verb forms/irregulars; nothing meaning-changing; the media→medium class already
+  denylisted). Per the recorded P3 correction, the IR-harness A/B was never the coherent gate
+  for a DISPLAY-layer change — the precision review WAS, and it has now happened. So
+  `OO_FAMILY_LEMMA` flips default "0"→"1" (opt-OUT stays; `_lemma_enabled` families.py:188).
+  The brief's slices: S1 the flip + reframe the two default-pinning tests
+  (test_repo_invariants.py:490 opt-in invariant → default-on/display-layer/reversible;
+  test_families.py:185 off-by-default → on-by-default + opt-out-byte-identical) + docs sweep;
+  S2 preview honesty upgrade (annotate groups ALREADY merged by the plural rule vs genuine
+  lemma additions — most of the maintainer's 35 rows were plural-rule overlap, the true delta
+  is verb forms/irregulars); S3 the deferred `conflated_by=["lemma"]` frontend indicator
+  (conservative+flagged, Q6a); S4 `learn/learning` recorded as a WATCH (standalone "learning"
+  ≈ machine-learning contexts) — NEVER pre-denylisted (evidence-grown only). Facts to keep:
+  merges are per-language within `_LEMMA_LANGS` {en fr de es it pt nl ru id} — non-Latin
+  script is NOT the barrier (ru works); zh/ja (unsegmented) + poorly-covered langs no-op
+  honestly; core installs (no simplemma) no-op regardless of the default (the Core-only lane
+  proves it); the trusted index is untouched (display layer only, invariant-pinned). The
+  BM25F default choice stays SEPARATE (retrieval-side, still wants the graded gold set).
+
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
