@@ -6233,6 +6233,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   analysis Keywords subtab + search (plural membership = multiple chips); S4 cleanup; S5 curation
   → the SAME Settings home the Families session builds (never a second home). Frontend
   conservative+flagged (Q6a).
+
+  **AMENDED same day (maintainer rulings after the ring-country-map review — brief =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_GROUPS_LAYER_AMENDMENT.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_GROUPS_LAYER_AMENDMENT.md),
+  same executing session):** (a) **NAMING RULED: keyword → GROUP → SUPER-GROUP** (user-facing,
+  ×12; "ring" leaves the UI entirely, stays internal — the Lead-rename precedent; theme/concept
+  was REJECTED: ambiguous containment + uneven translation; super-X-contains-X reads in every
+  locale's morphology; fix today's collision where the "Groups" subtab shows super-groups;
+  families stay invisible variant-collapsing, never a 4th tier). (b) **THE CIRCLE GRAMMAR:**
+  uniform level marking app-wide — plain chip = keyword, ONE circle = group, TWO circles =
+  super-group (the count encodes the level); + COLOR emphasis via two theme-DERIVED variables
+  (color-mix from theme tokens, NEVER hardcoded hues — the #23 caveat-color lesson: verify
+  contrast by math across all 17 themes), color reinforcing-only (circle count + hover + aria
+  stay primary); a clickable path breadcrumb (⦾⦾ ▸ ⦾ ▸ word) wherever any level appears.
+  (c) **GROUP-level statistics** share the S1 resolution primitive one level down, with the
+  disclosure adapted: top-LANGUAGE dominance ("ru carries 61% of this group"); the rising-card
+  family stays super-group-only (540 groups ≠ a reviewable card population). (d) **THE CONCEPT
+  MAP upgraded** (the surface the maintainer praised; queries.py:528 ring_country_split +
+  /ring-countries): the 540-item dropdown → a two-tier circled browse (⦾⦾ chips → ⦾ chips +
+  type-ahead); COUNTRIES BECOME CLICKABLE (member keyword-ids ∩ source country → exact ids →
+  openAnalysisForIds; the "not mapped" bucket clickable too — 717 articles in the export, the
+  largest bucket); every ⦾ chip app-wide deep-links to the map; the located-share honesty line
+  states that map coverage grows as source countries are filled (the ~49% unlocated share = the
+  standing Wikidata source-country generator lever, operator-side).
 =======
 - **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
   2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
