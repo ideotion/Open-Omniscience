@@ -89,10 +89,10 @@ The software is young and still being proven, so it stays **below `1.0`**:
 
 ```
 0.0.x  pre-alpha    the first, un-public pre-alpha iterations (0.0.4 .. 0.0.9).
-0.x    alpha        ← we are here (0.2.0). Public, working, honestly-labelled — open
-                     to feedback, but not yet consolidated (each cycle is still a
-                     "0.2.0 is honest about every limit, not finished" release, per
-                     the README header — see it for the current cycle's exact status).
+0.x    alpha        ← we are here (0.3.0). Public, working, honestly-labelled — open
+                     to feedback, but not yet consolidated (each cycle is still an
+                     "honest about every limit, not finished" release, per the README
+                     header — see it for the current cycle's exact status).
 0.x    beta         once things consolidate (a deliberate, later maintainer call —
                      not implied by any particular `0.x` number crossing over from alpha).
 1.0    release      an official, stable release.
@@ -117,7 +117,7 @@ leading zeros elided for brevity:
 | `0.09` | `0.0.9` |
 | `0.1`  | `0.1.0` |  (the `0.09` cycle branch was renamed `0.09 → 0.1` at the alpha flip)
 | `0.2`  | `0.2.0` |  (the `0.1` cycle branch was renamed `0.1 → 0.2` at the 0.2 flip)
-| `main` | `0.2.0` |  (the `0.2` cycle branch was renamed `0.2 → main` on 2026-07-15 — the current default branch; the `v0.2.0` **tag** still awaits the live-corpus scale validation, see [docs/product/SCALE_ROADMAP.md](docs/product/SCALE_ROADMAP.md))
+| `main` | `0.2.0` → `0.3.0` |  (the `0.2` cycle branch was renamed `0.2 → main` on 2026-07-15 — the default branch is now permanently `main` and the branch name and version are independent; `v0.2.0` was tagged after the live-corpus scale validation, and `main` now carries the `0.3.0` measured-and-verified cycle)
 
 So "the `0.06` intelligence layer" means "the work that ships in `0.0.6`". When you read a
 cycle shorthand like `0.05` in the docs, read it as `0.0.5`. PRs land on `main`, the current

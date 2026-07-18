@@ -69,17 +69,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   present. Every consent/caveat string ships ×12 locales. Applies to every
   surface built or reworked from now on (T9+); the network consent popup
   (invariant #14) and the restore preview (T6) are the reference patterns.
-- **The current cycle branch is `main` (version `0.2.0`), the data-safety-at-scale cycle.**
-  The maintainer renamed the default branch `0.2 → main` on 2026-07-15 (mirrors
-  `0.09 → 0.1 → 0.2` before it — see the 2026-07-10 flip-PR record below for that
-  rename's own template). Cut/rebase branches from `origin/main` and open PRs onto
-  `main`; `git fetch` the tip first. Version single-sourced from pyproject (`0.2.0`) —
-  the branch name and the version number are independent; the `main` rename does NOT
-  itself imply a version bump. Historical `0.0.8`/`0.08`/`0.09`/`0.1`/`0.2` tags +
-  "draft PR onto 0.09"/"onto 0.1"/"onto 0.2" shipped-log entries are RECORDS of when
-  those were the branch, not the current one. The `v0.2.0` release TAG is still gated
-  on the P0 live-corpus scale validation (Open-queue 0.2 ruling + `docs/product/SCALE_ROADMAP.md`) —
-  the version reads 0.2.0 but 0.2 is not yet a tagged release.
+- **The current cycle branch is `main` (version `0.3.0`), the measured-and-verified cycle.**
+  The maintainer renamed the default branch `0.2 → main` PERMANENTLY on 2026-07-15 —
+  the branch name and the version number are independent, and version flips no longer
+  rename the branch. Cut/rebase branches from `origin/main` and open PRs onto `main`;
+  `git fetch` the tip first. Version single-sourced from pyproject (`0.3.0`).
+  Historical `0.0.8`/`0.08`/`0.09`/`0.1`/`0.2` tags + "draft PR onto 0.09"/"onto
+  0.1"/"onto 0.2" shipped-log entries are RECORDS of when those were the branch, not
+  the current one. **`v0.2.0` IS TAGGED (2026-07-18, maintainer):** the maintainer ran
+  the S1 push-button P0 validation job on the live corpus and tagged — the 0.2
+  data-safety-at-scale cycle is CLOSED as a tagged release (the sequencing ruling +
+  the flip record are in the Open queue, 2026-07-18). The 0.3 cycle = the recursive
+  improvement loop v1 + the six delegated 2026-07-18 calibration executions + the law
+  vertical + the browser-verification burn-down (V1_PATHWAY §3's 0.3 step).
 - No bundling of Ollama/models in the repo (GitHub 100 MB limit). Model catalog
   stays date-stamped (`CATALOG_AS_OF` + freshness test); clearnet is a stated
   install prerequisite for model downloads.
@@ -1243,7 +1245,8 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the whole program's outstanding human steps):** (a) **run the S1 push-button P0 live validation on the
   real corpus, then TAG v0.2.0** (the version reads 0.2.0 but 0.2 is not yet a tagged release; the tag is
   the gate the whole 0.2 cycle waits on; RE-RUN the validation if the live run predates the S3 DB-9 engine
-  change). (b) **the networked FETCHES / bundles:** the per-OS httpfs crypto binaries (turns D1/D2/D3 on),
+  change) **[DONE 2026-07-18 — the maintainer ran the validation and tagged v0.2.0; see the current-cycle
+  bullet + the 2026-07-18 version-sequence ruling]**. (b) **the networked FETCHES / bundles:** the per-OS httpfs crypto binaries (turns D1/D2/D3 on),
   the USGS MCS data, subjectivity lexicon sourcing/vetting, the Wikidata ring gap run — none fabricated,
   all gated on egress. (c) **GRADE THE GOLD SETS:** the IR gold set (Settings → Diagnostics, one click)
   unblocks lemmatization + the BM25F default; a graded who/where/when perception set (+ a model that
@@ -1310,7 +1313,9 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   right after merge (mirrors #547); (2) the `v0.2.0` TAG waits on the P0 live-corpus scale
   validation — P0.1/P0.2/P0.3 engines are shipped awaiting the maintainer's live run, and
   **P0.4 unlock-at-scale is still unresolved** (SCALE_ROADMAP P0). So the version now reads
-  0.2.0 but 0.2 is not yet a tagged release.
+  0.2.0 but 0.2 is not yet a tagged release. **[RESOLVED 2026-07-18: P0.4 was fixed by
+  Session A, the maintainer ran the live P0 validation and TAGGED v0.2.0 — see the
+  current-cycle bullet + the version-sequence ruling.]**
 - **FIELD-TEST 2026-07-08 — full intake + diagnostics action plan captured in
   [`docs/product/field-test-2026-07-08/LEDGER.md`](docs/product/field-test-2026-07-08/LEDGER.md)
   (PR #583; items 1–7 merged via #580). CAPTURE-ONLY session on a live 59,566-article /
@@ -6355,6 +6360,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   PREREQS before build: the super-groups S1 stats core (the Observatory is its 2nd consumer) +
   the §8 triage / caps-furniture sky-quality cleanups. The maintainer click-through is the ship
   gate for every frontend slice (this surface is NOT conservative-flaggable).
+
+- **VERSION SEQUENCE RULED 2026-07-18 (maintainer, verbatim "I'll run the P0, then mark alpha
+  0.2, then move to alpha 0.3"): P0 live validation → TAG `v0.2.0` → FLIP to `0.3.0`.** This
+  closes the long-held 0.2 tag gate the honest way (the tag = the release the whole 0.2 cycle
+  was defined by) and approves the V1_PATHWAY §3 version train's 0.3 step ("measured &
+  verified" — partially resolves open ruling V1-1 for 0.3; later steps still per that plan).
+  ORDERING IS MECHANICAL, not just procedural: `release.yml` verifies tag == pyproject
+  version, so the `v0.2.0` tag MUST be cut while pyproject still reads 0.2.0, and the flip PR
+  merges ONLY AFTER the tag exists (if the P0 run FAILS, the flip does not merge — the cycle
+  is not closeable on a failed validation; never a fabricated pass). THE FLIP PR (prepared
+  same day, HELD as a draft until the tag): pyproject `0.2.0→0.3.0` + README header/version-
+  note/status blocks + CHANGES header + a new 0.3.0 in-progress section + the 0.2.0 section's
+  tag line + CONTRIBUTING ladder/table + ROADMAP §version/P0-statuses/lemma-ruling row + this
+  ledger's current-cycle bullet — all prose written for the POST-tag state (true at merge
+  time). Simpler than the 0.1→0.2 flip: NO branch rename (the `main` rename is permanent;
+  branch and version are independent). The 0.3 cycle contents = the CHANGES 0.3.0 board (the
+  loop v1 · the six 2026-07-18 delegated executions · the law vertical · the browser
+  burn-down · the Observatory chain). NOTE for the tag-day checklist: the tagged 0.2.0 tree's
+  own CHANGES still carries the pre-tag "tag is gated" wording (the amendment rides this flip
+  PR, which lands after the tag) — cosmetic, recorded here so it never reads as an oversight.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
