@@ -415,7 +415,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
 - Update `docs/product/RELEASE_0.1_RC_GATE.md` rows you close, every session.
 - Lessons that cost a bug: duplicate top-level JS function names silently
   override — grep before declaring. Sizes lie, diffs don't (`git diff
-  --numstat` before fearing loss). Agent findings get hand-re-verified before
+  --numstat` before fearing loss). A ledger merge is NOT resolved until
+  `grep -n '^<<<<<<<\|^=======$\|^>>>>>>>' CLAUDE.md docs/ledger/shipped.csv`
+  returns nothing — the 2026-07-18 b9dcbcc merge committed unresolved conflict
+  markers INTO CLAUDE.md on main because only shipped.csv was verified (fixed
+  same day; both sides were kept additively, as the ledger rule requires). Agent findings get hand-re-verified before
   shipping (the 06-audit false-positive lesson). NEVER switch git branches while
   a background test suite is running (2026-07-09: a checkout mid-run made a
   SUBPROCESS-spawning determinism test import the OLD code from the mutated
@@ -6274,6 +6278,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   LEAD SLOTS only — nothing deleted from exploration; anti-capping + cross-time recall stand.
   WORKED (don't regress): law-change, through-time, recycled framing, weather concept, and the
   method disclosures that made the dump diagnosable. PENDING: the brief's execution (CLI session).
+  **AMENDED same day (maintainer field export of Insights→Convergence, default 7-day window, on
+  the same ~500k corpus — "Plenty of bugs and optimizations to do"; amendment brief =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_CONVERGENCE_AMENDMENT.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_CONVERGENCE_AMENDMENT.md),
+  executed by the SAME Leads-calibration session — it shares the S4.2 place-canonicalization
+  primitive):** **NEW RULING (maintainer, verbatim intent "I don't like cap counts, I'd prefer
+  having real, reliable data"): REAL, RELIABLE DATA — NEVER CAPPED FIGURES.** A cap may bound
+  which EXAMPLES are listed; it must never bound a displayed NUMBER (extends the standing
+  anti-capping doctrine from computation to display). The export's smoking gun: EVERY cluster
+  showed "⚠ 50 shared-origin links" because `_shared_origin` (`src/analytics/convergence.py:335`)
+  runs `.limit(50)` then returns `len(rows)` — the display cap IS the reported count; fix = an
+  exact COUNT aggregate over the HAVING-filtered subquery (no limit; examples keep a small fetch
+  bound) + a sweep for any other displayed figure that is secretly a cap (C1, do-first). The
+  rest of the amendment: (C2) "United States"/"America"/"Usa" as three separate cluster families
+  → country-code canonicalization via the SHARED S4.2 primitive (city-level stays distinct);
+  (C3) sliding-window fragmentation (Iran ×3 contiguous windows, Washington/New York/France/China
+  ×2) → ONE span entry per canonical place (full extent + peak window + per-step drill); (C4)
+  8,448 clusters ordered scale-blind → baseline-relative ORDERING (deviation from the place's own
+  baseline share) — reorder NEVER gate, full-recall exploration stands; (C5) display honesty
+  (source-COUNTRY spread instead of the alphabetical source prefix; word-boundary truncation; an
+  "includes future-dated mentions" label on future-extending windows — legitimate deduced dates
+  that otherwise read as an error). The producer cards inherit every shared fix; execution
+  PENDING with the parent brief.
 
 - **THE OBSERVATORY — THE CORPUS AS A NIGHT SKY, A DEDICATED TAB (maintainer ruled 2026-07-18 —
   SUPERSEDES Q5a (2026-07-13), which had deprioritized the 3D keyword explorer; revives the
