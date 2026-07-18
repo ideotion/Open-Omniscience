@@ -6207,6 +6207,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   invariant #8, beside the Keywords explorer) showing only rows with a real decision; Insights
   keeps the data view; automation does the bulk (nothing manual required). Out of scope: real
   NER kind population (the LLM-perception track), §8 triage, lemmatization (own brief).
+
+- **SUPER-GROUPS: HONEST STATS + A LEADS FAMILY + NAVIGATION — FIELD EXPORT + SESSION BRIEF
+  (maintainer 2026-07-18, the Insights→Groups surface on the live ~500k corpus; ruled: super-group
+  statistics ("is a theme rising?"), a Leads family for super-groups, keyword→super-group
+  navigation; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md);
+  execution delegated, PENDING — SEQUENCED AFTER the Leads-calibration + Families-entities
+  executions, whose primitives it consumes):** the ~77-group scaffold is healthy but the layer has
+  NO statistics, and the export exposed the totals as broken: (1) GENERIC CONTAMINATION — "data"
+  = 36,507 of the AI group's 43,067 mentions (85%); creation/sentence/marketplace/identity same
+  class; universe ring·68 at 16,393 = a probable homograph member inflating in one language →
+  every stat carries a mandatory top-member DOMINANCE disclosure + the shared DF-ubiquity gate;
+  (2) WITHIN-GROUP DOUBLE COUNTING — the AI group mixes legacy plain families
+  (model/models/modèles/ia/données) with rings covering the same concepts (plain "ai 12" beside
+  the ai ring 1,555) → member keyword-ids DEDUPED before any sum + the residue migrated (data
+  fix, user-edit-wins honored); (3) cross-group overlap (data ×2, logic in Mathematics AND
+  Philosophy) legitimate but DISCLOSED; (4) scaffold bugs — deficiency-in-Money (deficit
+  conflation?), copyrighted→copyright, the diaspora* asterisk, zero-mention clutter → hand-
+  verified per-case fixes + a config lint, never a sweep. THE BUILD: S1 stats core (dedup member
+  resolution → windowed series/rate via the EXISTING rollup+trending grammar, dominance+overlap
+  disclosures mandatory on every payload); S2 `supergroup_rising` producer born scale-aware (FDR
+  across ~77 groups, count floors, share-normalized, one-member-driven rises disclosed,
+  generic-driven rises NOT a Lead); S3 the keyword→super-group reverse lookup + chips in the
+  analysis Keywords subtab + search (plural membership = multiple chips); S4 cleanup; S5 curation
+  → the SAME Settings home the Families session builds (never a second home). Frontend
+  conservative+flagged (Q6a).
 =======
 - **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
   2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
