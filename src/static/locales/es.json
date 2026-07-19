@@ -1749,6 +1749,8 @@
   "Cross-country map of a concept": "Mapa transnacional de un concepto",
   "Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "Elige un anillo entre idiomas — un mismo concepto contado en todos los idiomas — para ver de dónde procede su cobertura, desglosada por país e idioma de la fuente que la produce. Solo recuentos; una fuente con país desconocido se muestra con honestidad (nunca mapeada, nunca adivinada).",
   "Pick a cross-language group — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "Elige un grupo entre idiomas — un mismo concepto contado en todos los idiomas — para ver de dónde procede su cobertura, desglosada por país e idioma de la fuente que la produce. Solo recuentos; una fuente con país desconocido se muestra con honestidad (nunca mapeada, nunca adivinada).",
+  "A group: one concept counted across every language it appears in.": "Un grupo: un concepto contado en todos los idiomas en los que aparece.",
+  "A super-group: several groups gathered under one theme.": "Un supergrupo: varios grupos reunidos bajo un mismo tema.",
   "Concept (ring)": "Concepto (anillo)",
   "Concept (group)": "Concepto (grupo)",
   "No cross-country coverage for this concept yet.": "Aún no hay cobertura transnacional para este concepto.",

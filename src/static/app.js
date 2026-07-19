@@ -9234,7 +9234,7 @@
         list.innerHTML = fams.length ? fams.map(f => `<div class="fam-row">
             <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
-              ${f.ring_id ? '<span class="pill" title="a cross-language group merge">group</span>' : ""}
+              ${f.ring_id ? `<span class="pill lvl-group" title="${esc(lvlTitle("group"))}">group</span>` : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips muted">${_famMemberList(f)}</div></div></div>`
           ).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
@@ -9271,7 +9271,7 @@
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
             <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
-              ${f.ring_id ? '<span class="pill" title="a cross-language group merge">group</span>' : ""}
+              ${f.ring_id ? `<span class="pill lvl-group" title="${esc(lvlTitle("group"))}">group</span>` : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
         }).join("") : '<div class="muted">No families with a decision to review — grouping is fully automatic so far.</div>';
@@ -9486,10 +9486,13 @@
         // that stated in its hover, never silently summed as if exclusive.
         const alsoIn = (m.also_in && m.also_in.length)
           ? ` — also in: ${m.also_in.join(", ")}` : "";
-        const tip = esc(t("Open this keyword's own analysis window") + alsoIn);
+        // §B circle grammar: a ring/group member gets the box-shadow ring + the
+        // translated level hover appended (colour reinforces, the hover carries it).
+        const levelTip = isRing ? " — " + lvlTitle("group") : "";
+        const tip = esc(t("Open this keyword's own analysis window") + alsoIn + levelTip);
         // A data chip navigates (its own analysis window) rather than mutating the
         // group -- curation actions live in Settings now.
-        return `<button class="chip" onclick="openCorpus(${esc(JSON.stringify(m.normalized))})"
+        return `<button class="chip${isRing ? " lvl-group" : ""}" onclick="openCorpus(${esc(JSON.stringify(m.normalized))})"
            title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>`;
       }).join("")
         : '<span class="muted">No members yet.</span>';
@@ -9511,7 +9514,7 @@
         ? `<div style="margin-top:6px">${dashChartSvg(g.series.map(p => ({observed_on: p.date, price: p.count})), "")}</div>`
         : "";
       return `<div class="sg-card" id="sg-card-${g.id}">
-        <div class="sg-head"><b>${esc(g.name)}</b>
+        <div class="sg-head"><b class="lvl-super" title="${esc(lvlTitle("super"))}">${esc(g.name)}</b>
           <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span></div>
         ${domLine}${rateLine}${spark}
         <div class="fam-chips" style="margin-top:6px">${chips}${zeroChip ? " " + zeroChip : ""}</div></div>`;
@@ -9556,13 +9559,16 @@
         const inner = isRing
           ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">group·${(m.ring_members || []).length}</span>`
           : esc(m.normalized);
-        const tip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
-        return `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
+        // §B circle grammar: the group ring + its translated level hover, appended
+        // to the existing member-list tip (never replacing it).
+        const baseTip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
+        const tip = isRing ? baseTip + " — " + esc(lvlTitle("group")) : baseTip;
+        return `<button class="fam-chip${isRing ? " lvl-group" : ""}" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
            title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>`;
       }).join("")
         : '<span class="muted">No members yet — add a family or a group below.</span>';
       return `<div class="sg-card">
-        <div class="sg-head"><b>${esc(g.name)}</b>
+        <div class="sg-head"><b class="lvl-super" title="${esc(lvlTitle("super"))}">${esc(g.name)}</b>
           <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"}</span>
           <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
             onclick="deleteSuperGroup(this)">delete</button></div>
@@ -11529,6 +11535,47 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return ` <span class="kw-trans kw-tentative" title="${esc(t("AI-generated tentative translation — unreliable, not verified."))}">≈ ${esc(row.tentative)}</span>`;
     }
+
+    // -- Circle-grammar level marking (GROUPS amendment §B) -------------------------
+    // The uniform convention app-wide: plain chip = keyword, ONE ring = a group
+    // (a cross-language concept), TWO rings = a super-group. `lvlClass`/`lvlTitle`
+    // are the shared primitives every chip-rendering call site attaches; `.lvl-group`
+    // /`.lvl-super` (app.css) draw the box-shadow rings themselves, so applying a
+    // class never shifts layout. Colour is reinforcing-only (WCAG 1.4.1) -- the
+    // translated title here (rendered by the existing #oo-tip hover convention,
+    // invariant #17) plus the ring COUNT are what actually carry the level.
+    function lvlClass(level) {
+      return level === "super" ? "lvl-super" : (level === "group" ? "lvl-group" : "");
+    }
+    function lvlTitle(level) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (level === "super") return t("A super-group: several groups gathered under one theme.");
+      if (level === "group") return t("A group: one concept counted across every language it appears in.");
+      return "";
+    }
+    // The reusable path breadcrumb -- renders wherever any level appears, e.g.
+    // "⦾⦾ Climate change ▸ ⦾ temperature ▸ температура (ru)". `segments` is
+    // [{level:'super'|'group'|'keyword', label, onClick}]; every segment is its own
+    // clickable button (plural super-group membership renders several ⦾⦾ segments,
+    // never silently picking one). `onClick` receives no args -- callers close over
+    // whatever id they need (mirrors the openSupergroup/openCorpus call convention).
+    let _lvlCrumbHandlers = [];
+    function lvlBreadcrumb(segments) {
+      if (!segments || !segments.length) return "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const glyph = (lvl) => lvl === "super" ? "⦾⦾" : (lvl === "group" ? "⦾" : "");
+      const idx0 = _lvlCrumbHandlers.length;
+      _lvlCrumbHandlers.push(...segments.map((s) => s.onClick || null));
+      const parts = segments.map((s, i) => {
+        const g = glyph(s.level);
+        const title = esc(lvlTitle(s.level) || t("Open this corpus"));
+        const handlerIdx = idx0 + i;
+        const clickable = _lvlCrumbHandlers[handlerIdx] ? ` onclick="_lvlCrumbFire(${handlerIdx})"` : "";
+        return `<button class="seg" type="button" title="${title}"${clickable}>${g ? g + " " : ""}${esc(s.label)}</button>`;
+      });
+      return `<span class="lvl-crumb">` + parts.join(`<span class="sep">▸</span>`) + `</span>`;
+    }
+    function _lvlCrumbFire(i) { const fn = _lvlCrumbHandlers[i]; if (typeof fn === "function") fn(); }
     // Analysis-window Keywords subtab render + the Phase-4 tentative-fill action.
     let _anKwData = null, _anKwHost = null;
     function _anKwNeedsTentative(tm) {
@@ -11603,9 +11650,12 @@
       // S3 (keyword -> super-group navigation): a "part of ⊕ <group>" chip per group
       // the keyword belongs to (never picks one — plural membership renders every
       // hit), linking straight to the group's own trend + members view.
+      // §B circle grammar: this chip jumps to a SUPER-group (openSupergroup), so it
+      // carries the double-ring .lvl-super marking + the translated level hover
+      // appended to the existing action hover (never replacing it).
       const sgChips = (term) => (term.supergroups || []).map((g) =>
-        `<button class="chip tiny" onclick="openSupergroup(${g.id})"`
-        + ` title="${esc(t("Open this group's own trend + members"))}">⊕ ${esc(g.name)}</button>`).join(" ");
+        `<button class="chip tiny lvl-super" onclick="openSupergroup(${g.id})"`
+        + ` title="${esc(t("Open this group's own trend + members") + " — " + lvlTitle("super"))}">⊕ ${esc(g.name)}</button>`).join(" ");
       const chips = d.terms.map((term) =>
         `<button class="chip" data-kwstat="${esc(term.term)}" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}${kwTransHtml(term)}${kwTentativeHtml(term)}`

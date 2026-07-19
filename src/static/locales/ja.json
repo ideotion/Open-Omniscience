@@ -1749,6 +1749,8 @@
   "Cross-country map of a concept": "概念の国別マップ",
   "Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "言語横断リング（すべての言語で数えた一つの概念）を選ぶと、その報道がどこから来ているかを、情報源の国と言語ごとに確認できます。件数のみ。国が不明な情報源は正直に表示されます（決して地図化せず、推測もしません）。",
   "Pick a cross-language group — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "言語横断グループ（すべての言語で数えた一つの概念）を選ぶと、その報道がどこから来ているかを、情報源の国と言語ごとに確認できます。件数のみ。国が不明な情報源は正直に表示されます（決して地図化せず、推測もしません）。",
+  "A group: one concept counted across every language it appears in.": "グループ：ある概念を、それが現れるすべての言語にわたって集計したもの。",
+  "A super-group: several groups gathered under one theme.": "スーパーグループ：一つのテーマの下にまとめられた複数のグループ。",
   "Concept (ring)": "概念（リング）",
   "Concept (group)": "概念（グループ）",
   "No cross-country coverage for this concept yet.": "この概念の国をまたぐ報道はまだありません。",

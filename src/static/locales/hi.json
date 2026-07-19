@@ -1749,6 +1749,8 @@
   "Cross-country map of a concept": "किसी अवधारणा का देश-पार मानचित्र",
   "Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "एक अंतर-भाषी रिंग चुनें — एक ही अवधारणा जो सभी भाषाओं में गिनी गई हो — यह देखने के लिए कि उसका कवरेज कहाँ से आता है, स्रोत के देश और भाषा के अनुसार विभाजित। केवल गणनाएँ; अज्ञात देश वाले स्रोत को ईमानदारी से दिखाया जाता है (कभी मानचित्रित नहीं, कभी अनुमानित नहीं)।",
   "Pick a cross-language group — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "एक अंतर-भाषी समूह चुनें — एक ही अवधारणा जो सभी भाषाओं में गिनी गई हो — यह देखने के लिए कि उसका कवरेज कहाँ से आता है, स्रोत के देश और भाषा के अनुसार विभाजित। केवल गणनाएँ; अज्ञात देश वाले स्रोत को ईमानदारी से दिखाया जाता है (कभी मानचित्रित नहीं, कभी अनुमानित नहीं)।",
+  "A group: one concept counted across every language it appears in.": "समूह: एक अवधारणा जिसे यह जिस भी भाषा में दिखाई देती है, उन सभी में गिना जाता है।",
+  "A super-group: several groups gathered under one theme.": "सुपर-समूह: एक ही विषय के अंतर्गत एकत्र किए गए कई समूह।",
   "Concept (ring)": "अवधारणा (रिंग)",
   "Concept (group)": "अवधारणा (समूह)",
   "No cross-country coverage for this concept yet.": "इस अवधारणा के लिए अभी कोई देश-पार कवरेज नहीं है।",

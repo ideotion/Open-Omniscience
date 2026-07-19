@@ -1749,6 +1749,8 @@
   "Cross-country map of a concept": "خريطة عبر البلدان لمفهوم",
   "Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "اختر حلقة متعددة اللغات — مفهوم واحد محسوب عبر كل اللغات — لترى من أين تأتي تغطيته، موزَّعة حسب بلد ولغة المصدر المنتج. أعداد فقط؛ يُعرض المصدر المجهول البلد بصدق (لا يُوضع على الخريطة ولا يُخمَّن أبدًا).",
   "Pick a cross-language group — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).": "اختر مجموعة متعددة اللغات — مفهوم واحد محسوب عبر كل اللغات — لترى من أين تأتي تغطيته، موزَّعة حسب بلد ولغة المصدر المنتج. أعداد فقط؛ يُعرض المصدر المجهول البلد بصدق (لا يُوضع على الخريطة ولا يُخمَّن أبدًا).",
+  "A group: one concept counted across every language it appears in.": "مجموعة: مفهوم واحد يُحسب في كل لغة يظهر فيها.",
+  "A super-group: several groups gathered under one theme.": "مجموعة عليا: عدة مجموعات مجمّعة تحت موضوع واحد.",
   "Concept (ring)": "المفهوم (حلقة)",
   "Concept (group)": "المفهوم (مجموعة)",
   "No cross-country coverage for this concept yet.": "لا توجد بعد تغطية عبر البلدان لهذا المفهوم.",

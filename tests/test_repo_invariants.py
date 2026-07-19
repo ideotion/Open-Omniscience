@@ -4359,8 +4359,11 @@ def test_naming_sweep_ring_disappears_from_the_user_visible_ui():
     for lit in forbidden_literals:
         assert lit not in src, f"a user-visible 'ring' literal survived the naming sweep: {lit!r}"
 
+    # (the group pill's static title was superseded by §B's translated lvlTitle()
+    # hover + the .lvl-group ring class -- test_circle_grammar_level_marking_is_
+    # wired_and_contrast_verified pins that evolved markup.)
     required_literals = (
-        '<span class="pill" title="a cross-language group merge">group</span>',
+        'class="pill lvl-group"',
         "add families or groups to it",
         '<span class="muted">group·${(m.ring_members || []).length}</span>',
         "add a family or a group below",
@@ -4402,6 +4405,141 @@ def test_naming_sweep_ring_map_header_is_keyed_group_wording():
         d = json.load(open(locales_dir / f"{loc}.json", encoding="utf-8"))
         assert d.get(key1), f"{loc}: missing translation for the renamed map header"
         assert d.get(key2), f"{loc}: missing translation for 'Concept (group)'"
+
+
+def test_circle_grammar_level_marking_is_wired_and_contrast_verified():
+    """GROUPS layer amendment §B: uniform level marking app-wide -- plain chip =
+    keyword, ONE ring = a group, TWO rings = a super-group. Pins (a) the two
+    theme-derived colour variables (color-mix off --accent/--fg -- never a
+    hardcoded hue, the --caveat lesson) with contrast math clearing WCAG
+    non-text-UI (>=3:1) on every one of the 17 themes' panel surfaces, (b) the
+    box-shadow-only ring classes never touch padding/width/height (zero layout
+    shift, invariant #3's discipline extended here), (c) the reusable JS
+    primitives + the breadcrumb component, and (d) the class is actually
+    attached at the identified group/super-group chip render sites."""
+    import json
+    import re
+
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    # (a) theme-derived variables, never a hardcoded hex hue.
+    assert "--lvl-group:color-mix(in srgb, var(--accent)" in css.replace("\n", "")
+    assert "--lvl-super:color-mix(in srgb, var(--accent)" in css.replace("\n", "")
+    assert re.search(r"--lvl-group\s*:\s*#[0-9a-fA-F]{3,6}", css) is None, (
+        "a hardcoded hex for --lvl-group would repeat the failed caveat-colour attempt"
+    )
+    assert re.search(r"--lvl-super\s*:\s*#[0-9a-fA-F]{3,6}", css) is None
+
+    # (b) the ring classes are box-shadow-only -- no layout-affecting properties.
+    for cls in ("lvl-group", "lvl-super"):
+        m = re.search(r"\." + cls + r"\s*\{([^}]*)\}", css)
+        assert m, f".{cls} rule must exist"
+        body = m.group(1)
+        assert "box-shadow" in body, f".{cls} must draw its ring via box-shadow"
+        for forbidden in ("padding", "width:", "height:", "border-width", "margin"):
+            assert forbidden not in body, (
+                f".{cls} must never declare {forbidden!r} (zero layout shift)"
+            )
+
+    # (c) the JS primitives.
+    assert "function lvlClass(level)" in js
+    assert "function lvlTitle(level)" in js
+    assert "function lvlBreadcrumb(segments)" in js
+    assert "function _lvlCrumbFire(" in js
+    assert '"lvl-super"' in js and '"lvl-group"' in js  # lvlClass actually maps both
+
+    # (d) attached at the identified render call sites (family/super-group chips,
+    # the keyword -> super-group navigation chip from the sibling S3 brief).
+    assert 'class="pill lvl-group"' in js, "the family-panel group pill must carry .lvl-group"
+    assert '"chip${isRing ? " lvl-group" : ""}"' in js or "chip${isRing ? \" lvl-group\" : \"\"}" in js, (
+        "a group (ring) member chip in sgCard must carry .lvl-group"
+    )
+    assert '"fam-chip${isRing ? " lvl-group" : ""}"' in js or "fam-chip${isRing ? \" lvl-group\" : \"\"}" in js, (
+        "a group (ring) member chip in sgCurationCard must carry .lvl-group"
+    )
+    assert 'class="lvl-super" title="${esc(lvlTitle("super"))}"' in js, (
+        "a super-group's own name/header must carry .lvl-super"
+    )
+    assert '"chip tiny lvl-super"' in js, (
+        "the keyword -> super-group navigation chip must carry .lvl-super"
+    )
+
+    # (e) the two new translated hover strings exist + are translated in all locales.
+    key_group = "A group: one concept counted across every language it appears in."
+    key_super = "A super-group: several groups gathered under one theme."
+    assert key_group in js and key_super in js, "lvlTitle must call t() with the literal English strings"
+    locales_dir = _SRC / "static" / "locales"
+    en = json.load(open(locales_dir / "en.json", encoding="utf-8"))
+    assert key_group in en and key_super in en
+    for loc in ("fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id"):
+        d = json.load(open(locales_dir / f"{loc}.json", encoding="utf-8"))
+        assert d.get(key_group), f"{loc}: missing translation for the group-level hover"
+        assert d.get(key_super), f"{loc}: missing translation for the super-group-level hover"
+
+    # Contrast math (mirrors the #23 caveat-colour precedent): all 17 themes' own
+    # --accent/--fg mixed the SAME way the CSS declares, checked against every
+    # theme's --panel/--panel2/--panel3. Decorative box-shadow rings are governed
+    # by WCAG 1.4.11 (non-text UI components, >=3:1) since the level information
+    # itself is carried by the ring COUNT + the translated hover, never colour
+    # alone (WCAG 1.4.1) -- so 3:1 is the applicable bar, verified with margin.
+    themes = {
+        "ink": ("#14181f", "#1b212b", "#232b38", "#e8ebf0", "#5b9dd9"),
+        "slate": ("#161b23", "#1e2531", "#28323f", "#e8ebf0", "#7aa2f7"),
+        "midnight": ("#10142e", "#171c3c", "#1f2650", "#e8eaff", "#8b7dff"),
+        "terminal": ("#0a1013", "#0e1619", "#13211d", "#c8f7d4", "#36d97a"),
+        "sepia": ("#262019", "#2f2820", "#3a3127", "#efe5d6", "#d8a657"),
+        "contrast": ("#0a0a0a", "#161616", "#222222", "#ffffff", "#ffd400"),
+        "light": ("#ffffff", "#f3f5f9", "#e7ecf3", "#1b1f27", "#2f6fb3"),
+        "paper": ("#fbf8f1", "#f1ebdc", "#e6ddc8", "#2b271f", "#9a6a2f"),
+        "arctic": ("#171c22", "#1e242c", "#262e38", "#e5e9f0", "#88c0d0"),
+        "solar": ("#073642", "#0a4150", "#11505f", "#eee8d5", "#b58900"),
+        "forest": ("#131a14", "#19231a", "#223024", "#e3ece2", "#6fbf73"),
+        "aubergine": ("#1a1424", "#231b30", "#2e2440", "#ece6f4", "#c084fc"),
+        "garnet": ("#1f1419", "#291a20", "#35222a", "#f0e6ea", "#d96c7f"),
+        "cyber": ("#0d1120", "#131830", "#1a2140", "#dbe6ff", "#22d3ee"),
+        "mist": ("#f9fafc", "#eff2f6", "#e3e8ef", "#222831", "#5e81ac"),
+        "dawn": ("#fffaf3", "#f2e9e1", "#e9dfd5", "#575279", "#b4637a"),
+        "mint": ("#f8fbf8", "#ecf2ed", "#dfe9e1", "#1f2a23", "#2e7d5b"),
+    }
+    assert len(themes) == 17
+
+    def hx(h):
+        h = h.lstrip("#")
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+    def mix(c1, c2, pct1):
+        r1, g1, b1 = hx(c1)
+        r2, g2, b2 = hx(c2)
+        w = pct1 / 100.0
+        return (r1 * w + r2 * (1 - w), g1 * w + g2 * (1 - w), b1 * w + b2 * (1 - w))
+
+    def lin(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    def rel_lum(rgb):
+        r, g, b = rgb
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+    def contrast(rgb1, rgb2):
+        l1, l2 = rel_lum(rgb1), rel_lum(rgb2)
+        lighter, darker = max(l1, l2), min(l1, l2)
+        return (lighter + 0.05) / (darker + 0.05)
+
+    NONTEXT_MIN = 3.0
+    worst = 999.0
+    for name, (panel, panel2, panel3, fg, accent) in themes.items():
+        group_rgb = mix(accent, fg, 75)
+        super_rgb = mix(accent, fg, 35)
+        for bg in (panel, panel2, panel3):
+            bg_rgb = hx(bg)
+            cg = contrast(group_rgb, bg_rgb)
+            cs = contrast(super_rgb, bg_rgb)
+            worst = min(worst, cg, cs)
+            assert cg >= NONTEXT_MIN, f"{name}: --lvl-group contrast {cg:.2f} < {NONTEXT_MIN}:1"
+            assert cs >= NONTEXT_MIN, f"{name}: --lvl-super contrast {cs:.2f} < {NONTEXT_MIN}:1"
+    assert worst >= NONTEXT_MIN  # sanity: the loop above already asserted every case
 
 
 def test_task_manager_opens_in_a_standalone_tab():
