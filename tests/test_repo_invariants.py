@@ -487,15 +487,18 @@ def test_bm25f_per_column_ranking_is_wired():
     assert ":wt" in fts and ":wb" in fts
 
 
-def test_lemmatization_is_opt_in_display_layer_and_reversible():
-    """Keyword-engine P4.3: simplemma lemmatization conflates morphological keyword variants
-    (study/studied) at the DISPLAY layer (families.py), NOT the stored index — opt-in
-    (OO_FAMILY_LEMMA, default OFF, gated on the gold set + P3 for quality), graceful-degrade
-    when simplemma is absent, with a visible conflated_by provenance. It must NEVER touch
-    the trusted normalize/store path (that would rewrite the canonical index)."""
+def test_lemmatization_is_on_by_default_display_layer_and_reversible():
+    """Keyword-engine P4.3, ruled default-ON 2026-07-18: simplemma lemmatization conflates
+    morphological keyword variants (study/studied) at the DISPLAY layer (families.py), NOT
+    the stored index. The measure-before-trust gate is satisfied by a maintainer precision
+    review of the live-corpus lemma_preview (lemmatization is a display-layer change,
+    invisible to the FTS retrieval harness, so an IR-gold-set A/B was never the coherent
+    measurement for it). Opt OUT with OO_FAMILY_LEMMA=0; graceful-degrade when simplemma is
+    absent; a visible conflated_by provenance. It must NEVER touch the trusted
+    normalize/store path (that would rewrite the canonical index)."""
     fam = (_SRC / "analytics" / "families.py").read_text(encoding="utf-8")
     assert "def _lemma(" in fam and "def _lemma_enabled(" in fam
-    assert 'os.getenv("OO_FAMILY_LEMMA"' in fam and '"0")' in fam  # default OFF
+    assert 'os.getenv("OO_FAMILY_LEMMA"' in fam and '"1")' in fam  # default ON
     assert "_MISLEMMA_DENYLIST" in fam and "conflated_by" in fam  # denylist + visible provenance
     assert "import simplemma" in fam  # optional dep, try/except guarded
     # lemmatization is display-only: the trusted extractor/normalize path must NOT import it
@@ -507,6 +510,31 @@ def test_lemmatization_is_opt_in_display_layer_and_reversible():
     # the optional dependency is declared in the [analysis] extra (CI exercises it)
     pyproject = (_SRC.parent / "pyproject.toml").read_text(encoding="utf-8")
     assert "simplemma" in pyproject
+
+
+def test_lemma_preview_shows_the_true_delta_over_the_plural_rule():
+    """S2 of the 2026-07-18 default-on brief: the lemma_preview review instrument tags each
+    candidate group by whether the PLURAL rule (families step 1.5, which runs before the
+    lemma step) already accounts for it -- else a naive review over-counts "new merges"
+    that are actually already collapsed by the earlier step. Pure computation, no score."""
+    er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
+    assert "def _plural_rule_classification(" in er
+    assert '"plural_rule"' in er and '"lemma_only"' in er and '"mixed"' in er
+    assert "plural_overlap" in er and "by_plural_overlap" in er
+    # cross-references the SAME plural mechanics the families grouping step uses -- never a
+    # re-implementation that could silently drift from what the plural rule actually merges
+    assert "_plural_bases" in er and "_PLURAL_DENYLIST" in er
+
+
+def test_lemma_conflation_indicator_is_wired_conservative_and_flagged():
+    """S3 of the 2026-07-18 default-on brief (deferred from the original opt-in ruling, now
+    shipped since the feature is on by default): a family collapsed in part by
+    lemmatization (conflated_by=["lemma"]) shows a small, honest, reversible marker in the
+    Insights -> Families list -- browser-unverified per fork-3/Q6a, so this pins the wiring
+    rather than a rendered screenshot."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "conflated by lemma" in js
+    assert 'f.conflated_by || []).includes("lemma")' in js
 
 
 def test_corpus_facets_drill_is_wired():
@@ -5273,16 +5301,16 @@ def test_ir_gold_set_builder_writes_validated_gold_and_closes_the_loop():
 
 
 def test_lemma_preview_is_surfaced_in_the_diagnostics_panel():
-    """S5.4: the lemma-conflation preview (what OO_FAMILY_LEMMA would merge) is now VISIBLE in
-    the Diagnostics panel next to the gold-set builder — it was only reachable by downloading
-    the engine-report JSON. A focused endpoint + a render showing candidate groups + would-merge
-    counts + the _MISLEMMA_DENYLIST affordance. The default STAYS off (reviews, never flips)."""
+    """S5.4: the lemma-conflation preview (what lemmatization merges, ON by default since
+    2026-07-18) is VISIBLE in the Diagnostics panel next to the gold-set builder — it was
+    only reachable by downloading the engine-report JSON. A focused endpoint + a render
+    showing candidate groups + would-merge counts + the _MISLEMMA_DENYLIST affordance."""
     er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
     assert "def lemma_preview_report(" in er, "the focused (no full-report) preview function"
     diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     assert '"/lemma-preview"' in diag
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    lp = app[app.index("async function loadLemmaPreview(") : app.index("async function loadLemmaPreview(") + 1600]
+    lp = app[app.index("async function loadLemmaPreview(") : app.index("async function loadLemmaPreview(") + 2600]
     assert "/api/diagnostics/lemma-preview" in lp and "_MISLEMMA_DENYLIST" in lp
     assert "candidate_groups" in lp and "keywords_that_would_merge" in lp
     assert 'id="lemma-preview-body"' in (_SRC / "static" / "index.html").read_text(encoding="utf-8")

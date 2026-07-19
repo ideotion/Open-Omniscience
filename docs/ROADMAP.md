@@ -180,7 +180,7 @@ this is the tracked list. Items already shipped are omitted (see the ledger).
 - **Date-extraction recall — the residual tail** — hu/fa relative-day words shipped (B4); the CJK-numeral **probe** shipped (S4.1, measure-first/context-only). Remaining: EXTRACTING the CJK dates (segmenter-dependent) + the other `date-like-but-unextracted` classes. 🚧
 - **Open-class stoplist sweep** — the measured `analyze_keyword_log --generic-terms` loop over a fresh export (kills the FLOOD filler + "rising"-card leaks; never a hand-guess). **S4.6: the detector now also rides the in-app `engine_report`** (`generic_terms` block), so the diagnostics export carries the worklist automatically; the review-and-apply loop is the maintainer step. 🛠 operational
 - **Trans-language equivalence — remaining** — the cross-country ring MAP ✅ shipped in Groups (`showRingMap`, 2026-07-03); residue: the `language_breakdown`/`members` hover on the Trends/Home merged rows (→ S4.2) + local-LLM proposing candidate rings. 🚧
-- **Lemmatization default-on** — `OO_FAMILY_LEMMA` (73 of top-500 would merge) — stays measure-gated on the maintainer-made gold set (re-confirmed by ruling 3a execution). 🔒
+- **Lemmatization default-on** — ✅ **SHIPPED (2026-07-18)**: `OO_FAMILY_LEMMA` flipped to default-ON after a maintainer precision review of the live-corpus `lemma_preview` (35 groups / 71 keywords, clean); the measure-before-trust gate was satisfied by that review, not an IR-harness A/B (lemmatization is a display-layer change, invisible to retrieval). Opt out with `OO_FAMILY_LEMMA=0`; `learn/learning` recorded as a watch item, not pre-denylisted.
 - **Keyword-log-driven catalog pruning** as a repeatable workflow. 🛠 operational
 
 ### Backup, import / export & data-safety
