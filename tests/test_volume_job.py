@@ -185,3 +185,47 @@ def test_reap_allows_next_after_a_lingering_finished_thread(tmp_path):
     src.mkdir()
     mgr.start_restore(str(src), "pw", _restore_fn=lambda s, pw: {"report": {"ok": True}})
     assert _wait(mgr)["state"] == "done"
+
+
+def test_restore_reports_a_distinct_reindexing_phase(tmp_path, monkeypatch):
+    """Field report 2026-07-19: the post-merge per-article re-index used to run
+    silently AFTER the 14-step merge, leaving the UI frozen on the merge's LAST
+    reported step ("14/14") for however long that (previously single-core,
+    unbatched) phase took -- sometimes hours on a large restore, reading as a hang.
+    The job must now report a DISTINCT "reindexing" phase with real done/total, via
+    its OWN callback -- never conflated with the 14-step merge's progress dict."""
+    import src.backup.artifact as artifact_mod
+    import src.backup.merge as merge_mod
+
+    captured = {}
+
+    def fake_run_restore(staged, *, commit, allow_unverified, progress_cb=None, reindex_progress_cb=None):
+        captured["reindex_progress_cb"] = reindex_progress_cb
+        assert progress_cb is not None
+        progress_cb(1, 14, "keyword categories")  # the merge phase still reports too
+        assert reindex_progress_cb is not None
+        reindex_progress_cb(3, 10)
+        reindex_progress_cb(10, 10)
+        return {"committed": True}
+
+    monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    snapshots: list[dict] = []
+    real_on_prog = mgr._on_prog
+    mgr._on_prog = lambda p: (snapshots.append(dict(p)), real_on_prog(p))
+
+    mgr.start_restore(str(src), "pw")
+    st = _wait(mgr)
+    assert st["state"] == "done"
+
+    merge_steps = [p for p in snapshots if p.get("phase") == "merging"]
+    reindex_steps = [p for p in snapshots if p.get("phase") == "reindexing"]
+    assert merge_steps and merge_steps[-1]["merge_step"] == 1 and merge_steps[-1]["merge_steps"] == 14
+    assert len(reindex_steps) == 2
+    assert reindex_steps[0] == {"phase": "reindexing", "reindex_done": 3, "reindex_total": 10}
+    assert reindex_steps[-1] == {"phase": "reindexing", "reindex_done": 10, "reindex_total": 10}

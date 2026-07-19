@@ -534,3 +534,180 @@ def test_reconcile_article_language_is_idempotent(db):
     assert first["set_by_text"] == 1
     second = reconcile_article_language(db)
     assert second["scanned"] == 0 and second["done"] is True
+
+
+# --- restore-merge re-index perf (2026-07-19): precomputed args + batching -- #
+
+
+def test_index_article_precomputed_terms_and_sentiment_match_the_recomputed_path(db):
+    """A caller that precomputes terms/sentiment (the parallel path) must store the
+    EXACT same rows as the default recompute-inline path -- byte-identical, just
+    where the CPU-bound extraction happened differs."""
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ex = BaselineExtractor()
+    text = "Reuters reports the WHO announced a wonderful election vaccine policy today."
+
+    a1 = _article(db, "h-inline", text, title="T1")
+    r1 = index_article(db, a1, extractor=ex, country="fr")
+
+    a2 = _article(db, "h-precomputed", text, title="T1")
+    from src.analytics.sentiment import score_article
+
+    terms = ex.extract(text, title="T1", language="en")
+    sentiment = score_article(text, "en")
+    r2 = index_article(
+        db, a2, extractor=ex, country="fr", precomputed_terms=terms, precomputed_sentiment=sentiment
+    )
+
+    assert r1["mentions"] == r2["mentions"] and r1["entities"] == r2["entities"]
+    assert a1.sentiment_score == a2.sentiment_score
+    assert a1.sentiment_label == a2.sentiment_label
+
+    def _mention_set(article):
+        return sorted(
+            (m.keyword_id, m.count, m.first_offset)
+            for m in db.query(KeywordMention).filter_by(article_id=article.id).all()
+        )
+
+    # both articles are the SAME text, so their mention sets must line up 1:1 on
+    # (count, first_offset) even though the keyword_ids differ (a fresh Keyword row
+    # per article's own term instances is expected -- BaselineExtractor.extract is
+    # deterministic on identical input regardless of who called it).
+    m1, m2 = _mention_set(a1), _mention_set(a2)
+    assert [(c, o) for _, c, o in m1] == [(c, o) for _, c, o in m2]
+
+
+def test_index_article_content_param_skips_get_content(db):
+    """When ``content=`` is explicitly given, ``index_article`` must use it AS-IS
+    and never call ``article.get_content()`` again -- the whole point of the
+    parameter (skip a second decompression pass when a caller -- the restore-merge
+    precompute prep -- already holds the decompressed text)."""
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ex = BaselineExtractor()
+    text = "Energy prices and the drought pushed agriculture costs higher today."
+    a = _article(db, "h-content", text, title="T")
+
+    called = {"n": 0}
+    real_get_content = a.get_content
+
+    def _spy():
+        called["n"] += 1
+        return real_get_content()
+
+    a.get_content = _spy
+    r = index_article(db, a, extractor=ex, country="fr", content=text, commit=False)
+    assert called["n"] == 0, "get_content() must not be called when content= is provided"
+    assert r["mentions"] > 0
+
+    # the omitted-content path (default) still calls it, exactly as before.
+    db.rollback()
+    a2 = _article(db, "h-content2", text, title="T")
+    a2.get_content = _spy
+    index_article(db, a2, extractor=ex, country="fr", commit=False)
+    assert called["n"] == 1
+
+
+def test_reindex_articles_batches_progress_and_parallel_match_per_article(db):
+    """commit_batch>1 + parallel precompute must produce IDENTICAL mention rows +
+    counters to the per-article baseline, AND report real (done, total) progress."""
+    from src.analytics.store import reindex_articles
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ex = BaselineExtractor()
+    ids = []
+    for i in range(20):
+        a = _article(
+            db, f"ha{i}",
+            f"Reuters reports the WHO announced election vaccine market policy number {i}.",
+            title=f"T{i}",
+        )
+        ids.append(a.id)
+
+    baseline = reindex_articles(db, extractor=ex, article_ids=ids, commit_batch=1, workers=0)
+    assert baseline == {"reindexed": 20, "failed": 0}
+    snap1, ctr1 = _mentions_snapshot(db), _stored_counters(db)
+
+    progress = []
+    batched = reindex_articles(
+        db, extractor=ex, article_ids=ids, commit_batch=6, workers=4,
+        progress_cb=lambda done, total: progress.append((done, total)),
+    )
+    assert batched == {"reindexed": 20, "failed": 0}
+    snap2, ctr2 = _mentions_snapshot(db), _stored_counters(db)
+
+    assert snap1 == snap2  # identical mention rows across per-article vs batched+parallel
+    assert ctr1 == ctr2  # identical denormalised counters
+    assert ctr2 == _live_counters(db)  # counters == the live GROUP BY (zero drift)
+    assert progress, "progress_cb must fire"
+    assert progress[-1] == (20, 20)  # ends at 100%
+    assert all(total == 20 for _done, total in progress)  # total never changes mid-run
+
+
+def test_reindex_articles_batch_failure_fallback_loses_nothing(db):
+    """A staging failure MID-BATCH (a flaky extractor) must not silently drop the
+    batch-mates accumulated BEFORE it: rolling back a SQLAlchemy transaction wipes
+    every uncommitted pending object, not just the one that raised -- so the
+    survivors must be redone, committed, one at a time (mirrors
+    test_batched_reindex_failure_fallback_loses_nothing for reindex_all_batch)."""
+    from src.analytics.store import reindex_articles
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ex = BaselineExtractor()
+    ids = []
+    for i in range(6):
+        a = _article(
+            db, f"hb{i}", "Energy prices and the drought pushed agriculture costs higher today.",
+            title=f"T{i}",
+        )
+        ids.append(a.id)
+    bad_id = ids[2]  # T2 raises during extraction, mid-batch (workers=0 -> real object used)
+
+    class FlakyExtractor:
+        name = ex.name
+
+        def extract(self, content, *, title="", language="en"):
+            if title == "T2":
+                raise RuntimeError("boom")
+            return ex.extract(content, title=title, language=language)
+
+    r = reindex_articles(db, extractor=FlakyExtractor(), article_ids=ids, commit_batch=4, workers=0)
+    assert r == {"reindexed": 5, "failed": 1}
+    for aid in ids:
+        n = db.query(KeywordMention).filter_by(article_id=aid).count()
+        assert n == 0 if aid == bad_id else n > 0  # only the bad one lost its mentions
+    assert _stored_counters(db) == _live_counters(db)  # counters exact despite the mid-batch failure
+
+
+def test_reindex_articles_missing_id_is_silently_skipped(db):
+    """An id that no longer resolves to an Article (e.g. deleted mid-run) is
+    skipped, matching the pre-existing per-article behaviour -- never counted as
+    reindexed OR failed, never raises."""
+    from src.analytics.store import reindex_articles
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    a = _article(db, "hc0", "Some ordinary article text about markets and trade today.")
+    out = reindex_articles(db, extractor=BaselineExtractor(), article_ids=[a.id, 999999])
+    assert out == {"reindexed": 1, "failed": 0}
+
+
+def test_reindex_articles_is_idempotent_across_batching_modes(db):
+    """Re-running with a DIFFERENT commit_batch/workers combo is idempotent (no
+    duplicate mentions, no drift) -- the delete-then-reinsert contract holds
+    regardless of how the precompute/commit was batched."""
+    from src.analytics.store import reindex_articles
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ex = BaselineExtractor()
+    ids = [_article(db, f"hd{i}", "Drought and inflation reshaped the global economy.", title=f"T{i}").id for i in range(10)]
+
+    reindex_articles(db, extractor=ex, article_ids=ids, commit_batch=1, workers=0)
+    n1 = db.query(KeywordMention).count()
+    reindex_articles(db, extractor=ex, article_ids=ids, commit_batch=3, workers=4)
+    n2 = db.query(KeywordMention).count()
+    assert n1 == n2

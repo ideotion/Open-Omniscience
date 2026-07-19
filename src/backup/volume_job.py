@@ -196,8 +196,21 @@ class VolumeBackupManager:
                         }
                     )
 
+                def _reindex_prog(done: int, total: int) -> None:
+                    # A DISTINCT "reindexing" phase (2026-07-19 field report): the
+                    # post-merge per-article re-index used to run silently after the
+                    # 14-step merge finished, leaving the UI frozen on "14/14" for
+                    # however long the (previously single-core, unbatched) CPU-bound
+                    # extraction took -- sometimes hours on a large restore, reading
+                    # as a hang. Now reported as its own phase with real done/total.
+                    self._on_prog({"phase": "reindexing", "reindex_done": done, "reindex_total": total})
+
                 report = run_restore(
-                    staged, commit=True, allow_unverified=allow_unverified, progress_cb=_merge_prog
+                    staged,
+                    commit=True,
+                    allow_unverified=allow_unverified,
+                    progress_cb=_merge_prog,
+                    reindex_progress_cb=_reindex_prog,
                 )
                 with self._lock:
                     self._state, self._summary = "done", {"report": report}

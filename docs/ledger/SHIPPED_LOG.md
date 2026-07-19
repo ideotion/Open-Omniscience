@@ -3508,3 +3508,66 @@ encrypted paths are no longer untestable here; the fix was live-reproduced end-t
 (fail → fix → both sizes rebuild+verify+bench green) and pinned as skip-guarded tests
 that run in CI and in any wheels-equipped sandbox. No UI change needed: the worker's
 `passphrase=None` → `get_passphrase()` (the unlocked process key) is the correct design.
+
+## 2026-07-19 — restore-merge re-index: the invisible phase + a rollback-drops-survivors bug
+
+Field report: a volume-backup RESTORE showed high disk writes during the 14-step
+`merge_corpus` phase, then writes trickled to <5 Mb/s irregular blips every 30+ s while the
+UI stayed frozen at "merging (14/14)" and ONE core pinned at 100% on a 6-core box.
+
+ROOT CAUSE: the 14-step progress callback only covers `merge_corpus`. `run_restore` then
+calls `reindex_imported_articles` → `reindex_articles` (P0-4: re-index every merged article
+against the CURRENT engine) — a plain single-threaded Python loop with ZERO progress
+reporting and a per-article `commit=True` default. `index_article`'s two most expensive
+steps — `extractor.extract()` (tokenize/stopword-filter/entity-detect over the whole body)
+and `score_article()` (VADER) — are pure, DB-free functions of the article's text, yet ran
+serially on the GIL, pinning one core while `app.js:5374` kept rendering the LAST
+`merge_step` it ever received (nothing updates it during this phase).
+
+FIX (three parts, requested together): (1) `src/analytics/reindex_parallel.py` offloads
+those two pure steps to a bounded `ProcessPoolExecutor` (worker_count = cpu_count-1, capped
+at 8, `OO_REINDEX_WORKERS` override; a small batch, `workers<=1`, or an unrecognised/
+test-double extractor always takes the exact serial path — an extractor is only
+reconstructed BY NAME in a worker for the two registered kinds, so a custom object is
+never silently swapped); ANY pool trouble (spawn restricted, a broken worker, a pickling
+hiccup) degrades to the identical serial computation over the whole batch. (2)
+`index_article` gained optional `content`/`precomputed_terms`/`precomputed_sentiment`
+kwargs (default `None` = byte-identical to every existing caller); the language-deduction
+block was extracted into `_resolve_known_language` so a precompute prep step and
+`index_article` itself agree on the exact same deduced language — a real bug caught BEFORE
+shipping: computing the precompute language before running deduction would have silently
+regressed sentiment for undetected-language articles that resolve to English (score_article
+needs the POST-deduction language, not the pre-deduction one). `reindex_articles` was
+rewritten to window the work (bounding peak RAM regardless of corpus size — the same P0.1
+discipline the backup engine follows), precompute each window, and apply+commit in
+`commit_batch` groups mirroring `reindex_all_batch`'s PROVEN rollback-then-redo-per-article
+fallback.
+
+SKEPTIC-CAUGHT BUG (found via cross-checking against the reference implementation, not by
+a fuzzer): the first draft's mid-batch STAGING-failure handler (one article's
+`index_article(commit=False)` raising) did `session.rollback()` and marked only THAT
+article failed — but a SQLAlchemy rollback discards the WHOLE pending transaction, so every
+already-staged-but-uncommitted batch-mate accumulated before the failure was SILENTLY
+DROPPED (never committed, never retried, never counted). Fixed to redo the accumulated
+survivors one at a time, COMMITTED — exactly the pattern `reindex_all_batch`'s own comment
+already documents for this exact scenario. A targeted repro (6 articles, `commit_batch=4`,
+a flaky extractor failing article #3) proves 5/6 reindexed with exact live-vs-stored
+counters, and is now a permanent regression test.
+
+(3) `merge.py`/`volume_job.py` thread `commit_batch` (reads the SAME `OO_REINDEX_COMMIT_BATCH`
+env var the standalone re-index-all job already reads — one knob tunes both) + `workers` + a
+`progress_cb` through; the volume-restore job reports a DISTINCT `"reindexing"` phase
+(`reindex_done`/`reindex_total`) via its OWN callback, never conflated with the 14-step
+merge callback's different (3-arg vs 2-arg) shape. Frontend renders it with a real percent +
+the existing rule-of-three ETA machinery; +1 i18n key ×12 (AI-drafted, flagged for native
+review), gate stays green.
+
+LESSON (copied to Session-rituals): a SQLAlchemy `session.rollback()` inside a mid-batch
+failure handler discards EVERY pending (uncommitted) object in the transaction, not just the
+one that raised — a batching loop's failure path must redo the accumulated survivors, never
+just mark the trigger as failed and move on (`reindex_all_batch`'s own fallback already
+encoded this; a rewrite must re-derive it, not assume a simpler shape is equivalent). And: a
+progress callback wired into only ONE stage of a multi-stage pipeline reads as a hang once
+that stage's work moves to the next, unreported stage — treat "the UI is frozen on the last
+number it saw" as a sign to grep for what runs AFTER the last reported callback, not as
+proof of a stall.
