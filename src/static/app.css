@@ -270,6 +270,9 @@
       cursor:pointer; border-radius:4px; }
     .lvl-crumb .seg:hover { background:var(--panel2); text-decoration:underline; }
     .lvl-crumb .sep { color:var(--muted); }
+    /* The concept-map §D two-tier browse's "currently selected" chip state --
+       mirrors the app's existing .active convention (nav-item/doc-link). */
+    .chip.active { background:color-mix(in srgb, var(--accent) 16%, transparent); }
     /* Background-activity indicator (top bar): an honest "the app is doing something"
        signal. The ring stays legible even when prefers-reduced-motion freezes the spin. */
     .activity { display:inline-flex; align-items:center; gap:6px; padding:1px 9px;

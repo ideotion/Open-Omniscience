@@ -4542,6 +4542,75 @@ def test_circle_grammar_level_marking_is_wired_and_contrast_verified():
     assert worst >= NONTEXT_MIN  # sanity: the loop above already asserted every case
 
 
+def test_concept_map_two_tier_browse_and_clickable_countries():
+    """GROUPS layer amendment §D: the flat 540-item <select> is replaced by a
+    two-tier circled browse (super-group chips -> click one -> its group chips,
+    plus an Ungrouped-concepts bucket so no ring is ever unreachable) with a
+    type-ahead filter; every country row/polygon AND the "not mapped" bucket
+    drill into the exact corpus (never a dead end); every ⦾ group chip in the
+    app deep-links to this map via openConceptMap."""
+    import json
+
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    # The old flat dropdown is GONE; the new two-tier browse scaffolding is present.
+    assert 'id="sg-ringmap-pick"' not in html, "the flat 540-item dropdown must be removed"
+    for el_id in ("sg-concept-filter", "sg-concept-crumb", "sg-concept-supers", "sg-concept-groups"):
+        assert f'id="{el_id}"' in html, f"the concept-map two-tier browse must render #{el_id}"
+
+    # The JS primitives.
+    for fn in (
+        "function renderConceptBrowse(",
+        "function selectConceptBucket(",
+        "function selectConceptGroup(",
+        "function filterConceptBrowse(",
+        "function openConceptMap(",
+        "function _conceptApplyPending(",
+        "async function _conceptDrillCountry(",
+    ):
+        assert fn in js, f"missing concept-map browse primitive: {fn!r}"
+
+    # An "Ungrouped concepts" bucket so a ring with no super-group parent is
+    # never silently unreachable from the picker.
+    assert "_ungrouped_" in js
+    assert "Ungrouped concepts" in js
+
+    # Clickable countries: the ooMap polygon drill, the table-row drill, and the
+    # "not mapped" bucket drill all resolve through the SAME shared function.
+    assert "onCountry: (iso) => _conceptDrillCountry(ringId, iso)" in js
+    assert '<tr style="cursor:pointer" onclick="_conceptDrillCountry(' in js
+    assert 'onclick="_conceptDrillCountry(\'${esc(ringId)}\', null)"' in js, (
+        "the not-mapped/unlocated bucket must be a clickable drill, never a dead-end div"
+    )
+    assert "/api/insights/ring-country-articles" in js
+    assert "openAnalysisForIds(d.article_ids" in js
+
+    # Every ⦾ group chip in the app deep-links to the map (openConceptMap), at
+    # each identified render site: the family-panel pill, the sgCard chip's map
+    # link, and the sgCurationCard chip's map link.
+    assert 'onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})"' in js
+    assert js.count('onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})"') >= 2, (
+        "both sgCard and sgCurationCard ring-member chips must offer the map deep-link"
+    )
+
+    # The located-share honesty line (map coverage grows as source countries are
+    # filled in -- an unlocated share is a gap, never a claim nobody covers a
+    # concept), a NEW key so it never orphans a translation, present + translated
+    # everywhere.
+    key = (
+        "Map coverage grows as more sources get a known country — an unlocated "
+        "share is a data gap, never a claim that nobody covers a concept."
+    )
+    assert key in html
+    locales_dir = _SRC / "static" / "locales"
+    en = json.load(open(locales_dir / "en.json", encoding="utf-8"))
+    assert key in en
+    for loc in ("fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id"):
+        d = json.load(open(locales_dir / f"{loc}.json", encoding="utf-8"))
+        assert d.get(key), f"{loc}: missing translation for the map-coverage honesty line"
+
+
 def test_task_manager_opens_in_a_standalone_tab():
     """The task manager opens in its OWN browser tab (maintainer 2026-06-18) so it
     can stay parked on the desktop while the user works in the app. Pinned: the

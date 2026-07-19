@@ -1551,6 +1551,33 @@ def insights_ring_stats(
     )
 
 
+@router.get("/ring-country-articles")
+def insights_ring_country_articles(
+    ring_id: str = Query(..., description="an equivalence-group (ring) id, e.g. 'inflation'"),
+    country: str | None = Query(
+        None, description="ISO-2 source country; omit for the 'not mapped' (unlocated) bucket"
+    ),
+    days: int | None = Query(None, ge=1, le=36500),
+    limit: int = Query(2000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The concept-map §D drill: the exact article ids behind ONE country row of
+    ring-countries' table (or the 'not mapped' bucket when ``country`` is omitted
+    — the largest bucket is often unlocated, and it must be investigable too,
+    never a dead end). Same keyword resolution as ring-countries, so the drilled
+    set can never disagree with the number beside it. Bounded and disclosed."""
+    from src.analytics.queries import ring_country_article_ids
+
+    limit = limit if isinstance(limit, int) else 2000
+    days = days if isinstance(days, int) else None
+
+    key = _ckey("ring-country-articles", ring_id=ring_id, country=country, days=days, limit=limit)
+    return _deadlined(
+        db, key,
+        lambda: ring_country_article_ids(db, ring_id=ring_id, country=country, days=days, limit=limit),
+    )
+
+
 @router.get("/source-laundering")
 def insights_source_laundering(
     min_sources: int = Query(3, ge=2, le=100, description="distinct-source surfacing gate"),

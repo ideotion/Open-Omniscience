@@ -9234,7 +9234,7 @@
         list.innerHTML = fams.length ? fams.map(f => `<div class="fam-row">
             <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
-              ${f.ring_id ? `<span class="pill lvl-group" title="${esc(lvlTitle("group"))}">group</span>` : ""}
+              ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips muted">${_famMemberList(f)}</div></div></div>`
           ).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
@@ -9271,7 +9271,7 @@
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
             <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
-              ${f.ring_id ? `<span class="pill lvl-group" title="${esc(lvlTitle("group"))}">group</span>` : ""}
+              ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
         }).join("") : '<div class="muted">No families with a decision to review — grouping is fully automatic so far.</div>';
@@ -9333,7 +9333,7 @@
     // Every country in the payload is drawn, capped at _DUMBBELL_MAX with the drop DISCLOSED
     // (no silent truncation — the honesty rule).
     const _DUMBBELL_MAX = 15;
-    function ringDumbbellSvg(rows, names) {
+    function ringDumbbellSvg(rows, names, ringId) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (typeof ooViz === "undefined" || !ooViz.linearScale || !ooViz.niceTicks) return "";
       const data = (rows || []).filter(r => r.country && ((r.mentions || 0) || (r.articles || 0)))
@@ -9349,15 +9349,20 @@
         return `<line x1="${gx}" y1="${padT}" x2="${gx}" y2="${(padT + shown.length * rowH).toFixed(1)}" stroke="var(--border-soft)" stroke-width="1"/>`
           + `<text x="${gx}" y="${(padT + shown.length * rowH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--muted)">${esc(String(v))}</text>`;
       }).join("");
+      // §D: every bar drills into the exact corpus (group's keyword ids ∩ that
+      // country -> article ids), when ringId is supplied.
       const bars = shown.map((r, i) => {
         const cy = (padT + i * rowH + rowH / 2).toFixed(1);
         const xa = x(r.articles || 0), xm = x(r.mentions || 0);
         const lo = Math.min(xa, xm).toFixed(1), hi = Math.max(xa, xm).toFixed(1);
         const nm = esc((names && names[r.country]) || String(r.country).toUpperCase());
-        return `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${nm}</text>`
+        const clickable = ringId
+          ? ` style="cursor:pointer" onclick="_conceptDrillCountry('${esc(ringId)}','${esc(r.country)}')"` : "";
+        return `<g${clickable}><title>${nm}</title>`
+          + `<text x="${padL - 6}" y="${(+cy + 3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--fg)">${nm}</text>`
           + `<line x1="${lo}" y1="${cy}" x2="${hi}" y2="${cy}" stroke="var(--muted)" stroke-width="2" opacity="0.5"/>`
           + `<circle cx="${xa.toFixed(1)}" cy="${cy}" r="4" fill="var(--accent)"><title>${nm}: ${r.articles} ${esc(t("articles"))}</title></circle>`
-          + `<circle cx="${xm.toFixed(1)}" cy="${cy}" r="4" fill="var(--muted)"><title>${nm}: ${r.mentions} ${esc(t("mentions"))}</title></circle>`;
+          + `<circle cx="${xm.toFixed(1)}" cy="${cy}" r="4" fill="var(--muted)"><title>${nm}: ${r.mentions} ${esc(t("mentions"))}</title></circle></g>`;
       }).join("");
       const legend = `<div class="hint" style="margin-top:2px"><span style="color:var(--accent)">●</span> ${esc(t("articles"))} · <span style="color:var(--muted)">●</span> ${esc(t("mentions"))}`
         + (dropped ? ` · <span class="muted">${esc(t("+ {n} more (not shown)").replace("{n}", dropped))}</span>` : "") + `</div>`;
@@ -9366,6 +9371,120 @@
     // Cross-language ring -> per-language mention breakdown, indexed from /top?group=true
     // (best-effort: only rings that fall in the fetched top-N carry a language breakdown).
     let _ringLangIndex = {};
+
+    // -- Concept-map §D: the two-tier circled browse ------------------------------
+    // Replaces the flat 540-item <select> with super-group chips (⦾⦾) -> click one
+    // -> its member group (ring) chips (⦾) below, an "Ungrouped concepts" bucket so
+    // no ring is ever unreachable, and a type-ahead filter. State kept module-level
+    // so a refresh (loadSuperGroups) or a deep link (openConceptMap) can re-render
+    // without re-fetching.
+    let _conceptSupergroups = [], _conceptRings = [];
+    let _conceptActiveBucket = null;   // a super-group id, "_ungrouped_", or null
+    let _conceptSelectedRing = null;   // the currently-mapped group (ring) id, or null
+    let _conceptFilterQ = "";
+    let _conceptPendingRing = null;    // openConceptMap's deep-link target, applied once data loads
+
+    function _conceptRingToSupers() {
+      // ring_id -> [{id, name}] -- a ring MAY belong to several super-groups; it is
+      // shown under every one (plural membership, never silently picking one).
+      const idx = {};
+      _conceptSupergroups.forEach((sg) => (sg.members || []).forEach((m) => {
+        if (!m.ring_id) return;
+        (idx[m.ring_id] = idx[m.ring_id] || []).push({ id: sg.id, name: sg.name });
+      }));
+      return idx;
+    }
+
+    function _conceptMatches(label) {
+      if (!_conceptFilterQ) return true;
+      return (label || "").toLowerCase().includes(_conceptFilterQ);
+    }
+
+    function renderConceptBrowse() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const supersHost = $("sg-concept-supers"), groupsHost = $("sg-concept-groups"),
+        crumbHost = $("sg-concept-crumb");
+      if (!supersHost || !groupsHost) return;
+      const ringToSupers = _conceptRingToSupers();
+      const groupedRingIds = new Set(Object.keys(ringToSupers));
+      const ungrouped = _conceptRings.filter((r) => !groupedRingIds.has(r.id));
+
+      // Tier 1: every super-group, plus a synthetic "Ungrouped concepts" bucket
+      // (only when at least one ring has no super-group parent).
+      const superChips = _conceptSupergroups
+        .filter((sg) => _conceptMatches(sg.name))
+        .map((sg) => `<button class="chip lvl-super${_conceptActiveBucket === sg.id ? " active" : ""}"
+           onclick="selectConceptBucket(${sg.id})" title="${esc(lvlTitle("super"))}">⦾⦾ ${esc(sg.name)}</button>`)
+        .join(" ");
+      const ungroupedChip = ungrouped.length && _conceptMatches(t("Ungrouped concepts"))
+        ? `<button class="chip${_conceptActiveBucket === "_ungrouped_" ? " active" : ""}"
+             onclick="selectConceptBucket('_ungrouped_')">${esc(t("Ungrouped concepts"))} <span class="muted">${ungrouped.length}</span></button>`
+        : "";
+      supersHost.innerHTML = (superChips || ungroupedChip)
+        ? superChips + (ungroupedChip ? " " + ungroupedChip : "")
+        : `<div class="muted">${esc(t("No super-groups yet."))}</div>`;
+
+      // Tier 2: the active bucket's group (ring) chips.
+      let members = [];
+      if (_conceptActiveBucket === "_ungrouped_") members = ungrouped;
+      else if (_conceptActiveBucket) {
+        const sg = _conceptSupergroups.find((s) => s.id === _conceptActiveBucket);
+        const ringIds = new Set((sg && sg.members || []).filter((m) => m.ring_id).map((m) => m.ring_id));
+        members = _conceptRings.filter((r) => ringIds.has(r.id));
+      }
+      groupsHost.innerHTML = members.length
+        ? members.filter((r) => _conceptMatches(r.id) || _conceptMatches((r.languages || []).join("/")))
+            .map((r) => `<button class="chip lvl-group${_conceptActiveBucket && r.id === _conceptSelectedRing ? " active" : ""}"
+               onclick="selectConceptGroup('${esc(r.id)}')" title="${esc(lvlTitle("group"))}">⦾ ${esc(r.id)}
+               <span class="muted">(${esc((r.languages || []).join("/"))})</span></button>`).join(" ")
+        : (_conceptActiveBucket ? `<div class="muted">${esc(t("No groups in this bucket."))}</div>` : "");
+
+      // The clickable path breadcrumb (reuses the shared component from §B).
+      const crumbSegs = [];
+      if (_conceptActiveBucket && _conceptActiveBucket !== "_ungrouped_") {
+        const sg = _conceptSupergroups.find((s) => s.id === _conceptActiveBucket);
+        if (sg) crumbSegs.push({ level: "super", label: sg.name, onClick: () => selectConceptBucket(sg.id) });
+      } else if (_conceptActiveBucket === "_ungrouped_") {
+        crumbSegs.push({ level: "keyword", label: t("Ungrouped concepts"), onClick: () => selectConceptBucket("_ungrouped_") });
+      }
+      if (_conceptSelectedRing) crumbSegs.push({ level: "group", label: _conceptSelectedRing, onClick: () => selectConceptGroup(_conceptSelectedRing) });
+      if (crumbHost) crumbHost.innerHTML = lvlBreadcrumb(crumbSegs);
+    }
+
+    function selectConceptBucket(id) {
+      _conceptActiveBucket = id;
+      _conceptSelectedRing = null;
+      renderConceptBrowse();
+    }
+    function selectConceptGroup(ringId) {
+      _conceptSelectedRing = ringId;
+      renderConceptBrowse();
+      showRingMap(ringId);
+    }
+    function filterConceptBrowse(qstr) {
+      _conceptFilterQ = (qstr || "").trim().toLowerCase();
+      renderConceptBrowse();
+    }
+    // The deep link every ⦾ group chip in the app can call: jump to Insights ->
+    // Groups, land on the right bucket (the ring's FIRST super-group, else the
+    // Ungrouped bucket), and open its map -- mirrors openSupergroup's deferred
+    // scroll-to-target pattern for when the data hasn't loaded yet.
+    function openConceptMap(ringId) {
+      _conceptPendingRing = ringId;
+      showTab("insights");
+      if (_insSubtabs) _insSubtabs.select("supergroups"); else showInsightCat("supergroups");
+      if (_insLoaded.has("supergroups")) _conceptApplyPending();
+    }
+    function _conceptApplyPending() {
+      if (!_conceptPendingRing) return;
+      const ringId = _conceptPendingRing; _conceptPendingRing = null;
+      const ringToSupers = _conceptRingToSupers();
+      const parents = ringToSupers[ringId];
+      selectConceptBucket(parents && parents.length ? parents[0].id : "_ungrouped_");
+      selectConceptGroup(ringId);
+      const el = $("sg-ringmap"); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
     // Item #4: render a cross-language ring's coverage on the ooMap component — where the
     // concept is covered (by the producing source's country) + its per-language split.
     // Counts only, no score; unknown country is shown honestly, never mapped or guessed.
@@ -9390,11 +9509,14 @@
           host.innerHTML = `<div class="muted">${esc(t("No located sources for this concept yet."))}</div>`;
         } else {
           host.innerHTML = "";
+          // §D: every country polygon drills into the exact corpus (this group's
+          // keyword ids ∩ that source country -> article ids) via openAnalysisForIds.
           await ooMap(host, {
             values, names, unit: t("articles"),
             valueLabel: (iso, v) => `${v} ${t("articles")}`,
             aria: `${label} — ${Object.keys(values).length} ${t("countries")}`,
             method: d.method || "", caveat: d.caveat || "",
+            onCountry: (iso) => _conceptDrillCountry(ringId, iso),
           });
         }
         // Detail: the per-language mention split (from /top?group=true) + unlocated + a table.
@@ -9407,16 +9529,37 @@
           : "";
         const langs = (d.languages || []).length
           ? `<div class="hint"><b>${esc(t("Languages"))}:</b> ${esc((d.languages || []).join(" · "))}</div>` : "";
+        // §D: the "not mapped" bucket is CLICKABLE too -- often the largest bucket,
+        // and it must be investigable, never a dead end.
         const unlocNote = unloc
-          ? `<div class="card-caveat">${esc(t("Not mapped (source country unknown)"))}: ${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}</div>` : "";
+          ? `<button class="secondary" style="display:block;width:100%;text-align:left;margin-top:6px" onclick="_conceptDrillCountry('${esc(ringId)}', null)">`
+            + `${esc(t("Not mapped (source country unknown)"))}: ${unloc.articles} ${esc(t("articles"))} · ${unloc.mentions} ${esc(t("mentions"))}</button>` : "";
         const rows = (d.countries || []).filter(c => c.country)
-          .map(c => `<tr><td>${esc(names[c.country] || c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
+          .map(c => `<tr style="cursor:pointer" onclick="_conceptDrillCountry('${esc(ringId)}','${esc(c.country)}')">`
+            + `<td>${esc(names[c.country] || c.country)}</td><td style="text-align:right">${c.articles}</td><td style="text-align:right">${c.mentions}</td></tr>`).join("");
         const tbl = rows
           ? `<table style="margin-top:8px"><thead><tr><th>${esc(t("Country"))}</th><th style="text-align:right">${esc(t("Articles"))}</th><th style="text-align:right">${esc(t("Mentions"))}</th></tr></thead><tbody>${rows}</tbody></table>` : "";
         // Item #8: an honest per-country dumbbell (articles vs mentions) above the table.
-        const dumb = ringDumbbellSvg((d.countries || []).filter(c => c.country), names);
+        const dumb = ringDumbbellSvg((d.countries || []).filter(c => c.country), names, ringId);
         if (detail) detail.innerHTML = langs + langBd + unlocNote + dumb + tbl;
       } catch (e) { host.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
+    }
+    // §D: the shared country-cell drill -- exact article ids behind (ring, country),
+    // via the /ring-country-articles endpoint (same keyword resolution as the
+    // summary table, so the drilled set can never disagree with the number beside
+    // it), opened as a fresh corpus. country===null resolves the "not mapped"
+    // bucket, never a silent drop.
+    async function _conceptDrillCountry(ringId, country) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const d = await api("/api/insights/ring-country-articles?ring_id=" + encodeURIComponent(ringId)
+          + (country ? "&country=" + encodeURIComponent(country) : ""));
+        if (!d.article_ids || !d.article_ids.length) { toast(t("No articles found for this cell.")); return; }
+        const place = country
+          ? ((typeof ooRegionName === "function") ? ooRegionName(country, String(country).toUpperCase()) : String(country).toUpperCase())
+          : t("not mapped");
+        openAnalysisForIds(d.article_ids, `${ringId} · ${place}`);
+      } catch (e) { toast(t("Drill failed: ") + (e && e.message || e), "err"); }
     }
     async function loadSuperGroups() {
       const box = $("sg-list");
@@ -9435,18 +9578,19 @@
         // and fill the ring-map picker (kept selection across a refresh).
         _ringLangIndex = {};
         (top.terms || []).forEach(f => { if (f.ring_id && f.language_breakdown) _ringLangIndex[f.ring_id] = f.language_breakdown; });
-        const pick = $("sg-ringmap-pick");
-        if (pick) {
-          const cur = pick.value;
-          pick.innerHTML = `<option value=""></option>` + (rings.rings || []).map(r =>
-            `<option value="${esc(r.id)}">${esc(r.id)} (${esc((r.languages || []).join("/"))})</option>`).join("");
-          if (cur && (rings.rings || []).some(r => r.id === cur)) pick.value = cur;
-        }
+        // §D: the two-tier circled browse replaces the flat 540-item dropdown --
+        // super-group chips (⦾⦾) -> click one -> its group (ring) chips (⦾) below,
+        // plus an "Ungrouped concepts" bucket so a ring with no super-group parent
+        // stays reachable (never silently dropped from the picker).
+        _conceptSupergroups = sgs.supergroups || [];
+        _conceptRings = rings.rings || [];
+        renderConceptBrowse();
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
           : '<div class="muted">No super-groups yet. Create one above, then add families or groups to it.</div>';
         const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
       _sgScrollToTarget();  // S3: land on the deep-linked group after it renders
+      _conceptApplyPending();  // §D: land on the deep-linked concept-map ring, if any
     }
 
     // S3 (keyword -> super-group navigation): jump from anywhere (the Keywords-subtab
@@ -9492,8 +9636,13 @@
         const tip = esc(t("Open this keyword's own analysis window") + alsoIn + levelTip);
         // A data chip navigates (its own analysis window) rather than mutating the
         // group -- curation actions live in Settings now.
+        // §D: a separate map deep-link (never hijacking the chip's own openCorpus
+        // action) -- "every ⦾ group chip in the app deep-links to this map".
+        const mapLink = isRing
+          ? ` <button class="ghost tiny" title="${esc(t("Open on the cross-country concept map"))}"
+               onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
         return `<button class="chip${isRing ? " lvl-group" : ""}" onclick="openCorpus(${esc(JSON.stringify(m.normalized))})"
-           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>`;
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>${mapLink}`;
       }).join("")
         : '<span class="muted">No members yet.</span>';
       const zeroChip = zeroCount > 0
@@ -9563,8 +9712,13 @@
         // to the existing member-list tip (never replacing it).
         const baseTip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
         const tip = isRing ? baseTip + " — " + esc(lvlTitle("group")) : baseTip;
+        // §D: a separate map deep-link (never hijacking the chip's own remove
+        // action) -- "every ⦾ group chip in the app deep-links to this map".
+        const mapLink = isRing
+          ? ` <button class="ghost tiny" title="Open on the cross-country concept map"
+               onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})">🗺</button>` : "";
         return `<button class="fam-chip${isRing ? " lvl-group" : ""}" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
-           title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>`;
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>${mapLink}`;
       }).join("")
         : '<span class="muted">No members yet — add a family or a group below.</span>';
       return `<div class="sg-card">

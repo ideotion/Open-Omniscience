@@ -991,8 +991,12 @@
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <h2 style="font-size:13px;margin:0">Cross-country map of a concept</h2>
         <p class="hint" style="margin-top:2px">Pick a cross-language group — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).</p>
-        <div class="row"><div style="flex:2"><label for="sg-ringmap-pick">Concept (group)</label>
-          <select id="sg-ringmap-pick" onchange="showRingMap(this.value)"><option value=""></option></select></div></div>
+        <p class="hint muted" style="margin-top:2px">Map coverage grows as more sources get a known country — an unlocated share is a data gap, never a claim that nobody covers a concept.</p>
+        <label for="sg-concept-filter">Concept (group)</label>
+        <input id="sg-concept-filter" type="text" placeholder="Filter super-groups and groups…" style="width:100%;margin-top:6px" oninput="filterConceptBrowse(this.value)">
+        <div id="sg-concept-crumb" style="margin-top:6px"></div>
+        <div id="sg-concept-supers" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px"></div>
+        <div id="sg-concept-groups" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px"></div>
         <div id="sg-ringmap" style="margin-top:8px"></div>
         <div id="sg-ringmap-detail" style="margin-top:8px"></div>
       </div>

@@ -108,3 +108,88 @@ def test_ring_country_split_excludes_no_language_keywords(db, monkeypatch):
     _add_kw_mention(db, term="alpha", language=None, source=us, n=4)
     out = q.ring_country_split(db, ring_id="testconcept")
     assert out["n_keywords"] == 0 and out["countries"] == []
+
+
+# --------------------------------------------------------------------------- #
+# ring_country_article_ids — the concept-map §D drill (a country cell -> the
+# exact articles behind it, incl. the "not mapped" bucket).
+# --------------------------------------------------------------------------- #
+
+
+def _article_id(db, *, term, language, domain, n=1):
+    from src.database.models import Article as _Article
+    return db.query(_Article.id).filter_by(hash=f"{term}-{language}-{domain}-{n}").scalar()
+
+
+def test_ring_country_article_ids_matches_the_exact_country_cell(db, monkeypatch):
+    from src.analytics import equivalence
+    ring = _ring()
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "testconcept" else None)
+    monkeypatch.setattr(equivalence, "ring_of",
+                        lambda lang, norm: "testconcept" if (lang, norm) in ring.members else None)
+
+    us = Source(name="US Src", domain="us.test", country="us"); db.add(us)
+    fr = Source(name="FR Src", domain="fr.test", country="fr"); db.add(fr)
+    db.commit()
+
+    _add_kw_mention(db, term="alpha", language="en", source=us, n=5)
+    _add_kw_mention(db, term="alpha", language="fr", source=fr, n=3)
+    # A non-member keyword in the SAME country must never leak into the drill.
+    _add_kw_mention(db, term="beta", language="en", source=us, n=9)
+
+    us_art = _article_id(db, term="alpha", language="en", domain="us.test", n=5)
+    fr_art = _article_id(db, term="alpha", language="fr", domain="fr.test", n=3)
+    beta_art = _article_id(db, term="beta", language="en", domain="us.test", n=9)
+
+    us_out = q.ring_country_article_ids(db, ring_id="testconcept", country="us")
+    assert us_out["found"] is True
+    assert us_out["article_ids"] == [us_art]
+    assert beta_art not in us_out["article_ids"]
+
+    fr_out = q.ring_country_article_ids(db, ring_id="testconcept", country="fr")
+    assert fr_out["article_ids"] == [fr_art]
+
+    # No score anywhere in the payload.
+    assert not any("score" in k for k in us_out)
+
+
+def test_ring_country_article_ids_unlocated_bucket_is_drillable(db, monkeypatch):
+    from src.analytics import equivalence
+    ring = _ring()
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "testconcept" else None)
+    monkeypatch.setattr(equivalence, "ring_of",
+                        lambda lang, norm: "testconcept" if (lang, norm) in ring.members else None)
+    un = Source(name="Unlocated", domain="x.test", country=None); db.add(un); db.commit()
+    _add_kw_mention(db, term="alpha", language="en", source=un, n=2)
+    un_art = _article_id(db, term="alpha", language="en", domain="x.test", n=2)
+
+    # country=None resolves the SAME "not mapped" bucket ring_country_split reports
+    # -- never a silent drop of the (often largest) unlocated bucket.
+    out = q.ring_country_article_ids(db, ring_id="testconcept", country=None)
+    assert out["found"] is True
+    assert out["article_ids"] == [un_art]
+
+
+def test_ring_country_article_ids_unknown_ring(db):
+    out = q.ring_country_article_ids(db, ring_id="nope-not-a-ring-xyz", country="us")
+    assert out["found"] is False and out["article_ids"] == []
+
+
+def test_ring_country_article_ids_bounded_and_disclosed(db, monkeypatch):
+    from src.analytics import equivalence
+    ring = _ring()
+    monkeypatch.setattr(equivalence, "ring_meta", lambda rid: ring if rid == "testconcept" else None)
+    monkeypatch.setattr(equivalence, "ring_of",
+                        lambda lang, norm: "testconcept" if (lang, norm) in ring.members else None)
+    us = Source(name="US Src", domain="us.test", country="us"); db.add(us); db.commit()
+    for i in range(1, 6):
+        _add_kw_mention(db, term="alpha", language="en", source=us, n=i)
+
+    out = q.ring_country_article_ids(db, ring_id="testconcept", country="us", limit=3)
+    assert out["bounded"] is True
+    assert out["total"] == 3
+    assert len(out["article_ids"]) == 3
+
+    out_full = q.ring_country_article_ids(db, ring_id="testconcept", country="us", limit=100)
+    assert out_full["bounded"] is False
+    assert out_full["total"] == 5
