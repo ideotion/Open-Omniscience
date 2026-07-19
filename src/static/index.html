@@ -537,6 +537,11 @@
       <!-- Countries: per-country indicators (GDP/population/life-expectancy/labour/
            public finance + indices) over the vintaged official-statistics store. -->
       <div class="gov-view" id="gov-countries">
+        <!-- Field report 2026-07-17 (law-vertical brief, S2): a real, working law
+             tracker is buried two clicks deep with no hint it exists from the
+             default Countries view -- a small clickable pointer chip fixes that
+             without changing which subtab opens by default (fork-3 conservative). -->
+        <div id="gov-law-pointer" class="hint" style="cursor:pointer" onclick="_govSubtabs && _govSubtabs.select('law')"></div>
         <section class="panel">
           <div class="phead"><h2>Country data</h2><span class="sp"></span>
             <button class="secondary" id="gov-load-btn" onclick="govLoadStandard(this)"
@@ -584,10 +589,33 @@
         <div id="law-status" class="stat-grid" style="margin-top:12px"><div class="muted">Loading…</div></div>
       </section>
       <section class="panel">
-        <div class="phead"><h2>Flagged legal changes</h2><span class="sp"></span>
-          <label class="switch" style="margin-top:0"><input type="checkbox" id="law-flagged-only" checked
+        <div class="phead"><h2>Legal changes</h2><span class="sp"></span>
+          <label class="switch" style="margin-top:0"><input type="checkbox" id="law-flagged-only"
                 onchange="loadLawChanges()"> flagged only</label></div>
-        <div id="law-changes"><div class="muted">No tracked changes yet — “Track changes now”.</div></div>
+        <div id="law-changes"><div class="muted">Loading…</div></div>
+      </section>
+      <!-- S3 of the law-vertical brief (2026-07-17): add-a-document-by-URL —
+           editing configs/legal_sources.yml + re-seeding was the only way before. -->
+      <section class="panel">
+        <h2>Track a document by URL</h2>
+        <p class="hint">Paste the URL of a statute, gazette page or IP record to start
+          tracking it for change — no file editing. Fetched once immediately (a
+          network action); a blocked or unreachable URL is still added so it can be
+          retried later, with its real status shown.</p>
+        <div class="row">
+          <div style="flex:1;max-width:120px"><label for="law-add-jur">Jurisdiction</label>
+            <input type="text" id="law-add-jur" maxlength="8" placeholder="uk"></div>
+          <div style="flex:2"><label for="law-add-title">Title</label>
+            <input type="text" id="law-add-title" maxlength="512" placeholder="Human Rights Act 1998"></div>
+        </div>
+        <div class="row">
+          <div style="flex:1"><label for="law-add-url">URL</label>
+            <input type="text" id="law-add-url" placeholder="https://…"></div>
+          <div style="flex:1"><label for="law-add-official">Official URL (optional)</label>
+            <input type="text" id="law-add-official" placeholder="https://…"></div>
+        </div>
+        <button onclick="lawAddDocument(this)" style="margin-top:0">Add &amp; track now</button>
+        <div id="law-add-msg" class="hint" style="margin-top:8px"></div>
       </section>
       <section class="panel">
         <h2>Tracked laws</h2>

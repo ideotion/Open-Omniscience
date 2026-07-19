@@ -1894,6 +1894,15 @@ class LawDocument(Base):
     last_size: Mapped[int | None] = mapped_column(Integer)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime)
     last_status: Mapped[str | None] = mapped_column(String(255))  # honest last outcome (ok / fetch error / …)
+    # S4b (the Cambodia fix, law-vertical brief 2026-07-17): the catalog carries the
+    # document's OWN ASSERTED language/country (a French-language Cambodian code, an
+    # English-language India Code…), but registration used to drop it, so the corpus
+    # Article got no language -> wrong stoplist, no language facet. Additive, nullable:
+    # a document the catalog never states a language for stays honestly None, never
+    # guessed from the jurisdiction (uk/us are English, eu is multilingual, many
+    # jurisdictions are ambiguous).
+    language: Mapped[str | None] = mapped_column(String(8))
+    country: Mapped[str | None] = mapped_column(String(8))
     created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     revisions = relationship("LawRevision", back_populates="document", cascade="all, delete-orphan")

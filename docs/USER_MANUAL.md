@@ -1211,6 +1211,17 @@ almanac) and `GET /api/events/climate` (bundled El Niño dataset). **Weather con
 `/import-all`, `/import-url`; `/api/commodities/{symbol}/prices` (+ `/import-csv`,
 `/correlation`).
 
+**Governments** — per-country World Bank indicators + the choropleth map, read-only
+except the one consented fetch: `GET /api/governments/indicators|map|country/{iso}`;
+`POST /api/governments/load-standard` (+ `/load-standard/status`, a background job).
+**World law** — tracked statutes/gazettes/IP records, a research mirror (never legal
+advice): `GET /api/law/status|documents|documents/{id}|documents/{id}/view|changes`;
+`POST /api/law/documents` (add a document by URL — fetched immediately);
+`DELETE /api/law/documents/{id}` (stop tracking; history is kept); `POST /api/law/track`
+(fetch every watched document now) and `/api/law/seed` (re-seed the worldwide catalog).
+A tracked document becomes a first-class, searchable corpus article (When×Where×Who,
+keywords) alongside scraped news, with its amendment history a linked layer.
+
 **Wikipedia** — `GET /api/wiki/status|pages|changes`; `POST /api/wiki/pages`,
 `/track-now`, `/pages/{id}/track`; `GET /api/wiki/revisions/{id}`;
 `GET /api/wiki/languages` (a **flat, UI-locales-first** list, each option led by the

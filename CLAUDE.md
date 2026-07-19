@@ -6380,6 +6380,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   burn-down · the Observatory chain). NOTE for the tag-day checklist: the tagged 0.2.0 tree's
   own CHANGES still carries the pre-tag "tag is gated" wording (the amendment rides this flip
   PR, which lands after the tag) — cosmetic, recorded here so it never reads as an oversight.
+  **P0 RESULT (maintainer ran the job 2026-07-18/19): 5 pass · 0 fail · 0 not-measurable-here**
+  — P0.1 backup bounded-RAM (peak RSS +440 MB over a 2522 MB corpus) · P0.1 verify (manifest
+  signature + every volume checksum) · P0.2 staged restore + dry-run merge preview (live corpus
+  read-only) · P0.4 unlock 602 ms (bar 2000 ms) · P0.3 collector RSS +166 MB across 2 passes
+  (floor 512 MB); the report's own follow-ups carried forward: confirm unlock at full scale
+  with a COLD boot on the complete corpus + confirm the collector over a multi-day live soak.
+  TAG MECHANICS FACT (learned 2026-07-19): the session git proxy REFUSES tag pushes (HTTP 403
+  — branch refs only; this is also why v0.1.0 was never tagged from a session), so the tag is
+  cut from the MAINTAINER'S machine: `git fetch origin main && git tag -a v0.2.0 5b5452c15 &&
+  git push origin v0.2.0` — tag the WATCHED-GREEN SHA `5b5452c15` (blocking test lane + every
+  required gate green; only the NON-blocking Windows observation lane was still running, the
+  known #701 hung-runner pattern). Push the TAG ONLY (never create the release via the GitHub
+  UI — release.yml's own `gh release create` would then collide); release.yml re-runs the full
+  suite, verifies tag==pyproject(0.2.0), builds sdist+wheel+SHA256SUMS and publishes.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

@@ -2195,6 +2195,33 @@ def data_dir_persistence_report() -> dict:
     return _dp()
 
 
+@router.get("/law-coverage")
+def law_coverage(
+    download: bool = Query(False), db: Session = Depends(get_db)
+) -> JSONResponse:
+    """Per-jurisdiction law-tracking coverage/freshness (S5 of the law-vertical
+    brief 2026-07-17): "the maintainer's next 'is law working?' is answered by
+    one JSON." Counts + verdict tallies + freshness ages, no score. THE
+    COMPLETENESS PRINCIPLE: a tracked-document count is an entry point, never a
+    coverage claim — see ``src.law.coverage`` for the full caveat. With
+    ``download=1`` it returns as a dated attachment."""
+    from src.law.coverage import law_coverage_report
+
+    payload = law_coverage_report(db)
+    body = envelope(
+        kind="law-coverage",
+        query={},
+        count=payload.get("documents", 0),
+        payload=payload,
+    )
+    if download:
+        fname = f"oo-law-coverage-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+        return JSONResponse(
+            body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+        )
+    return JSONResponse(body)
+
+
 @router.get("/storage-footprint")
 def storage_footprint_report(download: bool = Query(False)) -> JSONResponse:
     """The COMPLETE on-disk footprint across ALL app stores, ITEMIZED per component (A12b):
@@ -2689,6 +2716,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # DB-10 §1b: the last saved page-size A/B bench report (read-only; never RUNS
         # the bench — that is its own background job, like p0-validation above).
         ("pagesize-bench.json", lambda: _pagesize_bench_last_member()),
+        # S5 (law-vertical brief 2026-07-17): per-jurisdiction law-tracking coverage/
+        # freshness — "is law working?" answered by one JSON, in the bundle by default.
+        ("law-coverage.json", lambda: law_coverage(download=False, db=db)),
     ]
 
 
