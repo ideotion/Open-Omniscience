@@ -82,14 +82,25 @@ def _keywords_group(db: Session, q: str) -> dict:
         .limit(_PER_GROUP)
         .all()
     )
+    # S3 (keyword -> super-group navigation): the omnibar shows only _PER_GROUP=3
+    # rows, so this batched reverse lookup is trivially cheap (cached index, no N+1).
+    from src.analytics.supergroup_index import supergroups_for_keywords
+
+    sg_by_term = supergroups_for_keywords(db, [(k.normalized_term, k.language) for k in rows])
+    items: list[dict] = []
+    for k in rows:
+        item: dict = {
+            "term": k.term, "normalized_term": k.normalized_term,
+            "frequency": k.frequency, "is_entity": bool(k.is_entity),
+            "language": k.language,
+        }
+        hits = sg_by_term.get(k.normalized_term, [])
+        if hits:
+            item["supergroups"] = hits
+        items.append(item)
     return {
         "kind": "keywords",
-        "items": [
-            {"term": k.term, "normalized_term": k.normalized_term,
-             "frequency": k.frequency, "is_entity": bool(k.is_entity),
-             "language": k.language}
-            for k in rows
-        ],
+        "items": items,
         "total": total,
         "note": "prefix match on the indexed normalized term",
     }

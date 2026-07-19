@@ -1826,10 +1826,19 @@
             run: () => window.open(it.url, "_blank")}));
         } else if (g.kind === "keywords") {
           const grp = head(t("Keywords"), g);
-          items.forEach(it => out.push({grp,
-            label: it.term + (it.frequency ? ` (${it.frequency})` : ""),
-            sub: t("opens its corpus window"),
-            run: () => openCorpus(it.normalized_term)}));
+          items.forEach(it => {
+            // S3: keyword -> super-group navigation. Plural membership renders every
+            // group name (never picks one); the palette row's single action still
+            // opens the keyword's own corpus window — the group VIEW is one more
+            // click away via the Keywords-subtab chip (richer HTML there).
+            const sgNote = (it.supergroups && it.supergroups.length)
+              ? " · " + t("part of") + " ⊕ " + it.supergroups.map(g2 => g2.name).join(", ")
+              : "";
+            out.push({grp,
+              label: it.term + (it.frequency ? ` (${it.frequency})` : ""),
+              sub: t("opens its corpus window") + sgNote,
+              run: () => openCorpus(it.normalized_term)});
+          });
         } else if (g.kind === "sources") {
           const grp = head(t("Sources"), g);
           items.forEach(it => out.push({grp, label: it.name, sub: it.domain || "",
@@ -9439,6 +9448,25 @@
           : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
         const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+      _sgScrollToTarget();  // S3: land on the deep-linked group after it renders
+    }
+
+    // S3 (keyword -> super-group navigation): jump from anywhere (the Keywords-subtab
+    // chip, a future card) to the Groups surface, scrolled to the exact group. Deep
+    // link via a pending target so it works whether Groups was already loaded (an
+    // instant scroll) or is loading now (loadSuperGroups scrolls when it finishes).
+    let _sgScrollTo = null;
+    function openSupergroup(sgId) {
+      _sgScrollTo = sgId;
+      showTab("insights");
+      if (_insSubtabs) _insSubtabs.select("supergroups"); else showInsightCat("supergroups");
+      if (_insLoaded.has("supergroups")) _sgScrollToTarget();
+    }
+    function _sgScrollToTarget() {
+      if (_sgScrollTo == null) return;
+      const id = _sgScrollTo; _sgScrollTo = null;
+      const el = document.getElementById("sg-card-" + id);
+      if (el && el.scrollIntoView) el.scrollIntoView({behavior: "smooth", block: "center"});
     }
 
     function sgCard(g) {
@@ -9477,7 +9505,7 @@
       const spark = (g.series && g.series.length)
         ? `<div style="margin-top:6px">${dashChartSvg(g.series.map(p => ({observed_on: p.date, price: p.count})), "")}</div>`
         : "";
-      return `<div class="sg-card">
+      return `<div class="sg-card" id="sg-card-${g.id}">
         <div class="sg-head"><b>${esc(g.name)}</b>
           <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span>
           <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
@@ -11522,10 +11550,16 @@
           + `<div class="muted">${esc(t("No keywords indexed across the matched articles yet."))}</div>`;
         return;
       }
+      // S3 (keyword -> super-group navigation): a "part of ⊕ <group>" chip per group
+      // the keyword belongs to (never picks one — plural membership renders every
+      // hit), linking straight to the group's own trend + members view.
+      const sgChips = (term) => (term.supergroups || []).map((g) =>
+        `<button class="chip tiny" onclick="openSupergroup(${g.id})"`
+        + ` title="${esc(t("Open this group's own trend + members"))}">⊕ ${esc(g.name)}</button>`).join(" ");
       const chips = d.terms.map((term) =>
         `<button class="chip" data-kwstat="${esc(term.term)}" onclick="openCorpus(${esc(JSON.stringify(term.term))})"`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(term.term)}${kwTransHtml(term)}${kwTentativeHtml(term)}`
-        + ` <span class="muted">${term.articles}</span></button>`).join(" ");
+        + ` <span class="muted">${term.articles}</span></button>${sgChips(term)}`).join(" ");
       // Audit-07 B1 disclosure: our extractor does NOT segment CJK, so those keywords
       // are unreliable; surface it when CJK terms are present.
       const cjk = d.terms.some((tm) => /[぀-ヿ㐀-䶿一-鿿가-힯]/.test(tm.term));

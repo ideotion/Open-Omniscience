@@ -4287,6 +4287,21 @@ def test_supergroup_stats_ui():
     assert "g.rate.growth" in fn, "S1.5: the disclosed recent-vs-baseline rate must render"
 
 
+def test_keyword_to_supergroup_navigation():
+    """Supergroups brief S3: a keyword's super-group membership is surfaced as a
+    chip in the analysis window's Keywords subtab AND on omnibar keyword rows,
+    linking to the group's own view (deep-scrolled to it, plural membership
+    rendering every hit, never picking one)."""
+    src = _ui_source()
+    fn = src[src.index("function anRenderKwChips(") : src.index("function anContextHtml(")]
+    assert "term.supergroups" in fn and "openSupergroup(" in fn, (
+        "the Keywords-subtab chip must render every super-group the keyword belongs to"
+    )
+    assert "function openSupergroup(" in src, "the deep-link handler must exist"
+    assert 'id="sg-card-${g.id}"' in src, "each group card must be addressable for the deep-link scroll"
+    assert "it.supergroups" in src, "omnibar keyword rows must surface the same membership"
+
+
 def test_task_manager_opens_in_a_standalone_tab():
     """The task manager opens in its OWN browser tab (maintainer 2026-06-18) so it
     can stay parked on the desktop while the user works in the app. Pinned: the

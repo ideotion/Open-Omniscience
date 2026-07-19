@@ -627,6 +627,20 @@ def insights_corpus_keywords(
             f"Counts only, never a score — scoped to the top {len(ids)} matched "
             "article(s) by relevance."
         )
+        # S3 (keyword -> super-group navigation): ONE batched reverse lookup for the
+        # whole page of terms — the reverse index is cached per process, so this is
+        # in-memory lookups, never an N+1 query per row. Plural membership renders as
+        # every hit (never picked down to one).
+        from src.analytics.supergroup_index import supergroups_for_keywords
+
+        terms = res.get("terms", [])
+        sg_by_term = supergroups_for_keywords(
+            db, [(t["normalized"], t.get("language")) for t in terms]
+        )
+        for t in terms:
+            hits = sg_by_term.get(t["normalized"], [])
+            if hits:
+                t["supergroups"] = hits
         return res
 
     return _deadlined(db, key, _compute)
@@ -2026,6 +2040,9 @@ def create_supergroup(body: SuperGroupCreate, db: Session = Depends(get_db)) -> 
     sg = KeywordSuperGroup(name=name, color=(body.color or None))
     db.add(sg)
     db.commit()
+    from src.analytics.supergroup_index import invalidate as _invalidate_sg_index
+
+    _invalidate_sg_index()  # S3: the keyword->super-group reverse lookup is stale now
     return {"id": sg.id, "name": sg.name, "color": sg.color}
 
 
@@ -2035,6 +2052,9 @@ def delete_supergroup(sg_id: int, db: Session = Depends(get_db)) -> dict:
     sg = _get_supergroup(db, sg_id)
     db.delete(sg)
     db.commit()
+    from src.analytics.supergroup_index import invalidate as _invalidate_sg_index
+
+    _invalidate_sg_index()
     return {"deleted": sg_id}
 
 
@@ -2068,6 +2088,9 @@ def add_supergroup_members(
         existing.add(rid)
         added.append(rid)
     db.commit()
+    from src.analytics.supergroup_index import invalidate as _invalidate_sg_index
+
+    _invalidate_sg_index()
     return {"supergroup": sg.id, "added": added, "members": sorted(existing)}
 
 
@@ -2082,6 +2105,9 @@ def remove_supergroup_member(sg_id: int, normalized: str, db: Session = Depends(
         db.query(KeywordSuperGroupMember).filter_by(supergroup_id=sg_id, normalized_term=n).delete()
     )
     db.commit()
+    from src.analytics.supergroup_index import invalidate as _invalidate_sg_index
+
+    _invalidate_sg_index()
     return {"supergroup": sg_id, "removed": n, "deleted": int(deleted)}
 
 
