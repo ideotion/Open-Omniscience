@@ -913,6 +913,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     default repos — a versioned-Python install closes the package gap, not the interpreter gap); `sudo`/apt
     need an **administration password** set at the Welcome Screen (OFF by default); apt runs over **Tor**; apt
     packages are **amnesic** unless added via Persistent Storage → Additional Software.
+  - **SQLCipher CANNOT DISCOVER `cipher_page_size` FROM THE FILE — a store built at a non-default
+    size reads as WRONG-PASSPHRASE unless the opener declares the SAME size right after `PRAGMA
+    key` (2026-07-19, the pagesize-bench field failure "the passphrase does not open
+    .pagesize-bench-16384.db"):** the maintainer's passphrase was CORRECT — `connect()` just never
+    set the page size, so the 4096 target opened (the default) and the 16384 target HMAC-failed.
+    `connect()` now takes `cipher_page_size=` for exactly this case. TWO SIBLING TRAPS fixed in the
+    same pass, both live-reproduced (sqlcipher3-wheels installs in the sandbox — the encrypted
+    paths are NO LONGER unrunnable here): (a) some sqlcipher3 builds return PRAGMA read-backs as
+    TEXT (`'16384'`), false-failing an `==` self-verify on a perfect rebuild — always `int()` the
+    read-back; (b) a function that ACCEPTS an explicit `passphrase` but opens some of its
+    connections via the ambient process key is half-wired — thread the key through EVERY open
+    (source + verify + workload), or the explicit-key path fails in ways the in-app path hides.
+    And the meta-lesson: "the encrypted path shares the code shape and self-verifies at runtime"
+    was the test docstring's exact excuse — the untested branch is where all three bugs lived;
+    skip-guarded encrypted tests now pin it (they RUN in CI and in any sandbox via the wheels).
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now

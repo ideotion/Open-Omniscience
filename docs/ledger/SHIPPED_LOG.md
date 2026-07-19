@@ -3474,3 +3474,37 @@ SAVEPOINT — before wrapping an existing helper in `begin_nested`, grep it and 
 commit/rollback. And a swallowed-exception design hides exactly this failure class: the standalone
 repro calling `index_article` directly is what surfaced the real exception (bonus: on py3.11 the
 swallow path itself failed to import — PEP-695 in `write.py` — which is what exposed the traceback).
+
+## 2026-07-19 — pagesize-bench encrypted-path fix (the cipher_page_size reopen trap)
+
+Field failure: "Bench failed: WrongPassphraseError: the passphrase does not open
+.pagesize-bench-16384.db (or the file is damaged)" on every encrypted corpus. The
+maintainer's hypothesis was a missing UI passphrase field (the P0-panel pattern); the
+live reproduction DISPROVED it — the passphrase was correct and available (the bench's
+own `BenchRefused` for the no-passphrase case never fired). THREE stacked defects, all
+in the encrypted branch the tests never exercised ("the encrypted path shares the code
+shape and self-verifies at runtime; sqlcipher3 is CI/operator territory" — the shipping
+test file's own docstring):
+
+1. **The reopen trap (the crash):** SQLCipher cannot discover `cipher_page_size` from
+   the file; a store built at a non-default size HMAC-fails its first read unless the
+   opener declares the SAME size right after `PRAGMA key` — and the failure surfaces as
+   wrong-passphrase, not as a page-size error. `connect()` gained `cipher_page_size=`
+   (encrypted-open path only, default None = byte-identical); the bench's self-verify
+   and workload opens pass the candidate size. This is why 4096 worked (SQLCipher 4's
+   default) and 16384 always died.
+2. **TEXT PRAGMA read-backs (the false verify-fail hiding behind #1):** the sqlcipher3
+   build in use returns `PRAGMA page_size` as `'16384'` (str) — `got != wanted` on a
+   perfect rebuild. The self-verify now `int()`s every read-back.
+3. **Half-threaded explicit passphrase:** `rebuild_at_pragmas(passphrase=...)` used the
+   explicit key only for the ATTACH; the source open, verify open and `bench_store`
+   silently depended on the ambient process key. The key now threads through every open.
+
+Hardening: `run_pagesize_ab`'s per-size catch now includes `WrongPassphraseError` /
+`DatabaseLockedError` so an unreadable target degrades to a per-size `error` entry in
+the report instead of aborting the whole job (the degrade-loudly rule). EMPIRICAL
+UNBLOCK worth remembering: `pip install sqlcipher3-wheels` WORKS in the sandbox — the
+encrypted paths are no longer untestable here; the fix was live-reproduced end-to-end
+(fail → fix → both sizes rebuild+verify+bench green) and pinned as skip-guarded tests
+that run in CI and in any wheels-equipped sandbox. No UI change needed: the worker's
+`passphrase=None` → `get_passphrase()` (the unlocked process key) is the correct design.
