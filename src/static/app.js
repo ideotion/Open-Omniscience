@@ -1678,7 +1678,7 @@
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
-      if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); }  // Item AC: explore/hide/tag; family merge/split curation relocated here 2026-07-18 (invariant #8)
+      if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); }  // Item AC: explore/hide/tag; family + super-group curation relocated here (invariant #8)
       if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
@@ -9429,10 +9429,8 @@
           api("/api/insights/top?group=true&limit=200" + tgtLangParam()),
           api("/api/insights/rings"),
         ]);
-        $("sg-family-options").innerHTML = (top.terms || []).map(f =>
-          `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
-        $("sg-ring-options").innerHTML = (rings.rings || []).map(r =>
-          `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
+        // (S5: the add-family/add-ring datalists moved to the Settings curation
+        // panel — this data view no longer populates them.)
         // Item #4: index the per-language mention breakdown carried by grouped ring rows,
         // and fill the ring-map picker (kept selection across a refresh).
         _ringLangIndex = {};
@@ -9469,11 +9467,16 @@
       if (el && el.scrollIntoView) el.scrollIntoView({behavior: "smooth", block: "center"});
     }
 
+    // S5 (curation relocated to Settings -> Keywords, §0 row 9): sgCard is now the
+    // READ-ONLY DATA VIEW (Insights -> Groups) -- stats, dominance, trend, members
+    // with provenance, but no create/add/remove/delete. sgCurationCard (below) is
+    // the interactive counterpart rendered ONLY in Settings.
     function sgCard(g) {
       // Row 7 (display noise): zero-mention members collapse behind a count instead
       // of rendering a flat wall of empty chips.
       const shown = g.members.filter(m => m.mentions > 0);
       const zeroCount = g.members.length - shown.length;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const chips = shown.length ? shown.map(m => {
         const isRing = !!m.ring_id;
         const inner = isRing
@@ -9483,11 +9486,13 @@
         // that stated in its hover, never silently summed as if exclusive.
         const alsoIn = (m.also_in && m.also_in.length)
           ? ` — also in: ${m.also_in.join(", ")}` : "";
-        const tip = esc((isRing ? (m.ring_members || []).join(" · ") : "remove from this group") + alsoIn);
-        return `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
-           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""} ✕</button>`;
+        const tip = esc(t("Open this keyword's own analysis window") + alsoIn);
+        // A data chip navigates (its own analysis window) rather than mutating the
+        // group -- curation actions live in Settings now.
+        return `<button class="chip" onclick="openCorpus(${esc(JSON.stringify(m.normalized))})"
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""}</button>`;
       }).join("")
-        : '<span class="muted">No members yet — add a family or a ring below.</span>';
+        : '<span class="muted">No members yet.</span>';
       const zeroChip = zeroCount > 0
         ? `<span class="muted" title="${esc(g.members.filter(m => m.mentions === 0).map(m => m.normalized).join(", "))}">+${zeroCount} with no mentions yet</span>`
         : "";
@@ -9507,11 +9512,61 @@
         : "";
       return `<div class="sg-card" id="sg-card-${g.id}">
         <div class="sg-head"><b>${esc(g.name)}</b>
-          <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span>
+          <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span></div>
+        ${domLine}${rateLine}${spark}
+        <div class="fam-chips" style="margin-top:6px">${chips}${zeroChip ? " " + zeroChip : ""}</div></div>`;
+    }
+
+    async function createSuperGroup() {
+      // S5 (curation relocated to Settings): the create input lives at Settings ->
+      // Keywords now; Insights -> Groups keeps only the read-only data view.
+      const name = $("sgc-name").value.trim();
+      if (!name) { toast("Name the super-group.", "err"); return; }
+      try {
+        await api("/api/insights/supergroups", {method: "POST", body: JSON.stringify({name})});
+        $("sgc-name").value = ""; toast("Super-group created."); loadSupergroupCuration();
+        if (_insLoaded.has("supergroups")) loadSuperGroups();  // keep the data view in sync
+      } catch (e) { toast("Create failed: " + e.message, "err"); }
+    }
+
+    // -- Super-group CURATION (Settings -> Keywords; the interactive counterpart of
+    // the read-only sgCard data view in Insights -> Groups) ------------------------
+    async function loadSupergroupCuration() {
+      const box = $("sgc-list");
+      if (!box) return;
+      box.innerHTML = '<div class="muted">Loading…</div>';
+      try {
+        const [sgs, top, rings] = await Promise.all([
+          api("/api/insights/supergroups"),  // no series_top -- curation needs no rate/sparkline
+          api("/api/insights/top?group=true&limit=200" + tgtLangParam()),
+          api("/api/insights/rings"),
+        ]);
+        $("sg-family-options").innerHTML = (top.terms || []).map(f =>
+          `<option value="${esc(f.normalized)}">${esc(f.term)} (${f.mentions})</option>`).join("");
+        $("sg-ring-options").innerHTML = (rings.rings || []).map(r =>
+          `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
+        box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCurationCard).join("")
+          : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
+      } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
+    }
+
+    function sgCurationCard(g) {
+      const chips = g.members.length ? g.members.map(m => {
+        const isRing = !!m.ring_id;
+        const inner = isRing
+          ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">ring·${(m.ring_members || []).length}</span>`
+          : esc(m.normalized);
+        const tip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
+        return `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>`;
+      }).join("")
+        : '<span class="muted">No members yet — add a family or a ring below.</span>';
+      return `<div class="sg-card">
+        <div class="sg-head"><b>${esc(g.name)}</b>
+          <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"}</span>
           <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
             onclick="deleteSuperGroup(this)">delete</button></div>
-        ${domLine}${rateLine}${spark}
-        <div class="fam-chips" style="margin-top:6px">${chips}${zeroChip ? " " + zeroChip : ""}</div>
+        <div class="fam-chips" style="margin-top:6px">${chips}</div>
         <div class="row" style="margin-top:8px">
           <div style="flex:2"><input class="sg-fam-in" list="sg-family-options" placeholder="add a family…"
             data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddMember(this)"></div>
@@ -9524,21 +9579,13 @@
         </div></div>`;
     }
 
-    async function createSuperGroup() {
-      const name = $("sg-name").value.trim();
-      if (!name) { toast("Name the super-group.", "err"); return; }
-      try {
-        await api("/api/insights/supergroups", {method: "POST", body: JSON.stringify({name})});
-        $("sg-name").value = ""; toast("Super-group created."); loadSuperGroups();
-      } catch (e) { toast("Create failed: " + e.message, "err"); }
-    }
-
     async function sgAddMember(input) {
       const sg = input.dataset.sg, norm = input.value.trim();
       if (!norm) return;
       try {
         await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({normalized: [norm]})});
-        toast("Added."); loadSuperGroups();
+        toast("Added."); loadSupergroupCuration();
+        if (_insLoaded.has("supergroups")) loadSuperGroups();
       } catch (e) { toast("Add failed: " + e.message, "err"); }
     }
 
@@ -9547,14 +9594,16 @@
       if (!ring) return;
       try {
         await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({rings: [ring]})});
-        toast("Ring added."); loadSuperGroups();
+        toast("Ring added."); loadSupergroupCuration();
+        if (_insLoaded.has("supergroups")) loadSuperGroups();
       } catch (e) { toast("Add ring failed: " + e.message, "err"); }
     }
 
     async function sgRemoveMember(btn) {
       try {
         await api(`/api/insights/supergroups/${btn.dataset.sg}/members?normalized=` + encodeURIComponent(btn.dataset.norm), {method: "DELETE"});
-        loadSuperGroups();
+        loadSupergroupCuration();
+        if (_insLoaded.has("supergroups")) loadSuperGroups();
       } catch (e) { toast("Remove failed: " + e.message, "err"); }
     }
 
@@ -9562,7 +9611,8 @@
       if (!confirm(`Delete super-group "${btn.dataset.name}"? (keyword data is untouched)`)) return;
       try {
         await api(`/api/insights/supergroups/${btn.dataset.sg}`, {method: "DELETE"});
-        toast("Deleted."); loadSuperGroups();
+        toast("Deleted."); loadSupergroupCuration();
+        if (_insLoaded.has("supergroups")) loadSuperGroups();
       } catch (e) { toast("Delete failed: " + e.message, "err"); }
     }
 

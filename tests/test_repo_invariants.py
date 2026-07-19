@@ -4287,6 +4287,31 @@ def test_supergroup_stats_ui():
     assert "g.rate.growth" in fn, "S1.5: the disclosed recent-vs-baseline rate must render"
 
 
+def test_supergroup_curation_relocated_to_settings():
+    """Supergroups brief S5: create/add-family/add-ring/delete/remove-member move
+    to Settings -> Keywords (sgCurationCard); Insights -> Groups (sgCard) keeps
+    ONLY the read-only data view (stats/dominance/trend/members-with-provenance),
+    per the Desk rule -- nothing lost, just relocated."""
+    src = _ui_source()
+    assert 'id="sgc-name"' in src and 'onclick="createSuperGroup()"' in src, (
+        "the create-group input must live in the Settings curation panel"
+    )
+    assert "function loadSupergroupCuration(" in src and "function sgCurationCard(" in src
+    assert 'loadSupergroupCuration();' in src[
+        src.index('if (cat === "keywords")') : src.index('if (cat === "keywords")') + 200
+    ], "the Settings Keywords subtab must load the super-group curation panel"
+
+    # sgCard (Insights, the data view) must carry NONE of the mutation actions.
+    card_fn = src[src.index("function sgCard(") : src.index("async function createSuperGroup(")]
+    for forbidden in ("sgRemoveMember", "deleteSuperGroup", "sgAddMember(this", "sgAddRing(this"):
+        assert forbidden not in card_fn, f"sgCard (data view) must not carry {forbidden!r}"
+
+    # sgCurationCard (Settings) carries all four.
+    curation_fn = src[src.index("function sgCurationCard(") : src.index("async function sgAddMember(")]
+    for required in ("deleteSuperGroup", "sgAddMember(this", "sgAddRing(this", "sgRemoveMember(this)"):
+        assert required in curation_fn, f"sgCurationCard must carry {required!r}"
+
+
 def test_keyword_to_supergroup_navigation():
     """Supergroups brief S3: a keyword's super-group membership is surfaced as a
     chip in the analysis window's Keywords subtab AND on omnibar keyword rows,

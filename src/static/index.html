@@ -982,16 +982,11 @@
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
       <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families and rings</span> <span id="sg-basis"></span></h2>
-      <p class="hint" style="margin-top:0">Gather several families — or cross-language rings (one concept across languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war over Russia, Ukraine, Putin, sanctions…) for sorting and discovery. A ring member makes the super-group span languages (the super-ring model). Pure curation — nothing in the keyword store changes.</p>
+      <p class="hint" style="margin-top:0">Several families — or cross-language rings (one concept across languages, e.g. election / élection / wahl) — gathered under one theme (e.g. Russia–Ukraine war over Russia, Ukraine, Putin, sanctions…), with real statistics: a dominance disclosure, a windowed trend, and cross-group overlap. Creating a group, adding members, and deleting live in Settings → Keywords — this view is the data.</p>
       <div class="row" style="align-items:center">
-        <div style="flex:2"><label for="sg-name">New super-group</label>
-          <input id="sg-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
-        <div style="flex:0 0 auto;align-self:end"><button onclick="createSuperGroup()">Create</button></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadSuperGroups()">Refresh</button></div>
+        <button class="secondary" onclick="loadSuperGroups()">Refresh</button>
         <span id="sg-status" class="hint"></span>
       </div>
-      <datalist id="sg-family-options"></datalist>
-      <datalist id="sg-ring-options"></datalist>
       <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <h2 style="font-size:13px;margin:0">Cross-country map of a concept</h2>
@@ -1869,6 +1864,23 @@
       </div>
       <div id="famc-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
       <div id="fam-overrides" style="margin-top:14px"></div>
+    </section>
+    <section class="panel">
+      <h2 style="margin-top:0;font-size:13px">Super-group curation <span class="muted">— create, add, remove, delete</span></h2>
+      <p class="hint" style="margin-top:0">Gather several families — or cross-language rings (one concept across
+        languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war over Russia, Ukraine,
+        Putin, sanctions…). A ring member makes the group span languages (the super-ring model). Pure curation —
+        nothing in the keyword store changes; see the group's real statistics in Insights → Groups.</p>
+      <div class="row" style="align-items:center">
+        <div style="flex:2"><label for="sgc-name">New super-group</label>
+          <input id="sgc-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="createSuperGroup()">Create</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadSupergroupCuration()">Refresh</button></div>
+        <span id="sgc-status" class="hint"></span>
+      </div>
+      <datalist id="sg-family-options"></datalist>
+      <datalist id="sg-ring-options"></datalist>
+      <div id="sgc-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
     </section>
     </div>
 
