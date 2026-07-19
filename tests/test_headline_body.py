@@ -70,7 +70,7 @@ def _art(db, aid, title, body, *, lang="en", days_ago=1):
 def test_fires_on_lexical_divergence(db):
     _src(db, 1, "a.test")
     # Headline is about aliens/Pentagon; the body is about interest rates -> no overlap.
-    _art(db, 1, "Aliens spotted over the Pentagon in shocking new footage tonight", BODY)
+    _art(db, 1, "Pentagon aliens hijack interest rates in shocking new footage tonight", BODY)
     res = find_headline_body_mismatch(db)
     assert res["count"] == 1, res
     it = res["items"][0]
@@ -113,7 +113,7 @@ def test_sentiment_gap_is_english_only(db):
 
 def test_item_carries_components_never_a_score(db):
     _src(db, 1, "a.test")
-    _art(db, 1, "Aliens spotted over the Pentagon in shocking new footage tonight", BODY)
+    _art(db, 1, "Pentagon aliens hijack interest rates in shocking new footage tonight", BODY)
     res = find_headline_body_mismatch(db)
     it = res["items"][0]
     # Components present (incl. the SECONDARY outrage annotation)...
@@ -136,8 +136,35 @@ def test_item_carries_components_never_a_score(db):
 def test_bounded_scan_only_recent(db):
     _src(db, 1, "a.test")
     # An OLD mismatching article is outside the recent window -> not scanned.
-    _art(db, 1, "Aliens spotted over the Pentagon in shocking new footage tonight", BODY, days_ago=400)
+    _art(db, 1, "Pentagon aliens hijack interest rates in shocking new footage tonight", BODY, days_ago=400)
     assert find_headline_body_mismatch(db, recent_days=14)["count"] == 0
+
+
+def test_high_inflection_language_is_gated_not_a_finding(db):
+    """Row 12 (2026-07-18 field export): four cards, all lexical_div == 1.0, including
+    two Estonian -- a highly-inflected language where bare surface-form comparison is
+    unreliable. An Estonian article must produce NO card, regardless of how divergent
+    the (unreliable) measure would otherwise look."""
+    _src(db, 1, "a.test")
+    _art(db, 1, "Pentagon aliens hijack interest rates in shocking new footage tonight",
+         BODY, lang="et")
+    res = find_headline_body_mismatch(db)
+    assert res["count"] == 0, res["items"]
+    assert res["excluded_high_inflection_language"] >= 1
+    assert "et" in res["method"]
+
+
+def test_complete_non_overlap_is_a_method_failure_not_a_finding(db):
+    """A d_lex of EXACTLY 1.0 against a real, non-empty body is treated as a method-
+    failure signal, never a finding -- a genuine mismatch almost always shares SOME
+    word (a name, a place) with the body; total non-overlap is the extraction bug's
+    own fingerprint."""
+    _src(db, 1, "a.test")
+    # Zero shared vocabulary at all with the economics BODY (not even one word).
+    _art(db, 1, "Wizards summon a dragon over the castle in a spectacular parade", BODY)
+    res = find_headline_body_mismatch(db)
+    assert res["count"] == 0, res["items"]
+    assert res["excluded_method_failure"] >= 1
 
 
 def test_producer_emits_a_valid_debunk_card(db):
@@ -146,7 +173,7 @@ def test_producer_emits_a_valid_debunk_card(db):
     from src.briefing.producers import headline_body_mismatch
 
     _src(db, 1, "a.test")
-    _art(db, 1, "Aliens spotted over the Pentagon in shocking new footage tonight", BODY)
+    _art(db, 1, "Pentagon aliens hijack interest rates in shocking new footage tonight", BODY)
     cards = headline_body_mismatch(db)
     assert len(cards) == 1
     card = cards[0]

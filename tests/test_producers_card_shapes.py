@@ -219,3 +219,32 @@ def test_producer_failures_are_isolated_not_fatal():
     finally:
         # Restore the registry so we don't leak the bad producer into other tests.
         registry._REGISTRY = [(n, p) for (n, p) in registry._REGISTRY if n != "audit_boom_producer"]
+
+
+def test_run_all_drops_exact_type_key_duplicates_across_producers():
+    """S5.1 (Leads-calibration cross-card dedup belt): two DIFFERENT producers that
+    happen to emit the SAME (type, key) card must not both survive into the feed --
+    the belt beneath each producer's own dedup key, loudly logged (never silent)."""
+    from src.briefing import registry
+    from src.briefing.card import Card
+
+    def _one(_session):
+        return [Card(type="audit_dup", title="t1", summary="s1", bucket="context",
+                     method="m", caveat="c", key="dup-key")]
+
+    def _two(_session):
+        return [Card(type="audit_dup", title="t2", summary="s2", bucket="context",
+                     method="m", caveat="c", key="dup-key")]
+
+    registry.register("audit_dup_producer_1", _one)
+    registry.register("audit_dup_producer_2", _two)
+    try:
+        cards = registry.run_all(object())
+        dups = [c for c in cards if c.type == "audit_dup" and c.key == "dup-key"]
+        assert len(dups) == 1, dups
+        assert dups[0].title == "t1"  # the FIRST (registration-order) occurrence survives
+    finally:
+        registry._REGISTRY = [
+            (n, p) for (n, p) in registry._REGISTRY
+            if n not in ("audit_dup_producer_1", "audit_dup_producer_2")
+        ]

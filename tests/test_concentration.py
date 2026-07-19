@@ -98,6 +98,68 @@ def test_silent_below_min_share(db):
     assert find_flooded_topics(db, **KW)["count"] == 0
 
 
+def test_min_recent_count_floor_blocks_a_small_sample(db):
+    """Row 5 (2026-07-18 field export): a two-proportion z-test on 2-3 articles is not a
+    valid sample for the normal approximation, however large z comes out — a count floor
+    on the keyword's OWN recent mentions (not just the source's total article count) is
+    required."""
+    db.add(Source(id=5, name="S5", domain="s5.test"))
+    db.add(Keyword(id=502, term="rareterm", normalized_term="rareterm"))
+    db.commit()
+    for aid in range(1, 5):  # 4 recent articles, 3 mention the candidate keyword
+        _km(db, 5, 502 if aid <= 3 else FILLER, RECENT)
+    for _ in range(8):  # 8 prior articles, the keyword essentially absent
+        _km(db, 5, FILLER, PRIOR)
+    db.commit()
+    assert find_flooded_topics(db, **KW)["count"] == 0
+
+
+def test_generic_furniture_term_never_floods_but_a_real_event_term_does(db):
+    """Row 4 (2026-07-18 field export, RTV SLO "vir"/"lani"): a term carried by nearly
+    every active same-language source is publishing furniture, not a real topic, even
+    when its own per-source z-test would otherwise fire — while a term concentrated in
+    ONE source (a genuine event) still surfaces."""
+    for sid in (10, 11, 12):
+        db.add(Source(id=sid, name=f"S{sid}", domain=f"s{sid}.test", language="sl"))
+    db.add(Keyword(id=601, term="vir", normalized_term="vir", language="sl"))
+    db.add(Keyword(id=602, term="event602", normalized_term="event602", language="sl"))
+    db.commit()
+
+    # Source 10: a real jump on BOTH terms (so the generic gate — not an earlier gate —
+    # is what has to stop "vir").
+    for _ in range(15):
+        _km(db, 10, 602, RECENT)  # event602
+    for _ in range(15):
+        _km(db, 10, 601, RECENT)  # vir
+    for _ in range(20):
+        _km(db, 10, FILLER, PRIOR)  # both essentially absent historically
+
+    # Sources 11/12: only "vir" (attribution-line furniture on nearly every article,
+    # regardless of publisher) — never "event602" (which stays a single-source story).
+    _km(db, 11, 601, RECENT)
+    _km(db, 12, 601, RECENT)
+    db.commit()
+
+    res = find_flooded_topics(db, **KW)
+    terms = {it["term"] for it in res["items"]}
+    assert "vir" not in terms, res["items"]  # ubiquitous across active sl sources -> gated
+    assert "event602" in terms, res["items"]  # concentrated in one source -> a real flood
+    assert "carried by" in res["method"] or "same-language" in res["method"]
+
+
+def test_internal_channel_source_is_exempt_from_flood_candidacy(db):
+    """Row 7 (2026-07-18 field export): a newsletter import / law tracker / wiki edition
+    is the user's own import channel, not a publisher whose 'conduct' this producer
+    should be judging."""
+    db.add(Source(id=6, name="Law tracker", domain="law.us.local", source_type="legal"))
+    db.commit()
+    _spread(db, 6, RECENT, n=5, k_hits=5)
+    _spread(db, 6, PRIOR, n=8, k_hits=1)
+    res = find_flooded_topics(db, **KW)
+    assert res["count"] == 0, res
+    assert "publisher" in res["method"]
+
+
 def test_no_score_and_caveat(db):
     _spread(db, 1, RECENT, n=5, k_hits=5)
     _spread(db, 1, PRIOR, n=8, k_hits=1)

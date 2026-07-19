@@ -52,6 +52,7 @@ def find_flooded_topics(
     min_share: float = 0.25,
     z_min: float = 2.5,
     min_prior_articles: int = 10,
+    min_recent_count: int = 5,
     max_sources: int = 120,
     max_items: int = 12,
 ) -> dict:
@@ -105,7 +106,41 @@ def find_flooded_topics(
         key=lambda t: -t[1],
     )[:max_sources]
 
+    from src.analytics.generic_terms import GENERIC_TERM_MIN_SHARE, is_generic_by_df_ubiquity
+    from src.analytics.managed import normalize_lang
     from src.analytics.queries import _hidden_predicate
+    from src.catalog.provenance import WEB, provenance_of
+
+    # Internal-channel exemption (S1.3, row 7): this producer is about PUBLISHER conduct,
+    # so a source that is not a plain web publisher -- the user's own newsletter import,
+    # a law-tracker synthetic source, a wiki edition -- is never a flood candidate; an
+    # unresolvable source (deleted between queries) defaults to web (not exempted, the
+    # pre-existing behaviour).
+    if cands:
+        cids = [s for s, _ in cands]
+        prov: dict[int, str] = {}
+        for i in range(0, len(cids), 400):
+            chunk = cids[i : i + 400]
+            for sid, dom, st in session.query(Source.id, Source.domain, Source.source_type).filter(
+                Source.id.in_(chunk)
+            ):
+                prov[int(sid)] = provenance_of(dom, st)
+        cands = [(s, n) for s, n in cands if prov.get(s, WEB) == WEB]
+
+    # Per-language active-source counts over the RECENT window (the DF-ubiquity gate's
+    # denominator, S1.2): every source with any recent activity, bucketed by language, in
+    # ONE small query -- not per-candidate.
+    active_by_lang: dict[str, int] = {}
+    if src_recent:
+        sids = list(src_recent.keys())
+        for i in range(0, len(sids), 400):
+            chunk = sids[i : i + 400]
+            for _sid, lang in session.query(Source.id, Source.language).filter(
+                Source.id.in_(chunk)
+            ):
+                lg = normalize_lang(lang)
+                if lg:
+                    active_by_lang[lg] = active_by_lang.get(lg, 0) + 1
 
     is_hidden = _hidden_predicate()
     items: list[dict] = []
@@ -117,6 +152,8 @@ def find_flooded_topics(
         prior_kw = _per_keyword(source_id, b_start, r_start)
         for kid, a_now in recent_kw.items():
             a_now = int(a_now or 0)
+            if a_now < min_recent_count:
+                continue  # too few articles for the normal approximation behind the z-test
             p_now = a_now / n_now
             if p_now < min_share:
                 continue  # not a flood share
@@ -133,6 +170,20 @@ def find_flooded_topics(
             kw = session.get(Keyword, kid)
             if kw is None or is_hidden(kw.normalized_term):
                 continue
+            kw_lang = normalize_lang(kw.language) if kw.language else None
+            if kw_lang:
+                term_sources = int(
+                    session.query(func.count(distinct(KeywordMention.source_id)))
+                    .filter(
+                        KeywordMention.keyword_id == kid,
+                        KeywordMention.observed_on >= r_start,
+                        KeywordMention.observed_on < r_hi,
+                    )
+                    .scalar()
+                    or 0
+                )
+                if is_generic_by_df_ubiquity(term_sources, active_by_lang.get(kw_lang, 0)):
+                    continue  # publishing furniture / a term nearly every active source carries
             article_ids = sorted(
                 r[0]
                 for r in session.query(KeywordMention.article_id)
@@ -170,12 +221,20 @@ def find_flooded_topics(
         "baseline_days": baseline_days,
         "min_share": min_share,
         "z_min": z_min,
+        "min_recent_count": min_recent_count,
         "method": (
-            "Per source with >= {mra} recent articles and >= {mpa} prior-period articles: a "
-            "two-proportion z-test of its recent share of a keyword (>= {ms}) vs its own "
-            "prior share. Fires at z >= {zm}. Reads the denormalised source_id only (no "
-            "content decrypt), so it covers re-indexed articles. Counts only, no score.".format(
+            "Per WEB-publisher source (a newsletter import / law tracker / wiki edition is "
+            "not a publisher and is excluded) with >= {mra} recent articles and >= {mpa} "
+            "prior-period articles, and the keyword itself mentioned in >= {mrc} recent "
+            "articles (a count floor so the z-test's normal approximation is not asked to "
+            "trust 2-3 articles): a two-proportion z-test of its recent share of a keyword "
+            "(>= {ms}) vs its own prior share. Fires at z >= {zm}. Excludes a keyword carried "
+            "by >= {gts:.0%} of same-language active sources in the window (publishing "
+            "furniture / attribution boilerplate, not a real topic). Reads the denormalised "
+            "source_id only (no content decrypt), so it covers re-indexed articles. Counts "
+            "only, no score.".format(
                 mra=min_recent_articles, mpa=min_prior_articles, ms=min_share, zm=z_min,
+                mrc=min_recent_count, gts=GENERIC_TERM_MIN_SHARE,
             )
         ),
         "caveat": FLOOD_CAVEAT,

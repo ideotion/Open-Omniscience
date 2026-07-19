@@ -15,7 +15,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from src.analytics.non_article_scan import scan_non_article_candidates
+from src.analytics.non_article_scan import scan_non_article_candidates, suspected_non_article_ids
 from src.database.models import Article, Base, Source
 
 _BANNED = ("score", "ranking", "rating", "grade")
@@ -87,3 +87,20 @@ def test_bounded_id_sample_per_reason():
     out = scan_non_article_candidates(s, sample_per_reason=1)
     tax = next(r for r in out["by_reason"] if r["signal"] == "url_taxonomy")
     assert tax["count"] == 2 and len(tax["sample_ids"]) == 1  # count is full, the sample is bounded
+
+
+def test_suspected_non_article_ids_scoped_to_a_member_set():
+    """S1.4 (row 10): a cluster-building producer's member-exclusion seam — scoped to a
+    SPECIFIC id set (never the whole corpus), never flags a real article, and returns []
+    for an empty input rather than scanning everything."""
+    s = _corpus()
+    ids = [a.id for a in s.query(Article).order_by(Article.id).all()]
+    real_id, brief_id, home_id, tag1_id, section_id, tag2_id = ids
+
+    out = suspected_non_article_ids(s, ids)
+    assert out == {home_id, tag1_id, section_id, tag2_id}
+    assert real_id not in out and brief_id not in out  # real content is never flagged
+
+    # Scoped to just the real article + the homepage capture:
+    assert suspected_non_article_ids(s, [real_id, home_id]) == {home_id}
+    assert suspected_non_article_ids(s, []) == set()

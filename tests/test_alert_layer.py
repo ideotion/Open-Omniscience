@@ -208,8 +208,10 @@ def test_severity_alerts_producer_emits_valid_cards(session, data_dir):
     assert cards, "expected at least one alert card"
     assert_no_score_fields(Card)
     by_tier = {c.signal["tier"]: c for c in cards}
-    # Three active tiers: urgent (red hazard), watch (fired watch), info (convergence).
-    assert set(by_tier) == {"urgent", "watch", "info"}
+    # S4.5 (row 17, 2026-07-18 field export): 'info' here is PURE convergences (no green
+    # hazard, no fired watch of its own) -- the same space_time_convergence cards already
+    # shown elsewhere in the feed, so this meta-card is suppressed as a pure re-count.
+    assert set(by_tier) == {"urgent", "watch"}
     for c in cards:
         assert isinstance(c, Card)
         assert c.type == "severity_alert" and c.bucket == "watch"
@@ -220,9 +222,43 @@ def test_severity_alerts_producer_emits_valid_cards(session, data_dir):
     # 'urgent' comes ONLY from a provider red alert → no corpus articles, but real evidence.
     assert by_tier["urgent"].article_ids == []
     assert any(ev.get("url") for ev in by_tier["urgent"].evidence)
-    # 'watch'/'info' carry the exact corpus article ids of their evidence.
+    # 'watch' carries the exact corpus article ids of its evidence.
     assert set(by_tier["watch"].article_ids) == {901, 902}
-    assert set(by_tier["info"].article_ids) == set(ids)
+    _ = ids  # the convergence ids exist but 'info' is suppressed here — see the note above
+
+
+def test_info_tier_still_fires_on_a_real_green_hazard(session, data_dir):
+    """The suppression is PRECISE (row 17): a genuine green/relayed hazard is not a
+    re-count of anything else in the feed, so the info tier must still fire."""
+    from src.briefing.producers import severity_alerts
+    from src.hazards.store import save_snapshot
+
+    save_snapshot([
+        {"source": "gdacs", "severity": "info", "type": "wildfire", "title": "Green wildfire watch", "url": "https://gdacs.org/2"},
+    ])
+    cards = severity_alerts(session)
+    by_tier = {c.signal["tier"]: c for c in cards}
+    assert "info" in by_tier
+    assert by_tier["info"].signal["hazards"] == 1
+    assert by_tier["info"].signal["convergences"] == 0
+
+
+def test_info_tier_fires_with_both_a_hazard_and_convergences(session, data_dir):
+    """Info is suppressed only when convergences are the WHOLE content -- with a real
+    hazard alongside them, the tier is not a pure re-count and must still fire."""
+    from src.briefing.producers import severity_alerts
+    from src.hazards.store import save_snapshot
+
+    save_snapshot([
+        {"source": "gdacs", "severity": "info", "type": "wildfire", "title": "Green wildfire watch", "url": "https://gdacs.org/2"},
+    ])
+    ids = _seed_convergence(session)
+    cards = severity_alerts(session)
+    by_tier = {c.signal["tier"]: c for c in cards}
+    assert "info" in by_tier
+    assert by_tier["info"].signal["hazards"] == 1
+    assert by_tier["info"].signal["convergences"] >= 1
+    assert set(ids) <= set(by_tier["info"].article_ids)
 
 
 def test_severity_alerts_producer_silent_when_nothing(session, data_dir):

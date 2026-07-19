@@ -47,6 +47,18 @@ HEADLINE_BODY_CAVEAT = (
     "'headline ≠ body', never a claim it was deliberate. Read both and judge."
 )
 
+# S3.1 (row 12, 2026-07-18 field export): lexical divergence compares bare SURFACE
+# FORMS (no lemmatization), which is unreliable in highly-inflected/agglutinative
+# languages -- the SAME lemma routinely surfaces in a different grammatical case in the
+# headline vs the body, guaranteeing near-total non-overlap regardless of real content
+# divergence (four cards, all lexical_div == 1.0, including two Estonian). Estonian is
+# the evidenced case; Finnish and Hungarian (the other canonical Uralic languages with
+# 14-18+ productive cases) and Turkish (the textbook agglutinative example) share the
+# identical mechanism. The method needs a lemma/stem-aware comparison for these
+# languages -- until then, an honest per-language gap (the S5.2 script-guard
+# precedent), never a fabricated mismatch.
+_HIGH_INFLECTION_LANGS: frozenset[str] = frozenset({"et", "fi", "hu", "tr"})
+
 
 def find_headline_body_mismatch(
     session,
@@ -89,12 +101,17 @@ def find_headline_body_mismatch(
 
     ext = BaselineExtractor()
     items: list[dict] = []
+    excluded_high_inflection = 0
+    excluded_method_failure = 0
     for a, sname, sdom in rows:
         title = (a.title or "").strip()
         body = (a.get_content() or "").strip()
         if not title or len(body) < min_chars:
             continue
         lang = (a.language or "").lower()
+        if lang in _HIGH_INFLECTION_LANGS:
+            excluded_high_inflection += 1
+            continue  # surface-form comparison is unreliable for this language
         ex_lang = a.language or "en"
 
         # Headline content keywords — UNIGRAMS only (single content words), casefolded
@@ -119,6 +136,14 @@ def find_headline_body_mismatch(
         overlap = len(head & b_top)
         d_lex = round(1.0 - overlap / len(head), 3)
         absent = sorted(head - b_top)
+
+        # A COMPLETE non-overlap (d_lex == 1.0) with a real, non-empty body is a
+        # method-failure signal (the same extraction/tokenization mismatch the
+        # language gate above targets), not a genuine finding -- a real mismatch still
+        # almost always shares SOME word (a name, a place, an acronym) with the body.
+        if d_lex >= 1.0 and b_top:
+            excluded_method_failure += 1
+            continue
 
         # Sentiment gap — English only (VADER); None elsewhere, never a fake neutral.
         s_gap: float | None = None
@@ -166,13 +191,18 @@ def find_headline_body_mismatch(
         "recent_days": recent_days,
         "d_min": d_min,
         "sentiment_gap_min": sentiment_gap_min,
+        "excluded_high_inflection_language": excluded_high_inflection,
+        "excluded_method_failure": excluded_method_failure,
         "method": (
             "Per recent article (last {r} days, up to {rl} scanned): lexical divergence "
             "d_lex = 1 - |H ∩ B_top| / |H| of the headline's content keywords H vs the "
             "body's top {tb} keywords B_top (same extractor, language-agnostic), and, for "
             "English only, the headline-vs-body VADER sentiment gap. Fires when |H| >= {mh} "
-            "AND (d_lex >= {dm} OR sentiment_gap >= {sg}). Body capped at {bc} chars. Real "
-            "ratios, not a score.".format(
+            "AND (d_lex >= {dm} OR sentiment_gap >= {sg}). Highly-inflected/agglutinative "
+            "languages ({hl}) are excluded — bare surface-form comparison is unreliable "
+            "there without lemmatization; a complete non-overlap (d_lex==1.0) against a "
+            "real, non-empty body is treated as a method failure, not a finding, in every "
+            "language. Body capped at {bc} chars. Real ratios, not a score.".format(
                 r=recent_days,
                 rl=recent_limit,
                 tb=top_body_terms,
@@ -180,6 +210,7 @@ def find_headline_body_mismatch(
                 dm=d_min,
                 sg=sentiment_gap_min,
                 bc=body_max_chars,
+                hl=", ".join(sorted(_HIGH_INFLECTION_LANGS)),
             )
         ),
         "caveat": HEADLINE_BODY_CAVEAT,

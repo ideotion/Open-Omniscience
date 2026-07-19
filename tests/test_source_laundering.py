@@ -79,6 +79,39 @@ def test_social_and_commerce_origins_excluded(db):
     assert find_source_laundering(db, min_sources=3, min_articles=3)["count"] == 0
 
 
+def test_infrastructure_origins_excluded(db):
+    """2026-07-18 field export (Leads-calibration §0 rows 1-3): a live corpus surfaced
+    policies.google.com and addtoany.com as "source-laundering origins" — boilerplate/
+    widget pages everyone links, never a corroborating citation."""
+    for sid in (1, 2, 3):
+        _src(db, sid, f"src{sid}.test")
+    urls = (
+        "https://policies.google.com/privacy",
+        "https://www.addtoany.com/share",
+        "https://creativecommons.org/licenses/by/4.0/",
+    )
+    for base, url in enumerate(urls):
+        for sid in (1, 2, 3):
+            _art_citing(db, base * 100 + sid, sid, url)
+        assert find_source_laundering(db, min_sources=3, min_articles=3)["count"] == 0, url
+
+
+def test_one_card_per_registrable_origin_domain(db):
+    """Row 2: the same origin domain must never surface as two separate cards even
+    when two distinct URL paths on it each clear the gates."""
+    for sid in range(1, 7):
+        _src(db, sid, f"src{sid}.test")
+    for aid, sid in enumerate((1, 2, 3), start=1):
+        _art_citing(db, aid, sid, "https://origin.example/claim-a")
+    for aid, sid in enumerate((4, 5, 6), start=4):
+        _art_citing(db, aid, sid, "https://origin.example/claim-b")
+    out = find_source_laundering(db, min_sources=3, min_articles=3)
+    domains = [c["origin_domain"] for c in out["clusters"]]
+    assert domains.count("origin.example") == 1, domains
+    assert out["count"] == 1
+    assert "one card per registrable origin domain" in out["method"]
+
+
 def test_below_gates_does_not_fire(db):
     _src(db, 1, "a.test")
     _src(db, 2, "b.test")

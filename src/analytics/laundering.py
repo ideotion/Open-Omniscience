@@ -27,7 +27,7 @@ from __future__ import annotations
 from sqlalchemy import func
 
 from src.catalog.normalize import is_social, registrable_domain
-from src.discovery.channels import is_commerce_domain
+from src.discovery.channels import is_commerce_domain, is_infrastructure_domain
 
 LAUNDERING_CAVEAT = (
     "Several sources citing the same single origin are NOT independent corroboration — "
@@ -38,11 +38,12 @@ LAUNDERING_CAVEAT = (
 
 
 def _noise_origin(url: str | None) -> bool:
-    """True for an origin everyone links for non-corroboration reasons (social/store)."""
+    """True for an origin everyone links for non-corroboration reasons (social/store/
+    infrastructure — CDNs, cookie/privacy-policy pages, share widgets, license footers)."""
     dom = registrable_domain(url)
     if not dom:
         return True  # unparseable -> not a usable origin
-    return is_social(dom) or is_commerce_domain(dom)
+    return is_social(dom) or is_commerce_domain(dom) or is_infrastructure_domain(dom)
 
 
 def find_source_laundering(
@@ -83,9 +84,17 @@ def find_source_laundering(
     )
 
     clusters = []
+    seen_domains: set[str] = set()
     for url, n_arts, n_srcs in rows:
         if _noise_origin(url):
             continue
+        dom = registrable_domain(url)
+        if dom is None or dom in seen_domains:
+            # One card per registrable origin domain (row 2) — rows are already ordered
+            # srcs desc, arts desc, so the first occurrence is the strongest cluster for
+            # this domain; a second URL path on the same domain is not a distinct origin.
+            continue
+        seen_domains.add(dom)
         # The exact citing articles + the distinct source names (provenance the card shows).
         members = (
             session.query(Article.id, Source.name)
@@ -113,9 +122,12 @@ def find_source_laundering(
         "min_sources": min_sources,
         "min_articles": min_articles,
         "method": (
-            "Outbound origins cited by >= {ms} distinct sources (and >= {ma} articles), "
-            "social/storefront origins excluded. Independence = distinct sources, not "
-            "article count.".format(ms=min_sources, ma=min_articles)
+            "Outbound origins cited by >= {ms} distinct sources (and >= {ma} articles); "
+            "social/storefront/infrastructure origins excluded (CDNs, cookie/privacy-policy "
+            "pages, share widgets, license footers); at most one card per registrable origin "
+            "domain. Independence = distinct sources, not article count.".format(
+                ms=min_sources, ma=min_articles
+            )
         ),
         "caveat": LAUNDERING_CAVEAT,
     }

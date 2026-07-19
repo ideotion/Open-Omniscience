@@ -51,8 +51,10 @@ STORY_PROPAGATION_METHOD = (
     "source's FIRST mention date (keyword_mentions.observed_on) is taken and the sources are "
     "ordered by it — the diffusion cascade, with the day-gaps between successive sources. A "
     "term is surfaced only when the cascade spans >= min_span_days (a genuine temporal "
-    "spread, not an all-at-once appearance). Reads the denormalised source_id/observed_on "
-    "only (no content decrypt). Counts + day-gaps only, no score."
+    "spread, not an all-at-once appearance). A term carried by an implausibly large share of "
+    "same-language active sources is excluded as publishing furniture / a corpus-volume "
+    "tracker, not a real topic (the DF-ubiquity gate). Reads the denormalised "
+    "source_id/observed_on only (no content decrypt). Counts + day-gaps only, no score."
 )
 
 
@@ -108,6 +110,22 @@ def find_story_propagation(
     if not cand_rows:
         return _empty(lookback_days, min_sources, min_span_days)
     cand_ids = [int(kid) for kid, _ in cand_rows]
+    n_src_by_kid = {int(kid): int(n or 0) for kid, n in cand_rows}
+
+    # Per-language active-source counts over the WHOLE window (the DF-ubiquity gate's
+    # denominator, S1.2) -- one small query, not per-candidate.
+    from src.analytics.generic_terms import is_generic_by_df_ubiquity
+    from src.analytics.managed import normalize_lang
+
+    active_sids = [r[0] for r in session.query(distinct(KeywordMention.source_id)).filter(*win)]
+    active_by_lang: dict[str, int] = {}
+    for chunk in _chunks(active_sids):
+        for _sid, lang in session.query(Source.id, Source.language).filter(
+            Source.id.in_(chunk)
+        ):
+            lg = normalize_lang(lang)
+            if lg:
+                active_by_lang[lg] = active_by_lang.get(lg, 0) + 1
 
     # One grouped query: per (keyword, source) FIRST mention date in the window.
     first_seen: dict[int, dict[int, date]] = defaultdict(dict)
@@ -126,17 +144,24 @@ def find_story_propagation(
             if first is not None:
                 first_seen[int(kid)][int(sid)] = first
 
-    # Keyword terms (drop stoplisted) + source names.
+    # Keyword terms (drop stoplisted + generic/furniture terms) + source names.
     is_hidden = _hidden_predicate()
     kw_terms: dict[int, str] = {}
     for chunk in _chunks(cand_ids):
-        for kid, norm in (
-            session.query(Keyword.id, Keyword.normalized_term)
+        for kid, norm, lang in (
+            session.query(Keyword.id, Keyword.normalized_term, Keyword.language)
             .filter(Keyword.id.in_(chunk))
             .all()
         ):
-            if not is_hidden(norm):
-                kw_terms[int(kid)] = norm
+            if is_hidden(norm):
+                continue
+            kid = int(kid)
+            kw_lang = normalize_lang(lang)
+            if kw_lang and is_generic_by_df_ubiquity(
+                n_src_by_kid.get(kid, 0), active_by_lang.get(kw_lang, 0)
+            ):
+                continue  # publishing furniture / a term nearly every active source carries
+            kw_terms[kid] = norm
     live_ids = [k for k in cand_ids if k in kw_terms]
     if not live_ids:
         return _empty(lookback_days, min_sources, min_span_days, terms_scanned=len(cand_ids))

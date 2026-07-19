@@ -159,7 +159,34 @@ def _magnitude(card: dict) -> float:
 
 
 def _sorted(cards: list[dict]) -> list[dict]:
-    return sorted(cards, key=lambda c: (_bucket_rank(c["bucket"]), -_magnitude(c)))
+    """Sort Home cards by bucket priority, then by the Leads-2.0 DISCLOSED order_key
+    (independent sources -> magnitude tier -> recency) instead of a raw single-value
+    magnitude (S5.2, Leads-calibration — "This visibly reorders Home", ship
+    conservative + flagged). Defensive: any failure in the reorder falls back to the
+    original raw-magnitude sort untouched, so Home is never broken by this change —
+    a browser click-through against the Settings→Leads preview is still owed."""
+    try:
+        from src.briefing.leads import order_key as _leads_order_key
+
+        now = datetime.now(UTC)
+
+        def _wrap(c: dict):
+            from types import SimpleNamespace
+
+            return SimpleNamespace(
+                evidence=c.get("evidence") or [], n=c.get("n"),
+                article_ids=c.get("article_ids") or [],
+                type=c.get("type"), key=c.get("key"),
+            )
+
+        def _key(c: dict):
+            sources, tier, recency = _leads_order_key(_wrap(c), now=now)
+            return (_bucket_rank(c["bucket"]), -sources, -tier, -recency)
+
+        return sorted(cards, key=_key)
+    except Exception:  # noqa: BLE001 - a reorder problem must never break Home
+        _LOG.warning("Leads-2.0 order_key sort failed; using the raw-magnitude fallback", exc_info=True)
+        return sorted(cards, key=lambda c: (_bucket_rank(c["bucket"]), -_magnitude(c)))
 
 
 def dismissed_ids() -> set[str]:
