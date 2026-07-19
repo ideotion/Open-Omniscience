@@ -173,3 +173,91 @@ def test_last_report_is_an_honest_stub_then_round_trips(tmp_path, monkeypatch):
     assert stub["available"] is False and "note" in stub
     pb.save_pagesize_bench_report({"schema": pb.PAGESIZE_BENCH_SCHEMA, "sizes": []})
     assert pb.last_pagesize_bench_report()["schema"] == pb.PAGESIZE_BENCH_SCHEMA
+
+
+# ---------------------------------------------------------------------------
+#  The ENCRYPTED path (2026-07-19 field failure): a SQLCipher target rebuilt at
+#  a non-default cipher_page_size is only decodable when the opener declares
+#  the same size after keying — without it the self-verify open died as
+#  WrongPassphraseError ("the passphrase does not open .pagesize-bench-16384.db")
+#  and the whole bench aborted. Also pins the explicit-passphrase threading
+#  (source open + verify open + workload open all honor it) and the int()
+#  coercion of PRAGMA read-backs (some sqlcipher3 builds return TEXT, which
+#  false-failed the verify on a perfect rebuild). Skip-guarded: runs wherever
+#  sqlcipher3 is installed (CI's main lane; the wheels in a dev sandbox).
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def encrypted_corpus(tmp_path):
+    pytest.importorskip("sqlcipher3")  # fixture-level: the plaintext tests above run anywhere
+    from sqlcipher3 import dbapi2 as sqc
+
+    db = tmp_path / "corpus-enc.db"
+    con = sqc.connect(str(db))
+    con.execute("PRAGMA key = 'bench-test-key'")
+    con.execute("CREATE TABLE articles (id INTEGER PRIMARY KEY, content TEXT)")
+    con.execute(
+        "CREATE TABLE keyword_mentions (id INTEGER PRIMARY KEY, observed_on TEXT)"
+    )
+    con.executemany(
+        "INSERT INTO articles (content) VALUES (?)",
+        [("body " * 40,) for _ in range(60)],
+    )
+    con.executemany(
+        "INSERT INTO keyword_mentions (observed_on) VALUES (?)",
+        [(f"2026-07-{(i % 28) + 1:02d}",) for i in range(200)],
+    )
+    con.commit()
+    con.close()
+    return db
+
+
+def test_encrypted_rebuild_at_non_default_page_size_verifies_and_benches(
+    encrypted_corpus, tmp_path
+):
+    """The exact field scenario: 16384 must rebuild, self-verify AND run the
+    workload — the explicit passphrase alone must suffice (no process key)."""
+    r = pb.rebuild_at_pragmas(
+        encrypted_corpus,
+        tmp_path / "t16k.db",
+        page_size=16384,
+        passphrase="bench-test-key",
+    )
+    assert r["encrypted"] is True
+    assert r["verified"]["page_size"] == 16384
+    assert r["verified"]["articles_rebuilt"] == 60
+    workload = pb.bench_store(
+        tmp_path / "t16k.db", cipher_page_size=16384, key="bench-test-key"
+    )
+    assert "point_lookup" in workload["first_pass"]
+
+
+def test_encrypted_ab_run_completes_both_sizes_without_error(encrypted_corpus, tmp_path):
+    report = pb.run_pagesize_ab(
+        encrypted_corpus,
+        tmp_path / "stage",
+        page_sizes=(4096, 16384),
+        passphrase="bench-test-key",
+    )
+    assert report["source"]["encrypted"] is True
+    by_size = {e["page_size"]: e for e in report["sizes"]}
+    for ps in (4096, 16384):
+        assert "error" not in by_size[ps], by_size[ps].get("error")
+        assert by_size[ps]["rebuild"]["verified"]["page_size"] == ps
+        assert "workload" in by_size[ps]
+    # stages cleaned
+    assert list((tmp_path / "stage").glob(pb._STAGE_PREFIX + "*")) == []
+
+
+def test_encrypted_target_open_without_declared_page_size_still_fails_closed(
+    encrypted_corpus, tmp_path
+):
+    """The negative space: the fix must NOT have weakened the wrong-passphrase
+    detection — a genuinely wrong key still refuses loudly."""
+    from src.database.connect import WrongPassphraseError, connect
+
+    pb.rebuild_at_pragmas(
+        encrypted_corpus, tmp_path / "t.db", page_size=16384, passphrase="bench-test-key"
+    )
+    with pytest.raises(WrongPassphraseError):
+        connect(tmp_path / "t.db", key="not-the-key", cipher_page_size=16384)
