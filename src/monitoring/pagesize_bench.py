@@ -106,7 +106,7 @@ def rebuild_at_pragmas(
     t0 = time.perf_counter()
     encrypted = bool(is_encrypted_file(src_p))
     key = passphrase if passphrase is not None else get_passphrase()
-    con = connect(src_p, check_same_thread=False)
+    con = connect(src_p, check_same_thread=False, key=passphrase)
     try:
         src_articles = con.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
         if encrypted:
@@ -135,12 +135,22 @@ def rebuild_at_pragmas(
         con.close()
     seconds = time.perf_counter() - t0
 
-    # SELF-VERIFY: never trust the mechanism — read the target back.
-    vcon = connect(dst_p, check_same_thread=False)
+    # SELF-VERIFY: never trust the mechanism — read the target back. An
+    # ENCRYPTED target built at a non-default page size MUST be reopened at
+    # that same size (SQLCipher cannot discover it from the file; without it
+    # the open reads as wrong-passphrase — the 2026-07-19 field failure).
+    vcon = connect(
+        dst_p,
+        check_same_thread=False,
+        key=passphrase,
+        cipher_page_size=page_size if encrypted else None,
+    )
     try:
-        got_page = vcon.execute("PRAGMA page_size").fetchone()[0]
-        got_av = vcon.execute("PRAGMA auto_vacuum").fetchone()[0]
-        got_articles = vcon.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+        # int() coercion: some sqlcipher3 builds return PRAGMA values as TEXT
+        # ('16384'), which would false-fail the comparison on a perfect rebuild.
+        got_page = int(vcon.execute("PRAGMA page_size").fetchone()[0])
+        got_av = int(vcon.execute("PRAGMA auto_vacuum").fetchone()[0])
+        got_articles = int(vcon.execute("SELECT COUNT(*) FROM articles").fetchone()[0])
     finally:
         vcon.close()
     verified = {
@@ -233,15 +243,24 @@ def _bench_pass(con, rng: random.Random) -> dict:
     return out
 
 
-def bench_store(db_path: Path | str) -> dict:
+def bench_store(
+    db_path: Path | str,
+    *,
+    cipher_page_size: int | None = None,
+    key: str | None = None,
+) -> dict:
     """Run the two-pass workload against one store (a rebuilt target). The first
     pass runs on a freshly opened connection (cold-ish — the OS file cache is
     NOT controlled, stated in the caveats); the second re-runs the identical
     operations (warm). Deterministic sampling (fixed seed) so every size and
-    every machine runs the SAME operations."""
+    every machine runs the SAME operations. ``cipher_page_size`` must name the
+    size an ENCRYPTED target was rebuilt at (see ``connect``); it is ignored
+    for plaintext stores."""
     from src.database.connect import connect
 
-    con = connect(Path(db_path), check_same_thread=False)
+    con = connect(
+        Path(db_path), check_same_thread=False, key=key, cipher_page_size=cipher_page_size
+    )
     try:
         first = _bench_pass(con, random.Random(_SEED))
         second = _bench_pass(con, random.Random(_SEED))
@@ -313,7 +332,11 @@ def run_pagesize_ab(
     delete, sequentially (one rebuild on disk at a time). Returns the report
     dict (also what gets persisted). Cancellation between phases leaves no
     stage file and an honestly-marked partial report."""
-    from src.database.connect import is_encrypted_file
+    from src.database.connect import (
+        DatabaseLockedError,
+        WrongPassphraseError,
+        is_encrypted_file,
+    )
 
     src_p = Path(src_db)
     if not src_p.exists():
@@ -326,7 +349,7 @@ def run_pagesize_ab(
 
     from src.database.connect import connect
 
-    scon = connect(src_p, check_same_thread=False)
+    scon = connect(src_p, check_same_thread=False, key=passphrase)
     try:
         source_facts = {
             "db_bytes": src_bytes,
@@ -361,13 +384,21 @@ def run_pagesize_ab(
                 break
             if progress_cb is not None:
                 progress_cb(step, total_steps, f"benching page_size={ps}")
-            entry["workload"] = bench_store(stage)
+            entry["workload"] = bench_store(
+                stage,
+                cipher_page_size=ps if source_facts["encrypted"] else None,
+                key=passphrase,
+            )
             step += 1
             if progress_cb is not None:
                 progress_cb(step, total_steps, f"cleaning page_size={ps}")
             step += 1
-        except (BenchRefused, BenchVerifyError) as exc:
-            entry["error"] = str(exc)
+        except (BenchRefused, BenchVerifyError, WrongPassphraseError, DatabaseLockedError) as exc:
+            # One candidate size failing must degrade to a per-size error in the
+            # report, never abort the whole bench (the degrade-loudly rule; the
+            # opener classes are included since an unreadable TARGET is a bench
+            # defect to report, not a job crash).
+            entry["error"] = f"{type(exc).__name__}: {exc}"
         finally:
             for suffix in ("", "-wal", "-shm"):
                 Path(str(stage) + suffix).unlink(missing_ok=True)
