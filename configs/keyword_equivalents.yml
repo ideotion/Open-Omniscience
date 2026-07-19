@@ -71,3 +71,21 @@ rings:
     note: "marketplace and financial market share the surface form across these languages."
   - id: refugee
     members: ["en:refugee", "fr:réfugié", "de:flüchtling", "es:refugiado", "it:rifugiato", "pt:refugiado", "nl:vluchteling", "ar:لاجئ", "ru:беженцы"]
+  # --- Entity ACRONYM aliases across scripts (2026-07-18, entity-families brief S3):
+  #     ring membership is casefolded at parse+lookup time (equivalence._norm/ring_of),
+  #     so an ALL-CAPS entity normalized form (USA, ФСБ) matches these lowercase-written
+  #     members exactly like any other ring -- no special-case code needed. Hand-curated,
+  #     common-knowledge verifiable, same legitimacy as the existing curated rings; scales
+  #     via the Wikidata generator's alias/acronym emission (operator-run, networked).
+  - id: united-states
+    members: ["en:usa", "ru:сша", "pt:eua", "tr:abd"]
+    note: "standalone acronym forms of 'the United States' across scripts/languages (USA / США / EUA / ABD)."
+  - id: fsb
+    members: ["en:fsb", "ru:фсб"]
+    note: "Russia's Federal Security Service acronym, Latin + Cyrillic forms."
+  - id: nba
+    members: ["en:nba", "ru:нба"]
+    note: "the (US) National Basketball Association acronym, Latin + Cyrillic transliteration."
+  - id: nhl
+    members: ["en:nhl", "ru:нхл"]
+    note: "the National Hockey League acronym, Latin + Cyrillic transliteration."

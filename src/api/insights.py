@@ -37,7 +37,7 @@ _LOG = logging.getLogger("api.insights")
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 
-_VALID_KINDS = ("term", "entity", "person", "org", "location")
+_VALID_KINDS = ("term", "entity", "non_term", "person", "org", "location")
 
 # ---------------------------------------------------------------------------- #
 # Whole-corpus read cache (perf, field report 2026-06-18).

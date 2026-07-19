@@ -967,19 +967,17 @@
     </section>
 
     <section class="panel ins-view" id="ins-families" style="display:none">
-      <h2 style="margin-top:0;font-size:13px">Keyword families <span class="muted">— you decide</span></h2>
-      <p class="hint" style="margin-top:0">Surface variants are grouped automatically (Trump = Trump's = Donald Trump). Here you correct it: tick two or more rows and Merge them, or click a member's ✕ to split it out. Your decisions win over the automatic rules and are fully reversible.</p>
+      <h2 style="margin-top:0;font-size:13px">Keyword families <span class="muted">— surface variants grouped</span></h2>
+      <p class="hint" style="margin-top:0">Entities are standalone ALL-CAPS acronyms (WHO, NATO, USA); a multi-word proper name is a topical TERM, not an entity. Rows here show variants the engine already grouped — a shared lemma/plural, or a cross-language ring (USA / США / EUA). To correct a grouping (merge or split), use Settings → Keywords.</p>
       <div class="row" style="align-items:center">
         <div><label for="fam-kind">Kind</label><select id="fam-kind" onchange="loadFamilies()">
-          <option value="entity">entities</option><option value="person">people</option>
-          <option value="org">orgs</option><option value="location">places</option>
-          <option value="">all</option></select></div>
-        <div style="flex:0 0 auto;align-self:end"><button onclick="familyMerge()">Merge selected</button></div>
+          <option value="entity">entities</option>
+          <option value="non_term">all</option></select></div>
         <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadFamilies()">Refresh</button></div>
         <span id="fam-status" class="hint"></span>
       </div>
+      <p class="hint muted" style="margin:4px 0 0">"all" aggregates every non-term kind (server-side, before any limit). person / org / location kinds await a future NER/gazetteer pass — the extractor does not yet assign them, so they are not offered here rather than shown as a fabricated, always-empty choice.</p>
       <div id="fam-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
-      <div id="fam-overrides" style="margin-top:14px"></div>
     </section>
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
@@ -1856,6 +1854,21 @@
       </div>
       <div id="kx-facets" style="margin-top:10px"><div class="muted">Loading…</div></div>
       <div id="kx-keywords" style="margin-top:8px"></div>
+    </section>
+    <section class="panel">
+      <h2 style="margin-top:0;font-size:13px">Entity family curation <span class="muted">— you decide</span></h2>
+      <p class="hint" style="margin-top:0">Surface variants are grouped automatically (a shared lemma/plural, or a
+        cross-language ring — USA / США / EUA). Only rows where there is actually something to decide are shown
+        below: a multi-member family, a ring merge, or a family you already overrode. Tick two or more rows and
+        Merge them, or click a member's ✕ to split it out. Your decisions win over the automatic rules and are
+        fully reversible.</p>
+      <div class="row" style="align-items:center">
+        <div style="flex:0 0 auto;align-self:end"><button onclick="familyMerge()">Merge selected</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadFamilyCuration()">Refresh</button></div>
+        <span id="famc-status" class="hint"></span>
+      </div>
+      <div id="famc-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="fam-overrides" style="margin-top:14px"></div>
     </section>
     </div>
 

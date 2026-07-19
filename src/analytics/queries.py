@@ -193,7 +193,14 @@ def _apply_kind(query, kind: str | None):
         return query
     if kind == "term":
         return query.filter(Keyword.is_entity.is_(False))
-    if kind == "entity":
+    if kind in ("entity", "non_term"):
+        # "non_term" (the Families "all" view, 2026-07-18 field fix) is the explicit
+        # every-non-term-kind aggregation: it filters BEFORE the limit, so it never
+        # falls back to a filter-after-limit trim that a term-dominated corpus would
+        # starve down to a handful of stray entities. Currently identical to "entity"
+        # (entity_type is only ever None/"entity" until a real NER/gazetteer pass
+        # populates person/org/location -- out of scope here) -- this is an honest
+        # consequence of today's taxonomy, not a bug to paper over.
         return query.filter(Keyword.is_entity.is_(True))
     return query.filter(Keyword.entity_type == kind)
 

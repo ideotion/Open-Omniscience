@@ -49,6 +49,49 @@ def test_ring_members_merge_with_visible_per_language_counts():
     assert any(m["normalized"] == "weather" and "ring_id" not in m for m in merged)
 
 
+def test_entity_acronym_rings_merge_across_scripts_case_insensitively():
+    """2026-07-18 entity-families brief S3 (the "case seam"): entity keywords keep
+    their normalized form UPPERCASE (WHO != who, USA != usa -- the 2026-06-16
+    acronym ruling), while ring members are written lowercase in the curated config.
+    ring_of/_norm already casefold BOTH sides at parse and lookup time, so an
+    ALL-CAPS entity normalized form matches a lowercase ring member with NO special-
+    case code needed. USA / США / EUA / ABD (the field export's fractured top-80
+    rows) collapse into one grouped entity, provenance visible via
+    language_breakdown; an unrelated entity (WHO) is never accidentally folded in."""
+    rows = [
+        {"term": "USA", "normalized": "USA", "kind": "entity", "mentions": 40, "articles": 22},
+        {"term": "США", "normalized": "США", "kind": "entity", "mentions": 15, "articles": 9},
+        {"term": "EUA", "normalized": "EUA", "kind": "entity", "mentions": 5, "articles": 4},
+        {"term": "ABD", "normalized": "ABD", "kind": "entity", "mentions": 3, "articles": 2},
+        {"term": "WHO", "normalized": "WHO", "kind": "entity", "mentions": 60, "articles": 30},
+    ]
+    lang_of = _lang({"USA": "en", "США": "ru", "EUA": "pt", "ABD": "tr", "WHO": "en"})
+    merged = E.merge_equivalents(rows, lang_of=lang_of)
+    rings = [m for m in merged if m.get("ring_id") == "united-states"]
+    assert len(rings) == 1, merged
+    r = rings[0]
+    assert r["mentions"] == 40 + 15 + 5 + 3
+    assert r["articles"] == 22  # max member, never a double-counting sum
+    assert r["language_breakdown"] == {"en": 40, "ru": 15, "pt": 5, "tr": 3}
+    assert {m["normalized"] for m in r["members"]} == {"USA", "США", "EUA", "ABD"}
+    # WHO stays a distinct, unrelated entity -- never accidentally folded in
+    assert any(m["normalized"] == "WHO" and "ring_id" not in m for m in merged)
+
+
+def test_fsb_nba_nhl_entity_rings_present_and_case_insensitive():
+    """The remaining §0-row-5 fractures (FSB/ФСБ, NBA/НБА, NHL/НХЛ) each merge too."""
+    for rid, latin, cyr in (("fsb", "FSB", "ФСБ"), ("nba", "NBA", "НБА"), ("nhl", "NHL", "НХЛ")):
+        rows = [
+            {"term": latin, "normalized": latin, "kind": "entity", "mentions": 10, "articles": 6},
+            {"term": cyr, "normalized": cyr, "kind": "entity", "mentions": 4, "articles": 3},
+        ]
+        lang_of = _lang({latin: "en", cyr: "ru"})
+        merged = E.merge_equivalents(rows, lang_of=lang_of)
+        rings = [m for m in merged if m.get("ring_id") == rid]
+        assert len(rings) == 1, (rid, merged)
+        assert rings[0]["mentions"] == 14
+
+
 def test_polysemy_is_language_qualified_fr_main_vs_en_main():
     rows = [
         {"term": "hand", "normalized": "hand", "kind": "term", "mentions": 5},

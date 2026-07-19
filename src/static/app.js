@@ -1678,7 +1678,7 @@
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
-      if (cat === "keywords") loadKeywordExplorer();  // Item AC: explore keywords by tag, hide, apply baseline tags
+      if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); }  // Item AC: explore/hide/tag; family merge/split curation relocated here 2026-07-18 (invariant #8)
       if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
@@ -9202,35 +9202,77 @@
       } catch (e) { box.innerHTML = `<div class="muted" style="margin-top:8px">Could not load: ${esc(e.message)}</div>`; }
     }
 
-    // -- Keyword families: review + manual merge/split ---------------------- //
+    // -- Keyword families: Insights DATA VIEW (read-only; invariant #8 content-first) -- //
+    // 2026-07-18 field fix: curation (merge/split/overrides) relocated to Settings ->
+    // Keywords (loadFamilyCuration below) -- this view shows the grouped data only, no
+    // plumbing (checkboxes/Merge/✕ chips). Nothing lost: every control still exists there.
+    function _famMemberList(f) {
+      return (f.members || []).map(m => esc(m.term)).join(", ");
+    }
+
     async function loadFamilies() {
       const list = $("fam-list");
       list.innerHTML = '<div class="muted">Loading…</div>';
       const kind = $("fam-kind").value;
       try {
+        // 2026-07-18 field fix (§0 row 1): the kind filter is applied SERVER-SIDE, before
+        // the limit -- `kind` here is always "entity" or "non_term" (never blank), so the
+        // response already contains only non-term rows. NO client-side re-filter: a
+        // filter-after-limit trim is exactly the bug this replaces (it silently starved
+        // the entity view down to whatever stray rows survived a term-dominated top-N).
+        const top = await api(`/api/insights/top?group=true&limit=80&kind=${encodeURIComponent(kind)}` + tgtLangParam());
+        const fams = top.terms || [];
+        list.innerHTML = fams.length ? fams.map(f => `<div class="fam-row">
+            <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
+              ${f.manual ? '<span class="pill ok">manual</span>' : ""}
+              ${f.ring_id ? '<span class="pill" title="a cross-language ring merge">ring</span>' : ""}
+              <span class="muted">· ${f.mentions} mentions</span></div>
+              <div class="fam-chips muted">${_famMemberList(f)}</div></div></div>`
+          ).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
+      } catch (e) { list.innerHTML = `<div class="muted">Could not load families: ${esc(e.message)}</div>`; }
+    }
+
+    // -- Settings -> Keywords: entity family CURATION (merge/split; relocated 2026-07-18) -- //
+    // Only rows where a DECISION exists are shown: multi-member (variants>1), a ring merge
+    // (ring_id), or a family carrying a manual override -- never thousands of single-member
+    // rows with nothing to do (§0 row 6).
+    async function loadFamilyCuration() {
+      const list = $("famc-list");
+      if (!list) return;
+      list.innerHTML = '<div class="muted">Loading…</div>';
+      try {
         const [top, ov] = await Promise.all([
-          api(`/api/insights/top?group=true&limit=80${kind ? "&kind=" + encodeURIComponent(kind) : ""}` + tgtLangParam()),
+          api(`/api/insights/top?group=true&limit=200&kind=non_term` + tgtLangParam()),
           api("/api/insights/family/overrides"),
         ]);
-        const fams = top.terms.filter(f => f.kind !== "term");
+        const overridden = new Set((ov.families || []).flatMap(f => f.members || []));
+        const fams = (top.terms || []).filter(f =>
+          f.variants > 1 || f.ring_id || f.manual ||
+          (f.members || []).some(m => overridden.has(m.normalized)));
         list.innerHTML = fams.length ? fams.map(f => {
           const norms = JSON.stringify((f.members || []).map(m => m.normalized));
+          const single = (f.members || []).length <= 1;
           const chips = (f.members || []).map(m =>
             `<button class="fam-chip" data-norm="${esc(m.normalized)}" data-kind="${esc(f.kind)}"
-               onclick="familySplit(this)" title="split this form out">${esc(m.term)}${f.variants > 1 ? " ✕" : ""}</button>`).join("");
+               data-single="${single ? "1" : "0"}"
+               onclick="familySplit(this)"
+               title="${single ? "nothing to split -- this family has only one member" : "split this form out"}"
+               >${esc(m.term)}${single ? "" : " ✕"}</button>`).join("");
           return `<div class="fam-row">
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
             <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
+              ${f.ring_id ? '<span class="pill" title="a cross-language ring merge">ring</span>' : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
-        }).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
+        }).join("") : '<div class="muted">No families with a decision to review — grouping is fully automatic so far.</div>';
         renderFamOverrides(ov);
       } catch (e) { list.innerHTML = `<div class="muted">Could not load families: ${esc(e.message)}</div>`; }
     }
 
     function renderFamOverrides(ov) {
       const box = $("fam-overrides");
+      if (!box) return;
       if (!ov.families || !ov.families.length) { box.innerHTML = ""; return; }
       box.innerHTML = `<h2 style="font-size:13px;margin:0 0 6px">Your manual overrides</h2>` +
         ov.families.map(f => `<div class="fam-ov">
@@ -9241,10 +9283,14 @@
     }
 
     async function familySplit(btn) {
+      if (btn.dataset.single === "1") {
+        toast("Nothing to split — this family has only one member.");
+        return;  // guarded no-op (§0 row 7): a single-member family has no meaningful split
+      }
       try {
         await api("/api/insights/family/split", {method: "POST",
           body: JSON.stringify({normalized: btn.dataset.norm, kind: btn.dataset.kind})});
-        toast("Split out."); loadFamilies();
+        toast("Split out."); loadFamilyCuration();
       } catch (e) { toast("Split failed: " + e.message, "err"); }
     }
 
@@ -9257,8 +9303,8 @@
       try {
         const r = await api("/api/insights/family/merge", {method: "POST",
           body: JSON.stringify({normalized: norms, label: label.trim() || undefined, kind: picks[0].dataset.kind})});
-        $("fam-status").textContent = `Merged ${r.merged.length} forms into “${r.label}”.`;
-        toast("Merged."); loadFamilies();
+        const st = $("famc-status"); if (st) st.textContent = `Merged ${r.merged.length} forms into “${r.label}”.`;
+        toast("Merged."); loadFamilyCuration();
       } catch (e) { toast("Merge failed: " + e.message, "err"); }
     }
 
@@ -9266,7 +9312,7 @@
       const members = JSON.parse(btn.dataset.members);
       try {
         for (const n of members) await api("/api/insights/family/override?normalized=" + encodeURIComponent(n), {method: "DELETE"});
-        toast("Override cleared."); loadFamilies();
+        toast("Override cleared."); loadFamilyCuration();
       } catch (e) { toast("Reset failed: " + e.message, "err"); }
     }
 
