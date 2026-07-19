@@ -4188,6 +4188,77 @@ def test_keyword_explorer_subtab():
     assert "/api/insights/exclude" in src, "the hide action must reuse the exclude endpoint"
 
 
+def test_families_kind_filter_and_taxonomy_honesty():
+    """2026-07-18 field fix (entity-families brief, §0 rows 1-2): the Insights Families
+    'all' filter used to fetch the raw top-N (terms included) then trim kind!=='term'
+    CLIENT-side -- filter-AFTER-limit, so a term-dominated corpus starved the entity
+    view down to whatever stray rows survived. The kind filter now applies SERVER-side,
+    before the limit (kind=non_term is the new every-non-term-kind alias, same as
+    'entity' until a real NER pass diversifies entity_type); the dropdown drops the
+    never-populated person/org/location options (never fabricate taxonomy) with an
+    honest note explaining why, and the stale 'Trump = Trump's' blurb (describing the
+    retired Title-Case entity model) is gone."""
+    src = _ui_source()
+    i = src.index('id="ins-families"')
+    j = src.index("</section>", i)
+    section = src[i:j]
+    assert 'value="entity"' in section and 'value="non_term"' in section
+    for dead in ('value="person"', 'value="org"', 'value="location"'):
+        assert dead not in section, f"{dead} is a fabricated, always-empty option"
+    assert "await a future NER/gazetteer pass" in section, "the dead-option note must state why"
+    assert "Trump" not in section, "the stale entity model's blurb example must be gone"
+
+    # backend: kind=non_term applies is_entity=True BEFORE the limit (never a filter-after-limit trim)
+    qsrc = (_SRC / "analytics" / "queries.py").read_text(encoding="utf-8")
+    assert '"non_term"' in qsrc and "Keyword.is_entity.is_(True)" in qsrc
+    api_src = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert '"non_term"' in api_src, "non_term must be an accepted kind value on the endpoint"
+
+    # the Insights read-only view no longer client-filters by kind after the fetch (the bug)
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fam_view = app[app.index("async function loadFamilies(") : app.index("async function loadFamilyCuration(")]
+    assert 'filter(f => f.kind !== "term")' not in fam_view, (
+        "a client-side filter-after-limit is exactly the bug this fix replaces"
+    )
+    assert "&kind=" in fam_view, "the kind filter must be sent server-side unconditionally"
+
+
+def test_family_curation_relocated_to_settings_and_single_member_guarded():
+    """S4 of the same brief: the merge/split curation UI moves OFF the content tab
+    (invariant #8) into Settings -> Keywords, beside the Keywords explorer; Insights
+    keeps only the DATA view (no checkboxes/Merge button/split chips). The relocated
+    review list is decision-only (multi-member/ring/manual-override -- never thousands
+    of single-member rows), and a single-member family's split chip is a guarded
+    no-op (§0 row 7) rather than a meaningless override write."""
+    src = _ui_source()
+
+    ins_i = src.index('id="ins-families"')
+    ins_j = src.index("</section>", ins_i)
+    ins_section = src[ins_i:ins_j]
+    for gone in ("fam-pick", "familyMerge()", "familySplit(", "Merge selected"):
+        assert gone not in ins_section, f"{gone!r} must not remain on the Insights data view"
+
+    set_i = src.index('id="set-keywords"')
+    set_j = src.index('id="set-leads"', set_i)  # the whole Settings Keywords view
+    set_section = src[set_i:set_j]
+    assert 'id="famc-list"' in set_section, "the relocated curation list must exist in Settings"
+    assert 'onclick="familyMerge()"' in set_section
+    assert 'id="fam-overrides"' in set_section, "the overrides list rides along (nothing lost)"
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    cur = app[app.index("async function loadFamilyCuration(") : app.index("async function familySplit(")]
+    assert "f.variants > 1 || f.ring_id || f.manual" in cur, (
+        "the relocated review list must show ONLY rows where a decision exists"
+    )
+    assert "data-single=" in cur, "each split chip must carry whether its family is single-member"
+
+    split_fn = app[app.index("async function familySplit(") : app.index("async function familyMerge(")]
+    assert 'dataset.single === "1"' in split_fn, "a single-member family's ✕ must be a guarded no-op"
+    assert "Nothing to split" in split_fn
+
+    assert "loadFamilyCuration()" in app, "showSetCat must wire the curation loader on the Keywords subtab"
+
+
 def test_super_ring_ui():
     """Step 4 of the pre-translation program: the Groups (super-groups) UI can add a
     cross-language RING as a member (the super-ring model), not just a family. It

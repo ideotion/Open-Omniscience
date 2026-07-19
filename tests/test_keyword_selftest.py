@@ -33,6 +33,22 @@ def test_who_vs_who_is_guarded_and_passes():
     assert who["status"] == "pass", who["detail"]
 
 
+def test_caps_furniture_and_roman_numerals_are_guarded_and_pass():
+    # 2026-07-18 entity-families brief S2: the live-corpus export found caps publishing
+    # furniture (FOTO/VIDEO/LIVE.../PDF/RSS) and pure Roman numerals (XIV/III) ranking as
+    # top "entities" — pinned here so a regression turns these red in both this suite
+    # and the in-app self-test export the maintainer sends.
+    cases = {c["id"]: c for c in run_keyword_selftest()["cases"]}
+    for cid in (
+        "caps_furniture_not_entity",
+        "roman_numerals_not_entities",
+        "roman_numeral_acronym_allowlist_kept",
+    ):
+        c = cases.get(cid)
+        assert c is not None, f"missing golden case {cid!r}"
+        assert c["status"] == "pass", c["detail"]
+
+
 def test_lemmatization_mechanism_case_present_and_passes_when_available():
     # P4.3: the lemma mechanism (study<-studied) + denylist (media!->medium) is a golden
     # case when the optional simplemma is installed (CI [analysis] + the maintainer's export);

@@ -366,6 +366,32 @@ _CASES: tuple[Challenge, ...] = (
         "Please share share share this article about the government budget and the new policy.",
         absent=("share share",),
     ),
+    Challenge(
+        # 2026-07-18 entity-families field export: FOTO/VIDEO/LIVE/INFO/PREMIUM/PDF/RSS
+        # ranked among the top "entities" -- caps publishing/headline furniture passing
+        # the acronym detector. A real acronym (NASA) still is one.
+        "caps_furniture_not_entity",
+        "publishing/headline furniture (FOTO, PDF, RSS) is not an entity; a real acronym still is",
+        "Check the FOTO gallery and download the PDF. RSS feed available. NASA confirmed the launch.",
+        entity=("NASA",),
+        not_entity=("foto", "pdf", "rss"),
+    ),
+    Challenge(
+        # Same export: pure Roman numerals (XIV, III) passed the all-caps rule too.
+        "roman_numerals_not_entities",
+        "pure Roman numerals (XIV, III, MMXXVI) are not entities",
+        "Louis XIV ruled France. Pope John Paul III visited. The event drew MMXXVI attendees.",
+        not_entity=("xiv", "iii", "mmxxvi"),
+    ),
+    Challenge(
+        # Negative space the Roman-numeral rule must not swallow: a real acronym that
+        # ALSO happens to be a well-formed Roman numeral stays an entity.
+        "roman_numeral_acronym_allowlist_kept",
+        "real acronyms that are also valid Roman numerals (LIV, DC, MD, CV) stay entities",
+        "LIV Golf hosted a tournament. The DC branch confirmed it. Her MD credentials were "
+        "verified. Send your CV today.",
+        entity=("LIV", "DC", "MD", "CV"),
+    ),
 )
 
 

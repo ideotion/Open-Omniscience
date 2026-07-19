@@ -73,6 +73,46 @@ def test_generate_with_injected_getter_then_emit_roundtrips():
     assert any(r.id == "election" for r in parsed)
 
 
+def test_generated_acronym_alias_roundtrips_case_insensitively():
+    """2026-07-18 entity-families brief S3.3: the wbgetentities payload the generator
+    ALREADY fetches carries per-language ALIASES (parse_entity collects them
+    unmodified, in their real Wikidata casing — confirmed above for "Wahl"), so an
+    entity's acronym alias (USA, alongside the "United States" label) flows straight
+    through generate() -> emit_yaml() -> _parse_rings the SAME as any other ring — no
+    special-case code, no lowercasing step, needed anywhere in this pipeline. This is
+    the proof for the GENERATOR side of the "case seam" (equivalence.ring_of's own
+    docstring/test proves the runtime lookup side)."""
+    search = {"search": [{"id": "Q30", "label": "United States"}]}
+    entity = {
+        "entities": {
+            "Q30": {
+                "labels": {"en": {"value": "United States"}, "ru": {"value": "Соединённые Штаты Америки"}},
+                "aliases": {
+                    "en": [{"value": "USA"}, {"value": "US"}],
+                    "ru": [{"value": "США"}],
+                },
+            }
+        }
+    }
+
+    def getter(url: str) -> bytes:
+        return json.dumps(search if "wbsearchentities" in url else entity).encode()
+
+    rings = G.generate(["united states"], getter=getter, sleep=0)
+    assert len(rings) == 1
+    assert "en:USA" in rings[0]["members"] and "ru:США" in rings[0]["members"]
+
+    # _parse_rings is the SAME pure function equivalence.load_rings uses on the real
+    # config files -- casefolds every member at parse time regardless of script, so
+    # the lookup index built from it (mirroring equivalence._index) matches an
+    # UPPERCASE entity normalized form directly.
+    parsed = _parse_rings(yaml.safe_load(G.emit_yaml(rings, "2026-07")))
+    by_lang_term = {(lang, term): r.id for r in parsed for lang, term in r.members}
+    ring = next(r for r in parsed if ("en", "usa") in r.members)
+    assert by_lang_term[("en", "usa")] == ring.id
+    assert by_lang_term[("ru", "сша")] == ring.id  # a Cyrillic acronym alias, same treatment
+
+
 def test_equivalence_loads_the_curated_expansion():
     from src.analytics.equivalence import load_rings
 
