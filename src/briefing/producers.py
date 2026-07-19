@@ -2682,6 +2682,75 @@ def supply_chain_ripple(session) -> list[Card]:
     return cards
 
 
+_MAX_RISING_SUPERGROUP = 4
+
+
+def supergroup_rising(session) -> list[Card]:
+    """Surface a super-group whose recent SHARE of corpus mention volume rose
+    against its own baseline (supergroups brief S2). Scale-aware from birth: a
+    count floor before a group even enters the test family, Benjamini-Hochberg FDR
+    across every tracked group, and a rise driven by a generic/ubiquitous member
+    is never a Lead at all — never a score, a two-proportion z-test on SHARE, not
+    raw counts."""
+    try:
+        from src.analytics.supergroup_rising import RISING_CAVEAT, find_rising_supergroups
+
+        found = find_rising_supergroups(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("supergroup-rising scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_RISING_SUPERGROUP]:
+        driven_note = (
+            f" — driven almost entirely by “{it['driven_by']}”"
+            if it["driven_share"] >= 0.6
+            else ""
+        )
+        cards.append(
+            Card(
+                type="supergroup_rising",
+                title=f"“{it['name']}” is rising in your corpus",
+                summary=(
+                    f"“{it['name']}” now makes up {it['share_now']:.2%} of your corpus's daily "
+                    f"coverage, up from {it['share_prior']:.2%} in its own baseline period"
+                    f"{driven_note}. A share shift, not a verdict — read the coverage and judge."
+                ),
+                bucket="watch",
+                signal={
+                    "metric": "share_zscore",
+                    "value": it["z"],
+                    "share_now": it["share_now"],
+                    "share_prior": it["share_prior"],
+                    "recent_mentions": it["recent_mentions"],
+                    "prior_mentions": it["prior_mentions"],
+                    "driven_by": it["driven_by"],
+                    "driven_share": it["driven_share"],
+                    "distinct_sources": it["distinct_sources"],
+                },
+                method=found.get("method", ""),
+                caveat=RISING_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["recent_mentions"],
+                key=f"supergroup-rising:{it['sg_id']}",
+                trigger=_trigger(
+                    "This theme is taking up a bigger share of your corpus's daily coverage "
+                    "than its own recent history — worth a look, never proof of importance.",
+                    [
+                        ("Share now vs baseline", f"{it['share_now']:.2%} vs {it['share_prior']:.2%}"),
+                        ("z-score (vs its own baseline)", f"{it['z']:+.2f}"),
+                        ("Distinct sources (recent window)", str(it["distinct_sources"])),
+                        (
+                            "Driven by",
+                            f"“{it['driven_by']}” ({it['driven_share']:.0%} of the recent total)",
+                        ),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 # --------------------------------------------------------------------------- #
 #  S6.4 — the two attention producers the board was missing.
 # --------------------------------------------------------------------------- #
@@ -2873,6 +2942,9 @@ _DEFAULT_PRODUCERS = (
     # lens. Buckets watch/context; NEVER promoted into an urgent alert (the ruled boundary).
     ("on_the_horizon", on_the_horizon),
     ("through_time", through_time),
+    # Supergroups brief S2 (registered last, fail-safe): a theme rising against its
+    # own baseline. Bucket watch; NEVER promoted into an urgent alert.
+    ("supergroup_rising", supergroup_rising),
 )
 
 
