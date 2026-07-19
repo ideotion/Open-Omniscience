@@ -1511,6 +1511,46 @@ def insights_ring_countries(
     return _deadlined(db, key, lambda: ring_country_split(db, ring_id=ring_id, days=days, limit=limit))
 
 
+@router.get("/ring-stats")
+def insights_ring_stats(
+    ring_id: str = Query(..., description="an equivalence-ring id, e.g. 'inflation'"),
+    window_days: int = Query(7, ge=1, le=90),
+    baseline_days: int = Query(30, ge=1, le=365),
+    series_days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Honest statistics for ONE group (GROUPS layer amendment §C).
+
+    A group is a cross-language equivalence ring — the SAME resolution primitive
+    the sibling super-group statistics use, one level down: members resolved to
+    their distinct keyword-id set FIRST, every figure computed from that set. The
+    disclosure is adapted to this level — top-LANGUAGE dominance (never a top-
+    member dominance, which is the super-group's own concern), the same disclosed
+    recent-vs-baseline rate, and a daily series for the sparkline. Counts and
+    ratios only, no composite score."""
+    from src.analytics.group_stats import group_stats
+
+    # Type-safe against the direct-call test pattern (_tlang's docstring): an unset
+    # int Query() default arrives as its FastAPI sentinel OBJECT, not an int, when a
+    # test calls this function directly rather than through the ASGI app.
+    window_days = window_days if isinstance(window_days, int) else 7
+    baseline_days = baseline_days if isinstance(baseline_days, int) else 30
+    series_days = series_days if isinstance(series_days, int) else 30
+
+    key = _ckey(
+        "ring-stats", ring_id=ring_id, window_days=window_days,
+        baseline_days=baseline_days, series_days=series_days,
+    )
+    return _deadlined(
+        db,
+        key,
+        lambda: group_stats(
+            db, ring_id, window_days=window_days, baseline_days=baseline_days,
+            series_days=series_days,
+        ),
+    )
+
+
 @router.get("/source-laundering")
 def insights_source_laundering(
     min_sources: int = Query(3, ge=2, le=100, description="distinct-source surfacing gate"),
