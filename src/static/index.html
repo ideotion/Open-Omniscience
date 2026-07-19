@@ -857,7 +857,7 @@
         <button data-tab="trends">Trends</button>
         <button data-tab="sources">Sources</button>
         <button data-tab="families">Families</button>
-        <button data-tab="supergroups">Groups</button>
+        <button data-tab="supergroups">Super-groups</button>
         <button data-tab="map">Map</button>
         <button data-tab="convergence">Convergence</button>
         <button data-tab="watches">Watches</button>
@@ -968,7 +968,7 @@
 
     <section class="panel ins-view" id="ins-families" style="display:none">
       <h2 style="margin-top:0;font-size:13px">Keyword families <span class="muted">— surface variants grouped</span></h2>
-      <p class="hint" style="margin-top:0">Entities are standalone ALL-CAPS acronyms (WHO, NATO, USA); a multi-word proper name is a topical TERM, not an entity. Rows here show variants the engine already grouped — a shared lemma/plural, or a cross-language ring (USA / США / EUA). To correct a grouping (merge or split), use Settings → Keywords.</p>
+      <p class="hint" style="margin-top:0">Entities are standalone ALL-CAPS acronyms (WHO, NATO, USA); a multi-word proper name is a topical TERM, not an entity. Rows here show variants the engine already grouped — a shared lemma/plural, or a cross-language group (USA / США / EUA). To correct a grouping (merge or split), use Settings → Keywords.</p>
       <div class="row" style="align-items:center">
         <div><label for="fam-kind">Kind</label><select id="fam-kind" onchange="loadFamilies()">
           <option value="entity">entities</option>
@@ -981,8 +981,8 @@
     </section>
 
     <section class="panel ins-view" id="ins-supergroups" style="display:none">
-      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— groups of families and rings</span> <span id="sg-basis"></span></h2>
-      <p class="hint" style="margin-top:0">Several families — or cross-language rings (one concept across languages, e.g. election / élection / wahl) — gathered under one theme (e.g. Russia–Ukraine war over Russia, Ukraine, Putin, sanctions…), with real statistics: a dominance disclosure, a windowed trend, and cross-group overlap. Creating a group, adding members, and deleting live in Settings → Keywords — this view is the data.</p>
+      <h2 style="margin-top:0;font-size:13px">Super-groups <span class="muted">— gathering families and groups together</span> <span id="sg-basis"></span></h2>
+      <p class="hint" style="margin-top:0">Several families — or cross-language groups (one concept across many languages, e.g. election / élection / wahl) — gathered under one super-group (e.g. Russia–Ukraine war, over Russia, Ukraine, Putin, sanctions…), with real statistics: a dominance disclosure, a windowed trend, and overlap between super-groups. Creating a super-group, adding members, and deleting all live in Settings → Keywords — this view is the data.</p>
       <div class="row" style="align-items:center">
         <button class="secondary" onclick="loadSuperGroups()">Refresh</button>
         <span id="sg-status" class="hint"></span>
@@ -990,8 +990,8 @@
       <div id="sg-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
       <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
         <h2 style="font-size:13px;margin:0">Cross-country map of a concept</h2>
-        <p class="hint" style="margin-top:2px">Pick a cross-language ring — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).</p>
-        <div class="row"><div style="flex:2"><label for="sg-ringmap-pick">Concept (ring)</label>
+        <p class="hint" style="margin-top:2px">Pick a cross-language group — one concept counted across every language — to see where its coverage comes from, split by the producing source's country and language. Counts only; a source with an unknown country is shown honestly (never mapped, never guessed).</p>
+        <div class="row"><div style="flex:2"><label for="sg-ringmap-pick">Concept (group)</label>
           <select id="sg-ringmap-pick" onchange="showRingMap(this.value)"><option value=""></option></select></div></div>
         <div id="sg-ringmap" style="margin-top:8px"></div>
         <div id="sg-ringmap-detail" style="margin-top:8px"></div>
@@ -1830,8 +1830,8 @@
       <div class="hint">The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.</div>
       <div class="hint">The scaling benchmark times the heavy read paths against your real corpus, several runs each, and reports cold vs warm timings per case — so we can check that big corpora stay fast on modest hardware. It records your corpus size, the keyword-counter freshness and the engine mode alongside the numbers so the results are interpretable. Read-only and local; nothing is transmitted.</div>
       <div class="hint">All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.</div>
-      <div class="hint">The keyword self-test challenges the keyword pre-selection on curated cases — most importantly that the organisation "WHO" stays distinct from the pronoun "who", plus the per-language tweaks (German nouns stay terms, sentence-initial capitals aren't entities, the stopword/weekday batches, the singular/plural family merge, cross-language equivalence rings, and the curated baseline tags). It runs the real pipeline and reports pass/fail per case — share it so a regression is caught early. No corpus content, no network, no scores.</div>
-      <div class="hint">The keyword-engine report measures how the engine is doing over your real corpus: composition, entity precision, cross-language translation coverage (how many top keywords have a ring), tag coverage, which languages are fully functional vs degraded (zh/ja aren't segmented), the self-test result, and indicative extraction/query timings. Counts and measured timings only — never a quality score. Send two over time and the difference shows whether an optimization landed.</div>
+      <div class="hint">The keyword self-test challenges the keyword pre-selection on curated cases — most importantly that the organisation "WHO" stays distinct from the pronoun "who", plus the per-language tweaks (German nouns stay terms, sentence-initial capitals aren't entities, the stopword/weekday batches, the singular/plural family merge, cross-language equivalence groups, and the curated baseline tags). It runs the real pipeline and reports pass/fail per case — share it so a regression is caught early. No corpus content, no network, no scores.</div>
+      <div class="hint">The keyword-engine report measures how the engine is doing over your real corpus: composition, entity precision, cross-language translation coverage (how many top keywords have a group), tag coverage, which languages are fully functional vs degraded (zh/ja aren't segmented), the self-test result, and indicative extraction/query timings. Counts and measured timings only — never a quality score. Send two over time and the difference shows whether an optimization landed.</div>
       <div class="hint">The date-extraction log shows, per article, the dates the extractor found versus the date-like text it skipped — the evidence for catching more dates. Counts and bounded samples only; local, never transmitted.</div>
       <div class="hint">The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.</div>
     </section>
@@ -1853,8 +1853,8 @@
     <section class="panel">
       <h2 style="margin-top:0;font-size:13px">Entity family curation <span class="muted">— you decide</span></h2>
       <p class="hint" style="margin-top:0">Surface variants are grouped automatically (a shared lemma/plural, or a
-        cross-language ring — USA / США / EUA). Only rows where there is actually something to decide are shown
-        below: a multi-member family, a ring merge, or a family you already overrode. Tick two or more rows and
+        cross-language group — USA / США / EUA). Only rows where there is actually something to decide are shown
+        below: a multi-member family, a group merge, or a family you already overrode. Tick two or more rows and
         Merge them, or click a member's ✕ to split it out. Your decisions win over the automatic rules and are
         fully reversible.</p>
       <div class="row" style="align-items:center">
@@ -1867,10 +1867,10 @@
     </section>
     <section class="panel">
       <h2 style="margin-top:0;font-size:13px">Super-group curation <span class="muted">— create, add, remove, delete</span></h2>
-      <p class="hint" style="margin-top:0">Gather several families — or cross-language rings (one concept across
-        languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war over Russia, Ukraine,
-        Putin, sanctions…). A ring member makes the group span languages (the super-ring model). Pure curation —
-        nothing in the keyword store changes; see the group's real statistics in Insights → Groups.</p>
+      <p class="hint" style="margin-top:0">Gather several families — or cross-language groups (one concept across
+        many languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war, over Russia,
+        Ukraine, Putin, sanctions…). A group member makes the super-group span languages. Pure curation —
+        nothing in the keyword store changes; see the super-group's real statistics in Insights → Super-groups.</p>
       <div class="row" style="align-items:center">
         <div style="flex:2"><label for="sgc-name">New super-group</label>
           <input id="sgc-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>

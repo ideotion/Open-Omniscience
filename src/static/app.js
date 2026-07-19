@@ -9234,7 +9234,7 @@
         list.innerHTML = fams.length ? fams.map(f => `<div class="fam-row">
             <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
-              ${f.ring_id ? '<span class="pill" title="a cross-language ring merge">ring</span>' : ""}
+              ${f.ring_id ? '<span class="pill" title="a cross-language group merge">group</span>' : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips muted">${_famMemberList(f)}</div></div></div>`
           ).join("") : '<div class="muted">No entity families yet — index the corpus first.</div>';
@@ -9242,7 +9242,7 @@
     }
 
     // -- Settings -> Keywords: entity family CURATION (merge/split; relocated 2026-07-18) -- //
-    // Only rows where a DECISION exists are shown: multi-member (variants>1), a ring merge
+    // Only rows where a DECISION exists are shown: multi-member (variants>1), a group merge
     // (ring_id), or a family carrying a manual override -- never thousands of single-member
     // rows with nothing to do (§0 row 6).
     async function loadFamilyCuration() {
@@ -9271,7 +9271,7 @@
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
             <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
-              ${f.ring_id ? '<span class="pill" title="a cross-language ring merge">ring</span>' : ""}
+              ${f.ring_id ? '<span class="pill" title="a cross-language group merge">group</span>' : ""}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
         }).join("") : '<div class="muted">No families with a decision to review — grouping is fully automatic so far.</div>';
@@ -9443,7 +9443,7 @@
           if (cur && (rings.rings || []).some(r => r.id === cur)) pick.value = cur;
         }
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCard).join("")
-          : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
+          : '<div class="muted">No super-groups yet. Create one above, then add families or groups to it.</div>';
         const bc = $("sg-basis"); if (bc) bc.innerHTML = basisChip(sgs.counts);
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
       _sgScrollToTarget();  // S3: land on the deep-linked group after it renders
@@ -9480,7 +9480,7 @@
       const chips = shown.length ? shown.map(m => {
         const isRing = !!m.ring_id;
         const inner = isRing
-          ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">ring·${(m.ring_members || []).length}</span>`
+          ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">group·${(m.ring_members || []).length}</span>`
           : esc(m.normalized);
         // Row 2 (cross-group overlap): a member also counted in other groups gets
         // that stated in its hover, never silently summed as if exclusive.
@@ -9546,7 +9546,7 @@
         $("sg-ring-options").innerHTML = (rings.rings || []).map(r =>
           `<option value="${esc(r.id)}">${esc(r.id)} — ${esc((r.languages || []).join("/"))}</option>`).join("");
         box.innerHTML = sgs.supergroups.length ? sgs.supergroups.map(sgCurationCard).join("")
-          : '<div class="muted">No super-groups yet. Create one above, then add families or rings to it.</div>';
+          : '<div class="muted">No super-groups yet. Create one above, then add families or groups to it.</div>';
       } catch (e) { box.innerHTML = `<div class="muted">Could not load: ${esc(e.message)}</div>`; }
     }
 
@@ -9554,13 +9554,13 @@
       const chips = g.members.length ? g.members.map(m => {
         const isRing = !!m.ring_id;
         const inner = isRing
-          ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">ring·${(m.ring_members || []).length}</span>`
+          ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">group·${(m.ring_members || []).length}</span>`
           : esc(m.normalized);
         const tip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
         return `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
            title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>`;
       }).join("")
-        : '<span class="muted">No members yet — add a family or a ring below.</span>';
+        : '<span class="muted">No members yet — add a family or a group below.</span>';
       return `<div class="sg-card">
         <div class="sg-head"><b>${esc(g.name)}</b>
           <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"}</span>
@@ -9572,10 +9572,10 @@
             data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddMember(this)"></div>
           <div style="flex:0 0 auto;align-self:end"><button class="secondary"
             onclick="sgAddMember(this.closest('.row').querySelector('.sg-fam-in'))">Add family</button></div>
-          <div style="flex:2"><input class="sg-ring-in" list="sg-ring-options" placeholder="add a ring (one concept, many languages)…"
+          <div style="flex:2"><input class="sg-ring-in" list="sg-ring-options" placeholder="add a group (one concept, many languages)…"
             data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddRing(this)"></div>
           <div style="flex:0 0 auto;align-self:end"><button class="secondary"
-            onclick="sgAddRing(this.closest('.row').querySelector('.sg-ring-in'))">Add ring</button></div>
+            onclick="sgAddRing(this.closest('.row').querySelector('.sg-ring-in'))">Add group</button></div>
         </div></div>`;
     }
 
@@ -9594,9 +9594,9 @@
       if (!ring) return;
       try {
         await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({rings: [ring]})});
-        toast("Ring added."); loadSupergroupCuration();
+        toast("Group added."); loadSupergroupCuration();
         if (_insLoaded.has("supergroups")) loadSuperGroups();
-      } catch (e) { toast("Add ring failed: " + e.message, "err"); }
+      } catch (e) { toast("Add group failed: " + e.message, "err"); }
     }
 
     async function sgRemoveMember(btn) {

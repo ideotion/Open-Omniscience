@@ -4327,6 +4327,83 @@ def test_keyword_to_supergroup_navigation():
     assert "it.supergroups" in src, "omnibar keyword rows must surface the same membership"
 
 
+def test_naming_sweep_ring_disappears_from_the_user_visible_ui():
+    """GROUPS layer amendment §A: the user-facing hierarchy is keyword -> group ->
+    super-group. "ring" stays the internal name (ring_id / /ring-countries / /rings
+    / the sg-ring-* element ids and datalists -- the Lead-rename precedent: labels
+    only, no internal identifier change) but disappears from every string a user
+    actually reads. Also resolves the naming collision: the Insights subtab that
+    opens the super-group data view must say "Super-groups", not the ambiguous
+    "Groups" (which the panel it opens never was)."""
+    src = _ui_source()
+
+    # The collision fix: the subtab nav button matches what #ins-supergroups holds.
+    assert '<button data-tab="supergroups">Super-groups</button>' in src
+    assert '<button data-tab="supergroups">Groups</button>' not in src
+
+    # Regression-pin the specific curation-chrome fixes (§A "ring" pills/buttons/
+    # placeholders -> "group"); scoped to exact prior literals so a legitimate
+    # internal `ring_id`/`ring-countries`/geometric "ring" (donut slices, mind-map
+    # concentric rings, GIS polygon rings, SVG hollow-ring markers) can never
+    # false-positive this guard.
+    forbidden_literals = (
+        '<span class="pill" title="a cross-language ring merge">ring</span>',
+        "add families or rings to it",
+        '<span class="muted">ring·${(m.ring_members || []).length}</span>',
+        "add a family or a ring below",
+        'placeholder="add a ring (one concept, many languages)…"',
+        ">Add ring</button>",
+        'toast("Ring added.")',
+        'toast("Add ring failed:',
+    )
+    for lit in forbidden_literals:
+        assert lit not in src, f"a user-visible 'ring' literal survived the naming sweep: {lit!r}"
+
+    required_literals = (
+        '<span class="pill" title="a cross-language group merge">group</span>',
+        "add families or groups to it",
+        '<span class="muted">group·${(m.ring_members || []).length}</span>',
+        "add a family or a group below",
+        'placeholder="add a group (one concept, many languages)…"',
+        ">Add group</button>",
+        'toast("Group added.")',
+        'toast("Add group failed:',
+    )
+    for lit in required_literals:
+        assert lit in src, f"expected the renamed literal to be present: {lit!r}"
+
+    # Internal identifiers are UNCHANGED (the brief's explicit "no internal id / API
+    # path / config key change" rule) -- these still say "ring" by design.
+    for internal in ('id="sg-ring-options"', "ring_id", "/api/insights/ring-countries",
+                      "/api/insights/rings"):
+        assert internal in src, f"internal ring-named identifier must be preserved: {internal!r}"
+
+
+def test_naming_sweep_ring_map_header_is_keyed_group_wording():
+    """The concept-map header (index.html, static -> keyable) picks a GROUP, not a
+    ring, and the picker label reads "Concept (group)" -- both via NEW keys (an
+    edited English string would silently orphan the old translation), so all 12
+    locales stay covered."""
+    import json
+
+    locales_dir = _SRC / "static" / "locales"
+    en = json.load(open(locales_dir / "en.json", encoding="utf-8"))
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    key1 = (
+        "Pick a cross-language group — one concept counted across every language — "
+        "to see where its coverage comes from, split by the producing source's "
+        "country and language. Counts only; a source with an unknown country is "
+        "shown honestly (never mapped, never guessed)."
+    )
+    key2 = "Concept (group)"
+    assert key1 in en and key2 in en, "the renamed map-header keys must exist in en.json"
+    assert key1 in html and key2 in html, "index.html must use the new group-wording keys"
+    for loc in ("fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id"):
+        d = json.load(open(locales_dir / f"{loc}.json", encoding="utf-8"))
+        assert d.get(key1), f"{loc}: missing translation for the renamed map header"
+        assert d.get(key2), f"{loc}: missing translation for 'Concept (group)'"
+
+
 def test_task_manager_opens_in_a_standalone_tab():
     """The task manager opens in its OWN browser tab (maintainer 2026-06-18) so it
     can stay parked on the desktop while the user works in the app. Pinned: the
@@ -4790,8 +4867,10 @@ def test_translations_extend_to_analysis_window_and_supergroups():
     assert 'target_lang=" + encodeURIComponent(uiLangCode())' in html and (
         "/api/insights/supergroups?series_top=" in html
     ), "the super-groups fetch must request the verified translation"
-    assert "ring·${(m.ring_members || []).length}" in html and "${kwTransHtml(m)}" in html, (
-        "a super-group ring member must render its verified translation"
+    # "ring" is the internal name only (GROUPS layer amendment §A) -- the pill now
+    # reads "group·N" in the user-visible UI.
+    assert "group·${(m.ring_members || []).length}" in html and "${kwTransHtml(m)}" in html, (
+        "a super-group group member must render its verified translation"
     )
 
 
