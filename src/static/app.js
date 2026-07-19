@@ -9413,8 +9413,10 @@
       const box = $("sg-list");
       box.innerHTML = '<div class="muted">Loading…</div>';
       try {
+        // series_top: only the top-mentioned groups get a windowed rate + sparkline
+        // (S1.5, bounded — never all ~77 groups on every load).
         const [sgs, top, rings] = await Promise.all([
-          api("/api/insights/supergroups?target_lang=" + encodeURIComponent(uiLangCode())),
+          api("/api/insights/supergroups?series_top=12&window_days=7&target_lang=" + encodeURIComponent(uiLangCode())),
           api("/api/insights/top?group=true&limit=200" + tgtLangParam()),
           api("/api/insights/rings"),
         ]);
@@ -9440,22 +9442,48 @@
     }
 
     function sgCard(g) {
-      const chips = g.members.length ? g.members.map(m => {
+      // Row 7 (display noise): zero-mention members collapse behind a count instead
+      // of rendering a flat wall of empty chips.
+      const shown = g.members.filter(m => m.mentions > 0);
+      const zeroCount = g.members.length - shown.length;
+      const chips = shown.length ? shown.map(m => {
         const isRing = !!m.ring_id;
         const inner = isRing
           ? `⊕ ${esc(m.ring_id)}${kwTransHtml(m)} <span class="muted">ring·${(m.ring_members || []).length}</span>`
           : esc(m.normalized);
-        const tip = isRing ? esc((m.ring_members || []).join(" · ")) : "remove from this group";
+        // Row 2 (cross-group overlap): a member also counted in other groups gets
+        // that stated in its hover, never silently summed as if exclusive.
+        const alsoIn = (m.also_in && m.also_in.length)
+          ? ` — also in: ${m.also_in.join(", ")}` : "";
+        const tip = esc((isRing ? (m.ring_members || []).join(" · ") : "remove from this group") + alsoIn);
         return `<button class="fam-chip" data-sg="${g.id}" data-norm="${esc(m.normalized)}" onclick="sgRemoveMember(this)"
-           title="${tip}">${inner} <span class="muted">${m.mentions}</span> ✕</button>`;
+           title="${tip}">${inner} <span class="muted">${m.mentions}</span>${alsoIn ? " *" : ""} ✕</button>`;
       }).join("")
         : '<span class="muted">No members yet — add a family or a ring below.</span>';
+      const zeroChip = zeroCount > 0
+        ? `<span class="muted" title="${esc(g.members.filter(m => m.mentions === 0).map(m => m.normalized).join(", "))}">+${zeroCount} with no mentions yet</span>`
+        : "";
+      // Row 1 (dominance): the mandatory "which member accounts for the total"
+      // disclosure — a group total without it misleads by construction.
+      const domLine = g.dominance
+        ? `<div class="hint muted" style="margin-top:2px">Dominated by <b>${esc(g.dominance.member)}</b> (${Math.round(g.dominance.share * 100)}% of this total)</div>`
+        : "";
+      // S1.5: a windowed rate + sparkline, present only on the top series_top groups
+      // (bounded — never all groups); both summed over the SAME deduped id set the
+      // headline total uses, so the chart can never disagree with the number beside it.
+      const rateLine = g.rate
+        ? `<div class="hint muted" style="margin-top:2px">↑${esc(String(g.rate.growth))}× (${g.rate.recent} recent · ${g.rate.prior} prior, ${g.rate.window_days}d vs ${g.rate.baseline_days}d)</div>`
+        : "";
+      const spark = (g.series && g.series.length)
+        ? `<div style="margin-top:6px">${dashChartSvg(g.series.map(p => ({observed_on: p.date, price: p.count})), "")}</div>`
+        : "";
       return `<div class="sg-card">
         <div class="sg-head"><b>${esc(g.name)}</b>
           <span class="muted">· ${g.count} member${g.count === 1 ? "" : "s"} · ${g.mentions} mentions</span>
           <button class="ghost tiny" style="margin-left:auto" data-sg="${g.id}" data-name="${esc(g.name)}"
             onclick="deleteSuperGroup(this)">delete</button></div>
-        <div class="fam-chips" style="margin-top:6px">${chips}</div>
+        ${domLine}${rateLine}${spark}
+        <div class="fam-chips" style="margin-top:6px">${chips}${zeroChip ? " " + zeroChip : ""}</div>
         <div class="row" style="margin-top:8px">
           <div style="flex:2"><input class="sg-fam-in" list="sg-family-options" placeholder="add a family…"
             data-sg="${g.id}" onkeydown="if(event.key==='Enter')sgAddMember(this)"></div>

@@ -4271,6 +4271,22 @@ def test_super_ring_ui():
     assert "rings: [ring]" in src, "add-ring must POST a ring member (not a family normalized)"
 
 
+def test_supergroup_stats_ui():
+    """Supergroups brief S1.5: the Groups surface discloses the honest per-group
+    statistics (§0 rows 1/2/3/7) — a bounded windowed rate + sparkline on the
+    top-mentioned groups, the mandatory dominance line, cross-group overlap on a
+    member's hover, and zero-mention members collapsed behind a count rather than
+    rendered as a wall of empty chips."""
+    src = _ui_source()
+    assert "series_top=12" in src, "loadSuperGroups must request a BOUNDED top-N series (never all groups)"
+    fn = src[src.index("function sgCard(") : src.index("async function createSuperGroup(")]
+    assert "g.dominance" in fn, "row 1: the dominance disclosure must render"
+    assert "also_in" in fn, "row 2: cross-group overlap must be disclosed on a member"
+    assert "zeroCount" in fn and "with no mentions yet" in fn, "row 7: zero-mention members must collapse"
+    assert "dashChartSvg(g.series" in fn, "S1.5: the sparkline must reuse the shared honest-charts primitive"
+    assert "g.rate.growth" in fn, "S1.5: the disclosed recent-vs-baseline rate must render"
+
+
 def test_task_manager_opens_in_a_standalone_tab():
     """The task manager opens in its OWN browser tab (maintainer 2026-06-18) so it
     can stay parked on the desktop while the user works in the app. Pinned: the
@@ -4729,10 +4745,11 @@ def test_translations_extend_to_analysis_window_and_supergroups():
     assert 'corpus-keywords?" + p.toString() + tgtLangParam()' in html, (
         "the analysis-window Keywords fetch must request the verified translation"
     )
-    # Super-groups: the list fetch passes target_lang and ring members show the translation.
-    assert '/api/insights/supergroups?target_lang=" + encodeURIComponent(uiLangCode())' in html, (
-        "the super-groups fetch must request the verified translation"
-    )
+    # Super-groups: the list fetch passes target_lang and ring members show the translation
+    # (the S1.5 series_top/window_days params were added additively before it).
+    assert 'target_lang=" + encodeURIComponent(uiLangCode())' in html and (
+        "/api/insights/supergroups?series_top=" in html
+    ), "the super-groups fetch must request the verified translation"
     assert "ring·${(m.ring_members || []).length}" in html and "${kwTransHtml(m)}" in html, (
         "a super-group ring member must render its verified translation"
     )

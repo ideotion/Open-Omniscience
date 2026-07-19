@@ -42,7 +42,7 @@ supergroups:
   - name: "Justice & courts"
     rings: [law, trial, judge, prosecutor, lawyer, jury, evidence, lawsuit, jurisdiction, sentence, parole, bail, prison, extradition, prisoner]
   - name: "Intellectual property"
-    rings: [copyrighted, patent]
+    rings: [copyright, patent]
   - name: "Inequality & welfare"
     rings: [inequality, poverty, welfare, homelessness, housing, famine]
   - name: "Population & demography"
@@ -55,8 +55,14 @@ supergroups:
     rings: [multiculturalism, voluntary-association, creation, resignation]
   - name: "Macroeconomy"
     rings: [economy, inflation, recession, unemployment, economic-growth, gross-domestic-product, austerity, productivity]
+  # Vetted 2026-07-18 (supergroups brief §0 row 4): the "deficiency" ring is a
+  # general lack/shortage concept (its own members include shortage/scarcity/
+  # lack/dearth/inadequacy alongside "deficit"), not a specifically financial
+  # ring -- included here it read as a deficit/deficiency conflation in the
+  # scaffold. Removed rather than re-scoped: no equally-general "budget deficit"
+  # -only ring exists yet to replace it with.
   - name: "Money & banking"
-    rings: [central-bank, currency, bank, interest-rate, debt, deficiency, exchange-rate, bankruptcy]
+    rings: [central-bank, currency, bank, interest-rate, debt, exchange-rate, bankruptcy]
   - name: "Financial markets"
     rings: [stock-market, investment, stock, bond, dividend, mortgage-loan, insurance, cryptocurrency, blockchain]
   - name: "Trade & globalization"
