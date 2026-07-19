@@ -39,8 +39,14 @@ supergroups:
     rings: [human-rights, civil-and-political-rights, freedom-of-speech, freedom-of-expression, censorship]
   - name: "Crime"
     rings: [crime, homicide, theft, fraud, smuggling, defamation]
+  # Vetted 2026-07-18 (supergroups brief S4.3, row 6: "'sentence' 5,430 carrying
+  # 'Justice'"): the "sentence" ring's own members (Wikidata QID Q41796) are ALL
+  # about the LINGUISTIC/grammatical sense (phrase/Satz/oración/kalimat/文 -- a
+  # sentence as a unit of grammar), never judicial sentencing -- the wrong concept
+  # for this group entirely. Removed rather than re-scoped: no "prison sentence"
+  # -specific ring exists yet to replace it with.
   - name: "Justice & courts"
-    rings: [law, trial, judge, prosecutor, lawyer, jury, evidence, lawsuit, jurisdiction, sentence, parole, bail, prison, extradition, prisoner]
+    rings: [law, trial, judge, prosecutor, lawyer, jury, evidence, lawsuit, jurisdiction, parole, bail, prison, extradition, prisoner]
   - name: "Intellectual property"
     rings: [copyright, patent]
   - name: "Inequality & welfare"
@@ -51,8 +57,14 @@ supergroups:
     rings: [gender, gender-equality, feminism, family, identity]
   - name: "Education & learning"
     rings: [education, university, school, teacher, student, literacy]
+  # Vetted 2026-07-18 (supergroups brief S4.3, row 6: "'creation' 4,618 (87% of
+  # 'Social cohesion')"): the "creation" ring is a generic act-of-forming/
+  # production concept (Wikidata QID Q11398090 -- "creating"/"formation"/
+  # "generation"/"making") with no conceptual link to multiculturalism/voluntary
+  # association/resignation; a scaffold misplacement, not a homograph WITHIN the
+  # ring itself. Removed from this group (the ring's own definition is untouched).
   - name: "Social cohesion"
-    rings: [multiculturalism, voluntary-association, creation, resignation]
+    rings: [multiculturalism, voluntary-association, resignation]
   - name: "Macroeconomy"
     rings: [economy, inflation, recession, unemployment, economic-growth, gross-domestic-product, austerity, productivity]
   # Vetted 2026-07-18 (supergroups brief §0 row 4): the "deficiency" ring is a

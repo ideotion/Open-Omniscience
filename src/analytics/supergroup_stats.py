@@ -350,3 +350,57 @@ def supergroup_stats(
             "both are disclosed, never silently summed as if exclusive."
         ),
     }
+
+
+REDUNDANT_MEMBER_METHOD = (
+    "A plain family member whose ENTIRE resolved keyword-id set is already covered "
+    "by a ring member in the same group (structural subset, not a guess) — the "
+    "legacy-residue pattern left behind once a covering ring was added on top of an "
+    "older plain-family entry (supergroups brief S4.1: the AI group's plain "
+    "model/models/ia/données members beside the covering artificial-intelligence "
+    "ring). A REPORT only — nothing is removed automatically; the maintainer reviews "
+    "each row and removes it (or not) via the existing member-remove action, "
+    "honoring user-edit-wins. Never a sweep."
+)
+
+
+def find_redundant_family_members(db) -> list[dict]:
+    """Plain family members that are fully redundant with a ring ALREADY in the
+    same group (S4.1) — a diagnostic REPORT, never an auto-applied fix.
+
+    Returns ``[{"sg_id", "sg_name", "member", "redundant_with_rings"}]``, one row
+    per plain member whose resolved keyword-id set is a non-empty subset of the
+    union of the group's own ring members' ids. A member covering NO keyword (an
+    unresolved/dead entry) is never flagged here — that is a config-lint concern,
+    not a redundancy one."""
+    from src.database.models import KeywordSuperGroup
+
+    out: list[dict] = []
+    sgs = db.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
+    for sg in sgs:
+        member_rows = [(m.normalized_term, m.ring_id) for m in sg.members]
+        ring_keys = [k for k, rid in member_rows if rid]
+        if not ring_keys:
+            continue  # no ring in this group -> nothing can be "covered by a ring"
+        id_sets = resolve_member_keyword_ids(db, member_rows)
+        ring_union: set[int] = set()
+        for key in ring_keys:
+            ring_union |= id_sets.get(key, set())
+        if not ring_union:
+            continue
+        for norm, ring_id in member_rows:
+            if ring_id:
+                continue  # only plain family members are candidates
+            own_ids = id_sets.get(norm, set())
+            if own_ids and own_ids <= ring_union:
+                out.append(
+                    {
+                        "sg_id": sg.id,
+                        "sg_name": sg.name,
+                        "member": norm,
+                        "redundant_with_rings": [
+                            k for k in ring_keys if id_sets.get(k, set()) & own_ids
+                        ],
+                    }
+                )
+    return out

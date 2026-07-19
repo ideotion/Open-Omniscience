@@ -2007,6 +2007,19 @@ def list_supergroups(
     }
 
 
+@router.get("/supergroups/redundant-members")
+def supergroup_redundant_members(db: Session = Depends(get_db)) -> dict:
+    """S4.1: plain family members that are fully redundant with a ring already in
+    the same group — the legacy-residue pattern the field export flagged (e.g. a
+    plain "ai" member beside the covering "artificial-intelligence" ring). A
+    REPORT only; the maintainer reviews each row and removes it (or not) via the
+    existing member-remove action — never an automated purge."""
+    from src.analytics.supergroup_stats import REDUNDANT_MEMBER_METHOD, find_redundant_family_members
+
+    items = find_redundant_family_members(db)
+    return {"items": items, "count": len(items), "method": REDUNDANT_MEMBER_METHOD}
+
+
 @router.get("/rings")
 def list_rings() -> dict:
     """The cross-language equivalence rings (curated + Wikidata-generated), so the UI

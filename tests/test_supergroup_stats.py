@@ -23,6 +23,7 @@ from src.analytics.supergroup_stats import (
     cross_group_membership,
     daily_series,
     distinct_ids,
+    find_redundant_family_members,
     group_rate,
     member_overlaps,
     resolve_member_keyword_ids,
@@ -489,3 +490,90 @@ def test_supergroup_stats_degrades_honestly_when_no_member_resolves_to_a_keyword
     out = supergroup_stats(s, sg)
     assert out["group_total"] == {"mentions": 0, "distinct_keywords": 0}
     assert out["dominance"] is None
+
+
+# ---------------------------------------------------------------------------
+# find_redundant_family_members -- S4.1, a REPORT never an auto-purge
+
+
+def test_find_redundant_family_members_flags_a_member_fully_covered_by_a_ring():
+    """The exact field-export scenario: a plain "ai" family member whose keyword
+    is ALSO covered by the "artificial-intelligence" ring in the same group."""
+    s = _sess()
+    a = _article(s)
+    kw_ai = _kw(s, "AI", "ai", "en")
+    _mention(s, kw_ai, a, 10)
+    sg = KeywordSuperGroup(name="Artificial intelligence")
+    s.add(sg)
+    s.flush()
+    s.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term="ai", ring_id=None))
+    s.add(
+        KeywordSuperGroupMember(
+            supergroup_id=sg.id, normalized_term="artificial-intelligence",
+            ring_id="artificial-intelligence",
+        )
+    )
+    s.commit()
+
+    report = find_redundant_family_members(s)
+    assert len(report) == 1
+    row = report[0]
+    assert row["sg_name"] == "Artificial intelligence"
+    assert row["member"] == "ai"
+    assert row["redundant_with_rings"] == ["artificial-intelligence"]
+
+
+def test_find_redundant_family_members_never_flags_a_partially_covered_member():
+    """A plain member whose keyword-id set is NOT a subset of the ring union
+    (it covers something the ring doesn't) must never be flagged as redundant --
+    it carries real, non-duplicated information."""
+    s = _sess()
+    a2 = _article(s, 2)
+    kw_extra = _kw(s, "extra", "extra", "en")
+    sg = KeywordSuperGroup(name="Artificial intelligence")
+    s.add(sg)
+    s.flush()
+    _mention(s, kw_extra, a2, 5)
+    s.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term="extra", ring_id=None))
+    s.add(
+        KeywordSuperGroupMember(
+            supergroup_id=sg.id, normalized_term="artificial-intelligence",
+            ring_id="artificial-intelligence",
+        )
+    )
+    s.commit()
+
+    assert find_redundant_family_members(s) == []
+
+
+def test_find_redundant_family_members_ignores_groups_with_no_ring():
+    s = _sess()
+    a = _article(s)
+    kw = _kw(s, "Trump", "trump", "en")
+    _mention(s, kw, a, 5)
+    sg = KeywordSuperGroup(name="People")
+    s.add(sg)
+    s.flush()
+    s.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term="trump", ring_id=None))
+    s.commit()
+
+    assert find_redundant_family_members(s) == []
+
+
+def test_find_redundant_family_members_never_flags_an_unresolvable_member():
+    """A plain member covering NO keyword at all (a dead/unresolved entry) is a
+    config-lint concern, not a redundancy one -- it must never be reported here."""
+    s = _sess()
+    sg = KeywordSuperGroup(name="Artificial intelligence")
+    s.add(sg)
+    s.flush()
+    s.add(KeywordSuperGroupMember(supergroup_id=sg.id, normalized_term="nonexistent", ring_id=None))
+    s.add(
+        KeywordSuperGroupMember(
+            supergroup_id=sg.id, normalized_term="artificial-intelligence",
+            ring_id="artificial-intelligence",
+        )
+    )
+    s.commit()
+
+    assert find_redundant_family_members(s) == []

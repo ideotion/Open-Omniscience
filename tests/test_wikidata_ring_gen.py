@@ -161,6 +161,15 @@ def test_shipped_generated_file_is_clean_and_vetted():
     rings = _parse_rings(data)
     assert all(len(r.members) >= 2 for r in rings)
 
+    # Supergroups brief S4.2 config lint: every member label is well-formed
+    # ("lang:term", both parts non-empty after stripping) -- a malformed label
+    # would silently fail to match any keyword (an honest gap masquerading as a
+    # populated ring).
+    for r in rings:
+        for lang, term in r.members:
+            assert lang.strip() and len(lang.strip()) <= 3, f"{r.id}: bad lang code {lang!r}"
+            assert term.strip(), f"{r.id}: empty term for lang {lang!r}"
+
     dropped = {
         "warsaw", "the-police", "taxon", "wii", "metabolism", "nuclear-fusion",
         "stem-cells", "the-library", "massachusetts", "sun-microsystems",

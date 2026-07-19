@@ -277,3 +277,35 @@ def test_supergroup_endpoint_dominance_is_none_for_an_empty_group(tmp_path):
             assert g["mentions"] == 0 and g["distinct_keywords"] == 0
     finally:
         app.dependency_overrides.clear()
+
+
+def test_redundant_members_endpoint_reports_the_field_export_scenario(tmp_path):
+    """S4.1 end to end: the report endpoint surfaces a plain family member fully
+    covered by a ring in the same group -- a REPORT only (nothing is removed)."""
+    app, Sess = _client(tmp_path)
+    with Sess() as s:
+        s.add(Source(name="Src", domain="s.test"))
+        s.flush()
+        s.add(Article(url="https://s.test/1", canonical_url="https://s.test/1",
+                      source_id=1, title="t", content="x", hash="h1"))
+        s.flush()
+        _seed_keyword(s, "AI", "ai", article_ids=[1])
+        s.commit()
+
+    try:
+        with TestClient(app) as c:
+            sid = c.post("/api/insights/supergroups", json={"name": "AI"}).json()["id"]
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"normalized": ["ai"]})
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"rings": ["artificial-intelligence"]})
+
+            r = c.get("/api/insights/supergroups/redundant-members").json()
+            assert r["count"] == 1
+            assert r["items"][0]["member"] == "ai"
+            assert r["items"][0]["redundant_with_rings"] == ["artificial-intelligence"]
+            assert isinstance(r["method"], str) and r["method"]
+
+            # The report is read-only -- the member is still there afterwards.
+            g = c.get("/api/insights/supergroups").json()["supergroups"][0]
+            assert any(m["normalized"] == "ai" for m in g["members"])
+    finally:
+        app.dependency_overrides.clear()

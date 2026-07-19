@@ -212,9 +212,17 @@ rings:
   - id: rocket
     qid: Q41291
     members: ["en:rocket", "en:rockets", "ar:صاروخ", "ar:صواريخ", "ar:الصورايخ", "ar:الصواريخ", "bn:রকেট", "de:Rakete", "de:Raketen", "es:cohete", "es:cohete a reacción", "es:cohete de reacción", "es:cohete a reaccion", "es:cohete de reaccion", "fr:fusée", "fr:fusée astronautique", "fr:fusées spatiales", "fr:fusées expérimentales", "fr:fusee spatiale", "fr:fusée spatiale", "hi:रॉकेट", "hi:Rocket", "hi:राकेट", "id:Roket", "ja:ロケット", "ja:化学ロケット", "ja:宇宙ロケット", "ja:ロケット機関", "ja:化学燃料ロケット", "pt:foguete", "pt:foguete espacial", "pt:foguetes", "ru:ракета", "zh:火箭"]
+  # Vetted 2026-07-18 (supergroups brief S4.3, row 6: "universe ring·68 at 16,393
+  # mentions, #1 in Cosmology, above star 2,491"): the raw generator output carried
+  # overly-generic single-word English aliases of this QID -- "world"/"existence"/
+  # "everything"/"all"/"system" -- that flood in ANY news text for reasons having
+  # nothing to do with cosmology (a "health system", "around the world", "system of
+  # government" all matched). Dropped (English only, this pass); non-English members
+  # carry the SAME generic-alias risk (e.g. de:Welt/fr:monde/ru:мир also mean "world")
+  # but are left for a native-reviewed follow-up rather than a unilateral guess.
   - id: universe
     qid: Q1
-    members: ["en:universe", "en:macrocosm", "en:the universe", "en:the cosmos", "en:our universe", "en:cosmos", "en:yin and yang", "en:world", "en:space", "en:outer space", "en:metagalaxy", "en:heaven and earth", "en:existence", "en:everything", "en:all", "en:system", "en:creation", "ar:فضاء كوني", "ar:الكون", "ar:كوننا", "ar:كون", "bn:মহাবিশ্ব", "bn:বিশ্ব-ব্রহ্মাণ্ড", "bn:সারা দুনিয়া", "de:Universum", "de:Weltall", "de:All", "de:Kosmos", "de:Welt", "es:universo", "es:cosmos", "es:espacio", "es:universos", "es:nuestro universo", "es:nuestro cosmos", "es:El Universo", "es:El Espacio", "fr:univers", "fr:cosmos", "fr:espace", "fr:monde", "fr:tout", "fr:macrocosme", "fr:notre univers", "fr:univers visible", "hi:ब्रह्माण्ड", "hi:ब्रह्मांड", "hi:अंतरिक्ष", "hi:दुनिया", "id:alam semesta", "id:jagad raya", "id:semesta", "id:kosmos", "id:ruang angkasa", "id:kehidupan", "id:universum", "ja:宇宙", "ja:うちゅう", "pt:universo", "pt:cosmos", "pt:espaço", "pt:mundo", "ru:Вселенная", "ru:мир", "ru:космос", "ru:наша Вселенная", "zh:宇宙", "zh:乾坤"]
+    members: ["en:universe", "en:macrocosm", "en:the universe", "en:the cosmos", "en:our universe", "en:cosmos", "en:yin and yang", "en:space", "en:outer space", "en:metagalaxy", "en:heaven and earth", "en:creation", "ar:فضاء كوني", "ar:الكون", "ar:كوننا", "ar:كون", "bn:মহাবিশ্ব", "bn:বিশ্ব-ব্রহ্মাণ্ড", "bn:সারা দুনিয়া", "de:Universum", "de:Weltall", "de:All", "de:Kosmos", "de:Welt", "es:universo", "es:cosmos", "es:espacio", "es:universos", "es:nuestro universo", "es:nuestro cosmos", "es:El Universo", "es:El Espacio", "fr:univers", "fr:cosmos", "fr:espace", "fr:monde", "fr:tout", "fr:macrocosme", "fr:notre univers", "fr:univers visible", "hi:ब्रह्माण्ड", "hi:ब्रह्मांड", "hi:अंतरिक्ष", "hi:दुनिया", "id:alam semesta", "id:jagad raya", "id:semesta", "id:kosmos", "id:ruang angkasa", "id:kehidupan", "id:universum", "ja:宇宙", "ja:うちゅう", "pt:universo", "pt:cosmos", "pt:espaço", "pt:mundo", "ru:Вселенная", "ru:мир", "ru:космос", "ru:наша Вселенная", "zh:宇宙", "zh:乾坤"]
   - id: artificial-intelligence
     qid: Q11660
     members: ["en:artificial intelligence", "en:AI", "en:AI software", "en:machine intelligence", "en:artificially intelligent", "en:machine understanding", "en:simulated intelligence", "en:computational rationality", "en:intelligent machine", "en:machine thought", "en:artificially intelligent beings", "en:machines that can think", "en:artificial smartness", "en:artificial stupidity", "en:AI science", "ar:ذكاء اصطناعي", "ar:ذكاء الاصناعي", "ar:الذكاء الاصناعي", "ar:AI", "ar:الذكاء الاصطناعي", "ar:الذكاء الصناعي", "ar:ذكاء صنعي", "ar:الذكاء الصنعي", "ar:ذكاء صناعي", "bn:কৃত্রিম বুদ্ধিমত্তা", "bn:এআই", "bn:আর্টিফিশিয়াল ইন্টেলিজেন্স", "bn:এ.আই.", "de:künstliche Intelligenz", "de:artifizielle Intelligenz", "de:KI", "de:AI", "de:KI-Wissenschaft", "es:inteligencia artificial", "es:inteligencia de la máquina", "es:IA", "es:I.A.", "es:inteligencias artificiales", "fr:intelligence artificielle", "fr:IA", "hi:कृत्रिम बुद्धिमत्ता", "hi:एआई", "hi:कृत्रिम होशियारी", "hi:कृत्रिम बुद्धि", "hi:आर्टिफिशियल इंटेलिजेंस", "hi:कृ॰बु॰", "hi:ए॰आई॰", "hi:आर्टिफ़िशियल इंटेलिजेंस", "hi:कृत्रिमबुद्धिमत्ता", "id:kecerdasan buatan", "id:KB", "id:AI", "id:A.I.", "id:akal imitasi", "ja:人工知能", "ja:人工頭脳", "ja:人工知能（AI）", "ja:AI", "pt:inteligência artificial", "pt:IA", "pt:A.I", "pt:I.A", "ru:искусственный интеллект", "ru:ИИ", "ru:AI", "ru:АИ", "ru:интеллект", "ru:искусственный разум", "ru:искусственный ум", "ru:машинный интеллект", "ru:машинный разум", "ru:интеллектуальная машина", "ru:программное обеспечение ИИ", "ru:машинное понимание", "ru:имитация интеллекта", "ru:вычислительная рациональность", "ru:машинная мысль", "zh:人工智能", "zh:人工智慧", "zh:機器智能", "zh:機械智能", "zh:智械", "zh:AI"]
@@ -1418,9 +1426,13 @@ rings:
   - id: metaphysics
     qid: Q35277
     members: ["en:metaphysics", "ar:ما وراء الطبيعة", "ar:الميتافيزيقيا", "ar:ميتافيزياء", "ar:الميتافيزيقية", "ar:الميتافيزيقا", "ar:ميتافيزيقيا", "ar:علم ماوراء الطبيعة", "ar:العلوم الميتافيزيقية", "ar:ميتافيزيقا", "ar:ميتافيزيقية", "ar:ماوراء الطبيعة", "bn:অধিবিদ্যা", "de:Metaphysik", "de:Fundamentalphilosophie", "de:Prima Philosophia", "es:metafísica", "es:metafisica", "fr:métaphysique", "hi:तत्वमीमांसा", "hi:तत्त्वमीमांसा", "hi:Metaphysics", "hi:तत्त्वज्ञान", "id:metafisika", "id:Metafisik", "ja:形而上学", "pt:metafísica", "ru:метафизика", "ru:метафизик", "zh:形而上学", "zh:形上學", "zh:形而上", "zh:形上学", "zh:形而上學"]
+  # Vetted 2026-07-18 (supergroups brief S4.3, row 6): the raw generator output carried
+  # "de:In der Falle" ("caught in the trap") as a German member of this ring -- it does
+  # not mean "identity" in any sense; a Wikidata label mismatch, not a genuine synonym.
+  # Dropped; the identity concept has no confirmed German member until one is sourced.
   - id: identity
     qid: Q16577364
-    members: ["en:Identity", "de:In der Falle", "es:Identity", "ja:アイデンティティ"]
+    members: ["en:Identity", "es:Identity", "ja:アイデンティティ"]
   - id: ritual
     qid: Q189819
     members: ["en:ritual", "ar:طقوس", "bn:আচার", "de:Ritual", "de:Rituell", "de:Politisches Ritual", "es:ritual", "es:ritualística", "es:ritualistica", "fr:rituel", "hi:अनुष्ठान", "id:ritual", "ja:儀式", "ja:儀礼式典", "ja:式典", "ja:セレモニー", "ja:儀", "pt:ritual", "pt:Magia ritual", "pt:Cerimónia", "pt:Cerimônia", "pt:Rituais", "ru:ритуал", "ru:обряд", "zh:仪式", "zh:儀式", "zh:教儀"]

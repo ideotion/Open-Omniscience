@@ -10,7 +10,9 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.analytics.supergroup_seed import _RETIRED, seed_supergroups
+import yaml
+
+from src.analytics.supergroup_seed import _PATH, _RETIRED, seed_supergroups
 from src.database.models import Base, KeywordSuperGroup, KeywordSuperGroupMember
 
 
@@ -85,3 +87,33 @@ def test_retire_only_removes_untouched_old_topic_groups(tmp_path):
     # the user-edited "Economy & markets" survived AND was not re-seeded (name exists)
     eco = s.query(KeywordSuperGroup).filter_by(name="Economy & markets").one()
     assert any(m.normalized_term == "inflation" for m in eco.members)
+
+
+def test_scaffold_config_lint():
+    """Supergroups brief S4.2: a config lint over the bundled scaffold -- every
+    ring id a group lists must actually resolve, and a group must never list the
+    SAME ring twice (a copy-paste duplicate silently double-counting a member,
+    exactly the row-3 double-counting bug the scaffold itself must never carry)."""
+    from src.analytics.equivalence import ring_meta
+
+    data = yaml.safe_load(_PATH.read_text("utf-8")) or {}
+    groups = data.get("supergroups", [])
+    assert groups  # the scaffold must not be accidentally emptied
+
+    unresolved: list[tuple[str, str]] = []
+    duplicated: list[tuple[str, str]] = []
+    for g in groups:
+        name = g.get("name", "")
+        assert name.strip(), "every group must have a non-empty, well-formed name"
+        rings = g.get("rings", [])
+        seen: set[str] = set()
+        for rid in rings:
+            rid = str(rid)
+            if rid in seen:
+                duplicated.append((name, rid))
+            seen.add(rid)
+            if ring_meta(rid) is None:
+                unresolved.append((name, rid))
+
+    assert not unresolved, f"ring ids that do not resolve: {unresolved}"
+    assert not duplicated, f"a ring listed twice within the same group: {duplicated}"
