@@ -72,3 +72,33 @@ def scan_non_article_candidates(session: Session, *, sample_per_reason: int = _S
                   "QUARANTINE (never a silent delete) is the operator action.",
         "reversible": True,
     }
+
+
+def suspected_non_article_ids(session: Session, article_ids: list[int]) -> set[int]:
+    """Non-article member exclusion seam (Leads-calibration S1.4, row 10).
+
+    Which of the given article ids are SUSPECTED non-articles — the same conservative,
+    high-precision ``classify_non_article`` URL-shape check the retroactive scan uses
+    (:func:`scan_non_article_candidates`), scoped to a SPECIFIC member set instead of the
+    whole corpus. For cluster-building producers (space-time convergence, weather
+    corroboration, recycled-claim) to exclude homepage/section/utility captures from
+    their evidence MEMBERS. Never a silent drop: the caller must disclose the excluded
+    count (``excluded_non_articles``) in its payload — this only returns the candidate
+    set, it does not remove or quarantine anything itself (the retroactive QUARANTINE
+    stays the separate, parked fix-session action). COUNT-ONLY, no content decrypt (reads
+    ``id``/``url``/``word_count`` only)."""
+    from src.database.models import Article
+    from src.ingest.non_article import classify_non_article
+
+    ids = sorted({int(a) for a in article_ids})
+    if not ids:
+        return set()
+    out: set[int] = set()
+    for i in range(0, len(ids), 900):  # bounded IN() (SQLite variable limit)
+        chunk = ids[i : i + 900]
+        for aid, url, wc in session.query(Article.id, Article.url, Article.word_count).filter(
+            Article.id.in_(chunk)
+        ):
+            if classify_non_article(url or "", word_count=wc) is not None:
+                out.add(int(aid))
+    return out

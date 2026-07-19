@@ -63,6 +63,31 @@ def test_diet_self_audit_carries_the_exact_windowed_article_set(db):
     assert len(c.article_ids) == 10  # every article in the 30-day window, not a placeholder
     assert set(c.article_ids) == set(range(1, 11))
     assert c.key == "diet"  # the key stays a stable per-type id; the click no longer uses it as a query
+    assert c.title == "Your reading diet leans on a few sources"  # top-3 share = 100% here
+
+
+def test_diet_self_audit_says_broad_when_the_top3_share_is_low(db):
+    """Row 16 (2026-07-18 field export): "leans on a few sources" at a top-3 share of
+    14% over 2,117 sources contradicted its own number. A wide, even spread across
+    MANY sources (a low top-3 share) must say the diet is broad, not concentrated."""
+    from src.briefing.producers import diet_self_audit
+
+    for sid in range(1, 21):  # 20 sources, evenly contributing -> a low top-3 share
+        db.add(Source(id=sid, name=f"S{sid}", domain=f"s{sid}.test"))
+    db.commit()
+    aid = 0
+    for sid in range(1, 21):
+        for _ in range(3):  # 3 articles each = top-3 share ~= 3*3/60 = 15% (well below 30%)
+            aid += 1
+            _article(db, sid, aid)
+    db.commit()
+
+    cards = diet_self_audit(db)
+    assert cards, "expected a diet_self_audit card"
+    c = cards[0]
+    assert c.title == "Your reading diet is broad"
+    assert "broad" in c.summary.lower()
+    assert c.signal["value"] < 0.30
 
 
 def test_capacity_implausible_carries_the_flagged_sources_own_articles(db):
@@ -93,6 +118,30 @@ def test_capacity_implausible_carries_the_flagged_sources_own_articles(db):
     assert c.article_ids, "must carry the flagged source's own articles, not a placeholder"
     assert set(c.article_ids) == set(firehose_ids)
     assert c.key == "capacity"
+
+
+def test_capacity_implausible_exempts_the_users_own_newsletter_import(db):
+    """Row 7 (2026-07-18 field export): 'Imported newsletters (.eml) averaged ~176/day'
+    flagged the user's own bulk-import channel as a suspicious publisher — the .eml
+    import source must never be a capacity candidate (nor skew the median)."""
+    from src.briefing.producers import capacity_implausible
+
+    db.add(Source(id=1, name="Normal1", domain="n1.test"))
+    db.add(Source(id=2, name="Normal2", domain="n2.test"))
+    db.add(Source(id=3, name="Normal3", domain="n3.test"))
+    db.add(Source(id=4, name="Imported newsletters (.eml)", domain="newsletters.import.local"))
+    db.commit()
+    aid = 0
+    for sid in (1, 2, 3):
+        for day in range(14):
+            aid += 1
+            _article(db, sid, aid, days_ago=day)
+    for _ in range(400):  # a huge bulk import — would trivially clear the flood gates
+        aid += 1
+        _article(db, 4, aid, days_ago=aid % 14)
+    db.commit()
+
+    assert capacity_implausible(db) == []
 
 
 def test_capacity_implausible_quiet_without_an_implausible_source(db):
