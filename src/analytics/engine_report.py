@@ -208,13 +208,65 @@ def _mention_distribution(session: Session) -> dict:
     }
 
 
+def _plural_rule_classification(members: list[str]) -> str:
+    """Classify a lemma-preview group by how much the PLURAL rule (families.py step 1.5,
+    which runs BEFORE the lemma step) already accounts for it — so the review shows the
+    true DELTA lemmatization adds, not merges it was already getting for free.
+
+    ``"plural_rule"`` — every member is already connected via the plural rule alone (a
+    regular -s/-es/-ies relation, base not denylisted); the lemma step contributes NOTHING
+    new here. ``"lemma_only"`` — no member pair is plural-connected (a genuine addition —
+    typically a verb form or an irregular, e.g. study/studied). ``"mixed"`` — the lemma
+    step bridges two-or-more plural-connected sub-clusters the plural rule alone would have
+    kept apart. Pure, no DB access."""
+    from src.analytics.families import _PLURAL_DENYLIST, _plural_bases
+
+    ms = sorted(set(members))
+    if len(ms) < 2:
+        return "lemma_only"
+    idx = {m: i for i, m in enumerate(ms)}
+    parent = list(range(len(ms)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def union(i: int, j: int) -> None:
+        ri, rj = find(i), find(j)
+        if ri != rj:
+            parent[ri] = rj
+
+    connected = False
+    for m in ms:
+        for base in _plural_bases(m):
+            if base in _PLURAL_DENYLIST:
+                continue
+            j = idx.get(base)
+            if j is not None:
+                union(idx[m], j)
+                connected = True
+
+    if not connected:
+        return "lemma_only"
+    roots = {find(i) for i in range(len(ms))}
+    return "plural_rule" if len(roots) == 1 else "mixed"
+
+
 def _lemma_preview(rows: list[tuple]) -> dict:
-    """What OPT-IN lemmatization (P4.3) WOULD merge among the top keywords — the
-    precision-review instrument for the measure-before-trust discipline. Single-token
-    TERMS (never entity NAMES) that share a lemma per (language) are the candidate
-    conflations the maintainer eyeballs BEFORE enabling ``OO_FAMILY_LEMMA`` (default off);
-    a wrong merge becomes a ``_MISLEMMA_DENYLIST`` entry. Read-only, bounded, no score;
-    reports "unavailable" honestly when the optional ``simplemma`` is absent.
+    """What lemmatization (P4.3, ON by default since 2026-07-18) MERGES among the top
+    keywords — the precision-review instrument for the measure-before-trust discipline.
+    Single-token TERMS (never entity NAMES) that share a lemma per (language) are the
+    candidate conflations the maintainer eyeballs; a wrong merge becomes a
+    ``_MISLEMMA_DENYLIST`` entry (and ``OO_FAMILY_LEMMA=0`` opts out entirely). Read-only,
+    bounded, no score; reports "unavailable" honestly when the optional ``simplemma`` is
+    absent.
+
+    Each candidate group is also tagged ``plural_overlap`` (plural_rule / lemma_only /
+    mixed, see ``_plural_rule_classification``) so a review shows the TRUE delta the lemma
+    step adds beyond the plural rule already running before it — most groups a naive read
+    flags as "new merges" turn out to already be collapsed by the plural step alone.
 
     ``rows`` are ``(normalized_term, language, is_entity)`` from the top-N keyword scan."""
     from src.analytics.families import _lemma, _lemma_enabled, _simplemma
@@ -231,22 +283,35 @@ def _lemma_preview(rows: list[tuple]) -> dict:
             continue
         groups.setdefault(((lang or "?"), _lemma(n, lang)), []).append(n)
     candidates = [
-        {"lemma": lem, "language": lg, "members": sorted(set(ms)), "n": len(set(ms))}
+        {
+            "lemma": lem,
+            "language": lg,
+            "members": sorted(set(ms)),
+            "n": len(set(ms)),
+            "plural_overlap": _plural_rule_classification(list(ms)),
+        }
         for (lg, lem), ms in groups.items()
         if len(set(ms)) >= 2
     ]
     candidates.sort(key=lambda c: (-c["n"], c["lemma"]))
+    by_overlap: dict[str, int] = {"plural_rule": 0, "mixed": 0, "lemma_only": 0}
+    for c in candidates:
+        by_overlap[c["plural_overlap"]] += 1
     return {
         "available": True,
-        "enabled": _lemma_enabled(),  # whether OO_FAMILY_LEMMA is currently on
+        "enabled": _lemma_enabled(),  # whether OO_FAMILY_LEMMA is currently on (default: yes)
         "scanned_top_n": len(rows),
         "candidate_groups": len(candidates),
         "keywords_that_would_merge": sum(c["n"] for c in candidates),
+        "by_plural_overlap": by_overlap,
         "examples": candidates[:15],
         "method": (
             "Among the most-mentioned single-token TERMS, the groups that share a lemma "
-            "(study/studied -> study). REVIEW for precision before enabling OO_FAMILY_LEMMA "
-            "(default off); a wrong merge means a _MISLEMMA_DENYLIST entry. No score."
+            "(study/studied -> study). plural_overlap on each group shows whether the "
+            "plural rule (families step 1.5) already merges it ('plural_rule'/'mixed') or "
+            "the lemma step is the ONLY reason it merges ('lemma_only' -- the true delta, "
+            "e.g. verb forms/irregulars). REVIEW for precision -- a wrong merge means a "
+            "_MISLEMMA_DENYLIST entry, or OO_FAMILY_LEMMA=0 to opt out entirely. No score."
         ),
     }
 
@@ -254,9 +319,10 @@ def _lemma_preview(rows: list[tuple]) -> dict:
 def lemma_preview_report(session: Session, *, top_n: int = 500) -> dict:
     """The lemma-conflation preview ALONE (S5.4) — the focused review instrument the
     Diagnostics panel surfaces next to the gold-set builder, WITHOUT running the full engine
-    report (no timings / self-test). Reads the top-N keywords and returns what OO_FAMILY_LEMMA
-    (default OFF) WOULD merge, so a wrong merge can be noted for ``_MISLEMMA_DENYLIST`` before
-    the flip. Read-only, bounded, no score; honest ``available: false`` when simplemma is absent.
+    report (no timings / self-test). Reads the top-N keywords and returns what lemmatization
+    (``OO_FAMILY_LEMMA``, on by default) MERGES, so a wrong merge can be noted for
+    ``_MISLEMMA_DENYLIST`` (or the feature disabled) before trusting it further. Read-only,
+    bounded, no score; honest ``available: false`` when simplemma is absent.
     """
     rows = (
         session.query(

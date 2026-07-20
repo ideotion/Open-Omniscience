@@ -186,11 +186,17 @@ _MISLEMMA_DENYLIST: frozenset[str] = frozenset(
 
 
 def _lemma_enabled() -> bool:
-    """Display-time lemmatization is OPT-IN (default OFF). It changes keyword grouping
-    app-wide, so its retrieval-quality impact must be MEASURED (the P3 eval harness + a
-    human-judged gold set) before it is trusted on-by-default — the measure-before-trust
-    discipline. Enable with ``OO_FAMILY_LEMMA=1`` (needs the optional ``simplemma``)."""
-    return _simplemma is not None and os.getenv("OO_FAMILY_LEMMA", "0") == "1"
+    """Display-time lemmatization is ON BY DEFAULT (ruled 2026-07-18). It changes keyword
+    grouping app-wide, so the measure-before-trust gate held it off until its retrieval
+    impact was assessed — lemmatization is a DISPLAY-layer families change (never touches
+    the stored index), which is invisible to the FTS retrieval harness, so an IR-gold-set
+    A/B was never the coherent measurement for it. The coherent gate was a PRECISION
+    review of the candidate merges: the maintainer ran the ``lemma_preview`` instrument
+    over the live ~500k-article corpus (top 500 keywords -> 35 candidate groups / 71
+    keywords) and found it clean (regular plurals + verb forms/irregulars only; nothing
+    meaning-changing). Opt OUT with ``OO_FAMILY_LEMMA=0`` (a core install without the
+    optional ``simplemma`` still no-ops regardless of this default)."""
+    return _simplemma is not None and os.getenv("OO_FAMILY_LEMMA", "1") == "1"
 
 
 def _lemma(norm: str, lang: str | None) -> str:
@@ -323,13 +329,13 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
                     union(j, i)  # plural i -> singular j (the base)
                     break
 
-    # 1.6) Lemma collapse for single-token TERMS (auto only; OPT-IN, default OFF — see
-    # _lemma_enabled). Groups morphological variants a plural heuristic MISSES — verb forms
-    # and irregulars (study/studied, run/running, child/children, mouse/mice) — via
+    # 1.6) Lemma collapse for single-token TERMS (auto only; ON BY DEFAULT since 2026-07-18
+    # — see _lemma_enabled). Groups morphological variants a plural heuristic MISSES — verb
+    # forms and irregulars (study/studied, run/running, child/children, mouse/mice) — via
     # simplemma, per (kind, language) so an en term never merges a fr one. Same guards as the
     # plural rule (terms only, never entity NAMES; a meaning-changing norm is denylisted;
     # reversible via a split override) PLUS a visible ``conflated_by=["lemma"]`` on the family.
-    # Default off + this skip => byte-identical to the pre-lemma grouping.
+    # OO_FAMILY_LEMMA=0 (or no simplemma) + this skip => byte-identical to the pre-lemma grouping.
     if _lemma_enabled():
         lemma_first: dict[tuple, int] = {}
         for i in auto:

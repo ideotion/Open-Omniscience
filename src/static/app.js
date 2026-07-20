@@ -9276,11 +9276,18 @@
                onclick="familySplit(this)"
                title="${single ? "nothing to split -- this family has only one member" : "split this form out"}"
                >${esc(m.term)}${single ? "" : " ✕"}</button>`).join("");
+          // S3 (2026-07-18 default-on brief, conservative + browser-unverified per fork-3/Q6a):
+          // a family collapsed in part by lemmatization (families.py conflated_by=["lemma"])
+          // carries a small, honest marker -- reversible via the split control above, never a score.
+          const lemmaTag = (f.conflated_by || []).includes("lemma")
+            ? '<span class="pill" title="This grouping merges a form via lemmatization (e.g. study/studied). Split any member out above if a merge looks wrong.">conflated by lemma</span>'
+            : "";
           return `<div class="fam-row">
             <input type="checkbox" class="fam-pick" data-norms="${esc(norms)}" data-kind="${esc(f.kind)}" data-label="${esc(f.term)}" aria-label="${esc(f.term)}">
             <div class="fam-body"><div><b>${esc(f.term)}</b>${kwTransHtml(f)} <span class="pill">${esc(f.kind)}</span>
               ${f.manual ? '<span class="pill ok">manual</span>' : ""}
               ${f.ring_id ? `<button class="pill lvl-group" title="${esc(lvlTitle("group"))}" onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})">group</button>` : ""}
+              ${lemmaTag}
               <span class="muted">· ${f.mentions} mentions</span></div>
               <div class="fam-chips">${chips}</div></div></div>`;
         }).join("") : '<div class="muted">No families with a decision to review — grouping is fully automatic so far.</div>';
@@ -10841,18 +10848,27 @@
         if (!d.available) {
           host.innerHTML = `<div class="hint muted">${esc(d.method || "Lemmatization preview unavailable (simplemma not installed).")}</div>`;
         } else {
-          const rows = (d.examples || []).map((c) =>
-            `<tr><td><b>${esc(c.lemma)}</b> <span class="muted">${esc(c.language || "?")}</span></td>`
-            + `<td>${(c.members || []).map(esc).join(", ")}</td>`
-            + `<td style="text-align:right;font-variant-numeric:tabular-nums">${c.n}</td></tr>`).join("");
-          const state = d.enabled ? "ON" : "OFF (default)";
+          const overlapLabel = { plural_rule: "already via plural rule", mixed: "mixed", lemma_only: "lemma-only (true delta)" };
+          const rows = (d.examples || []).map((c) => {
+            const ov = c.plural_overlap || "";
+            const ovTag = ov ? ` <span class="muted" style="font-size:11px">(${esc(overlapLabel[ov] || ov)})</span>` : "";
+            return `<tr><td><b>${esc(c.lemma)}</b> <span class="muted">${esc(c.language || "?")}</span>${ovTag}</td>`
+              + `<td>${(c.members || []).map(esc).join(", ")}</td>`
+              + `<td style="text-align:right;font-variant-numeric:tabular-nums">${c.n}</td></tr>`;
+          }).join("");
+          const state = d.enabled ? "ON (default)" : "OFF";
+          const bpo = d.by_plural_overlap || {};
+          const overlapNote = (bpo.lemma_only !== undefined)
+            ? ` Of these, <b>${bpo.lemma_only || 0}</b> are lemma-only (the true delta — verb forms/irregulars), `
+              + `<b>${bpo.plural_rule || 0}</b> the plural rule already covers, and <b>${bpo.mixed || 0}</b> are mixed.`
+            : "";
           host.innerHTML =
             `<div class="hint muted" style="margin-top:4px">OO_FAMILY_LEMMA is currently <b>${esc(state)}</b>. `
             + `Scanned top ${d.scanned_top_n} keywords → <b>${d.candidate_groups}</b> candidate merge groups, `
-            + `<b>${d.keywords_that_would_merge}</b> keywords would merge. Review for precision before enabling; `
-            + `a WRONG merge is a note for the _MISLEMMA_DENYLIST. ${esc(d.method || "")}</div>`
+            + `<b>${d.keywords_that_would_merge}</b> keywords merge.${overlapNote} Review for precision; `
+            + `a WRONG merge is a note for the _MISLEMMA_DENYLIST, or set OO_FAMILY_LEMMA=0 to opt out. ${esc(d.method || "")}</div>`
             + (rows
-              ? `<table class="data" style="margin-top:6px"><thead><tr><th>Lemma</th><th>Would merge</th><th style="text-align:right">n</th></tr></thead><tbody>${rows}</tbody></table>`
+              ? `<table class="data" style="margin-top:6px"><thead><tr><th>Lemma</th><th>Merges</th><th style="text-align:right">n</th></tr></thead><tbody>${rows}</tbody></table>`
               : `<div class="muted" style="margin-top:6px">No candidate merges among the top keywords.</div>`);
         }
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }

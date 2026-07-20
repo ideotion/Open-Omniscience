@@ -182,11 +182,39 @@ def test_lemma_collapses_verb_and_irregular_variants_when_enabled(monkeypatch):
     assert "conflated_by" in study_fam.to_dict()
 
 
-def test_lemma_is_off_by_default(monkeypatch):
-    # No OO_FAMILY_LEMMA => the lemma step is skipped entirely. "studied" is NOT a regular
-    # plural, so the plural rule never merges it => study and studied stay separate. This is
-    # the byte-identical-when-off guarantee (independent of whether simplemma is installed).
+@_needs_simplemma
+def test_lemma_is_on_by_default_and_opt_out_restores_byte_identical(monkeypatch):
+    # Ruled 2026-07-18: lemmatization is ON BY DEFAULT (the measure-before-trust gate was
+    # satisfied by a maintainer precision review of the live-corpus lemma_preview, not an
+    # IR-harness A/B -- lemmatization is a display-layer change, invisible to retrieval).
+    # "studied" is NOT a regular plural, so ONLY the lemma step (not the plural rule) can
+    # merge it -- proving the default is really on, not an artifact of the plural heuristic.
     monkeypatch.delenv("OO_FAMILY_LEMMA", raising=False)
+    items = [
+        {"normalized": "study", "term": "study", "kind": "term", "language": "en", "mentions": 40},
+        {"normalized": "studied", "term": "studied", "kind": "term", "language": "en", "mentions": 7},
+    ]
+    fams = build_families(items)
+    assert _members(fams, "study") == {"study", "studied"}
+    study_fam = next(f for f in fams if "study" in {m["normalized"] for m in f.members})
+    assert study_fam.conflated_by == ["lemma"]
+
+    # The reversibility half is load-bearing: OO_FAMILY_LEMMA=0 must restore the exact
+    # pre-lemma (byte-identical) grouping -- the opt-OUT, not just an opt-in that happens
+    # to default on.
+    monkeypatch.setenv("OO_FAMILY_LEMMA", "0")
+    fams_off = build_families(items)
+    assert _members(fams_off, "study") == {"study"}
+    assert _members(fams_off, "studied") == {"studied"}
+    assert all(f.conflated_by == [] for f in fams_off)
+
+
+def test_lemma_off_by_default_without_simplemma_installed(monkeypatch):
+    # A core install (simplemma absent) must be byte-identical regardless of the new
+    # default -- _lemma_enabled() checks `_simplemma is not None` before the env var, so
+    # the on-by-default flip can never fabricate a merge without the optional dependency.
+    monkeypatch.delenv("OO_FAMILY_LEMMA", raising=False)
+    monkeypatch.setattr(fam_mod, "_simplemma", None)
     items = [
         {"normalized": "study", "term": "study", "kind": "term", "language": "en", "mentions": 40},
         {"normalized": "studied", "term": "studied", "kind": "term", "language": "en", "mentions": 7},

@@ -1761,11 +1761,13 @@
       <div id="gold-builder-cov" class="hint muted"></div>
       <div id="gold-builder-body"></div>
       <!-- S5.4: lemma-conflation PREVIEW — visible review instrument next to the gold-set
-           builder (both feed the OO_FAMILY_LEMMA decision). Shows what lemmatization WOULD
-           merge among the top keywords + would-merge counts; a wrong merge is a note for the
-           _MISLEMMA_DENYLIST. The default STAYS off — this reviews, it does not flip. -->
+           builder. Shows what lemmatization (OO_FAMILY_LEMMA, ON by default since
+           2026-07-18) MERGES among the top keywords + would-merge counts, each group
+           tagged plural_overlap so the true delta beyond the plural rule is visible; a
+           wrong merge is a note for the _MISLEMMA_DENYLIST, or OO_FAMILY_LEMMA=0 to opt
+           out entirely. -->
       <div class="row" style="margin-top:8px">
-        <button class="secondary" onclick="loadLemmaPreview(this)" title="Preview what OPT-IN lemmatization (OO_FAMILY_LEMMA, default OFF) WOULD merge among your top keywords (study/studied -> study). Review the candidate groups for precision BEFORE enabling it; a wrong merge is a _MISLEMMA_DENYLIST note. Read-only, no score.">Preview lemmatization merges</button>
+        <button class="secondary" onclick="loadLemmaPreview(this)" title="Preview what lemmatization (OO_FAMILY_LEMMA, ON by default) MERGES among your top keywords (study/studied -> study). Each group is tagged by whether the plural rule already covers it, so you see the true delta. Review for precision; a wrong merge is a _MISLEMMA_DENYLIST note, or set OO_FAMILY_LEMMA=0 to opt out entirely. Read-only, no score.">Preview lemmatization merges</button>
       </div>
       <div id="lemma-preview-body"></div>
       <div class="row" style="margin-top:6px">
