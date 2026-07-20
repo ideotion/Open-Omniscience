@@ -39,6 +39,7 @@ import logging
 import os
 import re
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1516,7 +1517,23 @@ def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
     return removed
 
 
-def reindex_imported_articles(batch_id: int) -> dict:
+def _default_reindex_commit_batch() -> int:
+    """``OO_REINDEX_COMMIT_BATCH`` -- the SAME env var the standalone "re-index the
+    whole corpus" job already reads (src/analytics/reindex_job.py), so one knob tunes
+    fsync batching for both the background job AND a restore's post-merge re-index."""
+    try:
+        return max(1, int(os.getenv("OO_REINDEX_COMMIT_BATCH", "1") or "1"))
+    except ValueError:
+        return 1
+
+
+def reindex_imported_articles(
+    batch_id: int,
+    *,
+    commit_batch: int | None = None,
+    workers: int | None = None,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> dict:
     """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
 
     Maintainer ruling 2026-06-19 (P0-4): a backup may have been produced by an OLDER
@@ -1525,12 +1542,24 @@ def reindex_imported_articles(batch_id: int) -> dict:
     at the merged live DB and ``merged_rows`` (carried in from the working copy) names
     the imported article rowids = their live ids (articles.id == rowid). ``index_article``
     overwrites those derived rows with current-engine output; AI artifacts
-    (article_analyses summaries/translations, ai_keyword) are left verbatim."""
+    (article_analyses summaries/translations, ai_keyword) are left verbatim.
+
+    ``commit_batch`` / ``workers`` / ``progress_cb`` (restore-merge re-index perf,
+    2026-07-19 -- field report: this used to be an entirely silent, single-core,
+    per-article-fsync phase that a large restore could spend HOURS in while the
+    caller's UI stayed frozen on the prior "merging" step's last progress) are
+    threaded straight through to :func:`src.analytics.store.reindex_articles` -- see
+    there for the batching/parallel-precompute contract. ``commit_batch=None``
+    (default) reads the env var above; ``workers=None`` uses
+    :func:`src.analytics.reindex_parallel.worker_count`'s own default."""
     from sqlalchemy import text
 
     from src.analytics.extract import get_extractor
     from src.analytics.store import reindex_articles
     from src.database.session import session_scope
+
+    if commit_batch is None:
+        commit_batch = _default_reindex_commit_batch()
 
     with session_scope() as session:
         rows = session.execute(
@@ -1543,7 +1572,14 @@ def reindex_imported_articles(batch_id: int) -> dict:
         ids = [int(r[0]) for r in rows]
         if not ids:
             return {"reindexed": 0, "failed": 0}
-        return reindex_articles(session, extractor=get_extractor("baseline"), article_ids=ids)
+        return reindex_articles(
+            session,
+            extractor=get_extractor("baseline"),
+            article_ids=ids,
+            commit_batch=commit_batch,
+            workers=workers,
+            progress_cb=progress_cb,
+        )
 
 
 def run_restore(
@@ -1553,6 +1589,9 @@ def run_restore(
     allow_unverified: bool = False,
     reindex_imported: bool = True,
     progress_cb=None,
+    reindex_commit_batch: int | None = None,
+    reindex_workers: int | None = None,
+    reindex_progress_cb: Callable[[int, int], None] | None = None,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -1561,6 +1600,14 @@ def run_restore(
     (commutativity/idempotency/crash-safety) passes False to test the engine in
     isolation — the re-index is a one-directional post-step (it makes the FULL
     restore direction-dependent in DERIVED data by design) with its own test.
+
+    ``reindex_commit_batch`` / ``reindex_workers`` / ``reindex_progress_cb``
+    (2026-07-19): passed straight through to :func:`reindex_imported_articles` for
+    that post-swap re-index. Kept as a SEPARATE callback from ``progress_cb`` (which
+    reports the 14-step table-merge above via a ``(step_done, step_total, step_name)``
+    signature): the re-index reports a plain ``(done, total)`` over a different unit
+    of work (articles, not table-merge steps), so a caller distinguishes the two
+    phases explicitly instead of guessing from a shared callback's arity.
 
     Preview and commit run THE SAME merge code against a disposable working
     copy, so the preview's numbers are exactly what a commit would do to the
@@ -1685,7 +1732,12 @@ def run_restore(
     # re-index hiccup must never undo it.
     if reindex_imported:
         try:
-            report["reindexed"] = reindex_imported_articles(batch_id)
+            report["reindexed"] = reindex_imported_articles(
+                batch_id,
+                commit_batch=reindex_commit_batch,
+                workers=reindex_workers,
+                progress_cb=reindex_progress_cb,
+            )
         except Exception:  # noqa: BLE001 - never undo a committed, additive restore
             _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
             report["reindexed"] = {"reindexed": 0, "failed": 0, "skipped": "see server log"}

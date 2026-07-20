@@ -928,6 +928,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     And the meta-lesson: "the encrypted path shares the code shape and self-verifies at runtime"
     was the test docstring's exact excuse — the untested branch is where all three bugs lived;
     skip-guarded encrypted tests now pin it (they RUN in CI and in any sandbox via the wheels).
+  - **A `session.rollback()` inside a mid-batch failure handler discards EVERY pending
+    (uncommitted) object in the transaction, not just the one that raised (2026-07-19, the
+    restore-merge re-index perf fix):** a batching loop's failure path must redo the
+    ACCUMULATED SURVIVORS one at a time, committed — never just mark the triggering item
+    failed and move on (that silently drops every already-staged batch-mate accumulated
+    before it). `reindex_all_batch` already encoded this correctly; a sibling rewrite
+    (`reindex_articles`) initially missed it — cross-check a new batching implementation
+    against the PROVEN reference shape, don't assume a simpler-looking version is
+    equivalent. Also: a progress callback wired into only ONE stage of a multi-stage
+    pipeline (here, the 14-step table-merge) reads as a HANG once the work moves to the
+    next, unreported stage (the post-merge per-article re-index ran silently, single-core,
+    for however long it took) — "the UI is frozen on the last number it saw" is a prompt to
+    grep for what runs AFTER that last callback, not proof of a stall.
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
@@ -6409,6 +6422,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   known #701 hung-runner pattern). Push the TAG ONLY (never create the release via the GitHub
   UI — release.yml's own `gh release create` would then collide); release.yml re-runs the full
   suite, verifies tag==pyproject(0.2.0), builds sdist+wheel+SHA256SUMS and publishes.
+  **THE COLLISION HAPPENED ANYWAY at v0.2.0 (2026-07-19):** the maintainer had created the
+  release via the UI (with the tag; pre-release ticked) — the workflow's suite/verify/build all
+  passed but `gh release create` failed instantly on the existing release, which shipped with
+  NO artifacts. FIXED FORWARD: the publish step is now IDEMPOTENT (release exists → `gh release
+  upload --clobber` the artifacts + append the checksums to the notes only if missing, the
+  maintainer's notes/pre-release flag left alone; else create, with `--prerelease` AUTO for 0.x
+  tags per the maturity ladder). CAVEAT for the v0.2.0 recovery: a RE-RUN of an existing run
+  uses the workflow AT THE TAG'S COMMIT (the old non-idempotent step), so the v0.2.0 unblock =
+  maintainer deletes the asset-less release (KEEP the tag) → re-run the failed job → re-tick
+  pre-release / re-edit notes; the idempotent step protects v0.3.0+.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

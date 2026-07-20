@@ -137,3 +137,76 @@ def test_reindex_imported_articles_targets_only_merged_rows():
                 if b is not None:
                     s.delete(b)
             s.commit()
+
+
+def test_reindex_imported_articles_threads_batching_and_progress(monkeypatch):
+    """The perf-fix plumbing (2026-07-19): commit_batch/workers/progress_cb passed
+    to ``reindex_imported_articles`` must reach the underlying ``reindex_articles``
+    call for the SAME merged-rows set, and the ``OO_REINDEX_COMMIT_BATCH`` env var
+    is the honest default when ``commit_batch`` is left unset (matches the
+    standalone re-index-all job's own reading of that var)."""
+    from src.backup import merge as merge_mod
+    from src.database.models import MergeBatch, MergedRow
+    from src.database.session import init_db, session_scope
+
+    init_db()
+    merged_id = batch_id = None
+    try:
+        with session_scope() as s:
+            if not s.query(Source).filter_by(domain="reimp2.test").first():
+                s.add(Source(name="RS2", domain="reimp2.test", country="fr"))
+                s.flush()
+            merged = _article(s, "reimp2-merged", "A drought and a market crash dominated headlines.")
+            merged_id = merged.id
+            batch = MergeBatch(artifact_kind="oo-backup-2", origin_fingerprint="unsigned", status="merged")
+            s.add(batch)
+            s.flush()
+            batch_id = batch.id
+            s.add(MergedRow(batch_id=batch_id, table_name="articles", row_id=merged_id))
+            s.commit()
+
+        import src.analytics.store as store_mod
+
+        captured = {}
+        real_reindex_articles = store_mod.reindex_articles
+
+        def _spy(session, *, extractor, article_ids, commit_batch, workers, progress_cb):
+            captured["commit_batch"] = commit_batch
+            captured["workers"] = workers
+            captured["progress_cb"] = progress_cb
+            return real_reindex_articles(
+                session, extractor=extractor, article_ids=article_ids,
+                commit_batch=commit_batch, workers=workers, progress_cb=progress_cb,
+            )
+
+        # reindex_imported_articles does `from src.analytics.store import
+        # reindex_articles` INSIDE the function body (a lazy import), so it must
+        # be patched on the SOURCE module (looked up at call time), not on
+        # merge_mod (which never binds the name at module scope).
+        monkeypatch.setattr(store_mod, "reindex_articles", _spy)
+        progress_seen = []
+        out = merge_mod.reindex_imported_articles(
+            batch_id, commit_batch=5, workers=0, progress_cb=lambda d, t: progress_seen.append((d, t))
+        )
+        assert out["reindexed"] == 1 and out["failed"] == 0
+        assert captured["commit_batch"] == 5
+        assert captured["workers"] == 0
+        assert progress_seen == [(1, 1)]
+
+        # commit_batch=None (the default) reads OO_REINDEX_COMMIT_BATCH.
+        monkeypatch.setenv("OO_REINDEX_COMMIT_BATCH", "7")
+        merge_mod.reindex_imported_articles(batch_id, workers=0)
+        assert captured["commit_batch"] == 7
+    finally:
+        with session_scope() as s:
+            if merged_id is not None:
+                s.query(KeywordMention).filter_by(article_id=merged_id).delete()
+                a = s.get(Article, merged_id)
+                if a is not None:
+                    s.delete(a)
+            if batch_id is not None:
+                s.query(MergedRow).filter_by(batch_id=batch_id).delete()
+                b = s.get(MergeBatch, batch_id)
+                if b is not None:
+                    s.delete(b)
+            s.commit()
