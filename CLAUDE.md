@@ -6599,6 +6599,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   once per country, disclosed; the anycast/CDN approximation caveat visible per the 6c
   ruling). All three are surface slices over shipped data; frontend conservative+flagged
   per Q6a.
+  **AMENDED same day (maintainer asked to circumvent the Tor gap — "can't we ping the source
+  server or ask the server directly?"; ASSESSED, design of record pending the go):** DIRECT
+  contact is RULED OUT as an automatic mechanism by the standing never-silently-downgrade-
+  transport non-negotiable: ICMP ping CANNOT ride Tor at all (Tor is TCP-only, so a ping is
+  ALWAYS clearnet by construction), and a direct probe of a just-Tor-fetched source hands the
+  server + ISP a TIME-CORRELATED link between the user's real IP and that source — a
+  deanonymization worse than fetching clearnet outright. THE TOR-NATIVE PATH INSTEAD:
+  Tor's SOCKS port supports the RESOLVE command (0xF0 — the stock `tor-resolve` mechanism,
+  same SocksPort the app already uses, no control port) — the EXIT performs the DNS lookup,
+  so the source's DNS sees only the exit, never the user: zero direct contact, zero new third
+  party (DoH deliberately NOT chosen — it would add an external service class), ~30 lines of
+  stdlib socket code, cached per (domain, pass), kill-switch-gated, degrades honestly when the
+  configured SOCKS proxy is not Tor (rejects 0xF0). HONESTY: the answer is the SAME epistemic
+  class as the clearnet capture at a DIFFERENT vantage (CDN answers vary by resolver — "edge
+  nearest the EXIT" vs the socket capture's "edge nearest the user"; an origin hidden behind
+  a CDN stays hidden either way) → store under a DISTINCT provenance class
+  (`server_ip_reason: dns-via-tor-exit`, never blended with socket-observed; exit-rotation
+  variance is DATA under the multiple-IPs-per-source model, disclosed). FUTURE free upgrade:
+  when the designed-not-built Stem/control-port integration lands, Tor's ADDRMAP cache
+  exposes the resolutions exits ALREADY performed during the fetches — zero extra queries;
+  the SOCKS-RESOLVE path need not wait for it.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
