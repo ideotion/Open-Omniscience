@@ -6612,6 +6612,33 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   stratified re-judgement sample weighted TOWARD non-English, rejection/timing sanity, the
   deterministic artifact built only from surviving verdicts as a draft PR). Execution
   PENDING; the maintainer's log upload then triggers the verification session.
+- **POST-IMPORT RESULTS SCREEN — the unlabeled row-sum headline + the dedicated delta view
+  (maintainer field report 2026-07-20, after merging a 10 GB corpus: "4,855,433 imported …
+  frankly too vague… I'm sure it doesn't contain 5 million articles"; ROOT-CAUSED same turn,
+  redesign PENDING):** the maintainer's read is CORRECT — `_renderImportSummary`
+  (`src/static/app.js:5875`, the 2026-07-02 "clear view of what was imported" iteration)
+  sums `c.new`/`c.duplicate`/`c.conflict` across EVERY table of the merge plan (:5883-5885),
+  so the headline mixes articles with keyword-mention/link/entity/date/custody ROWS under
+  the single unlabeled word "imported" — an every-number-carries-its-method violation (a
+  row-sum reads as an article count; mentions dominate it by an order of magnitude). The
+  per-table truth already exists but is buried in the collapsed "Details by source"
+  `_v2PlanTable`s. THE REDESIGN (ruled): a DEDICATED post-import results screen — (1)
+  HEADLINE in the user's unit: ARTICLES imported/deduplicated first, then a LABELED
+  per-type breakdown (sources · keywords · mentions · links · law docs · wiki pages ·
+  events · analyses — each its own labeled count; the cross-table row-sum may remain ONLY
+  labeled "database records, all types"); (2) **THE CORPUS-DELTA VIEW ("how the corpus got
+  improved")**: before→after per dimension — articles, sources, languages present,
+  countries covered, date-range span, distinct keywords — computed by snapshotting the
+  cheap maintained counters BEFORE the merge and diffing after (never a whole-table scan
+  post-merge; the counters + `Source` counts make this near-free); (3) **WORK INDUCED**:
+  the import's follow-up queue stated honestly — N newly-imported sources awaiting
+  QUALIFICATION (first-class via the same-day qualification-status rulings), unindexed
+  articles if indexing lags, discovery candidates added; (4) POSITIVE-BUT-HONEST framing
+  (ruled: "imports should give positive feedback") — "your corpus grew by X articles from
+  Y new sources spanning Z new languages" is both celebratory AND every-number-real; no
+  fabricated praise, the delta IS the good news. Numbers via the shared formatter +
+  `OOI18N.tf` templates ×12. Frontend browser-gated per Q6a; the delta snapshot is the
+  small backend piece.
 - **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
   field report: "the app is currently requesting airplane mode to be turned off to allow
   ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
