@@ -5343,7 +5343,7 @@
       const back = { starting: t("Preparing…"), building: t("Building encrypted volumes…"),
         volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"), done: t("Done.") };
       const rest = { verifying: t("Verifying volumes…"), reassembling: t("Reassembling the archive…"),
-        merging: t("Merging (additive)…"), done: t("Done.") };
+        merging: t("Merging (additive)…"), reindexing: t("Re-indexing merged articles…"), done: t("Done.") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -5369,13 +5369,22 @@
         return { pct, indeterminate: !bt, frac: bt ? bc / bt : null,
           text: `${n} ${verb}, ${p.skipped || 0} ${esc(t("skipped"))}` };
       }
-      // volumes: mostly phase-driven + indeterminate, EXCEPT the merge, which reports
-      // step N of M — show a real bar there + drive the rule-of-three ETA (field ask).
+      // volumes: mostly phase-driven + indeterminate, EXCEPT the merge/reindex phases,
+      // which report real N-of-M progress — show a real bar there + drive the
+      // rule-of-three ETA (field ask). The reindex phase used to be entirely silent
+      // (frozen on the merge's last-reported step) for however long the post-merge
+      // per-article re-index took — sometimes hours on a large restore, reading as a
+      // hang (2026-07-19 field report).
       if (p.merge_steps) {
         const frac = Math.min(1, (p.merge_step || 0) / p.merge_steps);
         const label = p.merge_label
           ? `${esc(_uxVolPhase("merging", s.mode, t))} <span class="muted">(${p.merge_step}/${p.merge_steps} · ${esc(p.merge_label)})</span>`
           : esc(_uxVolPhase("merging", s.mode, t));
+        return { pct: Math.round(frac * 100), indeterminate: false, frac, text: label };
+      }
+      if (p.reindex_total) {
+        const frac = Math.min(1, (p.reindex_done || 0) / p.reindex_total);
+        const label = `${esc(_uxVolPhase("reindexing", s.mode, t))} <span class="muted">(${p.reindex_done || 0}/${p.reindex_total} ${esc(t("articles"))})</span>`;
         return { pct: Math.round(frac * 100), indeterminate: false, frac, text: label };
       }
       let extra = "";

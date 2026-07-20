@@ -1931,6 +1931,7 @@
   "Restoring…": "Восстановление…",
   "Restore complete.": "Восстановление завершено.",
   "Merging (additive)…": "Слияние (добавление)…",
+  "Re-indexing merged articles…": "Переиндексация объединённых статей…",
   "Preparing…": "Подготовка…",
   "Choose a destination folder.": "Выберите папку назначения.",
   "Choose a folder to restore from.": "Выберите папку для восстановления.",

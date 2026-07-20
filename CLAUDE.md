@@ -928,6 +928,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     And the meta-lesson: "the encrypted path shares the code shape and self-verifies at runtime"
     was the test docstring's exact excuse — the untested branch is where all three bugs lived;
     skip-guarded encrypted tests now pin it (they RUN in CI and in any sandbox via the wheels).
+  - **A `session.rollback()` inside a mid-batch failure handler discards EVERY pending
+    (uncommitted) object in the transaction, not just the one that raised (2026-07-19, the
+    restore-merge re-index perf fix):** a batching loop's failure path must redo the
+    ACCUMULATED SURVIVORS one at a time, committed — never just mark the triggering item
+    failed and move on (that silently drops every already-staged batch-mate accumulated
+    before it). `reindex_all_batch` already encoded this correctly; a sibling rewrite
+    (`reindex_articles`) initially missed it — cross-check a new batching implementation
+    against the PROVEN reference shape, don't assume a simpler-looking version is
+    equivalent. Also: a progress callback wired into only ONE stage of a multi-stage
+    pipeline (here, the 14-step table-merge) reads as a HANG once the work moves to the
+    next, unreported stage (the post-merge per-article re-index ran silently, single-core,
+    for however long it took) — "the UI is frozen on the last number it saw" is a prompt to
+    grep for what runs AFTER that last callback, not proof of a stall.
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
