@@ -122,6 +122,7 @@ def connect(
     create_encrypted: bool | None = None,
     check_same_thread: bool = True,
     timeout: float = 30.0,
+    cipher_page_size: int | None = None,
 ):
     """Open ``path`` with the right driver and key for ITS state.
 
@@ -133,6 +134,14 @@ def connect(
                          default), plaintext only under OO_DB_PLAINTEXT=1 or
                          create_encrypted=False; otherwise DatabaseLockedError
                          (the unlock/create flow supplies the passphrase first).
+
+    ``cipher_page_size``: SQLCipher decodes a database ONLY at the page size it
+    was created with, and that size is NOT discoverable from the file — a store
+    created at a non-default size reads as wrong-passphrase unless the opener
+    declares the same size right after keying. Pass it when opening a store
+    KNOWN to be built at a non-default size (the page-size bench's rebuilt
+    targets). Applied only on the encrypted-open path; ignored for plaintext
+    files (their page size is self-describing).
     """
     p = Path(path)
     state = is_encrypted_file(p)
@@ -149,6 +158,8 @@ def connect(
 
         conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         _apply_key(conn, use_key)
+        if cipher_page_size is not None:
+            conn.execute(f"PRAGMA cipher_page_size = {int(cipher_page_size)}")
         _verify_readable(conn, p)
         return conn
 

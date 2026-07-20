@@ -37,11 +37,11 @@ That exposed the theme of the whole cycle: **the app works, but does not yet sca
 scaling failures now cause crashes and data loss, not just slowness.** So 0.2's north star is
 *"the version that survives a 100 GB field run."*
 
-- `pyproject` version is **`0.2.0`**; the default branch is **`0.2`**.
-- The **`v0.2.0` tag is HELD** — gated on the maintainer's live-corpus validation of the **P0
-  scale set** (see §2). All four P0 engines are now shipped **including P0.4 unlock-at-scale
-  (root-caused + fixed on the synthetic harness)** — the maintainer's live-corpus run is the
-  one remaining gate.
+- `pyproject` version is **`0.3.0`**; the default branch is **`main`** (permanent since
+  2026-07-15 — branch name and version are independent).
+- The **`v0.2.0` tag is DONE** — the maintainer ran the in-app P0 validation job on the
+  live corpus and tagged (2026-07 — see `docs/CHANGES.md` 0.2.0). The P0 scale set (§2)
+  is thereby live-validated; the 0.3 cycle (measured & verified) is open.
 - **Definition of "snappy" (the acceptance bar for 0.2):** every interactive endpoint p95
   **< ~500 ms** at 100 GB · **unlock < 2 s** · no UI action blocks > 1 s without becoming a
   visible job · background work never freezes the UI.
@@ -89,10 +89,10 @@ instrumentation into one report with a per-check verdict. The live RUN and the
 
 | Item | What | Status |
 |---|---|---|
-| **P0.1** | Backup at 100 GB+ — the `oo-volumes-2` streaming engine (no plaintext corpus snapshot, no zip, bounded RAM incl. banded parity, incremental changed-volume re-emit, resumable, verifiable) | 🔧 engine shipped — **awaiting the maintainer's live-corpus validation** (the v0.2.0 gate item) |
-| **P0.2** | Restore/import at scale — streams member-by-member, disk-preflights staging, hands to the unchanged additive merge | 🔧 engine half shipped — full-scale proof gated on an operator run |
-| **P0.3** | Crash root-cause — OOM in a 21.6-h crawl pass (**RSS 10.6 GB > VM RAM**); fix = pass recycling + an RSS memory guard + inter-pass WAL checkpoints | 🔧 collector fix shipped — awaiting live-run validation |
-| **P0.4** | **Unlock at scale** — ROOT-CAUSED + fixed (Session A, `claude/a-scale-backend-p04-9faxvb`): `init_db`→`ensure_fts` ran the FTS5 `'rebuild'` (a corpus-scaled codec re-read) UNCONDITIONALLY on EVERY boot; the sync triggers already maintain the index, so it now rebuilds only when needed. Measured on a 112k/2.7 GB **encrypted** synthetic corpus: 28.6 s → **0.002 s** per boot; G2 warm unlock **0.012 s** (acceptance <2 s). | 🔧 **fixed on synthetic — awaiting the maintainer's live-corpus validation** (the standing v0.2 gate item; never claim closed on synthetic) |
+| **P0.1** | Backup at 100 GB+ — the `oo-volumes-2` streaming engine (no plaintext corpus snapshot, no zip, bounded RAM incl. banded parity, incremental changed-volume re-emit, resumable, verifiable) | ✅ live-validated (the maintainer's P0 validation run — the v0.2.0 tag) |
+| **P0.2** | Restore/import at scale — streams member-by-member, disk-preflights staging, hands to the unchanged additive merge | ✅ live-validated via the P0 validation job's staged-restore probe + dry-run merge preview (the v0.2.0 tag run) |
+| **P0.3** | Crash root-cause — OOM in a 21.6-h crawl pass (**RSS 10.6 GB > VM RAM**); fix = pass recycling + an RSS memory guard + inter-pass WAL checkpoints | ✅ live-validated (the v0.2.0 tag run reads the collector instrumentation) |
+| **P0.4** | **Unlock at scale** — ROOT-CAUSED + fixed (Session A, `claude/a-scale-backend-p04-9faxvb`): `init_db`→`ensure_fts` ran the FTS5 `'rebuild'` (a corpus-scaled codec re-read) UNCONDITIONALLY on EVERY boot; the sync triggers already maintain the index, so it now rebuilds only when needed. Measured on a 112k/2.7 GB **encrypted** synthetic corpus: 28.6 s → **0.002 s** per boot; G2 warm unlock **0.012 s** (acceptance <2 s). | ✅ live-validated (the v0.2.0 tag run reads the unlock instrumentation) |
 | **P0.5** | Scale test harness (GAMMA: synthetic-corpus generator + benchmark runner + CI smoke tier) | ✅ shipped (#601) |
 
 ### P1 — snappiness at scale (adoption-critical)
@@ -308,8 +308,8 @@ anchoring), Node 0 = the maintainer's own machine. **User corpora never touch th
 2. **httpfs crypto-extension bundling** — the fetch hit the network egress allowlist (403 on `extensions.duckdb.org`); **no checksum fabricated**, in-memory fallback stays. Needs a networked machine or an allowlist entry. 🛠 (see DB-3)
 
 **Still with the maintainer:**
-4. **`v0.2.0` tag** — HELD until the P0 live-corpus validation (all four P0 engines now shipped; the live run is the last gate). 🛠
-6. **Lemmatization default-on** — measure-gated on the maintainer-made gold set. ✅ **S5.3/S5.4 make the measurement one click away**: the IR gold-set BUILDER (grade real corpus queries 0/1/2 → the exact ir_eval file) + the lemma-conflation preview are both in the Diagnostics panel; the flip still waits on the maintainer GRADING the set. 🛠
+4. **`v0.2.0` tag** — ✅ DONE (the maintainer ran the P0 live-corpus validation and tagged; 0.3 opens the measured-&-verified cycle).
+6. **Lemmatization default-on** — ✅ RULED default-ON 2026-07-18: the maintainer's live-corpus `lemma_preview` precision review (35 groups / 71 keywords, clean) was the coherent gate — per the recorded correction, the IR A/B never was, for a display-layer change. Execution delegated (`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md`); the graded IR gold set remains wanted for the separate BM25F retrieval decision. 🛠
 7. **Retention / eviction posture** — decide after the storage-footprint numbers from the next field export are in. 🔒
 
 ---

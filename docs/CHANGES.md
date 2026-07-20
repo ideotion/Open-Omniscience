@@ -1,6 +1,31 @@
 # Changelog
 
-> The repository’s **default branch is the active cycle branch** (currently `0.2`, renamed from `0.1` at the 0.2 flip, itself renamed from `0.09` at the alpha flip); each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, and the `0.1` cycle now bumps to **`0.2.0`, data safety at scale** (the tagged release is gated on the live-corpus scale validation) — the cycle branch is renamed `0.1 → 0.2` to match (see the README's version note).
+> The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, the `0.1` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), and the current cycle is **`0.3.0`, measured & verified** (see the README's version note).
+
+## 0.3.0 — measured & verified (in progress, unreleased)
+
+The `0.3` cycle turns the instruments the project has built into a standing improvement
+loop, and recalibrates the analytics against a real ~500k-article corpus. On the board
+(each item ships via its own reviewed PR; nothing below is claimed done until it lands):
+
+- **The recursive improvement loop v1** — the machine-readable KPI snapshot + diff and
+  the standing improvement-cycle protocol
+  ([`docs/design/V1_PATHWAY_2026-07-14.md`](design/V1_PATHWAY_2026-07-14.md) §2).
+- **Scale recalibration of the analytics surfaces** — the six delegated 2026-07-18
+  briefs: Leads/card-system selection calibration (+ the convergence exploration
+  amendment and the **no-capped-figures rule**: a displayed number is never a cap),
+  lemmatization default-on, entity-families cleanup (furniture acronyms, cross-script
+  aliases, truthful kind filters), the groups layer (keyword → group → super-group
+  naming, the circle grammar, honest group statistics with mandatory dominance
+  disclosures, keyword→group navigation, the clickable concept map).
+- **The law vertical build-out** — proving the tracker end-to-end on the merged
+  world-wide legal-source catalog (225 sources / 162 jurisdictions), adapters for
+  structured sources, coverage diagnostics against official enumerations.
+- **The browser-verification burn-down** — the AppVM runner + `ui_walk`, graduating the
+  accumulated "browser-unverified, needs click-through" frontend backlog.
+- **The Observatory** — the corpus-as-night-sky exploration tab (design of record:
+  [`docs/design/OBSERVATORY_DESIGN.md`](design/OBSERVATORY_DESIGN.md)), gated on the
+  group-statistics core and maintainer click-through.
 
 ## 0.2.0 — data safety at scale (the `0.1` cycle, version set 2026-07-10)
 
@@ -9,10 +34,10 @@ reached ~100–130 GB. Shipped so far: a streaming, bounded-RAM, resumable, veri
 backup/restore engine (`oo-volumes-2` — no plaintext corpus snapshot, incremental
 changed-volume re-emit); the collector out-of-memory root-cause fix (pass recycling + an
 RSS memory guard + inter-pass WAL checkpoints); unlock-at-scale instrumentation; and a
-synthetic-corpus scale-test harness. **The `v0.2.0` tag is gated on the maintainer's
-live-corpus validation** of the P0 scale set — the P0 engines are shipped, awaiting that
-run (see [`docs/product/SCALE_ROADMAP.md`](product/SCALE_ROADMAP.md)); the version is set in
-pyproject but 0.2 is not yet a tagged release.
+synthetic-corpus scale-test harness. **Tagged `v0.2.0`** after the maintainer's
+live-corpus validation of the P0 scale set via the in-app push-button P0 validation job
+(see [`docs/product/SCALE_ROADMAP.md`](product/SCALE_ROADMAP.md) and
+[`docs/product/P0_VALIDATION_RUNBOOK.md`](product/P0_VALIDATION_RUNBOOK.md)).
 
 - **Backup at scale, rebuilt (`oo-volumes-2`).** The large-corpus backup no longer
   materialises the whole corpus twice (a plaintext snapshot + a zip) before writing a
