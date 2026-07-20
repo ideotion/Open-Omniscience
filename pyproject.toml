@@ -211,7 +211,7 @@ dev = [
     # Pinned: the type-check ratchet count must be deterministic. An unpinned
     # floor let a newer mypy report one extra error (129 > 128) and redden every
     # PR with no code change. Bump deliberately, re-measuring the baseline.
-    "mypy==2.2.0",
+    "mypy==2.3.0",
     "httpx>=0.27",
 ]
 
