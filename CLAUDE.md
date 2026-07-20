@@ -6548,10 +6548,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   NOTES for the build: COLD START — the statistical comparison needs a same-language corpus
   baseline, so on a fresh/small corpus the auditor's honest small-cohort behaviour applies
   (soft criteria unflaggable → qualification initially decides on the hard extraction-
-  validity floor only, firming as the corpus grows); the first collect pass over the curated
-  catalog can BE its qualification pass (trial articles are kept — no wasted fetch), OR
-  curated `sources.yml` rows ship pre-qualified ("by catalog curation") — flagged as the one
-  open sub-decision; RECONCILIATION with cover-everything — qualification gates on
+  validity floor only, firming as the corpus grows); **SUB-DECISION RESOLVED same day
+  (maintainer): ALL sources are qualified BY DEFINITION — the curated catalog INCLUDED; NO
+  pre-qualified-by-curation stamp.** The first collect pass over the catalog IS its
+  qualification pass (trial articles are kept — no wasted fetch). COROLLARY (maintainer):
+  the preliminary/release tests must verify the INITIAL LIST PASSES qualification — a
+  catalog source failing it is a CATALOG-REVIEW signal (fix the seed list, never
+  grandfather it). FRAMING recorded: the initial list is a SEED that grows the corpus
+  outwards (citations/newsletters/discovery extend it; qualification is the membrane every
+  entrant — the seed included — passes through); RECONCILIATION with cover-everything —
+  qualification gates on
   EXTRACTION VALIDITY (is this a content source at all), never editorial merit, so it
   removes mis-gathered noise without violating "ordering ≠ exclusion"; disqualification
   REASONS persist per source (transparency + undo, per the Phase-2 audit-view design).
@@ -6660,7 +6666,9 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the maintainer's ongoing merges — the spirit is REAL field data, per the
   P0-live-run-not-synthetic precedent). (4) **a FULL IMPORT of the database that RE-CHECKS
   ALL SOURCES** — the ruled qualification-at-import admission gate demonstrated at full
-  scale (every source through the pass, verdicts stamped) before the switch; this row
+  scale (every source through the pass, verdicts stamped — the curated catalog INCLUDED,
+  no grandfathering per the same-day seed ruling; catalog failures = catalog-review work
+  items) before the switch; this row
   EXPLICITLY doubles as the backup/restore-AT-SCALE validation (a ~5M-article import IS a
   restore at ~10× the P0-validated 2.5 GB scale — state it in the gate evidence). (5) **an
   ARTICLE CLEAN-UP strategy: DISCUSSED → AGREED (explicit maintainer sign-off BEFORE
