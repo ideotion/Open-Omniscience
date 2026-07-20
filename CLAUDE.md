@@ -6640,9 +6640,9 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `OOI18N.tf` templates ×12. Frontend browser-gated per Q6a; the delta snapshot is the
   small backend piece.
 - **THE 0.3 CLOSE GATE (maintainer RULED 2026-07-20 — the conditions for tagging v0.3.0;
-  the analog of the P0 validation that closed 0.2):** the version already reads 0.3.0 (the
-  2026-07-18 sequence: P0 pass → v0.2.0 tag → flip), so this gate governs CLOSING the 0.3
-  cycle. FIVE gate rows, all required before the tag: (1) **the entire 2026-07-20
+  the analog of the P0 validation that closed 0.2; row 6 added same day):** the version
+  already reads 0.3.0 (the 2026-07-18 sequence: P0 pass → v0.2.0 tag → flip), so this gate
+  governs CLOSING the 0.3 cycle. SIX gate rows, all required before the tag: (1) **the entire 2026-07-20
   source-management program implemented AND DOUBLE-CHECKED** — the qualification lifecycle
   (admission gate · stamp · background job · re-qualification ladder) · newsletter
   links→sources · the airplane/Ollama gate split · source-IP surfacing incl. the
@@ -6664,6 +6664,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   prose gate (ingest door, stops new ones) + the Slice-4a retroactive QUARANTINE (reversible,
   never a blind delete) + the post-cleanup re-index (clears the junk keywords/entities);
   the strategy discussion settles quarantine-vs-delete, criteria, and review sampling.
+  (6) **the DB-10 §1b PAGE-SIZE A/B BENCH (4K vs 16K) PASSED FULLY** (added same day) —
+  the shipped `pagesize-bench` job run on the LARGE corpus (plus a small corpus for the
+  trend, per its own design), the numbers reviewed, and the §1b `page_size` ruling MADE on
+  that evidence (currently waiting on the large-corpus run; the CREATE-time seam makes
+  this decision more expensive to revisit with every corpus born before it).
   The CHANGES.md 0.3.0 board + this entry are the live gate list; stand up a
   `RELEASE_0.3_GATE.md` checkable inventory (the RC-gate precedent) when the cycle
   approaches closure.
@@ -6700,6 +6705,24 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   name · elapsed" (the progress callback already carries it). 0.3 TIE-IN: gate row 3 (the
   5M diagnostics run) depends on this — without the journal, a failed hour-long run at
   scale is undiagnosable.
+  **AMENDED same day (maintainer added two rulings):** (6) **HARDWARE PROFILE in the run
+  header** — the diagnostics must scan the machine so every measurement reads in
+  perspective of hardware capacity (the maintainer tests across several rigs incl.
+  low/cheap/old laptops — cross-machine comparison is the point): CPU model + physical/
+  logical cores + freq, total RAM + swap, disk FREE + rotational-vs-SSD (the Linux
+  `/sys/block/*/queue/rotational` probe; honest `unavailable` on other OSes), OS/kernel,
+  plus an OPTIONAL operator-set MACHINE LABEL (settings/env, e.g. "old-thinkpad") so logs
+  from different machines are distinguishable at a glance. All LOCAL reads, zero network,
+  shared only by click (the standing diagnostics posture). (7) **DIAGNOSTIC-BUTTON
+  CONSOLIDATION ruled: remove all per-report download buttons except THE ONE
+  all-diagnostics button** — safe because the ratchet guarantees the bundle carries every
+  report. THE DISTINCTION that must survive the sweep: JOB-STARTERS and INTERACTIVE tools
+  (p0-validation · pagesize-bench · the source-quality ZIP · rollup/source-coverage
+  benchmarks · IR-eval + gold-builder · discover-world · the upcoming LLM triage/tag runs)
+  are ACTIONS, not report downloads — they STAY (the Desk lesson: absorption-gated, never
+  silently lose a tool; ENDPOINTS are never removed, only redundant download buttons).
+  Browser-unverified per fork-3/Q6a; extend the UI invariant tests to pin the one-button
+  state + the surviving action controls.
 - **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
   field report: "the app is currently requesting airplane mode to be turned off to allow
   ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
