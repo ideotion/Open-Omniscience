@@ -6598,6 +6598,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   step; auto-apply into the deduced channel only once the maintainer has eyeballed a real
   batch. SYNERGY: depends on the airplane/Ollama fix above — tag assignment is loopback
   inference and must work offline once that gate is split.
+  **GO RULED same day (maintainer: run the §8 triage AND the source-tag assignment on the
+  local Ollama rig, export logs, "I currently don't trust enough small models. You should
+  verify it." — the ruled ai-proposed→claude-verified→maintainer-merged chain is now
+  OPERATIONAL POLICY):** investigation found NEITHER run is one-click today —
+  `run_triage_batch`'s ONLY caller is the selftest (`triage.py:704`; the sole endpoint is
+  `/keyword-triage-selftest`), so the REAL-run wiring (job + endpoints + panel button) is a
+  build; the tag half is design-only (the entry above). BOTH are one CLI build session:
+  brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-20_LLM_TRIAGE_TAG_RUNS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-20_LLM_TRIAGE_TAG_RUNS.md)
+  (S1 wire the triage run · S2 the tag run on the same chassis · §4 the VERIFICATION
+  CONTRACT: what the JSONL must carry + the Claude-side protocol — canary integrity, a
+  stratified re-judgement sample weighted TOWARD non-English, rejection/timing sanity, the
+  deterministic artifact built only from surviving verdicts as a draft PR). Execution
+  PENDING; the maintainer's log upload then triggers the verification session.
 - **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
   field report: "the app is currently requesting airplane mode to be turned off to allow
   ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
