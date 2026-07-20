@@ -6572,6 +6572,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   a changed/fixed site gets caught within a month, a persistently-junk domain costs ~2
   checks/year. A Settings knob (bounded ~30–180 days) stays available to override; the
   ladder is the default unless the maintainer rules otherwise.
+- **LLM SOURCE-TAG ASSIGNMENT FROM TOP KEYWORDS (maintainer proposed 2026-07-20: "a source
+  tag assignment strategy based on their top 200 keywords, given to the local LLM in the
+  diagnostic tab"; DESIGN RECORDED, build PENDING — reuses the §8 triage chassis):** the
+  motivation is real — ~17k discovered/cited sources carry NO topical tags, and tags drive
+  the stratified collection interleave (untagged sources pool in the "·untagged" bucket),
+  the wizard themes, and every tag filter. THE SHAPE (= the ruled §8 LLM-triage pattern with
+  a different task; reuse `src/ai_layer/triage.py`'s conventions wholesale): per-source
+  top-N TERMS (post-stoplist, via the denormalised `KeywordMention.source_id` — a covering
+  scan, no codec join) → batched to loopback Ollama → the model picks from the EXISTING
+  CLOSED tag vocabulary only (the catalog taxonomy the wizard already reads — closed-set
+  classification is what small local models do reliably, and it stops taxonomy
+  fragmentation; an out-of-vocabulary answer is REJECTED, never stored), echo-back
+  validation + canaries (hand-known obvious sources — a sports outlet — detect model
+  degradation) + timing telemetry, run as a visible abortable job from the Diagnostics
+  panel. HONESTY RAILS: (a) the TWO-CLASS model applies to tags — LLM-proposed tags are
+  DEDUCED, stored in a separate labeled channel (the `detected_language` precedent), NEVER
+  silently overwriting the catalog's ASSERTED `Source.tags`; consumers (interleave/filters)
+  may read asserted-else-deduced, disclosed; (b) EVIDENCE FLOOR — a source below a minimum
+  article/mention count gets an honest SKIP ("insufficient evidence"), never a guess from 3
+  articles (the auditor-floor convention; a garbage/unvalidatable model answer stores
+  NOTHING, per B15); (c) input quality gates first — junk keywords (the nav-soup entities)
+  poison the evidence, so the prose gate + §8 triage cleanup upstream materially improve
+  this feature's inputs; (d) start EXPORT-ONLY (the §8 posture) with an apply-reviewed-batch
+  step; auto-apply into the deduced channel only once the maintainer has eyeballed a real
+  batch. SYNERGY: depends on the airplane/Ollama fix above — tag assignment is loopback
+  inference and must work offline once that gate is split.
 - **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
   field report: "the app is currently requesting airplane mode to be turned off to allow
   ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
