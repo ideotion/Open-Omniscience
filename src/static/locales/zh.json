@@ -1944,6 +1944,7 @@
   "Restoring…": "正在恢复…",
   "Restore complete.": "恢复完成。",
   "Merging (additive)…": "正在合并（仅追加）…",
+  "Re-indexing merged articles…": "正在重新索引已合并的文章…",
   "Preparing…": "正在准备…",
   "Choose a destination folder.": "请选择目标文件夹。",
   "Choose a folder to restore from.": "请选择要从中恢复的文件夹。",

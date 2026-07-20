@@ -1944,6 +1944,7 @@
   "Restoring…": "復元中…",
   "Restore complete.": "復元が完了しました。",
   "Merging (additive)…": "統合中（追加のみ）…",
+  "Re-indexing merged articles…": "統合された記事を再インデックス中…",
   "Preparing…": "準備中…",
   "Choose a destination folder.": "保存先フォルダーを選択してください。",
   "Choose a folder to restore from.": "復元元のフォルダーを選択してください。",

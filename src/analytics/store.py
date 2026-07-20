@@ -18,6 +18,7 @@ queries stay single-scan.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
@@ -177,6 +178,33 @@ def _apply_keyword_counter_deltas(
         kw.article_count = max(0, (kw.article_count or 0) + d_art)
 
 
+def _resolve_known_language(article: Article, content: str) -> str | None:
+    """The known/deduced language driving extraction + sentiment for one article.
+
+    SECONDARY/DEDUCED language (field §2.6, maintainer ruling Q3): when the
+    authoritative ``language`` (source/extractor) is absent, deduce it OFFLINE
+    (confidence-gated, never a guess) and store it in ``detected_language``
+    WITHOUT touching ``language``. The deduction mutates the ORM object, so it
+    runs (and is visible) EXACTLY ONCE per article regardless of how many
+    readers of that same object ask for its known language afterwards — e.g. a
+    precompute step run BEFORE ``index_article`` itself (see
+    :func:`reindex_articles`) sees and reuses the identical deduction, rather
+    than the two silently disagreeing on which language drove extraction."""
+    if not (article.language or "").strip() and not (
+        getattr(article, "detected_language", None) or ""
+    ).strip():
+        from src.analytics.langdetect import detect_language
+
+        deduced = detect_language(content)
+        if deduced:
+            article.detected_language = deduced
+    return (
+        (article.language or "").strip()
+        or (getattr(article, "detected_language", None) or "").strip()
+        or None
+    )
+
+
 def index_article(
     session: Session,
     article: Article,
@@ -186,6 +214,9 @@ def index_article(
     city: str | None = None,
     scope: str = "full",
     commit: bool = True,
+    content: str | None = None,
+    precomputed_terms: list[ExtractedTerm] | None = None,
+    precomputed_sentiment: tuple[float | None, str | None] | None = None,
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally.
 
@@ -202,28 +233,26 @@ def index_article(
     the counter deltas accumulate read-your-own-writes within a single transaction, a
     batched commit equals the sum of the per-article commits exactly. A batching caller
     MUST provide the proven rollback-then-redo-per-article fallback on a commit failure
-    (see :func:`reindex_all_batch`) so a collision/lock never drops a batch-mate."""
-    content = article.get_content() if hasattr(article, "get_content") else (article.content or "")
+    (see :func:`reindex_all_batch`) so a collision/lock never drops a batch-mate.
 
-    # SECONDARY/DEDUCED language (field §2.6, maintainer ruling Q3): when the
-    # authoritative `language` (source/extractor) is absent, deduce it OFFLINE
-    # (confidence-gated, never a guess) and store it in `detected_language` WITHOUT
-    # touching `language`. `known_lang` (asserted first, then deduced) drives extraction
-    # + sentiment + the keyword's analytic language, so a foreign UNTAGGED article gets
-    # the RIGHT stoplist instead of leaking its function words as keywords.
-    if not (article.language or "").strip() and not (
-        getattr(article, "detected_language", None) or ""
-    ).strip():
-        from src.analytics.langdetect import detect_language
+    ``content`` (restore-merge re-index perf, 2026-07-19): defaults ``None`` — the
+    article's content is decompressed here via ``article.get_content()``, exactly as
+    before. A caller that already holds the decompressed text (the same precompute
+    step below) passes it in to skip a redundant decompression.
 
-        deduced = detect_language(content)
-        if deduced:
-            article.detected_language = deduced
-    known_lang = (
-        (article.language or "").strip()
-        or (getattr(article, "detected_language", None) or "").strip()
-        or None
-    )
+    ``precomputed_terms`` / ``precomputed_sentiment`` (same date): both default
+    ``None`` — BYTE-IDENTICAL to every existing caller, which still computes them
+    here via ``extractor.extract``/``score_article``. A caller that has ALREADY
+    computed them (see :mod:`src.analytics.reindex_parallel`, which runs those two
+    DB-free steps across a process pool) passes them in to skip the redundant
+    recompute; everything else (old-contribution accounting, delete-then-reinsert,
+    counter deltas, when/where/who, commit) is unchanged and still runs HERE, in this
+    session, serially — only the CPU-bound text extraction itself may have happened
+    elsewhere."""
+    if content is None:
+        content = article.get_content() if hasattr(article, "get_content") else (article.content or "")
+
+    known_lang = _resolve_known_language(article, content)
 
     # Sentiment at ingest (language-aware, honest): VADER scores ENGLISH articles
     # and stores the result on the article; every other language stays NULL — never
@@ -231,16 +260,22 @@ def index_article(
     # backfill all populate the (previously dead) sentiment columns. Skipped in the
     # keyword-only scope (a keyword cleanup leaves sentiment untouched).
     if scope != "keywords":
-        from src.analytics.sentiment import score_article
+        if precomputed_sentiment is not None:
+            article.sentiment_score, article.sentiment_label = precomputed_sentiment
+        else:
+            from src.analytics.sentiment import score_article
 
-        article.sentiment_score, article.sentiment_label = score_article(content, known_lang)
+            article.sentiment_score, article.sentiment_label = score_article(content, known_lang)
 
-    terms = extractor.extract(
-        content or "",
-        title=article.title or "",
-        language=known_lang or "en",  # extractor needs SOME stoplist; "en" here is an
-        # extraction working assumption, never stored as the keyword's language.
-    )
+    if precomputed_terms is not None:
+        terms = precomputed_terms
+    else:
+        terms = extractor.extract(
+            content or "",
+            title=article.title or "",
+            language=known_lang or "en",  # extractor needs SOME stoplist; "en" here is
+            # an extraction working assumption, never stored as the keyword's language.
+        )
 
     observed = article.published_at or article.created_at
     observed_on = observed.date() if observed else None
@@ -397,7 +432,27 @@ def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> 
     return {"indexed": indexed, "remaining": remaining}
 
 
-def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> dict:
+# Articles per precompute window (restore-merge re-index perf, 2026-07-19): bounds
+# peak RAM to one window's worth of decompressed article text + extracted terms
+# regardless of how many articles a single restore merges (a field corpus can merge
+# hundreds of thousands at once) -- the same P0.1 bounded-RAM discipline the backup
+# engine itself follows. Deliberately independent of (and typically larger than)
+# ``commit_batch``: precomputation holds no DB session/lock at all, so it can be
+# windowed generously to amortise process-pool spawn cost, while the DB-apply
+# commits within a window stay grouped in the smaller, write-gate-friendly
+# ``commit_batch`` chunks reindex_all_batch already established.
+_PRECOMPUTE_WINDOW = 500
+
+
+def reindex_articles(
+    session: Session,
+    *,
+    extractor,
+    article_ids: list[int],
+    commit_batch: int = 1,
+    workers: int | None = None,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> dict:
     """Recompute CORE-ENGINE derived metadata for an EXPLICIT set of articles.
 
     Used after a backup MERGE (maintainer ruling 2026-06-19 P0-4): an imported
@@ -407,7 +462,34 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
     rows with current-engine output (keywords, mentions, sentiment, when/where/who).
     AI artifacts (``article_analyses`` summaries/translations + the AI-derived keyword
     rows) are NOT touched by ``index_article``, so they stay verbatim. Idempotent; one
-    bad article never aborts the batch (the restore is already committed + additive)."""
+    bad article never aborts the batch (the restore is already committed + additive).
+
+    ``commit_batch`` (default 1 = the original per-article-commit behaviour, byte-
+    identical): >1 commits every N articles instead of once per article, mirroring
+    :func:`reindex_all_batch`'s proven pattern exactly -- a batch-commit failure (a
+    transient lock, or an error building one article's mentions) rolls the batch back
+    and REDOES it one article at a time (each committed, a bad/locked one isolated),
+    so a collision never drops a batch-mate.
+
+    ``workers`` / the parallel precompute (2026-07-19, field report: a large restore
+    pinned one CPU core for hours while the other cores sat idle and disk writes
+    trickled to a crawl): the two CPU-bound, DB-free steps inside ``index_article``
+    -- keyword extraction and sentiment scoring -- are precomputed for a WINDOW of
+    articles via :func:`src.analytics.reindex_parallel.precompute_batch` (a bounded
+    process pool when the window is large enough; ``workers=0`` or a tiny remainder
+    always falls back to the exact serial computation). Everything else (old-
+    contribution accounting, delete-then-reinsert, counter deltas, when/where/who,
+    the commit itself) is UNCHANGED and still runs here, serially, in this session.
+
+    ``progress_cb(done, total)``, if given, is called after every article is
+    finalised (reindexed or failed) so a caller can show real progress instead of a
+    frozen bar during what used to be an entirely silent phase -- report-only,
+    wrapped so a reporting error can never affect the re-index."""
+    total = len(article_ids)
+    reindexed = 0
+    failed = 0
+    commit_batch = max(1, commit_batch)
+
     # Re-index is delete-then-reinsert, so the disposable columnar rollup must FULL-rebuild
     # rather than incrementally merge (the D3 double-count guard). This is ALSO the
     # restore-merge path: reindex_imported_articles re-indexes the merged articles against
@@ -416,7 +498,26 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
         from src.analytics.corpus_epoch import bump_corpus_epoch
 
         bump_corpus_epoch(session, reason="reindex_articles")
+    from src.analytics.reindex_parallel import ArticleDerivatives, precompute_batch
     from src.database.write import run_write_with_retry
+
+    def _report() -> None:
+        if progress_cb is not None:
+            try:
+                progress_cb(reindexed + failed, total)
+            except Exception:  # noqa: BLE001 - progress reporting must never break a re-index
+                pass
+
+    def _derived_args(
+        deriv: ArticleDerivatives | None,
+    ) -> tuple[list[ExtractedTerm] | None, tuple[float | None, str | None] | None]:
+        # A precompute error for THIS article (isolated by reindex_parallel, never
+        # dropping the rest of the window) falls back to index_article's own inline
+        # computation for just this one -- so a single bad article never loses its
+        # re-index, it only loses the parallelism for itself.
+        if deriv is None or deriv.error is not None:
+            return None, None
+        return deriv.terms, (deriv.sentiment_score, deriv.sentiment_label)
 
     # Audit finding 2026-07-17: index_article's own contract explicitly re-raises a
     # transient lock so a caller's run_write_with_retry can roll back and redo it
@@ -425,33 +526,134 @@ def reindex_articles(session: Session, *, extractor, article_ids: list[int]) -> 
     # that contract, so a lock hit while re-indexing after a restore permanently
     # marked the article "failed" instead of retrying (idempotent re-index
     # reproduces the full result on redo, so nothing is lost by retrying).
-    # A named helper taking ``article`` as a PARAMETER (mirroring
-    # _reindex_one_committed_with_retry below) rather than an inline lambda closing
-    # over the loop's own ``art`` -- the lambda would otherwise capture the loop
-    # variable by reference (ruff B023: it is safe here since run_write_with_retry
-    # runs it to completion, incl. retries, before the loop reassigns ``art``, but
-    # the parameter form is the same non-fragile shape already used at the sibling
-    # call site and needs no closure-safety reasoning at all).
-    def _reindex_with_retry(article: Article) -> None:
+    def _reindex_one_committed_with_retry(
+        article: Article, deriv: ArticleDerivatives | None, content: str | None = None
+    ) -> None:
+        terms, sentiment = _derived_args(deriv)
         run_write_with_retry(
-            lambda: index_article(session, article, extractor=extractor, country=article.country),
+            lambda: index_article(
+                session,
+                article,
+                extractor=extractor,
+                country=article.country,
+                content=content,
+                precomputed_terms=terms,
+                precomputed_sentiment=sentiment,
+            ),
             session=session,
             label=f"reindex_articles[{article.id}]",
         )
 
-    reindexed = 0
-    failed = 0
-    for aid in article_ids:
-        art = session.get(Article, aid)
-        if art is None:
+    def _redo_committed(items: list[tuple[Article, ArticleDerivatives | None]]) -> None:
+        """One-at-a-time, COMMITTED redo after a batch-commit failure -- mirrors
+        reindex_all_batch's proven no-loss fallback: isolates one bad/locked
+        article, never drops its batch-mates (re-index is idempotent, so the
+        redo reproduces the full result)."""
+        nonlocal reindexed, failed
+        for article, deriv in items:
+            try:
+                _reindex_one_committed_with_retry(article, deriv)
+                reindexed += 1
+            except Exception:  # noqa: BLE001 - isolate one bad/locked article
+                session.rollback()
+                failed += 1
+                _LOG.warning(
+                    "re-index of imported article %s failed (redo)", article.id, exc_info=True
+                )
+            _report()
+
+    def _apply_window(
+        articles: list[Article], derivs: dict[int, ArticleDerivatives], content_by_id: dict[int, str]
+    ) -> None:
+        """Apply one window's precomputed derivatives to the DB, batching commits
+        per ``commit_batch``. A fresh, single-call scope (never nested in the
+        window loop below) so ``pending``/``_flush`` are unambiguous locals, not a
+        closure over a variable a loop reassigns."""
+        nonlocal reindexed, failed
+        if commit_batch <= 1:
+            for art in articles:
+                try:
+                    _reindex_one_committed_with_retry(art, derivs.get(art.id), content_by_id.get(art.id))
+                    reindexed += 1
+                except Exception:  # noqa: BLE001 - one bad/exhausted-retry article must not abort the batch
+                    session.rollback()
+                    failed += 1
+                    _LOG.warning("re-index of imported article %s failed", art.id, exc_info=True)
+                _report()
+            return
+
+        pending: list[tuple[Article, ArticleDerivatives | None]] = []
+
+        def _flush() -> None:
+            nonlocal reindexed
+            if not pending:
+                return
+            try:
+                session.commit()
+                reindexed += len(pending)
+            except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
+                session.rollback()
+                _redo_committed(list(pending))
+            pending.clear()
+            _report()
+
+        for art in articles:
+            deriv = derivs.get(art.id)
+            terms, sentiment = _derived_args(deriv)
+            try:
+                index_article(
+                    session,
+                    art,
+                    extractor=extractor,
+                    country=art.country,
+                    commit=False,
+                    content=content_by_id.get(art.id),
+                    precomputed_terms=terms,
+                    precomputed_sentiment=sentiment,
+                )
+                pending.append((art, deriv))
+            except Exception:  # noqa: BLE001 - this article corrupted the in-flight batch
+                # A rollback here drops THIS article's partial work AND every
+                # already-staged-but-uncommitted batch-mate in ``pending`` (they were
+                # never flushed to a savepoint of their own) -- so redo the accumulated
+                # survivors one at a time, COMMITTED, exactly like reindex_all_batch's
+                # proven fallback, rather than silently losing them.
+                session.rollback()
+                redo = list(pending)
+                pending.clear()
+                _redo_committed(redo)
+                failed += 1
+                _LOG.warning("re-index of imported article %s failed (batch)", art.id, exc_info=True)
+                _report()
+                continue
+            if len(pending) >= commit_batch:
+                _flush()
+        _flush()
+
+    for w_start in range(0, len(article_ids), _PRECOMPUTE_WINDOW):
+        window_ids = article_ids[w_start : w_start + _PRECOMPUTE_WINDOW]
+        articles: list[Article] = []
+        for aid in window_ids:
+            art = session.get(Article, aid)
+            if art is not None:
+                articles.append(art)
+        if not articles:
             continue
-        try:
-            _reindex_with_retry(art)
-            reindexed += 1
-        except Exception:  # noqa: BLE001 - one bad/exhausted-retry article must not abort the batch
-            session.rollback()
-            failed += 1
-            _LOG.warning("re-index of imported article %s failed", aid, exc_info=True)
+
+        # Precompute (parallel when it's worth it; always falls back to serial
+        # in-process on any pool trouble -- see reindex_parallel's docstring).
+        # ``content_by_id`` is kept so the DB-apply pass reuses the already-
+        # decompressed text instead of decompressing every article a second time.
+        tasks = []
+        content_by_id: dict[int, str] = {}
+        for art in articles:
+            body = art.get_content() if hasattr(art, "get_content") else (art.content or "")
+            lang = _resolve_known_language(art, body)
+            tasks.append((art.id, body, art.title or "", lang or "en", lang))
+            content_by_id[art.id] = body
+        derivs = precompute_batch(tasks, extractor=extractor, workers=workers)
+        _apply_window(articles, derivs, content_by_id)
+
     return {"reindexed": reindexed, "failed": failed}
 
 

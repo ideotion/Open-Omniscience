@@ -106,8 +106,36 @@ jobs:
             cat dist/SHA256SUMS
             echo '```'
           } > release_notes.md
-          gh release create "${TAG}" \
-            dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
-            --title "${TAG}" \
-            --notes-file release_notes.md \
-            --verify-tag
+          # An 0.x version is an alpha by the project's own maturity ladder
+          # (docs/CONTRIBUTING.md) -- mark it honestly as a pre-release.
+          prerelease=""
+          case "${TAG#v}" in 0.*) prerelease="--prerelease" ;; esac
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            # A release for this tag already exists -- e.g. created together with
+            # the tag from the GitHub UI, exactly what happened at v0.2.0 (the
+            # create below then failed and the release shipped with NO artifacts).
+            # Never fail the artifacts on that: attach/replace them on the existing
+            # release and append the checksums to its notes when missing. The
+            # existing notes text and pre-release flag are the maintainer's --
+            # left alone.
+            gh release upload "${TAG}" dist/*.whl dist/*.tar.gz dist/SHA256SUMS --clobber
+            gh release view "${TAG}" --json body --jq .body > existing_notes.md
+            if ! grep -q "Verify your download (SHA-256)" existing_notes.md; then
+              {
+                cat existing_notes.md
+                echo ""
+                echo "### Verify your download (SHA-256)"
+                echo "No signing key yet -- verify integrity with the checksums below."
+                echo '```'
+                cat dist/SHA256SUMS
+                echo '```'
+              } > merged_notes.md
+              gh release edit "${TAG}" --notes-file merged_notes.md
+            fi
+          else
+            gh release create "${TAG}" \
+              dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
+              --title "${TAG}" \
+              --notes-file release_notes.md \
+              --verify-tag ${prerelease}
+          fi
