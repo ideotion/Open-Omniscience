@@ -6668,7 +6668,17 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   field-name discipline: no score/rating/grade/ranking substrings in payload keys (the
   "degraded"-contains-"grade" walker lesson; qualified/disqualified are safe). Perf: derive
   from `article_links` × qualification status per the cited_domain_stats shape (covering
-  scans, never a codec join).
+  scans, never a codec join). **RECIPROCAL VIEW ruled same day (maintainer: "reciprocally,
+  I'd like to see when a source has mentioned qualified sources"):** the tally's classes
+  become CLICKABLE DRILLS — each class (qualified · disqualified · pending · filtered)
+  expands to the actual LIST of cited domains in that class, each row linking to that
+  source's own management row AND to the citing articles (the `article_links` trail — the
+  same "sources' sources" grammar as the Related subtab's shared-origins lens). SYMMETRY
+  CAVEAT recorded: the positive direction carries the SAME no-interpretation discipline as
+  the negative — citing many qualified sources is NOT an endorsement/quality signal (wire
+  services get cited by everyone; a laundering hub can cite reputable sources deliberately —
+  the source-laundering card's own lesson), exactly as citing a disqualified one is not
+  guilt; both directions are descriptive facts with the caveat visible.
   (3) **CORPUS FILTER-BY-SOURCE/LANGUAGE IN THE ARTICLES TAB ("apply filter" → the deduced
   corpus)** — EXISTS: `#an-adv-source` + `#an-adv-lang` (Advanced subtab), threaded through
   `anParams()` into EVERY subtab + the "Filtered" chip (`_anFilterSummary`). GAPS the ask
