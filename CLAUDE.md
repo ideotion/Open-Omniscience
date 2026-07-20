@@ -6432,6 +6432,466 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   uses the workflow AT THE TAG'S COMMIT (the old non-idempotent step), so the v0.2.0 unblock =
   maintainer deletes the asset-less release (KEEP the tag) → re-run the failed job → re-tick
   pre-release / re-edit notes; the idempotent step protects v0.3.0+.
+- **RING LIFECYCLE — LONG-TERM EVOLUTION STRATEGY (maintainer-agreed 2026-07-20; design note,
+  builds PENDING):** answers the maintainer's long-view question ("once the ~2000-ring target is
+  reached, how does the selection evolve as the corpus grows? new words keep being invented — the
+  strategy needs a very long term view"). GROUNDING recorded so the reasoning survives: (a) rings
+  LAG, never GATE — keywords are captured uncapped instantly (the ChatGPT-2020 ruling), so an
+  unringed new concept costs only cross-language MERGE-lag, never capture; (b) the sensor/alarm
+  loop already exists — the `ring_candidates` gap digest recomputes from the LIVE corpus each
+  diagnostics export, and `translation_coverage` (engine report) DECAYS measurably as vocabulary
+  drifts; (c) Wikidata is the living external registry (prominent new concepts get QIDs within
+  days; QIDs stay stable under renames/alias drift); (d) mass-importing Wikidata stays REJECTED
+  (~115M items of wrong shape; the in-RAM `(lang,term)→ring` index on the 2-core reference VM;
+  unvetted merges at scale = fabricated merges via silent last-writer-wins — SELECTION/VETTING is
+  what makes rings the reliable trans-language layer, per the maintainer's own framing). THE TWO
+  AGREED MECHANISMS (pending builds): (1) **INSTITUTIONALIZED REFRESH CADENCE** — the gap-digest →
+  `--from-log` generate → vet → merge pass becomes a NAMED per-cycle ritual, and
+  `translation_coverage` joins the KPI board (V1_PATHWAY K-metrics) so coverage decay is SEEN, not
+  discovered. (2) **QID-REFRESH PASS** (small new tooling) — a `--refresh` mode for
+  `generate_wikidata_rings.py`: re-run `wbgetentities` over the ALREADY-VETTED QIDs in the
+  generated file, DIFF member lists, emit ONLY the additions for review — absorbs WITHIN-concept
+  alias/rename drift (the coronavirus→COVID-19 class) at low vetting cost since the QID judgment
+  was made once; propose→review→merge, never auto-apply. HONEST LIMITS stated: detection keys on
+  article SPREAD, so it inherits scraping breadth (a concept prominent only in an under-scraped
+  language surfaces late — a coverage problem mitigated by source-diversification/
+  language-equilibrium, not a ring problem); the ~2000 target is a VETTING-CAPACITY horizon, not a
+  wall (rings are NEVER pruned — cross-time recall sacred, a dead concept's ring keeps serving
+  history; the §8 LLM-triage propose→verify→merge chain can raise review throughput and move the
+  horizon). IN-FLIGHT CONTEXT (operator steps pending): a 168-seed thin-supergroup ring batch is
+  PREPARED and awaiting a machine with BOTH live Wikidata access AND write access — seeds file +
+  prevetting CSV (11 CONFLICT-MANUAL-PIN war seeds, 10 HOMOGRAPH-WATCH, 4 OVERLAP-EXISTING-RING) +
+  runbook + ledger templates delivered by a read-only networked session 2026-07-20 and
+  hand-verified against the tree this session. TWO EMPIRICAL FACTS from that verification,
+  recorded BEFORE the batch ships so they cannot be relearned the hard way: (i)
+  `generate_wikidata_rings.py` OVERWRITES its `-o` target with only the current run's rings
+  (emit-only, no merge — despite its docstring's "augments"; default `-o` IS the live
+  `configs/keyword_rings_generated.yml`, so a naive `--seeds` run would WIPE the 540 vetted
+  rings) — always resolve to a temp file and append-merge, per the runbook; (ii) `nuclear fusion`
+  is a KNOWN REPEAT OFFENDER seed (already resolved wrong + dropped in the 2026-06-20 vetting;
+  it sits in `test_wikidata_ring_gen.py`'s dropped-id guard). Batch overlap decisions
+  recommended (vetter's call at run time): seed `right of asylum` not bare `asylum`
+  (psychiatric-hospital already carries `en:asylum`); keep `secularism` as its own ring (a
+  distinct concept from irreligion, which carries it as an alias); DROP `public relations`
+  (marketing already carries `en:PR` + `en:public relations`); keep `pension` but strip
+  `de:Pension` from the resolved members (bound to guest-house — a cross-language homograph).
+- **SOURCE-MANAGEMENT ASKS — newsletter links · qualification funnel · language detection
+  (maintainer asked 2026-07-20; INVESTIGATED same session, code-verified; builds PENDING —
+  assessment-first, nothing built this turn):** three asks, each checked against the tree
+  (staleness guard) before answering.
+  (1) **NEWSLETTER LINKS → NEW SOURCES: NOT the case today — a real, well-bounded gap.** The
+  .eml/mailbox ingest de-tracks links in the BODY (`privacy/link_sanitizer.sanitize_text`) but
+  writes NO `ArticleLink` rows — only the web ingest paths do (`src/ingest/pipeline.py:317`,
+  `src/ingest/batch.py:398`) — and BOTH source funnels read exclusively `article_links`: the
+  per-pass citation discovery channel (`src/discovery/channels.py:190`) and the manual
+  `promote_cited_sources` endpoint (`src/api/source_management.py:207`; DISABLED `cited` rows,
+  ≥2-DISTINCT-citing-sources gate, commerce/social/infrastructure filters, alias-aware dedup).
+  BUILD SHAPE (the ruled intent — cleaned newsletter links must be able to become sources):
+  extract the SANITIZED external links at .eml ingest into `ArticleLink` rows — ONLY
+  fully-recovered destinations (a tracker-wrapped link whose destination could not be recovered
+  stores wrapper-domain-only by design and must NEVER seed a source); both funnels then pick
+  newsletters up with ZERO further change, and the ≥2-distinct-citers gate + noise filters are
+  the right protection against sponsor/self-promo link noise.
+  (2) **SOURCE QUALIFICATION (~20k sources on a 3-day-old install; "unqualify mis-gathered
+  links"):** the machinery largely EXISTS; the missing piece is the ORCHESTRATION, which is the
+  already-parked Phase-2 promotion frontier — this ask REINFORCES that parked build. Mapping:
+  robots check = the bounded preflight; "scrape a few articles + compare statistically vs the
+  same-language corpus average" = the #663 `source_audit` auditor (cohort-relative per-language
+  baselines; short-article rate · outlier keyword stats · furniture share · extraction-failure
+  pathology with an ABSOLUTE floor; flag-only, auto-demote built but DEFAULT-OFF per Q2a;
+  diversity guardrail); the qualification LIFECYCLE = candidate → TRIAL (consented few-article
+  scrape, gated on the auditor) → graduate/reject + audit view + undo (Q3a). GENUINELY NEW
+  signals to add when built: per-source PARAGRAPH/SENTENCE average word counts (style-ambiguous
+  → WATCH-only per the extraction-validity reframe, never auto-demote) + the function-word
+  prose-ness measure from (3). PERSPECTIVE recorded: most of the ~20k are DISABLED
+  discovery/cited candidates — inert metadata, never fetched; the pain is review-funnel absence,
+  not scraping exposure.
+  (3) **LANGUAGE DETECTION ("almost half the corpus has no language tag"): the engine ALREADY
+  EXISTS in three tiers — do NOT rebuild it.** Tier 1: py3langid at ingest
+  (`store._resolve_known_language` persists `Article.detected_language`; gated ≥200 chars +
+  ≥0.90 confidence + supported-language-only; `[analysis]` extra). Tier 2: the
+  `reconcile_article_language` backfill (text-detect → keyword-majority) wired into the
+  re-index job's cleanup pass. Tier 3: the opt-in LLM residue detector (B15,
+  `/api/ai/detect-language`). The proposed top-100-words/top-24-overlap detector would be a
+  WEAKER duplicate of tier 1 (py3langid = a trained offline model over the same evidence class)
+  — not built. THE ACTIONABLE GAP is operational + visibility: (a) the untagged half is most
+  likely pre-hook articles + HONEST refusals (short/junk text — the very mis-scrapes flagged in
+  the same message); running the re-index cleanup ("Clean up keywords") backfills the backlog;
+  (b) add a small diagnostic surfacing language-coverage tallies (asserted vs deduced vs
+  unknown, with refusal reasons) so the dominant case is SEEN before more is built. **THE
+  KEEPER IDEA — FUNCTION-WORD DENSITY AS A PROSE-NESS / MIS-SCRAPE SIGNAL (genuinely new):**
+  share of tokens that are function words of the best-matching language — the vendored
+  stopwords-iso lists already provide vetted function-word sets ×18 languages (no corpus
+  extraction step needed); real prose in ANY supported language scores high, title-lists/
+  product-pages/nav-junk score near zero in EVERY language → add as an extraction-validity
+  criterion in `source_audit` + the non-article scan, feeding (2)'s qualification gate. Each
+  item is a next-session slice.
+  **AMENDED same day (maintainer RULED the qualification lifecycle — answers/supersedes parts
+  of the parked Phase-2 design):** (a) **QUALIFICATION IS THE ADMISSION GATE — only QUALIFIED
+  sources are scraped**: after a restore/import (and any discovery registration), every
+  not-previously-qualified source gets the qualification pass BEFORE joining regular
+  collection. (b) the verdict is PERSISTED + STAMPED — "qualified by Open Omniscience on
+  DATE" (additive `Source` columns: status unqualified|qualified|disqualified + qualified_at
+  + the criteria VERSION it was judged by; the stamp states WHAT was checked — extraction
+  validity — never a quality score). (c) qualification runs as a BACKGROUND,
+  task-manager-visible job, parallel to other tasks (a NETWORK job kind — trial fetches ride
+  the standing online-consent envelope like the world-discovery ride-along; never under
+  airplane). (d) DISQUALIFIED/unqualified sources are KEPT, never deleted — a re-import or a
+  fresh citation of a disqualified domain (a mis-interpreted marketplace, a video blog) must
+  never re-register or re-trial it (the existing alias-aware dedup gives never-re-CREATE for
+  free as long as rows persist; ADD: the citation/discovery funnels must SKIP
+  disqualified-status domains rather than re-propose them). SUPERSESSION noted: Q3a's "trial
+  auto-enable DEFAULT-OFF" posture is AMENDED — qualification is automatic-by-default within
+  the online consent envelope (the trial IS the admission path, not an opt-in extra); Q2a's
+  flag-only stance evolves into this gate for NEW sources (retroactive DISqualification of
+  already-scraped sources stays evidence-first/reviewed, per the auditor's reframe). DESIGN
+  NOTES for the build: COLD START — the statistical comparison needs a same-language corpus
+  baseline, so on a fresh/small corpus the auditor's honest small-cohort behaviour applies
+  (soft criteria unflaggable → qualification initially decides on the hard extraction-
+  validity floor only, firming as the corpus grows); **SUB-DECISION RESOLVED same day
+  (maintainer): ALL sources are qualified BY DEFINITION — the curated catalog INCLUDED; NO
+  pre-qualified-by-curation stamp.** The first collect pass over the catalog IS its
+  qualification pass (trial articles are kept — no wasted fetch). COROLLARY (maintainer):
+  the preliminary/release tests must verify the INITIAL LIST PASSES qualification — a
+  catalog source failing it is a CATALOG-REVIEW signal (fix the seed list, never
+  grandfather it). FRAMING recorded: the initial list is a SEED that grows the corpus
+  outwards (citations/newsletters/discovery extend it; qualification is the membrane every
+  entrant — the seed included — passes through); RECONCILIATION with cover-everything —
+  qualification gates on
+  EXTRACTION VALIDITY (is this a content source at all), never editorial merit, so it
+  removes mis-gathered noise without violating "ordering ≠ exclusion"; disqualification
+  REASONS persist per source (transparency + undo, per the Phase-2 audit-view design).
+  **RE-QUALIFICATION RULED same day (maintainer: disqualified sources get a SECOND CHANCE —
+  re-qualify every 1 to 6 months, exact interval EXPLICITLY UNDECIDED — "maybe it was bad
+  luck, maybe they changed their website, or maybe not"):** the clock is the ONLY re-trigger
+  — this COMPOSES with (d) above, it does not contradict it: event-driven re-checks
+  (re-import, fresh citation) stay suppressed; only elapsed time re-opens a disqualified
+  source. Mechanics for the build: the background qualification job also picks up
+  disqualified sources whose last attempt is older than the interval (bounded per pass, like
+  `world_discovery_per_pass`, so a backlog never swamps a pass); every attempt is RECORDED
+  (date + verdict + criteria version — attempts append, never overwrite, per the vintage
+  convention), surfaced in the audit view. INTERVAL RECOMMENDATION (proposed, not ruled —
+  resolves the undecided 1-vs-6 by using the WHOLE stated range as a ladder): a per-source
+  BACKOFF — first re-check at 1 month, doubling toward the 6-month cap on each repeated
+  disqualification (1→2→4→6 capped), reset on success — the source-level analog of the
+  shipped capped feed-backoff (finding F: "the cap guarantees re-check; never exclusion");
+  a changed/fixed site gets caught within a month, a persistently-junk domain costs ~2
+  checks/year. A Settings knob (bounded ~30–180 days) stays available to override; the
+  ladder is the default unless the maintainer rules otherwise.
+- **LLM SOURCE-TAG ASSIGNMENT FROM TOP KEYWORDS (maintainer proposed 2026-07-20: "a source
+  tag assignment strategy based on their top 200 keywords, given to the local LLM in the
+  diagnostic tab"; DESIGN RECORDED, build PENDING — reuses the §8 triage chassis):** the
+  motivation is real — ~17k discovered/cited sources carry NO topical tags, and tags drive
+  the stratified collection interleave (untagged sources pool in the "·untagged" bucket),
+  the wizard themes, and every tag filter. THE SHAPE (= the ruled §8 LLM-triage pattern with
+  a different task; reuse `src/ai_layer/triage.py`'s conventions wholesale): per-source
+  top-N TERMS (post-stoplist, via the denormalised `KeywordMention.source_id` — a covering
+  scan, no codec join) → batched to loopback Ollama → the model picks from the EXISTING
+  CLOSED tag vocabulary only (the catalog taxonomy the wizard already reads — closed-set
+  classification is what small local models do reliably, and it stops taxonomy
+  fragmentation; an out-of-vocabulary answer is REJECTED, never stored), echo-back
+  validation + canaries (hand-known obvious sources — a sports outlet — detect model
+  degradation) + timing telemetry, run as a visible abortable job from the Diagnostics
+  panel. HONESTY RAILS: (a) the TWO-CLASS model applies to tags — LLM-proposed tags are
+  DEDUCED, stored in a separate labeled channel (the `detected_language` precedent), NEVER
+  silently overwriting the catalog's ASSERTED `Source.tags`; consumers (interleave/filters)
+  may read asserted-else-deduced, disclosed; (b) EVIDENCE FLOOR — a source below a minimum
+  article/mention count gets an honest SKIP ("insufficient evidence"), never a guess from 3
+  articles (the auditor-floor convention; a garbage/unvalidatable model answer stores
+  NOTHING, per B15); (c) input quality gates first — junk keywords (the nav-soup entities)
+  poison the evidence, so the prose gate + §8 triage cleanup upstream materially improve
+  this feature's inputs; (d) start EXPORT-ONLY (the §8 posture) with an apply-reviewed-batch
+  step; auto-apply into the deduced channel only once the maintainer has eyeballed a real
+  batch. SYNERGY: depends on the airplane/Ollama fix above — tag assignment is loopback
+  inference and must work offline once that gate is split.
+  **GO RULED same day (maintainer: run the §8 triage AND the source-tag assignment on the
+  local Ollama rig, export logs, "I currently don't trust enough small models. You should
+  verify it." — the ruled ai-proposed→claude-verified→maintainer-merged chain is now
+  OPERATIONAL POLICY):** investigation found NEITHER run is one-click today —
+  `run_triage_batch`'s ONLY caller is the selftest (`triage.py:704`; the sole endpoint is
+  `/keyword-triage-selftest`), so the REAL-run wiring (job + endpoints + panel button) is a
+  build; the tag half is design-only (the entry above). BOTH are one CLI build session:
+  brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-20_LLM_TRIAGE_TAG_RUNS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-20_LLM_TRIAGE_TAG_RUNS.md)
+  (S1 wire the triage run · S2 the tag run on the same chassis · §4 the VERIFICATION
+  CONTRACT: what the JSONL must carry + the Claude-side protocol — canary integrity, a
+  stratified re-judgement sample weighted TOWARD non-English, rejection/timing sanity, the
+  deterministic artifact built only from surviving verdicts as a draft PR). Execution
+  PENDING; the maintainer's log upload then triggers the verification session.
+- **POST-IMPORT RESULTS SCREEN — the unlabeled row-sum headline + the dedicated delta view
+  (maintainer field report 2026-07-20, after merging a 10 GB corpus: "4,855,433 imported …
+  frankly too vague… I'm sure it doesn't contain 5 million articles"; ROOT-CAUSED same turn,
+  redesign PENDING):** the maintainer's read is CORRECT — `_renderImportSummary`
+  (`src/static/app.js:5875`, the 2026-07-02 "clear view of what was imported" iteration)
+  sums `c.new`/`c.duplicate`/`c.conflict` across EVERY table of the merge plan (:5883-5885),
+  so the headline mixes articles with keyword-mention/link/entity/date/custody ROWS under
+  the single unlabeled word "imported" — an every-number-carries-its-method violation (a
+  row-sum reads as an article count; mentions dominate it by an order of magnitude). The
+  per-table truth already exists but is buried in the collapsed "Details by source"
+  `_v2PlanTable`s. THE REDESIGN (ruled): a DEDICATED post-import results screen — (1)
+  HEADLINE in the user's unit: ARTICLES imported/deduplicated first, then a LABELED
+  per-type breakdown (sources · keywords · mentions · links · law docs · wiki pages ·
+  events · analyses — each its own labeled count; the cross-table row-sum may remain ONLY
+  labeled "database records, all types"); (2) **THE CORPUS-DELTA VIEW ("how the corpus got
+  improved")**: before→after per dimension — articles, sources, languages present,
+  countries covered, date-range span, distinct keywords — computed by snapshotting the
+  cheap maintained counters BEFORE the merge and diffing after (never a whole-table scan
+  post-merge; the counters + `Source` counts make this near-free); (3) **WORK INDUCED**:
+  the import's follow-up queue stated honestly — N newly-imported sources awaiting
+  QUALIFICATION (first-class via the same-day qualification-status rulings), unindexed
+  articles if indexing lags, discovery candidates added; (4) POSITIVE-BUT-HONEST framing
+  (ruled: "imports should give positive feedback") — "your corpus grew by X articles from
+  Y new sources spanning Z new languages" is both celebratory AND every-number-real; no
+  fabricated praise, the delta IS the good news. Numbers via the shared formatter +
+  `OOI18N.tf` templates ×12. Frontend browser-gated per Q6a; the delta snapshot is the
+  small backend piece.
+- **THE 0.3 CLOSE GATE (maintainer RULED 2026-07-20 — the conditions for tagging v0.3.0;
+  the analog of the P0 validation that closed 0.2; rows 6–8 + the row-1/row-4 amendments
+  added same day):** the version already reads 0.3.0 (the 2026-07-18 sequence: P0 pass →
+  v0.2.0 tag → flip), so this gate governs CLOSING the 0.3 cycle. EIGHT gate rows, all
+  required before the tag: (1) **the entire 2026-07-20
+  source-management program implemented AND DOUBLE-CHECKED** — the qualification lifecycle
+  (admission gate · stamp · background job · re-qualification ladder) · newsletter
+  links→sources · the airplane/Ollama gate split · source-IP surfacing incl. the
+  Tor-exit-resolve path · discovery trail + citations tally/drills + corpus filters · the
+  nav-soup prose gate · the post-import delta screen · the LLM triage/tag runs with the
+  Claude-verification chain — each build verified per the house gates AND field-confirmed,
+  not merely merged (merged ≠ green ≠ verified); "double-checked" INCLUDES docs↔app
+  reciprocity — USER_MANUAL chapters for qualification / source management / the
+  post-import screen (the standing reciprocity rule applied to everything this row builds).
+  (2) **a fully TRANSVERSAL AUDIT of the entire repo** (the `07_TRANSVERSAL_AUDIT_V01` precedent — a new tool-by-tool edition for
+  0.3). (3) **full diagnostics taken from a MEDIUM corpus — at least 5 MILLION articles**
+  (the all-diagnostics bundle run at that scale; NOTE recorded honestly: the live corpus is
+  ~an order of magnitude below 5M today, so this row implies the corpus keeps growing via
+  the maintainer's ongoing merges — the spirit is REAL field data, per the
+  P0-live-run-not-synthetic precedent). (4) **a FULL IMPORT of the database that RE-CHECKS
+  ALL SOURCES** — the ruled qualification-at-import admission gate demonstrated at full
+  scale (every source through the pass, verdicts stamped — the curated catalog INCLUDED,
+  no grandfathering per the same-day seed ruling; catalog failures = catalog-review work
+  items) before the switch; this row
+  EXPLICITLY doubles as the backup/restore-AT-SCALE validation (a ~5M-article import IS a
+  restore at ~10× the P0-validated 2.5 GB scale — state it in the gate evidence). (5) **an
+  ARTICLE CLEAN-UP strategy: DISCUSSED → AGREED (explicit maintainer sign-off BEFORE
+  execution) → implemented → EXECUTED** on the ≥5M corpus, removing the undesired-article
+  class (the nav-soup/list specimens — "a list, not an article"); building blocks = the
+  prose gate (ingest door, stops new ones) + the Slice-4a retroactive QUARANTINE (reversible,
+  never a blind delete) + the post-cleanup re-index (clears the junk keywords/entities);
+  the strategy discussion settles quarantine-vs-delete, criteria, and review sampling.
+  (6) **the DB-10 §1b PAGE-SIZE A/B BENCH (4K vs 16K) PASSED FULLY** (added same day) —
+  the shipped `pagesize-bench` job run on the LARGE corpus (plus a small corpus for the
+  trend, per its own design), the numbers reviewed, and the §1b `page_size` ruling MADE on
+  that evidence (currently waiting on the large-corpus run; the CREATE-time seam makes
+  this decision more expensive to revisit with every corpus born before it).
+  (7) **the v0.2.0 P0 report's OWN follow-ups CLOSED** — cold-boot unlock at full scale on
+  the complete corpus + a multi-day live collector soak (the P0.3 measurement covered only
+  2 passes); both were flagged by the P0 report itself as not-yet-confirmed.
+  (8) **a BROWSER-VERIFICATION bar** — either the AppVM `ui_walk` runner STANDING (R3, the
+  V1-pathway-named highest-leverage build) or a DEFINED hand click-through of the flagship
+  surfaces (Home/Leads · the analysis window · the post-import screen · source management ·
+  the one-button diagnostics panel): the compounding "browser-unverified, needs
+  click-through" backlog must not tag as measured-and-verified with the flagship UI never
+  once rendered.
+  The CHANGES.md 0.3.0 board + this entry are the live gate list; stand up a
+  `RELEASE_0.3_GATE.md` checkable inventory (the RC-gate precedent) when the cycle
+  approaches closure.
+- **DIAGNOSE-THE-DIAGNOSTICS — the all-diagnostics RUN JOURNAL (maintainer asked 2026-07-20:
+  one-click-and-wait must hold at 5M scale, completeness "should be ensured", and each
+  member needs begin/end timing — "the police of the police"; INVESTIGATED same turn, build
+  PENDING — a prerequisite for 0.3 gate row 3):** VERIFIED STATE: completeness is already
+  ensured BY RATCHET (2026-07-17 — every GET route → bundle member or documented exemption;
+  the manifest's `excluded` block states the boundary); the background JOB exists
+  (`/all-job` start/status/download, live `progress(done,total,name)`, cooperative cancel
+  BETWEEN members — added because the sync build measured 36+ min at scale; `/all` kept
+  absorption-gated); one failing member writes `<name>.error.txt` + a manifest line, never
+  aborts. THE GAPS (all in `_write_all_diagnostics_zip` / `_all_diagnostics_manifest`,
+  diagnostics.py:2807/:2752): per-member results carry ONLY `{file, ok[, error]}` — NO
+  started_at/wall_s/bytes, so an hour-long 5M run cannot say which member ate it; the
+  manifest is written LAST, so a HARD death (OOM/kill, not a cooperative cancel) leaves an
+  archive with no self-description of where it died; no corpus-scale stamp (a log should
+  say what size corpus produced it); members run UNBOUNDED (a hung member hangs the bundle
+  — cancel only fires between members); the coverage guarantee lives in CI only, not in the
+  artifact. THE BUILD (one slice): (1) the per-member ENVELOPE — every member records
+  `{file, outcome ok|error|skipped-deadline, started_at, wall_s, bytes}` (+ RSS delta where
+  cheap); (2) the DURABLE JOURNAL — the job path appends `begin`/`end` lines to a sidecar
+  `journal.jsonl` as it goes (crash-safe: a hard-killed run's last `begin` without `end`
+  NAMES the culprit), folded into the zip as `bundle-journal.jsonl` on completion; (3) the
+  MANIFEST gains a run HEADER (corpus counters snapshot via the MAINTAINED counters —
+  articles/keywords/mentions — app version, schema head, started/ended, total wall) + a
+  slowest-members summary + a RUNTIME COVERAGE block (recompute the ratchet's route-vs-
+  member-vs-exemption comparison at run time, so the artifact itself proves completeness —
+  ensured in the log, not just in CI); (4) per-member DEADLINES honoring the S8 lesson —
+  DB-touching members run INLINE under a statement deadline (NEVER threaded on a shared
+  connection), only non-DB members may take the wall-clock thread; a timeout records
+  `skipped-deadline` honestly and the bundle continues; generous env-tunable defaults (a
+  diagnostics run is not a UI request); (5) the panel/task-manager line shows "member i/N ·
+  name · elapsed" (the progress callback already carries it). 0.3 TIE-IN: gate row 3 (the
+  5M diagnostics run) depends on this — without the journal, a failed hour-long run at
+  scale is undiagnosable.
+  **AMENDED same day (maintainer added two rulings):** (6) **HARDWARE PROFILE in the run
+  header** — the diagnostics must scan the machine so every measurement reads in
+  perspective of hardware capacity (the maintainer tests across several rigs incl.
+  low/cheap/old laptops — cross-machine comparison is the point): CPU model + physical/
+  logical cores + freq, total RAM + swap, disk FREE + rotational-vs-SSD (the Linux
+  `/sys/block/*/queue/rotational` probe; honest `unavailable` on other OSes), OS/kernel,
+  plus an OPTIONAL operator-set MACHINE LABEL (settings/env, e.g. "old-thinkpad") so logs
+  from different machines are distinguishable at a glance. All LOCAL reads, zero network,
+  shared only by click (the standing diagnostics posture). (7) **DIAGNOSTIC-BUTTON
+  CONSOLIDATION ruled: remove all per-report download buttons except THE ONE
+  all-diagnostics button** — safe because the ratchet guarantees the bundle carries every
+  report. THE DISTINCTION that must survive the sweep: JOB-STARTERS and INTERACTIVE tools
+  (p0-validation · pagesize-bench · the source-quality ZIP · rollup/source-coverage
+  benchmarks · IR-eval + gold-builder · discover-world · the upcoming LLM triage/tag runs)
+  are ACTIONS, not report downloads — they STAY (the Desk lesson: absorption-gated, never
+  silently lose a tool; ENDPOINTS are never removed, only redundant download buttons).
+  Browser-unverified per fork-3/Q6a; extend the UI invariant tests to pin the one-button
+  state + the surviving action controls.
+- **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
+  field report: "the app is currently requesting airplane mode to be turned off to allow
+  ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
+  fix PENDING):** `OllamaClient._check_kill_switch` (`src/llm/ollama.py:183`) blanket-refuses
+  EVERY Ollama call while the kill switch is engaged — including pure-loopback GENERATION
+  (translate/summarize/synthesize/extract against an already-installed local model, zero
+  egress) — with exactly the message the maintainer hit ("Turn airplane mode off to use the
+  local LLM"). This CONTRADICTS the airplane-mode non-negotiable's own design: the socket
+  guard deliberately whitelists loopback "(the app's own server, loopback Ollama, file DB)"
+  precisely so local inference works offline; the per-call gate (self-described "defense in
+  depth") is stricter than the guarantee it defends. FIX SHAPE: split the gate by egress
+  class — generation/list/health are loopback inference (`_require_loopback` already refuses
+  a non-loopback URL at construction; a missing model errors, it never auto-pulls) → allowed
+  under airplane; `pull`/`remove`-with-download + the binary installer STAY kill-switch-gated
+  (a pull egresses CLEARNET via the SEPARATE ollama process, which the in-process socket
+  guard cannot see — that half of the gate is load-bearing, never relax it). Sweep the
+  callers when fixing: the bulk-LLM path, auto-on-ingest extractors, langdetect-LLM, and any
+  UI ensureOnline prompt wired to LLM actions (the frontend may ALSO be gating locally — the
+  reader/bulk translate surfaces should not demand the ONE network consent for a loopback
+  call). Tests must pin BOTH directions: generate works with the kill switch engaged (no
+  socket beyond loopback) AND pull still refuses.
+- **SOURCE IPs — SURFACE THE CAPTURED DATA (maintainer asked 2026-07-20: record source IPs,
+  show in each article's view, accessible in source management, sources may have MULTIPLE
+  IPs, world map per-country sources by IP; INVESTIGATED same turn — capture EXISTS, three
+  surfaces are the gap; builds PENDING):** ALREADY SHIPPED (2026-06-19 slices 6a/6b/6c + the
+  2026-07-02 .eml sender-IP): per-ARTICLE `Article.server_ip`/`ip_observed_at`/
+  `server_ip_reason` captured at fetch (web + newsletter sender-IP), the bundled offline
+  DB-IP geolocation (CC BY 4.0), the `server_locations` aggregation
+  (`queries.py`/`insights.py`) and the ooMap "Server IPs" point layer (browser-unverified).
+  The per-article observation model ALREADY yields multiple IPs per source over time
+  (CDN/rotation) — no schema change needed, the asks are SURFACES: (1) the article/reader
+  view does NOT show the captured IP (verified: `server_ip` absent from `src/api/main.py`) —
+  add it to the reader's app-deduced metadata class with the standing caveats
+  (`server_ip_reason`; "may be a relay/CDN edge, never proof of origin"; Tor-fetched →
+  honestly unavailable since the socket is the proxy); (2) a per-SOURCE aggregated IP view
+  (distinct observed IPs + first/last seen + geolocated country each) in the source-
+  management interface — an aggregation over the existing article columns, no new capture;
+  (3) a per-country SOURCES-by-observed-IP choropleth DIMENSION on the world map — DISTINCT
+  from the existing sources-per-country dimension (which keys on the catalog-ASSERTED
+  `Source.country`): asserted vs observed-infrastructure are different classes and must
+  never be silently blended (a source whose articles geolocate to several countries counts
+  once per country, disclosed; the anycast/CDN approximation caveat visible per the 6c
+  ruling). All three are surface slices over shipped data; frontend conservative+flagged
+  per Q6a.
+  **AMENDED same day (maintainer asked to circumvent the Tor gap — "can't we ping the source
+  server or ask the server directly?"; ASSESSED, design of record pending the go):** DIRECT
+  contact is RULED OUT as an automatic mechanism by the standing never-silently-downgrade-
+  transport non-negotiable: ICMP ping CANNOT ride Tor at all (Tor is TCP-only, so a ping is
+  ALWAYS clearnet by construction), and a direct probe of a just-Tor-fetched source hands the
+  server + ISP a TIME-CORRELATED link between the user's real IP and that source — a
+  deanonymization worse than fetching clearnet outright. THE TOR-NATIVE PATH INSTEAD:
+  Tor's SOCKS port supports the RESOLVE command (0xF0 — the stock `tor-resolve` mechanism,
+  same SocksPort the app already uses, no control port) — the EXIT performs the DNS lookup,
+  so the source's DNS sees only the exit, never the user: zero direct contact, zero new third
+  party (DoH deliberately NOT chosen — it would add an external service class), ~30 lines of
+  stdlib socket code, cached per (domain, pass), kill-switch-gated, degrades honestly when the
+  configured SOCKS proxy is not Tor (rejects 0xF0). HONESTY: the answer is the SAME epistemic
+  class as the clearnet capture at a DIFFERENT vantage (CDN answers vary by resolver — "edge
+  nearest the EXIT" vs the socket capture's "edge nearest the user"; an origin hidden behind
+  a CDN stays hidden either way) → store under a DISTINCT provenance class
+  (`server_ip_reason: dns-via-tor-exit`, never blended with socket-observed; exit-rotation
+  variance is DATA under the multiple-IPs-per-source model, disclosed). FUTURE free upgrade:
+  when the designed-not-built Stem/control-port integration lands, Tor's ADDRMAP cache
+  exposes the resolutions exits ALREADY performed during the fetches — zero extra queries;
+  the SOCKS-RESOLVE path need not wait for it.
+- **SOURCE DISCOVERY TRAIL · QUALIFIED-CITATIONS TALLY · CORPUS SOURCE/LANGUAGE FILTERS
+  (maintainer asked 2026-07-20; INVESTIGATED same turn — substrate exists for all three, the
+  SURFACES are the gaps; builds PENDING):**
+  (1) **DISCOVERY PROVENANCE TRAIL** — when a source enters the qualification pipeline the
+  user must see WHERE it was first discovered (which article cited it) and be able to check
+  the source's source. EXISTS: `SourceCandidate` (models.py:1725) carries channel + evidence
+  JSON + first_seen; `Source` `via:*` provenance tags; `external_sources.discovered_via`
+  (Q4a); the citing trail is derivable on demand from `article_links` (the cited_sources
+  docstring says exactly this; "the sources' sources" is the standing Links-design goal, and
+  the S6.1b carry-over already names "surface the citing trail"). BUILD: a per-source
+  provenance panel in source management + the qualification review view — channel-appropriate
+  origin (cited/newsletter-link → the FIRST citing article [min created_at among citers] +
+  its source, click-through to the local reader and to the citing source's row;
+  catalog/wikidata/legal → channel + evidence). Verify at build whether the citation
+  channel's evidence JSON already stores example article ids; the trail recomputes from
+  `article_links` regardless.
+  (2) **QUALIFIED-CITATIONS TALLY (maintainer: "not interpretation, just a ratio … a tiny
+  icon")** — per source, how many of its cited domains are qualified/disqualified. HONESTY
+  GUARDRAILS recorded with the ask: (a) visible form = the TALLY with n ("cited domains: 14
+  qualified · 3 disqualified · 5 pending · 12 never-registered [commerce/social/infra-
+  filtered]"), a tiny icon is fine but the #oo-tip hover (invariant #17) carries the full
+  tally + caveat — never a bare percentage badge that reads as a grade; (b) DENOMINATOR:
+  raw cited domains include masses of legitimately-non-article links (every healthy outlet
+  links companies/platforms when reporting ON them), so the meaningful universe is domains
+  that entered the qualification funnel, with the filtered classes tallied separately —
+  else the ratio is noise; (c) CAVEAT visible: citing a disqualified domain is NOT guilt —
+  disqualification is extraction-validity ("not a content source"), never editorial badness;
+  the tally is a descriptive fact, no interpretation (the maintainer's own framing); (d)
+  field-name discipline: no score/rating/grade/ranking substrings in payload keys (the
+  "degraded"-contains-"grade" walker lesson; qualified/disqualified are safe). Perf: derive
+  from `article_links` × qualification status per the cited_domain_stats shape (covering
+  scans, never a codec join). **RECIPROCAL VIEW ruled same day (maintainer: "reciprocally,
+  I'd like to see when a source has mentioned qualified sources"):** the tally's classes
+  become CLICKABLE DRILLS — each class (qualified · disqualified · pending · filtered)
+  expands to the actual LIST of cited domains in that class, each row linking to that
+  source's own management row AND to the citing articles (the `article_links` trail — the
+  same "sources' sources" grammar as the Related subtab's shared-origins lens). SYMMETRY
+  CAVEAT recorded: the positive direction carries the SAME no-interpretation discipline as
+  the negative — citing many qualified sources is NOT an endorsement/quality signal (wire
+  services get cited by everyone; a laundering hub can cite reputable sources deliberately —
+  the source-laundering card's own lesson), exactly as citing a disqualified one is not
+  guilt; both directions are descriptive facts with the caveat visible.
+  (3) **CORPUS FILTER-BY-SOURCE/LANGUAGE IN THE ARTICLES TAB ("apply filter" → the deduced
+  corpus)** — EXISTS: `#an-adv-source` + `#an-adv-lang` (Advanced subtab), threaded through
+  `anParams()` into EVERY subtab + the "Filtered" chip (`_anFilterSummary`). GAPS the ask
+  names: the controls live in Advanced, not the Articles tab; source is free-TEXT, not a
+  facet list of what the current corpus actually contains; and an Advanced refine CLEARS a
+  card-seeded exact-id corpus instead of narrowing it. BUILD: facet controls in the Articles
+  subtab (the sources + languages present in the CURRENT corpus, with counts) + an "Apply
+  filter" that recomputes the whole deduced corpus across subtabs; for an id-seeded corpus
+  INTERSECT (the corpus_facet_article_ids drill grammar — ids ∩ filter → refreshed window)
+  rather than clear. Frontend conservative+flagged per Q6a.
+- **NAV-SOUP SPECIMEN — the ≥100-word body-gate recall gap in the non-article filter
+  (maintainer field specimen 2026-07-20: the Irish Mirror `newsletter-preference-centre` page
+  stored as an Article; ROOT-CAUSED same turn, fix PENDING):** the specimen (captured
+  2026-07-04) is pure header/footer nav chrome, with the extraction fallout proving the
+  pollution class — menu items became PEOPLE ("News Latest · Irish News · Mirror Bingo") and
+  an ORG ("Soccer Golf Rugby Union") in When×Where×Who. TWO findings: (a) it PREDATES the
+  ingest-door classifier (`src/ingest/non_article.py`, shipped 2026-07-13 off the
+  source-quality recall gap) — legacy junk of this class sits in the DB; the Slice-4a
+  retroactive QUARANTINE carry-over is what removes it, and a re-index then clears the junk
+  entities/keywords. (b) the filter would STILL miss it TODAY: its load-bearing guard
+  auto-KEEPS any body ≥ `_ARTICLE_MIN_WORDS=100` regardless of URL — and the specimen is
+  ~135 words OF MENU ITEMS (word-RICH nav soup defeats the thin-body precondition); the URL
+  rules are exact-segment matches, so the hyphenated compound `newsletter-preference-centre`
+  misses `_UTILITY_SEGMENTS`. THE FIX (extends the filter, keeps its high-precision
+  keep-when-in-doubt posture): (1) **the PROSE GATE** — for ≥100-word bodies, function-word
+  DENSITY of the asserted/best-matching language (the vendored stopwords-iso sets — the SAME
+  signal recorded this session for source_audit) AND-gated with near-zero
+  sentence-punctuation density → verdict `nav_soup` (the specimen: ~5% density + ~0 sentence
+  periods vs ~40%+ for real English prose; the AND is precision-serving here — a drop needs
+  BOTH signals, since a false positive is data loss). Guards: script-aware (unsegmented
+  zh/ja/th SKIP the gate or go segmenter-fed — the S5.2 mislabel lesson: unmeasurable text
+  is never dropped on a gap); headline-LIST pages (moderate density) deliberately escape —
+  the source-level auditor's territory, an honest undercount per the filter's own design.
+  (2) URL rules extended to HYPHEN-PARTS of segments (newsletter/preference/signup as
+  compound components) — safe because URL rules already fire ONLY under the thin-body
+  precondition. (3) optional crawl-time URL pre-skip (bandwidth saving only — the store-side
+  gate stays the honesty line). LAYERING NOTE: per-ARTICLE gates handle junk pages of REAL
+  sources (irishmirror.ie is a legitimate outlet — qualification would rightly NOT
+  disqualify it over its preference page); wholly-junk SOURCES are qualification's job —
+  the two layers compose, neither replaces the other.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
