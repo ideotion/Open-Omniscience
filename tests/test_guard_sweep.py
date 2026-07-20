@@ -120,6 +120,7 @@ def test_insights_raw_endpoints_are_now_deadlined():
         "insights_ring_countries",
         "insights_ring_stats",
         "insights_ring_country_articles",
+        "insights_observatory",
         "insights_source_laundering",
         "insights_recycled_claims",
         "insights_reading_diet_by_type",

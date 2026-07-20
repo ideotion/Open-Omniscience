@@ -1578,6 +1578,30 @@ def insights_ring_country_articles(
     )
 
 
+@router.get("/observatory")
+def insights_observatory(
+    window_days: int = Query(7, ge=1, le=90),
+    baseline_days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The Observatory's universe (cluster) + galaxy (super-group) data spine
+    (docs/design/OBSERVATORY_DESIGN.md; backend-only — the ``ooSky`` renderer
+    is browser-verify-gated, design §9). Reuses the super-groups brief's S1
+    stats core one tier up (a scaffold domain's totals are a deduped union of
+    its member galaxies' keyword ids, never a naive sum). Counts and ratios
+    only, no composite score."""
+    from src.analytics.observatory import observatory_payload
+
+    window_days = window_days if isinstance(window_days, int) else 7
+    baseline_days = baseline_days if isinstance(baseline_days, int) else 30
+
+    key = _ckey("observatory", window_days=window_days, baseline_days=baseline_days)
+    return _deadlined(
+        db, key,
+        lambda: observatory_payload(db, window_days=window_days, baseline_days=baseline_days),
+    )
+
+
 @router.get("/source-laundering")
 def insights_source_laundering(
     min_sources: int = Query(3, ge=2, le=100, description="distinct-source surfacing gate"),
