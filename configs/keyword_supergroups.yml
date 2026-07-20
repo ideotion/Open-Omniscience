@@ -9,35 +9,62 @@
 # Seeded at startup ONLY where a group name does not already exist -- the user's
 # own edits/deletions always win. A ring member is validated against the ring set
 # at seed time; an unknown ring id is skipped (never a dead member).
+#
+# `domain` (added 2026-07-20, Observatory brief S0): the machine-readable label
+# for the "~12 domains" this file's own header always described in prose only.
+# Exactly 12 distinct values across the 77 groups below (Politics & governance /
+# Conflict & security / Law & society / Economy & finance / Energy & resources /
+# Climate & environment / Physical sciences / Life sciences & medicine /
+# Technology / Media & information / Culture & heritage / Sport &
+# infrastructure) -- this is the "galaxy cluster" tier of the Observatory
+# (docs/design/OBSERVATORY_DESIGN.md). It is config-only metadata, never
+# persisted to the KeywordSuperGroup row: a user-renamed group simply falls out
+# of the name->domain lookup and degrades honestly into an "Uncategorized"
+# bucket (the same skip-not-crash convention as an unknown ring id, above) --
+# it is never re-derived by guessing.
 
 supergroups:
   - name: "State & government"
+    domain: "Politics & governance"
     rings: [government, president, prime-minister, minister, cabinet, senate, governance, federalism, monarchy, dictatorship, sovereignty, capital-city]
   - name: "Elections & democracy"
+    domain: "Politics & governance"
     rings: [public-election, voting, democracy, referendum, suffrage, political-opposition, citizenship]
   - name: "Lawmaking & political process"
+    domain: "Politics & governance"
     rings: [constitution, statute, policy, veto, impeachment, lobbying, coalition]
   - name: "Political ideologies"
+    domain: "Politics & governance"
     rings: [ideology, communism, socialism, capitalism, fascism, liberalism, conservatism, nationalism, populism, authoritarianism]
   - name: "Diplomacy & international order"
+    domain: "Politics & governance"
     rings: [diplomacy, treaty, summit, embassy, ambassador, geopolitics, united-nations, european-union]
   - name: "Protest & political change"
+    domain: "Politics & governance"
     rings: [protest, rebellion, independence, decolonization, colonialism, propaganda, coup-d-tat]
   - name: "Armed conflict"
+    domain: "Conflict & security"
     rings: [conflict, ceasefire, airstrike, occupation, blockade, peacekeeping, casualty, militia]
   - name: "Weapons & arsenals"
+    domain: "Conflict & security"
     rings: [weapon, missile, nuclear-weapon, tank, artillery-branch, submarine, ammunition, unmanned-aerial-vehicle]
   - name: "Armed forces"
+    domain: "Conflict & security"
     rings: [military, soldier, veteran, conscription, disarmament]
   - name: "Intelligence & cyberwar"
+    domain: "Conflict & security"
     rings: [espionage, intelligence-agency, cyberwarfare, surveillance]
   - name: "Terrorism & atrocities"
+    domain: "Conflict & security"
     rings: [terrorism, genocide, violence]
   - name: "Migration & displacement"
+    domain: "Politics & governance"
     rings: [refugee, human-migration, border, immigration, diaspora]
   - name: "Human rights & freedoms"
+    domain: "Politics & governance"
     rings: [human-rights, civil-and-political-rights, freedom-of-speech, freedom-of-expression, censorship]
   - name: "Crime"
+    domain: "Law & society"
     rings: [crime, homicide, theft, fraud, smuggling, defamation]
   # Vetted 2026-07-18 (supergroups brief S4.3, row 6: "'sentence' 5,430 carrying
   # 'Justice'"): the "sentence" ring's own members (Wikidata QID Q41796) are ALL
@@ -46,16 +73,22 @@ supergroups:
   # for this group entirely. Removed rather than re-scoped: no "prison sentence"
   # -specific ring exists yet to replace it with.
   - name: "Justice & courts"
+    domain: "Law & society"
     rings: [law, trial, judge, prosecutor, lawyer, jury, evidence, lawsuit, jurisdiction, parole, bail, prison, extradition, prisoner]
   - name: "Intellectual property"
+    domain: "Law & society"
     rings: [copyright, patent]
   - name: "Inequality & welfare"
+    domain: "Law & society"
     rings: [inequality, poverty, welfare, homelessness, housing, famine]
   - name: "Population & demography"
+    domain: "Law & society"
     rings: [human-population, demography, urbanization, census, birth-rate, life-expectancy, ethnic-group, continent]
   - name: "Gender & family"
+    domain: "Law & society"
     rings: [gender, gender-equality, feminism, family, identity]
   - name: "Education & learning"
+    domain: "Law & society"
     rings: [education, university, school, teacher, student, literacy]
   # Vetted 2026-07-18 (supergroups brief S4.3, row 6: "'creation' 4,618 (87% of
   # 'Social cohesion')"): the "creation" ring is a generic act-of-forming/
@@ -64,8 +97,10 @@ supergroups:
   # association/resignation; a scaffold misplacement, not a homograph WITHIN the
   # ring itself. Removed from this group (the ring's own definition is untouched).
   - name: "Social cohesion"
+    domain: "Law & society"
     rings: [multiculturalism, voluntary-association, resignation]
   - name: "Macroeconomy"
+    domain: "Economy & finance"
     rings: [economy, inflation, recession, unemployment, economic-growth, gross-domestic-product, austerity, productivity]
   # Vetted 2026-07-18 (supergroups brief §0 row 4): the "deficiency" ring is a
   # general lack/shortage concept (its own members include shortage/scarcity/
@@ -74,112 +109,167 @@ supergroups:
   # scaffold. Removed rather than re-scoped: no equally-general "budget deficit"
   # -only ring exists yet to replace it with.
   - name: "Money & banking"
+    domain: "Economy & finance"
     rings: [central-bank, currency, bank, interest-rate, debt, exchange-rate, bankruptcy]
   - name: "Financial markets"
+    domain: "Economy & finance"
     rings: [stock-market, investment, stock, bond, dividend, mortgage-loan, insurance, cryptocurrency, blockchain]
   - name: "Trade & globalization"
+    domain: "Economy & finance"
     rings: [trade, tariff, export, import, marketplace, globalization, supply-chain, logistics]
   - name: "Business & industry"
+    domain: "Economy & finance"
     rings: [corporation, startup, entrepreneurship, merger, monopoly, commerce, retail, industrial-manufacturing, consumer, profit]
   - name: "Labour & work"
+    domain: "Economy & finance"
     rings: [wage, strike, labor-union]
   - name: "Public finance"
+    domain: "Economy & finance"
     rings: [budget, subsidy, privatization, nationalization]
   - name: "Energy systems"
+    domain: "Energy & resources"
     rings: [energy, electricity, electrical-grid]
   - name: "Renewable energy"
+    domain: "Energy & resources"
     rings: [renewable-energy, solar-energy, wind-power, hydropower, geothermal-energy, biofuel, hydrogen]
   - name: "Fossil fuels"
+    domain: "Energy & resources"
     rings: [fossil-fuel, petroleum, natural-gas, coal, gasoline, refinery]
   - name: "Nuclear power"
+    domain: "Energy & resources"
     rings: [nuclear-power, uranium]
   - name: "Mining & metals"
+    domain: "Energy & resources"
     rings: [mining, gold, copper, steel, aluminium, lithium, rare-earth-element, semiconductor]
   - name: "Natural resources"
+    domain: "Energy & resources"
     rings: [natural-resource, water-supply]
   - name: "Climate change"
+    domain: "Climate & environment"
     rings: [climate-change, global-warming, greenhouse-gas-emissions, carbon-dioxide, carbon-footprint, methane, sea-level-rise]
   - name: "Natural disasters"
+    domain: "Climate & environment"
     rings: [drought, flood, wildfire, earthquake, hurricane, volcano, tsunami, landslide, monsoon]
   - name: "Ecology & biodiversity"
+    domain: "Climate & environment"
     rings: [biodiversity, ecosystem, endangered-species, coral-reef, rainforest, wetland, deforestation]
   - name: "Pollution & sustainability"
+    domain: "Climate & environment"
     rings: [pollution, air-quality, recycling, sustainability, environmental-protection, ozone-layer]
   - name: "Earth systems"
+    domain: "Climate & environment"
     rings: [climate, weather, atmosphere, ocean, geology, glacier, permafrost, soil, erosion, desertification, water-scarcity]
   - name: "Physical geography"
+    domain: "Climate & environment"
     rings: [mountain, river, desert, city]
   - name: "Agriculture"
+    domain: "Climate & environment"
     rings: [agriculture, crop, harvest, agricultural-irrigation, pesticide, fertilizer, organic-agriculture, gmo]
   - name: "Food & farming"
+    domain: "Climate & environment"
     rings: [food-security, rice, wheat, soybean, coffee, sugar, grain, cattle, dairy, livestock, aquaculture]
   - name: "Physics"
+    domain: "Physical sciences"
     rings: [physics, gravity, force, velocity, magnetism, electromagnetism, thermodynamics, temperature, theory-of-relativity]
   - name: "Quantum & particles"
+    domain: "Physical sciences"
     rings: [quantum-mechanics, atom, electron, proton, neutron, photon, isotope, antimatter, nuclear-fission, visible-spectrum]
   - name: "Chemistry"
+    domain: "Physical sciences"
     rings: [molecules, chemical-element, chemical-reaction, oxygen, carbon, nitrogen, periodic-table, metal, crystal]
   - name: "Astronomy"
+    domain: "Physical sciences"
     rings: [astronomy, galaxy, star, asteroid, comet, black-hole, supernova, nebula, telescope, orbit, moon]
   - name: "Cosmology & space"
+    domain: "Physical sciences"
     rings: [universe, cosmology, dark-matter, solar-system, space-exploration, rocket]
   - name: "Mathematics"
+    domain: "Physical sciences"
     rings: [geometry, algebra, calculus, statistics, probability, equation, logic]
   - name: "Biology & genetics"
+    domain: "Life sciences & medicine"
     rings: [biology, cell, deoxyribonucleic-acid, gene, genetics, chromosome, evolution, species, reproduction, protein, enzyme, hormone, photosynthesis, microbiome, genome]
   - name: "Microbiology & immunity"
+    domain: "Life sciences & medicine"
     rings: [bacteria, virus, immunity, antibody, infection, antibiotic]
   - name: "Human body"
+    domain: "Life sciences & medicine"
     rings: [anatomy, physiology, organ, tissue, blood, blood-plasma, heart, lung, brain, neuron]
   - name: "Disease & epidemics"
+    domain: "Life sciences & medicine"
     rings: [disease, cancer, pandemic, epidemic, epidemiology, malaria, tuberculosis, diabetes, obesity, pathology]
   - name: "Medicine & care"
+    domain: "Life sciences & medicine"
     rings: [medicine, hospital, surgery, medication, clinical-trial, diagnosis, medical-treatment, transplantation, vaccine, vaccination, health-care, public-health, nutrition]
   - name: "Mental health"
+    domain: "Life sciences & medicine"
     rings: [mental-health, anxiety, major-depressive-disorder, addiction, autism, psychiatric-hospital]
   - name: "Computing"
+    domain: "Technology"
     rings: [computer, computer-hardware, operating-system, server, cloud-computing, computer-network, computer-programming, open-source-software, integrated-circuit, central-processing-unit, bit-rate]
   - name: "Software & internet"
+    domain: "Technology"
     rings: [software, internet, database, technology]
   - name: "Artificial intelligence"
+    domain: "Technology"
     rings: [artificial-intelligence, machine-learning, deep-learning, artificial-neural-network, algorithm, automation, robot, autonomous-vehicle]
   - name: "Data & privacy"
+    domain: "Technology"
     rings: [data, privacy, computer-security, encryption, cryptography]
   - name: "Emerging technology"
+    domain: "Technology"
     rings: [biotechnology, nanotechnology, quantum-computing, virtual-reality, augmented-reality, electric-vehicle, battery, sensor, smartphone]
   - name: "Journalism & press"
+    domain: "Media & information"
     rings: [journalist, journalism, newspaper, editorial, news-conference, news-media, broadcasting, whistleblower, freedom-of-the-press]
   - name: "Broadcast & digital media"
+    domain: "Media & information"
     rings: [television, radio-station, podcast, documentary-film, social-media]
   - name: "Advertising & opinion"
+    domain: "Media & information"
     rings: [advertising, marketing, public-opinion]
   - name: "Information integrity"
+    domain: "Media & information"
     rings: [misinformation, disinformation, fact-checking]
   - name: "Visual & performing arts"
+    domain: "Culture & heritage"
     rings: [art, painting, sculpture, photography, calligraphy, music, opera, dance, theatre, film]
   - name: "Literature & language"
+    domain: "Culture & heritage"
     rings: [literature, poetry, novel, language, linguistics, grammatical-particle]
   - name: "Architecture & design"
+    domain: "Culture & heritage"
     rings: [architecture, fashion, aesthetics]
   - name: "Heritage & museums"
+    domain: "Culture & heritage"
     rings: [museum, monument, manuscript, heritage, archaeological-artefact, archaeology]
   - name: "Tradition & folklore"
+    domain: "Culture & heritage"
     rings: [culture, mythology, folklore, festival, ritual]
   - name: "Philosophy"
+    domain: "Culture & heritage"
     rings: [philosophy, ethics, logic, metaphysics, morality]
   - name: "Religion & belief"
+    domain: "Culture & heritage"
     rings: [religion, theology, faith, atheism, irreligion, meditation, pilgrimage, religious-text]
   - name: "Social sciences"
+    domain: "Culture & heritage"
     rings: [psychology, sociology, anthropology]
   - name: "Eras of history"
+    domain: "Culture & heritage"
     rings: [history, antiquity, prehistory, ancient-history, renaissance, enlightenment, feudalism, dynasty, civilization]
   - name: "Modern history"
+    domain: "Culture & heritage"
     rings: [industrial-revolution, world-war-i, cold-war, slavery, conquest, exploration]
   - name: "Sport & competition"
+    domain: "Sport & infrastructure"
     rings: [sport, olympic-games, fifa-world-cup, championship, tournament, athlete, referee, award, doping-in-sport, stadium]
   - name: "Sporting disciplines"
+    domain: "Sport & infrastructure"
     rings: [association-football, basketball, tennis, cricket, rugby, competitive-swimming, gymnastics, cycling, boxing, marathon]
   - name: "Transport & mobility"
+    domain: "Sport & infrastructure"
     rings: [transport, railway, airport, controlled-access-highway, bridge, tunnel]
   - name: "Built environment"
+    domain: "Sport & infrastructure"
     rings: [infrastructure, urban-planning, guest-house]
