@@ -6475,6 +6475,57 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   distinct concept from irreligion, which carries it as an alias); DROP `public relations`
   (marketing already carries `en:PR` + `en:public relations`); keep `pension` but strip
   `de:Pension` from the resolved members (bound to guest-house — a cross-language homograph).
+- **SOURCE-MANAGEMENT ASKS — newsletter links · qualification funnel · language detection
+  (maintainer asked 2026-07-20; INVESTIGATED same session, code-verified; builds PENDING —
+  assessment-first, nothing built this turn):** three asks, each checked against the tree
+  (staleness guard) before answering.
+  (1) **NEWSLETTER LINKS → NEW SOURCES: NOT the case today — a real, well-bounded gap.** The
+  .eml/mailbox ingest de-tracks links in the BODY (`privacy/link_sanitizer.sanitize_text`) but
+  writes NO `ArticleLink` rows — only the web ingest paths do (`src/ingest/pipeline.py:317`,
+  `src/ingest/batch.py:398`) — and BOTH source funnels read exclusively `article_links`: the
+  per-pass citation discovery channel (`src/discovery/channels.py:190`) and the manual
+  `promote_cited_sources` endpoint (`src/api/source_management.py:207`; DISABLED `cited` rows,
+  ≥2-DISTINCT-citing-sources gate, commerce/social/infrastructure filters, alias-aware dedup).
+  BUILD SHAPE (the ruled intent — cleaned newsletter links must be able to become sources):
+  extract the SANITIZED external links at .eml ingest into `ArticleLink` rows — ONLY
+  fully-recovered destinations (a tracker-wrapped link whose destination could not be recovered
+  stores wrapper-domain-only by design and must NEVER seed a source); both funnels then pick
+  newsletters up with ZERO further change, and the ≥2-distinct-citers gate + noise filters are
+  the right protection against sponsor/self-promo link noise.
+  (2) **SOURCE QUALIFICATION (~20k sources on a 3-day-old install; "unqualify mis-gathered
+  links"):** the machinery largely EXISTS; the missing piece is the ORCHESTRATION, which is the
+  already-parked Phase-2 promotion frontier — this ask REINFORCES that parked build. Mapping:
+  robots check = the bounded preflight; "scrape a few articles + compare statistically vs the
+  same-language corpus average" = the #663 `source_audit` auditor (cohort-relative per-language
+  baselines; short-article rate · outlier keyword stats · furniture share · extraction-failure
+  pathology with an ABSOLUTE floor; flag-only, auto-demote built but DEFAULT-OFF per Q2a;
+  diversity guardrail); the qualification LIFECYCLE = candidate → TRIAL (consented few-article
+  scrape, gated on the auditor) → graduate/reject + audit view + undo (Q3a). GENUINELY NEW
+  signals to add when built: per-source PARAGRAPH/SENTENCE average word counts (style-ambiguous
+  → WATCH-only per the extraction-validity reframe, never auto-demote) + the function-word
+  prose-ness measure from (3). PERSPECTIVE recorded: most of the ~20k are DISABLED
+  discovery/cited candidates — inert metadata, never fetched; the pain is review-funnel absence,
+  not scraping exposure.
+  (3) **LANGUAGE DETECTION ("almost half the corpus has no language tag"): the engine ALREADY
+  EXISTS in three tiers — do NOT rebuild it.** Tier 1: py3langid at ingest
+  (`store._resolve_known_language` persists `Article.detected_language`; gated ≥200 chars +
+  ≥0.90 confidence + supported-language-only; `[analysis]` extra). Tier 2: the
+  `reconcile_article_language` backfill (text-detect → keyword-majority) wired into the
+  re-index job's cleanup pass. Tier 3: the opt-in LLM residue detector (B15,
+  `/api/ai/detect-language`). The proposed top-100-words/top-24-overlap detector would be a
+  WEAKER duplicate of tier 1 (py3langid = a trained offline model over the same evidence class)
+  — not built. THE ACTIONABLE GAP is operational + visibility: (a) the untagged half is most
+  likely pre-hook articles + HONEST refusals (short/junk text — the very mis-scrapes flagged in
+  the same message); running the re-index cleanup ("Clean up keywords") backfills the backlog;
+  (b) add a small diagnostic surfacing language-coverage tallies (asserted vs deduced vs
+  unknown, with refusal reasons) so the dominant case is SEEN before more is built. **THE
+  KEEPER IDEA — FUNCTION-WORD DENSITY AS A PROSE-NESS / MIS-SCRAPE SIGNAL (genuinely new):**
+  share of tokens that are function words of the best-matching language — the vendored
+  stopwords-iso lists already provide vetted function-word sets ×18 languages (no corpus
+  extraction step needed); real prose in ANY supported language scores high, title-lists/
+  product-pages/nav-junk score near zero in EVERY language → add as an extraction-validity
+  criterion in `source_audit` + the non-article scan, feeding (2)'s qualification gate. Each
+  item is a next-session slice.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
