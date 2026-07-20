@@ -6526,6 +6526,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   product-pages/nav-junk score near zero in EVERY language → add as an extraction-validity
   criterion in `source_audit` + the non-article scan, feeding (2)'s qualification gate. Each
   item is a next-session slice.
+  **AMENDED same day (maintainer RULED the qualification lifecycle — answers/supersedes parts
+  of the parked Phase-2 design):** (a) **QUALIFICATION IS THE ADMISSION GATE — only QUALIFIED
+  sources are scraped**: after a restore/import (and any discovery registration), every
+  not-previously-qualified source gets the qualification pass BEFORE joining regular
+  collection. (b) the verdict is PERSISTED + STAMPED — "qualified by Open Omniscience on
+  DATE" (additive `Source` columns: status unqualified|qualified|disqualified + qualified_at
+  + the criteria VERSION it was judged by; the stamp states WHAT was checked — extraction
+  validity — never a quality score). (c) qualification runs as a BACKGROUND,
+  task-manager-visible job, parallel to other tasks (a NETWORK job kind — trial fetches ride
+  the standing online-consent envelope like the world-discovery ride-along; never under
+  airplane). (d) DISQUALIFIED/unqualified sources are KEPT, never deleted — a re-import or a
+  fresh citation of a disqualified domain (a mis-interpreted marketplace, a video blog) must
+  never re-register or re-trial it (the existing alias-aware dedup gives never-re-CREATE for
+  free as long as rows persist; ADD: the citation/discovery funnels must SKIP
+  disqualified-status domains rather than re-propose them). SUPERSESSION noted: Q3a's "trial
+  auto-enable DEFAULT-OFF" posture is AMENDED — qualification is automatic-by-default within
+  the online consent envelope (the trial IS the admission path, not an opt-in extra); Q2a's
+  flag-only stance evolves into this gate for NEW sources (retroactive DISqualification of
+  already-scraped sources stays evidence-first/reviewed, per the auditor's reframe). DESIGN
+  NOTES for the build: COLD START — the statistical comparison needs a same-language corpus
+  baseline, so on a fresh/small corpus the auditor's honest small-cohort behaviour applies
+  (soft criteria unflaggable → qualification initially decides on the hard extraction-
+  validity floor only, firming as the corpus grows); the first collect pass over the curated
+  catalog can BE its qualification pass (trial articles are kept — no wasted fetch), OR
+  curated `sources.yml` rows ship pre-qualified ("by catalog curation") — flagged as the one
+  open sub-decision; RECONCILIATION with cover-everything — qualification gates on
+  EXTRACTION VALIDITY (is this a content source at all), never editorial merit, so it
+  removes mis-gathered noise without violating "ordering ≠ exclusion"; disqualification
+  REASONS persist per source (transparency + undo, per the Phase-2 audit-view design).
 - **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
   field report: "the app is currently requesting airplane mode to be turned off to allow
   ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
@@ -6547,6 +6576,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   reader/bulk translate surfaces should not demand the ONE network consent for a loopback
   call). Tests must pin BOTH directions: generate works with the kill switch engaged (no
   socket beyond loopback) AND pull still refuses.
+- **SOURCE IPs — SURFACE THE CAPTURED DATA (maintainer asked 2026-07-20: record source IPs,
+  show in each article's view, accessible in source management, sources may have MULTIPLE
+  IPs, world map per-country sources by IP; INVESTIGATED same turn — capture EXISTS, three
+  surfaces are the gap; builds PENDING):** ALREADY SHIPPED (2026-06-19 slices 6a/6b/6c + the
+  2026-07-02 .eml sender-IP): per-ARTICLE `Article.server_ip`/`ip_observed_at`/
+  `server_ip_reason` captured at fetch (web + newsletter sender-IP), the bundled offline
+  DB-IP geolocation (CC BY 4.0), the `server_locations` aggregation
+  (`queries.py`/`insights.py`) and the ooMap "Server IPs" point layer (browser-unverified).
+  The per-article observation model ALREADY yields multiple IPs per source over time
+  (CDN/rotation) — no schema change needed, the asks are SURFACES: (1) the article/reader
+  view does NOT show the captured IP (verified: `server_ip` absent from `src/api/main.py`) —
+  add it to the reader's app-deduced metadata class with the standing caveats
+  (`server_ip_reason`; "may be a relay/CDN edge, never proof of origin"; Tor-fetched →
+  honestly unavailable since the socket is the proxy); (2) a per-SOURCE aggregated IP view
+  (distinct observed IPs + first/last seen + geolocated country each) in the source-
+  management interface — an aggregation over the existing article columns, no new capture;
+  (3) a per-country SOURCES-by-observed-IP choropleth DIMENSION on the world map — DISTINCT
+  from the existing sources-per-country dimension (which keys on the catalog-ASSERTED
+  `Source.country`): asserted vs observed-infrastructure are different classes and must
+  never be silently blended (a source whose articles geolocate to several countries counts
+  once per country, disclosed; the anycast/CDN approximation caveat visible per the 6c
+  ruling). All three are surface slices over shipped data; frontend conservative+flagged
+  per Q6a.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
