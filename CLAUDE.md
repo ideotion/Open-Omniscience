@@ -6620,6 +6620,78 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   when the designed-not-built Stem/control-port integration lands, Tor's ADDRMAP cache
   exposes the resolutions exits ALREADY performed during the fetches — zero extra queries;
   the SOCKS-RESOLVE path need not wait for it.
+- **SOURCE DISCOVERY TRAIL · QUALIFIED-CITATIONS TALLY · CORPUS SOURCE/LANGUAGE FILTERS
+  (maintainer asked 2026-07-20; INVESTIGATED same turn — substrate exists for all three, the
+  SURFACES are the gaps; builds PENDING):**
+  (1) **DISCOVERY PROVENANCE TRAIL** — when a source enters the qualification pipeline the
+  user must see WHERE it was first discovered (which article cited it) and be able to check
+  the source's source. EXISTS: `SourceCandidate` (models.py:1725) carries channel + evidence
+  JSON + first_seen; `Source` `via:*` provenance tags; `external_sources.discovered_via`
+  (Q4a); the citing trail is derivable on demand from `article_links` (the cited_sources
+  docstring says exactly this; "the sources' sources" is the standing Links-design goal, and
+  the S6.1b carry-over already names "surface the citing trail"). BUILD: a per-source
+  provenance panel in source management + the qualification review view — channel-appropriate
+  origin (cited/newsletter-link → the FIRST citing article [min created_at among citers] +
+  its source, click-through to the local reader and to the citing source's row;
+  catalog/wikidata/legal → channel + evidence). Verify at build whether the citation
+  channel's evidence JSON already stores example article ids; the trail recomputes from
+  `article_links` regardless.
+  (2) **QUALIFIED-CITATIONS TALLY (maintainer: "not interpretation, just a ratio … a tiny
+  icon")** — per source, how many of its cited domains are qualified/disqualified. HONESTY
+  GUARDRAILS recorded with the ask: (a) visible form = the TALLY with n ("cited domains: 14
+  qualified · 3 disqualified · 5 pending · 12 never-registered [commerce/social/infra-
+  filtered]"), a tiny icon is fine but the #oo-tip hover (invariant #17) carries the full
+  tally + caveat — never a bare percentage badge that reads as a grade; (b) DENOMINATOR:
+  raw cited domains include masses of legitimately-non-article links (every healthy outlet
+  links companies/platforms when reporting ON them), so the meaningful universe is domains
+  that entered the qualification funnel, with the filtered classes tallied separately —
+  else the ratio is noise; (c) CAVEAT visible: citing a disqualified domain is NOT guilt —
+  disqualification is extraction-validity ("not a content source"), never editorial badness;
+  the tally is a descriptive fact, no interpretation (the maintainer's own framing); (d)
+  field-name discipline: no score/rating/grade/ranking substrings in payload keys (the
+  "degraded"-contains-"grade" walker lesson; qualified/disqualified are safe). Perf: derive
+  from `article_links` × qualification status per the cited_domain_stats shape (covering
+  scans, never a codec join).
+  (3) **CORPUS FILTER-BY-SOURCE/LANGUAGE IN THE ARTICLES TAB ("apply filter" → the deduced
+  corpus)** — EXISTS: `#an-adv-source` + `#an-adv-lang` (Advanced subtab), threaded through
+  `anParams()` into EVERY subtab + the "Filtered" chip (`_anFilterSummary`). GAPS the ask
+  names: the controls live in Advanced, not the Articles tab; source is free-TEXT, not a
+  facet list of what the current corpus actually contains; and an Advanced refine CLEARS a
+  card-seeded exact-id corpus instead of narrowing it. BUILD: facet controls in the Articles
+  subtab (the sources + languages present in the CURRENT corpus, with counts) + an "Apply
+  filter" that recomputes the whole deduced corpus across subtabs; for an id-seeded corpus
+  INTERSECT (the corpus_facet_article_ids drill grammar — ids ∩ filter → refreshed window)
+  rather than clear. Frontend conservative+flagged per Q6a.
+- **NAV-SOUP SPECIMEN — the ≥100-word body-gate recall gap in the non-article filter
+  (maintainer field specimen 2026-07-20: the Irish Mirror `newsletter-preference-centre` page
+  stored as an Article; ROOT-CAUSED same turn, fix PENDING):** the specimen (captured
+  2026-07-04) is pure header/footer nav chrome, with the extraction fallout proving the
+  pollution class — menu items became PEOPLE ("News Latest · Irish News · Mirror Bingo") and
+  an ORG ("Soccer Golf Rugby Union") in When×Where×Who. TWO findings: (a) it PREDATES the
+  ingest-door classifier (`src/ingest/non_article.py`, shipped 2026-07-13 off the
+  source-quality recall gap) — legacy junk of this class sits in the DB; the Slice-4a
+  retroactive QUARANTINE carry-over is what removes it, and a re-index then clears the junk
+  entities/keywords. (b) the filter would STILL miss it TODAY: its load-bearing guard
+  auto-KEEPS any body ≥ `_ARTICLE_MIN_WORDS=100` regardless of URL — and the specimen is
+  ~135 words OF MENU ITEMS (word-RICH nav soup defeats the thin-body precondition); the URL
+  rules are exact-segment matches, so the hyphenated compound `newsletter-preference-centre`
+  misses `_UTILITY_SEGMENTS`. THE FIX (extends the filter, keeps its high-precision
+  keep-when-in-doubt posture): (1) **the PROSE GATE** — for ≥100-word bodies, function-word
+  DENSITY of the asserted/best-matching language (the vendored stopwords-iso sets — the SAME
+  signal recorded this session for source_audit) AND-gated with near-zero
+  sentence-punctuation density → verdict `nav_soup` (the specimen: ~5% density + ~0 sentence
+  periods vs ~40%+ for real English prose; the AND is precision-serving here — a drop needs
+  BOTH signals, since a false positive is data loss). Guards: script-aware (unsegmented
+  zh/ja/th SKIP the gate or go segmenter-fed — the S5.2 mislabel lesson: unmeasurable text
+  is never dropped on a gap); headline-LIST pages (moderate density) deliberately escape —
+  the source-level auditor's territory, an honest undercount per the filter's own design.
+  (2) URL rules extended to HYPHEN-PARTS of segments (newsletter/preference/signup as
+  compound components) — safe because URL rules already fire ONLY under the thin-body
+  precondition. (3) optional crawl-time URL pre-skip (bandwidth saving only — the store-side
+  gate stays the honesty line). LAYERING NOTE: per-ARTICLE gates handle junk pages of REAL
+  sources (irishmirror.ie is a legitimate outlet — qualification would rightly NOT
+  disqualify it over its preference page); wholly-junk SOURCES are qualification's job —
+  the two layers compose, neither replaces the other.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
