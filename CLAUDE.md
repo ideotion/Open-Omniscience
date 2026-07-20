@@ -6526,6 +6526,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   product-pages/nav-junk score near zero in EVERY language → add as an extraction-validity
   criterion in `source_audit` + the non-article scan, feeding (2)'s qualification gate. Each
   item is a next-session slice.
+- **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
+  field report: "the app is currently requesting airplane mode to be turned off to allow
+  ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
+  fix PENDING):** `OllamaClient._check_kill_switch` (`src/llm/ollama.py:183`) blanket-refuses
+  EVERY Ollama call while the kill switch is engaged — including pure-loopback GENERATION
+  (translate/summarize/synthesize/extract against an already-installed local model, zero
+  egress) — with exactly the message the maintainer hit ("Turn airplane mode off to use the
+  local LLM"). This CONTRADICTS the airplane-mode non-negotiable's own design: the socket
+  guard deliberately whitelists loopback "(the app's own server, loopback Ollama, file DB)"
+  precisely so local inference works offline; the per-call gate (self-described "defense in
+  depth") is stricter than the guarantee it defends. FIX SHAPE: split the gate by egress
+  class — generation/list/health are loopback inference (`_require_loopback` already refuses
+  a non-loopback URL at construction; a missing model errors, it never auto-pulls) → allowed
+  under airplane; `pull`/`remove`-with-download + the binary installer STAY kill-switch-gated
+  (a pull egresses CLEARNET via the SEPARATE ollama process, which the in-process socket
+  guard cannot see — that half of the gate is load-bearing, never relax it). Sweep the
+  callers when fixing: the bulk-LLM path, auto-on-ingest extractors, langdetect-LLM, and any
+  UI ensureOnline prompt wired to LLM actions (the frontend may ALSO be gating locally — the
+  reader/bulk translate surfaces should not demand the ONE network consent for a loopback
+  call). Tests must pin BOTH directions: generate works with the kill switch engaged (no
+  socket beyond loopback) AND pull still refuses.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
