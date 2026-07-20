@@ -6555,6 +6555,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   EXTRACTION VALIDITY (is this a content source at all), never editorial merit, so it
   removes mis-gathered noise without violating "ordering ≠ exclusion"; disqualification
   REASONS persist per source (transparency + undo, per the Phase-2 audit-view design).
+  **RE-QUALIFICATION RULED same day (maintainer: disqualified sources get a SECOND CHANCE —
+  re-qualify every 1 to 6 months, exact interval EXPLICITLY UNDECIDED — "maybe it was bad
+  luck, maybe they changed their website, or maybe not"):** the clock is the ONLY re-trigger
+  — this COMPOSES with (d) above, it does not contradict it: event-driven re-checks
+  (re-import, fresh citation) stay suppressed; only elapsed time re-opens a disqualified
+  source. Mechanics for the build: the background qualification job also picks up
+  disqualified sources whose last attempt is older than the interval (bounded per pass, like
+  `world_discovery_per_pass`, so a backlog never swamps a pass); every attempt is RECORDED
+  (date + verdict + criteria version — attempts append, never overwrite, per the vintage
+  convention), surfaced in the audit view. INTERVAL RECOMMENDATION (proposed, not ruled —
+  resolves the undecided 1-vs-6 by using the WHOLE stated range as a ladder): a per-source
+  BACKOFF — first re-check at 1 month, doubling toward the 6-month cap on each repeated
+  disqualification (1→2→4→6 capped), reset on success — the source-level analog of the
+  shipped capped feed-backoff (finding F: "the cap guarantees re-check; never exclusion");
+  a changed/fixed site gets caught within a month, a persistently-junk domain costs ~2
+  checks/year. A Settings knob (bounded ~30–180 days) stays available to override; the
+  ladder is the default unless the maintainer rules otherwise.
 - **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
   field report: "the app is currently requesting airplane mode to be turned off to allow
   ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
