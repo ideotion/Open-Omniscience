@@ -6639,6 +6639,34 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   fabricated praise, the delta IS the good news. Numbers via the shared formatter +
   `OOI18N.tf` templates ×12. Frontend browser-gated per Q6a; the delta snapshot is the
   small backend piece.
+- **THE 0.3 CLOSE GATE (maintainer RULED 2026-07-20 — the conditions for tagging v0.3.0;
+  the analog of the P0 validation that closed 0.2):** the version already reads 0.3.0 (the
+  2026-07-18 sequence: P0 pass → v0.2.0 tag → flip), so this gate governs CLOSING the 0.3
+  cycle. FIVE gate rows, all required before the tag: (1) **the entire 2026-07-20
+  source-management program implemented AND DOUBLE-CHECKED** — the qualification lifecycle
+  (admission gate · stamp · background job · re-qualification ladder) · newsletter
+  links→sources · the airplane/Ollama gate split · source-IP surfacing incl. the
+  Tor-exit-resolve path · discovery trail + citations tally/drills + corpus filters · the
+  nav-soup prose gate · the post-import delta screen · the LLM triage/tag runs with the
+  Claude-verification chain — each build verified per the house gates AND field-confirmed,
+  not merely merged (merged ≠ green ≠ verified). (2) **a fully TRANSVERSAL AUDIT of the
+  entire repo** (the `07_TRANSVERSAL_AUDIT_V01` precedent — a new tool-by-tool edition for
+  0.3). (3) **full diagnostics taken from a MEDIUM corpus — at least 5 MILLION articles**
+  (the all-diagnostics bundle run at that scale; NOTE recorded honestly: the live corpus is
+  ~an order of magnitude below 5M today, so this row implies the corpus keeps growing via
+  the maintainer's ongoing merges — the spirit is REAL field data, per the
+  P0-live-run-not-synthetic precedent). (4) **a FULL IMPORT of the database that RE-CHECKS
+  ALL SOURCES** — the ruled qualification-at-import admission gate demonstrated at full
+  scale (every source through the pass, verdicts stamped) before the switch. (5) **an
+  ARTICLE CLEAN-UP strategy: DISCUSSED → AGREED (explicit maintainer sign-off BEFORE
+  execution) → implemented → EXECUTED** on the ≥5M corpus, removing the undesired-article
+  class (the nav-soup/list specimens — "a list, not an article"); building blocks = the
+  prose gate (ingest door, stops new ones) + the Slice-4a retroactive QUARANTINE (reversible,
+  never a blind delete) + the post-cleanup re-index (clears the junk keywords/entities);
+  the strategy discussion settles quarantine-vs-delete, criteria, and review sampling.
+  The CHANGES.md 0.3.0 board + this entry are the live gate list; stand up a
+  `RELEASE_0.3_GATE.md` checkable inventory (the RC-gate precedent) when the cycle
+  approaches closure.
 - **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
   field report: "the app is currently requesting airplane mode to be turned off to allow
   ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
