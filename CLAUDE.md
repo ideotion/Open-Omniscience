@@ -6667,6 +6667,39 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   The CHANGES.md 0.3.0 board + this entry are the live gate list; stand up a
   `RELEASE_0.3_GATE.md` checkable inventory (the RC-gate precedent) when the cycle
   approaches closure.
+- **DIAGNOSE-THE-DIAGNOSTICS — the all-diagnostics RUN JOURNAL (maintainer asked 2026-07-20:
+  one-click-and-wait must hold at 5M scale, completeness "should be ensured", and each
+  member needs begin/end timing — "the police of the police"; INVESTIGATED same turn, build
+  PENDING — a prerequisite for 0.3 gate row 3):** VERIFIED STATE: completeness is already
+  ensured BY RATCHET (2026-07-17 — every GET route → bundle member or documented exemption;
+  the manifest's `excluded` block states the boundary); the background JOB exists
+  (`/all-job` start/status/download, live `progress(done,total,name)`, cooperative cancel
+  BETWEEN members — added because the sync build measured 36+ min at scale; `/all` kept
+  absorption-gated); one failing member writes `<name>.error.txt` + a manifest line, never
+  aborts. THE GAPS (all in `_write_all_diagnostics_zip` / `_all_diagnostics_manifest`,
+  diagnostics.py:2807/:2752): per-member results carry ONLY `{file, ok[, error]}` — NO
+  started_at/wall_s/bytes, so an hour-long 5M run cannot say which member ate it; the
+  manifest is written LAST, so a HARD death (OOM/kill, not a cooperative cancel) leaves an
+  archive with no self-description of where it died; no corpus-scale stamp (a log should
+  say what size corpus produced it); members run UNBOUNDED (a hung member hangs the bundle
+  — cancel only fires between members); the coverage guarantee lives in CI only, not in the
+  artifact. THE BUILD (one slice): (1) the per-member ENVELOPE — every member records
+  `{file, outcome ok|error|skipped-deadline, started_at, wall_s, bytes}` (+ RSS delta where
+  cheap); (2) the DURABLE JOURNAL — the job path appends `begin`/`end` lines to a sidecar
+  `journal.jsonl` as it goes (crash-safe: a hard-killed run's last `begin` without `end`
+  NAMES the culprit), folded into the zip as `bundle-journal.jsonl` on completion; (3) the
+  MANIFEST gains a run HEADER (corpus counters snapshot via the MAINTAINED counters —
+  articles/keywords/mentions — app version, schema head, started/ended, total wall) + a
+  slowest-members summary + a RUNTIME COVERAGE block (recompute the ratchet's route-vs-
+  member-vs-exemption comparison at run time, so the artifact itself proves completeness —
+  ensured in the log, not just in CI); (4) per-member DEADLINES honoring the S8 lesson —
+  DB-touching members run INLINE under a statement deadline (NEVER threaded on a shared
+  connection), only non-DB members may take the wall-clock thread; a timeout records
+  `skipped-deadline` honestly and the bundle continues; generous env-tunable defaults (a
+  diagnostics run is not a UI request); (5) the panel/task-manager line shows "member i/N ·
+  name · elapsed" (the progress callback already carries it). 0.3 TIE-IN: gate row 3 (the
+  5M diagnostics run) depends on this — without the journal, a failed hour-long run at
+  scale is undiagnosable.
 - **AIRPLANE MODE MUST NOT BLOCK LOOPBACK OLLAMA INFERENCE (maintainer to-do 2026-07-20,
   field report: "the app is currently requesting airplane mode to be turned off to allow
   ollama local model article translation — this should be fixed"; ROOT-CAUSED same turn,
