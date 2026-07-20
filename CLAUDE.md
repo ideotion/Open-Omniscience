@@ -6640,24 +6640,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `OOI18N.tf` templates ×12. Frontend browser-gated per Q6a; the delta snapshot is the
   small backend piece.
 - **THE 0.3 CLOSE GATE (maintainer RULED 2026-07-20 — the conditions for tagging v0.3.0;
-  the analog of the P0 validation that closed 0.2; row 6 added same day):** the version
-  already reads 0.3.0 (the 2026-07-18 sequence: P0 pass → v0.2.0 tag → flip), so this gate
-  governs CLOSING the 0.3 cycle. SIX gate rows, all required before the tag: (1) **the entire 2026-07-20
+  the analog of the P0 validation that closed 0.2; rows 6–8 + the row-1/row-4 amendments
+  added same day):** the version already reads 0.3.0 (the 2026-07-18 sequence: P0 pass →
+  v0.2.0 tag → flip), so this gate governs CLOSING the 0.3 cycle. EIGHT gate rows, all
+  required before the tag: (1) **the entire 2026-07-20
   source-management program implemented AND DOUBLE-CHECKED** — the qualification lifecycle
   (admission gate · stamp · background job · re-qualification ladder) · newsletter
   links→sources · the airplane/Ollama gate split · source-IP surfacing incl. the
   Tor-exit-resolve path · discovery trail + citations tally/drills + corpus filters · the
   nav-soup prose gate · the post-import delta screen · the LLM triage/tag runs with the
   Claude-verification chain — each build verified per the house gates AND field-confirmed,
-  not merely merged (merged ≠ green ≠ verified). (2) **a fully TRANSVERSAL AUDIT of the
-  entire repo** (the `07_TRANSVERSAL_AUDIT_V01` precedent — a new tool-by-tool edition for
+  not merely merged (merged ≠ green ≠ verified); "double-checked" INCLUDES docs↔app
+  reciprocity — USER_MANUAL chapters for qualification / source management / the
+  post-import screen (the standing reciprocity rule applied to everything this row builds).
+  (2) **a fully TRANSVERSAL AUDIT of the entire repo** (the `07_TRANSVERSAL_AUDIT_V01` precedent — a new tool-by-tool edition for
   0.3). (3) **full diagnostics taken from a MEDIUM corpus — at least 5 MILLION articles**
   (the all-diagnostics bundle run at that scale; NOTE recorded honestly: the live corpus is
   ~an order of magnitude below 5M today, so this row implies the corpus keeps growing via
   the maintainer's ongoing merges — the spirit is REAL field data, per the
   P0-live-run-not-synthetic precedent). (4) **a FULL IMPORT of the database that RE-CHECKS
   ALL SOURCES** — the ruled qualification-at-import admission gate demonstrated at full
-  scale (every source through the pass, verdicts stamped) before the switch. (5) **an
+  scale (every source through the pass, verdicts stamped) before the switch; this row
+  EXPLICITLY doubles as the backup/restore-AT-SCALE validation (a ~5M-article import IS a
+  restore at ~10× the P0-validated 2.5 GB scale — state it in the gate evidence). (5) **an
   ARTICLE CLEAN-UP strategy: DISCUSSED → AGREED (explicit maintainer sign-off BEFORE
   execution) → implemented → EXECUTED** on the ≥5M corpus, removing the undesired-article
   class (the nav-soup/list specimens — "a list, not an article"); building blocks = the
@@ -6669,6 +6674,15 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   trend, per its own design), the numbers reviewed, and the §1b `page_size` ruling MADE on
   that evidence (currently waiting on the large-corpus run; the CREATE-time seam makes
   this decision more expensive to revisit with every corpus born before it).
+  (7) **the v0.2.0 P0 report's OWN follow-ups CLOSED** — cold-boot unlock at full scale on
+  the complete corpus + a multi-day live collector soak (the P0.3 measurement covered only
+  2 passes); both were flagged by the P0 report itself as not-yet-confirmed.
+  (8) **a BROWSER-VERIFICATION bar** — either the AppVM `ui_walk` runner STANDING (R3, the
+  V1-pathway-named highest-leverage build) or a DEFINED hand click-through of the flagship
+  surfaces (Home/Leads · the analysis window · the post-import screen · source management ·
+  the one-button diagnostics panel): the compounding "browser-unverified, needs
+  click-through" backlog must not tag as measured-and-verified with the flagship UI never
+  once rendered.
   The CHANGES.md 0.3.0 board + this entry are the live gate list; stand up a
   `RELEASE_0.3_GATE.md` checkable inventory (the RC-gate precedent) when the cycle
   approaches closure.
