@@ -212,9 +212,17 @@ rings:
   - id: rocket
     qid: Q41291
     members: ["en:rocket", "en:rockets", "ar:صاروخ", "ar:صواريخ", "ar:الصورايخ", "ar:الصواريخ", "bn:রকেট", "de:Rakete", "de:Raketen", "es:cohete", "es:cohete a reacción", "es:cohete de reacción", "es:cohete a reaccion", "es:cohete de reaccion", "fr:fusée", "fr:fusée astronautique", "fr:fusées spatiales", "fr:fusées expérimentales", "fr:fusee spatiale", "fr:fusée spatiale", "hi:रॉकेट", "hi:Rocket", "hi:राकेट", "id:Roket", "ja:ロケット", "ja:化学ロケット", "ja:宇宙ロケット", "ja:ロケット機関", "ja:化学燃料ロケット", "pt:foguete", "pt:foguete espacial", "pt:foguetes", "ru:ракета", "zh:火箭"]
+  # Vetted 2026-07-18 (supergroups brief S4.3, row 6: "universe ring·68 at 16,393
+  # mentions, #1 in Cosmology, above star 2,491"): the raw generator output carried
+  # overly-generic single-word English aliases of this QID -- "world"/"existence"/
+  # "everything"/"all"/"system" -- that flood in ANY news text for reasons having
+  # nothing to do with cosmology (a "health system", "around the world", "system of
+  # government" all matched). Dropped (English only, this pass); non-English members
+  # carry the SAME generic-alias risk (e.g. de:Welt/fr:monde/ru:мир also mean "world")
+  # but are left for a native-reviewed follow-up rather than a unilateral guess.
   - id: universe
     qid: Q1
-    members: ["en:universe", "en:macrocosm", "en:the universe", "en:the cosmos", "en:our universe", "en:cosmos", "en:yin and yang", "en:world", "en:space", "en:outer space", "en:metagalaxy", "en:heaven and earth", "en:existence", "en:everything", "en:all", "en:system", "en:creation", "ar:فضاء كوني", "ar:الكون", "ar:كوننا", "ar:كون", "bn:মহাবিশ্ব", "bn:বিশ্ব-ব্রহ্মাণ্ড", "bn:সারা দুনিয়া", "de:Universum", "de:Weltall", "de:All", "de:Kosmos", "de:Welt", "es:universo", "es:cosmos", "es:espacio", "es:universos", "es:nuestro universo", "es:nuestro cosmos", "es:El Universo", "es:El Espacio", "fr:univers", "fr:cosmos", "fr:espace", "fr:monde", "fr:tout", "fr:macrocosme", "fr:notre univers", "fr:univers visible", "hi:ब्रह्माण्ड", "hi:ब्रह्मांड", "hi:अंतरिक्ष", "hi:दुनिया", "id:alam semesta", "id:jagad raya", "id:semesta", "id:kosmos", "id:ruang angkasa", "id:kehidupan", "id:universum", "ja:宇宙", "ja:うちゅう", "pt:universo", "pt:cosmos", "pt:espaço", "pt:mundo", "ru:Вселенная", "ru:мир", "ru:космос", "ru:наша Вселенная", "zh:宇宙", "zh:乾坤"]
+    members: ["en:universe", "en:macrocosm", "en:the universe", "en:the cosmos", "en:our universe", "en:cosmos", "en:yin and yang", "en:space", "en:outer space", "en:metagalaxy", "en:heaven and earth", "en:creation", "ar:فضاء كوني", "ar:الكون", "ar:كوننا", "ar:كون", "bn:মহাবিশ্ব", "bn:বিশ্ব-ব্রহ্মাণ্ড", "bn:সারা দুনিয়া", "de:Universum", "de:Weltall", "de:All", "de:Kosmos", "de:Welt", "es:universo", "es:cosmos", "es:espacio", "es:universos", "es:nuestro universo", "es:nuestro cosmos", "es:El Universo", "es:El Espacio", "fr:univers", "fr:cosmos", "fr:espace", "fr:monde", "fr:tout", "fr:macrocosme", "fr:notre univers", "fr:univers visible", "hi:ब्रह्माण्ड", "hi:ब्रह्मांड", "hi:अंतरिक्ष", "hi:दुनिया", "id:alam semesta", "id:jagad raya", "id:semesta", "id:kosmos", "id:ruang angkasa", "id:kehidupan", "id:universum", "ja:宇宙", "ja:うちゅう", "pt:universo", "pt:cosmos", "pt:espaço", "pt:mundo", "ru:Вселенная", "ru:мир", "ru:космос", "ru:наша Вселенная", "zh:宇宙", "zh:乾坤"]
   - id: artificial-intelligence
     qid: Q11660
     members: ["en:artificial intelligence", "en:AI", "en:AI software", "en:machine intelligence", "en:artificially intelligent", "en:machine understanding", "en:simulated intelligence", "en:computational rationality", "en:intelligent machine", "en:machine thought", "en:artificially intelligent beings", "en:machines that can think", "en:artificial smartness", "en:artificial stupidity", "en:AI science", "ar:ذكاء اصطناعي", "ar:ذكاء الاصناعي", "ar:الذكاء الاصناعي", "ar:AI", "ar:الذكاء الاصطناعي", "ar:الذكاء الصناعي", "ar:ذكاء صنعي", "ar:الذكاء الصنعي", "ar:ذكاء صناعي", "bn:কৃত্রিম বুদ্ধিমত্তা", "bn:এআই", "bn:আর্টিফিশিয়াল ইন্টেলিজেন্স", "bn:এ.আই.", "de:künstliche Intelligenz", "de:artifizielle Intelligenz", "de:KI", "de:AI", "de:KI-Wissenschaft", "es:inteligencia artificial", "es:inteligencia de la máquina", "es:IA", "es:I.A.", "es:inteligencias artificiales", "fr:intelligence artificielle", "fr:IA", "hi:कृत्रिम बुद्धिमत्ता", "hi:एआई", "hi:कृत्रिम होशियारी", "hi:कृत्रिम बुद्धि", "hi:आर्टिफिशियल इंटेलिजेंस", "hi:कृ॰बु॰", "hi:ए॰आई॰", "hi:आर्टिफ़िशियल इंटेलिजेंस", "hi:कृत्रिमबुद्धिमत्ता", "id:kecerdasan buatan", "id:KB", "id:AI", "id:A.I.", "id:akal imitasi", "ja:人工知能", "ja:人工頭脳", "ja:人工知能（AI）", "ja:AI", "pt:inteligência artificial", "pt:IA", "pt:A.I", "pt:I.A", "ru:искусственный интеллект", "ru:ИИ", "ru:AI", "ru:АИ", "ru:интеллект", "ru:искусственный разум", "ru:искусственный ум", "ru:машинный интеллект", "ru:машинный разум", "ru:интеллектуальная машина", "ru:программное обеспечение ИИ", "ru:машинное понимание", "ru:имитация интеллекта", "ru:вычислительная рациональность", "ru:машинная мысль", "zh:人工智能", "zh:人工智慧", "zh:機器智能", "zh:機械智能", "zh:智械", "zh:AI"]
@@ -515,7 +523,7 @@ rings:
   - id: civil-and-political-rights
     qid: Q191600
     members: ["en:civil and political rights", "en:civil and political right", "en:civil rights and political rights", "en:civil right and political right", "ar:حقوق مدنية", "ar:حقوق مدنيه", "ar:الحقوق المدنية والسياسية", "ar:الحقوق المدنيه", "ar:الحقوق المدنية", "ar:حقوق مدنية وسياسية", "bn:নাগরিক ও রাজনৈতিক অধিকার", "de:Bürgerrecht", "de:Bürgerrechte", "de:Bürgerrechtlich", "de:Bürgerliche Rechte", "de:Staatsbürgerrecht", "es:derechos civiles y políticos", "es:Libertad civil", "es:Libertades públicas", "es:Libertades civiles", "es:Libertades políticas", "es:Libertad política", "es:derechos civiles y politicos", "es:Libertades publicas", "es:Libertades politicas", "es:Libertad politica", "fr:droits civiques", "fr:droit civique", "fr:droits civique", "fr:responsabilité civique", "fr:liberté civique", "fr:libertés civiques", "hi:नागरिक और राजनीतिक अधिकार", "id:Hak-Hak Sipil", "ja:公民権", "pt:direitos civis", "ru:гражданские и политические права", "ru:гражданское и политическое право", "ru:политические и гражданские права", "ru:политическое и гражданское право", "zh:公民權利和政治權利", "zh:公民權利", "zh:政治權利", "zh:公民權", "zh:民權"]
-  - id: copyrighted
+  - id: copyright
     qid: Q50423863
     members: ["en:copyrighted", "en:under copyright", "en:protected by copyrights", "en:copyright-protected", "ar:حقوق التأليف والنشر محفوظة", "bn:স্বত্বাধিকারযুক্ত", "bn:স্বত্বাধিকারের অন্তর্গত", "bn:স্বত্বাধিকার সুরক্ষিত", "bn:কপিরাইটকৃত", "de:urheberrechtlich geschützt", "de:unter Urheberrechtsschutz", "de:Urheberrechtsschutz", "es:bajo derechos de autor", "es:con derechos de autor", "fr:sous droit d'auteur", "fr:sous copyright", "fr:sous droits d'auteurs", "hi:कॉपीराइट के अंतर्गत", "hi:कॉपीराइटेड", "hi:कॉपीराइट में", "hi:कॉपीराइटकृत", "id:berhak cipta", "ja:著作権で保護", "ja:著作権保護下", "pt:protegido por direitos autorais", "ru:защищено авторским правом", "ru:копирайт", "zh:版权所有", "zh:版權所有", "zh:有著作權", "zh:有著作权", "zh:有版权", "zh:有版權"]
   - id: patent
@@ -1418,9 +1426,13 @@ rings:
   - id: metaphysics
     qid: Q35277
     members: ["en:metaphysics", "ar:ما وراء الطبيعة", "ar:الميتافيزيقيا", "ar:ميتافيزياء", "ar:الميتافيزيقية", "ar:الميتافيزيقا", "ar:ميتافيزيقيا", "ar:علم ماوراء الطبيعة", "ar:العلوم الميتافيزيقية", "ar:ميتافيزيقا", "ar:ميتافيزيقية", "ar:ماوراء الطبيعة", "bn:অধিবিদ্যা", "de:Metaphysik", "de:Fundamentalphilosophie", "de:Prima Philosophia", "es:metafísica", "es:metafisica", "fr:métaphysique", "hi:तत्वमीमांसा", "hi:तत्त्वमीमांसा", "hi:Metaphysics", "hi:तत्त्वज्ञान", "id:metafisika", "id:Metafisik", "ja:形而上学", "pt:metafísica", "ru:метафизика", "ru:метафизик", "zh:形而上学", "zh:形上學", "zh:形而上", "zh:形上学", "zh:形而上學"]
+  # Vetted 2026-07-18 (supergroups brief S4.3, row 6): the raw generator output carried
+  # "de:In der Falle" ("caught in the trap") as a German member of this ring -- it does
+  # not mean "identity" in any sense; a Wikidata label mismatch, not a genuine synonym.
+  # Dropped; the identity concept has no confirmed German member until one is sourced.
   - id: identity
     qid: Q16577364
-    members: ["en:Identity", "de:In der Falle", "es:Identity", "ja:アイデンティティ"]
+    members: ["en:Identity", "es:Identity", "ja:アイデンティティ"]
   - id: ritual
     qid: Q189819
     members: ["en:ritual", "ar:طقوس", "bn:আচার", "de:Ritual", "de:Rituell", "de:Politisches Ritual", "es:ritual", "es:ritualística", "es:ritualistica", "fr:rituel", "hi:अनुष्ठान", "id:ritual", "ja:儀式", "ja:儀礼式典", "ja:式典", "ja:セレモニー", "ja:儀", "pt:ritual", "pt:Magia ritual", "pt:Cerimónia", "pt:Cerimônia", "pt:Rituais", "ru:ритуал", "ru:обряд", "zh:仪式", "zh:儀式", "zh:教儀"]
@@ -1621,7 +1633,14 @@ rings:
     members: ["en:life expectancy", "en:life span", "ar:متوسط العمر المتوقع", "ar:مأمول الحياة", "ar:معدل الحياة", "ar:مأمول الحياه", "ar:متوسط العمر المأمول", "de:Lebenserwartung", "de:Statistische Lebenserwartung", "es:esperanza de vida", "es:esperanza media de vida al nacer", "es:expectativas de vida", "es:esperanzas de vida", "es:expectativa de vida", "es:promedio de vida", "es:años de vida perdidos", "es:esperanza de vida al nacer", "fr:espérance de vie humaine", "hi:जीवन प्रत्याशा", "id:harapan hidup", "ja:平均余命", "ja:余命", "pt:esperança de vida", "pt:sobrevida", "pt:expectativa de vida ao nascer", "pt:expectativa de vida", "pt:longevo", "pt:longevidade", "pt:esperança média de vida", "ru:ожидаемая продолжительность жизни", "ru:средняя продолжительность предстоящей жизни при рождении", "ru:средняя продолжительность жизни", "zh:预期寿命", "zh:平均壽命", "zh:生命期望", "zh:期望寿命", "zh:平均餘命", "zh:預期壽命"]
   - id: diaspora
     qid: Q251649
-    members: ["en:diaspora*", "en:Diaspora", "de:Diaspora*", "de:Joindiaspora", "es:diaspora*", "es:Diaspora", "fr:diaspora*", "fr:diaspora", "fr:Framasphere", "ja:Diaspora (ソフトウェア)", "ja:Diaspora (ウェブサイト)", "ja:Diaspora（ソフトウェア）", "pt:diaspora", "ru:diaspora*", "ru:Diaspora", "zh:diaspora*"]
+    # Vetted 2026-07-18 (Leads-calibration §0 row 5 + the supergroups brief S4.2):
+    # the raw generator output conflated the human-diaspora concept with the
+    # decentralised social-network SOFTWARE "diaspora*" (Joindiaspora/Framasphere/
+    # the Japanese "(software)" disambiguation forms, and the asterisk-suffixed
+    # stylised brand name across every language) -- a Wikidata label collision,
+    # not just a stray character. Software members dropped; only the genuine
+    # human-diaspora synonyms remain.
+    members: ["en:Diaspora", "es:Diaspora", "fr:diaspora", "pt:diaspora", "ru:Diaspora"]
   - id: multiculturalism
     qid: Q190656
     members: ["en:multiculturalism", "ar:تعدد ثقافي", "ar:تعدد الثقافات", "ar:تعددية ثقافية", "de:Multikulturalismus", "de:Multikulturalität", "de:Multi-Kulti", "de:Multikulti", "es:multiculturalismo", "es:Multicultural", "es:Multiculturalidad", "es:Pluricultural", "es:Multiculturalista", "es:pluriculturalismo", "fr:multiculturalisme", "fr:pluriculturalité", "fr:multiculturaliste", "fr:société multiculturelle", "fr:multiculturelle", "fr:multiculturel", "fr:multi-culturalisme", "hi:बहुसंस्कृतिवाद", "id:multikulturalisme", "id:Monokulturalisme", "id:Kebinekaan", "ja:多文化主義", "ja:マルチカルチュラリズム", "ja:多文化共生", "ja:多文化", "ja:多様文化主義", "ja:多数文化主義", "pt:multiculturalismo", "pt:Pluriculturalismo", "ru:мультикультурализм", "ru:мультикультурность", "ru:мульти-культурализм", "zh:多元文化政策", "zh:多元文化", "zh:文化多元", "zh:多文化主義", "zh:多元文化主义", "zh:多元文化主義"]

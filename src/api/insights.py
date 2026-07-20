@@ -18,7 +18,7 @@ import logging
 import os as _os
 import threading as _threading
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -37,7 +37,7 @@ _LOG = logging.getLogger("api.insights")
 
 router = APIRouter(prefix="/api/insights", tags=["insights"])
 
-_VALID_KINDS = ("term", "entity", "person", "org", "location")
+_VALID_KINDS = ("term", "entity", "non_term", "person", "org", "location")
 
 # ---------------------------------------------------------------------------- #
 # Whole-corpus read cache (perf, field report 2026-06-18).
@@ -627,6 +627,20 @@ def insights_corpus_keywords(
             f"Counts only, never a score — scoped to the top {len(ids)} matched "
             "article(s) by relevance."
         )
+        # S3 (keyword -> super-group navigation): ONE batched reverse lookup for the
+        # whole page of terms — the reverse index is cached per process, so this is
+        # in-memory lookups, never an N+1 query per row. Plural membership renders as
+        # every hit (never picked down to one).
+        from src.analytics.supergroup_index import supergroups_for_keywords
+
+        terms = res.get("terms", [])
+        sg_by_term = supergroups_for_keywords(
+            db, [(t["normalized"], t.get("language")) for t in terms]
+        )
+        for t in terms:
+            hits = sg_by_term.get(t["normalized"], [])
+            if hits:
+                t["supergroups"] = hits
         return res
 
     return _deadlined(db, key, _compute)
@@ -1497,6 +1511,73 @@ def insights_ring_countries(
     return _deadlined(db, key, lambda: ring_country_split(db, ring_id=ring_id, days=days, limit=limit))
 
 
+@router.get("/ring-stats")
+def insights_ring_stats(
+    ring_id: str = Query(..., description="an equivalence-ring id, e.g. 'inflation'"),
+    window_days: int = Query(7, ge=1, le=90),
+    baseline_days: int = Query(30, ge=1, le=365),
+    series_days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Honest statistics for ONE group (GROUPS layer amendment §C).
+
+    A group is a cross-language equivalence ring — the SAME resolution primitive
+    the sibling super-group statistics use, one level down: members resolved to
+    their distinct keyword-id set FIRST, every figure computed from that set. The
+    disclosure is adapted to this level — top-LANGUAGE dominance (never a top-
+    member dominance, which is the super-group's own concern), the same disclosed
+    recent-vs-baseline rate, and a daily series for the sparkline. Counts and
+    ratios only, no composite score."""
+    from src.analytics.group_stats import group_stats
+
+    # Type-safe against the direct-call test pattern (_tlang's docstring): an unset
+    # int Query() default arrives as its FastAPI sentinel OBJECT, not an int, when a
+    # test calls this function directly rather than through the ASGI app.
+    window_days = window_days if isinstance(window_days, int) else 7
+    baseline_days = baseline_days if isinstance(baseline_days, int) else 30
+    series_days = series_days if isinstance(series_days, int) else 30
+
+    key = _ckey(
+        "ring-stats", ring_id=ring_id, window_days=window_days,
+        baseline_days=baseline_days, series_days=series_days,
+    )
+    return _deadlined(
+        db,
+        key,
+        lambda: group_stats(
+            db, ring_id, window_days=window_days, baseline_days=baseline_days,
+            series_days=series_days,
+        ),
+    )
+
+
+@router.get("/ring-country-articles")
+def insights_ring_country_articles(
+    ring_id: str = Query(..., description="an equivalence-group (ring) id, e.g. 'inflation'"),
+    country: str | None = Query(
+        None, description="ISO-2 source country; omit for the 'not mapped' (unlocated) bucket"
+    ),
+    days: int | None = Query(None, ge=1, le=36500),
+    limit: int = Query(2000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The concept-map §D drill: the exact article ids behind ONE country row of
+    ring-countries' table (or the 'not mapped' bucket when ``country`` is omitted
+    — the largest bucket is often unlocated, and it must be investigable too,
+    never a dead end). Same keyword resolution as ring-countries, so the drilled
+    set can never disagree with the number beside it. Bounded and disclosed."""
+    from src.analytics.queries import ring_country_article_ids
+
+    limit = limit if isinstance(limit, int) else 2000
+    days = days if isinstance(days, int) else None
+
+    key = _ckey("ring-country-articles", ring_id=ring_id, country=country, days=days, limit=limit)
+    return _deadlined(
+        db, key,
+        lambda: ring_country_article_ids(db, ring_id=ring_id, country=country, days=days, limit=limit),
+    )
+
+
 @router.get("/source-laundering")
 def insights_source_laundering(
     min_sources: int = Query(3, ge=2, le=100, description="distinct-source surfacing gate"),
@@ -1745,49 +1826,62 @@ class SuperGroupMembers(BaseModel):
     rings: list[str] = []  # ring ids — a ring MEMBER is a cross-language concept (super-ring)
 
 
-def _supergroup_totals(db: Session, member_rows: set[tuple[str, str | None]]) -> dict[str, dict]:
+def _supergroup_totals(
+    db: Session, member_rows: set[tuple[str, str | None]]
+) -> tuple[dict[str, dict], dict[str, set[int]], dict[int, int]]:
     """Aggregate mentions/articles per member.
 
     A FAMILY member (``ring_id`` None) matches its own normalized term (+ canonical
     key), as before. A RING member aggregates over ALL the ring's cross-language
     terms, so a super-group with a ring spans languages — the super-ring model.
     Keyed by the member's ``normalized_term`` (the ring id for a ring); a display
-    total, best-effort like the original (one term feeds one member key)."""
+    total, best-effort like the original (one term feeds one member key).
+
+    ALSO returns ``id_sets`` (member key -> the DISTINCT keyword ids it resolves
+    to) and ``mention_by_id`` (keyword id -> its mention_count) so a caller can
+    compute a GROUP's true deduped total (supergroups brief §0 row 3: a keyword
+    covered by two members of the same group must count once, never per-member)
+    without any further query — the id-per-key resolution now tracks EVERY member
+    key a term maps to (a set, not the prior scalar last-write-wins), which is
+    exactly what makes the overlap detectable at all."""
     from src.analytics.equivalence import ring_meta
     from src.analytics.families import canonical_key
     from src.database.models import Keyword
 
-    term_to_key: dict[str, str] = {}
-    canon_to_key: dict[str, str] = {}
+    term_to_key: dict[str, set[str]] = {}
+    canon_to_key: dict[str, set[str]] = {}
     keys: list[str] = []
     for norm_key, ring_id in member_rows:
         keys.append(norm_key)
         if ring_id:
             meta = ring_meta(ring_id)
             for _lang, term in meta.members if meta else ():
-                term_to_key[_n(term)] = norm_key  # every ring term -> this ring member
+                term_to_key.setdefault(_n(term), set()).add(norm_key)
         else:
-            term_to_key[norm_key] = norm_key
-            canon_to_key[canonical_key(norm_key)] = norm_key
+            term_to_key.setdefault(norm_key, set()).add(norm_key)
+            canon_to_key.setdefault(canonical_key(norm_key), set()).add(norm_key)
 
     totals = {k: {"mentions": 0, "articles": 0} for k in keys}
+    id_sets: dict[str, set[int]] = {k: set() for k in keys}
+    mention_by_id: dict[int, int] = {}
     if not keys:
-        return totals
+        return totals, id_sets, mention_by_id
 
     # PERFORMANCE (field report 2026-06-18: "Groups" took 132 s and froze the UI on a
     # 245k-keyword / 829k-mention corpus). The old query GROUP BY'd EVERY keyword joined
     # to EVERY mention, then kept only the handful belonging to a super-group — i.e. it
     # aggregated 829k mentions to discard 99.99% of them. Instead, resolve the member
     # keyword IDs FIRST (cheap, small columns), then aggregate mentions for ONLY those.
+    # Chunked IN-clauses (the established _IN_CHUNK convention) — this endpoint spans
+    # ALL super-groups' members at once, which can exceed SQLite's variable cap.
+    from src.analytics.supergroup_stats import _chunks
+
     matched_ids: set[int] = set()
     # Exact terms (every ring term + each family member's own term) — an indexed lookup.
     if term_to_key:
-        for (kid,) in (
-            db.query(Keyword.id)
-            .filter(Keyword.normalized_term.in_(list(term_to_key)))
-            .all()
-        ):
-            matched_ids.add(kid)
+        for chunk in _chunks(list(term_to_key)):
+            for (kid,) in db.query(Keyword.id).filter(Keyword.normalized_term.in_(chunk)).all():
+                matched_ids.add(kid)
     # Family morphological variants (country↔countries) match by canonical key, which is
     # a Python function (not a column) — so a scan is unavoidable, but ONLY when a family
     # (non-ring) member exists, and over the small (id, term) columns, never the mentions.
@@ -1796,24 +1890,30 @@ def _supergroup_totals(db: Session, member_rows: set[tuple[str, str | None]]) ->
             if canonical_key(norm) in canon_to_key:
                 matched_ids.add(kid)
     if not matched_ids:
-        return totals
+        return totals, id_sets, mention_by_id
     # Read the denormalised per-keyword counters (maintained at index time) for the
     # resolved member ids — NO keyword_mentions join / GROUP BY. mention_count ==
     # SUM(count) and article_count == COUNT(DISTINCT article_id) by construction
     # (src/analytics/store.py + tests/test_keyword_counters.py), so the per-member
     # totals are identical; the residual mention aggregation over the matched ids is
     # gone, leaving a small index-only read on the keywords table.
-    rows = (
-        db.query(Keyword.normalized_term, Keyword.mention_count, Keyword.article_count)
-        .filter(Keyword.id.in_(matched_ids))
-        .all()
-    )
-    for norm, m, a in rows:
-        key = term_to_key.get(norm) or canon_to_key.get(canonical_key(norm))
-        if key is not None:
+    rows = []
+    for chunk in _chunks(sorted(matched_ids)):
+        rows.extend(
+            db.query(
+                Keyword.id, Keyword.normalized_term, Keyword.mention_count, Keyword.article_count
+            )
+            .filter(Keyword.id.in_(chunk))
+            .all()
+        )
+    for kid, norm, m, a in rows:
+        mention_by_id[int(kid)] = int(m or 0)
+        keys_for_norm = term_to_key.get(norm) or canon_to_key.get(canonical_key(norm)) or set()
+        for key in keys_for_norm:
             totals[key]["mentions"] += int(m or 0)
             totals[key]["articles"] = max(totals[key]["articles"], int(a or 0))
-    return totals
+            id_sets[key].add(int(kid))
+    return totals, id_sets, mention_by_id
 
 
 def _get_supergroup(db: Session, sg_id: int):
@@ -1828,9 +1928,21 @@ def _get_supergroup(db: Session, sg_id: int):
 @router.get("/supergroups")
 def list_supergroups(
     target_lang: str | None = Query(None, description="UI language for verified ring translations"),
+    series_top: int = Query(
+        0, ge=0, le=30, description="attach a windowed rate + daily series to the top-N groups"
+    ),
+    window_days: int = Query(7, ge=1, le=90),
+    baseline_days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
 ) -> dict:
     """List super-groups with their members (families AND rings) + aggregate totals.
+
+    ``series_top`` (S1.5, bounded — never all groups): the first N groups of the
+    already-sorted (by mentions) list ALSO gain a ``rate`` (the disclosed recent-
+    vs-baseline ratio) and a ``series`` (a daily mention count over ``window_days``)
+    — both summed over the SAME deduped keyword-id set the group's headline total
+    uses, so the sparkline never re-introduces the row-3 double count the totals
+    fix removed. ``series_top=0`` (the default) is byte-identical to before.
 
     ``target_lang`` binds the verified cross-language ``translation`` to each ring
     member (the maintainer ruling: translations bind to keyword families AND groups),
@@ -1838,11 +1950,30 @@ def list_supergroups(
     from src.analytics.equivalence import ring_meta, ring_translation
     from src.database.models import KeywordSuperGroup
 
+    from src.analytics.supergroup_stats import cross_group_membership, member_overlaps
+
+    # Type-safe against the direct-call test pattern (_tlang's docstring): an unset
+    # int Query() default arrives as its FastAPI sentinel OBJECT, not an int, when a
+    # test calls this function directly rather than through the ASGI app.
+    series_top = series_top if isinstance(series_top, int) else 0
+    window_days = window_days if isinstance(window_days, int) else 7
+    baseline_days = baseline_days if isinstance(baseline_days, int) else 30
+
     tl = _tlang(target_lang)
     sgs = db.query(KeywordSuperGroup).order_by(KeywordSuperGroup.name).all()
     member_rows = {(m.normalized_term, m.ring_id) for sg in sgs for m in sg.members}
-    totals = _supergroup_totals(db, member_rows)
+    totals, id_sets, mention_by_id = _supergroup_totals(db, member_rows)
+
+    # Row 2 (cross-group overlap): a member row (e.g. the "logic" ring) legitimately
+    # sitting in more than one group — computed ONCE, in memory, over the scaffold's
+    # own membership rows (no extra query).
+    all_group_members = [
+        (sg.name, [(m.normalized_term, m.ring_id) for m in sg.members]) for sg in sgs
+    ]
+    cross = cross_group_membership(all_group_members)
+
     out = []
+    group_ids_by_sgid: dict[int, set[int]] = {}
     for sg in sgs:
         members = []
         for m in sg.members:
@@ -1861,8 +1992,38 @@ def list_supergroups(
                     if tr:
                         entry["translation"] = tr
                         entry["translation_source"] = "ring"
+            other_groups = [n for n in cross.get((m.normalized_term, m.ring_id), []) if n != sg.name]
+            if other_groups:
+                entry["also_in"] = other_groups  # row 2 disclosure, per member
             members.append(entry)
         members.sort(key=lambda x: -x["mentions"])
+
+        # Row 3 (within-group double counting): the group's headline total is the
+        # DEDUPED union of every member's resolved keyword ids — never a naive sum
+        # of per-member totals, which double-counts a keyword covered by two
+        # members of the same group (e.g. a plain "ai" family beside the covering
+        # "artificial-intelligence" ring).
+        member_id_sets = {m.normalized_term: id_sets.get(m.normalized_term, set()) for m in sg.members}
+        group_ids: set[int] = set()
+        for ids in member_id_sets.values():
+            group_ids |= ids
+        group_mentions = sum(mention_by_id.get(i, 0) for i in group_ids)
+
+        # Row 1 (dominance): which member accounts for the largest share of the
+        # group's TRUE (deduped) total — mandatory disclosure, never optional.
+        dominance = None
+        if group_mentions > 0 and members:
+            top = max(members, key=lambda x: x["mentions"])
+            if top["mentions"] > 0:
+                dominance = {
+                    "member": top["normalized"],
+                    "mentions": top["mentions"],
+                    "share": round(top["mentions"] / group_mentions, 4),
+                }
+
+        within_overlap = {k: v for k, v in member_overlaps(member_id_sets).items() if v}
+
+        group_ids_by_sgid[sg.id] = group_ids
         out.append(
             {
                 "id": sg.id,
@@ -1870,10 +2031,26 @@ def list_supergroups(
                 "color": sg.color,
                 "members": members,
                 "count": len(members),
-                "mentions": sum(x["mentions"] for x in members),
+                "mentions": group_mentions,
+                "distinct_keywords": len(group_ids),
+                "dominance": dominance,
+                "within_group_overlap": within_overlap,
             }
         )
-    out.sort(key=lambda s: -s["mentions"])
+    out.sort(key=lambda s: -cast(int, s["mentions"]))
+
+    # S1.5 (bounded, never all groups): the top series_top groups of the already-
+    # sorted list gain a windowed rate + daily series, over the SAME deduped id set
+    # their headline total used (group_ids_by_sgid) — never a fresh, inconsistent
+    # resolution.
+    if series_top > 0:
+        from src.analytics.supergroup_stats import daily_series, group_rate
+
+        for entry in out[:series_top]:
+            gids = group_ids_by_sgid.get(cast(int, entry["id"]), set())
+            entry["rate"] = group_rate(db, gids, window_days=window_days, baseline_days=baseline_days)
+            entry["series"] = daily_series(db, gids, days=window_days)
+
     # Honesty envelope over the maintained counters the super-group totals read (Slice
     # 2). ADDITIVE: a new `counts` key only. Disclosed `exact` when the counters were
     # reconciled within the freshness window, else `estimated` (may have drifted).
@@ -1883,7 +2060,31 @@ def list_supergroups(
         "count": len(out),
         "supergroups": out,
         "counts": counter_envelope(db).to_dict(),
+        "method": (
+            "Each group's mentions total is the DEDUPED union of every member's "
+            "resolved keyword ids (a keyword covered by two members of the same "
+            "group counts once, never twice)."
+        ),
+        "caveat": (
+            "A group's total can be dominated by one member (see 'dominance') and "
+            "a member can legitimately sit in more than one group (see a member's "
+            "'also_in') — both are disclosed, never silently summed as if exclusive. "
+            "Counts only, no composite score."
+        ),
     }
+
+
+@router.get("/supergroups/redundant-members")
+def supergroup_redundant_members(db: Session = Depends(get_db)) -> dict:
+    """S4.1: plain family members that are fully redundant with a ring already in
+    the same group — the legacy-residue pattern the field export flagged (e.g. a
+    plain "ai" member beside the covering "artificial-intelligence" ring). A
+    REPORT only; the maintainer reviews each row and removes it (or not) via the
+    existing member-remove action — never an automated purge."""
+    from src.analytics.supergroup_stats import REDUNDANT_MEMBER_METHOD, find_redundant_family_members
+
+    items = find_redundant_family_members(db)
+    return {"items": items, "count": len(items), "method": REDUNDANT_MEMBER_METHOD}
 
 
 @router.get("/rings")
@@ -1919,6 +2120,9 @@ def create_supergroup(body: SuperGroupCreate, db: Session = Depends(get_db)) -> 
     sg = KeywordSuperGroup(name=name, color=(body.color or None))
     db.add(sg)
     db.commit()
+    from src.analytics.supergroup_index import invalidate as _invalidate_sg_index
+
+    _invalidate_sg_index()  # S3: the keyword->super-group reverse lookup is stale now
     return {"id": sg.id, "name": sg.name, "color": sg.color}
 
 
@@ -1928,6 +2132,9 @@ def delete_supergroup(sg_id: int, db: Session = Depends(get_db)) -> dict:
     sg = _get_supergroup(db, sg_id)
     db.delete(sg)
     db.commit()
+    from src.analytics.supergroup_index import invalidate as _invalidate_sg_index
+
+    _invalidate_sg_index()
     return {"deleted": sg_id}
 
 
@@ -1961,6 +2168,9 @@ def add_supergroup_members(
         existing.add(rid)
         added.append(rid)
     db.commit()
+    from src.analytics.supergroup_index import invalidate as _invalidate_sg_index
+
+    _invalidate_sg_index()
     return {"supergroup": sg.id, "added": added, "members": sorted(existing)}
 
 
@@ -1975,6 +2185,9 @@ def remove_supergroup_member(sg_id: int, normalized: str, db: Session = Depends(
         db.query(KeywordSuperGroupMember).filter_by(supergroup_id=sg_id, normalized_term=n).delete()
     )
     db.commit()
+    from src.analytics.supergroup_index import invalidate as _invalidate_sg_index
+
+    _invalidate_sg_index()
     return {"supergroup": sg_id, "removed": n, "deleted": int(deleted)}
 
 

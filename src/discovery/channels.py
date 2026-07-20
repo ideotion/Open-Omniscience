@@ -93,6 +93,10 @@ _INFRA_DOMAINS = frozenset(
         "quantserve.com", "hotjar.com", "mixpanel.com", "chartbeat.com",
         # licenses / markup / boilerplate (footer/markup links on nearly every page)
         "creativecommons.org", "schema.org", "gdpr.eu", "gdpr-info.eu",
+        # share widgets (2026-07-18 Leads-calibration field export: addtoany.com surfaced
+        # as a "source-laundering origin" — a share-button widget embedded on countless
+        # unrelated pages, never a corroborating citation)
+        "addtoany.com",
     }
 )
 _INFRA_LABELS = frozenset(

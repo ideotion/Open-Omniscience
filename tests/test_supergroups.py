@@ -144,3 +144,168 @@ def test_supergroup_totals_count_only_members(tmp_path):
             assert g["members"][0]["normalized"] == "russia"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_supergroup_endpoint_dedups_group_total_and_discloses_dominance(tmp_path):
+    """The 2026-07-18 field export's row 1 + row 3, at the API surface: a group
+    with a plain "ai" family member AND the "artificial-intelligence" ring member
+    (whose own English member IS "ai") must report the TRUE deduped total, never
+    the naive per-member sum, and must disclose which member dominates it."""
+    app, Sess = _client(tmp_path)
+    with Sess() as s:
+        s.add(Source(name="Src", domain="s.test"))
+        s.flush()
+        s.add(Article(url="https://s.test/1", canonical_url="https://s.test/1",
+                      source_id=1, title="t", content="x", hash="h1"))
+        s.flush()
+        _seed_keyword(s, "AI", "ai", article_ids=[1])  # 1 mention, 1 article
+        s.commit()
+
+    try:
+        with TestClient(app) as c:
+            sid = c.post("/api/insights/supergroups", json={"name": "Artificial intelligence"}).json()["id"]
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"normalized": ["ai"]})
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"rings": ["artificial-intelligence"]})
+
+            body = c.get("/api/insights/supergroups").json()
+            g = body["supergroups"][0]
+            assert g["count"] == 2
+            # NOT 2 (1 real mention double-counted across the two overlapping members).
+            assert g["mentions"] == 1
+            assert g["distinct_keywords"] == 1
+            assert g["dominance"]["mentions"] == 1
+            assert g["dominance"]["share"] == 1.0
+            assert set(g["within_group_overlap"]) == {"ai", "artificial-intelligence"}
+            assert isinstance(body["method"], str) and body["method"]
+            assert isinstance(body["caveat"], str) and body["caveat"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_supergroup_endpoint_discloses_cross_group_overlap_via_also_in(tmp_path):
+    """Row 2: a ring member (e.g. "logic") legitimately sitting in TWO groups is
+    disclosed per member as `also_in`, never silently summed as if exclusive."""
+    app, Sess = _client(tmp_path)
+    with Sess() as s:
+        s.add(Source(name="Src", domain="s.test"))
+        s.flush()
+        s.commit()
+
+    try:
+        with TestClient(app) as c:
+            m = c.post("/api/insights/supergroups", json={"name": "Mathematics"}).json()["id"]
+            p = c.post("/api/insights/supergroups", json={"name": "Philosophy"}).json()["id"]
+            c.post(f"/api/insights/supergroups/{m}/members", json={"rings": ["logic"]})
+            c.post(f"/api/insights/supergroups/{p}/members", json={"rings": ["logic"]})
+
+            body = c.get("/api/insights/supergroups").json()
+            groups = {g["name"]: g for g in body["supergroups"]}
+            assert groups["Mathematics"]["members"][0]["also_in"] == ["Philosophy"]
+            assert groups["Philosophy"]["members"][0]["also_in"] == ["Mathematics"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_supergroup_endpoint_no_overlap_disclosures_when_members_are_disjoint(tmp_path):
+    """Negative space: two unrelated members in one group, and a member that sits
+    in only ONE group, must carry no overlap disclosure at all."""
+    app, Sess = _client(tmp_path)
+    with Sess() as s:
+        s.add(Source(name="Src", domain="s.test"))
+        s.flush()
+        s.add(Article(url="https://s.test/1", canonical_url="https://s.test/1",
+                      source_id=1, title="t", content="x", hash="h1"))
+        s.flush()
+        _seed_keyword(s, "Trump", "trump", article_ids=[1])
+        _seed_keyword(s, "Biden", "biden", article_ids=[1])
+        s.commit()
+
+    try:
+        with TestClient(app) as c:
+            sid = c.post("/api/insights/supergroups", json={"name": "People"}).json()["id"]
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"normalized": ["trump", "biden"]})
+
+            g = c.get("/api/insights/supergroups").json()["supergroups"][0]
+            assert g["within_group_overlap"] == {}
+            assert all("also_in" not in m for m in g["members"])
+            assert g["mentions"] == 2  # 1 + 1, no double count to worry about here
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_supergroup_endpoint_series_top_attaches_rate_and_series_to_top_groups_only(tmp_path):
+    """S1.5, bounded: series_top=0 (the default) is byte-identical (no rate/series
+    key at all); series_top>0 attaches both ONLY to that many top-mentioned groups,
+    and the series is summed over the SAME deduped ids as the headline total (a
+    day where the overlapping "ai"/"artificial-intelligence" pair both fire must
+    show the true count once, not twice)."""
+    app, Sess = _client(tmp_path)
+    with Sess() as s:
+        s.add(Source(name="Src", domain="s.test"))
+        s.flush()
+        s.add(Article(url="https://s.test/1", canonical_url="https://s.test/1",
+                      source_id=1, title="t", content="x", hash="h1"))
+        s.flush()
+        _seed_keyword(s, "AI", "ai", article_ids=[1])
+        s.commit()
+
+    try:
+        with TestClient(app) as c:
+            sid = c.post("/api/insights/supergroups", json={"name": "AI"}).json()["id"]
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"normalized": ["ai"]})
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"rings": ["artificial-intelligence"]})
+
+            default = c.get("/api/insights/supergroups").json()["supergroups"][0]
+            assert "rate" not in default and "series" not in default
+
+            body = c.get("/api/insights/supergroups?series_top=1&window_days=7").json()
+            g = body["supergroups"][0]
+            assert g["rate"]["recent"] == 1  # the ONE real mention, not 2
+            today_iso = date.today().isoformat()
+            assert g["series"] == [{"date": today_iso, "count": 1}]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_supergroup_endpoint_dominance_is_none_for_an_empty_group(tmp_path):
+    app, Sess = _client(tmp_path)
+    try:
+        with TestClient(app) as c:
+            c.post("/api/insights/supergroups", json={"name": "Empty"})
+            g = c.get("/api/insights/supergroups").json()["supergroups"][0]
+            assert g["dominance"] is None
+            assert g["mentions"] == 0 and g["distinct_keywords"] == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_redundant_members_endpoint_reports_the_field_export_scenario(tmp_path):
+    """S4.1 end to end: the report endpoint surfaces a plain family member fully
+    covered by a ring in the same group -- a REPORT only (nothing is removed)."""
+    app, Sess = _client(tmp_path)
+    with Sess() as s:
+        s.add(Source(name="Src", domain="s.test"))
+        s.flush()
+        s.add(Article(url="https://s.test/1", canonical_url="https://s.test/1",
+                      source_id=1, title="t", content="x", hash="h1"))
+        s.flush()
+        _seed_keyword(s, "AI", "ai", article_ids=[1])
+        s.commit()
+
+    try:
+        with TestClient(app) as c:
+            sid = c.post("/api/insights/supergroups", json={"name": "AI"}).json()["id"]
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"normalized": ["ai"]})
+            c.post(f"/api/insights/supergroups/{sid}/members", json={"rings": ["artificial-intelligence"]})
+
+            r = c.get("/api/insights/supergroups/redundant-members").json()
+            assert r["count"] == 1
+            assert r["items"][0]["member"] == "ai"
+            assert r["items"][0]["redundant_with_rings"] == ["artificial-intelligence"]
+            assert isinstance(r["method"], str) and r["method"]
+
+            # The report is read-only -- the member is still there afterwards.
+            g = c.get("/api/insights/supergroups").json()["supergroups"][0]
+            assert any(m["normalized"] == "ai" for m in g["members"])
+    finally:
+        app.dependency_overrides.clear()

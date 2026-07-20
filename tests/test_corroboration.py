@@ -191,6 +191,131 @@ def test_engine_geocode_fallback_states_country_precision(client):
             s.execute(text(f"DELETE FROM sources WHERE id = {sid}"))  # noqa: S608
 
 
+def test_country_level_surface_strings_collapse_to_one_cluster(client):
+    """2026-07-18 field export (row 9): "Allemagne" (fr) and "Deutschland" (de) name the
+    SAME country -- articles mentioning either must merge into ONE cluster, not two."""
+    from src.analytics.corroboration import find_weather_opportunities
+    from src.database.models import Article, ArticleMentionedPlace, Keyword, KeywordMention, Source
+    from src.database.session import session_scope
+
+    today = date.today()
+    with session_scope() as s:
+        src = Source(name="AllemagneSrc", domain="allemagnesrc.example", country="fr")
+        s.add(src)
+        s.flush()
+        kw_fr = s.query(Keyword).filter_by(normalized_term="sécheresse").first()
+        if kw_fr is None:
+            kw_fr = Keyword(term="sécheresse", normalized_term="sécheresse", frequency=1)
+            s.add(kw_fr)
+        kw_de = s.query(Keyword).filter_by(normalized_term="dürre").first()
+        if kw_de is None:
+            kw_de = Keyword(term="dürre", normalized_term="dürre", frequency=1)
+            s.add(kw_de)
+        s.flush()
+        ids = []
+        # 2 French articles naming "Allemagne", 1 German article naming "Deutschland" --
+        # all the SAME country, all the same "drought" rule.
+        specs = [("Allemagne", kw_fr, "sécheresse en Allemagne"),
+                 ("Allemagne", kw_fr, "sécheresse en Allemagne encore"),
+                 ("Deutschland", kw_de, "dürre in Deutschland")]
+        for i, (place_name, kw, content) in enumerate(specs):
+            a = Article(
+                url=f"https://allemagnesrc.example/{i}", canonical_url=f"https://allemagnesrc.example/{i}",
+                source_id=src.id, title=f"story {i}", content=content, language="fr",
+                hash=f"deu{i}" + "c" * 59, published_at=datetime.now(UTC) - timedelta(days=2 + i),
+            )
+            s.add(a)
+            s.flush()
+            ids.append(a.id)
+            s.add(KeywordMention(keyword_id=kw.id, article_id=a.id, count=1,
+                                 observed_on=today - timedelta(days=2 + i), extractor="test"))
+            s.add(ArticleMentionedPlace(article_id=a.id, name=place_name, country="de",
+                                        kind="country", mentions=1, extractor="lexical-v1"))
+        kid_fr, kid_de, sid = kw_fr.id, kw_de.id, src.id
+    try:
+        with session_scope() as s:
+            found = find_weather_opportunities(s, min_articles=3)
+        de_ops = [o for o in found["opportunities"] if o["place_country"] == "de" and o["rule"] == "drought"]
+        assert len(de_ops) == 1, found["opportunities"]  # NOT two clusters
+        op = de_ops[0]
+        assert op["place"] == "Germany"  # canonical display, never a raw surface string
+        assert op["n_articles"] == 3
+        assert set(op["article_ids"]) == set(ids)
+    finally:
+        with session_scope() as s:
+            for aid in ids:
+                s.execute(text(f"DELETE FROM keyword_mentions WHERE article_id = {aid}"))  # noqa: S608
+                s.execute(text(f"DELETE FROM article_mentioned_places WHERE article_id = {aid}"))  # noqa: S608
+                s.execute(text(f"DELETE FROM articles WHERE id = {aid}"))  # noqa: S608
+            s.execute(text(f"DELETE FROM keywords WHERE id IN ({kid_fr}, {kid_de})"))  # noqa: S608
+            s.execute(text(f"DELETE FROM sources WHERE id = {sid}"))  # noqa: S608
+
+
+def test_non_article_member_excluded_and_disclosed(client):
+    """Row 10: a suspected homepage/section capture never counts as evidence -- it is
+    excluded from a cluster's members and the exclusion is disclosed, not silent."""
+    from src.analytics.corroboration import find_weather_opportunities
+    from src.database.models import Article, ArticleMentionedPlace, Keyword, KeywordMention, Source
+    from src.database.session import session_scope
+
+    today = date.today()
+    with session_scope() as s:
+        src = Source(name="NonArtSrc", domain="nonartsrc.example", country="ke")
+        s.add(src)
+        s.flush()
+        kw = s.query(Keyword).filter_by(normalized_term="drought").first()
+        if kw is None:
+            kw = Keyword(term="drought", normalized_term="drought", frequency=1)
+            s.add(kw)
+        s.flush()
+        ids = []
+        urls = [
+            "https://nonartsrc.example/story-a",
+            "https://nonartsrc.example/story-b",
+            "https://nonartsrc.example/story-c",
+            "https://nonartsrc.example/",  # a bare homepage capture -- suspected non-article
+        ]
+        for i, url in enumerate(urls):
+            is_home = url.endswith("/")
+            a = Article(
+                url=url, canonical_url=url, source_id=src.id, title=f"story {i}",
+                content="drought near nairobi" if not is_home else "home",
+                language="en", hash=f"nona{i}" + "d" * 59,
+                published_at=datetime.now(UTC) - timedelta(days=1 + i),
+                word_count=5 if is_home else 400,
+            )
+            s.add(a)
+            s.flush()
+            ids.append(a.id)
+            s.add(KeywordMention(keyword_id=kw.id, article_id=a.id, count=1,
+                                 observed_on=today - timedelta(days=1 + i), extractor="test"))
+            s.add(ArticleMentionedPlace(article_id=a.id, name="Nairobi", country="ke",
+                                        kind="city", mentions=1, lat=-1.2864, lon=36.8172,
+                                        extractor="lexical-v1"))
+        kid, sid = kw.id, src.id
+        real_ids = ids[:3]
+        home_id = ids[3]
+    try:
+        with session_scope() as s:
+            found = find_weather_opportunities(s, min_articles=3)
+        ops = [o for o in found["opportunities"] if o["place"] == "Nairobi" and set(real_ids) <= set(o["article_ids"] + [home_id])]
+        assert ops, found
+        op = ops[0]
+        assert home_id not in op["article_ids"]
+        assert set(op["article_ids"]) == set(real_ids)
+        assert op["n_articles"] == 3
+        assert op["excluded_non_articles"] >= 1
+        assert found["excluded_non_articles"] >= 1
+    finally:
+        with session_scope() as s:
+            for aid in ids:
+                s.execute(text(f"DELETE FROM keyword_mentions WHERE article_id = {aid}"))  # noqa: S608
+                s.execute(text(f"DELETE FROM article_mentioned_places WHERE article_id = {aid}"))  # noqa: S608
+                s.execute(text(f"DELETE FROM articles WHERE id = {aid}"))  # noqa: S608
+            s.execute(text(f"DELETE FROM keywords WHERE id = {kid}"))  # noqa: S608
+            s.execute(text(f"DELETE FROM sources WHERE id = {sid}"))  # noqa: S608
+
+
 def test_producer_emits_schema_valid_offer_cards(drought_cluster):
     from src.briefing.card import Card
     from src.briefing.producers import _DEFAULT_PRODUCERS, weather_corroboration

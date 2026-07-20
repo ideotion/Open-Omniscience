@@ -307,6 +307,24 @@ def test_refresh_then_cached_get(corpus):
     assert view["buckets"] and all("label" in b for b in view["buckets"])
 
 
+def test_sorted_uses_disclosed_order_key_not_raw_magnitude():
+    """S5.2 (Leads-calibration): within the SAME bucket, ordering follows the
+    Leads-2.0 disclosed order_key (independent sources -> magnitude tier -> recency)
+    -- a card with FEWER independent sources but a huge raw n/signal value must NOT
+    outrank one with more independent sources, unlike the old raw-magnitude sort."""
+    huge_but_lonely = Card(
+        type="a", title="huge", summary="s", bucket="context", method="m", caveat="c",
+        key="a", n=500, signal={"value": 500}, evidence=[{"source": "OnlyOne"}],
+    )
+    small_but_corroborated = Card(
+        type="b", title="small", summary="s", bucket="context", method="m", caveat="c",
+        key="b", n=10, signal={"value": 10},
+        evidence=[{"source": f"Src{i}"} for i in range(6)],
+    )
+    out = service._sorted([huge_but_lonely.to_dict(), small_but_corroborated.to_dict()])
+    assert [c["key"] for c in out] == ["b", "a"], out  # more independent sources first
+
+
 def test_dismiss_hides_card_and_is_reversible(corpus):
     view = service.get_briefing(corpus, force=True)
     card_id = view["cards"][0]["id"]

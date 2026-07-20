@@ -21,7 +21,7 @@ T12 tests; this file tests the convergence READ logic over those rows.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -257,6 +257,189 @@ def test_empty_corpus_degrades_loudly_not_a_fake_card(session):
     assert out["clusters"] == []
     assert out["clusters_total"] == 0
     assert "never causation" in out["caveat"]
+
+
+# --------------------------------------------------------------------------- #
+#  Convergence-amendment (2026-07-18): C1 exact counts, C2 place canonicalization,
+#  C3 span-collapse, C4 baseline-relative ordering, city-over-country dedup.
+# --------------------------------------------------------------------------- #
+def test_c1_shared_origin_count_is_exact_never_capped(session):
+    """The ruling: 'real, reliable data — never capped figures'. A cluster with 60
+    distinct shared-origin URLs reports EXACTLY 60, with only the EXAMPLES bounded."""
+    s = session
+    s.add(Source(id=1, name="Alpha", domain="alpha.test", country="fr"))
+    s.add(Source(id=2, name="Beta", domain="beta.test", country="us"))
+    s.commit()
+    for aid, src in ((1, 1), (2, 2), (3, 1), (4, 2)):
+        _add_article(s, aid=aid, source_id=src)
+        _add_place(s, aid=aid)
+        _add_date(s, aid=aid, on=date(2024, 5, 12))
+    # 60 DISTINCT outbound URLs, each cited by BOTH article 1 and article 2 (a real
+    # shared origin every time -- never the display-cap masquerading as the count).
+    for i in range(60):
+        url = f"https://wire.example/report-{i}"
+        s.add(ArticleLink(article_id=1, url=url, normalized_url=url))
+        s.add(ArticleLink(article_id=2, url=url, normalized_url=url))
+    s.commit()
+
+    out = find_convergences(s, window_days=7, min_articles=3, min_sources=2)
+    cluster = out["clusters"][0]
+    assert cluster["shared_origin_links"] == 60, cluster["shared_origin_links"]
+    assert len(cluster["shared_origin_examples"]) <= 3
+
+
+def test_c2_country_level_surface_strings_collapse_to_one_cluster(session):
+    """Row 8: "United States"/"America"/"Usa" name the SAME country -- they must
+    merge into ONE cluster, not three, and display the canonical name."""
+    s = session
+    for sid, cc in ((1, "fr"), (2, "de"), (3, "jp")):
+        s.add(Source(id=sid, name=f"Src{sid}", domain=f"s{sid}.test", country=cc))
+    s.commit()
+    for aid, src, name in ((1, 1, "United States"), (2, 2, "America"), (3, 3, "Usa")):
+        _add_article(s, aid=aid, source_id=src)
+        _add_place(s, aid=aid, name=name, country="us", kind="country", lat=None, lon=None)
+        _add_date(s, aid=aid, on=date(2024, 5, 12))
+    s.commit()
+
+    out = find_convergences(s, window_days=7, min_articles=3, min_sources=2)
+    us_clusters = [c for c in out["clusters"] if c["place_country"] == "us"]
+    assert len(us_clusters) == 1, out["clusters"]
+    assert us_clusters[0]["place"] == "United States"
+    assert us_clusters[0]["n_articles"] == 3
+
+
+def test_c3_sliding_window_fragmentation_collapses_to_one_span(session):
+    """Row 3: Iran x3 across contiguous windows must collapse to ONE span entry
+    with the full extent + a per-window step breakdown, not three siblings."""
+    s = session
+    for sid in (1, 2, 3):
+        s.add(Source(id=sid, name=f"Src{sid}", domain=f"s{sid}.test", country="us"))
+    s.commit()
+    # Three CONTIGUOUS 7-day-window steps (each touching the next, like the field
+    # export's 06-25→07-02 · 07-03→10 · 07-11→18), 3 distinct sources total.
+    aid = 1
+    for step_start, srcs in (
+        (date(2024, 6, 25), (1, 2, 3)),
+        (date(2024, 7, 3), (1, 2, 3)),
+        (date(2024, 7, 11), (1, 2, 3)),
+    ):
+        for i, src in enumerate(srcs):
+            _add_article(s, aid=aid, source_id=src)
+            _add_place(s, aid=aid, name="Iran", country="ir", kind="country", lat=None, lon=None)
+            _add_date(s, aid=aid, on=step_start + timedelta(days=i))
+            aid += 1
+    s.commit()
+
+    out = find_convergences(s, window_days=7, min_articles=3, min_sources=2)
+    iran_clusters = [c for c in out["clusters"] if c["place_country"] == "ir"]
+    assert len(iran_clusters) == 1, out["clusters"]  # ONE span, not three
+    span = iran_clusters[0]
+    assert span["window_start"] == "2024-06-25"
+    assert span["window_end"] == "2024-07-13"
+    assert len(span["steps"]) == 3
+    assert span["n_articles"] == 9
+    assert "peak_step_index" in span
+
+
+def test_c4_baseline_relative_ordering_hub_never_outranks_a_real_spike(session):
+    """C4 negative-space: a hub place at its NORMAL share must not outrank a small
+    place at several times its own baseline -- and full recall is preserved (both
+    remain in the list)."""
+    s = session
+    for sid in range(1, 5):
+        s.add(Source(id=sid, name=f"Src{sid}", domain=f"s{sid}.test", country="us"))
+    s.commit()
+    aid = 1
+    # HUB: mentioned constantly across many separate, far-apart windows (each span
+    # is a small fraction of its own huge all-time total -- the base rate).
+    hub_windows = [date(2024, m, 5) for m in range(1, 10)]  # 9 separate months
+    for w in hub_windows:
+        for src in (1, 2, 3):
+            _add_article(s, aid=aid, source_id=src)
+            _add_place(s, aid=aid, name="Germany", country="de", kind="country", lat=None, lon=None)
+            _add_date(s, aid=aid, on=w)
+            aid += 1
+    # SMALL PLACE: normally never mentioned, but ALL its (small) history concentrates
+    # into one recent span -- a genuine, surprising spike.
+    for src in (1, 2, 3):
+        _add_article(s, aid=aid, source_id=src)
+        _add_place(s, aid=aid, name="Tuvalu", country="tv", kind="country", lat=None, lon=None)
+        _add_date(s, aid=aid, on=date(2024, 10, 1))
+        aid += 1
+    s.commit()
+
+    out = find_convergences(s, window_days=7, min_articles=3, min_sources=2)
+    places = [c["place"] for c in out["clusters"]]
+    assert "Germany" in places and "Tuvalu" in places  # full recall — nothing dropped
+    hub = next(c for c in out["clusters"] if c["place"] == "Germany")
+    small = next(c for c in out["clusters"] if c["place"] == "Tuvalu")
+    assert small["baseline_share"] > hub["baseline_share"]
+    # Tuvalu's spike (100% of its own history) outranks Germany's routine slice.
+    assert places.index("Tuvalu") < places.index("Germany")
+
+
+def test_city_over_country_dedup_drops_a_fully_explained_country_span(session):
+    """A country-level span whose evidence is entirely covered by an overlapping
+    city-level span (same country) is dropped -- Paris explains all of France."""
+    s = session
+    for sid in (1, 2, 3):
+        s.add(Source(id=sid, name=f"Src{sid}", domain=f"s{sid}.test", country="fr"))
+    s.commit()
+    for aid, src in ((1, 1), (2, 2), (3, 3)):
+        _add_article(s, aid=aid, source_id=src)
+        _add_place(s, aid=aid, name="Paris", country="fr", kind="city", lat=48.85, lon=2.35)
+        _add_place(s, aid=aid, name="France", country="fr", kind="country", lat=None, lon=None)
+        _add_date(s, aid=aid, on=date(2024, 5, 12))
+    s.commit()
+
+    out = find_convergences(s, window_days=7, min_articles=3, min_sources=2)
+    kinds = {c["place"]: c["place_kind"] for c in out["clusters"]}
+    assert "Paris" in kinds
+    assert "France" not in kinds  # fully explained by Paris -- no added precision
+
+
+def test_country_span_kept_when_it_adds_breadth_beyond_any_city(session):
+    """France is KEPT when its evidence goes beyond what Paris alone covers -- a
+    country span genuinely adding precision beyond any single city."""
+    s = session
+    for sid in (1, 2, 3, 4, 5):
+        s.add(Source(id=sid, name=f"Src{sid}", domain=f"s{sid}.test", country="fr"))
+    s.commit()
+    for aid, src in ((1, 1), (2, 2), (3, 3)):
+        _add_article(s, aid=aid, source_id=src)
+        _add_place(s, aid=aid, name="Paris", country="fr", kind="city", lat=48.85, lon=2.35)
+        _add_place(s, aid=aid, name="France", country="fr", kind="country", lat=None, lon=None)
+        _add_date(s, aid=aid, on=date(2024, 5, 12))
+    # Two MORE articles mention France but NOT Paris -- real breadth beyond the city.
+    for aid, src in ((4, 4), (5, 5)):
+        _add_article(s, aid=aid, source_id=src)
+        _add_place(s, aid=aid, name="France", country="fr", kind="country", lat=None, lon=None)
+        _add_date(s, aid=aid, on=date(2024, 5, 12))
+    s.commit()
+
+    out = find_convergences(s, window_days=7, min_articles=3, min_sources=2)
+    kinds = {c["place"]: c["place_kind"] for c in out["clusters"]}
+    assert "Paris" in kinds and "France" in kinds
+    france = next(c for c in out["clusters"] if c["place"] == "France")
+    assert france["n_articles"] == 5
+
+
+def test_c5_source_country_spread_and_future_dated_flag(session):
+    s = session
+    s.add(Source(id=1, name="Alpha", domain="alpha.test", country="fr"))
+    s.add(Source(id=2, name="Beta", domain="beta.test", country="us"))
+    s.commit()
+    future = date.today() + timedelta(days=5)
+    for aid, src in ((1, 1), (2, 2), (3, 1)):
+        _add_article(s, aid=aid, source_id=src)
+        _add_place(s, aid=aid)
+        _add_date(s, aid=aid, on=future)
+    s.commit()
+
+    out = find_convergences(s, window_days=7, min_articles=3, min_sources=2, lookback_days=None)
+    cluster = out["clusters"][0]
+    assert cluster["source_countries"] == {"fr": 2, "us": 1}
+    assert cluster["includes_future_mentions"] is True
 
 
 def test_convergences_endpoint(client):

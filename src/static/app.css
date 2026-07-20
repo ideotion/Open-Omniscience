@@ -24,6 +24,20 @@
          panel of all 17 themes (verified) — light themes override it below. The old
          hardcoded #c98a1b/#b45309 failed contrast on 8/17 (resp. 17/17) themes. */
       --caveat:#eab44e;
+      /* --lvl-group / --lvl-super: the circle-grammar level colours (GROUPS
+         amendment §B, 2026-07-19) — reinforcing-only accents for the uniform
+         one-circle=group / two-circle=super-group marking (the circle COUNT
+         + the translated hover/aria carry the real information; colour never
+         does alone). Derived from each theme's OWN --accent/--fg via
+         color-mix — never a hardcoded hue (the --caveat lesson: a fixed hue
+         failed contrast on 8/17 themes). Verified by contrast math across
+         all 17 themes' --panel/--panel2/--panel3 (51 checks each): --lvl-group
+         clears WCAG 1.4.11 non-text-UI-component contrast (>=3:1, the bar
+         that applies to a decorative box-shadow ring) everywhere, worst
+         3.62:1; --lvl-super clears full AA text contrast (>=4.5:1) everywhere,
+         worst 4.61:1. */
+      --lvl-group:color-mix(in srgb, var(--accent) 75%, var(--fg) 25%);
+      --lvl-super:color-mix(in srgb, var(--accent) 35%, var(--fg) 65%);
       --border:#262d3a; --border-soft:#1d2331;
       --shadow:0 14px 38px -16px rgba(0,0,0,.62), 0 2px 6px -2px rgba(0,0,0,.4);
       --radius:12px; --radius-sm:8px;
@@ -233,6 +247,32 @@
     .dot.ok{ background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent); }
     .dot.err{ background:var(--err); box-shadow:0 0 0 3px color-mix(in srgb,var(--err) 22%,transparent); }
     .dot.warn{ background:var(--warn); }
+    /* Circle-grammar level marking (GROUPS amendment §B, 2026-07-19) — uniform across
+       the whole UI: plain chip = keyword, ONE ring = a group (a cross-language
+       concept, e.g. election/élection/wahl — formerly called "ring"), TWO rings =
+       a super-group (several groups under one theme). Pure box-shadow outlines --
+       no padding/border-width change, so applying either class never shifts layout
+       (the constant-footprint discipline, invariant #3, extended to this marking).
+       Colour is REINFORCING ONLY -- the ring COUNT plus the translated hover/
+       aria-label carry the real information, colour never does alone (WCAG 1.4.1).
+       --lvl-group/--lvl-super are defined in :root above (contrast-verified). */
+    .lvl-group { box-shadow:0 0 0 2px color-mix(in srgb, var(--lvl-group) 65%, transparent); }
+    .lvl-super { box-shadow:0 0 0 2px color-mix(in srgb, var(--lvl-super) 75%, transparent),
+      0 0 0 4px color-mix(in srgb, var(--lvl-super) 35%, transparent); }
+    .pill.lvl-group, .fam-chip.lvl-group { border-color:color-mix(in srgb, var(--lvl-group) 55%, var(--border)); }
+    .pill.lvl-super, .fam-chip.lvl-super { border-color:color-mix(in srgb, var(--lvl-super) 55%, var(--border)); }
+    /* The reusable path breadcrumb (a "path" chip) — renders wherever any level
+       appears, e.g. "⦾⦾ Climate change ▸ ⦾ temperature ▸ температура (ru)". Each
+       segment is its own clickable button; plural super-group membership renders
+       several ⦾⦾ segments rather than silently picking one. */
+    .lvl-crumb { display:inline-flex; align-items:center; flex-wrap:wrap; gap:4px; font-size:12px; }
+    .lvl-crumb .seg { background:none; border:0; padding:2px 4px; color:inherit; font:inherit;
+      cursor:pointer; border-radius:4px; }
+    .lvl-crumb .seg:hover { background:var(--panel2); text-decoration:underline; }
+    .lvl-crumb .sep { color:var(--muted); }
+    /* The concept-map §D two-tier browse's "currently selected" chip state --
+       mirrors the app's existing .active convention (nav-item/doc-link). */
+    .chip.active { background:color-mix(in srgb, var(--accent) 16%, transparent); }
     /* Background-activity indicator (top bar): an honest "the app is doing something"
        signal. The ring stays legible even when prefers-reduced-motion freezes the spin. */
     .activity { display:inline-flex; align-items:center; gap:6px; padding:1px 9px;

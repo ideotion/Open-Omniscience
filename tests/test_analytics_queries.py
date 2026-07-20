@@ -20,7 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from src.analytics import queries as q
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
-from src.database.models import Article, Base, Source
+from src.database.models import Article, Base, Keyword, Source
 
 
 @pytest.fixture()
@@ -311,3 +311,34 @@ def test_corpus_endpoints_accept_explicit_article_ids(tmp_path):
             assert src["total_matched"] == 1
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_top_terms_non_term_kind_aggregates_before_the_limit(db):
+    """2026-07-18 field fix (Families §0 row 1): a term-dominated corpus must not starve
+    the entity view down to a handful of stray survivors. The Families 'all' view used
+    to fetch the raw top-N (terms included) then filter kind!=='term' CLIENT-side --
+    filter-AFTER-limit -- so with terms outnumbering entities 100:1 only the rare
+    entities that happened to land in that raw top-N survived. kind='non_term' (what
+    'all' now sends) must apply the is_entity filter BEFORE the limit, so with a small
+    limit every real entity still surfaces even against a swamp of high-mention terms."""
+    for i in range(100):
+        db.add(Keyword(
+            term=f"topic{i}", normalized_term=f"topic{i}", language="en",
+            is_entity=False, mention_count=1000, article_count=50,
+        ))
+    for name in ("FIFA", "NATO"):
+        db.add(Keyword(
+            term=name, normalized_term=name, language="en",
+            is_entity=True, entity_type="entity", mention_count=1, article_count=1,
+        ))
+    db.commit()
+
+    # A naive "no kind filter, then trim" approach (mirroring the OLD client-side bug)
+    # would only see the top 5 by mention_count -- all terms, zero entities.
+    naive_top5 = q.top_terms(db, limit=5, group=False)["terms"]
+    assert all(t["kind"] == "term" for t in naive_top5), "sanity: the swamp is real"
+
+    out = q.top_terms(db, kind="non_term", limit=5, group=False)["terms"]
+    names = {t["normalized"] for t in out}
+    assert names == {"FIFA", "NATO"}, f"non_term must filter BEFORE the limit, got {names}"
+    assert all(t["kind"] != "term" for t in out)

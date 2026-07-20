@@ -4216,6 +4216,77 @@ def test_keyword_explorer_subtab():
     assert "/api/insights/exclude" in src, "the hide action must reuse the exclude endpoint"
 
 
+def test_families_kind_filter_and_taxonomy_honesty():
+    """2026-07-18 field fix (entity-families brief, §0 rows 1-2): the Insights Families
+    'all' filter used to fetch the raw top-N (terms included) then trim kind!=='term'
+    CLIENT-side -- filter-AFTER-limit, so a term-dominated corpus starved the entity
+    view down to whatever stray rows survived. The kind filter now applies SERVER-side,
+    before the limit (kind=non_term is the new every-non-term-kind alias, same as
+    'entity' until a real NER pass diversifies entity_type); the dropdown drops the
+    never-populated person/org/location options (never fabricate taxonomy) with an
+    honest note explaining why, and the stale 'Trump = Trump's' blurb (describing the
+    retired Title-Case entity model) is gone."""
+    src = _ui_source()
+    i = src.index('id="ins-families"')
+    j = src.index("</section>", i)
+    section = src[i:j]
+    assert 'value="entity"' in section and 'value="non_term"' in section
+    for dead in ('value="person"', 'value="org"', 'value="location"'):
+        assert dead not in section, f"{dead} is a fabricated, always-empty option"
+    assert "await a future NER/gazetteer pass" in section, "the dead-option note must state why"
+    assert "Trump" not in section, "the stale entity model's blurb example must be gone"
+
+    # backend: kind=non_term applies is_entity=True BEFORE the limit (never a filter-after-limit trim)
+    qsrc = (_SRC / "analytics" / "queries.py").read_text(encoding="utf-8")
+    assert '"non_term"' in qsrc and "Keyword.is_entity.is_(True)" in qsrc
+    api_src = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+    assert '"non_term"' in api_src, "non_term must be an accepted kind value on the endpoint"
+
+    # the Insights read-only view no longer client-filters by kind after the fetch (the bug)
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fam_view = app[app.index("async function loadFamilies(") : app.index("async function loadFamilyCuration(")]
+    assert 'filter(f => f.kind !== "term")' not in fam_view, (
+        "a client-side filter-after-limit is exactly the bug this fix replaces"
+    )
+    assert "&kind=" in fam_view, "the kind filter must be sent server-side unconditionally"
+
+
+def test_family_curation_relocated_to_settings_and_single_member_guarded():
+    """S4 of the same brief: the merge/split curation UI moves OFF the content tab
+    (invariant #8) into Settings -> Keywords, beside the Keywords explorer; Insights
+    keeps only the DATA view (no checkboxes/Merge button/split chips). The relocated
+    review list is decision-only (multi-member/ring/manual-override -- never thousands
+    of single-member rows), and a single-member family's split chip is a guarded
+    no-op (§0 row 7) rather than a meaningless override write."""
+    src = _ui_source()
+
+    ins_i = src.index('id="ins-families"')
+    ins_j = src.index("</section>", ins_i)
+    ins_section = src[ins_i:ins_j]
+    for gone in ("fam-pick", "familyMerge()", "familySplit(", "Merge selected"):
+        assert gone not in ins_section, f"{gone!r} must not remain on the Insights data view"
+
+    set_i = src.index('id="set-keywords"')
+    set_j = src.index('id="set-leads"', set_i)  # the whole Settings Keywords view
+    set_section = src[set_i:set_j]
+    assert 'id="famc-list"' in set_section, "the relocated curation list must exist in Settings"
+    assert 'onclick="familyMerge()"' in set_section
+    assert 'id="fam-overrides"' in set_section, "the overrides list rides along (nothing lost)"
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    cur = app[app.index("async function loadFamilyCuration(") : app.index("async function familySplit(")]
+    assert "f.variants > 1 || f.ring_id || f.manual" in cur, (
+        "the relocated review list must show ONLY rows where a decision exists"
+    )
+    assert "data-single=" in cur, "each split chip must carry whether its family is single-member"
+
+    split_fn = app[app.index("async function familySplit(") : app.index("async function familyMerge(")]
+    assert 'dataset.single === "1"' in split_fn, "a single-member family's ✕ must be a guarded no-op"
+    assert "Nothing to split" in split_fn
+
+    assert "loadFamilyCuration()" in app, "showSetCat must wire the curation loader on the Keywords subtab"
+
+
 def test_super_ring_ui():
     """Step 4 of the pre-translation program: the Groups (super-groups) UI can add a
     cross-language RING as a member (the super-ring model), not just a family. It
@@ -4226,6 +4297,346 @@ def test_super_ring_ui():
     assert "/api/insights/rings" in src, "loadSuperGroups must fetch the rings list"
     assert "function sgAddRing" in src, "the add-ring handler must exist"
     assert "rings: [ring]" in src, "add-ring must POST a ring member (not a family normalized)"
+
+
+def test_supergroup_stats_ui():
+    """Supergroups brief S1.5: the Groups surface discloses the honest per-group
+    statistics (§0 rows 1/2/3/7) — a bounded windowed rate + sparkline on the
+    top-mentioned groups, the mandatory dominance line, cross-group overlap on a
+    member's hover, and zero-mention members collapsed behind a count rather than
+    rendered as a wall of empty chips."""
+    src = _ui_source()
+    assert "series_top=12" in src, "loadSuperGroups must request a BOUNDED top-N series (never all groups)"
+    fn = src[src.index("function sgCard(") : src.index("async function createSuperGroup(")]
+    assert "g.dominance" in fn, "row 1: the dominance disclosure must render"
+    assert "also_in" in fn, "row 2: cross-group overlap must be disclosed on a member"
+    assert "zeroCount" in fn and "with no mentions yet" in fn, "row 7: zero-mention members must collapse"
+    assert "dashChartSvg(g.series" in fn, "S1.5: the sparkline must reuse the shared honest-charts primitive"
+    assert "g.rate.growth" in fn, "S1.5: the disclosed recent-vs-baseline rate must render"
+
+
+def test_supergroup_curation_relocated_to_settings():
+    """Supergroups brief S5: create/add-family/add-ring/delete/remove-member move
+    to Settings -> Keywords (sgCurationCard); Insights -> Groups (sgCard) keeps
+    ONLY the read-only data view (stats/dominance/trend/members-with-provenance),
+    per the Desk rule -- nothing lost, just relocated."""
+    src = _ui_source()
+    assert 'id="sgc-name"' in src and 'onclick="createSuperGroup()"' in src, (
+        "the create-group input must live in the Settings curation panel"
+    )
+    assert "function loadSupergroupCuration(" in src and "function sgCurationCard(" in src
+    assert 'loadSupergroupCuration();' in src[
+        src.index('if (cat === "keywords")') : src.index('if (cat === "keywords")') + 200
+    ], "the Settings Keywords subtab must load the super-group curation panel"
+
+    # sgCard (Insights, the data view) must carry NONE of the mutation actions.
+    card_fn = src[src.index("function sgCard(") : src.index("async function createSuperGroup(")]
+    for forbidden in ("sgRemoveMember", "deleteSuperGroup", "sgAddMember(this", "sgAddRing(this"):
+        assert forbidden not in card_fn, f"sgCard (data view) must not carry {forbidden!r}"
+
+    # sgCurationCard (Settings) carries all four.
+    curation_fn = src[src.index("function sgCurationCard(") : src.index("async function sgAddMember(")]
+    for required in ("deleteSuperGroup", "sgAddMember(this", "sgAddRing(this", "sgRemoveMember(this)"):
+        assert required in curation_fn, f"sgCurationCard must carry {required!r}"
+
+
+def test_keyword_to_supergroup_navigation():
+    """Supergroups brief S3: a keyword's super-group membership is surfaced as a
+    chip in the analysis window's Keywords subtab AND on omnibar keyword rows,
+    linking to the group's own view (deep-scrolled to it, plural membership
+    rendering every hit, never picking one)."""
+    src = _ui_source()
+    fn = src[src.index("function anRenderKwChips(") : src.index("function anContextHtml(")]
+    assert "term.supergroups" in fn and "openSupergroup(" in fn, (
+        "the Keywords-subtab chip must render every super-group the keyword belongs to"
+    )
+    assert "function openSupergroup(" in src, "the deep-link handler must exist"
+    assert 'id="sg-card-${g.id}"' in src, "each group card must be addressable for the deep-link scroll"
+    assert "it.supergroups" in src, "omnibar keyword rows must surface the same membership"
+
+
+def test_naming_sweep_ring_disappears_from_the_user_visible_ui():
+    """GROUPS layer amendment §A: the user-facing hierarchy is keyword -> group ->
+    super-group. "ring" stays the internal name (ring_id / /ring-countries / /rings
+    / the sg-ring-* element ids and datalists -- the Lead-rename precedent: labels
+    only, no internal identifier change) but disappears from every string a user
+    actually reads. Also resolves the naming collision: the Insights subtab that
+    opens the super-group data view must say "Super-groups", not the ambiguous
+    "Groups" (which the panel it opens never was)."""
+    src = _ui_source()
+
+    # The collision fix: the subtab nav button matches what #ins-supergroups holds.
+    assert '<button data-tab="supergroups">Super-groups</button>' in src
+    assert '<button data-tab="supergroups">Groups</button>' not in src
+
+    # Regression-pin the specific curation-chrome fixes (§A "ring" pills/buttons/
+    # placeholders -> "group"); scoped to exact prior literals so a legitimate
+    # internal `ring_id`/`ring-countries`/geometric "ring" (donut slices, mind-map
+    # concentric rings, GIS polygon rings, SVG hollow-ring markers) can never
+    # false-positive this guard.
+    forbidden_literals = (
+        '<span class="pill" title="a cross-language ring merge">ring</span>',
+        "add families or rings to it",
+        '<span class="muted">ring·${(m.ring_members || []).length}</span>',
+        "add a family or a ring below",
+        'placeholder="add a ring (one concept, many languages)…"',
+        ">Add ring</button>",
+        'toast("Ring added.")',
+        'toast("Add ring failed:',
+    )
+    for lit in forbidden_literals:
+        assert lit not in src, f"a user-visible 'ring' literal survived the naming sweep: {lit!r}"
+
+    # (the group pill's static title was superseded by §B's translated lvlTitle()
+    # hover + the .lvl-group ring class -- test_circle_grammar_level_marking_is_
+    # wired_and_contrast_verified pins that evolved markup.)
+    required_literals = (
+        'class="pill lvl-group"',
+        "add families or groups to it",
+        '<span class="muted">group·${(m.ring_members || []).length}</span>',
+        "add a family or a group below",
+        'placeholder="add a group (one concept, many languages)…"',
+        ">Add group</button>",
+        'toast("Group added.")',
+        'toast("Add group failed:',
+    )
+    for lit in required_literals:
+        assert lit in src, f"expected the renamed literal to be present: {lit!r}"
+
+    # Internal identifiers are UNCHANGED (the brief's explicit "no internal id / API
+    # path / config key change" rule) -- these still say "ring" by design.
+    for internal in ('id="sg-ring-options"', "ring_id", "/api/insights/ring-countries",
+                      "/api/insights/rings"):
+        assert internal in src, f"internal ring-named identifier must be preserved: {internal!r}"
+
+
+def test_naming_sweep_ring_map_header_is_keyed_group_wording():
+    """The concept-map header (index.html, static -> keyable) picks a GROUP, not a
+    ring, and the picker label reads "Concept (group)" -- both via NEW keys (an
+    edited English string would silently orphan the old translation), so all 12
+    locales stay covered."""
+    import json
+
+    locales_dir = _SRC / "static" / "locales"
+    en = json.load(open(locales_dir / "en.json", encoding="utf-8"))
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    key1 = (
+        "Pick a cross-language group — one concept counted across every language — "
+        "to see where its coverage comes from, split by the producing source's "
+        "country and language. Counts only; a source with an unknown country is "
+        "shown honestly (never mapped, never guessed)."
+    )
+    key2 = "Concept (group)"
+    assert key1 in en and key2 in en, "the renamed map-header keys must exist in en.json"
+    assert key1 in html and key2 in html, "index.html must use the new group-wording keys"
+    for loc in ("fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id"):
+        d = json.load(open(locales_dir / f"{loc}.json", encoding="utf-8"))
+        assert d.get(key1), f"{loc}: missing translation for the renamed map header"
+        assert d.get(key2), f"{loc}: missing translation for 'Concept (group)'"
+
+
+def test_circle_grammar_level_marking_is_wired_and_contrast_verified():
+    """GROUPS layer amendment §B: uniform level marking app-wide -- plain chip =
+    keyword, ONE ring = a group, TWO rings = a super-group. Pins (a) the two
+    theme-derived colour variables (color-mix off --accent/--fg -- never a
+    hardcoded hue, the --caveat lesson) with contrast math clearing WCAG
+    non-text-UI (>=3:1) on every one of the 17 themes' panel surfaces, (b) the
+    box-shadow-only ring classes never touch padding/width/height (zero layout
+    shift, invariant #3's discipline extended here), (c) the reusable JS
+    primitives + the breadcrumb component, and (d) the class is actually
+    attached at the identified group/super-group chip render sites."""
+    import json
+    import re
+
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    # (a) theme-derived variables, never a hardcoded hex hue.
+    assert "--lvl-group:color-mix(in srgb, var(--accent)" in css.replace("\n", "")
+    assert "--lvl-super:color-mix(in srgb, var(--accent)" in css.replace("\n", "")
+    assert re.search(r"--lvl-group\s*:\s*#[0-9a-fA-F]{3,6}", css) is None, (
+        "a hardcoded hex for --lvl-group would repeat the failed caveat-colour attempt"
+    )
+    assert re.search(r"--lvl-super\s*:\s*#[0-9a-fA-F]{3,6}", css) is None
+
+    # (b) the ring classes are box-shadow-only -- no layout-affecting properties.
+    for cls in ("lvl-group", "lvl-super"):
+        m = re.search(r"\." + cls + r"\s*\{([^}]*)\}", css)
+        assert m, f".{cls} rule must exist"
+        body = m.group(1)
+        assert "box-shadow" in body, f".{cls} must draw its ring via box-shadow"
+        for forbidden in ("padding", "width:", "height:", "border-width", "margin"):
+            assert forbidden not in body, (
+                f".{cls} must never declare {forbidden!r} (zero layout shift)"
+            )
+
+    # (c) the JS primitives.
+    assert "function lvlClass(level)" in js
+    assert "function lvlTitle(level)" in js
+    assert "function lvlBreadcrumb(segments)" in js
+    assert "function _lvlCrumbFire(" in js
+    assert '"lvl-super"' in js and '"lvl-group"' in js  # lvlClass actually maps both
+
+    # (d) attached at the identified render call sites (family/super-group chips,
+    # the keyword -> super-group navigation chip from the sibling S3 brief).
+    assert 'class="pill lvl-group"' in js, "the family-panel group pill must carry .lvl-group"
+    assert '"chip${isRing ? " lvl-group" : ""}"' in js or "chip${isRing ? \" lvl-group\" : \"\"}" in js, (
+        "a group (ring) member chip in sgCard must carry .lvl-group"
+    )
+    assert '"fam-chip${isRing ? " lvl-group" : ""}"' in js or "fam-chip${isRing ? \" lvl-group\" : \"\"}" in js, (
+        "a group (ring) member chip in sgCurationCard must carry .lvl-group"
+    )
+    assert 'class="lvl-super" title="${esc(lvlTitle("super"))}"' in js, (
+        "a super-group's own name/header must carry .lvl-super"
+    )
+    assert '"chip tiny lvl-super"' in js, (
+        "the keyword -> super-group navigation chip must carry .lvl-super"
+    )
+
+    # (e) the two new translated hover strings exist + are translated in all locales.
+    key_group = "A group: one concept counted across every language it appears in."
+    key_super = "A super-group: several groups gathered under one theme."
+    assert key_group in js and key_super in js, "lvlTitle must call t() with the literal English strings"
+    locales_dir = _SRC / "static" / "locales"
+    en = json.load(open(locales_dir / "en.json", encoding="utf-8"))
+    assert key_group in en and key_super in en
+    for loc in ("fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id"):
+        d = json.load(open(locales_dir / f"{loc}.json", encoding="utf-8"))
+        assert d.get(key_group), f"{loc}: missing translation for the group-level hover"
+        assert d.get(key_super), f"{loc}: missing translation for the super-group-level hover"
+
+    # Contrast math (mirrors the #23 caveat-colour precedent): all 17 themes' own
+    # --accent/--fg mixed the SAME way the CSS declares, checked against every
+    # theme's --panel/--panel2/--panel3. Decorative box-shadow rings are governed
+    # by WCAG 1.4.11 (non-text UI components, >=3:1) since the level information
+    # itself is carried by the ring COUNT + the translated hover, never colour
+    # alone (WCAG 1.4.1) -- so 3:1 is the applicable bar, verified with margin.
+    themes = {
+        "ink": ("#14181f", "#1b212b", "#232b38", "#e8ebf0", "#5b9dd9"),
+        "slate": ("#161b23", "#1e2531", "#28323f", "#e8ebf0", "#7aa2f7"),
+        "midnight": ("#10142e", "#171c3c", "#1f2650", "#e8eaff", "#8b7dff"),
+        "terminal": ("#0a1013", "#0e1619", "#13211d", "#c8f7d4", "#36d97a"),
+        "sepia": ("#262019", "#2f2820", "#3a3127", "#efe5d6", "#d8a657"),
+        "contrast": ("#0a0a0a", "#161616", "#222222", "#ffffff", "#ffd400"),
+        "light": ("#ffffff", "#f3f5f9", "#e7ecf3", "#1b1f27", "#2f6fb3"),
+        "paper": ("#fbf8f1", "#f1ebdc", "#e6ddc8", "#2b271f", "#9a6a2f"),
+        "arctic": ("#171c22", "#1e242c", "#262e38", "#e5e9f0", "#88c0d0"),
+        "solar": ("#073642", "#0a4150", "#11505f", "#eee8d5", "#b58900"),
+        "forest": ("#131a14", "#19231a", "#223024", "#e3ece2", "#6fbf73"),
+        "aubergine": ("#1a1424", "#231b30", "#2e2440", "#ece6f4", "#c084fc"),
+        "garnet": ("#1f1419", "#291a20", "#35222a", "#f0e6ea", "#d96c7f"),
+        "cyber": ("#0d1120", "#131830", "#1a2140", "#dbe6ff", "#22d3ee"),
+        "mist": ("#f9fafc", "#eff2f6", "#e3e8ef", "#222831", "#5e81ac"),
+        "dawn": ("#fffaf3", "#f2e9e1", "#e9dfd5", "#575279", "#b4637a"),
+        "mint": ("#f8fbf8", "#ecf2ed", "#dfe9e1", "#1f2a23", "#2e7d5b"),
+    }
+    assert len(themes) == 17
+
+    def hx(h):
+        h = h.lstrip("#")
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+    def mix(c1, c2, pct1):
+        r1, g1, b1 = hx(c1)
+        r2, g2, b2 = hx(c2)
+        w = pct1 / 100.0
+        return (r1 * w + r2 * (1 - w), g1 * w + g2 * (1 - w), b1 * w + b2 * (1 - w))
+
+    def lin(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    def rel_lum(rgb):
+        r, g, b = rgb
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+    def contrast(rgb1, rgb2):
+        l1, l2 = rel_lum(rgb1), rel_lum(rgb2)
+        lighter, darker = max(l1, l2), min(l1, l2)
+        return (lighter + 0.05) / (darker + 0.05)
+
+    NONTEXT_MIN = 3.0
+    worst = 999.0
+    for name, (panel, panel2, panel3, fg, accent) in themes.items():
+        group_rgb = mix(accent, fg, 75)
+        super_rgb = mix(accent, fg, 35)
+        for bg in (panel, panel2, panel3):
+            bg_rgb = hx(bg)
+            cg = contrast(group_rgb, bg_rgb)
+            cs = contrast(super_rgb, bg_rgb)
+            worst = min(worst, cg, cs)
+            assert cg >= NONTEXT_MIN, f"{name}: --lvl-group contrast {cg:.2f} < {NONTEXT_MIN}:1"
+            assert cs >= NONTEXT_MIN, f"{name}: --lvl-super contrast {cs:.2f} < {NONTEXT_MIN}:1"
+    assert worst >= NONTEXT_MIN  # sanity: the loop above already asserted every case
+
+
+def test_concept_map_two_tier_browse_and_clickable_countries():
+    """GROUPS layer amendment §D: the flat 540-item <select> is replaced by a
+    two-tier circled browse (super-group chips -> click one -> its group chips,
+    plus an Ungrouped-concepts bucket so no ring is ever unreachable) with a
+    type-ahead filter; every country row/polygon AND the "not mapped" bucket
+    drill into the exact corpus (never a dead end); every ⦾ group chip in the
+    app deep-links to this map via openConceptMap."""
+    import json
+
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    # The old flat dropdown is GONE; the new two-tier browse scaffolding is present.
+    assert 'id="sg-ringmap-pick"' not in html, "the flat 540-item dropdown must be removed"
+    for el_id in ("sg-concept-filter", "sg-concept-crumb", "sg-concept-supers", "sg-concept-groups"):
+        assert f'id="{el_id}"' in html, f"the concept-map two-tier browse must render #{el_id}"
+
+    # The JS primitives.
+    for fn in (
+        "function renderConceptBrowse(",
+        "function selectConceptBucket(",
+        "function selectConceptGroup(",
+        "function filterConceptBrowse(",
+        "function openConceptMap(",
+        "function _conceptApplyPending(",
+        "async function _conceptDrillCountry(",
+    ):
+        assert fn in js, f"missing concept-map browse primitive: {fn!r}"
+
+    # An "Ungrouped concepts" bucket so a ring with no super-group parent is
+    # never silently unreachable from the picker.
+    assert "_ungrouped_" in js
+    assert "Ungrouped concepts" in js
+
+    # Clickable countries: the ooMap polygon drill, the table-row drill, and the
+    # "not mapped" bucket drill all resolve through the SAME shared function.
+    assert "onCountry: (iso) => _conceptDrillCountry(ringId, iso)" in js
+    assert '<tr style="cursor:pointer" onclick="_conceptDrillCountry(' in js
+    assert 'onclick="_conceptDrillCountry(\'${esc(ringId)}\', null)"' in js, (
+        "the not-mapped/unlocated bucket must be a clickable drill, never a dead-end div"
+    )
+    assert "/api/insights/ring-country-articles" in js
+    assert "openAnalysisForIds(d.article_ids" in js
+
+    # Every ⦾ group chip in the app deep-links to the map (openConceptMap), at
+    # each identified render site: the family-panel pill, the sgCard chip's map
+    # link, and the sgCurationCard chip's map link.
+    assert 'onclick="openConceptMap(${esc(JSON.stringify(f.ring_id))})"' in js
+    assert js.count('onclick="openConceptMap(${esc(JSON.stringify(m.ring_id))})"') >= 2, (
+        "both sgCard and sgCurationCard ring-member chips must offer the map deep-link"
+    )
+
+    # The located-share honesty line (map coverage grows as source countries are
+    # filled in -- an unlocated share is a gap, never a claim nobody covers a
+    # concept), a NEW key so it never orphans a translation, present + translated
+    # everywhere.
+    key = (
+        "Map coverage grows as more sources get a known country — an unlocated "
+        "share is a data gap, never a claim that nobody covers a concept."
+    )
+    assert key in html
+    locales_dir = _SRC / "static" / "locales"
+    en = json.load(open(locales_dir / "en.json", encoding="utf-8"))
+    assert key in en
+    for loc in ("fr", "de", "es", "pt", "ru", "ar", "zh", "ja", "hi", "bn", "id"):
+        d = json.load(open(locales_dir / f"{loc}.json", encoding="utf-8"))
+        assert d.get(key), f"{loc}: missing translation for the map-coverage honesty line"
 
 
 def test_task_manager_opens_in_a_standalone_tab():
@@ -4686,12 +5097,15 @@ def test_translations_extend_to_analysis_window_and_supergroups():
     assert 'corpus-keywords?" + p.toString() + tgtLangParam()' in html, (
         "the analysis-window Keywords fetch must request the verified translation"
     )
-    # Super-groups: the list fetch passes target_lang and ring members show the translation.
-    assert '/api/insights/supergroups?target_lang=" + encodeURIComponent(uiLangCode())' in html, (
-        "the super-groups fetch must request the verified translation"
-    )
-    assert "ring·${(m.ring_members || []).length}" in html and "${kwTransHtml(m)}" in html, (
-        "a super-group ring member must render its verified translation"
+    # Super-groups: the list fetch passes target_lang and ring members show the translation
+    # (the S1.5 series_top/window_days params were added additively before it).
+    assert 'target_lang=" + encodeURIComponent(uiLangCode())' in html and (
+        "/api/insights/supergroups?series_top=" in html
+    ), "the super-groups fetch must request the verified translation"
+    # "ring" is the internal name only (GROUPS layer amendment §A) -- the pill now
+    # reads "group·N" in the user-visible UI.
+    assert "group·${(m.ring_members || []).length}" in html and "${kwTransHtml(m)}" in html, (
+        "a super-group group member must render its verified translation"
     )
 
 
@@ -5382,6 +5796,7 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
         "/p0-validation/last": "p0-validation.json",
         "/pagesize-bench/last": "pagesize-bench.json",
         "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
+        "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
     }
     exempt = {
         "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",

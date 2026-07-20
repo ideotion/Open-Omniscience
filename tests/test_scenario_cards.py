@@ -247,6 +247,44 @@ def test_story_propagation_producer_card(session):
     assert c.trigger and c.trigger["math"]
 
 
+def test_story_propagation_generic_furniture_term_is_gated_but_a_real_story_survives(session):
+    """2026-07-18 field export (row 4, RTV SLO "vir"/"lani"): a term carried by nearly
+    every active same-language source is publishing furniture, not a real topic, even
+    when it clears the >= min_sources candidacy bar -- while a genuine story spreading
+    across a small minority of the same cohort still surfaces."""
+    from src.analytics.story_propagation import find_story_propagation
+
+    s = session
+    today = date.today()
+    for sid in range(20, 30):  # 10 active sl sources
+        s.add(Source(id=sid, name=f"Src{sid}", domain=f"s{sid}.test", language="sl"))
+    s.add(Keyword(id=701, term="vir", normalized_term="vir", language="sl"))
+    s.add(Keyword(id=702, term="event702", normalized_term="event702", language="sl"))
+    s.commit()
+
+    aid = 8000
+    # "vir": ubiquitous furniture across 9 of the 10 active sources, same day (no cascade
+    # needed -- the gate must stop it before the span check ever runs).
+    for sid in range(20, 29):
+        s.add(KeywordMention(keyword_id=701, article_id=aid, source_id=sid, observed_on=today, count=1))
+        aid += 1
+    # "event702": a genuine story spreading across exactly 3 of the same 10 sources, over
+    # several days -- a real temporal cascade.
+    for sid, offset in ((20, 5), (21, 3), (29, 0)):
+        s.add(KeywordMention(
+            keyword_id=702, article_id=aid, source_id=sid,
+            observed_on=today - timedelta(days=offset), count=1,
+        ))
+        aid += 1
+    s.commit()
+
+    out = find_story_propagation(session, lookback_days=30, min_sources=3, min_span_days=2)
+    terms = {it["term"] for it in out["items"]}
+    assert "vir" not in terms, out["items"]
+    assert "event702" in terms, out["items"]
+    assert "DF-ubiquity" in out["method"] or "furniture" in out["method"]
+
+
 # =========================================================================== #
 #  Supply-chain ripple (native Pearson + Fisher-z + BH-FDR)
 # =========================================================================== #
@@ -367,6 +405,84 @@ def test_supply_chain_ripple_producer_card(session):
     assert "score" not in c.signal and c.signal["metric"] == "coverage_correlation"
     assert c.method and c.caveat and c.article_ids
     assert c.trigger and c.trigger["math"]
+
+
+def test_supply_chain_ripple_homograph_resolution_finds_nothing(session):
+    """S2.1 (row 13a, 2026-07-18 field export): a commodity labelled "Lead" must NEVER
+    silently resolve, via a substring/"significant words" heuristic, to an unrelated
+    common-word keyword -- it must resolve to NOTHING (an honest gap, no card) unless
+    its OWN exact label/symbol is itself a stored keyword."""
+    from src.analytics.supply_chain_ripple import _commodity_keywords, find_supply_chain_ripples
+
+    session.add(Source(id=1, name="Metals", domain="metals.test", country="us"))
+    session.flush()
+    session.add(MarketExtractionRule(source_id=1, symbol="PB", label="Lead",
+                                     url="https://metals.test/lead", selector=".price",
+                                     category="commodity"))
+    # NOT a keyword named "lead" or "pb" -- only an UNRELATED word that happens to
+    # contain "lead" as a substring (the old "significant words" homograph vector).
+    kw = Keyword(term="leadership", normalized_term="leadership", language="en")
+    session.add(kw)
+    session.flush()
+    today = date.today()
+    for i in range(10):
+        _add_article(session, aid=6100 + i, source_id=1)
+        session.add(KeywordMention(keyword_id=kw.id, article_id=6100 + i, source_id=1,
+                                   observed_on=today - timedelta(days=i + 2), count=1))
+    session.commit()
+
+    assert _commodity_keywords(session) == {}  # neither "lead" nor "pb" exists -> no match
+    out = find_supply_chain_ripples(session, window_days=30)
+    assert out["count"] == 0 and out["items"] == []
+
+
+def test_supply_chain_ripple_volume_confound_does_not_manufacture_a_pair(session):
+    """S2.2 (row 13b): two terms that only both scale with total daily collection
+    volume -- a FIXED share of it, every day, active across the whole window -- must
+    NOT co-move once correlated on their SHARE of that volume: a busier scraping day
+    inflates both terms' raw counts together (the confound a raw-count correlation
+    would wrongly reward), but neither term moves RELATIVE to that day's total, so
+    there is nothing left to correlate."""
+    from src.analytics.supply_chain_ripple import find_supply_chain_ripples
+
+    sources = (1, 2, 3)
+    for sid in sources:
+        session.add(Source(id=sid, name=f"Vol{sid}", domain=f"vol{sid}.test", country="us"))
+    session.flush()
+    session.add(MarketExtractionRule(source_id=1, symbol="HG", label="Copper",
+                                     url="https://vol.test/copper", selector=".price",
+                                     category="commodity"))
+    copper = Keyword(term="copper", normalized_term="copper", language="en")
+    weather = Keyword(term="weather", normalized_term="weather", language="en")
+    filler = Keyword(term="filler", normalized_term="filler", language="en")
+    session.add_all([copper, weather, filler])
+    session.flush()
+
+    today = date.today()
+    aid = 6200
+    # A fluctuating daily "scraping volume" driver, one entry per day of the analyzed
+    # window (offsets 0..19 -- EVERY day active, no gaps, so there is no on/off pattern
+    # to trivially correlate). copper/weather/filler ALWAYS keep the same 30%/20%/50%
+    # share of that day's total, so a busier day (higher multiplier) inflates every
+    # term's raw count together while none of them moves RELATIVE to the total.
+    multipliers = [1, 2, 3, 2, 1, 3, 2, 1, 3, 2, 1, 2, 3, 1, 2, 3, 1, 2, 3, 2, 1]
+    for offset, k in enumerate(multipliers):
+        on = today - timedelta(days=offset)
+        for kw, n in ((copper, 3 * k), (weather, 2 * k), (filler, 5 * k)):
+            for _ in range(n):
+                sid = sources[aid % len(sources)]
+                _add_article(session, aid=aid, source_id=sid, when=datetime.now(UTC))
+                session.add(KeywordMention(keyword_id=kw.id, article_id=aid, source_id=sid,
+                                           observed_on=on, count=1))
+                aid += 1
+    session.commit()
+
+    out = find_supply_chain_ripples(
+        session, window_days=len(multipliers) - 1, r_min=0.5, fdr_q=0.05
+    )
+    keywords = {it["keyword"] for it in out["items"]}
+    assert "weather" not in keywords, out["items"]
+    assert "filler" not in keywords, out["items"]
 
 
 # =========================================================================== #

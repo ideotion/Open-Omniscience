@@ -1455,6 +1455,24 @@ def keyword_growth(download: bool = Query(False), db: Session = Depends(get_db))
     return JSONResponse(curve, headers=headers)
 
 
+@router.get("/leads-quality")
+def leads_quality(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
+    """S6.1 (Leads-calibration, 2026-07-18): export the CURRENT Home Leads feed as a
+    bounded, real-facts report -- producer, key, bucket, n, independent sources, the
+    card's own disclosed signal fields verbatim, and the major-floor fact. The
+    maintainer re-runs this on the live corpus and sends it back, exactly like the
+    keyword-log measurement loop. Read-only; runs the SAME run_all() pass Home uses,
+    writes nothing. With ``download=1`` it returns as a dated attachment."""
+    from src.analytics.leads_quality import leads_quality_report
+
+    report = leads_quality_report(db)
+    headers = {}
+    if download:
+        fname = f"oo-leads-quality-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
 # --------------------------------------------------------------------------- #
 # TEMPORARY / REMOVABLE diagnostic — Source & article quality triage bundle.
 # THROWAWAY: delete this endpoint + its Settings→Diagnostics button once the
@@ -2719,6 +2737,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # S5 (law-vertical brief 2026-07-17): per-jurisdiction law-tracking coverage/
         # freshness — "is law working?" answered by one JSON, in the bundle by default.
         ("law-coverage.json", lambda: law_coverage(download=False, db=db)),
+        # S6.1 (Leads-calibration, 2026-07-18): the CURRENT Home Leads feed as a
+        # bounded, real-facts report — the measurement loop for the card system.
+        ("leads-quality.json", lambda: leads_quality(download=False, db=db)),
     ]
 
 

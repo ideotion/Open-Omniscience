@@ -65,4 +65,23 @@ def run_all(session, on_progress: Callable[[int, int, str], None] | None = None)
                 on_progress(i + 1, total, name)
             except Exception:  # noqa: BLE001 - progress is cosmetic, never fatal
                 pass
-    return cards
+
+    # S5.1 (Leads-calibration, cross-card dedup belt): each producer already keys its
+    # own cards for de-duplication (e.g. laundering's registrable-origin domain,
+    # convergence/weather's country+window span, ripple's commodity) — this is the
+    # belt UNDERNEATH those per-producer keys: an exact (type, key) collision across
+    # the WHOLE feed is dropped, loudly logged (never silent), keeping the first
+    # (registration-order) occurrence.
+    seen: set[tuple[str, str]] = set()
+    deduped: list[Card] = []
+    dup_count = 0
+    for card in cards:
+        ident = (card.type, card.key)
+        if ident in seen:
+            dup_count += 1
+            continue
+        seen.add(ident)
+        deduped.append(card)
+    if dup_count:
+        _LOG.info("run_all: dropped %d duplicate (type, key) card(s) across producers", dup_count)
+    return deduped

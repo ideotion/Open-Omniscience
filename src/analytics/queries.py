@@ -193,7 +193,14 @@ def _apply_kind(query, kind: str | None):
         return query
     if kind == "term":
         return query.filter(Keyword.is_entity.is_(False))
-    if kind == "entity":
+    if kind in ("entity", "non_term"):
+        # "non_term" (the Families "all" view, 2026-07-18 field fix) is the explicit
+        # every-non-term-kind aggregation: it filters BEFORE the limit, so it never
+        # falls back to a filter-after-limit trim that a term-dominated corpus would
+        # starve down to a handful of stray entities. Currently identical to "entity"
+        # (entity_type is only ever None/"entity" until a real NER/gazetteer pass
+        # populates person/org/location -- out of scope here) -- this is an honest
+        # consequence of today's taxonomy, not a bug to paper over.
         return query.filter(Keyword.is_entity.is_(True))
     return query.filter(Keyword.entity_type == kind)
 
@@ -598,6 +605,65 @@ def ring_country_split(session, *, ring_id: str, days: int | None = None, limit:
             "Coverage by producing-source country, never a credibility ranking or score. "
             "Unlocated sources are bucketed as null, not dropped. Co-occurrence in your "
             "corpus, never a claim about the country."
+        ),
+    }
+
+
+def ring_country_article_ids(
+    session, *, ring_id: str, country: str | None, days: int | None = None, limit: int = 2000,
+) -> dict:
+    """The exact article ids behind ONE (group, country) cell of ``ring_country_split``'s
+    table — the concept-map §D drill (a country bar/row is clickable, never a dead
+    end). ``country=None`` resolves the SAME "not mapped" bucket ring_country_split
+    reports (a source with no stored country) — the largest bucket is often the
+    unlocated one, and it must be investigable too, never a silent drop.
+
+    Reuses the IDENTICAL language-qualified keyword resolution
+    (``group_stats.resolve_group_keyword_ids``) that the summary table is built
+    from, so a drilled set can never disagree with the number beside it. Bounded
+    (never a silent truncation — ``bounded`` discloses when the real count exceeds
+    ``limit``); a huge concept in one country still returns a usable exact corpus.
+    """
+    from src.analytics.equivalence import ring_meta
+    from src.analytics.group_stats import resolve_group_keyword_ids
+
+    ring = ring_meta(ring_id)
+    if ring is None:
+        return {"ring_id": ring_id, "found": False, "article_ids": [], "total": 0}
+
+    kw_ids = resolve_group_keyword_ids(session, ring_id)
+    if not kw_ids:
+        return {
+            "ring_id": ring_id, "found": True, "country": country,
+            "article_ids": [], "total": 0, "bounded": False,
+            "caveat": "No indexed keywords in this group yet for your corpus.",
+        }
+
+    # .distinct() the QUERY method (SELECT DISTINCT), never a bare func.distinct()
+    # column wrap — the same pattern corpus_facet_article_ids uses for exact ids.
+    q = (
+        session.query(KeywordMention.article_id)
+        .join(Article, Article.id == KeywordMention.article_id)
+        .join(Source, Source.id == Article.source_id)
+        .filter(KeywordMention.keyword_id.in_(list(kw_ids)))
+        .distinct()
+    )
+    q = q.filter(Source.country.is_(None)) if country is None else q.filter(Source.country == country)
+    if days and days > 0:
+        cutoff = date.today() - timedelta(days=days)
+        q = q.filter(Article.published_at >= cutoff)
+    rows = q.order_by(KeywordMention.article_id).limit(limit + 1).all()
+    ids = [int(r[0]) for r in rows]
+    bounded = len(ids) > limit
+    if bounded:
+        ids = ids[:limit]
+    return {
+        "ring_id": ring_id, "found": True, "country": country,
+        "article_ids": ids, "total": len(ids), "bounded": bounded,
+        "method": (
+            "The exact articles behind this (group, country) cell of the country "
+            "breakdown — same keyword resolution and Source-country join as the "
+            "summary table."
         ),
     }
 

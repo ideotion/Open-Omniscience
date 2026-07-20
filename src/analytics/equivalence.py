@@ -140,6 +140,15 @@ def ring_of(language: str | None, normalized: str) -> str | None:
     keyword's effective language is fr. An unknown language never matches (the
     caller is expected to resolve it from the signature first) — conservative by
     design, so we never fabricate a cross-language merge.
+
+    DELIBERATELY case-insensitive (the 2026-07-18 "entity acronym" case seam):
+    an entity keyword's normalized form is kept UPPERCASE (WHO != who, USA != usa
+    — the acronym ruling), while ring members are written lowercase in the
+    curated/generated config. ``_norm()`` casefolds BOTH the config member (at
+    parse time, in ``_parse_rings``) and this lookup's ``normalized`` argument, so
+    an all-caps entity form matches its lowercase-written ring member with no
+    special-case code — verified end-to-end (USA/США/EUA/ABD one ring) in
+    tests/test_keyword_equivalence.py.
     """
     if not language:
         return None

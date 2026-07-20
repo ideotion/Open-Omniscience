@@ -83,8 +83,12 @@ def find_weather_opportunities(
     """Scan the local substrate for (climate term × place × window) clusters.
 
     Returns ``{"opportunities": [...], "clusters_total": n, "skipped_no_coords": n,
-    "rules_as_of": ..., "provenance": ...}`` — the totals are always disclosed so a
-    display bound (``limit``) never silently hides how much qualified.
+    "excluded_non_articles": n, "rules_as_of": ..., "provenance": ...}`` — the totals
+    are always disclosed so a display bound (``limit``) never silently hides how much
+    qualified. Country-level places canonicalize by country CODE (S4.2/C2), so
+    "Allemagne"/"Deutschland" never split into two clusters; a suspected homepage/
+    section capture is excluded from a cluster's article members (S1.4), disclosed via
+    ``excluded_non_articles`` (both the per-opportunity and the corpus-wide total).
     """
     today = today or date.today()
     cutoff = today - timedelta(days=lookback_days)
@@ -93,6 +97,7 @@ def find_weather_opportunities(
     terms = _term_index(cfg["rules"])
     if not terms:
         return {"opportunities": [], "clusters_total": 0, "skipped_no_coords": 0,
+                "excluded_non_articles": 0,
                 "rules_as_of": cfg["as_of"], "provenance": cfg["provenance"]}
 
     # 1) Which curated terms exist as keywords? (small columns only — the
@@ -104,6 +109,7 @@ def find_weather_opportunities(
     )
     if not kw_rows:
         return {"opportunities": [], "clusters_total": 0, "skipped_no_coords": 0,
+                "excluded_non_articles": 0,
                 "rules_as_of": cfg["as_of"], "provenance": cfg["provenance"]}
     kw_meta = {kid: (terms[norm][0], norm, terms[norm][1]) for kid, norm in kw_rows}
 
@@ -120,6 +126,7 @@ def find_weather_opportunities(
     )
     if not mention_rows:
         return {"opportunities": [], "clusters_total": 0, "skipped_no_coords": 0,
+                "excluded_non_articles": 0,
                 "rules_as_of": cfg["as_of"], "provenance": cfg["provenance"]}
 
     # article -> set of (rule_id, term, lang) and the article's observed date(s)
@@ -143,17 +150,21 @@ def find_weather_opportunities(
             .all()
         )
 
-    # 4) Cluster on (rule, place identity).
-    clusters: dict[tuple[str, str, str], dict] = {}
+    # 4) Cluster on (rule, place identity) -- country-level mentions canonicalize to the
+    #    country CODE (S4.2/C2: "Allemagne"/"Deutschland", "United States"/"America"/"Usa"
+    #    are the SAME place, never separate clusters); a city keeps its own identity.
+    from src.analytics.place_identity import place_identity
+
+    clusters: dict[tuple[str, str], dict] = {}
     for aid, name, country, kind, lat, lon in place_rows:
-        place_key = " ".join((name or "").split()).casefold()
-        if not place_key:
+        if not (name or "").strip():
             continue
+        place_key_id, place_display = place_identity(name, country, kind)
         for rule_id, term, lang in art_rules.get(aid, ()):  # an article can feed several rules
-            key = (rule_id, country or "", place_key)
+            key = (rule_id, place_key_id)
             c = clusters.setdefault(key, {
                 "articles": set(), "dates": [], "terms": set(), "langs": set(),
-                "name": name, "country": country, "kind": kind, "lat": None, "lon": None,
+                "name": place_display, "country": country, "kind": kind, "lat": None, "lon": None,
             })
             c["articles"].add(aid)
             c["dates"].extend(art_dates.get(aid, ()))
@@ -164,9 +175,25 @@ def find_weather_opportunities(
                 c["geocode"] = kind or "place"
 
     qualified = {k: c for k, c in clusters.items() if len(c["articles"]) >= min_articles}
+
+    # Non-article member exclusion seam (S1.4, row 10): a suspected homepage/section
+    # capture is excluded from a cluster's evidence MEMBERS, disclosed, never silent.
+    from src.analytics.non_article_scan import suspected_non_article_ids
+
+    all_member_ids = sorted({aid for c in qualified.values() for aid in c["articles"]})
+    suspects = suspected_non_article_ids(session, all_member_ids) if all_member_ids else set()
+
     skipped_no_coords = 0
+    excluded_non_articles = 0
     opportunities: list[dict] = []
-    for (rule_id, country, _pk), c in qualified.items():
+    for (rule_id, _pkid), c in qualified.items():
+        country = c["country"]
+        member_ids = sorted(c["articles"] - suspects)
+        n_excluded = len(c["articles"]) - len(member_ids)
+        if len(member_ids) < min_articles:
+            excluded_non_articles += n_excluded
+            continue  # the real, non-suspect evidence no longer clears the gate
+        excluded_non_articles += n_excluded
         lat, lon, precision = c["lat"], c["lon"], c.get("geocode")
         if lat is None or lon is None:
             # Honest fallback: a gazetteer city / country stand-in, precision stated.
@@ -194,8 +221,9 @@ def find_weather_opportunities(
             "geocode": precision,
             "window_start": start.isoformat(),
             "window_end": end.isoformat(),
-            "article_ids": sorted(c["articles"]),
-            "n_articles": len(c["articles"]),
+            "article_ids": member_ids,
+            "n_articles": len(member_ids),
+            "excluded_non_articles": n_excluded,
             "terms_matched": sorted(c["terms"]),
             "languages": sorted(c["langs"]),
         })
@@ -205,6 +233,7 @@ def find_weather_opportunities(
         "opportunities": opportunities[:limit],
         "clusters_total": len(opportunities),
         "skipped_no_coords": skipped_no_coords,
+        "excluded_non_articles": excluded_non_articles,
         "rules_as_of": cfg["as_of"],
         "provenance": cfg["provenance"],
     }

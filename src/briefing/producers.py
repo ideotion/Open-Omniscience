@@ -43,6 +43,11 @@ _MAX_WIKI = 5
 _MAX_SYMBOLS = 5
 _FRAMING_ARTICLE_CAP = 40
 _DIET_DAYS = 30
+# S4.4 (row 16, 2026-07-18 field export): "leans on a few sources" at a top-3 share of
+# 14% over 2,117 sources contradicted its own number -- a diverse diet, not a
+# concentrated one. The wording must follow the number: at/above this share it
+# genuinely leans on a few; below, the diet is broad.
+_DIET_CONCENTRATED_MIN_SHARE = 0.30
 _STALE_DAYS = 7
 
 # --- Young-corpus adaptation (maintainer-flagged: cards must appear sooner) -- #
@@ -433,6 +438,13 @@ def record_reshaped(session) -> list[Card]:
 # --------------------------------------------------------------------------- #
 #  Price ↔ narrative — honest commodity correlation (needs [analysis] / scipy)
 # --------------------------------------------------------------------------- #
+# S2.4 (row 14, 2026-07-18 field export): a null result (CORN r=0.17 p=0.721; COFFEE
+# p=0.712; BRENT p=0.514) is not a Lead -- it stays visible in the markets exploration
+# surface, it just never claims a Home slot. A Lead needs BOTH a stated significance
+# level AND a real, non-trivial effect size.
+_PRICE_NARRATIVE_R_MIN = 0.3
+
+
 def price_narrative(session) -> list[Card]:
     try:
         from src.commodity.correlation import correlate_price_with_news
@@ -470,6 +482,8 @@ def price_narrative(session) -> list[Card]:
         result = correlate_price_with_news(points, article_dates)
         if result.insufficient_data or result.coefficient is None:
             continue
+        if result.significant is not True or abs(result.coefficient) < _PRICE_NARRATIVE_R_MIN:
+            continue  # a null/borderline result is not a Lead -- see it in /#markets instead
         math_rows = [
             ("Correlation r (−1…+1)", f"{result.coefficient:+.2f}"),
             ("p-value (how likely by chance)", f"{result.p_value:.3g}"),
@@ -501,7 +515,12 @@ def price_narrative(session) -> list[Card]:
                     "significant": result.significant,
                     "symbol": symbol,
                 },
-                method=f"{result.method} correlation of daily price change vs daily article count on shared dates",
+                method=(
+                    f"{result.method} correlation of daily price change vs daily article count "
+                    f"on shared dates. Only surfaced as a Lead when significant (p < 0.05) AND "
+                    f"|r| >= {_PRICE_NARRATIVE_R_MIN} — a null or borderline result stays visible "
+                    f"in the markets exploration view, it never claims a Home slot."
+                ),
                 caveat=result.caveat,
                 evidence=[
                     {
@@ -639,20 +658,36 @@ def diet_self_audit(session) -> list[Card]:
         ),
         ("Minimum required: 5 articles across 2 sources", f"{total} · {len(counts)} ✓"),
     ]
+    concentrated = result.top_share >= _DIET_CONCENTRATED_MIN_SHARE
+    if concentrated:
+        title = "Your reading diet leans on a few sources"
+        trigger_plain = (
+            "Most of what you've collected recently comes from just a few sources. "
+            "This Lead shows you that share, so you can decide whether your reading "
+            "mix is what you want it to be."
+        )
+        summary = (
+            f"Over the last {_DIET_DAYS} days, the top 3 of {result.n} sources account for "
+            f"~{pct}% of what you collected (Gini {result.gini:.2f}). Top: {top_labels}."
+        )
+    else:
+        title = "Your reading diet is broad"
+        trigger_plain = (
+            "Your recent collection is NOT concentrated in a few sources — even your "
+            "busiest three account for a small share of the total. This Lead shows you "
+            "that spread."
+        )
+        summary = (
+            f"Over the last {_DIET_DAYS} days, your top 3 of {result.n} sources account for only "
+            f"~{pct}% of what you collected (Gini {result.gini:.2f}) — a broad spread, not a "
+            f"concentrated diet. Top: {top_labels}."
+        )
     return [
         Card(
             type="diet_self_audit",
-            trigger=_trigger(
-                "Most of what you've collected recently comes from just a few sources. "
-                "This Lead shows you that share, so you can decide whether your reading "
-                "mix is what you want it to be.",
-                math_rows,
-            ),
-            title="Your reading diet leans on a few sources",
-            summary=(
-                f"Over the last {_DIET_DAYS} days, the top 3 of {result.n} sources account for "
-                f"~{pct}% of what you collected (Gini {result.gini:.2f}). Top: {top_labels}."
-            ),
+            trigger=_trigger(trigger_plain, math_rows),
+            title=title,
+            summary=summary,
             bucket="context",
             signal={
                 "metric": "top3_share",
@@ -661,7 +696,11 @@ def diet_self_audit(session) -> list[Card]:
                 "sources": result.n,
                 "shares": result.shares[:10],
             },
-            method=result.method,
+            method=(
+                result.method
+                + f" 'Leans on a few' vs 'broad' is decided by the top-3 share against a stated "
+                f"{_DIET_CONCENTRATED_MIN_SHARE:.0%} threshold — the wording always follows the number."
+            ),
             caveat=(
                 result.caveat
                 + " This groups by source, not owner: several sources may share one owner, so true "
@@ -791,21 +830,63 @@ def echo_chamber(session) -> list[Card]:
 #  Lonely signal — a substantive single-source story that did not echo (§4)
 # --------------------------------------------------------------------------- #
 _MAX_LONELY = 3
+# S4.1 (row 6, 2026-07-18 field export): "three cards, all GIGAZINE" -- single-source is
+# the NORM at real scale (most articles have exactly one source by construction), so
+# above this many articles a lonely-signal is only a Lead when it intersects something
+# currently trending -- otherwise it stays available in exploration, never a card.
+_LONELY_LARGE_CORPUS_ARTICLES = 50_000
 
 
 def lonely_signal(session) -> list[Card]:
     """Recent single-source stories that did NOT echo — candidate undertold items.
 
     This states *only* that one source carried it and nobody near-duplicated it: it may
-    be a genuine exclusive or simply minor. The human decides (strong caveat)."""
+    be a genuine exclusive or simply minor. The human decides (strong caveat).
+
+    S4.1: at most ONE card per source per refresh (a prolific single-source publisher
+    must not claim every lonely-signal slot), and at large corpus scale a candidate is
+    surfaced only when it intersects a currently-trending term (single-source coverage
+    is the base rate at that scale, not a signal on its own)."""
     from src.integrity.collapse import story_prominence
 
     data = story_prominence(session, days=_ECHO_DAYS)
     singles = [s for s in data["stories"] if s["voices_raw"] == 1]
     # Most-recent first: representative id is the article id (higher = newer).
     singles.sort(key=lambda s: -int(s["representative"]))
+
+    large_corpus = _corpus_articles(session) >= _LONELY_LARGE_CORPUS_ARTICLES
+    trending_terms: set[str] = set()
+    if large_corpus and singles:
+        from src.analytics import queries as q
+
+        trending_terms = {
+            t["normalized"]
+            for t in q.trending(session, limit=50, min_recent=2 if _is_young(session) else 3).get("terms", [])
+        }
+
     cards: list[Card] = []
-    for story in singles[:_MAX_LONELY]:
+    seen_sources: set[str] = set()
+    for story in singles:
+        if len(cards) >= _MAX_LONELY:
+            break
+        src_name = story["sources"][0] if story["sources"] else None
+        if src_name is not None and src_name in seen_sources:
+            continue  # at most one card per source per refresh (row 6)
+        if large_corpus:
+            from src.database.models import Keyword
+
+            aid = int(story["representative"])
+            hit_terms = {
+                n
+                for (n,) in session.query(Keyword.normalized_term)
+                .join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
+                .filter(KeywordMention.article_id == aid)
+                .distinct()
+            }
+            if not (hit_terms & trending_terms):
+                continue  # single-source is the norm at this scale — not a Lead alone
+        if src_name is not None:
+            seen_sources.add(src_name)
         ev = _articles_by_id(session, [story["representative"]])
         evidence = list(ev.values())
         cards.append(
@@ -833,10 +914,15 @@ def lonely_signal(session) -> list[Card]:
                     "value": 1,
                     "source": story["sources"][0] if story["sources"] else None,
                 },
-                method="A near-duplicate story cluster of size 1 (one source, no echo) over the recent window.",
+                method=(
+                    "A near-duplicate story cluster of size 1 (one source, no echo) over the recent "
+                    "window; at most one per source per refresh. Single-source is the norm at "
+                    f"{_LONELY_LARGE_CORPUS_ARTICLES:,}+ articles, so above that scale a candidate "
+                    "also needs to intersect a currently-trending term to claim a Lead slot."
+                ),
                 caveat=(
                     "‘Single-source, did not echo’ is the ONLY claim — not that it is important, true, or "
-                    "suppressed. Many minor items are single-source. Read it and judge."
+                    "suppressed. Many minor items are single-source, especially at scale. Read it and judge."
                 ),
                 evidence=evidence,
                 n=1,
@@ -856,15 +942,28 @@ _CAPACITY_FACTOR = 8.0  # and well above the corpus median
 
 def capacity_implausible(session) -> list[Card]:
     """Sources whose article rate is implausibly high vs the corpus — a question, never
-    a verdict of automation (a wire agency or big newsroom can be legitimately prolific)."""
+    a verdict of automation (a wire agency or big newsroom can be legitimately prolific).
+
+    Internal-channel exemption (S1.3, row 7): this is a question about a PUBLISHER's
+    output rate, so a source that is not a plain web publisher (the user's own
+    newsletter import, a law tracker, a wiki edition) is excluded — both from the
+    flagged candidates AND from the corpus-median baseline it's compared against.
+    """
+    from src.catalog.provenance import WEB, provenance_of
+
     cutoff = datetime.now(UTC) - timedelta(days=_CAPACITY_DAYS)
-    rows = (
-        session.query(Source.id, Source.name, func.count(Article.id))
+    raw_rows = (
+        session.query(Source.id, Source.name, Source.domain, Source.source_type, func.count(Article.id))
         .join(Article, Article.source_id == Source.id)
         .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
         .group_by(Source.id)
         .all()
     )
+    rows = [
+        (sid, name, c)
+        for sid, name, dom, st, c in raw_rows
+        if provenance_of(dom, st) == WEB
+    ]
     if len(rows) < 3:
         return []
     id_by_name = {(name or "(unknown)"): sid for sid, name, _ in rows}
@@ -928,7 +1027,9 @@ def capacity_implausible(session) -> list[Card]:
                 "flagged": flagged[:20],
             },
             method=(
-                f"Sources whose articles/day over {_CAPACITY_DAYS}d is ≥ {_CAPACITY_MIN_PER_DAY} and "
+                f"Web-publisher sources only (a newsletter import / law tracker / wiki edition is "
+                f"not a publisher and is excluded from both the candidates and the median) whose "
+                f"articles/day over {_CAPACITY_DAYS}d is ≥ {_CAPACITY_MIN_PER_DAY} and "
                 f"≥ {_CAPACITY_FACTOR:.0f}× the corpus median per-source rate."
             ),
             caveat=(
@@ -1107,12 +1208,22 @@ def ownership_change(session) -> list[Card]:
     """Candidate ownership-change stories — articles whose text reports a deal (§4 IP/legal).
 
     States only that deal language appears; it never asserts the deal happened or that IP
-    was 'stripped' — the tool reads reporting, not filings. The human confirms."""
+    was 'stripped' — the tool reads reporting, not filings. The human confirms.
+
+    S3.2 (row 11, 2026-07-18 field export): the deal-verb regex is ENGLISH ONLY (e.g.
+    ``merg\\w+`` for "merger"/"merging" false-cognate-matched Romanian "merge" = "goes",
+    as in a Romanian election piece "Israelul merge la urne" = "Israel goes to the
+    polls"). Gated on ``language == "en"`` until per-language verb lists exist as
+    reviewed data — never guess at a translation.
+    """
     cutoff = datetime.now(UTC) - timedelta(days=_IP_DAYS)
     rows = (
         session.query(Article, Source.name)
         .outerjoin(Source, Source.id == Article.source_id)
-        .filter(func.coalesce(Article.published_at, Article.created_at) >= cutoff)
+        .filter(
+            func.coalesce(Article.published_at, Article.created_at) >= cutoff,
+            Article.language == "en",
+        )
         .order_by(Article.id.desc())
         .limit(400)
         .all()
@@ -1159,7 +1270,10 @@ def ownership_change(session) -> list[Card]:
             ),
             bucket="investigate",
             signal={"metric": "deal_reports", "value": len(matches)},
-            method="recent articles whose text matches acquisition/merger/divestiture verbs",
+            method=(
+                "recent ENGLISH-LANGUAGE articles (the deal-verb list is English only) "
+                "whose text matches acquisition/merger/divestiture verbs"
+            ),
             caveat=(
                 "Matches *reporting language*, not confirmed deals — and never asserts IP was "
                 "transferred or stripped. Foreground the primary filing; the human confirms."
@@ -1564,6 +1678,7 @@ def weather_corroboration(session) -> list[Card]:
                     "variables": ",".join(op["variables"]),
                     "languages": ",".join(op["languages"]),
                     "clusters_total": found.get("clusters_total", 0),
+                    "excluded_non_articles": op.get("excluded_non_articles", 0),
                 },
                 evidence=evidence,
                 n=op["n_articles"],
@@ -2306,6 +2421,13 @@ def severity_alerts(session) -> list[Card]:
         watches = data.get("watches", [])
         convergences = data.get("convergences", [])
         n_haz, n_watch, n_conv = len(hazards), len(watches), len(convergences)
+        # S4.5 (row 17, 2026-07-18 field export): the "info" tier's convergences are
+        # the SAME space_time_convergence cards already surfaced elsewhere in the feed
+        # -- when info's ENTIRE content is just those (no hazard, no fired watch), this
+        # meta-card would only re-count cards already shown two slots earlier. Suppress
+        # it in that case; provider-declared urgent/watch tiers are never suppressed.
+        if tier == "info" and n_haz == 0 and n_watch == 0 and n_conv > 0:
+            continue
         parts = []
         if n_haz:
             parts.append(f"{n_haz} hazard alert(s)")
@@ -2560,6 +2682,75 @@ def supply_chain_ripple(session) -> list[Card]:
     return cards
 
 
+_MAX_RISING_SUPERGROUP = 4
+
+
+def supergroup_rising(session) -> list[Card]:
+    """Surface a super-group whose recent SHARE of corpus mention volume rose
+    against its own baseline (supergroups brief S2). Scale-aware from birth: a
+    count floor before a group even enters the test family, Benjamini-Hochberg FDR
+    across every tracked group, and a rise driven by a generic/ubiquitous member
+    is never a Lead at all — never a score, a two-proportion z-test on SHARE, not
+    raw counts."""
+    try:
+        from src.analytics.supergroup_rising import RISING_CAVEAT, find_rising_supergroups
+
+        found = find_rising_supergroups(session)
+    except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
+        _LOG.warning("supergroup-rising scan failed", exc_info=True)
+        return []
+
+    cards: list[Card] = []
+    for it in found.get("items", [])[:_MAX_RISING_SUPERGROUP]:
+        driven_note = (
+            f" — driven almost entirely by “{it['driven_by']}”"
+            if it["driven_share"] >= 0.6
+            else ""
+        )
+        cards.append(
+            Card(
+                type="supergroup_rising",
+                title=f"“{it['name']}” is rising in your corpus",
+                summary=(
+                    f"“{it['name']}” now makes up {it['share_now']:.2%} of your corpus's daily "
+                    f"coverage, up from {it['share_prior']:.2%} in its own baseline period"
+                    f"{driven_note}. A share shift, not a verdict — read the coverage and judge."
+                ),
+                bucket="watch",
+                signal={
+                    "metric": "share_zscore",
+                    "value": it["z"],
+                    "share_now": it["share_now"],
+                    "share_prior": it["share_prior"],
+                    "recent_mentions": it["recent_mentions"],
+                    "prior_mentions": it["prior_mentions"],
+                    "driven_by": it["driven_by"],
+                    "driven_share": it["driven_share"],
+                    "distinct_sources": it["distinct_sources"],
+                },
+                method=found.get("method", ""),
+                caveat=RISING_CAVEAT,
+                article_ids=list(it.get("article_ids", [])),
+                n=it["recent_mentions"],
+                key=f"supergroup-rising:{it['sg_id']}",
+                trigger=_trigger(
+                    "This theme is taking up a bigger share of your corpus's daily coverage "
+                    "than its own recent history — worth a look, never proof of importance.",
+                    [
+                        ("Share now vs baseline", f"{it['share_now']:.2%} vs {it['share_prior']:.2%}"),
+                        ("z-score (vs its own baseline)", f"{it['z']:+.2f}"),
+                        ("Distinct sources (recent window)", str(it["distinct_sources"])),
+                        (
+                            "Driven by",
+                            f"“{it['driven_by']}” ({it['driven_share']:.0%} of the recent total)",
+                        ),
+                    ],
+                ),
+            )
+        )
+    return cards
+
+
 # --------------------------------------------------------------------------- #
 #  S6.4 — the two attention producers the board was missing.
 # --------------------------------------------------------------------------- #
@@ -2751,6 +2942,9 @@ _DEFAULT_PRODUCERS = (
     # lens. Buckets watch/context; NEVER promoted into an urgent alert (the ruled boundary).
     ("on_the_horizon", on_the_horizon),
     ("through_time", through_time),
+    # Supergroups brief S2 (registered last, fail-safe): a theme rising against its
+    # own baseline. Bucket watch; NEVER promoted into an urgent alert.
+    ("supergroup_rising", supergroup_rising),
 )
 
 

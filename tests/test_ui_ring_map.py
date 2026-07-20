@@ -21,9 +21,14 @@ _JS = (_STATIC / "app.js").read_text(encoding="utf-8")
 
 
 def test_ring_map_hosts_exist():
-    assert 'id="sg-ringmap-pick"' in _HTML
+    # GROUPS amendment §D: the flat 540-item <select> was replaced by the two-tier
+    # circled browse (super-group chips -> group chips) -- see test_repo_invariants
+    # ::test_concept_map_two_tier_browse_and_clickable_countries for the full pin.
+    assert 'id="sg-ringmap-pick"' not in _HTML
+    for el_id in ("sg-concept-supers", "sg-concept-groups"):
+        assert f'id="{el_id}"' in _HTML
     assert 'id="sg-ringmap"' in _HTML and 'id="sg-ringmap-detail"' in _HTML
-    assert 'onchange="showRingMap(this.value)"' in _HTML
+    assert "showRingMap(ringId)" in _JS  # selectConceptGroup drives it now
 
 
 def test_showringmap_uses_ring_countries_and_ooMap():
@@ -36,7 +41,9 @@ def test_unlocated_sources_are_never_mapped_but_disclosed():
     # a country-less row goes to the unlocated bucket, not into the choropleth values
     assert "if (!c.country) { unloc = c; return; }" in _JS
     assert 't("Not mapped (source country unknown)")' in _JS
-    assert "card-caveat" in _JS  # the unlocated note is a visible caveat
+    # §D: the unlocated note is now a CLICKABLE drill (often the largest bucket,
+    # never a dead end), not a static caveat div.
+    assert "onclick=\"_conceptDrillCountry('${esc(ringId)}', null)\"" in _JS
 
 
 def test_language_breakdown_surfaced_from_grouped_top():

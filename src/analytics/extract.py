@@ -143,6 +143,43 @@ _ACRONYM_STOP: frozenset[str] = frozenset(
     }
 )
 
+# CAPS PUBLISHING/HEADLINE FURNITURE that survives the acronym detector -- field
+# evidence 2026-07-18 (the maintainer's live ~500k-article Families export): FOTO /
+# VIDEO / LIVE / INFO / PREMIUM / PDF / RSS ranked among the top "entities". This
+# operates ONLY on standalone ALL-CAPS tokens at the acronym-DETECTION layer, exactly
+# like _ACRONYM_STOP -- the lowercase content words (it/es/pt "foto", en "live" the
+# verb/adjective...) are UNTOUCHED terms, never removed from the index. Evidence-grown
+# + tunable; ship only what the export showed, never speculative additions.
+_CAPS_FURNITURE_STOP: frozenset[str] = frozenset(
+    {"foto", "video", "live", "info", "premium", "pdf", "rss"}
+)
+
+# Canonical-form Roman numeral (strict subtractive notation), length >= 2. Deliberately
+# STRICT: a malformed run (IIII, VX, IC) does NOT match, so this never over-reaches past
+# a token that is genuinely, unambiguously a numeral shape (§0 row 4 of the 2026-07-18
+# entity-families brief).
+_ROMAN_NUMERAL_RE = re.compile(r"^M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3})$")
+
+
+def _is_strict_roman_numeral(token: str) -> bool:
+    """True for a canonical Roman numeral of length >= 2 (II, III, XIV, MMXXVI...)."""
+    return len(token) >= 2 and bool(_ROMAN_NUMERAL_RE.fullmatch(token))
+
+
+# Real acronyms that ALSO happen to be well-formed Roman numerals -- the negative space
+# the Roman-numeral exclusion must not swallow (LIV Golf; DC = Washington/direct current;
+# CD = Compact Disc; XL as a clothing-size/brand acronym; MC = Master of Ceremonies; DM =
+# Deutsche Mark/direct message; CM as an org acronym; MD = Doctor of Medicine, an
+# everyday byline acronym; CV = Curriculum Vitae). Evidence-grown allowlist, same
+# discipline as _ACRONYM_STOP -- add only on real, common-knowledge-verifiable evidence,
+# never speculatively widen (the brief's own seed + the two highest-confidence additions
+# a skeptic pass over every 2-letter roman-valid string surfaced: "md"/"cv"; lower-
+# confidence candidates like "mi"/"di"/"vi"/"li" are DELIBERATELY left out pending real
+# corpus evidence, not assumed).
+_ROMAN_NUMERAL_ACRONYM_ALLOWLIST: frozenset[str] = frozenset(
+    {"liv", "dc", "cd", "xl", "mc", "dm", "cm", "md", "cv"}
+)
+
 
 def _is_caps_run_word(w: str) -> bool:
     """True for an all-caps token of length >= 2 with at least one letter.
@@ -734,6 +771,10 @@ class BaselineExtractor:
                 continue
             if surface.casefold() in _ACRONYM_STOP:
                 continue
+            if surface.casefold() in _CAPS_FURNITURE_STOP:
+                # Publishing/headline furniture (FOTO, VIDEO, LIVE...) -- the lowercase
+                # content word is untouched, this only demotes the shouted CHROME form.
+                continue
             # An accented-Latin all-caps word (DÉCOUVREZ) or a known CTA button word (PARTAGEZ,
             # SUBSCRIBE) is a shouted term, NOT an acronym entity — demote it to a plain term.
             if _ACCENTED_LATIN_RE.search(surface) or surface.casefold() in _CTA_STOP:
@@ -741,6 +782,14 @@ class BaselineExtractor:
             if _is_code_token(surface):
                 # A-10C-style multi-segment code, not a real acronym entity (G7 /
                 # COVID-19 are one transition and survive; H1N1 is allowlisted).
+                continue
+            if (
+                _is_strict_roman_numeral(surface)
+                and surface.casefold() not in _ROMAN_NUMERAL_ACRONYM_ALLOWLIST
+            ):
+                # A pure Roman numeral (XIV, III) is not an organisation/entity, UNLESS
+                # it is a known real acronym that also happens to be well-formed
+                # (LIV Golf, DC, CD...) -- the allowlist protects that negative space.
                 continue
             # A real acronym stands out against mixed-case neighbours; an all-caps
             # token ADJACENT to another all-caps word is part of a HEADLINE/shout run

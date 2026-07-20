@@ -49,23 +49,27 @@ SUPPLY_CHAIN_CAVEAT = (
     "Co-occurrence in your coverage, NEVER causation. Two topics whose daily coverage "
     "rises and falls together may both respond to a common driver, or line up by chance — "
     "a co-movement is a prompt to investigate a possible supply-chain or market linkage, "
-    "never proof one moves the other. The measure is a correlation of coverage VOLUME (not "
-    "prices), and its significance test is an approximation that does not model day-to-day "
-    "autocorrelation, so treat borderline results with care. Independence is guarded: both "
-    "topics must be carried by MULTIPLE DISTINCT SOURCES over the window, so one outlet's "
-    "editorial rhythm cannot manufacture a co-movement. Screening many pairs is corrected "
-    "with false-discovery-rate control. Counts + statistics only, no score."
+    "never proof one moves the other. The measure is a correlation of each term's SHARE of "
+    "that day's total corpus activity (not raw counts, and not prices) — so a busier "
+    "scraping day cannot make two unrelated terms look co-moving — and its significance "
+    "test is an approximation that does not model day-to-day autocorrelation, so treat "
+    "borderline results with care. Independence is guarded: both topics must be carried by "
+    "MULTIPLE DISTINCT SOURCES over the window, so one outlet's editorial rhythm cannot "
+    "manufacture a co-movement. Screening many pairs is corrected with false-discovery-rate "
+    "control. Counts + statistics only, no score."
 )
 
 SUPPLY_CHAIN_METHOD = (
-    "For each tracked commodity keyword x each frequent topic keyword, a Pearson "
-    "correlation of their daily article-count series over the window (coverage volume, not "
-    "prices), with a Fisher-z two-sided p-value computed natively. Both terms must be "
-    "covered by >= min_sources_per_term DISTINCT sources (so a single chatty source cannot "
-    "manufacture a co-movement). The whole family of pairs is corrected with "
-    "Benjamini-Hochberg FDR; a pair is surfaced only if it survives at the FDR level AND "
-    "r >= r_min (a real positive co-movement). Reads the denormalised keyword_mentions only "
-    "(no content decrypt). Counts + statistics only, no score."
+    "For each tracked commodity keyword (resolved by an EXACT match on its label or symbol "
+    "only — never a substring/homograph guess) x each frequent topic keyword, a Pearson "
+    "correlation of their daily SHARE-of-corpus-activity series over the window (each "
+    "term's daily count divided by that day's total mentioned-article count, guarding "
+    "against a shared-volume confound), with a Fisher-z two-sided p-value computed "
+    "natively. Both terms must be covered by >= min_sources_per_term DISTINCT sources (so "
+    "a single chatty source cannot manufacture a co-movement). The whole family of pairs is "
+    "corrected with Benjamini-Hochberg FDR; a pair is surfaced only if it survives at the "
+    "FDR level AND r >= r_min (a real positive co-movement). Reads the denormalised "
+    "keyword_mentions only (no content decrypt). Counts + statistics only, no score."
 )
 
 
@@ -103,16 +107,33 @@ def _fisher_pvalue(r: float, n: int) -> float | None:
     return max(0.0, min(1.0, 2.0 * (1.0 - _phi(abs(stat)))))
 
 
+def _exact_keyword_id(session, term: str | None) -> int | None:
+    """EXACT normalized-term match only -- never the fuzzy ``LIKE %term%`` fallback
+    :func:`src.analytics.queries.resolve_keyword` uses for other, human-driven callers
+    (S2.1, row 13a). A commodity label/symbol that has no keyword under its OWN exact
+    normalized form must resolve to NOTHING, never an unrelated keyword that merely
+    CONTAINS it as a substring (the "significant words of the label" homograph vector —
+    a commodity "Lead" silently matching the unrelated common word/verb "lead")."""
+    from src.analytics.queries import _normalize
+
+    norm = _normalize(term or "")
+    if not norm:
+        return None
+    row = session.query(Keyword.id).filter_by(normalized_term=norm).first()
+    return int(row[0]) if row else None
+
+
 def _commodity_keywords(session) -> dict[int, str]:
     """Resolve the operator's TRACKED commodities to keyword ids -> display label.
 
     The vocabulary is the commodities the operator already configured (market extraction
     rules) plus any symbol with a price series — honest, never a fabricated seed list. Each
-    is resolved to a stored keyword via its label, its symbol, and the significant words of
-    its label; the first hit wins. Commodities that resolve to no keyword contribute nothing.
+    is resolved to a stored keyword by an EXACT match on its label OR its exact symbol only
+    (S2.1) — never a substring/"significant words" heuristic, which is a homograph vector
+    (a commodity labelled "Lead" silently matching the unrelated common word "lead"). A
+    commodity whose exact label AND exact symbol both fail to resolve contributes nothing —
+    an honest gap, never an invented match.
     """
-    from src.analytics.queries import resolve_keyword
-
     candidates: list[tuple[str, str]] = []  # (label, probe)
     for symbol, label in session.query(MarketExtractionRule.symbol, MarketExtractionRule.label).all():
         candidates.append((label or symbol, label or symbol))
@@ -127,16 +148,9 @@ def _commodity_keywords(session) -> dict[int, str]:
 
     out: dict[int, str] = {}
     for label, probe in candidates:
-        kw = resolve_keyword(session, probe)
-        if kw is None:
-            # Try the significant words of a multi-word label (e.g. "Neodymium spot").
-            for word in (probe or "").split():
-                if len(word) >= 4:
-                    kw = resolve_keyword(session, word)
-                    if kw is not None:
-                        break
-        if kw is not None:
-            out.setdefault(kw.id, label or kw.normalized_term)
+        kid = _exact_keyword_id(session, probe)
+        if kid is not None:
+            out.setdefault(kid, label or probe)
     return out
 
 
@@ -162,6 +176,31 @@ def _daily_series(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[in
         ):
             series[int(kid)][on] = int(cnt or 0)
     return series
+
+
+def _daily_totals(session, cutoff: date, hi: date) -> dict[date, int]:
+    """Total DISTINCT articles carrying ANY keyword mention, per day, over the window --
+    the volume-confound denominator (S2.2, row 13b). Correlating raw daily COUNTS lets
+    any two terms that merely both track total collection volume "co-move" (a day with
+    more scraping produces more mentions of everything); dividing by this total turns
+    each series into a SHARE of that day's activity, so a pair that only tracks shared
+    volume collapses to a constant (zero variance, no correlation), while a pair that
+    genuinely moves together independent of volume still does."""
+    out: dict[date, int] = {}
+    for on, cnt in (
+        session.query(
+            KeywordMention.observed_on, func.count(distinct(KeywordMention.article_id))
+        )
+        .filter(
+            KeywordMention.observed_on >= cutoff,
+            KeywordMention.observed_on < hi,
+            KeywordMention.observed_on.isnot(None),
+        )
+        .group_by(KeywordMention.observed_on)
+        .all()
+    ):
+        out[on] = int(cnt or 0)
+    return out
 
 
 def _source_counts(session, kw_ids: list[int], cutoff: date, hi: date) -> dict[int, int]:
@@ -252,13 +291,21 @@ def find_supply_chain_ripples(
         return _empty("no frequent candidate topic in the window")
 
     series_raw = _daily_series(session, all_ids, cutoff, hi)
+    daily_totals = _daily_totals(session, cutoff, hi)
     series: dict[int, list[float]] = {}
     nonzero: dict[int, int] = {}
     for kid in all_ids:
         by_day = series_raw.get(kid, {})
-        vec = [float(by_day.get(d, 0)) for d in axis]
-        series[kid] = vec
-        nonzero[kid] = sum(1 for v in vec if v > 0)
+        raw_vec = [float(by_day.get(d, 0)) for d in axis]
+        nonzero[kid] = sum(1 for v in raw_vec if v > 0)
+        # S2.2 (row 13b): correlate SHARES of the day's total corpus activity, not raw
+        # counts -- two terms that both merely track total collection volume collapse
+        # to a constant share (no variance, no spurious co-movement); a genuine
+        # co-movement, independent of volume, still shows up.
+        series[kid] = [
+            v / daily_totals[d] if daily_totals.get(d, 0) > 0 else 0.0
+            for d, v in zip(axis, raw_vec, strict=True)
+        ]
     # Distinct-source breadth per term (the independence gate): a co-movement carried by
     # only one outlet is that outlet's editorial rhythm, not a corpus-wide pattern.
     src_counts = _source_counts(session, all_ids, cutoff, hi)
