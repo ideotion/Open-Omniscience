@@ -149,6 +149,26 @@ def test_lemma_preview_surfaces_candidate_conflations():
     assert lp["available"] is True and "enabled" in lp
     member_sets = {tuple(g["members"]) for g in lp["examples"]}  # members are sorted
     assert ("studied", "study") in member_sets  # the verb form a plural rule would miss
+    # S2: the group is tagged as the TRUE delta over the plural rule (a verb form, not a
+    # plural the earlier step already collapses), and the summary tally reflects it.
+    study_group = next(g for g in lp["examples"] if tuple(g["members"]) == ("studied", "study"))
+    assert study_group["plural_overlap"] == "lemma_only"
+    assert lp["by_plural_overlap"]["lemma_only"] >= 1
+
+
+def test_plural_rule_classification_distinguishes_true_delta():
+    """S2 (2026-07-18 default-on brief): a group the PLURAL rule already fully collapses
+    (election/elections -- a regular -s plural, families step 1.5) must be tagged
+    'plural_rule', not lumped in with a genuine lemma-only addition (study/studied) --
+    else a precision review can't tell what lemmatization is ACTUALLY adding beyond the
+    step that already runs before it."""
+    from src.analytics.engine_report import _plural_rule_classification
+
+    assert _plural_rule_classification(["election", "elections"]) == "plural_rule"
+    assert _plural_rule_classification(["study", "studied"]) == "lemma_only"
+    # a lemma group spanning two otherwise-unconnected plural pairs: the lemma step is
+    # doing real work bridging them, beyond what either plural pair gets alone.
+    assert _plural_rule_classification(["city", "cities", "town"]) == "mixed"
 
 
 def test_focused_lemma_preview_report_matches_the_full_report(monkeypatch):

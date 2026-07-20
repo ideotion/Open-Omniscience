@@ -1311,11 +1311,11 @@ def lemma_preview(
     top_n: int = Query(500, ge=1, le=5000),
     db: Session = Depends(get_db),
 ) -> dict:
-    """S5.4: what OPT-IN lemmatization (OO_FAMILY_LEMMA, default OFF) WOULD merge among the
-    top keywords — the precision-review instrument surfaced in the Diagnostics panel so the
-    maintainer eyeballs the candidate conflations (and notes a wrong one for the
-    _MISLEMMA_DENYLIST) BEFORE flipping the default. Read-only, no score; honest
-    'unavailable' when the optional simplemma is absent."""
+    """S5.4: what lemmatization (OO_FAMILY_LEMMA, ON by default since 2026-07-18) MERGES
+    among the top keywords — the precision-review instrument surfaced in the Diagnostics
+    panel so the maintainer eyeballs the candidate conflations (and notes a wrong one for
+    the _MISLEMMA_DENYLIST, or opts out entirely with OO_FAMILY_LEMMA=0). Read-only, no
+    score; honest 'unavailable' when the optional simplemma is absent."""
     from src.analytics.engine_report import lemma_preview_report
 
     return lemma_preview_report(db, top_n=top_n)
