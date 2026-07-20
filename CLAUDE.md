@@ -6432,6 +6432,49 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   uses the workflow AT THE TAG'S COMMIT (the old non-idempotent step), so the v0.2.0 unblock =
   maintainer deletes the asset-less release (KEEP the tag) → re-run the failed job → re-tick
   pre-release / re-edit notes; the idempotent step protects v0.3.0+.
+- **RING LIFECYCLE — LONG-TERM EVOLUTION STRATEGY (maintainer-agreed 2026-07-20; design note,
+  builds PENDING):** answers the maintainer's long-view question ("once the ~2000-ring target is
+  reached, how does the selection evolve as the corpus grows? new words keep being invented — the
+  strategy needs a very long term view"). GROUNDING recorded so the reasoning survives: (a) rings
+  LAG, never GATE — keywords are captured uncapped instantly (the ChatGPT-2020 ruling), so an
+  unringed new concept costs only cross-language MERGE-lag, never capture; (b) the sensor/alarm
+  loop already exists — the `ring_candidates` gap digest recomputes from the LIVE corpus each
+  diagnostics export, and `translation_coverage` (engine report) DECAYS measurably as vocabulary
+  drifts; (c) Wikidata is the living external registry (prominent new concepts get QIDs within
+  days; QIDs stay stable under renames/alias drift); (d) mass-importing Wikidata stays REJECTED
+  (~115M items of wrong shape; the in-RAM `(lang,term)→ring` index on the 2-core reference VM;
+  unvetted merges at scale = fabricated merges via silent last-writer-wins — SELECTION/VETTING is
+  what makes rings the reliable trans-language layer, per the maintainer's own framing). THE TWO
+  AGREED MECHANISMS (pending builds): (1) **INSTITUTIONALIZED REFRESH CADENCE** — the gap-digest →
+  `--from-log` generate → vet → merge pass becomes a NAMED per-cycle ritual, and
+  `translation_coverage` joins the KPI board (V1_PATHWAY K-metrics) so coverage decay is SEEN, not
+  discovered. (2) **QID-REFRESH PASS** (small new tooling) — a `--refresh` mode for
+  `generate_wikidata_rings.py`: re-run `wbgetentities` over the ALREADY-VETTED QIDs in the
+  generated file, DIFF member lists, emit ONLY the additions for review — absorbs WITHIN-concept
+  alias/rename drift (the coronavirus→COVID-19 class) at low vetting cost since the QID judgment
+  was made once; propose→review→merge, never auto-apply. HONEST LIMITS stated: detection keys on
+  article SPREAD, so it inherits scraping breadth (a concept prominent only in an under-scraped
+  language surfaces late — a coverage problem mitigated by source-diversification/
+  language-equilibrium, not a ring problem); the ~2000 target is a VETTING-CAPACITY horizon, not a
+  wall (rings are NEVER pruned — cross-time recall sacred, a dead concept's ring keeps serving
+  history; the §8 LLM-triage propose→verify→merge chain can raise review throughput and move the
+  horizon). IN-FLIGHT CONTEXT (operator steps pending): a 168-seed thin-supergroup ring batch is
+  PREPARED and awaiting a machine with BOTH live Wikidata access AND write access — seeds file +
+  prevetting CSV (11 CONFLICT-MANUAL-PIN war seeds, 10 HOMOGRAPH-WATCH, 4 OVERLAP-EXISTING-RING) +
+  runbook + ledger templates delivered by a read-only networked session 2026-07-20 and
+  hand-verified against the tree this session. TWO EMPIRICAL FACTS from that verification,
+  recorded BEFORE the batch ships so they cannot be relearned the hard way: (i)
+  `generate_wikidata_rings.py` OVERWRITES its `-o` target with only the current run's rings
+  (emit-only, no merge — despite its docstring's "augments"; default `-o` IS the live
+  `configs/keyword_rings_generated.yml`, so a naive `--seeds` run would WIPE the 540 vetted
+  rings) — always resolve to a temp file and append-merge, per the runbook; (ii) `nuclear fusion`
+  is a KNOWN REPEAT OFFENDER seed (already resolved wrong + dropped in the 2026-06-20 vetting;
+  it sits in `test_wikidata_ring_gen.py`'s dropped-id guard). Batch overlap decisions
+  recommended (vetter's call at run time): seed `right of asylum` not bare `asylum`
+  (psychiatric-hospital already carries `en:asylum`); keep `secularism` as its own ring (a
+  distinct concept from irreligion, which carries it as an alias); DROP `public relations`
+  (marketing already carries `en:PR` + `en:public relations`); keep `pension` but strip
+  `de:Pension` from the resolved members (bound to guest-house — a cross-language homograph).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
