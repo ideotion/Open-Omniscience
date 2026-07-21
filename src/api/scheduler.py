@@ -55,6 +55,9 @@ class SchedulerConfigUpdate(BaseModel):
     # WORLD discovery ride-along: countries advanced per online pass (2026-07-15
     # "background and automated" ruling); 0 disables. Finds stay DISABLED for review.
     world_discovery_per_pass: int | None = None
+    # QUALIFICATION ride-along (0.3 CLOSE GATE ruling): candidate sources trial-fetched +
+    # judged per online pass, like the world-discovery ride-along; 0 disables.
+    qualification_per_pass: int | None = None
     # Optional per-language cadence lever (default OFF): a {lang: weight} target
     # the operator opts into; {} or omitted keeps the pure random rotation.
     language_equilibrium: dict | None = None

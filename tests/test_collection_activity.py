@@ -75,6 +75,7 @@ def test_plan_preview_targets_and_estimate(monkeypatch, tmp_path):
                 domain=f"s{i}.test",
                 rss_url=f"https://s{i}.test/feed.xml",
                 enabled=True,
+                status="qualified",
                 rate_limit_ms=2000,
             )
         )
@@ -114,7 +115,7 @@ def test_plan_preview_reports_actual_language_and_tag_strata(monkeypatch, tmp_pa
     ]
     for i, (lang, tags) in enumerate(seed):
         s.add(Source(name=f"S{i}", domain=f"s{i}.test", rss_url=f"https://s{i}.test/f.xml",
-                     enabled=True, language=lang, tags=tags))
+                     enabled=True, status="qualified", language=lang, tags=tags))
     s.commit()
 
     plan = plan_preview(s, SchedulerSettings(mode="rss"), last_result=None)

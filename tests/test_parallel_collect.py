@@ -132,7 +132,7 @@ def test_run_scrape_once_parallel_processes_all_sources():
             s.add(Source(
                 name=f"P{i}", domain=f"{tag}-{i}.example",
                 rss_url=f"https://{tag}-{i}.example/feed.xml",
-                enabled=True, language="en", tags=tag,
+                enabled=True, status="qualified", language="en", tags=tag,
             ))
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0, session=_EmptyFeedSession())
     settings = SchedulerSettings(mode="rss", collect_parallelism=4, select_tags=[tag])
