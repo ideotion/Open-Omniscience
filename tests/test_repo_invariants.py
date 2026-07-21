@@ -5763,6 +5763,9 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
         "/ir-eval-selftest": "ir-eval-selftest.json",
         "/perception-eval-selftest": "perception-eval-selftest.json",
         "/keyword-triage-selftest": "keyword-triage-selftest.json",
+        "/keyword-triage/last": "keyword-triage-run.json",
+        "/source-tags-selftest": "source-tags-selftest.json",
+        "/source-tags/last": "source-tags-run.json",
         "/recursive-loop": "recursive-loop.json",
         "/kpi": "kpi.json",
         "/search-timing": "search-timing.json",
@@ -5810,6 +5813,8 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
         "/pagesize-bench/status": "job control", "/pagesize-bench/download": "job control",
         "/discover-world/status": "job control",
         "/enrich-source-types/status": "job control",
+        "/keyword-triage/status": "job control", "/keyword-triage/download": "job control",
+        "/source-tags/status": "job control", "/source-tags/download": "job control",
     }
     unclassified = sorted(gets - set(covered) - set(exempt))
     assert not unclassified, (

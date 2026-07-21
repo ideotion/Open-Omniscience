@@ -2728,6 +2728,12 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("ir-eval-selftest.json", lambda: ir_eval_selftest(download=False)),
         ("perception-eval-selftest.json", lambda: perception_eval_selftest(download=False)),
         ("keyword-triage-selftest.json", lambda: keyword_triage_selftest(download=False)),
+        # Section 8 real run (2026-07-20 ruling): the last saved keyword-triage JSONL run,
+        # summarised (read-only; never RUNS a triage -- that is its own background job).
+        ("keyword-triage-run.json", lambda: keyword_triage_last()),
+        # The sibling LLM source-tag-assignment run: selftest + last saved summary.
+        ("source-tags-selftest.json", lambda: source_tags_selftest(download=False)),
+        ("source-tags-run.json", lambda: source_tags_last()),
         ("search-timing-selftest.json", lambda: search_timing_selftest(download=False)),
         ("power-profile-selftest.json", lambda: power_profile_selftest(download=False)),
         ("source-audit-selftest.json", lambda: source_audit_selftest(download=False)),
@@ -2792,8 +2798,9 @@ def _all_diagnostics_manifest(results: list[dict]) -> dict:
             },
             {
                 "endpoint": "job control/status/download endpoints",
-                "reason": "p0-validation and pagesize-bench contribute their LAST saved "
-                "report as members; starting/cancelling jobs is not a report",
+                "reason": "p0-validation, pagesize-bench, keyword-triage and source-tags each "
+                "contribute their LAST saved report/summary as a member; starting/cancelling a "
+                "job or downloading its raw dated JSONL log is not a report",
             },
         ],
         "note": (
@@ -3242,3 +3249,288 @@ def pagesize_bench_download() -> Response:
         path, media_type="application/json",
         filename=res.get("filename") or "oo-pagesize-bench.json",
     )
+
+
+# ---------------------------------------------------------------------------
+#  Real keyword-TRIAGE run (Section 8, maintainer-ruled 2026-07-20): the batch
+#  runner + parser + canaries + EXPORT-ONLY JSONL already existed
+#  (``src/ai_layer/triage.py``) but its only caller was its own selftest. This is
+#  the REAL wiring -- a visible, abortable BackgroundJob over the live corpus,
+#  driving the SAME core. Mirrors the p0-validation / pagesize-bench job surface
+#  exactly. NEVER writes the trusted keyword index -- EXPORT-ONLY JSONL, per the
+#  ruling. Merge-order note: Ollama is still gated by the BLANKET airplane-mode
+#  kill switch until the gate-split (L3, PR #730) lands; this job runs ONLINE for
+#  now, same as every other LLM feature in the app.
+# ---------------------------------------------------------------------------
+
+
+class KeywordTriageRunBody(BaseModel):
+    model: str = Field(
+        ..., description="an INSTALLED Ollama tag (refused if not in `ollama list`)"
+    )
+    limit: int = Field(
+        default=500, ge=1, le=20000, description="how many head-scope keywords to triage"
+    )
+    min_articles: int = Field(
+        default=1, ge=0, description="the same counter-only floor select_triage_head uses"
+    )
+    batch_size: int = Field(default=25, ge=1, le=200)
+
+
+def _keyword_triage_worker(ctx, **kwargs) -> dict:
+    from src.ai_layer.triage_job import run_keyword_triage_job
+
+    return run_keyword_triage_job(ctx, **kwargs)
+
+
+_KEYWORD_TRIAGE_JOB = register_job(
+    BackgroundJob(
+        "keyword-triage", "LLM keyword triage (Section 8, real run)", _keyword_triage_worker,
+        is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.post("/keyword-triage/run")
+def keyword_triage_run(body: KeywordTriageRunBody) -> JSONResponse:
+    """Start the REAL keyword-triage run as a BACKGROUND job: select the head scope,
+    batch it through the local Ollama model (canaries on every batch, echo-back +
+    constrained-verdict validation, per ``ai_layer.triage``), append EXPORT-ONLY
+    JSONL to ``data_dir()/triage/oo-keyword-triage-<date>.jsonl``. NEVER writes the
+    trusted keyword index. Refuses up front (409) under airplane mode, and (400) if
+    ``model`` is not an INSTALLED Ollama tag (``verify_roster`` -- never substitutes
+    a 'close' tag). Poll ``/keyword-triage/status``; download the dated log via
+    ``/keyword-triage/download``. 409-free for an already-running job: returns its
+    current status with ``started:false``."""
+    from src.ai_layer.triage import verify_roster
+    from src.ingest import kill_switch_active
+    from src.llm.ollama import LLMUnavailable, OllamaClient
+
+    if kill_switch_active():
+        raise HTTPException(
+            status_code=409,
+            detail="network refused: airplane mode is engaged (loopback Ollama is blocked "
+            "by the blanket kill switch until the airplane/Ollama gate split lands)",
+        )
+    try:
+        installed = OllamaClient().list_installed()
+    except LLMUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    roster = verify_roster([body.model], installed)
+    if not roster["ok"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"model {body.model!r} is not installed (ollama list has {installed}); "
+            "run: ollama pull " + body.model,
+        )
+    try:
+        st = _KEYWORD_TRIAGE_JOB.start(
+            model=body.model, limit=body.limit, min_articles=body.min_articles,
+            batch_size=body.batch_size,
+        )
+        st["started"] = True
+    except RuntimeError:
+        st = _KEYWORD_TRIAGE_JOB.status()
+        st["started"] = False
+    return JSONResponse(st)
+
+
+@router.get("/keyword-triage/status")
+def keyword_triage_status() -> JSONResponse:
+    """Live status of the keyword-triage job (state, per-batch progress; when done,
+    the ready download filename + the run summary in ``result``). No score."""
+    st = _KEYWORD_TRIAGE_JOB.status()
+    res = st.get("result") or {}
+    st["ready"] = bool(res.get("path"))
+    st["download_filename"] = res.get("filename")
+    return JSONResponse(st)
+
+
+@router.post("/keyword-triage/cancel")
+def keyword_triage_cancel() -> JSONResponse:
+    """Ask the running keyword-triage job to stop at its next safe point (between
+    batches; a batch already in flight always finishes). The partial JSONL log is
+    honestly marked ``cancelled`` in its trailing summary record. Idempotent."""
+    _KEYWORD_TRIAGE_JOB.cancel()
+    return JSONResponse(_KEYWORD_TRIAGE_JOB.status())
+
+
+@router.get("/keyword-triage/last")
+def keyword_triage_last() -> JSONResponse:
+    """A JSON SUMMARY of the newest saved keyword-triage run (read-only; never runs
+    a triage). Returns ``{available:false}`` honestly when none has been run.
+    Serves the raw JSONL from ``/keyword-triage/download`` instead."""
+    from src.ai_layer.triage_job import last_keyword_triage_report
+
+    return JSONResponse(last_keyword_triage_report())
+
+
+@router.get("/keyword-triage/download")
+def keyword_triage_download() -> Response:
+    """Serve the newest keyword-triage JSONL log (the ai-proposed artifact a Claude
+    session verifies before anything is applied). 404 until a run has produced one."""
+    st = _KEYWORD_TRIAGE_JOB.status()
+    res = st.get("result") or {}
+    path = res.get("path")
+    if not path or not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail="no keyword-triage log is ready -- start one with "
+            "POST /api/diagnostics/keyword-triage/run",
+        )
+    return FileResponse(
+        path, media_type="application/x-jsonlines",
+        filename=res.get("filename") or "oo-keyword-triage.jsonl",
+    )
+
+
+# ---------------------------------------------------------------------------
+#  Real source-TAG assignment run (design entry + GO ruling, maintainer
+#  2026-07-20 -- the same chassis as the keyword-triage run above): per-source
+#  top-N post-stoplist terms -> loopback Ollama -> CLOSED-vocabulary tag
+#  classification (``src/ai_layer/source_tags.py``). EXPORT-ONLY JSONL; NEVER
+#  writes ``Source.tags`` (the honesty rail -- the apply-reviewed-batch step is
+#  later, explicit, maintainer-gated work). Mirrors the keyword-triage job
+#  surface above exactly.
+# ---------------------------------------------------------------------------
+
+
+class SourceTagsRunBody(BaseModel):
+    model: str = Field(
+        ..., description="an INSTALLED Ollama tag (refused if not in `ollama list`)"
+    )
+    top_n: int = Field(
+        default=200, ge=1, le=2000, description="top-N post-stoplist terms per source"
+    )
+    min_articles: int = Field(
+        default=5, ge=0, description="the evidence floor -- below this, an honest SKIP"
+    )
+    min_mentions: int = Field(default=0, ge=0)
+    limit_sources: int = Field(
+        default=200, ge=1, le=20000, description="how many sources to consider, ranked by evidence"
+    )
+    batch_size: int = Field(default=20, ge=1, le=200)
+
+
+def _source_tags_worker(ctx, **kwargs) -> dict:
+    from src.ai_layer.source_tags_job import run_source_tags_job
+
+    return run_source_tags_job(ctx, **kwargs)
+
+
+_SOURCE_TAGS_JOB = register_job(
+    BackgroundJob(
+        "source-tags", "LLM source-tag assignment (real run)", _source_tags_worker,
+        is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.post("/source-tags/run")
+def source_tags_run(body: SourceTagsRunBody) -> JSONResponse:
+    """Start the REAL source-tag assignment run as a BACKGROUND job: resolve the
+    live CLOSED tag vocabulary from every ``Source.tags`` value in the corpus,
+    select per-source top-N post-stoplist terms (a source below the evidence floor
+    is SKIPPED, never guessed), batch through the local Ollama model (canaries +
+    echo-back + closed-vocabulary rejection, per ``ai_layer.source_tags``), append
+    EXPORT-ONLY JSONL to ``data_dir()/triage/oo-source-tags-<date>.jsonl``. NEVER
+    writes ``Source.tags``. Refuses up front (409) under airplane mode, and (400)
+    if ``model`` is not an installed Ollama tag. Poll ``/source-tags/status``;
+    download via ``/source-tags/download``. 409-free for an already-running job."""
+    from src.ai_layer.triage import verify_roster
+    from src.ingest import kill_switch_active
+    from src.llm.ollama import LLMUnavailable, OllamaClient
+
+    if kill_switch_active():
+        raise HTTPException(
+            status_code=409,
+            detail="network refused: airplane mode is engaged (loopback Ollama is blocked "
+            "by the blanket kill switch until the airplane/Ollama gate split lands)",
+        )
+    try:
+        installed = OllamaClient().list_installed()
+    except LLMUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    roster = verify_roster([body.model], installed)
+    if not roster["ok"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"model {body.model!r} is not installed (ollama list has {installed}); "
+            "run: ollama pull " + body.model,
+        )
+    try:
+        st = _SOURCE_TAGS_JOB.start(
+            model=body.model, top_n=body.top_n, min_articles=body.min_articles,
+            min_mentions=body.min_mentions, limit_sources=body.limit_sources,
+            batch_size=body.batch_size,
+        )
+        st["started"] = True
+    except RuntimeError:
+        st = _SOURCE_TAGS_JOB.status()
+        st["started"] = False
+    return JSONResponse(st)
+
+
+@router.get("/source-tags/status")
+def source_tags_status() -> JSONResponse:
+    """Live status of the source-tags job (state, per-batch progress; when done,
+    the ready download filename + the run summary in ``result``). No score."""
+    st = _SOURCE_TAGS_JOB.status()
+    res = st.get("result") or {}
+    st["ready"] = bool(res.get("path"))
+    st["download_filename"] = res.get("filename")
+    return JSONResponse(st)
+
+
+@router.post("/source-tags/cancel")
+def source_tags_cancel() -> JSONResponse:
+    """Ask the running source-tags job to stop at its next safe point (between
+    batches). The partial JSONL log is honestly marked ``cancelled``. Idempotent."""
+    _SOURCE_TAGS_JOB.cancel()
+    return JSONResponse(_SOURCE_TAGS_JOB.status())
+
+
+@router.get("/source-tags/last")
+def source_tags_last() -> JSONResponse:
+    """A JSON SUMMARY of the newest saved source-tags run (read-only; never runs
+    one). Returns ``{available:false}`` honestly when none has been run."""
+    from src.ai_layer.source_tags_job import last_source_tags_report
+
+    return JSONResponse(last_source_tags_report())
+
+
+@router.get("/source-tags/download")
+def source_tags_download() -> Response:
+    """Serve the newest source-tags JSONL log (the ai-proposed artifact a Claude
+    session verifies -- and the ONLY place these proposed tags live; ``Source.tags``
+    is never touched by this run). 404 until a run has produced one."""
+    st = _SOURCE_TAGS_JOB.status()
+    res = st.get("result") or {}
+    path = res.get("path")
+    if not path or not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail="no source-tags log is ready -- start one with "
+            "POST /api/diagnostics/source-tags/run",
+        )
+    return FileResponse(
+        path, media_type="application/x-jsonlines",
+        filename=res.get("filename") or "oo-source-tags.jsonl",
+    )
+
+
+@router.get("/source-tags-selftest")
+def source_tags_selftest(download: bool = Query(False)) -> JSONResponse:
+    """Run the LLM source-tag-assignment self-test -- the measure-before-trust GATE
+    before any real run, mirroring ``/keyword-triage-selftest`` exactly. Proves the
+    closed-vocabulary parser (an out-of-vocabulary tag rejects the WHOLE line),
+    echo-back, the explicit 'none' verdict, and canaries on a deterministic STUB --
+    no model, no network, no score. ``download=1`` returns a dated attachment."""
+    from src.ai_layer.source_tags import run_source_tags_selftest
+
+    log = run_source_tags_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-source-tags-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
