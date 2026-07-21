@@ -6015,6 +6015,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   page_size+auto_vacuum — pinned as a test); the encrypted path is covered by the same runtime
   self-verify. OPERATOR: run it on a SMALL and a LARGE corpus and send both logs (it rides the
   all-diagnostics bundle as `pagesize-bench.json`, last-report read-only).
+  **§1b EVIDENCE PAIR DELIVERED (maintainer ran both, 2026-07-19 + 2026-07-20, after the
+  encrypted-path fix): 16384 WINS EVERY DIMENSION AT SCALE — recommendation FIRM, awaiting the
+  maintainer's ratification.** Run 1 = 2.95 GB / 67,758 articles / 5.17M mentions (4-core Qubes);
+  run 2 = 22.2 GB / 474,556 articles / 40.6M mentions (6-core Qubes), both encrypted, live
+  corpora. Warm p50, 4096→16384: index_window 510→334 ms (−34%) at 3 GB and 2525→1268 ms (−50%)
+  at 22 GB; content_band −26% / −14%; rebuild −23% / −37%; file −1.9% both. THE DECISIVE FINDING:
+  the ONE shape 4K won at 3 GB (warm point lookups, 0.040 vs 0.091 ms) INVERTED at 22 GB (0.459
+  vs 0.203 ms — 16K 2.3× faster): the 4K advantage was a CACHE-FIT ARTIFACT — once the working
+  set exceeds cache, every lookup pays real I/O + codec and 16K's shallower tree / fewer codec
+  calls per descent dominates; the memo's codec-granularity fear (16K decrypts 4× bytes per
+  point access) is empirically OUTWEIGHED exactly where it was feared. Stability signature: 16K's
+  warm index_window ≈ its cold (1272→1268 ms) while 4K DEGRADED cold→warm (1569→2525 ms, scan
+  thrash) — the gap widens toward 5 TB. Migration cost from rebuild.seconds: ~10–17 s/GB (≈4–6
+  min at 22 GB; ≈30 min at 100 GB — cp-class, as the folder-copy-parity ruling predicted).
+  RECOMMENDATION: `page_size=16384` ON CREATE for NEW corpora, alongside the ruled
+  `auto_vacuum=INCREMENTAL` (§1a) — ONE fresh-file-pragmas build slice in `connect.py` covers
+  both, plus the §3 idle incremental_vacuum pass + §2 VACUUM-button size gate (the same
+  buildable-now set §1a queued). Existing corpora migrate via the proven rebuild op when the
+  maintainer chooses (the bench IS the mechanism proof; a user-facing migrate op is a separate
+  build). Residual bench nit: `source.page_size` in the report header is an uncoerced TEXT
+  read-back ("4096") — display-only, fold `int()` into the next touch.
 - **"ALL DIAGNOSTICS" MUST COMPRISE ALL DIAGNOSTICS (maintainer flagged 2026-07-17 "it seems not
   while it should" — CONFIRMED + FIXED same day; shipped.csv row):** the bundle had drifted 12
   members behind the router since the #645 membership pass. Added the missing read-only reports
