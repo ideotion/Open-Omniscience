@@ -14,8 +14,10 @@ model is not installed, raise -- never return a fabricated "analysis".
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 
@@ -123,6 +125,25 @@ class LLMUnavailable(LLMError):
     """Ollama is unreachable, or the requested model is not installed."""
 
 
+def _is_loopback_url(url: str) -> bool:
+    """True if url's hostname is loopback (127.0.0.0/8, ::1, or the localhost family).
+
+    Uses ``ipaddress`` for the numeric case (never a string prefix match — a bare
+    ``.startswith("127.")`` would wrongly accept a crafted DNS name like
+    ``127.0.0.1.evil.example``, which resolves to whatever IP the attacker's DNS
+    returns, not loopback). A bare hostname is only treated as local via an exact
+    match against the localhost aliases; anything else that fails IP parsing is
+    treated as remote.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    if host in {"localhost", "ip6-localhost", "localhost.localdomain"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False  # a remote (or unparsable) hostname
+
+
 def _require_loopback(url: str) -> None:
     """Refuse a non-loopback Ollama URL (privacy: LLM egress must stay on the machine).
 
@@ -131,11 +152,9 @@ def _require_loopback(url: str) -> None:
     misconfiguration fails loudly instead of leaking. (Skipped when a client is
     injected — tests drive an in-memory MockTransport with no real egress.)
     """
-    from urllib.parse import urlparse
-
-    host = (urlparse(url).hostname or "").lower()
-    if host in {"localhost", "::1"} or host.startswith("127."):
+    if _is_loopback_url(url):
         return
+    host = (urlparse(url).hostname or "").lower()
     raise LLMError(
         f"OO_OLLAMA_URL must be loopback (127.0.0.1 / localhost / ::1); got {host!r}. "
         "The local LLM never talks to a remote host."
@@ -180,17 +199,25 @@ class OllamaClient:
 
     # -- network kill switch ----------------------------------------------- #
 
-    def _check_kill_switch(self) -> None:
-        """Refuse any Ollama call while the global kill switch (airplane mode) is engaged.
+    def _check_kill_switch(self, *, clearnet: bool = False) -> None:
+        """Refuse an Ollama call while the global kill switch (airplane mode) is engaged
+        -- but only for calls whose egress actually reaches beyond the local machine.
 
-        Ollama is loopback-only, but airplane mode means the operator wants NO
-        connections at all — honour it for the LLM path too (defense in depth; it
-        also blocks a misconfigured non-loopback URL slipping through an injected
-        client). Degrade LOUDLY — never a fabricated answer.
+        Loopback inference (list/generate: talking to OUR OWN Ollama daemon on
+        127.0.0.1/localhost/::1) is not the kind of connection airplane mode is meant
+        to guard against, so it is allowed through -- UNLESS ``base_url`` itself is
+        not loopback, in which case this is defense in depth against a misconfigured
+        or injected non-loopback client, and the call is refused like any other.
+
+        ``clearnet=True`` call sites (pull/remove) are refused UNCONDITIONALLY,
+        regardless of ``base_url``: a pull instructs the separate Ollama PROCESS to
+        fetch model weights over clearnet (maintainer Q9, 2026-06-16) -- egress this
+        in-process socket guard cannot see, so that half of the gate must never
+        relax. Degrade LOUDLY — never a fabricated answer.
         """
         from src.ingest import kill_switch_active
 
-        if kill_switch_active():
+        if (clearnet or not _is_loopback_url(self.base_url)) and kill_switch_active():
             raise LLMUnavailable(
                 "Network is OFF (airplane mode): refusing the Ollama request. "
                 "Turn airplane mode off to use the local LLM."
@@ -300,7 +327,7 @@ class OllamaClient:
         Ollama PROCESS over CLEARNET, NOT the app's Tor proxy/guarded factory — so
         airplane+Tor do not cover it. Airplane mode (the kill switch) still refuses it
         here; the UI must DISCLOSE the clearnet egress at consent."""
-        self._check_kill_switch()
+        self._check_kill_switch(clearnet=True)
         import json as _json
 
         try:
@@ -323,7 +350,7 @@ class OllamaClient:
     def remove(self, model: str) -> bool:
         """Delete an installed model via the local Ollama process. Returns True on
         success; LLMUnavailable if the model is absent. Respects the kill switch."""
-        self._check_kill_switch()
+        self._check_kill_switch(clearnet=True)
         try:
             resp = self._client.request("DELETE", "/api/delete", json={"model": model})
             resp.raise_for_status()
