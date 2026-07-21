@@ -91,6 +91,13 @@ class SchedulerSettings:
     # 0 disables the ride-along; the manual Diagnostics job remains either way.
     world_discovery_per_pass: int = 2
 
+    # QUALIFICATION ride-along (0.3 CLOSE GATE ruling: "qualification runs as a
+    # background job... like the world-discovery ride-along"): how many candidate
+    # sources (never-yet-qualified, then due re-qualifications) the admission gate
+    # trial-fetches + judges per online collection pass. 0 disables the ride-along
+    # (candidates then simply stay unqualified/disqualified -- never auto-admitted).
+    qualification_per_pass: int = 5
+
     # Optional per-language cadence lever (default OFF). ``language_equilibrium``
     # is a {lang: weight} TARGET the operator opts into; when set, over-
     # represented languages are re-checked LESS often (never excluded — a hard
@@ -264,6 +271,9 @@ def load_settings() -> SchedulerSettings:
         world_discovery_per_pass=_coerce_int(
             raw.get("world_discovery_per_pass"), d.world_discovery_per_pass, 0, 12
         ),
+        qualification_per_pass=_coerce_int(
+            raw.get("qualification_per_pass"), d.qualification_per_pass, 0, 100
+        ),
         language_equilibrium=_coerce_target(raw.get("language_equilibrium")),
         equilibrium_floor=_coerce_float(raw.get("equilibrium_floor"), d.equilibrium_floor, 0.0, 1.0),
         # Reuses _coerce_target: a {iso2: weight} map cleaned to {lowercased-key: float>0},
@@ -315,6 +325,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
 
     _ranged("discovery_per_run", 0, 100, "discovery_per_run")
     _ranged("world_discovery_per_pass", 0, 12, "world_discovery_per_pass")
+    _ranged("qualification_per_pass", 0, 100, "qualification_per_pass")
     _ranged("collect_parallelism", 1, _MAX_PARALLELISM, "collect_parallelism")
     _ranged("collect_target_kbps", _MIN_TARGET_KBPS, _MAX_TARGET_KBPS, "collect_target_kbps")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")

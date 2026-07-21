@@ -323,17 +323,22 @@ def _filter_due_feeds(session, sources: list) -> tuple[list, int]:
 
 
 def select_sources(session, settings: SchedulerSettings):
-    """Query of enabled sources matching the scheduler's selection criteria.
+    """Query of enabled, QUALIFIED sources matching the scheduler's selection criteria.
 
-    Always enabled-only; optionally narrowed by language / source_type (exact) and
-    tags (match ANY, substring). Ordered highest-priority first. Used by rss/crawl
-    runs and by the targets-preview endpoint so "what will be scraped" is explicit.
+    Always enabled-only; ALWAYS qualified-only (the admission gate, 0.3 CLOSE GATE
+    ruling: "only QUALIFIED sources are scraped" -- a not-yet-qualified or disqualified
+    source never joins regular collection; it is picked up instead by the qualification
+    ride-along, see src.catalog.qualification.advance_qualification). Optionally narrowed
+    by language / source_type (exact) and tags (match ANY, substring). Ordered highest-
+    priority first. Used by rss/crawl runs and by the targets-preview endpoint so "what
+    will be scraped" is explicit.
     """
     from sqlalchemy import or_
 
+    from src.catalog.qualification import STATUS_QUALIFIED
     from src.database.models import Source
 
-    q = session.query(Source).filter_by(enabled=True)
+    q = session.query(Source).filter_by(enabled=True, status=STATUS_QUALIFIED)
     if settings.select_languages:
         q = q.filter(Source.language.in_(settings.select_languages))
     if settings.select_source_types:
@@ -1302,6 +1307,30 @@ class BackgroundScheduler:
                     result["world_discovery"] = _wd
             except Exception:  # noqa: BLE001 - never fail the scrape on discovery
                 _LOG.warning("world source-discovery ride-along failed", exc_info=True)
+            # QUALIFICATION ride-along (0.3 CLOSE GATE ruling, clause (c): "background,
+            # task-manager-visible... like the world-discovery ride-along"): a bounded
+            # pass of candidate-source trial-fetch + judge, through this SAME session +
+            # fetcher (never a new fetch surface). Task-manager-visible via
+            # src.monitoring.tasks so the activity chip can honestly show it running.
+            # Best-effort: a failure here never breaks the scrape.
+            try:
+                from src.catalog.qualification import advance_qualification
+                from src.monitoring import tasks as _bgtasks
+
+                _qtok = _bgtasks.register(
+                    "qualification", "qualifying candidate sources",
+                    detail=f"up to {settings.qualification_per_pass} candidate(s)",
+                )
+                try:
+                    _ql = advance_qualification(
+                        session, fetcher, per_pass=settings.qualification_per_pass
+                    )
+                finally:
+                    _bgtasks.finish(_qtok)
+                if _ql.get("enabled"):
+                    result["qualification"] = _ql
+            except Exception:  # noqa: BLE001 - never fail the scrape on qualification
+                _LOG.warning("qualification ride-along failed", exc_info=True)
             # AUTO-ON-INGEST (opt-in): run every enabled, run_on_ingest custom AI
             # extractor over the most recent articles. Best-effort + bounded; with no
             # auto prompts (the default) it is one empty query, so zero cost. NEVER

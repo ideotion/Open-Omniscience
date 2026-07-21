@@ -439,6 +439,70 @@ _SOURCE_COUNTER_BACKFILL = (
 )
 
 
+# Qualification lifecycle STAMP columns (0.3 CLOSE GATE ruling, 2026-07-19/20) for
+# stores created before they existed. ``status`` gets a real DEFAULT so every existing
+# row is immediately, honestly 'unqualified' (no NULL window, no silent admission); the
+# one-time backfill below then promotes a source that ALREADY has collected articles to
+# 'qualified' -- "the first collect pass over the catalog IS its qualification pass"
+# (maintainer ruling): a source this store already scraped has already, de facto, passed
+# its trial, so the admission gate must not suddenly starve an install that was already
+# collecting. A source with zero articles ever collected stays 'unqualified' and enters
+# the qualification job's normal candidate queue. Same additive self-heal pattern as
+# ensure_source_counter_columns; idempotent (PRAGMA-checked).
+_SOURCE_QUALIFICATION_COLUMNS: dict[str, str] = {
+    "status": "ALTER TABLE sources ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'unqualified'",
+    "qualified_at": "ALTER TABLE sources ADD COLUMN qualified_at DATETIME",
+    "qualification_criteria_version": "ALTER TABLE sources ADD COLUMN qualification_criteria_version VARCHAR(40)",
+}
+
+
+def _source_qualification_backfill_sql(criteria_version: str) -> str:
+    # Promote to 'qualified' only sources with >=1 already-collected article; the rest
+    # keep the column DEFAULT ('unqualified'). Never touches a row the self-heal did not
+    # just create (WHERE status = 'unqualified' AND ... -- a fresh column is always
+    # 'unqualified' until this runs once, so this is safe to run only right after ADD).
+    return (
+        "UPDATE sources SET "
+        "status = 'qualified', "
+        "qualified_at = CURRENT_TIMESTAMP, "
+        f"qualification_criteria_version = '{criteria_version}' "
+        "WHERE status = 'unqualified' "
+        "AND (SELECT COUNT(*) FROM articles WHERE articles.source_id = sources.id) > 0"
+    )
+
+
+def ensure_source_qualification_columns(engine: Engine) -> list[str]:
+    """Self-heal ``sources.status`` / ``.qualified_at`` / ``.qualification_criteria_version``
+    (the admission-gate STAMP) on a store created before they existed, then BACKFILL:
+    a source with an already-collected article is stamped 'qualified' (its first collect
+    pass already served as its qualification pass); everything else stays 'unqualified'
+    (the column default) and is picked up by the background qualification job. Additive,
+    idempotent; the backfill runs ONLY when ``status`` was just added (a fresh DB gets it
+    from create_all's own default, so no backfill would find anything unqualified with
+    articles -- but running unconditionally after a fresh add is still a no-op there).
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    from src.catalog.qualification import CRITERIA_VERSION
+
+    added: list[str] = []
+    with engine.begin() as conn:
+        if not conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='sources'")
+        ).fetchone():
+            return []
+        cols = {r[1] for r in conn.execute(text("PRAGMA table_info(sources)")).fetchall()}
+        for name, ddl in _SOURCE_QUALIFICATION_COLUMNS.items():
+            if name not in cols:
+                conn.execute(text(ddl))
+                added.append(f"sources.{name}")
+        if "sources.status" in added:
+            conn.execute(text(_source_qualification_backfill_sql(CRITERIA_VERSION)))
+    if added:
+        _LOG.info(f"added source qualification column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_source_counter_columns(engine: Engine) -> list[str]:
     """Self-heal ``sources.article_count`` + ``sources.counter_reconciled_at`` (S6) on a store
     created before they existed, then BACKFILL from the live articles so there is no NULL window
@@ -693,6 +757,8 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
     "law_documents": frozenset(_LAW_DOCUMENT_TEXT_COLUMNS) | frozenset(_LAW_DOCUMENT_LANGUAGE_COLUMNS),
     "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS),
+    # ensure_source_qualification_columns (the admission-gate STAMP columns).
+    "sources": frozenset(_SOURCE_QUALIFICATION_COLUMNS),
 }
 
 

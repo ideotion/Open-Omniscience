@@ -208,6 +208,7 @@ def init_db() -> None:
         ensure_law_document_language_columns,
         ensure_law_text_columns,
         ensure_source_counter_columns,
+        ensure_source_qualification_columns,
         ensure_supergroup_ring_column,
         ensure_wiki_text_columns,
     )
@@ -263,6 +264,11 @@ def init_db() -> None:
     # S6: maintained per-source article counter (self-heal, no backfill; reconcile populates
     # forward + stamps freshness, a NULL count reads live).
     ensure_source_counter_columns(engine)
+
+    # Qualification lifecycle STAMP columns (0.3 CLOSE GATE ruling): self-heal + the
+    # one-time "already scraped -> already qualified" backfill (never starves an
+    # install that was already collecting before this column existed).
+    ensure_source_qualification_columns(engine)
 
     # DB-8: the self-heals above bring an OLD store's schema to head WITHOUT touching the
     # alembic stamp, leaving a "lying stamp" (behind head while the schema is ahead) that

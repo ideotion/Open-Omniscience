@@ -110,7 +110,7 @@ def test_targets_will_process_equals_matched_when_uncapped():
     db = sessionmaker(bind=eng, future=True)()
     for i in range(3):
         db.add(Source(name=f"S{i}", domain=f"s{i}.test", rss_url=f"https://s{i}.test/rss",
-                      enabled=True))
+                      enabled=True, status="qualified"))
     db.commit()
 
     out = scheduler_targets(db=db)

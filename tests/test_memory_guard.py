@@ -210,7 +210,7 @@ def test_engaged_guard_winds_a_pass_down_and_never_touches_the_gate(monkeypatch)
         session.add(Source(
             name=f"M{i}", domain=f"{tag}-{i}.example",
             rss_url=f"https://{tag}-{i}.example/feed.xml",
-            enabled=True, language="en", tags=tag,
+            enabled=True, status="qualified", language="en", tags=tag,
         ))
     session.commit()
     runner._consume_deferred()

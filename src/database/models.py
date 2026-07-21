@@ -396,6 +396,7 @@ class Source(Base):
         update_frequency: How often source updates (in minutes).
         cacheability: Whether responses can be cached.
         articles: Relationship to Article model.
+        status: Qualification lifecycle state -- see the class-level note below.
     """
 
     __tablename__ = "sources"
@@ -436,6 +437,29 @@ class Source(Base):
     article_count: Mapped[int | None] = mapped_column(Integer)
     counter_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # Qualification lifecycle (0.3 CLOSE GATE ruling, 2026-07-19/20): the ADMISSION GATE
+    # -- only a QUALIFIED source feeds regular collection (select_sources). ``status`` is
+    # one of exactly unqualified|qualified|disqualified (never a "candidate"/"trial"
+    # status -- trial is the PROCESS, not a persisted state). NOT NULL DEFAULT
+    # 'unqualified' so every self-healed/legacy row is honestly gated, never silently
+    # admitted. ``qualified_at`` + ``qualification_criteria_version`` are the STAMP
+    # ("qualified by Open Omniscience on DATE", judged by criteria version N) -- both are
+    # cleared (NULL) whenever the source is not currently qualified, so a stale stamp
+    # never survives a later disqualification. This states WHAT was checked --
+    # extraction validity, via src.analytics.source_audit's reused criteria -- NEVER a
+    # quality score (see src.catalog.qualification; the no-score/ranking/rating/grade
+    # invariant applies here too). The per-attempt HISTORY (append-only, the vintage
+    # convention -- never overwritten) lives in SourceQualificationAttempt, not here.
+    # server_default="unqualified" (same precedent as mention_count/article_count
+    # above): a NOT NULL column needs a DB-level default too, not just the Python-side
+    # ORM default, or any raw-SQL INSERT that omits the column (e.g. backup/merge.py's
+    # tracked-column copy) hits a NOT NULL constraint violation.
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="unqualified", server_default="unqualified"
+    )
+    qualified_at: Mapped[datetime | None] = mapped_column(DateTime)
+    qualification_criteria_version: Mapped[str | None] = mapped_column(String(40))
+
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
 
@@ -459,6 +483,7 @@ class Source(Base):
         Index("idx_source_region", "region"),
         Index("idx_source_country", "country"),
         Index("idx_source_type", "source_type"),
+        Index("idx_source_status", "status"),
     )
 
     def __repr__(self):
@@ -508,6 +533,45 @@ class FeedFetchState(Base):
 
     def __repr__(self):
         return f"<FeedFetchState(source_id={self.source_id}, status={self.last_status})>"
+
+
+class SourceQualificationAttempt(Base):
+    """One row per qualification/re-qualification ATTEMPT (append-only -- the vintage
+    convention, matching StatFigure/law-document versioning: a re-attempt is a NEW row,
+    never an overwrite of the last one). This is the system of record the re-
+    qualification ladder reads: the most recent row's ``attempted_at`` is "last attempt",
+    and the run of trailing ``disqualified`` verdicts (newest-first) is the ladder
+    position (see src.catalog.qualification.consecutive_disqualifications).
+
+    A SEPARATE table rather than columns on ``sources``, for the same reason as
+    FeedFetchState: create_all materialises a missing table on every existing database
+    at boot, so a brand-new table needs no ALTER-COLUMN self-heal (the qualification
+    STAMP columns on Source do -- see ensure_source_qualification_columns).
+
+    ``verdict`` is categorical (qualified|disqualified) -- never a score. ``criteria_version``
+    records which version of src.analytics.source_audit's criteria judged this attempt,
+    so a later criteria change is visible in the history rather than silently reinterpreted.
+    """
+
+    __tablename__ = "source_qualification_attempts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("sources.id", ondelete="CASCADE"), nullable=False
+    )
+    attempted_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    verdict: Mapped[str] = mapped_column(String(20), nullable=False)  # qualified | disqualified
+    criteria_version: Mapped[str] = mapped_column(String(40), nullable=False)
+
+    __table_args__ = (
+        Index("idx_qual_attempt_source_time", "source_id", "attempted_at"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<SourceQualificationAttempt(source_id={self.source_id}, "
+            f"verdict={self.verdict!r}, attempted_at={self.attempted_at})>"
+        )
 
 
 class Article(Base):

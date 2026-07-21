@@ -92,6 +92,8 @@ def _make_source(s) -> Source:
         rss_url="https://feed.example/rss",
         language="en",
         enabled=True,
+        status="qualified",  # the admission gate (0.3 CLOSE GATE ruling) -- this
+        # fixture is not exercising qualification, only the feed backoff state machine.
     )
     s.add(src)
     s.commit()
