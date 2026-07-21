@@ -334,6 +334,16 @@ class StopwordsManager:
         # only for THAT language (extraction is language-scoped), so the collision
         # cannot happen. (2026-06-23 keyword-engine report; STOPWORDS_ISO_AS_OF.)
         self.scoped_stopwords: dict[str, set[str]] = _load_scoped_stopwords()
+        # RAW vendored-only snapshot, captured BEFORE the curated supplements below are merged
+        # in -- the pure stopwords-iso grammar lists, with none of the hand-curated NEWS/PLATFORM/
+        # publishing-boilerplate domain additions. Used by get_grammar_stopwords() (the NAV-SOUP
+        # prose-density signal, src.services.prose_gate): those curated additions are CONTENT/
+        # topical-noise words (e.g. "newsletter", "podcast"), not grammatical function words, and
+        # a nav-soup page is often SATURATED with exactly them -- folding them into the
+        # function-word count would blur the very distinction the prose gate measures.
+        self._raw_scoped_stopwords: dict[str, set[str]] = {
+            lang: set(words) for lang, words in self.scoped_stopwords.items()
+        }
         # Merge the hand-curated supplements (temporal-deictic adverbs + publishing
         # boilerplate) into the SAME language-scoped channel (not the global union). A
         # curated language without a vendored file still gets its own scoped set here.
@@ -355,6 +365,29 @@ class StopwordsManager:
     def filter_stopwords(self, words, language="en"):
         stopwords = self.get_stopwords(language)
         return [word for word in words if word.lower() not in stopwords]
+
+    def get_grammar_stopwords(self, language="en"):
+        """PURE closed-class grammar words only (articles, pronouns, prepositions,
+        conjunctions, auxiliaries, indefinites) -- deliberately EXCLUDING the hand-curated
+        NEWS_STOPWORDS/PLATFORM_STOPWORDS/publishing-boilerplate domain additions that
+        ``get_stopwords()`` folds in for keyword-extraction dedup. Those additions are
+        topical non-content words (e.g. "newsletter", "podcast", "cookies"), not
+        grammatical function words -- a nav/listing page is often saturated with exactly
+        them, so counting them as "function words" would blur the prose/non-prose
+        distinction this method exists for (src.services.prose_gate, the NAV-SOUP
+        specimen ruling 2026-07-20). English: the base pronoun/determiner/auxiliary set
+        plus the closed-class indefinite pronouns, no NEWS/PLATFORM words. Any other
+        language: its vendored stopwords-iso list as-is (already pure grammar) if
+        present, else the small hardcoded LANGUAGE_STOPWORDS grammar set (e.g. fr), else
+        empty (honestly no signal rather than a wrong one)."""
+        lang = language.lower()
+        if lang == "en":
+            return (self.DEFAULT_ENGLISH_STOPWORDS | self.INDEFINITE_STOPWORDS).copy()
+        if lang in self._raw_scoped_stopwords:
+            return self._raw_scoped_stopwords[lang].copy()
+        if lang in self.language_stopwords:
+            return self.language_stopwords[lang].copy()
+        return set()
 
 
 # Dated provenance for the vendored stopwords-iso snapshot (registered in
