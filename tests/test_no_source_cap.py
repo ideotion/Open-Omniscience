@@ -26,7 +26,7 @@ def _db_with_sources(n: int):
     Base.metadata.create_all(engine)
     s = sessionmaker(bind=engine, future=True)()
     for i in range(n):
-        s.add(Source(name=f"S{i}", domain=f"s{i}.test", enabled=True, priority=i))
+        s.add(Source(name=f"S{i}", domain=f"s{i}.test", enabled=True, status="qualified", priority=i))
     s.commit()
     return s
 

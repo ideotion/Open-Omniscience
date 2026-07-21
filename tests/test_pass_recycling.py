@@ -92,7 +92,7 @@ def _seed_sources(session, n: int, tag: str) -> list[int]:
         s = Source(
             name=f"R{i}", domain=f"{tag}-{i}.example",
             rss_url=f"https://{tag}-{i}.example/feed.xml",
-            enabled=True, language="en", tags=tag,
+            enabled=True, status="qualified", language="en", tags=tag,
         )
         session.add(s)
         session.commit()
@@ -228,7 +228,7 @@ def test_parallel_pool_exactness_processed_plus_deferred_covers_all(monkeypatch)
             s.add(Source(
                 name=f"P{i}", domain=f"{tag}-{i}.example",
                 rss_url=f"https://{tag}-{i}.example/feed.xml",
-                enabled=True, language="en", tags=tag,
+                enabled=True, status="qualified", language="en", tags=tag,
             ))
     fetcher = EthicalFetcher(min_interval_s=0.0, retry_backoff_s=0.0,
                              session=_RecordingFeedSession())

@@ -142,7 +142,7 @@ def _seed_sources(n: int, tag: str) -> None:
             s.add(Source(
                 name=f"soak-{i}", domain=f"soak-{tag}-{i}.example",
                 rss_url=f"https://soak-{tag}-{i}.example/feed.xml",
-                enabled=True, language="en", tags="soak",
+                enabled=True, status="qualified", language="en", tags="soak",
             ))
 
 

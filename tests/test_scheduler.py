@@ -71,11 +71,12 @@ def db():
             domain="example.com",
             rss_url="https://example.com/feed.xml",
             enabled=True,
+            status="qualified",
             priority=1,
             language="en",
         )
     )
-    s.add(Source(name="NoFeed", domain="nofeed.test", enabled=True, priority=2))
+    s.add(Source(name="NoFeed", domain="nofeed.test", enabled=True, status="qualified", priority=2))
     s.commit()
     yield s
     s.close()

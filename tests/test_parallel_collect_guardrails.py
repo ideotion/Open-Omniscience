@@ -114,7 +114,7 @@ def _seed(tag, feed_hosts):
             s.add(Source(
                 name=f"{tag}-{i}", domain=f"{tag}-{i}.src",  # unique per row
                 rss_url=f"https://{host}/feed{i}.xml",  # shared host = same netloc
-                enabled=True, language="en", tags=tag,
+                enabled=True, status="qualified", language="en", tags=tag,
             ))
 
 

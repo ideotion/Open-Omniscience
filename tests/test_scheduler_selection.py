@@ -31,6 +31,7 @@ def _db():
                 source_type="news",
                 tags="politics,world",
                 enabled=True,
+                status="qualified",
             ),
             Source(
                 name="EN News",
@@ -39,6 +40,7 @@ def _db():
                 source_type="news",
                 tags="politics,sports",
                 enabled=True,
+                status="qualified",
             ),
             Source(
                 name="EN Mkt",
@@ -47,6 +49,7 @@ def _db():
                 source_type="financial",
                 tags="markets,equities",
                 enabled=True,
+                status="qualified",
             ),
             Source(
                 name="Disabled",
@@ -107,9 +110,9 @@ def test_targets_endpoint(tmp_path, monkeypatch):
     with Sess() as s:
         s.add_all(
             [
-                Source(name="N1", domain="n1.test", source_type="news", enabled=True),
-                Source(name="N2", domain="n2.test", source_type="news", enabled=True),
-                Source(name="M1", domain="m1.test", source_type="financial", enabled=True),
+                Source(name="N1", domain="n1.test", source_type="news", enabled=True, status="qualified"),
+                Source(name="N2", domain="n2.test", source_type="news", enabled=True, status="qualified"),
+                Source(name="M1", domain="m1.test", source_type="financial", enabled=True, status="qualified"),
             ]
         )
         s.commit()
