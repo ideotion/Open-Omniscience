@@ -81,6 +81,106 @@ def test_article_offline_view(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_article_view_shows_server_ip_with_caveat(tmp_path):
+    """SOURCE IPs ruling (2026-07-20): the captured server_ip must surface in the
+    reader's app-deduced metadata, with its reason and the standing never-proof-of-
+    origin caveat -- previously verified absent from this endpoint."""
+    from src.database.session import get_db
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'ip.db'}", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        s.add(Source(name="Example News", domain="ex.test"))
+        s.commit()
+        s.add(
+            Article(
+                url="https://ex.test/story",
+                canonical_url="https://ex.test/story",
+                source_id=1,
+                title="IP Story",
+                content="Body.",
+                hash="h-ip",
+                server_ip="203.0.113.5",
+                server_ip_reason="captured at fetch",
+                created_at=datetime.now(UTC),
+            )
+        )
+        s.commit()
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            r = client.get("/api/articles/1/view")
+            assert r.status_code == 200
+            body = r.text
+            assert "203.0.113.5" in body
+            assert "captured at fetch" in body
+            assert "never proof of origin" in body
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_article_view_shows_unavailable_server_ip_with_reason(tmp_path):
+    """A Tor/proxy fetch captures no IP by design -- the row must say so honestly
+    (with the reason) rather than showing blank or a guessed address."""
+    from src.database.session import get_db
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'ip2.db'}", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        s.add(Source(name="Example News", domain="ex.test"))
+        s.commit()
+        s.add(
+            Article(
+                url="https://ex.test/story2",
+                canonical_url="https://ex.test/story2",
+                source_id=1,
+                title="Tor Story",
+                content="Body.",
+                hash="h-ip2",
+                server_ip=None,
+                server_ip_reason="fetched via Tor/SOCKS proxy -- only the proxy socket is known",
+                created_at=datetime.now(UTC),
+            )
+        )
+        s.commit()
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            r = client.get("/api/articles/1/view")
+            assert r.status_code == 200
+            body = r.text
+            assert "unavailable" in body
+            assert "only the proxy socket is known" in body
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_article_view_shows_co_citation(tmp_path):
     """When two articles cite the same external link, the reader flags the shared source."""
     from src.database.session import get_db

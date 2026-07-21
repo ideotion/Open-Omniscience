@@ -120,6 +120,11 @@ class SanitizedLink:
     unwrapped: bool = False
     stripped_params: list[str] = field(default_factory=list)
     text: str | None = None  # visible anchor text, when known (recipient-safe)
+    # Character offset of ``original`` in the source text. Only set by
+    # ``sanitize_text_links``; ``sanitize_url`` called standalone has no text to
+    # offset into, so it stays ``None``. Additive/optional -- existing keyword-only
+    # construction sites are unaffected.
+    position: int | None = None
 
 
 @dataclass
@@ -263,30 +268,65 @@ def _sanitize_url_inner(url: str, text: str | None, _depth: int) -> SanitizedLin
     return SanitizedLink(original=raw, url=cleaned, stripped_params=stripped, text=text)
 
 
-def sanitize_text(text: str) -> tuple[str, SanitizeStats]:
-    """Rewrite every http(s) URL found in plain text to its sanitised form.
+def _sanitize_text_inner(text: str) -> tuple[str, SanitizeStats, list[SanitizedLink]]:
+    """Shared implementation behind ``sanitize_text`` / ``sanitize_text_links``.
 
-    Tracker-wrapped links are replaced with a visible, recipient-safe marker
-    (``[tracked link -> scheme://host]``) rather than silently kept or dropped.
+    Walks every http(s) URL in ``text`` exactly once, in order, recording the
+    per-URL ``SanitizedLink`` outcome (with its character offset in ``text``)
+    alongside the aggregate ``SanitizeStats`` -- so a caller that only wants the
+    rewritten text (``sanitize_text``) and one that also needs the individual
+    outcomes (``sanitize_text_links``, to seed ``ArticleLink`` rows) never drift
+    out of sync by running two separate passes.
     """
     stats = SanitizeStats()
+    links: list[SanitizedLink] = []
     if not text:
-        return text, stats
+        return text, stats, links
 
     def _repl(m: re.Match[str]) -> str:
         raw = m.group(0)
+        start = m.start()
         trail = ""
         while raw and raw[-1] in _TRAILING:
             trail = raw[-1] + trail
             raw = raw[:-1]
         link = sanitize_url(raw)
+        link.position = start
         stats.links_seen += 1
         stats.params_stripped += len(link.stripped_params)
         if link.unwrapped:
             stats.unwrapped += 1
         if link.tracker_wrapped:
             stats.trackers_wrapped += 1
+            links.append(link)
             return f"[tracked link -> {link.url}]" + trail
+        links.append(link)
         return link.url + trail
 
-    return _URL_RE.sub(_repl, text), stats
+    rewritten = _URL_RE.sub(_repl, text)
+    return rewritten, stats, links
+
+
+def sanitize_text(text: str) -> tuple[str, SanitizeStats]:
+    """Rewrite every http(s) URL found in plain text to its sanitised form.
+
+    Tracker-wrapped links are replaced with a visible, recipient-safe marker
+    (``[tracked link -> scheme://host]``) rather than silently kept or dropped.
+    """
+    rewritten, stats, _links = _sanitize_text_inner(text)
+    return rewritten, stats
+
+
+def sanitize_text_links(text: str) -> tuple[str, SanitizeStats, list[SanitizedLink]]:
+    """Like :func:`sanitize_text`, but also returns each URL's ``SanitizedLink``
+    outcome (in order found, with its character offset in ``text``) so a caller
+    can turn the RECOVERED links into first-class rows (e.g. ``ArticleLink``)
+    without re-parsing the text.
+
+    A tracker-wrapped link whose destination could not be recovered comes back
+    with ``tracker_wrapped=True`` and ``url`` set to the bare wrapper
+    ``scheme://host`` -- callers seeding a downstream store from these MUST
+    exclude those (``link.tracker_wrapped``), never treat the wrapper host as
+    the real destination.
+    """
+    return _sanitize_text_inner(text)

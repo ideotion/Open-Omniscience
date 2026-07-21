@@ -13,6 +13,7 @@ from urllib.parse import quote
 from src.privacy.link_sanitizer import (
     RECIPIENT_PARAMS,
     sanitize_text,
+    sanitize_text_links,
     sanitize_url,
 )
 
@@ -140,3 +141,48 @@ def test_embedded_in_path_variant_of_the_same_malformed_destination():
     wrapper = "https://tracker.example.com/redirect/" + quote(bad_dest, safe="")
     s = sanitize_url(wrapper)
     assert s.url  # never raises
+
+
+# --- sanitize_text_links (per-URL outcomes for ArticleLink seeding) ---------- #
+
+
+def test_sanitize_text_links_matches_sanitize_text_rewrite_and_stats():
+    text = "Read https://publisher.example/a?mc_eid=SECRET&id=9 today."
+    out1, stats1 = sanitize_text(text)
+    out2, stats2, links = sanitize_text_links(text)
+    assert out1 == out2
+    assert stats1 == stats2
+    assert len(links) == 1
+    assert links[0].url == "https://publisher.example/a?id=9"
+    assert links[0].tracker_wrapped is False
+
+
+def test_sanitize_text_links_records_position_in_order():
+    text = "See https://a.example/x and then https://b.example/y later."
+    _out, _stats, links = sanitize_text_links(text)
+    assert [link.original for link in links] == ["https://a.example/x", "https://b.example/y"]
+    assert links[0].position < links[1].position
+    assert text[links[0].position:].startswith("https://a.example/x")
+    assert text[links[1].position:].startswith("https://b.example/y")
+
+
+def test_sanitize_text_links_flags_unrecoverable_tracker_wrapper():
+    # An opaque (server-side-resolved) wrapper must come back tracker_wrapped=True
+    # with only the bare wrapper host -- never the (unknown) real destination.
+    text = "Click https://news.us1.list-manage.com/track/click?u=abc&id=def&e=RECIPIENT now."
+    _out, _stats, links = sanitize_text_links(text)
+    assert len(links) == 1
+    assert links[0].tracker_wrapped is True
+    assert links[0].url == "https://news.us1.list-manage.com"
+
+
+def test_sanitize_text_links_recovers_embedded_destination_as_unwrapped():
+    from urllib.parse import quote
+
+    real = "https://real-news.example/story?p=1"
+    wrapped = "https://click.tracker.example/redirect?url=" + quote(real, safe="")
+    _out, _stats, links = sanitize_text_links(f"See {wrapped} for details.")
+    assert len(links) == 1
+    assert links[0].unwrapped is True
+    assert links[0].tracker_wrapped is False
+    assert links[0].url.startswith("https://real-news.example/story")

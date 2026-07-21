@@ -1538,6 +1538,22 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
             )
     except Exception:  # noqa: BLE001
         logger.warning("entity extraction failed in reader", exc_info=True)
+    # Server IP (SOURCE IPs ruling, 2026-07-20): captured at fetch (web + newsletter
+    # sender-IP) but never previously surfaced to a reader (verified gap: `server_ip`
+    # absent from this file). Honest either way -- an IP shows with its capture reason
+    # and the standing caveat; a Tor/proxy fetch shows "unavailable" + WHY (the socket
+    # was the proxy, never a guessed origin) rather than a blank row.
+    if a.server_ip:
+        _ip_val = f"<code>{_html.escape(a.server_ip)}</code>"
+        if a.server_ip_reason:
+            _ip_val += f" <span class='muted'>({_html.escape(a.server_ip_reason)})</span>"
+        _ip_val += (
+            " <span class='muted'>— may be a relay/CDN edge; never proof of origin.</span>"
+        )
+    elif a.server_ip_reason:
+        _ip_val = f"<span class='muted'>unavailable — {_html.escape(a.server_ip_reason)}</span>"
+    else:
+        _ip_val = None
     deduced_rows = "".join(
         [
             _row("Captured (downloaded)", _html.escape(captured) if captured else None),
@@ -1545,6 +1561,7 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
                 "Region (from the source's catalog entry)",
                 _html.escape(a.country or a.region or "") if (a.country or a.region) else None,
             ),
+            _row("Server IP (app-observed)", _ip_val),
             *deduced_extra,
             _row(
                 "Content hash", f"<code>{_html.escape(hash_short)}</code>" if hash_short else None

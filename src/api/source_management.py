@@ -449,6 +449,25 @@ async def get_source(request: Request, source_id: int, db: Session = Depends(get
         return result
 
 
+@router.get("/{source_id}/observed-ips", response_model=dict)
+@limiter.limit("100/hour")
+async def get_source_observed_ips(request: Request, source_id: int, db: Session = Depends(get_db)):
+    """Per-source aggregated view of the already-captured server IPs (SOURCE IPs
+    ruling, 2026-07-20, ask 2): distinct observed IPs + first/last seen + each IP's
+    geolocated country. An aggregation over the existing ``Article.server_ip`` /
+    ``ip_observed_at`` columns -- no new capture. A source legitimately carries
+    MULTIPLE IPs over time (CDN edges, rotation); the caveat travels with the data.
+    """
+    from src.analytics.queries import source_observed_ips
+
+    with SourceManager(session=db) as manager:
+        source = manager.get_source_by_id(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
+
+    return source_observed_ips(db, source_id)
+
+
 @router.post("/", response_model=dict)
 @limiter.limit("50/hour")
 async def create_source(request: Request, source_data: dict, db: Session = Depends(get_db)):

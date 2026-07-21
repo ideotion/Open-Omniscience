@@ -33,7 +33,7 @@ from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
 from src.database.write import is_locked_error, run_write_with_retry
-from src.privacy.link_sanitizer import SanitizeStats, sanitize_text
+from src.privacy.link_sanitizer import SanitizedLink, SanitizeStats, sanitize_text_links
 from src.utils.url_utils import generate_content_hash
 
 _LOG = logging.getLogger(__name__)
@@ -64,6 +64,11 @@ class ParsedEmail:
     # forwarder may sit between it and the true origin (stated in the reason).
     sender_ip: str | None = None
     sender_ip_reason: str | None = None
+    # Per-URL sanitiser outcomes for every link found in the body (SOURCE-MANAGEMENT
+    # ASKS ruling #1: cleaned newsletter links must be able to become sources). A
+    # tracker-wrapped entry's ``url`` is the bare wrapper ``scheme://host`` -- the
+    # caller (``_email_link_rows``) MUST filter those out before seeding ArticleLink.
+    links: list[SanitizedLink] = field(default_factory=list)
 
 
 def _decode_part(part: Message) -> str:
@@ -236,7 +241,7 @@ def parse_email(raw: bytes) -> ParsedEmail:
         message_id = f"no-id-{generate_content_hash(raw.decode(errors='replace'))[:16]}"
 
     subject = _header(msg, "Subject", "(no subject)")
-    body_text, stats = sanitize_text(_extract_body(msg))
+    body_text, stats, links = sanitize_text_links(_extract_body(msg))
 
     recipients = _recipient_addresses(msg)
     subject, r1 = _redact(subject, recipients)
@@ -253,6 +258,7 @@ def parse_email(raw: bytes) -> ParsedEmail:
         redactions=r1 + r2,
         sender_ip=sender_ip,
         sender_ip_reason=sender_ip_reason,
+        links=links,
     )
 
 
@@ -399,6 +405,78 @@ def _email_article(source: Source, parsed: ParsedEmail, content_hash: str, canon
     )
 
 
+# Guard against a pathological link-farm newsletter (mirrors pipeline.py's cap on
+# the web-ingest side -- see ``_maybe_index_links``).
+_MAX_EMAIL_LINKS = 300
+
+
+def _email_link_rows(links: list[SanitizedLink]) -> list[dict]:
+    """Sanitised body links -> pre-filtered/deduped/capped dicts for ``_link_rows``.
+
+    Ruling #1 (SOURCE-MANAGEMENT ASKS, newsletter links -> new sources): only a
+    FULLY-RECOVERED destination may seed a source. A tracker-wrapped link whose true
+    destination could not be resolved server-side comes back from the sanitiser with
+    ``tracker_wrapped=True`` and ``url`` set to the bare wrapper ``scheme://host`` --
+    that is excluded here, before a row is ever built, so it can never be mistaken
+    for (or promoted as) the real destination.
+    """
+    from src.services.link_analyzer import LinkExtractor
+
+    normalize = LinkExtractor().normalize_url
+    seen: set[str] = set()
+    out: list[dict] = []
+    for link in links:
+        if link.tracker_wrapped:
+            continue  # wrapper-domain-only -- must never seed a source
+        nu = normalize(link.url)
+        if not nu or nu in seen:
+            continue
+        seen.add(nu)
+        out.append(
+            {
+                "url": link.url,
+                "normalized_url": nu,
+                "link_text": link.text,
+                "position": link.position,
+            }
+        )
+        if len(out) >= _MAX_EMAIL_LINKS:
+            break
+    return out
+
+
+def _maybe_index_email_links(session: Session, article_id: int, links: list[SanitizedLink]) -> None:
+    """Best-effort: turn one newsletter's RECOVERED sanitised links into
+    ``article_links`` rows, mirroring the web-ingest pattern
+    (``src.ingest.pipeline._maybe_index_links`` / ``src.ingest.batch._link_rows``) so
+    the citation-discovery channel (``src.discovery.channels.citation_channel``) and
+    the manual ``promote_cited_sources`` endpoint pick newsletters up with ZERO
+    further change on their side -- both already read ``article_links`` generically.
+    Fail-open like keyword indexing: a link-extraction hiccup must never break
+    ingestion. Disable with ``OO_NO_INDEX=1``.
+    """
+    import os
+
+    if os.getenv("OO_NO_INDEX") == "1" or not links:
+        return
+    try:
+        from src.ingest.batch import _link_rows
+
+        def _work() -> None:
+            # Rebuilt inside the retry's work callable, like the web-ingest paths:
+            # a rollback on a transient lock expunges pending objects, so the rows
+            # must be fresh each attempt.
+            rows = _link_rows(article_id, _email_link_rows(links))
+            if rows:
+                session.add_all(rows)
+                session.commit()
+
+        run_write_with_retry(_work, session=session, label=f"index_email_links[{article_id}]")
+    except Exception:  # noqa: BLE001 - link indexing is auxiliary; never fail ingestion
+        session.rollback()
+        _LOG.warning("newsletter link indexing failed", exc_info=True)
+
+
 def _is_integrity_error(exc: BaseException) -> bool:
     """True iff ``exc`` (or a wrapped cause/context) is a UNIQUE/FK/NOT-NULL violation.
 
@@ -464,9 +542,10 @@ def ingest_emails(
         "tracker_params_stripped": 0,
         "trackers_flagged": 0,
     }
-    # Added-but-not-yet-committed: (parsed, hash, canonical) — kept so a batch that
-    # fails on commit can be re-applied one message at a time without re-parsing.
-    pending: list[tuple[ParsedEmail, str, str]] = []
+    # Added-but-not-yet-committed: (article, parsed, hash, canonical) — kept so a batch
+    # that fails on commit can be re-applied one message at a time without re-parsing,
+    # and so a successful flush can link-index each article by its post-commit id.
+    pending: list[tuple[Article, ParsedEmail, str, str]] = []
     # In-batch dedup keyed on the ACTUAL unique column. `articles.hash` is the ONLY
     # UNIQUE constraint (canonical_url is NOT unique), so two emails with the SAME body
     # but DIFFERENT Message-IDs share a content_hash and MUST dedup on the hash ALONE.
@@ -496,13 +575,18 @@ def ingest_emails(
             tally["duplicate"] += 1
             return
 
+        holder: dict = {}
+
         def _work() -> None:
-            session.add(_email_article(source, parsed, content_hash, canonical))
+            a = _email_article(source, parsed, content_hash, canonical)
+            session.add(a)
             session.commit()
+            holder["article"] = a
 
         try:
             run_write_with_retry(_work, session=session, label="newsletter import")
             tally["stored"] += 1
+            _maybe_index_email_links(session, holder["article"].id, parsed.links)
         except Exception as exc:  # noqa: BLE001 - is_locked_error/_is_integrity_error are the
             # precise, cross-driver-aware discriminators (see _is_integrity_error's docstring);
             # anything neither of them recognises is a genuinely unexpected failure and must
@@ -522,6 +606,8 @@ def ingest_emails(
         try:
             session.commit()
             tally["stored"] += len(pending)
+            for article, parsed, _h, _canon in pending:
+                _maybe_index_email_links(session, article.id, parsed.links)
         except Exception as exc:  # noqa: BLE001 - same discriminated dispatch as _commit_one
             if not (is_locked_error(exc) or _is_integrity_error(exc)):
                 session.rollback()
@@ -530,7 +616,7 @@ def ingest_emails(
             # lock: redo this batch one message at a time so a single collision/lock never
             # drops its batch-mates and never escapes as an unhandled error.
             session.rollback()
-            for parsed, h, canon in pending:
+            for _article, parsed, h, canon in pending:
                 _commit_one(parsed, h, canon)
         pending.clear()
         pending_hashes.clear()
@@ -556,8 +642,9 @@ def ingest_emails(
         ):
             tally["duplicate"] += 1
             continue
-        session.add(_email_article(source, parsed, content_hash, canonical))
-        pending.append((parsed, content_hash, canonical))
+        article = _email_article(source, parsed, content_hash, canonical)
+        session.add(article)
+        pending.append((article, parsed, content_hash, canonical))
         pending_hashes.add(content_hash)
         pending_canon.add(canonical)
         if len(pending) >= commit_batch:
