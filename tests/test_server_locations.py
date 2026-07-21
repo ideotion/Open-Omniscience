@@ -104,3 +104,39 @@ def test_empty_corpus_is_honest(db):
     assert out["countries"] == []
     assert out["clusters"] == []
     assert out["unavailable"] == {"tor_or_proxy": 0, "not_captured": 0, "unknown_ip": 0}
+
+
+# --- source_observed_ips (SOURCE IPs ruling, ask 2: per-source aggregated view) --- #
+
+
+def test_source_observed_ips_aggregates_distinct_ips_first_last_seen_and_country(db):
+    _add(db, 1, 1, server_ip="203.0.113.10", ip_observed_at=datetime(2026, 1, 1, tzinfo=UTC))
+    _add(db, 2, 1, server_ip="203.0.113.10", ip_observed_at=datetime(2026, 3, 1, tzinfo=UTC))
+    _add(db, 3, 1, server_ip="8.8.8.8", ip_observed_at=datetime(2026, 2, 1, tzinfo=UTC))
+    _add(db, 4, 1, server_ip=None, server_ip_reason="unavailable (proxy/Tor)")
+    _add(db, 5, 1, server_ip=None, server_ip_reason=None)
+    _add(db, 6, 2, server_ip="203.0.113.10")  # a DIFFERENT source -- must not leak in
+
+    out = q.source_observed_ips(db, source_id=1)
+
+    assert out["source_id"] == 1
+    assert out["distinct_ips"] == 2
+    assert out["total_articles"] == 5  # source 1's rows only, including unavailable ones
+    by_ip = {row["ip"]: row for row in out["ips"]}
+    assert by_ip["203.0.113.10"]["articles"] == 2
+    assert by_ip["203.0.113.10"]["country"] == "fr"
+    # SQLite round-trips a stored datetime without its tz suffix (naive) -- match that.
+    assert by_ip["203.0.113.10"]["first_seen"].startswith("2026-01-01T00:00:00")
+    assert by_ip["203.0.113.10"]["last_seen"].startswith("2026-03-01T00:00:00")
+    assert by_ip["8.8.8.8"]["articles"] == 1
+    assert out["unavailable"] == {"tor_or_proxy": 1, "not_captured": 1}
+    assert out["db_vintage"] == ip_geo.IP_GEO_AS_OF
+    assert "not proof of the publisher" in out["caveat"].lower()
+
+
+def test_source_observed_ips_empty_source_is_honest(db):
+    out = q.source_observed_ips(db, source_id=1)
+    assert out["ips"] == []
+    assert out["distinct_ips"] == 0
+    assert out["total_articles"] == 0
+    assert out["unavailable"] == {"tor_or_proxy": 0, "not_captured": 0}

@@ -1170,6 +1170,87 @@ def server_locations(session) -> dict:
     }
 
 
+_SOURCE_IP_METHOD = (
+    "Distinct server_ip values observed across this source's articles, captured at "
+    "fetch time (web + newsletter sender-IP) -- an aggregation over the existing "
+    "Article.server_ip/ip_observed_at columns (Slice 6a/6b), no new capture. First/"
+    "last seen are the earliest/latest capture among that IP's articles; country is "
+    "the same offline CC-licensed geolocation the world map's Server IPs layer uses."
+)
+_SOURCE_IP_CAVEAT = (
+    "Observed server IP is OUR vantage point at fetch time -- often a CDN edge / "
+    "anycast host / IP rotation, NOT proof of the publisher's origin. A source "
+    "showing several distinct IPs over time is the EXPECTED shape (CDN/rotation), "
+    "never a claim of anything unusual. A Tor-fetched article yields no IP by "
+    "design (the socket is the proxy, never a guess). Counts only, no score."
+)
+
+
+def source_observed_ips(session, source_id: int) -> dict:
+    """Per-SOURCE aggregation of the already-captured server IPs (SOURCE IPs ruling,
+    2026-07-20, ask 2): distinct observed IPs + first/last seen + each IP's
+    geolocated country. An aggregation over the existing ``Article.server_ip`` /
+    ``ip_observed_at`` / ``server_ip_reason`` columns -- the per-source-keyed
+    counterpart of :func:`server_locations` (which aggregates the same columns by
+    COUNTRY). The per-article observation model already yields multiple IPs per
+    source over time (CDN edges, rotation); that is disclosed data, never a verdict.
+    """
+    from src.geo import ip_geo
+
+    rows = (
+        session.query(Article.server_ip, Article.server_ip_reason, Article.ip_observed_at)
+        .filter(Article.source_id == source_id)
+        .all()
+    )
+    by_ip: dict[str, dict] = {}
+    unavailable = {"tor_or_proxy": 0, "not_captured": 0}
+    total = 0
+    for ip, reason, observed_at in rows:
+        total += 1
+        if not ip:
+            r = (reason or "").lower()
+            if "tor" in r or "proxy" in r:
+                unavailable["tor_or_proxy"] += 1
+            else:
+                unavailable["not_captured"] += 1
+            continue
+        b = by_ip.setdefault(
+            ip, {"articles": 0, "first_seen": observed_at, "last_seen": observed_at}
+        )
+        b["articles"] += 1
+        if observed_at is not None:
+            if b["first_seen"] is None or observed_at < b["first_seen"]:
+                b["first_seen"] = observed_at
+            if b["last_seen"] is None or observed_at > b["last_seen"]:
+                b["last_seen"] = observed_at
+
+    ips = []
+    for ip, b in sorted(by_ip.items(), key=lambda kv: -kv[1]["articles"]):
+        g = ip_geo.lookup(ip)
+        ips.append(
+            {
+                "ip": ip,
+                "articles": b["articles"],
+                "first_seen": b["first_seen"].isoformat() if b["first_seen"] else None,
+                "last_seen": b["last_seen"].isoformat() if b["last_seen"] else None,
+                "country": g.get("country"),
+                "level": g.get("level"),
+            }
+        )
+
+    return {
+        "source_id": source_id,
+        "distinct_ips": len(ips),
+        "ips": ips,
+        "unavailable": unavailable,
+        "total_articles": total,
+        "db_vintage": ip_geo.db_vintage(),
+        "attribution": ip_geo.ATTRIBUTION,
+        "method": _SOURCE_IP_METHOD,
+        "caveat": _SOURCE_IP_CAVEAT,
+    }
+
+
 _COORD_METHOD = (
     "Near-duplicate clustering (MinHash + LSH, high-precision, Jaccard >= 0.7) within the "
     "matched set; independence is measured by DISTINCT SOURCES, never article count."
