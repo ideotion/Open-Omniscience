@@ -943,6 +943,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     grep for what runs AFTER that last callback, not proof of a stall.
 
 ## Open queue (when maintainer says proceed)
+- **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
+  474,556-article corpus, NOT the 0.3 gate's ≥5M run):** brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-21_FIELD_DIAGNOSTICS_FINDINGS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-21_FIELD_DIAGNOSTICS_FINDINGS.md),
+  PENDING a future session. Seven items, each a candidate for its own scoped PR: (1) a severe
+  p95/p99 slow-tail on `/api/insights/map-coverage` (up to 335s) and `/api/search/omni` (up to
+  291s); (2) "rising" Home Lead cards never hard-link to their exact articles (`Card(...)` in
+  `rising_now`, `producers.py:193`, is missing the `article_ids=` sibling producers got via the
+  F1 hard-link follow-up); (3) a cluster of multi-hour stalls + 503s all on 2026-07-11,
+  cause not yet identified; (4) keyword-growth evidence (marginal ~9.7 new keywords/article,
+  flat vs the ~10.6 cumulative average) supporting the still-unbuilt nav-soup prose gate; (5) a
+  measured, bounded non-article-contamination figure (1.44%, 6,825 articles) ready to quarantine
+  once cleanup strategy is agreed; (6) five sources at 100% outlier_rate
+  (`subseaworldnews.com`, `biospectrumasia.com`, `jota.info`, `24heures.ch`, `suspilne.media`)
+  worth a manual check before automating source requalification; (7) schema/FTS confirmed
+  clean (nothing to do there). None require corpus growth to investigate or fix.
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
   [`docs/ROADMAP.md`](docs/ROADMAP.md) (DB limitations · performance/scale · known bugs ·
   feature backlog, each with status) — read it for the overview; the DEEP scale detail stays
