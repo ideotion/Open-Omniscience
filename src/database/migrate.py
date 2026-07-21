@@ -59,6 +59,21 @@ def known_revisions() -> list[str]:
     return [rev.revision for rev in script.walk_revisions()]
 
 
+def schema_head() -> str | None:
+    """The migration SCRIPT DIRECTORY's head revision -- the schema version the CODE
+    expects, as distinct from ``file_revision`` (what a given database FILE is actually
+    stamped at). Read via alembic's own ``ScriptDirectory`` API (equivalent metadata to
+    ``alembic heads`` -- no subprocess, no regex-scan of migration filenames). Returns
+    None if the history has more than one head (a branched, unmerged migration set) or
+    exactly one head's revision id otherwise; raises only if alembic/migrations itself
+    is unavailable (the caller decides how to report that)."""
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(_alembic_config())
+    heads = script.get_heads()
+    return heads[0] if len(heads) == 1 else None
+
+
 def upgrade_database_file(path: Path, target: str = "head") -> str | None:
     """Run ``alembic upgrade`` against an ARBITRARY SQLite file -- never the live DB.
 

@@ -2377,6 +2377,75 @@ def test_ui_invariants():
     )
 
 
+def test_diagnostics_panel_button_consolidation():
+    """DIAGNOSE-THE-DIAGNOSTICS ruling #7 (AMENDED 2026-07-20): remove all per-report
+    DOWNLOAD buttons from the diagnostics panel except the ONE all-diagnostics button --
+    safe because the completeness ratchet guarantees the bundle carries every covered
+    report. THE DISTINCTION that must survive: job-starters/interactive ACTIONS are not
+    report downloads and stay untouched; and a download button whose exact content is
+    NOT actually in the bundle (a full-dump export the manifest's own 'excluded' block
+    documents, or an endpoint on a DIFFERENT router the diagnostics ratchet never scans)
+    must also stay -- removing it would strand that data behind no UI at all, which is
+    not what the ruling asks for ("do not weaken that ratchet")."""
+    html = _ui_source()
+
+    # (a) ONE-BUTTON STATE: every plain per-report download button whose content the
+    # all-diagnostics bundle ACTUALLY carries (per _DIAG_COVERAGE_MAP) must be gone --
+    # these paths are covered 1:1 by a bundle member with no other stated exemption.
+    removed_download_urls = (
+        "/api/diagnostics/keyword-selftest?download=1",
+        "/api/diagnostics/keyword-engine?download=1",
+        "/api/diagnostics/keyword-growth?download=1",
+        "/api/diagnostics/article-length?download=1",
+        "/api/diagnostics/non-article-scan?download=1",
+        "/api/diagnostics/source-audit?download=1",
+        "/api/diagnostics/source-audit-selftest?download=1",
+        "/api/diagnostics/home-cards?download=1",
+        "/api/diagnostics/dates',",
+        "/api/diagnostics/network',",
+        "/api/diagnostics/performance',",
+        "/api/diagnostics/benchmark',",
+        "/api/diagnostics/debug-bundle',",
+        "/api/diagnostics/request-latency',",
+        "/api/diagnostics/slow-queries',",
+        "/api/diagnostics/schema-drift',",
+        "/api/diagnostics/integrity',",
+        "/api/diagnostics/frontend-errors',",
+    )
+    for url in removed_download_urls:
+        assert url not in html, f"a covered per-report download button survived: {url}"
+
+    # (b) DELIBERATELY KEPT exceptions -- NOT weakening the ratchet:
+    #   - the full keyword-corpus dump (both size variants): the manifest's own
+    #     'excluded' block says the bundle carries only the bounded DIGEST, so these
+    #     buttons are each report's ONLY full-dump access, not a redundant download.
+    assert "window.open('/api/diagnostics/keywords?format=zip','_blank')" in html
+    assert "per_lang=1000000" in html and "All keywords (.zip)" in html
+    #   - source-quality + rollup-benchmark: explicitly named as surviving ACTIONS in
+    #     the AMENDED ruling despite living in the same button row.
+    assert "window.open('/api/diagnostics/source-quality?download=1','_blank')" in html
+    assert "window.open('/api/diagnostics/rollup-benchmark','_blank')" in html
+    #   - the 4 statistical-signal reports: on DIFFERENT routers (signals.py/insights.py),
+    #     never scanned by the diagnostics-router ratchet and not bundle members --
+    #     removing them would strand that data behind no UI at all.
+    for url in (
+        "/api/signals/fdr-selftest?download=1",
+        "/api/signals/flood',",
+        "/api/signals/bury',",
+        "/api/insights/lunar-correlation',",
+    ):
+        assert url in html, f"a cross-router signal report (outside the ratchet) must stay: {url}"
+
+    # (c) SURVIVING ACTION CONTROLS (job-starters / interactive tools, never downloads):
+    for marker in (
+        'id="all-diag-btn"', "runAllDiagnostics(", 'id="p0-run-btn"', "runP0Validation(",
+        'id="psb-run-btn"', "runPagesizeBench(", "viewKeywordGrowth(", "enrichSources(",
+        "enrichSourceTypes(", "discoverSources(", "discoverWorld(", "goldBuilderLoad(",
+        "goldBuilderSave(", "loadLemmaPreview(", "runIrEval(", "loadSessionForensics(",
+    ):
+        assert marker in html, f"a surviving action control must still be wired: {marker}"
+
+
 def test_corpus_tier_header():
     """Corpus maturity tier on Home (evidence-tiered cards REMAINING slice): a
     DESCRIPTIVE stage (early/developing/established) rides with the at-a-glance
@@ -5246,17 +5315,24 @@ def test_home_card_click_diagnostics_and_download_all_wired():
         assert member in diag
     assert ".error.txt" in diag  # per-member failure is recorded, never fatal
 
-    # The Settings -> Diagnostics buttons: the new ones + the dense row shed the
-    # redundant "Download " prefix (screen space). The "All diagnostics" button leads.
-    assert "/api/diagnostics/home-cards?download=1" in html
-    # The "All diagnostics" button now runs the BACKGROUND job (B6/#622): the old synchronous
-    # window.open('/api/diagnostics/all') froze the single-worker server for ~36 min on a large
-    # corpus, so the button POSTs /all-job (backend below), polls status, downloads when ready.
+    # The Settings -> Diagnostics buttons: DIAGNOSE-THE-DIAGNOSTICS ruling #7
+    # (2026-07-20) removed the standalone home-cards/debug-bundle download buttons --
+    # the all-diagnostics bundle already carries both (home-cards.json, debug-bundle.json,
+    # asserted above) and the completeness ratchet guarantees it. The "All diagnostics"
+    # button now runs the BACKGROUND job (B6/#622): the old synchronous
+    # window.open('/api/diagnostics/all') froze the single-worker server for ~36 min on a
+    # large corpus, so the button POSTs /all-job (backend below), polls status, downloads
+    # when ready.
     assert 'onclick="runAllDiagnostics(this)"' in html and 'id="all-diag-status"' in html
     assert '@router.post("/all-job")' in diag  # the non-blocking background-job endpoint
     assert ">All diagnostics (.zip)<" in html
-    assert ">Keyword log (.zip)<" in html  # de-prefixed
-    assert ">Debug bundle (.json)<" in html  # de-prefixed
+    assert ">Keyword log (.zip)<" in html  # kept -- the FULL dump, exempt from the bundle
+    assert "/api/diagnostics/home-cards?download=1" not in html, (
+        "the standalone home-cards download button must be gone (bundle carries it)"
+    )
+    assert "/api/diagnostics/debug-bundle" not in html, (
+        "the standalone debug-bundle download button must be gone (bundle carries it)"
+    )
     assert "Download keyword log (.zip)" not in html  # the old verbose label is gone
 
     # The live hard-linking fix: cache version bumped so a pre-fix cached briefing
@@ -5332,7 +5408,12 @@ def test_keyword_growth_curve_wired_and_decrypt_free():
 
     src = _ui_source()  # index.html + app.js
     assert "viewKeywordGrowth" in src and "_growthSvg" in src
-    assert "/api/diagnostics/keyword-growth?download=1" in src
+    # DIAGNOSE-THE-DIAGNOSTICS ruling #7 (2026-07-20): the standalone JSON download
+    # button is gone -- the all-diagnostics bundle already carries keyword-growth.json
+    # (asserted in _all_diagnostics_members, tests/test_recursive_loop.py); the
+    # interactive chart button (viewKeywordGrowth, asserted above) stays -- it is an
+    # ACTION, not a report download.
+    assert "/api/diagnostics/keyword-growth?download=1" not in src
 
 
 def test_volume_backup_job_wired_slice_1c():
@@ -5750,67 +5831,24 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
     contribute to the all-diagnostics bundle (a member file, or its /last report
     for job kinds) or be EXEMPT with a stated reason — mirrored honestly in the
     manifest's "excluded" block. A new GET diagnostic reddens this test until it
-    is classified, so the bundle can never silently fall behind again."""
+    is classified, so the bundle can never silently fall behind again.
+
+    DIAGNOSE-THE-DIAGNOSTICS (2026-07-20): the covered/exempt maps below are IMPORTED
+    from src.api.diagnostics, not hand-duplicated here — the manifest's own runtime
+    coverage block (_diagnostics_coverage_report) recomputes this SAME comparison inside
+    every all-diagnostics run, and importing rather than copying means the CI-time ratchet
+    and the runtime block can never silently diverge from each other."""
     import re
+
+    from src.api import diagnostics as _diag
 
     src = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     gets = set(re.findall(r'@router\.get\("([^"]+)"', src))
 
-    # endpoint path -> the bundle member filename that carries its payload
-    covered = {
-        "/keywords": "keyword-log-digest.json",  # digest form; full dump exempt below
-        "/keyword-selftest": "keyword-selftest.json",
-        "/ir-eval-selftest": "ir-eval-selftest.json",
-        "/perception-eval-selftest": "perception-eval-selftest.json",
-        "/keyword-triage-selftest": "keyword-triage-selftest.json",
-        "/recursive-loop": "recursive-loop.json",
-        "/kpi": "kpi.json",
-        "/search-timing": "search-timing.json",
-        "/search-timing-selftest": "search-timing-selftest.json",
-        "/lemma-preview": "lemma-preview.json",
-        "/home-cards": "home-cards.json",
-        "/keyword-engine": "keyword-engine.json",
-        "/power-profile": "power-profile.json",
-        "/power-profile-selftest": "power-profile-selftest.json",
-        "/article-length": "article-length.json",
-        "/non-article-scan": "non-article-scan.json",
-        "/keyword-growth": "keyword-growth.json",
-        "/source-audit": "source-audit.json",
-        "/source-audit-selftest": "source-audit-selftest.json",
-        "/dates": "date-extraction.json",
-        "/performance": "performance.json",
-        "/benchmark": "benchmark.json",
-        "/network": "network.json",
-        "/columnar": "columnar.json",
-        "/freshness": "freshness.json",
-        "/session-forensics": "session-forensics.json",
-        "/data-dir-persistence": "data-dir-persistence.json",
-        "/storage-footprint": "storage-footprint.json",
-        "/storage-composition": "storage-composition.json",
-        "/frontend-errors": "frontend-errors.json",
-        "/request-latency": "request-latency.json",
-        "/slow-queries": "slow-queries.json",
-        "/schema-drift": "schema-drift.json",
-        "/integrity": "corpus-integrity.json",
-        "/debug-bundle": "debug-bundle.json",
-        "/p0-validation/last": "p0-validation.json",
-        "/pagesize-bench/last": "pagesize-bench.json",
-        "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
-        "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
-    }
-    exempt = {
-        "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
-        "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
-        "/source-coverage-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
-        "/ir-eval": "needs an operator-graded gold-set file (manifest 'excluded')",
-        "/gold-builder/sample": "interactive grading sampler, not a report (manifest 'excluded')",
-        "/all": "the bundle itself",
-        "/all-job/status": "job control", "/all-job/download": "job control",
-        "/p0-validation/status": "job control", "/p0-validation/download": "job control",
-        "/pagesize-bench/status": "job control", "/pagesize-bench/download": "job control",
-        "/discover-world/status": "job control",
-        "/enrich-source-types/status": "job control",
-    }
+    # endpoint path -> the bundle member filename that carries its payload. Imported from
+    # src.api.diagnostics (see the module docstring above) rather than duplicated here.
+    covered = dict(_diag._DIAG_COVERAGE_MAP)
+    exempt = dict(_diag._DIAG_COVERAGE_EXEMPT)
     unclassified = sorted(gets - set(covered) - set(exempt))
     assert not unclassified, (
         "new GET diagnostics endpoint(s) are neither in the all-diagnostics bundle "

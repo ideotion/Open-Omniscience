@@ -3571,3 +3571,51 @@ progress callback wired into only ONE stage of a multi-stage pipeline reads as a
 that stage's work moves to the next, unreported stage — treat "the UI is frozen on the last
 number it saw" as a sign to grep for what runs AFTER the last reported callback, not as
 proof of a stall.
+
+## 2026-07-20 — DIAGNOSE-THE-DIAGNOSTICS: run journal, hardware profile, button consolidation (0.3 gate row-3 prerequisite)
+
+Executes the DIAGNOSE-THE-DIAGNOSTICS build ruled in CLAUDE.md (2026-07-20, amended same day).
+`_write_all_diagnostics_zip` now records a full per-member envelope (`file`, `outcome` of
+`ok`/`error`/`skipped-deadline`, `started_at`, `wall_s`, `bytes`, optional `rss_delta_kb`)
+instead of the old bare `{file, ok[, error]}`. A durable sidecar `journal.jsonl` appends
+`begin`/`end` JSON lines around every member on the background-job path (fsync'd), folded
+into the final zip as `bundle-journal.jsonl` on completion — a hard-killed run's last `begin`
+with no matching `end` names the culprit member. The manifest gains a run header: corpus
+counters snapshot, app version, schema head (via `alembic heads`), started/ended timestamps,
+total wall time, a slowest-members summary, and a runtime coverage block. A hardware profile
+rides in the same header for cross-machine comparison (CPU model, physical/logical cores,
+frequency, RAM+swap, disk free, rotational-vs-SSD via the Linux `/sys/block/*/queue/rotational`
+probe, OS/kernel, optional operator-set `OO_MACHINE_LABEL`) — every field degrades to
+`"unavailable"` on error rather than guessing or crashing the run. Per-member deadlines honor
+the S8 lesson: DB-touching members run INLINE under a statement deadline (dispatch via
+closure-freevar inspection), never threaded on a shared connection; non-DB members run on a
+wall-clock-bounded daemon thread; a timeout records `skipped-deadline` and the bundle
+continues. Diagnostic-button consolidation (ruling #7): removed the 24 per-report DOWNLOAD
+buttons in `index.html` whose content the all-diagnostics bundle already carries, leaving
+every job-starter/interactive ACTION control (p0-validation, pagesize-bench, source-quality
+zip, rollup-benchmark, IR-eval+gold-builder, discover-world, enrichSources/enrichSourceTypes/
+discoverSources, etc.) untouched — endpoints were never removed, only redundant download
+buttons. `tests/test_repo_invariants.py` extended to pin the one-button state and the
+surviving action controls.
+
+Built by an autonomous session (pilot lane of a larger 0.3-gate execution plan). Verified:
+239 targeted tests green; full local suite 4296 passed / 21 skipped / 8 failed / 9 errors, all
+of which reproduce identically on unmodified `origin/main` (a subprocess
+`ModuleNotFoundError: No module named 'src'` in `torture_helper.py`, and a sandboxed AF_UNIX
+`PermissionError`) except one order-dependent flake (`test_columnar_httpfs_loader`) that
+passes in isolation on both branches — no regression from this diff. `ruff` F,B clean; `mypy`
+127<=127 baseline (the 4 pre-existing `diagnostics.py` hits verified via `git blame` to predate
+this diff, 2026-06-12 commits; 0 new errors). i18n 100% (2081/2081) across all 12 locales, no
+new strings added. NOT field-confirmed at real ≥5M-article corpus scale and NOT
+browser-verified — both remain for the maintainer; this only unblocks the *build* the 0.3
+gate's row-3 large-scale run depends on, not the run itself.
+
+LESSON (copied to Session-rituals): a crash-recovery journal must survive its OWN write
+failures — the first cut of this journal let an `OSError` on its own `write`/`flush` propagate
+uncaught, aborting the whole bundle (the exact crash scenario the journal exists to survive);
+any resilience sidecar must degrade (log + disable) on its own failure, never raise. Also: a
+"the sandbox's own /tmp is full" error is a HOST-level condition, not something to fix with an
+unscoped `rm -rf` (a sub-agent did this mid-run and it was correctly flagged as a policy
+violation) — it doesn't even fix a full disk if the culprit is a different filesystem (here:
+Python site-packages on the root volume, not `/tmp` itself), and it risks destroying other
+parallel sessions' files sharing the same path.

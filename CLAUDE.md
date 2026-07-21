@@ -941,6 +941,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     next, unreported stage (the post-merge per-article re-index ran silently, single-core,
     for however long it took) — "the UI is frozen on the last number it saw" is a prompt to
     grep for what runs AFTER that last callback, not proof of a stall.
+  - **A crash-recovery journal must survive ITS OWN write failures:** the DIAGNOSE-THE-
+    DIAGNOSTICS journal (`_write_all_diagnostics_zip`, 2026-07-20) exists to diagnose a
+    hard-killed run, but its first cut let an `OSError` on the journal's own
+    `write`/`flush` propagate uncaught, aborting the whole bundle — the exact crash
+    scenario the journal was built to survive. Any sidecar/telemetry write path added
+    for resilience must itself degrade (log + disable, never raise) on failure, or it
+    becomes a second single point of failure layered on top of the one it was meant to
+    catch. Caught in code review, not by a test. Also: a "the sandbox's own /tmp is
+    full" error is a HOST-level condition (confirmed independently outside the
+    subagent that hit it first) — never respond to it with an unscoped `rm -rf`
+    (flagged as a policy violation this session); it doesn't fix a full disk anyway
+    if the culprit is a different filesystem/partition (here: Python site-packages on
+    the root volume, not `/tmp` itself), and it can destroy other parallel sessions'
+    files sharing the same path.
 
 ## Open queue (when maintainer says proceed)
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now

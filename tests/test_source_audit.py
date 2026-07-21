@@ -328,9 +328,13 @@ def test_per_source_metrics_are_count_only_and_shaped():
 
 
 # --------------------------------------------------------------------------- #
-# WIRING — the diagnostics route composes to exactly what the Settings button calls
-# (the 404-drift lesson: compose prefix+decorator, match the caller; text-level so it runs
-# without the crypto/ORM import the endpoint test would need).
+# WIRING — the diagnostics routes exist and (pre-2026-07-20) composed to exactly what
+# the Settings button called (the 404-drift lesson: compose prefix+decorator, match the
+# caller; text-level so it runs without the crypto/ORM import the endpoint test would
+# need). DIAGNOSE-THE-DIAGNOSTICS ruling #7 (2026-07-20) removed the standalone
+# source-audit/source-audit-selftest download buttons -- the all-diagnostics bundle
+# already carries both (source-audit.json, source-audit-selftest.json; the ratchet in
+# tests/test_repo_invariants.py guarantees it), so only the ROUTES stay pinned here.
 # --------------------------------------------------------------------------- #
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -343,5 +347,7 @@ def test_source_audit_endpoint_wired_to_the_settings_button():
     assert prefix == "/api/diagnostics"
     for path in ("/source-audit", "/source-audit-selftest"):
         assert f'@router.get("{path}")' in diag, f"route {path} not registered"
-        # the button must call the FULL composed route (prefix + decorator) — never a bare path
-        assert f"{prefix}{path}?download=1" in html, f"panel button does not call {prefix}{path}"
+        # the standalone per-report download button is gone (bundle carries it instead)
+        assert f"{prefix}{path}?download=1" not in html, (
+            f"a removed per-report download button survived for {prefix}{path}"
+        )
