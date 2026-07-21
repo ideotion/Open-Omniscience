@@ -2093,5 +2093,17 @@
   "pending": "保留中",
   "never-registered": "未登録",
   "Discovery": "発見方法",
-  "First cited by": "最初に引用したのは"
+  "First cited by": "最初に引用したのは",
+  "How your corpus grew": "コーパスがどう成長したか",
+  "Date range": "日付範囲",
+  "Analyses": "分析",
+  "Wiki pages": "Wikiページ",
+  "Law docs": "法律文書",
+  "Events": "イベント",
+  "Before": "以前",
+  "After": "以後",
+  "New sources": "新しい情報源",
+  "Articles awaiting indexing": "まだ索引付け待ちの記事",
+  "database records, all types": "データベースレコード(全種別)",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "コーパスは{sources}件の新しい情報源から{articles}件の記事が増え、{languages}件の新しい言語に広がりました。"
 }

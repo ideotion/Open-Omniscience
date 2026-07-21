@@ -5635,7 +5635,8 @@
       try {
         const s = await api("/api/backup/v2/volumes/status");
         if (s && s.state === "done" && s.mode === "restore" && s.summary && s.summary.report) {
-          summaries.push({ title: label(t("Corpus backup")), plan: s.summary.report.plan || {} });
+          const rep = s.summary.report;
+          summaries.push({ title: label(t("Corpus backup")), plan: rep.plan || {}, ..._uxPlanExtras(rep) });
         }
       } catch (e) { /* best-effort: one endpoint failing must not hide the others */ }
       try {
@@ -5803,14 +5804,14 @@
           await api("/api/backup/v2/volumes/restore", { method: "POST", body: JSON.stringify({ src: c.path, passphrase: pass }) });
           const s = await _uxPoll("/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") });
           const rep = (s.summary && s.summary.report) || {};
-          summaries.push({ title: t("Corpus backup"), plan: rep.plan || {} });
+          summaries.push({ title: t("Corpus backup"), plan: rep.plan || {}, ..._uxPlanExtras(rep) });
         }
         // Legacy single-file backups: merge each additively (server-side path).
         for (const lg of (doLegacy ? legacy : [])) {
           if (bar) { bar.style.display = ""; bar.removeAttribute("value"); }
           prog.innerHTML = `${esc(t("Legacy"))}: ${esc(lg.name)} — ${esc(t("Merging (additive)…"))}`;
           const rep = await api("/api/backup/legacy/restore", { method: "POST", body: JSON.stringify({ path: lg.path, passphrase: pass }) });
-          summaries.push({ title: lg.name, plan: rep.plan || {} });
+          summaries.push({ title: lg.name, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
         }
         // Large-data blobs: one folder/restore call per root dir the scan grouped.
         for (const br of (doBlobs ? blobRoots : [])) {
@@ -5863,52 +5864,218 @@
       if (typeof openTaskManager === "function") openTaskManager();
     }
 
-    // Render "what was imported" as a prominent, honest success view (maintainer
-    // field ask 2026-07-02: "a clear view of what was successfully imported… a
-    // 'backup successful' graph with what has been imported and deduplicated").
-    // Leads with one aggregate headline across every restored source — records
-    // newly IMPORTED, records DEDUPLICATED (already present, additively skipped),
-    // and CONFLICTS (your version kept) — plus a proportion bar; the per-source
-    // detail tables stay below, collapsed. Every count is a real backend number
-    // (no fabricated totals) and the additive-restore honesty (nothing replaced/
-    // deleted) is stated.
+    // Extra, honest post-import signals a merge-restore's REPORT carries beyond the
+    // per-table plan (corpus-delta 2026-07-20) -- pulled out once so every call site
+    // (a live run, the legacy-restore loop, and the recovered last-completed-run) feeds
+    // the SAME shape into _renderImportSummary. `rep` is a run_restore() report dict;
+    // absent/best-effort fields degrade to "no signal" (never a fabricated one).
+    function _uxPlanExtras(rep) {
+      const r = rep || {};
+      const cal = ((r.side_files || {}).state || {})["calendar_feed_imports.json"];
+      return {
+        delta: r.corpus_delta || null,       // {before, after} cheap-counter snapshot
+        reindexed: r.reindexed || null,      // {reindexed, failed} post-merge re-index
+        events_added: (cal && cal.added) || 0,
+      };
+    }
+
+    // "How your corpus grew": a plain BEFORE -> AFTER table over the backend's cheap
+    // counter snapshot (never a post-merge re-scan — merge.py's _corpus_snapshot is
+    // COUNT/DISTINCT/MIN/MAX on indexed columns only). One row per dimension named
+    // by the ruling; the date-range row shows the actual span rather than a bare
+    // number since a day-count alone would hide what actually moved.
+    function _uxCorpusDeltaView(before, after, t) {
+      if (!before || !after) return "";
+      const num = (n) => Number(n || 0).toLocaleString();
+      const fmtDate = (iso) => iso ? String(iso).slice(0, 10) : "—";
+      const dims = [
+        [t("Articles"), before.articles, after.articles],
+        [t("Sources"), before.sources, after.sources],
+        [t("Languages"), before.languages, after.languages],
+        [t("Countries"), before.countries, after.countries],
+        [t("Keywords"), before.keywords, after.keywords],
+      ];
+      const rows = dims.map(([label, b, a]) => {
+        const d = (a || 0) - (b || 0);
+        const dTxt = d === 0 ? "±0" : (d > 0 ? "+" + num(d) : num(d));
+        const dCol = d > 0 ? "var(--ok, #4caf50)" : (d < 0 ? "var(--err, #d9534f)" : "");
+        return `<tr><td style="padding:2px 8px 2px 0">${esc(label)}</td>`
+          + `<td style="text-align:right;padding:2px 8px" class="muted">${esc(num(b))}</td>`
+          + `<td style="text-align:right;padding:2px 8px">${esc(num(a))}</td>`
+          + `<td style="text-align:right;padding:2px 0"><b style="color:${dCol}">${esc(dTxt)}</b></td></tr>`;
+      }).join("");
+      const dateRow = `<tr><td style="padding:2px 8px 2px 0">${esc(t("Date range"))}</td>`
+        + `<td style="text-align:right;padding:2px 8px" class="muted">${esc(fmtDate(before.date_min))} – ${esc(fmtDate(before.date_max))}</td>`
+        + `<td style="text-align:right;padding:2px 8px" colspan="2">${esc(fmtDate(after.date_min))} – ${esc(fmtDate(after.date_max))}</td></tr>`;
+      return `<div style="margin-top:8px">`
+        + `<div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("How your corpus grew"))}</div>`
+        + `<table style="width:100%;font-size:13px;border-collapse:collapse">`
+        + `<thead><tr><th></th><th style="text-align:right">${esc(t("Before"))}</th><th style="text-align:right">${esc(t("After"))}</th><th></th></tr></thead>`
+        + `<tbody>${rows}${dateRow}</tbody></table></div>`;
+    }
+
+    // Render "what was imported" as a prominent, honest success view (maintainer field
+    // ask 2026-07-02: "a clear view of what was successfully imported…"). ROOT-CAUSED
+    // 2026-07-20 (maintainer, after merging a 10 GB corpus: "4,855,433 imported… I'm
+    // sure it doesn't contain 5 million articles"): the old headline summed EVERY
+    // merged TABLE (articles, keyword mentions, links, dates, custody rows, …) under
+    // the single unlabeled word "imported" — mentions alone outnumber articles by an
+    // order of magnitude, so the row-sum read as an article count and was wrong.
+    // REDESIGNED: (1) an ARTICLES-first headline (the user's own unit), plus a labeled
+    // per-type breakdown — the old row-sum survives ONLY as an explicitly-labeled
+    // "database records, all types" figure, never unlabeled again; (2) a CORPUS-DELTA
+    // view (before -> after per dimension) from the backend's cheap-counter snapshot;
+    // (3) an honest WORK-INDUCED queue — new sources to look over, articles still
+    // awaiting indexing (real re-index failures, never fabricated), discovery
+    // candidates added. (A source's QUALIFICATION status is not yet a built feature —
+    // deliberately NOT claimed here; see the code comment on newSources below.) A
+    // tally-only run (newsletters/large-data — no per-table plan) keeps its ORIGINAL
+    // generic imported/deduplicated headline unchanged. Every count is a real backend
+    // number; nothing here is fabricated.
     function _renderImportSummary(host, summaries) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, vars) => {
+        let out = s;
+        if (vars) out = out.replace(/\{(\w+)\}/g, (m, k) => (vars[k] === undefined || vars[k] === null) ? m : String(vars[k]));
+        return out;
+      });
       if (!summaries || !summaries.length) { host.innerHTML = ""; return; }
-      let imported = 0, deduped = 0, conflicts = 0;
+
+      // ARTICLES — the headline, in the user's own unit. plan.articles is the real
+      // per-article tally; no OTHER plan table is ever added to it.
+      let artNew = 0, artDup = 0, artConf = 0;
+      // "database records, all types" (ruling 2026-07-20): the SAME cross-table
+      // row-sum the old headline computed, kept ONLY as an explicitly-labeled
+      // catch-all — never presented as an article count again.
+      let allNew = 0, allDup = 0, allConf = 0;
+      // Per-type labeled breakdown, the ruling's own list: sources · keywords ·
+      // mentions · links · law docs · wiki pages · events · analyses.
+      const perType = [
+        { keys: ["sources"], label: t("Sources"), n: 0 },
+        { keys: ["keywords"], label: t("Keywords"), n: 0 },
+        { keys: ["keyword_mentions"], label: t("Keyword mentions"), n: 0 },
+        { keys: ["article_links"], label: t("Links"), n: 0 },
+        { keys: ["law_documents", "law_revisions"], label: t("Law docs"), n: 0 },
+        { keys: ["wiki_pages", "wiki_revisions"], label: t("Wiki pages"), n: 0 },
+        { keys: ["article_analyses"], label: t("Analyses"), n: 0 },
+      ];
+      // Fallback headline for a tally-only run (no plan at all — newsletters/large
+      // data): reproduces the ORIGINAL generic imported/deduplicated stat, unchanged.
+      let tallyNew = 0, tallyDup = 0;
+      let newSources = 0, discoveryAdded = 0, eventsAdded = 0, unindexed = 0;
+      let deltaBefore = null, deltaAfter = null;
       const extra = [];  // empty/errored newsletters, surfaced honestly
       const detail = [];
+      let sawPlan = false;
       for (const sm of summaries) {
         if (sm.plan) {
-          for (const c of Object.values(sm.plan)) {
-            imported += c.new || 0; deduped += c.duplicate || 0; conflicts += c.conflict || 0;
+          sawPlan = true;
+          const p = sm.plan;
+          const art = p.articles || {};
+          artNew += art.new || 0; artDup += art.duplicate || 0; artConf += art.conflict || 0;
+          for (const c of Object.values(p)) {
+            if (c && typeof c === "object") {
+              allNew += c.new || 0; allDup += c.duplicate || 0; allConf += c.conflict || 0;
+            }
           }
-          detail.push({ title: sm.title, body: _v2PlanTable(sm.plan) });
+          for (const row of perType) {
+            for (const k of row.keys) { const c = p[k]; if (c) row.n += c.new || 0; }
+          }
+          // New sources: reported plainly (worth a look in Source Management) — NOT
+          // "awaiting qualification". That lifecycle (ledger ruling, same-day amend)
+          // is not yet built (no qualification-status column/gate exists), so a new
+          // source is enabled exactly as the backup had it; claiming a queued
+          // "awaiting qualification" state here would be fabricated.
+          newSources += (p.sources && p.sources.new) || 0;
+          discoveryAdded += (p.source_candidates && p.source_candidates.new) || 0;
+          detail.push({ title: sm.title, body: _v2PlanTable(p) });
+
+          if (sm.events_added) eventsAdded += sm.events_added;
+          // Real re-index failures only — reindex_imported_articles ran (or was
+          // skipped entirely; either way the true count of never-reindexed imported
+          // articles is knowable, never guessed).
+          if (sm.reindexed) unindexed += sm.reindexed.failed || 0;
+          else if (art.new) unindexed += art.new;  // re-index was skipped for this run
+          if (sm.delta && sm.delta.before && sm.delta.after) {
+            if (!deltaBefore) deltaBefore = sm.delta.before;
+            deltaAfter = sm.delta.after;
+          }
         } else {
           const tl = sm.tally || {};
-          imported += (tl.stored || 0) + (tl.restored || 0);
-          deduped  += (tl.duplicate || 0) + (tl.skipped || 0);
+          tallyNew += (tl.stored || 0) + (tl.restored || 0);
+          tallyDup += (tl.duplicate || 0) + (tl.skipped || 0);
           if (tl.empty)  extra.push(`${tl.empty} ${t("empty")}`);
           if (tl.errors) extra.push(`${tl.errors} ${t("errors")}`);
           detail.push({ title: sm.title, body: `<div class="hint">${(sm.lines || []).map(esc).join(" · ")}</div>` });
         }
       }
+      if (eventsAdded) perType.push({ keys: [], label: t("Events"), n: eventsAdded });
+
       const num = (n) => Number(n || 0).toLocaleString();
-      const total = imported + deduped + conflicts;
       const seg = (v, col) => v > 0 ? `<span style="flex:${v};background:${col}"></span>` : "";
-      const bar = total > 0
-        ? `<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin:8px 0 4px">`
-          + seg(imported, "var(--accent, #4a90d9)") + seg(deduped, "var(--muted-bg, #888)")
-          + seg(conflicts, "var(--err, #d9534f)") + `</div>`
-        : "";
       const stat = (n, label, col) =>
         `<div style="text-align:center;min-width:88px"><div style="font-size:22px;font-weight:700;color:${col}">${esc(num(n))}</div>`
         + `<div class="muted" style="font-size:12px">${esc(label)}</div></div>`;
-      const nums = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px">`
-        + stat(imported, t("imported"), "var(--accent, #4a90d9)")
-        + stat(deduped, t("deduplicated"), "")
-        + (conflicts ? stat(conflicts, t("conflicts (your version kept)"), "var(--err, #d9534f)") : "")
-        + `</div>`;
+
+      let headline, bar;
+      if (sawPlan) {
+        // HEADLINE: articles, in the user's own unit — never a cross-table row-sum.
+        const artTotal = artNew + artDup + artConf;
+        bar = artTotal > 0
+          ? `<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin:8px 0 4px">`
+            + seg(artNew, "var(--accent, #4a90d9)") + seg(artDup, "var(--muted-bg, #888)")
+            + seg(artConf, "var(--err, #d9534f)") + `</div>`
+          : "";
+        headline =
+          `<div class="muted" style="font-size:12px">${esc(t("Articles"))}</div>`
+          + `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:2px">`
+          + stat(artNew, t("imported"), "var(--accent, #4a90d9)")
+          + stat(artDup, t("deduplicated"), "")
+          + (artConf ? stat(artConf, t("conflicts (your version kept)"), "var(--err, #d9534f)") : "")
+          + `</div>`;
+      } else {
+        // No per-table plan at all (newsletters/large-data only) — the ORIGINAL
+        // generic stat, unchanged.
+        const tallyTotal = tallyNew + tallyDup;
+        bar = tallyTotal > 0
+          ? `<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin:8px 0 4px">`
+            + seg(tallyNew, "var(--accent, #4a90d9)") + seg(tallyDup, "var(--muted-bg, #888)") + `</div>`
+          : "";
+        headline = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px">`
+          + stat(tallyNew, t("imported"), "var(--accent, #4a90d9)")
+          + stat(tallyDup, t("deduplicated"), "")
+          + `</div>`;
+      }
+
+      const typeLabels = perType.filter((r) => r.n > 0).map((r) => `${num(r.n)} ${r.label}`);
+      const catchAll = allNew ? [`${num(allNew)} ${t("database records, all types")}`] : [];
+      const typeBlock = (typeLabels.length || catchAll.length)
+        ? `<div class="muted" style="font-size:12px;margin-top:4px">${typeLabels.concat(catchAll).map(esc).join(" · ")}</div>`
+        : "";
+
+      // Positive-but-honest framing (ruling: "imports should give positive
+      // feedback" — the delta IS the good news, no fabricated praise).
+      const growLine = (deltaBefore && deltaAfter)
+        ? `<div style="margin-top:6px">${esc(tf(
+            "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.",
+            {
+              articles: num(Math.max(0, deltaAfter.articles - deltaBefore.articles)),
+              sources: num(Math.max(0, deltaAfter.sources - deltaBefore.sources)),
+              languages: num(Math.max(0, deltaAfter.languages - deltaBefore.languages)),
+            }
+          ))}</div>`
+        : "";
+      const deltaView = _uxCorpusDeltaView(deltaBefore, deltaAfter, t);
+
+      // WORK INDUCED: stated honestly, only when there is actually something queued.
+      const queueLines = [];
+      if (newSources > 0) queueLines.push(`${num(newSources)} ${t("New sources")}`);
+      if (unindexed > 0) queueLines.push(`${num(unindexed)} ${t("Articles awaiting indexing")}`);
+      if (discoveryAdded > 0) queueLines.push(`${num(discoveryAdded)} ${t("Discovery candidates")}`);
+      const queueBlock = queueLines.length
+        ? `<div class="muted" style="font-size:12px;margin-top:6px">${queueLines.map(esc).join(" · ")}</div>`
+        : "";
+
       const extraLine = extra.length
         ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(extra.join(" · "))}</div>` : "";
       const detailBlocks = detail.map((d) =>
@@ -5916,7 +6083,8 @@
       host.innerHTML =
         `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid var(--ok, #4caf50)">`
         + `<div style="font-weight:700;font-size:15px">✓ ${esc(t("Import successful"))}</div>`
-        + nums + bar + extraLine
+        + growLine + headline + bar + typeBlock + extraLine + queueBlock
+        + deltaView
         + `<div class="muted" style="font-size:12px;margin-top:6px">${esc(t("Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped."))}</div>`
         + `<div style="margin-top:8px"><div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("Details by source"))}</div>${detailBlocks}</div>`
         + `</div>`;
