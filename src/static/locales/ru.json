@@ -2085,5 +2085,13 @@
   "Track a document now": "Отслеживать документ сейчас",
   "Adding & tracking…": "Добавление и отслеживание…",
   "Status:": "Статус:",
-  "Resume tracking this document": "Возобновить отслеживание этого документа"
+  "Resume tracking this document": "Возобновить отслеживание этого документа",
+  "Apply filter": "Применить фильтр",
+  "Trail": "След",
+  "qualified": "квалифицирован",
+  "disqualified": "дисквалифицирован",
+  "pending": "в ожидании",
+  "never-registered": "никогда не регистрировался",
+  "Discovery": "Обнаружение",
+  "First cited by": "Впервые процитирован"
 }
