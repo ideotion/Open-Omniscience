@@ -10824,6 +10824,145 @@
       const el = $("psb-status"); if (el) el.textContent = t("Cancelling…");
     }
 
+    // Keyword-triage real run (Section 8, ruled 2026-07-20): start the background job, poll
+    // status, render the run summary + a download link for the dated JSONL log. Mirrors
+    // runPagesizeBench/runP0Validation exactly.
+    async function runKeywordTriage(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("kt-status"); const out = $("kt-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const model = (($("kt-model") && $("kt-model").value) || "").trim();
+      const limit = parseInt(($("kt-limit") && $("kt-limit").value) || "500", 10) || 500;
+      if (!model) { if (typeof toast === "function") toast(t("Enter an installed Ollama model tag first.")); return; }
+      if (btn) btn.disabled = true;
+      if (out) out.innerHTML = "";
+      set(t("Starting…"));
+      try {
+        try {
+          await api("/api/diagnostics/keyword-triage/run", {
+            method: "POST", body: JSON.stringify({ model, limit }),
+          });
+        } catch (e) {
+          set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
+          return;
+        }
+        let miss = 0;
+        for (let i = 0; i < 5400; i++) {
+          let s;
+          try { s = await api("/api/diagnostics/keyword-triage/status"); miss = 0; }
+          catch (e) {
+            miss++;
+            set(t("Connection hiccup — retrying…"));
+            await sleep(Math.min(2000 * miss, 10000));
+            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
+            continue;
+          }
+          const state = s && s.state;
+          // BackgroundJob reaches 'done' even when the WORK inside it ended in an
+          // honest error (an Ollama outage mid-run does not raise -- the job catches it
+          // and returns a result with state:'error', per src/ai_layer/triage_job.py) --
+          // check the run's own reported state first so this line is never "Done."
+          // while the panel below shows a failure.
+          const runState = (s.result && s.result.state) || state;
+          if (runState === "error") { set(t("Triage failed:") + " " + ((s.result && s.result.error) || s.error || t("unknown error"))); renderKeywordTriageResult(out, s); break; }
+          if (state === "done" && s.ready) { set(t("Done.")); renderKeywordTriageResult(out, s); break; }
+          if (state === "cancelled" || runState === "cancelled") { set(t("Triage cancelled.")); renderKeywordTriageResult(out, s); break; }
+          const detail = s.detail ? " · " + s.detail : "";
+          set(t("Running in the background…") + detail);
+          await sleep(2000);
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function renderKeywordTriageResult(out, status) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const res = (status && status.result) || {};
+      out.innerHTML = esc(res.state || "") + " — " + esc(res.batches_completed || 0) + "/"
+        + esc(res.batches_total || 0) + " batches, " + esc((res.totals && res.totals.verdicts_out) || 0)
+        + " verdicts, canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
+        + '<div style="margin-top:4px"><a href="/api/diagnostics/keyword-triage/download" target="_blank">'
+        + t("Download report (.json)").replace(".json", ".jsonl") + "</a></div>";
+    }
+
+    async function cancelKeywordTriage() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { await api("/api/diagnostics/keyword-triage/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+      const el = $("kt-status"); if (el) el.textContent = t("Cancelling…");
+    }
+
+    // Source-tag assignment real run (design entry + GO ruling, maintainer 2026-07-20): same
+    // chassis as runKeywordTriage above.
+    async function runSourceTags(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("st-status"); const out = $("st-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const model = (($("st-model") && $("st-model").value) || "").trim();
+      const topN = parseInt(($("st-topn") && $("st-topn").value) || "200", 10) || 200;
+      if (!model) { if (typeof toast === "function") toast(t("Enter an installed Ollama model tag first.")); return; }
+      if (btn) btn.disabled = true;
+      if (out) out.innerHTML = "";
+      set(t("Starting…"));
+      try {
+        try {
+          await api("/api/diagnostics/source-tags/run", {
+            method: "POST", body: JSON.stringify({ model, top_n: topN }),
+          });
+        } catch (e) {
+          set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
+          return;
+        }
+        let miss = 0;
+        for (let i = 0; i < 5400; i++) {
+          let s;
+          try { s = await api("/api/diagnostics/source-tags/status"); miss = 0; }
+          catch (e) {
+            miss++;
+            set(t("Connection hiccup — retrying…"));
+            await sleep(Math.min(2000 * miss, 10000));
+            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
+            continue;
+          }
+          const state = s && s.state;
+          // Same wrinkle as runKeywordTriage: an Ollama outage mid-run does not raise --
+          // the job catches it and completes with state:'done' but result.state:'error'.
+          const runState = (s.result && s.result.state) || state;
+          if (runState === "error") { set(t("Source-tag run failed:") + " " + ((s.result && s.result.error) || s.error || t("unknown error"))); renderSourceTagsResult(out, s); break; }
+          if (state === "done" && s.ready) { set(t("Done.")); renderSourceTagsResult(out, s); break; }
+          if (state === "cancelled" || runState === "cancelled") { set(t("Source-tag run cancelled.")); renderSourceTagsResult(out, s); break; }
+          const detail = s.detail ? " · " + s.detail : "";
+          set(t("Running in the background…") + detail);
+          await sleep(2000);
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function renderSourceTagsResult(out, status) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const res = (status && status.result) || {};
+      const totals = res.totals || {};
+      out.innerHTML = esc(res.state || "") + " — " + esc(res.batches_completed || 0) + "/"
+        + esc(res.batches_total || 0) + " batches, " + esc(totals.assigned_count || 0) + " tagged, "
+        + esc(totals.none_count || 0) + " none, " + esc(res.skipped_evidence_floor || 0)
+        + " skipped (evidence floor), canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
+        + '<div style="margin-top:4px"><a href="/api/diagnostics/source-tags/download" target="_blank">'
+        + t("Download report (.json)").replace(".json", ".jsonl") + "</a> — "
+        + esc(t("proposed tags are logged only, never applied to Source.tags")) + "</div>";
+    }
+
+    async function cancelSourceTags() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try { await api("/api/diagnostics/source-tags/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+      const el = $("st-status"); if (el) el.textContent = t("Cancelling…");
+    }
+
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
     // /api/diagnostics/ir-eval report for a gold-set FILE — score the live search at the
     // current BM25F default, or (both weight boxes filled) A/B two (title,body) weight
