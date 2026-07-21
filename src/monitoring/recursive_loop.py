@@ -40,6 +40,7 @@ LOOP_SELFTESTS: tuple[tuple[str, str, str], ...] = (
     ("ir-eval-selftest", "src.analytics.ir_eval", "run_ir_eval_selftest"),
     ("perception-eval-selftest", "src.analytics.perception_eval", "run_perception_eval_selftest"),
     ("keyword-triage-selftest", "src.ai_layer.triage", "run_triage_selftest"),
+    ("source-tags-selftest", "src.ai_layer.source_tags", "run_source_tags_selftest"),
     ("conjunction-selftest", "src.analytics.conjunction", "run_conjunction_selftest"),
     ("leads-selftest", "src.briefing.leads", "run_leads_selftest"),
     ("non-article-selftest", "src.ingest.non_article", "run_non_article_selftest"),
