@@ -2093,5 +2093,17 @@
   "pending": "tertunda",
   "never-registered": "tidak pernah terdaftar",
   "Discovery": "Penemuan",
-  "First cited by": "Pertama kali dikutip oleh"
+  "First cited by": "Pertama kali dikutip oleh",
+  "How your corpus grew": "Bagaimana korpus Anda bertambah",
+  "Date range": "Rentang tanggal",
+  "Analyses": "Analisis",
+  "Wiki pages": "Halaman wiki",
+  "Law docs": "Dokumen hukum",
+  "Events": "Peristiwa",
+  "Before": "Sebelum",
+  "After": "Sesudah",
+  "New sources": "Sumber baru",
+  "Articles awaiting indexing": "Artikel masih menunggu pengindeksan",
+  "database records, all types": "Rekaman database, semua jenis",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Korpus Anda bertambah {articles} artikel dari {sources} sumber baru, mencakup {languages} bahasa baru."
 }

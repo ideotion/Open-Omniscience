@@ -1527,6 +1527,42 @@ def _default_reindex_commit_batch() -> int:
         return 1
 
 
+def _corpus_snapshot(session) -> dict:
+    """A near-free snapshot of the corpus: COUNT/DISTINCT/MIN/MAX aggregates over
+    INDEXED columns only -- never a whole-table content scan. Taken once on the live
+    corpus right before a commit-restore's atomic swap and once right after, so the
+    UI can render the post-import CORPUS-DELTA view (maintainer field report
+    2026-07-20: "I'm sure it doesn't contain 5 million articles" -- the old headline
+    summed every merged TABLE, not articles) as a plain before -> after per
+    dimension, with no post-merge re-scan of the corpus needed."""
+    from sqlalchemy import func
+
+    from src.database.models import Article, Keyword, Source
+
+    date_min, date_max = session.query(
+        func.min(Article.published_at), func.max(Article.published_at)
+    ).one()
+    return {
+        "articles": int(session.query(func.count(Article.id)).scalar() or 0),
+        "sources": int(session.query(func.count(Source.id)).scalar() or 0),
+        "languages": int(
+            session.query(func.count(func.distinct(Article.language)))
+            .filter(Article.language.isnot(None))
+            .scalar()
+            or 0
+        ),
+        "countries": int(
+            session.query(func.count(func.distinct(Article.country)))
+            .filter(Article.country.isnot(None))
+            .scalar()
+            or 0
+        ),
+        "keywords": int(session.query(func.count(Keyword.id)).scalar() or 0),
+        "date_min": date_min.isoformat() if date_min else None,
+        "date_max": date_max.isoformat() if date_max else None,
+    }
+
+
 def reindex_imported_articles(
     batch_id: int,
     *,
@@ -1657,6 +1693,18 @@ def run_restore(
         return report
 
     # ---- commit path ------------------------------------------------------ #
+    # Corpus-delta "before": the live corpus is still byte-identical at this point
+    # (the merge above only touched the disposable working copy) -- so this is the
+    # true pre-import state. Best-effort: a snapshot hiccup must never abort an
+    # otherwise-good restore; absence just means the UI shows no delta view.
+    try:
+        from src.database.session import session_scope
+
+        with session_scope() as _before_sess:
+            report["corpus_delta"] = {"before": _corpus_snapshot(_before_sess)}
+    except Exception:  # noqa: BLE001 - a snapshot failure must never block a commit
+        _LOG.warning("pre-restore corpus snapshot failed", exc_info=True)
+
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = data_dir() / f"pre-restore-{ts}.db"
     snapshot_preserving(live_db_path(), snapshot)
@@ -1690,6 +1738,19 @@ def run_restore(
 
     report["committed"] = True
     report["batch_id"] = batch_id
+
+    # Corpus-delta "after": same cheap aggregates, now against the just-swapped-in
+    # merged corpus. Only set alongside "before" (both best-effort; a partial pair
+    # is dropped rather than shown as a false delta).
+    if "corpus_delta" in report:
+        try:
+            from src.database.session import session_scope as _session_scope_after
+
+            with _session_scope_after() as _after_sess:
+                report["corpus_delta"]["after"] = _corpus_snapshot(_after_sess)
+        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+            _LOG.warning("post-restore corpus snapshot failed", exc_info=True)
+            report.pop("corpus_delta", None)
 
     # DB-7 (corpus-epoch → restore-merge): a committed merge is a bulk mutation of the live
     # corpus, and the restore is "the one residual mutator" not yet wired to the corpus
@@ -1740,7 +1801,13 @@ def run_restore(
             )
         except Exception:  # noqa: BLE001 - never undo a committed, additive restore
             _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
-            report["reindexed"] = {"reindexed": 0, "failed": 0, "skipped": "see server log"}
+            # The whole batch failed before touching a single article, so NONE of the
+            # imported articles got re-indexed -- "failed" must be the true imported
+            # count (from the already-known plan), not 0. Reporting 0 here would read
+            # as "nothing needed re-indexing", which is the fabricated-signal the rest
+            # of this feature is built to avoid (see reindex_imported_articles above).
+            _imported = int((counts.get("articles") or {}).get("new") or 0)
+            report["reindexed"] = {"reindexed": 0, "failed": _imported, "skipped": "see server log"}
     report["pruned_snapshots"] = _prune_snapshots()
     _LOG.info("merge-restore committed: batch=%s plan=%s", batch_id, counts)
     return report

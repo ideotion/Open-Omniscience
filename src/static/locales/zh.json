@@ -2093,5 +2093,17 @@
   "pending": "待定",
   "never-registered": "从未注册",
   "Discovery": "发现方式",
-  "First cited by": "首次引用者"
+  "First cited by": "首次引用者",
+  "How your corpus grew": "您的语料库是如何增长的",
+  "Date range": "日期范围",
+  "Analyses": "分析",
+  "Wiki pages": "维基页面",
+  "Law docs": "法律文件",
+  "Events": "事件",
+  "Before": "之前",
+  "After": "之后",
+  "New sources": "新来源",
+  "Articles awaiting indexing": "仍在等待索引的文章",
+  "database records, all types": "数据库记录(所有类型)",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "您的语料库新增了 {articles} 篇文章,来自 {sources} 个新来源,涵盖 {languages} 种新语言。"
 }

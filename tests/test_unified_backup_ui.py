@@ -70,6 +70,87 @@ def test_dialogs_have_a_real_progress_bar_and_import_summary():
     assert "Additive restore: nothing in your corpus was replaced or deleted." in _APP
 
 
+def test_post_import_headline_is_articles_first_never_a_cross_table_row_sum():
+    """Root-cause fix (maintainer field report 2026-07-20, after merging a 10 GB
+    corpus: "4,855,433 imported… I'm sure it doesn't contain 5 million articles"):
+    the old headline summed EVERY merged TABLE (articles, keyword mentions, links,
+    dates, custody rows, …) under the single unlabeled word "imported". The redesign
+    must lead with ARTICLES specifically, keep the old cross-table row-sum ONLY under
+    an explicit "database records, all types" label, and never re-introduce an
+    unlabeled sum of every plan table."""
+    fn = _APP[_APP.index("function _renderImportSummary("):]
+    fn = fn[: fn.index("\n    }\n")]
+    # the headline is built from plan.articles specifically, not a sum over every key
+    assert "p.articles" in fn or "art.new" in fn
+    assert 'art.new || 0' in fn
+    # the old bug pattern (summing every value in the plan with no per-table split)
+    # may still exist ONLY as the explicitly-labeled catch-all, never unlabeled
+    assert "database records, all types" in fn
+    # a tally-only run (newsletters/large-data, no per-table plan) keeps ITS own
+    # original generic stat -- this redesign must not regress that shipped path
+    assert "sawPlan" in fn
+
+
+def test_post_import_per_type_breakdown_is_labeled_not_a_row_sum():
+    """The per-table detail must surface as INDIVIDUALLY labeled counts (ruling
+    2026-07-20's exact list), not folded back into one number."""
+    fn = _APP[_APP.index("function _renderImportSummary("):]
+    fn = fn[: fn.index("\n    }\n")]
+    for key in (
+        "sources", "keywords", "keyword_mentions", "article_links",
+        "law_documents", "wiki_pages", "article_analyses",
+    ):
+        assert f'"{key}"' in fn, key
+    for label in ("Sources", "Keywords", "Keyword mentions", "Links", "Law docs", "Wiki pages", "Analyses", "Events"):
+        assert f't("{label}")' in fn, label
+
+
+def test_post_import_corpus_delta_view_is_wired():
+    """The dedicated CORPUS-DELTA view (before -> after per dimension) is rendered
+    from the backend's cheap-counter snapshot (never a post-merge whole-table
+    re-scan) and reaches the renderer through every push site."""
+    assert "_uxCorpusDeltaView" in _APP
+    dv = _APP[_APP.index("function _uxCorpusDeltaView("):]
+    dv = dv[: dv.index("\n    }\n")]
+    for label in ("Articles", "Sources", "Languages", "Countries", "Keywords", "Date range", "Before", "After"):
+        assert f't("{label}")' in dv, label
+    # _uxPlanExtras carries corpus_delta (+ the re-index / events signals) from a
+    # run_restore() report into every summaries.push() call site
+    assert "function _uxPlanExtras(" in _APP
+    extras = _APP[_APP.index("function _uxPlanExtras("):]
+    extras = extras[: extras.index("\n    }\n")]
+    assert "r.corpus_delta" in extras
+    assert "r.reindexed" in extras
+    assert "_uxPlanExtras(rep)" in _APP
+
+
+def test_post_import_positive_but_honest_growth_line_uses_i18n_template():
+    """Positive-but-honest framing (ruling: "imports should give positive
+    feedback") — the delta itself is the good news, via a fixed OOI18N.tf template
+    (never string-concatenated, so it stays translatable) with real deltas only."""
+    fn = _APP[_APP.index("function _renderImportSummary("):]
+    fn = fn[: fn.index("\n    }\n")]
+    assert "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages." in fn
+
+
+def test_post_import_work_induced_queue_never_claims_unbuilt_qualification():
+    """(3) WORK INDUCED, stated honestly: new sources, articles still awaiting
+    indexing, discovery candidates. The qualification LIFECYCLE (ledger ruling,
+    same-day amend) is NOT yet built in this codebase (no qualification-status
+    column/gate exists), so a new source must be reported plainly -- never as
+    "awaiting qualification", which would fabricate a queue state the app cannot
+    actually enforce."""
+    fn = _APP[_APP.index("function _renderImportSummary("):]
+    fn = fn[: fn.index("\n    }\n")]
+    assert 't("New sources")' in fn
+    assert 't("Articles awaiting indexing")' in fn
+    assert 't("Discovery candidates")' in fn
+    # "qualification" may appear in explanatory CODE COMMENTS (documenting the
+    # deferral), but must never be user-facing text: no t("...qualification...")
+    import re as _re
+    assert not _re.search(r't\(\s*"[^"]*qualification[^"]*"', fn, _re.I)
+
+
 def test_import_restores_each_volume_set_from_its_own_scanned_path():
     # root-cause fix: a nested volume set restores from c.path, not the scanned parent
     assert "c.path" in _APP
