@@ -24,10 +24,10 @@ from src.database.session import get_db
 from src.llm.ollama import LLMUnavailable, OllamaClient
 
 
-def _client_with(handler) -> OllamaClient:
+def _client_with(handler, *, base_url: str = "http://testollama") -> OllamaClient:
     transport = httpx.MockTransport(handler)
-    http = httpx.Client(transport=transport, base_url="http://testollama")
-    return OllamaClient(client=http, base_url="http://testollama")
+    http = httpx.Client(transport=transport, base_url=base_url)
+    return OllamaClient(client=http, base_url=base_url)
 
 
 # --------------------------------------------------------------------------- #
@@ -108,9 +108,32 @@ def test_remove_deletes_and_404_is_loud():
 # --------------------------------------------------------------------------- #
 
 
-def test_kill_switch_blocks_ollama_call():
-    """Airplane mode (the global kill switch) must refuse Ollama requests LOUDLY,
-    without even attempting the call (no socket while the operator is offline)."""
+def test_kill_switch_allows_loopback_generation_and_list():
+    """Airplane mode must NOT block LOOPBACK Ollama inference (2026-07-20 field
+    report / ruling): the local model does no network I/O of its own, so list and
+    generate against a loopback base_url proceed even while the kill switch is
+    engaged."""
+    from src.ingest import activate_kill_switch, clear_kill_switch
+
+    def handler(request):
+        if request.url.path == "/api/generate":
+            return httpx.Response(200, json={"response": "a summary.", "eval_count": 3})
+        return httpx.Response(200, json={"models": [{"name": "llama3.2:3b"}]})
+
+    client = _client_with(handler, base_url="http://127.0.0.1:11434")
+    activate_kill_switch()
+    try:
+        assert client.list_installed() == ["llama3.2:3b"]
+        out = client.generate("hi", model="llama3.2:3b")
+        assert out.text == "a summary."
+    finally:
+        clear_kill_switch()
+
+
+def test_kill_switch_blocks_non_loopback_base_url_even_for_generate():
+    """A non-loopback base_url is still refused under airplane mode, even for
+    list/generate -- the loopback allowance is conditioned on the target actually
+    being loopback (defense in depth for a misconfigured/injected client)."""
     from src.ingest import activate_kill_switch, clear_kill_switch
     from src.llm.ollama import LLMUnavailable
 
@@ -120,11 +143,12 @@ def test_kill_switch_blocks_ollama_call():
         called["n"] += 1
         return httpx.Response(200, json={"models": [{"name": "llama3.2:3b"}]})
 
-    client = _client_with(handler)
+    client = _client_with(handler, base_url="http://evil.example")
     activate_kill_switch()
     try:
-        with pytest.raises(LLMUnavailable):
+        with pytest.raises(LLMUnavailable) as exc:
             client.list_installed()
+        assert "Turn airplane mode off" in str(exc.value)
         with pytest.raises(LLMUnavailable):
             client.generate("hi", model="llama3.2:3b")
         assert called["n"] == 0, "no Ollama request may be attempted while offline"
@@ -162,7 +186,19 @@ def test_non_loopback_ollama_url_refused():
     the local LLM never talks to a remote host (privacy by construction)."""
     from src.llm.ollama import LLMError, OllamaClient
 
-    for bad in ("http://evil.example:11434", "http://10.0.0.5:11434", "http://[::ffff:8.8.8.8]"):
+    for bad in (
+        "http://evil.example:11434",
+        "http://10.0.0.5:11434",
+        "http://[::ffff:8.8.8.8]",
+        # Hostname-prefix bypass regression: these merely START WITH "127." as a
+        # string but are ordinary DNS names, not loopback addresses -- a naive
+        # `.startswith("127.")` check wrongly accepted them (a crafted
+        # OO_OLLAMA_URL could then egress to whatever IP the attacker's DNS
+        # resolves them to).
+        "http://127.0.0.1.evil.example:11434",
+        "http://127.evil.com:11434",
+        "http://127.0.0.1evil.com:11434",
+    ):
         with pytest.raises(LLMError):
             OllamaClient(base_url=bad)  # client=None -> we open the socket -> enforced
     # Loopback forms are accepted.
