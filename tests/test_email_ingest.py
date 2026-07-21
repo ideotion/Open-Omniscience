@@ -11,7 +11,7 @@ from __future__ import annotations
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-from src.database.models import Article, Base, Source
+from src.database.models import Article, ArticleLink, Base, Source
 from src.ingest.email import (
     fetch_imap,
     ingest_emails,
@@ -249,6 +249,64 @@ def test_recipient_is_redacted_and_never_stored():
     assert p.redactions >= 2
     # the sender is recipient-safe and kept
     assert p.from_addr == "Daily <news@publisher.example>"
+
+
+UNWRAP = b"""From: News <n@publisher.example>
+Subject: Recovered link
+Message-ID: <unwrap1@publisher.example>
+Date: Tue, 06 Jan 2026 09:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+
+See https://click.tracker.example/redirect?url=https%3A%2F%2Freal-news.example%2Fstory%3Fp%3D1 for details.
+"""
+
+
+def test_newsletter_links_seed_article_link_rows_recovered_only():
+    """SOURCE-MANAGEMENT ASKS ruling #1: cleaned newsletter links must become
+    ArticleLink rows -- but ONLY fully-recovered destinations. A tracker-wrapped
+    link whose destination could not be resolved (list-manage.com here) stores
+    wrapper-domain-only and must NEVER seed a source; an ordinary cleaned link
+    must."""
+    s = _db()
+    src = s.query(Source).first()
+    tally = ingest_emails(s, src, [TRACK])
+    assert tally["stored"] == 1
+    art = s.query(Article).filter_by(title="Markets").one()
+    links = s.query(ArticleLink).filter_by(article_id=art.id).all()
+    normalized = {ln.normalized_url for ln in links}
+    # the clean (recipient-param-stripped) link seeds a row
+    assert any("publisher.example/a" in nu for nu in normalized)
+    # the unrecoverable tracker wrapper (wrapper-domain-only) must NOT seed one
+    assert not any("list-manage.com" in nu for nu in normalized)
+    for ln in links:
+        assert ln.link_type == "external"
+    s.close()
+
+
+def test_newsletter_unwrapped_recovered_link_seeds_the_real_destination():
+    """A redirect wrapper whose destination is embedded (no network needed) is
+    RECOVERED -- the ArticleLink row must point at the recovered destination's own
+    domain, never at the wrapper host."""
+    s = _db()
+    src = s.query(Source).first()
+    tally = ingest_emails(s, src, [UNWRAP])
+    assert tally["stored"] == 1
+    art = s.query(Article).filter_by(title="Recovered link").one()
+    links = s.query(ArticleLink).filter_by(article_id=art.id).all()
+    assert len(links) == 1
+    assert links[0].normalized_url.startswith("https://real-news.example/story")
+    assert "click.tracker.example" not in links[0].normalized_url
+    s.close()
+
+
+def test_newsletter_link_indexing_disabled_by_oo_no_index(monkeypatch):
+    monkeypatch.setenv("OO_NO_INDEX", "1")
+    s = _db()
+    src = s.query(Source).first()
+    tally = ingest_emails(s, src, [TRACK])
+    assert tally["stored"] == 1
+    assert s.query(ArticleLink).count() == 0
+    s.close()
 
 
 def test_links_are_detracked_on_ingest():

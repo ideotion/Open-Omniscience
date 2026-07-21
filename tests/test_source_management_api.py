@@ -65,6 +65,21 @@ def test_source_crud_via_router(client):
     assert client.get(f"/api/sources/{sid}").status_code == 404
 
 
+def test_source_observed_ips_endpoint_shape(client):
+    """SOURCE IPs ruling (2026-07-20), ask 2: per-source aggregated observed-IP
+    view accessible in source management."""
+    r = client.post("/api/sources/", json={"name": "Alpha", "domain": "alpha.example"})
+    sid = r.json()["id"]
+
+    out = client.get(f"/api/sources/{sid}/observed-ips").json()
+    assert out["source_id"] == sid
+    assert out["ips"] == []
+    assert out["distinct_ips"] == 0
+    assert "caveat" in out and "method" in out
+
+    assert client.get("/api/sources/999999/observed-ips").status_code == 404
+
+
 def test_missing_required_field_400(client):
     assert client.post("/api/sources/", json={"name": "NoDomain"}).status_code == 400
 
