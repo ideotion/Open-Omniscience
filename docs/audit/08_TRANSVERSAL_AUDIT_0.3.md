@@ -89,14 +89,22 @@ level, detection is the buildable lever). What changed:
   cannot distinguish a healthy slow re-index from a hung/corrupted one.
   Fixed by real progress phases, not just parallelization.
 - **B2 (07's proposed local fixity audit: re-hash the corpus vs stored
-  hashes, loud report)** — this reviewer found `src/integrity/fixity.py`
-  and `src/verification/fixity.py` referenced only in a 2026-06-15 ledger
-  row about an unrelated airplane-mode status fix; no dedicated
-  standalone fixity-audit tool/endpoint was located this session. **Status:
-  unconfirmed built — flagged for the maintainer to confirm or re-open**,
-  not claimed done and not claimed absent (this reviewer did not open those
-  two files' full contents this session; a grep-level pass is not sufficient
-  evidence either way for a gate-facing document).
+  hashes, loud report) — confirmed shipped, read in full this session.**
+  `src/verification/fixity.py` (`audit_fixity`) re-hashes every stored
+  `Article.content` with the *exact* ingest-time function
+  (`generate_content_hash` — whitespace-normalised SHA-256) and compares
+  against the `Article.hash` column recorded at capture; a divergence is
+  reported (never auto-fixed), `missing_hash` rows are counted separately
+  (degrade loudly, never assume), the exact comparison method travels with
+  every result (`METHOD` string), and rows stream via `yield_per` so the
+  whole corpus is never materialised. It is wired to `GET
+  /api/integrity/fixity` (`src/api/integrity.py`) and to a UI button in
+  `src/static/app.js` explicitly commented `"Local fixity audit (B-2)"` —
+  the shipped code names its own gate correspondence. **07's B2 is closed.**
+  (Correction: `src/integrity/fixity.py` does not exist — only
+  `src/verification/fixity.py`; this reviewer's first pass cited both paths
+  from a grep hit without opening either file, which understated
+  confidence on a gate-facing finding. Opening the file resolved it.)
 
 ## 3. Performance after long use — delta
 
@@ -161,7 +169,7 @@ contradicting them.
 |---|---|---|---|
 | B0 | Maintainer arbitrates severities into the RC gate | Superseded — 0.1 shipped, 07's findings folded into that cycle's work per ledger references; 0.3 gate (row 2) is this document | `CLAUDE.md` ~6648 |
 | B1 | Disclosure sweep ×12 (VADER-EN label, LLM-artifact label, lexical-limits caveat, modality statement, CJK-capability honesty, survivorship sentence, "record begins" stamp, Wikipedia-bias note, etc.) | **Partial.** VADER-English-only disclosure was extended to at least one more UI surface (#an competitive panel, UI batch F, 2026-07-03). No evidence found this session of the LLM-output "model artifact" label, a "record begins" stamp, or a Wikipedia-systemic-bias manual note. Not confirmed as a completed sweep. | shipped.csv row 210; no counter-evidence found for the rest — absence of evidence, not evidence of absence, given session scope |
-| B2 | Local fixity audit tool | **Unconfirmed** — see §2 | `src/integrity/fixity.py`, `src/verification/fixity.py` (contents not opened this session) |
+| B2 | Local fixity audit tool | **Shipped, confirmed this session** — see §2 | `src/verification/fixity.py::audit_fixity`, `src/api/integrity.py::GET /api/integrity/fixity`, `src/static/app.js` (UI button commented "B-2") |
 | B3 | perf_harness 100k profile + consented-archiving design | **Not done** — see §3 | no `perf_harness.py` changes found past T1 |
 | B4 | "Your lens" dashboard v1 | **Not built** — see §5 | only aspirational references found |
 | B5 | CJK segmenter extra + per-language capability matrix in-app | **Half-shipped** — segmenter extra shipped (§1/§6); in-app matrix surfacing not found | `src/analytics/segmentation.py`, 2026-07-10 |
@@ -218,11 +226,15 @@ Beyond the tool-table deltas in §1, four surface areas shipped since
   Wikipedia-systemic-bias manual note; audit whether VADER-English-only
   disclosure reaches every surface that shows sentiment, not just the ones
   checked this session.
-- **C2 · Resolve B2's fixity-tool status** (maintainer or a follow-up
-  session with time budget to read `src/integrity/fixity.py` and
-  `src/verification/fixity.py` in full): confirm whether a local
-  re-hash-and-report tool exists, and if not, build it — this is the
-  cheapest tamper-detection win still on the table two audit cycles later.
+- **C2 · B2 is closed — retarget it at scale, not existence.** The local
+  fixity audit (`audit_fixity`, `GET /api/integrity/fixity`) is shipped and
+  confirmed this session (§2/§7) — no further build needed to make it
+  exist. The open question now is operational: is it exercised as part of
+  the 5M-article diagnostics run (gate row 3), and is it fast enough at
+  that scale (full-corpus SHA-256 re-hash is O(n) over `content`; the
+  endpoint's own docstring already flags it as CPU-bound)? Fold a fixity
+  pass into the gate-row-3 diagnostics bundle rather than treating it as a
+  separate ask.
 - **C3 · Surface the segmentation/capability matrix in-app** (closes the
   install-conditional gap named in §6): one panel/endpoint telling a user
   which languages their specific install can meaningfully analyze —
