@@ -30,14 +30,17 @@ from src.database.models import (
 
 
 def _seed(s):
-    """Three articles with known who/where/when facet rows."""
+    """Three articles with known who/where/when facet rows -- a2/a3 use a SECOND
+    source + a non-English language so the source/language facet tests have signal."""
     s.add(Source(name="S", domain="x.test", country="fr"))
+    s.add(Source(name="T", domain="y.test", country="jp"))
     s.commit()
     ids = []
     for i in range(1, 4):
         a = Article(
-            url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}", source_id=1,
-            title=f"T{i}", content="Body.", hash=f"h{i}", language="en",
+            url=f"https://x.test/{i}", canonical_url=f"https://x.test/{i}",
+            source_id=2 if i == 3 else 1,
+            title=f"T{i}", content="Body.", hash=f"h{i}", language=("ja" if i == 3 else "en"),
             created_at=datetime.now(UTC),
         )
         s.add(a)
@@ -153,5 +156,91 @@ def test_corpus_www_endpoint_includes_when_and_drill_endpoint_intersects():
                 params={"article_ids": ids, "facet": "nope", "value": "x"},
             )
             assert bad.status_code == 400
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_corpus_facet_article_ids_source_and_language():
+    s = _session()
+    a1, a2, a3 = _seed(s)
+    corpus = [a1, a2, a3]
+    # a1/a2 are source "S" (id 1, x.test, en); a3 is source "T" (id 2, y.test, ja).
+    # Matched by Source.ID, never name -- Source.name has no uniqueness constraint,
+    # so a name lookup could collide across two same-named sources (see the
+    # dedicated collision test below); the chip UI supplies the id directly.
+    assert q.corpus_facet_article_ids(s, article_ids=corpus, facet="source", value="1") == [a1, a2]
+    assert q.corpus_facet_article_ids(s, article_ids=corpus, facet="source", value="2") == [a3]
+    assert q.corpus_facet_article_ids(s, article_ids=corpus, facet="language", value="en") == [a1, a2]
+    assert q.corpus_facet_article_ids(s, article_ids=corpus, facet="language", value="ja") == [a3]
+    # stays within the passed corpus
+    assert q.corpus_facet_article_ids(s, article_ids=[a1, a2], facet="source", value="2") == []
+    # an unknown source id, or a non-numeric value, is honestly empty, never a crash
+    assert q.corpus_facet_article_ids(s, article_ids=corpus, facet="source", value="999") == []
+    assert q.corpus_facet_article_ids(s, article_ids=corpus, facet="source", value="not-an-id") == []
+
+
+def test_corpus_facet_article_ids_source_survives_a_name_collision():
+    # Source.name carries no uniqueness constraint (only Source.domain does) -- two
+    # sources can legitimately share a display name. Drilling by id (not name) must
+    # still resolve unambiguously instead of raising MultipleResultsFound.
+    s = _session()
+    a1, a2, a3 = _seed(s)
+    s.add(Source(name="S", domain="x2.test", country="fr"))  # same name as source id 1
+    s.commit()
+    assert q.corpus_facet_article_ids(s, article_ids=[a1, a2, a3], facet="source", value="1") == [a1, a2]
+
+
+def test_corpus_source_language_facets_lists_whats_present_with_counts():
+    s = _session()
+    a1, a2, a3 = _seed(s)
+    facets = q.corpus_source_language_facets(s, article_ids=[a1, a2, a3])
+    by_source = {row["source_id"]: row["n"] for row in facets["sources"]}
+    assert by_source == {1: 2, 2: 1}
+    assert facets["sources"][0]["name"] == "S"  # most-cited source first
+    by_lang = {row["language"]: row["n"] for row in facets["languages"]}
+    assert by_lang == {"en": 2, "ja": 1}
+    assert q.corpus_source_language_facets(s, article_ids=[])["sources"] == []
+
+
+def test_corpus_facet_articles_endpoint_accepts_source_and_language():
+    from src.api.main import app
+    from src.database.session import get_db
+
+    eng = create_engine(
+        "sqlite://", future=True, connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(eng)
+    Sess = sessionmaker(bind=eng, future=True)
+    with Sess() as s:
+        a1, a2, a3 = _seed(s)
+
+    def _override():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    app.dependency_overrides[get_db] = _override
+    try:
+        with TestClient(app) as client:
+            ids = f"{a1},{a2},{a3}"
+            dr = client.get(
+                "/api/insights/corpus-facet-articles",
+                params={"article_ids": ids, "facet": "source", "value": "2"},  # source "T" is id 2
+            ).json()
+            assert dr["article_ids"] == [a3]
+
+            langr = client.get(
+                "/api/insights/corpus-facet-articles",
+                params={"article_ids": ids, "facet": "language", "value": "ja"},
+            ).json()
+            assert langr["article_ids"] == [a3]
+
+            facets = client.get(
+                "/api/insights/corpus-source-language-facets", params={"article_ids": ids}
+            ).json()
+            assert {row["source_id"] for row in facets["sources"]} == {1, 2}
+            assert {row["language"] for row in facets["languages"]} == {"en", "ja"}
     finally:
         app.dependency_overrides.pop(get_db, None)

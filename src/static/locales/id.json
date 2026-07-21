@@ -2085,5 +2085,13 @@
   "Track a document now": "Lacak dokumen sekarang",
   "Adding & tracking…": "Menambahkan & melacak…",
   "Status:": "Status:",
-  "Resume tracking this document": "Lanjutkan pelacakan dokumen ini"
+  "Resume tracking this document": "Lanjutkan pelacakan dokumen ini",
+  "Apply filter": "Terapkan filter",
+  "Trail": "Jejak",
+  "qualified": "memenuhi syarat",
+  "disqualified": "didiskualifikasi",
+  "pending": "tertunda",
+  "never-registered": "tidak pernah terdaftar",
+  "Discovery": "Penemuan",
+  "First cited by": "Pertama kali dikutip oleh"
 }

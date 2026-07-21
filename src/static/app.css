@@ -730,6 +730,9 @@
       background:var(--panel2); color:var(--fg); cursor:pointer; font:inherit; line-height:1.4; }
     .an-facet:hover { border-color:var(--accent); }
     .an-facet:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+    /* Staged (not-yet-applied) selection in the Articles-subtab source/language filter
+       (2026-07-20 ruling, item 3) -- same chip, a filled state for the pending pick. */
+    .an-facet[aria-pressed="true"] { background:var(--accent); color:var(--accent-fg,#fff); border-color:var(--accent); }
     /* Offline-map regions as a LIST, not a dropdown (#15): every region visible at once. */
     .osm-region-list { max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
     .osm-region-row { display:flex; align-items:center; justify-content:space-between; gap:10px;

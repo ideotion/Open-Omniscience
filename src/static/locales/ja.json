@@ -2085,5 +2085,13 @@
   "Track a document now": "今すぐドキュメントを追跡",
   "Adding & tracking…": "追加して追跡しています…",
   "Status:": "ステータス:",
-  "Resume tracking this document": "このドキュメントの追跡を再開する"
+  "Resume tracking this document": "このドキュメントの追跡を再開する",
+  "Apply filter": "フィルターを適用",
+  "Trail": "経路",
+  "qualified": "適格",
+  "disqualified": "不適格",
+  "pending": "保留中",
+  "never-registered": "未登録",
+  "Discovery": "発見方法",
+  "First cited by": "最初に引用したのは"
 }

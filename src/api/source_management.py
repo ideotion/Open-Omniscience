@@ -226,6 +226,44 @@ async def promote_cited_sources_endpoint(
     return result
 
 
+# ==================== DISCOVERY TRAIL / QUALIFIED-CITATIONS TALLY (L5) ====================
+# Per-source provenance panel + citation tally, per the 2026-07-20 ruling: where a
+# source was discovered (with the citing trail so a user can check "the source's
+# source"), and how many of its OWN cited domains are qualified/disqualified --
+# descriptive counts only, never a score/grade.
+
+
+@router.get("/{source_id}/provenance", response_model=dict)
+@limiter.limit("100/hour")
+async def get_source_provenance(request: Request, source_id: int, db: Session = Depends(get_db)):
+    """Discovery provenance for one source: the channel it entered through (a
+    promoted candidate / catalog via:* tag / the cited auto-integration channel /
+    external-source registry) plus, when discovered via citation, the FIRST citing
+    article and its source (recomputed from article_links every call)."""
+    from src.discovery.source_trail import source_provenance
+
+    result = source_provenance(db, source_id)
+    if not result.get("found"):
+        raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
+    return result
+
+
+@router.get("/{source_id}/citation-tally", response_model=dict)
+@limiter.limit("100/hour")
+async def get_source_citation_tally(request: Request, source_id: int, db: Session = Depends(get_db)):
+    """Qualified-citations tally for one source's own articles: how many distinct
+    cited domains are qualified / disqualified / pending, vs never entering the
+    qualification funnel (commerce/social/infrastructure, tallied separately).
+    Each class is a domain LIST -- the clickable drill, both directions -- with a
+    caveat: descriptive only, never guilt-by-citation or an endorsement."""
+    from src.discovery.source_trail import source_citation_tally
+
+    result = source_citation_tally(db, source_id)
+    if not result.get("found"):
+        raise HTTPException(status_code=404, detail=f"Source with ID {source_id} not found")
+    return result
+
+
 @router.get("/preflight/log", response_model=dict)
 @limiter.limit("100/hour")
 async def source_preflight_log(request: Request, limit: int = Query(200, ge=1, le=1000)):

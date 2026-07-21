@@ -792,10 +792,71 @@ def corpus_facet_article_ids(
             .distinct()
             .all()
         )
+    elif facet == "source":
+        # Corpus-source/language filter build (L5, 2026-07-20 ruling): the id-seeded-
+        # corpus INTERSECT path -- ids ∩ source -> the narrowed window, never a clear.
+        # Matched by Source.ID, not name -- Source.name carries no uniqueness
+        # constraint (only Source.domain does), so a name lookup can collide across
+        # two same-named sources; the chip already carries source_id (it's how
+        # corpus_source_language_facets built the chip in the first place), so the
+        # drill uses it directly and never re-resolves a name back to an id.
+        try:
+            sid = int(value)
+        except (TypeError, ValueError):
+            return []
+        rows = (
+            session.query(Article.id)
+            .filter(Article.id.in_(article_ids), Article.source_id == sid)
+            .all()
+        )
+    elif facet == "language":
+        rows = (
+            session.query(Article.id)
+            .filter(Article.id.in_(article_ids), Article.language == value)
+            .all()
+        )
     else:
         return []
     found = {r[0] for r in rows}
     return [aid for aid in article_ids if aid in found]
+
+
+def corpus_source_language_facets(session, *, article_ids: list[int]) -> dict:
+    """Sources + languages PRESENT in the given article-id corpus, with counts --
+    powers the Articles-subtab facet controls (2026-07-20 ruling, item 3): a facet
+    list of what the CURRENT corpus actually contains, not free text. Two column-
+    projected group-bys over articles already in the corpus (never a full join);
+    counts only, no ranking."""
+    if not article_ids:
+        return {"sources": [], "languages": []}
+    src_rows = (
+        session.query(Article.source_id, func.count(Article.id))
+        .filter(Article.id.in_(article_ids))
+        .group_by(Article.source_id)
+        .all()
+    )
+    if not src_rows:
+        return {"sources": [], "languages": []}
+    src_ids = [sid for sid, _n in src_rows if sid is not None]
+    names = dict(session.query(Source.id, Source.name).filter(Source.id.in_(src_ids))) if src_ids else {}
+    domains = dict(session.query(Source.id, Source.domain).filter(Source.id.in_(src_ids))) if src_ids else {}
+    sources = [
+        {"source_id": sid, "name": names.get(sid, str(sid)), "domain": domains.get(sid), "n": int(n or 0)}
+        for sid, n in sorted(src_rows, key=lambda kv: -kv[1])
+        if sid is not None
+    ]
+    lang_rows = (
+        session.query(Article.language, func.count(Article.id))
+        .filter(Article.id.in_(article_ids), Article.language.isnot(None))
+        .group_by(Article.language)
+        .all()
+    )
+    languages = [
+        {"language": lang, "n": int(n or 0)}
+        for lang, n in sorted(lang_rows, key=lambda kv: -kv[1])
+        if lang
+    ]
+    return {"sources": sources, "languages": languages}
 
 
 _SENTIMENT_CAVEAT = (
