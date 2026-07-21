@@ -2085,5 +2085,13 @@
   "Track a document now": "立即跟踪文档",
   "Adding & tracking…": "正在添加并跟踪…",
   "Status:": "状态：",
-  "Resume tracking this document": "恢复跟踪此文档"
+  "Resume tracking this document": "恢复跟踪此文档",
+  "Apply filter": "应用筛选",
+  "Trail": "溯源",
+  "qualified": "已认证",
+  "disqualified": "已取消资格",
+  "pending": "待定",
+  "never-registered": "从未注册",
+  "Discovery": "发现方式",
+  "First cited by": "首次引用者"
 }

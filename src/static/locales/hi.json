@@ -2085,5 +2085,13 @@
   "Track a document now": "अभी एक दस्तावेज़ ट्रैक करें",
   "Adding & tracking…": "जोड़ा और ट्रैक किया जा रहा है…",
   "Status:": "स्थिति:",
-  "Resume tracking this document": "इस दस्तावेज़ का ट्रैकिंग फिर से शुरू करें"
+  "Resume tracking this document": "इस दस्तावेज़ का ट्रैकिंग फिर से शुरू करें",
+  "Apply filter": "फ़िल्टर लागू करें",
+  "Trail": "ट्रेल",
+  "qualified": "योग्य",
+  "disqualified": "अयोग्य",
+  "pending": "लंबित",
+  "never-registered": "कभी पंजीकृत नहीं",
+  "Discovery": "खोज",
+  "First cited by": "सबसे पहले उद्धृत किया"
 }

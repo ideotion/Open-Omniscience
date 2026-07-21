@@ -687,7 +687,7 @@ def insights_corpus_www(
 
 @router.get("/corpus-facet-articles")
 def insights_corpus_facet_articles(
-    facet: str = Query(..., description="entity | place | when"),
+    facet: str = Query(..., description="entity | place | when | source | language"),
     value: str = Query(..., description="the facet value to drill into"),
     query: str | None = None,
     source: str | None = None,
@@ -700,12 +700,18 @@ def insights_corpus_facet_articles(
     db: Session = Depends(get_db),
 ) -> dict:
     """The facet DRILL — the article ids WITHIN the current analysis corpus that carry a
-    given facet value (an ``entity`` name, a ``place`` name, or a ``when`` year). This is
-    what makes a facet co-equal with the text query: a facet value narrows the corpus, and
-    the caller spawns a refined analysis window over the returned ids. Deduced from text,
-    never confirmed; these articles MENTION the value (counts only, no score)."""
-    if facet not in ("entity", "place", "when"):
-        raise HTTPException(status_code=400, detail="facet must be entity|place|when")
+    given facet value (an ``entity`` name, a ``place`` name, a ``when`` year, a ``source``
+    ID, or a ``language`` code). This is what makes a facet co-equal with the text query: a
+    facet value narrows the corpus, and the caller spawns a refined analysis window over the
+    returned ids. ``source``/``language`` power the Articles-tab corpus filter (2026-07-20
+    ruling, item 3): for an id-seeded corpus (``article_ids`` set) this INTERSECTS — ids ∩
+    facet — rather than clearing the seeded set, exactly the drill grammar entity/place/when
+    already use. entity/place/when are deduced from text, never confirmed; source/language
+    are stored article metadata (counts only, no score either way). ``source``'s value is
+    ``Source.id`` (not name) — Source.name has no uniqueness constraint, so drilling by name
+    can collide across two same-named sources; the chip UI supplies the id directly."""
+    if facet not in ("entity", "place", "when", "source", "language"):
+        raise HTTPException(status_code=400, detail="facet must be entity|place|when|source|language")
     ids, total = _resolve_corpus(
         db, article_ids, query=query, source=source, start_date=start_date,
         end_date=end_date, language=language, tags=tags, cap=cap,
@@ -719,6 +725,35 @@ def insights_corpus_facet_articles(
         "corpus_n": len(ids),
         "corpus_total": total,
         "caveat": "Deduced from text, never confirmed — these articles mention the value.",
+    }
+
+
+@router.get("/corpus-source-language-facets")
+def insights_corpus_source_language_facets(
+    query: str | None = None,
+    source: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    language: str | None = None,
+    tags: str | None = None,
+    article_ids: str | None = Query(None, description="explicit article-id set (exact card corpus)"),
+    cap: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Sources + languages PRESENT in the CURRENT corpus, with counts — the facet list
+    the Articles-subtab filter controls populate (2026-07-20 ruling, item 3): what the
+    corpus actually contains, not free text. Reuses ``_resolve_corpus`` so it honours
+    whatever corpus is active (an exact id set OR the search + Advanced filters)."""
+    ids, total = _resolve_corpus(
+        db, article_ids, query=query, source=source, start_date=start_date,
+        end_date=end_date, language=language, tags=tags, cap=cap,
+    )
+    facets = q.corpus_source_language_facets(db, article_ids=ids)
+    return {
+        "sources": facets["sources"],
+        "languages": facets["languages"],
+        "corpus_n": len(ids),
+        "corpus_total": total,
     }
 
 

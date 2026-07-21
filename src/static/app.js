@@ -7083,6 +7083,7 @@
         `<span class="pill" style="cursor:pointer" title="filter by this tag" onclick="srcFilterTag(${esc(JSON.stringify(x))})">${esc(x)}</span>`).join(" ");
       const prio = [1,2,3].map(p =>
         `<option value="${p}" ${s.priority===p?"selected":""}>${p}</option>`).join("");
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       return `<tr>
         <td>${esc(s.name)}<div class="muted" style="font-size:12px">${tags}</div></td>
         <td>${esc(s.domain)}${s.rss_url?' <span class="pill ok" title="has RSS feed">rss</span>':''}</td>
@@ -7094,8 +7095,105 @@
         <td class="muted">${s.article_count!=null?s.article_count:'—'}</td>
         <td><input type="checkbox" style="width:auto" ${s.enabled?"checked":""}
               onchange="updateSource(${s.id},{enabled:this.checked})"></td>
-        <td><button class="tiny danger" onclick="deleteSource(${s.id}, ${esc(JSON.stringify(s.name))})">Delete</button></td>
-      </tr>`;
+        <td><button class="tiny ghost" onclick="toggleSourceTrail(${s.id})" title="${esc(t("Discovery"))}">${esc(t("Trail"))}</button>
+        <button class="tiny danger" onclick="deleteSource(${s.id}, ${esc(JSON.stringify(s.name))})">Delete</button></td>
+      </tr>
+      <tr id="src-trail-${s.id}" style="display:none"><td colspan="9"></td></tr>`;
+    }
+
+    // -- Discovery-trail / qualified-citations panel (2026-07-20 ruling, items 1+2) -- //
+    // Per-source provenance (where it was discovered + the citing trail) and the
+    // qualified-citations tally, expandable inline in the Sources management row.
+    // Reuses the row's own table (no new UI paradigm); the qualification status
+    // (L1's Source.status) is surfaced here too, since this panel is exactly where
+    // "is this admitted yet" belongs.
+    const _srcTrailData = {};   // {sourceId: {qualified:[], disqualified:[], pending:[], never_registered:[]}}
+    async function toggleSourceTrail(id) {
+      const row = $("src-trail-" + id); if (!row) return;
+      if (row.style.display !== "none") { row.style.display = "none"; return; }
+      row.style.display = "";
+      const cell = row.querySelector("td");
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      cell.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const [prov, tally] = await Promise.all([
+          api(`/api/sources/${id}/provenance`),
+          api(`/api/sources/${id}/citation-tally`),
+        ]);
+        // Every class -- including never_registered/filtered -- keeps its own dict
+        // shape from the API (domain + sample_article_ids, +source_id/name when
+        // matched), so the drill list always matches the chip's own count.
+        _srcTrailData[id] = {
+          qualified: tally.qualified || [], disqualified: tally.disqualified || [],
+          pending: tally.pending || [], never_registered: tally.never_registered || [],
+        };
+        cell.innerHTML = _srcTrailHtml(id, prov, tally);
+      } catch (e) { cell.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+    }
+    function _srcTrailHtml(id, prov, tally) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const qs = prov.qualification_status || "unqualified";
+      const qsLabel = qs === "unqualified" ? t("pending") : t(qs);
+      const qsClass = qs === "qualified" ? "ok" : (qs === "disqualified" ? "err" : "");
+      let html = `<div><span class="pill ${qsClass}">${esc(qsLabel)}</span></div>`;
+      html += `<div style="margin-top:6px"><strong>${esc(t("Discovery"))}:</strong> `
+        + `${esc(prov.channel || "—")} <span class="muted">— ${esc(prov.detail || "")}</span></div>`;
+      if (prov.citing_trail) {
+        const ct = prov.citing_trail;
+        const citerLink = ct.citing_source_domain
+          ? ` (<a href="#" onclick="srcJumpToDomain(${esc(JSON.stringify(ct.citing_source_domain))});return false">${esc(ct.citing_source_name || ct.citing_source_domain)}</a>)`
+          : (ct.citing_source_name ? ` (${esc(ct.citing_source_name)})` : "");
+        html += `<div class="muted" style="margin-top:2px">${esc(t("First cited by"))}: `
+          + `<a href="/api/articles/${ct.article_id}/view" target="_blank" rel="noopener">${esc(ct.article_title || ("#" + ct.article_id))}</a>`
+          + citerLink + "</div>";
+      }
+      // Four DRILLABLE classes (qualified/disqualified/pending/never-registered) --
+      // each chip's number is exactly the length of the list it expands to (never a
+      // rolled-up total that the drill can't account for). The filtered classes
+      // (commerce/social/infrastructure -- guardrail b's "tallied separately", NOT
+      // folded into never-registered) get their own always-visible, non-drilling line.
+      const classes = [
+        ["qualified", tally.qualified || []],
+        ["disqualified", tally.disqualified || []],
+        ["pending", tally.pending || []],
+        ["never_registered", tally.never_registered || []],
+      ];
+      const chips = classes.map(([k, arr]) => {
+        const label = k === "never_registered" ? t("never-registered") : t(k);
+        return `<button class="tiny ghost" onclick="_srcTrailToggleClass(${id},'${k}')">${esc(label)}: ${arr.length}</button>`;
+      }).join(" ");
+      html += `<div style="margin-top:8px">${chips}</div>`;
+      html += `<div id="src-trail-cls-${id}" class="muted" style="display:none;margin:4px 0;font-size:.85em"></div>`;
+      const c = tally.counts || {};
+      html += `<div class="muted" style="font-size:.82em;margin-top:4px">`
+        + `filtered (excluded from the funnel, not guilt either way): `
+        + `commerce ${c.filtered_commerce || 0} · social ${c.filtered_social || 0} · infrastructure ${c.filtered_infrastructure || 0}</div>`;
+      html += `<div class="muted" style="font-size:.82em;margin-top:2px">${esc(tally.caveat || "")}</div>`;
+      return html;
+    }
+    function _srcTrailToggleClass(id, cls) {
+      const host = $("src-trail-cls-" + id); if (!host) return;
+      const arr = (_srcTrailData[id] && _srcTrailData[id][cls]) || [];
+      host.style.display = "";
+      host.innerHTML = arr.length
+        ? arr.map(d => {
+            const jump = `<a href="#" onclick="srcJumpToDomain(${esc(JSON.stringify(d.domain))});return false">${esc(d.domain)}</a>`;
+            // "the sources' sources" grammar: also link to THIS source's own
+            // citing articles for that domain, not just the domain's own row.
+            const ids = d.sample_article_ids || [];
+            const artsLink = ids.length
+              ? ` <a href="#" onclick="openAnalysisForIds(${esc(JSON.stringify(ids))}, ${esc(JSON.stringify(d.domain))});return false" title="Open the articles that cite this domain">↗</a>`
+              : "";
+            return jump + artsLink;
+          }).join(", ")
+        : `<span class="muted">—</span>`;
+    }
+    // Jump to a cited domain's OWN management row (the drill's "linking to that
+    // source's own management row" -- the pending/qualified/disqualified classes'
+    // domains ARE sources; never_registered domains simply won't match anything).
+    function srcJumpToDomain(domain) {
+      $("src-search").value = domain;
+      applySrcFilters();
     }
 
     // Check one option in a multi-select checklist by value (used by tag pills + the
@@ -15623,6 +15721,12 @@
     let _anProvenance = "";    // "" = all resources
     let _anKwSort = false;     // order the list by the searched keyword's per-article count
     let _anKwForCount = "";    // the keyword whose counts are shown (from the API), or ""
+    // Corpus source/language filter (2026-07-20 ruling, item 3): facet controls live
+    // IN the Articles subtab (not buried in Advanced), populated from what the CURRENT
+    // corpus actually contains (a facet list, never free text). Selecting chips only
+    // stages the choice; "Apply filter" (anApplyArticlesFilter) commits it.
+    let _anArtFacetSel = { source: "", language: "" };
+    let _anArtFacetData = { sources: [], languages: [] };
     function _anSetProvenance(v) {
       _anProvenance = v || "";
       // Wikipedia view orders by keyword count when a count is available (the ruling).
@@ -15651,6 +15755,93 @@
           + `↕ “${esc(d.keyword_for_count)}” ${esc(t("count"))}</button>`;
       }
       return h + "</div>";
+    }
+    // Sources + languages PRESENT in the current corpus, with counts -- a facet LIST
+    // of what the corpus actually contains (2026-07-20 ruling, item 3), never free
+    // text. Fetched once per fresh corpus (from loadAnalysis); chip selection alone
+    // never refetches or re-filters -- only "Apply filter" commits it.
+    async function _anLoadArtFacets(p) {
+      try {
+        const d = await api("/api/insights/corpus-source-language-facets?" + p.toString());
+        _anArtFacetData = { sources: d.sources || [], languages: d.languages || [] };
+      } catch (e) { _anArtFacetData = { sources: [], languages: [] }; }
+      _anRenderArtFacetChips();
+    }
+    function _anToggleArtFacetChip(kind, value) {
+      _anArtFacetSel[kind] = (_anArtFacetSel[kind] === value) ? "" : value;
+      _anRenderArtFacetChips();
+    }
+    function _anRenderArtFacetChips() {
+      const host = $("an-art-facets"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const srcChips = (_anArtFacetData.sources || []).slice(0, 20).map(s => {
+        // Selection/drill key is source_id (never name) -- Source.name carries no
+        // uniqueness constraint, so two chips can legitimately share a display name;
+        // only the id disambiguates them (2026-07-20 ruling review fix).
+        const on = _anArtFacetSel.source === String(s.source_id);
+        return `<button type="button" class="an-facet" aria-pressed="${on}" `
+          + `onclick="_anToggleArtFacetChip('source', ${esc(JSON.stringify(String(s.source_id)))})">${esc(s.name)} `
+          + `<span class="muted">${s.n}</span></button>`;
+      }).join(" ");
+      const langChips = (_anArtFacetData.languages || []).slice(0, 20).map(l => {
+        const on = _anArtFacetSel.language === l.language;
+        return `<button type="button" class="an-facet" aria-pressed="${on}" `
+          + `onclick="_anToggleArtFacetChip('language', ${esc(JSON.stringify(l.language))})">${esc(String(l.language || "").toUpperCase())} `
+          + `<span class="muted">${l.n}</span></button>`;
+      }).join(" ");
+      if (!srcChips && !langChips) { host.innerHTML = ""; return; }
+      host.innerHTML = `<div style="margin:4px 0 8px">`
+        + (srcChips ? `<div style="margin-bottom:4px"><span class="muted" style="font-size:.85em">${esc(t("source"))}:</span> ${srcChips}</div>` : "")
+        + (langChips ? `<div><span class="muted" style="font-size:.85em">${esc(t("language"))}:</span> ${langChips}</div>` : "")
+        + `<button class="tiny" style="margin-top:4px" onclick="anApplyArticlesFilter()">${esc(t("Apply filter"))}</button>`
+        + `</div>`;
+    }
+    // The drill -- ids ∩ facet -> the narrowed set, in corpus order (never a clear).
+    async function _anFacetDrillIds(ids, facet, value) {
+      if (!ids.length) return ids;
+      const p = new URLSearchParams();
+      p.set("article_ids", ids.join(","));
+      p.set("facet", facet);
+      p.set("value", value);
+      try {
+        const d = await api("/api/insights/corpus-facet-articles?" + p.toString());
+        return d.article_ids || [];
+      } catch (e) { return ids; }   // a failed drill never silently empties the corpus
+    }
+    // Commit the staged facet selection. For an id-seeded corpus (a card's exact
+    // article set) this INTERSECTS via the drill grammar -- ids ∩ source ∩ language --
+    // rather than clearing the seeded set (the 2026-07-20 ruling's own wording); for a
+    // query-seeded corpus it mirrors into the existing Advanced fields and reuses the
+    // already-correct refine path.
+    async function anApplyArticlesFilter() {
+      const selSrc = _anArtFacetSel.source, selLang = _anArtFacetSel.language;
+      if (!selSrc && !selLang) return;
+      // selSrc is a source_id (the drill key -- see the chip's onclick); an-adv-source
+      // is a NAME field (an-adv-source / _resolve_corpus's own "source" param semantics,
+      // unchanged), so mirror the chip's matching source NAME into it, not the id.
+      // Each field is only touched when its own facet was actually selected -- never
+      // blank the other dimension's pre-existing Advanced value.
+      if (selSrc) {
+        const srcRow = (_anArtFacetData.sources || []).find(r => String(r.source_id) === selSrc);
+        $("an-adv-source").value = srcRow ? srcRow.name : "";
+      }
+      if (selLang) $("an-adv-lang").value = selLang;
+      if (_anIds && _anIds.length) {
+        let ids = _anIds.slice();
+        if (selSrc) ids = await _anFacetDrillIds(ids, "source", selSrc);
+        if (selLang) ids = await _anFacetDrillIds(ids, "language", selLang);
+        _anIds = ids;
+        const tb = _anTabs.find(x => x.id === _anActiveId);
+        if (tb) { tb.ids = ids.slice(); tb.kind = "ids"; _anRenderStrip(); _anSaveTabs(); }
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        const fs = _anFilterSummary();
+        $("an-adv-note").innerHTML = fs.length
+          ? `<span class="pill">${esc(t("Filtered"))}</span> ${fs.map(esc).join(" · ")}`
+          : "";
+        loadAnalysis(anParams());
+      } else {
+        anRunAdvanced();   // a query-seeded corpus already refines correctly
+      }
     }
     async function _anLoadArticles(p, page) {
       const arts = $("an-articles"); if (!arts) return;
@@ -15684,12 +15875,14 @@
         }).join("");
         const pager = _anArtPager(total, pages);
         arts.innerHTML = _anArtControls(d)
+          + `<div id="an-art-facets"></div>`
           + `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
           + pager
           + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
           + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`
           + pager;
         annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
+        _anRenderArtFacetChips();   // redraw from already-fetched facet data (sync, no network)
       } catch (e) { arts.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
     }
     async function loadAnalysis(p) {
@@ -15698,6 +15891,7 @@
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
+      _anArtFacetSel = { source: "", language: "" };   // fresh corpus -> reset the staged facet selection too
       _anLastParams = p; _anTrend.key = null; _anRelated.key = null; _anCompetitive.key = null;   // a new analysis run -> the lazy subtabs refetch on next show
       if ($("an-trend") && $("an-trend").style.display !== "none") setTimeout(() => renderAnTrend(p), 0);
       if ($("an-related") && $("an-related").style.display !== "none") setTimeout(() => renderAnRelated(p), 0);
@@ -15729,6 +15923,7 @@
         }
       } catch (e) { mm.innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
       _anLoadArticles(p, 0);   // paginated Articles list — Prev/Next + "Page X of Y", above + below
+      _anLoadArtFacets(p);   // sources/languages present in this corpus, with counts (item 3 facet controls)
       // When/Where/Who deduced across the matched articles, as CLICKABLE FACETS:
       // clicking a value narrows the corpus to the articles that mention it (the drill
       // that makes a facet co-equal with the text query). Counts only, never confirmed.

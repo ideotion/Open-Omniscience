@@ -2085,5 +2085,13 @@
   "Track a document now": "Rastrear un documento ahora",
   "Adding & tracking…": "Añadiendo y rastreando…",
   "Status:": "Estado:",
-  "Resume tracking this document": "Reanudar el rastreo de este documento"
+  "Resume tracking this document": "Reanudar el rastreo de este documento",
+  "Apply filter": "Aplicar filtro",
+  "Trail": "Rastro",
+  "qualified": "calificado",
+  "disqualified": "descalificado",
+  "pending": "pendiente",
+  "never-registered": "nunca registrado",
+  "Discovery": "Descubrimiento",
+  "First cited by": "Citado por primera vez por"
 }

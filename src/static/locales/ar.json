@@ -2085,5 +2085,13 @@
   "Track a document now": "تتبّع مستند الآن",
   "Adding & tracking…": "يجري الإضافة والتتبّع…",
   "Status:": "الحالة:",
-  "Resume tracking this document": "استئناف تتبّع هذا المستند"
+  "Resume tracking this document": "استئناف تتبّع هذا المستند",
+  "Apply filter": "تطبيق التصفية",
+  "Trail": "المسار",
+  "qualified": "مؤهل",
+  "disqualified": "غير مؤهل",
+  "pending": "قيد الانتظار",
+  "never-registered": "غير مسجل قط",
+  "Discovery": "الاكتشاف",
+  "First cited by": "أول من استشهد به"
 }

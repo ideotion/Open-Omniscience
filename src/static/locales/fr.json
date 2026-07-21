@@ -2085,5 +2085,13 @@
   "Track a document now": "Suivre un document maintenant",
   "Adding & tracking…": "Ajout et suivi en cours…",
   "Status:": "Statut :",
-  "Resume tracking this document": "Reprendre le suivi de ce document"
+  "Resume tracking this document": "Reprendre le suivi de ce document",
+  "Apply filter": "Appliquer le filtre",
+  "Trail": "Parcours",
+  "qualified": "qualifié",
+  "disqualified": "disqualifié",
+  "pending": "en attente",
+  "never-registered": "jamais enregistré",
+  "Discovery": "Découverte",
+  "First cited by": "D'abord cité par"
 }
