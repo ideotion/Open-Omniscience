@@ -14,11 +14,24 @@ LOAD-BEARING guard is the EXTRACTED BODY LENGTH: by the time this runs, ``extrac
 the pipeline never reaches here otherwise). A nav / index / tag / section / wall page yields only a
 THIN extracted body; a real article yields a SUBSTANTIAL one. So:
   * A body at or above ``_ARTICLE_MIN_WORDS`` is a real article — KEPT regardless of URL shape. A
-    genuine article at ``/business``, ``/category/politics`` or ``/tag/gaza`` is never dropped.
+    genuine article at ``/business``, ``/category/politics`` or ``/tag/gaza`` is never dropped...
+    UNLESS the PROSE GATE fires (below): word-RICH nav soup can clear this word-count guard too.
   * Only for a THIN body do the URL-shape / wall rules fire — the drop condition is (thin body) AND
     (a non-article URL shape OR a definitive wall phrase), which is what makes it high-precision.
   * Every rule is EXPLICIT; the classifier returns the first matching rule with a disclosed REASON +
     signal, never a fuzzy score.
+
+THE PROSE GATE (NAV-SOUP SPECIMEN ruling, maintainer field specimen 2026-07-20: the Irish Mirror
+``newsletter-preference-centre`` page stored as an Article) closes the recall gap the load-bearing
+guard above otherwise leaves open: a body can be WORD-RICH (>= ``_ARTICLE_MIN_WORDS``) and still be
+pure nav/menu chrome, not prose — the specimen was ~135 words of nothing but menu items. For a
+body at/above the guard, :func:`src.services.prose_gate.prose_gate_verdict` runs an AND-gated check
+(low function-word density of the asserted/best-matching language AND near-zero sentence-ending
+punctuation — either alone is not enough, precision-serving exactly like the rest of this module)
+and returns a ``nav_soup`` verdict only when BOTH are true. Script-aware (an unsegmented zh/ja/th
+body is never judged — unmeasurable text is never dropped on a gap) and conservative by
+construction (a headline-list page deliberately escapes; that undercount is the source-level
+auditor's territory, not this gate's job — see ``src/analytics/source_audit.py``).
 
 This is not-exclusion of a SOURCE (the source's real articles still ingest) — it is not-storing a
 non-article. The caller SKIPS with a distinct, counted, reversible outcome; nothing is silently
@@ -33,6 +46,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from urllib.parse import urlparse
+
+from src.services.prose_gate import prose_gate_verdict
 
 # Utility / tool / listing path segments that are (almost) never an article slug on their own.
 _UTILITY_SEGMENTS = frozenset({
@@ -87,17 +102,28 @@ def _is_short_taxonomy(seg: str) -> bool:
 
 def classify_non_article(
     url: str, *, title: str | None = None, text: str | None = None, word_count: int | None = None,
+    language: str | None = None,
 ) -> NonArticleVerdict | None:
     """Return a verdict if ``url``/``text`` is CLEARLY a non-article, else ``None`` (keep it).
 
     A SUBSTANTIAL extracted body (``>= _ARTICLE_MIN_WORDS``) is a real article — kept regardless of
-    URL. Only a THIN body proceeds to the wall / URL rules (order: boilerplate wall → utility path →
-    pagination → taxonomy listing → homepage → section landing). Conservative — when in doubt, keep."""
+    URL, UNLESS the PROSE GATE fires on it (word-rich nav soup; see the module docstring). Only a
+    THIN body proceeds to the wall / URL rules (order: boilerplate wall → utility path → pagination
+    → taxonomy listing → homepage → section landing). Conservative — when in doubt, keep.
+    ``language`` is the asserted/detected article language, if known (passed through to the prose
+    gate's best-matching-language search; optional, additive)."""
     wc: int | None = word_count if word_count is not None else (len(text.split()) if text else None)
 
-    # THE guard: a real article has a substantial extracted body — keep it whatever the URL shape.
-    # A nav/index/tag/section/wall page yields only a thin body; only that proceeds to the rules.
+    # THE guard: a real article has a substantial extracted body — keep it whatever the URL shape,
+    # UNLESS the PROSE GATE (below) catches word-rich nav soup that cleared this word-count floor.
+    # A nav/index/tag/section/wall page normally yields only a thin body; only THAT then proceeds
+    # to the URL/wall rules below. The prose gate needs the actual body text — with text=None (the
+    # retroactive URL-shape-only scan) it never fires, so that scan's behavior is unchanged.
     if wc is not None and wc >= _ARTICLE_MIN_WORDS:
+        if text:
+            prose_verdict = prose_gate_verdict(text, language=language)
+            if prose_verdict is not None:
+                return NonArticleVerdict(prose_verdict.signal, prose_verdict.reason)
         return None
 
     # 1. Boilerplate WALL — a chrome-TINY body dominated by a definitive consent/paywall/error
@@ -189,6 +215,64 @@ def run_non_article_selftest() -> dict:
     check("drops_thin_bare_section", classify_non_article(
         "https://blog.example.com/business", text="Headline one. Headline two.", word_count=4) is not None)
 
+    # THE PROSE GATE (NAV-SOUP SPECIMEN ruling 2026-07-20): a body that CLEARS the word-count
+    # guard above can still be pure nav/menu chrome (the Irish Mirror newsletter-preference-centre
+    # specimen, ~135 words of nothing but menu items). This is the recall gap the gate closes.
+    nav_soup_body = (
+        "News Latest Irish News Mirror Bingo Soccer Golf Rugby Union Sport Business Politics "
+        "World News Travel Money Markets Weather Video Photos Gallery Podcast Newsletters Events "
+        "About Contact Home Search Login Sign Up Subscribe Cookies Advertisement Privacy Terms "
+        "Follow Facebook Twitter Instagram Newsletter Preference Centre Manage Subscriptions "
+        "Menu Toggle Navigation Skip Content Latest News Sport GAA Rugby Soccer Racing Golf Boxing "
+        "Motors Showbiz TV Fashion Beauty Food Recipes Property Travel Family Voucher Codes Bingo "
+        "Dating Contact Advertise Cookie Policy Privacy Policy Terms Conditions Modern Slavery "
+        "Statement Complaints Regulation Archive Sitemap Jobs Shop Weddings Announcements Obituaries "
+        "Horoscopes Puzzles Crosswords Competitions Vouchers Discounts Deals Reviews Betting Casino "
+        "Lottery Results Traffic Cameras Roadworks Bus Times Train Times Flight Tracker Currency "
+        "Converter Recipes Wine Beer Cocktails Restaurants Bars Nightlife Theatre Cinema Music Books"
+    )
+    v = classify_non_article(
+        "https://www.irishmirror.ie/all-about/newsletter-preference-centre",
+        text=nav_soup_body, word_count=len(nav_soup_body.split()), language="en",
+    )
+    check("catches_word_rich_nav_soup_specimen", v is not None and v.signal == "nav_soup", str(v))
+    # the real-article negative space is NOT newly caught by the gate (real prose has both a
+    # healthy function-word density and real sentence punctuation) -- re-run the SAME "kept" URLs
+    # above, this time with text= so the prose gate actually runs (the loop above uses a body with
+    # no periods; ARTICLE_TEXT-shaped real prose with periods is the load-bearing negative space).
+    real_prose_body = "A full genuine article body with real sentences, written like a person. " * 30
+    for name, u in kept.items():
+        v = classify_non_article(u, text=real_prose_body, word_count=len(real_prose_body.split()))
+        check(f"prose_gate_keeps_{name}", v is None, f"{u} -> {v}")
+    # a headline-list page deliberately escapes the gate (undercount by design, not this gate's job)
+    headlines_body = (
+        "Storm warning issued for the coast. Markets fall on rate fears. Council votes on new "
+        "budget plan. Local team wins the regional final. Weather turns colder into the weekend. "
+    ) * 3
+    check("prose_gate_headline_list_escapes", classify_non_article(
+        "https://site.com/news/roundup", text=headlines_body,
+        word_count=len(headlines_body.split())) is None)
+    # an unsegmented script (zh) is never dropped on a measurement gap, even word-rich
+    zh_nav = "中国新闻体育财经" * 20
+    check("prose_gate_skips_unsegmented_script", classify_non_article(
+        "https://site.cn/x", text=zh_nav, word_count=len(zh_nav), language="zh") is None)
+    # a MANAGED language with NO grammar vocabulary (sr -- keyword extraction works, sources are
+    # enabled, but get_grammar_stopwords('sr') is empty) must never be dropped either: a sparse-
+    # punctuation results/listicle article in that language is a REAL ARTICLE shape, and scoring
+    # it as density 0.0 would silently degrade the AND-gate to punctuation-only.
+    sr_article = ("Rezultati Utakmica Fudbal Kosarka Odbojka Tenis Rukomet Vaterpolo Atletika "
+                 "Plivanje ") * 12
+    check("prose_gate_skips_uncovered_managed_language", classify_non_article(
+        "https://example.rs/sport/rezultati", text=sr_article,
+        word_count=len(sr_article.split()), language="sr") is None)
+    # Code-review finding (2026-07-20 re-review): the same sr article, but with NO language
+    # asserted at all -- the shape the real ingest call site (src/ingest/pipeline.py) actually
+    # exercises, since doc.language is only populated when trafilatura's detector fires. Must be
+    # kept for the same reason (unmeasurable, not nav-soup evidence), not just when sr is asserted.
+    check("prose_gate_skips_uncovered_managed_language_untagged", classify_non_article(
+        "https://example.rs/sport/rezultati", text=sr_article,
+        word_count=len(sr_article.split()), language=None) is None)
+
     passed = all(c["passed"] for c in checks)
     return {
         "schema": "oo-non-article-selftest-1",
@@ -199,8 +283,11 @@ def run_non_article_selftest() -> dict:
         "failed_count": sum(1 for c in checks if not c["passed"]),
         "method": "Hand-picked URLs/bodies through classify_non_article, both should-catch and "
         "should-KEEP (the negative space), incl. the body-gate cases (a real article at a "
-        "non-article-shaped URL is kept because its extracted body is substantial).",
-        "caveat": "High-precision by design (a substantial extracted body is always kept) — it will "
-        "miss some non-articles (a long consent wall, non-English nav) rather than risk dropping a "
-        "real article. Fully reversible via OO_SKIP_NON_ARTICLES.",
+        "non-article-shaped URL is kept because its extracted body is substantial) and the PROSE "
+        "GATE cases (word-rich nav soup clearing that same body-length guard is still caught, "
+        "while real prose at the SAME non-article-shaped URLs is not newly caught).",
+        "caveat": "High-precision by design (a substantial extracted body is kept unless the prose "
+        "gate's AND-gate both fires) — it will miss some non-articles (a long consent wall, a "
+        "headline-list page, non-English nav without a matching stoplist) rather than risk dropping "
+        "a real article. Fully reversible via OO_SKIP_NON_ARTICLES.",
     }
