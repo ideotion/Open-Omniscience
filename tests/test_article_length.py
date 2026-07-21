@@ -162,8 +162,11 @@ def test_endpoint_and_button_are_wired():
     diag = (_ROOT / "src" / "api" / "diagnostics.py").read_text(encoding="utf-8")
     assert '@router.get("/article-length")' in diag
     assert "from src.analytics.article_length import article_length_report" in diag
+    # DIAGNOSE-THE-DIAGNOSTICS ruling #7 (2026-07-20): the standalone download button was
+    # removed -- the all-diagnostics bundle already carries article-length.json (the
+    # completeness ratchet guarantees it), so the endpoint itself is what stays wired.
     html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
-    assert "/api/diagnostics/article-length?download=1" in html
+    assert "/api/diagnostics/article-length?download=1" not in html
 
 
 # ----------------------------- the endpoint (CI) ------------------------------- #

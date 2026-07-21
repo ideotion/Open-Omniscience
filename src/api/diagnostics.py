@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
+import pathlib
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -35,15 +37,17 @@ from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.models import (
     Article,
     Keyword,
+    KeywordMention,
     KeywordSuperGroup,
     Source,
 )
 from src.database.read_snapshot import read_only_db
 from src.database.session import get_db
 from src.jobs.background import BackgroundJob, register_job
-from src.utils.export_envelope import envelope
+from src.utils.export_envelope import app_version, envelope
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
+_LOG = logging.getLogger("api.diagnostics")
 
 # Bounded scan — PER LANGUAGE (maintainer-ruled 2026-06-11): a single global
 # mentions-ranked cap structurally anglicised the export (English keywords
@@ -2749,9 +2753,383 @@ def _pagesize_bench_last_member() -> dict:
     return last_pagesize_bench_report()
 
 
-def _all_diagnostics_manifest(results: list[dict]) -> dict:
+def _all_diag_db_member_deadline_s() -> float:
+    """Per-member statement deadline (SQL VM opcode interrupt) for a DB-touching
+    all-diagnostics member, ``OO_ALL_DIAG_DB_MEMBER_DEADLINE_S`` (generous default -- a
+    diagnostics run is not a UI request). Clamped finite/positive so a bad env value can
+    never overflow ``Thread.join`` downstream nor emit a non-finite, JSON-invalid budget
+    (the same S8-lesson clamp as the debug-bundle budget)."""
+    import math
+
+    try:
+        v = float(os.environ.get("OO_ALL_DIAG_DB_MEMBER_DEADLINE_S", "300"))
+    except ValueError:
+        return 300.0
+    if not math.isfinite(v) or v <= 0:
+        return 300.0
+    return min(v, 3600.0)
+
+
+def _all_diag_nondb_member_deadline_s() -> float:
+    """Per-member wall-clock budget for a NON-DB all-diagnostics member run on a daemon
+    thread, ``OO_ALL_DIAG_NONDB_MEMBER_DEADLINE_S`` (same generous default + clamp)."""
+    import math
+
+    try:
+        v = float(os.environ.get("OO_ALL_DIAG_NONDB_MEMBER_DEADLINE_S", "300"))
+    except ValueError:
+        return 300.0
+    if not math.isfinite(v) or v <= 0:
+        return 300.0
+    return min(v, 3600.0)
+
+
+def _member_touches_db(fn) -> bool:
+    """True if this member's thunk closes over a ``db`` free variable -- i.e. it reads
+    the shared DB connection. Determined from the ACTUAL closure (``fn.__code__``), never
+    a hand-maintained allow-list that could silently drift from ``_all_diagnostics_members``
+    as members are added. The S8 house lesson: a DB-touching member must run INLINE, never
+    on a worker thread sharing the connection (pysqlite/sqlcipher serialise statements --
+    a second thread BLOCKS, it does not error -- and a SQLAlchemy Session is not
+    thread-safe), so this is the dispatch key for the deadline strategy below."""
+    code = getattr(fn, "__code__", None)
+    return code is not None and "db" in code.co_freevars
+
+
+def _rss_kb() -> int | None:
+    """Best-effort CURRENT-process resident-set size in KB (+ RSS delta 'where cheap' per
+    the envelope spec) -- a single ``getrusage`` syscall, no new dependency. Linux reports
+    ru_maxrss in KB already; macOS reports bytes, normalized here. This is a HIGH-WATER-MARK
+    (never decreases within a process lifetime), so a per-member 'delta' is a lower bound on
+    that member's own allocation, not an exact attribution -- still the cheap, honest signal
+    the spec asks for. None (never fabricated) if unavailable on this platform."""
+    try:
+        import resource
+        import sys as _sys
+
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return int(rss / 1024) if _sys.platform == "darwin" else int(rss)
+    except Exception:  # noqa: BLE001 - best-effort instrumentation, never fatal
+        return None
+
+
+_ALL_DIAG_DEADLINE_SENTINEL = object()
+
+
+def _run_nondb_member_bounded(fn, budget_s: float):
+    """Run a NON-DB member thunk on a daemon thread under a wall-clock budget (S8: safe
+    ONLY because these members never touch the shared DB connection -- they may block on a
+    socket or a file read, and abandoning the thread past budget cannot corrupt anything
+    shared). Returns the thunk's value, or ``_ALL_DIAG_DEADLINE_SENTINEL`` if it is still
+    running past ``budget_s`` (the thread is simply abandoned -- daemon, so it never blocks
+    process exit). A raised exception inside the thunk is re-raised here so the caller's
+    normal per-member except-block handles it uniformly with the inline DB path."""
+    import threading
+
+    box: dict = {}
+
+    def _run() -> None:
+        try:
+            box["value"] = fn()
+        except Exception as exc:  # noqa: BLE001 - re-raised on the caller's side below
+            box["error"] = exc
+
+    t = threading.Thread(target=_run, name="all-diag-member", daemon=True)
+    t.start()
+    t.join(budget_s)
+    if t.is_alive():
+        return _ALL_DIAG_DEADLINE_SENTINEL
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
+def _all_diag_err_str(exc: Exception) -> str:
+    """Render a member's exception for the envelope/error-file -- even a broken ``__str__``
+    must still yield a marker (S8 lesson: a failed member must never be silently lost)."""
+    try:
+        return str(exc)[:300]
+    except Exception:  # noqa: BLE001
+        return f"<{type(exc).__name__}: unrenderable>"
+
+
+# RATCHET (2026-07-17) + RUNTIME COVERAGE (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): the
+# SINGLE source of truth for "every GET diagnostics route is either a bundle member or a
+# documented exemption" -- shared by test_repo_invariants' CI-time ratchet (which imports
+# these two dicts rather than hand-duplicating them) AND the manifest's runtime coverage
+# block below, so the CI-time check and the artifact's own self-description can never
+# silently diverge from each other.
+_DIAG_COVERAGE_MAP: dict[str, str] = {
+    "/keywords": "keyword-log-digest.json",  # digest form; full dump exempt below
+    "/keyword-selftest": "keyword-selftest.json",
+    "/ir-eval-selftest": "ir-eval-selftest.json",
+    "/perception-eval-selftest": "perception-eval-selftest.json",
+    "/keyword-triage-selftest": "keyword-triage-selftest.json",
+    "/recursive-loop": "recursive-loop.json",
+    "/kpi": "kpi.json",
+    "/search-timing": "search-timing.json",
+    "/search-timing-selftest": "search-timing-selftest.json",
+    "/lemma-preview": "lemma-preview.json",
+    "/home-cards": "home-cards.json",
+    "/keyword-engine": "keyword-engine.json",
+    "/power-profile": "power-profile.json",
+    "/power-profile-selftest": "power-profile-selftest.json",
+    "/article-length": "article-length.json",
+    "/non-article-scan": "non-article-scan.json",
+    "/keyword-growth": "keyword-growth.json",
+    "/source-audit": "source-audit.json",
+    "/source-audit-selftest": "source-audit-selftest.json",
+    "/dates": "date-extraction.json",
+    "/performance": "performance.json",
+    "/benchmark": "benchmark.json",
+    "/network": "network.json",
+    "/columnar": "columnar.json",
+    "/freshness": "freshness.json",
+    "/session-forensics": "session-forensics.json",
+    "/data-dir-persistence": "data-dir-persistence.json",
+    "/storage-footprint": "storage-footprint.json",
+    "/storage-composition": "storage-composition.json",
+    "/frontend-errors": "frontend-errors.json",
+    "/request-latency": "request-latency.json",
+    "/slow-queries": "slow-queries.json",
+    "/schema-drift": "schema-drift.json",
+    "/integrity": "corpus-integrity.json",
+    "/debug-bundle": "debug-bundle.json",
+    "/p0-validation/last": "p0-validation.json",
+    "/pagesize-bench/last": "pagesize-bench.json",
+    "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
+    "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
+}
+_DIAG_COVERAGE_EXEMPT: dict[str, str] = {
+    "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
+    "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
+    "/source-coverage-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
+    "/ir-eval": "needs an operator-graded gold-set file (manifest 'excluded')",
+    "/gold-builder/sample": "interactive grading sampler, not a report (manifest 'excluded')",
+    "/all": "the bundle itself",
+    "/all-job/status": "job control", "/all-job/download": "job control",
+    "/p0-validation/status": "job control", "/p0-validation/download": "job control",
+    "/pagesize-bench/status": "job control", "/pagesize-bench/download": "job control",
+    "/discover-world/status": "job control",
+    "/enrich-source-types/status": "job control",
+}
+
+
+def _diagnostics_coverage_report() -> dict:
+    """Recompute the route-vs-member-vs-exemption completeness comparison AT RUN TIME
+    (maintainer ruling: "ensured in the log, not just in CI") -- reads THIS module's own
+    source (no regex-scan of anything external), the same technique the CI ratchet uses,
+    against the shared ``_DIAG_COVERAGE_MAP``/``_DIAG_COVERAGE_EXEMPT`` above so the two
+    checks cannot silently diverge. Degrades to ``{"available": False}`` rather than ever
+    failing the whole bundle build over an introspection quirk."""
+    import re as _re
+
+    try:
+        src = pathlib.Path(__file__).read_text(encoding="utf-8")
+        gets = set(_re.findall(r'@router\.get\("([^"]+)"', src))
+        covered = set(_DIAG_COVERAGE_MAP)
+        exempt = set(_DIAG_COVERAGE_EXEMPT)
+        unclassified = sorted(gets - covered - exempt)
+        stale = sorted((covered | exempt) - gets)
+        members_block = src.split("def _all_diagnostics_members", 1)[1].split("def _", 1)[0]
+        missing_members = sorted(
+            fname for fname in _DIAG_COVERAGE_MAP.values() if f'"{fname}"' not in members_block
+        )
+        return {
+            "available": True,
+            "total_get_routes": len(gets),
+            "covered_routes": len(covered),
+            "exempt_routes": len(exempt),
+            "unclassified": unclassified,
+            "stale_classifications": stale,
+            "missing_bundle_members": missing_members,
+            "complete": not unclassified and not stale and not missing_members,
+        }
+    except Exception as exc:  # noqa: BLE001 - a coverage-recompute glitch must not sink the run
+        return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
+def _corpus_counters_safe(db) -> dict:
+    """A read-only articles/keywords/mentions snapshot for the manifest run header -- so a
+    reader comparing logs across runs/machines knows what CORPUS SIZE produced each one.
+    Bounded by the same DB-member statement deadline; degrades honestly if db is absent
+    (the sync route's absorption-gated test path) or the read itself fails/times out."""
+    if db is None:
+        return {"available": False, "reason": "no database session"}
+    try:
+        with statement_deadline(db, _all_diag_db_member_deadline_s()):
+            return {
+                "available": True,
+                "articles": int(db.query(func.count(Article.id)).scalar() or 0),
+                "keywords": int(db.query(func.count(Keyword.id)).scalar() or 0),
+                "mentions": int(db.query(func.count(KeywordMention.id)).scalar() or 0),
+            }
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
+def _schema_head_safe() -> str:
+    """The migrations script directory's head revision (what the CODE expects), via
+    alembic's ScriptDirectory API -- never a regex-scan, never a fabricated guess.
+    'unavailable' on any failure (alembic missing, a branched/multi-head history, an
+    unreadable migrations/ dir)."""
+    try:
+        from src.database.migrate import schema_head
+
+        head = schema_head()
+        return head if head else "unavailable"
+    except Exception:  # noqa: BLE001
+        return "unavailable"
+
+
+def _disk_rotational_probe(target_dir) -> object:
+    """Honest Linux-only probe of whether the disk backing ``target_dir`` is rotational
+    (HDD) or not (SSD/NVMe), via ``/sys/block/*/queue/rotational`` -- the exact file the
+    AMENDED ruling names. Resolves the SPECIFIC block device backing the directory via
+    ``os.stat().st_dev`` -> ``/sys/dev/block/<major>:<minor>`` where possible (a partition
+    node's queue/ lives on its parent whole-disk device); falls back to the first probed
+    device in ``/sys/block/*`` if the precise resolution fails. Returns the honest string
+    'unavailable' on non-Linux platforms or if sysfs is unreadable -- NEVER fabricated."""
+    import sys as _sys
+
+    if not _sys.platform.startswith("linux"):
+        return "unavailable"
+    try:
+        st = os.stat(target_dir)
+        major, minor = os.major(st.st_dev), os.minor(st.st_dev)
+        node = pathlib.Path(f"/sys/dev/block/{major}:{minor}").resolve()
+        for cand in (node / "queue" / "rotational", node.parent / "queue" / "rotational"):
+            if cand.exists():
+                val = cand.read_text(encoding="utf-8").strip()
+                return "rotational" if val == "1" else "ssd/nvme"
+    except Exception:  # noqa: BLE001 - fall through to the coarse scan below
+        pass
+    try:
+        import glob as _glob
+
+        for qpath in sorted(_glob.glob("/sys/block/*/queue/rotational")):
+            dev = qpath.split("/")[3]
+            if dev.startswith(("loop", "ram")):
+                continue
+            val = pathlib.Path(qpath).read_text(encoding="utf-8").strip()
+            return "rotational" if val == "1" else "ssd/nvme"
+    except Exception:  # noqa: BLE001
+        pass
+    return "unavailable"
+
+
+def _cpu_model_safe() -> str:
+    """Best-effort CPU model string, LOCAL reads only, zero network. 'unavailable' if the
+    platform-specific source can't be read (never fabricated)."""
+    import sys as _sys
+
+    try:
+        if _sys.platform.startswith("linux"):
+            with open("/proc/cpuinfo", encoding="utf-8") as f:
+                for line in f:
+                    if line.lower().startswith("model name"):
+                        return line.split(":", 1)[1].strip()
+        elif _sys.platform == "darwin":
+            import subprocess
+
+            out = subprocess.run(
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
+                capture_output=True, text=True, timeout=2,
+            )
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.strip()
+        else:
+            import platform as _platform
+
+            proc = _platform.processor()
+            if proc:
+                return proc
+    except Exception:  # noqa: BLE001
+        pass
+    return "unavailable"
+
+
+def _hardware_profile() -> dict:
+    """LOCAL machine facts for the manifest run header (AMENDED ruling, 2026-07-20):
+    cross-machine comparison is the point (the maintainer tests across several rigs incl.
+    low/cheap/old laptops), so every measurement in the log needs the hardware it was taken
+    on stated alongside it. All reads are LOCAL (stdlib os/platform/shutil + the already-
+    depended-on psutil); zero network calls. Every field degrades to the honest string
+    'unavailable' rather than a guess; an operator-set ``OO_MACHINE_LABEL`` (optional) makes
+    logs from different machines distinguishable at a glance."""
+    import platform as _platform
+    import shutil as _shutil
+
+    try:
+        os_name = _platform.platform()
+    except Exception:  # noqa: BLE001 - degrade honestly, never guess or crash the run
+        os_name = "unavailable"
+    try:
+        kernel = _platform.release()
+    except Exception:  # noqa: BLE001
+        kernel = "unavailable"
+    profile: dict = {
+        "os": os_name,
+        "kernel": kernel,
+        "cpu_model": _cpu_model_safe(),
+        "machine_label": os.environ.get("OO_MACHINE_LABEL") or None,
+    }
+    try:
+        import psutil
+
+        profile["cpu_physical_cores"] = psutil.cpu_count(logical=False) or "unavailable"
+        profile["cpu_logical_cores"] = psutil.cpu_count(logical=True) or "unavailable"
+        freq = psutil.cpu_freq()
+        profile["cpu_freq_mhz"] = round(freq.current, 1) if freq and freq.current else "unavailable"
+        vm = psutil.virtual_memory()
+        sm = psutil.swap_memory()
+        profile["ram_total_bytes"] = int(vm.total)
+        profile["swap_total_bytes"] = int(sm.total)
+    except Exception:  # noqa: BLE001 - psutil unavailable/unsupported on this platform
+        for k in (
+            "cpu_physical_cores", "cpu_logical_cores", "cpu_freq_mhz",
+            "ram_total_bytes", "swap_total_bytes",
+        ):
+            profile.setdefault(k, "unavailable")
+    try:
+        target = str(_all_diagnostics_dir())
+        profile["disk_free_bytes"] = int(_shutil.disk_usage(target).free)
+    except Exception:  # noqa: BLE001
+        target = "."
+        profile["disk_free_bytes"] = "unavailable"
+    profile["disk_rotational"] = _disk_rotational_probe(target)
+    return profile
+
+
+def _all_diagnostics_manifest(
+    results: list[dict],
+    *,
+    db=None,
+    run_started_at: float | None = None,
+    run_ended_at: float | None = None,
+) -> dict:
     import platform
     import sys as _sys
+
+    run_started_iso = (
+        datetime.fromtimestamp(run_started_at).isoformat(timespec="seconds")
+        if run_started_at else None
+    )
+    run_ended_iso = (
+        datetime.fromtimestamp(run_ended_at).isoformat(timespec="seconds")
+        if run_ended_at else None
+    )
+    total_wall_s = (
+        round(run_ended_at - run_started_at, 3)
+        if (run_started_at is not None and run_ended_at is not None) else None
+    )
+    slowest_members = sorted(
+        (
+            {"file": r["file"], "wall_s": r["wall_s"]}
+            for r in results if r.get("wall_s") is not None
+        ),
+        key=lambda r: r["wall_s"], reverse=True,
+    )[:10]
 
     return {
         "export_schema": "oo-export-1",
@@ -2759,6 +3137,21 @@ def _all_diagnostics_manifest(results: list[dict]) -> dict:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "python": _sys.version.split()[0],
         "platform": platform.platform(),
+        # RUN HEADER (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): the 0.3 gate row-3 tie-in --
+        # a failed hour-long 5M-scale run must be diagnosable FROM THE ARCHIVE ITSELF, not
+        # just from having watched it live. Corpus size + app/schema version + the hardware
+        # it ran on + which member ate the wall time, all in one place.
+        "run": {
+            "app_version": app_version(),
+            "schema_head": _schema_head_safe(),
+            "corpus": _corpus_counters_safe(db),
+            "hardware": _hardware_profile(),
+            "started_at": run_started_iso,
+            "ended_at": run_ended_iso,
+            "total_wall_s": total_wall_s,
+            "slowest_members": slowest_members,
+            "runtime_coverage": _diagnostics_coverage_report(),
+        },
         "members": results,
         # HONESTY (2026-07-17): what is deliberately NOT in this archive, and why —
         # so "all diagnostics" states its own boundary instead of implying totality.
@@ -2804,32 +3197,160 @@ def _all_diagnostics_manifest(results: list[dict]) -> dict:
     }
 
 
-def _write_all_diagnostics_zip(members, zf, *, progress=None, should_stop=None) -> list[dict]:
+def _write_all_diagnostics_zip(
+    members, zf, *, progress=None, should_stop=None, journal_path=None, db=None
+) -> list[dict]:
     """Write every member (+ manifest) into the open ZipFile ``zf``; return the per-member
     results. Shared by the sync endpoint (an in-memory BytesIO) and the job (a file on disk).
     ``progress(done, total, name)`` reports live progress; ``should_stop()`` lets the job
     cancel cooperatively BETWEEN members (a single member — e.g. the benchmark — can't be
     interrupted mid-run). One failing log never aborts the bundle (a ``<name>.error.txt`` is
-    written and recorded in the manifest)."""
+    written and recorded in the manifest).
+
+    ENVELOPE (0.3 gate row 3 / DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): every member now
+    records ``{file, ok, outcome, started_at, wall_s, bytes[, error][, rss_delta_kb]}`` --
+    ``ok`` is KEPT (True iff ``outcome == "ok"``) for any reader still on the old boolean.
+
+    DEADLINES (S8 lesson): a member whose thunk closes over ``db`` (touches the shared
+    connection) runs INLINE under a statement deadline — never threaded, because a shared
+    SQLite/SQLCipher connection BLOCKS (not errors) under concurrent use and a statement
+    deadline bounds only SQL VM opcodes, never the Python row-materialisation around them,
+    so a DB worker could never be cleanly abandoned mid-query. A non-DB member runs on a
+    daemon wall-clock-bounded thread. Either way a timeout records outcome
+    ``skipped-deadline`` honestly and the bundle CONTINUES to the next member (never aborts).
+
+    JOURNAL: when ``journal_path`` is given (the background job path only — the sync route's
+    in-memory BytesIO build has no durable file to journal against), a begin/end JSON line is
+    appended + fsync'd around every member, so a HARD-killed run's last ``begin`` with no
+    matching ``end`` NAMES the culprit member — a diagnosis the in-memory manifest (written
+    only once, at the very end) cannot offer a crashed run."""
+    import time as _time
+
     results: list[dict] = []
     total = len(members)
-    for i, (name, fn) in enumerate(members):
-        if should_stop is not None and should_stop():
-            break
-        if progress is not None:
-            progress(i, total, name)
-        try:
-            zf.writestr(name, _member_bytes(fn()))
-            results.append({"file": name, "ok": True})
-        except Exception as exc:  # noqa: BLE001 - one failing log must not abort the bundle
-            zf.writestr(name + ".error.txt", str(exc))
-            results.append({"file": name, "ok": False, "error": str(exc)[:300]})
-    zf.writestr(
-        "manifest.json", json.dumps(_all_diagnostics_manifest(results), ensure_ascii=False, indent=2)
+    run_started_at = _time.time()
+    # Left open across the whole loop (appended + fsync'd per member) and closed in the
+    # `finally` below -- a `with` here would have to wrap the entire member loop AND the
+    # conditional-None case, which reads worse than the explicit open/close pair below.
+    journal_fp = (
+        open(journal_path, "a", encoding="utf-8")  # noqa: SIM115
+        if journal_path is not None else None
     )
+    try:
+        for i, (name, fn) in enumerate(members):
+            if should_stop is not None and should_stop():
+                break
+            if progress is not None:
+                progress(i, total, name)
+            started_t = _time.time()
+            started_iso = datetime.now().isoformat(timespec="seconds")
+            if journal_fp is not None:
+                try:
+                    journal_fp.write(
+                        json.dumps(
+                            {"event": "begin", "file": name, "i": i, "total": total,
+                             "started_at": started_iso}
+                        ) + "\n"
+                    )
+                    journal_fp.flush()
+                    with contextlib.suppress(OSError):
+                        os.fsync(journal_fp.fileno())
+                except OSError:
+                    # The journal is a diagnostic aid, not the bundle itself -- a write
+                    # failure (e.g. ENOSPC on the sidecar's disk) must degrade the run to
+                    # unjournaled rather than abort a hard-won hour-long bundle.
+                    _LOG.warning(
+                        "all-diagnostics journal write failed; disabling journal for the "
+                        "rest of this run", exc_info=True
+                    )
+                    with contextlib.suppress(OSError):
+                        journal_fp.close()
+                    journal_fp = None
+
+            rss_before = _rss_kb()
+            outcome = "ok"
+            err: str | None = None
+            nbytes = 0
+            try:
+                if db is not None and _member_touches_db(fn):
+                    with statement_deadline(db, _all_diag_db_member_deadline_s()):
+                        value = fn()
+                else:
+                    value = _run_nondb_member_bounded(fn, _all_diag_nondb_member_deadline_s())
+                    if value is _ALL_DIAG_DEADLINE_SENTINEL:
+                        outcome = "skipped-deadline"
+                if outcome == "ok":
+                    payload = _member_bytes(value)
+                    zf.writestr(name, payload)
+                    nbytes = len(payload)
+                else:
+                    marker = (
+                        f"member exceeded its {_all_diag_nondb_member_deadline_s():.0f}s "
+                        "wall-clock deadline and was abandoned (non-DB member)"
+                    ).encode()
+                    zf.writestr(name + ".skipped-deadline.txt", marker)
+            except StatementTimeout as exc:
+                outcome = "skipped-deadline"
+                zf.writestr(name + ".skipped-deadline.txt", _all_diag_err_str(exc))
+            except Exception as exc:  # noqa: BLE001 - one failing member must not abort the bundle
+                outcome = "error"
+                err = _all_diag_err_str(exc)
+                zf.writestr(name + ".error.txt", err)
+
+            wall_s = round(_time.time() - started_t, 3)
+            rss_after = _rss_kb()
+            entry: dict = {
+                "file": name,
+                "ok": outcome == "ok",
+                "outcome": outcome,
+                "started_at": started_iso,
+                "wall_s": wall_s,
+                "bytes": nbytes,
+            }
+            if err is not None:
+                entry["error"] = err
+            if rss_before is not None and rss_after is not None:
+                entry["rss_delta_kb"] = rss_after - rss_before
+            results.append(entry)
+
+            if journal_fp is not None:
+                try:
+                    journal_fp.write(
+                        json.dumps(
+                            {"event": "end", "file": name, "outcome": outcome, "wall_s": wall_s}
+                        ) + "\n"
+                    )
+                    journal_fp.flush()
+                    with contextlib.suppress(OSError):
+                        os.fsync(journal_fp.fileno())
+                except OSError:
+                    _LOG.warning(
+                        "all-diagnostics journal write failed; disabling journal for the "
+                        "rest of this run", exc_info=True
+                    )
+                    with contextlib.suppress(OSError):
+                        journal_fp.close()
+                    journal_fp = None
+    finally:
+        if journal_fp is not None:
+            journal_fp.close()
+
+    run_ended_at = _time.time()
+    manifest = _all_diagnostics_manifest(
+        results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at
+    )
+    zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
+    # Fold the durable journal into the finished archive as bundle-journal.jsonl -- the
+    # sidecar on disk has done its job (any hard-kill forensics happen from the sidecar
+    # ITSELF, before this point is ever reached); the caller removes the sidecar file.
+    if journal_path is not None and pathlib.Path(journal_path).exists():
+        zf.writestr(
+            "bundle-journal.jsonl", pathlib.Path(journal_path).read_text(encoding="utf-8")
+        )
     if progress is not None:
         progress(total, total, "done")
     return results
+
 
 
 @router.get("/all")
@@ -2852,7 +3373,7 @@ def all_diagnostics(db: Session = Depends(get_db)) -> Response:
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        _write_all_diagnostics_zip(_all_diagnostics_members(db), z)
+        _write_all_diagnostics_zip(_all_diagnostics_members(db), z, db=db)
     fname = f"oo-all-diagnostics-{datetime.now().strftime('%Y%m%d-%H%M')}.zip"
     return Response(
         content=buf.getvalue(),
@@ -2891,6 +3412,13 @@ def _all_diagnostics_worker(ctx) -> dict:
     fname = f"oo-all-diagnostics-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
     final_path = out_dir / fname
     part_path = out_dir / (fname + ".part")
+    # DURABLE JOURNAL sidecar (DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): begin/end lines
+    # appended + fsync'd around every member as the build runs, so a HARD kill (OOM/kill
+    # -9, not a cooperative cancel) leaves this file on disk with its last `begin` unmatched
+    # by an `end` -- naming the culprit member for an hour-long 5M-scale run gone wrong. On
+    # a clean finish it is folded into the zip as bundle-journal.jsonl and the sidecar is
+    # removed (its job is done); on a hard kill it simply survives as forensic evidence.
+    journal_path = out_dir / (fname + ".journal.jsonl")
     with session_scope() as db:
         members = _all_diagnostics_members(db)
 
@@ -2899,19 +3427,29 @@ def _all_diagnostics_worker(ctx) -> dict:
 
         with zipfile.ZipFile(part_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             results = _write_all_diagnostics_zip(
-                members, z, progress=_progress, should_stop=lambda: ctx.stopping
+                members, z, progress=_progress, should_stop=lambda: ctx.stopping,
+                journal_path=journal_path, db=db,
             )
     if ctx.stopping:
         # Cancelled between members: drop the partial, never present it as a good archive.
         with contextlib.suppress(OSError):
             part_path.unlink()
+        with contextlib.suppress(OSError):
+            journal_path.unlink()
         return {"cancelled": True, "members": results}
     _os.replace(part_path, final_path)  # atomic publish
+    with contextlib.suppress(OSError):
+        journal_path.unlink()  # folded into the zip as bundle-journal.jsonl already
     # Keep only the newest archive (the channel is one-shot; old ones just consume disk).
-    # Also sweep any stale ``.part`` left by a PREVIOUS crashed/killed run — this run's own
-    # part was just renamed away, and the job is single-instance, so no live writer is
-    # touched (no orphaned staging accumulates across hard-kills).
-    for old in (*out_dir.glob("oo-all-diagnostics-*.zip"), *out_dir.glob("oo-all-diagnostics-*.zip.part")):
+    # Also sweep any stale ``.part``/``.journal.jsonl`` left by a PREVIOUS crashed/killed
+    # run — this run's own part/journal were just renamed away/removed, and the job is
+    # single-instance, so no live writer is touched (no orphaned staging accumulates
+    # across hard-kills).
+    for old in (
+        *out_dir.glob("oo-all-diagnostics-*.zip"),
+        *out_dir.glob("oo-all-diagnostics-*.zip.part"),
+        *out_dir.glob("oo-all-diagnostics-*.journal.jsonl"),
+    ):
         if old != final_path:
             with contextlib.suppress(OSError):
                 old.unlink()

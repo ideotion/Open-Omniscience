@@ -10633,10 +10633,19 @@
           if (state === "error") { set(t("Build failed:") + " " + (s.error || t("unknown error"))); break; }
           if (state === "cancelled") { set(t("Build cancelled.")); break; }
           if (state === "done") { set(t("Done — check the task manager for the file.")); break; }
-          // running / idle: show live progress
+          // running / idle: show live progress — "member i/N · name · elapsed" (the DIAGNOSE-
+          // THE-DIAGNOSTICS run-journal ruling): i/N + name already ride the existing
+          // done/total/detail fields, elapsed is computed client-side from started_at so no new
+          // backend field is needed for this line.
+          // `done` is the count of members COMPLETED so far (0 while the first one is
+          // still running), so the human-facing "member i/N" is done+1, capped at N.
+          const memberPos = (s.done != null && s.total)
+            ? "member " + Math.min(s.done + 1, s.total) + "/" + s.total : "";
+          const member = s.detail ? (memberPos ? memberPos + " · " + s.detail : s.detail) : memberPos;
+          const elapsedS = s.started_at ? Math.max(0, Math.round(Date.now() / 1000 - s.started_at)) : null;
+          const elapsed = elapsedS != null ? " · " + elapsedS + "s" : "";
           const pct = (s.progress && s.progress.percent != null) ? " " + s.progress.percent + "%" : "";
-          const member = s.detail ? " · " + s.detail : "";
-          set(t("Building in the background…") + pct + member);
+          set(t("Building in the background…") + pct + (member ? " · " + member : "") + elapsed);
           await sleep(2000);
         }
       } finally {
