@@ -2093,5 +2093,17 @@
   "pending": "pending",
   "never-registered": "never-registered",
   "Discovery": "Discovery",
-  "First cited by": "First cited by"
+  "First cited by": "First cited by",
+  "How your corpus grew": "How your corpus grew",
+  "Date range": "Date range",
+  "Analyses": "Analyses",
+  "Wiki pages": "Wiki pages",
+  "Law docs": "Law docs",
+  "Events": "Events",
+  "Before": "Before",
+  "After": "After",
+  "New sources": "New sources",
+  "Articles awaiting indexing": "Articles awaiting indexing",
+  "database records, all types": "database records, all types",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages."
 }

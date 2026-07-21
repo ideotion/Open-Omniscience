@@ -2093,5 +2093,17 @@
   "pending": "в ожидании",
   "never-registered": "никогда не регистрировался",
   "Discovery": "Обнаружение",
-  "First cited by": "Впервые процитирован"
+  "First cited by": "Впервые процитирован",
+  "How your corpus grew": "Как вырос ваш корпус",
+  "Date range": "Диапазон дат",
+  "Analyses": "Анализы",
+  "Wiki pages": "Вики-страницы",
+  "Law docs": "Правовые документы",
+  "Events": "События",
+  "Before": "До",
+  "After": "После",
+  "New sources": "Новые источники",
+  "Articles awaiting indexing": "Статьи, ещё ожидающие индексации",
+  "database records, all types": "Записи базы данных, все типы",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Ваш корпус пополнился на {articles} статей из {sources} новых источников, охватив {languages} новых языков."
 }

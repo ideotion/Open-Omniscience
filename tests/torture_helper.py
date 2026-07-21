@@ -176,6 +176,16 @@ def cmd_merge(args) -> None:
 
         setattr(merge_mod, args.kill_at, _kill_handler)
 
+    # Opt-in re-index crash injection (regression test for the "awaiting indexing"
+    # count on a genuine whole-batch re-index failure): forces the post-swap
+    # re-index step to raise, so the caller can assert run_restore's exception
+    # handler reports the TRUE imported-article count as "failed", never 0.
+    if args.crash_reindex:
+        def _crash_reindex(*_a, **_k):
+            raise RuntimeError("torture: forced re-index crash")
+
+        merge_mod.reindex_imported_articles = _crash_reindex  # type: ignore[assignment]
+
     pw = args.passphrase if args.passphrase != "-" else None
     try:
         staged = read_artifact(Path(args.artifact).read_bytes(), passphrase=pw)
@@ -187,8 +197,9 @@ def cmd_merge(args) -> None:
         # crash-safety, dedup). The post-swap re-index of imported articles (P0-4) is a
         # one-directional post-step with its own test (test_reindex_on_import) — it makes
         # the FULL restore direction-dependent in DERIVED data BY DESIGN, so disable it
-        # here to keep the engine's symmetry/determinism assertions meaningful.
-        report = merge_mod.run_restore(staged, commit=args.commit, reindex_imported=False)
+        # here to keep the engine's symmetry/determinism assertions meaningful. ``--reindex``
+        # opts a specific test into the real post-swap re-index step (default stays off).
+        report = merge_mod.run_restore(staged, commit=args.commit, reindex_imported=args.reindex)
         _emit({"report": report})
     except Exception as exc:  # noqa: BLE001
         _emit({"error": type(exc).__name__, "message": str(exc)[:300]})
@@ -320,6 +331,8 @@ def main() -> None:
     m.add_argument("--passphrase", default="-")
     m.add_argument("--commit", action="store_true")
     m.add_argument("--kill-at", default=None)
+    m.add_argument("--reindex", action="store_true")
+    m.add_argument("--crash-reindex", action="store_true")
     sub.add_parser("dump")
     f = sub.add_parser("fts-find")
     f.add_argument("token")

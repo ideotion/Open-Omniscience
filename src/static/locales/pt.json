@@ -2093,5 +2093,17 @@
   "pending": "pendente",
   "never-registered": "nunca registrado",
   "Discovery": "Descoberta",
-  "First cited by": "Citado pela primeira vez por"
+  "First cited by": "Citado pela primeira vez por",
+  "How your corpus grew": "Como o seu corpus cresceu",
+  "Date range": "Intervalo de datas",
+  "Analyses": "Análises",
+  "Wiki pages": "Páginas da wiki",
+  "Law docs": "Documentos jurídicos",
+  "Events": "Eventos",
+  "Before": "Antes",
+  "After": "Depois",
+  "New sources": "Novas fontes",
+  "Articles awaiting indexing": "Artigos ainda aguardando indexação",
+  "database records, all types": "Registros de banco de dados, todos os tipos",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Seu corpus cresceu em {articles} artigos de {sources} novas fontes, abrangendo {languages} novos idiomas."
 }
