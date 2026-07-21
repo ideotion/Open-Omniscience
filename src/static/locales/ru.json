@@ -2085,5 +2085,17 @@
   "Track a document now": "Отслеживать документ сейчас",
   "Adding & tracking…": "Добавление и отслеживание…",
   "Status:": "Статус:",
-  "Resume tracking this document": "Возобновить отслеживание этого документа"
+  "Resume tracking this document": "Возобновить отслеживание этого документа",
+  "How your corpus grew": "Как вырос ваш корпус",
+  "Date range": "Диапазон дат",
+  "Analyses": "Анализы",
+  "Wiki pages": "Вики-страницы",
+  "Law docs": "Правовые документы",
+  "Events": "События",
+  "Before": "До",
+  "After": "После",
+  "New sources": "Новые источники",
+  "Articles awaiting indexing": "Статьи, ещё ожидающие индексации",
+  "database records, all types": "Записи базы данных, все типы",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Ваш корпус пополнился на {articles} статей из {sources} новых источников, охватив {languages} новых языков."
 }

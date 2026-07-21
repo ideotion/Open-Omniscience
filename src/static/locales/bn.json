@@ -2085,5 +2085,17 @@
   "Track a document now": "এখনই একটি নথি ট্র্যাক করুন",
   "Adding & tracking…": "যোগ করা হচ্ছে এবং ট্র্যাক করা হচ্ছে…",
   "Status:": "অবস্থা:",
-  "Resume tracking this document": "এই নথির ট্র্যাকিং পুনরায় শুরু করুন"
+  "Resume tracking this document": "এই নথির ট্র্যাকিং পুনরায় শুরু করুন",
+  "How your corpus grew": "আপনার কর্পাস যেভাবে বেড়েছে",
+  "Date range": "তারিখের পরিসর",
+  "Analyses": "বিশ্লেষণ",
+  "Wiki pages": "উইকি পৃষ্ঠা",
+  "Law docs": "আইন নথি",
+  "Events": "ঘটনা",
+  "Before": "আগে",
+  "After": "পরে",
+  "New sources": "নতুন উৎস",
+  "Articles awaiting indexing": "নিবন্ধ এখনও ইনডেক্সিং-এর অপেক্ষায়",
+  "database records, all types": "ডেটাবেস রেকর্ড, সকল ধরনের",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "আপনার কর্পাস {sources} টি নতুন উৎস থেকে {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে, যা {languages} টি নতুন ভাষা জুড়ে বিস্তৃত।"
 }

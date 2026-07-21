@@ -2085,5 +2085,17 @@
   "Track a document now": "Suivre un document maintenant",
   "Adding & tracking…": "Ajout et suivi en cours…",
   "Status:": "Statut :",
-  "Resume tracking this document": "Reprendre le suivi de ce document"
+  "Resume tracking this document": "Reprendre le suivi de ce document",
+  "How your corpus grew": "Comment votre corpus a grandi",
+  "Date range": "Période",
+  "Analyses": "Analyses",
+  "Wiki pages": "Pages wiki",
+  "Law docs": "Documents juridiques",
+  "Events": "Événements",
+  "Before": "Avant",
+  "After": "Après",
+  "New sources": "Nouvelles sources",
+  "Articles awaiting indexing": "Articles en attente d'indexation",
+  "database records, all types": "Enregistrements de base de données, tous types confondus",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Votre corpus s'est enrichi de {articles} articles provenant de {sources} nouvelles sources, couvrant {languages} nouvelles langues."
 }

@@ -2085,5 +2085,17 @@
   "Track a document now": "تتبّع مستند الآن",
   "Adding & tracking…": "يجري الإضافة والتتبّع…",
   "Status:": "الحالة:",
-  "Resume tracking this document": "استئناف تتبّع هذا المستند"
+  "Resume tracking this document": "استئناف تتبّع هذا المستند",
+  "How your corpus grew": "كيف نمت مجموعتك",
+  "Date range": "النطاق الزمني",
+  "Analyses": "التحليلات",
+  "Wiki pages": "صفحات ويكي",
+  "Law docs": "الوثائق القانونية",
+  "Events": "الأحداث",
+  "Before": "قبل",
+  "After": "بعد",
+  "New sources": "مصادر جديدة",
+  "Articles awaiting indexing": "مقالات ما زالت بانتظار الفهرسة",
+  "database records, all types": "سجلات قاعدة البيانات، جميع الأنواع",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "نمت مجموعتك بمقدار {articles} مقالة من {sources} مصادر جديدة، شملت {languages} لغة جديدة."
 }

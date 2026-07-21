@@ -2085,5 +2085,17 @@
   "Track a document now": "अभी एक दस्तावेज़ ट्रैक करें",
   "Adding & tracking…": "जोड़ा और ट्रैक किया जा रहा है…",
   "Status:": "स्थिति:",
-  "Resume tracking this document": "इस दस्तावेज़ का ट्रैकिंग फिर से शुरू करें"
+  "Resume tracking this document": "इस दस्तावेज़ का ट्रैकिंग फिर से शुरू करें",
+  "How your corpus grew": "आपका कॉर्पस कैसे बढ़ा",
+  "Date range": "तिथि सीमा",
+  "Analyses": "विश्लेषण",
+  "Wiki pages": "विकी पेज",
+  "Law docs": "कानूनी दस्तावेज़",
+  "Events": "घटनाएँ",
+  "Before": "पहले",
+  "After": "बाद में",
+  "New sources": "नए स्रोत",
+  "Articles awaiting indexing": "लेख अभी भी इंडेक्सिंग की प्रतीक्षा में",
+  "database records, all types": "डेटाबेस रिकॉर्ड, सभी प्रकार",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "आपका कॉर्पस {sources} नए स्रोतों से {articles} लेखों से बढ़ा, जो {languages} नई भाषाओं तक फैला।"
 }

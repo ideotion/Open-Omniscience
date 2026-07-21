@@ -2085,5 +2085,17 @@
   "Track a document now": "Lacak dokumen sekarang",
   "Adding & tracking…": "Menambahkan & melacak…",
   "Status:": "Status:",
-  "Resume tracking this document": "Lanjutkan pelacakan dokumen ini"
+  "Resume tracking this document": "Lanjutkan pelacakan dokumen ini",
+  "How your corpus grew": "Bagaimana korpus Anda bertambah",
+  "Date range": "Rentang tanggal",
+  "Analyses": "Analisis",
+  "Wiki pages": "Halaman wiki",
+  "Law docs": "Dokumen hukum",
+  "Events": "Peristiwa",
+  "Before": "Sebelum",
+  "After": "Sesudah",
+  "New sources": "Sumber baru",
+  "Articles awaiting indexing": "Artikel masih menunggu pengindeksan",
+  "database records, all types": "Rekaman database, semua jenis",
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Korpus Anda bertambah {articles} artikel dari {sources} sumber baru, mencakup {languages} bahasa baru."
 }
