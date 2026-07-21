@@ -957,6 +957,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     files sharing the same path.
 
 ## Open queue (when maintainer says proceed)
+- **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
+  474,556-article corpus, NOT the 0.3 gate's ≥5M run):** brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-21_FIELD_DIAGNOSTICS_FINDINGS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-21_FIELD_DIAGNOSTICS_FINDINGS.md),
+  PENDING a future session. Seven items, each a candidate for its own scoped PR: (1) a severe
+  p95/p99 slow-tail on `/api/insights/map-coverage` (up to 335s) and `/api/search/omni` (up to
+  291s); (2) "rising" Home Lead cards never hard-link to their exact articles (`Card(...)` in
+  `rising_now`, `producers.py:193`, is missing the `article_ids=` sibling producers got via the
+  F1 hard-link follow-up); (3) a cluster of multi-hour stalls + 503s all on 2026-07-11,
+  cause not yet identified; (4) keyword-growth evidence (marginal ~9.7 new keywords/article,
+  flat vs the ~10.6 cumulative average) supporting the still-unbuilt nav-soup prose gate; (5) a
+  measured, bounded non-article-contamination figure (1.44%, 6,825 articles) ready to quarantine
+  once cleanup strategy is agreed; (6) five sources at 100% outlier_rate
+  (`subseaworldnews.com`, `biospectrumasia.com`, `jota.info`, `24heures.ch`, `suspilne.media`)
+  worth a manual check before automating source requalification; (7) schema/FTS confirmed
+  clean (nothing to do there). None require corpus growth to investigate or fix.
 - **DOC MAP (consolidated 2026-07-10):** the single forward-looking board is now
   [`docs/ROADMAP.md`](docs/ROADMAP.md) (DB limitations · performance/scale · known bugs ·
   feature backlog, each with status) — read it for the overview; the DEEP scale detail stays
@@ -6029,6 +6044,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   page_size+auto_vacuum — pinned as a test); the encrypted path is covered by the same runtime
   self-verify. OPERATOR: run it on a SMALL and a LARGE corpus and send both logs (it rides the
   all-diagnostics bundle as `pagesize-bench.json`, last-report read-only).
+  **§1b EVIDENCE PAIR DELIVERED (maintainer ran both, 2026-07-19 + 2026-07-20, after the
+  encrypted-path fix): 16384 WINS EVERY DIMENSION AT SCALE — recommendation FIRM, awaiting the
+  maintainer's ratification.** Run 1 = 2.95 GB / 67,758 articles / 5.17M mentions (4-core Qubes);
+  run 2 = 22.2 GB / 474,556 articles / 40.6M mentions (6-core Qubes), both encrypted, live
+  corpora. Warm p50, 4096→16384: index_window 510→334 ms (−34%) at 3 GB and 2525→1268 ms (−50%)
+  at 22 GB; content_band −26% / −14%; rebuild −23% / −37%; file −1.9% both. THE DECISIVE FINDING:
+  the ONE shape 4K won at 3 GB (warm point lookups, 0.040 vs 0.091 ms) INVERTED at 22 GB (0.459
+  vs 0.203 ms — 16K 2.3× faster): the 4K advantage was a CACHE-FIT ARTIFACT — once the working
+  set exceeds cache, every lookup pays real I/O + codec and 16K's shallower tree / fewer codec
+  calls per descent dominates; the memo's codec-granularity fear (16K decrypts 4× bytes per
+  point access) is empirically OUTWEIGHED exactly where it was feared. Stability signature: 16K's
+  warm index_window ≈ its cold (1272→1268 ms) while 4K DEGRADED cold→warm (1569→2525 ms, scan
+  thrash) — the gap widens toward 5 TB. Migration cost from rebuild.seconds: ~10–17 s/GB (≈4–6
+  min at 22 GB; ≈30 min at 100 GB — cp-class, as the folder-copy-parity ruling predicted).
+  RECOMMENDATION: `page_size=16384` ON CREATE for NEW corpora, alongside the ruled
+  `auto_vacuum=INCREMENTAL` (§1a) — ONE fresh-file-pragmas build slice in `connect.py` covers
+  both, plus the §3 idle incremental_vacuum pass + §2 VACUUM-button size gate (the same
+  buildable-now set §1a queued). Existing corpora migrate via the proven rebuild op when the
+  maintainer chooses (the bench IS the mechanism proof; a user-facing migrate op is a separate
+  build). Residual bench nit: `source.page_size` in the report header is an uncoerced TEXT
+  read-back ("4096") — display-only, fold `int()` into the next touch.
 - **"ALL DIAGNOSTICS" MUST COMPRISE ALL DIAGNOSTICS (maintainer flagged 2026-07-17 "it seems not
   while it should" — CONFIRMED + FIXED same day; shipped.csv row):** the bundle had drifted 12
   members behind the router since the #645 membership pass. Added the missing read-only reports

@@ -354,8 +354,10 @@ def run_pagesize_ab(
         source_facts = {
             "db_bytes": src_bytes,
             "encrypted": bool(is_encrypted_file(src_p)),
-            "page_size": scon.execute("PRAGMA page_size").fetchone()[0],
-            "auto_vacuum": scon.execute("PRAGMA auto_vacuum").fetchone()[0],
+            # int(): some sqlcipher3 builds return PRAGMA read-backs as TEXT
+            # (the 2026-07-19 field reports showed "page_size": "4096").
+            "page_size": int(scon.execute("PRAGMA page_size").fetchone()[0]),
+            "auto_vacuum": int(scon.execute("PRAGMA auto_vacuum").fetchone()[0]),
             "articles": scon.execute("SELECT COUNT(*) FROM articles").fetchone()[0],
             "keyword_mentions": scon.execute("SELECT COUNT(*) FROM keyword_mentions").fetchone()[0],
         }
