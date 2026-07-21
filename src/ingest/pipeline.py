@@ -162,7 +162,8 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
     # stage so it applies to both the batch and the direct path.
     if skip_non_articles_enabled():
         verdict = classify_non_article(
-            fetched.final_url, title=doc.title, text=doc.text, word_count=len(doc.text.split())
+            fetched.final_url, title=doc.title, text=doc.text, word_count=len(doc.text.split()),
+            language=doc.language or source.language,
         )
         if verdict is not None:
             import logging

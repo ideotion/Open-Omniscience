@@ -6,6 +6,11 @@ NEGATIVE SPACE: a real article (substantial word_count) is NEVER flagged whateve
 real brief at an article path is NOT flagged (only clear URL-shaped nav/section/tag/homepage pages
 with a thin body are).
 
+Also covers the OPT-IN ``include_prose_gate`` subpass (NAV-SOUP SPECIMEN ruling 2026-07-20): off by
+default (byte-identical base scan), and when enabled catches word-rich nav soup among >=100-word
+bodies that the URL-shape pass above can never see — while a real article at the same word count is
+not newly flagged (the negative space again).
+
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 """
@@ -104,3 +109,82 @@ def test_suspected_non_article_ids_scoped_to_a_member_set():
     # Scoped to just the real article + the homepage capture:
     assert suspected_non_article_ids(s, [real_id, home_id]) == {home_id}
     assert suspected_non_article_ids(s, []) == set()
+
+
+_NAV_SOUP_BODY = (
+    "News Latest Irish News Mirror Bingo Soccer Golf Rugby Union Sport Business Politics "
+    "World News Travel Money Markets Weather Video Photos Gallery Podcast Newsletters Events "
+    "About Contact Home Search Login Sign Up Subscribe Cookies Advertisement Privacy Terms "
+    "Follow Facebook Twitter Instagram Newsletter Preference Centre Manage Subscriptions "
+    "Menu Toggle Navigation Skip Content Latest News Sport GAA Rugby Soccer Racing Golf Boxing "
+    "Motors Showbiz TV Fashion Beauty Food Recipes Property Travel Family Voucher Codes Bingo "
+    "Dating Contact Advertise Cookie Policy Privacy Policy Terms Conditions Modern Slavery "
+    "Statement Complaints Regulation Archive Sitemap Jobs Shop Weddings Announcements Obituaries "
+    "Horoscopes Puzzles Crosswords Competitions Vouchers Discounts Deals Reviews Betting Casino "
+    "Lottery Results Traffic Cameras Roadworks Bus Times Train Times Flight Tracker Currency "
+    "Converter Recipes Wine Beer Cocktails Restaurants Bars Nightlife Theatre Cinema Music Books"
+)
+_REAL_PROSE_BODY = (
+    "The government said on Tuesday that it would review the policy after months of criticism "
+    "from opposition lawmakers, who argued that the reform had failed to deliver the promised "
+    "benefits to the region's struggling economy. Officials declined to give a firm timetable "
+    "for the review, but said a report would follow before the end of the year, once "
+    "consultations with local councils and community groups had concluded. "
+) * 2
+
+
+def test_prose_gate_subpass_is_opt_in_and_byte_identical_by_default():
+    s = _corpus()
+    out = scan_non_article_candidates(s)
+    assert out["prose_gate"]["enabled"] is False
+    assert out["scanned"] == 6 and out["flagged"] == 4  # unchanged base contract
+
+
+def test_prose_gate_subpass_catches_word_rich_nav_soup_but_not_real_prose():
+    s = _corpus()
+    src = s.query(Source).one()
+    s.add(Article(url="https://news.example/newsletter-preference-centre",
+                  canonical_url="https://news.example/newsletter-preference-centre",
+                  source_id=src.id, content=_NAV_SOUP_BODY, hash="hNAVSOUP",
+                  word_count=len(_NAV_SOUP_BODY.split()), language="en", title="nav soup"))
+    s.add(Article(url="https://news.example/2026/07/a-real-story",
+                  canonical_url="https://news.example/2026/07/a-real-story",
+                  source_id=src.id, content=_REAL_PROSE_BODY, hash="hREALPROSE",
+                  word_count=len(_REAL_PROSE_BODY.split()), language="en", title="real story"))
+    s.commit()
+
+    out = scan_non_article_candidates(s, include_prose_gate=True)
+    pg = out["prose_gate"]
+    assert pg["enabled"] is True
+    assert pg["flagged"] == 1  # only the nav-soup body, never the real-prose one
+    assert pg["scanned"] >= 2
+    assert pg["done"] is True
+
+    # confirm which id was flagged by re-checking the sample against the DB
+    flagged_urls = {a.url for a in s.query(Article).filter(Article.id.in_(pg["sample_ids"])).all()}
+    assert flagged_urls == {"https://news.example/newsletter-preference-centre"}
+
+
+def test_prose_gate_subpass_is_bounded_and_resumable():
+    s = _corpus()
+    src = s.query(Source).one()
+    for i in range(3):
+        s.add(Article(url=f"https://news.example/nav-{i}", canonical_url=f"https://news.example/nav-{i}",
+                      source_id=src.id, content=_NAV_SOUP_BODY, hash=f"hNAV{i}",
+                      word_count=len(_NAV_SOUP_BODY.split()), language="en", title=f"nav{i}"))
+    s.commit()
+
+    out = scan_non_article_candidates(s, include_prose_gate=True, prose_gate_limit=1)
+    pg = out["prose_gate"]
+    assert pg["scanned"] == 1 and pg["done"] is False  # bounded to `limit`, more remains
+    last_id = pg["last_id"]
+
+    out2 = scan_non_article_candidates(
+        s, include_prose_gate=True, prose_gate_limit=1, prose_gate_after_id=last_id,
+    )
+    assert out2["prose_gate"]["last_id"] > last_id  # resumed past the first batch
+
+
+def test_no_score_field_including_prose_gate():
+    s = _corpus()
+    _walk_no_score(scan_non_article_candidates(s, include_prose_gate=True))
