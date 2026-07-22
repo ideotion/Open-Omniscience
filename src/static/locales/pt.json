@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "Criptografando — todo o banco é reescrito…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Criptografado. Sua frase-senha agora é exigida a cada início — sem recuperação.",
   "Wrong passphrase — try again.": "Frase incorreta — tente novamente.",
+  "use at least 8 characters": "use pelo menos 8 caracteres",
+  "passphrases do not match": "as frases secretas não coincidem",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Faça-a longa — várias palavras não relacionadas superam uma só palavra esperta. Se o seu arquivo de banco de dados for copiado, ele pode ser adivinhado offline; por isso o comprimento é a proteção real (não a rapidez desta tela).",
   "Database maintenance": "Manutenção do banco de dados",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "A compactação reconstrói o arquivo do banco de dados: recupera o espaço deixado pelas exclusões e desfragmenta os índices. Leva um tempo proporcional ao tamanho do arquivo e pausa as gravações de coleta durante a execução — nada é interpretado ou removido.",

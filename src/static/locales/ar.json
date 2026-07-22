@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "جارٍ التشفير — تُعاد كتابة قاعدة البيانات كاملة…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "تم التشفير. عبارة المرور مطلوبة الآن عند كل تشغيل — بلا استرداد.",
   "Wrong passphrase — try again.": "عبارة مرور خاطئة — حاول مجددًا.",
+  "use at least 8 characters": "استخدم 8 أحرف على الأقل",
+  "passphrases do not match": "عبارتا المرور غير متطابقتين",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "اجعلها طويلة — عدة كلمات غير مترابطة أفضل من كلمة واحدة ذكية. إذا نُسخ ملف قاعدة بياناتك فيمكن تخمينه دون اتصال؛ لذا فإن الطول هو الحماية الحقيقية (وليست سرعة رد هذه الشاشة).",
   "Database maintenance": "صيانة قاعدة البيانات",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "يعيد الضغط بناء ملف قاعدة البيانات: يستعيد المساحة التي تتركها عمليات الحذف ويزيل تجزئة الفهارس. يستغرق وقتًا يتناسب مع حجم الملف ويوقف كتابات الجمع مؤقتًا أثناء تشغيله — لا يُفسَّر أي شيء ولا يُحذف.",

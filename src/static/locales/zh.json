@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "正在加密 — 整个数据库将被重写…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "已加密。现在每次启动都需要口令短语 — 不可恢复。",
   "Wrong passphrase — try again.": "口令短语错误 — 请重试。",
+  "use at least 8 characters": "至少使用 8 个字符",
+  "passphrases do not match": "两次输入的口令短语不一致",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "请设得长一些 — 几个不相关的词胜过一个巧妙的词。若数据库文件被复制，可在离线状态下被暴力猜测；所以真正的保护是长度，而非此界面的响应速度。",
   "Database maintenance": "数据库维护",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "压缩会重建数据库文件：回收删除操作留下的空间并整理索引碎片。耗时与文件大小成正比，运行期间会暂停采集写入——不会解读或删除任何数据。",

@@ -5104,6 +5104,70 @@ def test_unlock_enters_when_queryable_not_after_full_upkeep():
     )
 
 
+def test_unlock_error_reshows_the_form_and_is_translated():
+    """GUI-test finding LC-VIEW-HIDDEN-ON-ERROR (P0) + LC-ERROR-TEXT-UNTRANSLATED
+    (P2, bonus, unmasked by the P0 fix): go(btn, fn) -- shared by #btn-unlock and
+    #btn-create -- called _startPrep(), which unconditionally hid
+    view-unlock/view-create/view-open and showed view-preparing BEFORE fn()
+    resolved. On a thrown error the catch block wrote the message into the msg box
+    and hid view-preparing again, but never re-showed whichever view _startPrep()
+    had hidden -- the whole form (with the error trapped inside it) stayed
+    invisible, leaving a blank page (confirmed live: document.body.innerText was
+    empty after a too-short-passphrase submit). _startPrep now takes the caller's
+    priorView (inferable from btn.id, which go() already has) and remembers it in
+    _prepPriorView; the catch block re-shows that exact view. The error text
+    itself (the backend's raw HTTPException detail -- "use at least 8 characters" /
+    "passphrases do not match") is also now run through t() instead of assigned
+    verbatim, so it renders in the user's chosen language like every other string
+    on this page."""
+    unlock = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+
+    prep = unlock.split("function _startPrep(", 1)[1].split("\n    }\n", 1)[0]
+    assert prep.startswith("priorView) {"), (
+        "_startPrep must accept the caller's priorView so it can be restored later"
+    )
+    assert "_prepPriorView = priorView || null;" in prep, (
+        "_startPrep must remember which view was active before hiding it"
+    )
+
+    go_fn = unlock.split("async function go(btn, fn) {", 1)[1].split("\n      }\n", 1)[0]
+    assert (
+        '_startPrep(btn.id === "btn-unlock" ? "view-unlock" : "view-create");' in go_fn
+    ), "go() must tell _startPrep which view is being hidden (inferred from btn.id)"
+
+    catch_block = go_fn.split("catch (e) {", 1)[1]
+    assert '$("view-preparing").classList.add("hidden");' in catch_block, (
+        "the catch block must still hide the preparing view on failure"
+    )
+    hide_idx = catch_block.index('$("view-preparing").classList.add("hidden");')
+    reshow = 'if (_prepPriorView) $(_prepPriorView).classList.remove("hidden");'
+    assert reshow in catch_block, (
+        "the catch block must re-show whichever view _startPrep() hid, or the form "
+        "(and the error message inside it) stays invisible forever"
+    )
+    assert catch_block.index(reshow) > hide_idx, (
+        "the prior view must be re-shown AFTER view-preparing is hidden, not before"
+    )
+    assert 'box.textContent = e.message ? t(e.message) : t(' in catch_block, (
+        "the backend's raw error detail must be run through t() so it translates "
+        "(bare `e.message ||` left it hardcoded English regardless of locale)"
+    )
+
+    # The two backend HTTPException details (src/api/unlock.py: "use at least 8
+    # characters", "passphrases do not match") must be keyable -- present, and
+    # actually translated (not just echoed back as English), in every locale.
+    import json
+
+    for code in (
+        "ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh",
+    ):
+        data = json.loads((_SRC / "static" / "locales" / f"{code}.json").read_text(encoding="utf-8"))
+        for key in ("use at least 8 characters", "passphrases do not match"):
+            assert key in data and data[key], f"{code}.json is missing a translation for {key!r}"
+            if code != "en":
+                assert data[key] != key, f"{code}.json left {key!r} untranslated (verbatim English)"
+
+
 def test_llm_catalog_tags_are_pullable_and_embeddings_labelled():
     """Every suggested model must be PULLABLE — its tag has to satisfy the same
     strict regex the /api/llm/pull endpoint enforces (src/api/llm.py:_MODEL_RE), so

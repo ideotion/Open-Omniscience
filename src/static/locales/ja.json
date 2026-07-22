@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "暗号化中 — データベース全体を書き直しています…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "暗号化しました。今後は起動のたびにパスフレーズが必要です — 復旧はできません。",
   "Wrong passphrase — try again.": "パスフレーズが違います — もう一度。",
+  "use at least 8 characters": "8文字以上を使用してください",
+  "passphrases do not match": "パスフレーズが一致しません",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "長くしてください — 無関係な単語をいくつか並べるほうが、一つの巧妙な単語より強力です。データベースファイルが複製されればオフラインで総当たりされ得ます。だから本当の防御は長さであって、この画面の応答速度ではありません。",
   "Database maintenance": "データベースのメンテナンス",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "コンパクト化はデータベースファイルを再構築します。削除で残った空き領域を回収し、インデックスを最適化します。所要時間はファイルサイズに比例し、実行中は収集の書き込みを一時停止します — データの解釈や削除は行いません。",
