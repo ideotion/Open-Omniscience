@@ -1754,28 +1754,51 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
 
     # Related in your corpus: other articles sharing the most keywords with this
     # one (maintainer feedback: read locally, then branch out by similarity --
-    # source-agnostic). Pure counting over the keyword association table; the
-    # number shown IS the method.
+    # source-agnostic). Reads KeywordMention (the real per-article extraction
+    # chokepoint, src/analytics/store.py:index_article) -- NOT the legacy
+    # article_keyword_association table, which has zero writers anywhere in the
+    # live ingest path and always yields an empty candidate set (P0 fix,
+    # reader-dead-legacy-table-related). The candidate/ranking step below is an
+    # id+count-only projection over keyword_mentions (no Article join, so no
+    # per-candidate row decrypt); only the small, already-ranked final result set
+    # (limit 8) is resolved to titles.
     related_html = ""
     try:
-        from src.database.models import article_keyword_association as aka
+        from src.database.models import KeywordMention
 
-        my_kw = [r[0] for r in db.query(aka.c.keyword_id).filter(aka.c.article_id == a.id)]
+        my_kw = [
+            r[0]
+            for r in db.query(KeywordMention.keyword_id).filter(
+                KeywordMention.article_id == a.id
+            )
+        ]
         if my_kw:
-            rows = (
-                db.query(Article.id, Article.title, func.count(aka.c.keyword_id).label("shared"))
-                .join(aka, aka.c.article_id == Article.id)
-                .filter(aka.c.keyword_id.in_(my_kw), Article.id != a.id)
-                .group_by(Article.id, Article.title)
-                .order_by(func.count(aka.c.keyword_id).desc())
+            ranked = (
+                db.query(
+                    KeywordMention.article_id,
+                    func.count(KeywordMention.keyword_id).label("shared"),
+                )
+                .filter(
+                    KeywordMention.keyword_id.in_(my_kw),
+                    KeywordMention.article_id != a.id,
+                )
+                .group_by(KeywordMention.article_id)
+                .order_by(func.count(KeywordMention.keyword_id).desc())
                 .limit(8)
                 .all()
             )
-            if rows:
+            if ranked:
+                _rel_titles = {
+                    rid: rtitle
+                    for rid, rtitle in db.query(Article.id, Article.title).filter(
+                        Article.id.in_([rid for rid, _shared in ranked])
+                    )
+                }
                 items = "".join(
-                    f'<li><a href="/api/articles/{rid}/view">{_html.escape(rtitle or "(untitled)")}</a>'
+                    f'<li><a href="/api/articles/{rid}/view">'
+                    f'{_html.escape(_rel_titles.get(rid) or "(untitled)")}</a>'
                     f' <span class="muted">— {shared} shared keyword{"s" if shared != 1 else ""}</span></li>'
-                    for rid, rtitle, shared in rows
+                    for rid, shared in ranked
                 )
                 related_html = (
                     '<section><h2>Related in your corpus</h2>'
@@ -1802,21 +1825,43 @@ def view_article(request: Request, article_id: int, db: Session = Depends(get_db
     # this article's most keyword-related neighbours (near-dups share many keywords),
     # never a corpus-wide scan here. The ≈N pill is a number (language-neutral); the
     # caption is a keyed string so i18n.js translates it to the UI language.
+    #
+    # Reads KeywordMention, not the legacy (never-written) article_keyword_association
+    # table (P0 fix, reader-dead-legacy-table-related — same root cause as the Related
+    # block above). The ranking/candidate step is an id+count-only projection over
+    # keyword_mentions (no Article join, so no per-candidate row decrypt just to count
+    # shared keywords); only the resulting short-list of candidates is then resolved to
+    # full Article rows for the MinHash comparison, which -- unlike the ranking step --
+    # genuinely needs body text and cannot be done as counts alone. The candidate cap is
+    # 12 (down from an earlier 40): a true near-duplicate shares nearly ALL of an
+    # article's extracted keywords, so it is reliably within the top handful by shared-
+    # keyword count; this keeps the per-page-view decrypt cost bounded
+    # (reader-dupbadge-n-plus-1-decrypt-risk) without weakening detection.
     dup_badge = ""
     try:
-        from src.database.models import article_keyword_association as _aka
+        from src.database.models import KeywordMention
         from src.signals.near_dup import near_duplicate_clusters
 
-        _mk = [r[0] for r in db.query(_aka.c.keyword_id).filter(_aka.c.article_id == a.id)]
+        _mk = [
+            r[0]
+            for r in db.query(KeywordMention.keyword_id).filter(
+                KeywordMention.article_id == a.id
+            )
+        ]
         _cand = (
             [
-                r[0]
-                for r in db.query(Article.id)
-                .join(_aka, _aka.c.article_id == Article.id)
-                .filter(_aka.c.keyword_id.in_(_mk), Article.id != a.id)
-                .group_by(Article.id)
-                .order_by(func.count(_aka.c.keyword_id).desc())
-                .limit(40)
+                rid
+                for rid, _shared in db.query(
+                    KeywordMention.article_id,
+                    func.count(KeywordMention.keyword_id).label("shared"),
+                )
+                .filter(
+                    KeywordMention.keyword_id.in_(_mk),
+                    KeywordMention.article_id != a.id,
+                )
+                .group_by(KeywordMention.article_id)
+                .order_by(func.count(KeywordMention.keyword_id).desc())
+                .limit(12)
                 .all()
             ]
             if _mk
