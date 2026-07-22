@@ -456,16 +456,18 @@ _SOURCE_QUALIFICATION_COLUMNS: dict[str, str] = {
 }
 
 
-def _source_qualification_backfill_sql(criteria_version: str) -> str:
+def _source_qualification_backfill_sql() -> str:
     # Promote to 'qualified' only sources with >=1 already-collected article; the rest
     # keep the column DEFAULT ('unqualified'). Never touches a row the self-heal did not
     # just create (WHERE status = 'unqualified' AND ... -- a fresh column is always
     # 'unqualified' until this runs once, so this is safe to run only right after ADD).
+    # criteria_version rides as a BOUND parameter (:criteria_version) -- the constant
+    # SQL carries no interpolation, so the blocking bandit B608 gate has nothing to flag.
     return (
         "UPDATE sources SET "
         "status = 'qualified', "
         "qualified_at = CURRENT_TIMESTAMP, "
-        f"qualification_criteria_version = '{criteria_version}' "
+        "qualification_criteria_version = :criteria_version "
         "WHERE status = 'unqualified' "
         "AND (SELECT COUNT(*) FROM articles WHERE articles.source_id = sources.id) > 0"
     )
@@ -497,7 +499,10 @@ def ensure_source_qualification_columns(engine: Engine) -> list[str]:
                 conn.execute(text(ddl))
                 added.append(f"sources.{name}")
         if "sources.status" in added:
-            conn.execute(text(_source_qualification_backfill_sql(CRITERIA_VERSION)))
+            conn.execute(
+                text(_source_qualification_backfill_sql()),
+                {"criteria_version": CRITERIA_VERSION},
+            )
     if added:
         _LOG.info(f"added source qualification column(s): {', '.join(added)}")
     return added
