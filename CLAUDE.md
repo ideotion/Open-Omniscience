@@ -7008,6 +7008,43 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   pass, disclosed as a clean follow-up). REMAINING: the report's §9 ordered fix list (10 items, P0s
   first); the `OO_DB_PLAINTEXT` legal-acceptance-bypass seed question stayed genuinely untestable
   (needs a differing-env server restart); a maintainer click-through remains owed regardless.
+- **PR #740 + PR #744 REMEDIATION — SESSION BRIEF (maintainer-asked 2026-07-22, "have a careful
+  and detailed look... create a very detailed, professional and highly curated prompt for an
+  entirely autonomous session maximizing the use of subagents addressing both PRs"; brief of
+  record = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_PR740_PR744_REMEDIATION.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_PR740_PR744_REMEDIATION.md);
+  execution PENDING):** the operating manual for one autonomous, subagent-parallelized session
+  that builds PR #740's buildable-now remediation phases (the design-audit board — DB-10
+  create-time seam, docs hygiene, law vertical, keyword-baseline, OSM preprocessing,
+  field-diagnostics) AND fixes PR #744's P0/P1 GUI-test findings, chosen as a PAIR precisely
+  because their file scopes are almost entirely disjoint (backend/DB vs frontend HTML/CSS/JS —
+  the ideal shape for real subagent parallelism). Every citation in the brief was RE-DERIVED
+  from the live tree during authoring (not copied from either source PR's own text), confirming
+  both PRs' core claims still hold with nothing else having landed on `main` in between (a clean
+  740→742→744 linear chain). **THE BRIEF'S OWN NOVEL FINDING (neither source PR states this):**
+  PR #740's Phase 1 (`auto_vacuum=INCREMENTAL` + `page_size=16384` on fresh-file creation) is
+  MISSING a load-bearing safety requirement — `src/database/session.py:63`'s normal boot reopen
+  path passes NO `cipher_page_size` to `connect()`, so if a store gets created at 16384 without
+  ALSO teaching every future reopen to redeclare that size, the very next restart would misread
+  the user's correct passphrase as wrong (SQLCipher cannot discover page_size from the file — the
+  EXACT bug class this project already has a named Lessons-list entry about, from a real
+  2026-07-19 field failure). Root-caused precisely: `auto_vacuum` alone (§1a, RULED yes 2026-07-17,
+  verbatim "I agree with your proposal to change the auto_vacuum to incremental") carries NO
+  reopen hazard since it doesn't change page framing; only `page_size` (§1b, evidence delivered
+  but explicitly "awaiting the maintainer's ratification" — NOT yet formally ruled) does. The
+  brief mandates a persisted-marker-or-verify-fallback design + a create→restart→reopen
+  round-trip test as part of Phase 1's own DoD, and resolves the §1b ratification gap by
+  instructing the future session to ship §1a and §1b as SEPARATE PRs, the §1b one prominently
+  self-labeled "merging this PR is being treated as the ratification, per the §1a precedent —
+  close without merging to hold it instead," so the maintainer's actual decision power is
+  preserved without needing a synchronous mid-session answer. Also corrects PR #740's own
+  `connect.py` line-86 citation (that line is inside `is_encrypted_file()`, not the actual
+  fresh-file PRAGMA site — the real target is the "Fresh file" branch at line 169 with THREE
+  sub-paths needing the fix, not one). Embeds exact, verified CI commands (the blocking
+  `ruff check --select=F,B --extend-ignore=B008`, the pinned `bandit==1.9.4 -r src/ -ll -q`, the
+  `MYPY_BASELINE=127` ratchet, `i18n_report.py --min 100`) rather than vague references. Scope
+  fence carries forward every maintainer-ruling/operator/browser gate both source PRs already
+  established (5 new verticals, the Observatory frontend, the LLM-rig-dependent runs, etc.) —
+  none of those are touched. REMAINING: execution (nothing built yet — this is the brief only).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
