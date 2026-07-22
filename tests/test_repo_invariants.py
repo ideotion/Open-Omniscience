@@ -5985,3 +5985,20 @@ def test_agenda_dated_instances_place_in_their_own_year_and_show_provenance():
     # Visible provenance: the feed-directory resolver + the from-pill in agRow.
     assert "_agFeedById" in app
     assert "Calendar feed(s) this event came from:" in app
+
+
+def test_font_size_slider_has_an_accessible_label():
+    """GUI-test finding font-size-slider-missing-label (P0, axe: label, critical):
+    the Settings > Graphics 'Text size' range slider (#dr-font) had its visible label
+    text sitting in a plain, unassociated <div class="sl">, so a screen-reader user
+    tabbing to the slider heard only "slider, 88 to 124" with no indication of what it
+    controls. Fixed by turning the wrapping element into a real <label for="dr-font">
+    (same visual result via the unchanged .sl class; a <label> may wrap other markup
+    like the live-percentage <span>), matching this file's own established convention
+    for range sliders (see #mm-size / #sch-speed, both driven by a <label for=...>)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert '<label class="sl" for="dr-font">' in html, \
+        "the Text-size label must be a real <label for=\"dr-font\">, not a bare div"
+    # The old, unassociated markup must be gone from directly before the input.
+    assert '<div class="sl">Text size' not in html, \
+        "the old unassociated <div class=\"sl\">Text size...</div> must not survive"
