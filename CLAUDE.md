@@ -6970,6 +6970,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the OSM boundary-preprocessing bridge, and the field-diagnostics brief's #728
   fixes. NOT YET EXECUTED — this entry records the AUDIT + PLAN, not the
   remediation itself.
+- **SYSTEMATIC GUI TEST & CRITICAL REVIEW — SESSION BRIEF (maintainer-asked 2026-07-22; brief of
+  record = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md);
+  execution PENDING):** the operating manual for one autonomous session that drives the RUNNING app
+  in a real Chromium browser, walks EVERY user-facing surface, and delivers a critical findings
+  report (bugs + measured optimizations) — the first full execution path for the 0.3 close gate
+  ROW 8 browser-verification bar and the fork-3 "browser-unverified" backlog burn-down. FEASIBILITY
+  PROVEN same day in a remote sandbox session (py3.13 + sqlcipher3 wheels + Chromium/playwright-core;
+  the app booted on a scratch data dir and a smoke walk of Home/Insights/Settings ran with ZERO JS
+  errors). The brief: verified setup commands · three test states (virgin/empty/synthetic-populated,
+  scratch-data-only — the real corpus NEVER enters) · first-launch + lifecycle flows (incl. the
+  legal-decline path) · a fully tree-anchored coverage matrix (every tab/subtab/dialog/standalone
+  page, grepped 2026-07-22) · cross-cutting axes (17+1 themes with caveat-contrast math · 12 locales
+  incl. an ar RTL audit · 5 breakpoints incl. the 601px sidebar boundary · keyboard/a11y) ·
+  performance instrumentation (idle-poll census, long tasks, waterfalls, leak smell) · SEVEN critical
+  lenses (honesty/consistency/first-user/density/state-abuse/failure/optimization) · findings
+  discipline (severity taxonomy, hand-re-verify + a refutation pass, known-open cross-check so
+  standing items are confirmed not re-discovered) · report-first anti-scope (no fixes mid-walk).
+  Composes with the shipped `ui_walk.py` row-8 harness (a real Playwright UiWalkDriver is an
+  optional deliverable) — never duplicates it. Passing surfaces graduate to the honest stamp
+  "Chromium-verified (remote sandbox) · awaiting human UX pass" (explicitly NOT the queued
+  Gecko-verified(VM) bar; the human UX pass stays owed).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
