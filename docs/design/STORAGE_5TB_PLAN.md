@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the CREATE-time seam (`auto_vacuum`/`page_size`) this whole plan sequences after is still unwired in `src/database/connect.py` (see the 5TB_ARCHITECTURE_REVIEW banner) — Phase B/C and the KDF hierarchy remain correctly not-yet-due. `journal_size_limit` is now set (`src/database/session.py:137`), confirmed shipped. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Storage at 5 TB+ — the PLAN OF RECORD (v1, 2026-07-12)
 
 **Status:** DESIGN-ONLY (no code from this doc yet). This is the reconciled successor of the

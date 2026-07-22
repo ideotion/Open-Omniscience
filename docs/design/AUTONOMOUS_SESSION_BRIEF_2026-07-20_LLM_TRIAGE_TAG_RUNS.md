@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — S1 (wiring the real triage run) and S2 (the source-tag-assignment run on the same chassis) are confirmed SHIPPED — see `src/ai_layer/triage_job.py`, which now calls `run_triage_batch` for real production runs, not just the selftest. What remains is the actual operator run on the Ollama rig plus the Claude-side verification pass this brief's §4 specifies — that hasn't happened yet. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Autonomous session brief — wire the real LLM triage run + build the source-tag run (2026-07-20)
 
 **Mission.** The maintainer ruled (2026-07-20): run the §8 LLM keyword-triage AND the LLM

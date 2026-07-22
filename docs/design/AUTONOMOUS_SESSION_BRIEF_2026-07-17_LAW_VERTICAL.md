@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — S2 (the changes endpoint now defaults `flagged_only=False`, all-changes) and S5 (`src/law/coverage.py`, wired into diagnostics) are confirmed SHIPPED, alongside the laws-as-Articles wiring this brief's S1 called for. S3 (add-a-document-by-URL), S6 (structured per-jurisdiction adapters — legislation.gov.uk / gesetze-im-internet / EUR-Lex ELI), and S7 (gazette-as-RSS-stream ingestion) remain genuinely unbuilt — still just the generic HTML-diff tracker. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Autonomous session brief — the LAW vertical: verify, surface, then scale to every country (2026-07-17)
 
 **Status:** plan of record, ready for execution. **Executor:** one autonomous Claude Code CLI

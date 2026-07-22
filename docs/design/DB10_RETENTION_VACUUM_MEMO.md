@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — §1a is ruled and §1b's evidence is in, but NEITHER PRAGMA is actually set in `src/database/connect.py` yet — and its two direct follow-ons (the idle `incremental_vacuum` maintenance pass, §3; the VACUUM-button size gate, §2) are confirmed still unbuilt now that §1a is ruled. §4/§5 correctly still wait on a footprint-measurement field export that hasn't happened. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # DB-10 — retention, vacuum & storage-hygiene DECISION MEMO (S3.4)
 
 **Status:** DESIGN-ONLY · ruling-gated on the maintainer's footprint numbers · no code beyond

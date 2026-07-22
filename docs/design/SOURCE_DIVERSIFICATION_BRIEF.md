@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — confirmed NOT executed — this brief's dedicated 14-cluster live-network run has never happened. English-source share is 68.8% as of 2026-07-22 (2358/3429), down from the brief's 73% baseline, but that drift is incidental (most likely from the unrelated law-catalog acquisition batches), not from a diversification run. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Source diversification brief — language & region equilibrium
 
 **Purpose.** The collected corpus runs ~79% English because `configs/sources.yml` is

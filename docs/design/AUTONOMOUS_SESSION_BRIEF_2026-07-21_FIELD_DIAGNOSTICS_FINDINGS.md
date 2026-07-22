@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — still fully unaddressed as of 2026-07-22 — none of its 7 findings (the slow map-coverage endpoint, the missing `article_ids=` hard-link on the "rising" Home Lead card, the unexplained stall cluster, the 5 outlier-rate sources) have been fixed yet. Now tracked as a phase in `ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Autonomous session brief — field diagnostics findings (2026-07-21)
 
 Status: **findings only, nothing implemented.** This brief packages what a real diagnostics

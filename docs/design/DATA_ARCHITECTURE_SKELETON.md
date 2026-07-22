@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — K1 (`content_multihash`), K2 (`canon_version`), and K4 (the honesty envelope) are confirmed SHIPPED. K5 (WARC/BagIt archive), age/SLIP-39 archival encryption, TLS-chain/SCT/CT capture, C2PA verification, the Provenance-Tier UI, and tiered-retention cold storage all remain at zero code — correctly still deferred, exactly as this doc's own §7 states (not silently forgotten). See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Data Architecture & Durability Skeleton (architecture-of-record)
 
 **Status:** decisions ratified in the 2026-06-19 design session · pre-0.1 (no installed

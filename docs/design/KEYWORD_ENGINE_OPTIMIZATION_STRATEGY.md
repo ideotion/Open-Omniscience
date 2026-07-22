@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — Phases 1 through 5.1, 4.2, and 4.3 (mechanism AND the 2026-07-18 default-on flip, `OO_FAMILY_LEMMA` now defaults to `"1"`) are all confirmed SHIPPED. P5.2 (static-embedding recall layer) and P6 (entity→QID via OpenTapioca) remain genuinely unbuilt — zero code for either. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Keyword-engine optimization — implementation strategy
 
 > **What this is.** The build blueprint for the keyword search-and-analytics optimization, synthesizing
