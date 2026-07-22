@@ -6970,27 +6970,44 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the OSM boundary-preprocessing bridge, and the field-diagnostics brief's #728
   fixes. NOT YET EXECUTED — this entry records the AUDIT + PLAN, not the
   remediation itself.
-- **SYSTEMATIC GUI TEST & CRITICAL REVIEW — SESSION BRIEF (maintainer-asked 2026-07-22; brief of
-  record = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md);
-  execution PENDING):** the operating manual for one autonomous session that drives the RUNNING app
-  in a real Chromium browser, walks EVERY user-facing surface, and delivers a critical findings
-  report (bugs + measured optimizations) — the first full execution path for the 0.3 close gate
-  ROW 8 browser-verification bar and the fork-3 "browser-unverified" backlog burn-down. FEASIBILITY
-  PROVEN same day in a remote sandbox session (py3.13 + sqlcipher3 wheels + Chromium/playwright-core;
-  the app booted on a scratch data dir and a smoke walk of Home/Insights/Settings ran with ZERO JS
-  errors). The brief: verified setup commands · three test states (virgin/empty/synthetic-populated,
-  scratch-data-only — the real corpus NEVER enters) · first-launch + lifecycle flows (incl. the
-  legal-decline path) · a fully tree-anchored coverage matrix (every tab/subtab/dialog/standalone
-  page, grepped 2026-07-22) · cross-cutting axes (17+1 themes with caveat-contrast math · 12 locales
-  incl. an ar RTL audit · 5 breakpoints incl. the 601px sidebar boundary · keyboard/a11y) ·
-  performance instrumentation (idle-poll census, long tasks, waterfalls, leak smell) · SEVEN critical
-  lenses (honesty/consistency/first-user/density/state-abuse/failure/optimization) · findings
-  discipline (severity taxonomy, hand-re-verify + a refutation pass, known-open cross-check so
-  standing items are confirmed not re-discovered) · report-first anti-scope (no fixes mid-walk).
-  Composes with the shipped `ui_walk.py` row-8 harness (a real Playwright UiWalkDriver is an
-  optional deliverable) — never duplicates it. Passing surfaces graduate to the honest stamp
-  "Chromium-verified (remote sandbox) · awaiting human UX pass" (explicitly NOT the queued
-  Gecko-verified(VM) bar; the human UX pass stays owed).
+- **SYSTEMATIC GUI TEST & CRITICAL REVIEW — EXECUTED 2026-07-22 (maintainer-asked; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md);
+  report = [`docs/audit/GUI_TEST_REPORT_2026-07-22.md`](docs/audit/GUI_TEST_REPORT_2026-07-22.md);
+  full detail in the shipped.csv row):** a 100-agent orchestrated run (14 walk/lifecycle/cross-cutting/
+  perf agents → 86 raw findings → a fresh-load adversarial skeptic re-verification of every candidate →
+  72 merged survivors after cross-group dedup, 5 P0 · 24 P1 · 38 P2 · 5 OPT) drove a real Chromium
+  browser against the app across all three test states on a synthetic corpus seeded through the real
+  `index_article` chokepoint. All 5 P0s + 4 sampled P1s HAND-RE-VERIFIED by the orchestrating session
+  itself (source-code citations + fresh live reproduction) beyond the in-workflow skeptic pass — 9/9
+  confirmed, zero false positives. **HEADLINE POSITIVE:** the airplane-mode zero-egress guarantee held
+  perfectly across thousands of requests under adversarial concurrent load (100 agents, none ever
+  reached a non-127.0.0.1 host). **HEADLINE NEGATIVES (5 P0s):** the reader's "Related in your corpus" +
+  near-dup badge query a DEAD legacy table (`article_keyword_association`, zero writers anywhere in the
+  live ingest path — confirmed via source) so they are silently, permanently non-functional for every
+  article in any modern corpus; the `#net-coach` onboarding coachmark pointer-blocks the very airplane
+  toggle (+ language switcher/task-manager/shutdown) it points at; any rejected first-launch passphrase
+  hides the WHOLE create-passphrase form (root-caused in `unlock.html`'s `go()` — `_startPrep()` hides
+  the view before the catch handler ever un-hides it, confirmed live: `document.body.innerText` goes
+  empty); at 375px the airplane toggle + language switcher + task-manager + shutdown are pushed
+  off-screen with zero scroll affordance; the Settings text-size slider has NO accessible label at all
+  (axe critical). Also found: a boot-ordering race destroys the flagship parallel-analysis-tab
+  workspace on every omnibar search opened in a new browser tab (P1, root-caused via `app.js:15293-
+  17497`); Settings→General lossily collapses any of the 17 named themes to plain Ink on save (P1);
+  browser Back while a backup `<dialog>` is open leaves the app invisibly frozen (P1); THREE known-open
+  items independently confirmed ALREADY FIXED (Families kind-dropdown honesty hint, the moon-glyph
+  dedup, the post-import Articles-first headline); the Governments-tab-defaults-to-Countries known-open
+  item independently rediscovered by 4 separate test groups (merged to one finding, strong cross-
+  validation). METHODOLOGY CAVEAT stated prominently in the report: "384 total JS errors" is 100%
+  `console.error` 429-rate-limit resource-load lines from the test's OWN 14-concurrent-agent load on
+  one shared server — ZERO real `pageerror` exceptions occurred anywhere in the whole run (every group
+  independently confirmed this); the app degraded LOUDLY and gracefully under the storm (visible
+  "busy — retrying" toasts), a genuine FAILURE-lens pass. 5 of 7 skeptic-killed candidates trace to
+  this same rate-limit artifact. Passing surfaces carry the honest stamp "Chromium-verified (remote
+  sandbox) · awaiting human UX pass" (explicitly NOT the Gecko-verified(VM) bar). Composes with the
+  shipped `ui_walk.py` row-8 harness (not duplicated; a real driver implementation was skipped this
+  pass, disclosed as a clean follow-up). REMAINING: the report's §9 ordered fix list (10 items, P0s
+  first); the `OO_DB_PLAINTEXT` legal-acceptance-bypass seed question stayed genuinely untestable
+  (needs a differing-env server restart); a maintainer click-through remains owed regardless.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
