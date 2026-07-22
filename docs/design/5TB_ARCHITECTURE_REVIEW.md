@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the highest-value confirmed gap: `auto_vacuum=INCREMENTAL` + `page_size=16384` are STILL not set on the fresh-file creation path (`src/database/connect.py:86`), despite §1a being formally ruled (2026-07-17) and §1b's evidence being delivered ("16384 wins every dimension at scale", PR #726). Adaptive backup volume sizing, D2/D3 rollups, the cross-time-recall invariant test, and `journal_size_limit` are all confirmed SHIPPED (this doc was stale on those). See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # 5 TB Architecture — Verify-Before-Trust Review (A14 / P1.7)
 
 **Status:** design review · INPUT for autonomous Session 3 (D1/D2/D3 persisted columnar

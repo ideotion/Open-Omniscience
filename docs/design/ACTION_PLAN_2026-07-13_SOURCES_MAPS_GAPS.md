@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the OSM boundary/gazetteer offline-preprocessing bridge for choropleth maps is confirmed STILL MISSING (only the download-manager pieces exist in `src/geo/`), as is keyword-skeleton fingerprint persistence (`src/analytics/skeleton.py` remains explicitly a pure in-memory core, deliberately dormant per its own docstring). Most of this plan's other rulings (source qualification, the discovery funnel core, tags) landed via separate later sessions — see CLAUDE.md. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Action plan — self-curating sources · maps/OSM · planned-but-partial remediation (2026-07-13)
 
 **Status:** DESIGN / PLAN OF RECORD. Consolidates the 2026-07-13 planning dialogue

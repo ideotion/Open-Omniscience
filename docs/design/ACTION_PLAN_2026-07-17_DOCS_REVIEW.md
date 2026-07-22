@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — **SUPERSEDED for its unexecuted items.** A 2026-07-22 audit found almost none of T1–T10 was ever executed: no docs/README.md index reconciliation (T1), no `test_docs_index_covers_live_docs` invariant (T2), AUDIT_TRAIL.md still stops around 2026-06-14 (T3), no USER_MANUAL staleness banner (T5), QUICKSTART still says "Phases 2–5" (T6), and the archival sweep (T8) had never run before this pass. The remaining items are now carried forward as Phase 1 of `ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md` — treat that plan as authoritative for what's left. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Action plan — documentation review & reconciliation (2026-07-17)
 
 **Status:** plan of record, ready for execution. **Executor:** a Claude Code CLI session

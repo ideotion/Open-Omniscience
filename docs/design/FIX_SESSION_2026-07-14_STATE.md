@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — this file's own "laws-as-Articles NOT built" note is now stale and superseded — `src/law/corpus.py` ships that wiring (see the FIX_SESSION_PROMPT_2026-07-14.md banner for detail). The other two carry-overs (data-location chooser, the quarantine action) remain open exactly as this file describes. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Fix session 2026-07-14 — execution state + carry-over
 
 Executing `docs/design/FIX_SESSION_2026-07-14.md` (`FIX_SESSION_PROMPT_...`). One draft PR per slice

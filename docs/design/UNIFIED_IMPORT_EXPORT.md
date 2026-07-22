@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — Slice 2 ("Import discovery") is confirmed SHIPPED — `src/backup/import_scan.py:scan_import_folder` + the wired `#ux-import` dialog — this doc was stale in not marking it BUILT. The one remaining disclosed residue (the legacy capped single-file `write_backup_v2` create endpoint and its orphaned frontend handlers, kept deliberately UI-unreachable pending a browser click-through) is confirmed still present, unchanged. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Unified Import + Unified Export/Backup (field remarks 2 / 5 / 6)
 
 > **Status: DESIGN.** A frontend-heavy consolidation that REUSES the shipped backup/import

@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — D2 (`keyword_daily`), D3 (incremental refresh + epoch-bump guard), and D4 (`source_coverage`) are all confirmed SHIPPED in `src/analytics/columnar.py`. D1 remains blocked on the httpfs binaries (see PERSISTED_DUCKDB_HTTPFS.md); D5 (Roaring co-occurrence bitmaps) is correctly still deferred, as designed. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Scaling the derived layer to 1000× (data-architecture workstream 5A-bis)
 
 > **Source of truth + test plan for the derived-layer scaling work.** The deep fix for the

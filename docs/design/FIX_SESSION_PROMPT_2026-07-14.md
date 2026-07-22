@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — Slice 3's remainder (laws stored full-text per-revision, ingested via `index_article` as first-class corpus Articles) is now confirmed SHIPPED — see `src/law/corpus.py`, which mirrors `src/wiki/corpus.py` deliberately. Two carry-overs remain genuinely open: Slice 2 (a first-launch external-drive data-location chooser) and Slice 4a's remainder (a reversible retroactive quarantine ACTION — `src/analytics/quarantine_job.py` is still explicitly build-only, no singleton wired). See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Fix-session prompt — 2026-07-14 (data-safety first)
 
 **What this is.** A ready-to-paste kickoff prompt for a Claude Code CLI session (Opus 4.8,

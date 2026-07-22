@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — Strategies 1–3 (corpus topic fingerprints, Wikidata reconciliation, deterministic cleanup) are confirmed SHIPPED. Measured coverage as of 2026-07-22: `source_type` 8.4% (289/3429, up from the doc's 2026-06-27 baseline of 2%), `country` 53.4% (up from 45%) — real but partial progress. Strategy 4 (LLM batch-enrichment of the ~2,900 residual sources) has still only run a 12-source pilot, never the full batch. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Source-metadata enrichment — strategy & automation plan
 
 Status: design + tooling delivered (2026-06-27). Scope: enrich `configs/sources.yml`

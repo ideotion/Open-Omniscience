@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — S0 (the `domain` scaffold field) and S1 (the universe/galaxy payload endpoint, `src/analytics/observatory.py`, with real tests) shipped 2026-07-20 — this is no longer "design-only, build not started." The `ooSky` canvas renderer and its dedicated tab have zero frontend code yet, correctly gated behind a maintainer browser click-through per this doc's own §9 sequencing. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # The Observatory — the corpus as a night sky (design of record)
 
 **Status: DESIGN-ONLY — nothing built.** Maintainer-ruled 2026-07-18 (in-dialogue);

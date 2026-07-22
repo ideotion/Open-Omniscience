@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the offline pin-and-verify loader is shipped and tested (`tests/test_columnar_httpfs_loader.py`); the per-OS binaries + real SHA-256 pins in `configs/external_artifacts.yml` remain blank — unchanged, still operator-gated (needs a networked machine), not a code gap. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Persisted encrypted DuckDB — the offline static-OpenSSL httpfs build (workstream 5A-bis D1 / 5B)
 
 > **Status: DESIGN + the OFFLINE-LOAD code is OURS to write; the per-OS/arch binaries are the

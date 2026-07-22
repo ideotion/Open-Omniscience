@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — S1 (the `KeywordTag` model), S2 (positive baseline data files), and S3 (the explore/hide/tag Settings subtab) are confirmed SHIPPED. Two items remain genuinely open: Q3/S1b (migrating `_EXTRA_STOPWORD_TEXT` from a Python string blob into per-language data files) and S4 (an in-app one-click apply of the offline analyzer's proposed stopword/ring/mistag candidates) — this doc should NOT be archived yet on account of those two. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Item AC — Pre-tagged per-language keyword baseline + keyword-management subtab
 
 > **Status: DESIGN (kicked off 2026-06-16, maintainer-asked "kick off the Item AC

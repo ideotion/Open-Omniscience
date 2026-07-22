@@ -6942,6 +6942,34 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   sources (irishmirror.ie is a legitimate outlet — qualification would rightly NOT
   disqualify it over its preference page); wholly-junk SOURCES are qualification's job —
   the two layers compose, neither replaces the other.
+- **DESIGN-FOLDER AUDIT + REMEDIATION PLAN (2026-07-22, user-requested; full detail
+  in [`docs/design/ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](docs/design/ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md)):**
+  a 7-fork subagent fan-out audited every file then in `docs/design/` (34 total)
+  against LIVE `main` — each claimed "not done" item was grepped against the actual
+  code, never trusted from the doc's own text. HEADLINE CORRECTION: all six
+  2026-07-18 briefs (convergence-amendment · families-entities · groups-layer-
+  amendment · leads-calibration · lemma-default-on · supergroups) turned out to be
+  FULLY BUILT — real execution had landed on `main` between 2026-07-19 and 07-21
+  that this ledger's own prior text did not yet reflect (lemmatization is ON by
+  default now; Home's Leads are actually reordered by the shipped `sort_leads`
+  core). HEADLINE GAP: **DB-10 §1a/§1b were ruled + evidenced (2026-07-17, PR
+  #726) but NEVER actually wired into `src/database/connect.py`** — every corpus
+  created today still gets the pre-ruling PRAGMA defaults; this is the plan's
+  Phase 1, highest-value + self-contained. ARCHIVAL DONE SAME PASS: 10 docs whose
+  entire scope was confirmed fully executed moved non-lossily to
+  `docs/archive/{design,session-briefs}/` (3 non-brief docs got a new
+  `docs/archive/design/README.md`; the 6 briefs + the OPTIMIZATION_TAIL brief
+  joined the existing `docs/archive/session-briefs/` index). The 22 remaining
+  `docs/design/` files that had at least one stale claim each got a short
+  status-update banner pointing at the plan doc. The plan itself has 11 phases
+  tagged buildable-now / operator-gated (needs a networked machine or Ollama rig)
+  / maintainer-ruling-gated / browser-gated (Observatory's `ooSky` renderer,
+  explicitly sequenced behind a real click-through) — including the carried-
+  forward remainder of the 2026-07-17 docs-review plan (T1/T2/T3/T5/T6, now that
+  T8's archival is done), the law vertical's S3/S6/S7, keyword-baseline S1b/S4,
+  the OSM boundary-preprocessing bridge, and the field-diagnostics brief's #728
+  fixes. NOT YET EXECUTED — this entry records the AUDIT + PLAN, not the
+  remediation itself.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

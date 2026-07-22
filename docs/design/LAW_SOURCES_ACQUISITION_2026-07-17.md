@@ -1,3 +1,5 @@
+> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — the acquisition program this doc specifies fully ran — 12 parallel-session batches delivered 225 sources + 7 documents across ~162 jurisdictions into `configs/legal_sources_generated.yml`, all merged and tag-wired. This doc's own scope is substantially executed; what remains (structured adapters, add-by-URL, gazette RSS) belongs to the sibling LAW_VERTICAL brief, not this acquisition doc. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+
 # Law-sources acquisition — the parallel internet-session channel (2026-07-17)
 
 **Status:** plan of record + file contract + ready-to-paste session prompt. **Ruled by the
