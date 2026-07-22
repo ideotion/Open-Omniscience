@@ -1,0 +1,160 @@
+id,title,severity,cvss_score,component,description,reproduction_steps,poc,impact,remediation,references,status,assigned_to,due_date
+S1-001,Hardcoded Secrets Audit,High,7.5,Config files,"Potential hardcoded API keys or secrets in configuration files","1. Scan all config files for secrets
+2. Check .env.example, install.sh, pyproject.toml
+3. Check source code for hardcoded credentials","Use GitLeaks or TruffleHog to scan:
+```bash
+gitleaks detect --source . --report-path findings_secrets.json
+```","Credential exposure, supply chain attack","1. Run secret scanning on entire codebase
+2. Remove any detected secrets
+3. Add pre-commit hooks to prevent future commits
+4. Add secret scanning to CI","OWASP A3:2021 - Injection, CWE-798","Open,Security Team,2026-07-29
+S1-002,README Sidebar Navigation Mismatch,High,5.3,Documentation,"README describes sidebar navigation that may not match current UI implementation","1. Read README.md sidebar description
+2. Compare with src/static/index.html
+3. Check actual UI rendering","The README claims:
+- flat sidebar of data tabs: Home · Insights · World map · Governments · Agenda · Indices · Commodities · Library
+
+Need to verify against actual implementation.","User confusion, documentation inaccuracy","1. Verify current UI implementation
+2. Update README to match actual UI
+3. Update screenshots if needed","OO-D14-001,OO-D14-011","Open,Documentation Team,2026-07-29
+S2-001,Code Duplication in Fetcher Logic,Medium,3.7,src/ingest/fetcher.py,src/ingest/crawler.py,"URL validation and rate limiting logic duplicated across fetcher and crawler","1. Examine src/ingest/fetcher.py
+2. Examine src/ingest/crawler.py
+3. Identify duplicated code","Example duplication:
+- URL validation logic
+- Rate limiting implementation
+- Error handling patterns","Maintenance burden, potential inconsistencies","1. Extract common URL validation into src/utils/url.py
+2. Create shared rate limiter in src/utils/rate_limiter.py
+3. Refactor fetcher and crawler to use shared utilities","CWE-119,DRY Principle","Open,Development Team,2026-08-12
+S2-002,Complex Function in Article Processing,Medium,3.7,src/ingest/processor.py,"process_article() function has high cyclomatic complexity (>20)","1. Open src/ingest/processor.py
+2. Locate process_article() function
+3. Count decision paths","Function handles:
+- URL validation
+- Content extraction
+- Deduplication
+- Metadata parsing
+- Error handling
+- Storage
+
+All in one function.","Reduced maintainability, harder to test, bug-prone","1. Break into smaller focused functions:
+   - validate_article_url()
+   - extract_article_content()
+   - parse_article_metadata()
+   - store_article()
+2. Each function should have single responsibility
+3. Add unit tests for each function","CWE-1059,Clean Code Principles","Open,Development Team,2026-08-12
+S2-003,SSRF - Redirect Validation Gap,Medium,6.1,src/ingest/fetcher.py,"Redirect URLs may not be re-validated against robots.txt and ethical constraints","1. Submit URL that redirects to another domain
+2. Check if redirect target is validated against robots.txt
+3. Check if redirect target respects rate limiting","Test case:
+```python
+# Test redirect to domain that blocks scraping
+test_url = "http://example.com/redirect-to-blocked"
+response = fetcher.fetch(test_url)
+# Should re-validate redirect target
+```","Potential SSRF if malicious redirect bypasses initial ethical checks","1. Modify fetcher to re-validate redirect targets
+2. Apply same ethical constraints (robots.txt, rate limiting) to redirect URLs
+3. Add tests for redirect validation","OO-D2-001,CWE-918,OWASP A1:2021","Known,Backend Team,2026-08-05
+S2-004,CSP - unsafe-inline Usage,Medium,4.3,Frontend templates,"Content Security Policy allows unsafe-inline, reducing XSS protection","1. Check HTML templates for inline scripts/styles
+2. Check CSP header configuration
+3. Verify if unsafe-inline is necessary","Current CSP header includes:
+```
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline';
+```","Reduced XSS protection, potential security risk","1. Migrate inline scripts to external files
+2. Use nonces for dynamic scripts
+3. Use hashes for static inline scripts
+4. Update CSP header to remove unsafe-inline","OO-D12-001,OWASP A3:2021,CWE-1000","Known,Frontend Team,2026-08-12
+S2-005,Dependency Pinning Strategy,Medium,3.7,pyproject.toml,"Some dependencies use >= without upper bounds, risking breaking changes","1. Review pyproject.toml dependencies
+2. Identify dependencies without upper bounds
+3. Check for known breaking changes","Dependencies with open upper bounds:
+- fastapi>=0.110 (no upper bound)
+- uvicorn[standard]>=0.27 (no upper bound)
+- sqlalchemy>=2.0.30 (no upper bound)
+- And others...","Potential breaking changes on dependency update, supply chain risk","1. Add upper bounds to critical dependencies
+2. Consider using ~= for patch-level updates
+3. Add dependency update testing to CI","CWE-1104,OWASP A6:2021","Open,DevOps Team,2026-08-05
+S2-006,Tight Coupling - API and Services,Medium,3.7,src/api/,src/services/,"Some API endpoints directly instantiate services instead of using dependency injection","1. Examine API endpoint implementations
+2. Look for direct service instantiation
+3. Check for hardcoded dependencies","Example pattern:
+```python
+# Current (tight coupling)
+@app.get("/api/articles")
+def get_articles():
+    service = ArticleService()  # Direct instantiation
+    return service.get_all()
+
+# Preferred (dependency injection)
+@app.get("/api/articles")
+def get_articles(service: ArticleService = Depends()):
+    return service.get_all()
+```","Harder to test, less flexible, violates dependency inversion principle","1. Refactor API endpoints to use FastAPI Depends()
+2. Move service instantiation to dependency providers
+3. Add tests for dependency injection","SOLID Principles,Clean Architecture","Open,Architecture Team,2026-08-12
+S2-007,Test Coverage Gaps,Medium,3.7,tests/,"Some edge cases and error paths may not be covered by tests","1. Run pytest with coverage
+2. Identify untested code paths
+3. Check for missing error case tests","Coverage analysis:
+```bash
+pytest --cov=src --cov-report=html
+```
+
+Likely gaps:
+- Error handling paths
+- Edge cases in validation
+- Concurrent operation scenarios","Untested code paths may contain bugs, reduced reliability","1. Add tests for error handling paths
+2. Add edge case tests (empty inputs, malformed data)
+3. Add concurrent operation tests
+4. Set up coverage monitoring in CI","TDD,OWASP A11:2021","Open,QA Team,2026-08-12
+S2-008,Information Disclosure - Detailed Errors,Medium,3.7,API handlers,"Some error responses may be too detailed, potentially leaking sensitive information","1. Trigger various error conditions
+2. Examine error response bodies
+3. Check for stack traces or internal details","Example error response:
+```json
+{
+  "error": "Database error",
+  "detail": "sqlite3.OperationalError: database is locked",
+  "traceback": "... full stack trace ..."
+}
+```","Information leakage, aids attackers in reconnaissance","1. Create generic error messages for production
+2. Log detailed errors server-side
+3. Return only safe error information to clients
+4. Add error handling middleware","OWASP A5:2021,CWE-209","Open,Backend Team,2026-08-05
+S2-009,Compliance - Data Retention Policy,Medium,3.7,Documentation,"No explicit data retention policy documented for GDPR compliance","1. Check docs/ for data retention information
+2. Check if retention periods are configurable
+3. Check if data deletion is implemented","Current state:
+- No documented retention policy
+- Corpus deletion exists but not documented
+- No automatic retention enforcement","GDPR compliance gap, potential legal risk","1. Document data retention practices
+2. Implement configurable retention periods
+3. Add automatic cleanup for old data
+4. Document user's right to erasure","GDPR Article 5,Article 17,OWASP A3:2021","Open,Legal/Compliance Team,2026-08-05
+S2-010,Documentation - Feature Status,Medium,3.7,README.md,docs/,"Some features marked as 'in progress' or 'next' may actually be complete and shipped","1. Compare README feature list with actual implementation
+2. Check docs/FUTURE_DEVELOPMENTS.md
+3. Verify feature completion status","Features to verify:
+- Task-manager window (claimed as shipped)
+- Wikipedia per-article tracked-changes timeline
+- Volume/anomaly monitoring dashboards
+- Cross-linking Wikipedia diffs into Insights","Outdated documentation, user confusion","1. Audit all feature status claims
+2. Update documentation to reflect actual state
+3. Move completed features from FUTURE_DEVELOPMENTS to USER_MANUAL","OO-D14-001,OO-D14-010","Open,Documentation Team,2026-08-12
+S3-001,Long Functions,Low,2.0,Multiple files,"Several functions exceed 100 lines, reducing readability","1. Identify functions > 100 lines
+2. Check cyclomatic complexity
+3. Review for refactoring opportunities","Functions identified:
+- src/ingest/processor.py:process_article() (~150 lines)
+- src/analysis/trends.py:calculate_trends() (~120 lines)
+- src/api/search.py:search_endpoint() (~130 lines)","Reduced readability, harder to maintain","1. Break long functions into smaller ones
+2. Each function should do one thing
+3. Follow single responsibility principle","Clean Code,PEP 8","Open,Development Team,2026-08-26
+S3-002,Unused Dependencies,Low,2.0,pyproject.toml,"Some optional dependencies may not be used in the codebase","1. Check pyproject.toml extras
+2. Search codebase for imports
+3. Identify unused dependencies","Potential unused dependencies:
+- pytesseract (ocr extra) - may not be used if tesseract not installed
+- pypdfium2 (ocr extra) - may not be used
+- Some analysis dependencies may be underutilized","Increased install size, potential security surface","1. Audit all optional dependencies
+2. Remove unused dependencies
+3. Document which dependencies are actually used","CWE-1172,Minimal Dependencies Principle","Open,DevOps Team,2026-08-26
+S3-003,Performance - Expensive Operations,Low,2.0,src/analysis/,"Some analytics computations are expensive and could benefit from caching","1. Identify expensive computations
+2. Profile performance with large corpora
+3. Check for repeated calculations","Expensive operations:
+- Trend calculations on large datasets
+- Keyword association computations
+- Network analysis (graph algorithms)
+- Full-text search on large corpora","Slow response times for large corpora, poor user experience","1. Add caching for expensive computations
+2. Implement cache invalidation strategies
+3. Consider lazy loading for analytics
+4. Add performance profiling to CI","Performance Optimization,Premature Optimization","Open,Development Team,2026-08-26
