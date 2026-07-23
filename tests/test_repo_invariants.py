@@ -271,7 +271,7 @@ def test_reindex_background_job_is_wired():
     jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
     assert "def _reindex_jobs(" in jobs and "jobs.extend(_reindex_jobs())" in jobs
     # it joins the DB-writer arbitration set (serialised with collect/import)
-    assert '("collect", "import", "reindex")' in jobs
+    assert '("collect", "import", "reindex", "quarantine")' in jobs
     # cancel/resume routed to the owning manager
     assert 'job_id == "reindex"' in jobs and "get_reindex_manager()" in jobs
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")

@@ -807,6 +807,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         frozenset(_ARTICLE_IDENTITY_COLUMNS)
         | frozenset(_ARTICLE_IP_COLUMNS)
         | frozenset(_ARTICLE_DETECTED_LANG_COLUMN)
+        | frozenset(_ARTICLE_QUARANTINE_COLUMNS)
     ),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),
     # ensure_keyword_mention_source_column (inline DDL, column + its index).
