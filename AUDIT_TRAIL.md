@@ -5,6 +5,117 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
 
 ---
 
+## 2026-07-22 · Systematic GUI test & critical review (100-agent Chromium pass)
+
+- **Base commit:** `main` tip at session start; brief:
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md).
+- **Method:** a 100-agent orchestrated run (14 walk/lifecycle/cross-cutting/perf agents →
+  86 raw findings → a fresh-load adversarial skeptic re-verification of every candidate → 72
+  merged findings after cross-group dedup) driving a **real Chromium browser** against the
+  app across all three test states, on a synthetic corpus seeded through the real
+  `index_article` chokepoint. All 5 P0s + 4 sampled P1s were additionally HAND-re-verified by
+  the orchestrating session (source citations + fresh live reproduction) — 9/9 confirmed,
+  zero false positives.
+- **Headline positive:** the airplane-mode zero-egress guarantee held perfectly across
+  thousands of requests under adversarial concurrent load — no agent, of 100, ever reached a
+  non-loopback host.
+- **5 P0s found** (see the full report for detail): the reader's "Related in your corpus" +
+  near-dup badge query a dead legacy table with zero live writers; the `#net-coach` onboarding
+  coachmark pointer-blocks the airplane toggle it points at; a rejected first-launch
+  passphrase hides the whole create-passphrase form; at 375px several top-bar controls are
+  pushed off-screen with no scroll affordance; the Settings text-size slider has no accessible
+  label. Plus 24 P1 / 38 P2 / 5 optional findings, and 3 independently-confirmed-already-fixed
+  known-open items.
+- **Verification stamp convention introduced:** passing surfaces carry "Chromium-verified
+  (remote sandbox) · awaiting human UX pass" — explicitly NOT the queued Gecko-verified(VM)
+  bar, and it does not replace a maintainer click-through.
+- **Full log:** [`docs/audit/GUI_TEST_REPORT_2026-07-22.md`](docs/audit/GUI_TEST_REPORT_2026-07-22.md)
+  + machine-readable companions
+  [`findings.csv`](docs/audit/gui-test-2026-07-22/findings.csv) (72 merged) ·
+  [`coverage.csv`](docs/audit/gui-test-2026-07-22/coverage.csv) (179 rows) ·
+  [`killed_findings.csv`](docs/audit/gui-test-2026-07-22/killed_findings.csv) (7 refuted).
+- **Follow-up:** the report's 5 P0s were the seed of PR #740/#744's remediation, itself
+  addressed across several later sessions (see `docs/ledger/shipped.csv`).
+
+---
+
+## 2026-07-21 · Transversal audit, 0.3 edition (delta audit vs 07)
+
+- **Base commit:** `main` tip at session start; scoped as a *delta* against
+  [`07_TRANSVERSAL_AUDIT_V01.md`](docs/audit/07_TRANSVERSAL_AUDIT_V01.md) (2026-06-12), per
+  **THE 0.3 CLOSE GATE, row 2** in `CLAUDE.md`, not a re-derivation from scratch.
+- **Scope:** (a) disposition of 07's own Action Plan B, checked against
+  `docs/ledger/shipped.csv`; (b) a transversal pass (method/truth/disclosure, tamperability,
+  scale, missing data, neutrality, bias) over every surface that shipped since 07, incl. the
+  new law vertical and the super-groups/GROUPS hierarchy layer.
+- **Headline:** 07's two core truths still hold (the honesty discipline is the right spine;
+  labels alone don't make outputs true or understood). The corpus moved from a synthetic
+  6.4k-article sample (07's T1) to a live ~500k-article corpus, an order of magnitude past
+  it. Two concrete deltas flagged: the DB-10 §1b page-size A/B bench found and fixed a real
+  encrypted-reopen defect but is **still pending its large-corpus run** (carried into the 0.3
+  close gate as open); 07's proposed 100k-article `perf_harness.py` extension was **not
+  done** — the only evidence at 500k scale is qualitative (maintainer field reports), not a
+  repeatable harness run.
+- **Full log:** [`docs/audit/08_TRANSVERSAL_AUDIT_0.3.md`](docs/audit/08_TRANSVERSAL_AUDIT_0.3.md)
+
+---
+
+## 2026-07-15 · External audit — full transversal / bug-bounty / docs-vs-reality
+
+- **Commit audited:** `da393591` (branch `main`, fetched fresh from `origin`).
+- **Auditor:** an autonomous AI audit session (1 lead + 3 parallel specialist sub-agents:
+  security, code-quality, docs-verification).
+- **Scope, stated honestly:** full static analysis of `src/` (ruff default + the security
+  ruleset, with manual tracing of every suppressed warning), manual review of the four
+  highest-stakes subsystems (SQL construction, the ethical-fetcher egress chokepoint, the
+  custody-log crypto, secrets/config handling), `pip-audit`, secret-pattern scanning, 18
+  documentation claims extracted from README.md and checked against source, and a CI-gate
+  reality check. Explicitly NOT performed: live DAST/pentest, load/fuzz testing, container/
+  cloud scanning (no such infrastructure exists for this local-first app), and a second-pass
+  peer review of the report itself.
+- **Two HIGH findings, both since RESOLVED:**
+  - **OO-01** — a SQL-injection primitive in the backup-restore path (`src/backup/merge.py`):
+    a table name from an untrusted restore artifact was interpolated into a quoted identifier
+    with a `nosec` comment whose trust claim was factually wrong for that call site. **Fixed**
+    (an allowlist-validated `_ident()` + `_SAFE_TABLE_NAME`, referenced inline at the fix site
+    — "audit OO-01").
+  - **OO-02** — the panic-wipe / secure-uninstall path overwrote only the first 4 MiB of each
+    file regardless of size, leaving most of a multi-GB corpus unerased — directly undermining
+    the feature's own threat model. **Fixed** via a two-phase crypto-erase
+    (`src/safety/crypto_erase.py`): the quick pass destroys the SQLCipher salt page, making the
+    encrypted corpus permanently unrecoverable at ANY size, with an optional full free-space
+    scrub as defence-in-depth; the byte-overwrite-vs-SSD/CoW limitation stays honestly
+    disclosed rather than falsely promised away.
+  - Also found: a Medium supply-chain defect (a pinned `numpy` version not resolvable on
+    public PyPI) and several Informational/Low docs-vs-reality gaps (the mypy ratchet vs. an
+    implied zero-error gate, PQC signing off-by-default, a stale git-remote-tracking note).
+- **Full log:** [`docs/audit/EXTERNAL_AUDIT_2026-07-15.md`](docs/audit/EXTERNAL_AUDIT_2026-07-15.md)
+
+---
+
+## 2026-07-13 · Cumulative integrity audit (0.2 cycle, S1–S6 all merged)
+
+- **Base commit:** `a25e5ca2` (tip of `origin/0.2`, S1–S6 all merged).
+- **Scope:** verify that everything the project CLAIMS shipped is present + correct in the
+  current tree, *cumulatively* — i.e. not silently reverted by a later merge (the #548
+  hazard). Read-only. Claim set: the 324 `docs/ledger/shipped.csv` rows + the `docs/ROADMAP.md`
+  ✅ rows + the merged-PR history they reference.
+- **Method:** a breadth scan (scripted) of every row's `key_paths`/referenced test file
+  against the tree, plus a deep-verify agent fan-out over 16 curated high-value/high-risk
+  claims (each independently skeptic-refuted; only survivors kept). Environment: py3.13 venv
+  without sqlcipher3, so the encrypted-store + httpfs lanes honestly SKIP rather than being
+  claimed as run.
+- **Headline: the tree has HIGH cumulative integrity — no #548-style silent revert found.**
+  Of 324 claims, only 1 absent artifact surfaced, and it was a documented, deliberate
+  retirement (a superseded single-file backup CREATE path) rather than a regression; the one
+  BUG-classed finding was a swallowed-exception diagnosability hole in seed CI-red, not a
+  correctness regression. 0 vacuous tests found; the core honesty guards
+  (`assert_no_score_fields`, `install_airplane_socket_guard`, the single-writer `WriterGate`)
+  all confirmed present and import-time-enforced.
+- **Full log:** [`docs/audit/CUMULATIVE_INTEGRITY_AUDIT_2026-07-13.md`](docs/audit/CUMULATIVE_INTEGRITY_AUDIT_2026-07-13.md)
+
+---
+
 ## 2026-06-18 · Comprehensive audit + remediation (0.09 / v0.0.9)
 
 - **Base commit:** `b75100e` (tip of the protected default `0.09`, PR #394 merged).
@@ -42,7 +153,7 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
   "articles = max member" honest convention (`src/api/insights.py:854`), not a bug.
 - **Known/tracked, unchanged:** CSP `unsafe-inline` (`OO-D12-001`), Ollama clearnet pull (by
   design), SSRF TOCTOU (`OO-D2-003`), `ALLOWED_ORIGINS` env (S3).
-- **Full log:** [`docs/audit/AUDIT_LOG_2026-06-18.md`](docs/audit/AUDIT_LOG_2026-06-18.md)
+- **Full log:** [`docs/archive/audits/AUDIT_LOG_2026-06-18.md`](docs/archive/audits/AUDIT_LOG_2026-06-18.md)
 - **Source files changed:** `tests/conftest.py`, `tests/test_managed_languages.py`,
   `tests/test_ollama_store_detection.py` (test-baseline), `README.md`, `docs/USER_MANUAL.md`
   (docs-coherence). The closed 29-finding `findings.csv` ledger was intentionally not touched.
@@ -77,11 +188,11 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
   charts) DEFERRED on a real bar-baseline honesty question; Item N (Trust tabs) is a
   Class-C "help me decide" left untouched; Item X (TM doesn't open) not reproducible
   statically (likely stale build).
-- **Full log:** [`docs/audit/AUDIT_LOG_2026-06-15_solo.md`](docs/audit/AUDIT_LOG_2026-06-15_solo.md)
+- **Full log:** [`docs/archive/audits/AUDIT_LOG_2026-06-15_solo.md`](docs/archive/audits/AUDIT_LOG_2026-06-15_solo.md)
 - **Action plan / decisions / PR stack:**
-  [`docs/audit/ACTION_PLAN_2026-06-15_solo.md`](docs/audit/ACTION_PLAN_2026-06-15_solo.md) ·
-  [`docs/SOLO_SESSION_DECISIONS.md`](docs/SOLO_SESSION_DECISIONS.md) ·
-  [`docs/SOLO_SESSION_PR_PLAN.md`](docs/SOLO_SESSION_PR_PLAN.md)
+  [`docs/archive/audits/ACTION_PLAN_2026-06-15_solo.md`](docs/archive/audits/ACTION_PLAN_2026-06-15_solo.md) ·
+  [`docs/archive/SOLO_SESSION_DECISIONS.md`](docs/archive/SOLO_SESSION_DECISIONS.md) ·
+  [`docs/archive/SOLO_SESSION_PR_PLAN.md`](docs/archive/SOLO_SESSION_PR_PLAN.md)
 
 ---
 
@@ -94,7 +205,7 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
   (baseline 1160 passed / 6 skipped green; mypy 114 ≤ 127; bandit clean; i18n 100%
   ×12). No headless browser — frontend changes are `node --check`'d + test-pinned,
   not visually verified.
-- **Plan:** [`docs/audit/ACTION_PLAN_2026-06-14.md`](docs/audit/ACTION_PLAN_2026-06-14.md)
+- **Plan:** [`docs/archive/audits/ACTION_PLAN_2026-06-14.md`](docs/archive/audits/ACTION_PLAN_2026-06-14.md)
   (every finding → decision → status → resolving commit).
 - **Resolved (verified):** OO-D2-001 (robots-redirect SSRF + tests), OO-D3-001/
   OO-D5-002/OO-D10-001 (dead-config prune + data-dir divergence), OO-D7-001
@@ -158,7 +269,7 @@ Each entry: date, commit, scope, headline findings, and a pointer to the full lo
   - 30 findings filed (mostly S2/S3; two S1 honesty items; one S0 = none). 8 themed
     remediation work packages, sequenced and dependency-aware.
 
-- **Full log:** [`docs/audit/AUDIT_LOG_2026-06-14.md`](docs/audit/AUDIT_LOG_2026-06-14.md)
+- **Full log:** [`docs/archive/audits/AUDIT_LOG_2026-06-14.md`](docs/archive/audits/AUDIT_LOG_2026-06-14.md)
 - **Note:** This run modified no source file. Only this trail entry and the audit log
   were written (and committed as audit-artifacts-only to persist in the ephemeral
   environment). In-flight PRs #150 (guided wizard) and #151 (task-manager Schedule

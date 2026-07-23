@@ -6955,3 +6955,21 @@ def test_markdown_bold_span_survives_a_source_line_break():
         "Some <strong>important text that continues here</strong> and also "
         "<strong>another</strong> bold phrase."
     ), "the FIXED join-before-inline approach must correctly wrap both spans"
+
+
+def test_docs_index_covers_live_docs():
+    """docs/README.md must mention every top-level doc so a new file/folder never goes
+    silently unindexed (PR #740/#744 remediation brief §4.2 -- the doc-hygiene reconciliation
+    this test guards going forward). A file is checked by its exact filename; a directory is
+    checked by "<name>/" so either a bare directory link or a link to a specific file inside
+    it (e.g. "ledger/shipped.csv") satisfies the check."""
+    docs_dir = _ROOT / "docs"
+    index_text = (docs_dir / "README.md").read_text(encoding="utf-8")
+    missing = []
+    for entry in sorted(docs_dir.iterdir()):
+        if entry.name == "README.md":
+            continue
+        needle = entry.name if entry.is_file() else f"{entry.name}/"
+        if needle not in index_text:
+            missing.append(entry.name)
+    assert not missing, f"docs/README.md must reference every top-level doc; missing: {missing}"

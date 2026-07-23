@@ -163,6 +163,10 @@ stored locally; nothing is transmitted.
 
 ### Recent additions (0.0.8 live-test cycle, June 2026)
 
+> **Historical snapshot.** This section describes the app as of the 0.0.8 cycle
+> (June 2026); the app has moved on since. `CLAUDE.md` is the live source of truth
+> for what shipped after — see `docs/ledger/shipped.csv` for the index.
+
 - **The network switch is an airplane-mode toggle (top bar):** one constant
   airplane glyph whose **fill is the state** — filled means offline engaged
   (every new network request refused instantly; one in-flight request may
@@ -2278,6 +2282,10 @@ opt‑in, defaults to offline, and ships with the warning above.
 ---
 
 # What shipped in 0.0.8 — the roadmap cycle
+
+> **Historical snapshot, see CLAUDE.md.** This is a point-in-time record of the 0.0.8 cycle;
+> it is not maintained against later releases. `CLAUDE.md`'s Open queue + `docs/ledger/`
+> are the live sources of truth for what has shipped since.
 
 Everything below is available now, entirely from the browser UI. Each feature states its
 honest limit where it appears.

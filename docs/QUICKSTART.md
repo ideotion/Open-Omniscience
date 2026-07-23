@@ -184,7 +184,7 @@ Interactive API docs: **http://127.0.0.1:8000/docs**.
 
 ---
 
-## D. Analysis capabilities (Phases 2–5)
+## D. Analysis capabilities
 
 All are local-first and degrade loudly (never fabricate). Full schemas at `/docs`.
 
