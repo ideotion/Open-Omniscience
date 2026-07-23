@@ -70,6 +70,18 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS ix_article_observed "
         "ON articles (coalesce(published_at, created_at))"
     ),
+    # Covering index for /api/insights/map-coverage's per-source-country GROUP BY
+    # (queries.source_country_counts; PR #740/#744 remediation, field-diagnostics
+    # #728 item 9.2). EXPLAIN QUERY PLAN confirmed the existing idx_article_source_id
+    # is a plain SEARCH (not COVERING) for this query, so every matching row still
+    # costs a table page read -- a decrypt, under SQLCipher -- just to read
+    # sentiment_score. Mirrored in Article.__table_args__ (fresh DBs) and migration
+    # 04c029205aa8 (alembic-managed DBs); this boot self-heal covers existing
+    # installs that don't run `make migrate`.
+    "idx_article_source_sentiment": (
+        "CREATE INDEX IF NOT EXISTS idx_article_source_sentiment "
+        "ON articles (source_id, sentiment_score)"
+    ),
 }
 
 

@@ -265,6 +265,7 @@ def rising_now(session) -> list[Card]:
                 evidence=_evidence_from_articles(rows),
                 n=term["recent"],
                 key=term["normalized"],
+                article_ids=sorted({a.id for a, _ in rows}),  # F1: carry the exact set so the click opens it
             )
         )
     return cards

@@ -155,6 +155,73 @@ def test_migration_matches_model_index():
         assert col in mig
 
 
+# --------------------------------------------------------------------------- #
+# map-coverage covering index (PR #740/#744 remediation, field-diagnostics #728,
+# item 9.2 — EXPLAIN QUERY PLAN confirmed idx_article_source_id alone is a plain
+# SEARCH, not COVERING, for the per-source-country GROUP BY)
+# --------------------------------------------------------------------------- #
+def test_map_coverage_covering_index_exists_after_init(client):
+    from src.database.session import engine
+
+    with engine.connect() as conn:
+        names = {
+            r[0]
+            for r in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='index'")
+            )
+        }
+    assert "idx_article_source_sentiment" in names
+
+
+def test_ensure_hot_indexes_self_heals_map_coverage_index(client):
+    from src.database.maintenance import ensure_hot_indexes
+    from src.database.session import engine
+
+    with engine.begin() as conn:
+        conn.execute(text("DROP INDEX IF EXISTS idx_article_source_sentiment"))
+    created = ensure_hot_indexes(engine)
+    assert created == ["idx_article_source_sentiment"]
+    assert ensure_hot_indexes(engine) == []  # idempotent
+
+
+def test_migration_matches_model_index_map_coverage():
+    """Drift guard: the alembic migration creates exactly the model's index."""
+    from pathlib import Path
+
+    from src.database.models import Article
+
+    model_cols = None
+    for idx in Article.__table_args__:
+        if getattr(idx, "name", "") == "idx_article_source_sentiment":
+            model_cols = [c.name for c in idx.columns]
+    assert model_cols == ["source_id", "sentiment_score"]
+    mig = Path(
+        "migrations/versions/04c029205aa8_article_source_sentiment_covering.py"
+    ).read_text(encoding="utf-8")
+    for col in model_cols:
+        assert col in mig
+
+
+def test_map_coverage_query_plan_uses_the_covering_index(client):
+    """The real EXPLAIN QUERY PLAN, over the app's own boot-created schema (not a
+    synthetic profiling script), for queries.source_country_counts()'s article/tone
+    GROUP BY -- proving the fix, not just that the index exists."""
+    from src.database.session import engine
+
+    sql = (
+        "SELECT sources.country, count(articles.id), avg(articles.sentiment_score), "
+        "count(articles.sentiment_score) FROM sources "
+        "JOIN articles ON articles.source_id = sources.id "
+        "GROUP BY sources.country"
+    )
+    with engine.connect() as conn:
+        plan = " | ".join(
+            str(row[3]) for row in conn.execute(text("EXPLAIN QUERY PLAN " + sql))
+        )
+    assert "SEARCH articles USING COVERING INDEX idx_article_source_sentiment" in plan, plan
+    assert "SCAN articles" not in plan, plan  # never a bare table scan
+
+
 def test_optimize_at_boot_reports_real_work(client):
     from src.database.maintenance import optimize_at_boot
     from src.database.session import engine
