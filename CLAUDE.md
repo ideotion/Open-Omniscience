@@ -7189,16 +7189,46 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   logger — filter it so the error log stays signal); the KPI K2 resolver dies with a TypeError
   (reported as not-measurable — a real resolver bug); `locked_errors` 6 this session (the
   is_locked_error family, keep watching); event-loop watchdog ~278 ms lag events (minor).
-  **NEXT WORKFLOW (queued, ruled order, amended per the export):** (1) qualification VERIFY +
-  SCALE (bulk job over the 42.6k backlog / hardware-aware per-pass) + the two-class sources
-  display; (2) the Library graphs UI + the snapshot recorder (infinite retention) + compressed
-  Downloaded section + wiki/law tracked sections (items 3+5) — also the stall detector; (3) the
-  import-report (JSON+Md, persisted, backup-carried) folded into the post-import screen + the
-  quarantine-in-DB screening (import-time + retroactive) with the temporary top-100
-  criteria-calibration diagnostic FIRST (items 1+2+A4); (4) the throughput levers in evidence
-  order: duty-cycle fix (overlap/bound the inter-pass housekeeping) · supply growth via the
-  funnel · memory headroom on small boxes (the mem floor is the worker ceiling; hardware-aware
-  profiles) · crawl mode — plus the export's small defects (iv).
+  **SECOND-INSTANCE COMPARISON (same day — the maintainer's controlled experiment: a SECOND
+  all-diagnostics zip from an i7-13620H Qubes VM, 4 vCPU / 9.7 GB RAM, launched at the same
+  time as the AMD 3020e 2c/3.2 GB instance; the "hardware is not the issue" intuition is
+  CONFIRMED and the diagnosis sharpens):** (a) the memory floor vanishes on the big box (ZERO
+  `mem-low` samples, min avail 6.6 GB, permits median 11 / max 27 vs the slow box's median 2)
+  and passes run 2× faster over MORE sources (527–533 vs 354/pass) — yet stored articles/hour
+  is only ~1.7× (331/h vs 193/h; corpus 6,918 vs 5,731 ≈ 1.2×), nowhere near the ~3× compute
+  gap. (b) WHY — Amdahl at the pass boundary: the inter-pass gap stays 3–8 min on BOTH machines
+  (fast box duty cycle is actually WORSE: 48% fetching / 52% gap, since passes shrank but gaps
+  did not) — the gap work barely scales with CPU because it is SINGLE-CORE analytics (the
+  post-pass briefing refresh: home-cards 96 s vs 131 s in the diagnostics run — only 1.4×
+  faster on 2.7× compute) + SERIAL TOR FETCHES in the ride-alongs (calendar auto-imports,
+  wiki/law tracking, discovery + world-discovery Wikidata queries + qualification trials — each
+  a sequential ~5–15 s Tor fetch). DUTY-CYCLE FIX = the TOP lever (≈2× on fast hardware alone):
+  overlap the ride-alongs/briefing with the next pass or parallelize/bound them. (c) SUPPLY
+  confirmed hardware-independent: ~90% duplicate rate on BOTH (fast 15,214/16,980; slow
+  18,434/20,701) — both drain what the ~2,766 feeds offer. (d) **NEW: the fast box hits
+  "writer-bound" pass verdicts** (writer-saturated samples at permits ~27) — the LIVE
+  measurement the deferred COLLECTOR write-batching was explicitly gated on has now arrived;
+  as supply grows, the single-writer gate + full per-article indexing is the next wall →
+  write-batching graduates from measure-gated to evidence-justified. (e) the fast instance's
+  world-discovery shows added_total 66,697 / countries 245/249 (the candidate pool keeps
+  growing; qualification at 5/pass = 5 qualified/pass, 0 errors — working but far too slow for
+  the backlog). (f) BOTH instances still ran rate_mode "target" (saved settings predate the
+  default flip — the new top-bar knob is how existing installs switch). MAINTAINER'S OFFER of a
+  third 8-core/20 GB test: NOT needed for diagnosis (two points already separate the
+  hardware-dependent mem floor from the hardware-independent gap+supply ceiling); SAVE that
+  machine as the before/after benchmark for the duty-cycle fix.
+  **NEXT WORKFLOW (queued, ruled order, amended per the two exports):** (1) qualification
+  VERIFY + SCALE (bulk job over the 42.6k–66.7k candidate backlogs / hardware-aware per-pass) +
+  the two-class sources display; (2) the Library graphs UI + the snapshot recorder (infinite
+  retention) + compressed Downloaded section + wiki/law tracked sections (items 3+5) — also the
+  stall detector; (3) the import-report (JSON+Md, persisted, backup-carried) folded into the
+  post-import screen + the quarantine-in-DB screening (import-time + retroactive) with the
+  temporary top-100 criteria-calibration diagnostic FIRST (items 1+2+A4); (4) the throughput
+  levers in evidence order: DUTY-CYCLE fix (overlap/parallelize the inter-pass housekeeping —
+  measured ≈2× on modern hardware) · supply growth via the funnel · COLLECTOR write-batching
+  (now evidence-justified by the fast box's writer-bound verdicts) · memory headroom on small
+  boxes (the mem floor is the worker ceiling; hardware-aware profiles) · crawl mode — plus the
+  first export's small defects (iv).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
