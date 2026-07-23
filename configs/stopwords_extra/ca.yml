@@ -1,0 +1,29 @@
+# Curated EXTRA stopwords -- Catalan.
+# Migrated from src/analytics/extract.py::_EXTRA_STOPWORD_TEXT (Phase 4.1, PR #740/#744
+# remediation). LANGUAGE-AGNOSTIC UNION: global_stopwords() unions every file here
+# regardless of which one a word lives in -- this split is a readability/maintenance
+# convenience, not a per-language scoping guarantee (unlike configs/keyword_baseline/,
+# which IS genuinely per-language). See configs/stopwords_extra/PROVENANCE.md for the
+# full evidence trail (field-log dates, mention counts, collision-safety reasoning)
+# that justified each addition -- preserved verbatim from the original inline comments.
+stopwords:
+  - això
+  - altres
+  - aquell
+  - aquella
+  - aquest
+  - aquesta
+  - aquestes
+  - aquests
+  - aquí
+  - està
+  - menys
+  - molt
+  - perquè
+  - però
+  - quan
+  - seva
+  - seves
+  - són
+  - tota
+  - totes

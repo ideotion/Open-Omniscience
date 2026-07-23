@@ -1,0 +1,83 @@
+# Curated EXTRA stopwords -- Ukrainian.
+# Migrated from src/analytics/extract.py::_EXTRA_STOPWORD_TEXT (Phase 4.1, PR #740/#744
+# remediation). LANGUAGE-AGNOSTIC UNION: global_stopwords() unions every file here
+# regardless of which one a word lives in -- this split is a readability/maintenance
+# convenience, not a per-language scoping guarantee (unlike configs/keyword_baseline/,
+# which IS genuinely per-language). See configs/stopwords_extra/PROVENANCE.md for the
+# full evidence trail (field-log dates, mention counts, collision-safety reasoning)
+# that justified each addition -- preserved verbatim from the original inline comments.
+stopwords:
+  - або
+  - але
+  - без
+  - бо
+  - був
+  - була
+  - було
+  - бути
+  - більше
+  - в
+  - ваш
+  - весь
+  - вже
+  - вони
+  - все
+  - вся
+  - всі
+  - від
+  - він
+  - де
+  - для
+  - до
+  - дуже
+  - за
+  - й
+  - його
+  - кожен
+  - коли
+  - лише
+  - мають
+  - має
+  - менше
+  - можна
+  - між
+  - мій
+  - навіщо
+  - над
+  - наш
+  - не
+  - о
+  - об
+  - по
+  - при
+  - про
+  - під
+  - після
+  - свій
+  - та
+  - так
+  - також
+  - твій
+  - тому
+  - у
+  - хто
+  - це
+  - цей
+  - цього
+  - ця
+  - ці
+  - час
+  - через
+  - чому
+  - ще
+  - що
+  - щоб
+  - як
+  - який
+  - якщо
+  - які
+  - є
+  - і
+  - інший
+  - їх
+  - її

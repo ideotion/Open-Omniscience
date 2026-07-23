@@ -161,3 +161,37 @@ def test_2026_07_01_korean_marathi_stopword_batch_is_collision_free():
     for latin_content in ("man", "tag", "state", "time", "premier", "grande", "parte"):
         # these were NOT in the batch; the guard is that the batch can't touch them
         assert latin_content not in added
+
+
+def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob():
+    """Phase 4.1 (PR #740/#744 remediation) replaced the 370-line in-Python
+    ``_EXTRA_STOPWORD_TEXT`` string blob with a loader over
+    ``configs/stopwords_extra/<lang>.yml`` data files. That was declared a
+    REPRESENTATION change only -- the acceptance bar is that the resulting
+    ``_EXTRA_STOPWORDS`` frozenset (after the curly-apostrophe contraction
+    expansion the module already applies) is byte-identical to the set the old
+    blob produced. The digest below was computed once, directly from
+    ``origin/main``'s pre-migration ``_EXTRA_STOPWORD_TEXT`` via AST
+    (``ast.literal_eval``, never a hand-transcription) plus the SAME
+    curly-apostrophe expansion the module performs, over the sorted,
+    newline-joined member set -- so any accidental drop, duplication, or the
+    YAML-1.1-boolean-scalar trap (PyYAML's safe_load silently turning an
+    unquoted ``no``/``yes``/``on``/``off``/``true``/``false`` list item into a
+    Python bool instead of a string -- a real bug caught by this exact check
+    during the migration) reddens this test immediately.
+    """
+    import hashlib
+
+    from src.analytics.extract import _EXTRA_STOPWORDS
+
+    # Every member must be a str: the YAML-boolean-coercion regression guard.
+    assert all(isinstance(w, str) for w in _EXTRA_STOPWORDS)
+    assert len(_EXTRA_STOPWORDS) == 2377
+
+    digest = hashlib.sha256(
+        "\n".join(sorted(_EXTRA_STOPWORDS)).encode("utf-8")
+    ).hexdigest()
+    assert (
+        digest
+        == "a1a7493a21afb9abfe48eb1f13b323df6ea2cff46a21f03f7c3901f62221fc86"
+    ), "the extra-stopword SET changed -- confirm this is intentional, not a migration regression"
