@@ -7426,6 +7426,36 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   REMAINING per the brief's ordering: S3 (import report + quarantine-in-DB screening, gated
   on the top-100 calibration diagnostic shipping+being reviewed FIRST) then S4 (throughput
   levers, duty-cycle fix first).
+  **S3.1 SHIPPED 2026-07-23 (the TEMPORARY criteria-calibration diagnostic; branch
+  `claude/oos-s3-import-report-quarantine`, draft PR onto `main`; the brief's own S3.1
+  slice — the binding gate before S3.4's real quarantine execution):**
+  `src/analytics/criteria_calibration.py:calibration_report` is a REPORT over the existing
+  detectors, never new judging — reuses `scan_non_article_candidates(..., include_prose_gate=
+  True)` verbatim, collects up to `top_n` (default 100) sample ids across every URL-shape
+  reason + the prose-gate subpass, fetches real per-article detail for that bounded id set
+  (id/title/url/source/word_count/language/function-word density/sentence-punctuation
+  density/which criterion fired), and aggregates per criterion/per source/per language — so
+  the maintainer optimizes the criteria on real specimens before ANY retroactive quarantine
+  runs on a real corpus. An id that vanished between the scan and the detail fetch (a
+  concurrent delete/prune) is silently skipped, never fabricated. `CRITERIA_VERSION`
+  (`"nav-soup-v1"`) is stamped so a future S3.2 quarantine write can record exactly which
+  criteria generation flagged an article. New `GET /api/diagnostics/criteria-calibration`
+  (plain `def` → threadpool, `download=1` dated attachment) is wired into the all-diagnostics
+  bundle (`_DIAG_COVERAGE_MAP` + a member using a smaller `prose_gate_limit` than the
+  endpoint's own default, keeping the bundle's own runtime bounded) — respects the 2026-07-17
+  completeness ratchet; per the 2026-07-20 button-consolidation ruling, no new per-report
+  Settings button was added (the one all-diagnostics button already carries it). VERIFIED
+  (py3.13 venv): the new test file (negative space — a real article is never collected
+  whatever its URL/length — plus the full field set, the top_n cap, the vanished-row skip,
+  aggregation correctness, no-score-field walk) + `test_non_article_scan.py` +
+  `test_repo_invariants.py` all green (235 tests); ruff F/B clean; mypy 0 new errors (fixed
+  one genuinely-new error — a `dict(session.query(...).all())` call mypy can't type — by
+  switching to the dict-comprehension pattern already proven clean elsewhere, e.g.
+  `src/catalog/csv_io.py:190`); bandit clean; i18n unchanged (2111/2111 ×12 — no frontend
+  strings added). **REMAINING (S3.2–S3.5, each its own follow-up PR per the brief's own
+  data-safety skeptic mandate for the schema/write-path slices):** the quarantine schema +
+  write step, import-time screening, the retroactive screening job (dry-run-default, real
+  execution gated on this report's review), and the import report + post-import screen.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
