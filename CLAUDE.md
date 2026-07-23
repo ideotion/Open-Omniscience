@@ -7154,13 +7154,51 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     SAME download rate — the machine is NOT the issue (weakens a pure CPU/write-bound theory,
     strengthens the shared-structural suspects above); hardware-aware diagnostics welcome
     (already ruled in the diagnose-the-diagnostics hardware-profile entry).
-  **NEXT WORKFLOW (queued, in ruled order):** (1) the qualification lifecycle build (2026-07-20
-  spec) + the two-class sources display; (2) the Library graphs UI + the snapshot recorder
-  (infinite retention) + compressed Downloaded section + wiki/law tracked sections (items 3+5);
-  (3) the import-report (JSON+Md, persisted, backup-carried) folded into the post-import
-  screen + the quarantine-in-DB screening (import-time + retroactive) with the temporary
-  top-100 criteria-calibration diagnostic FIRST (items 1+2+A4); (4) the throughput hunt
-  instrumented by (2).
+  **DIAGNOSTICS EXPORT ANALYZED same day (supersedes A10's "do without" — the maintainer's
+  all-diagnostics zip from the slow 2-core/3.2 GB AMD 3020e Tor instance arrived and was
+  crunched; 30-run scheduler history + 199 collect_perf samples + 1 pass summary):**
+  (i) **STALENESS CORRECTION — the QUALIFICATION LIFECYCLE IS ALREADY BUILT + LIVE** on main
+  (`src/catalog/qualification.py`: admission gate in `select_sources`, `advance_qualification`
+  ride-along default `qualification_per_pass=5`, backoff ladder 1→2→4→6 months, categorical
+  stamps + append-only `SourceQualificationAttempt`; live evidence in the export: a
+  "qualification trial fetch failed for 'latimes.com'" log line). NEXT-WORKFLOW STEP 1 therefore
+  becomes VERIFY + SCALE + SURFACE, not build: at 5/pass (~4 passes/h) the 42.6k candidate
+  backlog needs ~90+ days — it wants the dedicated bulk qualification job / a higher
+  hardware-aware per-pass, plus the two-class sources display. (ii) **THROUGHPUT VERDICT
+  (three stacked causes, the rate-mode target was only one):** (a) the governor's MEM-LOW floor
+  parks permits at median 2 / max 8 on the 3.3 GB box (35 `mem-low` samples; pass verdict
+  "memory-bound", min avail 395 MB, RSS ~1 GB) — the "maximum" flip cannot lift this floor,
+  RAM is the worker ceiling on 3–4 GB machines; (b) SUPPLY: 92% duplicate rate (per-pass tally
+  e.g. entries 979 · duplicate 900 · stored 62 · not_modified 56), 9–117 new articles/pass
+  across 30 runs — the due feeds OFFER no more; 2,766 of the 3,599 enabled sources have an
+  rss_url and yield ≈2 new/day/feed on average (the maintainer's ">10/day" holds for big-name
+  feeds, not the median), so the 10× is more QUALIFIED+ENABLED sources (the funnel now running)
+  + crawl mode; (c) DUTY CYCLE: inter-pass gaps of 5–7.5 min EVERY cycle (65% fetching / 35%
+  between passes over the 30-run window) — the serial post-pass housekeeping (briefing refresh,
+  auto-imports, wiki/law tracking, discovery + world-discovery + qualification ride-alongs) IS
+  the item-4 "few minutes" stall, structural; the dozens-of-minutes stalls remain unexplained
+  (collect_perf's rolling retention covers ~one pass — too short; the item-3 graphs stay the
+  detector). During-pass burst rate was FINE (avg 1402 KiB/s, above the 500 target — with
+  'above-target' shrinks proving target mode was also costing; the maintainer's "few kB/s"
+  reading is the long-window average diluted by gaps + the 83/199 zero-rate samples). (iii)
+  **the diagnose-the-diagnostics build is CONFIRMED WORKING at field scale** (journal + hardware
+  header + runtime-coverage `complete:true`; total 961 s; slowest members leads-quality 268 s ·
+  date-extraction 229 s · home-cards 131 s — heavy analytics on 2 cores, consistent with the
+  housekeeping-gap finding). (iv) **small defects found in the export, queued:** htmldate.meta
+  "impossible to clear cache" log noise ×85 = 85 of the 93 logged "problems" (third-party
+  logger — filter it so the error log stays signal); the KPI K2 resolver dies with a TypeError
+  (reported as not-measurable — a real resolver bug); `locked_errors` 6 this session (the
+  is_locked_error family, keep watching); event-loop watchdog ~278 ms lag events (minor).
+  **NEXT WORKFLOW (queued, ruled order, amended per the export):** (1) qualification VERIFY +
+  SCALE (bulk job over the 42.6k backlog / hardware-aware per-pass) + the two-class sources
+  display; (2) the Library graphs UI + the snapshot recorder (infinite retention) + compressed
+  Downloaded section + wiki/law tracked sections (items 3+5) — also the stall detector; (3) the
+  import-report (JSON+Md, persisted, backup-carried) folded into the post-import screen + the
+  quarantine-in-DB screening (import-time + retroactive) with the temporary top-100
+  criteria-calibration diagnostic FIRST (items 1+2+A4); (4) the throughput levers in evidence
+  order: duty-cycle fix (overlap/bound the inter-pass housekeeping) · supply growth via the
+  funnel · memory headroom on small boxes (the mem floor is the worker ceiling; hardware-aware
+  profiles) · crawl mode — plus the export's small defects (iv).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
