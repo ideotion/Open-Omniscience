@@ -2056,6 +2056,7 @@
   "{n} h ago": "há {n} h",
   "{n} d ago": "há {n} d",
   "Law: {tracked} tracked · {changes} changes": "Direito: {tracked} acompanhados · {changes} alterações",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Direito: {documents} acompanhados · {baselined} com linha de base · {changes} alterações",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Abrir o subseparador Direito — acompanhamento de alterações em leis, diários oficiais e registos de PI.",
   "no FLAGGED changes": "nenhuma alteração SINALIZADA",
   "no changes": "sem alterações",

@@ -2056,6 +2056,7 @@
   "{n} h ago": "{n} घंटे पहले",
   "{n} d ago": "{n} दिन पहले",
   "Law: {tracked} tracked · {changes} changes": "कानून: {tracked} ट्रैक किए गए · {changes} परिवर्तन",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "कानून: {documents} ट्रैक किए गए · {baselined} बेसलाइन के साथ · {changes} परिवर्तन",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "कानून उप-टैब खोलें — क़ानूनों, राजपत्रों और आईपी रिकॉर्ड में परिवर्तन ट्रैकिंग।",
   "no FLAGGED changes": "कोई फ़्लैग किया गया परिवर्तन नहीं",
   "no changes": "कोई परिवर्तन नहीं",

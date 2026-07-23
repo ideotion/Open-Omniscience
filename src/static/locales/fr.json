@@ -2056,6 +2056,7 @@
   "{n} h ago": "il y a {n} h",
   "{n} d ago": "il y a {n} j",
   "Law: {tracked} tracked · {changes} changes": "Droit : {tracked} suivis · {changes} changements",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Droit : {documents} suivis · {baselined} avec version de référence · {changes} changements",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Ouvrir l'onglet Droit — suivi des modifications des lois, journaux officiels et registres de PI.",
   "no FLAGGED changes": "aucun changement SIGNALÉ",
   "no changes": "aucun changement",

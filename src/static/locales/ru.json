@@ -2056,6 +2056,7 @@
   "{n} h ago": "{n} ч назад",
   "{n} d ago": "{n} дн назад",
   "Law: {tracked} tracked · {changes} changes": "Право: отслеживается {tracked} · изменений {changes}",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Право: отслеживается {documents} · {baselined} с базовой версией · изменений {changes}",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Открыть вкладку «Право» — отслеживание изменений в законах, официальных бюллетенях и реестрах ИС.",
   "no FLAGGED changes": "нет ОТМЕЧЕННЫХ изменений",
   "no changes": "нет изменений",

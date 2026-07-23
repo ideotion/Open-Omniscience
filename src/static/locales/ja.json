@@ -2056,6 +2056,7 @@
   "{n} h ago": "{n} 時間前",
   "{n} d ago": "{n} 日前",
   "Law: {tracked} tracked · {changes} changes": "法律：{tracked} 件追跡中 · {changes} 件の変更",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "法律：{documents} 件追跡中 · {baselined} 件にベースラインあり · {changes} 件の変更",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "「法律」サブタブを開く — 法令・官報・知的財産記録の変更追跡。",
   "no FLAGGED changes": "フラグ付きの変更なし",
   "no changes": "変更なし",

@@ -2056,6 +2056,7 @@
   "{n} h ago": "{n} 小时前",
   "{n} d ago": "{n} 天前",
   "Law: {tracked} tracked · {changes} changes": "法律：已跟踪 {tracked} · {changes} 项变更",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "法律：已跟踪 {documents} · {baselined} 份已建立基线 · {changes} 项变更",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "打开“法律”子标签 — 追踪法规、公报和知识产权记录的变更。",
   "no FLAGGED changes": "没有被标记的变更",
   "no changes": "没有变更",

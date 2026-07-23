@@ -2056,6 +2056,7 @@
   "{n} h ago": "منذ {n} ساعة",
   "{n} d ago": "منذ {n} يوم",
   "Law: {tracked} tracked · {changes} changes": "القانون: {tracked} متابَع · {changes} تغييرات",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "القانون: {documents} متابَع · {baselined} بخط أساس · {changes} تغييرات",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "افتح تبويب القانون — تتبّع التغييرات في التشريعات والجرائد الرسمية وسجلات الملكية الفكرية.",
   "no FLAGGED changes": "لا تغييرات مُعلَّمة",
   "no changes": "لا تغييرات",

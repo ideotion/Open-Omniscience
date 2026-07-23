@@ -2184,7 +2184,15 @@
             + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
         }).join("");
         panel.hidden = false;
-      } catch (e) { box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
+      } catch (e) {
+        // home-recent-panel-hidden-on-error (P1): both SUCCESS paths above clear
+        // `hidden`, but this catch branch set an honest error message into the
+        // panel's own box while leaving the panel itself hidden -- the message was
+        // written but never shown. The panel must render its error the same way it
+        // renders any other outcome.
+        box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
+        panel.hidden = false;
+      }
     }
     // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
     // REDUNDANT by design: the past-week RISING keywords (the disclosed window-vs-
@@ -4186,13 +4194,22 @@
     // Field report 2026-07-17 (S2c): the law tracker is 2 clicks deep from the
     // Governments tab's default (Countries) view -- a small always-visible chip
     // makes it discoverable without changing the default subtab.
+    // governments-law-pointer-misleading-zero-tracked (P1): this chip used to
+    // label /api/law/status's `tracked` field (server-side: documents WITH A
+    // COMPLETED BASELINE) as "tracked" -- reading "0 tracked" on a corpus with 23
+    // real documents being watched, before any online pass has run a baseline. One
+    // click away, the Law subtab uses the SAME API response correctly, showing
+    // BOTH numbers ("23 documents tracked · 0 baselined"). Since the two concepts
+    // are legitimately distinct, the pointer now shows both too, matching that
+    // established wording exactly instead of collapsing to one misleading word.
     async function loadLawPointer() {
       const host = $("gov-law-pointer"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => v[k]));
       try {
         const s = await api("/api/law/status");
-        host.textContent = "⚖ " + tf("Law: {tracked} tracked · {changes} changes", { tracked: s.tracked, changes: s.changes });
+        host.textContent = "⚖ " + tf("Law: {documents} tracked · {baselined} baselined · {changes} changes",
+          { documents: s.documents, baselined: s.tracked, changes: s.changes });
         host.title = t("Open the Law subtab — change tracking for statutes, gazettes and IP records.");
       } catch (e) { host.textContent = ""; }
     }
@@ -4433,7 +4450,16 @@
           /^(https?:|\/|#)/.test(url) ? `<a href="${esc(url)}" ${url.startsWith("http") ? 'target="_blank" rel="noopener"' : ""}>${txt}</a>` : m);
       const lines = md.split("\n"), out = [];
       let i = 0;
-      const flushPara = (buf) => { if (buf.length) out.push("<p>" + buf.map(inline).join(" ") + "</p>"); };
+      // help-md-linebreak-bug (P1): calling inline() PER RAW SOURCE LINE, before
+      // joining lines together, made a **bold**/*em*/[link]() span whose markers
+      // land on different wrapped source lines invisible to the per-line regex on
+      // BOTH lines — and could make a dangling opening marker mis-pair with a
+      // LATER, unrelated marker on the second line, producing a garbled, wrongly-
+      // placed <strong>/<em> (reported in USER_MANUAL.md and the Ethics doc, ~64
+      // unrendered spans). Joining the raw lines into ONE string per paragraph
+      // BEFORE running inline() lets the regex see the whole span regardless of
+      // which source line it was wrapped on.
+      const flushPara = (buf) => { if (buf.length) out.push("<p>" + inline(buf.join(" ")) + "</p>"); };
       let para = [];
       while (i < lines.length) {
         const ln = lines[i];
@@ -4458,7 +4484,13 @@
         }
         if (/^\s*>\s?/.test(ln)) { flushPara(para); para = [];
           let q = []; while (i < lines.length && /^\s*>\s?/.test(lines[i])) { q.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
-          out.push("<blockquote>" + q.map(inline).join("<br>") + "</blockquote>"); continue; }
+          // Same cross-line fix as flushPara, but a blockquote's line breaks must
+          // stay VISIBLE (unlike a paragraph's, which collapse to one space) — join
+          // with a placeholder inline() can't possibly escape or match (esc() only
+          // touches &<>"'), run inline() on the WHOLE joined string so a span
+          // crossing a quoted line is seen as one contiguous string, THEN swap the
+          // placeholder for a real <br> after escaping/formatting has already run.
+          out.push("<blockquote>" + inline(q.join("\u0000")).replace(/\u0000/g, "<br>") + "</blockquote>"); continue; }
         if (/^\s*([-*+]|\d+\.)\s+/.test(ln)) { flushPara(para); para = [];
           const ordered = /^\s*\d+\.\s+/.test(ln); let items = [];
           while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
@@ -12799,6 +12831,14 @@
         };
         const render = () => {
           hint.textContent = HINTS[mode] || "";
+          // mkt-002-stale-caveat-scale-toggle (P1): the static #chart-enlarge-note
+          // set once above (from the caller's own `caveat` — for the Commodities
+          // family-stacked view, a fixed "Indexed to 100 at the window start…"
+          // string) never refreshed on a scale-toggle click, so switching to
+          // Absolute or Log left a note directly contradicting the now-accurate
+          // dynamic hint just above it. The note now mirrors the same per-mode
+          // HINTS text as the dynamic hint, so the two can never disagree.
+          if (note) { note.textContent = HINTS[mode] || caveat || ""; note.style.display = ""; }
           ooChart(host, seriesList, {height: 360, maxWidth: 880, indexed: mode === "indexed", logY: mode === "log"});
         };
         ctl.addEventListener("click", (e) => {
@@ -13326,11 +13366,25 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const W = MAP_W, H = MAP_H;
       // Reset the ⛶ glyph/title when fullscreen exits (Esc or the button). Wired once.
+      // worldmap-fullscreen-hides-legend-caveat (P1): fullscreen used to target
+      // .oomap-wrap specifically (the SVG + in-map controls only) -- but
+      // .oomap-legend, the method hint, and the caveat div are SIBLINGS of
+      // .oomap-wrap, not descendants, so the browser natively hid all three the
+      // moment fullscreen engaged (a fullscreen element shows only its own
+      // subtree). `host` (the caller's dedicated map container, e.g.
+      // #oo-coverage-map) already wraps EVERYTHING this render produces --
+      // .oomap-wrap, .oomap-legend, the method hint, and the caveat -- and
+      // nothing unrelated, so targeting it instead shows the whole map
+      // including its caveat while fullscreen. Verified this does not depend on
+      // .oomap-wrap being the exact fullscreen root: the viewBox zoom/pan math
+      // operates purely on the SVG's own viewBox attribute (ancestor-
+      // independent), and the CSS `.mm-big` fallback class is a generic
+      // fixed-position overlay that works on any element.
       if (!host._ooFsWired) {
         host._ooFsWired = true;
         document.addEventListener("fullscreenchange", () => {
           const fsBtn = host.querySelector('[data-oomap="big"]'); if (!fsBtn) return;
-          const on = document.fullscreenElement === host.querySelector(".oomap-wrap");
+          const on = document.fullscreenElement === host;
           fsBtn.textContent = on ? "🗗" : "⛶";
           fsBtn.title = on ? t("Exit fullscreen") : t("Enlarge the map");
         });
@@ -13353,15 +13407,16 @@
         else if (a === "big") {
           // TRUE fullscreen (field test 2026-06-19 #12), with a CSS fallback for
           // browsers without the API. The in-map ⛶ stays the visible exit control
-          // (clicking it again exits); Esc also exits natively.
-          const w = host.querySelector(".oomap-wrap"); if (!w) return;
+          // (clicking it again exits); Esc also exits natively. Targets `host`
+          // itself (see the worldmap-fullscreen-hides-legend-caveat comment above)
+          // so the legend/method/caveat stay visible in fullscreen too.
           try {
-            if (document.fullscreenElement === w) { document.exitFullscreen(); }
-            else if (w.requestFullscreen) {
-              w.requestFullscreen().then(() => { b.title = t("Exit fullscreen"); b.textContent = "🗗"; })
-                .catch(() => w.classList.toggle("mm-big"));
-            } else { w.classList.toggle("mm-big"); }
-          } catch (_e) { w.classList.toggle("mm-big"); }
+            if (document.fullscreenElement === host) { document.exitFullscreen(); }
+            else if (host.requestFullscreen) {
+              host.requestFullscreen().then(() => { b.title = t("Exit fullscreen"); b.textContent = "🗗"; })
+                .catch(() => host.classList.toggle("mm-big"));
+            } else { host.classList.toggle("mm-big"); }
+          } catch (_e) { host.classList.toggle("mm-big"); }
         }
         else { vb = { x: 0, y: 0, w: W, h: H }; apply(); }
       }));

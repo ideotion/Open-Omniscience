@@ -2056,6 +2056,7 @@
   "{n} h ago": "{n} h ago",
   "{n} d ago": "{n} d ago",
   "Law: {tracked} tracked · {changes} changes": "Law: {tracked} tracked · {changes} changes",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Law: {documents} tracked · {baselined} baselined · {changes} changes",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Open the Law subtab — change tracking for statutes, gazettes and IP records.",
   "no FLAGGED changes": "no FLAGGED changes",
   "no changes": "no changes",

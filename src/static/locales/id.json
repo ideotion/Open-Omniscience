@@ -2056,6 +2056,7 @@
   "{n} h ago": "{n} jam lalu",
   "{n} d ago": "{n} hari lalu",
   "Law: {tracked} tracked · {changes} changes": "Hukum: {tracked} dilacak · {changes} perubahan",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Hukum: {documents} dilacak · {baselined} memiliki garis dasar · {changes} perubahan",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Buka subtab Hukum — pelacakan perubahan undang-undang, lembaran negara, dan catatan KI.",
   "no FLAGGED changes": "tidak ada perubahan yang DITANDAI",
   "no changes": "tidak ada perubahan",

@@ -6556,3 +6556,266 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
         "face must still pass the event (so its OWN interactive-descendant guard "
         "keeps protecting the flip from stray clicks bubbling up from elsewhere)"
     )
+
+
+def test_governments_law_pointer_shows_both_tracked_and_baselined():
+    """GUI-test finding governments-law-pointer-misleading-zero-tracked (P1): the
+    Governments -> Countries subtab's always-visible '(scales) Law: N tracked · M
+    changes' discoverability pointer labelled /api/law/status's `tracked` field as
+    the total tracked-document count, but that field server-side counts only
+    documents WITH A COMPLETED BASELINE (`LawDocument.baseline_text IS NOT NULL`)
+    -- reading '0 tracked' on a corpus with 23 real documents being watched across
+    8 jurisdictions, before any online pass has run a baseline. One click away, the
+    Law subtab uses the SAME API response correctly ('23 documents tracked · 0
+    baselined'). Since the two concepts are legitimately distinct, the pointer now
+    shows BOTH numbers, matching that established wording exactly rather than
+    collapsing to one misleading word."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("async function loadLawPointer() {", 1)[1].split("\n    }\n", 1)[0]
+
+    # documents (the real tracked-document count) and tracked (the API's own,
+    # baseline-only field) are BOTH read and BOTH shown, distinctly labelled.
+    assert "s.documents" in fn, "the pointer must read the real tracked-document count"
+    assert "baselined: s.tracked" in fn, (
+        "the API's `tracked` field (baseline-only) must be relabelled 'baselined' "
+        "in the pointer, matching the Law subtab's own established wording"
+    )
+    assert (
+        'tf("Law: {documents} tracked · {baselined} baselined · {changes} changes"'
+    ) in fn, "the pointer must show both numbers, distinctly labelled"
+    # The stale, misleading single-word template must not linger as the live text.
+    assert 'tf("Law: {tracked} tracked · {changes} changes"' not in fn, (
+        "the old collapsed-to-one-word template must no longer be used live"
+    )
+
+    import json
+
+    new_key = "Law: {documents} tracked · {baselined} baselined · {changes} changes"
+    locales_dir = _SRC / "static" / "locales"
+    for lang in ("en", "ar", "bn", "de", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        data = json.loads((locales_dir / f"{lang}.json").read_text(encoding="utf-8"))
+        assert data.get(new_key), f"{lang}.json is missing the new law-pointer template key"
+
+
+def test_convergence_window_input_max_matches_the_backend_cap():
+    """GUI-test finding ins-convergence-window-cap-mismatch (P1, the <input> max
+    half -- the api()-error-message half already shipped in Phase 5): the
+    Insights -> Convergence 'Window (days)' input's HTML max="3650" invited a
+    value the backend (GET /api/insights/convergences, window_days: Query(...,
+    le=90)) would reject with a 422 -- reproduced live, entering 365 (well within
+    the field's own stated range) surfaced a confusing error. The input's max now
+    matches the real backend cap exactly, so the field never invites a value it
+    will refuse."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    api_py = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+
+    m = re.search(r'id="cv-window"[^>]*\bmax="(\d+)"', html)
+    assert m, "the #cv-window input must exist with a max attribute"
+    html_max = int(m.group(1))
+
+    # Several endpoints in this file declare their own "window_days: int = Query(...)"
+    # with DIFFERENT le= caps (30/365/90) -- scope the search to the /convergences
+    # endpoint specifically, not the first occurrence in the whole file.
+    fn_src = api_py.split("def insights_convergences(", 1)[1].split("\ndef ", 1)[0]
+    m2 = re.search(r"window_days:\s*int\s*=\s*Query\([^)]*\ble=(\d+)", fn_src)
+    assert m2, "the /convergences endpoint's window_days Query(...) le= cap must exist"
+    backend_max = int(m2.group(1))
+
+    assert html_max == backend_max, (
+        f"#cv-window's max ({html_max}) must equal the backend's real cap "
+        f"({backend_max}) so the field never invites a value the API will reject"
+    )
+
+
+def test_trends_and_map_kind_selects_offer_only_functional_options():
+    """GUI-test finding ins-kind-filter-nonfunctional-options (P1): the Insights ->
+    Trends (#trd-kind) and the legacy Map tab's (#map-kind) 'Kind' selects both
+    still listed person/orgs/places options the extractor never assigns --
+    GET /api/insights/map?kind=person returned honestly-empty {countries:[],
+    cities:[]} on the identical corpus/window that kind="" populated. The sibling
+    Families subtab's own #fam-kind select already restricts itself to functional
+    kinds and shows an explicit honesty hint explaining why; both selects now
+    match that established pattern instead of offering a fabricated, always-empty
+    choice."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+    for sel_id in ("trd-kind", "map-kind"):
+        block = html.split(f'id="{sel_id}"', 1)[1].split("</select>", 1)[0]
+        for bad in ("person", "org", "location"):
+            assert f'value="{bad}"' not in block, (
+                f"#{sel_id} must not offer the non-functional '{bad}' option "
+                "(the extractor never assigns it)"
+            )
+        assert 'value=""' in block and 'value="term"' in block and 'value="entity"' in block, (
+            f"#{sel_id} must keep its functional options (all/term/entity)"
+        )
+
+    # Both selects carry the same honesty hint Families already established.
+    hint = (
+        "person / org / location kinds await a future NER/gazetteer pass — the "
+        "extractor does not yet assign them, so they are not offered here rather "
+        "than shown as a fabricated, always-empty choice."
+    )
+    assert html.count(hint) >= 3, (
+        "the honesty hint must appear for Families (already shipped) AND both "
+        "newly-fixed selects (Trends + the legacy Map tab)"
+    )
+
+
+def test_home_recent_panel_unhides_on_error_too():
+    """GUI-test finding home-recent-panel-hidden-on-error (P1): loadHomeRecentList()'s
+    catch(e) branch wrote an honest error message into the panel's own inner box
+    but never cleared #home-recent-panel's own `hidden` attribute (the static
+    markup starts `<section ... id="home-recent-panel" hidden>`, and only the two
+    SUCCESS paths -- the honest empty state and the populated rows -- toggled it
+    visible) -- so a genuine fetch failure silently disappeared instead of showing
+    its own honest message."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("async function loadHomeRecentList(tag) {", 1)[1].split("\n    }\n", 1)[0]
+
+    catch_block = fn.split("} catch (e) {", 1)[1]
+    assert "panel.hidden = false;" in catch_block, (
+        "the catch branch must clear panel.hidden too, matching both success paths"
+    )
+    # sanity: the error message is still written into the panel's own inner box.
+    assert "box.innerHTML" in catch_block
+
+
+def test_chart_enlarge_note_refreshes_on_scale_toggle():
+    """GUI-test finding mkt-002-stale-caveat-scale-toggle (P1): the Commodities
+    enlarge dialog's dynamic scale hint (Absolute/Indexed/Log) updated correctly
+    on toggle, but a SEPARATE static caption (#chart-enlarge-note, set once at
+    dialog-open time from the caller's own caveat -- for the family-stacked
+    Commodities view, a fixed 'Indexed to 100 at the window start…' string) never
+    refreshed, so switching to Absolute or Log left it directly contradicting the
+    now-accurate dynamic hint a few lines above. The note now mirrors the same
+    per-mode HINTS text inside the same render() the scale-toggle click handler
+    calls, so the two can never disagree."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("function chartEnlarge(title, seriesList, caveat, opts) {", 1)[1].split(
+        "\n    function _chartEnlargeExtra", 1)[0]
+
+    render_block = fn.split("const render = () => {", 1)[1].split("};", 1)[0]
+    assert "hint.textContent = HINTS[mode]" in render_block, (
+        "sanity: the dynamic hint's own per-mode refresh must still exist"
+    )
+    assert "note.textContent = HINTS[mode]" in render_block, (
+        "the static note must refresh to the SAME per-mode text inside the same "
+        "render() the scale-toggle click handler calls"
+    )
+    # The click handler's only job is to update `mode` then call render() -- the
+    # note refresh must live INSIDE render(), not be a second, separately-wired
+    # update that could drift out of sync again.
+    click_block = fn.split('ctl.addEventListener("click", (e) => {', 1)[1].split("});", 1)[0]
+    assert "note.textContent" not in click_block, (
+        "the note refresh must live inside render(), reached via the single "
+        "render() call at the end of the click handler -- not duplicated here"
+    )
+    assert "render();" in click_block
+
+
+def test_worldmap_fullscreen_targets_host_so_legend_and_caveat_stay_visible():
+    """GUI-test finding worldmap-fullscreen-hides-legend-caveat (P1): the World
+    map's fullscreen button targeted .oomap-wrap specifically (the SVG + in-map
+    controls) via requestFullscreen(), but .oomap-legend, the method hint, and the
+    caveat div are SIBLINGS of .oomap-wrap, not descendants -- a fullscreen
+    element shows only its own subtree, so the browser natively hid all three
+    while fullscreen. `host` (the caller's dedicated map container, e.g.
+    #oo-coverage-map) already wraps .oomap-wrap AND .oomap-legend AND the method/
+    caveat and nothing unrelated, so fullscreen now targets `host` instead."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("function _wireOoMap(host, opts) {", 1)[1].split("\n    function ", 1)[0]
+
+    # The three fullscreen call sites must all resolve against `host` directly,
+    # never re-query .oomap-wrap as a narrower fullscreen target.
+    assert "document.fullscreenElement === host" in fn
+    assert "host.requestFullscreen" in fn
+    assert 'host.querySelector(".oomap-wrap")' not in fn, (
+        "fullscreen must no longer target the narrower .oomap-wrap div"
+    )
+
+    # Sanity: .oomap-legend/method/caveat really are siblings of .oomap-wrap under
+    # `host` (never descendants of it) -- confirms `host` is the correct wider
+    # container and this isn't fixing a problem that doesn't exist.
+    render_fn = js.split('host.innerHTML = `<div class="oomap-wrap"', 1)[1].split(
+        "host._ooSigVisible", 1)[0]
+    assert 'class="oomap-legend"' in render_fn
+    wrap_region = render_fn.split("</div>", 1)[0]
+    assert 'class="oomap-legend"' not in wrap_region, (
+        "sanity: .oomap-legend must be OUTSIDE the first (.oomap-wrap) closing div"
+    )
+
+
+def test_markdown_bold_span_survives_a_source_line_break():
+    """GUI-test finding help-md-linebreak-bug (P1): mdToHtml()'s paragraph AND
+    blockquote handling called its inline-emphasis formatter PER RAW SOURCE LINE
+    (buf.map(inline).join(...)) before joining lines together, so a **bold**/
+    *em*/[link]() span whose opening and closing markers land on different
+    wrapped source lines was invisible to the per-line regex on BOTH lines --
+    and could make a dangling opening marker mis-pair with a LATER, unrelated
+    marker on the second line, producing a garbled, wrongly-placed <strong>
+    (reported in USER_MANUAL.md and the Ethics doc, ~64 unrendered spans).
+    Joining the raw lines into ONE string per paragraph/blockquote BEFORE
+    running inline() lets the regex see the whole span regardless of which
+    source line it was wrapped on."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("function mdToHtml(md) {", 1)[1].split("\n    function humanBytes", 1)[0]
+
+    # Paragraphs: inline() must run on the WHOLE joined string, never per-line.
+    assert "inline(buf.join(" in fn, (
+        "flushPara must join the raw lines into one string BEFORE calling inline(), "
+        "not call inline() per line and join the (already-processed) results"
+    )
+    assert "buf.map(inline)" not in fn, (
+        "the old per-line inline() call (which could never see a span crossing "
+        "two source lines) must be gone"
+    )
+
+    # Blockquotes: the SAME join-before-inline fix, but a quote's line breaks must
+    # stay VISIBLE -- verified via the literal (non-raw-byte) six-character escape
+    # sequence used as a placeholder that inline()/esc() can neither escape nor
+    # accidentally match, swapped for a real <br> only AFTER inline() has run.
+    assert "inline(q.join(" in fn, (
+        "the blockquote handler must join its lines into one string BEFORE "
+        "calling inline(), matching flushPara's fix"
+    )
+    assert "q.map(inline)" not in fn, (
+        "the old per-line inline() call for blockquotes must be gone"
+    )
+    placeholder = chr(92) + "u0000"  # the literal 6-char escape sequence, computed
+    assert placeholder in fn, (
+        "the blockquote fix must use a real placeholder marker (never a plain "
+        "space, which would also match every genuine space in the quoted text)"
+    )
+
+    # Byte-level sanity: the fix must be an ESCAPED source-text sequence, never an
+    # actual embedded NUL byte in the file.
+    raw_bytes = (_SRC / "static" / "app.js").read_bytes()
+    assert b"\x00" not in raw_bytes, "app.js must never contain a literal NUL byte"
+
+    # Runtime proof (mirrors mdToHtml's own regex set exactly): a bold span
+    # spanning two lines renders as ONE correctly-wrapped <strong>, not a garbled
+    # mis-pairing with an unrelated later marker on the second line.
+    import re as _re
+
+    def esc_(s):
+        return _re.sub(r'[&<>"\']', lambda m: {"&": "&amp;", "<": "&lt;", ">": "&gt;",
+                                                 '"': "&quot;", "'": "&#39;"}[m.group(0)], s)
+
+    def inline_(t):
+        t = esc_(t)
+        t = _re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        t = _re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", t)
+        t = _re.sub(r"(^|[^*])\*([^*]+)\*", r"\1<em>\2</em>", t)
+        return t
+
+    buf = ["Some **important text that", "continues here** and also **another** bold phrase."]
+    buggy_per_line = " ".join(inline_(x) for x in buf)
+    fixed_joined_first = inline_(" ".join(buf))
+    assert "<strong> and also </strong>another**" in buggy_per_line, (
+        "sanity: the OLD per-line approach really did mis-pair (proves this is a real bug)"
+    )
+    assert fixed_joined_first == (
+        "Some <strong>important text that continues here</strong> and also "
+        "<strong>another</strong> bold phrase."
+    ), "the FIXED join-before-inline approach must correctly wrap both spans"
