@@ -6146,3 +6146,74 @@ def test_saving_unrelated_settings_never_silently_overwrites_a_named_theme():
     sync_at = load_fn.index("syncThemeSelect();")
     assert guard_at < seed_at < sync_at, \
         "the first-run seed must stay wrapped by its localStorage guard, before syncThemeSelect()"
+
+
+def test_popstate_closes_every_open_dialog():
+    """GUI-test finding imp-ghost-modal-after-back (P1): no popstate listener anywhere
+    closed an open <dialog> -- browser Back while e.g. #ux-export was open left the tab
+    underneath repainted while the dialog's native modal top-layer backdrop stayed
+    active, blocking every click with no visual cue (only Escape recovered). Fixed with
+    one shared popstate listener that closes EVERY open <dialog> via the native
+    mechanism, not a hardcoded id list -- so it covers every dialog in the app, present
+    and future.
+
+    A bare .close() alone was insufficient -- an adversarial skeptic pass on this
+    fix (mandatory for a shared-infrastructure change) found it would ORPHAN
+    #net-consent's ensureOnline() Promise forever (per the <dialog> spec, .close()
+    fires only "close", never "cancel"; that Promise resolves ONLY via its ok/cancel
+    click handlers or dlg.oncancel) and skip #guide-wizard's closeGuide bookkeeping
+    (wired to "cancel" too). Fixed by dispatching a synthetic "cancel" event (the
+    same signal Escape sends) BEFORE the force-close, so every dialog's own
+    resolve/cleanup path runs first."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'new Event("cancel", {cancelable: true})' in app, \
+        "a synthetic cancel must be dispatched so each dialog's own resolve/cleanup runs"
+    assert 'document.querySelectorAll("dialog[open]").forEach((d) => {' in app, \
+        "a popstate handler must act on every open <dialog>, not a hardcoded subset"
+    close_all_at = app.index('document.querySelectorAll("dialog[open]").forEach((d) => {')
+    handler_block = app[close_all_at:close_all_at + 300]
+    assert 'd.dispatchEvent(new Event("cancel"' in handler_block, \
+        "the cancel dispatch must happen inside the per-dialog forEach callback"
+    assert "d.close();" in handler_block, \
+        "the dialog must still be force-closed after the cancel dispatch"
+    dispatch_at = handler_block.index("d.dispatchEvent(")
+    close_at = handler_block.index("d.close();")
+    assert dispatch_at < close_at, \
+        "cancel must be dispatched BEFORE the force-close, so listeners see it first"
+    preceding = app[max(0, close_all_at - 250):close_all_at]
+    assert 'window.addEventListener("popstate"' in preceding, \
+        "the close-every-dialog call must be wired directly to a popstate listener"
+
+    # Every dialog present in the markup must be reachable by the generic selector
+    # (a plain <dialog id=...>, never something that would escape "dialog[open]").
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    dialog_ids = re.findall(r'<dialog id="([\w-]+)"', html)
+    assert len(dialog_ids) >= 8, "sanity: expected several <dialog> elements in the markup"
+    for did in dialog_ids:
+        assert f'<dialog id="{did}"' in html, did
+
+
+def test_api_error_handles_a_pydantic_validation_array_detail():
+    """GUI-test finding ins-convergence-window-cap-mismatch (P1, the api() half): a
+    FastAPI/Pydantic 422 response body's `detail` is an ARRAY of {type, loc, msg}
+    objects, which `new Error(...)` string-coerces into the useless
+    "[object Object],[object Object]" -- this is the SHARED error path for
+    essentially every call made through api(), so the fix must not be scoped
+    narrowly to one endpoint. Fixed via a small _apiErrorMessage(data, res) helper:
+    an Array detail is joined from each item's .msg (or JSON.stringify as a
+    fallback); a plain string detail (or none at all) must render BYTE-IDENTICALLY
+    to the old expression."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _apiErrorMessage(data, res)" in app, "the shared helper must exist"
+    fn = app.split("function _apiErrorMessage(data, res) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "Array.isArray(d)" in fn, "it must specifically branch on an Array detail"
+    assert "item.msg" in fn and "JSON.stringify(item)" in fn, \
+        "array items must prefer .msg, falling back to JSON.stringify"
+    assert 'res.status + " " + res.statusText' in fn, \
+        "the no-detail-at-all fallback (status + statusText) must be preserved"
+
+    # The throw site must route through the helper, not the old inline expression.
+    assert "throw new Error(_apiErrorMessage(data, res));" in app, \
+        "the !res.ok throw must call the shared helper"
+    assert 'throw new Error((data && data.detail) || res.status + " " + res.statusText)' not in app, \
+        "the old inline (never-Array-aware) expression must not linger as a duplicate"

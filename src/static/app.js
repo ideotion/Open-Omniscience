@@ -1307,6 +1307,20 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       toast(t("The app is busy — retrying shortly…"), "warn");
     }
+    // ins-convergence-window-cap-mismatch (P1, the api() half): a FastAPI/Pydantic
+    // 422 response body's `detail` is an ARRAY of {type, loc, msg} objects, which
+    // Error() string-coerces into the useless "[object Object],[object Object]" --
+    // this is the SHARED error path for essentially every call made through api(),
+    // so the fix applies everywhere a validation error can surface, not just the
+    // endpoint the finding was reported against. A plain string `detail` (or none)
+    // renders BYTE-IDENTICALLY to before -- only the Array case changes.
+    function _apiErrorMessage(data, res) {
+      const d = data && data.detail;
+      const msg = Array.isArray(d)
+        ? d.map((item) => (item && typeof item === "object" && item.msg) ? item.msg : JSON.stringify(item)).join("; ")
+        : d;
+      return msg || (res.status + " " + res.statusText);
+    }
     async function api(path, opts={}) {
       _bumpInflight(1);
       try {
@@ -1325,7 +1339,7 @@
           const text = await res.text();
           let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
           if (res.status === 503 && data && data.locked) { location.replace("/unlock"); throw new Error(data.detail); }
-          if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
+          if (!res.ok) throw new Error(_apiErrorMessage(data, res));
           return data;
         }
       } finally { _bumpInflight(-1); }
