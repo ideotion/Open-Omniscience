@@ -2107,5 +2107,10 @@
   "New sources": "新しい情報源",
   "Articles awaiting indexing": "まだ索引付け待ちの記事",
   "database records, all types": "データベースレコード(全種別)",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "コーパスは{sources}件の新しい情報源から{articles}件の記事が増え、{languages}件の新しい言語に広がりました。"
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "コーパスは{sources}件の新しい情報源から{articles}件の記事が増え、{languages}件の新しい言語に広がりました。",
+  "People": "人物",
+  "Orgs": "組織",
+  "Other entities": "その他のエンティティ",
+  "Themes": "テーマ",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "この層は緊急性を捏造することはありません。「緊急」は、災害情報提供元（GDACS）自身が赤色警報を発した場合にのみ表示されます。「注意」は、提供元のオレンジ警報、またはあなた自身が保存したウォッチがあなた自身のしきい値を超えた場合に表示されます。「情報」は、提供元の緑色警報、転送された観測結果、またはコーパス内の最近の時空間的な一致を示すものであり——因果関係の証拠では決してなく、共起の手がかりに過ぎません。災害記録は、監視対象のフィードが報告した内容のキャッシュされた中継です（古くなっている可能性があり、情報源が報告した内容を示すだけで、実際に起きているすべてを示すものではありません）——沈黙は安全を意味しません。件数のみで、スコアはありません。"
 }

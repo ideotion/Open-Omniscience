@@ -2107,5 +2107,10 @@
   "New sources": "Novas fontes",
   "Articles awaiting indexing": "Artigos ainda aguardando indexação",
   "database records, all types": "Registros de banco de dados, todos os tipos",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Seu corpus cresceu em {articles} artigos de {sources} novas fontes, abrangendo {languages} novos idiomas."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Seu corpus cresceu em {articles} artigos de {sources} novas fontes, abrangendo {languages} novos idiomas.",
+  "People": "Pessoas",
+  "Orgs": "Organizações",
+  "Other entities": "Outras entidades",
+  "Themes": "Temas",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "Esta camada nunca inventa urgência. 'Urgente' aparece APENAS quando um provedor de riscos (GDACS) declarou, ele próprio, um alerta VERMELHO; 'vigiar' aparece para um alerta LARANJA do provedor ou uma vigilância que VOCÊ salvou e que ultrapassou o SEU próprio limite; 'info' é um alerta VERDE do provedor, uma observação repassada, ou uma convergência espaço-temporal recente no seu corpus — um indício de coocorrência, nunca prova de causalidade. Os registros de risco são um repasse em cache do que um feed monitorado relatou (pode estar desatualizado, e mostra o que uma fonte relatou, não tudo o que está acontecendo) — o silêncio não é segurança. Apenas contagens, sem pontuação."
 }

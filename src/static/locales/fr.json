@@ -2107,5 +2107,10 @@
   "New sources": "Nouvelles sources",
   "Articles awaiting indexing": "Articles en attente d'indexation",
   "database records, all types": "Enregistrements de base de données, tous types confondus",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Votre corpus s'est enrichi de {articles} articles provenant de {sources} nouvelles sources, couvrant {languages} nouvelles langues."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Votre corpus s'est enrichi de {articles} articles provenant de {sources} nouvelles sources, couvrant {languages} nouvelles langues.",
+  "People": "Personnes",
+  "Orgs": "Organisations",
+  "Other entities": "Autres entités",
+  "Themes": "Thèmes",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "Cette couche n'invente jamais l'urgence. « Urgent » n'apparaît QUE lorsqu'un fournisseur de risques (GDACS) a lui-même déclaré une alerte ROUGE ; « à surveiller » apparaît pour une alerte ORANGE du fournisseur ou une surveillance que VOUS avez enregistrée et qui a franchi VOTRE propre seuil ; « info » correspond à une alerte VERTE du fournisseur, une observation relayée, ou une convergence spatio-temporelle récente dans votre corpus — une invite à la co-occurrence, jamais une preuve de causalité. Les enregistrements de risques sont un relais mis en cache de ce qu'un flux surveillé a signalé (il peut être obsolète, et il montre ce qu'une source a rapporté, pas tout ce qui se passe) — le silence n'est pas la sécurité. Comptages uniquement, aucun score."
 }

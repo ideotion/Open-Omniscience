@@ -2107,5 +2107,10 @@
   "New sources": "নতুন উৎস",
   "Articles awaiting indexing": "নিবন্ধ এখনও ইনডেক্সিং-এর অপেক্ষায়",
   "database records, all types": "ডেটাবেস রেকর্ড, সকল ধরনের",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "আপনার কর্পাস {sources} টি নতুন উৎস থেকে {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে, যা {languages} টি নতুন ভাষা জুড়ে বিস্তৃত।"
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "আপনার কর্পাস {sources} টি নতুন উৎস থেকে {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে, যা {languages} টি নতুন ভাষা জুড়ে বিস্তৃত।",
+  "People": "ব্যক্তি",
+  "Orgs": "প্রতিষ্ঠান",
+  "Other entities": "অন্যান্য সত্তা",
+  "Themes": "বিষয়সমূহ",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "এই স্তর কখনও জরুরি অবস্থার আবিষ্কার করে না। 'জরুরি' তখনই দেখা যায় যখন কোনো বিপদ-সরবরাহকারী (GDACS) নিজেই একটি লাল সতর্কতা ঘোষণা করে; 'নজরদারি' দেখা যায় সরবরাহকারীর কমলা সতর্কতার জন্য অথবা আপনার সংরক্ষিত কোনো নজরদারি আপনার নিজস্ব সীমা অতিক্রম করলে; 'তথ্য' হল সরবরাহকারীর সবুজ সতর্কতা, একটি প্রেরিত পর্যবেক্ষণ, অথবা আপনার সংগ্রহে সাম্প্রতিক স্থান-কাল সমাপতন — এটি কেবল একটি সহ-ঘটনার ইঙ্গিত, কখনোই কার্যকারণের প্রমাণ নয়। বিপদ রেকর্ডগুলি পর্যবেক্ষণ করা ফিড যা রিপোর্ট করেছে তার একটি ক্যাশ করা পুনঃসম্প্রচার (এটি পুরনো হতে পারে, এবং এটি একটি উৎস যা রিপোর্ট করেছে তা দেখায়, প্রকৃতপক্ষে যা ঘটছে তার সবকিছু নয়) — নীরবতা নিরাপত্তা নয়। শুধুমাত্র গণনা, কোনো স্কোর নেই।"
 }

@@ -2107,5 +2107,10 @@
   "New sources": "Новые источники",
   "Articles awaiting indexing": "Статьи, ещё ожидающие индексации",
   "database records, all types": "Записи базы данных, все типы",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Ваш корпус пополнился на {articles} статей из {sources} новых источников, охватив {languages} новых языков."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Ваш корпус пополнился на {articles} статей из {sources} новых источников, охватив {languages} новых языков.",
+  "People": "Люди",
+  "Orgs": "Организации",
+  "Other entities": "Другие сущности",
+  "Themes": "Темы",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "Этот слой никогда не выдумывает срочность. «Срочно» появляется ТОЛЬКО когда поставщик данных об опасностях (GDACS) сам объявил КРАСНОЕ предупреждение; «наблюдение» появляется при ОРАНЖЕВОМ предупреждении поставщика или при сохранённом ВАМИ наблюдении, превысившем ВАШ собственный порог; «инфо» — это ЗЕЛЁНОЕ предупреждение поставщика, ретранслированное наблюдение или недавнее пространственно-временное совпадение в вашем корпусе — повод для проверки совпадения, а не доказательство причинности. Записи об опасностях — это кешированная ретрансляция того, что сообщил отслеживаемый источник (данные могут быть устаревшими и отражают то, что сообщил источник, а не всё происходящее) — молчание не значит безопасность. Только подсчёты, без оценки."
 }

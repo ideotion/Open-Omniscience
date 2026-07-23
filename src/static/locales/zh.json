@@ -2107,5 +2107,10 @@
   "New sources": "新来源",
   "Articles awaiting indexing": "仍在等待索引的文章",
   "database records, all types": "数据库记录(所有类型)",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "您的语料库新增了 {articles} 篇文章,来自 {sources} 个新来源,涵盖 {languages} 种新语言。"
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "您的语料库新增了 {articles} 篇文章,来自 {sources} 个新来源,涵盖 {languages} 种新语言。",
+  "People": "人物",
+  "Orgs": "组织",
+  "Other entities": "其他实体",
+  "Themes": "主题",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "此图层从不捏造紧急情况。只有当灾害数据提供方（GDACS）自身发布红色警报时才会显示“紧急”；当提供方发布橙色警报，或您保存的关注项超过您自己设定的阈值时，会显示“关注”；“信息”则表示提供方发布的绿色警报、转发的观测，或语料库中近期的时空重合——这只是一个共现提示，绝非因果关系的证据。灾害记录是对所监测信息源报告内容的缓存转发（可能已过时，且仅反映来源报告的内容，并非正在发生的一切）——沉默并不代表安全。仅为计数，没有评分。"
 }

@@ -2107,5 +2107,10 @@
   "New sources": "नए स्रोत",
   "Articles awaiting indexing": "लेख अभी भी इंडेक्सिंग की प्रतीक्षा में",
   "database records, all types": "डेटाबेस रिकॉर्ड, सभी प्रकार",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "आपका कॉर्पस {sources} नए स्रोतों से {articles} लेखों से बढ़ा, जो {languages} नई भाषाओं तक फैला।"
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "आपका कॉर्पस {sources} नए स्रोतों से {articles} लेखों से बढ़ा, जो {languages} नई भाषाओं तक फैला।",
+  "People": "लोग",
+  "Orgs": "संगठन",
+  "Other entities": "अन्य इकाइयाँ",
+  "Themes": "विषय",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "यह परत कभी भी तात्कालिकता का आविष्कार नहीं करती। 'अत्यावश्यक' केवल तभी दिखाई देता है जब किसी खतरा-प्रदाता (GDACS) ने स्वयं एक लाल अलर्ट घोषित किया हो; 'निगरानी' तब दिखाई देती है जब प्रदाता का नारंगी अलर्ट हो या आपके द्वारा सहेजी गई कोई निगरानी आपकी अपनी सीमा को पार कर गई हो; 'जानकारी' प्रदाता का हरा अलर्ट, एक प्रसारित अवलोकन, या आपके कॉर्पस में हाल की स्थान-समय संयोग है — यह केवल एक सह-घटना संकेत है, कभी भी कारण का प्रमाण नहीं। खतरा रिकॉर्ड एक निगरानी किए गए फ़ीड द्वारा रिपोर्ट की गई जानकारी का संचित प्रसारण है (यह पुराना हो सकता है, और यह वही दिखाता है जो किसी स्रोत ने रिपोर्ट किया, न कि वह सब कुछ जो वास्तव में हो रहा है) — मौन का अर्थ सुरक्षा नहीं है। केवल गणना, कोई स्कोर नहीं।"
 }

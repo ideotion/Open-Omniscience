@@ -2107,5 +2107,10 @@
   "New sources": "New sources",
   "Articles awaiting indexing": "Articles awaiting indexing",
   "database records, all types": "database records, all types",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.",
+  "People": "People",
+  "Orgs": "Orgs",
+  "Other entities": "Other entities",
+  "Themes": "Themes",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score."
 }

@@ -2107,5 +2107,10 @@
   "New sources": "مصادر جديدة",
   "Articles awaiting indexing": "مقالات ما زالت بانتظار الفهرسة",
   "database records, all types": "سجلات قاعدة البيانات، جميع الأنواع",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "نمت مجموعتك بمقدار {articles} مقالة من {sources} مصادر جديدة، شملت {languages} لغة جديدة."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "نمت مجموعتك بمقدار {articles} مقالة من {sources} مصادر جديدة، شملت {languages} لغة جديدة.",
+  "People": "أشخاص",
+  "Orgs": "منظمات",
+  "Other entities": "كيانات أخرى",
+  "Themes": "مواضيع",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "هذه الطبقة لا تختلق الاستعجال أبداً. تظهر كلمة «عاجل» فقط عندما يُعلن مزوّد بيانات المخاطر (GDACS) بنفسه إنذاراً أحمر؛ وتظهر كلمة «مراقبة» عند إنذار برتقالي من المزوّد أو عند مراقبة حفظتَها أنتَ وتجاوزت حدّك الخاص؛ أما «معلومة» فهي إنذار أخضر من المزوّد، أو ملاحظة مُعاد بثّها، أو تقارب زمني-مكاني حديث في مجموعتك — وهو دافع للتحقق من التزامن، وليس دليلاً على السببية. سجلات المخاطر هي بثّ مخزّن مؤقتاً لما أبلغته خلاصة مراقبة (قد تكون قديمة، وتُظهر ما أبلغ به مصدر ما، وليس كل ما يحدث فعلياً) — الصمت ليس أماناً. أعداد فقط، دون درجة."
 }
