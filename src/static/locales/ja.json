@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "暗号化中 — データベース全体を書き直しています…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "暗号化しました。今後は起動のたびにパスフレーズが必要です — 復旧はできません。",
   "Wrong passphrase — try again.": "パスフレーズが違います — もう一度。",
+  "use at least 8 characters": "8文字以上を使用してください",
+  "passphrases do not match": "パスフレーズが一致しません",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "長くしてください — 無関係な単語をいくつか並べるほうが、一つの巧妙な単語より強力です。データベースファイルが複製されればオフラインで総当たりされ得ます。だから本当の防御は長さであって、この画面の応答速度ではありません。",
   "Database maintenance": "データベースのメンテナンス",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "コンパクト化はデータベースファイルを再構築します。削除で残った空き領域を回収し、インデックスを最適化します。所要時間はファイルサイズに比例し、実行中は収集の書き込みを一時停止します — データの解釈や削除は行いません。",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "{n} 時間前",
   "{n} d ago": "{n} 日前",
   "Law: {tracked} tracked · {changes} changes": "法律：{tracked} 件追跡中 · {changes} 件の変更",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "法律：{documents} 件追跡中 · {baselined} 件にベースラインあり · {changes} 件の変更",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "「法律」サブタブを開く — 法令・官報・知的財産記録の変更追跡。",
   "no FLAGGED changes": "フラグ付きの変更なし",
   "no changes": "変更なし",
@@ -2105,5 +2108,10 @@
   "New sources": "新しい情報源",
   "Articles awaiting indexing": "まだ索引付け待ちの記事",
   "database records, all types": "データベースレコード(全種別)",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "コーパスは{sources}件の新しい情報源から{articles}件の記事が増え、{languages}件の新しい言語に広がりました。"
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "コーパスは{sources}件の新しい情報源から{articles}件の記事が増え、{languages}件の新しい言語に広がりました。",
+  "People": "人物",
+  "Orgs": "組織",
+  "Other entities": "その他のエンティティ",
+  "Themes": "テーマ",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "この層は緊急性を捏造することはありません。「緊急」は、災害情報提供元（GDACS）自身が赤色警報を発した場合にのみ表示されます。「注意」は、提供元のオレンジ警報、またはあなた自身が保存したウォッチがあなた自身のしきい値を超えた場合に表示されます。「情報」は、提供元の緑色警報、転送された観測結果、またはコーパス内の最近の時空間的な一致を示すものであり——因果関係の証拠では決してなく、共起の手がかりに過ぎません。災害記録は、監視対象のフィードが報告した内容のキャッシュされた中継です（古くなっている可能性があり、情報源が報告した内容を示すだけで、実際に起きているすべてを示すものではありません）——沈黙は安全を意味しません。件数のみで、スコアはありません。"
 }

@@ -362,9 +362,14 @@
     // this, invisible). We show the preparing view + a ticking elapsed clock the MOMENT
     // the passphrase is submitted — never a fabricated percent, just real elapsed time
     // and the honest one-time-migration explanation.
-    let _prepTimer = null, _prepStart = 0;
+    let _prepTimer = null, _prepStart = 0, _prepPriorView = null;
     function _stopPrep() { if (_prepTimer) { clearInterval(_prepTimer); _prepTimer = null; } }
-    function _startPrep() {
+    function _startPrep(priorView) {
+      // Remember which view was on-screen before we hide it (inferable from which
+      // button was clicked -- go() passes it), so a thrown error can re-show THAT
+      // exact view instead of leaving the whole form -- and the error message
+      // trapped inside it -- hidden forever (LC-VIEW-HIDDEN-ON-ERROR).
+      _prepPriorView = priorView || null;
       ["view-unlock", "view-create", "view-open"].forEach((v) => $(v).classList.add("hidden"));
       $("view-preparing").classList.remove("hidden");
       _prepStart = Date.now();
@@ -382,16 +387,24 @@
 
     async function go(btn, fn) {
       btn.disabled = true;
-      _startPrep();  // show the preparing view + elapsed clock NOW, before the (possibly
-                     // multi-minute) synchronous init_db that runs inside fn()
+      // Show the preparing view + elapsed clock NOW, before the (possibly multi-minute)
+      // synchronous init_db that runs inside fn() -- but tell _startPrep which view is
+      // being hidden (btn.id says which form this is) so a failure can restore it.
+      _startPrep(btn.id === "btn-unlock" ? "view-unlock" : "view-create");
       try { await fn(); await waitReadyThenEnter(); }
       catch (e) {
         _stopPrep();
         const box = btn.id === "btn-unlock" ? $("msg") : $("msg2");
-        box.textContent = e.message || t("Wrong passphrase — try again.");
+        // e.message is the backend's raw detail string ("passphrases do not match",
+        // "use at least 8 characters") -- run it through t() so it renders in the
+        // user's chosen language like every other string on this page.
+        box.textContent = e.message ? t(e.message) : t("Wrong passphrase — try again.");
         btn.disabled = false;
-        // A failed prepare-wait shouldn't leave the user stuck on the preparing view.
+        // A failed prepare-wait shouldn't leave the user stuck on the preparing view --
+        // re-show whichever view _startPrep() hid so the form (and the now-visible
+        // error inside it) reappears, instead of a blank page.
         $("view-preparing").classList.add("hidden");
+        if (_prepPriorView) $(_prepPriorView).classList.remove("hidden");
       }
     }
 

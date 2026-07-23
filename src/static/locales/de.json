@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "Verschlüsselung — die gesamte Datenbank wird neu geschrieben…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Verschlüsselt. Ihre Passphrase ist nun bei jedem Start erforderlich — ohne Wiederherstellung.",
   "Wrong passphrase — try again.": "Falsche Passphrase — erneut versuchen.",
+  "use at least 8 characters": "mindestens 8 Zeichen verwenden",
+  "passphrases do not match": "die Passphrasen stimmen nicht überein",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Machen Sie sie lang — mehrere unzusammenhängende Wörter schlagen ein einzelnes raffiniertes Wort. Wird Ihre Datenbankdatei kopiert, lässt sie sich offline erraten; Länge ist daher der echte Schutz (nicht die Antwortzeit dieses Bildschirms).",
   "Database maintenance": "Datenbankwartung",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "Das Kompaktieren baut die Datenbankdatei neu auf: Es gewinnt den durch Löschungen freigewordenen Platz zurück und defragmentiert die Indizes. Die Dauer wächst mit der Dateigröße; Sammel-Schreibvorgänge pausieren währenddessen — nichts wird interpretiert oder entfernt.",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "vor {n} Std.",
   "{n} d ago": "vor {n} Tg.",
   "Law: {tracked} tracked · {changes} changes": "Recht: {tracked} verfolgt · {changes} Änderungen",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Recht: {documents} verfolgt · {baselined} mit Basisversion · {changes} Änderungen",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Den Reiter „Recht“ öffnen — Änderungsverfolgung für Gesetze, Amtsblätter und IP-Register.",
   "no FLAGGED changes": "keine MARKIERTEN Änderungen",
   "no changes": "keine Änderungen",
@@ -2105,5 +2108,10 @@
   "New sources": "Neue Quellen",
   "Articles awaiting indexing": "Artikel warten noch auf Indizierung",
   "database records, all types": "Datensätze insgesamt, alle Arten",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Ihr Korpus ist um {articles} Artikel aus {sources} neuen Quellen in {languages} neuen Sprachen gewachsen."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Ihr Korpus ist um {articles} Artikel aus {sources} neuen Quellen in {languages} neuen Sprachen gewachsen.",
+  "People": "Personen",
+  "Orgs": "Organisationen",
+  "Other entities": "Andere Entitäten",
+  "Themes": "Themen",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "Diese Ebene erfindet niemals Dringlichkeit. „Dringend“ erscheint NUR, wenn ein Gefahrenanbieter (GDACS) selbst einen ROTEN Alarm ausgelöst hat; „Beobachten“ erscheint bei einem ORANGEN Alarm des Anbieters oder einer von IHNEN gespeicherten Beobachtung, die IHREN eigenen Schwellenwert überschritten hat; „Info“ ist ein GRÜNER Alarm des Anbieters, eine weitergeleitete Beobachtung oder eine kürzliche Raum-Zeit-Konvergenz in Ihrem Korpus — ein Hinweis auf gemeinsames Auftreten, niemals ein Kausalitätsbeweis. Gefahrendatensätze sind eine zwischengespeicherte Weiterleitung dessen, was ein beobachteter Feed gemeldet hat (er kann veraltet sein und zeigt, was eine Quelle berichtet hat, nicht alles, was tatsächlich geschieht) — Stille ist keine Sicherheit. Nur Zählungen, kein Score."
 }

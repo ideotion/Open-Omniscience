@@ -186,7 +186,12 @@
 
       <!-- At-a-glance: a slim, permanent stats strip pinned to the top of Home
            (UI_SHELL_REDESIGN_PLAN §5). Populated by loadHome(). -->
-      <div class="panel home-glance">
+      <!-- home-i18n-mixed-language-glance (P1): every child here (#home-stats/
+           #home-tier/#home-status) renders itself in the active language via
+           direct OOI18N.t() calls (renderHomeStats/renderCorpusTier/renderHomeStatus)
+           -- data-i18n-dyn tells the DOM-walker to never cache their ALREADY-
+           TRANSLATED text as "the original English" (see i18n.js:doText). -->
+      <div class="panel home-glance" data-i18n-dyn>
         <div id="home-stats" class="stat-strip"><div class="muted">Loading…</div></div>
         <!-- Corpus maturity STAGE (descriptive, never a score): rides with the
              glance strip so the reader can calibrate how much weight to give the
@@ -953,11 +958,11 @@
         <div><label for="trd-window">Window (days)</label><input id="trd-window" type="number" value="7" min="1" max="365"></div>
         <div><label for="trd-base">Baseline (days)</label><input id="trd-base" type="number" value="30" min="1" max="3650"></div>
         <div><label for="trd-kind">Kind</label><select id="trd-kind">
-          <option value="">all</option><option value="term">terms</option><option value="entity">entities</option>
-          <option value="person">people</option><option value="org">orgs</option><option value="location">places</option></select></div>
+          <option value="">all</option><option value="term">terms</option><option value="entity">entities</option></select></div>
         <div><label for="trd-country">Country</label><input id="trd-country" placeholder="fr (optional)"></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="loadTrends()">Refresh</button></div>
       </div>
+      <p class="hint muted" style="margin:4px 0 0">person / org / location kinds await a future NER/gazetteer pass — the extractor does not yet assign them, so they are not offered here rather than shown as a fabricated, always-empty choice.</p>
       <div class="row" style="gap:20px;margin-top:8px">
         <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Rising</h2><div id="trd-rising"></div></div>
         <div style="flex:1;min-width:280px"><h2 style="font-size:13px">Top <span id="trd-basis"></span></h2><div id="trd-top"></div></div>
@@ -1023,10 +1028,10 @@
       <div class="row">
         <div><label for="map-days">Window (days)</label><input id="map-days" type="number" value="30" min="1" max="3650"></div>
         <div><label for="map-kind">Kind</label><select id="map-kind">
-          <option value="">all</option><option value="term">terms</option><option value="entity">entities</option>
-          <option value="person">people</option><option value="org">orgs</option><option value="location">places</option></select></div>
+          <option value="">all</option><option value="term">terms</option><option value="entity">entities</option></select></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="loadMap()">Refresh</button></div>
       </div>
+      <p class="hint muted" style="margin:4px 0 0">person / org / location kinds await a future NER/gazetteer pass — the extractor does not yet assign them, so they are not offered here rather than shown as a fabricated, always-empty choice.</p>
       <div class="hint" style="margin-top:6px">Region is the source's country/city (the reliable source-based signal).</div>
       <h2 style="margin:12px 0 6px;font-size:13px">Map (cities)</h2>
       <div class="row" style="margin-bottom:6px">
@@ -1048,7 +1053,7 @@
       <h2 style="margin-top:0;font-size:13px">Convergence <span class="muted">— same place, same window</span></h2>
       <p class="hint" style="margin-top:0">Clusters of articles that converge on the same place within a time window, on the date mentioned in the text. Independence is measured by distinct sources, not article count. Co-occurrence is never causation — a prompt to read, not proof anything happened. Click a cluster to assemble its exact article set.</p>
       <div class="row" style="align-items:center">
-        <div><label for="cv-window">Window (days)</label><input id="cv-window" type="number" value="7" min="1" max="3650" onkeydown="if(event.key==='Enter')loadConvergences()"></div>
+        <div><label for="cv-window">Window (days)</label><input id="cv-window" type="number" value="7" min="1" max="90" onkeydown="if(event.key==='Enter')loadConvergences()"></div>
         <div style="flex:0 0 auto;align-self:end"><button onclick="loadConvergences()">Refresh</button></div>
       </div>
       <div id="cv-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
@@ -1150,7 +1155,7 @@
       <div class="seg"><div class="sl">Density</div><div class="seg-toggle" id="dr-density"></div></div>
       <div class="seg"><div class="sl">Typeface</div><div class="seg-toggle wrap" id="dr-faces"></div>
         <div class="hint">Open-source fonts bundled with the app — nothing to download, nothing fetched.</div></div>
-      <div class="seg"><div class="sl">Text size · <span id="dr-font-val">100%</span></div>
+      <div class="seg"><label class="sl" for="dr-font">Text size · <span id="dr-font-val">100%</span></label>
         <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
       <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
       <!-- "Tools shown in the sidebar" checklist removed (maintainer-ruled 2026-06-22,

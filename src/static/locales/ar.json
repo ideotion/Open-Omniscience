@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "جارٍ التشفير — تُعاد كتابة قاعدة البيانات كاملة…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "تم التشفير. عبارة المرور مطلوبة الآن عند كل تشغيل — بلا استرداد.",
   "Wrong passphrase — try again.": "عبارة مرور خاطئة — حاول مجددًا.",
+  "use at least 8 characters": "استخدم 8 أحرف على الأقل",
+  "passphrases do not match": "عبارتا المرور غير متطابقتين",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "اجعلها طويلة — عدة كلمات غير مترابطة أفضل من كلمة واحدة ذكية. إذا نُسخ ملف قاعدة بياناتك فيمكن تخمينه دون اتصال؛ لذا فإن الطول هو الحماية الحقيقية (وليست سرعة رد هذه الشاشة).",
   "Database maintenance": "صيانة قاعدة البيانات",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "يعيد الضغط بناء ملف قاعدة البيانات: يستعيد المساحة التي تتركها عمليات الحذف ويزيل تجزئة الفهارس. يستغرق وقتًا يتناسب مع حجم الملف ويوقف كتابات الجمع مؤقتًا أثناء تشغيله — لا يُفسَّر أي شيء ولا يُحذف.",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "منذ {n} ساعة",
   "{n} d ago": "منذ {n} يوم",
   "Law: {tracked} tracked · {changes} changes": "القانون: {tracked} متابَع · {changes} تغييرات",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "القانون: {documents} متابَع · {baselined} بخط أساس · {changes} تغييرات",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "افتح تبويب القانون — تتبّع التغييرات في التشريعات والجرائد الرسمية وسجلات الملكية الفكرية.",
   "no FLAGGED changes": "لا تغييرات مُعلَّمة",
   "no changes": "لا تغييرات",
@@ -2105,5 +2108,10 @@
   "New sources": "مصادر جديدة",
   "Articles awaiting indexing": "مقالات ما زالت بانتظار الفهرسة",
   "database records, all types": "سجلات قاعدة البيانات، جميع الأنواع",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "نمت مجموعتك بمقدار {articles} مقالة من {sources} مصادر جديدة، شملت {languages} لغة جديدة."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "نمت مجموعتك بمقدار {articles} مقالة من {sources} مصادر جديدة، شملت {languages} لغة جديدة.",
+  "People": "أشخاص",
+  "Orgs": "منظمات",
+  "Other entities": "كيانات أخرى",
+  "Themes": "مواضيع",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "هذه الطبقة لا تختلق الاستعجال أبداً. تظهر كلمة «عاجل» فقط عندما يُعلن مزوّد بيانات المخاطر (GDACS) بنفسه إنذاراً أحمر؛ وتظهر كلمة «مراقبة» عند إنذار برتقالي من المزوّد أو عند مراقبة حفظتَها أنتَ وتجاوزت حدّك الخاص؛ أما «معلومة» فهي إنذار أخضر من المزوّد، أو ملاحظة مُعاد بثّها، أو تقارب زمني-مكاني حديث في مجموعتك — وهو دافع للتحقق من التزامن، وليس دليلاً على السببية. سجلات المخاطر هي بثّ مخزّن مؤقتاً لما أبلغته خلاصة مراقبة (قد تكون قديمة، وتُظهر ما أبلغ به مصدر ما، وليس كل ما يحدث فعلياً) — الصمت ليس أماناً. أعداد فقط، دون درجة."
 }

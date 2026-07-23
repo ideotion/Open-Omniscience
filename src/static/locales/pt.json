@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "Criptografando — todo o banco é reescrito…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Criptografado. Sua frase-senha agora é exigida a cada início — sem recuperação.",
   "Wrong passphrase — try again.": "Frase incorreta — tente novamente.",
+  "use at least 8 characters": "use pelo menos 8 caracteres",
+  "passphrases do not match": "as frases secretas não coincidem",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Faça-a longa — várias palavras não relacionadas superam uma só palavra esperta. Se o seu arquivo de banco de dados for copiado, ele pode ser adivinhado offline; por isso o comprimento é a proteção real (não a rapidez desta tela).",
   "Database maintenance": "Manutenção do banco de dados",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "A compactação reconstrói o arquivo do banco de dados: recupera o espaço deixado pelas exclusões e desfragmenta os índices. Leva um tempo proporcional ao tamanho do arquivo e pausa as gravações de coleta durante a execução — nada é interpretado ou removido.",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "há {n} h",
   "{n} d ago": "há {n} d",
   "Law: {tracked} tracked · {changes} changes": "Direito: {tracked} acompanhados · {changes} alterações",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Direito: {documents} acompanhados · {baselined} com linha de base · {changes} alterações",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Abrir o subseparador Direito — acompanhamento de alterações em leis, diários oficiais e registos de PI.",
   "no FLAGGED changes": "nenhuma alteração SINALIZADA",
   "no changes": "sem alterações",
@@ -2105,5 +2108,10 @@
   "New sources": "Novas fontes",
   "Articles awaiting indexing": "Artigos ainda aguardando indexação",
   "database records, all types": "Registros de banco de dados, todos os tipos",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Seu corpus cresceu em {articles} artigos de {sources} novas fontes, abrangendo {languages} novos idiomas."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Seu corpus cresceu em {articles} artigos de {sources} novas fontes, abrangendo {languages} novos idiomas.",
+  "People": "Pessoas",
+  "Orgs": "Organizações",
+  "Other entities": "Outras entidades",
+  "Themes": "Temas",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "Esta camada nunca inventa urgência. 'Urgente' aparece APENAS quando um provedor de riscos (GDACS) declarou, ele próprio, um alerta VERMELHO; 'vigiar' aparece para um alerta LARANJA do provedor ou uma vigilância que VOCÊ salvou e que ultrapassou o SEU próprio limite; 'info' é um alerta VERDE do provedor, uma observação repassada, ou uma convergência espaço-temporal recente no seu corpus — um indício de coocorrência, nunca prova de causalidade. Os registros de risco são um repasse em cache do que um feed monitorado relatou (pode estar desatualizado, e mostra o que uma fonte relatou, não tudo o que está acontecendo) — o silêncio não é segurança. Apenas contagens, sem pontuação."
 }

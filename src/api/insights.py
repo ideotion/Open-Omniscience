@@ -2258,6 +2258,12 @@ def insights_graph(
         None, description="explicit article-id set → a radial keyword map over that "
         "exact selection (the reader / analysis 'corpus of 1+'); overrides term/level"
     ),
+    query: str | None = Query(None, description="analysis-window search scope (same as corpus-keywords)"),
+    source: str | None = Query(None, description="analysis-window source-domain scope"),
+    language: str | None = Query(None, description="analysis-window language scope"),
+    start_date: str | None = Query(None, description="analysis-window search start (YYYY-MM-DD)"),
+    end_date: str | None = Query(None, description="analysis-window search end (YYYY-MM-DD)"),
+    tags: str | None = Query(None, description="analysis-window source-tag scope"),
     hops: int = Query(2, ge=1, le=2),
     days: int | None = Query(None, ge=1, le=3650, description="window: last N days"),
     start: str | None = Query(None, description="window start (YYYY-MM-DD)"),
@@ -2270,13 +2276,21 @@ def insights_graph(
     FAMILIES; zoom out again to curated SUPER-GROUPS. Every edge is real
     article co-occurrence with the method stated per level.
 
-    With ``article_ids`` it instead returns a RADIAL keyword map over that exact
-    article set — the reader's Mindmap tab (article = corpus of 1) and the analysis
-    window's mindmap subtab. The explicit set takes precedence over term/level."""
-    if article_ids:
+    With ``article_ids`` — OR any analysis-window search scope (``query``/``source``/
+    ``language``/``start_date``/``end_date``/``tags``, the same params every sibling
+    analysis-window endpoint accepts) — it instead returns a RADIAL keyword map over
+    exactly that corpus: the reader's Mindmap tab (article = corpus of 1), the analysis
+    window's mindmap subtab seeded by an exact article set, AND an analysis window
+    seeded by a typed query (an-mindmap-wrong-corpus-scope, P1: this endpoint used to
+    have no way to scope a term-seeded graph by anything but an explicit article_ids
+    set, so a query-seeded analysis silently got the WHOLE corpus's graph instead of
+    its own matched set). Any of these scope params takes precedence over the plain
+    corpus-wide term/level exploration below (the Insights tab's own "explore this term
+    everywhere" use of this same endpoint, which passes none of them)."""
+    if article_ids or query or source or language or start_date or end_date or tags:
         ids, _total = _resolve_corpus(
-            db, article_ids, query=None, source=None, start_date=None,
-            end_date=None, language=None, tags=None, cap=cap,
+            db, article_ids, query=query, source=source, start_date=start_date,
+            end_date=end_date, language=language, tags=tags, cap=cap,
         )
         # Cache by the exact id set so re-opening the same analysis mindmap is instant.
         return _deadlined(

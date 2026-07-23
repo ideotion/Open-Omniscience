@@ -547,8 +547,21 @@
       let left, top, side;
       if (b.right + gap + w <= window.innerWidth - pad) {   // prefer to the right of the button
         left = b.right + gap; top = b.top + b.height / 2 - h / 2; side = "left";
-      } else {                                              // else float above it
-        left = b.left; top = b.top - gap - h; side = "bottom";
+      } else {
+        // No room to the right. The coach must go BELOW the whole protected-button
+        // cluster, never above it: the topbar sits at the very top of the viewport,
+        // so placing it above the button (its top computed from the button's own
+        // top, minus the gap and the coach's height) is almost always deeply
+        // negative, and the clamp below collapses it right back into the topbar's
+        // own row -- overlapping every button in it (net-coach-blocks-topbar-buttons,
+        // P0; this was the exact, guaranteed-every-time root cause, not an
+        // occasional mispositioning). Below the union of every button the coach
+        // must never cover is the one direction structurally guaranteed to have
+        // room and to never overlap any of them.
+        const guard = ["net-toggle", "lang-switch", "tm-open", "app-shutdown"]
+          .map((id) => $(id)).filter(Boolean).map((e) => e.getBoundingClientRect());
+        const guardBottom = guard.length ? Math.max(...guard.map((r) => r.bottom)) : b.bottom;
+        left = b.left; top = guardBottom + gap; side = "below";
       }
       left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
       top = Math.max(pad, Math.min(top, window.innerHeight - h - pad));
@@ -559,9 +572,12 @@
           arrow.style.top = Math.max(8, Math.min(b.top + b.height / 2 - top - 5, h - 16)) + "px";
           arrow.style.transform = "rotate(45deg)";
         } else {
-          arrow.style.top = (h - 6) + "px";
+          // "below": the arrow must point UP at the button cluster, so it peeks out
+          // the TOP edge (mirrors the "left" case's left:-6px) -- never the bottom,
+          // which was only correct for the old, unsafe above-the-button placement.
+          arrow.style.top = "-6px";
           arrow.style.left = Math.max(8, Math.min(b.left + b.width / 2 - left - 5, w - 16)) + "px";
-          arrow.style.transform = "rotate(-45deg)";
+          arrow.style.transform = "rotate(45deg)";
         }
       }
     }
@@ -1291,6 +1307,20 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       toast(t("The app is busy — retrying shortly…"), "warn");
     }
+    // ins-convergence-window-cap-mismatch (P1, the api() half): a FastAPI/Pydantic
+    // 422 response body's `detail` is an ARRAY of {type, loc, msg} objects, which
+    // Error() string-coerces into the useless "[object Object],[object Object]" --
+    // this is the SHARED error path for essentially every call made through api(),
+    // so the fix applies everywhere a validation error can surface, not just the
+    // endpoint the finding was reported against. A plain string `detail` (or none)
+    // renders BYTE-IDENTICALLY to before -- only the Array case changes.
+    function _apiErrorMessage(data, res) {
+      const d = data && data.detail;
+      const msg = Array.isArray(d)
+        ? d.map((item) => (item && typeof item === "object" && item.msg) ? item.msg : JSON.stringify(item)).join("; ")
+        : d;
+      return msg || (res.status + " " + res.statusText);
+    }
     async function api(path, opts={}) {
       _bumpInflight(1);
       try {
@@ -1309,7 +1339,7 @@
           const text = await res.text();
           let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
           if (res.status === 503 && data && data.locked) { location.replace("/unlock"); throw new Error(data.detail); }
-          if (!res.ok) throw new Error((data && data.detail) || res.status + " " + res.statusText);
+          if (!res.ok) throw new Error(_apiErrorMessage(data, res));
           return data;
         }
       } finally { _bumpInflight(-1); }
@@ -1484,6 +1514,28 @@
     // Back/Forward navigates the tab history (render only — the URL already moved).
     window.addEventListener("popstate", () =>
       showTab((location.hash || "#home").slice(1), false));
+    // imp-ghost-modal-after-back (P1): no popstate listener anywhere closed an open
+    // <dialog> -- browser Back while e.g. #ux-export was open left the tab underneath
+    // repainted while the dialog's native modal top-layer backdrop stayed active,
+    // blocking every click with no visual cue (only Escape recovered). Close EVERY
+    // open dialog on Back/Forward via the one shared native mechanism -- this covers
+    // all of them (#ux-import/#ux-export/#chart-enlarge/#synth-window/#link-preview/
+    // #wiki-tc/#folder-picker/#net-consent/#guide-wizard/#corpus-win), not just one.
+    //
+    // A BARE .close() is not enough: per the <dialog> spec it fires only "close",
+    // never "cancel" -- and #net-consent's ensureOnline() Promise only ever resolves
+    // via its ok/cancel click handlers OR dlg.oncancel (the same for #guide-wizard's
+    // closeGuide bookkeeping, wired to "cancel"). A bare .close() would silently
+    // ORPHAN that Promise forever (every ensureOnline() caller hangs with no error),
+    // and leave the guide marked not-done. Dispatch a synthetic "cancel" first (the
+    // same signal Escape sends) so each dialog's own resolve/cleanup path runs --
+    // resolving #net-consent as `false` ("stay offline"), the same safe default as
+    // Esc -- THEN force-close (a no-op if the cancel handler already closed it).
+    window.addEventListener("popstate", () =>
+      document.querySelectorAll("dialog[open]").forEach((d) => {
+        d.dispatchEvent(new Event("cancel", {cancelable: true}));
+        d.close();
+      }));
 
     // -- Appearance / customization (local-only, never transmitted) --------- //
     const UI_KEY = "oo.ui";
@@ -1545,9 +1597,18 @@
     function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
     function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
       toast("Appearance reset to defaults."); }
+    // theme-select-lossy-overwrite (P1): the Settings -> General panel's #set-theme
+    // select is a lossy 3-way dark/light/system BUCKET of the full 17/18-theme value
+    // (Settings -> Graphics is the authoritative picker). _lastSyncedThemeBucket
+    // remembers which bucket syncThemeSelect() just assigned, so saveSettings() can
+    // tell "the user left this alone" (skip re-applying the bucket default) apart
+    // from "the user actually picked a different bucket here" (honor it).
+    let _lastSyncedThemeBucket = null;
     function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
       const lightish = ["light", "paper", "mist", "dawn", "mint"];
-      if (sel) sel.value = (t === "system" ? "system" : lightish.includes(t) ? "light" : "dark"); }
+      const bucket = (t === "system" ? "system" : lightish.includes(t) ? "light" : "dark");
+      if (sel) sel.value = bucket;
+      _lastSyncedThemeBucket = bucket; }
 
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the
@@ -2123,7 +2184,15 @@
             + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
         }).join("");
         panel.hidden = false;
-      } catch (e) { box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`; }
+      } catch (e) {
+        // home-recent-panel-hidden-on-error (P1): both SUCCESS paths above clear
+        // `hidden`, but this catch branch set an honest error message into the
+        // panel's own box while leaving the panel itself hidden -- the message was
+        // written but never shown. The panel must render its error the same way it
+        // renders any other outcome.
+        box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
+        panel.hidden = false;
+      }
     }
     // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
     // REDUNDANT by design: the past-week RISING keywords (the disclosed window-vs-
@@ -2534,6 +2603,22 @@
         card.classList.toggle("flipped");
       }
     }
+    // dblclick-opens-duplicate-analysis-tabs (P1): a fast double-click (or an
+    // accidental double-tap) on a card's "Open corpus" button fired window.open()
+    // twice at the identical URL before the first tab settled -- neither
+    // openCardCorpus nor openAnalysisInNewTab guarded against a second call for the
+    // same URL in quick succession. A single user action should be idempotent
+    // against an accidental repeat activation, so both now route through one
+    // shared debounce: a call for the SAME URL within 700ms of the last one is a
+    // no-op (a deliberate second open of a DIFFERENT corpus a moment later still
+    // works normally -- only the identical-URL-in-quick-succession case is guarded).
+    let _lastCorpusOpenUrl = "", _lastCorpusOpenAt = 0;
+    function _openCorpusUrlOnce(url) {
+      const now = Date.now();
+      if (url === _lastCorpusOpenUrl && (now - _lastCorpusOpenAt) < 700) return;
+      _lastCorpusOpenUrl = url; _lastCorpusOpenAt = now;
+      window.open(url, "_blank", "noopener");
+    }
     // Open the card's corpus IN A NEW WINDOW (maintainer 2026-06-23) — a real browser
     // tab the SPA hydrates from the URL (boot handler below), so the analysis lives
     // outside the current view. Exact set when the card carries article_ids, else the
@@ -2543,7 +2628,7 @@
       p.set("corpus", (ids || []).join(","));
       if (label) p.set("label", label);
       if (tab) p.set("tab", tab);   // item #5: land the new window on the type's best subtab
-      window.open("/?" + p.toString(), "_blank", "noopener");
+      _openCorpusUrlOnce("/?" + p.toString());
     }
     // Open a query's analysis window in a NEW BROWSER TAB (field remark 9: search +
     // Enter should open a new tab). A fresh SPA boot hydrates ?analyze= via
@@ -2553,7 +2638,7 @@
       const p = new URLSearchParams();
       p.set("analyze", q || "");
       if (tab) p.set("tab", tab);   // optional deep-link subtab (item #5); omnibar Enter omits it
-      window.open("/?" + p.toString(), "_blank", "noopener");
+      _openCorpusUrlOnce("/?" + p.toString());
     }
     function openCardCorpusQuery(q, tab) { openAnalysisInNewTab(q, tab); }
     // Route a Lead to the most useful analysis subtab for its type (item #5): a rising
@@ -2644,9 +2729,24 @@
         : "";
       const chip = `<span class="chip">${esc(c.type.replace(/_/g, " "))}</span>`;
       const _title = cardTitle(c);
-      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" tabindex="0" role="button" aria-label="${esc(_title)}" onclick="leadFlip(this,event)" onkeydown="leadFlipKey(this,event)">
+      // lead-card-nested-interactive (P1, axe): role="button" tabindex="0" on this
+      // OUTER container, while it ALSO hosted genuinely interactive descendants
+      // (the back face's buttons/links once flipped), is an invalid ARIA pattern --
+      // a "button" must not contain more focusable content. leadFlip/leadFlipKey
+      // already guarded against clicks/keys originating from a nested interactive
+      // element (so the CLICK BEHAVIOUR was already correct), but the STRUCTURE
+      // itself was wrong. Fixed by moving the interactive button role onto the
+      // FRONT face specifically (it has no interactive children of its own -- chip/
+      // heading/summary/sig-line/hint are all plain text), and giving the BACK
+      // face's own "Back" hint its own small, explicitly-scoped button instead of
+      // relying on the whole (interactive-descendant-hosting) back face being
+      // itself a button. The outer container is now role="group" -- a plain
+      // semantic wrapper, not an interactive element that could conflict with what
+      // it contains.
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" role="group" aria-label="${esc(_title)}">
         <div class="card-inner">
-          <div class="card-face card-front">
+          <div class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"
+               onclick="leadFlip(this.closest('.card'),event)" onkeydown="leadFlipKey(this.closest('.card'),event)">
             ${chip}
             <h4>${esc(_title)}</h4>
             <p class="sum">${esc(c.summary)}</p>
@@ -2670,7 +2770,13 @@
               ${collapseBtn}
               ${dismiss}
             </div>
-            <span class="lead-flip-hint back">⟲ ${esc(t("Back"))}</span>
+            <button class="lead-flip-hint back" onclick="leadFlip(this.closest('.card'))">⟲ ${esc(t("Back"))}</button>
+            <!-- the Back button intentionally omits ",event": leadFlip's own
+                 interactive-descendant guard (ev.target.closest("button,a,...")) would
+                 always match the button ITSELF (ev.target IS the button), silently
+                 blocking every flip-back click. Passing no event makes the guard's
+                 "ev &&" check false, so it falls straight to the toggle -- exactly what
+                 a dedicated, single-purpose flip-back control should do. -->
           </div>
         </div></div>`;
     }
@@ -2758,9 +2864,15 @@
     // (invariant #6e — search rows, markets, law, events, insights, reader…).
     // It never jumps straight out: it opens the local preview first. Use this
     // for every external source link so none can regress to a bare jump.
+    // evidence-links-contrast-and-no-underline (P1): these links rendered at
+    // 2.41:1 with no underline (axe: link-in-text-block) -- color alone is
+    // insufficient distinction per WCAG 1.4.1. The shared "ext-link" class
+    // (app.css) adds a permanent underline, since this IS the one shared
+    // chokepoint every evidence link renders through.
     function extLink(url, label, cls, style) {
       const u = safeUrl(url);
-      return `<a${cls ? ` class="${cls}"` : ""}${style ? ` style="${style}"` : ""} href="${esc(u)}" rel="noopener" `
+      const classes = cls ? `ext-link ${cls}` : "ext-link";
+      return `<a class="${classes}"${style ? ` style="${style}"` : ""} href="${esc(u)}" rel="noopener" `
         + `onclick="event.preventDefault();openLinkPreview('${esc(u)}')" `
         + `title="Opens the local preview first — what your database knows about this link">`
         + `${esc(label)}</a>`;
@@ -4082,13 +4194,22 @@
     // Field report 2026-07-17 (S2c): the law tracker is 2 clicks deep from the
     // Governments tab's default (Countries) view -- a small always-visible chip
     // makes it discoverable without changing the default subtab.
+    // governments-law-pointer-misleading-zero-tracked (P1): this chip used to
+    // label /api/law/status's `tracked` field (server-side: documents WITH A
+    // COMPLETED BASELINE) as "tracked" -- reading "0 tracked" on a corpus with 23
+    // real documents being watched, before any online pass has run a baseline. One
+    // click away, the Law subtab uses the SAME API response correctly, showing
+    // BOTH numbers ("23 documents tracked · 0 baselined"). Since the two concepts
+    // are legitimately distinct, the pointer now shows both too, matching that
+    // established wording exactly instead of collapsing to one misleading word.
     async function loadLawPointer() {
       const host = $("gov-law-pointer"); if (!host) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => v[k]));
       try {
         const s = await api("/api/law/status");
-        host.textContent = "⚖ " + tf("Law: {tracked} tracked · {changes} changes", { tracked: s.tracked, changes: s.changes });
+        host.textContent = "⚖ " + tf("Law: {documents} tracked · {baselined} baselined · {changes} changes",
+          { documents: s.documents, baselined: s.tracked, changes: s.changes });
         host.title = t("Open the Law subtab — change tracking for statutes, gazettes and IP records.");
       } catch (e) { host.textContent = ""; }
     }
@@ -4329,7 +4450,16 @@
           /^(https?:|\/|#)/.test(url) ? `<a href="${esc(url)}" ${url.startsWith("http") ? 'target="_blank" rel="noopener"' : ""}>${txt}</a>` : m);
       const lines = md.split("\n"), out = [];
       let i = 0;
-      const flushPara = (buf) => { if (buf.length) out.push("<p>" + buf.map(inline).join(" ") + "</p>"); };
+      // help-md-linebreak-bug (P1): calling inline() PER RAW SOURCE LINE, before
+      // joining lines together, made a **bold**/*em*/[link]() span whose markers
+      // land on different wrapped source lines invisible to the per-line regex on
+      // BOTH lines — and could make a dangling opening marker mis-pair with a
+      // LATER, unrelated marker on the second line, producing a garbled, wrongly-
+      // placed <strong>/<em> (reported in USER_MANUAL.md and the Ethics doc, ~64
+      // unrendered spans). Joining the raw lines into ONE string per paragraph
+      // BEFORE running inline() lets the regex see the whole span regardless of
+      // which source line it was wrapped on.
+      const flushPara = (buf) => { if (buf.length) out.push("<p>" + inline(buf.join(" ")) + "</p>"); };
       let para = [];
       while (i < lines.length) {
         const ln = lines[i];
@@ -4354,7 +4484,13 @@
         }
         if (/^\s*>\s?/.test(ln)) { flushPara(para); para = [];
           let q = []; while (i < lines.length && /^\s*>\s?/.test(lines[i])) { q.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
-          out.push("<blockquote>" + q.map(inline).join("<br>") + "</blockquote>"); continue; }
+          // Same cross-line fix as flushPara, but a blockquote's line breaks must
+          // stay VISIBLE (unlike a paragraph's, which collapse to one space) — join
+          // with a placeholder inline() can't possibly escape or match (esc() only
+          // touches &<>"'), run inline() on the WHOLE joined string so a span
+          // crossing a quoted line is seen as one contiguous string, THEN swap the
+          // placeholder for a real <br> after escaping/formatting has already run.
+          out.push("<blockquote>" + inline(q.join("\u0000")).replace(/\u0000/g, "<br>") + "</blockquote>"); continue; }
         if (/^\s*([-*+]|\d+\.)\s+/.test(ln)) { flushPara(para); para = [];
           const ordered = /^\s*\d+\.\s+/.test(ln); let items = [];
           while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
@@ -4966,7 +5102,13 @@
       try {
         const s = await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
         DEFAULT_LIMIT = s.default_result_limit;
-        setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");
+        // theme-select-lossy-overwrite (P1): only apply the General panel's 3-way
+        // bucket if the user actually changed it HERE since it was last synced --
+        // else every Save (of unrelated preferences) silently collapsed a named
+        // Graphics theme (e.g. "midnight") down to its bucket's plain default.
+        if ($("set-theme").value !== _lastSyncedThemeBucket) {
+          setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");
+        }
         toast("Preferences saved.");
       } catch (e) { toast("Save failed: " + e.message, "err"); }
     }
@@ -9504,6 +9646,11 @@
     let _landscapeLoaded = false;
     async function loadLandscape(force) {
       if (_landscapeLoaded && !force) return;
+      // insights-landscape-headers-hardcoded (P1): _KIND_GROUPS' labels
+      // (People/Orgs/Places/Other entities/Themes) were injected with no t()
+      // wrapper anywhere below, so they stayed hardcoded English regardless of
+      // the active UI language.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("ins-landscape");
       box.innerHTML = '<div class="muted" style="margin-top:8px">Loading…</div>';
       try {
@@ -9522,7 +9669,7 @@
               title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
               onclick="pickTerm(${esc(JSON.stringify(f.term))})">${esc(f.term)}${kwTransHtml(f)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
           }).join("");
-          return `<div class="ls-col"><div class="ls-h">${g.label} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
+          return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");
         box.innerHTML = `<div class="ls-grid">${cols}</div>`;
       } catch (e) { box.innerHTML = `<div class="muted" style="margin-top:8px">Could not load: ${esc(e.message)}</div>`; }
@@ -12726,6 +12873,14 @@
         };
         const render = () => {
           hint.textContent = HINTS[mode] || "";
+          // mkt-002-stale-caveat-scale-toggle (P1): the static #chart-enlarge-note
+          // set once above (from the caller's own `caveat` — for the Commodities
+          // family-stacked view, a fixed "Indexed to 100 at the window start…"
+          // string) never refreshed on a scale-toggle click, so switching to
+          // Absolute or Log left a note directly contradicting the now-accurate
+          // dynamic hint just above it. The note now mirrors the same per-mode
+          // HINTS text as the dynamic hint, so the two can never disagree.
+          if (note) { note.textContent = HINTS[mode] || caveat || ""; note.style.display = ""; }
           ooChart(host, seriesList, {height: 360, maxWidth: 880, indexed: mode === "indexed", logY: mode === "log"});
         };
         ctl.addEventListener("click", (e) => {
@@ -13253,11 +13408,25 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const W = MAP_W, H = MAP_H;
       // Reset the ⛶ glyph/title when fullscreen exits (Esc or the button). Wired once.
+      // worldmap-fullscreen-hides-legend-caveat (P1): fullscreen used to target
+      // .oomap-wrap specifically (the SVG + in-map controls only) -- but
+      // .oomap-legend, the method hint, and the caveat div are SIBLINGS of
+      // .oomap-wrap, not descendants, so the browser natively hid all three the
+      // moment fullscreen engaged (a fullscreen element shows only its own
+      // subtree). `host` (the caller's dedicated map container, e.g.
+      // #oo-coverage-map) already wraps EVERYTHING this render produces --
+      // .oomap-wrap, .oomap-legend, the method hint, and the caveat -- and
+      // nothing unrelated, so targeting it instead shows the whole map
+      // including its caveat while fullscreen. Verified this does not depend on
+      // .oomap-wrap being the exact fullscreen root: the viewBox zoom/pan math
+      // operates purely on the SVG's own viewBox attribute (ancestor-
+      // independent), and the CSS `.mm-big` fallback class is a generic
+      // fixed-position overlay that works on any element.
       if (!host._ooFsWired) {
         host._ooFsWired = true;
         document.addEventListener("fullscreenchange", () => {
           const fsBtn = host.querySelector('[data-oomap="big"]'); if (!fsBtn) return;
-          const on = document.fullscreenElement === host.querySelector(".oomap-wrap");
+          const on = document.fullscreenElement === host;
           fsBtn.textContent = on ? "🗗" : "⛶";
           fsBtn.title = on ? t("Exit fullscreen") : t("Enlarge the map");
         });
@@ -13280,15 +13449,16 @@
         else if (a === "big") {
           // TRUE fullscreen (field test 2026-06-19 #12), with a CSS fallback for
           // browsers without the API. The in-map ⛶ stays the visible exit control
-          // (clicking it again exits); Esc also exits natively.
-          const w = host.querySelector(".oomap-wrap"); if (!w) return;
+          // (clicking it again exits); Esc also exits natively. Targets `host`
+          // itself (see the worldmap-fullscreen-hides-legend-caveat comment above)
+          // so the legend/method/caveat stay visible in fullscreen too.
           try {
-            if (document.fullscreenElement === w) { document.exitFullscreen(); }
-            else if (w.requestFullscreen) {
-              w.requestFullscreen().then(() => { b.title = t("Exit fullscreen"); b.textContent = "🗗"; })
-                .catch(() => w.classList.toggle("mm-big"));
-            } else { w.classList.toggle("mm-big"); }
-          } catch (_e) { w.classList.toggle("mm-big"); }
+            if (document.fullscreenElement === host) { document.exitFullscreen(); }
+            else if (host.requestFullscreen) {
+              host.requestFullscreen().then(() => { b.title = t("Exit fullscreen"); b.textContent = "🗗"; })
+                .catch(() => host.classList.toggle("mm-big"));
+            } else { host.classList.toggle("mm-big"); }
+          } catch (_e) { host.classList.toggle("mm-big"); }
         }
         else { vb = { x: 0, y: 0, w: W, h: H }; apply(); }
       }));
@@ -13685,7 +13855,7 @@
         </div>
         ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
-          ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "text-decoration:none;align-self:center") : ""}
+          ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center") : ""}
           ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
         </div>
         ${(() => {
@@ -14234,7 +14404,7 @@
         </div>
         ${s.note?`<div class="hint" style="margin-top:5px">${esc(s.note)}</div>`:""}
         <div class="row" style="margin-top:7px;gap:8px">
-          ${url?extLink(url, "Official / reference source ↗", "tiny secondary", "text-decoration:none;align-self:center"):""}
+          ${url?extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center"):""}
           ${cov?`<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>`:""}
         </div>
         ${(() => {
@@ -16264,9 +16434,12 @@
         if (!top) {
           mm.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
         } else {
-          const gp = new URLSearchParams();
+          // an-mindmap-wrong-corpus-scope (P1): clone the analysis window's OWN scope
+          // (article_ids, or query/source/language/date-range) instead of a fresh,
+          // scope-less params object — else the mindmap silently reverted to a
+          // corpus-wide keyword graph for every seeded/searched analysis.
+          const gp = new URLSearchParams(p);
           gp.set("level", "keyword"); gp.set("term", top); gp.set("hops", "2");
-          for (const k of ["days", "start", "end"]) { const v = p.get(k); if (v) gp.set(k, v); }
           const g = await api("/api/insights/graph?" + gp.toString());
           renderAnMindmap(g, mm);
         }
@@ -17309,6 +17482,15 @@
         const tbl = $("src-table");
         if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
       } catch (_e) {}
+      // home-lead-title-frozen-locale (P1): renderBriefing() (Home Leads + the
+      // corpus-tier badge it renders internally via renderCorpusTier) builds
+      // OOI18N.tf()-templated titles that were never re-rendered on a language
+      // switch, so any Lead card title stayed frozen in whatever locale was active
+      // when it last rendered. Re-fetch+re-render only if the briefing has actually
+      // loaded at least once (_lastBriefGen is set the first time renderBriefing
+      // runs); the endpoint is server-cached (~30s) and dismissal is server-tracked,
+      // so re-fetching never resurrects a dismissed card.
+      try { if (_lastBriefGen !== null && typeof loadBriefing === "function") loadBriefing(); } catch (_e) {}
       // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
       try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
       // Re-render the AI prompt editor (remark 13): its labels are auto-translated by the
@@ -17496,6 +17678,19 @@
     // showTab itself maps legacy aliases (#database -> #library) and falls back.
     showTab((location.hash || "#home").slice(1), false);  // initial render: replace, don't push
 
+    // THEME-3: restore the spawned analysis-tab strip (data loads lazily) -- this MUST
+    // run BEFORE _hydrateCardCorpus() below (analysis-boot-race-destroys-tab-workspace,
+    // P1): _hydrateCardCorpus()'s ?corpus=/?analyze= spawn calls _anSpawn() ->
+    // _anActivate() -> _anSaveTabs(), which OVERWRITES the persisted 'oo.an.tabs.v1'
+    // localStorage key with only the just-spawned tab. Restoring the PREVIOUSLY
+    // persisted tabs FIRST means the deep-linked seed gets ADDED to that restored set
+    // (via _anSpawn's own dedup-by-key check, which reuses a matching tab in place
+    // rather than duplicating it) instead of clobbering it -- so opening the omnibar
+    // in successive new browser tabs actually accumulates a multi-tab workspace via
+    // its real, documented entry point, instead of every fresh tab always showing
+    // exactly the one query it was seeded with.
+    _anRestoreTabs();
+
     // Deep-link a Lead's corpus opened "in a new window" (maintainer 2026-06-23): a
     // card's back button does window.open("/?corpus=1,2,3&label=…"); this fresh SPA
     // tab hydrates the analysis over that exact set (or ?analyze=<seed> for a query
@@ -17536,7 +17731,6 @@
     if (_anBootTab && document.getElementById("an-" + _anBootTab)) {
       _anSubtabs.select(_anBootTab); _anBootTab = null;
     }
-    _anRestoreTabs();   // THEME-3: restore the spawned analysis-tab strip (data loads lazily)
 
     // Click the EMPTY space of the sidebar (not a nav item / button / link) to
     // collapse / expand it (remark 15) — the same toggle as the #sb-collapse /

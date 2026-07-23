@@ -260,6 +260,97 @@ def test_article_view_shows_co_citation(tmp_path):
         app.dependency_overrides.clear()
 
 
+def test_article_view_related_and_dup_badge_read_keyword_mentions(tmp_path):
+    """P0 fix (reader-dead-legacy-table-related) + its OPT bonus
+    (reader-dupbadge-n-plus-1-decrypt-risk): the reader's 'Related in your corpus'
+    list and the near-dup '~N' badge must read KeywordMention -- the table the real
+    per-article ingest chokepoint (src/analytics/store.index_article) actually
+    writes -- not the legacy article_keyword_association table, which has zero
+    writers anywhere in the live ingest path and always yielded an empty candidate
+    set. Seeds three verbatim near-duplicate articles from three different
+    outlets (differing only by a bracketed source tag, matching the finding's own
+    repro) through the REAL index_article ingestion path -- never raw SQL -- so the
+    KeywordMention rows are the genuine article ever writes."""
+    from src.analytics.extract import BaselineExtractor
+    from src.analytics.store import index_article
+    from src.database.session import get_db
+
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'related.db'}",
+        future=True,
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    # A long shared body so word-shingle MinHash similarity clears the 0.7
+    # near-dup threshold despite the few differing title tokens below.
+    shared_body = (
+        "The ministry announced a sweeping new policy on coastal infrastructure "
+        "funding today, citing climate resilience and regional development goals "
+        "as the central justification for the multi-year program of public works "
+        "it intends to deliver across the northern provinces over the coming "
+        "decade and beyond. Officials said the plan would also expand port "
+        "capacity, modernize rail links and strengthen flood defenses in "
+        "low-lying communities that have repeatedly suffered storm damage in "
+        "recent years, while independent analysts cautioned that financing "
+        "details remain unresolved and depend on parliamentary approval expected "
+        "later this year."
+    )
+    with Sess() as s:
+        for i in (1, 2, 3):
+            s.add(Source(name=f"Outlet {i}", domain=f"outlet{i}.test"))
+        s.commit()
+        arts = []
+        for i in (1, 2, 3):
+            art = Article(
+                url=f"https://outlet{i}.test/central-bank",
+                canonical_url=f"https://outlet{i}.test/central-bank",
+                source_id=i,
+                title=f"Coastal infrastructure policy unveiled [Outlet {i}]",
+                content=shared_body,
+                hash=f"cb{i}",
+                language="en",
+                created_at=datetime.now(UTC),
+            )
+            s.add(art)
+            s.commit()
+            arts.append(art)
+        ex = BaselineExtractor()
+        for art in arts:
+            index_article(s, art, extractor=ex, country="fr")
+        s.commit()
+
+    def _db():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+
+    app.dependency_overrides[get_db] = _db
+    try:
+        with TestClient(app) as client:
+            r = client.get("/api/articles/1/view")
+            assert r.status_code == 200
+            body = r.text
+            # "Related in your corpus" now correctly lists the two near-identical
+            # siblings, ranked by shared extracted keywords -- not the honest-
+            # looking-but-wrong empty state the dead legacy table used to force.
+            assert "Related in your corpus" in body
+            assert "No related articles yet" not in body
+            assert "/api/articles/2/view" in body
+            assert "/api/articles/3/view" in body
+            assert "shared keyword" in body
+            # The inline near-dup "~N" badge fires: all 3 outlets are one cluster.
+            assert 'class="dup-pill"' in body
+            assert "≈3" in body  # "≈3" -- the cluster's full member count
+            assert "Show the copies" in body
+    finally:
+        app.dependency_overrides.clear()
+
+
 def _engine_with_article(tmp_path, name):
     engine = create_engine(
         f"sqlite:///{tmp_path / name}", future=True, connect_args={"check_same_thread": False}

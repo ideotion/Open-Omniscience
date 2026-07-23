@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "Encrypting — this rewrites the whole database…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Encrypted. Your passphrase is now required at every start — there is no recovery.",
   "Wrong passphrase — try again.": "Wrong passphrase — try again.",
+  "use at least 8 characters": "use at least 8 characters",
+  "passphrases do not match": "passphrases do not match",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).",
   "Database maintenance": "Database maintenance",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "{n} h ago",
   "{n} d ago": "{n} d ago",
   "Law: {tracked} tracked · {changes} changes": "Law: {tracked} tracked · {changes} changes",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Law: {documents} tracked · {baselined} baselined · {changes} changes",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Open the Law subtab — change tracking for statutes, gazettes and IP records.",
   "no FLAGGED changes": "no FLAGGED changes",
   "no changes": "no changes",
@@ -2105,5 +2108,10 @@
   "New sources": "New sources",
   "Articles awaiting indexing": "Articles awaiting indexing",
   "database records, all types": "database records, all types",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.",
+  "People": "People",
+  "Orgs": "Orgs",
+  "Other entities": "Other entities",
+  "Themes": "Themes",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score."
 }

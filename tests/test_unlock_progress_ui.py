@@ -34,12 +34,15 @@ def test_elapsed_clock_shown_immediately_on_submit() -> None:
     html = _unlock()
     assert "function _startPrep(" in html, "no _startPrep helper"
     # _startPrep must be called in go() BEFORE the (possibly multi-minute) fn() await,
-    # otherwise the synchronous init_db stays invisible.
+    # otherwise the synchronous init_db stays invisible. It also takes the view that
+    # is currently on-screen (derived from btn.id) so a thrown error can re-show that
+    # exact view instead of leaving the whole form hidden forever (LC-VIEW-HIDDEN-ON-ERROR).
     go = html.index("async function go(")
     end = html.index("document.addEventListener", go)
     body = html[go:end]
-    assert "_startPrep();" in body
-    assert body.index("_startPrep();") < body.index("await fn()"), "prep must show BEFORE the POST"
+    prep_call = '_startPrep(btn.id === "btn-unlock" ? "view-unlock" : "view-create");'
+    assert prep_call in body, "go() must tell _startPrep which view it is currently hiding"
+    assert body.index(prep_call) < body.index("await fn()"), "prep must show BEFORE the POST"
 
 
 def test_no_fabricated_percent() -> None:

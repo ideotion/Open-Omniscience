@@ -2214,11 +2214,22 @@ def test_ui_invariants():
         "the method must render on the card back (the flip replaced the per-card '?')"
     )
     # Clicking flips; the standardized, family-themed button opens the corpus IN A NEW WINDOW.
-    assert "function leadFlip(" in html and 'onclick="leadFlip(this,event)"' in card_html, (
-        "clicking a Lead card must flip it (maintainer 2026-06-23)"
+    # lead-card-nested-interactive (P1, GUI-test finding): the flip trigger moved from
+    # the outer .card (now a plain role="group" wrapper) onto the front face
+    # specifically, resolving the ancestor .card via closest() -- see
+    # test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role for the
+    # full structural regression coverage of this restructuring.
+    assert "function leadFlip(" in html and "leadFlip(this.closest('.card'),event)" in card_html, (
+        "clicking a Lead card's front face must flip it (maintainer 2026-06-23)"
     )
-    assert "function openCardCorpus(" in html and 'window.open("/?"' in html, (
+    # corpus-open-dblclick-duplicate-tabs (P1): the direct window.open() moved into the
+    # shared _openCorpusUrlOnce() debounce (a same-URL open within 700ms is a no-op) --
+    # openCardCorpus still opens a real new window at "/?...", just through that helper.
+    assert "function openCardCorpus(" in html and '_openCorpusUrlOnce("/?" + p.toString())' in html, (
         "the back's 'Open corpus' button must open the card's corpus in a new window"
+    )
+    assert "function _openCorpusUrlOnce(url)" in html and 'window.open(url, "_blank", "noopener")' in html, (
+        "_openCorpusUrlOnce (the shared double-click debounce) must still perform a real window.open"
     )
     assert 'class="lead-open"' in card_html, "the back needs the standardized themed open-corpus button"
     assert "_hydrateCardCorpus" in html and '"corpus"' in html, (
@@ -2627,6 +2638,60 @@ def test_net_coach_suppressed_while_the_wizard_is_open():
     assert "dismissNetCoach(false)" in guide_fn, (
         "openGuide must hide an already-showing coach NON-permanently (it may still "
         "teach a later session where the guide won't reopen)"
+    )
+
+
+def test_net_coach_never_places_above_the_topbar_row():
+    """GUI-test findings net-coach-blocks-topbar-buttons (P0) + netcoach-blocks-lang-switch
+    (P1, same root cause): _placeCoach()'s fallback branch (used whenever there is no room
+    to the right of #net-toggle) computed `top = b.top - gap - h`, placing the coach ABOVE
+    the button. Because the topbar sits at the very top of the viewport, that value is
+    almost always deeply negative, and the subsequent clamp (`Math.max(pad, ...)`) always
+    collapsed it right back down to `pad` -- landing the coach back inside the topbar's own
+    row, overlapping #net-toggle/#lang-switch/#tm-open/#app-shutdown every single time this
+    branch ran (verified live: document.elementFromPoint() at each button's center resolved
+    to the coach, not the button, and a real Playwright .click() timed out). The fallback
+    now places the coach BELOW the union of every button it must never cover -- the one
+    direction structurally guaranteed to have room near a top-anchored topbar -- confirmed
+    live: at both 1400px (room to the right, "left" branch) and 900px (no room, "below"
+    branch forced), all four buttons independently resolve document.elementFromPoint() to
+    themselves while the coach is showing."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("function _placeCoach() {", 1)[1].split("\n    }\n", 1)[0]
+    assert "top = b.top - gap - h" not in fn, (
+        "the old always-fails-near-the-topbar fallback (place above the single button, "
+        "then clamp) must be gone"
+    )
+    assert '"net-toggle", "lang-switch", "tm-open", "app-shutdown"' in fn, (
+        "the fallback must compute a union rect over ALL FOUR protected buttons, not just "
+        "the one #net-toggle it points at"
+    )
+    assert "guardBottom + gap" in fn, (
+        "the fallback must place the coach BELOW the guard-button union (never above), the "
+        "one direction guaranteed to have room near a top-anchored topbar"
+    )
+
+
+def test_topbar_wraps_instead_of_overflowing():
+    """GUI-test findings topbar-overflow-mobile-375-net-toggle-unreachable (P0) +
+    topbar-overflow-mainstream-widths (P1): .topbar was `display:flex` with the default
+    `flex-wrap:nowrap` and no bounding media query anywhere in the stylesheet, so
+    documentElement.scrollWidth exceeded clientWidth at every mainstream breakpoint down
+    to 375px, pushing the airplane toggle (the sole informed-consent gate), the language
+    switcher, the task-manager button, and the shutdown button off-screen with zero
+    scroll affordance. flex-wrap:wrap lets the row grow additional rows instead of forcing
+    horizontal overflow -- confirmed live at 1400/1024/768/601px (documentElement.scrollWidth
+    == clientWidth, all four buttons on-screen and clickable at every width; #app-shutdown
+    wraps to its own second row at 601px). NOTE: at 375px a SEPARATE, previously-undiscovered
+    overflow source was found in Home's .panel.home-glance / #home-stats.stat-strip flex row
+    (unrelated to the topbar; its own root cause and fix are out of scope here and are
+    recorded as a fresh follow-up, not silently absorbed into this fix) -- this test pins
+    only the topbar's OWN contribution, which is what these two findings are about."""
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    topbar_rule = css.split(".topbar {", 1)[1].split("}", 1)[0]
+    assert "flex-wrap:wrap" in topbar_rule.replace(" ", ""), (
+        ".topbar must wrap onto additional rows instead of forcing horizontal overflow "
+        "at narrow viewports"
     )
 
 
@@ -5111,6 +5176,70 @@ def test_unlock_enters_when_queryable_not_after_full_upkeep():
     )
 
 
+def test_unlock_error_reshows_the_form_and_is_translated():
+    """GUI-test finding LC-VIEW-HIDDEN-ON-ERROR (P0) + LC-ERROR-TEXT-UNTRANSLATED
+    (P2, bonus, unmasked by the P0 fix): go(btn, fn) -- shared by #btn-unlock and
+    #btn-create -- called _startPrep(), which unconditionally hid
+    view-unlock/view-create/view-open and showed view-preparing BEFORE fn()
+    resolved. On a thrown error the catch block wrote the message into the msg box
+    and hid view-preparing again, but never re-showed whichever view _startPrep()
+    had hidden -- the whole form (with the error trapped inside it) stayed
+    invisible, leaving a blank page (confirmed live: document.body.innerText was
+    empty after a too-short-passphrase submit). _startPrep now takes the caller's
+    priorView (inferable from btn.id, which go() already has) and remembers it in
+    _prepPriorView; the catch block re-shows that exact view. The error text
+    itself (the backend's raw HTTPException detail -- "use at least 8 characters" /
+    "passphrases do not match") is also now run through t() instead of assigned
+    verbatim, so it renders in the user's chosen language like every other string
+    on this page."""
+    unlock = (_ROOT / "src" / "static" / "unlock.html").read_text(encoding="utf-8")
+
+    prep = unlock.split("function _startPrep(", 1)[1].split("\n    }\n", 1)[0]
+    assert prep.startswith("priorView) {"), (
+        "_startPrep must accept the caller's priorView so it can be restored later"
+    )
+    assert "_prepPriorView = priorView || null;" in prep, (
+        "_startPrep must remember which view was active before hiding it"
+    )
+
+    go_fn = unlock.split("async function go(btn, fn) {", 1)[1].split("\n      }\n", 1)[0]
+    assert (
+        '_startPrep(btn.id === "btn-unlock" ? "view-unlock" : "view-create");' in go_fn
+    ), "go() must tell _startPrep which view is being hidden (inferred from btn.id)"
+
+    catch_block = go_fn.split("catch (e) {", 1)[1]
+    assert '$("view-preparing").classList.add("hidden");' in catch_block, (
+        "the catch block must still hide the preparing view on failure"
+    )
+    hide_idx = catch_block.index('$("view-preparing").classList.add("hidden");')
+    reshow = 'if (_prepPriorView) $(_prepPriorView).classList.remove("hidden");'
+    assert reshow in catch_block, (
+        "the catch block must re-show whichever view _startPrep() hid, or the form "
+        "(and the error message inside it) stays invisible forever"
+    )
+    assert catch_block.index(reshow) > hide_idx, (
+        "the prior view must be re-shown AFTER view-preparing is hidden, not before"
+    )
+    assert 'box.textContent = e.message ? t(e.message) : t(' in catch_block, (
+        "the backend's raw error detail must be run through t() so it translates "
+        "(bare `e.message ||` left it hardcoded English regardless of locale)"
+    )
+
+    # The two backend HTTPException details (src/api/unlock.py: "use at least 8
+    # characters", "passphrases do not match") must be keyable -- present, and
+    # actually translated (not just echoed back as English), in every locale.
+    import json
+
+    for code in (
+        "ar", "bn", "de", "en", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh",
+    ):
+        data = json.loads((_SRC / "static" / "locales" / f"{code}.json").read_text(encoding="utf-8"))
+        for key in ("use at least 8 characters", "passphrases do not match"):
+            assert key in data and data[key], f"{code}.json is missing a translation for {key!r}"
+            if code != "en":
+                assert data[key] != key, f"{code}.json left {key!r} untranslated (verbatim English)"
+
+
 def test_llm_catalog_tags_are_pullable_and_embeddings_labelled():
     """Every suggested model must be PULLABLE — its tag has to satisfy the same
     strict regex the /api/llm/pull endpoint enforces (src/api/llm.py:_MODEL_RE), so
@@ -5967,3 +6096,772 @@ def test_rate_mode_knob_in_top_bar_and_maximum_default():
     assert "#rate-toggle.rate-max" in css and "var(--accent)" in css.split(
         "#rate-toggle.rate-max", 1
     )[1][:200], "the maximum state paints with the theme accent (never a hardcoded hue)"
+
+
+def test_font_size_slider_has_an_accessible_label():
+    """GUI-test finding font-size-slider-missing-label (P0, axe: label, critical):
+    the Settings > Graphics 'Text size' range slider (#dr-font) had its visible label
+    text sitting in a plain, unassociated <div class="sl">, so a screen-reader user
+    tabbing to the slider heard only "slider, 88 to 124" with no indication of what it
+    controls. Fixed by turning the wrapping element into a real <label for="dr-font">
+    (same visual result via the unchanged .sl class; a <label> may wrap other markup
+    like the live-percentage <span>), matching this file's own established convention
+    for range sliders (see #mm-size / #sch-speed, both driven by a <label for=...>)."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert '<label class="sl" for="dr-font">' in html, \
+        "the Text-size label must be a real <label for=\"dr-font\">, not a bare div"
+    # The old, unassociated markup must be gone from directly before the input.
+    assert '<div class="sl">Text size' not in html, \
+        "the old unassociated <div class=\"sl\">Text size...</div> must not survive"
+
+
+def test_analysis_tab_restore_runs_before_the_deep_link_hydration():
+    """GUI-test finding analysis-boot-race-destroys-tab-workspace (P1): opening the
+    omnibar in successive NEW browser tabs never accumulated a multi-tab analysis
+    workspace -- every fresh tab showed only the one query it was just seeded with.
+    Root cause: _anRestoreTabs() (restores the PERSISTED oo.an.tabs.v1 tab strip) ran
+    AFTER the ?corpus=/?analyze= deep-link hydration IIFE, whose _anSpawn() ->
+    _anActivate() -> _anSaveTabs() OVERWRITES that same localStorage key with only the
+    just-spawned tab before the restore ever reads it. Fix: restore FIRST, so the
+    deep-linked seed is ADDED (via _anSpawn's dedup-by-key reuse) to the restored set
+    instead of clobbering it."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    restore_at = app.index("_anRestoreTabs();")
+    hydrate_at = app.index("(function _hydrateCardCorpus() {")
+    assert restore_at < hydrate_at, \
+        "_anRestoreTabs() must run BEFORE the _hydrateCardCorpus deep-link IIFE, " \
+        "or a fresh-tab deep link clobbers the persisted multi-tab workspace"
+    # The old post-hydration restore call site must not linger as a second call.
+    assert app.count("_anRestoreTabs();") == 1, \
+        "_anRestoreTabs() must be called exactly once at boot (no duplicate call site)"
+
+
+def test_corpus_window_open_is_debounced_against_double_clicks():
+    """GUI-test finding corpus-open-dblclick-duplicate-tabs (P1): a fast double-click
+    on a card/keyword that opens its corpus in a new tab (openCardCorpus /
+    openAnalysisInNewTab) fired window.open() twice, leaving two duplicate browser
+    tabs for the same corpus. Fixed with a shared _openCorpusUrlOnce() debounce (a
+    same-URL open within 700ms is swallowed) that both call sites route through
+    instead of calling window.open() directly."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _openCorpusUrlOnce(url)" in app, "the shared debounce helper must exist"
+    debounce_fn = app.split("function _openCorpusUrlOnce(url) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "_lastCorpusOpenUrl" in debounce_fn and "_lastCorpusOpenAt" in debounce_fn
+    assert "700" in debounce_fn, "the debounce window must be present"
+    assert "window.open(url" in debounce_fn, "the helper must still perform the real open"
+
+    for fn_name in ("openCardCorpus", "openAnalysisInNewTab"):
+        body = app.split(f"function {fn_name}(", 1)[1].split("\n    }\n", 1)[0]
+        assert "_openCorpusUrlOnce(" in body, \
+            f"{fn_name} must route its window.open through the shared debounce"
+        assert "window.open(" not in body, \
+            f"{fn_name} must not call window.open directly (bypasses the debounce)"
+
+
+def test_saving_unrelated_settings_never_silently_overwrites_a_named_theme():
+    """GUI-test finding theme-select-lossy-overwrite (P1): the Settings -> General
+    panel's #set-theme select is a lossy 3-way dark/light/system BUCKET of the full
+    17/18-theme value (Settings -> Graphics is the authoritative picker). saveSettings()
+    used to unconditionally re-apply that bucket's plain default on EVERY Save click --
+    so picking "Midnight" in Graphics, then saving an unrelated preference in General
+    (e.g. the result-limit), silently collapsed the theme back to plain "ink". Fixed by
+    tracking which bucket syncThemeSelect() last assigned (_lastSyncedThemeBucket) and
+    only re-applying the select's value in saveSettings() when it has actually CHANGED
+    since -- i.e. the user picked a different bucket in General themselves."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "_lastSyncedThemeBucket" in app, "the last-synced-bucket tracker must exist"
+
+    sync_fn = app.split("function syncThemeSelect() {", 1)[1].split("\n    }\n", 1)[0]
+    assert "_lastSyncedThemeBucket = bucket" in sync_fn, \
+        "syncThemeSelect() must record the bucket it just assigned"
+
+    save_fn = app.split("async function saveSettings() {", 1)[1].split("\n    }\n", 1)[0]
+    assert '$("set-theme").value !== _lastSyncedThemeBucket' in save_fn, \
+        "saveSettings() must gate the theme re-apply on an ACTUAL change to the select"
+    # The unconditional call this fix replaced must not linger as an unguarded duplicate.
+    unconditional = 'setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");'
+    assert save_fn.count(unconditional) <= 1, \
+        "the theme re-apply must not run unconditionally anywhere in saveSettings()"
+    if unconditional in save_fn:
+        guard_at = save_fn.index('$("set-theme").value !== _lastSyncedThemeBucket')
+        call_at = save_fn.index(unconditional)
+        assert guard_at < call_at, "the guard must wrap the call, not merely precede it unrelatedly"
+
+    # loadSettings()'s first-run seeding (guarded by the localStorage check) is
+    # DELIBERATELY untouched by this fix -- it must stay exactly as guarded.
+    load_fn = app.split("async function loadSettings() {", 1)[1].split("\n      } catch", 1)[0]
+    assert 'if (!localStorage.getItem(UI_KEY)) {' in load_fn, \
+        "loadSettings()'s guarded first-run theme seed must survive unmodified"
+    guard_at = load_fn.index("if (!localStorage.getItem(UI_KEY)) {")
+    seed_at = load_fn.index('setTheme({dark:"ink", light:"light", system:"system"}[s.theme] || "ink")')
+    sync_at = load_fn.index("syncThemeSelect();")
+    assert guard_at < seed_at < sync_at, \
+        "the first-run seed must stay wrapped by its localStorage guard, before syncThemeSelect()"
+
+
+def test_popstate_closes_every_open_dialog():
+    """GUI-test finding imp-ghost-modal-after-back (P1): no popstate listener anywhere
+    closed an open <dialog> -- browser Back while e.g. #ux-export was open left the tab
+    underneath repainted while the dialog's native modal top-layer backdrop stayed
+    active, blocking every click with no visual cue (only Escape recovered). Fixed with
+    one shared popstate listener that closes EVERY open <dialog> via the native
+    mechanism, not a hardcoded id list -- so it covers every dialog in the app, present
+    and future.
+
+    A bare .close() alone was insufficient -- an adversarial skeptic pass on this
+    fix (mandatory for a shared-infrastructure change) found it would ORPHAN
+    #net-consent's ensureOnline() Promise forever (per the <dialog> spec, .close()
+    fires only "close", never "cancel"; that Promise resolves ONLY via its ok/cancel
+    click handlers or dlg.oncancel) and skip #guide-wizard's closeGuide bookkeeping
+    (wired to "cancel" too). Fixed by dispatching a synthetic "cancel" event (the
+    same signal Escape sends) BEFORE the force-close, so every dialog's own
+    resolve/cleanup path runs first."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'new Event("cancel", {cancelable: true})' in app, \
+        "a synthetic cancel must be dispatched so each dialog's own resolve/cleanup runs"
+    assert 'document.querySelectorAll("dialog[open]").forEach((d) => {' in app, \
+        "a popstate handler must act on every open <dialog>, not a hardcoded subset"
+    close_all_at = app.index('document.querySelectorAll("dialog[open]").forEach((d) => {')
+    handler_block = app[close_all_at:close_all_at + 300]
+    assert 'd.dispatchEvent(new Event("cancel"' in handler_block, \
+        "the cancel dispatch must happen inside the per-dialog forEach callback"
+    assert "d.close();" in handler_block, \
+        "the dialog must still be force-closed after the cancel dispatch"
+    dispatch_at = handler_block.index("d.dispatchEvent(")
+    close_at = handler_block.index("d.close();")
+    assert dispatch_at < close_at, \
+        "cancel must be dispatched BEFORE the force-close, so listeners see it first"
+    preceding = app[max(0, close_all_at - 250):close_all_at]
+    assert 'window.addEventListener("popstate"' in preceding, \
+        "the close-every-dialog call must be wired directly to a popstate listener"
+
+    # Every dialog present in the markup must be reachable by the generic selector
+    # (a plain <dialog id=...>, never something that would escape "dialog[open]").
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    dialog_ids = re.findall(r'<dialog id="([\w-]+)"', html)
+    assert len(dialog_ids) >= 8, "sanity: expected several <dialog> elements in the markup"
+    for did in dialog_ids:
+        assert f'<dialog id="{did}"' in html, did
+
+
+def test_api_error_handles_a_pydantic_validation_array_detail():
+    """GUI-test finding ins-convergence-window-cap-mismatch (P1, the api() half): a
+    FastAPI/Pydantic 422 response body's `detail` is an ARRAY of {type, loc, msg}
+    objects, which `new Error(...)` string-coerces into the useless
+    "[object Object],[object Object]" -- this is the SHARED error path for
+    essentially every call made through api(), so the fix must not be scoped
+    narrowly to one endpoint. Fixed via a small _apiErrorMessage(data, res) helper:
+    an Array detail is joined from each item's .msg (or JSON.stringify as a
+    fallback); a plain string detail (or none at all) must render BYTE-IDENTICALLY
+    to the old expression."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _apiErrorMessage(data, res)" in app, "the shared helper must exist"
+    fn = app.split("function _apiErrorMessage(data, res) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "Array.isArray(d)" in fn, "it must specifically branch on an Array detail"
+    assert "item.msg" in fn and "JSON.stringify(item)" in fn, \
+        "array items must prefer .msg, falling back to JSON.stringify"
+    assert 'res.status + " " + res.statusText' in fn, \
+        "the no-detail-at-all fallback (status + statusText) must be preserved"
+
+    # The throw site must route through the helper, not the old inline expression.
+    assert "throw new Error(_apiErrorMessage(data, res));" in app, \
+        "the !res.ok throw must call the shared helper"
+    assert 'throw new Error((data && data.detail) || res.status + " " + res.statusText)' not in app, \
+        "the old inline (never-Array-aware) expression must not linger as a duplicate"
+
+
+def test_home_briefing_re_renders_on_language_switch():
+    """GUI-test finding home-lead-title-frozen-locale (P1): the 'oo:langchange'
+    listener re-rendered the world map / sources table / airplane-button title /
+    AI-prompt editor on a language switch, but never re-rendered the Home briefing
+    (renderBriefing, which also calls renderCorpusTier internally) -- so any
+    OOI18N.tf()-built Home Lead-card title stayed frozen in whatever locale was
+    active when it last rendered. Fixed by re-fetching+re-rendering the briefing
+    in that same listener, gated on _lastBriefGen (only once the briefing has
+    actually loaded at least once, so a fresh boot never fires an unnecessary
+    fetch before Home was ever opened)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    listener = app.split('document.addEventListener("oo:langchange", () => {', 1)[1] \
+                  .split("\n    });\n", 1)[0]
+    assert "_lastBriefGen !== null" in listener, \
+        "the re-render must be gated on the briefing having actually loaded once"
+    assert "loadBriefing()" in listener, \
+        "the langchange listener must re-fetch+re-render the Home briefing"
+
+
+def test_insights_landscape_kind_group_labels_are_translated():
+    """GUI-test finding insights-landscape-headers-hardcoded (P1): _KIND_GROUPS
+    built label:"Themes"/"Other entities"/"People"/"Orgs"/"Places" and injected
+    ${g.label} with no t() wrapper anywhere in loadLandscape() -- so the Insights
+    -> landscape column headers stayed hardcoded English regardless of the active
+    UI language. Fixed by wrapping the label in esc(t(...)), matching the
+    surrounding code's escaping convention, plus keying the 4 labels that were not
+    already translatable ("Places" alone already had a key) across all 12 locales."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = app.split("async function loadLandscape(force) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "esc(t(g.label))" in fn, \
+        "the column header must render through esc(t(...)), matching the surrounding code"
+    assert re.search(r"\bconst t = \(window\.OOI18N", fn), \
+        "loadLandscape() must declare the local t() alias like every other renderer"
+
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    for label in ("People", "Orgs", "Other entities", "Themes", "Places"):
+        assert label in en, f"{label!r} must be a keyed, translatable string"
+
+
+def test_home_glance_panel_is_excluded_from_the_i18n_dom_walker():
+    """GUI-test finding home-i18n-mixed-language-glance (P1): the i18n DOM-walker
+    caches each text node's FIRST-SEEN value as "the original English" in a
+    WeakMap; renderHomeStats()/renderCorpusTier()/renderHomeStatus() rebuild
+    #home-stats/#home-tier/#home-status DIRECTLY via t() calls (correctly, for
+    whatever language is active at that instant) -- but if the debounced
+    MutationObserver's own apply() pass ever fires AFTER one of those renders, it
+    permanently caches that ALREADY-TRANSLATED string as the node's "original",
+    poisoning every future lookup for that node under every OTHER language (an
+    Arabic-rendered node never matches a French map again). Fixed by marking the
+    whole .home-glance panel data-i18n-dyn (the existing attribute-level opt-out
+    convention, extended to text nodes) so the DOM-walker never touches or caches
+    anything inside it -- those renderers already translate themselves."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'<div class="panel home-glance"[^>]*\bdata-i18n-dyn\b', html), \
+        ".home-glance must be marked data-i18n-dyn so its self-translating children " \
+        "are never cached/poisoned by the DOM-walker"
+
+    i18n_js = (_SRC / "static" / "i18n.js").read_text(encoding="utf-8")
+    do_text_fn = i18n_js.split("function doText(n) {", 1)[1].split("\n  }\n", 1)[0]
+    assert 'p.closest("[data-i18n-dyn]")' in do_text_fn, \
+        "doText() must skip (never cache) text nodes inside a data-i18n-dyn ancestor"
+    # The skip must come BEFORE the first-seen-wins cache write, or it's a no-op.
+    skip_at = do_text_fn.index('p.closest("[data-i18n-dyn]")')
+    cache_at = do_text_fn.index("origText.set(n, o)")
+    assert skip_at < cache_at, \
+        "the data-i18n-dyn skip must run BEFORE the node is ever cached"
+
+
+def test_hazard_caveat_is_translated_across_all_locales():
+    """GUI-test finding hazard-caveat-untranslated (P1): the Home hazard-lens
+    disclosure box's long explanatory paragraph (server-emitted ALERT_CAVEAT,
+    src/analytics/alerts.py) had ZERO matching key in ar/fr/de/es/zh/ja (0/6
+    hit on the exact English source string) -- so only the short "Alerts"
+    headline translated; the caveat itself always rendered in English regardless
+    of locale, since the i18n DOM-walker can only translate a dynamically-
+    injected server string when it exactly matches a known key. Fixed by adding
+    the missing key + AI-drafted translation (flagged for native review, per the
+    project's standing convention) across all 12 locale files."""
+    alerts_py = (_SRC / "analytics" / "alerts.py").read_text(encoding="utf-8")
+    assert "ALERT_CAVEAT = (" in alerts_py, "the server-side caveat constant must exist"
+    caveat = alerts_py.split("ALERT_CAVEAT = (", 1)[1].split(")\n", 1)[0]
+    # Reconstruct the exact Python-concatenated string the same way Python would.
+    import ast
+    key = ast.literal_eval("(" + caveat + ")")
+    assert key.startswith("This layer never invents urgency."), \
+        "sanity: the extracted caveat text must be the expected string"
+
+    import json
+    locales_dir = _SRC / "static" / "locales"
+    for lang in ("en", "ar", "bn", "de", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        data = json.loads((locales_dir / f"{lang}.json").read_text(encoding="utf-8"))
+        assert key in data, f"{lang}.json is missing the hazard-caveat key"
+        assert data[key], f"{lang}.json has an empty translation for the hazard-caveat key"
+
+
+def test_severe_contrast_findings_fixed_across_all_17_themes():
+    """GUI-test findings pillwarn-severe-contrast + chip-button-color-contrast (both
+    P1, axe colour-contrast): (1) .pill.warn and .nav-item.adv .badge rendered their
+    text in var(--warn) directly -- a colour tuned for dot/border ACCENTS, not body
+    text -- measuring as low as 1.87:1 on Dawn/Paper/Solar. (2) button/a.btnlike/
+    .an-facet[aria-pressed="true"] render white text (the OLD --accent-fg default)
+    on an accent-coloured background, measuring 2.89:1 on the default "ink" theme
+    alone. Fixed by (1) a dedicated --warn-fg text-safe colour (mirroring the
+    existing --caveat pattern: --warn itself is untouched for non-text dot/border
+    uses) and (2) changing the DEFAULT --accent-fg to a near-black, with the
+    themes that already passed with white (light/paper/mint) and the one other
+    failing theme (dawn) pinning their own explicit override so the default change
+    never silently regresses an already-passing theme. This test recomputes the
+    real WCAG contrast ratio (mirroring the --lvl-group/--lvl-super precedent in
+    test_circle_grammar_level_marking_is_wired_and_contrast_verified) for the
+    ACTUAL rendering context of each fixed colour, across all 17 themes:
+    --warn-fg against both .pill's background (--panel2) and the sidebar's
+    background the .nav-item.adv .badge sits on (--bg2); --accent-fg against its
+    own --accent (the button/.btnlike/.an-facet background)."""
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+
+    # Structural: --warn stays untouched for non-text uses; --warn-fg is the new,
+    # separate text-safe colour used by the two fixed text contexts.
+    assert re.search(r"--warn-fg\s*:\s*#[0-9a-fA-F]{3,6}", css), \
+        "--warn-fg must exist as a real (non-color-mix) hex colour in :root"
+    assert ".pill.warn{ color:var(--warn-fg)" in css.replace(" ", "") or \
+        ".pill.warn{color:var(--warn-fg)" in css.replace(" ", ""), \
+        ".pill.warn must render its text via --warn-fg, not --warn"
+    assert ".nav-item.adv .badge { color:var(--warn-fg)" in css, \
+        ".nav-item.adv .badge must render its text via --warn-fg, not --warn"
+
+    # 17 themes: (accent, accent_fg [FINAL resolved value: root default or the
+    # theme's own explicit override], panel2, bg2, warn_fg [FINAL resolved value]).
+    themes = {
+        "ink":       ("#5b9dd9", "#0a0f16", "#1b212b", "#0f1218", "#d9a441"),
+        "slate":     ("#7aa2f7", "#0a0f16", "#1e2531", "#11151c", "#d9a441"),
+        "midnight":  ("#8b7dff", "#0a0f16", "#171c3c", "#0b0e22", "#d9a441"),
+        "terminal":  ("#36d97a", "#04140b", "#0e1619", "#06090c", "#d9a441"),
+        "sepia":     ("#d8a657", "#241a0c", "#2f2820", "#201911", "#d9a441"),
+        "contrast":  ("#ffd400", "#000000", "#161616", "#000000", "#ffd400"),
+        "light":     ("#2f6fb3", "#ffffff", "#f3f5f9", "#e6eaf0", "#7a4308"),
+        "paper":     ("#9a6a2f", "#ffffff", "#f1ebdc", "#ebe5d6", "#7a4308"),
+        "arctic":    ("#88c0d0", "#0b1216", "#1e242c", "#12161b", "#d9a441"),
+        "solar":     ("#b58900", "#002b36", "#0a4150", "#00313d", "#d9a441"),
+        "forest":    ("#6fbf73", "#0a140b", "#19231a", "#0f150f", "#d9a441"),
+        "aubergine": ("#c084fc", "#160e20", "#231b30", "#150f1d", "#d9a441"),
+        "garnet":    ("#d96c7f", "#1c0d12", "#291a20", "#191014", "#d9a441"),
+        "cyber":     ("#22d3ee", "#04121a", "#131830", "#090c15", "#d9a441"),
+        "mist":      ("#5e81ac", "#0a0f16", "#eff2f6", "#e4e8ee", "#7a4308"),
+        "dawn":      ("#b4637a", "#000000", "#f2e9e1", "#f4ece2", "#7a4308"),
+        "mint":      ("#2e7d5b", "#ffffff", "#ecf2ed", "#e4ece6", "#7a4308"),
+    }
+    assert len(themes) == 17
+
+    # Every hex value above must actually appear in the CSS as the resolved value
+    # for that theme (catches a copy-paste slip in this test's own fixture data,
+    # and catches a future colour edit that silently drifts from what's tested).
+    root_block = css.split(":root {", 1)[1]
+    depth = 1
+    end = 0
+    for i, ch in enumerate(root_block):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    root_block = root_block[:end]
+    assert "--accent-fg:#0a0f16" in root_block.replace(" ", ""), \
+        "the default --accent-fg must be the near-black fix value"
+    assert "--warn-fg:#d9a441" in root_block.replace(" ", ""), \
+        "the default --warn-fg must exist in :root"
+
+    # normalise 3-digit shorthand (#fff) to 6-digit for comparison
+    def _norm(h):
+        h = h.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        return "#" + h.lower()
+
+    for theme, (_, accent_fg, _, _, warn_fg) in themes.items():
+        if theme == "ink":
+            continue  # ink IS the :root default, already checked above
+        sel = f'html[data-theme="{theme}"]'
+        assert sel in css, f"theme selector {sel!r} must exist"
+        block = css.split(sel, 1)[1].split("}", 1)[0]
+        # accent-fg: either explicitly overridden (any hex incl. 3-digit shorthand),
+        # or absent -> correctly falling through to the new :root default.
+        m = re.search(r"--accent-fg\s*:\s*(#[0-9a-fA-F]{3,6})", block)
+        resolved_accent_fg = m.group(1) if m else "#0a0f16"
+        assert _norm(resolved_accent_fg) == _norm(accent_fg), (
+            f"{theme}: expected resolved --accent-fg {accent_fg}, CSS resolves to "
+            f"{resolved_accent_fg}"
+        )
+        m2 = re.search(r"--warn-fg\s*:\s*(#[0-9a-fA-F]{3,6})", block)
+        resolved_warn_fg = m2.group(1) if m2 else "#d9a441"
+        assert _norm(resolved_warn_fg) == _norm(warn_fg), (
+            f"{theme}: expected resolved --warn-fg {warn_fg}, CSS resolves to "
+            f"{resolved_warn_fg}"
+        )
+
+    def hx(h):
+        h = h.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+    def lin(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    def rel_lum(rgb):
+        r, g, b = rgb
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+    def contrast(c1, c2):
+        l1, l2 = rel_lum(hx(c1)), rel_lum(hx(c2))
+        lighter, darker = max(l1, l2), min(l1, l2)
+        return (lighter + 0.05) / (darker + 0.05)
+
+    AA_TEXT_MIN = 4.5
+    worst = 999.0
+    for name, (accent, accent_fg, panel2, bg2, warn_fg) in themes.items():
+        c_accent = contrast(accent_fg, accent)
+        c_warn_panel2 = contrast(warn_fg, panel2)
+        c_warn_bg2 = contrast(warn_fg, bg2)
+        worst = min(worst, c_accent, c_warn_panel2, c_warn_bg2)
+        assert c_accent >= AA_TEXT_MIN, (
+            f"{name}: --accent-fg vs --accent (button/a.btnlike/an-facet text) = "
+            f"{c_accent:.2f} < {AA_TEXT_MIN}:1"
+        )
+        assert c_warn_panel2 >= AA_TEXT_MIN, (
+            f"{name}: --warn-fg vs --panel2 (.pill.warn text) = {c_warn_panel2:.2f} "
+            f"< {AA_TEXT_MIN}:1"
+        )
+        assert c_warn_bg2 >= AA_TEXT_MIN, (
+            f"{name}: --warn-fg vs --bg2 (sidebar .badge text) = {c_warn_bg2:.2f} "
+            f"< {AA_TEXT_MIN}:1"
+        )
+    assert worst >= AA_TEXT_MIN  # sanity: the loop above already asserted every case
+
+    # A nested de-emphasised count (e.g. a Home chip's article-count span) must
+    # inherit the now-fixed button text colour rather than the page-level --muted
+    # tone (calibrated for a PANEL background, not an accent-coloured button).
+    assert re.search(
+        r"button:not\(\.secondary\):not\(\.danger\):not\(\.ghost\):not\(\.lead-open\) \.muted,\s*"
+        r"a\.btnlike \.muted,\s*"
+        r"\.an-facet\[aria-pressed=\"true\"\] \.muted \{ color:inherit; \}",
+        css,
+    ), "a nested .muted count inside an accent-background control must inherit its parent's (fixed) text colour"
+
+
+def test_evidence_links_underlined_and_use_the_shared_extlink_class():
+    """GUI-test finding evidence-links-contrast-and-no-underline (P1, axe
+    link-in-text-block): every outbound "source ↗" evidence link renders through
+    the ONE shared extLink() chokepoint (invariant #6e) and relied on colour ALONE
+    (accent text, no underline) to distinguish itself from surrounding body text --
+    WCAG 1.4.1 requires more than colour for a link inside a text block. Fixed by
+    always prefixing the "ext-link" class in extLink() and giving that class a
+    permanent underline in CSS, removing the two inline text-decoration:none
+    overrides that would otherwise have defeated it."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+
+    fn = js.split("function extLink(url, label, cls, style) {", 1)[1].split("\n    }\n", 1)[0]
+    assert '"ext-link"' in fn or "'ext-link'" in fn, \
+        "extLink() must always attach the ext-link class regardless of the caller's own cls"
+    assert "a.ext-link { text-decoration:underline" in css, \
+        "the shared .ext-link class must render a permanent underline"
+
+    # The two call sites that used to defeat the underline via an inline style
+    # must no longer carry text-decoration:none.
+    assert "text-decoration:none;align-self:center" not in js, \
+        "no extLink() call site may re-introduce an inline text-decoration:none override"
+    assert js.count('extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center")') >= 2, \
+        "both temporal-map/insights source-link call sites must keep their style but drop the override"
+
+
+def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
+    """GUI-test finding lead-card-nested-interactive (P1, axe nested-interactive):
+    the outer Home Lead-card container was role="button" tabindex="0" while ALSO
+    hosting genuinely interactive descendants (links/buttons on the back face once
+    flipped) -- an invalid ARIA pattern (axe flagged 23 nodes). Fixed by making the
+    outer container a plain role="group" wrapper (never itself interactive), moving
+    the flip-trigger role/tabindex onto the FRONT face specifically (which has no
+    interactive descendants of its own -- chip/heading/summary/sig-line/hint are
+    all plain text), and giving the back's own "Back" hint its own small,
+    explicitly-scoped <button> instead of relying on the whole (button/link-hosting)
+    back face being itself a button."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    card_html = js.split("function cardHtml(", 1)[1].split("\n    function ", 1)[0]
+
+    # The outer container is a plain, non-interactive group wrapper -- exact-string
+    # match so no tabindex/onclick/role="button" can sneak back onto it.
+    assert (
+        '<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" role="group" '
+        'aria-label="${esc(_title)}">'
+    ) in card_html, (
+        'the outer .card container must be role="group" with NO tabindex/onclick '
+        "(those now live on the front face specifically)"
+    )
+
+    # The front face (no interactive descendants of its own) carries the sole
+    # flip-trigger role/tabindex/handlers, resolving the ancestor .card via closest().
+    assert (
+        'class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"'
+    ) in card_html, "the FRONT face must carry the flip-trigger role/tabindex"
+    assert (
+        "onclick=\"leadFlip(this.closest('.card'),event)\" "
+        "onkeydown=\"leadFlipKey(this.closest('.card'),event)\""
+    ) in card_html, "the front face's handlers must resolve to the ancestor .card via closest()"
+
+    # The back's flip-back hint is now a real, explicitly-scoped <button> (not a
+    # bare <span> that relied on an interactive-role ancestor it shared with other
+    # buttons on the same face).
+    assert (
+        '<button class="lead-flip-hint back" onclick="leadFlip(this.closest(\'.card\'))">'
+    ) in card_html, "the back's flip-back hint must be its own dedicated <button>"
+
+    # Regression proof for the guard-defeats-itself trap: leadFlip's own
+    # interactive-descendant guard (`ev.target.closest("button,a,input,label,
+    # details,summary")`) would ALWAYS match a click whose event.target IS a
+    # button -- so the Back button's own onclick call correctly OMITS the event
+    # argument (falling through the "ev &&" guard check straight to the toggle)
+    # rather than passing it and silently defeating its own click.
+    lead_flip_fn = js.split("function leadFlip(card, ev) {", 1)[1].split("\n    }\n", 1)[0]
+    assert 'ev.target.closest("button,a,input,label,details,summary")' in lead_flip_fn, \
+        "sanity: leadFlip's interactive-descendant guard must still exist"
+    assert "leadFlip(this.closest('.card'))" in card_html and \
+        "leadFlip(this.closest('.card'),event)" in card_html, (
+        "the Back button must call leadFlip WITHOUT an event arg (bypassing its own "
+        "guard, which would otherwise match the button being clicked); the front "
+        "face must still pass the event (so its OWN interactive-descendant guard "
+        "keeps protecting the flip from stray clicks bubbling up from elsewhere)"
+    )
+
+
+def test_governments_law_pointer_shows_both_tracked_and_baselined():
+    """GUI-test finding governments-law-pointer-misleading-zero-tracked (P1): the
+    Governments -> Countries subtab's always-visible '(scales) Law: N tracked · M
+    changes' discoverability pointer labelled /api/law/status's `tracked` field as
+    the total tracked-document count, but that field server-side counts only
+    documents WITH A COMPLETED BASELINE (`LawDocument.baseline_text IS NOT NULL`)
+    -- reading '0 tracked' on a corpus with 23 real documents being watched across
+    8 jurisdictions, before any online pass has run a baseline. One click away, the
+    Law subtab uses the SAME API response correctly ('23 documents tracked · 0
+    baselined'). Since the two concepts are legitimately distinct, the pointer now
+    shows BOTH numbers, matching that established wording exactly rather than
+    collapsing to one misleading word."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("async function loadLawPointer() {", 1)[1].split("\n    }\n", 1)[0]
+
+    # documents (the real tracked-document count) and tracked (the API's own,
+    # baseline-only field) are BOTH read and BOTH shown, distinctly labelled.
+    assert "s.documents" in fn, "the pointer must read the real tracked-document count"
+    assert "baselined: s.tracked" in fn, (
+        "the API's `tracked` field (baseline-only) must be relabelled 'baselined' "
+        "in the pointer, matching the Law subtab's own established wording"
+    )
+    assert (
+        'tf("Law: {documents} tracked · {baselined} baselined · {changes} changes"'
+    ) in fn, "the pointer must show both numbers, distinctly labelled"
+    # The stale, misleading single-word template must not linger as the live text.
+    assert 'tf("Law: {tracked} tracked · {changes} changes"' not in fn, (
+        "the old collapsed-to-one-word template must no longer be used live"
+    )
+
+    import json
+
+    new_key = "Law: {documents} tracked · {baselined} baselined · {changes} changes"
+    locales_dir = _SRC / "static" / "locales"
+    for lang in ("en", "ar", "bn", "de", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        data = json.loads((locales_dir / f"{lang}.json").read_text(encoding="utf-8"))
+        assert data.get(new_key), f"{lang}.json is missing the new law-pointer template key"
+
+
+def test_convergence_window_input_max_matches_the_backend_cap():
+    """GUI-test finding ins-convergence-window-cap-mismatch (P1, the <input> max
+    half -- the api()-error-message half already shipped in Phase 5): the
+    Insights -> Convergence 'Window (days)' input's HTML max="3650" invited a
+    value the backend (GET /api/insights/convergences, window_days: Query(...,
+    le=90)) would reject with a 422 -- reproduced live, entering 365 (well within
+    the field's own stated range) surfaced a confusing error. The input's max now
+    matches the real backend cap exactly, so the field never invites a value it
+    will refuse."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    api_py = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
+
+    m = re.search(r'id="cv-window"[^>]*\bmax="(\d+)"', html)
+    assert m, "the #cv-window input must exist with a max attribute"
+    html_max = int(m.group(1))
+
+    # Several endpoints in this file declare their own "window_days: int = Query(...)"
+    # with DIFFERENT le= caps (30/365/90) -- scope the search to the /convergences
+    # endpoint specifically, not the first occurrence in the whole file.
+    fn_src = api_py.split("def insights_convergences(", 1)[1].split("\ndef ", 1)[0]
+    m2 = re.search(r"window_days:\s*int\s*=\s*Query\([^)]*\ble=(\d+)", fn_src)
+    assert m2, "the /convergences endpoint's window_days Query(...) le= cap must exist"
+    backend_max = int(m2.group(1))
+
+    assert html_max == backend_max, (
+        f"#cv-window's max ({html_max}) must equal the backend's real cap "
+        f"({backend_max}) so the field never invites a value the API will reject"
+    )
+
+
+def test_trends_and_map_kind_selects_offer_only_functional_options():
+    """GUI-test finding ins-kind-filter-nonfunctional-options (P1): the Insights ->
+    Trends (#trd-kind) and the legacy Map tab's (#map-kind) 'Kind' selects both
+    still listed person/orgs/places options the extractor never assigns --
+    GET /api/insights/map?kind=person returned honestly-empty {countries:[],
+    cities:[]} on the identical corpus/window that kind="" populated. The sibling
+    Families subtab's own #fam-kind select already restricts itself to functional
+    kinds and shows an explicit honesty hint explaining why; both selects now
+    match that established pattern instead of offering a fabricated, always-empty
+    choice."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+    for sel_id in ("trd-kind", "map-kind"):
+        block = html.split(f'id="{sel_id}"', 1)[1].split("</select>", 1)[0]
+        for bad in ("person", "org", "location"):
+            assert f'value="{bad}"' not in block, (
+                f"#{sel_id} must not offer the non-functional '{bad}' option "
+                "(the extractor never assigns it)"
+            )
+        assert 'value=""' in block and 'value="term"' in block and 'value="entity"' in block, (
+            f"#{sel_id} must keep its functional options (all/term/entity)"
+        )
+
+    # Both selects carry the same honesty hint Families already established.
+    hint = (
+        "person / org / location kinds await a future NER/gazetteer pass — the "
+        "extractor does not yet assign them, so they are not offered here rather "
+        "than shown as a fabricated, always-empty choice."
+    )
+    assert html.count(hint) >= 3, (
+        "the honesty hint must appear for Families (already shipped) AND both "
+        "newly-fixed selects (Trends + the legacy Map tab)"
+    )
+
+
+def test_home_recent_panel_unhides_on_error_too():
+    """GUI-test finding home-recent-panel-hidden-on-error (P1): loadHomeRecentList()'s
+    catch(e) branch wrote an honest error message into the panel's own inner box
+    but never cleared #home-recent-panel's own `hidden` attribute (the static
+    markup starts `<section ... id="home-recent-panel" hidden>`, and only the two
+    SUCCESS paths -- the honest empty state and the populated rows -- toggled it
+    visible) -- so a genuine fetch failure silently disappeared instead of showing
+    its own honest message."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("async function loadHomeRecentList(tag) {", 1)[1].split("\n    }\n", 1)[0]
+
+    catch_block = fn.split("} catch (e) {", 1)[1]
+    assert "panel.hidden = false;" in catch_block, (
+        "the catch branch must clear panel.hidden too, matching both success paths"
+    )
+    # sanity: the error message is still written into the panel's own inner box.
+    assert "box.innerHTML" in catch_block
+
+
+def test_chart_enlarge_note_refreshes_on_scale_toggle():
+    """GUI-test finding mkt-002-stale-caveat-scale-toggle (P1): the Commodities
+    enlarge dialog's dynamic scale hint (Absolute/Indexed/Log) updated correctly
+    on toggle, but a SEPARATE static caption (#chart-enlarge-note, set once at
+    dialog-open time from the caller's own caveat -- for the family-stacked
+    Commodities view, a fixed 'Indexed to 100 at the window start…' string) never
+    refreshed, so switching to Absolute or Log left it directly contradicting the
+    now-accurate dynamic hint a few lines above. The note now mirrors the same
+    per-mode HINTS text inside the same render() the scale-toggle click handler
+    calls, so the two can never disagree."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("function chartEnlarge(title, seriesList, caveat, opts) {", 1)[1].split(
+        "\n    function _chartEnlargeExtra", 1)[0]
+
+    render_block = fn.split("const render = () => {", 1)[1].split("};", 1)[0]
+    assert "hint.textContent = HINTS[mode]" in render_block, (
+        "sanity: the dynamic hint's own per-mode refresh must still exist"
+    )
+    assert "note.textContent = HINTS[mode]" in render_block, (
+        "the static note must refresh to the SAME per-mode text inside the same "
+        "render() the scale-toggle click handler calls"
+    )
+    # The click handler's only job is to update `mode` then call render() -- the
+    # note refresh must live INSIDE render(), not be a second, separately-wired
+    # update that could drift out of sync again.
+    click_block = fn.split('ctl.addEventListener("click", (e) => {', 1)[1].split("});", 1)[0]
+    assert "note.textContent" not in click_block, (
+        "the note refresh must live inside render(), reached via the single "
+        "render() call at the end of the click handler -- not duplicated here"
+    )
+    assert "render();" in click_block
+
+
+def test_worldmap_fullscreen_targets_host_so_legend_and_caveat_stay_visible():
+    """GUI-test finding worldmap-fullscreen-hides-legend-caveat (P1): the World
+    map's fullscreen button targeted .oomap-wrap specifically (the SVG + in-map
+    controls) via requestFullscreen(), but .oomap-legend, the method hint, and the
+    caveat div are SIBLINGS of .oomap-wrap, not descendants -- a fullscreen
+    element shows only its own subtree, so the browser natively hid all three
+    while fullscreen. `host` (the caller's dedicated map container, e.g.
+    #oo-coverage-map) already wraps .oomap-wrap AND .oomap-legend AND the method/
+    caveat and nothing unrelated, so fullscreen now targets `host` instead."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("function _wireOoMap(host, opts) {", 1)[1].split("\n    function ", 1)[0]
+
+    # The three fullscreen call sites must all resolve against `host` directly,
+    # never re-query .oomap-wrap as a narrower fullscreen target.
+    assert "document.fullscreenElement === host" in fn
+    assert "host.requestFullscreen" in fn
+    assert 'host.querySelector(".oomap-wrap")' not in fn, (
+        "fullscreen must no longer target the narrower .oomap-wrap div"
+    )
+
+    # Sanity: .oomap-legend/method/caveat really are siblings of .oomap-wrap under
+    # `host` (never descendants of it) -- confirms `host` is the correct wider
+    # container and this isn't fixing a problem that doesn't exist.
+    render_fn = js.split('host.innerHTML = `<div class="oomap-wrap"', 1)[1].split(
+        "host._ooSigVisible", 1)[0]
+    assert 'class="oomap-legend"' in render_fn
+    wrap_region = render_fn.split("</div>", 1)[0]
+    assert 'class="oomap-legend"' not in wrap_region, (
+        "sanity: .oomap-legend must be OUTSIDE the first (.oomap-wrap) closing div"
+    )
+
+
+def test_markdown_bold_span_survives_a_source_line_break():
+    """GUI-test finding help-md-linebreak-bug (P1): mdToHtml()'s paragraph AND
+    blockquote handling called its inline-emphasis formatter PER RAW SOURCE LINE
+    (buf.map(inline).join(...)) before joining lines together, so a **bold**/
+    *em*/[link]() span whose opening and closing markers land on different
+    wrapped source lines was invisible to the per-line regex on BOTH lines --
+    and could make a dangling opening marker mis-pair with a LATER, unrelated
+    marker on the second line, producing a garbled, wrongly-placed <strong>
+    (reported in USER_MANUAL.md and the Ethics doc, ~64 unrendered spans).
+    Joining the raw lines into ONE string per paragraph/blockquote BEFORE
+    running inline() lets the regex see the whole span regardless of which
+    source line it was wrapped on."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("function mdToHtml(md) {", 1)[1].split("\n    function humanBytes", 1)[0]
+
+    # Paragraphs: inline() must run on the WHOLE joined string, never per-line.
+    assert "inline(buf.join(" in fn, (
+        "flushPara must join the raw lines into one string BEFORE calling inline(), "
+        "not call inline() per line and join the (already-processed) results"
+    )
+    assert "buf.map(inline)" not in fn, (
+        "the old per-line inline() call (which could never see a span crossing "
+        "two source lines) must be gone"
+    )
+
+    # Blockquotes: the SAME join-before-inline fix, but a quote's line breaks must
+    # stay VISIBLE -- verified via the literal (non-raw-byte) six-character escape
+    # sequence used as a placeholder that inline()/esc() can neither escape nor
+    # accidentally match, swapped for a real <br> only AFTER inline() has run.
+    assert "inline(q.join(" in fn, (
+        "the blockquote handler must join its lines into one string BEFORE "
+        "calling inline(), matching flushPara's fix"
+    )
+    assert "q.map(inline)" not in fn, (
+        "the old per-line inline() call for blockquotes must be gone"
+    )
+    placeholder = chr(92) + "u0000"  # the literal 6-char escape sequence, computed
+    assert placeholder in fn, (
+        "the blockquote fix must use a real placeholder marker (never a plain "
+        "space, which would also match every genuine space in the quoted text)"
+    )
+
+    # Byte-level sanity: the fix must be an ESCAPED source-text sequence, never an
+    # actual embedded NUL byte in the file.
+    raw_bytes = (_SRC / "static" / "app.js").read_bytes()
+    assert b"\x00" not in raw_bytes, "app.js must never contain a literal NUL byte"
+
+    # Runtime proof (mirrors mdToHtml's own regex set exactly): a bold span
+    # spanning two lines renders as ONE correctly-wrapped <strong>, not a garbled
+    # mis-pairing with an unrelated later marker on the second line.
+    import re as _re
+
+    def esc_(s):
+        return _re.sub(r'[&<>"\']', lambda m: {"&": "&amp;", "<": "&lt;", ">": "&gt;",
+                                                 '"': "&quot;", "'": "&#39;"}[m.group(0)], s)
+
+    def inline_(t):
+        t = esc_(t)
+        t = _re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        t = _re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", t)
+        t = _re.sub(r"(^|[^*])\*([^*]+)\*", r"\1<em>\2</em>", t)
+        return t
+
+    buf = ["Some **important text that", "continues here** and also **another** bold phrase."]
+    buggy_per_line = " ".join(inline_(x) for x in buf)
+    fixed_joined_first = inline_(" ".join(buf))
+    assert "<strong> and also </strong>another**" in buggy_per_line, (
+        "sanity: the OLD per-line approach really did mis-pair (proves this is a real bug)"
+    )
+    assert fixed_joined_first == (
+        "Some <strong>important text that continues here</strong> and also "
+        "<strong>another</strong> bold phrase."
+    ), "the FIXED join-before-inline approach must correctly wrap both spans"

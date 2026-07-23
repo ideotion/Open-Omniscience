@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "Mengenkripsi — seluruh basis data ditulis ulang…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Terenkripsi. Frasa sandi kini diperlukan di setiap mulai — tanpa pemulihan.",
   "Wrong passphrase — try again.": "Frasa sandi salah — coba lagi.",
+  "use at least 8 characters": "gunakan minimal 8 karakter",
+  "passphrases do not match": "frasa sandi tidak cocok",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Buat panjang — beberapa kata tak berhubungan lebih kuat daripada satu kata cerdik. Jika berkas basis data Anda disalin, ia bisa ditebak secara offline; jadi panjang adalah perlindungan yang sebenarnya (bukan secepat apa layar ini menjawab).",
   "Database maintenance": "Pemeliharaan basis data",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "Pemadatan membangun ulang berkas basis data: memulihkan ruang yang ditinggalkan penghapusan dan mendefragmentasi indeks. Waktunya sebanding dengan ukuran berkas dan menjeda penulisan pengumpulan selama berjalan — tidak ada yang ditafsirkan atau dihapus.",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "{n} jam lalu",
   "{n} d ago": "{n} hari lalu",
   "Law: {tracked} tracked · {changes} changes": "Hukum: {tracked} dilacak · {changes} perubahan",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Hukum: {documents} dilacak · {baselined} memiliki garis dasar · {changes} perubahan",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Buka subtab Hukum — pelacakan perubahan undang-undang, lembaran negara, dan catatan KI.",
   "no FLAGGED changes": "tidak ada perubahan yang DITANDAI",
   "no changes": "tidak ada perubahan",
@@ -2105,5 +2108,10 @@
   "New sources": "Sumber baru",
   "Articles awaiting indexing": "Artikel masih menunggu pengindeksan",
   "database records, all types": "Rekaman database, semua jenis",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Korpus Anda bertambah {articles} artikel dari {sources} sumber baru, mencakup {languages} bahasa baru."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Korpus Anda bertambah {articles} artikel dari {sources} sumber baru, mencakup {languages} bahasa baru.",
+  "People": "Orang",
+  "Orgs": "Organisasi",
+  "Other entities": "Entitas lainnya",
+  "Themes": "Tema",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "Lapisan ini tidak pernah mengada-ada urgensi. 'Mendesak' muncul HANYA ketika penyedia data bahaya (GDACS) sendiri menyatakan peringatan MERAH; 'pantau' muncul untuk peringatan ORANYE dari penyedia atau pantauan yang ANDA simpan yang melewati ambang batas ANDA sendiri; 'info' adalah peringatan HIJAU dari penyedia, pengamatan yang diteruskan, atau konvergensi ruang-waktu terbaru dalam korpus Anda — sebuah petunjuk ko-kejadian, bukan bukti sebab-akibat. Catatan bahaya adalah relai tersimpan (cache) dari apa yang dilaporkan oleh umpan yang dipantau (mungkin sudah usang, dan menunjukkan apa yang dilaporkan sebuah sumber, bukan segala hal yang sebenarnya terjadi) — diam bukan berarti aman. Hanya hitungan, tanpa skor."
 }
