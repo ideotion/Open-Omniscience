@@ -12,6 +12,7 @@ slice-1c 404 lesson.
 from __future__ import annotations
 
 import re
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import STATUS_QUALIFIED, STATUS_UNQUALIFIED
 from src.catalog.qualify_job import initial_backlog_estimate, run_bulk_qualification
-from src.database.models import Base, Source
+from src.database.models import Article, Base, Source
 from src.ingest import activate_kill_switch, clear_kill_switch
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -90,6 +91,48 @@ def _always_no_evidence_pass(db, fetcher, per_pass, now):
         return {"enabled": True, "evaluated": 0}
     return {"enabled": True, "evaluated": len(candidates), "qualified": 0,
             "disqualified": 0, "no_evidence": len(candidates), "trial_fetch_errors": 0}
+
+
+def test_the_real_pass_never_livelocks_on_permanently_stuck_candidates(db, scope, monkeypatch):
+    """End-to-end proof through run_bulk_qualification itself (not a stub), using the
+    REAL qualification.run_qualification_pass -- the adversarial-review finding,
+    reproduced live before the fix: 30 feed-less, forever-zero-evidence sources ahead
+    of one genuinely resolvable source in id order must not starve the resolvable one.
+    trial_fetch is stubbed to a no-op (no network in a unit test); the "good" source
+    carries a REAL pre-existing article so it has genuine evidence from the start."""
+    import src.catalog.qualification as qmod
+
+    monkeypatch.setattr(qmod, "trial_fetch", lambda session, source, fetcher, **kw: {})
+
+    for i in range(30):
+        db.add(Source(name=f"stuck{i}", domain=f"stuck{i}.example", rss_url=None,
+                      enabled=True, status=STATUS_UNQUALIFIED))
+    db.commit()
+    good = Source(name="good", domain="good.example", rss_url="https://good.example/rss",
+                  enabled=True, status=STATUS_UNQUALIFIED)
+    db.add(good)
+    db.commit()
+    db.add(Article(
+        url=f"https://good.example/{uuid.uuid4().hex}",
+        canonical_url=f"https://good.example/{uuid.uuid4().hex}",
+        source_id=good.id, title="Real article", content="x " * 200,
+        language="en", hash=uuid.uuid4().hex + uuid.uuid4().hex, word_count=200,
+    ))
+    db.commit()
+
+    ctx = _Ctx()
+    out = run_bulk_qualification(
+        ctx, batch_size=10, fetcher=object(), session_factory=scope, sleep_s=0.0
+    )
+    db.refresh(good)
+    assert good.status == STATUS_QUALIFIED, (
+        "a resolvable candidate must not be starved by permanently-stuck ones "
+        f"(bulk job result: {out})"
+    )
+    stuck_statuses = {
+        s.status for s in db.query(Source).filter(Source.domain.like("stuck%")).all()
+    }
+    assert stuck_statuses == {STATUS_UNQUALIFIED}  # never silently qualified either
 
 
 def test_drains_the_backlog_across_several_batches(db, scope, monkeypatch):

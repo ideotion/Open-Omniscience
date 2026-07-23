@@ -6838,6 +6838,7 @@
     const DB_STAT_HIDDEN_KEYS = new Set(["sources"]);
     const DB_STAT_LABELS = {
       sources_qualified: "Sources (collecting)",
+      sources_pending: "Sources awaiting qualification (enabled)",
       sources_candidates: "Discovered candidates",
     };
 

@@ -3718,3 +3718,57 @@ examined" from "examined, nothing bad found", and an admission gate built on tha
 promotes the zero-evidence case to a pass. Audit every such `.get(id, default)` call downstream of
 a groupby-style aggregation for whether "missing" and "present but empty" are meant to be the same
 thing.
+
+FIX-FORWARD (same session, before push): a mandatory adversarial skeptic pass over the S1.1/S1.2
+diff found two real defects, both hand-re-verified with a live reproduction before trusting them
+and before fixing them.
+
+(1) HIGH — the zero-evidence fix, correct in isolation, created a LIVELOCK when combined with
+`select_unqualified`'s pure `ORDER BY id ASC`. `scripts/build_world_news_catalog.py` never sets
+`rss_url` (grep-confirmed) — every Wikidata-discovered candidate is structurally unable to ever
+produce evidence via a trial fetch. Once enough of the lowest-id candidates are permanently
+unresolvable, they occupy an ENTIRE batch's selection window on every future call, and nothing
+behind them in id order is ever reached — reproduced live (30 feed-less sources blocked one
+genuinely resolvable source across 20 passes) before any fix was written. FIX: a no-evidence
+outcome is now logged as a `SourceQualificationAttempt` row with a NEW verdict value
+(`VERDICT_NO_EVIDENCE`, `log_no_evidence_attempts`) — `Source.status` is still never touched (the
+original fix's correctness holds) — and `select_unqualified` now orders by LEAST-RECENTLY-
+ATTEMPTED (a LEFT JOIN + `nullsfirst()`, mirroring `select_due_disqualified`'s existing subquery
+shape) rather than pure id, so a stuck candidate rotates out of the way after one attempt in
+favour of never-yet-tried candidates, while still getting retried eventually (a transient failure
+deserves another chance — it just can never again BLOCK the queue).
+`consecutive_disqualifications_from_verdicts` was adjusted to SKIP (not break on) a `no_evidence`
+entry, so an inconclusive retry of a previously-disqualified source doesn't wrongly reset its
+re-qualification ladder position. Re-ran the exact repro after the fix: resolves in 4 passes. Two
+new regression tests pin the scenario — one at the `run_qualification_pass` level, one end-to-end
+through `run_bulk_qualification` using the REAL pass function (a stubbed no-network `trial_fetch`,
+a genuinely pre-seeded article for the resolvable source — never a mock of the judging logic).
+
+(2) MED — the S1.3 two-class sources split did not SUM back to the flat `sources` total: an
+enabled-but-not-yet-qualified source (e.g. a freshly seeded catalog source awaiting its first
+pass) was invisible in both `sources_qualified` and `sources_candidates`, undermining the whole
+point of replacing one ambiguous number with a transparent breakdown. FIX: added
+`sources_pending` (enabled AND status!=qualified — covering both never-yet-judged and
+disqualified-but-still-enabled sources), so the three classes now PARTITION the flat total
+exactly. Pinned with an explicit sum-equality assertion
+(`sources_qualified + sources_pending + sources_candidates == sources`).
+
+(3) LOW, recorded not fixed — a plausible-but-unproven concurrency finding: the bulk job and the
+steady-state ride-along use independent sessions with no row-level locking, so both could select
+overlapping candidates before either commits (`per_source_metrics` is a whole-corpus scan that
+takes real wall-clock time). Assessed as no-data-loss (the single-writer gate still serialises
+commits; worst case is a redundant `SourceQualificationAttempt` row and a minor ladder skew, never
+a corrupted stamp) and recorded as a deliberately-not-addressed risk per the project's own
+reproducer-first-for-gate-hold-riders discipline, rather than building real coordination for a
+narrow, low-probability window with a bounded, non-corrupting worst case.
+
+Re-verified after all three: full suite still 4378 passed / 107 skipped / 0 failed, ruff F/B
+clean, mypy 0 new errors (127==baseline), bandit clean, i18n 100% (2111/2111 ×12).
+
+LESSON (copied to Session-rituals): fixing a free-pass bug can silently CREATE a livelock if the
+underlying selection query has no fairness/rotation mechanism — a pure FIFO/id-ordered query
+implicitly assumed every entry would eventually leave the queue; once that assumption breaks
+(some entries can structurally never resolve), the fix needs a rotation mechanism (log the
+inconclusive attempt, order by least-recently-tried) alongside the correctness fix, or the cure is
+worse than the disease. Always reproduce the adversarial scenario live, both to confirm the
+defect and to confirm the fix, before trusting either claim.

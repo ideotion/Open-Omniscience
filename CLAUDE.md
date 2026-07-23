@@ -980,6 +980,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     this exact trap for any entity that produced ZERO observations — audit every
     `.get(id, [])`/`.get(id, {})` downstream of one for whether "missing" and "present
     but empty" are meant to mean the same thing (they usually aren't).
+  - **FIXING A FREE-PASS BUG CAN CREATE A LIVELOCK IF THE SELECTION QUERY HAS NO
+    FAIRNESS/ROTATION MECHANISM (2026-07-23, the SAME qualification fix, found by
+    adversarial review + reproduced live BEFORE trusting the claim):** a pure
+    `ORDER BY id ASC LIMIT n` selection query (`select_unqualified`) silently assumed
+    every candidate would EVENTUALLY leave the queue (get stamped one way or the other).
+    Once "never silently qualify with zero evidence" was correctly enforced, any
+    candidate that can STRUCTURALLY never produce evidence (here: bulk-generated
+    sources with no feed at all, confirmed by grepping the generator script) stays
+    `unqualified` forever and — because it is still the oldest untouched row — gets
+    RE-SELECTED identically on every future call. Once enough such candidates occupy an
+    entire batch window, nothing behind them in id order is EVER reached again, no
+    matter how many times the job runs. The fix pattern: log the inconclusive attempt
+    (a NEW verdict distinct from the real judged states, never touching the actual
+    status) and change the selection ORDER to least-recently-attempted (NULLS FIRST for
+    never-tried) instead of pure insertion order — a stuck row rotates out of the way
+    after one try instead of permanently occupying the front of the queue. General
+    form: whenever a bug fix changes "always removed from a FIFO/id-ordered queue" into
+    "sometimes stays in the queue", check whether the queue has ANY rotation/fairness
+    mechanism — a fix that is locally correct can convert a working-by-luck queue into
+    one that starves on its very first permanently-unresolvable entry. Reproduce the
+    EXACT adversarial scenario live (not just reason about it) before trusting a
+    claimed defect OR a claimed fix.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
@@ -7287,11 +7309,46 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   qualified-citations tally + discovery-provenance trail (optional stretch inside S1.3)
   were found ALREADY SHIPPED (`src/discovery/source_trail.py`, endpoints
   `/{source_id}/{provenance,citation-tally}`, 13 tests, frontend-wired) — verified, not
-  rebuilt. VERIFIED: full suite 4378 passed/107 skipped/0 failed (py3.13 venv), ruff F/B
-  clean, mypy 0 new errors (127==baseline), bandit clean, i18n 100% (2109/2109 ×12,
-  no new keys — the new UI strings use the established un-keyed-diagnostics-panel
-  convention). Frontend BROWSER-UNVERIFIED per fork-3/Q6a. REMAINING for S2: the Library
-  graphs + snapshot recorder is next per the brief's ordering.
+  rebuilt.
+  **ADVERSARIAL SKEPTIC PASS (before push) found a SECOND real bug, fixed same session:**
+  the S1.1 zero-evidence fix, correct in isolation, combined with `select_unqualified`'s
+  pure `ORDER BY id ASC` to create a LIVELOCK — `scripts/build_world_news_catalog.py`
+  never sets `rss_url` (grep-confirmed), so EVERY Wikidata-discovered candidate can
+  NEVER produce evidence via a trial fetch; once enough of the LOWEST-id candidates are
+  permanently unresolvable, they occupy every future batch's selection window forever,
+  starving any genuinely resolvable candidate behind them in id order. REPRODUCED LIVE
+  (30 feed-less sources blocked one resolvable source across 20 passes) before fixing.
+  FIX: a `no_evidence` outcome is now LOGGED as a `SourceQualificationAttempt` row
+  (`log_no_evidence_attempts`, NEW verdict value, `Source.status` untouched — no free
+  pass, S1.1's fix stands) and `select_unqualified` orders by LEAST-RECENTLY-ATTEMPTED
+  (a LEFT JOIN + `nullsfirst()`, mirroring `select_due_disqualified`'s existing subquery
+  shape) instead of pure id — a stuck candidate rotates OUT of the way after one attempt,
+  in favour of never-yet-tried candidates, and only comes back up once everyone else has
+  had a turn (still retried eventually — a transient failure deserves another chance,
+  it just can never again BLOCK the queue). `consecutive_disqualifications_from_verdicts`
+  was adjusted to SKIP (not break on) a `no_evidence` entry so the re-qualification
+  ladder position isn't wrongly reset by an inconclusive retry. Re-verified the exact
+  repro now resolves in 4 passes; 2 new regression tests pin the scenario at both the
+  `run_qualification_pass` level and end-to-end through `run_bulk_qualification` (using
+  the REAL pass function, a stubbed no-network `trial_fetch`, and a genuinely
+  pre-seeded article — not a mock of the judging logic itself).
+  **A THIRD finding (S1.3 sum-completeness) also fixed:** the two-class split did not sum
+  back to `sources` — an enabled-but-not-yet-qualified source (e.g. freshly seeded,
+  awaiting its first pass) was invisible in both `sources_qualified` and
+  `sources_candidates`. Added `sources_pending` (enabled AND status!=qualified, covering
+  both never-yet-judged and disqualified-but-still-enabled) so the three classes now
+  PARTITION the flat total exactly — pinned with an explicit sum-equality assertion.
+  A concurrency finding (the bulk job and the ride-along could theoretically select
+  overlapping candidates before either commits) was assessed as low-severity/no-data-loss
+  (the single-writer gate still serialises commits; worst case is a redundant attempt row)
+  and recorded as a documented, deliberately-not-addressed risk rather than built out,
+  per the reproducer-first-for-gate-hold-riders discipline.
+  VERIFIED (post-fix): full suite 4378 passed/107 skipped/0 failed (py3.13 venv) both
+  before AND after this fix round, ruff F/B clean, mypy 0 new errors (127==baseline),
+  bandit clean, i18n 100% (2111/2111 ×12, no new keys — the new UI strings use the
+  established un-keyed-diagnostics-panel convention). Frontend BROWSER-UNVERIFIED per
+  fork-3/Q6a. REMAINING for S2: the Library graphs + snapshot recorder is next per the
+  brief's ordering.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

@@ -37,6 +37,19 @@ e.g. a persistent glut of feed-less, evidence-less candidates sitting at the fro
 the FIFO queue, per the 2026-07-23 zero-evidence fix in ``qualification.py``) is
 detected and the run stops HONESTLY rather than spinning forever on candidates it can
 never resolve — mirrors ``discover_job.py``'s ``_MAX_CONSECUTIVE_FAILURES`` convention.
+
+KNOWN, ACCEPTED CONCURRENCY RISK (adversarial review, 2026-07-23, recorded rather than
+silently missed): this job and the steady-state ride-along use INDEPENDENT sessions
+with no row-level locking between them, so both could select overlapping candidates
+before either commits (``per_source_metrics`` is a whole-corpus scan that takes real
+wall-clock time). The single-writer GATE still serialises the actual COMMITS, so the
+worst outcome is a redundant ``SourceQualificationAttempt`` row and a minor skew to
+``consecutive_disqualifications`` for a source judged twice in the same window — never
+data loss or a corrupted stamp (the last commit's verdict simply wins, and it is always
+a real evaluation, not a guess). NOT fixed here: the fix would need real coordination
+(e.g. a claimed-candidate lock) for a narrow, low-probability window with a bounded,
+non-corrupting worst case — out of scope for this slice; revisit if it is ever measured
+to matter in practice (the project's own "reproducer-first for gate-hold riders" rule).
 """
 
 from __future__ import annotations

@@ -355,7 +355,10 @@ def test_run_qualification_pass_never_qualifies_on_zero_evidence():
     """2026-07-23 field-diagnostics fix: a candidate that produced ZERO stored articles
     (a totally-failed trial fetch, or no rss_url and nothing collected by other means)
     must NEVER be silently stamped ``qualified`` on an empty fails list — it stays
-    ``unqualified`` (no attempt row, no stamp) and is re-offered on a later pass."""
+    ``unqualified`` (no stamp) and is re-offered on a later pass. A ``no_evidence``
+    ATTEMPT row IS logged (the livelock fix, same day) so the source rotates behind
+    never-yet-tried candidates instead of looking identical to one that was never tried
+    and blocking the queue forever — but ``Source.status`` itself never moves."""
     s = _engine_session()
     bare = Source(name="No Evidence", domain="noevidence.example", rss_url="https://noevidence.example/rss",
                   enabled=True, status=STATUS_UNQUALIFIED)
@@ -382,7 +385,9 @@ def test_run_qualification_pass_never_qualifies_on_zero_evidence():
     s.refresh(bare)
     assert bare.status == STATUS_UNQUALIFIED
     assert bare.qualified_at is None
-    assert s.query(SourceQualificationAttempt).filter_by(source_id=bare_id).count() == 0
+    attempts = s.query(SourceQualificationAttempt).filter_by(source_id=bare_id).all()
+    assert len(attempts) == 1
+    assert attempts[0].verdict == "no_evidence"
 
     # Re-offered next pass — never permanently stuck, never silently dropped.
     still = select_unqualified(s, limit=5)
@@ -430,6 +435,41 @@ def test_run_qualification_pass_still_judges_evidence_from_prior_articles():
     assert out["trial_fetch_errors"] >= 1
     s.refresh(good)
     assert good.status == STATUS_QUALIFIED  # judged on its EXISTING articles, not skipped
+
+
+def test_select_unqualified_never_lets_permanently_stuck_candidates_livelock_the_queue():
+    """2026-07-23 adversarial-review finding, CONFIRMED by a live reproduction before
+    this fix: with select_unqualified ordering by pure id ASC, several feed-less,
+    forever-zero-evidence candidates at the FRONT of the id order (exactly the shape of
+    scripts/build_world_news_catalog.py's generated rows, which never set rss_url) would
+    be re-selected identically on EVERY future call, so a genuinely resolvable candidate
+    behind them in id order was NEVER reached -- reproduced live: 30 stuck sources
+    blocked one resolvable source across 20 passes. The fix orders by least-recently-
+    attempted (a no_evidence attempt is now logged, see log_no_evidence_attempts), so a
+    stuck candidate rotates OUT of the way after being tried once, in favour of never-
+    yet-tried candidates -- this must resolve within a small, bounded number of passes."""
+    s = _engine_session()
+    for i in range(30):
+        s.add(Source(name=f"stuck{i}", domain=f"stuck{i}.example", rss_url=None,
+                     enabled=True, status=STATUS_UNQUALIFIED))
+    s.commit()
+    good = _add_candidate_with_articles(s, domain="reachable.example",
+                                         status=STATUS_UNQUALIFIED, pathology=False)
+
+    resolved = False
+    for _ in range(20):
+        run_qualification_pass(s, fetcher=None, per_pass=10)
+        s.refresh(good)
+        if good.status != STATUS_UNQUALIFIED:
+            resolved = True
+            break
+    assert resolved, "a resolvable candidate must not be starved by permanently-stuck ones"
+    assert good.status == STATUS_QUALIFIED
+    # The stuck sources are never silently qualified either -- they just rotate.
+    stuck_statuses = {
+        row.status for row in s.query(Source).filter(Source.domain.like("stuck%")).all()
+    }
+    assert stuck_statuses == {STATUS_UNQUALIFIED}
 
 
 def test_run_qualification_pass_per_pass_zero_disables():
