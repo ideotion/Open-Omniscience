@@ -16238,9 +16238,12 @@
         if (!top) {
           mm.innerHTML = `<div class="muted">${esc(t("No strong associations yet."))}</div>`;
         } else {
-          const gp = new URLSearchParams();
+          // an-mindmap-wrong-corpus-scope (P1): clone the analysis window's OWN scope
+          // (article_ids, or query/source/language/date-range) instead of a fresh,
+          // scope-less params object — else the mindmap silently reverted to a
+          // corpus-wide keyword graph for every seeded/searched analysis.
+          const gp = new URLSearchParams(p);
           gp.set("level", "keyword"); gp.set("term", top); gp.set("hops", "2");
-          for (const k of ["days", "start", "end"]) { const v = p.get(k); if (v) gp.set(k, v); }
           const g = await api("/api/insights/graph?" + gp.toString());
           renderAnMindmap(g, mm);
         }
