@@ -218,7 +218,7 @@ def test_map_coverage_query_plan_uses_the_covering_index(tmp_path):
     """
     from sqlalchemy import create_engine
 
-    from src.database.models import Article, Base, Source
+    from src.database.models import Base
 
     db_path = tmp_path / "plan.db"
     engine = create_engine(f"sqlite:///{db_path}", future=True)
