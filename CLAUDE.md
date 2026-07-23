@@ -146,9 +146,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
 4. **AMENDED by §2 (ruled 2026-06-14, SHIPPED #143): vitals moved OUT of the
    chrome into the task-manager window's System tab** (`#tm-system`); the top bar
    keeps a PERSISTENT task-manager access (`#tm-open`, since `#activity` is hidden
-   when idle). The version number is STILL NOT displayed in the chrome. (`#vitals-mini`
+   when idle). (`#vitals-mini`
    retired; the 5 s chrome poll is now network-only — a bonus against the
    polling-storm finding.) Enforced in test_ui_invariants (#4).
+   **AMENDED 2026-07-23 (maintainer answer 9, SHIPPED same day, browser-unverified
+   per fork-3): the VERSION is now DISPLAYED in ONE place — visibly under the brand
+   name in the sidebar** (`<span id="version">` unhidden, filled by loadHealth; the
+   top BAR still never shows it). SAME ruling added the **top-bar collection-speed
+   KNOB** (`#rate-toggle`, gauge icon + needle, accent `.rate-max` state theme-derived
+   via color-mix; toggles the governor "maximum"↔"target 500 KiB/s" through a
+   loopback `PUT /api/scheduler/config` — no egress, so NEVER ensureOnline-gated;
+   syncs the Settings speed slider via applySchedConfig; applies next pass). Both
+   enforced: test_ui_invariants #4 (version-in-brand) +
+   test_rate_mode_knob_in_top_bar_and_maximum_default.
 5. **The brand mark is the ASCII eye** (`assets/logo.txt`) as vector — the
    pointed-oval + grid-iris SVG in `index.html` and `assets/icon.svg`.
 6. Article links in analytics/insights lead to the LOCAL reader
@@ -7045,6 +7055,189 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   fence carries forward every maintainer-ruling/operator/browser gate both source PRs already
   established (5 new verticals, the Observatory frontend, the LLM-rig-dependent runs, etc.) —
   none of those are touched. REMAINING: execution (nothing built yet — this is the brief only).
+- **FIELD FEEDBACK 2026-07-23 — seven impressions from multi-VM/multi-machine use (maintainer;
+  INTAKE + INVESTIGATION this session, code-verified against main@7405968; numbered questions put
+  to the maintainer, ANSWERS PENDING — record them here when they arrive):** (1) IMPORT REPORT —
+  downloadable per-import detail (successes/errors/redundancies + executive summary) offered in a
+  dedicated end-of-import popup: COMPOSES with the ruled 2026-07-20 POST-IMPORT RESULTS SCREEN
+  (same surface; the report becomes its download half — one build, not two). (2) IMPORT-TIME
+  ARTICLE SCREENING — what to do when an imported corpus (built by OLDER engines) carries
+  non-articles (link lists/marketplaces) that newer criteria would refuse; maintainer intuition =
+  disregard + count + optional export of the disregarded set for verification. Composes with the
+  0.3 close-gate row 5 (clean-up strategy DISCUSSED→AGREED before execution), the Slice-4a
+  reversible-quarantine carry-over, and the pending nav-soup prose gate; the
+  skip-vs-quarantine-in-DB decision is question 2 (session recommendation: quarantine-in-DB,
+  reversible, criteria-version-stamped — criteria WILL keep evolving). (3) LIBRARY TAB LIVE
+  GRAPHS instead of live figures (articles/hour past 7 days + live speed; database-count
+  evolution), box-sized, click-to-enlarge: the render substrate EXISTS (dashChartSvg tiny cards +
+  chartEnlarge→ooChart); the DATA gap is a history for non-article counts — articles/hour derives
+  retroactively from created_at, but source/keyword/link/price counts have NO history table →
+  needs a lightweight periodic snapshot recorder (honest: those graphs begin when recording
+  begins, never a fabricated backfill). (4) SCRAPING STALLS (minutes to dozens of minutes,
+  several installs) — investigate; candidates ranked: serial post-pass housekeeping between
+  passes (briefing refresh/wiki+law tracking/feed auto-import/idle maintenance), feed-level
+  backoff, Tor circuit trouble, VM suspend, the 2026-07-21 finding-3 stall cluster (cause still
+  unidentified); needs a diagnostics export from an affected instance + the item-3 graphs as the
+  detector. (5) LIBRARY "Downloaded" section COMPRESSES; Wikipedia pages/revisions-tracked and
+  law articles/revisions-tracked get OWN sections WITH graphs (series derivable from stored
+  revision timestamps). (6) ~50,000 "sources discovered" vs ~5,000 articles in 12 h on a fresh
+  install — VERIFIED: the discovery funnel CANNOT produce that (run_discovery is budget-bounded
+  ~10 candidates/pass; curated catalog seeds ~3.4k + 225 legal; world_news_sources.yml is NOT
+  generated/committed), so WHICH figure reads 50k is question 6 (best guess: distinct cited
+  domains from article_links — naturally ~10×/article); the ruled-but-unbuilt qualification
+  lifecycle + a two-class sources-vs-candidates display are the levers. (7) THROUGHPUT ~5,000
+  articles/12 h is too slow (want ≥10×; bandwidth visibly under-utilized) — VERIFIED: parallel
+  collection is ALREADY default-on with ceiling `collect_parallelism=50`, BUT
+  `collect_rate_mode` defaults to "target" at 500 KiB/s — the BandwidthGovernor deliberately
+  parks workers to hold ~500 KiB/s (the under-utilization is BY DESIGN; "maximum" mode ramps to
+  the ceiling and exists today). Other suspects before promising 10×: write-bound collection
+  (the F2 writer-gate saturation lesson; the deferred collector write-batching is
+  live-measure-gated and a collect_perf export from the slow instance is the measurement), and
+  PUBLISH-RATE bound (~3.4k enabled sources ≈ 1.5 new articles/source/12 h — more articles may
+  need more enabled sources [qualification funnel + the pending networked
+  build_world_news_catalog.py run] and/or crawl mode, not just more workers). NOTHING BUILT this
+  session — intake, verification and the question list only.
+  **ANSWERS RECEIVED + RULED same day (maintainer answered all 12 questions; the small ruled
+  slice SHIPPED same session, the rest queued):**
+  • **A1 (import report):** JSON + Markdown, PERSISTED on disk, and the persisted reports RIDE
+    the backup export/import. Folds into the ruled post-import results screen (one build).
+  • **A2 (screening disposition): QUARANTINE-IN-DB ruled** (reversible, criteria-version-
+    stamped, excluded from search/analytics/keywords by default); quarantined articles ALSO
+    ride backup export/import (they are data, never silently dropped).
+  • **A3: the screening runs RETROACTIVELY on existing corpora** (this is the 0.3 close-gate
+    row-5 cleanup; the agreed-strategy-before-execution step still applies to the criteria).
+  • **A4 (criteria scope): BOTH extraction-validity AND borderline classes, tested together
+    via an ITERATIVE loop** — build a TEMPORARY criteria-calibration DIAGNOSTIC first: a
+    downloadable top-100 of disregarded/would-be-disregarded articles with statistics +
+    per-article detail, so the criteria are optimized on real specimens before any execution
+    (propose→human-review→apply, the stoplist discipline applied to articles).
+  • **A5 (Library graphs): confirmed; snapshot recorder with INFINITE retention** (hourly
+    counter snapshots are tiny — ~10 counters × 8,760/yr ≈ trivial rows; no downsampling
+    needed; article-series backfills from created_at, other counts begin at recording start).
+  • **A6 (stalls):** every instance runs over Tor (identity protection); maintainer judges the
+    stalls NOT Tor-linked; the diagnostics export is deferred until after the current builds.
+  • **A7 RESOLVED (the 50k figure) — the maintainer's sources CSV analyzed (46,213 rows):**
+    42,612 DISABLED `via:wikidata-discovery`+`world-catalog` candidates + 3,599 ENABLED
+    (3,200 curated · 205 legal-generated · 88 markets · 58 spectrum · 47 legal · 1 other).
+    So "50k sources" = the world-discovery machinery WORKING AS RULED (2026-07-15
+    "significantly increase the source count" + the default-on ride-along), blended into one
+    Library "Sources" count — a DISPLAY problem, not a registration bug. Composition note:
+    source_type institution 20,777 / news 17,021 / religious 7,957 — the Wikidata specs'
+    breadth makes the qualification membrane ESSENTIAL before any of it enables. Fixes: the
+    TWO-CLASS display (enabled/qualified vs discovered candidates, never one blended number)
+    + the qualification funnel to digest the 42k backlog.
+  • **A8 (workflow order RULED): source QUALIFICATION first, THEN the Library graphs UI** —
+    both in the next workflow; the 2026-07-20 qualification rulings (admission gate · stamp ·
+    background job · re-qualification ladder · all-sources-qualified-by-definition) are the
+    spec.
+  • **A9 RULED + SHIPPED same session:** `collect_rate_mode` default flips "target"→"maximum"
+    (src/scheduler/settings.py; test_parallel_collect updated; existing installs keep a saved
+    choice — the new knob or Settings flips them) + the top-bar SPEED KNOB + the VERSION under
+    the sidebar logo (see the invariant-#4 amendment above; frontend browser-unverified per
+    fork-3). NOTE: a saved settings.json that predates the flip keeps "target" until the user
+    clicks the knob.
+  • **A10:** proceed WITHOUT the collect_perf measurement for now (the all-diagnostics zip is
+    slow on the old test machine; the maintainer will try later). The write-batching decision
+    stays measure-gated — the item-3 graphs + a later export are the measurement path.
+  • **A11 (throughput diagnosis, maintainer facts):** enabled sources publish >10 articles/day
+    (publish-rate bound REJECTED by the maintainer for the enabled set); measured average
+    download is a FEW kB/s — two orders below Tor capability → the bottleneck is app-side.
+    INVESTIGATION NOTE (recorded for the build session): the governor seeds 25 workers and
+    ramps toward w_max=50 in target mode when rate < target, so a few-kB/s average means
+    workers are BLOCKED elsewhere or the duty cycle is low — ranked suspects: per-host Tor
+    circuit builds (one isolated circuit per host × 3.4k hosts), robots.txt fetches per new
+    host, serial inter-pass housekeeping (also the item-4 stall suspect), feed-level backoff
+    shrinking the due set, the single-writer gate. The rate-mode flip is NECESSARY but likely
+    NOT SUFFICIENT — the throughput hunt continues instrumented (item-3 graphs + collect_perf
+    when available).
+  • **A12:** affected instance = 2-core/4 GB over Tor, but an 8-core modern machine shows the
+    SAME download rate — the machine is NOT the issue (weakens a pure CPU/write-bound theory,
+    strengthens the shared-structural suspects above); hardware-aware diagnostics welcome
+    (already ruled in the diagnose-the-diagnostics hardware-profile entry).
+  **DIAGNOSTICS EXPORT ANALYZED same day (supersedes A10's "do without" — the maintainer's
+  all-diagnostics zip from the slow 2-core/3.2 GB AMD 3020e Tor instance arrived and was
+  crunched; 30-run scheduler history + 199 collect_perf samples + 1 pass summary):**
+  (i) **STALENESS CORRECTION — the QUALIFICATION LIFECYCLE IS ALREADY BUILT + LIVE** on main
+  (`src/catalog/qualification.py`: admission gate in `select_sources`, `advance_qualification`
+  ride-along default `qualification_per_pass=5`, backoff ladder 1→2→4→6 months, categorical
+  stamps + append-only `SourceQualificationAttempt`; live evidence in the export: a
+  "qualification trial fetch failed for 'latimes.com'" log line). NEXT-WORKFLOW STEP 1 therefore
+  becomes VERIFY + SCALE + SURFACE, not build: at 5/pass (~4 passes/h) the 42.6k candidate
+  backlog needs ~90+ days — it wants the dedicated bulk qualification job / a higher
+  hardware-aware per-pass, plus the two-class sources display. (ii) **THROUGHPUT VERDICT
+  (three stacked causes, the rate-mode target was only one):** (a) the governor's MEM-LOW floor
+  parks permits at median 2 / max 8 on the 3.3 GB box (35 `mem-low` samples; pass verdict
+  "memory-bound", min avail 395 MB, RSS ~1 GB) — the "maximum" flip cannot lift this floor,
+  RAM is the worker ceiling on 3–4 GB machines; (b) SUPPLY: 92% duplicate rate (per-pass tally
+  e.g. entries 979 · duplicate 900 · stored 62 · not_modified 56), 9–117 new articles/pass
+  across 30 runs — the due feeds OFFER no more; 2,766 of the 3,599 enabled sources have an
+  rss_url and yield ≈2 new/day/feed on average (the maintainer's ">10/day" holds for big-name
+  feeds, not the median), so the 10× is more QUALIFIED+ENABLED sources (the funnel now running)
+  + crawl mode; (c) DUTY CYCLE: inter-pass gaps of 5–7.5 min EVERY cycle (65% fetching / 35%
+  between passes over the 30-run window) — the serial post-pass housekeeping (briefing refresh,
+  auto-imports, wiki/law tracking, discovery + world-discovery + qualification ride-alongs) IS
+  the item-4 "few minutes" stall, structural; the dozens-of-minutes stalls remain unexplained
+  (collect_perf's rolling retention covers ~one pass — too short; the item-3 graphs stay the
+  detector). During-pass burst rate was FINE (avg 1402 KiB/s, above the 500 target — with
+  'above-target' shrinks proving target mode was also costing; the maintainer's "few kB/s"
+  reading is the long-window average diluted by gaps + the 83/199 zero-rate samples). (iii)
+  **the diagnose-the-diagnostics build is CONFIRMED WORKING at field scale** (journal + hardware
+  header + runtime-coverage `complete:true`; total 961 s; slowest members leads-quality 268 s ·
+  date-extraction 229 s · home-cards 131 s — heavy analytics on 2 cores, consistent with the
+  housekeeping-gap finding). (iv) **small defects found in the export, queued:** htmldate.meta
+  "impossible to clear cache" log noise ×85 = 85 of the 93 logged "problems" (third-party
+  logger — filter it so the error log stays signal); the KPI K2 resolver dies with a TypeError
+  (reported as not-measurable — a real resolver bug); `locked_errors` 6 this session (the
+  is_locked_error family, keep watching); event-loop watchdog ~278 ms lag events (minor).
+  **SECOND-INSTANCE COMPARISON (same day — the maintainer's controlled experiment: a SECOND
+  all-diagnostics zip from an i7-13620H Qubes VM, 4 vCPU / 9.7 GB RAM, launched at the same
+  time as the AMD 3020e 2c/3.2 GB instance; the "hardware is not the issue" intuition is
+  CONFIRMED and the diagnosis sharpens):** (a) the memory floor vanishes on the big box (ZERO
+  `mem-low` samples, min avail 6.6 GB, permits median 11 / max 27 vs the slow box's median 2)
+  and passes run 2× faster over MORE sources (527–533 vs 354/pass) — yet stored articles/hour
+  is only ~1.7× (331/h vs 193/h; corpus 6,918 vs 5,731 ≈ 1.2×), nowhere near the ~3× compute
+  gap. (b) WHY — Amdahl at the pass boundary: the inter-pass gap stays 3–8 min on BOTH machines
+  (fast box duty cycle is actually WORSE: 48% fetching / 52% gap, since passes shrank but gaps
+  did not) — the gap work barely scales with CPU because it is SINGLE-CORE analytics (the
+  post-pass briefing refresh: home-cards 96 s vs 131 s in the diagnostics run — only 1.4×
+  faster on 2.7× compute) + SERIAL TOR FETCHES in the ride-alongs (calendar auto-imports,
+  wiki/law tracking, discovery + world-discovery Wikidata queries + qualification trials — each
+  a sequential ~5–15 s Tor fetch). DUTY-CYCLE FIX = the TOP lever (≈2× on fast hardware alone):
+  overlap the ride-alongs/briefing with the next pass or parallelize/bound them. (c) SUPPLY
+  confirmed hardware-independent: ~90% duplicate rate on BOTH (fast 15,214/16,980; slow
+  18,434/20,701) — both drain what the ~2,766 feeds offer. (d) **NEW: the fast box hits
+  "writer-bound" pass verdicts** (writer-saturated samples at permits ~27) — the LIVE
+  measurement the deferred COLLECTOR write-batching was explicitly gated on has now arrived;
+  as supply grows, the single-writer gate + full per-article indexing is the next wall →
+  write-batching graduates from measure-gated to evidence-justified. (e) the fast instance's
+  world-discovery shows added_total 66,697 / countries 245/249 (the candidate pool keeps
+  growing; qualification at 5/pass = 5 qualified/pass, 0 errors — working but far too slow for
+  the backlog). (f) BOTH instances still ran rate_mode "target" (saved settings predate the
+  default flip — the new top-bar knob is how existing installs switch). MAINTAINER'S OFFER of a
+  third 8-core/20 GB test: NOT needed for diagnosis (two points already separate the
+  hardware-dependent mem floor from the hardware-independent gap+supply ceiling); SAVE that
+  machine as the before/after benchmark for the duty-cycle fix.
+  **NEXT WORKFLOW (queued, ruled order, amended per the two exports; BRIEF OF RECORD =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md)
+  — the operating manual for the executing session(s), with the verified-current-state table +
+  per-slice specs/acceptance):** (1) qualification
+  VERIFY + SCALE (bulk job over the 42.6k–66.7k candidate backlogs / hardware-aware per-pass) +
+  the two-class sources display; (2) the Library graphs UI + the snapshot recorder (infinite
+  retention) + compressed Downloaded section + wiki/law tracked sections (items 3+5) — also the
+  stall detector; (3) the import-report (JSON+Md, persisted, backup-carried) folded into the
+  post-import screen + the quarantine-in-DB screening (import-time + retroactive) with the
+  temporary top-100 criteria-calibration diagnostic FIRST (items 1+2+A4); (4) the throughput
+  levers in evidence order: DUTY-CYCLE fix (overlap/parallelize the inter-pass housekeeping —
+  measured ≈2× on modern hardware) · supply growth via the funnel · COLLECTOR write-batching
+  (now evidence-justified by the fast box's writer-bound verdicts) · memory headroom on small
+  boxes (the mem floor is the worker ceiling; hardware-aware profiles) · crawl mode — plus the
+  first export's small defects (iv). TWO MORE STALENESS CATCHES folded into the brief's
+  current-state table (verified in-tree 2026-07-23): the nav-soup PROSE GATE is BUILT
+  (`src/services/prose_gate.py`, AND-gated function-word + sentence-punctuation density, wired
+  opt-in into `non_article_scan`) and the RETROACTIVE-QUARANTINE JOB exists as a BUILT-BUT-
+  DELIBERATELY-UNWIRED dry-run scaffold (`src/analytics/quarantine_job.py`, `_work_fn` seam, no
+  Article quarantine column yet) — its own docstring gates execution on maintainer sign-off,
+  WHICH THE A2–A4 RULINGS NOW PROVIDE, conditioned on the S3.1 calibration-review round.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
