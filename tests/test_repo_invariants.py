@@ -6217,3 +6217,99 @@ def test_api_error_handles_a_pydantic_validation_array_detail():
         "the !res.ok throw must call the shared helper"
     assert 'throw new Error((data && data.detail) || res.status + " " + res.statusText)' not in app, \
         "the old inline (never-Array-aware) expression must not linger as a duplicate"
+
+
+def test_home_briefing_re_renders_on_language_switch():
+    """GUI-test finding home-lead-title-frozen-locale (P1): the 'oo:langchange'
+    listener re-rendered the world map / sources table / airplane-button title /
+    AI-prompt editor on a language switch, but never re-rendered the Home briefing
+    (renderBriefing, which also calls renderCorpusTier internally) -- so any
+    OOI18N.tf()-built Home Lead-card title stayed frozen in whatever locale was
+    active when it last rendered. Fixed by re-fetching+re-rendering the briefing
+    in that same listener, gated on _lastBriefGen (only once the briefing has
+    actually loaded at least once, so a fresh boot never fires an unnecessary
+    fetch before Home was ever opened)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    listener = app.split('document.addEventListener("oo:langchange", () => {', 1)[1] \
+                  .split("\n    });\n", 1)[0]
+    assert "_lastBriefGen !== null" in listener, \
+        "the re-render must be gated on the briefing having actually loaded once"
+    assert "loadBriefing()" in listener, \
+        "the langchange listener must re-fetch+re-render the Home briefing"
+
+
+def test_insights_landscape_kind_group_labels_are_translated():
+    """GUI-test finding insights-landscape-headers-hardcoded (P1): _KIND_GROUPS
+    built label:"Themes"/"Other entities"/"People"/"Orgs"/"Places" and injected
+    ${g.label} with no t() wrapper anywhere in loadLandscape() -- so the Insights
+    -> landscape column headers stayed hardcoded English regardless of the active
+    UI language. Fixed by wrapping the label in esc(t(...)), matching the
+    surrounding code's escaping convention, plus keying the 4 labels that were not
+    already translatable ("Places" alone already had a key) across all 12 locales."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = app.split("async function loadLandscape(force) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "esc(t(g.label))" in fn, \
+        "the column header must render through esc(t(...)), matching the surrounding code"
+    assert re.search(r"\bconst t = \(window\.OOI18N", fn), \
+        "loadLandscape() must declare the local t() alias like every other renderer"
+
+    import json
+    en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
+    for label in ("People", "Orgs", "Other entities", "Themes", "Places"):
+        assert label in en, f"{label!r} must be a keyed, translatable string"
+
+
+def test_home_glance_panel_is_excluded_from_the_i18n_dom_walker():
+    """GUI-test finding home-i18n-mixed-language-glance (P1): the i18n DOM-walker
+    caches each text node's FIRST-SEEN value as "the original English" in a
+    WeakMap; renderHomeStats()/renderCorpusTier()/renderHomeStatus() rebuild
+    #home-stats/#home-tier/#home-status DIRECTLY via t() calls (correctly, for
+    whatever language is active at that instant) -- but if the debounced
+    MutationObserver's own apply() pass ever fires AFTER one of those renders, it
+    permanently caches that ALREADY-TRANSLATED string as the node's "original",
+    poisoning every future lookup for that node under every OTHER language (an
+    Arabic-rendered node never matches a French map again). Fixed by marking the
+    whole .home-glance panel data-i18n-dyn (the existing attribute-level opt-out
+    convention, extended to text nodes) so the DOM-walker never touches or caches
+    anything inside it -- those renderers already translate themselves."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'<div class="panel home-glance"[^>]*\bdata-i18n-dyn\b', html), \
+        ".home-glance must be marked data-i18n-dyn so its self-translating children " \
+        "are never cached/poisoned by the DOM-walker"
+
+    i18n_js = (_SRC / "static" / "i18n.js").read_text(encoding="utf-8")
+    do_text_fn = i18n_js.split("function doText(n) {", 1)[1].split("\n  }\n", 1)[0]
+    assert 'p.closest("[data-i18n-dyn]")' in do_text_fn, \
+        "doText() must skip (never cache) text nodes inside a data-i18n-dyn ancestor"
+    # The skip must come BEFORE the first-seen-wins cache write, or it's a no-op.
+    skip_at = do_text_fn.index('p.closest("[data-i18n-dyn]")')
+    cache_at = do_text_fn.index("origText.set(n, o)")
+    assert skip_at < cache_at, \
+        "the data-i18n-dyn skip must run BEFORE the node is ever cached"
+
+
+def test_hazard_caveat_is_translated_across_all_locales():
+    """GUI-test finding hazard-caveat-untranslated (P1): the Home hazard-lens
+    disclosure box's long explanatory paragraph (server-emitted ALERT_CAVEAT,
+    src/analytics/alerts.py) had ZERO matching key in ar/fr/de/es/zh/ja (0/6
+    hit on the exact English source string) -- so only the short "Alerts"
+    headline translated; the caveat itself always rendered in English regardless
+    of locale, since the i18n DOM-walker can only translate a dynamically-
+    injected server string when it exactly matches a known key. Fixed by adding
+    the missing key + AI-drafted translation (flagged for native review, per the
+    project's standing convention) across all 12 locale files."""
+    alerts_py = (_SRC / "analytics" / "alerts.py").read_text(encoding="utf-8")
+    assert "ALERT_CAVEAT = (" in alerts_py, "the server-side caveat constant must exist"
+    caveat = alerts_py.split("ALERT_CAVEAT = (", 1)[1].split(")\n", 1)[0]
+    # Reconstruct the exact Python-concatenated string the same way Python would.
+    import ast
+    key = ast.literal_eval("(" + caveat + ")")
+    assert key.startswith("This layer never invents urgency."), \
+        "sanity: the extracted caveat text must be the expected string"
+
+    import json
+    locales_dir = _SRC / "static" / "locales"
+    for lang in ("en", "ar", "bn", "de", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"):
+        data = json.loads((locales_dir / f"{lang}.json").read_text(encoding="utf-8"))
+        assert key in data, f"{lang}.json is missing the hazard-caveat key"
+        assert data[key], f"{lang}.json has an empty translation for the hazard-caveat key"

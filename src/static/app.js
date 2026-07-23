@@ -9545,6 +9545,11 @@
     let _landscapeLoaded = false;
     async function loadLandscape(force) {
       if (_landscapeLoaded && !force) return;
+      // insights-landscape-headers-hardcoded (P1): _KIND_GROUPS' labels
+      // (People/Orgs/Places/Other entities/Themes) were injected with no t()
+      // wrapper anywhere below, so they stayed hardcoded English regardless of
+      // the active UI language.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("ins-landscape");
       box.innerHTML = '<div class="muted" style="margin-top:8px">Loading…</div>';
       try {
@@ -9563,7 +9568,7 @@
               title="${fam ? `family of ${f.variants}: ${esc((f.members||[]).map(m=>m.term).join(', '))} · ` : ""}${f.mentions} mentions — click to zoom in"
               onclick="pickTerm(${esc(JSON.stringify(f.term))})">${esc(f.term)}${kwTransHtml(f)}${fam ? `<span class="muted"> ·${f.variants}</span>` : ""}</button>`;
           }).join("");
-          return `<div class="ls-col"><div class="ls-h">${g.label} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
+          return `<div class="ls-col"><div class="ls-h">${esc(t(g.label))} <span class="muted">${items.length}</span></div><div class="ls-chips">${chips}</div></div>`;
         }).join("");
         box.innerHTML = `<div class="ls-grid">${cols}</div>`;
       } catch (e) { box.innerHTML = `<div class="muted" style="margin-top:8px">Could not load: ${esc(e.message)}</div>`; }
@@ -17353,6 +17358,15 @@
         const tbl = $("src-table");
         if (tbl && tbl.querySelector("tr") && typeof loadSources === "function") loadSources();
       } catch (_e) {}
+      // home-lead-title-frozen-locale (P1): renderBriefing() (Home Leads + the
+      // corpus-tier badge it renders internally via renderCorpusTier) builds
+      // OOI18N.tf()-templated titles that were never re-rendered on a language
+      // switch, so any Lead card title stayed frozen in whatever locale was active
+      // when it last rendered. Re-fetch+re-render only if the briefing has actually
+      // loaded at least once (_lastBriefGen is set the first time renderBriefing
+      // runs); the endpoint is server-cached (~30s) and dismissal is server-tracked,
+      // so re-fetching never resurrects a dismissed card.
+      try { if (_lastBriefGen !== null && typeof loadBriefing === "function") loadBriefing(); } catch (_e) {}
       // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
       try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
       // Re-render the AI prompt editor (remark 13): its labels are auto-translated by the
