@@ -163,7 +163,7 @@ Documentation interactive de l'API : **http://127.0.0.1:8000/docs**.
 
 ---
 
-## D. Capacités d'analyse (Phases 2–5)
+## D. Capacités d'analyse
 
 Toutes sont locales d'abord et se dégradent bruyamment (jamais de fabrication).
 Schémas complets sur `/docs`.
