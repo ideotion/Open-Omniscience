@@ -202,11 +202,52 @@ def test_migration_matches_model_index_map_coverage():
         assert col in mig
 
 
-def test_map_coverage_query_plan_uses_the_covering_index(client):
-    """The real EXPLAIN QUERY PLAN, over the app's own boot-created schema (not a
-    synthetic profiling script), for queries.source_country_counts()'s article/tone
-    GROUP BY -- proving the fix, not just that the index exists."""
-    from src.database.session import engine
+def test_map_coverage_query_plan_uses_the_covering_index(tmp_path):
+    """The real EXPLAIN QUERY PLAN for queries.source_country_counts()'s article/tone
+    GROUP BY, proving the fix -- not just that the index exists.
+
+    Deliberately an ISOLATED, dedicated engine + deterministic seeded rows, NOT the
+    shared `client`/app-level engine: SQLite's cost-based planner picks between the
+    plain idx_article_source_id and this covering index using sqlite_stat1
+    (ANALYZE-derived), and the shared test-suite database's stats depend on
+    whatever OTHER tests ran before this one in the full suite -- exactly the
+    'never assert against the shared mutable engine' pollution hazard. A dedicated
+    engine with a real (if modest) row count + an explicit ANALYZE removes that
+    order-dependency; confirmed empirically to choose the covering index
+    deterministically at both 2,000 and 20,000 seeded articles.
+    """
+    from sqlalchemy import create_engine
+
+    from src.database.models import Article, Base, Source
+
+    db_path = tmp_path / "plan.db"
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        for i in range(1, 21):
+            conn.execute(
+                text(
+                    "INSERT INTO sources (id, name, domain, country, enabled) "
+                    "VALUES (:i, :n, :d, :c, 1)"
+                ),
+                {"i": i, "n": f"S{i}", "d": f"s{i}.test", "c": ["us", "fr", "de", ""][i % 4]},
+            )
+        for i in range(1, 2001):
+            conn.execute(
+                text(
+                    "INSERT INTO articles "
+                    "(id, url, canonical_url, source_id, title, content, hash, sentiment_score) "
+                    "VALUES (:i, :u, :u, :sid, 'T', 'c', :h, :s)"
+                ),
+                {
+                    "i": i,
+                    "u": f"https://x.test/{i}",
+                    "sid": (i % 20) + 1,
+                    "h": f"h{i}",
+                    "s": (i % 100) / 100.0 if i % 3 == 0 else None,
+                },
+            )
+        conn.execute(text("ANALYZE"))
 
     sql = (
         "SELECT sources.country, count(articles.id), avg(articles.sentiment_score), "
