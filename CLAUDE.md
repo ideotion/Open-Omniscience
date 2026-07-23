@@ -7045,6 +7045,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   fence carries forward every maintainer-ruling/operator/browser gate both source PRs already
   established (5 new verticals, the Observatory frontend, the LLM-rig-dependent runs, etc.) —
   none of those are touched. REMAINING: execution (nothing built yet — this is the brief only).
+- **FIELD FEEDBACK 2026-07-23 — seven impressions from multi-VM/multi-machine use (maintainer;
+  INTAKE + INVESTIGATION this session, code-verified against main@7405968; numbered questions put
+  to the maintainer, ANSWERS PENDING — record them here when they arrive):** (1) IMPORT REPORT —
+  downloadable per-import detail (successes/errors/redundancies + executive summary) offered in a
+  dedicated end-of-import popup: COMPOSES with the ruled 2026-07-20 POST-IMPORT RESULTS SCREEN
+  (same surface; the report becomes its download half — one build, not two). (2) IMPORT-TIME
+  ARTICLE SCREENING — what to do when an imported corpus (built by OLDER engines) carries
+  non-articles (link lists/marketplaces) that newer criteria would refuse; maintainer intuition =
+  disregard + count + optional export of the disregarded set for verification. Composes with the
+  0.3 close-gate row 5 (clean-up strategy DISCUSSED→AGREED before execution), the Slice-4a
+  reversible-quarantine carry-over, and the pending nav-soup prose gate; the
+  skip-vs-quarantine-in-DB decision is question 2 (session recommendation: quarantine-in-DB,
+  reversible, criteria-version-stamped — criteria WILL keep evolving). (3) LIBRARY TAB LIVE
+  GRAPHS instead of live figures (articles/hour past 7 days + live speed; database-count
+  evolution), box-sized, click-to-enlarge: the render substrate EXISTS (dashChartSvg tiny cards +
+  chartEnlarge→ooChart); the DATA gap is a history for non-article counts — articles/hour derives
+  retroactively from created_at, but source/keyword/link/price counts have NO history table →
+  needs a lightweight periodic snapshot recorder (honest: those graphs begin when recording
+  begins, never a fabricated backfill). (4) SCRAPING STALLS (minutes to dozens of minutes,
+  several installs) — investigate; candidates ranked: serial post-pass housekeeping between
+  passes (briefing refresh/wiki+law tracking/feed auto-import/idle maintenance), feed-level
+  backoff, Tor circuit trouble, VM suspend, the 2026-07-21 finding-3 stall cluster (cause still
+  unidentified); needs a diagnostics export from an affected instance + the item-3 graphs as the
+  detector. (5) LIBRARY "Downloaded" section COMPRESSES; Wikipedia pages/revisions-tracked and
+  law articles/revisions-tracked get OWN sections WITH graphs (series derivable from stored
+  revision timestamps). (6) ~50,000 "sources discovered" vs ~5,000 articles in 12 h on a fresh
+  install — VERIFIED: the discovery funnel CANNOT produce that (run_discovery is budget-bounded
+  ~10 candidates/pass; curated catalog seeds ~3.4k + 225 legal; world_news_sources.yml is NOT
+  generated/committed), so WHICH figure reads 50k is question 6 (best guess: distinct cited
+  domains from article_links — naturally ~10×/article); the ruled-but-unbuilt qualification
+  lifecycle + a two-class sources-vs-candidates display are the levers. (7) THROUGHPUT ~5,000
+  articles/12 h is too slow (want ≥10×; bandwidth visibly under-utilized) — VERIFIED: parallel
+  collection is ALREADY default-on with ceiling `collect_parallelism=50`, BUT
+  `collect_rate_mode` defaults to "target" at 500 KiB/s — the BandwidthGovernor deliberately
+  parks workers to hold ~500 KiB/s (the under-utilization is BY DESIGN; "maximum" mode ramps to
+  the ceiling and exists today). Other suspects before promising 10×: write-bound collection
+  (the F2 writer-gate saturation lesson; the deferred collector write-batching is
+  live-measure-gated and a collect_perf export from the slow instance is the measurement), and
+  PUBLISH-RATE bound (~3.4k enabled sources ≈ 1.5 new articles/source/12 h — more articles may
+  need more enabled sources [qualification funnel + the pending networked
+  build_world_news_catalog.py run] and/or crawl mode, not just more workers). NOTHING BUILT this
+  session — intake, verification and the question list only.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
