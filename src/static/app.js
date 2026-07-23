@@ -2721,9 +2721,24 @@
         : "";
       const chip = `<span class="chip">${esc(c.type.replace(/_/g, " "))}</span>`;
       const _title = cardTitle(c);
-      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" tabindex="0" role="button" aria-label="${esc(_title)}" onclick="leadFlip(this,event)" onkeydown="leadFlipKey(this,event)">
+      // lead-card-nested-interactive (P1, axe): role="button" tabindex="0" on this
+      // OUTER container, while it ALSO hosted genuinely interactive descendants
+      // (the back face's buttons/links once flipped), is an invalid ARIA pattern --
+      // a "button" must not contain more focusable content. leadFlip/leadFlipKey
+      // already guarded against clicks/keys originating from a nested interactive
+      // element (so the CLICK BEHAVIOUR was already correct), but the STRUCTURE
+      // itself was wrong. Fixed by moving the interactive button role onto the
+      // FRONT face specifically (it has no interactive children of its own -- chip/
+      // heading/summary/sig-line/hint are all plain text), and giving the BACK
+      // face's own "Back" hint its own small, explicitly-scoped button instead of
+      // relying on the whole (interactive-descendant-hosting) back face being
+      // itself a button. The outer container is now role="group" -- a plain
+      // semantic wrapper, not an interactive element that could conflict with what
+      // it contains.
+      return `<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" role="group" aria-label="${esc(_title)}">
         <div class="card-inner">
-          <div class="card-face card-front">
+          <div class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"
+               onclick="leadFlip(this.closest('.card'),event)" onkeydown="leadFlipKey(this.closest('.card'),event)">
             ${chip}
             <h4>${esc(_title)}</h4>
             <p class="sum">${esc(c.summary)}</p>
@@ -2747,7 +2762,13 @@
               ${collapseBtn}
               ${dismiss}
             </div>
-            <span class="lead-flip-hint back">⟲ ${esc(t("Back"))}</span>
+            <button class="lead-flip-hint back" onclick="leadFlip(this.closest('.card'))">⟲ ${esc(t("Back"))}</button>
+            <!-- the Back button intentionally omits ",event": leadFlip's own
+                 interactive-descendant guard (ev.target.closest("button,a,...")) would
+                 always match the button ITSELF (ev.target IS the button), silently
+                 blocking every flip-back click. Passing no event makes the guard's
+                 "ev &&" check false, so it falls straight to the toggle -- exactly what
+                 a dedicated, single-purpose flip-back control should do. -->
           </div>
         </div></div>`;
     }

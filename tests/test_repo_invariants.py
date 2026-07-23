@@ -2207,8 +2207,13 @@ def test_ui_invariants():
         "the method must render on the card back (the flip replaced the per-card '?')"
     )
     # Clicking flips; the standardized, family-themed button opens the corpus IN A NEW WINDOW.
-    assert "function leadFlip(" in html and 'onclick="leadFlip(this,event)"' in card_html, (
-        "clicking a Lead card must flip it (maintainer 2026-06-23)"
+    # lead-card-nested-interactive (P1, GUI-test finding): the flip trigger moved from
+    # the outer .card (now a plain role="group" wrapper) onto the front face
+    # specifically, resolving the ancestor .card via closest() -- see
+    # test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role for the
+    # full structural regression coverage of this restructuring.
+    assert "function leadFlip(" in html and "leadFlip(this.closest('.card'),event)" in card_html, (
+        "clicking a Lead card's front face must flip it (maintainer 2026-06-23)"
     )
     # corpus-open-dblclick-duplicate-tabs (P1): the direct window.open() moved into the
     # shared _openCorpusUrlOnce() debounce (a same-URL open within 700ms is a no-op) --
@@ -6492,3 +6497,62 @@ def test_evidence_links_underlined_and_use_the_shared_extlink_class():
         "no extLink() call site may re-introduce an inline text-decoration:none override"
     assert js.count('extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center")') >= 2, \
         "both temporal-map/insights source-link call sites must keep their style but drop the override"
+
+
+def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
+    """GUI-test finding lead-card-nested-interactive (P1, axe nested-interactive):
+    the outer Home Lead-card container was role="button" tabindex="0" while ALSO
+    hosting genuinely interactive descendants (links/buttons on the back face once
+    flipped) -- an invalid ARIA pattern (axe flagged 23 nodes). Fixed by making the
+    outer container a plain role="group" wrapper (never itself interactive), moving
+    the flip-trigger role/tabindex onto the FRONT face specifically (which has no
+    interactive descendants of its own -- chip/heading/summary/sig-line/hint are
+    all plain text), and giving the back's own "Back" hint its own small,
+    explicitly-scoped <button> instead of relying on the whole (button/link-hosting)
+    back face being itself a button."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    card_html = js.split("function cardHtml(", 1)[1].split("\n    function ", 1)[0]
+
+    # The outer container is a plain, non-interactive group wrapper -- exact-string
+    # match so no tabindex/onclick/role="button" can sneak back onto it.
+    assert (
+        '<div class="card bk-${esc(c.bucket)}" data-card="${c.id}" role="group" '
+        'aria-label="${esc(_title)}">'
+    ) in card_html, (
+        'the outer .card container must be role="group" with NO tabindex/onclick '
+        "(those now live on the front face specifically)"
+    )
+
+    # The front face (no interactive descendants of its own) carries the sole
+    # flip-trigger role/tabindex/handlers, resolving the ancestor .card via closest().
+    assert (
+        'class="card-face card-front" tabindex="0" role="button" aria-label="${esc(_title)}"'
+    ) in card_html, "the FRONT face must carry the flip-trigger role/tabindex"
+    assert (
+        "onclick=\"leadFlip(this.closest('.card'),event)\" "
+        "onkeydown=\"leadFlipKey(this.closest('.card'),event)\""
+    ) in card_html, "the front face's handlers must resolve to the ancestor .card via closest()"
+
+    # The back's flip-back hint is now a real, explicitly-scoped <button> (not a
+    # bare <span> that relied on an interactive-role ancestor it shared with other
+    # buttons on the same face).
+    assert (
+        '<button class="lead-flip-hint back" onclick="leadFlip(this.closest(\'.card\'))">'
+    ) in card_html, "the back's flip-back hint must be its own dedicated <button>"
+
+    # Regression proof for the guard-defeats-itself trap: leadFlip's own
+    # interactive-descendant guard (`ev.target.closest("button,a,input,label,
+    # details,summary")`) would ALWAYS match a click whose event.target IS a
+    # button -- so the Back button's own onclick call correctly OMITS the event
+    # argument (falling through the "ev &&" guard check straight to the toggle)
+    # rather than passing it and silently defeating its own click.
+    lead_flip_fn = js.split("function leadFlip(card, ev) {", 1)[1].split("\n    }\n", 1)[0]
+    assert 'ev.target.closest("button,a,input,label,details,summary")' in lead_flip_fn, \
+        "sanity: leadFlip's interactive-descendant guard must still exist"
+    assert "leadFlip(this.closest('.card'))" in card_html and \
+        "leadFlip(this.closest('.card'),event)" in card_html, (
+        "the Back button must call leadFlip WITHOUT an event arg (bypassing its own "
+        "guard, which would otherwise match the button being clicked); the front "
+        "face must still pass the event (so its OWN interactive-descendant guard "
+        "keeps protecting the flip from stray clicks bubbling up from elsewhere)"
+    )
