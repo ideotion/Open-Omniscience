@@ -4847,11 +4847,13 @@
     async function runLangDetect(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("langdetect-status");
+      const contEl = $("langdetect-continuous");
+      const continuous = !!(contEl && contEl.checked);
       if (btn) btn.disabled = true;
       if (el) el.textContent = t("Starting…");
       let fails = 0;
       try {
-        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({}) });
+        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous }) });
         for (;;) {
           let s;
           // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while the job runs.

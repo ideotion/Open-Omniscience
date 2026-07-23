@@ -193,6 +193,25 @@ def test_worklist_slides_past_labelled_so_the_tail_is_reachable(db, monkeypatch)
     assert db.query(AiKeyword).filter_by(article_id=a2, kind="language").count() == 1
 
 
+def test_exclude_ids_makes_the_query_advance_past_unstored_attempts(db):
+    """The continuous-mode seam: unlike the AI-label exclusion (which only advances past
+    STORED results), exclude_ids must also advance past articles a caller has merely
+    ATTEMPTED this run — even though a "none"/garbage result writes no ai_keyword row and
+    would otherwise keep re-appearing at the top of every subsequent (newest-first) query."""
+    a1 = _seed(db, language=None, detected=None)  # lower id (older)
+    a2 = _seed(db, language=None, detected=None)  # higher id (newer) -> first by id DESC
+    w1 = ld.unknown_language_work(db, 1)
+    assert [w.article_id for w in w1] == [a2]
+    # a2 is "attempted" (imagine it came back "none" -- no ai_keyword row written), so
+    # exclude_ids must slide the window to a1 exactly as the AI-label exclusion would.
+    w2 = ld.unknown_language_work(db, 1, exclude_ids={a2})
+    assert [w.article_id for w in w2] == [a1]
+    # excluding BOTH leaves nothing -- the query converges, never spins forever.
+    assert ld.unknown_language_work(db, 10, exclude_ids={a1, a2}) == []
+    # an empty/falsy exclude_ids must behave exactly like omitting the parameter (no filter).
+    assert [w.article_id for w in ld.unknown_language_work(db, 1, exclude_ids=set())] == [a2]
+
+
 def test_skip_existing_defends_against_a_stale_worklist(db, monkeypatch):
     """Defense-in-depth: even if a caller hands detect_for_articles a work item that was
     already labelled (a stale snapshot), skip_existing tops up rather than duplicating."""

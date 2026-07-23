@@ -31,7 +31,7 @@ client and no network. The batch writer mirrors ``jobs.extract_for_articles``.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 
 from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
@@ -107,7 +107,9 @@ def _already_labelled():
     return exists().where((AiKeyword.article_id == Article.id) & (AiKeyword.kind == LANG_KIND))
 
 
-def unknown_language_work(session: Session, limit: int) -> list[ArticleWork]:
+def unknown_language_work(
+    session: Session, limit: int, *, exclude_ids: Collection[int] | None = None
+) -> list[ArticleWork]:
     """Articles STILL unknown after the offline detector AND not yet AI-labelled: both
     ``language`` AND ``detected_language`` unset (NULL or empty) AND no ``ai_keyword``
     language row. Newest first, bounded.
@@ -117,14 +119,23 @@ def unknown_language_work(session: Session, limit: int) -> list[ArticleWork]:
     SAME newest ``limit`` rows — the tail beyond ``limit`` would be UNREACHABLE. Excluding
     already-labelled articles in SQL makes the window SLIDE, so re-running truly continues the
     tail and the candidate count falls. (A garbage/'none' article stores no row, so it
-    legitimately recurs and is retried — miss over invent.)"""
+    legitimately recurs and is retried — miss over invent.)
+
+    ``exclude_ids`` is the CONTINUOUS-MODE seam (2026-07-23): a "none"/failed article writes
+    no row, so within ONE continuous run — which must chain many batches without re-querying
+    the DB in between attempts — the SQL exclusion above is not enough on its own: it would
+    let the SAME still-unclassifiable articles (newest first, never labelled) re-occupy every
+    subsequent batch's window forever, starving the rest of the backlog. Passing the set of
+    article ids this run has already ATTEMPTED (regardless of outcome) makes every batch
+    advance past them too, so a continuous run always terminates once genuinely nothing is
+    left to attempt."""
     unset = lambda col: or_(col.is_(None), col == "")  # noqa: E731
-    rows = session.execute(
-        select(Article.id, Article.title, Article.content, Article.language)
-        .where(unset(Article.language), unset(Article.detected_language), ~_already_labelled())
-        .order_by(Article.id.desc())
-        .limit(limit)
-    ).all()
+    stmt = select(Article.id, Article.title, Article.content, Article.language).where(
+        unset(Article.language), unset(Article.detected_language), ~_already_labelled()
+    )
+    if exclude_ids:
+        stmt = stmt.where(~Article.id.in_(exclude_ids))
+    rows = session.execute(stmt.order_by(Article.id.desc()).limit(limit)).all()
     return [ArticleWork(r[0], r[1] or "", r[2] or "", r[3]) for r in rows]
 
 

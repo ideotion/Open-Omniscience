@@ -5690,6 +5690,13 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     # the endpoints + the opt-in Settings button + candidate count
     assert '@router.post("/detect-language")' in api and '@router.get("/detect-language/candidates")' in api
     assert "runLangDetect" in ui and 'id="langdetect-btn"' in ui and "loadLangDetectCount" in ui
+    # 2026-07-23 continuous-mode ask: an on/off switch chains internal batches until the
+    # backlog is exhausted, instead of a fixed one-shot cap; a "none" result is excluded via
+    # an in-run exclude_ids set (never persisted), so the unclassifiable residue can't starve
+    # the rest of the backlog by re-occupying every batch's query window.
+    assert "continuous: bool = False" in api and "exclude_ids=attempted" in api
+    assert "exclude_ids" in mod and "Article.id.in_(exclude_ids)" in mod
+    assert 'id="langdetect-continuous"' in ui and "continuous" in ui
 
 
 def test_newsletter_eml_upload_runs_off_the_event_loop():
