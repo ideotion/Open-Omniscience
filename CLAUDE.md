@@ -1002,6 +1002,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     one that starves on its very first permanently-unresolvable entry. Reproduce the
     EXACT adversarial scenario live (not just reason about it) before trusting a
     claimed defect OR a claimed fix.
+  - **A PER-ROW `IntegrityError` HANDLER INSIDE A MULTI-INSERT LOOP MUST ROLL BACK TO A
+    SAVEPOINT, NEVER THE WHOLE TRANSACTION (2026-07-23, S2 Library-snapshot recorder,
+    caught by re-reading my own code against this exact lesson list before pushing —
+    not by an external skeptic this time):** the hourly snapshot recorder loops over
+    several metrics, `session.add()`-ing one row per metric inside ONE open
+    transaction. A bare `session.flush()` + `except IntegrityError: session.rollback()`
+    on a concurrent-writer collision would have discarded EVERY prior metric's
+    already-flushed-but-uncommitted insert in the SAME loop iteration, not just the
+    colliding one — the identical class of defect the "delete-then-reinsert" and
+    "restore-merge re-index" lessons above already name for OTHER call sites. FIX: wrap
+    each row's insert in its own SAVEPOINT (`with session.begin_nested(): session.add(...)`)
+    so a rollback on that one IntegrityError rolls back only to the savepoint, leaving
+    sibling inserts in the same call untouched. PROVE it, don't just assert it: seed a
+    pre-existing colliding row for ONE metric and assert every OTHER metric still gets
+    recorded in the same call (`test_a_mid_batch_collision_never_discards_sibling_inserts`)
+    — a test that merely checks "the function doesn't raise" would pass even with the
+    unsafe bare-rollback version.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
@@ -7347,8 +7364,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   before AND after this fix round, ruff F/B clean, mypy 0 new errors (127==baseline),
   bandit clean, i18n 100% (2111/2111 ×12, no new keys — the new UI strings use the
   established un-keyed-diagnostics-panel convention). Frontend BROWSER-UNVERIFIED per
-  fork-3/Q6a. REMAINING for S2: the Library graphs + snapshot recorder is next per the
-  brief's ordering.
+  fork-3/Q6a.
+  **S2 SHIPPED 2026-07-23 (Library-tab evolution graphs + hourly snapshot recorder; branch
+  `claude/oos-s2-library-graphs`, draft PR onto `main`; the brief's own S2 slices):** new
+  `StatSnapshot` model (table `stat_snapshots`) — an append-only EAV row (metric,
+  hour-bucket `taken_at`, value) mirroring the vintage convention (`StatFigure`/
+  `SourceQualificationAttempt`); migration `f670ae07b75e` off the REAL alembic head
+  (`04c029205aa8`, read via `alembic heads`, never guessed) — `alembic check` confirms zero
+  drift. `src/database/snapshots.py:maybe_snapshot_library_stats` records one hourly
+  snapshot per tracked metric (articles/sources/keywords/wiki_pages/wiki_revisions/
+  law_documents/law_revisions), each a cheap `COUNT(*)` over a small/indexed table (never
+  the codec column-order perf trap); the `(metric, hour)` unique constraint IS the
+  freshness gate — no separate marker file, run inside `run_idle_maintenance` alongside
+  the existing keyword-cleanup/incremental-vacuum steps. `articles_per_hour` is DERIVED
+  live from `Article.created_at` (real history that already existed — backfills for free,
+  no gap); every snapshot-table metric honestly states `recording_began_at` instead of
+  implying a pre-recording gap means nothing happened. New `GET /api/library/history?
+  metric=&days=` serves both kinds through one contract (response window bounded — default
+  30d, clamped ≤10y — even though storage retention is infinite). Frontend: three new
+  dedicated Library-tab sections (Activity / Wikipedia tracked / Law tracked), small tiles
+  reusing the EXISTING `dashChartSvg` (invariant #16) + `chartEnlarge` — no new chart
+  renderer, no larger tile footprint; the "Downloaded" 9-tile grid is compressed into the
+  established collapsed-by-default `<details class="adv-collect">` disclosure (item 5's
+  ask), matching Settings' own legacy/advanced-section convention. Zero new i18n keys
+  (un-keyed English fallback, matching S1's own qualification-panel convention).
+  **A REAL SAFETY FIX caught pre-push by re-reading my own code against this project's OWN
+  documented lesson list (not by an external skeptic this time):** the recorder's per-
+  metric loop initially caught a concurrent-writer `IntegrityError` with a bare
+  `session.flush()` + `session.rollback()` — which per the standing "delete-then-reinsert"/
+  "restore-merge re-index" lesson family would have discarded EVERY prior metric's
+  already-flushed insert in the same loop, not just the colliding one. Fixed by wrapping
+  each row's insert in its own SAVEPOINT (`session.begin_nested()`), so a collision on one
+  metric never discards sibling metrics recorded earlier in the same call; PROVEN (not just
+  asserted) via `test_a_mid_batch_collision_never_discards_sibling_inserts` (seeds a
+  pre-existing colliding row, asserts every OTHER metric still lands). A repo-invariant
+  test pins the three graph hosts, the compressed Downloaded section, the render-function
+  wiring on tab-show, dashChartSvg/chartEnlarge reuse, and the composed real route (the
+  "slice-1c 404 lesson" — never assert two literal strings side by side).
+  VERIFIED: full suite 4423 passed/107 skipped/0 failed (py3.13 venv) — after fixing ONE
+  real cross-cutting failure the full run surfaced: a new test's `Path.read_text()` call
+  was missing `encoding="utf-8"`, caught by this repo's own house-wide
+  `test_all_text_io_declares_utf8_encoding` guard (a reminder that a full-suite run catches
+  defects no single test file run in isolation would). ruff F/B clean; mypy 0 new errors
+  (127==baseline); bandit clean; alembic upgrade-head + check both green; i18n 100%
+  (2111/2111 ×12, unchanged key count). Frontend BROWSER-UNVERIFIED per fork-3/Q6a.
+  REMAINING per the brief's ordering: S3 (import report + quarantine-in-DB screening, gated
+  on the top-100 calibration diagnostic shipping+being reviewed FIRST) then S4 (throughput
+  levers, duty-cycle fix first).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
