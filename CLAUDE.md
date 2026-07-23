@@ -7217,7 +7217,10 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   third 8-core/20 GB test: NOT needed for diagnosis (two points already separate the
   hardware-dependent mem floor from the hardware-independent gap+supply ceiling); SAVE that
   machine as the before/after benchmark for the duty-cycle fix.
-  **NEXT WORKFLOW (queued, ruled order, amended per the two exports):** (1) qualification
+  **NEXT WORKFLOW (queued, ruled order, amended per the two exports; BRIEF OF RECORD =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md)
+  — the operating manual for the executing session(s), with the verified-current-state table +
+  per-slice specs/acceptance):** (1) qualification
   VERIFY + SCALE (bulk job over the 42.6k–66.7k candidate backlogs / hardware-aware per-pass) +
   the two-class sources display; (2) the Library graphs UI + the snapshot recorder (infinite
   retention) + compressed Downloaded section + wiki/law tracked sections (items 3+5) — also the
@@ -7228,7 +7231,13 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   measured ≈2× on modern hardware) · supply growth via the funnel · COLLECTOR write-batching
   (now evidence-justified by the fast box's writer-bound verdicts) · memory headroom on small
   boxes (the mem floor is the worker ceiling; hardware-aware profiles) · crawl mode — plus the
-  first export's small defects (iv).
+  first export's small defects (iv). TWO MORE STALENESS CATCHES folded into the brief's
+  current-state table (verified in-tree 2026-07-23): the nav-soup PROSE GATE is BUILT
+  (`src/services/prose_gate.py`, AND-gated function-word + sentence-punctuation density, wired
+  opt-in into `non_article_scan`) and the RETROACTIVE-QUARANTINE JOB exists as a BUILT-BUT-
+  DELIBERATELY-UNWIRED dry-run scaffold (`src/analytics/quarantine_job.py`, `_work_fn` seam, no
+  Article quarantine column yet) — its own docstring gates execution on maintainer sign-off,
+  WHICH THE A2–A4 RULINGS NOW PROVIDE, conditioned on the S3.1 calibration-review round.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
