@@ -1514,6 +1514,28 @@
     // Back/Forward navigates the tab history (render only — the URL already moved).
     window.addEventListener("popstate", () =>
       showTab((location.hash || "#home").slice(1), false));
+    // imp-ghost-modal-after-back (P1): no popstate listener anywhere closed an open
+    // <dialog> -- browser Back while e.g. #ux-export was open left the tab underneath
+    // repainted while the dialog's native modal top-layer backdrop stayed active,
+    // blocking every click with no visual cue (only Escape recovered). Close EVERY
+    // open dialog on Back/Forward via the one shared native mechanism -- this covers
+    // all of them (#ux-import/#ux-export/#chart-enlarge/#synth-window/#link-preview/
+    // #wiki-tc/#folder-picker/#net-consent/#guide-wizard/#corpus-win), not just one.
+    //
+    // A BARE .close() is not enough: per the <dialog> spec it fires only "close",
+    // never "cancel" -- and #net-consent's ensureOnline() Promise only ever resolves
+    // via its ok/cancel click handlers OR dlg.oncancel (the same for #guide-wizard's
+    // closeGuide bookkeeping, wired to "cancel"). A bare .close() would silently
+    // ORPHAN that Promise forever (every ensureOnline() caller hangs with no error),
+    // and leave the guide marked not-done. Dispatch a synthetic "cancel" first (the
+    // same signal Escape sends) so each dialog's own resolve/cleanup path runs --
+    // resolving #net-consent as `false` ("stay offline"), the same safe default as
+    // Esc -- THEN force-close (a no-op if the cancel handler already closed it).
+    window.addEventListener("popstate", () =>
+      document.querySelectorAll("dialog[open]").forEach((d) => {
+        d.dispatchEvent(new Event("cancel", {cancelable: true}));
+        d.close();
+      }));
 
     // -- Appearance / customization (local-only, never transmitted) --------- //
     const UI_KEY = "oo.ui";
