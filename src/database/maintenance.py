@@ -82,6 +82,13 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS idx_article_source_sentiment "
         "ON articles (source_id, sentiment_score)"
     ),
+    # S3.2 (2026-07-23 field-feedback workflow): every search/browse query filters on
+    # articles.quarantined -- mirrored on the ORM model's __table_args__ (fresh DBs) +
+    # the migration (alembic-managed DBs); this boot self-heal covers existing installs
+    # that don't run `make migrate`.
+    "idx_article_quarantined": (
+        "CREATE INDEX IF NOT EXISTS idx_article_quarantined ON articles (quarantined)"
+    ),
 }
 
 
@@ -266,6 +273,42 @@ def ensure_article_ip_columns(engine: Engine) -> list[str]:
                 added.append(name)
     if added:
         _LOG.info(f"added articles source-IP column(s): {', '.join(added)}")
+    return added
+
+
+# QUARANTINE columns (S3.2, 2026-07-23 field-feedback workflow). Additive + NULLABLE,
+# no backfill -- an existing article simply has quarantined=NULL ("never judged"),
+# treated identically to False by every reader (Article.quarantined.isnot(True)). Same
+# self-heal pattern as the IP/identity columns.
+_ARTICLE_QUARANTINE_COLUMNS: dict[str, str] = {
+    "quarantined": "ALTER TABLE articles ADD COLUMN quarantined BOOLEAN",
+    "quarantine_reason": "ALTER TABLE articles ADD COLUMN quarantine_reason VARCHAR(255)",
+    "quarantine_criteria_version": "ALTER TABLE articles ADD COLUMN quarantine_criteria_version VARCHAR(40)",
+    "quarantined_at": "ALTER TABLE articles ADD COLUMN quarantined_at DATETIME",
+}
+
+
+def ensure_article_quarantine_columns(engine: Engine) -> list[str]:
+    """Self-heal the quarantine columns on ``articles`` (idempotent, additive).
+
+    No backfill: an existing article has quarantined=NULL (never judged), identical in
+    meaning to quarantined=False. No-op on a fresh DB / non-sqlite / missing table."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_QUARANTINE_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added articles quarantine column(s): {', '.join(added)}")
     return added
 
 
@@ -764,6 +807,7 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
         frozenset(_ARTICLE_IDENTITY_COLUMNS)
         | frozenset(_ARTICLE_IP_COLUMNS)
         | frozenset(_ARTICLE_DETECTED_LANG_COLUMN)
+        | frozenset(_ARTICLE_QUARANTINE_COLUMNS)
     ),
     "keywords": frozenset(_KEYWORD_COUNTER_COLUMNS) | frozenset(_KEYWORD_EXTRACTOR_COLUMNS),
     # ensure_keyword_mention_source_column (inline DDL, column + its index).

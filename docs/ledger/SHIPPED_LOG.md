@@ -3977,3 +3977,46 @@ that the function "doesn't raise."
   signal, not boilerplate.** The one seed the pre-vetting CSV singled out with an extra note —
   "UNESCO World Heritage Site" — was also the one seed among the ~145 unflagged
   `review-post-resolution` rows that actually drifted off-target on this run.
+
+## 2026-07-23 -- S3.2 quarantine schema + write step (field-feedback workflow)
+
+Shipped: `Article.quarantined`/`quarantine_reason`/`quarantine_criteria_version`/
+`quarantined_at` (additive, boot-self-healed + migrated), a real `write=True` mode for
+`default_quarantine_candidates_batch`, `QuarantineJobManager` wired into the app
+(`src/api/quarantine.py` + the generic `/api/jobs/{quarantine}/...` dispatch), and the
+`/api/articles` search/browse/`ids=` exclusion chokepoint. Full detail in
+`docs/ledger/shipped.csv` (2026-07-23, corpus-quality, "S3.2 (quarantine schema + write
+step)...").
+
+**LESSON: a resumable job manager's optional destructive/write MODE must be persisted
+alongside its cursor, and `resume()` must ALWAYS explicitly re-supply it to `start()` --
+never let `start()`'s own parameter default silently reset the mode on resume.** The
+first cut gated the mode assignment on the cursor (`if _cursor <= 0: self._write =
+bool(write)`), reasoning "only a fresh run decides the mode." But `resume()` calls
+`start()` WITHOUT passing `write=` (it has no reason to know the paused run's mode) --
+so a legitimately-paused WRITE-mode run that happened to have `_cursor == 0` (no
+progress made yet, e.g. paused on the very first batch) would have silently resumed in
+DRY-RUN mode, an operator-invisible behaviour flip on a data-safety-relevant control.
+Caught by design review before it was ever exercised by a test, not by a failing test --
+fixed by making `start()` ALWAYS set the mode unconditionally from its own parameter, and
+`resume()` explicitly captures `w = self._write` before calling `start(..., write=w)` so
+the paused run's mode survives regardless of cursor position. Pinned with two dedicated
+regression tests (write-mode and dry-run-mode each independently proven to survive a
+pause/resume cycle) -- the general form: any resumable job with more than one execution
+MODE (not just a cursor) needs an explicit mode-preservation test, because the mode is
+exactly the kind of state a "just re-call start()" resume path quietly drops.
+
+**LESSON: a query-result CACHING optimization keyed on "is the filter list non-empty" is
+silently defeated by ANY unconditional addition to that same list.** `_query_articles`'s
+browse branch chooses between a cheap CACHED total (`_browse_total_cached`, no filters)
+and a live `.count()` (`if filters:` -- filters is a plain Python list). Appending a
+new always-on exclusion condition (quarantine) directly into that list would have made
+`filters` NEVER empty again for the extremely common no-other-filter browse case,
+permanently defeating the S2.3 caching win for every browse request. The fix is to model
+"always-on, non-optional" conditions SEPARATELY from the "user-supplied, optional"
+filters list, and make the cached path itself aware of the always-on condition (rather
+than bypassing the cache entirely). General form: before adding a new WHERE condition to
+an existing query-building function, check whether that function branches its OWN
+behaviour (caching, index choice, plan shape) on whether its filter collection is empty --
+an always-on addition to that same collection can silently change which branch every
+caller takes.

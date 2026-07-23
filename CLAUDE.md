@@ -1034,6 +1034,25 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     video-game sharing the concept's name) and TARGET-SPECIFICITY DRIFT (the search API's top hit
     being a real but far narrower related item) — NOT with seed word-count (this batch's 12 drops
     split evenly 6 single-word / 6 multi-word, refuting that naive predictor).
+  - **A RESUMABLE JOB'S EXECUTION MODE MUST BE EXPLICITLY RE-SUPPLIED ON RESUME, NEVER LEFT TO A
+    DEFAULT (2026-07-23, S3.2 quarantine write step):** `QuarantineJobManager.start()` originally
+    only set `self._write` when `_cursor<=0` ("only a fresh run decides the mode"), but `resume()`
+    calls `start()` WITHOUT passing `write=` — so a legitimately-paused WRITE-mode run with
+    `_cursor==0` (paused before its first batch committed) would have silently resumed in
+    DRY-RUN mode, an invisible flip on a data-safety control. Caught by design review, not a
+    failing test, BEFORE it shipped. Fix: `start()` always sets the mode unconditionally from its
+    own parameter; `resume()` explicitly captures the paused run's mode and re-passes it. General
+    rule: any resumable job with more than a cursor (a mode, a scope, a target) needs an explicit
+    mode-preservation test — "just re-call start()" is exactly where that extra state quietly drops.
+  - **A CACHING BRANCH KEYED ON "IS THE FILTER LIST EMPTY" IS SILENTLY DEFEATED BY AN UNCONDITIONAL
+    ADDITION TO THAT SAME LIST (2026-07-23, S3.2 quarantine write step):** `_query_articles`'s
+    browse path picks a cheap CACHED total when `filters` (a plain list) is empty, else a live
+    `.count()`. Appending an always-on exclusion (the new quarantine condition) directly into
+    `filters` would make it never empty again, permanently defeating the cache for the common
+    no-other-filter case. Fix: model "always-on" conditions SEPARATELY from the optional filter
+    list, and make the cached path itself aware of the always-on condition. Before adding a WHERE
+    clause to an existing query builder, check whether it branches its OWN behaviour (caching,
+    plan shape) on the filter collection being empty.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
@@ -7456,6 +7475,69 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   data-safety skeptic mandate for the schema/write-path slices):** the quarantine schema +
   write step, import-time screening, the retroactive screening job (dry-run-default, real
   execution gated on this report's review), and the import report + post-import screen.
+  **S3.2 SHIPPED 2026-07-23 (the quarantine SCHEMA + WRITE STEP; branch
+  `claude/oos-s3-quarantine-write`, draft PR onto `main`):** the reversible flag +
+  first `/api/articles` exclusion chokepoint the brief's S3.4 execution will need.
+  `Article` gains four additive nullable columns (`quarantined` bool ·
+  `quarantine_reason` · `quarantine_criteria_version` · `quarantined_at`) + a covering
+  `idx_article_quarantined` index — a new `ensure_article_quarantine_columns` boot
+  self-heal (mirrors `ensure_article_ip_columns`, wired before `ensure_hot_indexes`
+  since the new index references the new column) PLUS a matching migration
+  `95120f685050` (chained onto the real `alembic heads` tip, `alembic check` confirms
+  zero drift). `Article.quarantined.isnot(True)` is the ONE exclusion condition (NULL
+  == "never judged" reads identically to `False` — a pre-migration row is never
+  silently hidden). `src/backup/merge.py:_merge_articles`'s explicit column-map INSERT
+  now carries the 4 columns so a quarantine verdict rides the additive-restore merge
+  (a gap noted in passing: `server_ip`/`detected_language`/`content_multihash`/
+  `canon_version` are STILL absent from that same INSERT list — a pre-existing gap,
+  flagged not fixed, out of this slice's scope). `default_quarantine_candidates_batch`
+  (the S3 scaffold) gains a real `write=True` mode — a per-row bulk
+  `Query.update(..., synchronize_session=False)` (confirmed covered by the single-
+  writer gate's `do_orm_execute` listener, no new gate-wiring needed), idempotent (an
+  already-quarantined row is skipped and tallied separately as `already_quarantined`
+  vs `newly_written`), stamping `quarantine_criteria_version` from
+  `criteria_calibration.CRITERIA_VERSION` by default. `QuarantineJobManager` is now
+  WIRED into the app for real (`get_quarantine_manager()` singleton; new
+  `src/api/quarantine.py`: `POST /api/quarantine/start?write=` · `GET .../status` ·
+  `POST /.../{pause,resume,cancel}`, plus the generic `/api/jobs/{quarantine}/...`
+  task-manager dispatch — `_quarantine_jobs()` mirrors `_reindex_jobs()` exactly,
+  `"quarantine"` joins `_DB_WRITER_KINDS`). `write=False` (the endpoint default) is
+  BYTE-IDENTICAL to the pre-slice dry-run scaffold. `/api/articles` (search FTS
+  branch, plain browse branch incl. its S2.3 cached-total path, and the explicit
+  `ids=` bypass) now excludes quarantined rows — deliberately scoped to ONLY this one
+  chokepoint (search + browse + CSV/JSON export + card-seeded exact-id corpora all
+  route through `_query_articles`); the omnibar/watches/reporting/framing surfaces
+  (which call `search_ids` directly) and Home producers/analytics aggregations are an
+  HONEST, undone remainder — not silently claimed covered. **A real design catch made
+  BEFORE writing any code (not via a failing test):** the S2.3 cached-total
+  optimization branches on `if filters:` (a Python list) vs the cached path — so
+  unconditionally appending the quarantine condition to that list would have made
+  `filters` NEVER empty again, silently defeating the cache for the common
+  no-other-filter browse case; fixed by applying `Article.quarantined.isnot(True)` as
+  an ALWAYS-ON condition separate from the optional `filters` list, and making
+  `_browse_total_cached` itself quarantine-aware in its own cached query. **A second
+  catch, also design-time:** `start()`'s write-mode assignment was originally
+  cursor-gated (`if _cursor <= 0: self._write = bool(write)`) on the assumption only a
+  fresh run sets the mode — but `resume()` calls `start()` without passing `write=`,
+  so a legitimately-paused write-mode run with `_cursor==0` (no progress yet) would
+  have silently flipped back to dry-run on resume; fixed by making `start()` always
+  set the mode unconditionally from its own parameter and having `resume()` explicitly
+  re-supply the paused run's `self._write`, pinned by two dedicated regression tests
+  (write-mode and dry-run-mode both survive a pause/resume cycle). VERIFIED (py3.13
+  venv): `test_quarantine_job.py` (11, incl. write-mode stamping/idempotency, dry-run
+  never mutates, the two resume-mode-preservation regressions, and a route-composition
+  test mirroring `test_bulk_qualification_job.py`'s pattern since the manager singleton
+  isn't `Depends()`-wired) + a new `tests/test_article_quarantine_search.py` (4: FTS
+  exclusion, browse exclusion + total, explicit `ids=` exclusion, structured-filter
+  browse exclusion — via the `app.dependency_overrides[get_db]` isolated-engine
+  pattern from `test_api_search.py`) + the backup/merge + migration regression suites,
+  all green; ruff F/B clean; mypy 0 new errors (127==baseline, none attributed to any
+  touched file); bandit clean. **REMAINING (S3.3–S3.5, unchanged from the S3.1 note):**
+  import-time screening, the retroactive screening job's real execution (still
+  gated on the maintainer's review of S3.1's calibration report — nothing in S3.2
+  ran it), and the import report + post-import screen; plus the honest remainder above
+  (omnibar/watches/reporting/framing exclusion, the "clear junk keywords via reindex"
+  step, and any frontend trigger control — none built this slice).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

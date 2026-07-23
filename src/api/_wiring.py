@@ -56,6 +56,7 @@ def wire(app) -> None:
     from src.api.markets import router as markets_router
     from src.api.monitoring import router as monitoring_router
     from src.api.personality import router as personality_router
+    from src.api.quarantine import router as quarantine_router
     from src.api.reporting import router as reporting_router
     from src.api.safety import router as safety_router
     from src.api.scheduler import router as scheduler_router
@@ -77,6 +78,7 @@ def wire(app) -> None:
     # immaterial for dispatch, but the route set + order stay identical).
     spine = (
         source_management_router,
+        quarantine_router,
         database_router,
         library_router,
         backup_v2_router,

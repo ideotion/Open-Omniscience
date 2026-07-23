@@ -1,33 +1,33 @@
 """
-Retroactive QUARANTINE job -- SCAFFOLDING ONLY, not wired to run, not wired to any real write.
+Retroactive QUARANTINE job.
 
-NAV-SOUP SPECIMEN ruling (2026-07-20) row 5 EXECUTION SCOPE: the ruling's finding (a) is that
-legacy non-article junk already sits in the DB (predating the #659 ingest-door filter and the
-PROSE GATE this session added), and that "the Slice-4a retroactive QUARANTINE carry-over is what
-removes it". This module builds the MECHANISM that COULD run that carry-over -- reusing
-``ReindexJobManager``'s resumable-job CHASSIS SHAPE (state machine, worker thread, persisted
-cursor, batching, progress/ETA, pause/resume/cancel) -- but per the 0.3 gate's own scope, actually
-EXECUTING a quarantine against real data needs separate maintainer sign-off. So, explicitly:
+NAV-SOUP SPECIMEN ruling (2026-07-20) row 5 EXECUTION SCOPE + the 2026-07-23 field-feedback S3.2
+sign-off (A2/A3): legacy non-article junk sits in the DB (predating the #659 ingest-door filter
+and the PROSE GATE), and "the Slice-4a retroactive QUARANTINE carry-over is what removes it". This
+module is the resumable job chassis (mirrors ``ReindexJobManager``: state machine, worker thread,
+persisted cursor, batching, progress/ETA, pause/resume/cancel) that runs it.
 
-  * this manager is BUILT, TESTED (on a throwaway in-memory DB), and IMPORTABLE, but
-  * NOTHING in the running app constructs/starts it: there is no ``get_quarantine_manager()``
-    singleton wired into ``/api/jobs``, no startup call, no cron/scheduler entry -- unlike
-    ``ReindexJobManager``, which IS live-wired (``src/analytics/reindex_job.get_reindex_manager``,
-    consumed by the jobs API). A maintainer who wants to run this imports the class directly.
-  * the default WORK FUNCTION (:func:`default_quarantine_candidates_batch`) does NOT write to the
-    database at all -- there is no ``quarantined`` column on ``Article`` yet (adding one is a
-    schema decision for the sign-off session, row 5, not this build). It DETECTS candidates
-    (reusing ``classify_non_article`` URL-shape rules + the opt-in PROSE GATE from this session)
-    and reports them in the batch's tally as a DRY-RUN count + a bounded id sample -- i.e. running
-    this job today is equivalent to a resumable, chunked version of
-    ``scan_non_article_candidates(..., include_prose_gate=True)``, with NO side effect.
-  * idempotency (the chassis's own correctness net, per ``ReindexJobManager``'s docstring) is
-    satisfied BY CONSTRUCTION here: re-scanning the same id range just re-detects the same
-    candidates and re-reports the same tally -- there is no persisted mutation to double-apply.
-    When a real write step is wired in later (behind the ``_work_fn`` test seam below, once a
-    ``quarantined``/``quarantine_reason`` column exists), THAT function must itself be a no-op on
-    an already-quarantined row, exactly as the setup note requires -- this scaffold's job is to
-    make that swap-in point exist, not to pre-empt the schema decision.
+WRITE IS OPT-IN, DRY-RUN IS THE DEFAULT (the binding S3 execution gate): :func:`default_quarantine_
+candidates_batch` takes a ``write: bool = False`` parameter. With ``write=False`` (the default,
+byte-identical to the original scaffold's behaviour) it only DETECTS candidates (the #659 URL-shape
+rules via ``classify_non_article`` + the opt-in PROSE GATE) and reports them in the batch's tally --
+a dry-run count + a bounded id sample, no side effect. With ``write=True`` it ADDITIONALLY stamps
+each detected candidate's ``Article.quarantined``/``quarantine_reason``/``quarantine_criteria_
+version``/``quarantined_at`` columns -- REVERSIBLE by construction (a stamp, never a delete; nothing
+about the row, its keywords, or its provenance is touched otherwise) and idempotent (an
+already-quarantined row is skipped, never re-stamped/double-counted).
+
+``QuarantineJobManager`` IS now wired into the app (:func:`get_quarantine_manager` + ``/api/jobs``,
+mirroring ``ReindexJobManager``'s own wiring) -- but STARTING A REAL WRITE RUN is still a deliberate
+choice per call (``write=True`` on ``start()``/the endpoint; the default stays dry-run/detection-
+only), consistent with the brief's own binding order: S3.1's calibration report ships and is
+REVIEWED before any real write executes against a maintainer's corpus.
+
+NOT covered by this module (explicitly out of scope, a follow-up): quarantined articles' existing
+KEYWORD MENTIONS are left exactly as they are -- a "Re-index the whole corpus" / "Clean up
+keywords" pass (the existing reindex job) is the honest, separate, real-cost way to clear their
+contribution from keyword aggregates; running it is the operator's own choice after a quarantine
+batch, never chained automatically here.
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -52,26 +53,37 @@ def _default_session():
 
 
 def default_quarantine_candidates_batch(
-    session: Any, *, after_id: int = 0, limit: int = _BATCH, include_prose_gate: bool = True,
+    session: Any,
+    *,
+    after_id: int = 0,
+    limit: int = _BATCH,
+    include_prose_gate: bool = True,
+    write: bool = False,
+    criteria_version: str | None = None,
 ) -> dict[str, Any]:
     """The default per-batch WORK FUNCTION: DETECT already-flagged non-article candidates (the
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
     ``>= _ARTICLE_MIN_WORDS`` bodies) ordered by id after ``after_id`` -- a resumable, chunked
     version of :func:`src.analytics.non_article_scan.scan_non_article_candidates`.
 
-    THIS BUILD NEVER WRITES TO THE DATABASE: there is no ``quarantined`` column on ``Article`` yet
-    (a schema decision for the maintainer sign-off session, not this build). "Quarantining" here
-    means reporting a candidate's id in ``quarantined_ids`` -- a DRY-RUN detection tally, not a
-    mutation. Idempotent by construction (no persisted state to double-apply): re-running over the
-    same range just re-detects the same candidates."""
+    ``write=False`` (the default): DRY-RUN, no database mutation -- "quarantining" here means
+    reporting a candidate's id in ``quarantined_ids``, exactly the original scaffold's behaviour.
+    ``write=True``: additionally STAMPS each detected candidate (idempotent -- an already-
+    quarantined row, per ``Article.quarantined is True``, is skipped and never re-counted/
+    re-stamped, so re-running over the same range after a partial write is always safe).
+    ``criteria_version`` defaults to :data:`src.analytics.criteria_calibration.CRITERIA_VERSION`
+    when not given."""
+    from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article
     from src.ingest.non_article import _ARTICLE_MIN_WORDS, classify_non_article
     from src.services.prose_gate import prose_gate_verdict
 
+    criteria_version = criteria_version or CRITERIA_VERSION
+
     q = (
         session.query(
             Article.id, Article.url, Article.word_count, Article.content,
-            Article.language, Article.detected_language,
+            Article.language, Article.detected_language, Article.quarantined,
         )
         .filter(Article.id > after_id)
         .order_by(Article.id)
@@ -79,9 +91,11 @@ def default_quarantine_candidates_batch(
     )
     quarantined_ids: list[int] = []
     by_reason: dict[str, int] = {}
+    to_write: dict[int, str] = {}  # id -> signal, for rows NOT already quarantined
+    already_quarantined = 0
     scanned = 0
     last_id = after_id
-    for aid, url, wc, content, lang, detected in q:
+    for aid, url, wc, content, lang, detected, is_quarantined in q:
         scanned += 1
         last_id = int(aid)
         verdict = classify_non_article(url or "", word_count=wc)  # URL-shape rules (text=None)
@@ -92,22 +106,50 @@ def default_quarantine_candidates_batch(
         if signal is not None:
             quarantined_ids.append(int(aid))
             by_reason[signal] = by_reason.get(signal, 0) + 1
+            if is_quarantined:
+                already_quarantined += 1  # idempotent: already stamped, never re-counted as new
+            else:
+                to_write[int(aid)] = signal
+
+    newly_written = 0
+    if write and to_write:
+        now = datetime.now(UTC)
+        for aid, signal in to_write.items():
+            # A targeted, no-load UPDATE (the batch already read every candidate's
+            # columns above; no second content decrypt). synchronize_session=False --
+            # this session never re-reads these rows again in the same batch.
+            session.query(Article).filter(Article.id == aid).update(
+                {
+                    "quarantined": True,
+                    "quarantine_reason": signal,
+                    "quarantine_criteria_version": criteria_version,
+                    "quarantined_at": now,
+                },
+                synchronize_session=False,
+            )
+        session.commit()
+        newly_written = len(to_write)
+
     return {
         "scanned": scanned,
         "quarantined": len(quarantined_ids),
         "quarantined_ids": quarantined_ids,
+        "already_quarantined": already_quarantined,
+        "newly_written": newly_written,
         "by_reason": by_reason,
         "last_id": last_id,
         "done": scanned < limit,
+        "write": write,
     }
 
 
 class QuarantineJobManager:
-    """A pausable, resumable retroactive-quarantine DETECTION job -- the SAME chassis shape as
+    """A pausable, resumable retroactive-quarantine job -- the SAME chassis shape as
     ``ReindexJobManager`` (state machine, worker thread, persisted cursor, batching, progress/ETA,
-    pause/resume/cancel), for the NAV-SOUP SPECIMEN ruling's row-5 carry-over. See the module
-    docstring: BUILD-ONLY -- no singleton getter is wired into the app, and the default work
-    function never writes to the database (dry-run detection tally only)."""
+    pause/resume/cancel), for the NAV-SOUP SPECIMEN ruling's row-5 carry-over. ``write`` (default
+    False, dry-run detection only) is fixed for the LIFETIME of one run -- a resume ALWAYS continues
+    in the mode the run started in (persisted alongside the cursor), never silently flipping a
+    dry-run into a real write or vice versa."""
 
     def __init__(self, *, state_path: Path | None = None) -> None:
         self._lock = threading.RLock()
@@ -118,12 +160,13 @@ class QuarantineJobManager:
         self._total = 0  # total articles at start (for percent + ETA)
         self._done = 0  # articles scanned so far (for percent + ETA)
         self._done_at_start = 0  # _done when the current run began (honest run-rate ETA)
-        self._tally: dict[str, int] = {}  # quarantined / by-reason counts (dry-run, never a write)
+        self._tally: dict[str, int] = {}  # quarantined / by-reason / write counts
+        self._write = False  # dry-run by default; fixed for a run's lifetime, persisted across resumes
         self._error: str | None = None
         self._cancelled = False
         self._started_at: float | None = None
         self._session_factory: Callable[[], Any] | None = None  # test seam
-        self._work_fn: Callable[..., dict[str, Any]] | None = None  # test seam / future real-write swap-in
+        self._work_fn: Callable[..., dict[str, Any]] | None = None  # test seam
         self._state_path_override = state_path
         self._load_persisted()
 
@@ -143,7 +186,7 @@ class QuarantineJobManager:
             p.write_text(
                 json.dumps({
                     "cursor": self._cursor, "total": self._total, "done": self._done,
-                    "tally": self._tally, "state": self._state,
+                    "tally": self._tally, "state": self._state, "write": self._write,
                 }),
                 encoding="utf-8",
             )
@@ -169,6 +212,7 @@ class QuarantineJobManager:
         self._total = max(0, int(d.get("total") or 0))
         self._done = max(0, int(d.get("done") or 0))
         self._tally = {str(k): int(v) for k, v in (d.get("tally") or {}).items()}
+        self._write = bool(d.get("write", False))
         self._state = "paused"
 
     # -- lifecycle ---------------------------------------------------------- #
@@ -188,11 +232,14 @@ class QuarantineJobManager:
             return 0
 
     def start(
-        self, *, _session_factory=None, _work_fn=None, _cursor: int = 0, _total: int = 0, _done: int = 0,
+        self, *, _session_factory=None, _work_fn=None, _cursor: int = 0, _total: int = 0,
+        _done: int = 0, write: bool = False,
     ) -> dict:
         """Launch the worker. RuntimeError if already running. ``_work_fn`` overrides the default
-        detection-only batch function (the seam a future real-write quarantine would use, once a
-        schema for it exists and a maintainer has signed off -- see the module docstring)."""
+        batch function (a test seam). ``write`` (default False, dry-run detection only) is fixed
+        for this run's lifetime -- ``resume()`` always passes through the SAME mode the run
+        started in, never a caller-supplied override, so a paused run can never silently resume
+        in a different mode than it started."""
         with self._lock:
             if self._alive():
                 raise RuntimeError("A quarantine job is already running.")
@@ -205,6 +252,12 @@ class QuarantineJobManager:
             self._total = max(0, _total)
             if _cursor <= 0:
                 self._tally = {}
+            # The caller supplies the mode explicitly every time: a genuinely fresh
+            # external start passes the operator's own choice; resume() (below) always
+            # passes through the PRESERVED mode of the run being resumed -- never
+            # silently reset to the default, even when a paused/errored run's cursor
+            # happens to still be 0.
+            self._write = bool(write)
             self._error = None
             self._started_at = time.monotonic()
             self._session_factory = _session_factory
@@ -223,16 +276,23 @@ class QuarantineJobManager:
             try:
                 with self._lock:
                     after = self._cursor
+                    write = self._write
                     self._save()
                 while True:
                     if self._stop.is_set():
                         break
-                    r = work(session, after_id=after, limit=_BATCH)
+                    r = work(session, after_id=after, limit=_BATCH, write=write)
                     after = int(r["last_id"])
                     with self._lock:
                         self._tally["scanned"] = self._tally.get("scanned", 0) + int(r.get("scanned", 0))
                         self._tally["quarantined"] = self._tally.get("quarantined", 0) + int(
                             r.get("quarantined", 0)
+                        )
+                        self._tally["already_quarantined"] = self._tally.get(
+                            "already_quarantined", 0
+                        ) + int(r.get("already_quarantined", 0))
+                        self._tally["newly_written"] = self._tally.get("newly_written", 0) + int(
+                            r.get("newly_written", 0)
                         )
                         for sig, cnt in (r.get("by_reason") or {}).items():
                             self._tally[f"reason:{sig}"] = self._tally.get(f"reason:{sig}", 0) + int(cnt)
@@ -267,7 +327,8 @@ class QuarantineJobManager:
             sf, wf = self._session_factory, self._work_fn
             cur, tot, done = self._cursor, self._total, self._done
             tally = dict(self._tally)
-        out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done)
+            w = self._write  # ALWAYS preserve the mode the paused run was in
+        out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done, write=w)
         with self._lock:
             self._tally = tally
             self._save()
@@ -302,11 +363,19 @@ class QuarantineJobManager:
                 "eta_seconds": eta_s,
                 "error": self._error,
                 "running": self._alive(),
-                "dry_run": True,  # ALWAYS true in this build: detection only, never a DB write
+                "dry_run": not self._write,  # honest: reflects the ACTUAL mode this run is in
             }
 
 
-# Deliberately NO module-level singleton / get_quarantine_manager() here (unlike
-# ReindexJobManager's get_reindex_manager()) -- per the module docstring, this scaffolding is not
-# wired into the app: no /api/jobs entry, no startup construction, no scheduler/cron entry. A
-# maintainer who wants to run it constructs QuarantineJobManager(...) directly.
+_manager: QuarantineJobManager | None = None
+
+
+def get_quarantine_manager() -> QuarantineJobManager:
+    """The module-level singleton (mirrors ``src.analytics.reindex_job.get_reindex_manager``),
+    wired into ``/api/jobs`` (S3.2, 2026-07-23 field-feedback workflow). Starting a REAL WRITE
+    run is still a deliberate per-call choice (``write=True``) -- the default stays dry-run/
+    detection-only, per the brief's binding execution gate."""
+    global _manager
+    if _manager is None:
+        _manager = QuarantineJobManager()
+    return _manager

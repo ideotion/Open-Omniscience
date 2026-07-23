@@ -919,11 +919,13 @@ def _load_articles_in_order(session, ids: list[int]) -> list:
 
 
 def _browse_total_cached(session) -> int:
-    """The UNFILTERED browse total — the corpus-scaled ``COUNT(*) FROM articles`` (P1.3):
-    served from a DATA-AWARE cache keyed on ``PRAGMA data_version`` (the /status pattern).
-    Repeat browse pages with no intervening write reuse the count (a HIT); a commit by ANY
-    connection bumps ``data_version`` so the count stays EXACT — never a drifting counter.
-    Probe unavailable -> the live count (never a wrong cache hit)."""
+    """The UNFILTERED browse total (S3.2: quarantine-EXCLUDED, "unfiltered" meaning no
+    OTHER structured filter) — the corpus-scaled ``COUNT(*) FROM articles WHERE
+    quarantined IS NOT TRUE`` (P1.3): served from a DATA-AWARE cache keyed on
+    ``PRAGMA data_version`` (the /status pattern). Repeat browse pages with no
+    intervening write reuse the count (a HIT); a commit by ANY connection (including a
+    quarantine write) bumps ``data_version`` so the count stays EXACT — never a
+    drifting counter. Probe unavailable -> the live count (never a wrong cache hit)."""
     from src.api.insights import _cached, _data_version
 
     try:
@@ -932,13 +934,14 @@ def _browse_total_cached(session) -> int:
         bind = None
     dv = _data_version(bind) if bind is not None else None
     if dv is None:
-        return int(session.query(Article).count())  # no probe -> live, never a wrong hit
+        # no probe -> live, never a wrong hit
+        return int(session.query(Article).filter(Article.quarantined.isnot(True)).count())
     # _cached persists DICT payloads only, so wrap the scalar in a dict (else it is a
     # silent no-op that recomputes COUNT(*) every page — the skeptic finding). The value
     # stays EXACT: data_version invalidates the key on any write.
     cached = _cached(
         f"articles-total|{id(bind)}|{dv}",
-        lambda: {"count": int(session.query(Article).count())},
+        lambda: {"count": int(session.query(Article).filter(Article.quarantined.isnot(True)).count())},
     )
     return int(cached["count"])
 
@@ -1057,7 +1060,13 @@ def _query_articles(
         id_rows = []
         for _i in range(0, len(fts_ids), _FTS_ID_CHUNK):
             chunk = fts_ids[_i : _i + _FTS_ID_CHUNK]
-            cq = id_q.filter(Article.id.in_(chunk))
+            # S3.2 (2026-07-23 field-feedback workflow): quarantined articles are
+            # EXCLUDED BY DEFAULT from search results -- an ALWAYS-ON condition
+            # (never gated on `if filters:`, unlike the optional structured filters
+            # below), so an FTS match on a quarantined article's text still never
+            # surfaces it. `.isnot(True)` also keeps a pre-migration NULL row (never
+            # judged) -- treated identically to quarantined=False.
+            cq = id_q.filter(Article.id.in_(chunk), Article.quarantined.isnot(True))
             if filters:
                 cq = cq.filter(and_(*filters))
             id_rows.extend(cq.all())
@@ -1087,7 +1096,11 @@ def _query_articles(
         return result
 
     # No text query: browse by the chosen metadata order (default recency).
-    q = session.query(Article)
+    # S3.2: quarantined articles are EXCLUDED BY DEFAULT -- ALWAYS applied, never
+    # gated on `if filters:` (so the common no-filter browse still excludes them),
+    # and `_browse_total_cached` is itself quarantine-aware so the S2.3 cached-total
+    # optimisation is preserved rather than forced onto the live-count path below.
+    q = session.query(Article).filter(Article.quarantined.isnot(True))
     if filters:
         q = q.filter(and_(*filters))
         total = q.count()  # filtered: bounded by the filter, computed live
@@ -1200,9 +1213,17 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     # articles, preserving the requested order. Bypasses FTS; bounded to 1000.
     if ids:
         id_list = [int(x) for x in ids.split(",") if x.strip().lstrip("-").isdigit()][:1000]
+        # S3.2: quarantined articles are EXCLUDED BY DEFAULT here too -- an explicit
+        # id set (e.g. a card-seeded analysis corpus) must not resurface one.
         by_id = {
             a.id: a
-            for a in (db.query(Article).filter(Article.id.in_(id_list)).all() if id_list else [])
+            for a in (
+                db.query(Article)
+                .filter(Article.id.in_(id_list), Article.quarantined.isnot(True))
+                .all()
+                if id_list
+                else []
+            )
         }
         ordered = [by_id[i] for i in id_list if i in by_id]
         # A provenance filter still applies to a fixed id set (bounded <=1000): derive
