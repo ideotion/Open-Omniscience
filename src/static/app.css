@@ -17,8 +17,19 @@
       --bg:#0c0e13; --bg2:#0f1218;
       --panel:#14181f; --panel2:#1b212b; --panel3:#232b38;
       --fg:#e8ebf0; --fg-soft:#c4cad6; --muted:#8c95a6;
-      --accent:#5b9dd9; --accent-fg:#ffffff;
+      /* chip-button-color-contrast (P1): white text on this accent measured 2.89:1
+         (button/a.btnlike/.an-facet[aria-pressed] — every accent-background text
+         context). Near-black clears 6.65:1 here; themes that already pass with
+         white (light/paper/mint) pin their own --accent-fg below so this default
+         change never regresses them; dawn (which also failed) gets its own fix too. */
+      --accent:#5b9dd9; --accent-fg:#0a0f16;
       --ok:#4caf7d; --warn:#d9a441; --err:#d96c6c;
+      /* pillwarn-severe-contrast (P1): --warn used directly as .pill.warn's TEXT
+         colour measured 1.87-3.5:1 across several themes (Dawn/Paper/Solar worst).
+         --warn-fg is a DEDICATED text-safe colour (mirrors the --caveat pattern);
+         --warn itself is untouched for non-text uses (dot/border accents), so a
+         theme's own tinted warn (e.g. solar's #cb4b16) still shows there. */
+      --warn-fg:#d9a441;
       /* --caveat: the dedicated colour for honesty caveats (visible-by-default,
          informed-consent mandate). Theme-aware so it clears WCAG AA 4.5:1 on every
          panel of all 17 themes (verified) — light themes override it below. The old
@@ -50,10 +61,10 @@
     html[data-theme="midnight"]{ --bg:#080a1a; --bg2:#0b0e22; --panel:#10142e; --panel2:#171c3c; --panel3:#1f2650; --fg:#e8eaff; --fg-soft:#c3c7ee; --muted:#8a90c0; --accent:#8b7dff; --border:#23284f; }
     html[data-theme="terminal"]{ --bg:#04070a; --bg2:#06090c; --panel:#0a1013; --panel2:#0e1619; --panel3:#13211d; --fg:#c8f7d4; --fg-soft:#a3e9ba; --muted:#5f8c72; --accent:#36d97a; --accent-fg:#04140b; --border:#16291f; --ff:var(--mono); }
     html[data-theme="sepia"]{ --bg:#1b150e; --bg2:#201911; --panel:#262019; --panel2:#2f2820; --panel3:#3a3127; --fg:#efe5d6; --fg-soft:#d8cab4; --muted:#a8967c; --accent:#d8a657; --accent-fg:#241a0c; --border:#3a3128; --ff:"Source Serif 4", Georgia, serif; }
-    html[data-theme="contrast"]{ --bg:#000; --bg2:#000; --panel:#0a0a0a; --panel2:#161616; --panel3:#222; --fg:#fff; --fg-soft:#f2f2f2; --muted:#cfcfcf; --accent:#ffd400; --accent-fg:#000; --ok:#5cff9d; --warn:#ffd400; --err:#ff6b6b; --border:#4d4d4d; --border-soft:#333; }
-    html[data-theme="light"]{ --bg:#eef1f5; --bg2:#e6eaf0; --panel:#fff; --panel2:#f3f5f9; --panel3:#e7ecf3; --fg:#1b1f27; --fg-soft:#37404f; --muted:#5c6573; --accent:#2f6fb3; --ok:#2e8b57; --warn:#b07a17; --err:#c0392b; --border:#dce1e9; --border-soft:#e8ebf1;
+    html[data-theme="contrast"]{ --bg:#000; --bg2:#000; --panel:#0a0a0a; --panel2:#161616; --panel3:#222; --fg:#fff; --fg-soft:#f2f2f2; --muted:#cfcfcf; --accent:#ffd400; --accent-fg:#000; --ok:#5cff9d; --warn:#ffd400; --warn-fg:#ffd400; --err:#ff6b6b; --border:#4d4d4d; --border-soft:#333; }
+    html[data-theme="light"]{ --bg:#eef1f5; --bg2:#e6eaf0; --panel:#fff; --panel2:#f3f5f9; --panel3:#e7ecf3; --fg:#1b1f27; --fg-soft:#37404f; --muted:#5c6573; --accent:#2f6fb3; --accent-fg:#ffffff; --ok:#2e8b57; --warn:#b07a17; --warn-fg:#7a4308; --err:#c0392b; --border:#dce1e9; --border-soft:#e8ebf1;
       --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); --caveat:#8a4d0a; color-scheme:light; }
-    html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --ok:#5b7d4b; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
+    html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --accent-fg:#ffffff; --ok:#5b7d4b; --warn-fg:#7a4308; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
       --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); --caveat:#8a4d0a; color-scheme:light; --ff:"Source Serif 4", Georgia, serif; }
     /* New colorways (2026-06-11, maintainer: "people like tuning with themes").
        Bundled-font pairings: Arctic→Inter, Cyber→Outfit, Mint→Manrope,
@@ -64,11 +75,11 @@
     html[data-theme="aubergine"]{ --bg:#120d18; --bg2:#150f1d; --panel:#1a1424; --panel2:#231b30; --panel3:#2e2440; --fg:#ece6f4; --fg-soft:#cfc5e0; --muted:#9a8cb4; --accent:#c084fc; --accent-fg:#160e20; --border:#2c2240; }
     html[data-theme="garnet"]{ --bg:#150e11; --bg2:#191014; --panel:#1f1419; --panel2:#291a20; --panel3:#35222a; --fg:#f0e6ea; --fg-soft:#d8c6cd; --muted:#a88b96; --accent:#d96c7f; --accent-fg:#1c0d12; --border:#33222a; }
     html[data-theme="cyber"]{ --bg:#070910; --bg2:#090c15; --panel:#0d1120; --panel2:#131830; --panel3:#1a2140; --fg:#dbe6ff; --fg-soft:#b6c5ec; --muted:#7787b8; --accent:#22d3ee; --accent-fg:#04121a; --border:#1c2444; --ff:"Outfit", system-ui, sans-serif; }
-    html[data-theme="mist"]{ --bg:#eceff2; --bg2:#e4e8ee; --panel:#f9fafc; --panel2:#eff2f6; --panel3:#e3e8ef; --fg:#222831; --fg-soft:#3d4654; --muted:#66707e; --accent:#5e81ac; --ok:#2e8b57; --warn:#b07a17; --err:#bf4040; --border:#d8dee7; --border-soft:#e5e9f0;
+    html[data-theme="mist"]{ --bg:#eceff2; --bg2:#e4e8ee; --panel:#f9fafc; --panel2:#eff2f6; --panel3:#e3e8ef; --fg:#222831; --fg-soft:#3d4654; --muted:#66707e; --accent:#5e81ac; --ok:#2e8b57; --warn:#b07a17; --warn-fg:#7a4308; --err:#bf4040; --border:#d8dee7; --border-soft:#e5e9f0;
       --shadow:0 14px 38px -20px rgba(30,40,55,.25), 0 2px 6px -3px rgba(30,40,55,.12); --caveat:#8a4d0a; color-scheme:light; }
-    html[data-theme="dawn"]{ --bg:#faf4ed; --bg2:#f4ece2; --panel:#fffaf3; --panel2:#f2e9e1; --panel3:#e9dfd5; --fg:#575279; --fg-soft:#6e6a86; --muted:#9893a5; --accent:#b4637a; --accent-fg:#fff; --ok:#56949f; --warn:#ea9d34; --err:#c34043; --border:#ddd3c8; --border-soft:#ece3da;
+    html[data-theme="dawn"]{ --bg:#faf4ed; --bg2:#f4ece2; --panel:#fffaf3; --panel2:#f2e9e1; --panel3:#e9dfd5; --fg:#575279; --fg-soft:#6e6a86; --muted:#9893a5; --accent:#b4637a; --accent-fg:#000000; --ok:#56949f; --warn:#ea9d34; --warn-fg:#7a4308; --err:#c34043; --border:#ddd3c8; --border-soft:#ece3da;
       --shadow:0 14px 38px -20px rgba(90,70,60,.20), 0 2px 6px -3px rgba(90,70,60,.10); --caveat:#8a4d0a; color-scheme:light; }
-    html[data-theme="mint"]{ --bg:#edf3ee; --bg2:#e4ece6; --panel:#f8fbf8; --panel2:#ecf2ed; --panel3:#dfe9e1; --fg:#1f2a23; --fg-soft:#3a4a3f; --muted:#5f7466; --accent:#2e7d5b; --accent-fg:#fff; --ok:#2e8b57; --warn:#a8761a; --err:#b3503e; --border:#d5e0d8; --border-soft:#e2eae4;
+    html[data-theme="mint"]{ --bg:#edf3ee; --bg2:#e4ece6; --panel:#f8fbf8; --panel2:#ecf2ed; --panel3:#dfe9e1; --fg:#1f2a23; --fg-soft:#3a4a3f; --muted:#5f7466; --accent:#2e7d5b; --accent-fg:#fff; --ok:#2e8b57; --warn:#a8761a; --warn-fg:#7a4308; --err:#b3503e; --border:#d5e0d8; --border-soft:#e2eae4;
       --shadow:0 14px 38px -20px rgba(40,60,48,.22), 0 2px 6px -3px rgba(40,60,48,.11); --caveat:#8a4d0a; color-scheme:light; --ff:"Manrope", system-ui, sans-serif; }
     html[data-density="compact"]{ --space:13px; --pad:12px; --radius:9px; --sidebar-w:228px; }
 
@@ -78,6 +89,13 @@
       font-size:15px; line-height:1.55; -webkit-font-smoothing:antialiased; }
     a { color:var(--accent); text-decoration:none; }
     a:hover { text-decoration:underline; }
+    /* evidence-links-contrast-and-no-underline (P1): every outbound "source ↗"
+       link renders through the ONE shared extLink() (invariant #6e) and used to
+       rely on colour ALONE (accent text, no underline) to distinguish itself from
+       surrounding text -- axe flagged this as link-in-text-block (WCAG 1.4.1: a
+       link inside a text block needs MORE than colour). A permanent underline
+       resolves it regardless of the exact colour pairing in any given theme. */
+    a.ext-link { text-decoration:underline; text-underline-offset:2px; }
     code { font-family:var(--mono); background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:.92em; }
     hr { border:none; border-top:1px solid var(--border); margin:16px 0; }
     ::selection { background:color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -117,7 +135,7 @@
       width:3px; border-radius:0 3px 3px 0; background:var(--accent); }
     .nav-item .badge { margin-left:auto; font-size:10px; color:var(--muted); border:1px solid var(--border);
       border-radius:99px; padding:0 6px; }
-    .nav-item.adv .badge { color:var(--warn); border-color:color-mix(in srgb,var(--warn) 50%,var(--border)); }
+    .nav-item.adv .badge { color:var(--warn-fg); border-color:color-mix(in srgb,var(--warn) 50%,var(--border)); }
     .sb-foot { padding:10px; border-top:1px solid var(--border); display:flex; gap:6px; }
     .sb-foot button { flex:1; margin:0; }
     /* Collapsed sidebar → icon rail */
@@ -238,6 +256,17 @@
     a.btnlike { display:inline-block; background:var(--accent); color:var(--accent-fg, #fff);
       border-radius:8px; text-decoration:none; cursor:pointer; }
     a.btnlike.tiny { padding:3px 9px; font-size:12px; font-weight:600; }
+    /* chip-button-color-contrast (P1): a nested de-emphasised count/number (e.g. a
+       Home channel chip's article count, <button class="chip">…<span class="muted">
+       N</span></button>) inherited the page-level --muted tone (calibrated for a
+       PANEL background), measuring ~1.04:1 against the accent-coloured button
+       background it actually sits on. Inheriting the button's own (now-fixed)
+       text colour keeps it fully legible; the plain-button variants that already
+       use a panel-like background (.secondary/.danger/.ghost/.lead-open) are
+       untouched, since --muted is correctly calibrated for THEM. */
+    button:not(.secondary):not(.danger):not(.ghost):not(.lead-open) .muted,
+    a.btnlike .muted,
+    .an-facet[aria-pressed="true"] .muted { color:inherit; }
     a.btnlike:hover { filter:brightness(1.08); }
 
     table { width:100%; border-collapse:collapse; font-size:14px; }
@@ -250,7 +279,7 @@
     .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px;
       background:var(--panel2); border:1px solid var(--border); }
     .pill.ok{ color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
-    .pill.warn{ color:var(--warn); border-color:color-mix(in srgb,var(--warn) 40%,var(--border)); }
+    .pill.warn{ color:var(--warn-fg); border-color:color-mix(in srgb,var(--warn) 40%,var(--border)); }
     .pill.err{ color:var(--err); border-color:color-mix(in srgb,var(--err) 40%,var(--border)); }
     .dot { display:inline-block; width:8px; height:8px; border-radius:99px; background:var(--muted); }
     .dot.ok{ background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent); }

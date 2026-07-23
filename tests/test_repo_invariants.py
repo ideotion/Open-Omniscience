@@ -6313,3 +6313,182 @@ def test_hazard_caveat_is_translated_across_all_locales():
         data = json.loads((locales_dir / f"{lang}.json").read_text(encoding="utf-8"))
         assert key in data, f"{lang}.json is missing the hazard-caveat key"
         assert data[key], f"{lang}.json has an empty translation for the hazard-caveat key"
+
+
+def test_severe_contrast_findings_fixed_across_all_17_themes():
+    """GUI-test findings pillwarn-severe-contrast + chip-button-color-contrast (both
+    P1, axe colour-contrast): (1) .pill.warn and .nav-item.adv .badge rendered their
+    text in var(--warn) directly -- a colour tuned for dot/border ACCENTS, not body
+    text -- measuring as low as 1.87:1 on Dawn/Paper/Solar. (2) button/a.btnlike/
+    .an-facet[aria-pressed="true"] render white text (the OLD --accent-fg default)
+    on an accent-coloured background, measuring 2.89:1 on the default "ink" theme
+    alone. Fixed by (1) a dedicated --warn-fg text-safe colour (mirroring the
+    existing --caveat pattern: --warn itself is untouched for non-text dot/border
+    uses) and (2) changing the DEFAULT --accent-fg to a near-black, with the
+    themes that already passed with white (light/paper/mint) and the one other
+    failing theme (dawn) pinning their own explicit override so the default change
+    never silently regresses an already-passing theme. This test recomputes the
+    real WCAG contrast ratio (mirroring the --lvl-group/--lvl-super precedent in
+    test_circle_grammar_level_marking_is_wired_and_contrast_verified) for the
+    ACTUAL rendering context of each fixed colour, across all 17 themes:
+    --warn-fg against both .pill's background (--panel2) and the sidebar's
+    background the .nav-item.adv .badge sits on (--bg2); --accent-fg against its
+    own --accent (the button/.btnlike/.an-facet background)."""
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+
+    # Structural: --warn stays untouched for non-text uses; --warn-fg is the new,
+    # separate text-safe colour used by the two fixed text contexts.
+    assert re.search(r"--warn-fg\s*:\s*#[0-9a-fA-F]{3,6}", css), \
+        "--warn-fg must exist as a real (non-color-mix) hex colour in :root"
+    assert ".pill.warn{ color:var(--warn-fg)" in css.replace(" ", "") or \
+        ".pill.warn{color:var(--warn-fg)" in css.replace(" ", ""), \
+        ".pill.warn must render its text via --warn-fg, not --warn"
+    assert ".nav-item.adv .badge { color:var(--warn-fg)" in css, \
+        ".nav-item.adv .badge must render its text via --warn-fg, not --warn"
+
+    # 17 themes: (accent, accent_fg [FINAL resolved value: root default or the
+    # theme's own explicit override], panel2, bg2, warn_fg [FINAL resolved value]).
+    themes = {
+        "ink":       ("#5b9dd9", "#0a0f16", "#1b212b", "#0f1218", "#d9a441"),
+        "slate":     ("#7aa2f7", "#0a0f16", "#1e2531", "#11151c", "#d9a441"),
+        "midnight":  ("#8b7dff", "#0a0f16", "#171c3c", "#0b0e22", "#d9a441"),
+        "terminal":  ("#36d97a", "#04140b", "#0e1619", "#06090c", "#d9a441"),
+        "sepia":     ("#d8a657", "#241a0c", "#2f2820", "#201911", "#d9a441"),
+        "contrast":  ("#ffd400", "#000000", "#161616", "#000000", "#ffd400"),
+        "light":     ("#2f6fb3", "#ffffff", "#f3f5f9", "#e6eaf0", "#7a4308"),
+        "paper":     ("#9a6a2f", "#ffffff", "#f1ebdc", "#ebe5d6", "#7a4308"),
+        "arctic":    ("#88c0d0", "#0b1216", "#1e242c", "#12161b", "#d9a441"),
+        "solar":     ("#b58900", "#002b36", "#0a4150", "#00313d", "#d9a441"),
+        "forest":    ("#6fbf73", "#0a140b", "#19231a", "#0f150f", "#d9a441"),
+        "aubergine": ("#c084fc", "#160e20", "#231b30", "#150f1d", "#d9a441"),
+        "garnet":    ("#d96c7f", "#1c0d12", "#291a20", "#191014", "#d9a441"),
+        "cyber":     ("#22d3ee", "#04121a", "#131830", "#090c15", "#d9a441"),
+        "mist":      ("#5e81ac", "#0a0f16", "#eff2f6", "#e4e8ee", "#7a4308"),
+        "dawn":      ("#b4637a", "#000000", "#f2e9e1", "#f4ece2", "#7a4308"),
+        "mint":      ("#2e7d5b", "#ffffff", "#ecf2ed", "#e4ece6", "#7a4308"),
+    }
+    assert len(themes) == 17
+
+    # Every hex value above must actually appear in the CSS as the resolved value
+    # for that theme (catches a copy-paste slip in this test's own fixture data,
+    # and catches a future colour edit that silently drifts from what's tested).
+    root_block = css.split(":root {", 1)[1]
+    depth = 1
+    end = 0
+    for i, ch in enumerate(root_block):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    root_block = root_block[:end]
+    assert "--accent-fg:#0a0f16" in root_block.replace(" ", ""), \
+        "the default --accent-fg must be the near-black fix value"
+    assert "--warn-fg:#d9a441" in root_block.replace(" ", ""), \
+        "the default --warn-fg must exist in :root"
+
+    # normalise 3-digit shorthand (#fff) to 6-digit for comparison
+    def _norm(h):
+        h = h.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        return "#" + h.lower()
+
+    for theme, (_, accent_fg, _, _, warn_fg) in themes.items():
+        if theme == "ink":
+            continue  # ink IS the :root default, already checked above
+        sel = f'html[data-theme="{theme}"]'
+        assert sel in css, f"theme selector {sel!r} must exist"
+        block = css.split(sel, 1)[1].split("}", 1)[0]
+        # accent-fg: either explicitly overridden (any hex incl. 3-digit shorthand),
+        # or absent -> correctly falling through to the new :root default.
+        m = re.search(r"--accent-fg\s*:\s*(#[0-9a-fA-F]{3,6})", block)
+        resolved_accent_fg = m.group(1) if m else "#0a0f16"
+        assert _norm(resolved_accent_fg) == _norm(accent_fg), (
+            f"{theme}: expected resolved --accent-fg {accent_fg}, CSS resolves to "
+            f"{resolved_accent_fg}"
+        )
+        m2 = re.search(r"--warn-fg\s*:\s*(#[0-9a-fA-F]{3,6})", block)
+        resolved_warn_fg = m2.group(1) if m2 else "#d9a441"
+        assert _norm(resolved_warn_fg) == _norm(warn_fg), (
+            f"{theme}: expected resolved --warn-fg {warn_fg}, CSS resolves to "
+            f"{resolved_warn_fg}"
+        )
+
+    def hx(h):
+        h = h.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+    def lin(c):
+        c = c / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    def rel_lum(rgb):
+        r, g, b = rgb
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+    def contrast(c1, c2):
+        l1, l2 = rel_lum(hx(c1)), rel_lum(hx(c2))
+        lighter, darker = max(l1, l2), min(l1, l2)
+        return (lighter + 0.05) / (darker + 0.05)
+
+    AA_TEXT_MIN = 4.5
+    worst = 999.0
+    for name, (accent, accent_fg, panel2, bg2, warn_fg) in themes.items():
+        c_accent = contrast(accent_fg, accent)
+        c_warn_panel2 = contrast(warn_fg, panel2)
+        c_warn_bg2 = contrast(warn_fg, bg2)
+        worst = min(worst, c_accent, c_warn_panel2, c_warn_bg2)
+        assert c_accent >= AA_TEXT_MIN, (
+            f"{name}: --accent-fg vs --accent (button/a.btnlike/an-facet text) = "
+            f"{c_accent:.2f} < {AA_TEXT_MIN}:1"
+        )
+        assert c_warn_panel2 >= AA_TEXT_MIN, (
+            f"{name}: --warn-fg vs --panel2 (.pill.warn text) = {c_warn_panel2:.2f} "
+            f"< {AA_TEXT_MIN}:1"
+        )
+        assert c_warn_bg2 >= AA_TEXT_MIN, (
+            f"{name}: --warn-fg vs --bg2 (sidebar .badge text) = {c_warn_bg2:.2f} "
+            f"< {AA_TEXT_MIN}:1"
+        )
+    assert worst >= AA_TEXT_MIN  # sanity: the loop above already asserted every case
+
+    # A nested de-emphasised count (e.g. a Home chip's article-count span) must
+    # inherit the now-fixed button text colour rather than the page-level --muted
+    # tone (calibrated for a PANEL background, not an accent-coloured button).
+    assert re.search(
+        r"button:not\(\.secondary\):not\(\.danger\):not\(\.ghost\):not\(\.lead-open\) \.muted,\s*"
+        r"a\.btnlike \.muted,\s*"
+        r"\.an-facet\[aria-pressed=\"true\"\] \.muted \{ color:inherit; \}",
+        css,
+    ), "a nested .muted count inside an accent-background control must inherit its parent's (fixed) text colour"
+
+
+def test_evidence_links_underlined_and_use_the_shared_extlink_class():
+    """GUI-test finding evidence-links-contrast-and-no-underline (P1, axe
+    link-in-text-block): every outbound "source ↗" evidence link renders through
+    the ONE shared extLink() chokepoint (invariant #6e) and relied on colour ALONE
+    (accent text, no underline) to distinguish itself from surrounding body text --
+    WCAG 1.4.1 requires more than colour for a link inside a text block. Fixed by
+    always prefixing the "ext-link" class in extLink() and giving that class a
+    permanent underline in CSS, removing the two inline text-decoration:none
+    overrides that would otherwise have defeated it."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+
+    fn = js.split("function extLink(url, label, cls, style) {", 1)[1].split("\n    }\n", 1)[0]
+    assert '"ext-link"' in fn or "'ext-link'" in fn, \
+        "extLink() must always attach the ext-link class regardless of the caller's own cls"
+    assert "a.ext-link { text-decoration:underline" in css, \
+        "the shared .ext-link class must render a permanent underline"
+
+    # The two call sites that used to defeat the underline via an inline style
+    # must no longer carry text-decoration:none.
+    assert "text-decoration:none;align-self:center" not in js, \
+        "no extLink() call site may re-introduce an inline text-decoration:none override"
+    assert js.count('extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center")') >= 2, \
+        "both temporal-map/insights source-link call sites must keep their style but drop the override"

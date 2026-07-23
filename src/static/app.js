@@ -2835,9 +2835,15 @@
     // (invariant #6e — search rows, markets, law, events, insights, reader…).
     // It never jumps straight out: it opens the local preview first. Use this
     // for every external source link so none can regress to a bare jump.
+    // evidence-links-contrast-and-no-underline (P1): these links rendered at
+    // 2.41:1 with no underline (axe: link-in-text-block) -- color alone is
+    // insufficient distinction per WCAG 1.4.1. The shared "ext-link" class
+    // (app.css) adds a permanent underline, since this IS the one shared
+    // chokepoint every evidence link renders through.
     function extLink(url, label, cls, style) {
       const u = safeUrl(url);
-      return `<a${cls ? ` class="${cls}"` : ""}${style ? ` style="${style}"` : ""} href="${esc(u)}" rel="noopener" `
+      const classes = cls ? `ext-link ${cls}` : "ext-link";
+      return `<a class="${classes}"${style ? ` style="${style}"` : ""} href="${esc(u)}" rel="noopener" `
         + `onclick="event.preventDefault();openLinkPreview('${esc(u)}')" `
         + `title="Opens the local preview first — what your database knows about this link">`
         + `${esc(label)}</a>`;
@@ -13731,7 +13737,7 @@
         </div>
         ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
-          ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "text-decoration:none;align-self:center") : ""}
+          ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center") : ""}
           ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
         </div>
         ${(() => {
@@ -14280,7 +14286,7 @@
         </div>
         ${s.note?`<div class="hint" style="margin-top:5px">${esc(s.note)}</div>`:""}
         <div class="row" style="margin-top:7px;gap:8px">
-          ${url?extLink(url, "Official / reference source ↗", "tiny secondary", "text-decoration:none;align-self:center"):""}
+          ${url?extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center"):""}
           ${cov?`<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>`:""}
         </div>
         ${(() => {
