@@ -4020,3 +4020,32 @@ an existing query-building function, check whether that function branches its OW
 behaviour (caching, index choice, plan shape) on whether its filter collection is empty --
 an always-on addition to that same collection can silently change which branch every
 caller takes.
+
+**LESSON: a resumable job's "capture the baseline" step must run EXACTLY ONCE per
+logical run and PERSIST across every resume -- never recompute it fresh on each
+invocation.** S3.3's newsletter-import auto-quarantine hook needed a "what's new since
+this run started" baseline (the corpus's max article id + a snapshot, at the moment the
+import begins) so it could screen only the articles THIS run added, not the whole
+corpus. The first cut captured that baseline fresh at the top of every `_run()` call --
+which silently drops coverage for a paused-then-resumed import: a resume's freshly-
+captured baseline sits ABOVE the articles the PRE-PAUSE half of the run already inserted,
+so those articles permanently never get auto-screened by this hook, with no error and no
+visible symptom. Fixed by capturing the baseline exactly once, guarded by a new
+`_quarantine_baseline_attempted` flag persisted alongside the job's existing on-disk
+cursor state (so it survives an app restart mid-pause, not just an in-process resume);
+a FAILED capture attempt is also recorded as "attempted" rather than left retriable,
+because retrying it later inside the same run would silently re-baseline past whatever
+the run had already inserted by then -- same class of bug, just delayed. A related trap
+avoided at design time, before writing any code: the natural-looking fallback for a
+failed capture (`self._quarantine_before_id = 0`) would have been actively DANGEROUS
+rather than merely incomplete -- an unscoped `Article.id > 0` matches EVERY pre-existing
+article in the corpus, not just this run's new ones, so a failed baseline capture must
+disable the hook for that run, never substitute a guessed numeric floor. STASH-VERIFIED
+(not just reasoned about): the fix was temporarily reverted to the old fresh-capture
+behaviour, the new regression test (`test_paused_then_resumed_import_screens_articles_
+from_both_halves`) was confirmed to fail in exactly the predicted way (the pre-pause
+article's `quarantined` flag read `False` instead of `True`), then the revert was undone
+and the test re-confirmed green. General form: for ANY resumable job, a "since the run
+started" computation is only correct if the reference point is captured once at the
+TRUE logical start and threaded through every resume -- treat it as part of the job's
+persisted state, exactly like its cursor, not as a per-invocation local.

@@ -23,11 +23,14 @@ even if the folder changed under us a re-processed message is never stored twice
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from pathlib import Path
 
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS, ingest_emails
+
+_LOG = logging.getLogger("ingest.import_job")
 
 # Files whose bytes are read into memory per ingest call — bounds RAM on a 20 GB+
 # folder (we never hold the whole folder in memory). ingest_emails then batches its
@@ -79,6 +82,16 @@ class NewsletterImportManager:
         self._files: list[Path] = []
         self._cursor = 0  # next file index to process
         self._tally: dict[str, int] = {}
+        # S3.3/S3.5 (2026-07-23): captured ONCE at the TRUE start of a logical import
+        # (never re-captured on a resume -- see start()'s ``if _cursor <= 0`` gate below)
+        # so a pause/resume sequence's eventual completion scans/reports EVERY article
+        # the WHOLE logical import added, not just the last resume's increment.
+        self._quarantine_before_id: int | None = None
+        self._quarantine_baseline_attempted = False  # disambiguates "not yet tried" (None,
+        # False -> attempt now) from "tried and failed" (None, True -> skip quarantine/
+        # report for this whole logical run; NEVER guess a value like 0, which would
+        # make Article.id > 0 match every PRE-EXISTING article too)
+        self._corpus_before: dict | None = None
         self._error: str | None = None
         self._cancelled = False
         self._started_at: float | None = None
@@ -107,6 +120,9 @@ class NewsletterImportManager:
                         "total": len(self._files),
                         "tally": self._tally,
                         "state": self._state,
+                        "quarantine_before_id": self._quarantine_before_id,
+                        "quarantine_baseline_attempted": self._quarantine_baseline_attempted,
+                        "corpus_before": self._corpus_before,
                     }
                 ),
                 encoding="utf-8",
@@ -137,6 +153,9 @@ class NewsletterImportManager:
         self._files = _eml_files(Path(folder))
         self._cursor = min(int(d.get("cursor") or 0), len(self._files))
         self._tally = dict(d.get("tally") or {})
+        self._quarantine_before_id = d.get("quarantine_before_id")
+        self._quarantine_baseline_attempted = bool(d.get("quarantine_baseline_attempted", False))
+        self._corpus_before = d.get("corpus_before")
         self._state = "paused"  # an interrupted run is resumable, never silently lost
 
     # -- lifecycle ---------------------------------------------------------- #
@@ -168,6 +187,12 @@ class NewsletterImportManager:
             self._cursor = max(0, min(_cursor, len(files)))
             if _cursor <= 0:
                 self._tally = {}
+                # a genuinely FRESH import (never a resume) starts a NEW logical run --
+                # _run() below captures its own before-id/corpus-delta baseline once,
+                # fresh, at the true start of THIS import.
+                self._quarantine_before_id = None
+                self._quarantine_baseline_attempted = False
+                self._corpus_before = None
             self._error = None
             self._started_at = time.monotonic()
             self._session_factory = _session_factory
@@ -183,6 +208,37 @@ class NewsletterImportManager:
             session = (session_factory or _default_session)()
             try:
                 source = _import_source(session)
+                # S3.3/S3.5 (2026-07-23 field-feedback workflow): captured ONCE, at the
+                # TRUE start of the WHOLE logical import (self._quarantine_before_id is
+                # None only on a genuinely fresh start() -- see start()'s _cursor<=0
+                # gate), and PERSISTED across every pause/resume of the same import --
+                # never re-captured on a resume. This is what lets a paused-then-resumed
+                # run's eventual completion scan/report EVERY article the whole logical
+                # import added, not just the last resume's increment (a real gap an
+                # earlier fresh-per-_run-call design would have left: articles stored by
+                # an EARLIER, paused-before-completion run would otherwise never be
+                # auto-screened at all). Best-effort: a snapshot hiccup must never abort
+                # an otherwise-good import.
+                if not self._quarantine_baseline_attempted:
+                    try:
+                        from sqlalchemy import func as _func
+
+                        from src.backup.merge import _corpus_snapshot
+                        from src.database.models import Article
+
+                        before_id = int(session.query(_func.max(Article.id)).scalar() or 0)
+                        before_snap = _corpus_snapshot(session)
+                        with self._lock:
+                            self._quarantine_before_id = before_id
+                            self._corpus_before = before_snap
+                            self._quarantine_baseline_attempted = True
+                            self._save()
+                    except Exception:  # noqa: BLE001 - never abort a good import; NEVER
+                        # guess a fallback id (0 would make Article.id > 0 match every
+                        # pre-existing article too) -- a failed capture just means the
+                        # quarantine/report hook is skipped for this whole logical run.
+                        with self._lock:
+                            self._quarantine_baseline_attempted = True
                 i = self._cursor
                 while i < len(files):
                     if self._stop.is_set():
@@ -213,6 +269,55 @@ class NewsletterImportManager:
                     from src.database.fts import optimize_after_bulk
 
                     optimize_after_bulk(session)
+
+                    # S3.3 (import-time screening): scan ONLY the articles added across
+                    # the WHOLE logical import (Article.id > self._quarantine_before_id,
+                    # captured ONCE at the true start and preserved across every resume
+                    # -- never a pre-existing article, and never silently skipping an
+                    # earlier paused run's articles either). Skipped entirely if the
+                    # baseline capture failed (self._quarantine_before_id stays None) --
+                    # NEVER guessed. Best-effort either way: never turns a successful
+                    # import into a failure.
+                    quarantine_summary: dict | None = None
+                    if self._quarantine_before_id is not None:
+                        try:
+                            from src.analytics.quarantine_job import (
+                                default_quarantine_candidates_batch,
+                            )
+                            from src.database.models import Article as _Article
+
+                            new_ids = [
+                                int(a.id)
+                                for a in session.query(_Article.id)
+                                .filter(_Article.id > self._quarantine_before_id)
+                                .all()
+                            ]
+                            if new_ids:
+                                quarantine_summary = default_quarantine_candidates_batch(
+                                    session, article_ids=new_ids, write=True
+                                )
+                        except Exception:  # noqa: BLE001 - never abort a good import
+                            _LOG.warning("quarantine scan after the import failed", exc_info=True)
+
+                    # S3.5 (field-feedback A1): persist a standalone, downloadable
+                    # JSON+Markdown report for this run -- the newsletter path had NONE
+                    # before this (unlike the restore-merge path's DB-column report).
+                    # Best-effort.
+                    try:
+                        from src.backup.import_reports import persist_import_report
+                        from src.backup.merge import _corpus_snapshot
+
+                        report: dict = {"kind": "newsletter", "tally": dict(self._tally)}
+                        if self._corpus_before is not None:
+                            report["corpus_delta"] = {
+                                "before": self._corpus_before,
+                                "after": _corpus_snapshot(session),
+                            }
+                        if quarantine_summary is not None:
+                            report["quarantine_summary"] = quarantine_summary
+                        persist_import_report("newsletter", report)
+                    except Exception:  # noqa: BLE001 - never abort a good import
+                        _LOG.warning("persisting the newsletter import report failed", exc_info=True)
                 with self._lock:
                     if self._stop.is_set():
                         self._state = "cancelled" if self._cancelled else "paused"

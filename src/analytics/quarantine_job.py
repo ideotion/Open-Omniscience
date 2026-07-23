@@ -52,6 +52,9 @@ def _default_session():
     return SessionLocal()
 
 
+_ID_SET_CHUNK = 900  # SQLite bound-variable safety (the fts_ids/.in_() chunking precedent)
+
+
 def default_quarantine_candidates_batch(
     session: Any,
     *,
@@ -60,6 +63,7 @@ def default_quarantine_candidates_batch(
     include_prose_gate: bool = True,
     write: bool = False,
     criteria_version: str | None = None,
+    article_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """The default per-batch WORK FUNCTION: DETECT already-flagged non-article candidates (the
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
@@ -72,7 +76,17 @@ def default_quarantine_candidates_batch(
     quarantined row, per ``Article.quarantined is True``, is skipped and never re-counted/
     re-stamped, so re-running over the same range after a partial write is always safe).
     ``criteria_version`` defaults to :data:`src.analytics.criteria_calibration.CRITERIA_VERSION`
-    when not given."""
+    when not given.
+
+    ``article_ids`` (2026-07-23, S3.3 import-time screening): when given, scans EXACTLY that
+    explicit id set instead of the ``after_id``/``limit`` range -- ``after_id``/``limit`` are then
+    ignored and every id in ``article_ids`` is scanned in ONE call (chunked internally under
+    SQLite's bound-variable cap, mirroring the ``fts_ids``/``.in_()`` chunking precedent in
+    ``src/api/main.py`` -- never truncated to ``limit``, since this is a one-shot scan over an
+    EXACT, already-bounded set such as a merge/import batch's newly-inserted article ids, not a
+    resumable paginated range). ``done`` is always ``True`` in this mode (there is no further
+    range to resume); ``last_id`` reports the highest id actually scanned. Purely additive: the
+    ``after_id``/``limit`` range path is completely unchanged when ``article_ids`` is ``None``."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article
     from src.ingest.non_article import _ARTICLE_MIN_WORDS, classify_non_article
@@ -80,36 +94,52 @@ def default_quarantine_candidates_batch(
 
     criteria_version = criteria_version or CRITERIA_VERSION
 
-    q = (
-        session.query(
-            Article.id, Article.url, Article.word_count, Article.content,
-            Article.language, Article.detected_language, Article.quarantined,
-        )
-        .filter(Article.id > after_id)
-        .order_by(Article.id)
-        .limit(limit)
-    )
     quarantined_ids: list[int] = []
     by_reason: dict[str, int] = {}
     to_write: dict[int, str] = {}  # id -> signal, for rows NOT already quarantined
     already_quarantined = 0
     scanned = 0
     last_id = after_id
-    for aid, url, wc, content, lang, detected, is_quarantined in q:
-        scanned += 1
-        last_id = int(aid)
-        verdict = classify_non_article(url or "", word_count=wc)  # URL-shape rules (text=None)
-        signal: str | None = verdict.signal if verdict is not None else None
-        if signal is None and include_prose_gate and wc is not None and wc >= _ARTICLE_MIN_WORDS:
-            prose_verdict = prose_gate_verdict(content or "", language=lang or detected)
-            signal = prose_verdict.signal if prose_verdict is not None else None
-        if signal is not None:
-            quarantined_ids.append(int(aid))
-            by_reason[signal] = by_reason.get(signal, 0) + 1
-            if is_quarantined:
-                already_quarantined += 1  # idempotent: already stamped, never re-counted as new
-            else:
-                to_write[int(aid)] = signal
+
+    def _classify_rows(rows) -> None:
+        nonlocal scanned, already_quarantined, last_id
+        for aid, url, wc, content, lang, detected, is_quarantined in rows:
+            scanned += 1
+            last_id = max(last_id, int(aid))
+            verdict = classify_non_article(url or "", word_count=wc)  # URL-shape rules (text=None)
+            signal: str | None = verdict.signal if verdict is not None else None
+            if signal is None and include_prose_gate and wc is not None and wc >= _ARTICLE_MIN_WORDS:
+                prose_verdict = prose_gate_verdict(content or "", language=lang or detected)
+                signal = prose_verdict.signal if prose_verdict is not None else None
+            if signal is not None:
+                quarantined_ids.append(int(aid))
+                by_reason[signal] = by_reason.get(signal, 0) + 1
+                if is_quarantined:
+                    already_quarantined += 1  # idempotent: already stamped, never re-counted
+                else:
+                    to_write[int(aid)] = signal
+
+    cols = (
+        Article.id, Article.url, Article.word_count, Article.content,
+        Article.language, Article.detected_language, Article.quarantined,
+    )
+    if article_ids is not None:
+        last_id = 0
+        for i in range(0, len(article_ids), _ID_SET_CHUNK):
+            chunk = article_ids[i : i + _ID_SET_CHUNK]
+            _classify_rows(
+                session.query(*cols).filter(Article.id.in_(chunk)).order_by(Article.id)
+            )
+        done = True
+    else:
+        q = (
+            session.query(*cols)
+            .filter(Article.id > after_id)
+            .order_by(Article.id)
+            .limit(limit)
+        )
+        _classify_rows(q)
+        done = scanned < limit
 
     newly_written = 0
     if write and to_write:
@@ -138,7 +168,7 @@ def default_quarantine_candidates_batch(
         "newly_written": newly_written,
         "by_reason": by_reason,
         "last_id": last_id,
-        "done": scanned < limit,
+        "done": done,
         "write": write,
     }
 

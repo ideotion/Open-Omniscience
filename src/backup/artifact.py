@@ -65,6 +65,11 @@ _LOG_FILES = (
     "scheduler_runs.jsonl",
 )
 _ANNOTATIONS_DIR = "annotations"
+_IMPORT_REPORTS_DIR = "import_reports"  # S3.5 (2026-07-23): persisted downloadable
+# import/restore reports (src/backup/import_reports.py) -- small, private, generated
+# data (never large/re-downloadable, so it belongs HERE, not the large-data folder
+# backup's wiki/OSM/model categories) that must ride the encrypted export per the
+# field-feedback A1 ruling.
 _KEYS_DIR = "keys"
 _CUSTODY_DB = "custody_log.db"
 _WIKI_DUMPS_DIR = "wiki_dumps"
@@ -320,6 +325,10 @@ def _collect_members(
     if ann.is_dir():
         for p in sorted(ann.rglob("*.json")):
             members.append(Member(str(p.relative_to(base)), "annotations", p))
+    reports = base / _IMPORT_REPORTS_DIR
+    if reports.is_dir():
+        for p in sorted(reports.rglob("*.json")):
+            members.append(Member(str(p.relative_to(base)), "import_reports", p))
     if include_keys:
         keys = base / _KEYS_DIR
         if keys.is_dir():
