@@ -138,10 +138,62 @@ def cmd_encrypt_inplace(_args) -> None:
     )
 
 
+def _live_page_size() -> int:
+    """PRAGMA page_size read through the app's OWN live engine (no special
+    test-only connection) — the strongest possible proof that the NORMAL
+    boot path actually opened the store at the recorded size."""
+    from sqlalchemy import text
+
+    from src.database.session import engine
+
+    with engine.connect() as conn:
+        return int(conn.execute(text("PRAGMA page_size")).scalar())
+
+
+def cmd_pagesize_create(_args) -> None:
+    """DB-10 §1b round trip, part 1: create a fresh encrypted store via the
+    REAL /create-db flow (no OO_DB_PASSPHRASE pre-set — a genuine first-launch
+    create, mirroring boot-fresh) and report the page size it landed at."""
+    with _client() as c:
+        created = c.post(
+            "/api/system/create-db",
+            json={"passphrase": "pw-pagesize-test", "confirm": "pw-pagesize-test"},
+        )
+        api_ok = c.get("/api/sources")
+        page_size = _live_page_size()
+    _emit({"created": created.status_code == 200, "api_ok": api_ok.status_code, "page_size": page_size})
+
+
+def cmd_pagesize_reopen(_args) -> None:
+    """DB-10 §1b round trip, part 2: a COMPLETELY FRESH process reopens the
+    SAME store via the NORMAL headless boot path (OO_DB_PASSPHRASE in the
+    environment, exactly like a real restart) — connect()'s call site here
+    (src/database/session.py's engine creator) passes NO cipher_page_size at
+    all; if the verify-then-fallback probe didn't work, the correct passphrase
+    would read as wrong (the field incident this fix closes)."""
+    with _client() as c:
+        state = c.get("/api/system/lock-state").json()
+        api_ok = c.get("/api/sources")
+        doctor = c.get("/api/system/doctor").json()
+        page_size = _live_page_size()
+    _emit(
+        {
+            "state": state["state"],
+            "api_ok": api_ok.status_code,
+            "doctor_corpus": doctor["corpus"]["state"],
+            "cipher": doctor["corpus"].get("cipher"),
+            "page_size": page_size,
+        }
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("boot-fresh", "boot-locked", "boot-env", "encrypt-inplace"):
+    for name in (
+        "boot-fresh", "boot-locked", "boot-env", "encrypt-inplace",
+        "pagesize-create", "pagesize-reopen",
+    ):
         sub.add_parser(name)
     args = p.parse_args()
     {
@@ -149,6 +201,8 @@ def main() -> None:
         "boot-locked": cmd_boot_locked,
         "boot-env": cmd_boot_env,
         "encrypt-inplace": cmd_encrypt_inplace,
+        "pagesize-create": cmd_pagesize_create,
+        "pagesize-reopen": cmd_pagesize_reopen,
     }[args.cmd](args)
 
 
