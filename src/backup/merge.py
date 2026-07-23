@@ -550,11 +550,18 @@ def _merge_articles(con, batch_id, results) -> None:
         con, batch_id, "articles",
         "INSERT INTO articles (url, canonical_url, source_id, title, content,"
         " compressed_content, published_at, language, hash, created_at, updated_at, region,"
-        " country, author, word_count, reading_time, sentiment_score, sentiment_label)"
+        " country, author, word_count, reading_time, sentiment_score, sentiment_label,"
+        # S3.2 (2026-07-23 field-feedback workflow): the quarantine stamp is a
+        # DEDUCED extraction-validity fact about this exact article -- it rides
+        # additive-restore exactly like sentiment_score/sentiment_label above (a
+        # quarantined article stays quarantined after a restore; never silently
+        # un-quarantined by import, never dropped).
+        " quarantined, quarantine_reason, quarantine_criteria_version, quarantined_at)"
         " SELECT i.url, i.canonical_url, ms.new, i.title, i.content,"
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
         " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
-        " i.sentiment_score, i.sentiment_label"
+        " i.sentiment_score, i.sentiment_label,"
+        " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
         " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)",
     )

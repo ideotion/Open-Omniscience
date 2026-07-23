@@ -1,11 +1,14 @@
 """
-Retroactive QUARANTINE job -- SCAFFOLDING ONLY (NAV-SOUP SPECIMEN ruling, row 5 execution scope).
+Retroactive QUARANTINE job (NAV-SOUP SPECIMEN ruling row 5 + 2026-07-23 field-feedback S3.2).
 
 Proves the resumable-job CHASSIS (mirrors ReindexJobManager: state machine, persisted cursor,
-pause/resume, progress) runs to completion detecting URL-shape + prose-gate candidates, and -- the
-load-bearing property for this scaffolding -- that it NEVER writes to the database (dry-run only,
-``status()["dry_run"] is True`` always) and is NOT reachable from anywhere in the running app (no
-singleton getter, no /api/jobs wiring).
+pause/resume, progress) runs to completion detecting URL-shape + prose-gate candidates; that
+``write=False`` (the default) is still PURE detection with no database mutation; that
+``write=True`` REVERSIBLY stamps each detected candidate (idempotent -- an already-quarantined
+row is skipped, never re-stamped/double-counted); and that a paused run's write MODE is preserved
+across resume (never silently flips dry-run <-> real-write). Also covers the app wiring
+(``get_quarantine_manager`` singleton + the /api/jobs API layer, S3.2 -- the deliberate wiring
+this module's own docstring calls for, superseding the earlier "build-only, not wired" scaffold).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -114,8 +117,8 @@ def test_job_pauses_and_resumes_from_persisted_cursor(tmp_path, monkeypatch):
     _seed(Session)
     mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
 
-    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True):
-        r = default_quarantine_candidates_batch(session, after_id=after_id, limit=1)
+    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False):
+        r = default_quarantine_candidates_batch(session, after_id=after_id, limit=1, write=write)
         return r
 
     mgr.start(_session_factory=Session, _work_fn=_one_at_a_time)
@@ -155,18 +158,164 @@ def test_interrupted_run_restores_as_paused_on_restart(tmp_path):
     assert mgr2.status()["articles_done"] == 2
 
 
-def test_scaffolding_is_not_wired_into_the_app():
-    """Build-only per the 0.3 gate's own scope: no singleton getter (unlike
-    ReindexJobManager.get_reindex_manager), and no api module imports this module at all."""
+def test_manager_is_wired_into_the_app():
+    """S3.2 supersedes the earlier 'build-only, not wired' scaffold (the maintainer's
+    A2/A3 sign-off IS the wiring authorisation): get_quarantine_manager exists (mirrors
+    ReindexJobManager.get_reindex_manager) and the api layer references it."""
     import src.analytics.quarantine_job as m
 
-    assert not hasattr(m, "get_quarantine_manager")
+    assert hasattr(m, "get_quarantine_manager")
+    mgr1 = m.get_quarantine_manager()
+    mgr2 = m.get_quarantine_manager()
+    assert mgr1 is mgr2  # a real singleton, not a fresh instance each call
 
     import pathlib
 
     api_dir = pathlib.Path(__file__).resolve().parents[1] / "src" / "api"
-    hits = []
-    for f in api_dir.glob("*.py"):
-        if "quarantine_job" in f.read_text(encoding="utf-8"):
-            hits.append(f.name)
-    assert hits == [], f"quarantine_job must not be wired into the api layer, found in: {hits}"
+    hits = [f.name for f in api_dir.glob("*.py") if "quarantine" in f.read_text(encoding="utf-8").lower()]
+    assert hits, "quarantine must be reachable from the api layer (src/api/quarantine.py + jobs.py)"
+
+
+def test_default_work_function_write_mode_stamps_reversibly_and_idempotently(tmp_path):
+    """write=True stamps quarantined/quarantine_reason/quarantine_criteria_version/
+    quarantined_at on each detected candidate; a real article is NEVER stamped
+    (negative space); re-running is idempotent (already-quarantined rows are counted
+    separately and never re-written/double-counted)."""
+    from src.analytics.criteria_calibration import CRITERIA_VERSION
+
+    Session = _env(tmp_path)
+    _seed(Session)
+    with Session() as s:
+        r = default_quarantine_candidates_batch(s, after_id=0, limit=100, write=True)
+        assert r["write"] is True
+        assert r["quarantined"] == 3
+        assert r["newly_written"] == 3
+        assert r["already_quarantined"] == 0
+
+        real = s.query(Article).filter_by(url="https://x.test/2026/07/real-story").one()
+        assert real.quarantined is not True  # the negative space: never stamped
+
+        home = s.query(Article).filter_by(url="https://x.test/").one()
+        assert home.quarantined is True
+        assert home.quarantine_reason == "url_homepage"
+        assert home.quarantine_criteria_version == CRITERIA_VERSION
+        assert home.quarantined_at is not None
+
+    # Re-running detects the SAME candidates but writes NOTHING new (idempotent).
+    with Session() as s:
+        r2 = default_quarantine_candidates_batch(s, after_id=0, limit=100, write=True)
+        assert r2["quarantined"] == 3
+        assert r2["newly_written"] == 0
+        assert r2["already_quarantined"] == 3
+
+
+def test_default_work_function_write_false_never_mutates(tmp_path):
+    """The dry-run default is unchanged: write=False (the default) never sets any
+    quarantine column, exactly the original scaffold's behaviour."""
+    Session = _env(tmp_path)
+    _seed(Session)
+    with Session() as s:
+        r = default_quarantine_candidates_batch(s, after_id=0, limit=100)
+        assert r.get("write") is False
+        assert r["newly_written"] == 0
+    with Session() as s:
+        assert all(a.quarantined is not True for a in s.query(Article).all())
+
+
+def test_manager_write_run_actually_quarantines(tmp_path):
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+    st = mgr.start(_session_factory=Session, write=True)
+    assert st["dry_run"] is False
+    _join(mgr)
+    final = mgr.status()
+    assert final["state"] == "done" and final["dry_run"] is False
+    assert final["tally"]["newly_written"] == 3
+    with Session() as s:
+        assert s.query(Article).filter(Article.quarantined.is_(True)).count() == 3
+
+
+def test_resume_preserves_the_write_mode_of_the_paused_run(tmp_path, monkeypatch):
+    """A paused WRITE run must resume as a write run -- never silently falling back to
+    the dry-run default just because resume()'s caller doesn't repeat the choice."""
+    monkeypatch.setattr("src.analytics.quarantine_job._BATCH", 1)
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+
+    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False):
+        return default_quarantine_candidates_batch(session, after_id=after_id, limit=1, write=write)
+
+    mgr.start(_session_factory=Session, _work_fn=_one_at_a_time, write=True)
+    mgr.pause()
+    _join(mgr)
+    paused = mgr.status()
+    assert paused["state"] in ("paused", "done")
+
+    if paused["state"] == "paused":
+        assert paused["dry_run"] is False  # still write mode while paused
+        resumed = mgr.resume()
+        assert resumed["state"] == "running" and resumed["dry_run"] is False
+        _join(mgr)
+        final = mgr.status()
+        assert final["state"] == "done" and final["dry_run"] is False
+        assert final["tally"]["newly_written"] == 3
+        with Session() as s:
+            assert s.query(Article).filter(Article.quarantined.is_(True)).count() == 3
+
+
+def test_resume_preserves_dry_run_mode_too(tmp_path, monkeypatch):
+    """The symmetric case: a paused DRY-RUN must never silently resume as a write."""
+    monkeypatch.setattr("src.analytics.quarantine_job._BATCH", 1)
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+
+    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False):
+        return default_quarantine_candidates_batch(session, after_id=after_id, limit=1, write=write)
+
+    mgr.start(_session_factory=Session, _work_fn=_one_at_a_time)  # write defaults False
+    mgr.pause()
+    _join(mgr)
+    paused = mgr.status()
+    if paused["state"] == "paused":
+        resumed = mgr.resume()
+        assert resumed["dry_run"] is True
+        _join(mgr)
+        assert mgr.status()["dry_run"] is True
+        with Session() as s:
+            assert all(a.quarantined is not True for a in s.query(Article).all())
+
+
+def test_quarantine_api_wiring_composes_end_to_end():
+    """The 'slice-1c 404 lesson' (CLAUDE.md): compose the REAL route from the router
+    prefix + decorator, never assert two literal strings side by side. Mirrors
+    test_bulk_qualification_job.py's own wiring-composition test."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    api_src = (root / "src" / "api" / "quarantine.py").read_text(encoding="utf-8")
+    wiring_src = (root / "src" / "api" / "_wiring.py").read_text(encoding="utf-8")
+    jobs_src = (root / "src" / "api" / "jobs.py").read_text(encoding="utf-8")
+
+    prefix_m = re.search(r'APIRouter\(prefix="([^"]+)"', api_src)
+    assert prefix_m
+    decorated = set(re.findall(r'@router\.(?:get|post)\("(/[^"]*)"', api_src))
+    routes = {prefix_m.group(1) + d for d in decorated}
+    assert routes == {"/api/quarantine/start", "/api/quarantine/status", "/api/quarantine/{action}"}
+
+    # the router is actually included by _wiring.py, not merely defined.
+    assert "from src.api.quarantine import router as quarantine_router" in wiring_src
+    assert "quarantine_router," in wiring_src
+
+    # /api/jobs surfacing: a DB-writer kind, listed in the aggregator, pause/resume routed.
+    assert '"quarantine"' in jobs_src.split("_DB_WRITER_KINDS", 1)[1][:200]
+    assert "_quarantine_jobs()" in jobs_src
+    assert 'job_id == "quarantine"' in jobs_src
+
+    # the manager's status() field name the jobs aggregator reads must actually exist.
+    from src.analytics.quarantine_job import get_quarantine_manager
+
+    assert "dry_run" in get_quarantine_manager().status()

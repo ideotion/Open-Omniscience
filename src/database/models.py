@@ -650,6 +650,22 @@ class Article(Base):
     sentiment_score: Mapped[float | None] = mapped_column(Float)  # Sentiment analysis score (-1 to 1)
     sentiment_label: Mapped[str | None] = mapped_column(String(20))  # Sentiment label (positive, negative, neutral)
 
+    # QUARANTINE (S3.2, 2026-07-23 field-feedback workflow -- the NAV-SOUP SPECIMEN ruling's row-5
+    # execution scope, maintainer sign-off A2/A3). A REVERSIBLE stamp, never a delete: quarantined
+    # rows, their keywords, and their provenance stay fully intact -- un-quarantining restores full
+    # visibility exactly as it was. Additive + nullable: an article created before this column
+    # existed simply has quarantined=NULL ("never judged" -- the same honest-NULL convention as
+    # server_ip above), treated identically to quarantined=False by every reader (see
+    # `Article.quarantined.isnot(True)`, the one condition every quarantine-aware query uses).
+    # quarantine_reason/quarantine_criteria_version mirror src.ingest.non_article.NonArticleVerdict's
+    # own (signal, reason) shape + src.analytics.criteria_calibration.CRITERIA_VERSION, so a stamp
+    # records EXACTLY which criteria generation flagged it and why -- never a bare boolean with no
+    # explanation.
+    quarantined: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    quarantine_reason: Mapped[str | None] = mapped_column(String(255))
+    quarantine_criteria_version: Mapped[str | None] = mapped_column(String(40))
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     # Relationship to source
     source = relationship("Source", back_populates="articles")
 
@@ -685,6 +701,8 @@ class Article(Base):
         Index("idx_article_word_count", "word_count"),
         # Index for sentiment analysis
         Index("idx_article_sentiment", "sentiment_score"),
+        # Index for the quarantine exclusion (S3.2) -- every search/browse query filters on it
+        Index("idx_article_quarantined", "quarantined"),
         # Covering index for the per-source-country GROUP BY behind /api/insights/
         # map-coverage (queries.source_country_counts): SELECT sources.country,
         # count(articles.id), avg(articles.sentiment_score), count(articles.sentiment_score)

@@ -345,6 +345,40 @@ def _reindex_jobs() -> list[dict]:
     ]
 
 
+def _quarantine_jobs() -> list[dict]:
+    """The retroactive article-quarantine job as a visible job (S3.2, 2026-07-23
+    field-feedback workflow). A DB-WRITER only when running in write=True mode (a
+    dry-run detection pass touches nothing); joins the arbitration set either way for
+    simplicity — local DB work, no network. Pausable + resumable; aggregated live from
+    the manager (no shadow state)."""
+    from src.analytics.quarantine_job import get_quarantine_manager
+
+    s = get_quarantine_manager().status()
+    if s["state"] in ("idle", "done") and not s.get("running"):
+        return []
+    state = {"running": "running", "paused": "paused", "error": "failed"}.get(s["state"], s["state"])
+    total = s.get("articles_total") or 0
+    prog = (
+        {"done": s.get("articles_done", 0), "total": total, "unit": "articles", "percent": s.get("percent", 0.0)}
+        if total
+        else None
+    )
+    actions = ["pause", "cancel"] if state == "running" else (["resume", "cancel"] if state in ("paused", "failed") else [])
+    label = "Quarantining flagged non-article junk" if not s.get("dry_run") else "Scanning for non-article junk (dry-run)"
+    return [
+        {
+            "id": "quarantine",
+            "kind": "quarantine",
+            "label": label,
+            "state": state,
+            "progress": prog,
+            "eta_seconds": s.get("eta_seconds"),
+            "error": s.get("error"),
+            "actions": actions,
+        }
+    ]
+
+
 def _model_pull_jobs() -> list[dict]:
     """Model downloads as visible jobs (§2.C1): one active pull, the rest queued.
     A NETWORK job (clearnet via the Ollama process) — NOT a DB writer. Ollama's pull
@@ -434,7 +468,7 @@ def _background_jobs() -> list[dict]:
 # writer kind is added in ONE place. The generic writers commit per unit, so they release
 # the gate between units — but they still contend, so the UI's "queue / proceed / stop the
 # other" ask fires.
-_DB_WRITER_KINDS = ("collect", "import", "reindex") + (
+_DB_WRITER_KINDS = ("collect", "import", "reindex", "quarantine") + (
     "governments",
     "enrich-source-types",
     "keyword-tags-backfill",
@@ -458,6 +492,7 @@ def list_jobs() -> dict:
     jobs.extend(_volume_backup_jobs())
     jobs.extend(_import_jobs())
     jobs.extend(_reindex_jobs())
+    jobs.extend(_quarantine_jobs())
     jobs.extend(_model_pull_jobs())
     jobs.extend(_background_jobs())
     jobs.extend(_task_jobs())
@@ -547,6 +582,13 @@ def cancel_job(job_id: str) -> dict:
 
         get_reindex_manager().pause()
         return {"cancelled": job_id, "detail": "re-index paused (resumable; it survives a restart)"}
+    if job_id == "quarantine":
+        # Task-manager "cancel"/"pause" PAUSE the quarantine job (resumable from its
+        # persisted cursor, in the SAME write/dry-run mode it started in).
+        from src.analytics.quarantine_job import get_quarantine_manager
+
+        get_quarantine_manager().pause()
+        return {"cancelled": job_id, "detail": "quarantine job paused (resumable; it survives a restart)"}
     if job_id.startswith("model-pull:"):
         # Ollama's pull is not resumable, so cancel ABORTS the download (queued or active).
         from src.llm.pull_queue import get_pull_manager
@@ -633,4 +675,14 @@ def resume_job(job_id: str) -> dict:
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"resumed": job_id, "detail": "re-index resumed"}
+    if job_id == "quarantine":
+        # Local DB work — no network/airplane gate; resume continues from the cursor,
+        # in the SAME write/dry-run mode the run started in (never a silent flip).
+        from src.analytics.quarantine_job import get_quarantine_manager
+
+        try:
+            get_quarantine_manager().resume()
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"resumed": job_id, "detail": "quarantine job resumed"}
     raise HTTPException(status_code=404, detail=f"unknown or unresumable job {job_id!r}")
