@@ -3619,3 +3619,102 @@ unscoped `rm -rf` (a sub-agent did this mid-run and it was correctly flagged as 
 violation) — it doesn't even fix a full disk if the culprit is a different filesystem (here:
 Python site-packages on the root volume, not `/tmp` itself), and it risks destroying other
 parallel sessions' files sharing the same path.
+
+## 2026-07-23 — S1 (source qualification: verify + scale + surface)
+
+Executes S1 of the 2026-07-23 field-feedback workflow brief
+(`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md`), the first
+slice of the maintainer's post-#748 workflow (qualification before Library graphs).
+
+S1.1 VERIFICATION of the live qualification lifecycle (`src/catalog/qualification.py`, shipped
+2026-07-19/20) found a REAL correctness bug while confirming it: `run_qualification_pass`
+stamped a candidate `qualified` whenever its trial fetch produced ZERO stored articles.
+`source_audit.per_source_metrics` builds its dict by iterating stored Article rows grouped by
+source — a source with no articles at all (a totally-failed fetch, or no rss_url and no prior
+evidence) never gets an entry, so `fails_by_source.get(source.id, [])` returned an empty list,
+`decide_verdict([])` read as "healthy", and the source was admitted to full collection having
+never actually been verified. Reproduced live with a standalone repro (a fake `trial_fetch`
+raising a transport error against a fresh in-memory source) BEFORE touching any code, confirming
+`source.status` ended up `"qualified"`. Fixed: candidates absent from the metrics dict are split
+out (`no_evidence = [s for s in candidates if s.id not in per]`) and excluded from
+`evaluate_and_stamp` entirely — left `unqualified` (no attempt row, no stamp), re-offered by
+`select_unqualified` on a later pass, honestly tallied as `no_evidence` in the pass's return dict.
+Four tests pin both directions: a totally-failed fetch never qualifies
+(`test_run_qualification_pass_never_qualifies_on_zero_evidence`); a feed-less, evidence-less
+candidate stays unqualified rather than getting the documented "no rss_url" scope limit read as a
+free pass (`test_run_qualification_pass_no_rss_url_and_no_prior_articles_stays_unqualified`); a
+source whose trial fails THIS round but already carries real articles from earlier ingestion is
+still judged on that existing evidence, not treated as no-evidence
+(`test_run_qualification_pass_still_judges_evidence_from_prior_articles`); and the existing
+per-pass-bounding test was corrected to seed real articles (it had accidentally been exercising
+the same bug — its original assertion that 2 zero-article dummy sources got "evaluated" encoded
+the pre-fix behavior). Also pinned, previously true only by construction and untested: a
+disqualified source's domain is never re-proposed by the citation/catalog/wikipedia-reference
+discovery channels (`_existing_domains` keys on `Source.domain` alone, which a disqualified row
+still occupies) — `test_citation_channel_never_re_proposes_a_disqualified_domain`.
+
+S1.2 the bulk qualification BACKGROUND JOB (`src/catalog/qualify_job.py:run_bulk_qualification`).
+The steady-state ride-along (`advance_qualification`, `qualification_per_pass=5` per online
+collection pass) cannot honestly drain a Wikidata-discovery-scale backlog — measured on the
+maintainer's 2026-07-23 field diagnostics at 42,612–66,697 candidates, 5/pass is 90+ days. This
+worker runs `run_qualification_pass` repeatedly in batches until the backlog empties or the run is
+stopped/paused, mirroring `discover_job.py`'s shape (a cancellable, task-manager-visible
+`BackgroundJob`) but with a DELIBERATE SIMPLIFICATION: no persisted cursor file, because
+`Source.status` is ITSELF the durable progress marker (a stamped source leaves the
+`select_unqualified`/`select_due_disqualified` query the moment it's judged), unlike a "country"
+in world-discovery which has no durable row of its own. Pauses cleanly (never auto-resumes,
+matching the world-discovery convention) on cooperative cancel, airplane mode (`kill_switch_active`),
+or the process-wide `memguard.memory_guard` engaging (the SAME singleton the collector's own pass
+loop polls) — a bulk run must never push a low-RAM machine over the edge to drain the backlog
+faster. A NO-PROGRESS breaker (`_MAX_CONSECUTIVE_NO_PROGRESS=10`, mirroring `discover_job.py`'s
+`_MAX_CONSECUTIVE_FAILURES` convention) stops the run honestly rather than spinning forever on a
+permanent glut of unresolvable candidates (no reachable feed, no prior evidence) sitting at the
+front of the FIFO queue. New endpoints `POST/GET/POST /api/sources/qualify-bulk{,/status,/cancel}`
+(`src/api/source_management.py`) wired identically to `discover-world-sources`
+(`BackgroundJob(is_writer=True, cancellable=True)`, registered so `/api/jobs` enumerates it with
+zero extra wiring); a Settings → Sources panel (`#qualify-bulk-status` + start/cancel buttons)
+starts it (consent-gated via `ensureOnline`, refused under airplane) and polls live progress via the
+existing `pollJobStatus` helper. 10 tests: draining a backlog across several batches; the initial
+backlog estimate; cooperative cancel leaving genuine partial progress; the airplane pause; the
+memory-guard pause; the no-progress breaker (with an explicit assertion that every candidate stays
+unqualified, nothing silently stamped); a clean immediate-complete on an empty backlog; a
+resume-after-cancel test proving the no-cursor design is actually safe (exactly one
+`SourceQualificationAttempt` row per source after a cancelled-then-resumed run, no double-stamps);
+a no-score-key payload walk; and a wiring-composition guard (the slice-1c 404 lesson) that COMPOSES
+the real routes from the router prefix + decorators and requires the frontend to call exactly those.
+
+S1.3 the two-class sources display. `database_stats` (`src/api/database.py`) gains
+`counts["sources_qualified"]` (enabled AND status=qualified — exactly `select_sources`'s own
+admission filter, i.e. what is ACTUALLY collecting) and `counts["sources_candidates"]`
+(enabled=False — discovered, awaiting qualification review), computed as two cheap indexed
+`COUNT()` queries alongside the existing raw table scans. The flat `counts["sources"]` key is kept
+for backward compatibility but the frontend (`loadDbStats` in `src/static/app.js`) now hides it
+from the Library "Sources" tile grid and shows the two labelled split tiles instead ("Sources
+(collecting)" / "Discovered candidates") — the exact figure a field export showed as "~50k
+sources" against a ~5k-article corpus, read as an alarm rather than the discovery funnel working
+as ruled. STALENESS CATCH: the 2026-07-20-ruled "qualified-citations tally" + "discovery
+provenance trail" (named in the brief as an optional S1.3 stretch) were found ALREADY SHIPPED —
+`src/discovery/source_trail.py` (`source_provenance`, `source_citation_tally`), endpoints
+`GET /{source_id}/{provenance,citation-tally}`, 13 existing tests, and already wired into the
+frontend — verified working, not rebuilt.
+
+Verified: full local suite 4378 passed / 107 skipped / 0 failed (py3.13 venv, `[analysis,dev]`
+extras installed); `ruff check --select=F,B --extend-ignore=B008` clean on every changed file;
+`mypy` 0 new errors attributed to any changed file (127<=127 baseline, confirmed by grepping the
+per-file error output); `bandit -r -ll -q` clean; `i18n_report.py --min 100` green (2109/2109 ×12
+— no new locale keys needed, the new UI strings use the established un-keyed-diagnostics-panel
+convention `discoverWorld` itself uses). An adversarial skeptic pass reviewed the fix + the bulk
+job for races, breaker-logic correctness, and API wiring before push. A merge with `origin/main`
+(21 commits ahead at push time) was verified conflict-free and touched none of the files this
+slice depends on except one unrelated covering-index addition to `Article.__table_args__`.
+Frontend BROWSER-UNVERIFIED per fork-3/Q6a — a click-through of the Settings → Sources panel is
+owed. NOT started this session: S2 (Library graphs + snapshot recorder), which the brief places
+next in the ruled order.
+
+LESSON (copied to Session-rituals): an aggregation dict built by iterating real observations
+(`.setdefault`/groupby over rows) OMITS an entity with zero observations entirely — it never gets
+a present-but-empty entry. Downstream code reading `.get(id, [])` cannot tell "no evidence
+examined" from "examined, nothing bad found", and an admission gate built on that read silently
+promotes the zero-evidence case to a pass. Audit every such `.get(id, default)` call downstream of
+a groupby-style aggregation for whether "missing" and "present but empty" are meant to be the same
+thing.

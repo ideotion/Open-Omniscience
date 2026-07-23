@@ -965,6 +965,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     if the culprit is a different filesystem/partition (here: Python site-packages on
     the root volume, not `/tmp` itself), and it can destroy other parallel sessions'
     files sharing the same path.
+  - **AN AGGREGATION THAT OMITS ZERO-EVIDENCE ENTRIES MAKES "ABSENT" READ AS "PASSED"
+    (2026-07-23, the qualification zero-evidence fix):** `source_audit.per_source_metrics`
+    only ever produces a dict entry for a source with >=1 stored article — a source with
+    literally NO evidence (a totally-failed trial fetch, or no feed and no prior
+    articles) is simply MISSING from the metrics dict, not present with an empty/zero
+    value. Downstream code that reads `fails_by_source.get(id, [])` then sees an empty
+    list — indistinguishable from "examined and found clean" — and an admission gate
+    (`run_qualification_pass`) silently promoted the source to `qualified` on zero
+    verification. The fix: explicitly test dict MEMBERSHIP (`id in per`) to separate
+    "no evidence to judge" from "judged, nothing bad found", and never let the absent
+    case fall through to the same code path as a genuine pass. The general form: any
+    aggregation keyed by a `.setdefault`/groupby loop over real observations will have
+    this exact trap for any entity that produced ZERO observations — audit every
+    `.get(id, [])`/`.get(id, {})` downstream of one for whether "missing" and "present
+    but empty" are meant to mean the same thing (they usually aren't).
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
@@ -7238,6 +7253,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   DELIBERATELY-UNWIRED dry-run scaffold (`src/analytics/quarantine_job.py`, `_work_fn` seam, no
   Article quarantine column yet) — its own docstring gates execution on maintainer sign-off,
   WHICH THE A2–A4 RULINGS NOW PROVIDE, conditioned on the S3.1 calibration-review round.
+  **S1 SHIPPED 2026-07-23 (qualification verify + scale + surface; branch
+  `claude/oos-optimization-feedback-ygywq7`, draft PR onto `main`; the brief's own S1
+  slices):** S1.1 VERIFICATION found a REAL correctness bug while confirming the live
+  lifecycle: `run_qualification_pass` stamped a candidate `qualified` whenever its trial
+  fetch produced ZERO stored articles (`source_audit.per_source_metrics` omits a
+  zero-article source ENTIRELY, so the empty fails-list read as "healthy" and admitted
+  the source with no verification ever performed — the field log's own "qualification
+  trial fetch failed for 'latimes.com'" line was very likely this exact free pass).
+  Reproduced live, then FIXED: a candidate absent from the metrics (no evidence — a
+  totally-failed fetch, or no rss_url and no prior articles) is left `unqualified` (no
+  attempt row, no stamp) and re-offered on a later pass, tallied honestly as
+  `no_evidence`; four tests pin both directions (zero-evidence never qualifies; existing
+  prior evidence still judges normally). Also pinned (was true by construction, now
+  explicitly tested): a disqualified source's domain is never re-proposed by the
+  discovery channels (domain uniqueness). **S1.2** the bulk qualification BACKGROUND JOB
+  (`src/catalog/qualify_job.py:run_bulk_qualification`) drains the 42.6k–66.7k candidate
+  backlog the 5/pass ride-along would take 90+ days to clear — batches the SAME
+  `run_qualification_pass`, NO persisted cursor (`Source.status` IS the durable progress
+  marker, unlike world-discovery's per-country file cursor), pauses cleanly (never
+  auto-resumes) on cancel/airplane/the process-wide memory guard, and stops honestly
+  after 10 consecutive no-progress batches rather than spinning on permanently-
+  unresolvable candidates. New endpoints `POST/GET/POST /api/sources/qualify-bulk{,
+  /status,/cancel}` mirror `discover-world-sources`'s wiring exactly (same
+  `BackgroundJob` chassis, same status/progress shape); a Settings → Sources panel
+  starts/cancels it with live status. Resume-after-cancel + a no-score-key payload walk
+  are explicitly pinned (10 tests total). **S1.3** the two-class sources display —
+  `database_stats` gains `sources_qualified` (enabled AND status=qualified — exactly
+  `select_sources`'s own admission filter) and `sources_candidates` (enabled=False), so
+  the Library "Sources" tile stops blending actively-collecting sources with disabled
+  discovery candidates (the exact figure the maintainer's export showed as "~50k
+  sources" against a ~5k-article corpus). **STALENESS CATCH:** the 2026-07-20-ruled
+  qualified-citations tally + discovery-provenance trail (optional stretch inside S1.3)
+  were found ALREADY SHIPPED (`src/discovery/source_trail.py`, endpoints
+  `/{source_id}/{provenance,citation-tally}`, 13 tests, frontend-wired) — verified, not
+  rebuilt. VERIFIED: full suite 4378 passed/107 skipped/0 failed (py3.13 venv), ruff F/B
+  clean, mypy 0 new errors (127==baseline), bandit clean, i18n 100% (2109/2109 ×12,
+  no new keys — the new UI strings use the established un-keyed-diagnostics-panel
+  convention). Frontend BROWSER-UNVERIFIED per fork-3/Q6a. REMAINING for S2: the Library
+  graphs + snapshot recorder is next per the brief's ordering.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
