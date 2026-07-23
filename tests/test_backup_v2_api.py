@@ -64,6 +64,46 @@ def test_plaintext_artifact_manifest_shape(client):
         assert env["algorithm"] == "ed25519" and env["signature"]
 
 
+def test_persisted_import_reports_ride_the_backup_export(client):
+    """S3.5 (field-feedback A1): a persisted import/restore report under
+    data_dir()/import_reports/ must be carried by the oo-backup-2 export (never
+    silently dropped), while a fresh install with NO reports yet never crashes."""
+    from src.backup.import_reports import persist_import_report
+
+    path = persist_import_report("restore", {"kind": "restore", "plan": {}}, run_id="t1")
+    blob = _build_backup()
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        env = json.loads(zf.read("manifest.json"))
+        m = env["manifest"]
+        rel = f"import_reports/{path.name}"
+        assert rel in zf.namelist()
+        assert any(x["name"] == rel and x["role"] == "import_reports" for x in m["members"])
+
+
+def test_import_reports_list_and_download_endpoints(client):
+    from src.backup.import_reports import persist_import_report
+
+    path = persist_import_report(
+        "restore", {"kind": "restore", "tally": {"new": 5}}, run_id="ep1"
+    )
+    listing = client.get("/api/backup/import-reports").json()["reports"]
+    assert any(r["filename"] == path.name for r in listing)
+
+    as_json = client.get(f"/api/backup/import-reports/{path.name}")
+    assert as_json.status_code == 200
+    assert as_json.json()["tally"]["new"] == 5
+
+    as_md = client.get(f"/api/backup/import-reports/{path.name}", params={"format": "md"})
+    assert as_md.status_code == 200
+    assert "text/markdown" in as_md.headers["content-type"]
+    assert "5 new articles" in as_md.text
+
+    assert client.get("/api/backup/import-reports/does-not-exist.json").status_code == 404
+    assert client.get(f"/api/backup/import-reports/{path.name}?format=xml").status_code == 400
+    # path traversal must never leak outside the reports directory
+    assert client.get("/api/backup/import-reports/..%2F..%2Fetc%2Fpasswd").status_code in (404, 400)
+
+
 def test_encrypted_roundtrip_and_self_merge(client):
     blob = _build_backup("api-pw-123")
     assert blob[:6] == b"OOENC1"

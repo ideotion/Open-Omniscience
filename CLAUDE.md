@@ -1053,6 +1053,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     list, and make the cached path itself aware of the always-on condition. Before adding a WHERE
     clause to an existing query builder, check whether it branches its OWN behaviour (caching,
     plan shape) on the filter collection being empty.
+  - **A "CAPTURE THE BASELINE FRESH EVERY CALL" DESIGN IS WRONG FOR A RESUMABLE JOB —
+    THE BASELINE MUST BE CAPTURED ONCE AND PERSISTED ACROSS EVERY RESUME (2026-07-23,
+    S3.3/S3.5 import-time quarantine + report hooks):** the first cut of the
+    newsletter-import quarantine hook captured the "before" article-id baseline FRESH
+    at the top of every `_run()` invocation, reasoning that a resume's baseline should
+    reflect reality at the resume point. This silently DROPPED coverage: a run that
+    gets PAUSED before reaching its own success branch never screens the articles it
+    already stored, and — because the LATER resume's fresh baseline sits ABOVE those
+    already-stored ids — the eventual completion's "new since baseline" scan skips
+    them FOREVER, not just for that one resume. The general form: for any per-run
+    "what's new since X" computation on a job that can be paused mid-way and resumed
+    as a SEPARATE invocation, X must be captured ONCE at the TRUE start of the whole
+    logical run and PERSISTED (alongside the cursor) across every resume — never
+    recomputed per invocation, or a paused invocation's own contribution becomes
+    permanently invisible to the very check meant to cover it. COROLLARY: when a
+    baseline capture can FAIL, never fall back to a "safe-looking" default like `0` —
+    an unscoped `id > 0` matches every PRE-EXISTING row, not just this run's; use an
+    explicit two-state flag ("not yet attempted" vs "attempted and failed, skip this
+    run's hook entirely") instead of guessing a numeric fallback. Caught by re-tracing
+    the pause/resume interleaving BEFORE push (no external skeptic this slice — same
+    scrutiny, done by hand); the fix was STASH-VERIFIED (the old behavior reproduced
+    live, the new regression test failed exactly as predicted, then the fix was
+    restored and the test passed) rather than merely asserted.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
@@ -7538,6 +7561,79 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   ran it), and the import report + post-import screen; plus the honest remainder above
   (omnibar/watches/reporting/framing exclusion, the "clear junk keywords via reindex"
   step, and any frontend trigger control — none built this slice).
+  **S3.3+S3.5 SHIPPED 2026-07-23 (import-time quarantine screening + persisted
+  downloadable import reports; branch `claude/oos-s3-import-report-quarantine-hook`,
+  draft PR onto `main`):** extends S3.2's reversible quarantine + the ALREADY-SHIPPED
+  2026-07-20 "post-import delta screen" (L6, restore-merge only, corpus-delta
+  before/after inside `merge_batches.report_json` — verified via source read before
+  building anything, so this slice does NOT rebuild it) to (a) the NEWSLETTER
+  folder-import path, which had NEITHER a corpus-delta nor any persisted report before
+  this, and (b) a standalone, DOWNLOADABLE JSON+Markdown report file for BOTH paths
+  (field-feedback A1: "the persisted reports RIDE the backup export/import" — the
+  restore-merge path's `merge_batches.report_json` column is not directly downloadable
+  or human-readable). `default_quarantine_candidates_batch` (S3.2) gains an optional
+  `article_ids: list[int] | None` parameter — when given, scans EXACTLY that explicit
+  set (chunked under SQLite's ~900-bound-variable cap, mirroring the `fts_ids`/`.in_()`
+  chunking precedent in `src/api/main.py`) instead of the `after_id`/`limit` range,
+  processing the WHOLE set in one call rather than truncating to `limit`; the
+  `after_id`/`limit` path is byte-identical when `article_ids` is `None` (11 pre-
+  existing tests unchanged, +3 new: exact-set scanning, chunking past 900, and
+  scoping-correctness — an id outside the given set is NEVER touched). New
+  `src/backup/import_reports.py`: `persist_import_report`/`list_import_reports`/
+  `read_import_report` (atomic temp-file+`os.replace` write, UTF-8, a traversal-guard
+  on read mirroring `src/backup/folder_backup.py`'s `_safe_member_path` resolve-and-
+  contain check) + a pure `render_import_report_markdown` (headline in the ARTICLES
+  unit — never a cross-table row-sum, the maintainer's own 2026-07-20 complaint about
+  "4,855,433 imported ... I'm sure it doesn't contain 5 million articles"). Wired into
+  `run_restore` (`src/backup/merge.py`, reusing the SAME `merged_rows` batch-id query
+  `reindex_imported_articles` already uses to get the new article-id set) and
+  `NewsletterImportManager._run` (`src/ingest/import_job.py`) — both best-effort
+  (try/except around corpus-delta/quarantine/report-persist, mirroring `run_restore`'s
+  existing `_corpus_snapshot` try/except pattern; a hiccup never turns a successful
+  restore or import into a failure). A "work induced" section reuses S1's
+  `sources_pending`/`sources_candidates` qualification counters — reported as
+  CORPUS-WIDE totals (no cheap before/after delta exists for them yet, stated
+  explicitly in the rendering, not silently scoped-as-if-per-import). The
+  `import_reports/` directory is wired into `src/backup/artifact.py`'s
+  `_collect_members` (mirroring the `_ANNOTATIONS_DIR` scan exactly) so reports ride
+  the encrypted oo-backup-2 export; `src/backup/folder_backup.py`'s `collect_items`
+  was checked and DELIBERATELY left untouched (it only covers large, re-downloadable
+  wiki/OSM/model blobs by design — small, private, generated reports don't belong in
+  that category). Two new read-only endpoints on the existing `/api/backup` router:
+  `GET /import-reports` (list) and `GET /import-reports/{filename}` (download,
+  `?format=md` for the Markdown rendering; 404 on an unknown/traversal-attempting
+  name, 400 on an unknown format). **A real coverage gap found + fixed during
+  self-review, BEFORE push (no separate skeptic agent this slice — the same repo,
+  same discipline, done by hand):** the first cut captured the newsletter path's
+  "before" article-id baseline FRESH at the start of every `_run()` invocation
+  (reasoning: "a resume's before-id should reflect reality at resume time") — but this
+  meant a PAUSED run's own articles (stored before the pause, never reaching the
+  success branch where quarantine/report run) were NEVER auto-screened at all, even
+  once a LATER resume completed, since the resume's fresh baseline would already sit
+  above them. Fixed by capturing the baseline (`_quarantine_before_id`/
+  `_corpus_before`) ONCE at the TRUE start of a logical import and PERSISTING it
+  across every pause/resume (a new `_quarantine_baseline_attempted` flag disambiguates
+  "not yet tried" from "tried and failed" — a failed capture is NEVER guessed as `0`,
+  which would have made `Article.id > 0` match every PRE-EXISTING article too; it
+  instead skips quarantine/report entirely for that run, never fabricating a
+  baseline). STASH-VERIFIED per this project's own discipline: temporarily reproduced
+  the old fresh-per-call behavior, confirmed the new pause/resume regression test
+  (`test_paused_then_resumed_import_screens_articles_from_both_halves`) FAILS exactly
+  as predicted (`AssertionError: assert False is True` on the pre-pause article's
+  `quarantined` flag), then restored the fix and confirmed it passes. VERIFIED
+  (py3.13 venv): the full targeted sweep (`test_quarantine_job.py` 14,
+  `test_import_reports.py` 8, `test_newsletter_import_job.py` 11,
+  `test_backup_v2_api.py` 8, plus the existing merge/restore/torture suites — 80 tests
+  total) green; ruff `--select=F,B --extend-ignore=B008` clean; mypy 0 new errors
+  across every touched file (127==baseline); bandit `-r -ll -q` clean; `alembic
+  check`/`heads` unaffected (no schema change this slice — reuses S3.2's columns
+  as-is); i18n unaffected (2111/2111 ×12, no frontend touched). **REMAINING (S3.4,
+  unchanged):** the retroactive screening job's real execution against a real corpus
+  stays gated on the maintainer's review of S3.1's calibration report — nothing in
+  this slice runs it; plus the honest remainder already on record (omnibar/watches/
+  reporting/framing exclusion, the "clear junk keywords via reindex" step, and any
+  frontend results-screen UI — deliberately out of scope, needs a browser
+  click-through per fork-3/Q6a).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

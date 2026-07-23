@@ -319,3 +319,78 @@ def test_quarantine_api_wiring_composes_end_to_end():
     from src.analytics.quarantine_job import get_quarantine_manager
 
     assert "dry_run" in get_quarantine_manager().status()
+
+
+def test_article_ids_mode_scans_exactly_the_given_set_and_reports_done(tmp_path):
+    """S3.3 (2026-07-23): the explicit article_ids mode is a one-shot scan over EXACTLY the
+    given set -- never truncated to `limit`, always reports done=True (no pagination), and
+    never touches a real article outside that set."""
+    Session = _env(tmp_path)
+    _seed(Session)
+    with Session() as s:
+        all_ids = [a.id for a in s.query(Article).order_by(Article.id).all()]
+        nav_soup_id = next(
+            a.id for a in s.query(Article).all() if "newsletter-preference-centre" in a.url
+        )
+        real_id = next(a.id for a in s.query(Article).all() if "real-story" in a.url)
+
+    # a tiny limit would truncate an after_id/limit scan, but article_ids must scan ALL of them
+    with Session() as s:
+        r = default_quarantine_candidates_batch(
+            s, article_ids=all_ids, limit=1, write=True
+        )
+    assert r["scanned"] == len(all_ids)
+    assert r["done"] is True
+    assert r["newly_written"] == 3  # homepage + taxonomy + nav_soup
+    assert r["last_id"] == max(all_ids)
+
+    with Session() as s:
+        assert s.get(Article, nav_soup_id).quarantined is True
+        assert s.get(Article, real_id).quarantined is not True  # the real article stays clean
+
+
+def test_article_ids_mode_never_touches_an_article_outside_the_given_set(tmp_path):
+    """Scoping correctness: an id NOT in article_ids must never be scanned or stamped, even if
+    it would itself be flagged -- this is the exact property a merge/import quarantine hook
+    depends on (only the NEWLY-imported ids are ever passed in)."""
+    Session = _env(tmp_path)
+    _seed(Session)
+    with Session() as s:
+        nav_soup_id = next(
+            a.id for a in s.query(Article).all() if "newsletter-preference-centre" in a.url
+        )
+        real_id = next(a.id for a in s.query(Article).all() if "real-story" in a.url)
+
+    # scope to ONLY the real article's id -- the nav-soup article must be left untouched
+    with Session() as s:
+        r = default_quarantine_candidates_batch(s, article_ids=[real_id], write=True)
+    assert r["scanned"] == 1
+    assert r["quarantined"] == 0
+
+    with Session() as s:
+        assert s.get(Article, nav_soup_id).quarantined is not True
+        assert s.get(Article, real_id).quarantined is not True
+
+
+def test_article_ids_mode_chunks_under_the_sqlite_variable_cap(tmp_path):
+    """A merge/import batch can import far more than SQLite's ~900-variable IN() cap worth of
+    articles; the article_ids path must chunk internally (mirrors the fts_ids/.in_() chunking
+    precedent) rather than silently truncating or erroring."""
+    Session = _env(tmp_path)
+    with Session() as s:
+        src = s.query(Source).one()
+        for i in range(1500):
+            a = Article(
+                url=f"https://x.test/bulk/{i}", canonical_url=f"https://x.test/bulk/{i}",
+                source_id=src.id, content="bulk body text " * 20, hash=f"bulk{i}",
+                word_count=60, language="en", title=f"bulk{i}",
+            )
+            s.add(a)
+        s.commit()
+        ids = [a.id for a in s.query(Article).filter(Article.url.like("%/bulk/%")).all()]
+    assert len(ids) == 1500
+
+    with Session() as s:
+        r = default_quarantine_candidates_batch(s, article_ids=ids, write=False)
+    assert r["scanned"] == 1500
+    assert r["done"] is True

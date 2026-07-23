@@ -1815,6 +1815,77 @@ def run_restore(
             # of this feature is built to avoid (see reindex_imported_articles above).
             _imported = int((counts.get("articles") or {}).get("new") or 0)
             report["reindexed"] = {"reindexed": 0, "failed": _imported, "skipped": "see server log"}
+
+    # S3.3 (2026-07-23 field-feedback workflow, import-time screening): scan the
+    # NEWLY-MERGED articles (the exact batch_id's rows in merged_rows -- the same set
+    # reindex_imported_articles above uses) for already-known non-article junk (the
+    # #659 URL-shape rules + the NAV-SOUP prose gate), stamping any detected candidate
+    # via the REVERSIBLE S3.2 quarantine flag -- never a delete. Best-effort: a
+    # quarantine-scan hiccup must never undo a committed, additive restore.
+    try:
+        from sqlalchemy import text as _text
+
+        from src.analytics.quarantine_job import default_quarantine_candidates_batch
+        from src.database.session import session_scope as _quarantine_session_scope
+
+        with _quarantine_session_scope() as _q_sess:
+            new_article_ids = [
+                int(r[0])
+                for r in _q_sess.execute(
+                    _text(
+                        "SELECT row_id FROM merged_rows "
+                        "WHERE batch_id = :b AND table_name = 'articles'"
+                    ),
+                    {"b": batch_id},
+                ).fetchall()
+            ]
+            if new_article_ids:
+                report["quarantine_summary"] = default_quarantine_candidates_batch(
+                    _q_sess, article_ids=new_article_ids, write=True
+                )
+    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+        _LOG.warning("post-restore quarantine scan failed", exc_info=True)
+
+    # S3.5 (field-feedback A1): the "work induced" queue -- corpus-wide totals (not
+    # scoped to just this import; no cheap before/after delta exists for these
+    # counters yet, stated explicitly in the persisted report's own rendering).
+    # Best-effort; never blocks a committed restore.
+    try:
+        from sqlalchemy import func as _func
+
+        from src.catalog.qualification import STATUS_QUALIFIED
+        from src.database.models import Source
+        from src.database.session import session_scope as _work_session_scope
+
+        with _work_session_scope() as _w_sess:
+            report["work_induced"] = {
+                "sources_pending": int(
+                    _w_sess.query(_func.count(Source.id))
+                    .filter(Source.enabled.is_(True), Source.status != STATUS_QUALIFIED)
+                    .scalar()
+                    or 0
+                ),
+                "sources_candidates": int(
+                    _w_sess.query(_func.count(Source.id)).filter(Source.enabled.is_(False)).scalar()
+                    or 0
+                ),
+            }
+    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+        _LOG.warning("post-restore work-induced tally failed", exc_info=True)
+
+    # S3.5 (field-feedback A1): persist a standalone, downloadable JSON report (the
+    # restore-merge report ALSO already lives inside merge_batches.report_json, but
+    # that column is not directly downloadable/human-readable, and does not ride an
+    # export unless separately wired -- see src/backup/import_reports.py). Best-effort.
+    try:
+        from src.backup.import_reports import persist_import_report
+
+        report["persisted_report_path"] = str(
+            persist_import_report("restore", report, run_id=str(batch_id))
+        )
+    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+        _LOG.warning("persisting the standalone import report failed", exc_info=True)
+
     report["pruned_snapshots"] = _prune_snapshots()
     _LOG.info("merge-restore committed: batch=%s plan=%s", batch_id, counts)
     return report

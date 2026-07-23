@@ -18,7 +18,8 @@ from __future__ import annotations
 import logging
 import secrets
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -60,6 +61,41 @@ def backup_inventory_endpoint() -> dict:
 
     with session_scope() as session:
         return backup_inventory(session)
+
+
+@router.get("/import-reports")
+def import_reports_list() -> dict:
+    """List the persisted, downloadable import/restore reports (S3.5, field-feedback
+    A1) -- read-only, newest first. An empty/missing directory is honestly an empty
+    list (never an error)."""
+    from src.backup.import_reports import list_import_reports
+
+    return {"reports": list_import_reports()}
+
+
+@router.get("/import-reports/{filename}")
+def import_reports_download(filename: str, format: str = Query("json")) -> Response:
+    """Download one persisted import/restore report by its exact filename.
+
+    ``format=json`` (default) returns the raw stored JSON; ``format=md`` renders the
+    same report through the pure Markdown formatter. 404 on an unknown or
+    traversal-attempting filename (never a 500, never another file's contents)."""
+    from src.backup.import_reports import read_import_report, render_import_report_markdown
+
+    try:
+        report = read_import_report(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="report not found") from exc
+    if format == "md":
+        return Response(
+            render_import_report_markdown(report),
+            media_type="text/markdown; charset=utf-8",
+        )
+    if format != "json":
+        raise HTTPException(status_code=400, detail="format must be 'json' or 'md'")
+    import json as _json
+
+    return Response(_json.dumps(report, indent=2, default=str), media_type="application/json")
 
 
 @router.get("/import-scan")
