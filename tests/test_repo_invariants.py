@@ -6021,6 +6021,55 @@ def test_fresh_stores_wire_incremental_auto_vacuum():
     )
 
 
+def test_fresh_encrypted_stores_wire_the_ruled_page_size_and_a_reopen_probe():
+    """DB-10 §1b (FIRM recommendation; NOT the marker design first attempted
+    -- a persisted marker was found to go stale in THIS codebase, since
+    snapshot_preserving/reencrypt_plain_to silently rewrite a live path at a
+    different page size, reproduced empirically as a real HMAC failure on a
+    merge-restore cycle). connect() instead PROBES on reopen (every valid
+    page size, ruled default first) so it can never go stale, with an
+    in-process (never persisted) cache so a repeated open of a non-default
+    store doesn't re-pay the deliberately-expensive key derivation per
+    candidate every time (an adversarial-skeptic finding, 2026-07-23: a
+    narrower [16384, None]-only probe left any OTHER legitimate page size
+    unopenable with no explicit hint, reproducing this fix's own target bug
+    for exactly that case). This is the fast wiring guard; the real
+    functional round trips (create -> a BRAND NEW process reopening via the
+    normal boot path; the snapshot/re-encrypt pragma preservation; an
+    atypical size found automatically; the cache) live in
+    tests/test_sqlcipher.py::test_page_size_1b_round_trip_across_a_real_restart,
+    ::test_snapshot_and_reencrypt_preserve_source_page_size_and_auto_vacuum,
+    ::test_page_size_probe_finds_an_atypical_size_with_no_explicit_hint, and
+    ::test_page_size_probe_caches_the_winning_candidate_per_path."""
+    src = (_SRC / "database" / "connect.py").read_text(encoding="utf-8")
+    assert "_FRESH_PAGE_SIZE = 16384" in src, "the ruled page-size default is missing"
+    assert "_PAGE_SIZE_CANDIDATES" in src, "the widened multi-candidate probe list is missing"
+    assert "_last_good_page_size" in src, "the in-process (never persisted) winning-candidate cache is missing"
+    assert "def _try_open_encrypted(" in src, "the verify-then-fallback probe helper is missing"
+    assert "def _match_source_pragmas(" in src, (
+        "snapshot/re-encrypt must preserve the source's real page_size/auto_vacuum "
+        "on the freshly-ATTACHed target, or a routine merge silently downgrades "
+        "the §1b ruling on the very next snapshot"
+    )
+    for marker in ('_match_source_pragmas(conn, "enc")', '_match_source_pragmas(conn, "snap")'):
+        assert marker in src, f"missing wiring: {marker}"
+    fresh_branch = src.split("# Fresh file.", 1)[1]
+    assert fresh_branch.count("PRAGMA cipher_page_size = {int(page_size)}") == 2, (
+        "both fresh-ENCRYPTED sub-branches (explicit key, ambient passphrase) "
+        "must declare cipher_page_size before returning the connection"
+    )
+    # Ordering guard: within EACH fresh-encrypted branch, cipher_page_size must
+    # be set BEFORE auto_vacuum (empirically required -- the reverse order
+    # corrupts page 1's HMAC once the schema is written, per the branch's own
+    # inline comment).
+    for branch in fresh_branch.split("if create_encrypted is False", 1)[0], fresh_branch.split(
+        "if use_key:", 1
+    )[1]:
+        pg_i = branch.index("PRAGMA cipher_page_size = {int(page_size)}")
+        av_i = branch.index("PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        assert pg_i < av_i, "cipher_page_size must be set BEFORE auto_vacuum on a fresh store"
+
+
 def test_vacuum_button_has_a_real_size_gate():
     """DB-10 §1.4: the Settings 'Compact database (VACUUM)' button ran an
     unbounded synchronous rebuild on any corpus size with no warning — gate it
