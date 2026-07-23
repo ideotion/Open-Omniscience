@@ -144,15 +144,16 @@ def test_equivalence_merges_a_generated_file_curated_wins(tmp_path, monkeypatch)
 
 
 def test_shipped_generated_file_is_clean_and_vetted():
-    """The committed configs/keyword_rings_generated.yml (Wikidata batch, vetted
-    2026-06-20) parses, every ring has >=2 members, carries a QID, and none of the
-    35 mis-resolved rings dropped in vetting (journals/bands/films/place-names/
-    homographs/Wikidata meta-classes) has crept back in."""
+    """The committed configs/keyword_rings_generated.yml (Wikidata batches, vetted
+    2026-06-20 then 2026-07-23) parses, every ring has >=2 members, carries a QID,
+    and none of the mis-resolved rings dropped in either vetting pass (journals/
+    bands/films/place-names/homographs/Wikidata meta-classes/too-narrow drift) has
+    crept back in."""
     path = Path(__file__).resolve().parents[1] / "configs" / "keyword_rings_generated.yml"
     data = yaml.safe_load(path.read_text("utf-8"))
     assert data.get("generated_as_of")
     raw = data["rings"]
-    assert len(raw) >= 500  # the breadth expansion
+    assert len(raw) >= 680  # the war/conflict/pandemic/IP/finance/labour/tech batch
     ids = {str(r["id"]) for r in raw}
     assert len(ids) == len(raw)  # no duplicate ids
     for r in raw:
@@ -171,10 +172,18 @@ def test_shipped_generated_file_is_clean_and_vetted():
             assert term.strip(), f"{r.id}: empty term for lang {lang!r}"
 
     dropped = {
+        # 2026-06-20 batch
         "warsaw", "the-police", "taxon", "wii", "metabolism", "nuclear-fusion",
         "stem-cells", "the-library", "massachusetts", "sun-microsystems",
         "indian-national-congress", "country-music", "version-edition-or-translation",
         "village-in-india", "geonames", "cornwall", "farmington",
+        # 2026-07-23 batch (the 4 true id/qid duplicates of an existing ring --
+        # guest-house/psychiatric-hospital/irreligion/marketing -- are NOT listed
+        # here: those ids legitimately exist in the file for their ORIGINAL
+        # correct sense, only the duplicate re-resolutions were discarded)
+        "massacre", "desalination", "repatriation-of-cultural-property-to-korea",
+        "antimicrobial-resistance-and-infection-control", "ethnic-cleansing",
+        "unesco-world-heritage-site-buffer-zone",
     }
     assert dropped.isdisjoint(ids), dropped & ids
 

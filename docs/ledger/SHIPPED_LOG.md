@@ -3842,3 +3842,138 @@ a bare `session.rollback()` — the latter discards every prior successful inser
 transaction, not just the one that collided. Prove the isolation with a test that seeds a
 pre-existing colliding row and asserts SIBLING inserts in the same call still land, not merely
 that the function "doesn't raise."
+
+- **WIKIDATA RING BATCH — THIN-SUPERGROUP EXPANSION (168 hand-mined seeds) 2026-07-23:**
+  Step 3 pre-translation, second Wikidata batch after 2026-06-20. 168 seeds mined against the
+  77-supergroup / 540-ring scaffold, each targeting a verified-thin supergroup (intellectual
+  property, public finance, terrorism/atrocities, labour, energy, cyber, crime, migration,
+  human rights, weapons/WMDs, named wars, pandemic/COVID, AI, sport, science, and more), incl.
+  the maintainer's directly-named examples (major wars/decolonization wars — Vietnam, Iraq,
+  Kuwait, Algeria/France — and the pandemic cluster — COVID, masks, vaccine, curfew,
+  confinement). Ran on a networked template Debian VM — **Wikidata is 403-blocked in the
+  sandbox** (`host_not_allowed`; the established maintainer-machine pattern, same as the
+  2026-06-20 run). TWO OPERATIONAL SETBACKS along the way, both fixed forward: the first VM run
+  hit Wikidata's anonymous-API burst-then-cooldown rate limiter (~4 seeds/8 calls succeed, then
+  a long 429 block) — fixed with a resumable wrapper that pauses after EVERY individual
+  `wbsearchentities`/`wbgetentities` call (not just once per seed, the original `generate()`
+  behaviour) with `Retry-After`-aware backoff, reading the prior run's log to retry only the
+  failed seeds; then the AppVM was deleted mid-retry, so the final run combined bootstrap +
+  pacing into one script resumable from seed #1 via incremental per-ring file writes. The
+  successful run attempted all 168 seeds with **zero 429 errors**.
+
+  **156/168 resolved to a QID** via `wbsearchentities` -> `wbgetentities` (labels+aliases, 12 UI
+  langs); 3 had no QID at all (Iran-Iraq War, football transfer window, factory closure), 7
+  resolved but were skipped for <2 languages (atrocity, oil and gas pipeline, blasphemy,
+  chemical spill, mass layoff, aging population, theocracy), and 2 seed PAIRS independently
+  resolved to the same QID and merged within the run (public debt + sovereign debt ->
+  government-debt; lockdown + curfew -> lockdown).
+
+  VETTED before merge via automated duplicate-id/qid scans, an untranslated-loanword-surface-
+  string detector (the tell that first caught nuclear-fusion/desalination in 2026-06-20 —
+  broadened this round to a near-identical-string threshold, which is what caught
+  ethnic-cleansing), a cross-ring member-collision scan (both within the new batch and against
+  the live 540), plus a full manual eyeball of every ring's content and every item the prior
+  session's offline pre-vetting CSV had flagged (`HOMOGRAPH-WATCH` / `OVERLAP-EXISTING-RING` /
+  `CONFLICT-MANUAL-PIN` / `review-post-resolution`). **12 mis-resolved rings DROPPED:**
+  - 4 TRUE id/qid duplicates of an already-existing ring — `pension`, `asylum`, `secularism`,
+    `public relations` each re-hit the SAME QID as `guest-house` (Q2460422, the German
+    `de:Pension` boarding-house sense), `psychiatric-hospital` (Q210999, the wrong "asylum"
+    sense), `irreligion` (Q58721, secularism already an alias there), and `marketing` (Q39809,
+    PR already a member) — the prior session's offline pre-vetting had flagged all 4 as
+    `OVERLAP-EXISTING-RING` and it was confirmed exactly right; nothing to merge, the
+    re-resolutions were discarded outright.
+  - `massacre` (Q1907359) resolved to the metal band of the same name — 5 of its 6 members
+    explicitly say "(groupe)"/"(banda)"; only `zh:大屠殺` was the real concept.
+  - `ethnic cleansing` (Q842636) resolved to a real, notorious 2002 neo-Nazi video game of the
+    same title — 7 of 9 members are the literal untranslated English string "Ethnic Cleansing"
+    (even the Arabic entry is a transliteration, not a translation), the exact tell that flagged
+    nuclear-fusion/desalination.
+  - `nuclear fusion` and `desalination` again resolved to untranslated single/multi-language
+    Wikidata stubs — nuclear-fusion is a **REPEAT** of the exact 2026-06-20 drop (same QID,
+    hit again by an independent seed this batch).
+  - `translation` resolved to Q3331189, the SAME "version, edition or translation" bibliographic
+    meta-class already dropped 2026-06-20 for the same reason (also a **repeat offender** — the
+    regression-guard test caught this one live, see LESSON below).
+  - `repatriation of cultural property` drifted to a Korea-specific sub-item (Q11517829) instead
+    of the general concept.
+  - `UNESCO World Heritage Site` drifted to "UNESCO World Heritage Site buffer zone" (Q64364418)
+    — the prior session's pre-vetting CSV had flagged this exact seed `review-post-resolution`
+    and it drifted exactly as that flag anticipated.
+
+  **144 concept rings KEPT**, appended to `configs/keyword_rings_generated.yml` (540 -> **684**;
+  existing 540 rings preserved byte-for-byte, verified via `git diff` — only appended, never
+  reformatted or reordered). **EMPIRICAL DATA POINT — this batch's mis-resolution rate = 7.7%**
+  (12/156), vs the 2026-06-20 batch's 35/575 ≈ 6.1% — comparably rare, slightly higher. This
+  REFUTES a naive "single-word seeds mis-resolve more" hypothesis floated going into the run:
+  of the 12 drops, 6 were single-word seeds (pension, asylum, secularism, massacre,
+  desalination, translation) and 6 were multi-word (public relations, nuclear fusion,
+  repatriation of cultural property, antimicrobial resistance, ethnic cleansing, UNESCO World
+  Heritage Site) — an even split. The real predictor was PROPER-NOUN NAMESPACE COLLISION (a
+  band/journal/video-game sharing the concept's name on Wikidata) and TARGET-SPECIFICITY DRIFT
+  (the search API's top hit being a real but far narrower related item), not word count.
+
+  **ALL 11 CONFLICT-MANUAL-PIN war/conflict seeds resolved cleanly, none dropped for
+  ambiguity** — Gulf War, Iraq War, War in Afghanistan (2001-2021), Syrian Civil War, Yemeni
+  Civil War, Yugoslav Wars, Bosnian War, Bosnian genocide, Nagorno-Karabakh conflict,
+  Russo-Ukrainian War, and Israeli-Palestinian conflict (the task's named highest-concern item)
+  all landed on correctly-scoped, richly-translated QIDs. TWO kept war rings needed a MEMBER
+  STRIP, not a drop: `gulf-war` carried `en:Iraq War`/`pt:Guerra do Iraque` (duplicating
+  `iraq-war`'s own members — the 1990-91 and 2003 wars are distinct conflicts) and `lockout`
+  carried `ar:إغلاق`/`de:Lockdown` (duplicating the pandemic `lockdown` ring — a labour-dispute
+  lockout is not a pandemic lockdown); both stripped with an inline explanatory comment,
+  following the file's own established precedent (the `diaspora` entry's software-collision
+  comment). **FLAGGED FOR A HUMAN CALL rather than resolved on a guess:** `soviet-afghan-war`
+  and `war-in-afghanistan-2001-2021` share 5 alias terms across es/fr/ja/ru
+  (`es:Guerra de Afganistan`, two `fr:guerre d'Afghanistan` apostrophe variants,
+  `ja:アフガニスタン紛争`, `ru:Война в Афганистане`) — those languages lack English's sharp lexical
+  distinction between the two wars; left as a disclosed cross-ring ambiguity rather than
+  arbitrarily assigning the shared terms to one ring, which would fabricate a distinction the
+  language doesn't make. Also flagged, not silently changed: the `lockdown` ring itself absorbed
+  `en:curfew` alongside `en:lockdown`/`fr:confinement`/`pt:confinamento` — defensible per
+  Wikidata's own item but conflating two related-not-identical concepts.
+
+  `test_shipped_generated_file_is_clean_and_vetted` updated: 6 genuinely-wrong new ids added to
+  the regression guard (`massacre`, `desalination`, `repatriation-of-cultural-property-to-korea`,
+  `antimicrobial-resistance-and-infection-control`, `ethnic-cleansing`,
+  `unesco-world-heritage-site-buffer-zone`); the other 2 drops needed NO test change — both
+  `nuclear-fusion` and `version-edition-or-translation` were ALREADY in the 2026-06-20 guard set,
+  so this batch's re-hits were simply excluded from the merge, and the guard is what caught the
+  `version-edition-or-translation` collision live on the first full pytest run (see the LESSON
+  below). The 4 true duplicates (`guest-house`/`psychiatric-hospital`/`irreligion`/`marketing`)
+  were deliberately NOT added, since those ids legitimately exist in the file for their ORIGINAL
+  correct sense; floor raised `>=500` -> `>=680`. No supergroup
+  assignment (`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md` owns that; step 7
+  of the runbook explicitly scoped it out).
+
+  VERIFIED: `test_wikidata_ring_gen.py` (12/12) plus the broader translation/families/selftest
+  surface (`test_super_rings.py`, `test_ring_candidates_digest.py`, `test_keyword_translation.py`,
+  `test_families.py`, `test_keyword_equivalence.py`, `test_keyword_selftest.py`) — 71 tests green
+  total, the only failures being pre-existing sandbox environment gaps unrelated to this change
+  (a missing `httpx2` package for one FastAPI `TestClient` test). `ruff check` clean on the
+  touched test file; `mypy` reports 0 new errors on it (the import-closure noise it surfaces
+  lives entirely in an untouched module, `src/crypto/provenance.py`, per the project's own
+  per-file-verification convention).
+
+  **LESSON (reusable, confirmed on a REAL run this time, not just read from source):**
+  `scripts/generate_wikidata_rings.py`'s `main()` FULLY OVERWRITES its `-o` target
+  (`args.out.write_text(emit_yaml(rings, ...))`) — it does not merge or append. A run must
+  ALWAYS target a fresh file (`-o keyword_rings_generated_NEW.yml`), never the live
+  `configs/keyword_rings_generated.yml`, and the merge into the live file is a SEPARATE,
+  deliberate step (append-only text splice preserving every existing byte, never a full
+  YAML round-trip re-serialization, which would reformat/reorder the 540 untouched entries and
+  bury the real diff in noise).
+
+  **LESSON: a repeat-offender QID can resurface under a DIFFERENT English seed string.**
+  `nuclear-fusion` (Q2191684) was dropped 2026-06-20 for a seed literally reading "nuclear
+  fusion"; this batch's entirely different seed "translation" independently hit ANOTHER
+  2026-06-20 repeat offender, Q3331189 ("version, edition or translation"), because Wikidata's
+  search-then-disambiguate step for a common one-word concept can land on an adjacent
+  bibliographic/technical meta-class instead. The regression-guard test's `dropped` blocklist is
+  what caught this live, on the FIRST full pytest run — a reminder that the test is not merely
+  documentation of past mistakes, it is an active tripwire that must be run (and obeyed) before
+  trusting a merge, not just updated after eyeballing the batch by hand.
+
+  **LESSON: a prior session's own pre-vetting flag (`review-post-resolution`) is a genuine
+  signal, not boilerplate.** The one seed the pre-vetting CSV singled out with an extra note —
+  "UNESCO World Heritage Site" — was also the one seed among the ~145 unflagged
+  `review-post-resolution` rows that actually drifted off-target on this run.

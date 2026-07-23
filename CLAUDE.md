@@ -1019,6 +1019,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     recorded in the same call (`test_a_mid_batch_collision_never_discards_sibling_inserts`)
     — a test that merely checks "the function doesn't raise" would pass even with the
     unsafe bare-rollback version.
+  - **`scripts/generate_wikidata_rings.py` OVERWRITES its `-o` TARGET — CONFIRMED ON A REAL RUN,
+    NOT JUST READ FROM SOURCE (2026-07-23, the 2nd Wikidata ring batch, 168 seeds):** `main()`
+    does `args.out.write_text(emit_yaml(rings, ...))` — a full overwrite, never a merge. A run
+    must ALWAYS target a fresh file, never the live `configs/keyword_rings_generated.yml`; the
+    merge into the live file is a SEPARATE, deliberate append-only TEXT SPLICE (never a full YAML
+    round-trip re-serialization, which reformats/reorders the untouched existing rings and buries
+    the real diff). A REPEAT-OFFENDER QID can resurface under a DIFFERENT seed string across
+    batches (this batch's "translation" independently re-hit the SAME "version, edition or
+    translation" bibliographic meta-class the 2026-06-20 batch already dropped under a different
+    seed) — the regression-guard test's `dropped` blocklist is what caught it LIVE on the first
+    full pytest run, not the manual eyeball; run the test before trusting a hand-vetted merge, not
+    just after. Mis-resolution correlates with PROPER-NOUN NAMESPACE COLLISION (a band/journal/
+    video-game sharing the concept's name) and TARGET-SPECIFICITY DRIFT (the search API's top hit
+    being a real but far narrower related item) — NOT with seed word-count (this batch's 12 drops
+    split evenly 6 single-word / 6 multi-word, refuting that naive predictor).
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
