@@ -110,6 +110,14 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
     omitted from ``counts`` rather than reported as zero, so the UI never implies
     a feature exists when it does not. Cached briefly (computed_at/cache_ttl_s
     state the freshness window in the response).
+
+    ``counts["sources"]`` is the flat table COUNT(*) -- kept for backward
+    compatibility -- but it BLENDS actively-collecting sources with disabled
+    discovery candidates awaiting review. ``counts["sources_qualified"]``
+    (enabled AND status=qualified -- exactly what ``select_sources`` admits to
+    collection) and ``counts["sources_candidates"]`` (enabled=False) are the
+    honest two-class split (2026-07-23 field-feedback S1.3): never show the flat
+    figure alone where it could read as one number describing the corpus.
     """
 
     def _compute() -> dict:
