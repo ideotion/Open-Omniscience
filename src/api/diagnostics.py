@@ -1438,6 +1438,39 @@ def non_article_scan(download: bool = Query(False), db: Session = Depends(get_db
     return JSONResponse(report, headers=headers)
 
 
+@router.get("/criteria-calibration")
+def criteria_calibration(
+    download: bool = Query(False),
+    top_n: int = Query(100, ge=1, le=1000),
+    prose_gate_limit: int = Query(2000, ge=1, le=20000),
+    prose_gate_after_id: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """S3.1 (2026-07-23 field-feedback workflow) — the TEMPORARY criteria-calibration report:
+    the top ``top_n`` disregarded/would-be-disregarded articles under the CURRENT
+    extraction-validity criteria, with per-article detail (id, title, url, source, word
+    count, function-word density, sentence-punctuation density, which criterion fired) plus
+    per-criterion/per-source/per-language aggregates — a REPORT over the existing detectors
+    (``classify_non_article`` + the prose gate), never new judging.
+
+    Iterative loop: review these specimens, adjust the criteria if needed (propose → review
+    → apply), re-export. No retroactive quarantine executes against real data until this
+    report has been reviewed and the criteria agreed (0.3 gate row 5). Bounded: at most
+    ``top_n`` article rows decrypted for detail + one bounded, resumable prose-gate batch
+    (``prose_gate_limit``, chunked via ``prose_gate_after_id``). Plain ``def`` → threadpool.
+    ``download=1`` returns a dated attachment."""
+    from src.analytics.criteria_calibration import calibration_report
+
+    report = calibration_report(
+        db, top_n=top_n, prose_gate_limit=prose_gate_limit, prose_gate_after_id=prose_gate_after_id,
+    )
+    headers = {}
+    if download:
+        fname = f"oo-criteria-calibration-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
 @router.get("/keyword-growth")
 def keyword_growth(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """The vocabulary-growth curve: cumulative distinct keywords vs cumulative words
@@ -2726,6 +2759,13 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # either the bundle or that block.
         ("source-audit.json", lambda: source_audit(download=False, with_furniture=True, db=db)),
         ("non-article-scan.json", lambda: non_article_scan(download=False, db=db)),
+        # S3.1 (2026-07-23 field-feedback workflow): the TEMPORARY criteria-calibration
+        # report. A smaller prose_gate_limit than the endpoint's own default (500 vs 2000)
+        # keeps this bundle member's content-decrypt bounded — the standalone endpoint
+        # still defaults fuller for a direct diagnostic run.
+        ("criteria-calibration.json", lambda: criteria_calibration(
+            download=False, top_n=100, prose_gate_limit=500, prose_gate_after_id=0, db=db,
+        )),
         ("lemma-preview.json", lambda: lemma_preview(top_n=500, db=db)),
         ("power-profile.json", lambda: power_profile(profile="optimized", download=False)),
         ("data-dir-persistence.json", lambda: data_dir_persistence_report()),
@@ -2882,6 +2922,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/power-profile-selftest": "power-profile-selftest.json",
     "/article-length": "article-length.json",
     "/non-article-scan": "non-article-scan.json",
+    "/criteria-calibration": "criteria-calibration.json",  # S3.1 of the 2026-07-23 field-feedback workflow
     "/keyword-growth": "keyword-growth.json",
     "/source-audit": "source-audit.json",
     "/source-audit-selftest": "source-audit-selftest.json",
