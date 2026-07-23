@@ -63,6 +63,11 @@ def order(monkeypatch):
 
     sched = BackgroundScheduler(settings_provider=lambda: SchedulerSettings())
     sched._default_run_once()
+    # S4.1 (duty-cycle fix): the briefing recompute now runs in its own
+    # background thread (see _refresh_briefing_async) instead of inline —
+    # join it so the ordering/phase assertions below stay deterministic.
+    if sched._briefing_thread is not None:
+        sched._briefing_thread.join(timeout=5)
     return calls, phases_at
 
 
@@ -78,7 +83,12 @@ def test_phase_is_collecting_during_scrape_then_cleared(order):
     _, phases_at = order
     assert phases_at["scrape"] == "collecting"
     assert phases_at["preflight"] == "background"
-    assert phases_at["briefing"] == "briefing"
+    # S4.1 (duty-cycle fix): the briefing recompute now runs concurrently in its
+    # own background thread (tracked as its own task-manager entry, kind=
+    # "briefing" — see test_briefing_duty_cycle.py) rather than as its own
+    # scheduler phase, so the pass's OWN phase stays "background" right through
+    # to when it kicks the refresh off.
+    assert phases_at["briefing"] == "background"
     # Idle once the pass returns (set None in _do_run; _default_run_once leaves it
     # to the caller, so we only assert it was the right phase at briefing time).
 

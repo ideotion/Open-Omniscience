@@ -921,6 +921,14 @@ class BackgroundScheduler:
         self._maint_interval_s = _maint_interval_s()
         self._last_maint = 0.0
         self._last_maintenance: dict | None = None
+        # S4.1 duty-cycle fix (field-feedback 2026-07-23): the whole-corpus
+        # briefing recompute runs in its own background thread (see
+        # _refresh_briefing_async); this lock makes overlapping refreshes
+        # non-overlapping-but-never-queued (a busy refresh means THIS pass's
+        # cycle is skipped, not stacked), and the thread ref lets tests wait
+        # for it deterministically.
+        self._briefing_bg_lock = threading.Lock()
+        self._briefing_thread: threading.Thread | None = None
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -1155,6 +1163,53 @@ class BackgroundScheduler:
                 self._active = False
             self._run_lock.release()
 
+    def _refresh_briefing_async(self) -> None:
+        """S4.1 duty-cycle fix (field-feedback 2026-07-23, two maintainer diagnostics
+        exports measuring 65%/48% duty cycle -- 3-8 min inter-pass gaps on BOTH a
+        2-core and an 8-core box): ``refresh_briefing`` is a single-core, whole-corpus
+        recompute (home-cards alone measured up to ~268s on a 2-core reference box)
+        that used to run SYNCHRONOUSLY at the tail of every pass, blocking the very
+        next pass's "collecting" phase from starting until it finished -- a large
+        share of the measured gap, and one that barely shrinks with more CPU (a
+        single-core recompute; the fast box's own gap only improved ~1.4x on 2.7x
+        compute). It is READ-MOSTLY (writes only its own file cache + the watch
+        evaluation, both already single-writer-gated like every other write in the
+        app) so it is handed to its OWN background thread with a FRESH session --
+        the caller returns immediately after kicking it off, letting the scheduler
+        loop start the next pass's collection concurrently while this finishes.
+        Best-effort + NON-OVERLAPPING (never queued): if a previous refresh is still
+        running when a later pass finishes, that pass's cycle is skipped outright --
+        the corpus grows incrementally between passes, so missing one refresh is
+        harmless, the same "occasionally skipped, never stacked" posture the other
+        ride-alongs (world-discovery, qualification) already use. Tracked in the task
+        manager (kind="briefing") like those ride-alongs, rather than as a scheduler
+        phase -- it can now genuinely overlap the next pass's OWN phase.
+        """
+        if not self._briefing_bg_lock.acquire(blocking=False):
+            _LOG.info("background briefing refresh still running; skipping this cycle")
+            return
+
+        def _run() -> None:
+            from src.database.session import session_scope
+            from src.monitoring import tasks as _bgtasks
+
+            tok = _bgtasks.register("briefing", "refreshing the Home briefing")
+            try:
+                from src.briefing.service import refresh_briefing
+
+                with session_scope() as session:
+                    refresh_briefing(session)
+            except Exception:  # noqa: BLE001 - a background refresh must never crash the thread
+                _LOG.warning("background briefing refresh failed", exc_info=True)
+            finally:
+                _bgtasks.finish(tok)
+                self._briefing_bg_lock.release()
+
+        self._briefing_thread = threading.Thread(
+            target=_run, daemon=True, name="oo-briefing-bg"
+        )
+        self._briefing_thread.start()
+
     def _default_run_once(self) -> dict:
 
         from src.database.session import session_scope
@@ -1388,15 +1443,15 @@ class BackgroundScheduler:
                         _LOG.info("weather signals refresh: %s", wsig)
             except Exception:  # noqa: BLE001 - never fail the scrape on signal refresh
                 _LOG.warning("hazard/weather signal refresh failed", exc_info=True)
-            # Precompute + cache the Home briefing so it loads instantly. Best-effort:
-            # a briefing failure must never fail the scrape that just succeeded.
-            _phase_set("briefing")
-            try:
-                from src.briefing.service import refresh_briefing
-
-                refresh_briefing(session)
-            except Exception:  # noqa: BLE001 - never let the briefing break a scrape
-                _LOG.warning("could not refresh briefing after scrape", exc_info=True)
+            # Precompute + cache the Home briefing so it loads instantly. S4.1
+            # (duty-cycle fix, see _refresh_briefing_async's docstring): this used
+            # to run synchronously here, blocking the next pass's collection from
+            # starting until the whole-corpus recompute finished. It now kicks off
+            # a background thread with its OWN session and returns immediately --
+            # the phase stays "background" through to the return (the recompute is
+            # tracked as its own task-manager entry, not a scheduler phase, since it
+            # can now genuinely outlive this pass).
+            self._refresh_briefing_async()
             return result
 
     # -- introspection ----------------------------------------------------- #

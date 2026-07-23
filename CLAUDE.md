@@ -1076,6 +1076,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     scrutiny, done by hand); the fix was STASH-VERIFIED (the old behavior reproduced
     live, the new regression test failed exactly as predicted, then the fix was
     restored and the test passed) rather than merely asserted.
+  - **A "the old pattern must be GONE" regression guard checked against the WHOLE
+    FILE can produce a FALSE PASS when the new code legitimately reuses the same
+    trailing text at a different nesting depth (2026-07-23, S4.1 duty-cycle fix):**
+    the first invariant-test draft asserted `"refresh_briefing(session)\n
+    except Exception" not in runner` to prove the old synchronous call site was
+    removed — but the NEW background-thread version also calls
+    `refresh_briefing(session)` immediately followed by an `except Exception:` line
+    at the SAME indent (Python's own indentation conventions make the two
+    structurally identical once you look only at where a line ends and what the
+    very next line starts with, regardless of how deeply the intervening code is
+    nested). The assertion therefore passed against BOTH the code it meant to
+    reject and the code it meant to accept. Fixed by scoping each "must be gone" /
+    "must be present" assertion to the SPECIFIC method body it claims to guard via
+    a source split on that method's own `def` line, never a bare whole-file
+    substring search when the two things being distinguished can share literal
+    text. General form: a regression guard proving something was REMOVED is only
+    as strong as the scope it searches.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
@@ -7634,6 +7651,58 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   reporting/framing exclusion, the "clear junk keywords via reindex" step, and any
   frontend results-screen UI — deliberately out of scope, needs a browser
   click-through per fork-3/Q6a).
+  **S4.1 SHIPPED 2026-07-23 (duty-cycle fix — the top throughput lever, evidence-ordered per the
+  brief's §5): `refresh_briefing` no longer blocks the next pass.** The two field-diagnostics
+  exports both measured a 3–8 min inter-pass gap, named as two stacked causes: "(i) the single-core
+  briefing refresh and (ii) the ride-alongs' serial Tor fetches." This slice fixes (i), the
+  simpler and more isolated of the two design directions the brief offered ("each independently
+  shippable"): `refresh_briefing` — a single-core, whole-corpus recompute (home-cards alone
+  measured up to ~268s on a 2-core box in an earlier diagnostics run) — used to run SYNCHRONOUSLY
+  at the tail of `_default_run_once`, so the very next pass's "collecting" phase could not start
+  until it finished. It is READ-MOSTLY (writes only its own file cache + the watch-evaluation
+  bookkeeping, both already single-writer-gated like every other write in the app), so
+  `BackgroundScheduler._refresh_briefing_async` now hands it to its OWN daemon thread with a FRESH
+  `session_scope()` (the pass's own session closes once `_default_run_once` returns, so the
+  background thread cannot reuse it) — the pass returns IMMEDIATELY after kicking it off, so the
+  scheduler loop's next `_do_run()` (the next collect pass) and `_run_off_peak_maintenance()` can
+  both start concurrently while the refresh finishes; this is SAFE by the existing single-writer
+  gate's own guarantee (reads never block, writes always serialize regardless of which thread/
+  session initiates them — the exact promise that already lets world-discovery/qualification run
+  their OWN concurrent sessions inside a single pass today). Non-overlapping, never queued: a
+  second attempt while one is still running is a no-op (`_briefing_bg_lock.acquire(blocking=False)`)
+  — a skipped cycle is harmless since the corpus grows incrementally between passes, the SAME
+  posture the world-discovery/qualification ride-alongs already use for their own per-pass budgets.
+  Tracked in the task manager (`kind="briefing"`, via `src.monitoring.tasks`, mirroring the
+  qualification ride-along's own register/finish pattern) instead of as a scheduler PHASE, since it
+  can now genuinely outlive the pass that started it — the pass's own phase now stays "background"
+  right through to its return (the `"briefing"` phase value + its now-unreachable `_PHASE_LABELS`
+  entry in `src/api/jobs.py` were removed). `tests/test_collect_first_ordering.py`'s two affected
+  assertions were updated to match the new intentional behaviour (the fixture now joins the
+  background thread before asserting on `calls`/`phases_at`, and `phases_at["briefing"]` now reads
+  `"background"` — the pass's phase at kickoff time — not the retired `"briefing"` phase value); a
+  new `tests/test_briefing_duty_cycle.py` (4 tests) proves the mechanism directly: the kickoff
+  returns before a deliberately-blocked refresh completes, a second concurrent attempt is skipped
+  (never stacked, and allowed again once the first fully finishes), a raising refresh never crashes
+  the thread AND still releases the lock (so a later pass isn't starved forever by one failure), and
+  the running refresh is visible in `tasks.snapshot()` while in flight and gone once it finishes. A
+  new `test_repo_invariants.py` guard pins the wiring (the async method + its lock/thread fields, the
+  non-overlapping acquire + task-manager registration inside it, and that `_default_run_once`'s own
+  body calls ONLY the async kickoff — never `refresh_briefing(` or `_phase_set("briefing")` directly).
+  VERIFIED (py3.13 venv): the new + updated test files plus a 22-file targeted scheduler/briefing/
+  jobs/collect sweep (133 tests) green, plus the full suite; ruff `--select=F,B --extend-ignore=B008`
+  clean; mypy 0 new errors on either touched file (127==baseline); bandit `-r -ll -q` clean; no schema/
+  frontend change (no alembic/i18n impact). **HONESTLY NOT MEASURED HERE (no fabricated numbers,
+  per the standing non-negotiable):** this ships the MECHANISM only — the brief's own designated
+  measurement path is "the maintainer's 8-core/20 GB machine is the clean before/after bench
+  (operator step)"; no duty-cycle percentage is claimed in this entry. **REMAINING (S4.1's own
+  cause (ii), S4.2, S4.3 — unchanged from the brief):** overlapping the network ride-alongs
+  (calendar/wiki/law/discovery/qualification's serial Tor fetches) themselves with the next pass's
+  fetch phase is NOT built this slice (a materially bigger structural change — moving live network
+  I/O across a pass boundary, not just a read-mostly recompute — deliberately left as its own
+  follow-up rather than bundled in); S4.2 (collector write-batching, now evidence-justified by the
+  fast box's `writer-bound` verdicts) is explicitly gated to land AFTER S4.1 "so its effect is
+  measured in isolation," per the brief; S4.3 (memory-headroom honesty for small boxes) is
+  documentation/profiling, not yet done.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

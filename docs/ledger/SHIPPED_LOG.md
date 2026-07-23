@@ -4049,3 +4049,26 @@ and the test re-confirmed green. General form: for ANY resumable job, a "since t
 started" computation is only correct if the reference point is captured once at the
 TRUE logical start and threaded through every resume -- treat it as part of the job's
 persisted state, exactly like its cursor, not as a per-invocation local.
+
+**LESSON: a "the old pattern must be GONE" regression guard checked against the
+WHOLE FILE can produce a false pass when the new code legitimately reuses the
+same trailing text at a different nesting depth.** S4.1's first invariant-test
+draft asserted `"refresh_briefing(session)\n            except Exception" not in
+runner` to prove the old SYNCHRONOUS call site was removed -- but the NEW
+background-thread version also calls `refresh_briefing(session)` immediately
+followed by an `except Exception:` line at the SAME 12-space indent (Python's
+own indentation conventions make the two structurally identical once you look
+only at where a line ends and what the very next line starts with, regardless
+of how deeply the intervening code is nested). The assertion therefore passed
+against BOTH the code it was meant to reject and the code it was meant to
+accept -- a false pass that would have let a regression back to synchronous
+inline execution slip through silently. Caught before commit by running the new
+test and reading its failure message closely (not by an external skeptic this
+time). Fixed by scoping each "must be gone" / "must be present" assertion to
+the SPECIFIC method body it claims to guard, via a source split on that
+method's own `def` line (`runner.split("def _default_run_once", 1)[1]`), never
+a bare whole-file substring search when the two things being distinguished can
+share literal text. General form: a regression guard proving something was
+REMOVED is only as strong as the scope it searches -- a substring that reads as
+distinctive in isolation may recur, coincidentally or not, somewhere the guard
+never meant to bless.
