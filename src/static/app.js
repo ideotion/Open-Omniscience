@@ -1561,9 +1561,18 @@
     function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
     function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
       toast("Appearance reset to defaults."); }
+    // theme-select-lossy-overwrite (P1): the Settings -> General panel's #set-theme
+    // select is a lossy 3-way dark/light/system BUCKET of the full 17/18-theme value
+    // (Settings -> Graphics is the authoritative picker). _lastSyncedThemeBucket
+    // remembers which bucket syncThemeSelect() just assigned, so saveSettings() can
+    // tell "the user left this alone" (skip re-applying the bucket default) apart
+    // from "the user actually picked a different bucket here" (honor it).
+    let _lastSyncedThemeBucket = null;
     function syncThemeSelect() { const t = getUi().theme; const sel = $("set-theme");
       const lightish = ["light", "paper", "mist", "dawn", "mint"];
-      if (sel) sel.value = (t === "system" ? "system" : lightish.includes(t) ? "light" : "dark"); }
+      const bucket = (t === "system" ? "system" : lightish.includes(t) ? "light" : "dark");
+      if (sel) sel.value = bucket;
+      _lastSyncedThemeBucket = bucket; }
 
     // Appearance now lives in Settings → Appearance (the old drawer is gone).
     // openDrawer() is kept as the single "take me to appearance" entry point so the
@@ -4998,7 +5007,13 @@
       try {
         const s = await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
         DEFAULT_LIMIT = s.default_result_limit;
-        setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");
+        // theme-select-lossy-overwrite (P1): only apply the General panel's 3-way
+        // bucket if the user actually changed it HERE since it was last synced --
+        // else every Save (of unrelated preferences) silently collapsed a named
+        // Graphics theme (e.g. "midnight") down to its bucket's plain default.
+        if ($("set-theme").value !== _lastSyncedThemeBucket) {
+          setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");
+        }
         toast("Preferences saved.");
       } catch (e) { toast("Save failed: " + e.message, "err"); }
     }

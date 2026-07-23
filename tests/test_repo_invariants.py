@@ -6105,3 +6105,44 @@ def test_corpus_window_open_is_debounced_against_double_clicks():
             f"{fn_name} must route its window.open through the shared debounce"
         assert "window.open(" not in body, \
             f"{fn_name} must not call window.open directly (bypasses the debounce)"
+
+
+def test_saving_unrelated_settings_never_silently_overwrites_a_named_theme():
+    """GUI-test finding theme-select-lossy-overwrite (P1): the Settings -> General
+    panel's #set-theme select is a lossy 3-way dark/light/system BUCKET of the full
+    17/18-theme value (Settings -> Graphics is the authoritative picker). saveSettings()
+    used to unconditionally re-apply that bucket's plain default on EVERY Save click --
+    so picking "Midnight" in Graphics, then saving an unrelated preference in General
+    (e.g. the result-limit), silently collapsed the theme back to plain "ink". Fixed by
+    tracking which bucket syncThemeSelect() last assigned (_lastSyncedThemeBucket) and
+    only re-applying the select's value in saveSettings() when it has actually CHANGED
+    since -- i.e. the user picked a different bucket in General themselves."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "_lastSyncedThemeBucket" in app, "the last-synced-bucket tracker must exist"
+
+    sync_fn = app.split("function syncThemeSelect() {", 1)[1].split("\n    }\n", 1)[0]
+    assert "_lastSyncedThemeBucket = bucket" in sync_fn, \
+        "syncThemeSelect() must record the bucket it just assigned"
+
+    save_fn = app.split("async function saveSettings() {", 1)[1].split("\n    }\n", 1)[0]
+    assert '$("set-theme").value !== _lastSyncedThemeBucket' in save_fn, \
+        "saveSettings() must gate the theme re-apply on an ACTUAL change to the select"
+    # The unconditional call this fix replaced must not linger as an unguarded duplicate.
+    unconditional = 'setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");'
+    assert save_fn.count(unconditional) <= 1, \
+        "the theme re-apply must not run unconditionally anywhere in saveSettings()"
+    if unconditional in save_fn:
+        guard_at = save_fn.index('$("set-theme").value !== _lastSyncedThemeBucket')
+        call_at = save_fn.index(unconditional)
+        assert guard_at < call_at, "the guard must wrap the call, not merely precede it unrelatedly"
+
+    # loadSettings()'s first-run seeding (guarded by the localStorage check) is
+    # DELIBERATELY untouched by this fix -- it must stay exactly as guarded.
+    load_fn = app.split("async function loadSettings() {", 1)[1].split("\n      } catch", 1)[0]
+    assert 'if (!localStorage.getItem(UI_KEY)) {' in load_fn, \
+        "loadSettings()'s guarded first-run theme seed must survive unmodified"
+    guard_at = load_fn.index("if (!localStorage.getItem(UI_KEY)) {")
+    seed_at = load_fn.index('setTheme({dark:"ink", light:"light", system:"system"}[s.theme] || "ink")')
+    sync_at = load_fn.index("syncThemeSelect();")
+    assert guard_at < seed_at < sync_at, \
+        "the first-run seed must stay wrapped by its localStorage guard, before syncThemeSelect()"
