@@ -6980,3 +6980,49 @@ def test_docs_index_covers_live_docs():
         if needle not in index_text:
             missing.append(entry.name)
     assert not missing, f"docs/README.md must reference every top-level doc; missing: {missing}"
+
+
+def test_library_graphs_wired_and_downloaded_section_compressed():
+    """S2 (2026-07-23 field-feedback workflow): the Library tab's bare live figures
+    (sources/keywords/Wikipedia+law tracked counts) become small evolution graphs
+    (reusing the EXISTING dashChartSvg + chartEnlarge helpers, invariant #16 —
+    never a new visual language, never a larger tile), and the "Downloaded" section
+    is compressed into the established collapsed-by-default <details class="adv-collect">
+    disclosure (item 5). Wired via the /api/library/history endpoint (S2 backend)."""
+    html = _ui_source()
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    # Three dedicated graph host sections exist in the Library tab, each with its
+    # own panel (Activity / Wikipedia tracked / Law tracked -- item 5's ask for
+    # OWN sections, not folded into the existing overview grid).
+    for host_id in ("lib-activity-graphs", "lib-wiki-graphs", "lib-law-graphs"):
+        assert f'id="{host_id}"' in html, f"missing Library graph host #{host_id}"
+
+    # The Downloaded tiles are now inside a collapsed-by-default disclosure (the
+    # same adv-collect convention Settings already uses for legacy/advanced
+    # sections), not a permanently-open 9-tile grid.
+    assert 'details class="adv-collect"' in app.split("function renderLibraryOverview", 1)[1].split(
+        "\n    }\n", 1
+    )[0], "the Downloaded tiles must be wrapped in a collapsed-by-default <details>"
+
+    # Frontend wiring: each graph host has a dedicated render function, called
+    # when the Library tab is shown, reusing dashChartSvg + chartEnlarge (no new
+    # chart renderer) and fetching the real S2 endpoint.
+    for fn in ("renderLibraryActivityGraphs", "renderLibraryWikiGraphs", "renderLibraryLawGraphs",
+               "enlargeLibMetric"):
+        assert f"function {fn}" in app, f"missing {fn}"
+    assert "renderLibraryActivityGraphs(); renderLibraryWikiGraphs(); renderLibraryLawGraphs();" in app, (
+        "the Library tab's show-dispatcher must render all three graph sections"
+    )
+    assert "dashChartSvg(series.map(" in app, "the small tile must reuse dashChartSvg, not a new renderer"
+    assert "chartEnlarge(label" in app, "click-to-enlarge must reuse the existing chartEnlarge modal"
+    assert "/api/library/history?metric=" in app
+
+    # The 'slice-1c 404 lesson' (CLAUDE.md): the wiring test must COMPOSE the real
+    # route (router prefix + decorator), never assert two literal strings side by
+    # side. Mirrors tests/test_library_history.py::test_wiring_composes_the_real_route.
+    lib_api = (_SRC / "api" / "library.py").read_text(encoding="utf-8")
+    prefix_m = re.search(r'APIRouter\(prefix="([^"]+)"', lib_api)
+    path_m = re.search(r'@router\.get\("(/history[^"]*)"', lib_api)
+    assert prefix_m and path_m
+    assert prefix_m.group(1) + path_m.group(1) == "/api/library/history"

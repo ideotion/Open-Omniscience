@@ -2143,6 +2143,48 @@ class StatFigure(Base):
         )
 
 
+class StatSnapshot(Base):
+    """One hourly snapshot of a cheap Library-tab counter (2026-07-23 field-feedback S2).
+
+    The Library tab's "Downloaded"/"Database" figures were live single numbers with
+    no history — the maintainer asked for small evolution GRAPHS instead. Most of
+    those counters (sources, keywords, Wikipedia pages/revisions tracked, law
+    documents/revisions tracked) have NO existing per-hour history anywhere in the
+    store, unlike ``Article.created_at`` (which lets an articles/hour graph backfill
+    retroactively for free) — so this table exists to start recording one, honestly,
+    from the moment recording begins.
+
+    An EAV shape (metric, taken_at, value) mirrors this project's own vintage
+    convention (:class:`StatFigure`, :class:`SourceQualificationAttempt`): APPEND-ONLY,
+    never an overwrite, one row per (metric, hour). Retention is INFINITE by design
+    (ruled: "I would prefer infinite retention") — nothing here ever prunes old rows;
+    a bounded READ window is a query-time concern (the serving endpoint), never a
+    storage-time one. ``taken_at`` is the metric's HOUR BUCKET (minutes/seconds
+    zeroed), so the unique constraint below is also the natural "already snapped
+    this hour" freshness gate — no separate marker file needed, unlike the
+    JSON-marker convention ``maybe_cleanup_keywords``/``maybe_incremental_vacuum``
+    use (those gate a HEAVY multi-step operation; this gates a handful of cheap
+    ``COUNT(*)`` reads, so the table itself is the cheaper and driftproof source of
+    truth for "have we already recorded this hour").
+    """
+
+    __tablename__ = "stat_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    metric: Mapped[str] = mapped_column(String(40), nullable=False)
+    taken_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)  # the hour bucket, UTC, naive
+    value: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        UniqueConstraint("metric", "taken_at", name="uq_stat_snapshot_metric_hour"),
+        Index("ix_stat_snapshots_metric_time", "metric", "taken_at"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<StatSnapshot({self.metric}={self.value} @{self.taken_at})>"
+
+
 class Watch(Base):
     """A saved local CONDITION the convergence watch engine re-evaluates (ruling
     2026-06-17 #3: "if-this-then-WATCH", ON by default).

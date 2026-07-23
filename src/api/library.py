@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, inspect, select, table
 from sqlalchemy.orm import Session
 
@@ -36,6 +36,14 @@ from src.utils.cache import SimpleCache
 
 _LOG = logging.getLogger("api.library")
 router = APIRouter(prefix="/api/library", tags=["library"])
+
+# The history endpoint's read window is bounded even though storage retention is
+# infinite (2026-07-23 field feedback: "I would prefer infinite retention" for
+# STORAGE — a response is still a query-time concern). Defaults match the
+# maintainer's own ask ("articles/hour past 7 days"); the counter-evolution
+# graphs default to a longer, still-bounded window.
+_HISTORY_DEFAULT_DAYS = 30
+_HISTORY_MAX_DAYS = 3650  # ~10 years — generous, never literally unbounded
 
 _CACHE_TTL_S = 30
 _cache = SimpleCache(max_size=4, default_ttl=_CACHE_TTL_S)
@@ -166,3 +174,30 @@ def library_overview(db: Session = Depends(get_db)) -> dict:
         }
 
     return _cached("overview", _compute, db)
+
+
+@router.get("/history")
+def library_history(metric: str, days: int = _HISTORY_DEFAULT_DAYS, db: Session = Depends(get_db)) -> dict:
+    """A bounded time series for one Library-tab counter, for the small evolution
+    graphs (2026-07-23 field-feedback S2).
+
+    ``metric="articles_per_hour"`` is DERIVED live from ``Article.created_at`` —
+    real history that already existed since ingestion, so it backfills for free
+    with no gap. Every other metric (sources / keywords / wiki_pages /
+    wiki_revisions / law_documents / law_revisions) is served from the hourly
+    snapshot table, which only started recording when this feature shipped —
+    ``recording_began_at`` states that honestly rather than implying an empty
+    window means nothing happened. ``days`` is clamped to a sane range; storage
+    retention is infinite, the RESPONSE window is not.
+    """
+    from src.database.snapshots import ALL_METRICS, hourly_article_counts, metric_history
+
+    if metric not in ALL_METRICS:
+        raise HTTPException(status_code=400, detail=f"unknown metric: {metric}")
+    days = max(1, min(int(days), _HISTORY_MAX_DAYS))
+    if metric == "articles_per_hour":
+        series = hourly_article_counts(db, days=days)
+        return {"metric": metric, "series": series, "recording_began_at": None, "days": days}
+    out = metric_history(db, metric=metric, days=days)
+    out["days"] = days
+    return out

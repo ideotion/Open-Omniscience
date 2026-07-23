@@ -1427,7 +1427,8 @@
       timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
       agenda: loadAgenda,
-      library: () => { renderLibraryOverview(); loadCoverage(); renderStorageFootprint("library-storage"); },  // stats handled by the live poller (startLive); the footprint walk is lazy, once
+      library: () => { renderLibraryOverview(); loadCoverage(); renderStorageFootprint("library-storage");
+        renderLibraryActivityGraphs(); renderLibraryWikiGraphs(); renderLibraryLawGraphs(); },  // stats handled by the live poller (startLive); the footprint walk is lazy, once
       custody: loadCustody,
       integrity: loadIntegrity,
       settings: loadSettings,
@@ -6974,15 +6975,100 @@
         tile(num(fig.articles_per_day), t("Articles / day (avg since first)")),
         tile(num(fig.articles_per_hour_recent), t("Articles / hour (last 24h)")),
       ].join("") : "";
+      // Downloaded section TIDIED (field feedback item 5): a compact, collapsed-by-
+      // default <details> disclosure — the established "adv-collect" convention
+      // (Settings' own legacy/advanced sections) — instead of a permanently-open
+      // 9-tile grid. Nothing lost, just less default visual space; the live
+      // Activity/Wikipedia/Law GRAPH sections below carry the evolution-over-time
+      // view these bare counts used to be the only source of.
       host.innerHTML =
         (figTiles
           ? `<div class="hint" style="margin-bottom:6px">${esc(t("Corpus figures — measured averages and the current ingestion rate:"))}</div>`
             + `<div class="stat-grid">${figTiles}</div>`
-            + `<div class="hint" style="margin:12px 0 6px">${esc(t("Downloaded — the raw, re-downloadable layer:"))}</div>`
-          : `<div class="hint" style="margin-bottom:6px">${esc(t("Downloaded — the raw, re-downloadable layer:"))}</div>`)
-        + `<div class="stat-grid">${dlTiles}</div>`
+          : "")
+        + `<details class="adv-collect" style="margin-top:10px"><summary>${esc(t("Downloaded — the raw, re-downloadable layer"))}</summary>`
+        + `<div class="stat-grid" style="margin-top:8px">${dlTiles}</div></details>`
         + `<div class="hint" style="margin:12px 0 6px">${esc(t("Extrapolated — AI-derived from your corpus (unreliable, never the trusted index):"))}</div>`
         + `<div class="stat-grid">${derTiles}</div>`;
+    }
+
+    // -- Library counter-evolution graphs (S2, 2026-07-23 field-feedback) -------
+    // Small honest evolution graphs for counters that had no history anywhere
+    // (sources/keywords/Wikipedia+law tracked counts) plus a live-DERIVED
+    // articles/hour series (real history since Article.created_at already
+    // existed -- backfills with no gap). Reuses the EXISTING dashChartSvg (the
+    // small-tile renderer, line-when-dense/bars-when-sparse, invariant #16) and
+    // chartEnlarge (click-to-enlarge into an interactive ooChart) -- no new
+    // visual language, no larger tile footprint than any other Library number.
+    const LIB_METRIC_LABEL_KEYS = {
+      articles_per_hour: "Articles / hour",
+      sources: "Sources tracked",
+      keywords: "Distinct keywords",
+      wiki_pages: "Wikipedia pages tracked",
+      wiki_revisions: "Wikipedia revisions tracked",
+      law_documents: "Law documents tracked",
+      law_revisions: "Law revisions tracked",
+    };
+    let _libGraphData = {};   // metric -> last-fetched /api/library/history payload
+    async function _libGraphTile(metric, days) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const label = t(LIB_METRIC_LABEL_KEYS[metric] || metric);
+      let d;
+      try {
+        d = await api(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${days}`);
+      } catch (e) {
+        return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
+          <b style="font-size:12.5px">${esc(label)}</b>
+          <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
+      }
+      _libGraphData[metric] = d;
+      const series = Array.isArray(d.series) ? d.series : [];
+      const spark = dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})), "");
+      const began = d.recording_began_at
+        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", d.recording_began_at))}</div>`
+        : "";
+      return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
+        <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
+          <b style="font-size:12.5px">${esc(label)}</b>
+          <button class="ghost tiny" onclick="enlargeLibMetric('${metric}')" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
+        </div>${spark}${began}</div>`;
+    }
+    async function _renderLibGraphHost(hostId, metrics) {
+      const host = $(hostId);
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const tiles = await Promise.all(metrics.map(([m, days]) => _libGraphTile(m, days)));
+        host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`;
+      } catch (e) {
+        host.innerHTML = `<div class="note err">${esc(e.message || e)}</div>`;
+      }
+    }
+    // The live current-rate readout stays in renderLibraryOverview's own
+    // "Articles / hour (last 24h)" tile above (unchanged) — this graph adds the
+    // past-7-days EVOLUTION the maintainer asked for, alongside the counters
+    // that had no history at all until this feature shipped.
+    function renderLibraryActivityGraphs() {
+      return _renderLibGraphHost("lib-activity-graphs", [
+        ["articles_per_hour", 7], ["sources", 30], ["keywords", 30],
+      ]);
+    }
+    function renderLibraryWikiGraphs() {
+      return _renderLibGraphHost("lib-wiki-graphs", [["wiki_pages", 30], ["wiki_revisions", 30]]);
+    }
+    function renderLibraryLawGraphs() {
+      return _renderLibGraphHost("lib-law-graphs", [["law_documents", 30], ["law_revisions", 30]]);
+    }
+    function enlargeLibMetric(metric) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const d = _libGraphData[metric];
+      if (!d || !Array.isArray(d.series)) return;   // defensive: nothing to enlarge
+      const label = t(LIB_METRIC_LABEL_KEYS[metric] || metric);
+      const caveat = d.recording_began_at
+        ? t("Recording began at {x}.").replace("{x}", d.recording_began_at) : "";
+      chartEnlarge(label, [{label, unit: label,
+        points: d.series.map(p => ({t: p.t, v: p.n}))}], caveat);
     }
 
     async function loadDbStats() {

@@ -3772,3 +3772,73 @@ implicitly assumed every entry would eventually leave the queue; once that assum
 inconclusive attempt, order by least-recently-tried) alongside the correctness fix, or the cure is
 worse than the disease. Always reproduce the adversarial scenario live, both to confirm the
 defect and to confirm the fix, before trusting either claim.
+
+## 2026-07-23 — S2 (Library-tab evolution graphs: hourly snapshot recorder)
+
+Answers field-feedback item 3: the Library tab's bare live figures (sources / keywords /
+Wikipedia+law tracked counts) become small evolution GRAPHS, with **INFINITE storage retention**
+("I would prefer infinite retention"). Most of these counters had NO history anywhere in the
+store — unlike `Article.created_at`, which already lets an articles/hour graph be derived
+retroactively for free (real history that existed before this feature shipped).
+
+**Schema:** `StatSnapshot` (table `stat_snapshots`) — an append-only EAV row (`metric`, `taken_at`
+hour-bucket, `value`), mirroring the project's own vintage convention (`StatFigure`,
+`SourceQualificationAttempt`). Migration `f670ae07b75e` off the REAL alembic head (`04c029205aa8`,
+read via `python3 -m alembic heads`, never guessed/regex-scanned); `alembic check` confirms zero
+model drift.
+
+**Recorder:** `src/database/snapshots.py:maybe_snapshot_library_stats` records one hourly
+snapshot per tracked metric — each a cheap `COUNT(*)` over a small/indexed table (never the
+SQLCipher codec column-order perf trap). The `(metric, hour)` unique constraint IS the freshness
+gate — no separate JSON marker file, unlike the heavier `maybe_cleanup_keywords`/
+`maybe_incremental_vacuum` steps it now runs alongside inside `run_idle_maintenance`. Never
+fabricates a backfill: every non-articles metric's serving endpoint states `recording_began_at`
+honestly instead of implying a pre-recording gap means nothing happened.
+
+**A SAVEPOINT-PER-ROW REAL SAFETY FIX (caught before push, not by an external skeptic this time —
+by re-reading my own code against the project's own documented lesson list):** the recorder loops
+over several metrics, `session.add()`-ing one `StatSnapshot` row per metric inside the SAME
+open transaction. A first draft caught an `IntegrityError` from a concurrent-writer collision with
+a bare `session.flush()` + `session.rollback()` — but per this project's OWN documented lesson
+("a `session.rollback()` inside a mid-batch failure handler discards EVERY pending object in the
+transaction, not just the one that raised"), that would have silently discarded every OTHER
+metric's already-flushed-but-uncommitted insert earlier in the SAME loop iteration, not just the
+colliding one. Fixed by wrapping each row's insert in its own SAVEPOINT
+(`session.begin_nested()`): a rollback on that specific IntegrityError now rolls back only to the
+savepoint, leaving prior successful inserts in the same call untouched. Verified with a dedicated
+test (`test_a_mid_batch_collision_never_discards_sibling_inserts`) that seeds a pre-existing
+colliding row for one metric and asserts every OTHER metric still gets recorded in the same call —
+proving the mechanism, not just asserting it.
+
+**Endpoint:** `GET /api/library/history?metric=&days=` serves both the live-derived
+`articles_per_hour` series and the snapshot-table metrics through one contract; the response
+window is bounded (default 30d, clamped ≤10y) even though storage retention is infinite — a
+response bound is a query-time concern, never a storage-time one.
+
+**Frontend:** three new dedicated Library-tab sections (Activity / Wikipedia tracked / Law
+tracked), each rendering small tiles that reuse the EXISTING `dashChartSvg` (line-when-dense /
+Item-Y bars-when-sparse, invariant #16) + `chartEnlarge` (click-to-enlarge into an interactive
+ooChart) — no new chart renderer, no larger tile footprint than any other Library number. The
+"Downloaded" 9-tile grid is compressed into the established collapsed-by-default
+`<details class="adv-collect">` disclosure (item 5's ask), matching Settings' own legacy/advanced-
+section convention — nothing removed, just less default visual space. Zero new i18n keys
+(un-keyed English fallback via `t()`, matching the S1 qualification panel's own convention).
+
+**A REAL CROSS-CUTTING FAILURE the full suite surfaced (fixed same session):** a new test's
+`Path.read_text()` call omitted `encoding="utf-8"`, tripping this repo's own
+`test_all_text_io_declares_utf8_encoding` guard (a Windows/cp1252 portability net that scans the
+WHOLE tree, not just changed files) — a reminder that a full-suite run can catch defects invisible
+to any test file run in isolation, and that a change touching test helpers still owes the
+project's house-wide text-IO discipline.
+
+VERIFIED: full suite 4423 passed / 107 skipped / 0 failed (py3.13 venv, after the encoding fix);
+ruff `--select=F,B --extend-ignore=B008` clean; mypy 0 new errors across every changed file
+(127==baseline); bandit clean; `alembic upgrade head` + `alembic check` both green. Frontend
+browser-unverified per the standing Q6a convention.
+
+LESSON (copied to Session-rituals): a per-row `IntegrityError` handler inside a multi-insert loop
+sharing ONE open transaction must roll back to a SAVEPOINT (`session.begin_nested()`), never call
+a bare `session.rollback()` — the latter discards every prior successful insert in the same
+transaction, not just the one that collided. Prove the isolation with a test that seeds a
+pre-existing colliding row and asserts SIBLING inserts in the same call still land, not merely
+that the function "doesn't raise."

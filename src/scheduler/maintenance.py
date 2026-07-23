@@ -35,12 +35,17 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
     """Run the budgeted keyword maintenance ONCE, in its own session, best-effort.
 
     Called by the scheduler in a collector-idle window. Runs the counter reconcile
-    (only when the counters are not fresh) then the keyword cleanup (orphan prune +
-    language reconcile, freshness-gated to ~12 h). Each is a deadline-budgeted,
-    resumable slice, so a whole sweep spans several idle windows and discloses
-    ``complete: false`` in between. Re-checks ``should_stop`` between the two so a
-    scheduler STOP is honoured promptly (a run-now during the window is handled by
-    the caller's busy signal, not by yielding mid-slice). Never raises.
+    (only when the counters are not fresh), the per-source article counter
+    reconcile, the keyword cleanup (orphan prune + language reconcile,
+    freshness-gated to ~12 h), a bounded incremental-vacuum slice (DB-10 §1a/§3),
+    and — S2 (2026-07-23 field-feedback workflow) — an hourly snapshot of the
+    Library-tab counters that otherwise have no history (sources/keywords/
+    Wikipedia+law tracked counts; gated by the snapshot table's own (metric, hour)
+    unique constraint, so most idle windows are a cheap no-op). Each step is
+    isolated (one failing step never breaks the rest) and re-checks ``should_stop``
+    between steps so a scheduler STOP is honoured promptly (a run-now during the
+    window is handled by the caller's busy signal, not by yielding mid-slice).
+    Never raises.
     """
     stop = should_stop or (lambda: False)
     out: dict = {}
@@ -91,6 +96,20 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
             except Exception:  # noqa: BLE001
                 _LOG.warning("off-peak incremental vacuum failed", exc_info=True)
                 out["incremental_vacuum"] = {"skipped": "error"}
+            if stop():
+                out["stat_snapshot"] = {"skipped": "stopping"}
+                return out
+            # S2 (2026-07-23 field-feedback workflow): an hourly snapshot of the
+            # Library-tab counters that otherwise have no history (sources/keywords/
+            # wiki+law tracked counts) — cheap COUNT(*)s, gated by the table's own
+            # (metric, hour) unique constraint so this is a no-op most idle windows.
+            try:
+                from src.database.snapshots import maybe_snapshot_library_stats
+
+                out["stat_snapshot"] = maybe_snapshot_library_stats(session)
+            except Exception:  # noqa: BLE001
+                _LOG.warning("off-peak stat snapshot failed", exc_info=True)
+                out["stat_snapshot"] = {"skipped": "error"}
     except Exception:  # noqa: BLE001 - even opening the session must never break the loop
         _LOG.warning("off-peak maintenance could not open a session", exc_info=True)
         return {"skipped": "error"}
