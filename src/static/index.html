@@ -169,7 +169,12 @@
 
       <!-- At-a-glance: a slim, permanent stats strip pinned to the top of Home
            (UI_SHELL_REDESIGN_PLAN §5). Populated by loadHome(). -->
-      <div class="panel home-glance">
+      <!-- home-i18n-mixed-language-glance (P1): every child here (#home-stats/
+           #home-tier/#home-status) renders itself in the active language via
+           direct OOI18N.t() calls (renderHomeStats/renderCorpusTier/renderHomeStatus)
+           -- data-i18n-dyn tells the DOM-walker to never cache their ALREADY-
+           TRANSLATED text as "the original English" (see i18n.js:doText). -->
+      <div class="panel home-glance" data-i18n-dyn>
         <div id="home-stats" class="stat-strip"><div class="muted">Loading…</div></div>
         <!-- Corpus maturity STAGE (descriptive, never a score): rides with the
              glance strip so the reader can calibrate how much weight to give the

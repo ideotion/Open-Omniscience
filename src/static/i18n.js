@@ -46,6 +46,16 @@
   function doText(n) {
     if (!n.nodeValue || !n.nodeValue.trim()) return;
     const p = n.parentNode; if (p && SKIP.test(p.nodeName)) return;
+    // home-i18n-mixed-language-glance (P1): a container marked data-i18n-dyn owns
+    // its own text (it renders itself, in the active language, via direct t()
+    // calls -- e.g. #home-stats/#home-tier/#home-status). The walker must NEVER
+    // touch or cache text inside one: doing so would cache that already-
+    // TRANSLATED string as "the original English" on first sight (origText below
+    // is first-seen-wins), permanently poisoning every future lookup for that
+    // node under every OTHER language -- a node stays frozen in whichever
+    // language it happened to render in first, exactly like the attribute-level
+    // opt-out just above this function.
+    if (p && p.closest && p.closest("[data-i18n-dyn]")) return;
     let o = origText.get(n);
     if (o === undefined) { o = n.nodeValue; origText.set(n, o); }  // first sight = English
     const t = tr(o);
