@@ -547,8 +547,21 @@
       let left, top, side;
       if (b.right + gap + w <= window.innerWidth - pad) {   // prefer to the right of the button
         left = b.right + gap; top = b.top + b.height / 2 - h / 2; side = "left";
-      } else {                                              // else float above it
-        left = b.left; top = b.top - gap - h; side = "bottom";
+      } else {
+        // No room to the right. The coach must go BELOW the whole protected-button
+        // cluster, never above it: the topbar sits at the very top of the viewport,
+        // so placing it above the button (its top computed from the button's own
+        // top, minus the gap and the coach's height) is almost always deeply
+        // negative, and the clamp below collapses it right back into the topbar's
+        // own row -- overlapping every button in it (net-coach-blocks-topbar-buttons,
+        // P0; this was the exact, guaranteed-every-time root cause, not an
+        // occasional mispositioning). Below the union of every button the coach
+        // must never cover is the one direction structurally guaranteed to have
+        // room and to never overlap any of them.
+        const guard = ["net-toggle", "lang-switch", "tm-open", "app-shutdown"]
+          .map((id) => $(id)).filter(Boolean).map((e) => e.getBoundingClientRect());
+        const guardBottom = guard.length ? Math.max(...guard.map((r) => r.bottom)) : b.bottom;
+        left = b.left; top = guardBottom + gap; side = "below";
       }
       left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
       top = Math.max(pad, Math.min(top, window.innerHeight - h - pad));
@@ -559,9 +572,12 @@
           arrow.style.top = Math.max(8, Math.min(b.top + b.height / 2 - top - 5, h - 16)) + "px";
           arrow.style.transform = "rotate(45deg)";
         } else {
-          arrow.style.top = (h - 6) + "px";
+          // "below": the arrow must point UP at the button cluster, so it peeks out
+          // the TOP edge (mirrors the "left" case's left:-6px) -- never the bottom,
+          // which was only correct for the old, unsafe above-the-button placement.
+          arrow.style.top = "-6px";
           arrow.style.left = Math.max(8, Math.min(b.left + b.width / 2 - left - 5, w - 16)) + "px";
-          arrow.style.transform = "rotate(-45deg)";
+          arrow.style.transform = "rotate(45deg)";
         }
       }
     }

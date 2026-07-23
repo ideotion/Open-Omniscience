@@ -2623,6 +2623,60 @@ def test_net_coach_suppressed_while_the_wizard_is_open():
     )
 
 
+def test_net_coach_never_places_above_the_topbar_row():
+    """GUI-test findings net-coach-blocks-topbar-buttons (P0) + netcoach-blocks-lang-switch
+    (P1, same root cause): _placeCoach()'s fallback branch (used whenever there is no room
+    to the right of #net-toggle) computed `top = b.top - gap - h`, placing the coach ABOVE
+    the button. Because the topbar sits at the very top of the viewport, that value is
+    almost always deeply negative, and the subsequent clamp (`Math.max(pad, ...)`) always
+    collapsed it right back down to `pad` -- landing the coach back inside the topbar's own
+    row, overlapping #net-toggle/#lang-switch/#tm-open/#app-shutdown every single time this
+    branch ran (verified live: document.elementFromPoint() at each button's center resolved
+    to the coach, not the button, and a real Playwright .click() timed out). The fallback
+    now places the coach BELOW the union of every button it must never cover -- the one
+    direction structurally guaranteed to have room near a top-anchored topbar -- confirmed
+    live: at both 1400px (room to the right, "left" branch) and 900px (no room, "below"
+    branch forced), all four buttons independently resolve document.elementFromPoint() to
+    themselves while the coach is showing."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = js.split("function _placeCoach() {", 1)[1].split("\n    }\n", 1)[0]
+    assert "top = b.top - gap - h" not in fn, (
+        "the old always-fails-near-the-topbar fallback (place above the single button, "
+        "then clamp) must be gone"
+    )
+    assert '"net-toggle", "lang-switch", "tm-open", "app-shutdown"' in fn, (
+        "the fallback must compute a union rect over ALL FOUR protected buttons, not just "
+        "the one #net-toggle it points at"
+    )
+    assert "guardBottom + gap" in fn, (
+        "the fallback must place the coach BELOW the guard-button union (never above), the "
+        "one direction guaranteed to have room near a top-anchored topbar"
+    )
+
+
+def test_topbar_wraps_instead_of_overflowing():
+    """GUI-test findings topbar-overflow-mobile-375-net-toggle-unreachable (P0) +
+    topbar-overflow-mainstream-widths (P1): .topbar was `display:flex` with the default
+    `flex-wrap:nowrap` and no bounding media query anywhere in the stylesheet, so
+    documentElement.scrollWidth exceeded clientWidth at every mainstream breakpoint down
+    to 375px, pushing the airplane toggle (the sole informed-consent gate), the language
+    switcher, the task-manager button, and the shutdown button off-screen with zero
+    scroll affordance. flex-wrap:wrap lets the row grow additional rows instead of forcing
+    horizontal overflow -- confirmed live at 1400/1024/768/601px (documentElement.scrollWidth
+    == clientWidth, all four buttons on-screen and clickable at every width; #app-shutdown
+    wraps to its own second row at 601px). NOTE: at 375px a SEPARATE, previously-undiscovered
+    overflow source was found in Home's .panel.home-glance / #home-stats.stat-strip flex row
+    (unrelated to the topbar; its own root cause and fix are out of scope here and are
+    recorded as a fresh follow-up, not silently absorbed into this fix) -- this test pins
+    only the topbar's OWN contribution, which is what these two findings are about."""
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    topbar_rule = css.split(".topbar {", 1)[1].split("}", 1)[0]
+    assert "flex-wrap:wrap" in topbar_rule.replace(" ", ""), (
+        ".topbar must wrap onto additional rows instead of forcing horizontal overflow "
+        "at narrow viewports"
+    )
+
+
 def test_collect_tab_moved_into_settings():
     """Content-first (§6, ruled 2026-06-13): the Collect tab LEFT the sidebar for a
     Settings subtab. The Desk lesson, enforced — nothing is lost: the scheduler +

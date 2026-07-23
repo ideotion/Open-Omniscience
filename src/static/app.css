@@ -146,7 +146,16 @@
     /* Opaque chrome matching the left sidebar (var(--bg2)) so scrolled content never
        shows through the sticky status bar / facet strip (remark 14). The backdrop blur
        is dropped — pointless on an opaque background, and a GPU cost at rest. */
-    .topbar { display:flex; align-items:center; gap:12px;
+    /* No responsive strategy existed here at all (topbar-overflow-mobile-375 /
+       topbar-overflow-mainstream-widths): flex-wrap defaulted to nowrap with no
+       bounding media query, so documentElement.scrollWidth exceeded clientWidth at
+       every mainstream breakpoint down to 375px, pushing the airplane toggle
+       (the sole informed-consent gate) and its neighbors off-screen with zero
+       scroll affordance. flex-wrap:wrap is sufficient on its own -- no single child
+       here (an icon button, a status pill) is remotely as wide as even the
+       narrowest tested viewport, so the browser simply adds rows as needed and
+       horizontal overflow becomes structurally impossible, at any width. */
+    .topbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px;
       padding:11px 18px; background:var(--bg2);
       border-bottom:1px solid var(--border); }
     .subtab-strip { display:flex; align-items:center; gap:2px; flex-wrap:wrap; padding:5px 18px;
