@@ -1,0 +1,82 @@
+# Curated EXTRA stopwords -- Polish.
+# Migrated from src/analytics/extract.py::_EXTRA_STOPWORD_TEXT (Phase 4.1, PR #740/#744
+# remediation). LANGUAGE-AGNOSTIC UNION: global_stopwords() unions every file here
+# regardless of which one a word lives in -- this split is a readability/maintenance
+# convenience, not a per-language scoping guarantee (unlike configs/keyword_baseline/,
+# which IS genuinely per-language). See configs/stopwords_extra/PROVENANCE.md for the
+# full evidence trail (field-log dates, mention counts, collision-safety reasoning)
+# that justified each addition -- preserved verbatim from the original inline comments.
+stopwords:
+  - albo
+  - ale
+  - bardzo
+  - bez
+  - bo
+  - by
+  - być
+  - był
+  - była
+  - było
+  - były
+  - co
+  - czy
+  - dla
+  - dlaczego
+  - do
+  - gdy
+  - gdzie
+  - i
+  - inna
+  - inny
+  - jak
+  - jako
+  - jest
+  - jeszcze
+  - jeśli
+  - już
+  - każdy
+  - kiedy
+  - kto
+  - który
+  - lub
+  - ma
+  - mają
+  - między
+  - mniej
+  - mój
+  - na
+  - nad
+  - nasz
+  - nie
+  - o
+  - od
+  - po
+  - pod
+  - przez
+  - przy
+  - się
+  - swój
+  - są
+  - ta
+  - tak
+  - także
+  - te
+  - tego
+  - tej
+  - ten
+  - też
+  - to
+  - twój
+  - tych
+  - tylko
+  - u
+  - w
+  - wasz
+  - we
+  - więcej
+  - wszyscy
+  - wszystko
+  - z
+  - za
+  - ze
+  - że

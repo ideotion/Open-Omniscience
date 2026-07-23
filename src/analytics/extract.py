@@ -32,6 +32,9 @@ from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from html import unescape
+from pathlib import Path
+
+import yaml
 
 from src.analytics.managed import normalize_lang
 from src.analytics.segmentation import segment
@@ -297,378 +300,35 @@ def _is_code_token(word: str) -> bool:
 # sets miss, plus number-words, across the major Latin-script languages. Combined
 # with the per-language sets into global_stopwords(). The user can add more from
 # the Settings tab (keyword filter).
-_EXTRA_STOPWORD_TEXT = (
-    # English fillers the base set lacks
-    "not no nor one two three four five six seven eight nine ten "
-    "get got gets getting make made makes making take takes took taking "
-    "go goes going gone come comes coming came see sees seen saw "
-    "know knows knew known think thinks thought want wants wanted need needs "
-    "like likes liked use used uses using way ways thing things lot lots "
-    "new old good bad big small great little much many even still back "
-    "people person time times part parts case cases number numbers group "
-    "well around across along yet ever never always often sometimes maybe perhaps "
-    "really quite rather pretty almost enough across upon onto unto whatever whoever "
-    "into within without toward towards among amongst per via "
-    "this that these those here there what which whose "
-    # Relative time + news-attribution fillers users flagged as noise
-    "since last next first second third ago today yesterday tomorrow soon "
-    "early late later recent recently latest current currently meanwhile amid "
-    "said says say told tells according reportedly however therefore thus hence "
-    "indeed instead although though whereas whilst despite "
-    # Contractions (ASCII; curly-apostrophe variants are added programmatically below)
-    "it's don't doesn't didn't won't can't cannot isn't aren't wasn't weren't "
-    "hasn't haven't hadn't couldn't wouldn't shouldn't i'm you're we're they're "
-    "i've you've we've they've i'll you'll that's there's what's let's he's she's "
-    "dont doesnt didnt wont cant isnt arent wasnt werent hasnt havent hadnt "
-    "couldnt wouldnt shouldnt youre theyre ive youve weve theyve thats theres whats lets "
-    # Spanish
-    "el la los las un una unos unas de del y o pero que como para por con sin "
-    "es son fue era ser estar su sus lo le les nos se mas muy "
-    # German
-    "der die das den dem ein eine einer und oder aber auch ist sind war "
-    "nicht mit von zu im am ich du wir sie es auf für "
-    # Italian
-    "il lo la gli le un uno una di del della che chi non con per tra fra "
-    "sono era essere ho hai abbiamo questo quello "
-    # Portuguese
-    "o a os as um uma uns umas de do da dos das que nao com para por "
-    "sou somos foi ser este esse isso "
-    # Dutch
-    "de het een en of maar ook is zijn was niet met van te ik je wij zij "
-    # French (was MISSING entirely — the 2026-06-11 field log leaked dans/plus/
-    # pas/aux/ont/ses… as top "entities"; added with elision combos + fillers)
-    "le la les un une des du de au aux et ou mais donc or ni car que qui quoi "
-    "dont où dans sur sous avec sans pour par entre vers chez pas plus moins "
-    "très tout tous toute toutes même aussi ainsi alors comme encore déjà "
-    "depuis pendant avant après être avoir fait faire été ont sont est était "
-    "avait avaient seront sera leur leurs ses son sa ce cet cette ces celui "
-    "celle ceux celles il elle ils elles nous vous je tu on lui y en se soi "
-    "notre votre nos vos mon ma mes ton ta tes deux trois quatre cinq six "
-    "sept huit neuf dix plusieurs quelques chaque autre autres certains "
-    "certaines désormais également notamment toutefois cependant pourtant "
-    "c'est n'est d'un d'une qu'il qu'elle qu'ils s'est j'ai l'on jusqu'à "
-    "aujourd'hui hier demain lundi mardi mercredi jeudi vendredi samedi dimanche "
-    # Month names leak as entities ("June" en:317, "Juin" fr:68 in the field log)
-    "january february march april may june july august september october november december "
-    "janvier février mars avril mai juin juillet août septembre octobre novembre décembre "
-    # English generics observed leaking as entities in the field log
-    "including found help work million billion millions billions "
-    # ----------------------------------------------------------------------- #
-    # Field log #2 (2026-06-12, 63,672-keyword export): the de-US-centred
-    # catalog brought 22 source languages, 16 of them WITHOUT stoplists —
-    # function words sat in TOP analytics slots (nl "dat"×1599, de "sich"×982,
-    # es "más"×1001, sv "som"×795, ru "что"×531…). Maintainer ruling: NO cap on
-    # keyword counts; instead a clear exception policy for pronouns,
-    # conjunctions & co. in ALL the app's corpus languages. Every block below
-    # is evidence-backed by that export; global_stopwords() applies these
-    # retroactively at query time, so stored junk disappears from analytics
-    # without touching data.
-    # English (the 3 residual leaks)
-    "another further yes "
-    # Spanish (extends the thin block above; 48 leaked words, 5,754 mentions)
-    "al en sobre entre desde hasta yo tú él ella ellos ellas nosotros usted "
-    "ustedes mi tu nuestro este esta estos estas ese esa esos esas aquel quien "
-    "cual cuyo donde cuando fueron hay también ya si sólo solo así pues porque "
-    "aunque mientras cada todo toda todos todas otro otra otros otras mismo misma qué "
-    # German (48 leaked, 8,194 mentions: sich/bei/wie/aus/über/nach/einem/einen…)
-    "des einem einen eines kein keine ja nein bei aus nach über unter vor "
-    "hinter zwischen durch gegen ohne um er ihr sich mein dein sein unser euer "
-    "dieser diese dieses jener welche welcher was wer wie wo wann warum waren "
-    "haben hat hatte werden wird wurde noch schon nur sehr mehr als wenn weil "
-    "dass damit sowie sowohl beide jeder jede jedes alle "
-    # Italian (42 leaked, 3,230 mentions: alla/dei/nel/più/delle/anche…)
-    "i dei delle a al alla in nel nella con da dal su sul senza io tu lui lei "
-    "noi voi loro mio tuo suo nostro questa questi queste quella cui dove "
-    "quando perché è erano avere ha hanno fu furono anche molto più meno già "
-    "sì così poiché mentre ogni tutto tutta tutti tutte altro altra "
-    # Portuguese (20 leaked: não/ele/também/até/foram/seu/ela…)
-    "no na nos nas em sem sobre entre desde até eu tu ele ela eles elas nós "
-    "você vocês meu teu seu nosso estes estas essa aquele quem qual cujo onde "
-    "quando porque é são era eram estar foram há também muito mais menos já "
-    "não sim só assim pois embora enquanto cada todo toda todos todas outro outra "
-    # Dutch (34 leaked, 10,257 mentions — the worst: dat/voor/hij/uit/bij/naar…)
-    "dat voor naar in op bij uit door over onder tussen tegen zonder om jij "
-    "hij wie zich mijn jouw zijn haar ons hun deze die dit welke wat waar "
-    "wanneer hoe waarom waren worden wordt werd hebben heeft had nog al alleen "
-    "zeer meer als toen omdat zodat beide elke alle "
-    # Russian (54 leaked, 2,658 mentions: что/для/как/его/также/это/при/более…)
-    "и в во не на я он она оно они мы вы ты что это эта этот эти как так но "
-    "или а же бы был была были быть есть от до из у за под над при с со для "
-    "по о об к ко его её их наш ваш мой твой свой кто где когда почему зачем "
-    "тоже также уже ещё еще только очень более менее всех весь вся всё все "
-    "другой другая каждый если потому пока между через без "
-    # Swedish (30 leaked, 3,752 mentions: som/har/det/och/för…)
-    "och eller men av till i på vid med för från ut genom över under mellan "
-    "mot utan om jag du han hon vi ni de sig min din sin vår er denna detta "
-    "dessa den det som vem vad var när hur varför är varit bli blir blev ha "
-    "har hade också än redan bara mycket mer mest alla varje annan "
-    # Norwegian bokmål (30 leaked: til/jeg/seg/ble/også/hadde/ved/når…)
-    "og av til ved fra gjennom mellom mot uten jeg han hun dere seg din sin "
-    "deres denne dette disse hvem hva hvor når hvordan hvorfor vært ble enn "
-    "hver annen "
-    # Danish (9 leaked; same family as nb/sv — completes the Scandinavian set)
-    "ud mod hvis bliver blive meget havde vores hvad gennem uden anden "
-    # Polish (42 leaked, 2,789 mentions: się/jest/jak/przez/czy/dla…)
-    "i w we na nie z ze do od po za pod nad przy o u dla przez bez się to ta "
-    "ten te tej tego tych jak tak ale lub albo czy że by był była było były "
-    "być jest są ma mają mój twój swój nasz wasz kto co gdzie kiedy dlaczego "
-    "też także już jeszcze tylko bardzo więcej mniej każdy wszystko wszyscy "
-    "inny inna jeśli bo między "
-    # Hungarian (32 leaked: hogy/nem/egy/már/volt/vagy/még/több…)
-    "a az és vagy de hogy nem igen egy ez ezek azok aki ami amely ahol amikor "
-    "miért hogyan én te ő mi ti ők enyém tied övé miénk van volt lesz lenni "
-    "már még csak nagyon több kevesebb minden mindenki más ha mert között "
-    "nélkül ellen alatt felett által "
-    # Arabic (22 leaked, 1,417 mentions: على/إلى/هذا/التي/هذه/كما/ذلك…)
-    "في من إلى على عن مع هذا هذه ذلك تلك التي الذي الذين ما لا لم لن إن أن "
-    "كان كانت يكون هو هي هم هن نحن أنت أنا أو ثم بل لكن حتى إذا كما قد كل "
-    "بعض غير بين عند منذ أي "
-    # Serbian/Croatian/Bosnian latin (30 leaked: kako/još/sve/više/biti/kada…)
-    "u za od do po pri sa bez kroz preko ispod iznad između protiv ovaj ova "
-    "ovo taj ona oni ko šta gde gdje kada kako zašto je su bio bila bilo biti "
-    "ima imaju takođe također već još samo veoma više manje svaki sve drugi "
-    "druga ako jer moj tvoj svoj naš vaš "
-    # Turkish (26 leaked: için/olarak/daha/çok/veya/ancak/gibi/değil…)
-    "ve veya ama fakat ancak ki bu şu bir için ile gibi kadar sonra önce "
-    "üzere göre eğer çünkü her hem ya ne hangi kim nerede zaman nasıl niçin "
-    "neden ben sen biz siz onlar benim senin onun bizim sizin değil var yok "
-    "daha çok az en idi olan olarak "
-    # Indonesian (33 leaked: untuk/ini/dengan/itu/adalah/pada/juga…)
-    "dan atau tetapi tapi dari ke di pada dengan untuk tanpa atas bawah "
-    "antara terhadap ini itu yang siapa apa mana kapan bagaimana mengapa saya "
-    "kamu dia kami kita mereka aku adalah ialah ada sudah telah akan juga "
-    "masih hanya sangat lebih kurang semua setiap lain jika karena "
-    # Finnish (16 leaked: että/olla/hän/myös…)
-    "ja tai mutta että ei kyllä se tämä nämä nuo joka mikä kuka missä milloin "
-    "miksi miten minä sinä hän me te he on oli ollut olla olen myös jo vain "
-    "hyvin enemmän vähemmän kaikki jokainen muu jos koska välillä ilman "
-    # Hindi (1 leaked — अगर; the conjunction/pronoun core completes the policy)
-    "और या लेकिन कि नहीं हाँ यह वह ये वे जो क्या कौन कहाँ कब कैसे क्यों मैं तुम आप हम "
-    "का की के को से में पर है हैं था थे थी होना भी अभी केवल बहुत अधिक कम सब हर "
-    "अन्य अगर क्योंकि बीच बिना "
-    # Second evidence pass (same export, post-policy survivors): inflected
-    # function words, modals, attribution verbs and date-generics that the
-    # core sets miss — plus month names beyond en/fr (es "junio"×257 and
-    # ru "июня"×133 leaked exactly like the en/fr months above).
-    "aan geen wel veel zegt zei jaar jaren niet maar werd onder meer "  # nl
-    "att ett kommer skriver sade säger mån månader dag dagar år procent "  # sv
-    "está según durante contra años año donde fueron sido siendo estado "  # es
-    "zum zur kann muss soll andere anderen ihre ihren seinen seiner jahr jahren "  # de
-    "anni anno dopo prima contro essere stato stata fatto detto "  # it
-    "года году год лет годы после этом этой этого того тем том тех ней нем них ему ей им "  # ru
-    "etter siden også året år dager "  # nb
-    "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre "
-    "januar februar märz april mai juni juli august september oktober november dezember "
-    "gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre "
-    "januari februari maart april mei juni juli augustus oktober "
-    "января февраля марта апреля мая июня июля августа сентября октября ноября декабря "
-    "январь февраль март апрель май июнь июль август сентябрь октябрь ноябрь декабрь "
-    # ----------------------------------------------------------------------- #
-    # Field log (2026-06-14 keyword-diagnostics export, 1,201-article corpus;
-    # surfaced via scripts/analyze_keyword_log.py). The de-US-centred corpus kept
-    # leaking per-language FUNCTION words the earlier passes missed, plus WEEKDAY
-    # names (the month blocks above never covered weekdays: "Sunday"/"sábado"/
-    # "lørdag" sat among the top keywords) and comment-widget/paywall BOILERPLATE.
-    # Net-new vs the blocks above; applied retroactively by global_stopwords().
-    # Names, places and content words the analyzer flagged stay OUT (its 'review'
-    # bucket); cross-language collisions (sea/tom/fin/laut…) deliberately omitted
-    # because this set is unioned across ALL languages.
-    # Weekday names across the corpus languages (fr weekdays already covered above)
-    "monday tuesday wednesday thursday friday saturday sunday "
-    "lunes martes miércoles miercoles jueves viernes sábado sabado domingo "
-    "montag dienstag mittwoch donnerstag freitag samstag sonntag "
-    "lunedì lunedi martedì martedi mercoledì mercoledi giovedì giovedi venerdì venerdi sabato domenica "
-    "segunda terça terca quarta quinta sexta "
-    "maandag dinsdag woensdag donderdag vrijdag zaterdag zondag "
-    "mandag tirsdag onsdag torsdag fredag lørdag lordag søndag sondag "
-    "poniedziałek poniedzialek wtorek środa sroda czwartek piątek piatek sobota niedziela "
-    "hétfő hetfo kedd szerda csütörtök csutortok péntek pentek szombat vasárnap vasarnap "
-    "ponedeljak utorak sreda četvrtak cetvrtak petak subota nedelja nedjelja "
-    "ponedeljek torek četrtek cetrtek petek "
-    "senin selasa rabu kamis jumat sabtu minggu "
-    "понедельник вторник среда четверг пятница суббота воскресенье "
-    "الاثنين الإثنين الثلاثاء الأربعاء الخميس الجمعة السبت الأحد "
-    # French function words still leaking (afin/lire la suite/doit/soit/à travers)
-    "afin lire doit soit travers a-t-il n'a "
-    # Spanish function words + number/temporal generics
-    "vez tres gran días después bien "
-    # German modals / conjunctions / adverbs
-    "können sondern solche dazu sollte oft selbst deshalb bereits dadurch keinen "
-    # Italian auxiliaries / prepositions / adverbs
-    "poi sarà dalla nei nelle sotto sarebbe oggi tempo "
-    # Portuguese function words
-    "ainda pelo pelas num numa deste apesar "
-    # Russian conjunctions / pronouns / adverbs / aux
-    "чтобы которые около там было даже время стать можете знать однако сейчас ранее прямо "
-    # Danish function words + paywall/comment boilerplate (læs/adgang/dagens)
-    "kun ikke godt ingen vil hele efter første læs adgang dagens "
-    # Polish function words + temporal
-    "które tym oraz może jej można aby również jednak jego nich roku "
-    # Hungarian function words + temporal/number generics
-    "meg azt pedig majd szerint ezt így után olyan kell arra első fel lehet "
-    "mondta egyik ahogy volna miatt akkor két perc "
-    # Serbian/Croatian function words + comment-widget boilerplate
-    "ili ovoj temi vaše nije što kao koja godine tako nakon "
-    "pročitajte komentare diskusiji oglas mišljenje "
-    # Slovenian function words
-    "tudi kot zelo vse tem ter bodo bolj jih kar naj nekaj veliko sicer saj "
-    "potem tega res kjer zaradi lahko "
-    # Arabic prepositions / conjunctions
-    "خلال قبل ضمن بعد وفي ومن حول بشكل داخل وهو أجل حيث بما "
-    # Indonesian function words
-    "dalam oleh bisa bagi menjadi sebagai satu dapat hari secara agar tidak "
-    "maupun melalui merupakan "
-    # Field log (2026-06-17 keyword-diagnostics export, 2,324-article corpus). The
-    # per-source concentration suspects surfaced LOGIN/SUBSCRIBE widget chrome that
-    # appears in ~every article of a source (share_of_source ≈ 1.0) — pure UI, not
-    # content. ONLY unambiguous chrome + pure function words are added; dual-use
-    # platform NAMES (facebook/twitter/telegram…) and content-capable words
-    # (comments/follow/correo/electrónico) are deliberately left OUT (a story may be
-    # ABOUT them), staying visible in the diagnostics for a maintainer ruling.
-    # French account-wall chrome (Le Nouvelliste: connectez-vous/inscrivez-vous in
-    # 27/27 of its articles) + leaked function words (selon/lors/avez):
-    "connectez-vous inscrivez-vous gratuitement selon lors avez "
-    # English subscribe button:
-    "subscribe "
-    # Round-2 of the same 2026-06-17 export: PURE function words still leaking in
-    # the higher-volume non-English corpora (analyzer "high-confidence" bucket,
-    # hand-filtered). Deliberately CONSERVATIVE because global_stopwords() is
-    # unioned across ALL languages: every word here is either accented (so it
-    # can't be a content token in another corpus language) or unambiguous grammar
-    # that is not an English/name homograph. Cross-language homographs were
-    # EXCLUDED on purpose — mint/nun/sei/seine (de), ska/nye/nyt/ole (Nordic/fi
-    # collide with ska-genre / Bill Nye / NYT / the name Ole), dana/nagy/srbije
-    # (names/places), kroner/ritzau (currency / the Ritzau agency name).
-    "doch vom seit wieder immer dabei viele viel dann habe gibt heute "  # German
-    "úgy arról hanem azért bár előtt óta "  # Hungarian
-    "može zbog prema tokom "  # Serbian
-    "två här inte nya "  # Swedish
-    "være prosent sier "  # Norwegian
-    "været blevet fået siger skal andet lyder blandt "  # Danish
-    "sitä olisi mukaan sanoo ovat kuin teki "  # Finnish
-    "görə "  # Azerbaijani postposition (Meydan TV per-source concentration)
-    # Universal WEB-MARKUP / URL junk (2026-06-18 field log: a source whose page
-    # chrome leaked into the indexed content turned 'https', 'www', 'img',
-    # 'margin-left', … into top keywords). These are never meaningful content in
-    # ANY language, so the global union is safe. NB: the real fix is stripping
-    # HTML/CSS/URLs from article content BEFORE extraction (a content-extraction
-    # issue, flagged separately) — this only stops the markup that still leaks
-    # from polluting keywords. Dual-use words (table/body/icon/html/css) are
-    # deliberately left OUT (a story may be about them).
-    "https http www href img colspan rowspan tbody thead nbsp margin-left margin-right px utf "
-    # 2026-06-18 keyword-log: the highest-volume no_stoplist languages (el 4992,
-    # uk 3684, bg 3090 keywords) leaked their grammar into the index. These are
-    # GREEK and CYRILLIC scripts, so the global union can never collide with a Latin
-    # corpus language; cross-Cyrillic overlap (bg/uk/ru/sr) is fine — a shared
-    # function word is a stopword in each. Hand-filtered to PURE grammar (articles,
-    # prepositions, pronouns, conjunctions, common auxiliaries); content/entities/
-    # months were excluded on purpose (el: ηπα/ιράν/τραμπ/πηγές; bg: българия/юни/
-    # евро/софия/директор; uk: україни/нато/завод/червня + the ru-mislabelled forms).
-    # el promotes to MANAGED (src/analytics/managed.py); uk stays gated (its sample
-    # mixed ru-spelled tokens, so the language signal is not yet trustworthy).
-    "και του της την για από που στο τον των στην τις ότι δεν τους στη στις είναι "  # Greek
-    "μια στα έχει ένα στον αλλά κατά ενώ όπως μας αυτό οποία ήταν εδώ μέσα μετά είχε "  # Greek
-    "αυτή καθώς προς σας έχουν πως πρέπει πιο μεταξύ μόνο όλα όταν πριν οποίο μία ένας έναν "  # Greek
-    "това като които има може през към ако много няма само който след той всички този "  # Bulgarian
-    "във която което защото със срещу така една както още дали трябва бъде беше пред "  # Bulgarian
-    "вече също кой бил чрез тези тази един "  # Bulgarian
-    "про він під також після які який від але вже його вони має мають лише коли цього всі "  # Ukrainian
-    # 2026-06-21 keyword-log (29k-article corpus): more CSS/markup leaked into the
-    # unknown-language ('?') bucket (table/width/div/block-1/max-width/font-size) — the
-    # root fix is HTML/CSS stripping before extraction (flagged), this stops the markup
-    # that still leaks. Only UNAMBIGUOUS CSS/HTML tokens (never natural content in any
-    # language); dual-use (table/width/body/icon) deliberately left OUT.
-    "div span max-width font-size font-family "
-    # de dialectal weekday the month/weekday pass missed (Saturday).
-    "sonnabend "
-    # Pure grammar still leaking in the higher-volume corpora (analyzer high-confidence,
-    # hand-filtered per the standing rule: accented OR unambiguous grammar, no English/
-    # name homograph, no cross-language content collision).
-    "tras ante sino eso hoy ahora esto además cómo "   # Spanish
-    "degli sulla sua sia "                                # Italian
-    "pela aos pode "                                      # Portuguese
-    "jako który gdy "                                     # Polish
-    "več prav danes "                                     # Slovenian
-    "får läs "                                            # Swedish
-    "flere opp "                                          # Norwegian
-    "aynı karşı "                                         # Turkish (accented; promotes toward managed)
-    # 2026-06-22 (field test, engine report): hi + bn are UI languages but were
-    # no_stoplist, leaking grammar into the index ("give them stoplists … hi/bn no
-    # longer no_stoplist"). DEVANAGARI + BENGALI scripts, so the global union can
-    # NEVER collide with a Latin/Cyrillic/Greek corpus language. Hand-filtered to
-    # PURE grammar (postpositions, pronouns, conjunctions, common auxiliaries);
-    # content nouns, names and months were excluded on purpose. Both promote to
-    # MANAGED (src/analytics/managed.py).
-    "का की के को में से पर ने और या भी है हैं था थे थी कि जो नहीं तो ही लिए तक साथ बाद पहले हुआ हुई हुए "  # Hindi
-    "एक इस उस अपने अपनी कर करने किया रहा रही रहे गया गई गए "  # Hindi
-    "এর এবং ও কে থেকে যে এই সেই করে করা হয় হয়েছে ছিল না কি যা তার জন্য কিন্তু বা আর হবে হয়ে নিয়ে "  # Bengali
-    "একটি দিয়ে সঙ্গে পরে আগে করেন করেছে "  # Bengali
-    # ----------------------------------------------------------------------- #
-    # 2026-06-22 field test, remainder batch (engine report no_stoplist tail).
-    # Adding more of the corpus languages the engine could not analyse. Two
-    # collision-safety classes, both honouring the standing union rule:
-    #   (1) DISTINCT-SCRIPT languages are collision-free by construction — Arabic
-    #       script (fa/ur) and Cyrillic (uk expansion) can NEVER overlap a Latin/
-    #       Greek content word; cross-script overlap (fa↔ar, uk↔ru/bg) is fine (a
-    #       shared function word is a stopword in each). Hand-filtered to PURE
-    #       grammar (pronouns, prepositions, conjunctions, common auxiliaries).
-    #   (2) LATIN languages add ONLY length>=4 distinctive grammar OR accented
-    #       words (the accent/length makes a content-word collision in es/it/pt/
-    #       en/de/nl effectively impossible); every short unaccented homograph was
-    #       EXCLUDED by hand (ro "cine"=es cinema; sk "bola/bolo"=es/pt ball/cake;
-    #       ca "sense/fins"=en sense/fins; sw "wake/sana/kama"=en wake / es heal /
-    #       name). These languages tokenise whole words (verified 2026-06-22), so
-    #       they promote to MANAGED in src/analytics/managed.py.
-    # Persian (fa) — Arabic script:
-    "و یا اما ولی که نه بله این آن در از به با برای را تا هم اگر چون بین است بود باشد "
-    "می خود کرد شد های هایی آنها او ما شما من تو ها هر همه چه کجا کی چرا چگونه نیز "
-    "هنوز فقط بسیار بیشتر کمتر دیگر بدون روی زیر تنها یعنی پس نیست "
-    # Urdu (ur) — Arabic script:
-    "اور یا لیکن مگر کہ نہیں ہاں یہ وہ میں سے پر کو کا کی کے نے ہے ہیں تھا تھے تھی بھی "
-    "اگر کیونکہ جو کیا کون کہاں کب کیسے کیوں ہم تم آپ یہاں وہاں صرف بہت زیادہ کم سب ہر "
-    "بغیر درمیان تک ساتھ بعد پہلے رہا رہی رہے گیا گئی گئے "
-    # Ukrainian (uk) — Cyrillic; expands the gated 2026-06-18 set into a full
-    # function-word stoplist (the union filters these regardless of the ru-mislabel
-    # noise that kept uk gated; uk tokenises whole words, so it promotes now).
-    "і та й або але не так як що це цей ця ці у в до від за над під при про без для по "
-    "о об його її їх наш ваш мій твій свій хто де коли чому навіщо тому також вже ще "
-    "лише дуже більше менше кожен весь вся все інший якщо бо між через був була було "
-    "бути є має мають можна щоб під час "
-    # Romanian (ro) — Latin, len>=4 / accented (short homographs excluded):
-    "și să că între fără când această aceasta dintre pentru prin despre asupra sunt "
-    "acest unde foarte fiecare deoarece către după însă doar mult puțin către sau "
-    # Czech (cs) — Latin, len>=4 / accented ('ale'=ale beer, 'ano'=pt year EXCLUDED):
-    "nebo která které jsou byla bylo být mají svůj náš váš velmi více méně každý "
-    "všechno protože mezi pokud jako když ačkoli avšak také však "
-    # Slovak (sk) — Latin, len>=4 / accented ('bola/bolo'=es/pt ball/cake EXCLUDED):
-    "alebo ktorý ktorá ktoré prečo bol byť majú svoj veľmi viac menej každý všetko "
-    "pretože medzi keď však tiež sú "
-    # Catalan (ca) — Latin, len>=4 / accented ('sense'=en, 'fins'=en EXCLUDED):
-    "però perquè aquest aquesta aquests aquestes això aquell aquella són està seva "
-    "seves quan molt menys tota totes altres aquí "
-    # Swahili (sw) — Latin, distinctive ('wake'/'sana'/'kama' EXCLUDED):
-    "kwamba lakini katika kutoka ambaye ambao ambayo ndiyo hapana huyu sababu wangu "
-    "wako hivyo zaidi kila wote bila "
-    # Azerbaijani (az) — Latin, accented ('amma'/'kimi' name homographs EXCLUDED):
-    "çünki lakin üçün qədər əvvəl əgər necə niyə deyil çox harada ilə hər yox "
-    # Estonian (et) — Latin, len>=4 / accented ('aga'=name homograph EXCLUDED):
-    "sest kõik väga samuti kuid nende olla kõige ainult palju vähem rohkem teine "
-    "teised või üks kaks kolm "
-    # --- 2026-07-01 keyword-log (36k-article corpus): the two highest-volume no_stoplist
-    # languages leaked their grammar. Korean (Hangul) + Marathi (Devanagari) are DISTINCT
-    # scripts, so the language-agnostic union is collision-free with the Latin/Arabic/
-    # Cyrillic/CJK corpus languages (mr shares Devanagari only with the managed hi — a
-    # shared function word is a stopword in both, which is fine). Sourced from stopwords-iso
-    # INTERSECTED with the ACTUAL leaked keywords (so each word is BOTH a curated function
-    # word AND observed leaking); CONTENT excluded (mr जात=caste, कोटी=crore,
-    # माहिती=information/RTI, कमी=shortage). Native review welcome. ko/mr STAY no_stoplist
-    # (agglutination means much still leaks) — a partial, collision-free win, not a promotion.
-    # Korean (ko) — Hangul; connectives/adverbs (하지만=but, 그러나=however, 따라서=therefore):
-    "공동으로 관계없이 관하여 구체적으로 그래도 그러나 그런데 그리고 기준으로 대하여 동시에 뒤이어 따라서 때문에 로부터 반대로 반드시 시작하여 심지어 아울러 앞에서 어떻게 얼마나 여전히 오히려 우르르 위하여 위해서 으로서 이러한 이용하여 잇따라 제외하고 중에서 쪽으로 차라리 통하여 하더라도 하면서 하여야 하지만 힘입어 "
-    # Marathi (mr) — Devanagari; copulas/conjunctions/pronouns/auxiliaries (आहे=is, आणि=and, नाही=not):
-    "अनेक अशी असलेल्या असा असून असे आणि आता आपल्या आला आली आले आहे आहेत एका करून काय काही केला केली केले गेल्या झाला झाली झाले झालेल्या तरी तसेच त्या त्याची त्यामुळे दिली दोन नाही मात्र म्हणजे म्हणाले म्हणून येणार येत येथे सर्व सुरू होणार होत होता होती होते "
-)
-_EXTRA_STOPWORDS: frozenset[str] = frozenset(_EXTRA_STOPWORD_TEXT.split())
+#
+# Migrated (Phase 4.1, PR #740/#744 remediation) from an in-Python string blob into
+# configs/stopwords_extra/<lang>.yml data files -- a REPRESENTATION change only. The
+# split is a readability/maintenance convenience, NOT a per-language scoping
+# guarantee: global_stopwords() unions every file's words below regardless of which
+# file a word lives in (unlike configs/keyword_baseline/, which IS genuinely scoped
+# per language). See configs/stopwords_extra/PROVENANCE.md for the evidence trail
+# (field-log dates, mention counts, collision-safety reasoning) preserved verbatim
+# from the original inline comments. tests/test_analytics_extract.py pins the
+# stopword SET as byte-identical to the pre-migration blob.
+_STOPWORDS_EXTRA_DIR = Path(__file__).resolve().parents[2] / "configs" / "stopwords_extra"
+
+
+def _load_extra_stopwords() -> frozenset[str]:
+    """Union of every configs/stopwords_extra/*.yml file's word list. A missing or
+    empty directory is a no-op (never invents a stopword); a malformed individual
+    file is skipped rather than crashing extraction."""
+    words: set[str] = set()
+    if _STOPWORDS_EXTRA_DIR.is_dir():
+        for path in sorted(_STOPWORDS_EXTRA_DIR.glob("*.yml")):
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except (OSError, yaml.YAMLError):
+                continue
+            words.update(str(w) for w in (data.get("stopwords") or []))
+    return frozenset(words)
+
+
+_EXTRA_STOPWORDS: frozenset[str] = _load_extra_stopwords()
 # News text often uses a curly apostrophe (’) — match those spellings of any
 # contraction too, so "don't" and "don’t" are both filtered without listing each twice.
 _EXTRA_STOPWORDS = _EXTRA_STOPWORDS | frozenset(

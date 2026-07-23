@@ -1,0 +1,86 @@
+# Curated EXTRA stopwords -- Dutch.
+# Migrated from src/analytics/extract.py::_EXTRA_STOPWORD_TEXT (Phase 4.1, PR #740/#744
+# remediation). LANGUAGE-AGNOSTIC UNION: global_stopwords() unions every file here
+# regardless of which one a word lives in -- this split is a readability/maintenance
+# convenience, not a per-language scoping guarantee (unlike configs/keyword_baseline/,
+# which IS genuinely per-language). See configs/stopwords_extra/PROVENANCE.md for the
+# full evidence trail (field-log dates, mention counts, collision-safety reasoning)
+# that justified each addition -- preserved verbatim from the original inline comments.
+stopwords:
+  - aan
+  - al
+  - alle
+  - alleen
+  - als
+  - beide
+  - bij
+  - dat
+  - de
+  - deze
+  - die
+  - dit
+  - door
+  - een
+  - elke
+  - en
+  - geen
+  - haar
+  - had
+  - hebben
+  - heeft
+  - het
+  - hij
+  - hoe
+  - hun
+  - ik
+  - in
+  - is
+  - jaar
+  - jaren
+  - je
+  - jij
+  - jouw
+  - maar
+  - meer
+  - met
+  - mijn
+  - naar
+  - niet
+  - nog
+  - of
+  - om
+  - omdat
+  - onder
+  - ons
+  - ook
+  - op
+  - over
+  - te
+  - tegen
+  - toen
+  - tussen
+  - uit
+  - van
+  - veel
+  - voor
+  - waar
+  - waarom
+  - wanneer
+  - waren
+  - was
+  - wat
+  - wel
+  - welke
+  - werd
+  - wie
+  - wij
+  - worden
+  - wordt
+  - zeer
+  - zegt
+  - zei
+  - zich
+  - zij
+  - zijn
+  - zodat
+  - zonder
