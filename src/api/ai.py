@@ -426,13 +426,49 @@ from src.ai_layer.langdetect_llm import detect_for_articles, unknown_language_wo
 from src.database.session import session_scope  # noqa: E402
 from src.jobs.background import BackgroundJob, register_job  # noqa: E402
 
-_LANGDETECT_LIMIT = 500  # per-run bound (opt-in; re-run to continue the tail)
+_LANGDETECT_LIMIT = 500  # per-BATCH bound (an internal chunk size, not a run cap — see below)
 
 
-def _langdetect_worker(ctx, *, model: str | None = None, limit: int = _LANGDETECT_LIMIT) -> dict:
+def _langdetect_candidate_count(session) -> int:
+    """Same predicate as unknown_language_work (without a limit): how many articles are
+    the job's actual worklist right now. Counts only, no score — used as the continuous-mode
+    progress bar's initial total estimate."""
+    from sqlalchemy import func, or_, select
+
+    from src.ai_layer.langdetect_llm import _already_labelled
+
+    unset = lambda col: or_(col.is_(None), col == "")  # noqa: E731
+    n = session.execute(
+        select(func.count(Article.id)).where(
+            unset(Article.language), unset(Article.detected_language), ~_already_labelled()
+        )
+    ).scalar() or 0
+    return int(n)
+
+
+def _langdetect_worker(
+    ctx, *, model: str | None = None, limit: int = _LANGDETECT_LIMIT, continuous: bool = False
+) -> dict:
     """Detect a language label for articles the offline detector could not classify.
     Opt-in + cancellable; writes ONLY ai_keyword(kind=language). No-op (never a wall of
-    failed events) when the local model is unavailable."""
+    failed events) when the local model is unavailable.
+
+    ``continuous=False`` (the default) runs exactly ONE bounded batch of at most ``limit``
+    articles, unchanged from before this option existed — the user re-triggers the job to
+    continue the tail.
+
+    ``continuous=True`` (maintainer ask 2026-07-23: "an on/off switch that allows for the
+    continuous analysis of articles until none are left, or the leftovers are those articles
+    whose languages could not be deduced") chains internal batches — each still capped at
+    ``limit`` for bounded per-query cost — until the worklist genuinely comes back empty or
+    the job is cancelled. Every attempted article id (whether it ended up stored, skipped,
+    failed, or an unclassifiable "none") is tracked in an in-memory ``attempted`` set for the
+    DURATION OF THIS RUN and excluded from every subsequent batch query via
+    ``exclude_ids`` — without this, a "none" result writes no ai_keyword row, so the SAME
+    newest-first unclassifiable articles would re-occupy every batch's query window forever
+    and the rest of the backlog would never be reached. Once the query returns empty, every
+    currently-unknown article has been attempted this run: whatever remains unlabelled in the
+    DB at that point IS exactly the residue whose language could not be deduced."""
     tally: dict = {"total": 0, "stored": 0, "skipped": 0, "failed": 0, "none": 0, "ran": False}
     client = OllamaClient()
     try:
@@ -444,24 +480,39 @@ def _langdetect_worker(ctx, *, model: str | None = None, limit: int = _LANGDETEC
         return tally
     mdl = model or active_model()
     bound = max(1, min(int(limit or _LANGDETECT_LIMIT), 5000))
-    with session_scope() as session:  # read the worklist, then release the session
-        work = unknown_language_work(session, bound)
-    tally["total"] = len(work)
-    ctx.set_progress(done=0, total=len(work), detail=f"model {mdl}")
     tally["ran"] = True
-    if not work:
-        return tally
+
+    attempted: set[int] = set()
     done = 0
-    for event in detect_for_articles(work, client, model=mdl, should_stop=lambda: ctx.stopping):
-        ev = event.get("event")
-        if ev == "item":
-            done += 1
-            st = event.get("status")
-            if st in ("stored", "skipped", "failed", "none"):
-                tally[st] += 1
-            ctx.set_progress(done=done, detail=f"{tally['stored']} labelled")
-        elif ev == "done":
-            tally["aborted"] = bool(event.get("aborted"))
+    with session_scope() as session:
+        estimate_total = _langdetect_candidate_count(session)
+    ctx.set_progress(done=0, total=estimate_total, detail=f"model {mdl}")
+
+    while True:
+        if ctx.stopping:
+            tally["aborted"] = True
+            break
+        with session_scope() as session:  # read the worklist, then release the session
+            work = unknown_language_work(session, bound, exclude_ids=attempted)
+        if not work:
+            break  # nothing left to attempt this run (stored, or the undeducible residue)
+        tally["total"] += len(work)
+        for event in detect_for_articles(work, client, model=mdl, should_stop=lambda: ctx.stopping):
+            ev = event.get("event")
+            if ev == "item":
+                done += 1
+                attempted.add(event["article_id"])
+                st = event.get("status")
+                if st in ("stored", "skipped", "failed", "none"):
+                    tally[st] += 1
+                ctx.set_progress(
+                    done=done, total=max(estimate_total, done), detail=f"{tally['stored']} labelled"
+                )
+            elif ev == "done" and event.get("aborted"):
+                tally["aborted"] = True
+        if not continuous or tally.get("aborted"):
+            break
+    tally["remaining_unclassified"] = tally["none"]
     return tally
 
 
@@ -476,6 +527,7 @@ _LANGDETECT_JOB = register_job(
 class LangDetectBody(BaseModel):
     model: str | None = None
     limit: int | None = None
+    continuous: bool = False
 
 
 @router.post("/detect-language")
@@ -483,10 +535,18 @@ def ai_detect_language_start(body: LangDetectBody | None = None) -> dict:
     """Start the OPT-IN local-LLM language-detection job. Writes a THIRD 'AI-derived ·
     unreliable' language class into ai_keyword — never the authoritative or offline-deduced
     channels. Cancellable + visible in /api/jobs; never the scrape hot path. 409-free: returns
-    the current status if a run is already in flight."""
+    the current status if a run is already in flight.
+
+    ``continuous`` (default False) chains internal batches until the whole backlog is
+    exhausted or the job is cancelled, instead of stopping after one bounded batch."""
     b = body or LangDetectBody()
     try:
-        return {"started": True, "job": _LANGDETECT_JOB.start(model=b.model, limit=b.limit or _LANGDETECT_LIMIT)}
+        return {
+            "started": True,
+            "job": _LANGDETECT_JOB.start(
+                model=b.model, limit=b.limit or _LANGDETECT_LIMIT, continuous=b.continuous
+            ),
+        }
     except RuntimeError:
         return {"started": False, "job": _LANGDETECT_JOB.status()}
 
@@ -510,14 +570,4 @@ def ai_detect_language_candidates(db: Session = Depends(get_db)) -> dict:
     detector AND not yet AI-labelled (the SAME predicate as unknown_language_work, so the
     count falls as the job runs and reaches 0 when the reachable tail is done). Counts only,
     no score."""
-    from sqlalchemy import func, or_, select
-
-    from src.ai_layer.langdetect_llm import _already_labelled
-
-    unset = lambda col: or_(col.is_(None), col == "")  # noqa: E731
-    n = db.execute(
-        select(func.count(Article.id)).where(
-            unset(Article.language), unset(Article.detected_language), ~_already_labelled()
-        )
-    ).scalar() or 0
-    return {"candidates": int(n)}
+    return {"candidates": _langdetect_candidate_count(db)}

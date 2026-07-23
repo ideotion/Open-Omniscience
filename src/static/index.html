@@ -1320,6 +1320,10 @@
       <p class="muted" style="margin-top:0">Some articles arrive with no language tag, and the fast offline detector cannot always classify them (short text, low confidence, or a language it does not cover). This OPT-IN pass asks the local model to identify the language of those still-unknown articles. It is AI-derived and unreliable — a THIRD, clearly-labelled provenance class shown inline in the article view. It NEVER overwrites the source-asserted or offline-deduced language, and a garbage or unclear answer stores nothing. It runs as a cancellable background job (watch it in the task manager), never during scraping, and only on this machine's local model.</p>
       <div class="row" style="align-items:center;gap:10px">
         <button id="langdetect-btn" onclick="runLangDetect(this)">Detect languages</button>
+        <label class="row" style="align-items:center;gap:4px;font-weight:normal">
+          <input type="checkbox" id="langdetect-continuous">
+          Keep going until none are left
+        </label>
         <span id="langdetect-status" class="hint"></span>
       </div>
     </section>
