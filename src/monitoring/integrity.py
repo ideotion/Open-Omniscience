@@ -190,6 +190,15 @@ def corpus_integrity(session: Session, *, sample: int = 500, full: bool = False)
     except Exception:  # noqa: BLE001
         report["auto_cleanup"] = {"last_run": None}
 
+    # DB-10 §1a/§3: the off-peak incremental-vacuum pass is likewise freshness-gated
+    # and off the request path; surface its last run + tally for the same reason.
+    try:
+        from src.database.maintenance import incremental_vacuum_state
+
+        report["auto_incremental_vacuum"] = incremental_vacuum_state()
+    except Exception:  # noqa: BLE001
+        report["auto_incremental_vacuum"] = {"last_run": None}
+
     report["timed_out"] = timed_out
     report["drift"] = bool(
         (report.get("orphan_keywords") or 0)

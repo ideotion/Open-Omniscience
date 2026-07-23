@@ -367,6 +367,8 @@
   "Compacted.": "কমপ্যাক্ট সম্পন্ন।",
   "Space freed:": "মুক্ত হওয়া স্থান:",
   "Compaction failed:": "কমপ্যাক্ট ব্যর্থ:",
+  "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "কমপ্যাক্ট করলে পুরো ডেটাবেস ফাইল পুনরায় লেখা হয় এবং বড় কর্পাসে এতে কিছুটা সময় লাগতে পারে। চালিয়ে যাবেন?",
+  "Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?": "আপনার ডেটাবেসের আকার প্রায় {size} — কমপ্যাক্ট করতে সাধারণত প্রায় {lo}–{hi} সেকেন্ড লাগে (এই প্রকল্পের নিজস্ব বেঞ্চমার্কে পরিমাপ করা)। এই সময় লেখা কাজ স্থগিত থাকবে। চালিয়ে যাবেন?",
   "Go online?": "অনলাইনে যাবেন?",
   "This action needs the network:": "এই কাজের জন্য নেটওয়ার্ক দরকার:",
   "Your machine presents these local network addresses:": "আপনার মেশিন এই স্থানীয় নেটওয়ার্ক ঠিকানাগুলি উপস্থাপন করে:",

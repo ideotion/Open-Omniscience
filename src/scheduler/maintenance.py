@@ -77,6 +77,20 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
             except Exception:  # noqa: BLE001
                 _LOG.warning("off-peak keyword cleanup failed", exc_info=True)
                 out["cleanup"] = {"skipped": "error"}
+            if stop():
+                out["incremental_vacuum"] = {"skipped": "stopping"}
+                return out
+            # DB-10 §1a/§3: reclaim a bounded slice of the freelist via
+            # PRAGMA incremental_vacuum in this same idle window (a no-op,
+            # honestly reported, on a pre-ruling auto_vacuum=NONE/FULL corpus).
+            try:
+                from src.database.maintenance import maybe_incremental_vacuum
+                from src.database.session import engine as _engine
+
+                out["incremental_vacuum"] = maybe_incremental_vacuum(_engine)
+            except Exception:  # noqa: BLE001
+                _LOG.warning("off-peak incremental vacuum failed", exc_info=True)
+                out["incremental_vacuum"] = {"skipped": "error"}
     except Exception:  # noqa: BLE001 - even opening the session must never break the loop
         _LOG.warning("off-peak maintenance could not open a session", exc_info=True)
         return {"skipped": "error"}

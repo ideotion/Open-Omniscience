@@ -367,6 +367,8 @@
   "Compacted.": "Compacted.",
   "Space freed:": "Space freed:",
   "Compaction failed:": "Compaction failed:",
+  "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?",
+  "Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?": "Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?",
   "Add a watched Wikipedia page (fetches its current revision)": "Add a watched Wikipedia page (fetches its current revision)",
   "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.": "Airplane mode — filled means offline: every new network request is refused instantly; one in-flight request may finish.",
   "Allow network requests again": "Allow network requests again",
