@@ -73,3 +73,51 @@ def test_refuses_up_front_under_airplane_mode(db):
     finally:
         clear_kill_switch()
     assert called["n"] == 0  # no query attempted offline
+
+
+def test_guarded_run_query_carries_http_status_on_a_non_json_response(monkeypatch):
+    """S5 item 4 (field-feedback 2026-07-23): a non-JSON WDQS response body (a
+    rate-limit page, an error page, a truncated response) used to surface as a
+    bare "Expecting value: line 1 column 1 (char 0)" parse exception, giving no
+    way to tell a 429 rate-limit from a genuinely broken query. The production
+    transport (_guarded_run_query) must now carry the real HTTP status + a short
+    body snippet — observability only, generate_catalog's own record-and-skip
+    control flow is unchanged."""
+    import json
+
+    from src.catalog.discover import _guarded_run_query
+
+    class _FakeResp:
+        status_code = 429
+        text = "<html>rate limit exceeded, try again later</html>"
+
+        def json(self):
+            raise json.JSONDecodeError("Expecting value", self.text, 0)
+
+    class _FakeSession:
+        def get(self, url, timeout=None):  # noqa: ARG002
+            return _FakeResp()
+
+    monkeypatch.setattr("src.safety.fetcher.guarded_session", lambda **_kw: _FakeSession())
+
+    run_query = _guarded_run_query({"label_lang": "en", "limit": 50})
+    with pytest.raises(RuntimeError) as exc_info:
+        run_query("gb", ["Q1"])
+    msg = str(exc_info.value)
+    assert "429" in msg
+    assert "rate limit" in msg
+
+
+def test_generate_catalog_records_the_enriched_error_and_keeps_going():
+    """The enriched message flows through generate_catalog's existing
+    record-and-skip path unchanged (no retry-policy change)."""
+    from src.catalog.build import generate_catalog
+
+    def rq(cc, type_qids):  # noqa: ARG001
+        if cc == "gb":
+            raise RuntimeError("non-JSON response (HTTP 429): '<html>rate limited</html>'")
+        return _payload("Kenya Times", "https://kenyatimes.co.ke/")
+
+    res = generate_catalog(rq, ["gb", "ke"], [{"type_qids": ["Q1"], "source_type": "news"}])
+    assert any("gb/news" in e and "429" in e for e in res["stats"]["errors"])
+    assert res["stats"]["countries_queried"] == 2  # gb's failure never aborted ke

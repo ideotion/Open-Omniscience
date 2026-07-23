@@ -1093,6 +1093,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     substring search when the two things being distinguished can share literal
     text. General form: a regression guard proving something was REMOVED is only
     as strong as the scope it searches.
+  - **AN HONEST "resolver error → not-measurable-here" DEGRADE PATH CAN SILENTLY MASK A GENUINE
+    BUG IN THE RESOLVER ITSELF (2026-07-23, S5 item 2, the KPI K2 fix):** the K2 resolver read
+    `latency.summary()["snappy_bar"]` as a plain float, but the module's REAL, current shape
+    nests it as a dict — `float(dict)` raised `TypeError` on EVERY real call. `kpi_snapshot()`'s
+    own try/except is exactly the "never a fabricated pass" honesty mechanism (a resolver fault
+    degrades to `"not-measurable-here"` rather than crashing the snapshot) — but that same
+    mechanism meant the crash was NEVER visible: every call silently read as "no data yet"
+    instead of "this metric is broken," and no test caught it because the suite only checked the
+    SHAPE of a not-measurable entry, never distinguished "genuinely no data" from "the resolver
+    itself is broken." General form: a resolver/adapter reading another module's payload by KEY
+    must be tested against that module's REAL, CURRENT shape (a live call, or a fixture that
+    matches the actual nesting) — not an assumed/historical shape — and a graceful-degrade
+    fallback needs its OWN regression test proving the HAPPY PATH still produces a real value, not
+    just that the sad path degrades honestly; otherwise the fallback becomes a permanent hiding
+    place for the very bug it was built to survive.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
@@ -7744,6 +7759,58 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   outstanding S4 item — deliberately deferred rather than rushed, given the brief's own
   full-skeptic-matrix mandate for it and this session's lack of a parallel-review workflow phase
   this cycle.
+  **§6 SLICE S5 SHIPPED 2026-07-23 (small defects from the two exports; 3 of 4 items fixed, 1
+  investigated-and-benign):** (1) **htmldate.meta log-noise filter** — `trafilatura.meta.
+  reset_caches()` (called at EVERY pass boundary by `src/scheduler/hygiene.py`'s memory-hygiene
+  step) internally calls `htmldate.meta.reset_caches()`, which `LOGGER.error()`s "impossible to
+  clear cache for function: %s" every single time it hits an `AttributeError` on
+  `charset_normalizer`'s functions under the installed version pin — measured 85 of 93 logged
+  "problems" on one field session, drowning the real signal `errorlog.summary()`'s
+  `problems_total`/`problems_this_session` counters exist to surface. A TARGETED
+  `logging.Filter` (`_HtmldateCacheNoiseFilter`, attached to the `_JsonlErrorHandler` instance in
+  `install()`) drops ONLY that (logger, message) pair from the counters — never a blanket
+  suppression of the whole `htmldate.meta` logger, so a genuinely different message from the
+  same logger (e.g. its OTHER `.error()` call, "impossible to import charset function name") still
+  counts; matched on LOGGER NAME too, so an unrelated logger emitting a similar-looking message
+  is never masked. (2) **KPI K2 resolver TypeError, fixed** — `_k2_latency` read
+  `summ.get("snappy_bar")` as a plain float (`float(summ.get("snappy_bar") or 500.0)`), but
+  `latency.summary()`'s REAL shape nests it as a dict (`{"bar_ms": ..., "interactive_routes": ...,
+  ...}`) — `float(dict)` raised `TypeError` on EVERY real call, silently degrading K2 to
+  "not-measurable-here" behind the honest resolver-error fallback (`kpi_snapshot`'s own
+  try/except), exactly the "a real resolver bug hiding behind an honest verdict" the brief named.
+  Fixed by reading the nested `bar_ms` field; a live repro (`kpi._k2_latency(...)` against the
+  real un-mocked `latency.summary()`) confirmed the crash BEFORE the fix and the correct
+  numeric/verdict payload AFTER. STASH-VERIFIED: temporarily reverted the fix, confirmed the new
+  regression test fails exactly as predicted (`'not-measurable-here' == 'green'` -> AssertionError),
+  restored the fix, confirmed green. (3) **`locked_errors` 6/session, INVESTIGATED — benign, no
+  code change**: `run_write_with_retry` (`src/database/write.py`) logs a `WARNING` — "hit
+  'database is locked' (attempt N/M); retrying" — on EVERY retry attempt, INCLUDING a
+  successful retry-then-succeed cycle, not only a final exhausted failure; `errorlog.summary()`'s
+  `_is_locked()` counts any WARNING+ record whose message/traceback mentions "database is
+  locked". Spot-checked every `is_locked_error` call site (`src/ingest/batch.py`,
+  `src/ingest/email.py`, `src/analytics/store.py`, plus `src/backup/merge.py`/`src/law/track.py`/
+  `src/law/corpus.py` which reference the same 2026-07-14 cross-driver fix in comments) — all
+  route through the retry/redo-per-row mechanism, no ungated write path found. Given S4.1 makes
+  the world-discovery/qualification ride-alongs + the main pass genuinely MORE concurrent (they
+  can now overlap a PRIOR pass's still-finishing background briefing refresh), occasional
+  single-writer-gate contention retried-and-recovered is the EXPECTED cost of that concurrency,
+  not a bug — recorded here per the brief's own "if benign retries, say so in the ledger"
+  guidance. (4) **world-discovery non-JSON-response observability, fixed** — `_guarded_run_query`
+  (`src/catalog/discover.py`, the production WDQS transport) called `resp.json()` directly; a
+  non-JSON response body (rate-limit page, error page, truncated response) raised a bare
+  `json.JSONDecodeError` ("Expecting value: line 1 column 1 (char 0)") that
+  `src/catalog/build.py`'s `generate_catalog` correctly recorded-and-skipped but with NO way to
+  tell a 429 rate-limit from a genuinely broken query (the exact "gb/news: Expecting value…"
+  the fast box's export showed). Now wraps the `.json()` call, catching `ValueError` and
+  re-raising a `RuntimeError` carrying the REAL HTTP status code + a short first-bytes body
+  snippet — observability only, `generate_catalog`'s own record-and-skip control flow is
+  UNCHANGED (no retry-policy change, per the brief). VERIFIED (py3.13 venv): 58 targeted tests
+  (`test_errorlog_summary.py` +2, `test_kpi.py` +2, `test_source_discovery.py` +2, plus the
+  existing discovery/kpi suites) green + the full suite; ruff `--select=F,B --extend-ignore=B008`
+  clean; mypy 0 new errors on every touched file (127==baseline — confirmed via a git-stash
+  before/after diff that the one errorlog.py mypy hit is a PRE-EXISTING baseline error merely
+  line-shifted by the new code, not a new one); bandit `-r -ll -q` clean; no schema/frontend
+  change.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
