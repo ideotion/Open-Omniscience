@@ -203,6 +203,72 @@ def test_stops_honestly_after_consecutive_no_progress_batches(db, scope, monkeyp
     assert remaining == 50
 
 
+def test_resume_after_cancel_finishes_the_backlog_with_no_double_stamps(db, scope, monkeypatch):
+    """No persisted cursor by design -- Source.status IS the durable progress marker.
+    A cancelled run resumed by simply calling run_bulk_qualification again must finish
+    the WHOLE backlog with each source stamped EXACTLY once (no double-counted
+    SourceQualificationAttempt rows, no re-judging an already-qualified source)."""
+    from src.database.models import SourceQualificationAttempt
+
+    _add_unqualified(db, 12)
+
+    calls = {"n": 0}
+
+    def _pass(session, fetcher, batch_size, now):
+        from src.catalog.qualification import select_unqualified
+
+        calls["n"] += 1
+        cands = select_unqualified(session, limit=batch_size)
+        for c in cands:
+            c.status = STATUS_QUALIFIED
+            session.add(SourceQualificationAttempt(
+                source_id=c.id, attempted_at=now, verdict=STATUS_QUALIFIED,
+                criteria_version="test",
+            ))
+        session.commit()
+        return {"enabled": True, "evaluated": len(cands), "qualified": len(cands),
+                "disqualified": 0, "no_evidence": 0, "trial_fetch_errors": 0}
+
+    monkeypatch.setattr("src.catalog.qualify_job.qualification_pass", _pass)
+
+    # First run: cancel after the very first progress report (partial drain).
+    out1 = run_bulk_qualification(
+        _Ctx(stop_after=1), batch_size=3, fetcher=object(), session_factory=scope, sleep_s=0.0
+    )
+    assert out1["complete"] is False
+    partially_qualified = db.query(Source).filter_by(status=STATUS_QUALIFIED).count()
+    assert 0 < partially_qualified < 12
+
+    # "Resume" is just calling it again -- no cursor file, no special resume flag.
+    out2 = run_bulk_qualification(
+        _Ctx(), batch_size=3, fetcher=object(), session_factory=scope, sleep_s=0.0
+    )
+    assert out2["complete"] is True
+    assert db.query(Source).filter_by(status=STATUS_UNQUALIFIED).count() == 0
+    assert db.query(Source).filter_by(status=STATUS_QUALIFIED).count() == 12
+    # Exactly one attempt row per source -- the resumed run never re-selected an
+    # already-qualified source (select_unqualified excludes it by construction).
+    assert db.query(SourceQualificationAttempt).count() == 12
+
+
+def test_never_a_score_key_anywhere_in_the_payload(db, scope, monkeypatch):
+    _add_unqualified(db, 3)
+    monkeypatch.setattr("src.catalog.qualify_job.qualification_pass", _always_no_evidence_pass)
+    ctx = _Ctx()
+    out = run_bulk_qualification(
+        ctx, batch_size=5, fetcher=object(), session_factory=scope, sleep_s=0.0
+    )
+    banned = ("score", "ranking", "rating", "grade")
+
+    def _walk(o, path=""):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                assert not any(b in k.lower() for b in banned), f"{path}.{k}"
+                _walk(v, f"{path}.{k}")
+
+    _walk(out)
+
+
 def test_empty_backlog_is_a_clean_immediate_complete(db, scope, monkeypatch):
     monkeypatch.setattr("src.catalog.qualify_job.qualification_pass", _always_no_evidence_pass)
     ctx = _Ctx()
