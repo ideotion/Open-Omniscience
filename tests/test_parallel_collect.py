@@ -149,12 +149,15 @@ def test_run_scrape_once_parallel_processes_all_sources():
 
 def test_collect_parallelism_setting_round_trips(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    # The bandwidth-governed collector: the default targets >= 500 kbps with a
-    # concurrency CEILING of 50 (maintainer ruling 2026-06-16, supersedes the old
-    # opt-in default of 1 worker).
+    # The bandwidth-governed collector: the default rate mode is "maximum"
+    # (maintainer ruling 2026-07-23 — the 500 KiB/s target parked workers and
+    # left real connections under-used) with a concurrency CEILING of 50
+    # (maintainer ruling 2026-06-16, supersedes the old opt-in default of 1).
+    # collect_target_kbps keeps its 500 default for anyone who switches back
+    # to "target" mode.
     d = load_settings()
     assert d.collect_parallelism == 50  # hard ceiling (the governor's upper bound)
-    assert d.collect_rate_mode == "target"
+    assert d.collect_rate_mode == "maximum"
     assert d.collect_target_kbps == 500
     save_settings({"collect_parallelism": 4})
     assert load_settings().collect_parallelism == 4

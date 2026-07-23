@@ -373,6 +373,13 @@
        state (invariant #14); this ring just emphasises it, painted ONCE. */
     #net-toggle.off { color:var(--err); border-color:var(--err);
                       box-shadow:0 0 0 3px color-mix(in srgb, var(--err) 16%, transparent); }
+    /* Collection-speed knob (2026-07-23): accent when the governor runs at
+       "maximum" — theme-derived (color-mix from tokens, never a hardcoded hue),
+       painted once on state change (no animation loops, same discipline as
+       #net-toggle.off). The needle rotation is set inline by _paintRateMode. */
+    #rate-toggle.rate-max { color:var(--accent);
+                            box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+    #rate-toggle #rate-needle { transition:transform .35s ease; }
     #net-flash { position:fixed; inset:0; z-index:200; pointer-events:none; opacity:0; }
     /* Direction-aware transition color. Field test 2026-06-19 #O-5: going ONLINE flashes
        GREEN (--ok, the "go" signal the maintainer expects); going OFFLINE flashes a

@@ -53,10 +53,14 @@ class SchedulerSettings:
     #   collect_target_kbps: best-effort download-rate goal in KiB/s (target mode)
     #   collect_parallelism: the hard CEILING on concurrent fetches (the governor's
     #                        upper bound). 1 = the sequential loop (governor off).
-    # The default targets >= 500 kbps out of the box (supersedes the old opt-in
-    # default of 1 worker); the governor backs off automatically under CPU/memory/
-    # writer contention (logged in src/monitoring/collect_perf.py).
-    collect_rate_mode: str = "target"
+    # The default is "maximum" (maintainer ruling 2026-07-23: the old 500 KiB/s
+    # target deliberately parked workers and left real connections under-used —
+    # field-observed as "a few kB/s average"); the governor still backs off
+    # automatically under CPU/memory/writer contention (logged in
+    # src/monitoring/collect_perf.py) and per-host politeness is untouched, so
+    # "maximum" ramps to the ceiling only where the machine and the hosts allow.
+    # "target" mode + collect_target_kbps stay available for constrained lines.
+    collect_rate_mode: str = "maximum"
     collect_target_kbps: int = 500
     collect_parallelism: int = 50
     mode: str = "rss"  # "rss" (feeds) or "crawl" (bounded recursion)

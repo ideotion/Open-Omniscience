@@ -1669,13 +1669,20 @@ def test_ui_invariants():
     assert "#llm { min-width" in html, "LLM pill needs a fixed footprint"
     # 4. §2 (ruled 2026-06-14, amends #4): vitals moved OUT of the chrome into the
     #    task-manager window's System tab; the chrome keeps a PERSISTENT task-manager
-    #    access (#activity is hidden when idle); version still not in the chrome.
+    #    access (#activity is hidden when idle).
     assert 'id="vitals-mini"' not in html, "the vitals strip must NOT live in the chrome (§2 amends #4)"
     assert 'id="tm-open"' in html and 'id="tm-system"' in html, (
         "a persistent task-manager access (#tm-open) + the System tab (#tm-system, where "
         "vitals now live) must both exist (CLAUDE.md #4, §2)"
     )
-    assert '<span id="version" hidden>' in html, "version stays out of the visible chrome"
+    # AMENDED 2026-07-23 (maintainer ruling): the version IS shown, in ONE place —
+    # visibly under the brand name in the sidebar (was `<span id="version" hidden>`).
+    # The top BAR still never shows it.
+    assert '<span id="version">' in html and '<span id="version" hidden>' not in html, (
+        "the version renders visibly under the brand mark (2026-07-23 amends #4)"
+    )
+    brand = html.split('class="brand"', 1)[1][:1600]
+    assert 'id="version"' in brand, "the version span must live inside the sidebar brand block"
     # 2. sidebar: medium widths collapse to a rail, not off-canvas
     assert "@media (max-width:860px) and (min-width:601px)" in html
     # 5. the eye brand mark (grid-iris path is its fingerprint) — in index.html
@@ -5921,3 +5928,42 @@ def test_agenda_dated_instances_place_in_their_own_year_and_show_provenance():
     # Visible provenance: the feed-directory resolver + the from-pill in agRow.
     assert "_agFeedById" in app
     assert "Calendar feed(s) this event came from:" in app
+
+
+def test_rate_mode_knob_in_top_bar_and_maximum_default():
+    """Maintainer ruling 2026-07-23 (field feedback item 7): the bandwidth governor
+    defaults to "maximum" (the old 500 KiB/s target deliberately parked workers —
+    field-observed as a few kB/s on real connections), and the top bar carries a
+    pretty gauge KNOB (#rate-toggle) toggling maximum <-> target with one click.
+    The knob is a LOOPBACK settings write (PUT /api/scheduler/config, no egress
+    side effect) so it must NOT be gated by ensureOnline; state paints via the
+    accent .rate-max class + the needle rotation, and the Settings speed slider
+    stays in sync via applySchedConfig."""
+    html = _ui_source()
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    settings_src = (_SRC / "scheduler" / "settings.py").read_text(encoding="utf-8")
+
+    # Backend default: maximum (target mode + its 500 KiB/s knob stay available).
+    assert 'collect_rate_mode: str = "maximum"' in settings_src, (
+        "the governor's default rate mode is 'maximum' (2026-07-23 ruling)"
+    )
+
+    # The knob exists in the top bar, before the airplane button, with the needle.
+    assert 'id="rate-toggle"' in html and 'id="rate-needle"' in html
+    assert html.index('id="rate-toggle"') < html.index('id="net-toggle"')
+
+    # Wiring: toggle PUTs ONLY the rate mode, paints state, syncs the Settings
+    # slider; boot loads the live state; the accent class is theme-derived CSS.
+    assert "function toggleRateMode" in app and "function loadRateMode" in app
+    assert '"rate-max"' in app, "the accent state class must be painted by _paintRateMode"
+    assert "collect_rate_mode: next" in app, "the toggle PUTs only the rate mode"
+    assert "loadRateMode();" in app, "boot must paint the knob's real state"
+    fn = app.split("async function toggleRateMode", 1)[1].split("async function", 1)[0]
+    assert "ensureOnline" not in fn, (
+        "a loopback config write must never demand the network-consent popup"
+    )
+    assert "applySchedConfig(c)" in fn, "the Settings speed slider must stay in sync"
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    assert "#rate-toggle.rate-max" in css and "var(--accent)" in css.split(
+        "#rate-toggle.rate-max", 1
+    )[1][:200], "the maximum state paints with the theme accent (never a hardcoded hue)"

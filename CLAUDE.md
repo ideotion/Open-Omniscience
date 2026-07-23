@@ -146,9 +146,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
 4. **AMENDED by §2 (ruled 2026-06-14, SHIPPED #143): vitals moved OUT of the
    chrome into the task-manager window's System tab** (`#tm-system`); the top bar
    keeps a PERSISTENT task-manager access (`#tm-open`, since `#activity` is hidden
-   when idle). The version number is STILL NOT displayed in the chrome. (`#vitals-mini`
+   when idle). (`#vitals-mini`
    retired; the 5 s chrome poll is now network-only — a bonus against the
    polling-storm finding.) Enforced in test_ui_invariants (#4).
+   **AMENDED 2026-07-23 (maintainer answer 9, SHIPPED same day, browser-unverified
+   per fork-3): the VERSION is now DISPLAYED in ONE place — visibly under the brand
+   name in the sidebar** (`<span id="version">` unhidden, filled by loadHealth; the
+   top BAR still never shows it). SAME ruling added the **top-bar collection-speed
+   KNOB** (`#rate-toggle`, gauge icon + needle, accent `.rate-max` state theme-derived
+   via color-mix; toggles the governor "maximum"↔"target 500 KiB/s" through a
+   loopback `PUT /api/scheduler/config` — no egress, so NEVER ensureOnline-gated;
+   syncs the Settings speed slider via applySchedConfig; applies next pass). Both
+   enforced: test_ui_invariants #4 (version-in-brand) +
+   test_rate_mode_knob_in_top_bar_and_maximum_default.
 5. **The brand mark is the ASCII eye** (`assets/logo.txt`) as vector — the
    pointed-oval + grid-iris SVG in `index.html` and `assets/icon.svg`.
 6. Article links in analytics/insights lead to the LOCAL reader
@@ -7087,6 +7097,70 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   need more enabled sources [qualification funnel + the pending networked
   build_world_news_catalog.py run] and/or crawl mode, not just more workers). NOTHING BUILT this
   session — intake, verification and the question list only.
+  **ANSWERS RECEIVED + RULED same day (maintainer answered all 12 questions; the small ruled
+  slice SHIPPED same session, the rest queued):**
+  • **A1 (import report):** JSON + Markdown, PERSISTED on disk, and the persisted reports RIDE
+    the backup export/import. Folds into the ruled post-import results screen (one build).
+  • **A2 (screening disposition): QUARANTINE-IN-DB ruled** (reversible, criteria-version-
+    stamped, excluded from search/analytics/keywords by default); quarantined articles ALSO
+    ride backup export/import (they are data, never silently dropped).
+  • **A3: the screening runs RETROACTIVELY on existing corpora** (this is the 0.3 close-gate
+    row-5 cleanup; the agreed-strategy-before-execution step still applies to the criteria).
+  • **A4 (criteria scope): BOTH extraction-validity AND borderline classes, tested together
+    via an ITERATIVE loop** — build a TEMPORARY criteria-calibration DIAGNOSTIC first: a
+    downloadable top-100 of disregarded/would-be-disregarded articles with statistics +
+    per-article detail, so the criteria are optimized on real specimens before any execution
+    (propose→human-review→apply, the stoplist discipline applied to articles).
+  • **A5 (Library graphs): confirmed; snapshot recorder with INFINITE retention** (hourly
+    counter snapshots are tiny — ~10 counters × 8,760/yr ≈ trivial rows; no downsampling
+    needed; article-series backfills from created_at, other counts begin at recording start).
+  • **A6 (stalls):** every instance runs over Tor (identity protection); maintainer judges the
+    stalls NOT Tor-linked; the diagnostics export is deferred until after the current builds.
+  • **A7 RESOLVED (the 50k figure) — the maintainer's sources CSV analyzed (46,213 rows):**
+    42,612 DISABLED `via:wikidata-discovery`+`world-catalog` candidates + 3,599 ENABLED
+    (3,200 curated · 205 legal-generated · 88 markets · 58 spectrum · 47 legal · 1 other).
+    So "50k sources" = the world-discovery machinery WORKING AS RULED (2026-07-15
+    "significantly increase the source count" + the default-on ride-along), blended into one
+    Library "Sources" count — a DISPLAY problem, not a registration bug. Composition note:
+    source_type institution 20,777 / news 17,021 / religious 7,957 — the Wikidata specs'
+    breadth makes the qualification membrane ESSENTIAL before any of it enables. Fixes: the
+    TWO-CLASS display (enabled/qualified vs discovered candidates, never one blended number)
+    + the qualification funnel to digest the 42k backlog.
+  • **A8 (workflow order RULED): source QUALIFICATION first, THEN the Library graphs UI** —
+    both in the next workflow; the 2026-07-20 qualification rulings (admission gate · stamp ·
+    background job · re-qualification ladder · all-sources-qualified-by-definition) are the
+    spec.
+  • **A9 RULED + SHIPPED same session:** `collect_rate_mode` default flips "target"→"maximum"
+    (src/scheduler/settings.py; test_parallel_collect updated; existing installs keep a saved
+    choice — the new knob or Settings flips them) + the top-bar SPEED KNOB + the VERSION under
+    the sidebar logo (see the invariant-#4 amendment above; frontend browser-unverified per
+    fork-3). NOTE: a saved settings.json that predates the flip keeps "target" until the user
+    clicks the knob.
+  • **A10:** proceed WITHOUT the collect_perf measurement for now (the all-diagnostics zip is
+    slow on the old test machine; the maintainer will try later). The write-batching decision
+    stays measure-gated — the item-3 graphs + a later export are the measurement path.
+  • **A11 (throughput diagnosis, maintainer facts):** enabled sources publish >10 articles/day
+    (publish-rate bound REJECTED by the maintainer for the enabled set); measured average
+    download is a FEW kB/s — two orders below Tor capability → the bottleneck is app-side.
+    INVESTIGATION NOTE (recorded for the build session): the governor seeds 25 workers and
+    ramps toward w_max=50 in target mode when rate < target, so a few-kB/s average means
+    workers are BLOCKED elsewhere or the duty cycle is low — ranked suspects: per-host Tor
+    circuit builds (one isolated circuit per host × 3.4k hosts), robots.txt fetches per new
+    host, serial inter-pass housekeeping (also the item-4 stall suspect), feed-level backoff
+    shrinking the due set, the single-writer gate. The rate-mode flip is NECESSARY but likely
+    NOT SUFFICIENT — the throughput hunt continues instrumented (item-3 graphs + collect_perf
+    when available).
+  • **A12:** affected instance = 2-core/4 GB over Tor, but an 8-core modern machine shows the
+    SAME download rate — the machine is NOT the issue (weakens a pure CPU/write-bound theory,
+    strengthens the shared-structural suspects above); hardware-aware diagnostics welcome
+    (already ruled in the diagnose-the-diagnostics hardware-profile entry).
+  **NEXT WORKFLOW (queued, in ruled order):** (1) the qualification lifecycle build (2026-07-20
+  spec) + the two-class sources display; (2) the Library graphs UI + the snapshot recorder
+  (infinite retention) + compressed Downloaded section + wiki/law tracked sections (items 3+5);
+  (3) the import-report (JSON+Md, persisted, backup-carried) folded into the post-import
+  screen + the quarantine-in-DB screening (import-time + retroactive) with the temporary
+  top-100 criteria-calibration diagnostic FIRST (items 1+2+A4); (4) the throughput hunt
+  instrumented by (2).
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

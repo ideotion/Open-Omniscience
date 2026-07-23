@@ -7639,6 +7639,48 @@
 
     const _csv = id => $(id).value.split(",").map(x => x.trim()).filter(Boolean);
 
+    // -- Top-bar collection-speed knob (maintainer ruling 2026-07-23) ------- //
+    // One click toggles the bandwidth governor between "maximum" (ramp to the
+    // worker ceiling; contention back-off + per-host politeness untouched) and
+    // the considerate 500 KiB/s "target". PUT /api/scheduler/config is a
+    // loopback settings write with no egress side effect (verified S4.7), so
+    // no consent popup; the governor reads the mode at the next pass.
+    let _rateMode = null;
+    function _paintRateMode(mode) {
+      const btn = $("rate-toggle");
+      if (!btn) return;
+      _rateMode = mode;
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const max = mode === "maximum";
+      btn.classList.toggle("rate-max", max);
+      const needle = document.getElementById("rate-needle");
+      if (needle) needle.setAttribute("transform", max ? "rotate(48 12 15.5)" : "rotate(-48 12 15.5)");
+      btn.title = max
+        ? t9("Collection speed: Maximum — uses your connection fully (politeness per host unchanged). Click for the considerate 500 KiB/s target.")
+        : t9("Collection speed: 500 KiB/s target — deliberately gentle. Click for Maximum (full speed).");
+      btn.setAttribute("aria-pressed", max ? "true" : "false");
+    }
+    async function loadRateMode() {
+      try {
+        const c = await api("/api/scheduler/config");
+        _paintRateMode(c.collect_rate_mode || "maximum");
+      } catch (_e) { /* chrome stays at the default paint; Settings still works */ }
+    }
+    async function toggleRateMode() {
+      const next = _rateMode === "maximum" ? "target" : "maximum";
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const c = await api("/api/scheduler/config",
+          {method: "PUT", body: JSON.stringify({collect_rate_mode: next})});
+        _paintRateMode((c && c.collect_rate_mode) || next);
+        // Keep the Settings → Collect speed slider in sync if that panel is live.
+        try { if ($("sch-speed") && c) applySchedConfig(c); } catch (_e) {}
+        toast(next === "maximum"
+          ? t9("Collection speed set to Maximum — applies from the next pass.")
+          : t9("Collection speed set to the 500 KiB/s target — applies from the next pass."));
+      } catch (e) { toast("Could not change the collection speed: " + e.message, "err"); }
+    }
+
     async function loadScheduler() {
       try { const s = await api("/api/scheduler/status"); renderSchedStatus(s); _paintCollectToggle(!!(s && s.running)); }
       catch (e) { $("sched-status").textContent = "Scheduler status unavailable: " + e.message; }
@@ -17287,7 +17329,7 @@
     if (_media) _media.addEventListener("change", () => {
       if (getUi().theme === "system") applyThemeAttr("system");
     });
-    loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus();
+    loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus(); loadRateMode();
     // Keep the background-activity chip live app-wide (e.g. a scheduled scrape that
     // the user didn't trigger from the current tab). Adaptive: fast while a scrape
     // is active, backing off when idle; paused while the tab is hidden (audit PR G).
