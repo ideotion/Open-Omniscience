@@ -4527,6 +4527,9 @@
     // the appearance engine above (applyUi / applyThemeAttr).
     let DEFAULT_LIMIT = 50;
     const _media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+    // Real on-disk DB size (main+wal+shm), refreshed by loadSettings from
+    // /api/database/stats; feeds vacuumNow's honest size-gate estimate (DB-10 §1.4).
+    let _dbFileBytes = null;
 
     // --- Ollama BINARY installer (Settings → AI) ------------------------------ //
     // The missing half of model management (maintainer 2026-06-20: "can't find the
@@ -4989,6 +4992,7 @@
           .forEach(b => { b.disabled = !st.backup_supported; });
         $("vacuum-reclaim").textContent =
           (st.reclaimable_bytes == null) ? "—" : _fmtBytes(st.reclaimable_bytes);
+        _dbFileBytes = (st.file && st.file.bytes != null) ? st.file.bytes : null;
       } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
       loadKeywordFilter();
       loadV2Batches();
@@ -5113,8 +5117,34 @@
       } catch (e) { toast("Save failed: " + e.message, "err"); }
     }
 
+    // DB-10 §1.4: a full VACUUM is unbounded synchronous work (proportional to
+    // the whole file), so gate it on real size with an honest estimate — never
+    // let a multi-GB corpus start a rebuild the user didn't know would take
+    // minutes. Rate is the project's own measured pagesize_bench rebuild cost
+    // (~10-17 s/GB across corpus sizes; CLAUDE.md DB-10 §1b evidence, 2026-07-19/20).
+    const VACUUM_GATE_BYTES = 500 * 1000 * 1000; // 500 MB — below this, always fast
+    const VACUUM_LO_S_PER_GB = 10, VACUUM_HI_S_PER_GB = 17;
+
+    function _confirmVacuum() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_dbFileBytes == null) {
+        // No cheap estimate available (e.g. non-SQLite backend) — a plain,
+        // honest caveat still gates a corpus we can't size.
+        return window.confirm(t("Compacting rewrites the whole database file and can take a while on a large corpus. Continue?"));
+      }
+      if (_dbFileBytes < VACUUM_GATE_BYTES) return true; // small enough to just run
+      const gb = _dbFileBytes / 1e9;
+      const lo = Math.round(gb * VACUUM_LO_S_PER_GB), hi = Math.round(gb * VACUUM_HI_S_PER_GB);
+      const msg = t("Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?");
+      const filled = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf(msg, {size: _fmtBytes(_dbFileBytes), lo, hi})
+        : msg.replace("{size}", _fmtBytes(_dbFileBytes)).replace("{lo}", lo).replace("{hi}", hi);
+      return window.confirm(filled);
+    }
+
     async function vacuumNow() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!_confirmVacuum()) return;
       const btn = $("vacuum-btn"), out = $("vacuum-result");
       btn.disabled = true; out.textContent = t("Compacting… this can take a while on a large corpus.");
       try {

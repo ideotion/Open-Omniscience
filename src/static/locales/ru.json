@@ -367,6 +367,8 @@
   "Compacted.": "Сжатие завершено.",
   "Space freed:": "Освобождено:",
   "Compaction failed:": "Ошибка сжатия:",
+  "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "Сжатие перезаписывает весь файл базы данных и может занять некоторое время на большом корпусе. Продолжить?",
+  "Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?": "Размер вашей базы данных около {size} — сжатие обычно занимает примерно {lo}–{hi} секунд (по замерам собственного бенчмарка проекта). На это время записи будут приостановлены. Продолжить?",
   "Go online?": "Выйти в сеть?",
   "This action needs the network:": "Для этого действия нужна сеть:",
   "Your machine presents these local network addresses:": "Ваша машина использует эти локальные сетевые адреса:",

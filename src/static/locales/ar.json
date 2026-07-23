@@ -367,6 +367,8 @@
   "Compacted.": "اكتمل الضغط.",
   "Space freed:": "المساحة المحررة:",
   "Compaction failed:": "فشل الضغط:",
+  "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "تعيد عملية الضغط كتابة ملف قاعدة البيانات بالكامل وقد تستغرق بعض الوقت على مجموعة بيانات كبيرة. هل تريد المتابعة؟",
+  "Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?": "حجم قاعدة بياناتك يبلغ نحو {size} — يستغرق الضغط عادة نحو {lo}–{hi} ثانية (وفق قياس اختبار الأداء الخاص بالمشروع). سيتم إيقاف الكتابة مؤقتًا خلال ذلك. هل تريد المتابعة؟",
   "Go online?": "الاتصال بالإنترنت؟",
   "This action needs the network:": "هذا الإجراء يحتاج إلى الشبكة:",
   "Your machine presents these local network addresses:": "يعرض جهازك عناوين الشبكة المحلية هذه:",

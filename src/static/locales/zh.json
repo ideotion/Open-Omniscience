@@ -367,6 +367,8 @@
   "Compacted.": "压缩完成。",
   "Space freed:": "已释放空间：",
   "Compaction failed:": "压缩失败：",
+  "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "压缩会重写整个数据库文件，在语料库较大时可能需要一段时间。是否继续？",
+  "Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?": "您的数据库大小约为 {size} — 压缩通常需要约 {lo}–{hi} 秒（依据本项目自身的基准测试测得）。在此期间写入操作将暂停。是否继续？",
   "Go online?": "要联网吗？",
   "This action needs the network:": "此操作需要网络：",
   "Your machine presents these local network addresses:": "您的设备使用以下本地网络地址：",

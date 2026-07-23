@@ -123,6 +123,50 @@ def test_snapshot_helpers_cross_boundary(tmp_path):
     c2.close()
 
 
+def test_fresh_stores_get_incremental_auto_vacuum_legacy_stores_untouched(tmp_path):
+    """DB-10 §1a (ruled 2026-07-17): every NEW corpus — encrypted or plaintext —
+    is created with ``auto_vacuum=INCREMENTAL`` (2), and a PRE-EXISTING store
+    (created before this change, or by any path other than a fresh connect())
+    keeps whatever mode it already had. auto_vacuum has no reopen hazard (it is
+    read back from the file header on every open, no extra plumbing needed —
+    unlike page_size), so a plain reopen is the whole round-trip proof."""
+    from src.database.connect import connect
+
+    # Fresh ENCRYPTED store.
+    enc = tmp_path / "fresh_enc.db"
+    c1 = connect(enc, key="av-pw")
+    c1.execute("CREATE TABLE t(x)")
+    c1.commit()
+    # int(): some sqlcipher3 builds return PRAGMA values as TEXT ("2" not 2).
+    assert int(c1.execute("PRAGMA auto_vacuum").fetchone()[0]) == 2
+    c1.close()
+    # Reopen via the NORMAL encrypted path (state is now True, not "fresh") —
+    # the mode is read from the file header, not re-declared.
+    c1b = connect(enc, key="av-pw")
+    assert int(c1b.execute("PRAGMA auto_vacuum").fetchone()[0]) == 2
+    c1b.close()
+
+    # Fresh PLAINTEXT store (the explicit opt-out path).
+    plain = tmp_path / "fresh_plain.db"
+    c2 = connect(plain, create_encrypted=False)
+    c2.execute("CREATE TABLE t(x)")
+    c2.commit()
+    assert int(c2.execute("PRAGMA auto_vacuum").fetchone()[0]) == 2
+    c2.close()
+
+    # A LEGACY store — created by a path connect() never touches (bypassing its
+    # fresh-file branch entirely, standing in for any corpus that existed before
+    # this ruling) — must be left exactly as it was: auto_vacuum stays NONE (0).
+    legacy = tmp_path / "legacy_plain.db"
+    raw = sqlite3.connect(str(legacy))
+    raw.execute("CREATE TABLE t(x)")
+    raw.commit()
+    raw.close()
+    c3 = connect(legacy)  # now an existing plaintext file -> the "state is False" path
+    assert int(c3.execute("PRAGMA auto_vacuum").fetchone()[0]) == 0
+    c3.close()
+
+
 def test_encrypt_tool_inplace(tmp_path):
     from src.database.connect import connect, is_encrypted_file
     from src.database.encrypt_tool import encrypt_database

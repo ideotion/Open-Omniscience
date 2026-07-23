@@ -367,6 +367,8 @@
   "Compacted.": "Compactado.",
   "Space freed:": "Espacio liberado:",
   "Compaction failed:": "Error al compactar:",
+  "Compacting rewrites the whole database file and can take a while on a large corpus. Continue?": "Compactar reescribe todo el archivo de la base de datos y puede tardar un rato en un corpus grande. ¿Continuar?",
+  "Your database is about {size} — compacting typically takes roughly {lo}–{hi} seconds (measured on this project's own benchmark). It will pause writes for the duration. Continue?": "Su base de datos pesa unos {size} — compactar suele tardar entre {lo} y {hi} segundos (medido con el propio banco de pruebas del proyecto). Pausará las escrituras mientras dure. ¿Continuar?",
   "Go online?": "¿Conectarse?",
   "This action needs the network:": "Esta acción necesita la red:",
   "Your machine presents these local network addresses:": "Su máquina presenta estas direcciones de red locales:",

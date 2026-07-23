@@ -41,6 +41,17 @@ _LOG = logging.getLogger("database.connect")
 
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 
+# DB-10 §1a (ruled 2026-07-17, "I agree with your proposal to change the
+# auto_vacuum to incremental"): every NEW corpus is created with incremental
+# auto-vacuum so free pages (deletes/re-indexes) can be reclaimed a little at a
+# time (src/scheduler/maintenance.py's idle pass) instead of only via a full,
+# blocking VACUUM. Must be set on the connection BEFORE any table exists —
+# SQLite records the mode in the file header once the first object is created,
+# and it is read back transparently on every later open (unlike page_size
+# below, auto_vacuum carries NO reopen hazard). Existing stores are untouched
+# (this only fires on the fresh-file branches of connect()).
+_FRESH_AUTO_VACUUM = 2  # INCREMENTAL
+
 _lock = threading.Lock()
 _passphrase: str | None = os.environ.get("OO_DB_PASSPHRASE") or None
 
@@ -134,6 +145,9 @@ def connect(
                          default), plaintext only under OO_DB_PLAINTEXT=1 or
                          create_encrypted=False; otherwise DatabaseLockedError
                          (the unlock/create flow supplies the passphrase first).
+                         Every fresh file (encrypted or plaintext) is created
+                         with ``auto_vacuum=INCREMENTAL`` (DB-10 §1a) before its
+                         first table exists — a pre-ruling store is untouched.
 
     ``cipher_page_size``: SQLCipher decodes a database ONLY at the page size it
     was created with, and that size is NOT discoverable from the file — a store
@@ -176,9 +190,12 @@ def connect(
 
         conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         _apply_key(conn, key)
+        conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
         return conn
     if create_encrypted is False or (create_encrypted is None and plaintext_mode()):
-        return sqlite3.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
+        conn = sqlite3.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
+        conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
+        return conn
     if use_key:
         if not have_driver():  # pragma: no cover
             raise DatabaseLockedError("sqlcipher3 driver unavailable; cannot create encrypted DB")
@@ -186,6 +203,7 @@ def connect(
 
         conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         _apply_key(conn, use_key)
+        conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
         return conn
     raise DatabaseLockedError(
         f"{p.name} does not exist yet: choose a passphrase (encrypted by default) "

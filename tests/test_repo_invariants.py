@@ -6001,6 +6001,47 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
     )
 
 
+def test_fresh_stores_wire_incremental_auto_vacuum():
+    """DB-10 §1a (ruled 2026-07-17): every 'Fresh file' branch of
+    ``connect()`` must set ``auto_vacuum = INCREMENTAL`` (2) before any table
+    exists — SQLite requires this ordering, and once set it is read back from
+    the file header on every later open with no extra plumbing (unlike
+    page_size, this has no reopen hazard). This is a fast wiring guard; the
+    real functional create -> reopen -> PRAGMA-read-back round trip (plus the
+    legacy-store-untouched proof) lives in
+    tests/test_sqlcipher.py::test_fresh_stores_get_incremental_auto_vacuum_legacy_stores_untouched
+    (a DB-creating test belongs beside connect()'s other functional tests, not
+    in this source-grep-only file)."""
+    src = (_SRC / "database" / "connect.py").read_text(encoding="utf-8")
+    assert "_FRESH_AUTO_VACUUM = 2" in src, "the ruled INCREMENTAL constant is missing"
+    fresh_branch = src.split("# Fresh file.", 1)[1]
+    assert fresh_branch.count("PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}") == 3, (
+        "all three fresh-file sub-branches (explicit key, plaintext opt-out, "
+        "ambient passphrase) must set auto_vacuum before returning the connection"
+    )
+
+
+def test_vacuum_button_has_a_real_size_gate():
+    """DB-10 §1.4: the Settings 'Compact database (VACUUM)' button ran an
+    unbounded synchronous rebuild on any corpus size with no warning — gate it
+    with a real size threshold + an honest, measured time estimate (never a
+    fabricated number), falling back to a plain confirm when the size can't be
+    read (e.g. a non-SQLite backend). Live-verified in a real headless browser
+    (small size -> no prompt; large size -> the real GB + the derived
+    seconds-range shown; cancel -> the API is never called; unknown size -> the
+    honest fallback caveat) — this is the fast source-grep companion."""
+    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "let _dbFileBytes = null;" in js
+    assert "_dbFileBytes = (st.file && st.file.bytes != null) ? st.file.bytes : null;" in js
+    assert "function _confirmVacuum()" in js
+    assert "VACUUM_GATE_BYTES = 500 * 1000 * 1000" in js
+    fn = js.split("async function vacuumNow()", 1)[1].split("\n    }", 1)[0]
+    assert "if (!_confirmVacuum()) return;" in fn, (
+        "vacuumNow must abort BEFORE disabling the button / calling the API "
+        "when the size-gate confirm is declined"
+    )
+
+
 def test_pagesize_bench_job_is_wired():
     """DB-10 §1b: the page-size A/B bench is a background job with the full
     P0-validation-style surface (start/status/cancel/last/download composed under

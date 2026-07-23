@@ -894,3 +894,105 @@ def vacuum_database(engine: Engine) -> dict:
             "PRAGMA optimize. Real byte sizes from the filesystem."
         ),
     }
+
+
+def _vacuum_marker_path():
+    from src.paths import data_dir
+
+    return data_dir() / "incremental_vacuum.json"
+
+
+def incremental_vacuum_state() -> dict:
+    """The last automatic incremental-vacuum pass (for the diagnostics logs). Never raises."""
+    import json
+
+    try:
+        p = _vacuum_marker_path()
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - a diagnostic read must never crash
+        pass
+    return {"last_run": None}
+
+
+def _incremental_vacuum_hours() -> float:
+    """Minimum hours between automatic incremental-vacuum passes (OO_INCREMENTAL_VACUUM_HOURS)."""
+    try:
+        return float(os.getenv("OO_INCREMENTAL_VACUUM_HOURS", "1"))
+    except ValueError:
+        return 1.0
+
+
+def _incremental_vacuum_pages() -> int:
+    """Pages reclaimed per automatic pass (bounded; OO_INCREMENTAL_VACUUM_PAGES)."""
+    try:
+        n = int(os.getenv("OO_INCREMENTAL_VACUUM_PAGES", "2000"))
+    except ValueError:
+        n = 2000
+    return max(n, 0)
+
+
+def maybe_incremental_vacuum(engine: Engine, *, now=None) -> dict:
+    """DB-10 §1a/§3: reclaim a BOUNDED number of free pages via
+    ``PRAGMA incremental_vacuum(N)`` in the scheduler's idle window, instead of
+    relying only on the heavy, blocking full VACUUM (the Settings button).
+
+    Called by :func:`src.scheduler.maintenance.run_idle_maintenance` — same
+    idle-gated, bounded, throttled, freshness-marker pattern as the keyword
+    cleanup it runs alongside. A documented, HONEST no-op on:
+      * a non-SQLite backend,
+      * a store still on the PRE-ruling auto_vacuum mode (NONE/FULL) — the
+        pragma has nothing to do until the store is rebuilt at INCREMENTAL (a
+        migrate op, not this pass's job; reports the real mode it found),
+      * a fresh-enough marker (throttled to OO_INCREMENTAL_VACUUM_HOURS).
+    Freelist-page counts are real PRAGMA reads, never estimated. Off the
+    request path, best-effort, never raises.
+    """
+    import json
+    from datetime import datetime, timedelta
+
+    if engine.url.get_backend_name() != "sqlite":
+        return {"skipped": "unsupported-backend"}
+
+    from src.database.writer import write_lock
+
+    try:
+        with write_lock(), engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            av = int(conn.execute(text("PRAGMA auto_vacuum")).scalar() or 0)
+            if av != 2:
+                return {"skipped": "not-incremental-mode", "auto_vacuum": av}
+
+            now = now or datetime.now()
+            state = incremental_vacuum_state()
+            last = state.get("last_run")
+            if last:
+                try:
+                    if datetime.fromisoformat(last) > now - timedelta(
+                        hours=_incremental_vacuum_hours()
+                    ):
+                        return {"skipped": "fresh", "last_run": last}
+                except (ValueError, TypeError):
+                    pass  # unparseable marker -> treat as due
+
+            pages = _incremental_vacuum_pages()
+            freelist_before = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
+            conn.execute(text(f"PRAGMA incremental_vacuum({pages})"))
+            freelist_after = int(conn.execute(text("PRAGMA freelist_count")).scalar() or 0)
+            report = {
+                "freelist_pages_before": freelist_before,
+                "freelist_pages_after": freelist_after,
+                "pages_reclaimed": max(freelist_before - freelist_after, 0),
+                "requested_pages": pages,
+                "at": now.isoformat(timespec="seconds"),
+            }
+    except Exception:  # noqa: BLE001 - a background safety net must never break the pass
+        _LOG.warning("off-peak incremental vacuum failed", exc_info=True)
+        return {"skipped": "error"}
+
+    try:
+        p = _vacuum_marker_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"last_run": report["at"], "last_tally": report}), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        _LOG.warning("could not persist the incremental-vacuum marker", exc_info=True)
+    return report
