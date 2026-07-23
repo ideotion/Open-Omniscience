@@ -17489,6 +17489,19 @@
     // showTab itself maps legacy aliases (#database -> #library) and falls back.
     showTab((location.hash || "#home").slice(1), false);  // initial render: replace, don't push
 
+    // THEME-3: restore the spawned analysis-tab strip (data loads lazily) -- this MUST
+    // run BEFORE _hydrateCardCorpus() below (analysis-boot-race-destroys-tab-workspace,
+    // P1): _hydrateCardCorpus()'s ?corpus=/?analyze= spawn calls _anSpawn() ->
+    // _anActivate() -> _anSaveTabs(), which OVERWRITES the persisted 'oo.an.tabs.v1'
+    // localStorage key with only the just-spawned tab. Restoring the PREVIOUSLY
+    // persisted tabs FIRST means the deep-linked seed gets ADDED to that restored set
+    // (via _anSpawn's own dedup-by-key check, which reuses a matching tab in place
+    // rather than duplicating it) instead of clobbering it -- so opening the omnibar
+    // in successive new browser tabs actually accumulates a multi-tab workspace via
+    // its real, documented entry point, instead of every fresh tab always showing
+    // exactly the one query it was seeded with.
+    _anRestoreTabs();
+
     // Deep-link a Lead's corpus opened "in a new window" (maintainer 2026-06-23): a
     // card's back button does window.open("/?corpus=1,2,3&label=…"); this fresh SPA
     // tab hydrates the analysis over that exact set (or ?analyze=<seed> for a query
@@ -17529,7 +17542,6 @@
     if (_anBootTab && document.getElementById("an-" + _anBootTab)) {
       _anSubtabs.select(_anBootTab); _anBootTab = null;
     }
-    _anRestoreTabs();   // THEME-3: restore the spawned analysis-tab strip (data loads lazily)
 
     // Click the EMPTY space of the sidebar (not a nav item / button / link) to
     // collapse / expand it (remark 15) — the same toggle as the #sb-collapse /
