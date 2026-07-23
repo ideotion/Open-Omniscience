@@ -43,8 +43,19 @@ def test_reader_computes_a_bounded_near_dup_badge():
     # the caption is emitted (source may wrap the literal; the full keyed string is
     # validated against the locales in the next test).
     assert "Near-identical copies in your corpus" in view, "the badge must show the keyed caption"
-    # honest, bounded, no score: the count is the cluster size only.
-    assert ".limit(40)" in view, "the near-dup candidate pool must be bounded"
+    # honest, bounded, no score: the count is the cluster size only. Reads
+    # KeywordMention (the real per-article extraction chokepoint), NOT the legacy,
+    # never-written article_keyword_association table (P0 fix,
+    # reader-dead-legacy-table-related) -- and the candidate cap is tightened to 12
+    # (from an earlier 40) so the per-page-view MinHash decrypt stays bounded
+    # (reader-dupbadge-n-plus-1-decrypt-risk).
+    assert "KeywordMention" in view, "the badge must read the real keyword-mention table"
+    # the dead legacy table is only mentioned in an explanatory comment now (why it
+    # was replaced) -- it must never be IMPORTED/queried as the candidate source.
+    assert "import article_keyword_association" not in view, (
+        "the badge must not import/query the dead legacy table"
+    )
+    assert ".limit(12)" in view, "the near-dup candidate pool must be bounded"
 
 
 def test_badge_caption_is_translated_in_all_locales():

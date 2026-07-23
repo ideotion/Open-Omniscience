@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "एन्क्रिप्ट हो रहा है — पूरा डेटाबेस फिर लिखा जा रहा है…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "एन्क्रिप्टेड। अब हर शुरुआत पर पासफ़्रेज़ आवश्यक है — कोई रिकवरी नहीं।",
   "Wrong passphrase — try again.": "गलत पासफ़्रेज़ — फिर प्रयास करें।",
+  "use at least 8 characters": "कम से कम 8 अक्षर उपयोग करें",
+  "passphrases do not match": "पासफ़्रेज़ मेल नहीं खाते",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "इसे लंबा रखें — कई असंबंधित शब्द एक चतुर शब्द से बेहतर हैं। यदि आपकी डेटाबेस फ़ाइल कॉपी हो जाए तो उसे ऑफ़लाइन अनुमान से तोड़ा जा सकता है; इसलिए लंबाई ही असली सुरक्षा है (यह स्क्रीन कितनी जल्दी जवाब देती है, वह नहीं)।",
   "Database maintenance": "डेटाबेस रखरखाव",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "कॉम्पैक्ट करने से डेटाबेस फ़ाइल फिर से बनती है: यह हटाने से बची जगह वापस पाता है और इंडेक्स को डीफ़्रैगमेंट करता है। समय फ़ाइल के आकार के अनुपात में लगता है और चलते समय संग्रह लेखन रुक जाता है — कुछ भी व्याख्यायित या हटाया नहीं जाता।",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "{n} घंटे पहले",
   "{n} d ago": "{n} दिन पहले",
   "Law: {tracked} tracked · {changes} changes": "कानून: {tracked} ट्रैक किए गए · {changes} परिवर्तन",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "कानून: {documents} ट्रैक किए गए · {baselined} बेसलाइन के साथ · {changes} परिवर्तन",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "कानून उप-टैब खोलें — क़ानूनों, राजपत्रों और आईपी रिकॉर्ड में परिवर्तन ट्रैकिंग।",
   "no FLAGGED changes": "कोई फ़्लैग किया गया परिवर्तन नहीं",
   "no changes": "कोई परिवर्तन नहीं",
@@ -2105,5 +2108,10 @@
   "New sources": "नए स्रोत",
   "Articles awaiting indexing": "लेख अभी भी इंडेक्सिंग की प्रतीक्षा में",
   "database records, all types": "डेटाबेस रिकॉर्ड, सभी प्रकार",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "आपका कॉर्पस {sources} नए स्रोतों से {articles} लेखों से बढ़ा, जो {languages} नई भाषाओं तक फैला।"
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "आपका कॉर्पस {sources} नए स्रोतों से {articles} लेखों से बढ़ा, जो {languages} नई भाषाओं तक फैला।",
+  "People": "लोग",
+  "Orgs": "संगठन",
+  "Other entities": "अन्य इकाइयाँ",
+  "Themes": "विषय",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "यह परत कभी भी तात्कालिकता का आविष्कार नहीं करती। 'अत्यावश्यक' केवल तभी दिखाई देता है जब किसी खतरा-प्रदाता (GDACS) ने स्वयं एक लाल अलर्ट घोषित किया हो; 'निगरानी' तब दिखाई देती है जब प्रदाता का नारंगी अलर्ट हो या आपके द्वारा सहेजी गई कोई निगरानी आपकी अपनी सीमा को पार कर गई हो; 'जानकारी' प्रदाता का हरा अलर्ट, एक प्रसारित अवलोकन, या आपके कॉर्पस में हाल की स्थान-समय संयोग है — यह केवल एक सह-घटना संकेत है, कभी भी कारण का प्रमाण नहीं। खतरा रिकॉर्ड एक निगरानी किए गए फ़ीड द्वारा रिपोर्ट की गई जानकारी का संचित प्रसारण है (यह पुराना हो सकता है, और यह वही दिखाता है जो किसी स्रोत ने रिपोर्ट किया, न कि वह सब कुछ जो वास्तव में हो रहा है) — मौन का अर्थ सुरक्षा नहीं है। केवल गणना, कोई स्कोर नहीं।"
 }

@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "এনক্রিপ্ট হচ্ছে — পুরো ডাটাবেস পুনর্লিখিত হচ্ছে…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "এনক্রিপ্টেড। এখন প্রতিবার চালুতে পাসফ্রেজ লাগবে — কোনো পুনরুদ্ধার নেই।",
   "Wrong passphrase — try again.": "ভুল পাসফ্রেজ — আবার চেষ্টা করুন।",
+  "use at least 8 characters": "কমপক্ষে ৮টি অক্ষর ব্যবহার করুন",
+  "passphrases do not match": "পাসফ্রেজ দুটি মেলেনি",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "এটি লম্বা করুন — কয়েকটি অসম্পর্কিত শব্দ একটি চতুর শব্দের চেয়ে ভালো। আপনার ডাটাবেস ফাইল কপি হলে তা অফলাইনে অনুমান করা যায়; তাই দৈর্ঘ্যই আসল সুরক্ষা (এই স্ক্রিন কত দ্রুত উত্তর দেয় তা নয়)।",
   "Database maintenance": "ডেটাবেস রক্ষণাবেক্ষণ",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "কমপ্যাক্ট করা ডেটাবেস ফাইলটি পুনর্নির্মাণ করে: মুছে ফেলায় পড়ে থাকা জায়গা পুনরুদ্ধার করে এবং সূচকগুলি ডিফ্র্যাগমেন্ট করে। সময় ফাইলের আকারের সমানুপাতিক এবং চলাকালীন সংগ্রহের লেখা স্থগিত থাকে — কিছুই ব্যাখ্যা বা মুছে ফেলা হয় না।",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "{n} ঘণ্টা আগে",
   "{n} d ago": "{n} দিন আগে",
   "Law: {tracked} tracked · {changes} changes": "আইন: {tracked}টি ট্র্যাক করা হয়েছে · {changes}টি পরিবর্তন",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "আইন: {documents}টি ট্র্যাক করা হয়েছে · {baselined}টি বেসলাইনসহ · {changes}টি পরিবর্তন",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "আইন উপ-ট্যাব খুলুন — আইন, গেজেট এবং আইপি রেকর্ডের পরিবর্তন ট্র্যাকিং।",
   "no FLAGGED changes": "কোনো ফ্ল্যাগ করা পরিবর্তন নেই",
   "no changes": "কোনো পরিবর্তন নেই",
@@ -2105,5 +2108,10 @@
   "New sources": "নতুন উৎস",
   "Articles awaiting indexing": "নিবন্ধ এখনও ইনডেক্সিং-এর অপেক্ষায়",
   "database records, all types": "ডেটাবেস রেকর্ড, সকল ধরনের",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "আপনার কর্পাস {sources} টি নতুন উৎস থেকে {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে, যা {languages} টি নতুন ভাষা জুড়ে বিস্তৃত।"
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "আপনার কর্পাস {sources} টি নতুন উৎস থেকে {articles} টি নিবন্ধ যোগ হয়ে বেড়েছে, যা {languages} টি নতুন ভাষা জুড়ে বিস্তৃত।",
+  "People": "ব্যক্তি",
+  "Orgs": "প্রতিষ্ঠান",
+  "Other entities": "অন্যান্য সত্তা",
+  "Themes": "বিষয়সমূহ",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "এই স্তর কখনও জরুরি অবস্থার আবিষ্কার করে না। 'জরুরি' তখনই দেখা যায় যখন কোনো বিপদ-সরবরাহকারী (GDACS) নিজেই একটি লাল সতর্কতা ঘোষণা করে; 'নজরদারি' দেখা যায় সরবরাহকারীর কমলা সতর্কতার জন্য অথবা আপনার সংরক্ষিত কোনো নজরদারি আপনার নিজস্ব সীমা অতিক্রম করলে; 'তথ্য' হল সরবরাহকারীর সবুজ সতর্কতা, একটি প্রেরিত পর্যবেক্ষণ, অথবা আপনার সংগ্রহে সাম্প্রতিক স্থান-কাল সমাপতন — এটি কেবল একটি সহ-ঘটনার ইঙ্গিত, কখনোই কার্যকারণের প্রমাণ নয়। বিপদ রেকর্ডগুলি পর্যবেক্ষণ করা ফিড যা রিপোর্ট করেছে তার একটি ক্যাশ করা পুনঃসম্প্রচার (এটি পুরনো হতে পারে, এবং এটি একটি উৎস যা রিপোর্ট করেছে তা দেখায়, প্রকৃতপক্ষে যা ঘটছে তার সবকিছু নয়) — নীরবতা নিরাপত্তা নয়। শুধুমাত্র গণনা, কোনো স্কোর নেই।"
 }

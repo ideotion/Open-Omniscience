@@ -105,6 +105,15 @@ def test_promises_due_fires_on_an_arrived_future_date(db):
     assert card.recipe["view"] == "promise"
     assert card.recipe["params"]["article_id"] == art.id
     assert card.caveat and card.method  # the honesty contract
+    # home-opencorpus-recipe-promise-seed (P1): the card's title never quotes a
+    # searchable term and its `key` is an internal "{id}:{date}" seed string no
+    # article's text contains — without article_ids, clicking "Open corpus" would
+    # re-run a full-text search for that literal string and load nothing (the same
+    # bug class already fixed for lonely_signal/story_lineage/ownership_change).
+    assert card.article_ids == [art.id], (
+        "a promises_due card must hard-link its single article so 'Open corpus' "
+        "opens it directly, not a synthetic-seed text search"
+    )
 
 
 def test_promises_due_ignores_past_dates_and_rejected_tags(db):

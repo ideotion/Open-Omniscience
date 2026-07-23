@@ -118,6 +118,12 @@ def promises_due(session) -> list[Card]:
                 ],
                 n=1,
                 key=f"{article.id}:{tag.mentioned_on.isoformat()}",
+                article_ids=[article.id],  # home-opencorpus-recipe-promise-seed: carry
+                # the exact article so "Open corpus" opens it directly, instead of
+                # falling back to a full-text search for this internal id:date seed
+                # string (which no article's text actually contains) — the same
+                # article_ids= pattern already applied to lonely_signal/story_lineage/
+                # ownership_change for this exact bug class.
                 recipe={
                     "view": "promise",
                     "params": {

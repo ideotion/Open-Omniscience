@@ -20,7 +20,7 @@ from sqlalchemy.orm import sessionmaker
 from src.analytics import queries as q
 from src.analytics.extract import BaselineExtractor
 from src.analytics.store import index_article
-from src.database.models import Article, Base, Keyword, Source
+from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
 
 @pytest.fixture()
@@ -309,6 +309,78 @@ def test_corpus_endpoints_accept_explicit_article_ids(tmp_path):
             assert ks["total_matched"] == 3 and "score" not in ks
             src = client.get("/api/insights/corpus-sources", params={"article_ids": "1"}).json()
             assert src["total_matched"] == 1
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_graph_endpoint_honours_the_analysis_windows_own_scope(tmp_path):
+    """an-mindmap-wrong-corpus-scope (P1, PR #744 remediation): a query/source/
+    language/date-scoped analysis window used to fall through to the CORPUS-WIDE
+    keyword/level branch of /api/insights/graph, silently dropping the window's own
+    scope -- a search for "harvest" showed a mindmap built from the WHOLE corpus,
+    "election" included. The endpoint must now route ANY of the analysis-window
+    scope params (not just an explicit article_ids set) into the exact-article-set
+    branch, exactly like its corpus-keywords/corpus-www siblings."""
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'graph.db'}", future=True,
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    Sess = sessionmaker(bind=engine, future=True)
+    with Sess() as s:
+        s.add(Source(id=1, name="A", domain="a.test", country="fr"))
+        s.add(Source(id=2, name="B", domain="b.test", country="fr"))
+        s.commit()
+        s.add(Article(
+            id=1, url="https://a.test/1", canonical_url="https://a.test/1",
+            source_id=1, title="Election piece", content="Election coverage.",
+            hash="ga1", country="fr", language="en",
+            published_at=datetime(2024, 4, 1, tzinfo=UTC), created_at=datetime.now(UTC),
+        ))
+        s.add(Article(
+            id=2, url="https://b.test/1", canonical_url="https://b.test/1",
+            source_id=2, title="Harvest piece", content="Harvest coverage.",
+            hash="ga2", country="fr", language="en",
+            published_at=datetime(2024, 4, 1, tzinfo=UTC), created_at=datetime.now(UTC),
+        ))
+        s.commit()
+        s.add(Keyword(id=1, term="election", normalized_term="election", language="en"))
+        s.add(Keyword(id=2, term="harvest", normalized_term="harvest", language="en"))
+        s.commit()
+        s.add(KeywordMention(keyword_id=1, article_id=1, count=9))
+        s.add(KeywordMention(keyword_id=2, article_id=2, count=7))
+        s.commit()
+
+    def _override():
+        d = Sess()
+        try:
+            yield d
+        finally:
+            d.close()
+
+    from src.api.main import app
+    from src.database.session import get_db
+
+    app.dependency_overrides[get_db] = _override
+    try:
+        with TestClient(app) as client:
+            # source= alone (no article_ids) must scope the graph to THAT source's
+            # article -- the exact-article branch, never the corpus-wide one.
+            # (_query_articles's ``source`` filter matches Source.name, not domain.)
+            ra = client.get("/api/insights/graph", params={"source": "A"}).json()
+            assert ra["level"] == "article" and ra["n_articles"] == 1
+            terms_a = {n["label"] for n in ra["nodes"]}
+            assert "election" in terms_a and "harvest" not in terms_a
+
+            rb = client.get("/api/insights/graph", params={"source": "B"}).json()
+            assert rb["level"] == "article" and rb["n_articles"] == 1
+            terms_b = {n["label"] for n in rb["nodes"]}
+            assert "harvest" in terms_b and "election" not in terms_b
+
+            # No scope param at all still requires the classic level/term contract
+            # (the Insights tab's own corpus-wide "explore this term everywhere").
+            r_missing_term = client.get("/api/insights/graph", params={"level": "keyword"})
+            assert r_missing_term.status_code == 400
     finally:
         app.dependency_overrides.pop(get_db, None)
 

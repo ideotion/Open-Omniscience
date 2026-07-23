@@ -356,6 +356,8 @@
   "Encrypting — this rewrites the whole database…": "Шифрование — вся база переписывается…",
   "Encrypted. Your passphrase is now required at every start — there is no recovery.": "Зашифровано. Парольная фраза теперь нужна при каждом запуске — без восстановления.",
   "Wrong passphrase — try again.": "Неверная фраза — попробуйте ещё раз.",
+  "use at least 8 characters": "используйте не менее 8 символов",
+  "passphrases do not match": "парольные фразы не совпадают",
   "Make it long — several unrelated words beat one clever word. If your database file is copied it can be guessed offline, so length is the real protection (not how fast this screen answers).": "Сделайте её длинной — несколько несвязанных слов надёжнее одного хитрого слова. Если файл базы данных скопируют, его можно подбирать офлайн; поэтому длина — это и есть настоящая защита (а не скорость ответа этого экрана).",
   "Database maintenance": "Обслуживание базы данных",
   "Compacting rebuilds the database file: it reclaims the space deletions leave behind and defragments the indexes. It takes time proportional to the file size and pauses collection writes while it runs — nothing is interpreted or removed.": "Сжатие перестраивает файл базы данных: возвращает место, освобождённое удалениями, и дефрагментирует индексы. Занимает время, пропорциональное размеру файла, и приостанавливает запись сбора на время выполнения — ничего не интерпретируется и не удаляется.",
@@ -2054,6 +2056,7 @@
   "{n} h ago": "{n} ч назад",
   "{n} d ago": "{n} дн назад",
   "Law: {tracked} tracked · {changes} changes": "Право: отслеживается {tracked} · изменений {changes}",
+  "Law: {documents} tracked · {baselined} baselined · {changes} changes": "Право: отслеживается {documents} · {baselined} с базовой версией · изменений {changes}",
   "Open the Law subtab — change tracking for statutes, gazettes and IP records.": "Открыть вкладку «Право» — отслеживание изменений в законах, официальных бюллетенях и реестрах ИС.",
   "no FLAGGED changes": "нет ОТМЕЧЕННЫХ изменений",
   "no changes": "нет изменений",
@@ -2105,5 +2108,10 @@
   "New sources": "Новые источники",
   "Articles awaiting indexing": "Статьи, ещё ожидающие индексации",
   "database records, all types": "Записи базы данных, все типы",
-  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Ваш корпус пополнился на {articles} статей из {sources} новых источников, охватив {languages} новых языков."
+  "Your corpus grew by {articles} articles from {sources} new sources spanning {languages} new languages.": "Ваш корпус пополнился на {articles} статей из {sources} новых источников, охватив {languages} новых языков.",
+  "People": "Люди",
+  "Orgs": "Организации",
+  "Other entities": "Другие сущности",
+  "Themes": "Темы",
+  "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score.": "Этот слой никогда не выдумывает срочность. «Срочно» появляется ТОЛЬКО когда поставщик данных об опасностях (GDACS) сам объявил КРАСНОЕ предупреждение; «наблюдение» появляется при ОРАНЖЕВОМ предупреждении поставщика или при сохранённом ВАМИ наблюдении, превысившем ВАШ собственный порог; «инфо» — это ЗЕЛЁНОЕ предупреждение поставщика, ретранслированное наблюдение или недавнее пространственно-временное совпадение в вашем корпусе — повод для проверки совпадения, а не доказательство причинности. Записи об опасностях — это кешированная ретрансляция того, что сообщил отслеживаемый источник (данные могут быть устаревшими и отражают то, что сообщил источник, а не всё происходящее) — молчание не значит безопасность. Только подсчёты, без оценки."
 }
