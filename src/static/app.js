@@ -1737,7 +1737,7 @@
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
-      if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); }  // moved Sources onShow (facets feed the multi-select filters #23)
+      if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
       if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); }  // Item AC: explore/hide/tag; family + super-group curation relocated here (invariant #8)
       if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
@@ -6829,6 +6829,19 @@
 
     let DB_KEYS = null;   // current rendered stat keys (rebuild grid only when they change)
 
+    // Two-class sources split (2026-07-23 field-feedback S1.3): the raw "sources" COUNT(*)
+    // blends enabled+qualified (actively collecting) sources with disabled discovery
+    // candidates awaiting review — the exact figure a field export showed as "~50k sources"
+    // and read as an alarm. Never show it as one bare number: skip the flat key, label the
+    // two split keys the backend now sends (database.py's counts["sources_qualified"] /
+    // counts["sources_candidates"]) in plain language.
+    const DB_STAT_HIDDEN_KEYS = new Set(["sources"]);
+    const DB_STAT_LABELS = {
+      sources_qualified: "Sources (collecting)",
+      sources_pending: "Sources awaiting qualification (enabled)",
+      sources_candidates: "Discovered candidates",
+    };
+
     // B14: the COMPLETE on-disk footprint (A12b backend, GET /api/diagnostics/storage-footprint)
     // shown wherever storage size shows — the Library dashboard + the task-manager System tab.
     // It is a RECURSIVE disk walk (potentially slow on a 100 GB+ corpus), so it is fetched
@@ -6976,13 +6989,14 @@
       const el = $("db-stats");
       try {
         const s = await api("/api/database/stats");
-        const entries = Object.entries(s.counts || {});
+        const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+        const entries = Object.entries(s.counts || {}).filter(([k]) => !DB_STAT_HIDDEN_KEYS.has(k));
         const keys = entries.map(([k]) => k).join(",");
         if (DB_KEYS !== keys) {                       // (re)build grid with stable number nodes
           DB_KEYS = keys;
           el.innerHTML = entries.length
             ? entries.map(([k]) =>
-                `<div class="stat"><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k">${esc(k)}</div></div>`).join("")
+                `<div class="stat"><div class="n" id="db-n-${k}" data-v="0">0</div><div class="k">${esc(t9(DB_STAT_LABELS[k] || k))}</div></div>`).join("")
             : '<div class="muted">No tables yet.</div>';
         }
         for (const [k, v] of entries) {
@@ -17250,6 +17264,81 @@
           : `Dismissed ${r.dismissed}.`);
         loadCandidates(); loadManagedSources();
       } catch (e) { toast(`${action} failed: ` + e.message, "err"); }
+    }
+
+    // Bulk source QUALIFICATION (2026-07-23 field-feedback S1.2): the manual catch-up
+    // for the steady-state ride-along (5 candidates/pass — far too slow to drain a
+    // Wikidata-discovery-scale backlog). Networked (each judgment trial-fetches a few
+    // articles) -> the one consent popup; cancel lives in the task manager (kind
+    // "qualify-sources-bulk"), same grammar as discoverWorld.
+    async function loadQualifyBulk() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("qualify-bulk-status");
+      if (!out) return;
+      try {
+        const st = await api("/api/sources/qualify-bulk/status");
+        const bl = st.backlog || {};
+        const backlog = (bl.unqualified || 0) + (bl.due_disqualified || 0);
+        const cancelBtn = $("qualify-bulk-cancel-btn");
+        if (st.running) {
+          out.textContent = (st.detail || t("Working…"))
+            + (st.progress ? ` (${st.done}/${st.total})` : "");
+          if (cancelBtn) cancelBtn.style.display = "";
+        } else {
+          out.textContent = backlog
+            ? `${fmtNum(backlog)} ${esc(t("candidates awaiting qualification"))}`
+            : t("No candidates awaiting qualification.");
+          if (cancelBtn) cancelBtn.style.display = "none";
+        }
+      } catch (e) { out.textContent = t("Could not load qualification status."); }
+    }
+    async function qualifyBulkStart(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("qualify-bulk-status");
+      const say = (msg) => { if (out) out.textContent = msg; };
+      if (typeof ensureOnline === "function"
+          && !await ensureOnline(t("Qualify the source backlog — a background job that trial-fetches a few articles from each candidate to judge extraction validity")))
+        return;
+      if (btn) btn.disabled = true;
+      say(t("Starting…"));
+      try {
+        const d = await api("/api/sources/qualify-bulk", {method: "POST"});
+        if (d && d.started === false && d.job && d.job.state === "running") {
+          say(t("Already running — see the task manager."));
+        }
+        const cancelBtn = $("qualify-bulk-cancel-btn");
+        if (cancelBtn) cancelBtn.style.display = "";
+        const st = await pollJobStatus("/api/sources/qualify-bulk/status", {
+          intervalMs: 4000,
+          onProgress: (s) => {
+            if (!s) return;
+            const p = s.progress ? ` ${s.done}/${s.total}` : "";
+            say((s.detail || t("Working…")) + p);
+          },
+        });
+        if (st && st.state === "error") {
+          say(t("Qualification failed — see console"));
+          console.error("qualifyBulkStart", st.error);
+        } else if (_jobStillRunning(st)) {
+          say(t("Still running in the background — see the task manager."));
+        } else if (st && st.result) {
+          const r = st.result;
+          say(`${r.qualified || 0} ${t("qualified")} · ${r.disqualified || 0} ${t("disqualified")} · `
+            + `${r.no_evidence || 0} ${t("no evidence yet")}`
+            + (r.paused_reason ? ` — ${r.paused_reason}` : ""));
+        }
+      } catch (e) {
+        say(t("Qualification failed — see console"));
+        console.error("qualifyBulkStart", e);
+      } finally {
+        if (btn) btn.disabled = false;
+        loadQualifyBulk();
+      }
+    }
+    async function qualifyBulkCancel() {
+      try { await api("/api/sources/qualify-bulk/cancel", {method: "POST"}); }
+      catch (e) { /* best-effort */ }
+      loadQualifyBulk();
     }
 
     async function exportMethods(qArg) {

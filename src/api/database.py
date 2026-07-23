@@ -110,6 +110,17 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
     omitted from ``counts`` rather than reported as zero, so the UI never implies
     a feature exists when it does not. Cached briefly (computed_at/cache_ttl_s
     state the freshness window in the response).
+
+    ``counts["sources"]`` is the flat table COUNT(*) -- kept for backward
+    compatibility -- but it BLENDS actively-collecting sources with disabled
+    discovery candidates awaiting review and enabled-but-not-yet-qualified
+    sources. ``counts["sources_qualified"]`` (enabled AND status=qualified --
+    exactly what ``select_sources`` admits to collection), ``sources_pending``
+    (enabled AND status!=qualified) and ``sources_candidates`` (enabled=False)
+    are the honest three-class PARTITION (2026-07-23 field-feedback S1.3; a
+    first two-class cut did not sum back to the total -- amended after review):
+    never show the flat figure alone where it could read as one number
+    describing the corpus.
     """
 
     def _compute() -> dict:
@@ -124,6 +135,42 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
                 counts[label] = int(
                     db.execute(select(func.count()).select_from(table(tbl))).scalar() or 0
                 )
+
+        # THREE-CLASS SOURCES SPLIT (2026-07-23 field-feedback S1.3, amended after
+        # adversarial review): the flat "sources" COUNT(*) above blends enabled+
+        # qualified/actively-collecting sources with disabled discovery/world-catalog
+        # CANDIDATES awaiting review — exactly the figure a field export showed as
+        # "~50k sources" against a ~5k-article corpus, read as an alarm rather than the
+        # discovery funnel working as ruled. A first cut split into only two buckets
+        # (qualified vs candidates), but those did NOT sum back to "sources" — an
+        # enabled-but-not-yet-qualified source (e.g. a freshly-seeded catalog source
+        # awaiting its first pass) was invisible in BOTH buckets. This is the honest
+        # PARTITION — the three sum to the flat total by construction:
+        #   sources_qualified  = enabled AND status=qualified (== select_sources' own
+        #                        admission-gate filter -- what is ACTUALLY collecting)
+        #   sources_pending    = enabled AND status!=qualified (awaiting an initial
+        #                        judgment, or enabled but disqualified — not collecting
+        #                        right now, but not a review-queue candidate either)
+        #   sources_candidates = enabled=False (discovered, awaiting qualification review)
+        if "sources" in present:
+            from src.catalog.qualification import STATUS_QUALIFIED
+            from src.database.models import Source
+
+            counts["sources_qualified"] = int(
+                db.query(func.count(Source.id))
+                .filter(Source.enabled.is_(True), Source.status == STATUS_QUALIFIED)
+                .scalar()
+                or 0
+            )
+            counts["sources_pending"] = int(
+                db.query(func.count(Source.id))
+                .filter(Source.enabled.is_(True), Source.status != STATUS_QUALIFIED)
+                .scalar()
+                or 0
+            )
+            counts["sources_candidates"] = int(
+                db.query(func.count(Source.id)).filter(Source.enabled.is_(False)).scalar() or 0
+            )
 
         backend = engine.url.get_backend_name()
         from src.backup.sqlite_backup import is_sqlite

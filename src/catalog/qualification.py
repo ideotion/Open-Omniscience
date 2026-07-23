@@ -76,6 +76,12 @@ TRIAL_MAX_ITEMS = 5
 # trial-sized source is judged at all (see the module docstring's COLD START note).
 TRIAL_MIN_ARTICLES = 1
 
+# A no-evidence outcome is logged to SourceQualificationAttempt (2026-07-23 livelock
+# fix -- see select_unqualified) but is NEVER a Source.status value: the three-state
+# admission-gate model (unqualified|qualified|disqualified) is untouched. It is a
+# fourth, ATTEMPT-LOG-only verdict recording "we tried, there was nothing to judge".
+VERDICT_NO_EVIDENCE = "no_evidence"
+
 # The re-qualification ladder cap (RE-QUALIFICATION RULED: "1 to 6 months").
 _LADDER_CAP_MONTHS = 6
 # 1 calendar month approximated as 30 days -- the ruling's own interval is casual ("1 to
@@ -104,11 +110,16 @@ def reattempt_due_at(last_attempt_at: datetime, consecutive_disqualifications: i
 def consecutive_disqualifications_from_verdicts(verdicts_newest_first: list[str]) -> int:
     """PURE core: count the TRAILING run of ``disqualified`` verdicts from the newest
     attempt backwards -- a single ``qualified`` verdict anywhere in the run stops the
-    count (the ladder resets on the NEXT success, per the ruling)."""
+    count (the ladder resets on the NEXT success, per the ruling). A ``no_evidence``
+    entry (2026-07-23 livelock fix) is INCONCLUSIVE -- it neither advances nor resets
+    the ladder, so it is skipped rather than stopping the count; a source stays at its
+    real ladder position until an attempt that actually judges it again."""
     n = 0
     for v in verdicts_newest_first:
         if v == STATUS_DISQUALIFIED:
             n += 1
+        elif v == VERDICT_NO_EVIDENCE:
+            continue
         else:
             break
     return n
@@ -155,15 +166,49 @@ def trial_fetch(session: Session, source: Source, fetcher: EthicalFetcher,
 
 
 def select_unqualified(session: Session, *, limit: int) -> list[Source]:
-    """Never-yet-qualified candidates, oldest (lowest id) first, bounded per pass."""
-    from src.database.models import Source
+    """Never-yet-qualified candidates, bounded per pass.
+
+    LIVELOCK FIX (2026-07-23, found by adversarial review + reproduced live against the
+    real query): a pure ``ORDER BY id ASC`` starves the queue the moment several of the
+    LOWEST-id candidates can never produce evidence (e.g. every source the world-catalog
+    generator creates has no ``rss_url`` at all -- confirmed by grep,
+    ``scripts/build_world_news_catalog.py`` never sets it -- so it can NEVER be resolved
+    by a trial fetch). Since the no-evidence fix (above) correctly leaves such a source
+    ``unqualified`` rather than silently qualifying it, the SAME lowest-id, permanently-
+    unresolvable sources would be re-selected on EVERY future call forever, and once
+    they fill an entire ``limit``-sized window, no candidate BEHIND them in id order is
+    ever reached again -- reproduced empirically: 30 feed-less sources followed by one
+    genuinely resolvable source never let the resolvable one through across 20 passes.
+
+    FIX: order by LEAST-RECENTLY-ATTEMPTED instead of pure id -- a candidate that has
+    NEVER been attempted (no ``SourceQualificationAttempt`` row at all, incl. one logged
+    for a no-evidence outcome; see ``run_qualification_pass``) sorts FIRST, ahead of any
+    candidate that already produced an inconclusive result; among already-attempted
+    candidates the OLDEST attempt sorts first (fair rotation, so a permanently-stuck
+    candidate still gets retried occasionally -- a transient failure deserves another
+    chance -- but can never again BLOCK a candidate that hasn't been tried yet). ``id``
+    stays the final tiebreaker for determinism. Mirrors the same LEFT-JOIN-a-last-attempt
+    shape ``select_due_disqualified`` already uses.
+    """
+    from sqlalchemy import func
+
+    from src.database.models import Source, SourceQualificationAttempt
 
     if limit <= 0:
         return []
+    last_attempt = (
+        session.query(
+            SourceQualificationAttempt.source_id.label("source_id"),
+            func.max(SourceQualificationAttempt.attempted_at).label("last_at"),
+        )
+        .group_by(SourceQualificationAttempt.source_id)
+        .subquery()
+    )
     return (
         session.query(Source)
+        .outerjoin(last_attempt, last_attempt.c.source_id == Source.id)
         .filter(Source.status == STATUS_UNQUALIFIED)
-        .order_by(Source.id.asc())
+        .order_by(last_attempt.c.last_at.asc().nullsfirst(), Source.id.asc())
         .limit(limit)
         .all()
     )
@@ -245,6 +290,28 @@ def evaluate_and_stamp(
     return {"qualified": qualified, "disqualified": disqualified}
 
 
+def log_no_evidence_attempts(
+    session: Session, sources: list[Source], *, now: datetime,
+    criteria_version: str = CRITERIA_VERSION,
+) -> int:
+    """Record a NO-EVIDENCE attempt for each source (2026-07-23 livelock fix) -- an
+    append-only log row exactly like ``evaluate_and_stamp`` writes, but ``Source.status``
+    is NEVER touched (stays ``unqualified``; no free pass, per the zero-evidence fix).
+    This is what lets :func:`select_unqualified` rotate PAST a source that just produced
+    no evidence in favour of one that has never been attempted (or was attempted longer
+    ago) -- without this log entry the source would look identical to a never-tried
+    candidate and sort right back to the front of the queue next time, reproducing the
+    same livelock."""
+    from src.database.models import SourceQualificationAttempt
+
+    for source in sources:
+        session.add(SourceQualificationAttempt(
+            source_id=source.id, attempted_at=now, verdict=VERDICT_NO_EVIDENCE,
+            criteria_version=criteria_version,
+        ))
+    return len(sources)
+
+
 def run_qualification_pass(
     session: Session, fetcher: EthicalFetcher | None, *, per_pass: int,
     now: datetime | None = None,
@@ -255,7 +322,30 @@ def run_qualification_pass(
     metrics pass, not one per candidate -- so cohort baselines can "firm up" as the
     corpus grows, per the ruling's cold-start note), and stamp the verdict. One
     candidate's trial-fetch failure never aborts the pass (best-effort, like every other
-    scheduler ride-along)."""
+    scheduler ride-along).
+
+    NO-EVIDENCE CANDIDATES ARE NEVER STAMPED (2026-07-23 field-diagnostics fix -- verified
+    LIVE against the field log's "qualification trial fetch failed for 'latimes.com'"):
+    ``source_audit.per_source_metrics``/``flag_criteria`` OMIT a source ENTIRELY (not just
+    from its BAD-tail flags) when it has zero stored articles -- this covers BOTH a
+    totally-failed trial fetch (no rss_url reachable) AND a candidate with no rss_url at
+    all (a documented scope limit: "judged on whatever it has already collected by other
+    means, if anything"). Reading that absence as "no failing criteria" and defaulting to
+    STATUS_QUALIFIED would silently ADMIT a candidate we never actually verified -- exactly
+    the free pass the whole admission gate exists to prevent. So a candidate that produced
+    NO evidence this round is left ``unqualified`` (its current status -- untouched, no
+    stamp) and re-offered by :func:`select_unqualified` on a LATER pass, honestly tallied
+    as ``no_evidence`` (never silently folded into "qualified").
+
+    A no-evidence outcome IS logged (:func:`log_no_evidence_attempts`) -- not to
+    ``Source.status``, but as a ``SourceQualificationAttempt`` row -- because
+    ``select_unqualified`` orders by least-recently-attempted, and a source with no log
+    entry at all looks identical to one that was NEVER tried, sorting right back to the
+    front of every future pass. Without this, a permanently-unresolvable candidate (e.g.
+    the world-catalog generator never sets ``rss_url``) would occupy its slot forever and
+    LIVELOCK the whole backlog for every candidate behind it in id order -- reproduced
+    empirically before this fix (30 feed-less sources blocked a genuinely resolvable one
+    across 20 passes)."""
     from src.analytics import source_audit as sa
 
     if per_pass <= 0:
@@ -290,11 +380,21 @@ def run_qualification_pass(
     for sid, m in per.items():
         m["furniture_share"] = shares.get(sid, 0.0)
     fails_by_source = sa.flag_criteria(per, min_articles=TRIAL_MIN_ARTICLES)
-    tally = evaluate_and_stamp(session, candidates, fails_by_source, now=now)
+
+    # A candidate absent from ``per`` has ZERO stored articles -- no evidence at all,
+    # never stamped (see the docstring above). ``sid in per`` is the exact same test
+    # ``flag_criteria`` uses internally (article_count >= TRIAL_MIN_ARTICLES == 1), so
+    # this never disagrees with which sources actually got judged.
+    judged = [s for s in candidates if s.id in per]
+    no_evidence = [s for s in candidates if s.id not in per]
+
+    tally = evaluate_and_stamp(session, judged, fails_by_source, now=now)
+    log_no_evidence_attempts(session, no_evidence, now=now)
     session.commit()
 
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,
+        "no_evidence": len(no_evidence),
         **tally,
     }
 

@@ -82,6 +82,24 @@ def test_citation_channel_skips_known_and_dismissed_domains(db):
     assert dismissed not in created  # dismissal is remembered, never re-suggested
 
 
+def test_citation_channel_never_re_proposes_a_disqualified_domain(db):
+    """S1.1 verification (2026-07-23 field-feedback workflow, ledger 'SOURCE
+    QUALIFICATION' thread): a source the qualification lifecycle disqualified is STILL
+    a ``Source`` row (the status is a stamp, not a deletion) — ``_existing_domains``
+    keys on ``Source.domain`` alone, so a disqualified domain is excluded from
+    re-proposal BY CONSTRUCTION, the same as any other already-registered domain. This
+    pins that property explicitly rather than leaving it an implicit side effect."""
+    from src.catalog.qualification import STATUS_DISQUALIFIED
+
+    disq = f"disqualified-{uuid.uuid4().hex[:6]}.example"
+    _seed_citations(db, disq, 4)  # enough citations to WOULD qualify as a candidate
+    db.add(Source(name="Was disqualified", domain=disq, language="en", enabled=True,
+                  status=STATUS_DISQUALIFIED))
+    db.flush()
+    created = citation_channel(db, cap=50)
+    assert disq not in created
+
+
 def test_is_commerce_domain_filter():
     # The field-log offenders (2026-06-13) and kindred storefronts.
     assert is_commerce_domain("shop.popsci.com")
