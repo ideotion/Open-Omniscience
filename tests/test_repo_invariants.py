@@ -7026,3 +7026,34 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     path_m = re.search(r'@router\.get\("(/history[^"]*)"', lib_api)
     assert prefix_m and path_m
     assert prefix_m.group(1) + path_m.group(1) == "/api/library/history"
+
+
+def test_briefing_refresh_runs_in_a_background_thread_not_inline():
+    """S4.1 duty-cycle fix (field-feedback 2026-07-23): refresh_briefing must NOT
+    run synchronously inline at the tail of a collect pass — that blocked the very
+    next pass's collection from starting until a single-core, whole-corpus
+    recompute finished (measured as a major share of a maintainer-observed 3-8 min
+    inter-pass gap on two different machines). Guard that the scheduler kicks it
+    off via a dedicated async method with its own lock (non-overlapping, never
+    queued) and that the pass itself no longer blocks on it -- see
+    tests/test_briefing_duty_cycle.py for the full behavioural coverage."""
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert "def _refresh_briefing_async(self)" in runner
+    assert "self._briefing_bg_lock" in runner and "self._briefing_thread" in runner
+    # _refresh_briefing_async's OWN body: non-overlapping (a busy refresh is
+    # skipped, never stacked/queued) and tracked in the task manager like the
+    # other ride-alongs (world-discovery, qualification), not as a scheduler
+    # phase — it can now genuinely overlap the next pass's own phase.
+    async_body = runner.split("def _refresh_briefing_async(self)", 1)[1].split(
+        "\n    def _default_run_once", 1
+    )[0]
+    assert "acquire(blocking=False)" in async_body
+    assert 'tasks.register("briefing"' in async_body
+    assert "threading.Thread(" in async_body and ".start()" in async_body
+
+    # _default_run_once's OWN body: it calls the async kickoff, and never calls
+    # refresh_briefing directly (the old synchronous inline call site is gone).
+    pass_body = runner.split("def _default_run_once", 1)[1]
+    assert "self._refresh_briefing_async()" in pass_body
+    assert "refresh_briefing(" not in pass_body
+    assert '_phase_set("briefing")' not in pass_body

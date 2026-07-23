@@ -143,7 +143,6 @@ def _collect_job() -> dict | None:
     _PHASE_LABELS = {
         "collecting": "collection pass — collecting articles",
         "background": "collection pass — background tasks (markets · calendars · checks)",
-        "briefing": "collection pass — building the briefing",
     }
     if st.get("active"):
         label = _PHASE_LABELS.get(st.get("phase") or "", "collection pass")
