@@ -2550,6 +2550,22 @@
         card.classList.toggle("flipped");
       }
     }
+    // dblclick-opens-duplicate-analysis-tabs (P1): a fast double-click (or an
+    // accidental double-tap) on a card's "Open corpus" button fired window.open()
+    // twice at the identical URL before the first tab settled -- neither
+    // openCardCorpus nor openAnalysisInNewTab guarded against a second call for the
+    // same URL in quick succession. A single user action should be idempotent
+    // against an accidental repeat activation, so both now route through one
+    // shared debounce: a call for the SAME URL within 700ms of the last one is a
+    // no-op (a deliberate second open of a DIFFERENT corpus a moment later still
+    // works normally -- only the identical-URL-in-quick-succession case is guarded).
+    let _lastCorpusOpenUrl = "", _lastCorpusOpenAt = 0;
+    function _openCorpusUrlOnce(url) {
+      const now = Date.now();
+      if (url === _lastCorpusOpenUrl && (now - _lastCorpusOpenAt) < 700) return;
+      _lastCorpusOpenUrl = url; _lastCorpusOpenAt = now;
+      window.open(url, "_blank", "noopener");
+    }
     // Open the card's corpus IN A NEW WINDOW (maintainer 2026-06-23) — a real browser
     // tab the SPA hydrates from the URL (boot handler below), so the analysis lives
     // outside the current view. Exact set when the card carries article_ids, else the
@@ -2559,7 +2575,7 @@
       p.set("corpus", (ids || []).join(","));
       if (label) p.set("label", label);
       if (tab) p.set("tab", tab);   // item #5: land the new window on the type's best subtab
-      window.open("/?" + p.toString(), "_blank", "noopener");
+      _openCorpusUrlOnce("/?" + p.toString());
     }
     // Open a query's analysis window in a NEW BROWSER TAB (field remark 9: search +
     // Enter should open a new tab). A fresh SPA boot hydrates ?analyze= via
@@ -2569,7 +2585,7 @@
       const p = new URLSearchParams();
       p.set("analyze", q || "");
       if (tab) p.set("tab", tab);   // optional deep-link subtab (item #5); omnibar Enter omits it
-      window.open("/?" + p.toString(), "_blank", "noopener");
+      _openCorpusUrlOnce("/?" + p.toString());
     }
     function openCardCorpusQuery(q, tab) { openAnalysisInNewTab(q, tab); }
     // Route a Lead to the most useful analysis subtab for its type (item #5): a rising

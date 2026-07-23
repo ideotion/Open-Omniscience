@@ -2210,8 +2210,14 @@ def test_ui_invariants():
     assert "function leadFlip(" in html and 'onclick="leadFlip(this,event)"' in card_html, (
         "clicking a Lead card must flip it (maintainer 2026-06-23)"
     )
-    assert "function openCardCorpus(" in html and 'window.open("/?"' in html, (
+    # corpus-open-dblclick-duplicate-tabs (P1): the direct window.open() moved into the
+    # shared _openCorpusUrlOnce() debounce (a same-URL open within 700ms is a no-op) --
+    # openCardCorpus still opens a real new window at "/?...", just through that helper.
+    assert "function openCardCorpus(" in html and '_openCorpusUrlOnce("/?" + p.toString())' in html, (
         "the back's 'Open corpus' button must open the card's corpus in a new window"
+    )
+    assert "function _openCorpusUrlOnce(url)" in html and 'window.open(url, "_blank", "noopener")' in html, (
+        "_openCorpusUrlOnce (the shared double-click debounce) must still perform a real window.open"
     )
     assert 'class="lead-open"' in card_html, "the back needs the standardized themed open-corpus button"
     assert "_hydrateCardCorpus" in html and '"corpus"' in html, (
@@ -6056,3 +6062,46 @@ def test_font_size_slider_has_an_accessible_label():
     # The old, unassociated markup must be gone from directly before the input.
     assert '<div class="sl">Text size' not in html, \
         "the old unassociated <div class=\"sl\">Text size...</div> must not survive"
+
+
+def test_analysis_tab_restore_runs_before_the_deep_link_hydration():
+    """GUI-test finding analysis-boot-race-destroys-tab-workspace (P1): opening the
+    omnibar in successive NEW browser tabs never accumulated a multi-tab analysis
+    workspace -- every fresh tab showed only the one query it was just seeded with.
+    Root cause: _anRestoreTabs() (restores the PERSISTED oo.an.tabs.v1 tab strip) ran
+    AFTER the ?corpus=/?analyze= deep-link hydration IIFE, whose _anSpawn() ->
+    _anActivate() -> _anSaveTabs() OVERWRITES that same localStorage key with only the
+    just-spawned tab before the restore ever reads it. Fix: restore FIRST, so the
+    deep-linked seed is ADDED (via _anSpawn's dedup-by-key reuse) to the restored set
+    instead of clobbering it."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    restore_at = app.index("_anRestoreTabs();")
+    hydrate_at = app.index("(function _hydrateCardCorpus() {")
+    assert restore_at < hydrate_at, \
+        "_anRestoreTabs() must run BEFORE the _hydrateCardCorpus deep-link IIFE, " \
+        "or a fresh-tab deep link clobbers the persisted multi-tab workspace"
+    # The old post-hydration restore call site must not linger as a second call.
+    assert app.count("_anRestoreTabs();") == 1, \
+        "_anRestoreTabs() must be called exactly once at boot (no duplicate call site)"
+
+
+def test_corpus_window_open_is_debounced_against_double_clicks():
+    """GUI-test finding corpus-open-dblclick-duplicate-tabs (P1): a fast double-click
+    on a card/keyword that opens its corpus in a new tab (openCardCorpus /
+    openAnalysisInNewTab) fired window.open() twice, leaving two duplicate browser
+    tabs for the same corpus. Fixed with a shared _openCorpusUrlOnce() debounce (a
+    same-URL open within 700ms is swallowed) that both call sites route through
+    instead of calling window.open() directly."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _openCorpusUrlOnce(url)" in app, "the shared debounce helper must exist"
+    debounce_fn = app.split("function _openCorpusUrlOnce(url) {", 1)[1].split("\n    }\n", 1)[0]
+    assert "_lastCorpusOpenUrl" in debounce_fn and "_lastCorpusOpenAt" in debounce_fn
+    assert "700" in debounce_fn, "the debounce window must be present"
+    assert "window.open(url" in debounce_fn, "the helper must still perform the real open"
+
+    for fn_name in ("openCardCorpus", "openAnalysisInNewTab"):
+        body = app.split(f"function {fn_name}(", 1)[1].split("\n    }\n", 1)[0]
+        assert "_openCorpusUrlOnce(" in body, \
+            f"{fn_name} must route its window.open through the shared debounce"
+        assert "window.open(" not in body, \
+            f"{fn_name} must not call window.open directly (bypasses the debounce)"
