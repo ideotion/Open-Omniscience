@@ -685,6 +685,22 @@ class Article(Base):
         Index("idx_article_word_count", "word_count"),
         # Index for sentiment analysis
         Index("idx_article_sentiment", "sentiment_score"),
+        # Covering index for the per-source-country GROUP BY behind /api/insights/
+        # map-coverage (queries.source_country_counts): SELECT sources.country,
+        # count(articles.id), avg(articles.sentiment_score), count(articles.sentiment_score)
+        # JOIN sources GROUP BY sources.country. EXPLAIN QUERY PLAN (9.2, PR #740/#744
+        # remediation field-diagnostics #728) confirmed the existing idx_article_source_id
+        # is only a plain SEARCH (not COVERING) for this query -- SQLite finds matching
+        # rows by source_id but still fetches the full table row to read sentiment_score,
+        # dragging every ~35 KB article row through the SQLCipher codec (the same
+        # column-order perf trap the ix_article_observed/ix_mention_covering indexes
+        # already fixed elsewhere). With this covering index the plan becomes a pure
+        # index-only SEARCH; measured 447 ms -> 38 ms on a 300k-article synthetic
+        # PLAINTEXT store (the encrypted live corpus wins proportionally more, per the
+        # documented codec cost). Mirrored in migration 04c029205aa8 (alembic-managed
+        # DBs) and src/database/maintenance.py HOT_INDEXES (existing installs that don't
+        # run `make migrate`).
+        Index("idx_article_source_sentiment", "source_id", "sentiment_score"),
     )
 
     @property

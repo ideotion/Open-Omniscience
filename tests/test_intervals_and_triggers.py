@@ -116,6 +116,25 @@ def test_rising_card_explains_itself(corpus):
     assert cards[0].to_dict()["trigger"]["plain"]
 
 
+def test_rising_card_carries_the_exact_article_set(corpus):
+    """9.1 (PR #740/#744 remediation, field-diagnostics #728): rising_now's Card was
+    missing article_ids -- the exact-set-seeding convention every other per-topic
+    producer follows (flooded_topic, buried_topic, framing_split...) -- so clicking a
+    rising card fell back to a synthetic text search on the term instead of opening the
+    exact articles the ratio was computed over."""
+    from src.briefing.producers import rising_now
+
+    cards = rising_now(corpus)
+    assert cards
+    card = cards[0]
+    assert card.article_ids, "a rising card must carry the exact article set it was computed over"
+    # Every id must be a real article that actually mentions the rising term (never a
+    # fabricated/unrelated id), and the evidence rows are a subset of the same set.
+    evidence_ids = {e["article_id"] for e in card.evidence}
+    assert evidence_ids <= set(card.article_ids)
+    assert card.article_ids == sorted(set(card.article_ids))  # matches the shipped convention
+
+
 def test_diet_card_carries_wilson_interval(corpus):
     from src.briefing.producers import diet_self_audit
 
