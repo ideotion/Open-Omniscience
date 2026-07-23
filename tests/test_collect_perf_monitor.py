@@ -51,6 +51,47 @@ def test_classifier_memory_bound(tmp_path, monkeypatch):
         mon._tick()
     summary = mon._write_summary(None)
     assert summary["bottleneck"]["verdict"] == "memory-bound"
+    # S4.3: a real, MEASURED note (never a projected worker count from total
+    # RAM) — this pass genuinely hit mem-low back-offs every tick.
+    b = summary["bottleneck"]
+    assert b["mem_low_ticks"] == 3
+    assert b["mem_low_min_permits"] is not None
+    assert str(b["mem_low_min_permits"]) in b["memory_headroom_note"]
+    assert "capped parallel collection" in b["memory_headroom_note"]
+
+
+def test_memory_headroom_note_absent_when_ram_was_never_low(tmp_path, monkeypatch):
+    """Negative space: a healthy pass must report mem_low_ticks == 0 and no note
+    — the honesty non-negotiable that absence of pressure reads as absence, not
+    a guessed capacity ceiling."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    g = BandwidthGovernor(mode="maximum", w_max=4)
+    mon = _monitor(governor=g, rate=200.0, vitals=_HEALTHY_VITALS, writer=_IDLE_WRITER)
+    for _ in range(3):
+        mon._tick()
+    summary = mon._write_summary(None)
+    b = summary["bottleneck"]
+    assert b["mem_low_ticks"] == 0
+    assert b["mem_low_min_permits"] is None
+    assert b["memory_headroom_note"] is None
+
+
+def test_mem_low_min_permits_tracks_the_worst_observed_floor(tmp_path, monkeypatch):
+    """The governor cuts permits by 2 on EVERY mem-low tick (down to a floor of
+    1) — mem_low_min_permits must track the SMALLEST value actually reached,
+    not just the first or the last."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    g = BandwidthGovernor(mode="maximum", w_max=10, seed=10)
+    vit = {**_HEALTHY_VITALS, "mem_avail_mb": 100.0}
+    mon = _monitor(governor=g, rate=200.0, vitals=vit, writer=_IDLE_WRITER)
+    permits_seen = []
+    for _ in range(4):
+        mon._tick()
+        permits_seen.append(g.permits)
+    summary = mon._write_summary(None)
+    b = summary["bottleneck"]
+    assert b["mem_low_ticks"] == 4
+    assert b["mem_low_min_permits"] == min(permits_seen)
 
 
 def test_classifier_writer_bound(tmp_path, monkeypatch):

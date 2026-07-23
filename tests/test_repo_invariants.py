@@ -7057,3 +7057,28 @@ def test_briefing_refresh_runs_in_a_background_thread_not_inline():
     assert "self._refresh_briefing_async()" in pass_body
     assert "refresh_briefing(" not in pass_body
     assert '_phase_set("briefing")' not in pass_body
+
+
+def test_memory_headroom_honesty_never_projects_a_worker_count():
+    """S4.3 (field-feedback 2026-07-23, 'memory-headroom honesty for small
+    boxes'): a mem-low-capped pass must surface a REAL, MEASURED note (never a
+    projected worker count computed from total RAM — that would be a fabricated
+    capacity claim, exactly what the honesty non-negotiables forbid). Guard that
+    the note derives from actually-observed governor back-offs, not a formula
+    over total/available memory."""
+    perf = (_SRC / "monitoring" / "collect_perf.py").read_text(encoding="utf-8")
+    assert "self._mem_low_ticks" in perf and "self._mem_low_min_permits" in perf
+    # The note is built from the OBSERVED minimum permits reached on a mem-low
+    # tick, not a division/estimate over total_mb/mem_total_mb (never a
+    # capacity formula).
+    note_block = perf.split("memory_headroom_note = None", 1)[1].split(
+        "return {", 1
+    )[0]
+    assert "self._mem_low_min_permits" in note_block
+    assert "mem_total_mb" not in note_block and "total_mb" not in note_block
+    # Always present in the payload, honestly None/0 when never observed —
+    # never omitted (an omitted key would read as "not applicable" rather
+    # than "did not happen").
+    assert '"mem_low_ticks": self._mem_low_ticks' in perf
+    assert '"mem_low_min_permits": self._mem_low_min_permits' in perf
+    assert '"memory_headroom_note": memory_headroom_note' in perf

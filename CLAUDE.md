@@ -7703,6 +7703,47 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   fast box's `writer-bound` verdicts) is explicitly gated to land AFTER S4.1 "so its effect is
   measured in isolation," per the brief; S4.3 (memory-headroom honesty for small boxes) is
   documentation/profiling, not yet done.
+  **S4.3 SHIPPED 2026-07-23 (memory-headroom honesty for small boxes — no magic, per the brief):**
+  the field diagnostics found a real "memory-bound" verdict on the slow 2-core/3.2 GB box (the
+  governor's mem-low back-off — an unconditional -2-permits cut every tick memory falls below the
+  floor — parking parallel collection at ~2 permits, "protecting the machine"), but the
+  `collect_perf` bottleneck classifier only ever surfaced a bare verdict STRING, never a plain-
+  language statement of WHAT the RAM actually capped collection at. Added TWO new measured
+  aggregates to `CollectionMonitor` (`_mem_low_ticks` — how many ticks this pass observed mem-low;
+  `_mem_low_min_permits` — the SMALLEST permits value the governor's own unconditional -2 cut
+  actually reached this pass) and a plain-English `memory_headroom_note` in `_classify()`'s payload
+  ("this machine's available RAM capped parallel collection at N worker(s) this pass (M mem-low
+  back-off tick(s) observed) — never assume a bigger box will hit the same ceiling"), always
+  present (`None`/`0` when never observed this pass — absence reads as absence, never omitted).
+  DELIBERATELY NOT a projected/estimated worker count from total or available RAM (that would be a
+  fabricated capacity claim, exactly what the honesty non-negotiables forbid) — the note derives
+  ONLY from the governor's own REAL back-off events this pass, pinned by a new
+  `test_repo_invariants.py` guard asserting the note-building code never references
+  `mem_total_mb`/`total_mb` (no capacity formula). Rides the EXISTING `/api/diagnostics` collect-
+  perf payload with zero new endpoint (`src/api/diagnostics.py` already passes the whole
+  `bottleneck` dict through). The optional "fold it into the power-profile surface" half of the
+  brief's ask was DELIBERATELY SKIPPED — `power_profiles.py` resolves STATIC configured knob values
+  for a chosen profile, and a live per-pass measured fact (this pass's actual mem-low back-off
+  count) doesn't fit that module's single responsibility; straining it to also surface live
+  telemetry would blur the boundary rather than serve the ask, so the collect-perf verdict (where
+  an operator/diagnostics viewer already sees the real pass numbers) stays the one home for this
+  note. Tests: `test_classifier_memory_bound` extended (asserts the note + both new fields on a
+  genuinely mem-low pass) + a NEGATIVE-SPACE test (`test_memory_headroom_note_absent_when_ram_was_
+  never_low` — a healthy pass reports `mem_low_ticks == 0` and `memory_headroom_note is None`,
+  never a guessed ceiling) + a worst-floor-tracking test (`test_mem_low_min_permits_tracks_the_
+  worst_observed_floor` — proves the field tracks the SMALLEST value reached across the pass, not
+  just the first/last, since the governor cuts by 2 on every mem-low tick down to a floor of 1).
+  VERIFIED (py3.13 venv): `test_collect_perf_monitor.py` (11 tests, +3 new) + the invariant guard +
+  a targeted diagnostics/memory-hygiene sweep green (the ONE failure hit,
+  `test_doctor_healthy_returns_zero`, is the documented pre-existing subset-order flake — passes in
+  isolation, unrelated to this change) + the full suite; ruff `--select=F,B --extend-ignore=B008`
+  clean; mypy 0 new errors (127==baseline, all 22 baseline errors on the touched file's import
+  closure sit in an unrelated `src/crypto/provenance.py`); bandit `-r -ll -q` clean; no schema/
+  frontend change. **S4-SERIES CLOSE-OUT NOTE:** S4.1 and S4.3 are now both shipped; S4.2
+  (collector write-batching, the program's own "riskiest hot-path change") remains the sole
+  outstanding S4 item — deliberately deferred rather than rushed, given the brief's own
+  full-skeptic-matrix mandate for it and this session's lack of a parallel-review workflow phase
+  this cycle.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

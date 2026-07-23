@@ -204,6 +204,15 @@ class CollectionMonitor:
         self._max_writer_waiters = 0
         self._writer_wait_start: float | None = None
         self._writer_wait_last: float = 0.0
+        # S4.3 (field-feedback 2026-07-23, "memory-headroom honesty for small
+        # boxes"): how often + how far this pass's RAM pressure actually pushed
+        # parallel collection down — MEASURED, never predicted from total RAM (a
+        # projected worker count would be a fabricated capacity claim). Every
+        # mem-low tick unconditionally cuts permits by 2 (BandwidthGovernor.observe),
+        # so the SMALLEST post-cut value observed this pass is the real, empirical
+        # floor the machine hit.
+        self._mem_low_ticks = 0
+        self._mem_low_min_permits: int | None = None
         # Per-tick deltas of the gate's CUMULATIVE counters — the real saturation
         # signal. Instantaneous ``waiters`` reads ~1 at a sample tick even when the
         # gate queued 23 deep between ticks (a write releases fast), so the old
@@ -351,6 +360,13 @@ class CollectionMonitor:
         self._n += 1
         self._rate_sum += rate
         self._peak_permits = max(self._peak_permits, permits, new_permits)
+        if reason == "mem-low":
+            self._mem_low_ticks += 1
+            self._mem_low_min_permits = (
+                new_permits
+                if self._mem_low_min_permits is None
+                else min(self._mem_low_min_permits, new_permits)
+            )
         self._max_inflight = max(self._max_inflight, inflight)
         if cpu_sys is not None:
             self._max_cpu_sys = max(self._max_cpu_sys, cpu_sys)
@@ -443,6 +459,19 @@ class CollectionMonitor:
         else:
             verdict = "target-met-or-headroom"
 
+        # S4.3: an honest, MEASURED note (never a projected worker count from
+        # total RAM — that would be a fabricated capacity claim) stating how far
+        # this pass's own RAM pressure actually pushed parallel collection down,
+        # only when it happened at least once this pass.
+        memory_headroom_note = None
+        if self._mem_low_ticks:
+            memory_headroom_note = (
+                f"this machine's available RAM capped parallel collection at "
+                f"{self._mem_low_min_permits} worker(s) this pass "
+                f"({self._mem_low_ticks} mem-low back-off tick(s) observed) — "
+                "never assume a bigger box will hit the same ceiling."
+            )
+
         return {
             "verdict": verdict,
             "method": (
@@ -459,6 +488,9 @@ class CollectionMonitor:
             "max_writer_waiters": self._max_writer_waiters,
             "writer_total_wait_s_delta": writer_wait_delta,
             "samples": self._n,
+            "mem_low_ticks": self._mem_low_ticks,
+            "mem_low_min_permits": self._mem_low_min_permits,
+            "memory_headroom_note": memory_headroom_note,
         }
 
     def _write_summary(self, result: dict | None) -> dict | None:
