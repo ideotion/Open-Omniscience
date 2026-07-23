@@ -69,3 +69,31 @@ def test_source_count_increments_with_real_rows():
         assert after == before + 1
         with session_scope() as s:
             s.query(Source).filter_by(domain=domain).delete()
+
+
+def test_two_class_sources_split_never_blends_candidates_with_collecting():
+    """2026-07-23 field-feedback S1.3: the flat "sources" COUNT(*) blends enabled/
+    qualified (actively collecting) sources with disabled discovery candidates
+    awaiting review -- exactly the figure a field export showed as "~50k sources"
+    against a ~5k-article corpus and read as an alarm. The two-class split must
+    move independently and never fold one into the other."""
+    from src.catalog.qualification import STATUS_QUALIFIED, STATUS_UNQUALIFIED
+
+    collecting = f"collecting-{uuid.uuid4().hex}.test"
+    candidate = f"candidate-{uuid.uuid4().hex}.test"
+    with TestClient(app) as client:
+        before = client.get("/api/database/stats").json()["counts"]
+        with session_scope() as s:
+            s.add(Source(name="Collecting", domain=collecting, enabled=True,
+                         status=STATUS_QUALIFIED))
+            s.add(Source(name="Candidate", domain=candidate, enabled=False,
+                         status=STATUS_UNQUALIFIED))
+        after = client.get("/api/database/stats").json()["counts"]
+        assert after["sources_qualified"] == before["sources_qualified"] + 1
+        assert after["sources_candidates"] == before["sources_candidates"] + 1
+        # a disabled candidate never counts as collecting, and vice versa
+        assert after["sources_qualified"] < after["sources"]
+        with session_scope() as s:
+            s.query(Source).filter(Source.domain.in_([collecting, candidate])).delete(
+                synchronize_session=False
+            )

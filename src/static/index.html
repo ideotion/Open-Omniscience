@@ -2090,6 +2090,13 @@
       <div id="candidates-list"></div>
     </section>
     <section class="panel">
+      <h2>Source qualification</h2>
+      <p class="muted" style="margin-top:0">Every source is judged for extraction validity — real prose vs a broken/junk scrape — before it joins regular collection: a categorical stamp (qualified · disqualified · not yet judged), never a quality score. A few candidates are judged automatically per online collection round; this runs the SAME judging in bulk to catch up a large backlog. Networked (each judgment is a small trial fetch through your transport) — asks for consent first, refused in airplane mode.</p>
+      <div id="qualify-bulk-status" class="hint">Loading…</div>
+      <button id="qualify-bulk-btn" onclick="qualifyBulkStart(this)">Qualify the backlog</button>
+      <button class="secondary" id="qualify-bulk-cancel-btn" style="display:none" onclick="qualifyBulkCancel()">Cancel</button>
+    </section>
+    <section class="panel">
       <h2>Add a source</h2>
       <div class="row">
         <div><label for="s-name">Name</label><input id="s-name" placeholder="Example News"></div>

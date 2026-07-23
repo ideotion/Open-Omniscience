@@ -274,6 +274,80 @@ async def source_preflight_log(request: Request, limit: int = Query(200, ge=1, l
     return {"count": len(rows), "results": rows}
 
 
+# ==================== BULK QUALIFICATION (2026-07-23 field-feedback S1.2) ====================
+# The steady-state ride-along qualifies 5 candidates per online collection pass — far too
+# slow to drain a Wikidata-discovery-scale backlog (measured: 90+ days for 42.6k-66.7k
+# candidates). This is the manual, task-manager-visible background job that runs the SAME
+# qualification.run_qualification_pass in batches until the backlog is drained or the run
+# is stopped/paused (airplane / memory guard / cancel). See src/catalog/qualify_job.py.
+
+from src.jobs.background import BackgroundJob, register_job
+
+
+def _bulk_qualification_worker(ctx, *, batch_size=None):
+    from src.catalog.qualify_job import run_bulk_qualification
+
+    return run_bulk_qualification(ctx, batch_size=batch_size or 20)
+
+
+_BULK_QUALIFICATION_JOB = register_job(
+    BackgroundJob(
+        "qualify-sources-bulk",
+        "Qualifying candidate sources (bulk)",
+        _bulk_qualification_worker,
+        is_writer=True,
+        cancellable=True,  # the worker checks ctx.stopping between batches
+    )
+)
+
+
+@router.post("/qualify-bulk", response_model=dict)
+@limiter.limit("20/hour")
+async def qualify_sources_bulk(
+    request: Request,
+    batch_size: int = Query(20, ge=1, le=200, description="candidates judged per internal batch"),
+):
+    """Drain the source-qualification backlog as a BACKGROUND JOB — the manual
+    catch-up for the steady-state ride-along (5 candidates per online collection
+    pass), which cannot honestly clear a Wikidata-discovery-scale backlog in
+    reasonable time. Runs the SAME trial-fetch + judge machinery, batch after
+    batch, through the guarded transport (airplane mode refuses up front; a
+    completed batch's trial fetches still ride the standing online-consent
+    envelope, exactly like the steady-state ride-along). Cancellable from the
+    task manager; pauses honestly (never silently) under airplane mode or the
+    memory guard, and stops honestly after a run of batches that judge nothing.
+    No score anywhere — every candidate ends up qualified, disqualified, or
+    left unqualified for a later retry."""
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+    try:
+        return {"started": True, "job": _BULK_QUALIFICATION_JOB.start(batch_size=batch_size)}
+    except RuntimeError:
+        return {"started": False, "job": _BULK_QUALIFICATION_JOB.status()}
+
+
+@router.get("/qualify-bulk/status", response_model=dict)
+@limiter.limit("200/hour")
+async def qualify_sources_bulk_status(request: Request, db: Session = Depends(get_db)):
+    """Live status of the bulk qualification job + a fresh backlog estimate (so the
+    panel can show remaining work even while the job is idle)."""
+    from src.catalog.qualify_job import initial_backlog_estimate
+
+    return {**_BULK_QUALIFICATION_JOB.status(), "backlog": initial_backlog_estimate(db)}
+
+
+@router.post("/qualify-bulk/cancel", response_model=dict)
+@limiter.limit("20/hour")
+async def qualify_sources_bulk_cancel(request: Request):
+    """Ask the bulk qualification job to stop at the next batch boundary (progress
+    is saved in each source's status — starting it again resumes). Also reachable
+    via the task manager's cancel."""
+    _BULK_QUALIFICATION_JOB.cancel()
+    return _BULK_QUALIFICATION_JOB.status()
+
+
 # ==================== SOURCE ENDPOINTS ====================
 
 

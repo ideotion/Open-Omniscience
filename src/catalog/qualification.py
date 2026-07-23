@@ -255,7 +255,20 @@ def run_qualification_pass(
     metrics pass, not one per candidate -- so cohort baselines can "firm up" as the
     corpus grows, per the ruling's cold-start note), and stamp the verdict. One
     candidate's trial-fetch failure never aborts the pass (best-effort, like every other
-    scheduler ride-along)."""
+    scheduler ride-along).
+
+    NO-EVIDENCE CANDIDATES ARE NEVER STAMPED (2026-07-23 field-diagnostics fix -- verified
+    LIVE against the field log's "qualification trial fetch failed for 'latimes.com'"):
+    ``source_audit.per_source_metrics``/``flag_criteria`` OMIT a source ENTIRELY (not just
+    from its BAD-tail flags) when it has zero stored articles -- this covers BOTH a
+    totally-failed trial fetch (no rss_url reachable) AND a candidate with no rss_url at
+    all (a documented scope limit: "judged on whatever it has already collected by other
+    means, if anything"). Reading that absence as "no failing criteria" and defaulting to
+    STATUS_QUALIFIED would silently ADMIT a candidate we never actually verified -- exactly
+    the free pass the whole admission gate exists to prevent. So a candidate that produced
+    NO evidence this round is left ``unqualified`` (its current status -- untouched, no
+    attempt row written) and re-offered by :func:`select_unqualified` on a LATER pass,
+    honestly tallied as ``no_evidence`` (never silently folded into "qualified")."""
     from src.analytics import source_audit as sa
 
     if per_pass <= 0:
@@ -290,11 +303,20 @@ def run_qualification_pass(
     for sid, m in per.items():
         m["furniture_share"] = shares.get(sid, 0.0)
     fails_by_source = sa.flag_criteria(per, min_articles=TRIAL_MIN_ARTICLES)
-    tally = evaluate_and_stamp(session, candidates, fails_by_source, now=now)
+
+    # A candidate absent from ``per`` has ZERO stored articles -- no evidence at all,
+    # never stamped (see the docstring above). ``sid in per`` is the exact same test
+    # ``flag_criteria`` uses internally (article_count >= TRIAL_MIN_ARTICLES == 1), so
+    # this never disagrees with which sources actually got judged.
+    judged = [s for s in candidates if s.id in per]
+    no_evidence = [s for s in candidates if s.id not in per]
+
+    tally = evaluate_and_stamp(session, judged, fails_by_source, now=now)
     session.commit()
 
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,
+        "no_evidence": len(no_evidence),
         **tally,
     }
 

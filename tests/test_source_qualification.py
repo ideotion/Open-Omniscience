@@ -33,6 +33,7 @@ from src.catalog.qualification import (
     reattempt_due_at,
     run_qualification_pass,
     select_due_disqualified,
+    select_unqualified,
 )
 from src.database.maintenance import ensure_source_qualification_columns
 from src.database.models import (
@@ -336,14 +337,99 @@ def test_run_qualification_pass_never_a_score_key():
 
 def test_run_qualification_pass_is_bounded_by_per_pass():
     s = _engine_session()
+    # Seeded WITH real articles (a healthy cohort) so these candidates carry actual
+    # evidence and get STAMPED — isolates the per_pass ceiling from the no-evidence
+    # path (covered separately below).
+    _seed_healthy_en_cohort(s)
     for i in range(5):
-        s.add(Source(name=f"c{i}", domain=f"c{i}.example", enabled=True, status=STATUS_UNQUALIFIED))
-    s.commit()
+        _add_candidate_with_articles(s, domain=f"c{i}.example", status=STATUS_UNQUALIFIED, pathology=False)
 
     out = run_qualification_pass(s, fetcher=None, per_pass=2)
     assert out["evaluated"] == 2
+    assert out["no_evidence"] == 0
     remaining_unqualified = s.query(Source).filter_by(status=STATUS_UNQUALIFIED).count()
     assert remaining_unqualified == 3  # only 2 of 5 were touched this pass
+
+
+def test_run_qualification_pass_never_qualifies_on_zero_evidence():
+    """2026-07-23 field-diagnostics fix: a candidate that produced ZERO stored articles
+    (a totally-failed trial fetch, or no rss_url and nothing collected by other means)
+    must NEVER be silently stamped ``qualified`` on an empty fails list — it stays
+    ``unqualified`` (no attempt row, no stamp) and is re-offered on a later pass."""
+    s = _engine_session()
+    bare = Source(name="No Evidence", domain="noevidence.example", rss_url="https://noevidence.example/rss",
+                  enabled=True, status=STATUS_UNQUALIFIED)
+    s.add(bare)
+    s.commit()
+    bare_id = bare.id
+
+    def failing_fetch(session, source, fetcher, **kw):
+        raise RuntimeError("simulated transport failure")
+
+    import src.catalog.qualification as qmod
+
+    orig = qmod.trial_fetch
+    qmod.trial_fetch = failing_fetch
+    try:
+        out = run_qualification_pass(s, fetcher=object(), per_pass=5)
+    finally:
+        qmod.trial_fetch = orig
+
+    assert out["evaluated"] == 1
+    assert out["no_evidence"] == 1
+    assert out["qualified"] == 0
+    assert out["disqualified"] == 0
+    s.refresh(bare)
+    assert bare.status == STATUS_UNQUALIFIED
+    assert bare.qualified_at is None
+    assert s.query(SourceQualificationAttempt).filter_by(source_id=bare_id).count() == 0
+
+    # Re-offered next pass — never permanently stuck, never silently dropped.
+    still = select_unqualified(s, limit=5)
+    assert any(c.id == bare_id for c in still)
+
+
+def test_run_qualification_pass_no_rss_url_and_no_prior_articles_stays_unqualified():
+    """The documented scope limit ("judged on whatever it has already collected by
+    other means, if anything") must not silently resolve to a free pass when there is
+    NO other means either — a feed-less, evidence-less candidate stays unqualified."""
+    s = _engine_session()
+    s.add(Source(name="No Feed", domain="nofeed.example", rss_url=None,
+                 enabled=True, status=STATUS_UNQUALIFIED))
+    s.commit()
+
+    out = run_qualification_pass(s, fetcher=object(), per_pass=5)
+    assert out["no_evidence"] == 1
+    assert out["qualified"] == 0
+    src = s.query(Source).filter_by(domain="nofeed.example").one()
+    assert src.status == STATUS_UNQUALIFIED
+
+
+def test_run_qualification_pass_still_judges_evidence_from_prior_articles():
+    """A source whose TRIAL fetch fails this round but already carries real articles
+    from earlier (legacy/imported) ingestion is judged on that EXISTING evidence, not
+    treated as no-evidence — the fix only withholds a stamp when there is truly nothing
+    to judge."""
+    s = _engine_session()
+    _seed_healthy_en_cohort(s)
+    good = _add_candidate_with_articles(s, domain="already-has-articles.example",
+                                         status=STATUS_UNQUALIFIED, pathology=False)
+
+    def failing_fetch(session, source, fetcher, **kw):
+        raise RuntimeError("simulated transport failure")
+
+    import src.catalog.qualification as qmod
+
+    orig = qmod.trial_fetch
+    qmod.trial_fetch = failing_fetch
+    try:
+        out = run_qualification_pass(s, fetcher=object(), per_pass=10)
+    finally:
+        qmod.trial_fetch = orig
+
+    assert out["trial_fetch_errors"] >= 1
+    s.refresh(good)
+    assert good.status == STATUS_QUALIFIED  # judged on its EXISTING articles, not skipped
 
 
 def test_run_qualification_pass_per_pass_zero_disables():

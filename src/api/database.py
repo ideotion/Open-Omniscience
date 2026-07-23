@@ -125,6 +125,29 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
                     db.execute(select(func.count()).select_from(table(tbl))).scalar() or 0
                 )
 
+        # TWO-CLASS SOURCES SPLIT (2026-07-23 field-feedback S1.3): the flat "sources"
+        # COUNT(*) above blends enabled+qualified/actively-collecting sources with
+        # disabled discovery/world-catalog CANDIDATES awaiting review — exactly the
+        # figure a field export showed as "~50k sources" against a ~5k-article corpus,
+        # read as an alarm rather than the discovery funnel working as ruled. Split it
+        # honestly, never one number implying two different things:
+        #   sources_qualified  = enabled AND status=qualified (== select_sources' own
+        #                        admission-gate filter -- what is ACTUALLY collecting)
+        #   sources_candidates = enabled=False (discovered, awaiting qualification review)
+        if "sources" in present:
+            from src.catalog.qualification import STATUS_QUALIFIED
+            from src.database.models import Source
+
+            counts["sources_qualified"] = int(
+                db.query(func.count(Source.id))
+                .filter(Source.enabled.is_(True), Source.status == STATUS_QUALIFIED)
+                .scalar()
+                or 0
+            )
+            counts["sources_candidates"] = int(
+                db.query(func.count(Source.id)).filter(Source.enabled.is_(False)).scalar() or 0
+            )
+
         backend = engine.url.get_backend_name()
         from src.backup.sqlite_backup import is_sqlite
 
