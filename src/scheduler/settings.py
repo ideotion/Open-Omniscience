@@ -123,6 +123,14 @@ class SchedulerSettings:
     # usually no-ops. Set False to leave those stores to the explicit manual endpoints only.
     auto_track_signals: bool = True
 
+    # COUNTRY-DATA ride-along (2026-07-24 field-feedback Session A §2, ruled: Governments-
+    # tab figures should load automatically, not only via the manual "Load standard
+    # country data" button): how many curated World-Bank indicators the scheduler
+    # bootstraps per online pass (never-yet-fetched ones only — ongoing refresh of an
+    # already-loaded indicator is the SEPARATE, already-wired stats.subscriptions.
+    # refresh_due). 0 disables the ride-along (the manual button remains either way).
+    country_data_per_pass: int = 2
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -284,6 +292,9 @@ def load_settings() -> SchedulerSettings:
         # exactly the shape the priority ladder needs (empty = OFF).
         country_priority=_coerce_target(raw.get("country_priority")),
         auto_track_signals=_coerce_bool(raw.get("auto_track_signals"), d.auto_track_signals),
+        country_data_per_pass=_coerce_int(
+            raw.get("country_data_per_pass"), d.country_data_per_pass, 0, 100
+        ),
     )
 
 
@@ -330,6 +341,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
     _ranged("discovery_per_run", 0, 100, "discovery_per_run")
     _ranged("world_discovery_per_pass", 0, 12, "world_discovery_per_pass")
     _ranged("qualification_per_pass", 0, 100, "qualification_per_pass")
+    _ranged("country_data_per_pass", 0, 100, "country_data_per_pass")
     _ranged("collect_parallelism", 1, _MAX_PARALLELISM, "collect_parallelism")
     _ranged("collect_target_kbps", _MIN_TARGET_KBPS, _MAX_TARGET_KBPS, "collect_target_kbps")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")

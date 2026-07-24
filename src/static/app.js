@@ -4046,7 +4046,7 @@
       if (!codes.length) {
         sel.innerHTML = "";
         $("gov-country-data").innerHTML =
-          `<div class="muted">${esc(t("No country data yet — use “Load standard country data” (online) to fetch it from the World Bank."))}</div>`;
+          `<div class="muted">${esc(t("Country data loads automatically in the background when online — or use “Load standard country data” to fetch it now."))}</div>`;
         return;
       }
       sel.innerHTML = codes.map(c => `<option value="${esc(c)}">${esc(ooRegionName(c, c))}</option>`).join("");
@@ -4115,7 +4115,7 @@
         catch (e) { data = null; }
       }
       if (!data || !(data.by_country || []).length) {
-        host.innerHTML = `<div class="muted">${esc(t("No country data yet — use the Countries tab to load it (online)."))}</div>`;
+        host.innerHTML = `<div class="muted">${esc(t("Country data loads automatically in the background when online — the map fills in once it lands."))}</div>`;
         $("gov-map-caveat").textContent = "";
         return;
       }

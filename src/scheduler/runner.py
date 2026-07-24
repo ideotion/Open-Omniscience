@@ -1368,6 +1368,22 @@ class BackgroundScheduler:
             # fetcher (never a new fetch surface). Task-manager-visible via
             # src.monitoring.tasks so the activity chip can honestly show it running.
             # Best-effort: a failure here never breaks the scrape.
+            # COUNTRY-DATA ride-along (2026-07-24 field-feedback Session A §2, ruled:
+            # the Governments tab must not depend on the user first clicking "Load
+            # standard country data"): bootstrap a few never-yet-fetched curated
+            # World-Bank indicators per online pass through this SAME session/fetcher.
+            # ONGOING refresh of an already-loaded indicator is the separate
+            # stats.subscriptions.refresh_due call elsewhere in this same pass, so the
+            # two never duplicate work. Best-effort: a failure here never breaks the
+            # scrape.
+            try:
+                from src.api.governments import advance_country_data
+
+                _cd = advance_country_data(session, per_pass=settings.country_data_per_pass)
+                if _cd.get("enabled"):
+                    result["country_data"] = _cd
+            except Exception:  # noqa: BLE001 - never fail the scrape on the stats ride-along
+                _LOG.warning("country-data auto-start ride-along failed", exc_info=True)
             try:
                 from src.catalog.qualification import advance_qualification
                 from src.monitoring import tasks as _bgtasks

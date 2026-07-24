@@ -65,6 +65,9 @@ class SchedulerConfigUpdate(BaseModel):
     # Opt-in per-country PRIORITY LADDER (default OFF): a {country: weight} map so chosen
     # countries scrape FIRST under constrained bandwidth. Orders only, never excludes.
     country_priority: dict | None = None
+    # COUNTRY-DATA ride-along (2026-07-24 Session A §2): curated World-Bank indicators
+    # bootstrapped per online pass (never-yet-fetched ones only); 0 disables.
+    country_data_per_pass: int | None = None
 
 
 def _status_payload() -> dict:

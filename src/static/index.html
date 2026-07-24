@@ -588,7 +588,7 @@
         <section class="panel">
           <div class="phead"><h2>Country data</h2><span class="sp"></span>
             <button class="secondary" id="gov-load-btn" onclick="govLoadStandard(this)"
-              title="Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). Once loaded, new vintages then refresh automatically in the background.">Load standard country data</button></div>
+              title="Fetch the standard country indicators for every country from the World Bank (online, asks for consent first). This also advances AUTOMATICALLY a couple of indicators per online collection pass (scheduler setting country_data_per_pass, 0 disables); this button just runs the whole catalog now. Once loaded, new vintages then refresh automatically in the background.">Load standard country data</button></div>
           <p class="hint">Per-country official statistics (World Bank): GDP, population, life
             expectancy, labour, public finance + common indices. Each value is a
             producer's published figure, never a credibility score; a missing value
