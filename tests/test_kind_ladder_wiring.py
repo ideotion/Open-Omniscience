@@ -32,12 +32,14 @@ def _fresh_ladder() -> KindLadder:
 
 
 def test_default_settings_makes_every_kind_pending():
-    # §8 (C3): the crawl supplement is now ALSO on by default, so a fresh
-    # SchedulerSettings has every kind pending.
+    # §8 (C3): the crawl supplement is now ALSO on by default; C15's archive
+    # backfill ride-along is on by default too (queue-driven -- a no-op when
+    # nothing has ever qualified), so a fresh SchedulerSettings has every kind
+    # pending.
     pending = _lane_pending_kinds(SchedulerSettings())
     assert pending == {
         "markets", "calendar", "law", "hazards",
-        "world_discovery", "qualification", "country_data", "crawl",
+        "world_discovery", "qualification", "country_data", "crawl", "backfill",
     }
 
 
@@ -51,13 +53,15 @@ def test_toggles_and_zero_budgets_exclude_their_kind():
     # auto_track_law/auto_import_calendars have no real SchedulerSettings field
     # today (a pre-existing dead toggle, unchanged by this slice -- both
     # ride-alongs always read True via getattr's fallback); auto_track_signals,
-    # crawl_supplement, and the four per-pass budgets ARE real fields.
+    # crawl_supplement, and the per-pass budgets (incl. C15's archive_backfill_
+    # per_pass) ARE real fields.
     s = SchedulerSettings(
         auto_track_signals=False,
         world_discovery_per_pass=0,
         qualification_per_pass=0,
         country_data_per_pass=0,
         crawl_per_pass=0,
+        archive_backfill_per_pass=0,
     )
     pending = _lane_pending_kinds(s)
     assert pending == {"markets", "calendar", "law"}
@@ -128,10 +132,22 @@ def test_zero_weight_kind_is_a_no_op_at_the_ladder_level():
 
 def test_crawl_rung_is_reserved_at_the_lowest_priority():
     """§8 crawl-by-default (C3): the crawl-supplement's ladder entry sits at
-    the lowest floor of every registered kind -- pin the table shape here so
-    a future edit cannot silently drop the "lowest rung" property the
+    the second-lowest floor of every registered kind (only C15's backfill
+    rung sits lower -- see the next test) -- pin the table shape here so a
+    future edit cannot silently drop the "lowest rung" property the
     crawl-by-default ruling requires."""
     assert _LANE_RATES["crawl"] == 0.0
-    assert 0 < _LANE_FLOORS["crawl"] < min(
-        v for k, v in _LANE_FLOORS.items() if k != "crawl" and v > 0
+    others = [v for k, v in _LANE_FLOORS.items() if k not in ("crawl", "backfill") and v > 0]
+    assert 0 < _LANE_FLOORS["crawl"] < min(others)
+
+
+def test_backfill_rung_is_the_true_lowest_priority_of_all():
+    """C15 (2026-07-24 throughput brief, S-E slice 2): the archive-backfill
+    ride-along must sit BELOW even the crawl-supplement rung -- a newly-
+    qualified source's multi-hundred-page history must never compete with
+    live collection, INCLUDING the crawl rung, for bandwidth."""
+    assert _LANE_RATES["backfill"] == 0.0
+    assert 0 < _LANE_FLOORS["backfill"] < _LANE_FLOORS["crawl"]
+    assert _LANE_FLOORS["backfill"] < min(
+        v for k, v in _LANE_FLOORS.items() if k != "backfill" and v > 0
     )

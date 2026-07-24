@@ -942,9 +942,11 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
 
 # Every kind the lane may run this pass. "crawl" (§8, C3) is the bounded
 # crawl-supplement rung -- see _lane_step_crawl / _select_crawl_candidates.
+# "backfill" (C15) is a newly-qualified source's sitemap-enumerated HISTORY --
+# see _lane_step_backfill / src.ingest.archive_backfill.
 _LANE_KINDS = (
     "markets", "hazards", "calendar", "law",
-    "world_discovery", "qualification", "country_data", "crawl",
+    "world_discovery", "qualification", "country_data", "crawl", "backfill",
 )
 
 # The bandwidth PRIORITY LADDER (ruled 2026-06-13): "(1) commodities/markets/
@@ -952,20 +954,22 @@ _LANE_KINDS = (
 # crawling ONLY with bandwidth headroom (heaviest)". Weights set a priority
 # ORDER (ordering != exclusion -- every due kind still runs every invocation;
 # see _lane_kind_order's safety net); floors guarantee the discovery/
-# qualification/country-data ride-alongs and the crawl rung are never starved
-# once a real per-lane budget exists (C15 backfill's own future headroom).
-# "crawl" sits at rate=0 + the LOWEST floor, so it only ever consumes headroom
-# after every other kind's own turn (§8's "lowest rung" requirement).
+# qualification/country-data ride-alongs, the crawl rung and the backfill rung
+# are never starved. "crawl" and "backfill" both sit at rate=0 (no priority
+# order beyond their floor); "backfill" carries the SMALLEST floor of all --
+# the ladder's LOWEST rung (C15's "live collection stays first" requirement) --
+# so it only ever consumes headroom after every other kind's own turn,
+# including "crawl".
 _LANE_RATES: dict[str, float] = {
     "markets": 5.0, "hazards": 4.0,
     "calendar": 2.0, "law": 2.0,
     "world_discovery": 1.0, "qualification": 1.0, "country_data": 1.0,
-    "crawl": 0.0,
+    "crawl": 0.0, "backfill": 0.0,
 }
 _LANE_FLOORS: dict[str, float] = {
     "markets": 0.0, "hazards": 0.0, "calendar": 0.0, "law": 0.0,
     "world_discovery": 0.2, "qualification": 0.2, "country_data": 0.2,
-    "crawl": 0.05,
+    "crawl": 0.05, "backfill": 0.02,
 }
 
 # Persistent across lane invocations (module-level; the lane's own lock
@@ -997,6 +1001,8 @@ def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
         pending.add("country_data")
     if getattr(settings, "crawl_supplement", True) and getattr(settings, "crawl_per_pass", 0) > 0:
         pending.add("crawl")
+    if getattr(settings, "archive_backfill_per_pass", 0) > 0:
+        pending.add("backfill")
     return pending
 
 
@@ -1162,6 +1168,28 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     }
 
 
+def _lane_step_backfill(session, fetcher, settings: SchedulerSettings) -> dict:
+    """C15 (2026-07-24 throughput brief, S-E slice 2): advance one bounded
+    slice of the persisted archive-backfill queue -- a newly-qualified
+    source's sitemap-enumerated HISTORY. Sources are enqueued automatically on
+    qualification success (src.catalog.qualification.evaluate_and_stamp's
+    caller); this ride-along only DRAINS the queue, it never enqueues.
+    Task-manager visible (mirrors the qualification ride-along's own token)."""
+    from src.ingest.archive_backfill import advance_backfill
+    from src.monitoring import tasks as _bgtasks
+
+    tok = _bgtasks.register(
+        "backfill", "backfilling a newly-qualified source's archive",
+        detail=f"up to {settings.archive_backfill_per_pass} page(s)",
+    )
+    try:
+        return advance_backfill(
+            session, fetcher, per_pass=settings.archive_backfill_per_pass
+        )
+    finally:
+        _bgtasks.finish(tok)
+
+
 # Registry (kept separate from _LANE_KINDS so a "reserved, not yet runnable"
 # kind can exist in the ladder table with no step to call -- none reserved
 # today; every kind in _LANE_KINDS now has a step).
@@ -1174,6 +1202,7 @@ _LANE_STEPS = {
     "qualification": _lane_step_qualification,
     "country_data": _lane_step_country_data,
     "crawl": _lane_step_crawl,
+    "backfill": _lane_step_backfill,
 }
 
 

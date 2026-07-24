@@ -281,6 +281,7 @@ def evaluate_and_stamp(
     from src.database.models import SourceQualificationAttempt
 
     qualified = disqualified = 0
+    qualified_ids: list[int] = []
     for source in sources:
         fails = fails_by_source.get(source.id, [])
         verdict = decide_verdict(fails)
@@ -293,11 +294,17 @@ def evaluate_and_stamp(
             source.qualified_at = now
             source.qualification_criteria_version = criteria_version
             qualified += 1
+            qualified_ids.append(source.id)
         else:
             source.qualified_at = None
             source.qualification_criteria_version = None
             disqualified += 1
-    return {"qualified": qualified, "disqualified": disqualified}
+    # C15 (2026-07-24 throughput brief, S-E slice 2): qualified_ids is returned
+    # (never enqueued HERE, before the caller's own commit) so the caller can
+    # enqueue archive backfill only AFTER the "qualified" stamp is actually
+    # committed -- a rollback between this call and the commit must never
+    # queue a backfill for a source that was never really admitted.
+    return {"qualified": qualified, "disqualified": disqualified, "qualified_ids": qualified_ids}
 
 
 def log_no_evidence_attempts(
@@ -403,6 +410,21 @@ def run_qualification_pass(
     tally = evaluate_and_stamp(session, judged, fails_by_source, now=now)
     log_no_evidence_attempts(session, no_evidence, now=now)
     session.commit()
+
+    # C15 (2026-07-24 throughput brief, S-E slice 2): auto-enqueue a BOUNDED
+    # archive backfill for every source that just got its "qualified" stamp
+    # COMMITTED -- never before the commit (a rollback must never leave a
+    # backfill queued for a source that was never really admitted). Always
+    # full_history=False here: the automatic path never requests full
+    # history, which is an explicit, separately-invoked per-source action.
+    # Best-effort -- a queueing hiccup must never fail a qualification pass.
+    for sid in tally.get("qualified_ids", []):
+        try:
+            from src.ingest.archive_backfill import enqueue_source
+
+            enqueue_source(sid, full_history=False)
+        except Exception:  # noqa: BLE001 - never fail qualification over a queueing hiccup
+            _LOG.warning("archive backfill enqueue failed for source %s", sid, exc_info=True)
 
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,

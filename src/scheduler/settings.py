@@ -143,6 +143,15 @@ class SchedulerSettings:
     crawl_supplement: bool = True
     crawl_per_pass: int = 3
 
+    # ARCHIVE BACKFILL ride-along (2026-07-24 throughput brief, C15/S-E slice 2): how
+    # many sitemap-enumerated URLs the persisted backfill cursor advances per online
+    # collection pass. Auto-enqueued (bounded ~100-500 pages) when a source QUALIFIES
+    # (src.catalog.qualification); a source's FULL history needs an explicit,
+    # separate per-source action -- never enqueued by this ride-along. Runs on the
+    # ladder's LOWEST rung (below "crawl") so live collection is never starved.
+    # 0 disables the ride-along (queued sources simply wait; nothing is lost).
+    archive_backfill_per_pass: int = 5
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -309,6 +318,9 @@ def load_settings() -> SchedulerSettings:
         ),
         crawl_supplement=_coerce_bool(raw.get("crawl_supplement"), d.crawl_supplement),
         crawl_per_pass=_coerce_int(raw.get("crawl_per_pass"), d.crawl_per_pass, 0, 100),
+        archive_backfill_per_pass=_coerce_int(
+            raw.get("archive_backfill_per_pass"), d.archive_backfill_per_pass, 0, 100
+        ),
     )
 
 
@@ -361,6 +373,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
     _ranged("qualification_per_pass", 0, 100, "qualification_per_pass")
     _ranged("country_data_per_pass", 0, 100, "country_data_per_pass")
     _ranged("crawl_per_pass", 0, 100, "crawl_per_pass")
+    _ranged("archive_backfill_per_pass", 0, 100, "archive_backfill_per_pass")
     _ranged("collect_parallelism", 1, _MAX_PARALLELISM, "collect_parallelism")
     _ranged("collect_target_kbps", _MIN_TARGET_KBPS, _MAX_TARGET_KBPS, "collect_target_kbps")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")
