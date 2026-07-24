@@ -67,6 +67,18 @@ _MIN_PARALLEL_BATCH = 16
 # processes buy little beyond a handful (the DB-writing main process stays the
 # other half of the pipeline) and cost more idle memory per worker.
 _MAX_WORKERS_CAP = 8
+# A separate, higher cap for the exclusive "own the machine" path
+# (all_cores_worker_count, below): deliberately allows meaningfully MORE than
+# _MAX_WORKERS_CAP on a big multi-core box (that IS the point of the exclusive
+# mode), while still bounding the worst case -- a data-loss-lens skeptic
+# finding (2026-07-24, MEDIUM): the first cut had NO ceiling at all, so a
+# 64+-core machine would spawn a same-sized ProcessPoolExecutor, once per
+# _PRECOMPUTE_WINDOW articles, stacking with the concurrently-enlarged SQLite
+# merge-connection cache (import_cache_mb) -- a real resource-exhaustion
+# exposure even though it occurs strictly post-swap (the already-committed
+# corpus can't be corrupted by it; worst case is a temporarily un-reindexed
+# batch, an already-designed-for, recoverable outcome).
+_MAX_EXCLUSIVE_WORKERS_CAP = 32
 # Extractor kinds the worker can safely rebuild BY NAME (mirrors get_extractor's
 # own registry). Anything else takes the serial path so the caller's own
 # (possibly custom/test) extractor object is used directly, never guessed at.
@@ -106,6 +118,23 @@ def worker_count(requested: int | None = None) -> int:
             pass
     cpu = os.cpu_count() or 1
     return max(0, min(_MAX_WORKERS_CAP, cpu - 1))
+
+
+def all_cores_worker_count() -> int:
+    """Most of the machine's CPU cores -- an explicit override of
+    :func:`worker_count`'s conservative default (field-feedback Session A §4,
+    "import owns the machine": re-index workers scale with core count). Used
+    ONLY when a restore is genuinely running exclusively (background
+    collection confirmed paused for its duration, i.e. the caller only reaches
+    this when its own ``was_paused`` is True), so there is no writer process
+    competing for the other cores. Every per-worker task is CPU-bound
+    pure-Python extraction with no DB/ORM access (see the module docstring),
+    so handing it many cores is safe from a CORRECTNESS standpoint -- but
+    still bounded at :data:`_MAX_EXCLUSIVE_WORKERS_CAP` (never literally
+    unbounded) so a huge box can't spawn an equally huge process pool, once
+    per precompute window, stacked on top of the concurrently-enlarged SQLite
+    cache -- a resource-EXHAUSTION concern, not a correctness one."""
+    return max(1, min(_MAX_EXCLUSIVE_WORKERS_CAP, os.cpu_count() or 1))
 
 
 # --------------------------------------------------------------------------- #

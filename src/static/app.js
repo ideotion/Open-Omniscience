@@ -5618,7 +5618,20 @@
       const back = { starting: t("Preparing…"), building: t("Building encrypted volumes…"),
         volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"), done: t("Done.") };
       const rest = { verifying: t("Verifying volumes…"), reassembling: t("Reassembling the archive…"),
-        merging: t("Merging (additive)…"), reindexing: t("Re-indexing merged articles…"), done: t("Done.") };
+        merging: t("Merging (additive)…"), reindexing: t("Re-indexing merged articles…"), done: t("Done."),
+        // "Progress everywhere" (§4 item 2): named labels for the run_restore
+        // stages that are slow/significant enough to be worth naming distinctly
+        // (a real corpus-file copy, the post-merge verification scan, the
+        // atomic commit itself) -- every OTHER stage (the cheap post-commit
+        // housekeeping: corpus_delta_*/corpus_epoch_bump/event_mirror_refresh/
+        // quarantine_scan/work_induced_tally/prune_snapshots/prepare_staged)
+        // honestly falls through to the generic "Restoring…" default below,
+        // since they are typically sub-second and a distinct label per one
+        // would be noise, not signal.
+        verify: t("Verifying the merge…"),
+        snapshot_working_copy: t("Snapshotting your corpus…"),
+        pre_restore_snapshot: t("Snapshotting your corpus…"),
+        swap: t("Committing…") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -6142,7 +6155,44 @@
         delta: r.corpus_delta || null,       // {before, after} cheap-counter snapshot
         reindexed: r.reindexed || null,      // {reindexed, failed} post-merge re-index
         events_added: (cal && cal.added) || 0,
+        timings: r.timings || null,          // {stages, wall_s} -- Session A §4, "instrument first"
       };
+    }
+
+    // "How long did this take?" (§4 item 5, "render its existing timings in
+    // the completion UI"): a real, measured number per stage, collapsed by
+    // default (a full restore has 15+ named stages plus 14 merge-step and
+    // several stage-A sub-entries — too many to show at a glance) with the
+    // biggest few surfaced first, since THOSE are the evidence base for any
+    // future "optimise the measured biggest stage" work. Never a projected/
+    // estimated number anywhere here -- every value came straight off the
+    // backend's own StageTimings report.
+    function _uxStageLabel(name, t) {
+      if (name.indexOf("merge_step:") === 0) return `${t("merge step")}: ${name.slice(11)}`;
+      if (name.indexOf("stage_a:") === 0) return `${t("stage A")}: ${name.slice(8).replace(/_/g, " ")}`;
+      return name.replace(/_/g, " ");
+    }
+    function _uxFmtS(s) {
+      const n = Number(s) || 0;
+      return n < 1 ? `${Math.round(n * 1000)} ms` : `${n.toFixed(1)} s`;
+    }
+    function _uxTimingsView(timings, t, tf) {
+      if (!timings || !timings.stages) return "";
+      const entries = Object.entries(timings.stages);
+      if (!entries.length) return "";
+      const sorted = entries.slice().sort((a, b) => b[1] - a[1]);
+      const top = sorted.slice(0, 6);
+      const rows = top.map(([name, secs]) =>
+        `<tr><td style="padding:1px 8px 1px 0">${esc(_uxStageLabel(name, t))}</td>`
+        + `<td style="text-align:right;padding:1px 0" class="muted">${esc(_uxFmtS(secs))}</td></tr>`
+      ).join("");
+      const restCount = entries.length - top.length;
+      const restNote = restCount > 0
+        ? `<div class="muted" style="font-size:11px;margin-top:2px">${esc(tf("+ {n} more stages", { n: restCount }))}</div>`
+        : "";
+      return `<details style="margin-top:6px"><summary class="muted">`
+        + `${esc(tf("How long did this take? ({wall})", { wall: _uxFmtS(timings.wall_s) }))}</summary>`
+        + `<table style="width:100%;font-size:12px;margin-top:4px">${rows}</table>${restNote}</details>`;
     }
 
     // "How your corpus grew": a plain BEFORE -> AFTER table over the backend's cheap
@@ -6254,7 +6304,7 @@
           // "awaiting qualification" state here would be fabricated.
           newSources += (p.sources && p.sources.new) || 0;
           discoveryAdded += (p.source_candidates && p.source_candidates.new) || 0;
-          detail.push({ title: sm.title, body: _v2PlanTable(p) });
+          detail.push({ title: sm.title, body: _v2PlanTable(p) + _uxTimingsView(sm.timings, t, tf) });
 
           if (sm.events_added) eventsAdded += sm.events_added;
           // Real re-index failures only — reindex_imported_articles ran (or was
@@ -6405,6 +6455,11 @@
     let _volPollTimer = null;
     async function _volRefresh(progId, btn, cancelId) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, vars) => {
+        let out = s;
+        if (vars) out = out.replace(/\{(\w+)\}/g, (m, k) => (vars[k] === undefined || vars[k] === null) ? m : String(vars[k]));
+        return out;
+      });
       const prog = $(progId);
       try {
         const s = await api("/api/backup/v2/volumes/status");
@@ -6424,7 +6479,16 @@
             if (prog) prog.textContent = t("Restore complete.");
           } else if (s.state === "done") {
             const par = sum.parity_available === false ? (" " + t("(volumes only — parity needs the analysis features)")) : "";
-            if (prog) prog.textContent = t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par;
+            // "How long did this take?" — the export side's own real, measured
+            // wall/gate-held numbers (stream_backup.py), same "instrument first"
+            // ask as the restore side; gate_held_s is the corpus writes-paused
+            // window, always <= wall_s.
+            const timing = (typeof sum.wall_s === "number")
+              ? " (" + tf("took {wall}, {gate} with writes paused", {
+                  wall: _uxFmtS(sum.wall_s), gate: _uxFmtS(sum.gate_held_s || 0),
+                }) + ")"
+              : "";
+            if (prog) prog.textContent = t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par + timing;
           } else if (s.state === "cancelled") {
             if (prog) prog.textContent = t("Cancelled.");
           } else if (s.state === "error") {

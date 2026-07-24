@@ -196,11 +196,24 @@ def test_restore_reports_a_distinct_reindexing_phase(tmp_path, monkeypatch):
     its OWN callback -- never conflated with the 14-step merge's progress dict."""
     import src.backup.artifact as artifact_mod
     import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
 
     captured = {}
 
-    def fake_run_restore(staged, *, commit, allow_unverified, progress_cb=None, reindex_progress_cb=None):
+    def fake_run_restore(
+        staged, *, commit, allow_unverified, progress_cb=None, reindex_progress_cb=None,
+        reindex_workers=None, merge_cache_mb=None, **_ignored,
+    ):
         captured["reindex_progress_cb"] = reindex_progress_cb
+        # "Import owns the machine" (Session A §4): applied ONLY when the pause
+        # actually confirmed exclusivity (was_paused=True, mocked below) -- a
+        # concurrency-skeptic MEDIUM fix (2026-07-24): these used to be
+        # unconditional, so this test's own assertion was silently riding
+        # whatever state the REAL, process-wide scheduler singleton happened
+        # to be in (fragile); explicitly mocking pause here makes it
+        # deterministic regardless of any other test's side effects on it.
+        assert reindex_workers is not None and reindex_workers >= 1
+        assert merge_cache_mb is not None and merge_cache_mb > 0
         assert progress_cb is not None
         progress_cb(1, 14, "keyword categories")  # the merge phase still reports too
         assert reindex_progress_cb is not None
@@ -208,6 +221,8 @@ def test_restore_reports_a_distinct_reindexing_phase(tmp_path, monkeypatch):
         reindex_progress_cb(10, 10)
         return {"committed": True}
 
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
@@ -227,5 +242,123 @@ def test_restore_reports_a_distinct_reindexing_phase(tmp_path, monkeypatch):
     reindex_steps = [p for p in snapshots if p.get("phase") == "reindexing"]
     assert merge_steps and merge_steps[-1]["merge_step"] == 1 and merge_steps[-1]["merge_steps"] == 14
     assert len(reindex_steps) == 2
-    assert reindex_steps[0] == {"phase": "reindexing", "reindex_done": 3, "reindex_total": 10}
-    assert reindex_steps[-1] == {"phase": "reindexing", "reindex_done": 10, "reindex_total": 10}
+    # "own_the_machine" now rides every own-the-machine-mode progress dict
+    # (Session A §4) -- assert on the fields this test actually cares about
+    # rather than exact dict equality, so it doesn't churn on that addition.
+    assert reindex_steps[0]["reindex_done"] == 3 and reindex_steps[0]["reindex_total"] == 10
+    assert reindex_steps[-1]["reindex_done"] == 10 and reindex_steps[-1]["reindex_total"] == 10
+    assert all(p.get("own_the_machine") is True for p in reindex_steps + merge_steps)
+
+
+def test_restore_pauses_collection_around_the_whole_operation_and_resumes(tmp_path, monkeypatch):
+    """'Import owns the machine' (field-feedback Session A §4, ruled): a real
+    volume restore pauses background collection BEFORE reassembly starts and
+    resumes it only AFTER the whole operation (reassemble+merge+reindex+
+    cleanup) finishes -- proven by call ORDER, not just presence."""
+    import src.backup.artifact as artifact_mod
+    import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
+
+    events: list[str] = []
+
+    def _fake_pause(timeout=10.0):
+        events.append("pause")
+        return True
+
+    def _fake_resume(was_paused):
+        assert was_paused is True
+        events.append("resume")
+
+    def fake_run_restore(staged, *, commit, allow_unverified, **kw):
+        events.append("restore")
+        return {"committed": True}
+
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", _fake_pause)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", _fake_resume)
+    monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
+    monkeypatch.setattr(
+        artifact_mod, "read_volume_backup",
+        lambda *a, **k: (events.append("reassemble"), object())[1],
+    )
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: events.append("cleanup"))
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw")
+    st = _wait(mgr)
+    assert st["state"] == "done"
+    assert events == ["pause", "reassemble", "restore", "cleanup", "resume"]
+
+
+def test_restore_resumes_collection_even_when_the_restore_itself_fails(tmp_path, monkeypatch):
+    """The resume is a finally-block guarantee: a genuine restore failure must
+    still resume collection, never leave it paused forever."""
+    import src.backup.artifact as artifact_mod
+    import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
+
+    events: list[str] = []
+    monkeypatch.setattr(
+        sched_mod, "pause_for_exclusive_operation",
+        lambda timeout=10.0: (events.append("pause"), True)[1],
+    )
+    monkeypatch.setattr(
+        sched_mod, "resume_after_exclusive_operation",
+        lambda was_paused: events.append("resume"),
+    )
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
+
+    def _boom(*a, **k):
+        raise RuntimeError("simulated merge failure")
+
+    monkeypatch.setattr(merge_mod, "run_restore", _boom)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw")
+    st = _wait(mgr)
+    assert st["state"] == "error"
+    assert "simulated merge failure" in st["error"]
+    assert events == ["pause", "resume"]  # resumed despite the failure
+
+
+def test_a_pause_hiccup_never_aborts_the_restore(tmp_path, monkeypatch):
+    """Best-effort, never load-bearing: if pausing collection itself raises,
+    the restore must still proceed to completion. ALSO proves the
+    concurrency-skeptic fix (2026-07-24, MEDIUM): when was_paused stays False
+    because the pause raised (the scheduler's real state is then UNKNOWN --
+    it may still be running), the restore must fall back to the conservative,
+    pre-existing defaults (reindex_workers=None, merge_cache_mb=None) rather
+    than still claiming all cores + an enlarged cache on the unverified
+    premise that nothing else is competing for them."""
+    import src.backup.artifact as artifact_mod
+    import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
+
+    def _boom_pause(timeout=10.0):
+        raise RuntimeError("scheduler singleton is in a weird state")
+
+    captured = {}
+
+    def fake_run_restore(staged, *, commit, allow_unverified, reindex_workers=None, merge_cache_mb=None, **kw):
+        captured["reindex_workers"] = reindex_workers
+        captured["merge_cache_mb"] = merge_cache_mb
+        return {"committed": True}
+
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", _boom_pause)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
+    monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw")
+    st = _wait(mgr)
+    assert st["state"] == "done"  # the restore completed despite the pause hiccup
+    assert captured["reindex_workers"] is None, "no all-cores claim when exclusivity was never confirmed"
+    assert captured["merge_cache_mb"] is None, "no enlarged cache when exclusivity was never confirmed"

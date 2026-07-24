@@ -19,6 +19,19 @@ from typing import Any
 
 _LOG = logging.getLogger(__name__)
 
+# "Progress everywhere" (field-feedback Session A §4 item 2): run_restore's
+# internal stage names (src/backup/merge.py) mapped onto the phase-string
+# vocabulary _uxVolPhase already understands on the frontend. "merge"/
+# "reindex" alias to the EXISTING "merging"/"reindexing" phases (whose own
+# granular progress_cb/reindex_progress_cb immediately overwrite this coarse
+# ping with real N-of-M data) rather than introducing near-duplicate names;
+# every other stage gets its own honest, distinct phase name.
+_STAGE_TO_PHASE = {"merge": "merging", "reindex": "reindexing"}
+
+
+def _stage_phase_name(stage_name: str) -> str:
+    return _STAGE_TO_PHASE.get(stage_name, stage_name)
+
 
 class VolumeBackupManager:
     """ONE volume backup OR restore at a time — you don't run two giant crypto+IO jobs
@@ -175,48 +188,106 @@ class VolumeBackupManager:
                     self._progress = {"phase": "done"}
                 return
             from src.backup.artifact import cleanup_staging, read_volume_backup
-            from src.backup.merge import run_restore
+            from src.backup.merge import import_cache_mb, run_restore
 
-            self._on_prog({"phase": "reassembling"})
-            staged = read_volume_backup(
-                srcp, passphrase, corpus_passphrase=corpus_passphrase
-            )  # verify + parity-recover + reassemble
+            # "Import owns the machine" (field-feedback Session A §4, ruled):
+            # a large volume restore competes for the single-writer gate and
+            # CPU with any in-flight background collection pass, so
+            # collection is paused for the restore's WHOLE duration
+            # (reassemble + merge + re-index) and resumed afterward. A
+            # THROUGHPUT courtesy, never a correctness requirement -- a
+            # pause/resume hiccup must never abort or corrupt an otherwise-
+            # good restore, so both sides are best-effort.
+            from src.scheduler.runner import (
+                pause_for_exclusive_operation,
+                resume_after_exclusive_operation,
+            )
+
+            was_paused = False
             try:
-                self._on_prog({"phase": "merging"})
+                was_paused = pause_for_exclusive_operation()
+            except Exception:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
+                _LOG.warning("pausing background collection for the restore failed", exc_info=True)
 
-                def _merge_prog(done: int, total: int, name: str) -> None:
-                    # Report the merge step so the UI shows a determinate bar + a
-                    # rule-of-three ETA over the "Merging (additive)…" phase.
-                    self._on_prog(
-                        {
-                            "phase": "merging",
-                            "merge_step": done,
-                            "merge_steps": total,
-                            "merge_label": name,
-                        }
+            try:
+                self._on_prog({"phase": "reassembling", "own_the_machine": True})
+                staged = read_volume_backup(
+                    srcp, passphrase, corpus_passphrase=corpus_passphrase
+                )  # verify + parity-recover + reassemble
+                try:
+                    self._on_prog({"phase": "merging", "own_the_machine": True})
+
+                    def _merge_prog(done: int, total: int, name: str) -> None:
+                        # Report the merge step so the UI shows a determinate bar + a
+                        # rule-of-three ETA over the "Merging (additive)…" phase.
+                        self._on_prog(
+                            {
+                                "phase": "merging",
+                                "merge_step": done,
+                                "merge_steps": total,
+                                "merge_label": name,
+                                "own_the_machine": True,
+                            }
+                        )
+
+                    def _reindex_prog(done: int, total: int) -> None:
+                        # A DISTINCT "reindexing" phase (2026-07-19 field report): the
+                        # post-merge per-article re-index used to run silently after the
+                        # 14-step merge finished, leaving the UI frozen on "14/14" for
+                        # however long the (previously single-core, unbatched) CPU-bound
+                        # extraction took -- sometimes hours on a large restore, reading
+                        # as a hang. Now reported as its own phase with real done/total.
+                        self._on_prog({
+                            "phase": "reindexing", "reindex_done": done,
+                            "reindex_total": total, "own_the_machine": True,
+                        })
+
+                    from src.analytics.reindex_parallel import all_cores_worker_count
+
+                    def _stage_prog(name: str) -> None:
+                        # A coarse "now doing: X" ping for stages B/D/E/G,
+                        # which have no callback of their own (§4 item 2).
+                        self._on_prog({"phase": _stage_phase_name(name), "own_the_machine": True})
+
+                    # Own-the-machine only when the pause ACTUALLY confirmed a
+                    # running pass was there and got signalled to stop (§4 item 3) --
+                    # a concurrency-skeptic MEDIUM finding (2026-07-24): these were
+                    # applied unconditionally regardless of was_paused, so if
+                    # pause_for_exclusive_operation() had raised (was_paused stays
+                    # False, the scheduler's real state then unknown), the restore
+                    # would STILL grab all cores + an enlarged cache while a pass
+                    # might genuinely still be running -- contradicting the code's
+                    # own stated precondition. was_paused == False also covers the
+                    # harmless case (nothing was running to begin with); falling
+                    # back to None (each parameter's own pre-existing, conservative
+                    # default: worker_count()'s auto-detect / no PRAGMA at all)
+                    # there costs a little throughput, never correctness -- the
+                    # safe direction to err.
+                    _reindex_workers = all_cores_worker_count() if was_paused else None
+                    _merge_cache_mb = import_cache_mb() if was_paused else None
+
+                    report = run_restore(
+                        staged,
+                        commit=True,
+                        allow_unverified=allow_unverified,
+                        progress_cb=_merge_prog,
+                        reindex_progress_cb=_reindex_prog,
+                        stage_progress_cb=_stage_prog,
+                        reindex_workers=_reindex_workers,
+                        merge_cache_mb=_merge_cache_mb,
                     )
-
-                def _reindex_prog(done: int, total: int) -> None:
-                    # A DISTINCT "reindexing" phase (2026-07-19 field report): the
-                    # post-merge per-article re-index used to run silently after the
-                    # 14-step merge finished, leaving the UI frozen on "14/14" for
-                    # however long the (previously single-core, unbatched) CPU-bound
-                    # extraction took -- sometimes hours on a large restore, reading
-                    # as a hang. Now reported as its own phase with real done/total.
-                    self._on_prog({"phase": "reindexing", "reindex_done": done, "reindex_total": total})
-
-                report = run_restore(
-                    staged,
-                    commit=True,
-                    allow_unverified=allow_unverified,
-                    progress_cb=_merge_prog,
-                    reindex_progress_cb=_reindex_prog,
-                )
-                with self._lock:
-                    self._state, self._summary = "done", {"report": report}
-                    self._progress = {"phase": "done"}
+                    with self._lock:
+                        self._state, self._summary = "done", {"report": report}
+                        self._progress = {"phase": "done"}
+                finally:
+                    cleanup_staging(staged)
             finally:
-                cleanup_staging(staged)
+                try:
+                    resume_after_exclusive_operation(was_paused)
+                except Exception:  # noqa: BLE001 - the resume is a courtesy, never load-bearing
+                    _LOG.warning(
+                        "resuming background collection after the restore failed", exc_info=True
+                    )
         except Exception as exc:  # noqa: BLE001
             _LOG.exception("volume restore failed")
             from src.backup.merge import MergeError, classify_restore_error
