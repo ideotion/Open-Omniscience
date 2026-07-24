@@ -54,6 +54,18 @@ _LOG = logging.getLogger("ingest.batch")
 # A batch is bounded by staged-text BYTES as well as count: this is the OOM
 # session — the batching fix must never become its own memory accumulation.
 _BATCH_MAX_TEXT_BYTES = 4 * 1024 * 1024
+# C14 (2026-07-24 throughput brief, A4): under measured memory pressure the cap
+# shrinks to this smaller value -- a worker's peak per-batch buffer footprint
+# drops exactly when the bandwidth governor's own mem-low floor (collect_perf.py,
+# _DEFAULT_MEM_FLOOR_MB) would otherwise be parking permits at ~2. Deliberately
+# NOT zero/one-article-at-a-time: still batches a FEW articles per commit
+# (avoiding a full reversion to the pre-P1.8 per-article gate-window cost) while
+# using a quarter of the healthy-machine ceiling.
+_BATCH_MAX_TEXT_BYTES_UNDER_PRESSURE = 1 * 1024 * 1024
+# The SAME floor the governor reacts to (collect_perf._DEFAULT_MEM_FLOOR_MB) --
+# both react to the identical pressure signal, at the same point, rather than
+# inventing a second threshold that could disagree with the governor's own.
+_MEM_PRESSURE_FLOOR_MB = 512.0
 
 
 def collect_batch_size() -> int:
@@ -62,6 +74,39 @@ def collect_batch_size() -> int:
         return max(0, int(os.getenv("OO_COLLECT_COMMIT_BATCH", "8")))
     except (TypeError, ValueError):
         return 8
+
+
+def _available_mem_mb() -> float | None:
+    """Best-effort available-RAM reading (MEASURED, never fabricated) --
+    mirrors src.scheduler.memguard's own resilience: any failure (no psutil, a
+    sandbox) returns None, so an unreadable machine never trips the shrink and
+    never silently assumes pressure that was not actually measured."""
+    try:
+        import psutil
+
+        return round(psutil.virtual_memory().available / (1024 * 1024), 1)
+    except Exception:  # noqa: BLE001 - a reading is best-effort
+        return None
+
+
+def staged_text_cap_bytes(mem_avail_mb: float | None = None) -> int:
+    """The staged-text byte cap for a batch -- the default (4 MiB) on a
+    healthy machine OR when no reading is available at all (never assume
+    pressure from silence), shrunk to ``_BATCH_MAX_TEXT_BYTES_UNDER_PRESSURE``
+    when measured available RAM is below ``_MEM_PRESSURE_FLOOR_MB`` -- the
+    SAME floor the bandwidth governor already backs off workers at. A smaller
+    in-process buffer per worker means MORE of the machine's scarce headroom
+    stays available for everything else, which is exactly the reading the
+    governor itself is watching -- so shrinking this cap under pressure works
+    WITH the governor's own signal instead of against it.
+
+    ``mem_avail_mb`` is injectable (tests; also lets a caller reuse an
+    already-fetched reading rather than a fresh psutil call per batch).
+    """
+    avail = mem_avail_mb if mem_avail_mb is not None else _available_mem_mb()
+    if avail is not None and avail < _MEM_PRESSURE_FLOOR_MB:
+        return _BATCH_MAX_TEXT_BYTES_UNDER_PRESSURE
+    return _BATCH_MAX_TEXT_BYTES
 
 
 @dataclass
@@ -98,10 +143,24 @@ class ArticleBatch:
     caller AFTER flush (a staged article's disposition is only known then).
     """
 
-    def __init__(self, session: Session, source: Source, *, size: int | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        source: Source,
+        *,
+        size: int | None = None,
+        text_cap_bytes: int | None = None,
+    ) -> None:
         self._session = session
         self._source = source
         self._size = collect_batch_size() if size is None else max(1, size)
+        # C14 (2026-07-24 throughput brief, A4): a per-batch snapshot (this
+        # object is short-lived -- one per source ingest/crawl), not a psutil
+        # call per stage() -- shrinks under measured memory pressure, else the
+        # byte-identical 4 MiB default.
+        self._text_cap = (
+            staged_text_cap_bytes() if text_cap_bytes is None else max(1, text_cap_bytes)
+        )
         self._pending: list[_StagedArticle] = []
         self._pending_text_bytes = 0
         self._pending_hashes: set[str] = set()
@@ -143,7 +202,7 @@ class ArticleBatch:
         self._pending_hashes.add(content_hash)
         self._pending_canonicals.add(canonical)
         self._pending_text_bytes += len(doc.text)
-        if len(self._pending) >= self._size or self._pending_text_bytes >= _BATCH_MAX_TEXT_BYTES:
+        if len(self._pending) >= self._size or self._pending_text_bytes >= self._text_cap:
             self.flush()
 
     @staticmethod
