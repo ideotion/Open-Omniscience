@@ -16,7 +16,7 @@ the API endpoint).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine
