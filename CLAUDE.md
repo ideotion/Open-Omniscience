@@ -7982,6 +7982,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   S-A's trial throughput), S-A digestion + operator runs, S-E sitemap core, S-C small slices,
   S-D last evidence-gated. Composes with the 2026-07-23 workflow brief (S4 series) + the
   2026-07-24 Session A/B briefs; NOTHING built this session.
+  **EXTENDED same day (maintainer: "add all of them to the PR in a coherent fashion so the coding
+  tasks can well be delegated to a smaller Sonnet 5 model without hiccups. Crawling should be
+  activated by default"):** the strategy doc gained (a) **§7 SECOND-TIER ACCELERATORS** — beyond the
+  five: A1 decouple ingestion from enrichment (store fast + a separate enrichment lane; largest, last)
+  · A2 in-memory dedup front [NOW, ~90% dup rate → skip codec reads; negative-space "never a false
+  negative"] · A3 bulk mention insert [NOW, `store.py:321-336` per-term ORM → Core insert; counter
+  math byte-identical] · A4 shrink per-worker memory footprint [NOW, small-box mem-low floor] · A5
+  persist robots/DNS caches across restarts · A6 clearnet DNS cache · the verified DB baseline (WAL +
+  synchronous=NORMAL already fast — no PRAGMA free lunch) · already-ruled page_size/cache_size restated
+  · honest NON-levers (HTTP/2 buys nothing under the per-host cap; more workers past the supply
+  ceiling; synchronous<NORMAL); (b) **§8 CRAWL-BY-DEFAULT (maintainer-ruled)** — ON by default as a
+  HYBRID BUDGETED RUNG, explicitly NOT a mode flip (flipping `mode="rss"→"crawl"` would abandon
+  conditional-GET feed economics + blow up pass time, violating bounded-pass + cover-everything; the
+  rejected alternative is recorded): additive `crawl_supplement: bool = True` + `crawl_per_pass` budget
+  mirroring the `world_discovery_per_pass` ride-along pattern (`settings.py:90-103`), a bounded crawl
+  sub-pass after RSS over least-recently-crawled + feedless-first sources (a new `Source.last_crawled_at`
+  marker), the lowest KindLadder rung so it never starves RSS, `crawl_source` through the ONE fetcher
+  (robots/politeness unchanged by construction), complements S-E (sitemap preferred, crawl the fallback);
+  (c) **§6 rulings ADOPTED as revertible spec defaults** (unblock the executing session; code lands as
+  draft PRs the maintainer reviews): a=bounded auto-backfill ~100–500 pages + consent for full history,
+  b=operator-run SOCKS list now / Stem later, c=full-content feeds used-with-disclosure, d=sitemap trial
+  evidence counts toward qualification, e=budgets ride the power-profile knob table; (d) **§9 EXECUTION**
+  pointing at the companion brief. THE COMPANION BRIEF =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_C_THROUGHPUT_SCALING.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_C_THROUGHPUT_SCALING.md)
+  — the Sonnet-executable HOW: 17 ordered slices (C1–C17) across 4 phases, each with exact files/anchors/
+  setting names/test names/invariant guards + the verified CI gate commands (ruff F/B, mypy 127 ratchet,
+  bandit 1.9.4, i18n --min 100, alembic random-revision-id/heads), the skeptic-before-push + mandatory
+  negative-space lens on every ⚠ slice (crawl rung, sitemap parser, DNS-guard change, dedup front, bulk
+  insert, S-D, A1), the staleness guard, draft-PR-only, the ethics non-options as hard fences, and the
+  operator-gated items (C6 catalog runs). Phase order: 1 duty-cycle+crawl-default+cache-persistence ·
+  2 supply (qualification budgets + sitemap core) · 3 transport (DNS-when-proxied + ceilings + proxy
+  pool + segmented downloads) · 4 processing ceilings (dedup front, bulk insert, memory footprint,
+  backfill, then S-D evidence-gated + A1 last). Sonnet sessions branch `claude/oos-c-*`. Still
+  planning-only in THIS PR (#766) — no engine code; the C-slices are the executing sessions' work.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).

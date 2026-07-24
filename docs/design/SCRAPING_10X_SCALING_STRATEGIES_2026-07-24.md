@@ -396,19 +396,155 @@ performance claims).
 
 ---
 
-## §6 Open maintainer rulings
+## §6 Rulings — adopted defaults (revertible; the maintainer reviews every draft PR)
 
-| # | Question | Recommendation |
-|---|---|---|
-| a | **Archive backfill default posture** (S-E-2): auto-backfill N pages for every newly qualified source, with full-history backfill consented per source? | Bounded auto (~100–500 pages) + explicit consent for full history; both under the ladder's lowest rung. |
-| b | **Proxy-pool surface** (S-C-3): accept an operator-run list of SOCKS endpoints, or wait for the designed in-app Stem-managed Tor? | Accept the list now (zero new trust surface); Stem integration stays its own future design. |
-| c | **Full-content feed storage** (S-E-3): store publisher-provided feed bodies without a page fetch, with the reduced-capture disclosure? | Yes, disclosed; the page fetch remains the path when the feed body is partial. |
-| d | **Sitemap-derived trial evidence** counts toward qualification exactly like feed-derived? | Yes — same extraction-validity judgment, channel recorded in provenance. |
-| e | **Hardware-aware budgets** (w_max, qualification batch, dump concurrency) ride the power-profile knob table with suggest-never-silently-switch? | Yes — consistent with the 2026-07-12 profiles ruling. |
+The five §6 questions are **adopted as spec defaults** (maintainer-directed 2026-07-24: package the
+work so the executing sessions are unblocked; the code lands as draft PRs the maintainer reviews, so
+any default here is reversible before merge). Each is the conservative, honesty-preserving reading.
+
+| # | Adopted default |
+|---|---|
+| a | **Archive backfill posture** (S-E-2): bounded auto (~100–500 pages) for every newly qualified source + explicit per-source consent for full history; both under the ladder's lowest rung, task-manager-visible, resumable. |
+| b | **Proxy-pool surface** (S-C-3): accept an operator-run *list* of SOCKS endpoints now (zero new trust surface — the operator's own Tor); the in-app Stem-managed Tor stays its own future design. |
+| c | **Full-content feed storage** (S-E-3): use publisher-provided feed bodies without a page fetch, with the reduced-capture disclosure; the page fetch remains the path when the feed body is partial. |
+| d | **Sitemap-derived trial evidence** (S-E-1b): counts toward qualification exactly like feed-derived — same extraction-validity judgment, channel recorded in provenance. |
+| e | **Hardware-aware budgets** (w_max, qualification batch, dump/crawl concurrency, cache_size): ride the power-profile knob table (`src/config/power_profiles.py`) with suggest-never-silently-switch, per the 2026-07-12 profiles ruling. |
 
 ---
 
-*Prepared 2026-07-24. Planning-only; the executing sessions take their slices from §3–§4 with the
-usual gates (skeptics-before-push with the negative-space lens on S-D and the sitemap parser;
-staleness guard against this document itself before building — the engine moved four times in the
-week before it was written).*
+## §7 Second-tier accelerators (beyond the five; grouped by where they bite)
+
+The five strategies are the multiplicative levers. This section captures the smaller/orthogonal
+"processing speed" accelerators surfaced in the 2026-07-24 follow-up, each grounded against the tree
+and honestly tiered. **Relevance rule:** because OFFER is the binding constraint today, most of these
+only pay off once S-A/S-E widen supply — they raise ceilings for later. The three marked **[NOW]**
+help immediately: two attack the high-frequency dedup/write path, one unsticks the memory-throttled
+small box the field tests run on.
+
+**Verified baseline (so we don't chase phantom wins):** the DB is already well-tuned —
+`journal_mode=WAL`, `synchronous=NORMAL` (already the fast-and-safe setting, not FULL),
+`temp_store=MEMORY`, configurable `cache_size` (negative-KiB), conditional `mmap`
+(`src/database/session.py:100-143`). There is no free win in the PRAGMAs beyond what the
+power-profile knobs already expose.
+
+### Processing side
+
+- **A1 — Decouple ingestion from enrichment** (the biggest lever not in the five). Store each article
+  fast (INSERT + the FTS trigger only) and run the heavy `index_article` passes (keywords · sentiment ·
+  when/where/who) on a *separate* background lane with its own persisted cursor, so collection
+  throughput becomes fetch-bound instead of extraction-bound. Distinct from S-D (which keeps
+  extraction *in* the collection path). The scaffolding already exists — the re-index job, the
+  persisted-cursor pattern, and the "N to index" backlog concept `autoIndexInsights` tops up — so
+  "searchable before fully indexed" is a state the UI already presents honestly. Larger design; sequence
+  after S-B/S-D land (they share the lane machinery).
+- **A2 — In-memory dedup front [NOW].** Every candidate hits a DB `_exists` dedup read
+  (`src/ingest/pipeline.py:119-124` canonical-URL, `:179-190` content-hash), and under SQLCipher even
+  an index read costs a page decrypt. With the measured ~90 % duplicate rate, a bounded in-memory
+  seen-set / Bloom filter in front answers most lookups without touching the codec — **no false
+  negatives for "definitely new"** (the negative-space property a test MUST pin); a rare false positive
+  just falls through to the real DB check. Bounded memory, evicted LRU.
+- **A3 — Bulk mention insert [NOW].** The keyword-mention write is per-term `session.add(KeywordMention(...))`
+  with a get-or-create-plus-flush per term (`src/analytics/store.py:321-336`). A two-phase shape —
+  resolve keyword ids, then one Core `insert().values([...])` for the mention rows — cuts per-row ORM
+  overhead inside the write window. Composes with S-D. Correctness pins: the `_apply_keyword_counter_deltas`
+  math and the idempotent delete-then-reinsert epoch must stay byte-identical (the delete-then-reinsert
+  double-count lesson lives here).
+- **A4 — Shrink per-worker memory footprint [NOW, small box].** On the 2c/3.2 GB instance the
+  governor's mem-low floor parks collection at ~2 permits (the measured ceiling there). S-C raises
+  ceilings on *big* boxes; A4 raises the *floor* on small ones: release article bodies sooner, shrink
+  the staged-text cap under memory pressure (`src/ingest/batch.py` 4 MiB cap), stream extraction. Less
+  RSS per worker ⇒ the governor stops throttling. The single most impactful change for the constrained
+  hardware. Measure via collect_perf `mem_low_ticks`/`mem_low_min_permits` (S4.3, already shipped).
+
+### Download side
+
+- **A5 — Persist the robots.txt + DNS caches across restarts [NOW-ish].** Both caches are in-memory
+  today (`_ROBOTS_CACHE`, TTL 3600 s, `src/ingest/__init__.py:110,:778`) and go cold on every restart;
+  with 3 k+ hosts the first pass after a restart pays thousands of robots round-trips over Tor.
+  Persist them (respecting the TTL) so a cold start is warm. Stacks with S-C slice 1.
+- **A6 — Clearnet DNS cache.** S-C slice 1 kills the local `getaddrinfo` for the *proxied* path; a
+  short-TTL DNS cache cuts the same per-fetch overhead on the *non-proxied* path (`_guard_target`,
+  `src/ingest/__init__.py:579`). Minor; completes that finding.
+
+### Config / already-ruled (restated in the throughput frame)
+
+- **`page_size=16384` + `auto_vacuum=INCREMENTAL` on create** (DB-10, ruled 2026-07-17; §1a wiring
+  pending in `connect.py`) directly speeds *processing*: fewer codec calls per index scan (measured
+  index-window −34 %…−50 % at scale). Do NOT re-spec here — reference the DB-10 memo.
+- **`cache_size` raised on capable boxes** via `sqlite_cache_mb()` (the power-profile knob).
+
+### Honest non-levers (so nobody chases them)
+
+- **HTTP/2 multiplexing** buys ~nothing — the deliberate per-host one-in-flight cap leaves no
+  within-host concurrency to unlock.
+- **More workers past the supply ceiling** — OFFER-bound; adding permits with nothing new to fetch
+  just spins.
+- **`synchronous` below NORMAL** — already NORMAL; lower trades durability for no measured gain under WAL.
+
+---
+
+## §8 Crawl-by-default (maintainer-ruled 2026-07-24)
+
+**Ruling:** crawling is ON by default. **Adopted shape: a hybrid budgeted rung, NOT a mode flip.**
+
+Rationale (design coherence): today `mode` is either/or (`VALID_MODES`, `mode="rss"` default,
+`src/scheduler/settings.py:66`; `_process_source` branches at `src/scheduler/runner.py:519`). Literally
+flipping the default to `"crawl"` would (a) abandon the conditional-GET feed economics that make the
+measured ~90 %-duplicate case cheap, and (b) blow up per-pass time — both violating the project's own
+bounded-pass + cover-everything rulings. **Rejected alternative recorded so it is not re-attempted.**
+
+**Design (buildable, additive, testable):**
+- New `AppSettings` fields, mirroring the `world_discovery_per_pass`/`qualification_per_pass` ride-along
+  pattern (`settings.py:90-103`): `crawl_supplement: bool = True` (default ON = the ruling) and
+  `crawl_per_pass: int` (bounded budget, `0` disables; ranged-coerced like the others; hardware-aware
+  via the power-profile table per §6e). The existing `mode="crawl"` full-crawl selector STAYS (it is the
+  explicit whole-source-crawl mode); the supplement is orthogonal.
+- After the RSS fetch stage, a **bounded crawl sub-pass** runs over `crawl_per_pass` qualified sources,
+  **round-robin by least-recently-crawled, feedless sources first** (they are invisible to RSS today),
+  reusing `crawl_source` with a tight `CrawlConfig` (small `max_pages`; existing depth/same-host bounds).
+  It is the **lowest rung of the S-B KindLadder** — consumes headroom only after RSS + housekeeping, so
+  it can never starve live feed collection.
+- **Cover-everything preserved:** rotation (least-recently-crawled) means every qualified source is
+  eventually crawled — ordering, never exclusion. A `Source.last_crawled_at` marker (additive nullable
+  column + migration + boot self-heal, the established pattern) drives the rotation; NULL sorts first.
+- **Safety unchanged, by construction:** `crawl_source` already routes through the ONE `EthicalFetcher`
+  (robots fail-closed, per-host one-in-flight + ≥1 s, honest UA), `same_domain_only`, bounded
+  depth/pages, dedup against stored URLs. The supplement adds no new fetch path.
+- **Complements S-E:** where a source publishes a sitemap, that is the preferred URL-discovery channel
+  (fewer requests, complete enumeration); crawl is the fallback for sources with neither feed nor
+  sitemap. Build sequence: crawl rung first (it needs no new parser), sitemap discovery layers in front
+  of it later.
+
+**Consent/network:** the supplement rides the collect pass, so it is already inside the ONE online
+consent envelope; airplane mode stops it with everything else. No new consent surface.
+
+---
+
+## §9 Execution — delegated to the Sonnet 5 session(s)
+
+The slice-by-slice execution manual (files, anchors, env-var/setting names, test names, invariant
+guards, CI gate commands, skeptic-before-push mandates, staleness guard, draft-PR-only) lives in the
+companion brief **`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_C_THROUGHPUT_SCALING.md`** — the
+established house pattern the 2026-07-24 A/B sessions already follow. This document is the WHY + the
+design of record; the brief is the HOW. Recommended phase order (from §4, with §7/§8 folded in):
+
+1. **Phase 1 — duty cycle + crawl-by-default (hardware-independent, safe):** S-B housekeeping lane +
+   KindLadder wiring · the §8 crawl-by-default rung · A5 robots/DNS cache persistence.
+2. **Phase 2 — supply:** S-A bulk-qualification hardware-aware budgets + operator catalog runs · S-E
+   slice 1 sitemap core → the feedless-candidate trial channel.
+3. **Phase 3 — transport:** S-C slice 1 DNS-when-proxied + A6 · hardware-aware ceilings/`cache_size` on
+   profiles · S-C proxy pool · S-C segmented bulk downloads (wire the shipped `tor_throughput` cores).
+4. **Phase 4 — processing ceilings:** A2 in-memory dedup front · A3 bulk mention insert · A4 per-worker
+   memory footprint · S-E slice 2 archive backfill · then **S-D** (evidence-gated on `writer-bound`
+   verdicts) and **A1** decoupled enrichment (largest, sequence last).
+
+Cross-cutting (do NOT duplicate here): the DB-10 `page_size`/`auto_vacuum` create-time wiring rides its
+own memo + PR-740 remediation track.
+
+---
+
+*Prepared 2026-07-24. Planning-only; the executing Sonnet sessions take their slices from the companion
+brief with the usual gates (skeptics-before-push with the mandatory negative-space lens on S-D, the
+sitemap parser, the crawl-by-default rung, and the A2 dedup front's "never a false negative" property;
+staleness guard against this document AND the tree before each slice — the engine moved four times in
+the week before it was written).*
