@@ -273,7 +273,7 @@ def run_and_persist_qualification_assist(
         from src.api.llm import active_model
         from src.llm.backend import get_client_with_name
 
-        backend_name, resolved_client = get_client_with_name()
+        _, resolved_client = get_client_with_name()
         client = client or resolved_client
         model = model or active_model()
 
@@ -308,8 +308,9 @@ def last_qualification_assist_report(source_id: int | None = None) -> dict:
                 "schema": QUALIFICATION_ASSIST_SCHEMA,
                 "available": False,
                 "note": (
-                    "no qualification-assist run has been made yet -- run it from "
-                    "Settings -> AI, or POST /api/diagnostics/qualification-assist/run."
+                    "no qualification-assist run has been made yet -- run it via "
+                    "POST /api/diagnostics/qualification-assist/run "
+                    "(body: {source_id, model?, max_articles?})."
                 ),
             }
         path = files[-1]
